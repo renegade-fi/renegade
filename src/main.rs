@@ -1,6 +1,7 @@
 mod config;
+mod gossip;
 
-use std::thread;
+use crate::gossip::start_gossip_server;
 
 #[tokio::main]
 async fn main() {
@@ -11,4 +12,6 @@ async fn main() {
         None => String::from("no version")
     };
     println!("Relayer running with\n\t version: {}\n\t port: {}", version, args.port);
+
+    start_gossip_server(vec![String::from("")]).await;
 }
