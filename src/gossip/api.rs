@@ -1,10 +1,13 @@
 use libp2p::PeerId;
 use serde::{Serialize, Deserialize};
 
-// Groups the gossip API definition for communication between peers
-#[derive(Debug, Serialize, Deserialize)]
+/**
+ * This file defines the APIs for the various libp2p protocols in use.
+ */
+
 // Defines the heartbeat message, both request and response take
 // on this message format
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HeartbeatMessage {
     known_peers: Vec<Vec<u8>>,
 }

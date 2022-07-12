@@ -1,36 +1,34 @@
 mod api;
 mod errors;
+mod composed_protocol;
 mod heartbeat_protocol;
 
 // This file groups logic for the package-public gossip interface
-use heartbeat_protocol::{
-    ProtocolVersion,
-    RelayerGossipCodec,
-    RelayerGossipProtocol
-};
 use libp2p::{
     identity, 
     futures::StreamExt,
     Multiaddr,
     PeerId,
     request_response::{
-        ProtocolSupport,
-        RequestResponse,
         RequestResponseEvent,
         RequestResponseMessage
     },
-    swarm::{Swarm, SwarmEvent},
+    swarm::{Swarm, SwarmEvent}, kad::KademliaEvent,
 };
 use std::{
     collections::HashSet,
     error::Error,
-    iter
 };
 use tokio::{
     time::{sleep, Duration},
 };
-
-use crate::gossip::api::HeartbeatMessage;
+use crate::gossip::{
+    api::HeartbeatMessage, 
+    composed_protocol::{
+        ComposedNetworkBehavior,
+        ComposedProtocolEvent
+    }
+};
 
 const HEARTBEAT_INTERVAL_MS: u64 = 5000;
 
@@ -41,7 +39,7 @@ pub struct GossipPeer {
     
     // Network information
     known_peers: HashSet<PeerId>,
-    swarm: Swarm<RequestResponse<RelayerGossipCodec>>
+    swarm: Swarm<ComposedNetworkBehavior>
 }
 
 impl GossipPeer {
@@ -52,27 +50,18 @@ impl GossipPeer {
     ) -> Result<Self, Box<dyn Error>> {
         // Build the peer keys
         let local_key = identity::Keypair::generate_ed25519();
-        let local_peer_id = PeerId::from(local_key.public());
+        let local_peer_id = local_key.public().to_peer_id();
         println!("peer ID: {}", local_peer_id);
 
         // Transport is TCP for now, this will eventually move to QUIC
         let transport = libp2p::development_transport(local_key).await?;
 
-        // Build the network behavior
-        let mut behavior = RequestResponse::new(
-            RelayerGossipCodec::new(),
-            iter::once((
-                RelayerGossipProtocol::new(ProtocolVersion::Version1),
-                ProtocolSupport::Full
-            )),
-            Default::default()
-        );
-
+        let mut behavior = ComposedNetworkBehavior::new(local_peer_id);
         // Add all addresses for bootstrap servers
         let mut known_peers = HashSet::new();
         for known_peer in bootstrap_servers.iter() {
             let addr: Multiaddr = "/ip4/127.0.0.1/tcp/12345".parse()?;
-            behavior.add_address(known_peer, addr);
+            behavior.kademlia_dht.add_address(known_peer, addr);
 
             known_peers.insert(*known_peer);
         }
@@ -112,21 +101,77 @@ impl GossipPeer {
                         },
 
                         // Matches a P2P message sent with the RequestResponse behavior
-                        SwarmEvent::Behaviour(
-                            RequestResponseEvent::Message { peer, message }
-                        ) => {
-                            println!("Recieved {:?} from peer {}\n\n", message, peer);
-                            self.process_request_response_event(message).await?;
+                        SwarmEvent::Behaviour(event) => {
+                            self.process_network_event(event).await?;
                         },
 
                         // Matches an event produced when the local peer dials another peer
                         SwarmEvent::Dialing(peer_id) => { println!("Dialing peer: {}", peer_id); }
+
+                        // Default behavior is to log unmatched events
                         _ => {
                             println!("Event not matched: {:?}\n\n", event);
                         }
                     }
                 }
             }
+        }
+    }
+
+    async fn process_network_event(&mut self, event: ComposedProtocolEvent) 
+        -> Result<(), Box<dyn std::error::Error>> {
+        match event {
+            ComposedProtocolEvent::RequestResponse(e) => { self.process_request_response_event(e).await?; }
+            ComposedProtocolEvent::Kademlia(e) => { self.process_kademlia_event(e).await?; }
+        }
+        Ok(())
+    }
+    // Processes a request or response from a peer under the RequestResponse network behavior
+    async fn process_request_response_event(
+        &mut self, 
+        event: RequestResponseEvent<HeartbeatMessage, HeartbeatMessage>
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // Only match messages for now, later connection informtation will be matched and traced
+        if let RequestResponseEvent::Message { message, .. } = event {
+            match message {
+                // A peer has dialed the local peer to check for a heartbeat
+                RequestResponseMessage::Request { request, channel, .. } => {
+                    // Add heartbeat peers to list of known peers
+                    self.merge_peers(request.get_known_peers()?);
+
+                    // Construct response with known peers
+                    let resp = self.get_heartbeat_message();
+                    self.swarm
+                        .behaviour_mut()
+                        .request_response
+                        .send_response(channel, resp)
+                        .unwrap();
+                },
+
+                // A peer has responded to a dialup, confirming their heartbeat
+                RequestResponseMessage::Response { response, .. } => {
+                    self.merge_peers(response.get_known_peers()?);
+                    println!("Received heartbeat response: {:?}", response);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    // Processes a Kademlia DHT event from the Kademlia network behavior
+    async fn process_kademlia_event(
+        &mut self,
+        event: KademliaEvent
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        println!("Received Kademlia event: {:?}", event);
+        Ok(())
+    }
+
+    // Merges the peers from a heartbeat into the set of known peers
+    fn merge_peers(&mut self, new_peers: Vec<PeerId>) {
+        for peer in new_peers.iter() {
+            self.known_peers.insert(*peer);
         }
     }
 
@@ -137,35 +182,11 @@ impl GossipPeer {
         for peer_id in self.known_peers.clone().into_iter() {
             println!("Sending heartbeat to {:?}...", peer_id);
             let request = self.get_heartbeat_message();
-            self.swarm.behaviour_mut()
+            self.swarm
+                .behaviour_mut()
+                .request_response
                 .send_request(&peer_id, request);
         }
-    }
-
-    // Processes a request or response from a peer under the RequestResponse network behavior
-    async fn process_request_response_event(
-        &mut self, 
-        message: RequestResponseMessage<HeartbeatMessage, HeartbeatMessage>
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        // Switch over request vs response
-        match message {
-            // A peer has dialed the local peer to check for a heartbeat
-            RequestResponseMessage::Request { request, channel, .. } => {
-                // Add heartbeat peers to list of known peers
-                self.merge_peers(request.get_known_peers()?);
-
-                // Construct response with known peers
-                let resp = self.get_heartbeat_message();
-                self.swarm.behaviour_mut().send_response(channel, resp).unwrap();
-            },
-
-            // A peer has responded to a dialup, confirming their heartbeat
-            RequestResponseMessage::Response { response, .. } => {
-                self.merge_peers(response.get_known_peers()?);
-                println!("Received heartbeat response: {:?}", response);
-            }
-        }
-        Ok(())
     }
 
     // Constructs the heartbeat message for the local peer
@@ -178,10 +199,4 @@ impl GossipPeer {
         HeartbeatMessage::new(known_peers)
     }
 
-    // Merges the peers from a heartbeat into the set of known peers
-    fn merge_peers(&mut self, new_peers: Vec<PeerId>) {
-        for peer in new_peers.iter() {
-            self.known_peers.insert(*peer);
-        }
-    }
 }
