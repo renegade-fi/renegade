@@ -17,14 +17,18 @@ use libp2p::{
 
 const MAX_MESSAGE_SIZE: usize = 1_000_000_000;
 
-#[derive(Debug, Clone)]
+/**
+ * Heartbeat protocol versioning, metadata, and codec
+ */
+
 // Specifies versioning information about the protocol
+#[derive(Debug, Clone)]
 pub enum ProtocolVersion {
     Version1,
 }
 
-#[derive(Debug, Clone)]
 // Represents the gossip protocol
+#[derive(Debug, Clone)]
 pub struct RelayerGossipProtocol {
     version: ProtocolVersion
 }
@@ -38,7 +42,7 @@ impl RelayerGossipProtocol {
 impl ProtocolName for RelayerGossipProtocol {
     fn protocol_name(&self) -> &[u8] {
         match self.version {
-            ProtocolVersion::Version1 => b"relayer-gossip/1.0"
+            ProtocolVersion::Version1 => b"/relayer-gossip/1.0"
         }
     }
 }
