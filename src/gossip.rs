@@ -126,18 +126,21 @@ impl GossipPeer {
         }
         Ok(())
     }
+
     // Processes a request or response from a peer under the RequestResponse network behavior
     async fn process_request_response_event(
         &mut self, 
         event: RequestResponseEvent<HeartbeatMessage, HeartbeatMessage>
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Only match messages for now, later connection informtation will be matched and traced
-        if let RequestResponseEvent::Message { message, .. } = event {
+        if let RequestResponseEvent::Message { message, peer } = event {
             match message {
                 // A peer has dialed the local peer to check for a heartbeat
                 RequestResponseMessage::Request { request, channel, .. } => {
                     // Add heartbeat peers to list of known peers
-                    self.merge_peers(request.get_known_peers()?);
+                    let mut known_peers = request.get_known_peers()?;
+                    known_peers.push(peer);
+                    self.merge_peers(known_peers);
 
                     // Construct response with known peers
                     let resp = self.get_heartbeat_message();
@@ -171,6 +174,10 @@ impl GossipPeer {
     // Merges the peers from a heartbeat into the set of known peers
     fn merge_peers(&mut self, new_peers: Vec<PeerId>) {
         for peer in new_peers.iter() {
+            if *peer == self.local_peer_id {
+                continue;
+            }
+
             self.known_peers.insert(*peer);
         }
     }
