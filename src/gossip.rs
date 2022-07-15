@@ -1,8 +1,8 @@
 mod api;
-mod errors;
 mod composed_protocol;
-mod network_manager;
 mod heartbeat_protocol;
+mod errors;
+mod network_manager;
 pub(crate) mod types;
 
 // This file groups logic for the package-public gossip interface
@@ -11,7 +11,7 @@ use std::{
     collections::HashMap,
     error::Error,
     sync::{
-        Arc, 
+        Arc,
         RwLock
     },
 };
@@ -19,11 +19,14 @@ use tokio::{
     sync::mpsc::unbounded_channel
 };
 
-use crate::gossip::{
-    heartbeat_protocol::{
-        HeartbeatProtocolExecutor
+use crate::{
+    gossip::{
+        heartbeat_protocol::{
+            HeartbeatProtocolExecutor
+        },
+        types::PeerInfo, network_manager::NetworkManager,
     },
-    types::PeerInfo, network_manager::NetworkManager,
+    state::GlobalRelayerState,
 };
 
 pub struct GossipServer {
@@ -36,7 +39,8 @@ impl GossipServer {
     // Creates a new gossip server
     pub async fn new(
         port: u32,
-        bootstrap_servers: Vec<PeerInfo>
+        bootstrap_servers: Vec<PeerInfo>,
+        global_state: GlobalRelayerState
     ) -> Result<Self, Box<dyn Error>> {
         // Build the peer info map
         let mut known_peer_info = HashMap::new();

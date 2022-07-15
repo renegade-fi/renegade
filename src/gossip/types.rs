@@ -1,9 +1,9 @@
 use std::{
     sync::atomic::{AtomicU64, Ordering},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH}
 };
-
 use libp2p::{Multiaddr, PeerId};
+
 
 // Contains information about connected peers
 #[derive(Debug)]
@@ -59,7 +59,6 @@ impl Clone for PeerInfo {
         } 
     }
 }
-
 
 /**
  * Helpers
