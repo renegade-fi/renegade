@@ -10,23 +10,25 @@ use libp2p::{
     swarm::SwarmEvent, kad::KademliaEvent, 
 };
 use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
     thread::{
         Builder,
         JoinHandle, self,
-    }
+    }, 
 };
 use tokio::{
     sync::mpsc::{UnboundedReceiver},
 };
 
-use crate::gossip::{
-    composed_protocol::{
-        ComposedNetworkBehavior, ComposedProtocolEvent
+use crate::{
+    gossip::{
+        composed_protocol::{
+            ComposedNetworkBehavior, ComposedProtocolEvent
+        }, 
+        types::{PeerInfo, WrappedPeerId}, 
+        heartbeat_protocol::HeartbeatExecutorJob
+
     }, 
-    types::PeerInfo, 
-    heartbeat_protocol::HeartbeatExecutorJob
+    state::GlobalRelayerState
 };
 
 use super::api::{GossipOutbound, GossipMessage};
@@ -34,7 +36,7 @@ use super::api::{GossipOutbound, GossipMessage};
 // Groups logic around monitoring and requesting the network
 pub struct NetworkManager {
     // The peerId of the locally running node
-    pub local_peer_id: PeerId,
+    pub local_peer_id: WrappedPeerId,
 
     // The join handle of the executor loop
     pub thread_handle: JoinHandle<()> 
@@ -46,42 +48,41 @@ pub struct NetworkManager {
 impl NetworkManager {
     pub async fn new(
         port: u32,
-        peer_info: Arc<RwLock<HashMap<PeerId, PeerInfo>>>,
         send_channel: UnboundedReceiver<GossipOutbound>,
         heartbeat_work_queue: Sender<HeartbeatExecutorJob>,
+        global_state: GlobalRelayerState,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Build the peer keys
         let local_key = identity::Keypair::generate_ed25519();
-        let local_peer_id = local_key.public().to_peer_id();
-        println!("peer ID: {}", local_peer_id);
+        let local_peer_id = WrappedPeerId(local_key.public().to_peer_id());
+        println!("peer ID: {:?}", local_peer_id);
 
         // Transport is TCP for now, this will eventually move to QUIC
         let transport = libp2p::development_transport(local_key).await?;
 
         // Behavior is a composed behavior of RequestResponse with Kademlia
-        let mut behavior = ComposedNetworkBehavior::new(local_peer_id);
+        let mut behavior = ComposedNetworkBehavior::new(*local_peer_id);
 
         // Add all addresses for bootstrap servers
-        for (peer_id, peer_info) in peer_info.clone()
-                                        .read()
+        for (peer_id, peer_info) in global_state.read()
                                         .unwrap()
-                                        .iter() 
+                                        .known_peers.iter()
         {
-            println!("Adding {}: {} to routing table...", peer_id, peer_info.get_addr());
+            println!("Adding {:?}: {} to routing table...", peer_id, peer_info.get_addr());
             behavior.kademlia_dht.add_address(peer_id, peer_info.get_addr());
-        }            
+        }
 
         // Connect the behavior and the transport via swarm
         // and begin listening for requests
-        let mut swarm = Swarm::new(transport, behavior, local_peer_id);
+        let mut swarm = Swarm::new(transport, behavior, *local_peer_id);
         let hostport = format!("/ip4/127.0.0.1/tcp/{}", port);
         let addr: Multiaddr = hostport.parse()?;
         swarm.listen_on(addr.clone())?;
 
         // Add self to known peers
-        peer_info.clone()
-            .write()
+        global_state.write()
             .unwrap()
+            .known_peers
             .insert(
                 local_peer_id, PeerInfo::new(local_peer_id, addr)
             );
@@ -116,7 +117,7 @@ impl NetworkManager {
     //      2. Events from workers to be sent over the network
     // It handles these in the tokio select! macro below
     async fn executor_loop(
-        local_peer_id: PeerId,
+        local_peer_id: WrappedPeerId,
         mut swarm: Swarm<ComposedNetworkBehavior>,
         mut send_channel: UnboundedReceiver<GossipOutbound>,
         heartbeat_work_queue: Sender<HeartbeatExecutorJob>
@@ -142,7 +143,7 @@ impl NetworkManager {
                         SwarmEvent::NewListenAddr { address, .. } => {
                             println!("Listening on {}/p2p/{}\n", address, local_peer_id);
                         },
-                        _ => { println!("Unmatched event {:?}", event) }
+                        _ => {  }
                     }
                 }
             }
@@ -206,7 +207,7 @@ impl NetworkManager {
                 match request {
                     GossipMessage::Heartbeat(heartbeat_message) => {
                         heartbeat_work_queue.send(
-                            HeartbeatExecutorJob::HandleHeartbeatReq { peer_id, message: heartbeat_message, channel }
+                            HeartbeatExecutorJob::HandleHeartbeatReq { peer_id: WrappedPeerId(peer_id), message: heartbeat_message, channel }
                         );
                     }
                 }
@@ -217,7 +218,7 @@ impl NetworkManager {
                 match response {
                     GossipMessage::Heartbeat(heartbeat_message) => {
                         heartbeat_work_queue.send(
-                            HeartbeatExecutorJob::HandleHeartbeatResp { peer_id, message: heartbeat_message }
+                            HeartbeatExecutorJob::HandleHeartbeatResp { peer_id: WrappedPeerId(peer_id), message: heartbeat_message }
                         );
                     }
                 }

@@ -1,10 +1,15 @@
+use std::collections::HashMap;
+
 use libp2p::{
-    PeerId,
     request_response::ResponseChannel, Multiaddr,
 };
 use serde::{Serialize, Deserialize};
+use uuid::Uuid;
 
-use super::types::PeerInfo;
+use crate::{
+    gossip::types::{PeerInfo, WrappedPeerId},
+    state::{WalletMetadata, RelayerState}
+};
 
 /**
  * This file groups API related definitions for the relayer's libp2p protocol
@@ -15,13 +20,13 @@ use super::types::PeerInfo;
 #[derive(Debug)]
 pub enum GossipOutbound {
     // A generic request sent to the network manager for outbound delivery
-    Request { peer_id: PeerId, message: GossipMessage },
+    Request { peer_id: WrappedPeerId, message: GossipMessage },
     // A generic response sent to the network manager for outbound delivery
     Response { channel: ResponseChannel<GossipMessage>, message: GossipMessage },
     // A command signalling to the network manager that a new node has been
     // discovered at the application level. The network manager should register
     // this node with the KDHT and propagate this change
-    NewAddr { peer_id: PeerId, address: Multiaddr }
+    NewAddr { peer_id: WrappedPeerId, address: Multiaddr }
 }
 
 // Represents the message data passed via the network
@@ -34,66 +39,80 @@ pub enum GossipMessage {
 // on this message format
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeartbeatMessage {
-    // Known peers represents a serialized PeerId, this is separated out
-    // from addrs to allow for easy serialization/deserializtion of the message
-    known_peers: Vec<Vec<u8>>,
-    known_peer_addrs: Vec<Multiaddr>,
+    // The list of wallets managed by the sending relayer
+    pub managed_wallets: HashMap<Uuid, WalletMetadata>,
+    // The set of peers known to the sending relayer
+    // PeerID is converted to string for serialization
+    pub known_peers: HashMap<String, PeerInfo>,
 }
 
 impl HeartbeatMessage {
     pub fn new(known_peers: Vec<PeerInfo>) -> Self {
-        let mut serialized_peers = Vec::new();
-        let mut peer_addrs = Vec::new();
+        let mut peer_info_map = HashMap::new();
 
-        for peer in known_peers {
-            serialized_peers.push(peer.get_peer_id().to_bytes());
-            peer_addrs.push(peer.get_addr());
+        for peer in known_peers.iter() {
+            peer_info_map.insert(peer.get_peer_id().to_string(), peer.clone());
         }
 
-        Self { known_peers: serialized_peers, known_peer_addrs: peer_addrs }
+        Self { known_peers: peer_info_map, managed_wallets: HashMap::new() }
     }
+}
 
-    // Parses known peers from byte data
-    pub fn get_known_peers(&self) -> Result<Vec<PeerInfo>, Box<dyn std::error::Error>> {
-        let mut parsed = Vec::new();
-        for (peer, addr) in self.known_peers.iter().zip(self.known_peer_addrs.clone()) {
-            parsed.push(
-                PeerInfo::new(
-                    PeerId::from_bytes(peer)?,
-                    addr
-                )
-            );
+/**
+ * Implements the derivation from global state to heartbeat message.
+ * The state primitive passed around to workers is of type GlobalRelayerState;
+ * this is an Arc<RwLock> wrapper around RelayerState. The caller of this cast
+ * should handle locking the object
+ */
+impl From<&RelayerState> for HeartbeatMessage {
+    fn from(state: &RelayerState) -> Self {
+        let mut managed_wallet_metadata: HashMap<Uuid, WalletMetadata> = HashMap::new();
+        for (wallet_id, wallet) in state.managed_wallets.iter() {
+            managed_wallet_metadata.insert(*wallet_id, wallet.metadata.clone());
         }
 
-        Ok(parsed)
-    }
+        // Convert peer info keys to strings for serialization/deserialization
+        let mut known_peers: HashMap<String, PeerInfo> = HashMap::new();
+        for (peer_id, peer_info) in state.known_peers.iter() {
+            known_peers.insert(peer_id.to_string(), peer_info.clone());
+        } 
+
+        HeartbeatMessage { managed_wallets: managed_wallet_metadata, known_peers } 
+    } 
 }
 
 #[cfg(test)]
 mod tests {
-    use libp2p::{identity, PeerId, Multiaddr};
-
-    use crate::gossip::types::PeerInfo;
+    use serde_json;
+    use std::{str::FromStr};
+    use libp2p::{identity, Multiaddr};
+    use crate::gossip::types::{PeerInfo, WrappedPeerId};
 
     use super::HeartbeatMessage;
 
-    #[test]
-    fn test_serialize_deserialize() {
-        let key = identity::Keypair::generate_ed25519();
-        let peer_id = PeerId::from_public_key(&key.public());
-        let addr = Multiaddr::empty();
+    const DUMMY_MULTIADDR: &str = "/ip4/127.0.0.1/tcp/5000";
 
-        let expected_peer_info = vec![
-            PeerInfo::new(peer_id, addr)
+    fn create_mock_heartbeat() -> HeartbeatMessage {
+        let local_key = identity::Keypair::generate_ed25519();
+        let local_peer_id = WrappedPeerId(local_key.public().to_peer_id());
+
+        let known_peers = vec![
+            PeerInfo::new(
+                local_peer_id, 
+                Multiaddr::from_str(DUMMY_MULTIADDR).expect("Cannot create multiaddr")
+            ) 
         ];
 
-        let message = HeartbeatMessage::new(expected_peer_info);
-        assert_eq!(1, message.get_known_peers().unwrap().len());
-        assert_eq!(peer_id, message.get_known_peers()
-                                .unwrap()
-                                .get(0)
-                                .unwrap()
-                                .get_peer_id()
-                            );
+        HeartbeatMessage::new(known_peers)    
+    }
+
+    #[test]
+    fn test_heartbeat_serde() {
+        // Mock a heartbeat, serialize and deserialize
+        let mock_heartbeat = create_mock_heartbeat();
+        let serialized = serde_json::to_string(&mock_heartbeat).expect("serialization error");
+        let deserialized: HeartbeatMessage = serde_json::from_str(&serialized[..]).expect("deserialization error");
+
+        assert_eq!(1, deserialized.known_peers.len());
     }
 }

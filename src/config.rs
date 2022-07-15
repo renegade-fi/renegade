@@ -2,7 +2,7 @@ use clap::Parser;
 use libp2p::{Multiaddr, PeerId};
 use std::error::Error;
 
-use crate::gossip::types::PeerInfo;
+use crate::gossip::types::{PeerInfo, WrappedPeerId};
 
 const DEFAULT_VERSION: &str = "1";
 
@@ -46,7 +46,9 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, Box<dyn Error>> {
         let parsed_addr: Multiaddr = addr.parse().expect("Invalid address passed as --bootstrap-server");
         let peer_id = PeerId::try_from_multiaddr(&parsed_addr).expect("Invalid address passed as --bootstrap-server");
         println!("parsed peer {}: {}", peer_id, parsed_addr);
-        parsed_bootstrap_addrs.push(PeerInfo::new(peer_id, parsed_addr));
+        parsed_bootstrap_addrs.push(
+            PeerInfo::new(WrappedPeerId(peer_id), parsed_addr)
+        );
     }
 
     Ok(

@@ -1,15 +1,10 @@
-
 // Groups the logic behind the gossip protocol specification
-use crate::{
-    gossip::{api::HeartbeatMessage},
-};
 use crossbeam::{channel::{
     Sender,
     Receiver, 
 }};
 use libp2p::{
     request_response::ResponseChannel,
-    PeerId, 
 };
 use lru::{
     LruCache
@@ -18,16 +13,19 @@ use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
     time::{Duration, SystemTime, UNIX_EPOCH}, 
-    thread
+    thread, 
 };
 use tokio::sync::mpsc::{
     error::SendError,
     UnboundedSender,
 };
 
-use crate::gossip::{
-    api::{GossipMessage, GossipOutbound},
-    types::PeerInfo
+use crate::{
+    gossip::{
+        api::{GossipMessage, GossipOutbound, HeartbeatMessage},
+        types::{PeerInfo, WrappedPeerId},
+    },
+    state::{GlobalRelayerState, RelayerState},
 };
 
 
@@ -70,16 +68,15 @@ fn get_current_time_seconds() -> u64 {
 pub enum HeartbeatExecutorJob {
     ExecuteHeartbeats,
     HandleHeartbeatReq{ 
-        peer_id: PeerId, 
+        peer_id: WrappedPeerId, 
         message: HeartbeatMessage, 
         channel: ResponseChannel<GossipMessage> 
     },
-    HandleHeartbeatResp{ peer_id: PeerId, message: HeartbeatMessage },
+    HandleHeartbeatResp{ peer_id: WrappedPeerId, message: HeartbeatMessage },
 }
 
 // Type aliases for shared objects
-type SharedPeerInfo = Arc<RwLock<HashMap<PeerId, PeerInfo>>>;
-type SharedLRUCache = Arc<RwLock<LruCache<PeerId, u64>>>;
+type SharedLRUCache = Arc<RwLock<LruCache<WrappedPeerId, u64>>>;
 
 // Executes the heartbeat protocols
 pub struct HeartbeatProtocolExecutor {
@@ -92,11 +89,11 @@ pub struct HeartbeatProtocolExecutor {
 impl HeartbeatProtocolExecutor {
     // Creates a new executor
     pub fn new(
-        local_peer_id: PeerId,
-        peer_info: SharedPeerInfo,
+        local_peer_id: WrappedPeerId,
         network_channel: UnboundedSender<GossipOutbound>,
         job_sender: Sender<HeartbeatExecutorJob>,
-        job_receiver: Receiver<HeartbeatExecutorJob>
+        job_receiver: Receiver<HeartbeatExecutorJob>,
+        global_state: GlobalRelayerState
     ) -> Self { 
         // Tracks recently expired peers and blocks them from being re-registered
         // until the state has synced. Maps peer_id to expiry time
@@ -112,10 +109,10 @@ impl HeartbeatProtocolExecutor {
                 .spawn(move || { 
                     Self::executor_loop(
                         local_peer_id,
-                        peer_info,
                         job_receiver,
                         network_channel,
                         peer_expiry_cache,
+                        global_state
                     );
                 })
                 .unwrap()
@@ -134,11 +131,11 @@ impl HeartbeatProtocolExecutor {
 
     // Runs the executor loop 
     fn executor_loop(
-        local_peer_id: PeerId,
-        peer_info: SharedPeerInfo,
+        local_peer_id: WrappedPeerId,
         job_receiver: Receiver<HeartbeatExecutorJob>,
         network_channel: UnboundedSender<GossipOutbound>,
-        peer_expiry_cache: SharedLRUCache
+        peer_expiry_cache: SharedLRUCache,
+        global_state: GlobalRelayerState
     ) {
         println!("Starting executor loop for heartbeat protocol executor...");
         loop {
@@ -146,105 +143,156 @@ impl HeartbeatProtocolExecutor {
             match job {
                 HeartbeatExecutorJob::ExecuteHeartbeats => {
                     Self::send_heartbeats(
-                        local_peer_id, 
-                        peer_info.clone(), 
+                        local_peer_id,
                         network_channel.clone(),
-                        peer_expiry_cache.clone()
+                        peer_expiry_cache.clone(),
+                        global_state.clone()
                     );
                 },
                 HeartbeatExecutorJob::HandleHeartbeatReq { message, channel, .. } => {
-                    if let Ok(peers) = message.get_known_peers() {
-                        Self::merge_peers(
-                            local_peer_id, 
-                            peers, 
-                            peer_info.clone(), 
-                            network_channel.clone(),
-                            peer_expiry_cache.clone()
-                        );
-                    } else {
-                        println!("Could not parse peers from heartbeat request...");
-                    }
-
                     // Respond on the channel given in the request
-                    let message = Self::build_heartbeat_message(peer_info.clone());
+                    let heartbeat_resp = Self::build_heartbeat_message(global_state.clone());
                     network_channel.send(
-                        GossipOutbound::Response { channel, message }
+                        GossipOutbound::Response { channel, message: heartbeat_resp }
                     );
+
+                    // Merge newly discovered peers into local state
+                    Self::merge_peers_from_message(
+                        local_peer_id, 
+                        &message,
+                        network_channel.clone(),
+                        peer_expiry_cache.clone(),
+                        global_state.clone()
+                    )
                 },
                 HeartbeatExecutorJob::HandleHeartbeatResp { peer_id, message } => {
-                    Self::record_heartbeat(peer_id, peer_info.clone());
-                    if let Ok(peers) = message.get_known_peers() {
-                        Self::merge_peers(
-                            local_peer_id, 
-                            peers, 
-                            peer_info.clone(), 
-                            network_channel.clone(),
-                            peer_expiry_cache.clone()
-                        )
-                    } else {
-                        println!("Could not parse peers from heartbeat response...")
-                    }
+                    Self::record_heartbeat(peer_id, global_state.clone());
+                    Self::merge_peers_from_message(
+                        local_peer_id, 
+                        &message,
+                        network_channel.clone(),
+                        peer_expiry_cache.clone(),
+                        global_state.clone()
+                    )
                 }
             }
         }
     }
 
     // Records a successful heartbeat
-    fn record_heartbeat(peer_id: PeerId, peer_info: SharedPeerInfo) {
-        let mut locked_peer_info = peer_info.write().unwrap();
-        if let Some(peer) = locked_peer_info.get_mut(&peer_id) {
-            peer.successful_heartbeat();
+    fn record_heartbeat(peer_id: WrappedPeerId, global_state: GlobalRelayerState) {
+        let mut locked_state = global_state.write().unwrap();
+        if let Some(peer_info) = locked_state.known_peers.get_mut(&peer_id) {
+            peer_info.successful_heartbeat();
         }
     }
 
-    // Merges the peers from a heartbeat into the set of already known peers
-    fn merge_peers(
-        local_peer_id: PeerId,
-        new_peers: Vec<PeerInfo>, 
-        peer_info: SharedPeerInfo,
+    // Sync the replication state when a heartbeat is received
+    // Effectively:
+    //  For each wallet that the local relayer manages:
+    //      1. Check if the peer sent a replication list for this wallet
+    //      2. Add any new peers from that list to the local state
+    fn merge_peers_from_message(
+        local_peer_id: WrappedPeerId,
+        message: &HeartbeatMessage,
         network_channel: UnboundedSender<GossipOutbound>,
-        peer_expiry_cache: SharedLRUCache
+        peer_expiry_cache: SharedLRUCache,
+        global_state: GlobalRelayerState
+    ) {
+        let mut locked_state = global_state.write().unwrap();
+        let mut locked_expiry_cache = peer_expiry_cache.write().unwrap();
+
+        // Loop over locally replicated wallets, check for new peers in each wallet
+        for (wallet_id, _) in locked_state.managed_wallets.clone().iter() {
+            match message.managed_wallets.get(wallet_id) {
+                // Peer does not replicate this wallet
+                None => { println!("Skipping, peer doesn't contain wallet"); continue; },
+
+                // Peer replicates this wallet, add any unknown replicas to local state
+                Some(wallet_metadata) => {
+                    Self::merge_replicas_for_wallet(
+                        *wallet_id,
+                        local_peer_id,
+                        &wallet_metadata.replicas, 
+                        &message.known_peers, 
+                        network_channel.clone(),
+                        &mut *locked_expiry_cache, 
+                        &mut *locked_state
+                    );
+                }
+            }
+        }
+    }
+
+    // Merges the replicating peers for a given wallet
+    // The typing of the arguments implies that the values passed in are already
+    // locked by the caller
+    fn merge_replicas_for_wallet(
+        wallet_id: uuid::Uuid,
+        local_peer_id: WrappedPeerId,
+        replicas_from_peer: &Vec<WrappedPeerId>,
+        replica_info_from_peer: &HashMap<String, PeerInfo>,
+        network_channel: UnboundedSender<GossipOutbound>,
+        peer_expiry_cache: &mut LruCache<WrappedPeerId, u64>,
+        global_state: &mut RelayerState,
     ) {
         let now = get_current_time_seconds();
-        let mut locked_peer_info = peer_info.write().unwrap();
-        let mut locked_expiry_cache = peer_expiry_cache.write().unwrap();
-        for peer in new_peers.iter() {
-            if peer.get_peer_id() == local_peer_id || locked_peer_info.contains_key(&peer.get_peer_id()) {
+
+        // Loop over replicas that the peer knows about for this wallet
+        for replica in replicas_from_peer {
+            // Skip local peer and peers already known
+            if *replica == local_peer_id || global_state.known_peers.contains_key(replica) {
                 continue;
-            } 
-            
+            }
+
             // Do not add new peers that have been recently expired. It is possibly they have
             // not expired on the other peer, in which case we may receive heartbeats containing
             // peers that have already expired
-            if let Some(expired_at) = locked_expiry_cache.get(&peer.get_peer_id()) {
-                if now - *expired_at <= EXPIRY_INVISIBILITY_WINDOW_MS * 1000 {
+            if let Some(expired_at) = peer_expiry_cache.get(replica) {
+                if now - *expired_at <= EXPIRY_INVISIBILITY_WINDOW_MS / 1000 {
                     continue;
                 }
             }
 
-            locked_peer_info.insert(peer.get_peer_id(), peer.clone());
-            network_channel.send(
-                GossipOutbound::NewAddr { 
-                    peer_id: peer.get_peer_id(), 
-                    address:  peer.get_addr()
-                }
-            );
+            // Add new peer to globally maintained peer info map
+            if let Some(replica_info) = replica_info_from_peer.get(&replica.to_string()) {
+                // Copy the peer info and record a dummy heartbeat to prevent immediate expiration
+                let mut peer_info_copy = replica_info.clone();
+                peer_info_copy.successful_heartbeat();
+
+                global_state.known_peers.insert(*replica, peer_info_copy);
+
+                // Register the newly discovered peer with the network manager
+                // so that we can dial it on outbound heartbeats
+                network_channel.send(GossipOutbound::NewAddr { peer_id: *replica, address: replica_info.get_addr() });
+            } else {
+                // Ignore this peer if peer_info was not sent for it,
+                // this is effectively useless to the local relayer without peer_info
+                continue;
+            }
+
+            // Add new peer as a replica of the wallet in the wallet's metadata
+            global_state.managed_wallets.get_mut(&wallet_id)
+                                        .expect("")
+                                        .metadata
+                                        .replicas
+                                        .push(*replica);
         }
     }
 
     // Sends heartbeat message to peers to exchange network information and ensure liveness
     fn send_heartbeats(
-        local_peer_id: PeerId,
-        peer_info: SharedPeerInfo,
+        local_peer_id: WrappedPeerId,
         network_channel: UnboundedSender<GossipOutbound>,
-        peer_expiry_cache: SharedLRUCache
+        peer_expiry_cache: SharedLRUCache,
+        global_state: GlobalRelayerState
     ) -> Result<(), SendError<GossipOutbound>> {
         // Send heartbeat requests
-        let heartbeat_message = Self::build_heartbeat_message(peer_info.clone());
+        let heartbeat_message = Self::build_heartbeat_message(global_state.clone());
         {
-            let locked_peer_info = peer_info.read().unwrap();
-            println!("\n\nSending heartbeats, I know {} peers...", locked_peer_info.len() - 1);
-            for (peer_id, _) in locked_peer_info.iter() {
+            let locked_state = global_state.read().unwrap();
+            println!("\n\nSending heartbeats, I know {} peers...", locked_state.known_peers.len() - 1);
+            for (peer_id, _) in locked_state.known_peers.iter() {
                 if *peer_id == local_peer_id {
                     continue;
                 }
@@ -255,57 +303,51 @@ impl HeartbeatProtocolExecutor {
             }
         } // locked_peer_info releases its read lock here
 
-        Self::expire_peers(local_peer_id, peer_info, peer_expiry_cache);
+        Self::expire_peers(local_peer_id, peer_expiry_cache, global_state);
         Ok(())
     }
 
     // Expires peers that have timed out due to consecutive failed heartbeats
     fn expire_peers(
-        local_peer_id: PeerId,
-        peer_info: SharedPeerInfo,
-        peer_expiry_cache: SharedLRUCache
+        local_peer_id: WrappedPeerId,
+        peer_expiry_cache: SharedLRUCache,
+        global_state: GlobalRelayerState
     ) {
-        println!("Evaluating peers to expire...");
         let now = get_current_time_seconds();
         let mut peers_to_expire = Vec::new();
         {
-            let locked_peer_info = peer_info.read().unwrap();
-            for (peer_id, peer_info) in locked_peer_info.iter() {
+            let locked_state = global_state.read().unwrap();
+            for (peer_id, peer_info) in locked_state.known_peers.iter() {
                 if *peer_id == local_peer_id {
                     continue;
                 }
 
                 if now - peer_info.get_last_heartbeat() >= HEARTBEAT_FAILURE_MS / 1000 {
-                    println!("Expiring peer: {}", peer_id);
                     peers_to_expire.push(*peer_id);
                 }
             }
         } // locked_peer_info releases read lock 
 
-        // Short cct to avoid acquiring locks
+        // Short cct to avoid acquiring locks if not necessary
         if peers_to_expire.is_empty() {
             return
         }
 
-        let mut locked_peer_info = peer_info.write().unwrap();
+        let mut locked_state = global_state.write().unwrap();
         let mut locked_expiry_cache = peer_expiry_cache.write().unwrap();
 
         // Acquire a write lock and update peer info
         for peer in peers_to_expire.iter() {
-            locked_peer_info.remove(peer);
+            locked_state.known_peers.remove(peer);
             locked_expiry_cache.put(*peer, now);
         }
     }
 
     // Constructs a heartbeat message from local state
-    fn build_heartbeat_message(peer_info: SharedPeerInfo) -> GossipMessage {
-        let locked_peer_info = peer_info.read().unwrap();
-        let mut known_peers: Vec<PeerInfo> = Vec::new();
-        for (_, peer_info) in locked_peer_info.iter() {
-            known_peers.push(peer_info.clone());
-        }
-
-        GossipMessage::Heartbeat(HeartbeatMessage::new(known_peers))
+    fn build_heartbeat_message(global_state: GlobalRelayerState) -> GossipMessage {
+        // Deref to remove lock guard then reference to borrow
+        let locked_state = global_state.read().unwrap();
+        GossipMessage::Heartbeat(HeartbeatMessage::from(&*locked_state))
     }
 
 }

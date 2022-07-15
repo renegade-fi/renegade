@@ -42,13 +42,13 @@ impl GossipServer {
         bootstrap_servers: Vec<PeerInfo>,
         global_state: GlobalRelayerState
     ) -> Result<Self, Box<dyn Error>> {
-        // Build the peer info map
-        let mut known_peer_info = HashMap::new();
-        for known_peer in bootstrap_servers.iter() {
-            println!("Bootstrap server: {:?}", known_peer);
-            known_peer_info.insert(known_peer.get_peer_id(), known_peer.clone());
-        }
-        let known_peers = Arc::new(RwLock::new(known_peer_info));
+        // Add boostrap servers to known peers
+        {
+            let mut locked_global_state = global_state.write().unwrap(); 
+            for server in bootstrap_servers.iter() {
+                locked_global_state.known_peers.insert(server.get_peer_id(), server.clone());
+            }
+        } // locked_global_state released
 
         // Build the cross-thread channels used to communicate between workers
         let (network_sender, network_receiver) = unbounded_channel();
@@ -57,18 +57,30 @@ impl GossipServer {
         // Build a network manager to serialize p2p networking requests
         let network_manager = NetworkManager::new(
             port, 
-            known_peers.clone(), 
             network_receiver, 
             heartbeat_worker_sender.clone(),
+            global_state.clone()
         ).await?;
+
+        // After network interface is setup, register self as replicator of owned wallets
+        // using the newly created peer information
+        {
+            let peer_id_copy = network_manager.local_peer_id.clone();
+            let global_copy = global_state.clone();
+            let mut locked_global_state = global_copy.write().expect("global state lock poisoned");
+
+            for (_, wallet) in locked_global_state.managed_wallets.iter_mut() {
+                wallet.metadata.replicas.push(peer_id_copy);
+            }
+        } // locked_global_state released
 
         // Heartbeat protocol executor; handles sending and receiving heartbeats
         let heartbeat_executor = HeartbeatProtocolExecutor::new(
             network_manager.local_peer_id,
-            known_peers.clone(),
             network_sender,
             heartbeat_worker_sender.clone(),
-            heatbeat_worker_receiver
+            heatbeat_worker_receiver,
+            global_state.clone()
         );
 
         Ok(Self { 
