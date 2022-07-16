@@ -21,6 +21,10 @@ struct Cli {
     #[clap(short, long, value_parser, default_value="12345")]
     // The port to listen on
     pub port: u32,
+
+    #[clap(short, long, value_parser)]
+    // The wallet IDs to manage locally
+    pub wallet_ids: Option<Vec<String>>,
 }
 
 // Defines the system config for the relayer
@@ -34,6 +38,9 @@ pub struct RelayerConfig {
 
     // The port to listen on
     pub port: u32,
+
+    // The wallet IDs to manage locally
+    pub wallet_ids: Vec<String>,
 }
 
 // Parses command line args into the node config
@@ -57,6 +64,7 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, Box<dyn Error>> {
                 version: cli_args.version.unwrap_or_else(|| String::from(DEFAULT_VERSION)),
                 boostrap_servers: parsed_bootstrap_addrs,
                 port: cli_args.port,
+                wallet_ids: cli_args.wallet_ids.unwrap_or_default()
             }
         )
     )

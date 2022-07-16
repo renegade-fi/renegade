@@ -14,7 +14,7 @@ async fn main() -> Result<(), String> {
     println!("Relayer running with\n\t version: {}\n\t port: {}", args.version, args.port);
 
     // Construct the global state
-    let global_state = RelayerState::initialize_global_state();
+    let global_state = RelayerState::initialize_global_state(args.wallet_ids);
 
     let gossip_server = GossipServer::new(
         args.port, 

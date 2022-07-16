@@ -52,14 +52,17 @@ pub struct WalletMetadata {
 }
 
 impl RelayerState {
-    pub fn initialize_global_state() -> GlobalRelayerState {
+    pub fn initialize_global_state(managed_wallet_ids: Vec<String>) -> GlobalRelayerState {
         let mut managed_wallets = HashMap::new();
-        let wallet_id = uuid::Uuid::from_str("67e55044-10b1-426f-9247-bb680e5fe0c8").expect("error with UUID");
-        let wal = Wallet {
-            wallet_id,
-            metadata: WalletMetadata { replicas: vec![] } 
-        };
-        managed_wallets.insert(uuid::Uuid::from_str("67e55044-10b1-426f-9247-bb680e5fe0c8").expect("err"), wal);
+        for wallet_id in managed_wallet_ids.iter() {
+            let wallet_id = uuid::Uuid::from_str(wallet_id).expect("could not parse wallet ID");
+            let wal = Wallet {
+                wallet_id,
+                metadata: WalletMetadata { replicas: vec![] } 
+            };
+            managed_wallets.insert(wallet_id, wal);
+        }
+
         Arc::new(
             RwLock::new(
                 Self { 
