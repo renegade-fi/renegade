@@ -39,7 +39,8 @@ pub enum GossipRequest {
 // Enumerates the possible response types for a gossip message
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GossipResponse {
-    Heartbeat(HeartbeatMessage)
+    Heartbeat(HeartbeatMessage),
+    Handshake() 
 }
 
 // Defines the heartbeat message, both request and response take

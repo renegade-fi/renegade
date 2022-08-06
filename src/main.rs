@@ -31,12 +31,14 @@ async fn main() -> Result<(), String> {
     // Build communication primitives
     let (network_sender, network_receiver) = mpsc::unbounded_channel::<GossipOutbound>();
     let (heartbeat_worker_sender, heartbeat_worker_receiver) = channel::unbounded();
+    let (handshake_worker_sender, handshake_worker_receiver) = channel::unbounded();
 
     // Start the network manager
     let network_manager = NetworkManager::new(
         args.port,
         network_receiver,
         heartbeat_worker_sender.clone(),
+        handshake_worker_sender.clone(),
         global_state.clone()
     ).await.expect("error building network manager");
 
@@ -52,7 +54,8 @@ async fn main() -> Result<(), String> {
     // Start the handshake manager
     let handshake_manager = HandshakeManager::new(
         global_state.clone(), 
-        network_sender.clone()
+        network_sender.clone(),
+        handshake_worker_receiver
     );
     
     // Await termination of the submodules

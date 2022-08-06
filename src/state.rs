@@ -30,6 +30,8 @@ pub type GlobalRelayerState = Arc<RwLock<RelayerState>>;
 #[derive(Debug, Serialize, Deserialize)]
 // The top level object in the global state tree
 pub struct RelayerState {
+    // The libp2p peerID assigned to the localhost
+    pub local_peer_id: Option<WrappedPeerId>,
     // The list of wallets managed by the sending relayer
     pub managed_wallets: HashMap<uuid::Uuid, Wallet>,
     // The set of peers known to the sending relayer
@@ -76,6 +78,7 @@ impl RelayerState {
         Arc::new(
             RwLock::new(
                 Self { 
+                    local_peer_id: None,
                     managed_wallets, 
                     known_peers,
                 }

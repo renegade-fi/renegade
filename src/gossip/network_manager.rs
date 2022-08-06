@@ -28,10 +28,10 @@ use crate::{
         heartbeat_protocol::HeartbeatExecutorJob
 
     }, 
-    state::GlobalRelayerState
+    state::GlobalRelayerState, handshake::types::HandshakeExecutionJob
 };
 
-use super::api::{GossipOutbound, GossipRequest, GossipResponse};
+use super::api::{GossipOutbound, GossipRequest, GossipResponse, HandshakeMessage};
 
 // Groups logic around monitoring and requesting the network
 pub struct NetworkManager {
@@ -50,12 +50,19 @@ impl NetworkManager {
         port: u32,
         send_channel: UnboundedReceiver<GossipOutbound>,
         heartbeat_work_queue: Sender<HeartbeatExecutorJob>,
+        handshake_work_queue: Sender<HandshakeExecutionJob>,
         global_state: GlobalRelayerState,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Build the peer keys
         let local_key = identity::Keypair::generate_ed25519();
         let local_peer_id = WrappedPeerId(local_key.public().to_peer_id());
         println!("peer ID: {:?}", local_peer_id);
+
+        // Update global state with newly assigned peerID
+        {
+            let mut locked_state = global_state.write().expect("global state lock poisoned");
+            locked_state.local_peer_id = Some(local_peer_id);
+        } // locked_state released here
 
         // Transport is TCP for now, this will eventually move to QUIC
         let transport = libp2p::development_transport(local_key).await?;
@@ -98,6 +105,7 @@ impl NetworkManager {
                         swarm,
                         send_channel,
                         heartbeat_work_queue,
+                        handshake_work_queue,
                     ) 
                 )
             })
@@ -120,7 +128,8 @@ impl NetworkManager {
         local_peer_id: WrappedPeerId,
         mut swarm: Swarm<ComposedNetworkBehavior>,
         mut send_channel: UnboundedReceiver<GossipOutbound>,
-        heartbeat_work_queue: Sender<HeartbeatExecutorJob>
+        heartbeat_work_queue: Sender<HeartbeatExecutorJob>,
+        handshake_work_queue: Sender<HandshakeExecutionJob>
     ) {
         println!("Starting executor loop for network manager...");
         loop {
@@ -137,7 +146,8 @@ impl NetworkManager {
                         SwarmEvent::Behaviour(event) => {
                             Self::handle_inbound_messsage(
                                 event,
-                                heartbeat_work_queue.clone()
+                                heartbeat_work_queue.clone(),
+                                handshake_work_queue.clone()
                             )
                         },
                         SwarmEvent::NewListenAddr { address, .. } => {
@@ -179,15 +189,17 @@ impl NetworkManager {
     // Handles a network event from the relayer's protocol
     fn handle_inbound_messsage(
         message: ComposedProtocolEvent,
-        heartbeat_work_queue: Sender<HeartbeatExecutorJob>
+        heartbeat_work_queue: Sender<HeartbeatExecutorJob>,
+        handshake_work_queue: Sender<HandshakeExecutionJob>
     ) {
         match message {
             ComposedProtocolEvent::RequestResponse(request_response) => {
                 if let RequestResponseEvent::Message{ peer, message } = request_response {
-                    Self::handle_inbound_request_response_message(peer, message, heartbeat_work_queue);
+                    Self::handle_inbound_request_response_message(peer, message, heartbeat_work_queue, handshake_work_queue);
                 }
             },
-            ComposedProtocolEvent::Kademlia(event) => { Self::handle_inbound_kademlia_event(event) }
+            // KAD events do nothing for now, routing tables are automatically updated by libp2p
+            ComposedProtocolEvent::Kademlia(_) => { }
         }
     }
 
@@ -199,6 +211,7 @@ impl NetworkManager {
         peer_id: PeerId,
         message: RequestResponseMessage<GossipRequest, GossipResponse>,
         heartbeat_work_queue: Sender<HeartbeatExecutorJob>,
+        handshake_work_queue: Sender<HandshakeExecutionJob>,
     ) {
         // Multiplex over request/response message types
         match message {
@@ -211,11 +224,13 @@ impl NetworkManager {
                         );
                     },
                     GossipRequest::Handshake(handshake_message) => {
-                        println!(
-                            "Received {:?} operation handshake from {}",
-                            handshake_message.operation,
-                            peer_id
-                        )
+                        handshake_work_queue.send(
+                            HandshakeExecutionJob::ProcessHandshakeRequest { 
+                                peer_id: WrappedPeerId(peer_id), 
+                                message: handshake_message, 
+                                response_channel: channel 
+                            }
+                        );
                     }
                 }
             },
@@ -227,20 +242,10 @@ impl NetworkManager {
                         heartbeat_work_queue.send(
                             HeartbeatExecutorJob::HandleHeartbeatResp { peer_id: WrappedPeerId(peer_id), message: heartbeat_message }
                         );
-                    }
+                    },
+                    GossipResponse::Handshake() => { }
                 }
             }
         }
-    }
-
-    /**
-     * Kademlia event handlers
-     */
-
-    // Handles Kademlia network events
-    fn handle_inbound_kademlia_event(
-        event: KademliaEvent
-    ) {
-        println!("Received KAD event: {:?}", event);
     }
 }
