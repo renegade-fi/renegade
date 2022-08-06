@@ -22,7 +22,7 @@ use libp2p::{
 };
 use std::iter;
 
-use crate::gossip::api::GossipMessage;
+use crate::gossip::api::{GossipRequest, GossipResponse};
 
 /** 
  * Constants
@@ -68,7 +68,7 @@ impl ComposedNetworkBehavior {
 
 #[derive(Debug)]
 pub enum ComposedProtocolEvent {
-    RequestResponse(RequestResponseEvent<GossipMessage, GossipMessage>),
+    RequestResponse(RequestResponseEvent<GossipRequest, GossipResponse>),
     Kademlia(KademliaEvent)
 }
 
@@ -81,8 +81,8 @@ impl From<KademliaEvent> for ComposedProtocolEvent {
     }
 }
 
-impl From<RequestResponseEvent<GossipMessage, GossipMessage>> for ComposedProtocolEvent {
-    fn from(e: RequestResponseEvent<GossipMessage, GossipMessage>) -> Self {
+impl From<RequestResponseEvent<GossipRequest, GossipResponse>> for ComposedProtocolEvent {
+    fn from(e: RequestResponseEvent<GossipRequest, GossipResponse>) -> Self {
         ComposedProtocolEvent::RequestResponse(e)
     }
 }
@@ -131,8 +131,8 @@ impl RelayerGossipCodec {
 #[async_trait]
 impl RequestResponseCodec for RelayerGossipCodec {
     type Protocol = RelayerGossipProtocol;
-    type Request = GossipMessage;
-    type Response = GossipMessage;
+    type Request = GossipRequest;
+    type Response = GossipResponse;
 
     // Deserializes a read request
     async fn read_request<T>(
@@ -144,7 +144,7 @@ impl RequestResponseCodec for RelayerGossipCodec {
         T: AsyncRead + Unpin + Send
     {
         let req_data = read_length_prefixed(io, MAX_MESSAGE_SIZE).await?;
-        let deserialized: GossipMessage = serde_json::from_slice(&req_data).unwrap();
+        let deserialized: GossipRequest = serde_json::from_slice(&req_data).unwrap();
         Ok(deserialized)
     }
 
@@ -158,16 +158,16 @@ impl RequestResponseCodec for RelayerGossipCodec {
         T: AsyncRead + Unpin + Send
     {
         let resp_data = read_length_prefixed(io, MAX_MESSAGE_SIZE).await?;
-        let deserialized: GossipMessage = serde_json::from_slice(&resp_data).unwrap();
+        let deserialized: GossipResponse = serde_json::from_slice(&resp_data).unwrap();
         Ok(deserialized)
     }
 
-    // Deserializes a write request
+    // Serializes a write request
     async fn write_request<T> (
         &mut self,
         _: &RelayerGossipProtocol,
         io: &mut T,
-        req: GossipMessage,
+        req: Self::Request,
     ) -> Result<(), std::io::Error>
     where
         T: AsyncWrite + Unpin + Send
@@ -180,12 +180,12 @@ impl RequestResponseCodec for RelayerGossipCodec {
         Ok(())
     }
 
-    // Deserializes a write response
+    // Serializes a write response
     async fn write_response<T>(
         &mut self,
         _: &RelayerGossipProtocol,
         io: &mut T,
-        resp: GossipMessage,
+        resp: Self::Response,
     ) -> Result<(), std::io::Error>
     where
         T: AsyncWrite + Unpin + Send,

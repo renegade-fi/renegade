@@ -31,7 +31,7 @@ use crate::{
     state::GlobalRelayerState
 };
 
-use super::api::{GossipOutbound, GossipMessage};
+use super::api::{GossipOutbound, GossipRequest, GossipResponse};
 
 // Groups logic around monitoring and requesting the network
 pub struct NetworkManager {
@@ -197,7 +197,7 @@ impl NetworkManager {
 
     fn handle_inbound_request_response_message(
         peer_id: PeerId,
-        message: RequestResponseMessage<GossipMessage, GossipMessage>,
+        message: RequestResponseMessage<GossipRequest, GossipResponse>,
         heartbeat_work_queue: Sender<HeartbeatExecutorJob>,
     ) {
         // Multiplex over request/response message types
@@ -205,10 +205,17 @@ impl NetworkManager {
             // Handle inbound request from another peer
             RequestResponseMessage::Request { request, channel, ..} => {
                 match request {
-                    GossipMessage::Heartbeat(heartbeat_message) => {
+                    GossipRequest::Heartbeat(heartbeat_message) => {
                         heartbeat_work_queue.send(
                             HeartbeatExecutorJob::HandleHeartbeatReq { peer_id: WrappedPeerId(peer_id), message: heartbeat_message, channel }
                         );
+                    },
+                    GossipRequest::Handshake(handshake_message) => {
+                        println!(
+                            "Received {:?} operation handshake from {}",
+                            handshake_message.operation,
+                            peer_id
+                        )
                     }
                 }
             },
@@ -216,7 +223,7 @@ impl NetworkManager {
             // Handle inbound response 
             RequestResponseMessage::Response { response, .. } => {
                 match response {
-                    GossipMessage::Heartbeat(heartbeat_message) => {
+                    GossipResponse::Heartbeat(heartbeat_message) => {
                         heartbeat_work_queue.send(
                             HeartbeatExecutorJob::HandleHeartbeatResp { peer_id: WrappedPeerId(peer_id), message: heartbeat_message }
                         );

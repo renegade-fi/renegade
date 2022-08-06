@@ -22,7 +22,7 @@ use tokio::sync::mpsc::{
 
 use crate::{
     gossip::{
-        api::{GossipMessage, GossipOutbound, HeartbeatMessage},
+        api::{GossipRequest, GossipResponse, GossipOutbound, HeartbeatMessage},
         types::{PeerInfo, WrappedPeerId},
     },
     state::{GlobalRelayerState, RelayerState},
@@ -70,7 +70,7 @@ pub enum HeartbeatExecutorJob {
     HandleHeartbeatReq{ 
         peer_id: WrappedPeerId, 
         message: HeartbeatMessage, 
-        channel: ResponseChannel<GossipMessage> 
+        channel: ResponseChannel<GossipResponse> 
     },
     HandleHeartbeatResp{ peer_id: WrappedPeerId, message: HeartbeatMessage },
 }
@@ -151,7 +151,9 @@ impl HeartbeatProtocolExecutor {
                 },
                 HeartbeatExecutorJob::HandleHeartbeatReq { message, channel, .. } => {
                     // Respond on the channel given in the request
-                    let heartbeat_resp = Self::build_heartbeat_message(global_state.clone());
+                    let heartbeat_resp = GossipResponse::Heartbeat(
+                        Self::build_heartbeat_message(global_state.clone())
+                    );
                     network_channel.send(
                         GossipOutbound::Response { channel, message: heartbeat_resp }
                     );
@@ -288,7 +290,10 @@ impl HeartbeatProtocolExecutor {
         global_state: GlobalRelayerState
     ) -> Result<(), SendError<GossipOutbound>> {
         // Send heartbeat requests
-        let heartbeat_message = Self::build_heartbeat_message(global_state.clone());
+        let heartbeat_message = GossipRequest::Heartbeat(
+            Self::build_heartbeat_message(global_state.clone())
+        );
+
         {
             let locked_state = global_state.read().unwrap();
             println!("\n\nSending heartbeats, I know {} peers...", locked_state.known_peers.len() - 1);
@@ -344,10 +349,10 @@ impl HeartbeatProtocolExecutor {
     }
 
     // Constructs a heartbeat message from local state
-    fn build_heartbeat_message(global_state: GlobalRelayerState) -> GossipMessage {
+    fn build_heartbeat_message(global_state: GlobalRelayerState) -> HeartbeatMessage {
         // Deref to remove lock guard then reference to borrow
         let locked_state = global_state.read().unwrap();
-        GossipMessage::Heartbeat(HeartbeatMessage::from(&*locked_state))
+        HeartbeatMessage::from(&*locked_state)
     }
 
 }

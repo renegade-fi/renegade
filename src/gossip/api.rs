@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use libp2p::{
-    request_response::ResponseChannel, Multiaddr,
+    request_response::ResponseChannel, Multiaddr, noise::Handshake,
 };
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
@@ -20,9 +20,9 @@ use crate::{
 #[derive(Debug)]
 pub enum GossipOutbound {
     // A generic request sent to the network manager for outbound delivery
-    Request { peer_id: WrappedPeerId, message: GossipMessage },
+    Request { peer_id: WrappedPeerId, message: GossipRequest },
     // A generic response sent to the network manager for outbound delivery
-    Response { channel: ResponseChannel<GossipMessage>, message: GossipMessage },
+    Response { channel: ResponseChannel<GossipResponse>, message: GossipResponse },
     // A command signalling to the network manager that a new node has been
     // discovered at the application level. The network manager should register
     // this node with the KDHT and propagate this change
@@ -31,7 +31,14 @@ pub enum GossipOutbound {
 
 // Represents the message data passed via the network
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum GossipMessage {
+pub enum GossipRequest {
+    Heartbeat(HeartbeatMessage),
+    Handshake(HandshakeMessage)
+}
+
+// Enumerates the possible response types for a gossip message
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GossipResponse {
     Heartbeat(HeartbeatMessage)
 }
 
@@ -79,6 +86,25 @@ impl From<&RelayerState> for HeartbeatMessage {
 
         HeartbeatMessage { managed_wallets: managed_wallet_metadata, known_peers } 
     } 
+}
+
+// Represents a gossip message sent to initiate a handshake request
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HandshakeMessage {
+    // The handshake operation to perform
+    pub operation: HandshakeOperation
+}
+
+// Enumerates the different operations possible via handshake
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum HandshakeOperation {
+    MPC
+}
+
+impl HandshakeMessage {
+    pub fn new(operation: HandshakeOperation) -> Self {
+        HandshakeMessage { operation }
+    }
 }
 
 #[cfg(test)]
