@@ -30,5 +30,6 @@ async fn main() -> Result<(), String> {
     
     // Await the gossip server's termination
     gossip_server.join();
+    handshake_manager.join();
     Err("Relayer terminated...".to_string())
 }
