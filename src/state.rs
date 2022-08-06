@@ -52,7 +52,11 @@ pub struct WalletMetadata {
 }
 
 impl RelayerState {
-    pub fn initialize_global_state(managed_wallet_ids: Vec<String>) -> GlobalRelayerState {
+    pub fn initialize_global_state(
+        managed_wallet_ids: Vec<String>,
+        bootstrap_servers: Vec<PeerInfo>
+    ) -> GlobalRelayerState {
+        // Setup initial wallets
         let mut managed_wallets = HashMap::new();
         for wallet_id in managed_wallet_ids.iter() {
             let wallet_id = uuid::Uuid::from_str(wallet_id).expect("could not parse wallet ID");
@@ -63,11 +67,17 @@ impl RelayerState {
             managed_wallets.insert(wallet_id, wal);
         }
 
+        // Setup initial set of known peers to be the bootstrap servers
+        let mut known_peers = HashMap::<WrappedPeerId, PeerInfo>::new();
+        for server in bootstrap_servers.iter() {
+            known_peers.insert(server.get_peer_id(), server.clone());
+        }
+
         Arc::new(
             RwLock::new(
                 Self { 
-                    managed_wallets: managed_wallets, 
-                    known_peers: HashMap::new(),
+                    managed_wallets, 
+                    known_peers,
                 }
             )
         )

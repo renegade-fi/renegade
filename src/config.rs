@@ -54,7 +54,7 @@ pub struct RelayerConfig {
     pub version: String,
 
     // Bootstrap servers that the peer should connect to
-    pub boostrap_servers: Vec<PeerInfo>,
+    pub bootstrap_servers: Vec<PeerInfo>,
 
     // The port to listen on
     pub port: u32,
@@ -101,7 +101,7 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, Box<dyn Error>> {
 
     let config = RelayerConfig{
         version: cli_args.version.unwrap_or_else(|| String::from(DEFAULT_VERSION)),
-        boostrap_servers: parsed_bootstrap_addrs,
+        bootstrap_servers: parsed_bootstrap_addrs,
         port: cli_args.port,
         wallet_ids: cli_args.wallet_ids.unwrap_or_default(),
         cluster_keypair: wrapped_keypair, 
