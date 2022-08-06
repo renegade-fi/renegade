@@ -2,7 +2,9 @@ use base64;
 use clap::Parser;
 use ed25519_dalek::{SignatureError, Keypair, Sha512, Digest};
 use libp2p::{Multiaddr, PeerId};
-use std::{error::Error};
+use serde::{Serialize, Deserialize};
+use std::{error::Error, fs};
+use toml;
 
 use crate::gossip::types::{PeerInfo, WrappedPeerId};
 
@@ -13,32 +15,36 @@ const DEFAULT_VERSION: &str = "1";
 const DUMMY_MESSAGE: &str = "signature check";
 
 // Defines the relayer system command line interface
-#[derive(Parser)]
+#[derive(Debug, Parser, Serialize, Deserialize)]
 #[clap(author, version, about, long_about = None)]
 struct Cli {
     #[clap(short, long, value_parser)]
-    // The software version of the relayer
-    pub version: Option<String>,
-
-    #[clap(short, long, value_parser)]
     // The bootstrap servers that the peer should dial initially
     pub bootstrap_servers: Option<Vec<String>>,
+
+    #[clap(short, long, value_parser)]
+    // An auxiliary config file to read from
+    pub config_file: Option<String>,
+
+    #[clap(long="private-key", value_parser)]
+    // The cluster private key to use
+    pub cluster_private_key: Option<String>,
+
+    #[clap(long="public-key", value_parser)]
+    // The cluster public key to use
+    pub cluster_public_key: Option<String>,
 
     #[clap(short, long, value_parser, default_value="12345")]
     // The port to listen on
     pub port: u32,
 
     #[clap(short, long, value_parser)]
+    // The software version of the relayer
+    pub version: Option<String>,
+
+    #[clap(short, long, value_parser)]
     // The wallet IDs to manage locally
     pub wallet_ids: Option<Vec<String>>,
-
-    #[clap(long="private-key", value_parser)]
-    // The cluster private key to use
-    pub cluster_private_key: String,
-
-    #[clap(long="public-key", value_parser)]
-    // The cluster public key to use
-    pub cluster_public_key: String,
 }
 
 // Defines the system config for the relayer
@@ -57,7 +63,7 @@ pub struct RelayerConfig {
     pub wallet_ids: Vec<String>,
 
     // The cluster keypair
-    pub cluster_keypair: Keypair,
+    pub cluster_keypair: Option<Keypair>,
 }
 
 // Parses command line args into the node config
@@ -77,28 +83,31 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, Box<dyn Error>> {
 
     // Parse the cluster keypair from CLI args
     // dalek library expects a packed byte array of [PRIVATE_KEY||PUBLIC_KEY]
-    let mut public_key: Vec<u8> = base64::decode(cli_args.cluster_public_key).unwrap();
-    let mut private_key: Vec<u8> = base64::decode(cli_args.cluster_private_key).unwrap();
-    private_key.append(&mut public_key);
+    let mut wrapped_keypair: Option<Keypair> = None; 
+    if cli_args.cluster_public_key.is_some() && cli_args.cluster_private_key.is_some() {
+        let mut public_key: Vec<u8> = base64::decode(cli_args.cluster_public_key.unwrap()).unwrap();
+        let mut private_key: Vec<u8> = base64::decode(cli_args.cluster_private_key.unwrap()).unwrap();
+        private_key.append(&mut public_key);
 
-    let keypair = ed25519_dalek::Keypair::from_bytes(&private_key[..]).unwrap();
+        let keypair = ed25519_dalek::Keypair::from_bytes(&private_key[..]).unwrap();
 
-    // Verify that the keypair represents a valid elliptic curve pair
-    if validate_keypair(&keypair).is_err() {
-        panic!("cluster keypair invalid")
-    }
+        // Verify that the keypair represents a valid elliptic curve pair
+        if validate_keypair(&keypair).is_err() {
+            panic!("cluster keypair invalid")
+        }
 
-    Ok(
-        Box::new(
-            RelayerConfig{
-                version: cli_args.version.unwrap_or_else(|| String::from(DEFAULT_VERSION)),
-                boostrap_servers: parsed_bootstrap_addrs,
-                port: cli_args.port,
-                wallet_ids: cli_args.wallet_ids.unwrap_or_default(),
-                cluster_keypair: keypair, 
-            }
-        )
-    )
+        wrapped_keypair = Some(keypair)
+    } 
+
+    let config = RelayerConfig{
+        version: cli_args.version.unwrap_or_else(|| String::from(DEFAULT_VERSION)),
+        boostrap_servers: parsed_bootstrap_addrs,
+        port: cli_args.port,
+        wallet_ids: cli_args.wallet_ids.unwrap_or_default(),
+        cluster_keypair: wrapped_keypair, 
+    };
+
+    Ok(Box::new(config))
 }
 
 // Runtime validation of the keypair passed into the relayer via config

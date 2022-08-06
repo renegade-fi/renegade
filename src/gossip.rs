@@ -8,12 +8,7 @@ pub(crate) mod types;
 // This file groups logic for the package-public gossip interface
 use crossbeam::channel;
 use std::{
-    collections::HashMap,
     error::Error,
-    sync::{
-        Arc,
-        RwLock
-    },
 };
 use tokio::{
     sync::mpsc::unbounded_channel

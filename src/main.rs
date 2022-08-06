@@ -1,9 +1,11 @@
 mod config;
 mod gossip;
+mod handshake;
 mod state;
 
 use crate::{
     gossip::GossipServer,
+    handshake::HandshakeManager,
     state::{RelayerState}
 };
 
@@ -16,11 +18,15 @@ async fn main() -> Result<(), String> {
     // Construct the global state
     let global_state = RelayerState::initialize_global_state(args.wallet_ids);
 
+    // Start the gossip server
     let gossip_server = GossipServer::new(
         args.port, 
         args.boostrap_servers,
         global_state
     ).await.unwrap();
+    
+    // Start the handshake manager
+    let handshake_manager = HandshakeManager::new();
     
     // Await the gossip server's termination
     gossip_server.join();
