@@ -22,11 +22,11 @@ async fn main() -> Result<(), String> {
     let gossip_server = GossipServer::new(
         args.port, 
         args.boostrap_servers,
-        global_state
+        global_state.clone()
     ).await.unwrap();
     
     // Start the handshake manager
-    let handshake_manager = HandshakeManager::new();
+    let handshake_manager = HandshakeManager::new(global_state.clone());
     
     // Await the gossip server's termination
     gossip_server.join();

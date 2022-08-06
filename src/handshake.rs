@@ -1,8 +1,10 @@
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::{
     sync::Arc,
-    thread::{self, JoinHandle}, time::Duration
+    thread, time::Duration
 };
+
+use crate::{state::GlobalRelayerState, gossip::types::WrappedPeerId};
 
 /**
  * Groups logic for handshakes executed through a threadpool at period intervals
@@ -21,7 +23,7 @@ pub struct HandshakeManager {
 }
 
 impl HandshakeManager {
-    pub fn new() -> Self {
+    pub fn new(global_state: GlobalRelayerState) -> Self {
         // Build a thread pool to handle handshake operations
         let thread_pool = Arc::new(
             ThreadPoolBuilder::new()
@@ -31,7 +33,7 @@ impl HandshakeManager {
         );
 
         // Start a timer thread
-        let timer = HandshakeTimer::new(thread_pool);
+        let timer = HandshakeTimer::new(thread_pool, global_state);
 
         HandshakeManager { timer } 
     }
@@ -42,11 +44,11 @@ impl HandshakeManager {
     }
 
     // Perform a handshake, dummy job for now
-    pub fn perform_handshake(job_id: u32, thread_pool: Arc<ThreadPool>) {
+    pub fn perform_handshake(peer_id: WrappedPeerId, thread_pool: Arc<ThreadPool>) {
         println!(
-            "Thread {} running task {}", 
+            "Thread {} running task {:?}", 
             thread_pool.current_thread_index().unwrap(), 
-            job_id
+            peer_id 
         );
     }
 
@@ -61,7 +63,8 @@ pub struct HandshakeTimer {
 
 impl HandshakeTimer {
     pub fn new(
-        thread_pool: Arc<ThreadPool>
+        thread_pool: Arc<ThreadPool>,
+        global_state: GlobalRelayerState
     ) -> Self {
         let interval_seconds = HANDSHAKE_INTERVAL_MS / 1000;
         let interval_nanos = (HANDSHAKE_INTERVAL_MS % 1000 * NANOS_PER_MILLI) as u32;
@@ -72,7 +75,7 @@ impl HandshakeTimer {
         let thread_handle = thread::Builder::new()
             .name("handshake-manager-timer".to_string())
             .spawn(move || {
-                Self::execution_loop(refresh_interval, thread_pool)
+                Self::execution_loop(refresh_interval, thread_pool, global_state)
             })
             .unwrap();
 
@@ -87,18 +90,22 @@ impl HandshakeTimer {
     fn execution_loop(
         refresh_interval: Duration,
         thread_pool: Arc<ThreadPool>,
+        global_state: GlobalRelayerState,
     ) {
         // Enqueue refreshes periodically
         loop {
-            for i in 1..10 {
-                let pool_copy = thread_pool.clone();
-                thread_pool.install(move || { 
-                    HandshakeManager::perform_handshake(i, pool_copy) 
-                })
-            }
+            {
+                let locked_state = global_state.read().expect("global state lock poisoned");
+                for (_, peer_info) in locked_state.known_peers.iter() {
+                    let pool_copy = thread_pool.clone();
+                    thread_pool.install(move || { 
+                        HandshakeManager::perform_handshake(peer_info.get_peer_id(), pool_copy) 
+                    })
+                }
+            } // locked_state released here
 
             thread::sleep(refresh_interval);
-        }
+        } 
     }
 }
 
