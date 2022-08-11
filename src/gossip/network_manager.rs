@@ -7,7 +7,7 @@ use libp2p::{
     PeerId,
     request_response::{RequestResponseEvent, RequestResponseMessage},
     Swarm, 
-    swarm::SwarmEvent, kad::KademliaEvent, 
+    swarm::SwarmEvent, 
 };
 use std::{
     thread::{
@@ -31,7 +31,7 @@ use crate::{
     state::GlobalRelayerState, handshake::types::HandshakeExecutionJob
 };
 
-use super::api::{GossipOutbound, GossipRequest, GossipResponse, HandshakeMessage};
+use super::api::{GossipOutbound, GossipRequest, GossipResponse};
 
 // Groups logic around monitoring and requesting the network
 pub struct NetworkManager {
