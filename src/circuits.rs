@@ -1,5 +1,5 @@
+pub mod gadgets;
 pub mod wallet_commit;
-pub mod comparators;
 
 use crate::circuits::wallet_commit::{
     WalletVar

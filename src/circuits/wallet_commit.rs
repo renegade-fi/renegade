@@ -9,12 +9,18 @@ use ark_r1cs_std::{
         uint64::UInt64,
         uint8::UInt8
     },
-    prelude::{AllocVar, EqGadget}, R1CSVar, ToBitsGadget, ToBytesGadget,
+    prelude::{AllocVar, EqGadget}, 
+    R1CSVar, ToBitsGadget
 };
+use serde::__private::de;
 use std::{borrow::Borrow, marker::PhantomData};
 
 use super::MAX_ORDERS;
-use crate::circuits::comparators::GreaterThanEqGadget;
+use crate::circuits::gadgets::{
+    GreaterThanEqGadget,
+    MaskGadget,
+    MinGadget
+};
 
 /**
  * Groups logic for arkworks gadets related to wallet commitments
@@ -103,10 +109,10 @@ impl<F: PrimeField> R1CSVar<F> for WalletVar<F> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Balance {
     mint: u64,
-    amount: u64
+    amount: u64 
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct BalanceVar<F: PrimeField> {
     pub mint: UInt64<F>,
     pub amount: UInt64<F>
@@ -260,85 +266,94 @@ impl<F: PrimeField> R1CSVar<F> for OrderVar<F> {
 }
 
 // The result of a matches operation and its constraint system analog
-#[derive(Debug)]
-pub struct MatchesResult<F: Field> {
-    pub matches: Vec<MatchVariable<F>>
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MatchResult {
+    pub matches1: Vec<Match>,
+    pub matches2: Vec<Match>
 }
 
-impl<F: Field> MatchesResult<F> {
+#[derive(Debug)]
+pub struct MatchResultVariable<F: PrimeField> {
+    pub matches1: Vec<MatchVariable<F>>,
+    pub matches2: Vec<MatchVariable<F>>
+}
+
+impl<F: PrimeField> MatchResultVariable<F> {
     pub fn new() -> Self {
-        Self { matches: Vec::new() }
+        Self { matches1: Vec::new(), matches2: Vec::new() }
     } 
 }
 
-#[derive(Debug)]
-pub struct MatchVariable<F: Field> {
+impl<F: PrimeField> R1CSVar<F> for MatchResultVariable<F> {
+    type Value = MatchResult;
+
+    fn cs(&self) -> ark_relations::r1cs::ConstraintSystemRef<F> {
+        self.matches1[0].cs()
+    } 
+
+    fn is_constant(&self) -> bool {
+        self.matches1[0].is_constant()
+    }
+
+    fn value(&self) -> Result<Self::Value, SynthesisError> {
+        let matches1 = self.matches1
+            .iter()
+            .map(|match_var| match_var.value())
+            .collect::<Result<Vec<Match>, SynthesisError>>()?;
+        
+        let matches2 = self.matches2
+            .iter()
+            .map(|match_var| match_var.value())
+            .collect::<Result<Vec<Match>, SynthesisError>>()?;
+        
+        Ok ( MatchResult { matches1, matches2 } )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Match {
+    mint: u64,
+    amount: u64,
+    side: OrderSide
+}
+
+#[derive(Debug, Clone)]
+pub struct MatchVariable<F: PrimeField> {
     mint: UInt64<F>,
     amount: UInt64<F>,
-    side: Boolean<F>
+    side: UInt8<F>
+}
+
+impl<F: PrimeField> R1CSVar<F> for MatchVariable<F> {
+    type Value = Match;
+
+    fn cs(&self) -> ark_relations::r1cs::ConstraintSystemRef<F> {
+        self.mint.cs()
+    }
+
+    fn is_constant(&self) -> bool {
+        self.mint.is_constant()
+    }
+
+    fn value(&self) -> Result<Self::Value, SynthesisError> {
+        Ok(
+            Match {
+                mint: self.mint.value()?,
+                amount: self.amount.value()?,
+                side: match self.side.value()? {
+                    0 => { Ok(OrderSide::Buy) },
+                    1 => { Ok(OrderSide::Sell) },
+                    _ => { Err(SynthesisError::Unsatisfiable) }
+                }?
+            }
+        )
+    }
 }
 
 /**
  * Gadgets
  */
 
-pub struct MatchGadget<F: PrimeField> {
-    _phantom: PhantomData<F>
-}
-
-impl<F: PrimeField> MatchGadget<F> {
-    pub fn compute_matches(
-        wallet1: &WalletVar<F>,
-        wallet2: &WalletVar<F>
-    ) -> Result<MatchesResult<F>, SynthesisError> {
-        let result = MatchesResult::<F>::new(); 
-        let zero_u8 = UInt8::new_constant(wallet1.cs(), 0)?;
-
-        for i in 0..MAX_ORDERS {
-            for j in 0..MAX_ORDERS {
-                let order1 = wallet1.orders[i].borrow();
-                let order2 = wallet2.orders[j].borrow();
-
-                let quote_mints_equal = order1.quote_mint.is_eq(&order2.quote_mint)?;
-                let base_mints_equal = order1.base_mint.is_eq(&order2.base_mint)?;
-
-                // Check that counterparties are on opposite sides of the market
-                let opposite_sides = order1.side
-                    .xor(&order2.side)?
-                    .is_eq(&zero_u8)?;
-
-                // Checks that order_2_side * order_1_price >= order_2_side * order_2_price
-                let overlap1 = OrderOverlapGadget::is_overlapping(
-                    &order2.side, 
-                    &order1.price, 
-                    &order2.side, 
-                    &order2.price
-                )?;
-
-                // Checks that order_2_side * order_1_price >= order_1_side * order_1_price
-                let overlap2 = OrderOverlapGadget::is_overlapping(
-                    &order2.side, 
-                    &order1.price, 
-                    &order1.side, 
-                    &order1.price
-                )?;
-
-                // Aggregate all checks together
-                let aggregated_checks = quote_mints_equal
-                    .and(&base_mints_equal)?
-                    .and(&opposite_sides)?
-                    .and(&overlap1)?
-                    .and(&overlap2)?;
-                
-                // Find the execution price and mask it with the checks
-            }
-        }
-
-        Err(SynthesisError::AssignmentMissing)
-    }
-}
-
-// Checks one half of an order price overlap
 pub struct OrderOverlapGadget<F: PrimeField> {
     _phantom: PhantomData<F>
 }
@@ -373,6 +388,128 @@ impl<F: PrimeField> OrderOverlapGadget<F> {
     }
 }
 
+
+pub struct MatchGadget<F: PrimeField> {
+    _phantom: PhantomData<F>
+}
+
+impl<F: PrimeField> MatchGadget<F> {
+    pub fn compute_matches(
+        wallet1: &WalletVar<F>,
+        wallet2: &WalletVar<F>
+    ) -> Result<MatchResultVariable<F>, SynthesisError> {
+        let mut result = MatchResultVariable::<F>::new(); 
+        let zero_u8 = UInt8::new_constant(wallet1.cs(), 0)?;
+
+        for i in 0..wallet1.orders.len() {
+            for j in 0..wallet2.orders.len() {
+                let order1 = wallet1.orders[i].borrow();
+                let order2 = wallet2.orders[j].borrow();
+
+                let quote_mints_equal = order1.quote_mint.is_eq(&order2.quote_mint)?;
+                let base_mints_equal = order1.base_mint.is_eq(&order2.base_mint)?;
+
+                // Check that counterparties are on opposite sides of the market
+                let opposite_sides = order1.side
+                    .xor(&order2.side)?
+                    .is_eq(&zero_u8)?;
+
+                // Checks that order_2_side * order_1_price >= order_2_side * order_2_price
+                let overlap1 = OrderOverlapGadget::is_overlapping(
+                    &order2.side, 
+                    &order1.price, 
+                    &order2.side, 
+                    &order2.price
+                )?;
+
+                // Checks that order_2_side * order_1_price >= order_1_side * order_1_price
+                let overlap2 = OrderOverlapGadget::is_overlapping(
+                    &order2.side, 
+                    &order1.price, 
+                    &order1.side, 
+                    &order1.price
+                )?;
+
+                // Aggregate all checks together
+                let aggregated_checks = quote_mints_equal
+                    .and(&base_mints_equal)?
+                    .and(&opposite_sides)?
+                    .and(&overlap1)?
+                    .and(&overlap2)?;
+                
+                // Convert to integer for operations 
+                // let check_mask = UInt64::from_bits_le(&[aggregated_checks]);
+                
+                // Find the execution price (midpoint) and mask it with the checks
+                // (price1 + price2) / 2
+                // Rotate right to emulate a shift right
+                // then xor with 1 << 63 to mask the top bit
+                let execution_price = UInt64::addmany(
+                    &[order1.price.clone(), order2.price.clone()]
+                )?
+                    .rotr(1) 
+                    .xor(&UInt64::<F>::constant(1 << 63))?;
+                
+                let base_swapped = MinGadget::min_uint64(order1.amount.clone(), order2.amount.clone())?;
+
+                // Compute the amount of quote token swapped
+                // Convert to field element then back to int
+                let base_swapped_fp = Boolean::le_bits_to_fp_var(&base_swapped.to_bits_le())?;
+                let execution_price_fp = Boolean::le_bits_to_fp_var(&execution_price.to_bits_le())?;
+                
+                let quote_swapped_fp = base_swapped_fp * execution_price_fp;
+                let quote_swapped = UInt64::from_bits_le(&quote_swapped_fp.to_bits_le()?[..64]);
+
+                // Mask output if the checks failed
+                let quote_mint_masked = MaskGadget::mask_uint64(&order1.quote_mint, &aggregated_checks)?;
+                let base_mint_masked = MaskGadget::mask_uint64(&order1.base_mint, &aggregated_checks)?;
+
+                let base_swapped_masked = MaskGadget::mask_uint64(&base_swapped, &aggregated_checks)?;
+                let quote_swapped_masked = MaskGadget::mask_uint64(&quote_swapped, &aggregated_checks)?;
+
+                let side1_masked = MaskGadget::mask_uint8(&order1.side, &aggregated_checks)?;
+                let side2_masked = MaskGadget::mask_uint8(&order2.side, &aggregated_checks)?;
+                
+                // For each party; add a match for the delta in quote token and the delta in base token
+                // Instead of doing 1 - side; we simply use the other party's side as we have constrained them to be opposite
+                result.matches1.push(
+                    MatchVariable { 
+                        mint: quote_mint_masked.clone(), 
+                        amount: quote_swapped_masked.clone(), 
+                        side: side2_masked.clone()
+                    }
+                );
+
+                result.matches1.push(
+                    MatchVariable { 
+                        mint: base_mint_masked.clone(),
+                        amount: base_swapped_masked.clone(),
+                        side: side1_masked.clone()
+                    }
+                );
+
+                result.matches2.push(
+                    MatchVariable { 
+                        mint: quote_mint_masked, 
+                        amount: quote_swapped_masked,
+                        side: side1_masked
+                    }
+                );
+
+                result.matches2.push(
+                    MatchVariable { 
+                        mint: base_mint_masked,
+                        amount: base_swapped_masked, 
+                        side: side2_masked 
+                    }
+                );
+            }
+        }
+
+        Ok(result)
+    }
+}
+
 #[cfg(test)]
 mod overlap_test {
     use ark_ff::PrimeField;
@@ -380,7 +517,7 @@ mod overlap_test {
     use ark_r1cs_std::{
         prelude::{AllocVar, EqGadget, Boolean}, 
         uint8::UInt8, 
-        uint64::UInt64, R1CSVar
+        uint64::UInt64
     };
     use super::{SystemField, OrderOverlapGadget};
 
@@ -429,7 +566,7 @@ mod overlap_test {
     fn test_overlap_gadget_with_overlap() {
         let cs = ConstraintSystem::<SystemField>::new_ref();
         let (side1_var, price1_var, side2_var, price2_var) = setup_prices(
-            200, 100, cs.clone()
+            200 /* buy_price */, 100 /* sell_price */, cs.clone()
         );
 
         let result_var = OverlapGadget::is_overlapping(
@@ -445,7 +582,7 @@ mod overlap_test {
     fn test_overlap_prices_equal() {
         let cs = ConstraintSystem::<SystemField>::new_ref();
         let (side1_var, price1_var, side2_var, price2_var) = setup_prices(
-            100, 100, cs.clone()
+            100 /* buy_price */, 100 /* sell_price */, cs.clone()
         );
 
         let result_var = OverlapGadget::is_overlapping(
@@ -454,5 +591,53 @@ mod overlap_test {
 
         result_var.enforce_equal(&Boolean::TRUE).unwrap();
         assert!(cs.is_satisfied().unwrap())
+    }
+}
+
+#[cfg(test)]
+mod match_test {
+    use ark_r1cs_std::{prelude::AllocVar, R1CSVar};
+    use ark_relations::r1cs::ConstraintSystem;
+
+    use super::{Match, MatchGadget, Order, OrderSide, Wallet, WalletVar, SystemField};
+
+    fn has_nonzero_match(matches_list: Vec<Match>) -> bool {
+        matches_list.iter()
+            .any(|match_res| {
+                match_res.amount != 0 || match_res.mint != 0 || match_res.side == OrderSide::Sell // Sell side is 1
+            })
+    }
+
+    #[test]
+    fn test_match_different_mints() {
+        // Build the wallets
+        let wallet1 = Wallet {
+            balances: vec![],
+            orders: vec![
+                Order { base_mint: 1, quote_mint: 2, price: 10, amount: 1, side: OrderSide::Buy }
+            ]
+        };
+
+        let wallet2 = Wallet {
+            balances: vec![],
+            orders: vec![
+                Order { base_mint: 3, quote_mint: 4, price: 10, amount: 1, side: OrderSide::Sell }
+            ]
+        };
+
+        // Build the constraint system and variables
+        let cs = ConstraintSystem::<SystemField>::new_ref();
+
+        let wallet1_var = WalletVar::new_witness(cs.clone(), || Ok(wallet1)).unwrap();
+        let wallet2_var = WalletVar::new_witness(cs.clone(), || Ok(wallet2)).unwrap();
+
+        let res = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
+            .unwrap()
+            .value()
+            .unwrap();
+        
+        // Both matches lists should be all zeroed
+        assert!(!has_nonzero_match(res.matches1));
+        assert!(!has_nonzero_match(res.matches2));
     }
 }
