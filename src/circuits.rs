@@ -1,19 +1,13 @@
-mod wallet_commit;
+pub mod wallet_commit;
+pub mod comparators;
 
 use crate::circuits::wallet_commit::{
     WalletVar
 };
 
-fn run_circuit() -> Option<()> {
-    Some(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::run_circuit;
-
-    #[test]
-    fn test_basic() {
-        assert!(run_circuit().is_none())
-    }
-}
+/**
+ * Constants
+ */
+pub const MAX_ORDERS: usize = 20;
+pub const MAX_BALANCES: usize = 20;
+pub const MAX_MATCHES: usize = MAX_ORDERS * MAX_ORDERS;
