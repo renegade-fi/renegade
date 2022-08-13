@@ -1,9 +1,6 @@
 pub mod gadgets;
-pub mod wallet_commit;
-
-use crate::circuits::wallet_commit::{
-    WalletVar
-};
+pub mod types;
+pub mod wallet_match;
 
 /**
  * Constants
