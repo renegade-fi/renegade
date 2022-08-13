@@ -399,7 +399,6 @@ impl<F: PrimeField> MatchGadget<F> {
         wallet2: &WalletVar<F>
     ) -> Result<MatchResultVariable<F>, SynthesisError> {
         let mut result = MatchResultVariable::<F>::new(); 
-        let zero_u8 = UInt8::new_constant(wallet1.cs(), 0)?;
 
         for i in 0..wallet1.orders.len() {
             for j in 0..wallet2.orders.len() {
@@ -412,33 +411,21 @@ impl<F: PrimeField> MatchGadget<F> {
                 // Check that counterparties are on opposite sides of the market
                 let opposite_sides = order1.side
                     .xor(&order2.side)?
-                    .is_eq(&zero_u8)?;
+                    .is_eq(&UInt8::constant(1))?;
 
                 // Checks that order_2_side * order_1_price >= order_2_side * order_2_price
-                let overlap1 = OrderOverlapGadget::is_overlapping(
-                    &order2.side, 
+                let price_overlap = OrderOverlapGadget::is_overlapping(
+                    &order1.side, 
                     &order1.price, 
                     &order2.side, 
                     &order2.price
-                )?;
-
-                // Checks that order_2_side * order_1_price >= order_1_side * order_1_price
-                let overlap2 = OrderOverlapGadget::is_overlapping(
-                    &order2.side, 
-                    &order1.price, 
-                    &order1.side, 
-                    &order1.price
                 )?;
 
                 // Aggregate all checks together
                 let aggregated_checks = quote_mints_equal
                     .and(&base_mints_equal)?
                     .and(&opposite_sides)?
-                    .and(&overlap1)?
-                    .and(&overlap2)?;
-                
-                // Convert to integer for operations 
-                // let check_mask = UInt64::from_bits_le(&[aggregated_checks]);
+                    .and(&price_overlap)?;
                 
                 // Find the execution price (midpoint) and mask it with the checks
                 // (price1 + price2) / 2
@@ -601,7 +588,7 @@ mod match_test {
 
     use super::{Match, MatchGadget, Order, OrderSide, Wallet, WalletVar, SystemField};
 
-    fn has_nonzero_match(matches_list: Vec<Match>) -> bool {
+    fn has_nonzero_match(matches_list: &Vec<Match>) -> bool {
         matches_list.iter()
             .any(|match_res| {
                 match_res.amount != 0 || match_res.mint != 0 || match_res.side == OrderSide::Sell // Sell side is 1
@@ -609,6 +596,8 @@ mod match_test {
     }
 
     #[test]
+    // Tests that no matches result from orders that overlap but have
+    // different mints
     fn test_match_different_mints() {
         // Build the wallets
         let wallet1 = Wallet {
@@ -637,7 +626,203 @@ mod match_test {
             .unwrap();
         
         // Both matches lists should be all zeroed
-        assert!(!has_nonzero_match(res.matches1));
-        assert!(!has_nonzero_match(res.matches2));
+        assert!(res.matches1.len() > 0);
+        assert!(res.matches2.len() > 0);
+        assert!(!has_nonzero_match(&res.matches1));
+        assert!(!has_nonzero_match(&res.matches2));
     }
+
+    #[test]
+    // Tests that no matches result from orders on the same side of a pair
+    // even when prices align
+    fn test_match_same_side() {
+        // Build the wallets
+        let wallet1 = Wallet {
+            balances: vec![],
+            orders: vec![
+                Order { base_mint: 1, quote_mint: 2, price: 10, amount: 1, side: OrderSide::Buy }
+            ]
+        };
+
+        let wallet2 = Wallet {
+            balances: vec![],
+            orders: vec![
+                Order { base_mint: 1, quote_mint: 2, price: 10, amount: 1, side: OrderSide::Buy }
+            ]
+        };
+
+        // Build the constraint system and variables
+        let cs = ConstraintSystem::<SystemField>::new_ref();
+
+        let wallet1_var = WalletVar::new_witness(cs.clone(), || Ok(wallet1)).unwrap();
+        let wallet2_var = WalletVar::new_witness(cs.clone(), || Ok(wallet2)).unwrap();
+
+        let res = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
+            .unwrap()
+            .value()
+            .unwrap();
+        
+        // Check that both matches lists are zeroed 
+        assert!(res.matches1.len() > 0);
+        assert!(res.matches2.len() > 0);
+        assert!(!has_nonzero_match(&res.matches1));
+        assert!(!has_nonzero_match(&res.matches2));
+    }
+
+    #[test]
+    // Tests the case in which the order prices are not overlapping
+    fn test_match_no_overlap() {
+        let wallet1 = Wallet {
+            balances: vec![],
+            orders: vec![
+                Order { base_mint: 1, quote_mint: 2, price: 20, amount: 1, side: OrderSide::Sell }
+            ]
+        };
+
+        let wallet2 = Wallet {
+            balances: vec![],
+            orders: vec![
+                Order { base_mint: 1, quote_mint: 2, price: 10, amount: 1, side: OrderSide::Buy }
+            ]
+        };
+
+        // Build the constraint system and variables
+        let cs = ConstraintSystem::<SystemField>::new_ref();
+
+        let wallet1_var = WalletVar::new_witness(cs.clone(), || Ok(wallet1)).unwrap();
+        let wallet2_var = WalletVar::new_witness(cs.clone(), || Ok(wallet2)).unwrap();
+
+        let res1 = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
+            .unwrap()
+            .value()
+            .unwrap();
+        
+        assert!(res1.matches1.len() > 0);
+        assert!(res1.matches2.len() > 0);
+        assert!(!has_nonzero_match(&res1.matches1));
+        assert!(!has_nonzero_match(&res1.matches2));
+
+        // Flip the wallets to ensure the arguments commute
+        let res2 = MatchGadget::compute_matches(&wallet2_var, &wallet1_var)
+            .unwrap()
+            .value()
+            .unwrap();
+        
+        assert!(res2.matches1.len() > 0);
+        assert!(res2.matches2.len() > 0);
+        assert!(!has_nonzero_match(&res2.matches1));
+        assert!(!has_nonzero_match(&res2.matches2));
+    }
+
+    #[test]
+    // Tests a correct match to ensure that the match is done correctly
+    fn test_match_correct_match() {
+        let base_mint = 1;
+        let quote_mint = 2;
+
+        let wallet1 = Wallet {
+            balances: vec![],
+            orders: vec![
+                Order { base_mint, quote_mint, price: 10, amount: 2, side: OrderSide::Sell }
+            ]
+        };
+
+        let wallet2 = Wallet {
+            balances: vec![],
+            orders: vec![
+                Order { base_mint, quote_mint, price: 20, amount: 3, side: OrderSide::Buy }
+            ]
+        };
+        
+        // Build the constraint system and variables
+        let cs = ConstraintSystem::<SystemField>::new_ref();
+
+        let wallet1_var = WalletVar::new_witness(cs.clone(), || Ok(wallet1)).unwrap();
+        let wallet2_var = WalletVar::new_witness(cs.clone(), || Ok(wallet2)).unwrap();
+
+        let mut res = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
+            .unwrap()
+            .value()
+            .unwrap();
+        
+        assert!(has_nonzero_match(&res.matches1));
+        assert!(has_nonzero_match(&res.matches2));
+        
+        // Sort by mint
+        res.matches1.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
+        res.matches2.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
+
+        // wallet 1 is selling quote currency, wallet 2 is buying quote currency
+        assert!(res.matches1[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Sell }));
+        assert!(res.matches1[1].eq(&Match { mint: quote_mint, amount: 30, side: OrderSide::Buy }));
+
+        assert!(res.matches2[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Buy }));
+        assert!(res.matches2[1].eq(&Match { mint: quote_mint, amount: 30, side: OrderSide::Sell }));
+
+        // Swap arguments to ensure the circuit commutes
+        let mut res2 = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
+            .unwrap()
+            .value()
+            .unwrap();
+        
+        assert!(has_nonzero_match(&res2.matches1));
+        assert!(has_nonzero_match(&res2.matches2));
+        
+        // Sort by mint
+        res2.matches1.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
+        res2.matches2.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
+
+        // wallet 1 is selling quote currency, wallet 2 is buying quote currency
+        assert!(res2.matches1[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Sell }));
+        assert!(res2.matches1[1].eq(&Match { mint: quote_mint, amount: 30, side: OrderSide::Buy }));
+
+        assert!(res2.matches2[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Buy }));
+        assert!(res2.matches2[1].eq(&Match { mint: quote_mint, amount: 30, side: OrderSide::Sell }));
+    }
+
+    #[test]
+    fn test_match_same_price() {
+        let base_mint = 1;
+        let quote_mint = 2;
+
+        let wallet1 = Wallet {
+            balances: vec![],
+            orders: vec![
+                Order { base_mint, quote_mint, price: 10, amount: 2, side: OrderSide::Sell }
+            ]
+        };
+
+        let wallet2 = Wallet {
+            balances: vec![],
+            orders: vec![
+                Order { base_mint, quote_mint, price: 10, amount: 3, side: OrderSide::Buy }
+            ]
+        };
+        
+        // Build the constraint system and variables
+        let cs = ConstraintSystem::<SystemField>::new_ref();
+
+        let wallet1_var = WalletVar::new_witness(cs.clone(), || Ok(wallet1)).unwrap();
+        let wallet2_var = WalletVar::new_witness(cs.clone(), || Ok(wallet2)).unwrap();
+
+        let mut res = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
+            .unwrap()
+            .value()
+            .unwrap();
+        
+        assert!(has_nonzero_match(&res.matches1));
+        assert!(has_nonzero_match(&res.matches2));
+        
+        // Sort by mint
+        res.matches1.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
+        res.matches2.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
+
+        // wallet 1 is selling quote currency, wallet 2 is buying quote currency
+        assert!(res.matches1[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Sell }));
+        assert!(res.matches1[1].eq(&Match { mint: quote_mint, amount: 20, side: OrderSide::Buy }));
+
+        assert!(res.matches2[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Buy }));
+        assert!(res.matches2[1].eq(&Match { mint: quote_mint, amount: 20, side: OrderSide::Sell }));
+    }
+
 }
