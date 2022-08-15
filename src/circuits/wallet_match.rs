@@ -41,7 +41,7 @@ pub struct MatchResult {
     pub matches2: Vec<Match>
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MatchResultVariable<F: PrimeField> {
     pub matches1: Vec<MatchVariable<F>>,
     pub matches2: Vec<MatchVariable<F>>
@@ -595,4 +595,83 @@ mod match_test {
         assert!(res.matches2[1].eq(&Match { mint: quote_mint, amount: 20, side: OrderSide::Sell }));
     }
 
+}
+
+#[cfg(test)]
+mod proof_test {
+    use ark_bn254::Bn254;
+    use ark_ff::{PrimeField};
+    use ark_groth16::{create_random_proof, generate_random_parameters, prepare_verifying_key, verify_proof};
+    use ark_r1cs_std::{prelude::{AllocVar, EqGadget, Boolean}, R1CSVar, uint64::UInt64};
+    use ark_relations::r1cs::{ConstraintSynthesizer, SynthesisError};
+    use rand::rngs::OsRng;
+    use std::{cell::RefCell, marker::PhantomData};
+
+    use crate::circuits::types::{Wallet, Order, OrderSide, WalletVar};
+    use super::{MatchGadget, MatchResultVariable};
+
+    #[derive(Clone)]
+    struct DummyCircuit<F: PrimeField> {
+        wallet1: Wallet,
+        wallet2: Wallet,
+        _phantom: PhantomData<F>
+    }
+
+    impl<F: PrimeField> ConstraintSynthesizer<F> for DummyCircuit<F> {
+        fn generate_constraints(
+            self, 
+            cs: ark_relations::r1cs::ConstraintSystemRef<F>
+        ) -> Result<(), SynthesisError> {
+            let wallet1_var = WalletVar::new_witness(cs.clone(), || Ok(&self.wallet1)).unwrap();
+            let wallet2_var = WalletVar::new_witness(cs.clone(), || Ok(&self.wallet2)).unwrap();
+
+            let res = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
+                .unwrap();
+            
+            res.matches1[0].amount.is_eq(&UInt64::constant(20))
+                .unwrap()
+                .enforce_equal(&Boolean::TRUE)
+                .unwrap();
+    
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_prove_wallet() {
+        let base_mint = 1;
+        let quote_mint = 2;
+
+        let wallet1 = Wallet {
+            balances: vec![],
+            orders: vec![
+                Order { base_mint, quote_mint, price: 10, amount: 2, side: OrderSide::Sell }
+            ]
+        };
+
+        let wallet2 = Wallet {
+            balances: vec![],
+            orders: vec![
+                Order { base_mint, quote_mint, price: 10, amount: 3, side: OrderSide::Buy }
+            ]
+        };
+        
+        // Build the constraint system and variables
+        let circuit = DummyCircuit { wallet1, wallet2, _phantom: PhantomData {} };
+
+        // Build the proving and verifying keys
+        let mut rng = OsRng{};
+        let proving_key = generate_random_parameters::<
+            Bn254, _, _
+        >(circuit.clone(), &mut rng).unwrap();
+        let verifying_key = prepare_verifying_key(&proving_key.vk);
+
+        // Prove and verify
+        let proof = create_random_proof(circuit, &proving_key, &mut rng).unwrap();
+
+        let verification_result = verify_proof(&verifying_key, &proof, &Vec::new()[..])
+            .unwrap();
+
+        assert!(verification_result);
+    }
 }
