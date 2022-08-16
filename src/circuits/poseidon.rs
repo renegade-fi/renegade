@@ -34,31 +34,25 @@ fn u8_to_field_element<F: PrimeField>(a: &UInt8<F>) -> Result<FpVar<F>, Synthesi
 /**
  * Constraint system types
  */
-// #[derive(Clone, Debug, Default)]
-// pub struct PoseidonTreeHashParams<F: PrimeField> {
-//     _phantom: PhantomData<F>
-// }
-// 
-// Poseidon parameters taken from the paper (tables 2 and 8): https://eprint.iacr.org/2019/458.pdf
-// impl<F: PrimeField> PoseidonRoundParams<F> for PoseidonTreeHashParams<F> {
-//     // The permutation size; t = 3 for our application of a 2-1 hash
-//     const WIDTH: usize = 3;
-//     // The number of full SBox rounds before the partial rounds
-//     const FULL_ROUNDS_BEGINNING: usize = 8; 
-//     // The number of full SBox rounds after the partial rounds
-//     const FULL_ROUNDS_END: usize = 8;
-//     // The number of partial SBox rounds to apply in between sets of full rounds
-//     const PARTIAL_ROUNDS: usize = 33;
-//     // The type of SBox to apply; for our case we implement \alpha = 5 so y = x^5 (mod p)
-//     const SBOX: PoseidonSbox = PoseidonSbox::Exponentiation(5);
-// }
 
-pub struct PoseidonHashInput<F: PrimeField> {
+pub trait PoseidonHashInput<F: PrimeField> {
+    fn get_elements(&self) -> &Vec<FpVar<F>>;
+}
+
+// The order hash input only hashes the orders of a given wallet
+#[derive(Debug)]
+pub struct OrderHashInput<F: PrimeField> {
     elements: Vec<FpVar<F>>,
 }
 
-// Alloc a tree hash input from a wallet
-impl<F: PrimeField> From<WalletVar<F>> for Result<PoseidonHashInput<F>, SynthesisError> {
+impl<F: PrimeField> PoseidonHashInput<F> for OrderHashInput<F> {
+    fn get_elements(&self) -> &Vec<FpVar<F>> {
+        &self.elements
+    }
+}
+
+// Allocate an order hash input from the wallet input
+impl<F: PrimeField> From<WalletVar<F>> for Result<OrderHashInput<F>, SynthesisError> {
     fn from(wallet: WalletVar<F>) -> Self {
         let mut elements = Vec::<FpVar<F>>::new();
         wallet.borrow()
@@ -74,8 +68,53 @@ impl<F: PrimeField> From<WalletVar<F>> for Result<PoseidonHashInput<F>, Synthesi
             })
             .collect::<Result<Vec<()>, SynthesisError>>()?;
         
-        // TODO: Pad to power of 2
-        Ok(PoseidonHashInput { elements })
+        Ok(OrderHashInput { elements })
+    }
+}
+
+// The wallet hash input hashes the entire wallet
+#[derive(Debug)]
+pub struct WalletHashInput<F: PrimeField> {
+    elements: Vec<FpVar<F>>
+}
+
+impl<F: PrimeField> PoseidonHashInput<F> for WalletHashInput<F> {
+    fn get_elements(&self) -> &Vec<FpVar<F>> {
+        &self.elements
+    }
+}
+
+// Allocate a wallet hash input from the wallet itself
+impl<F: PrimeField> From<WalletVar<F>> for Result<WalletHashInput<F>, SynthesisError> {
+    fn from(wallet: WalletVar<F>) -> Self {
+        let mut elements = Vec::<FpVar<F>>::new();
+        let wallet = wallet.borrow();
+
+        // Add all balances to the hash input
+        wallet.balances
+            .iter()
+            .map(|balance| {
+                elements.push(u64_to_field_element(&balance.amount)?);
+                elements.push(u64_to_field_element(&balance.mint)?);
+                Ok(())
+            })
+            .collect::<Result<Vec<()>, SynthesisError>>()?;
+        
+        // Add all orders to the hash input
+        wallet.orders
+            .iter()
+            .map(|order| {
+                elements.push(u64_to_field_element(&order.base_mint)?);
+                elements.push(u64_to_field_element(&order.quote_mint)?);
+                elements.push(u8_to_field_element(&order.side)?);
+                elements.push(u64_to_field_element(&order.price)?);
+                elements.push(u64_to_field_element(&order.amount)?);
+                Ok(())
+            })
+            .collect::<Result<Vec<()>, SynthesisError>>()?;
+        
+        Ok( WalletHashInput { elements } )
+         
     }
 }
 
@@ -108,7 +147,6 @@ impl<F: PrimeField> PoseidonSpongeWrapperVar<F> {
     }
 }
 
-
 /**
  * Gadgets
  */
@@ -118,11 +156,11 @@ pub struct PoseidonVectorHashGadget<F: PrimeField> {
 
 impl<F: PrimeField> PoseidonVectorHashGadget<F> {
     fn evaluate(
-        input: &PoseidonHashInput<F>,
+        input: &impl PoseidonHashInput<F>,
         poseidon_sponge: &mut PoseidonSpongeWrapperVar<F>
     ) -> Result<FpVar<F>, SynthesisError> {
         // Assume the input to be of length 2^n for some n 
-        for next_elem in input.elements.iter() {
+        for next_elem in input.get_elements().iter() {
             poseidon_sponge.sponge.absorb(next_elem)?;
         }
 
@@ -140,12 +178,11 @@ mod test {
     use ark_r1cs_std::{prelude::{AllocVar, EqGadget}, fields::fp::FpVar, R1CSVar};
     use ark_relations::r1cs::{ConstraintSystem, SynthesisError};
     use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
-    use serde::__private::size_hint::from_bounds;
 
     use std::result::Result;
-    use crate::circuits::{types::{Wallet, Order, OrderSide, WalletVar}, wallet_match::SystemField};
+    use crate::circuits::{types::{Wallet, Order, OrderSide, WalletVar}, wallet_match::SystemField, poseidon::OrderHashInput};
 
-    use super::{PoseidonSpongeWrapperVar, PoseidonHashInput, PoseidonVectorHashGadget};
+    use super::{PoseidonSpongeWrapperVar, PoseidonVectorHashGadget};
 
     /**
      * Helpers
@@ -187,7 +224,7 @@ mod test {
         let mut constraint_sponge = PoseidonSpongeWrapperVar::new(cs.clone());
 
         let wallet_var = WalletVar::new_witness(cs.clone(), || Ok(wallet)).unwrap();
-        let constraint_hash_input = Result::<PoseidonHashInput<SystemField>, SynthesisError>::from(wallet_var).unwrap();
+        let constraint_hash_input = Result::<OrderHashInput<SystemField>, SynthesisError>::from(wallet_var).unwrap();
 
         let res = PoseidonVectorHashGadget::evaluate(&constraint_hash_input, &mut constraint_sponge).unwrap();
 

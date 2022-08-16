@@ -2,7 +2,6 @@ pub mod constants;
 pub mod gadgets;
 pub mod tree_hash;
 pub mod types;
-pub mod wallet_commit;
 pub mod wallet_match;
 
 /**
