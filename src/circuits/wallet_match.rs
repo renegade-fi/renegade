@@ -88,9 +88,9 @@ pub struct Match {
 
 #[derive(Debug, Clone)]
 pub struct MatchVariable<F: PrimeField> {
-    mint: UInt64<F>,
-    amount: UInt64<F>,
-    side: UInt8<F>
+    pub mint: UInt64<F>,
+    pub amount: UInt64<F>,
+    pub side: UInt8<F>
 }
 
 impl<F: PrimeField> R1CSVar<F> for MatchVariable<F> {

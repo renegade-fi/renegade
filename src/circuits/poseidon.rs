@@ -11,7 +11,7 @@ use ark_sponge::{
     },
 };
 
-use super::{types::WalletVar, constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3}};
+use super::{types::WalletVar, constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3}, wallet_match::{MatchVariable, MatchResultVariable}};
 
 
 /**
@@ -115,6 +115,37 @@ impl<F: PrimeField> From<WalletVar<F>> for Result<WalletHashInput<F>, SynthesisE
         
         Ok( WalletHashInput { elements } )
          
+    }
+}
+
+// The match hash input hashes two lists of matches
+#[derive(Debug)]
+pub struct MatchHashInput<F: PrimeField> {
+    elements: Vec<FpVar<F>>
+}
+
+impl<F: PrimeField> PoseidonHashInput<F> for MatchHashInput<F> {
+    fn get_elements(&self) -> &Vec<FpVar<F>> {
+        &self.elements
+    }
+}
+
+impl<F: PrimeField> From<MatchResultVariable<F>> for Result<MatchHashInput<F>, SynthesisError> {
+    fn from(match_res: MatchResultVariable<F>) -> Self {
+        let mut elements = Vec::<FpVar<F>>::new();
+        match_res.matches1
+            .iter()
+            .chain(match_res.matches2.iter())
+            .map(|match_var| {
+                elements.push(u64_to_field_element(&match_var.amount)?);
+                elements.push(u64_to_field_element(&match_var.mint)?);
+                elements.push(u8_to_field_element(&match_var.side)?);
+                Ok(())
+            })
+            .collect::<Result<Vec<()>, SynthesisError>>()?;
+        
+        Ok( MatchHashInput { elements } )
+        
     }
 }
 
