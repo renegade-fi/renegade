@@ -52,8 +52,8 @@ impl<F: PrimeField> PoseidonHashInput<F> for OrderHashInput<F> {
 }
 
 // Allocate an order hash input from the wallet input
-impl<F: PrimeField> From<WalletVar<F>> for Result<OrderHashInput<F>, SynthesisError> {
-    fn from(wallet: WalletVar<F>) -> Self {
+impl<F: PrimeField> From<&WalletVar<F>> for Result<OrderHashInput<F>, SynthesisError> {
+    fn from(wallet: &WalletVar<F>) -> Self {
         let mut elements = Vec::<FpVar<F>>::new();
         wallet.borrow()
             .orders
@@ -85,8 +85,8 @@ impl<F: PrimeField> PoseidonHashInput<F> for WalletHashInput<F> {
 }
 
 // Allocate a wallet hash input from the wallet itself
-impl<F: PrimeField> From<WalletVar<F>> for Result<WalletHashInput<F>, SynthesisError> {
-    fn from(wallet: WalletVar<F>) -> Self {
+impl<F: PrimeField> From<&WalletVar<F>> for Result<WalletHashInput<F>, SynthesisError> {
+    fn from(wallet: &WalletVar<F>) -> Self {
         let mut elements = Vec::<FpVar<F>>::new();
         let wallet = wallet.borrow();
 
@@ -130,8 +130,8 @@ impl<F: PrimeField> PoseidonHashInput<F> for MatchHashInput<F> {
     }
 }
 
-impl<F: PrimeField> From<MatchResultVariable<F>> for Result<MatchHashInput<F>, SynthesisError> {
-    fn from(match_res: MatchResultVariable<F>) -> Self {
+impl<F: PrimeField> From<&MatchResultVariable<F>> for Result<MatchHashInput<F>, SynthesisError> {
+    fn from(match_res: &MatchResultVariable<F>) -> Self {
         let mut elements = Vec::<FpVar<F>>::new();
         match_res.matches1
             .iter()
@@ -164,7 +164,7 @@ impl<F: PrimeField> PoseidonSpongeWrapperVar<F> {
         }
     }
 
-    fn default_params() -> PoseidonParameters<F> {
+    pub fn default_params() -> PoseidonParameters<F> {
         // Poseidon parameters taken from the paper (tables 2 and 8): https://eprint.iacr.org/2019/458.pdf
         // and generated from the Hades scripts here: https://extgit.iaik.tugraz.at/krypto/hadeshash
         // t = 3 here for a 2 to 1 hash (to be composed into a Merkle tree)
@@ -186,7 +186,7 @@ pub struct PoseidonVectorHashGadget<F: PrimeField> {
 }
 
 impl<F: PrimeField> PoseidonVectorHashGadget<F> {
-    fn evaluate(
+    pub fn evaluate(
         input: &impl PoseidonHashInput<F>,
         poseidon_sponge: &mut PoseidonSpongeWrapperVar<F>
     ) -> Result<FpVar<F>, SynthesisError> {
@@ -255,7 +255,7 @@ mod test {
         let mut constraint_sponge = PoseidonSpongeWrapperVar::new(cs.clone());
 
         let wallet_var = WalletVar::new_witness(cs.clone(), || Ok(wallet)).unwrap();
-        let constraint_hash_input = Result::<OrderHashInput<SystemField>, SynthesisError>::from(wallet_var).unwrap();
+        let constraint_hash_input = Result::<OrderHashInput<SystemField>, SynthesisError>::from(&wallet_var).unwrap();
 
         let res = PoseidonVectorHashGadget::evaluate(&constraint_hash_input, &mut constraint_sponge).unwrap();
 

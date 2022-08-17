@@ -9,7 +9,7 @@ use ark_relations::r1cs::{SynthesisError, Namespace};
  */
 
 // Represents a wallet and its analog in the constraint system
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Wallet {
     pub balances: Vec<Balance>,
     pub orders: Vec<Order>
