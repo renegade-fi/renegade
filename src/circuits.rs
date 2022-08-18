@@ -35,6 +35,8 @@ pub type SystemField = ark_ed_on_bn254::Fr;
 pub struct ValidMatchCircuit<> {
     match_cell: Rc<RefCell<Option<MatchResult>>>,
     match_hash_cell: Rc<RefCell<Option<u64>>>,
+    match_result: Option<MatchResult>,
+    match_hash: Option<u64>,
     wrapped_type: RefCell<ValidMatchCircuitImpl<SystemField>>,
 }
 
@@ -58,21 +60,34 @@ impl ValidMatchCircuit {
             )
         );
 
-        Self { match_cell, match_hash_cell, wrapped_type }
+        Self { match_cell, match_hash_cell, match_result: None, match_hash: None, wrapped_type }
     }
 
+    // Generates the circuit constraints using the witness supplied in the constructor
     pub fn generate_constraints(&self, cs: ConstraintSystemRef<SystemField>) -> Result<(), SynthesisError> {
         self.wrapped_type
             .take()
             .generate_constraints(cs)
     }
 
-    pub fn get_matches(&self) -> Option<MatchResult> {
-        self.match_cell.take()
+    // Returns the matches produced by circuit evaluation and caches the result
+    pub fn get_matches(&mut self) -> &Option<MatchResult> {
+        // Lift the value to the wrapper struct; allow it to be consumed multiple times
+        if self.match_result.is_none() {
+            self.match_result = self.match_cell.take()
+        }
+
+        &self.match_result
     }
 
-    pub fn get_match_hash(&self) -> Option<u64> {
-        self.match_hash_cell.take()
+    // Returns the hash of the matches produced by circuit evaluation and caches the result
+    pub fn get_match_hash(&mut self) -> &Option<u64> {
+        // Lift the value to the wrapper struct; allow it to be consumed multiple times
+        if self.match_hash.is_none() {
+            self.match_hash = self.match_hash_cell.take();
+        }
+
+        &self.match_hash
     }
 }
 
