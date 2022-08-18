@@ -12,6 +12,7 @@ use ark_r1cs_std::{
 use std::{marker::PhantomData, borrow::Borrow};
 
 use crate::circuits::{
+    constants::{MAX_BALANCES, MAX_ORDERS},
     gadgets::{
         GreaterThanEqGadget,
         MaskGadget,
@@ -23,12 +24,10 @@ use crate::circuits::{
     }
 };
 
+
 /**
  * Groups together logic for computing matches between wallets
  */
-
-// The scalar field used throughout the proof system
-pub type SystemField = ark_ed_on_bn254::Fr;
 
 /**
  * Constraint system variables
@@ -169,8 +168,8 @@ impl<F: PrimeField> MatchGadget<F> {
     ) -> Result<MatchResultVariable<F>, SynthesisError> {
         let mut result = MatchResultVariable::<F>::new(); 
 
-        for i in 0..wallet1.orders.len() {
-            for j in 0..wallet2.orders.len() {
+        for i in 0..MAX_ORDERS {
+            for j in 0..MAX_ORDERS {
                 let order1 = wallet1.orders[i].borrow();
                 let order2 = wallet2.orders[j].borrow();
 
@@ -275,7 +274,9 @@ mod overlap_test {
         uint8::UInt8, 
         uint64::UInt64
     };
-    use super::{SystemField, OrderOverlapGadget};
+    use crate::circuits::SystemField;
+
+    use super::{OrderOverlapGadget};
 
     type OverlapGadget = OrderOverlapGadget<SystemField>;
 
@@ -355,8 +356,8 @@ mod match_test {
     use ark_r1cs_std::{prelude::AllocVar, R1CSVar};
     use ark_relations::r1cs::ConstraintSystem;
 
-    use crate::circuits::types::{Order, Wallet};
-    use super::{Match, MatchGadget, OrderSide, WalletVar, SystemField};
+    use crate::circuits::{types::{Order, Wallet}, wallet_match::MatchResult, SystemField};
+    use super::{Match, MatchGadget, OrderSide, WalletVar};
 
     fn has_nonzero_match(matches_list: &Vec<Match>) -> bool {
         matches_list.iter()
@@ -510,7 +511,7 @@ mod match_test {
         let wallet1_var = WalletVar::new_witness(cs.clone(), || Ok(wallet1)).unwrap();
         let wallet2_var = WalletVar::new_witness(cs.clone(), || Ok(wallet2)).unwrap();
 
-        let mut res = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
+        let res = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
             .unwrap()
             .value()
             .unwrap();
@@ -519,18 +520,28 @@ mod match_test {
         assert!(has_nonzero_match(&res.matches2));
         
         // Sort by mint
-        res.matches1.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
-        res.matches2.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
+        let mut matches1 = res.matches1
+            .iter()
+            .filter(|match_res| match_res.mint != 0)
+            .collect::<Vec<&Match>>();
+        matches1.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
+
+        let mut matches2 = res.matches2
+            .iter()
+            .filter(|match_res| match_res.mint != 0)
+            .collect::<Vec<&Match>>();
+
+        matches2.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
 
         // wallet 1 is selling quote currency, wallet 2 is buying quote currency
-        assert!(res.matches1[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Sell }));
-        assert!(res.matches1[1].eq(&Match { mint: quote_mint, amount: 30, side: OrderSide::Buy }));
+        assert!(matches1[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Sell }));
+        assert!(matches1[1].eq(&Match { mint: quote_mint, amount: 30, side: OrderSide::Buy }));
 
-        assert!(res.matches2[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Buy }));
-        assert!(res.matches2[1].eq(&Match { mint: quote_mint, amount: 30, side: OrderSide::Sell }));
+        assert!(matches2[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Buy }));
+        assert!(matches2[1].eq(&Match { mint: quote_mint, amount: 30, side: OrderSide::Sell }));
 
         // Swap arguments to ensure the circuit commutes
-        let mut res2 = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
+        let res2 = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
             .unwrap()
             .value()
             .unwrap();
@@ -538,16 +549,25 @@ mod match_test {
         assert!(has_nonzero_match(&res2.matches1));
         assert!(has_nonzero_match(&res2.matches2));
         
-        // Sort by mint
-        res2.matches1.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
-        res2.matches2.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
+        // filter out null matches (i.e. mint 0) and sort by mint
+        let mut matches1 = res2.matches1
+            .iter()
+            .filter(|match_res| match_res.mint != 0)
+            .collect::<Vec<&Match>>();
+        matches1.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
+
+        let mut matches2 = res2.matches2
+            .iter()
+            .filter(|match_res| match_res.mint != 0)
+            .collect::<Vec<&Match>>();
+        matches2.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
 
         // wallet 1 is selling quote currency, wallet 2 is buying quote currency
-        assert!(res2.matches1[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Sell }));
-        assert!(res2.matches1[1].eq(&Match { mint: quote_mint, amount: 30, side: OrderSide::Buy }));
+        assert!(matches1[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Sell }));
+        assert!(matches1[1].eq(&Match { mint: quote_mint, amount: 30, side: OrderSide::Buy }));
 
-        assert!(res2.matches2[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Buy }));
-        assert!(res2.matches2[1].eq(&Match { mint: quote_mint, amount: 30, side: OrderSide::Sell }));
+        assert!(matches2[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Buy }));
+        assert!(matches2[1].eq(&Match { mint: quote_mint, amount: 30, side: OrderSide::Sell }));
     }
 
     #[test]
@@ -575,7 +595,7 @@ mod match_test {
         let wallet1_var = WalletVar::new_witness(cs.clone(), || Ok(wallet1)).unwrap();
         let wallet2_var = WalletVar::new_witness(cs.clone(), || Ok(wallet2)).unwrap();
 
-        let mut res = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
+        let res = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
             .unwrap()
             .value()
             .unwrap();
@@ -584,15 +604,24 @@ mod match_test {
         assert!(has_nonzero_match(&res.matches2));
         
         // Sort by mint
-        res.matches1.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
-        res.matches2.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
+        let mut matches1 = res.matches1
+            .iter()
+            .filter(|match_res| match_res.mint != 0)
+            .collect::<Vec<&Match>>();
+        matches1.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
+
+        let mut matches2 = res.matches2
+            .iter()
+            .filter(|match_res| match_res.mint != 0)
+            .collect::<Vec<&Match>>();
+        matches2.sort_by(|a, b| a.mint.partial_cmp(&b.mint).unwrap());
 
         // wallet 1 is selling quote currency, wallet 2 is buying quote currency
-        assert!(res.matches1[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Sell }));
-        assert!(res.matches1[1].eq(&Match { mint: quote_mint, amount: 20, side: OrderSide::Buy }));
+        assert!(matches1[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Sell }));
+        assert!(matches1[1].eq(&Match { mint: quote_mint, amount: 20, side: OrderSide::Buy }));
 
-        assert!(res.matches2[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Buy }));
-        assert!(res.matches2[1].eq(&Match { mint: quote_mint, amount: 20, side: OrderSide::Sell }));
+        assert!(matches2[0].eq(&Match { mint: base_mint, amount: 2, side: OrderSide::Buy }));
+        assert!(matches2[1].eq(&Match { mint: quote_mint, amount: 20, side: OrderSide::Sell }));
     }
 
 }
@@ -602,13 +631,13 @@ mod proof_test {
     use ark_bn254::Bn254;
     use ark_ff::{PrimeField};
     use ark_groth16::{create_random_proof, generate_random_parameters, prepare_verifying_key, verify_proof};
-    use ark_r1cs_std::{prelude::{AllocVar, EqGadget, Boolean}, R1CSVar, uint64::UInt64};
+    use ark_r1cs_std::{prelude::{AllocVar, EqGadget, Boolean}, uint64::UInt64};
     use ark_relations::r1cs::{ConstraintSynthesizer, SynthesisError};
     use rand::rngs::OsRng;
-    use std::{cell::RefCell, marker::PhantomData};
+    use std::marker::PhantomData;
 
     use crate::circuits::types::{Wallet, Order, OrderSide, WalletVar};
-    use super::{MatchGadget, MatchResultVariable};
+    use super::MatchGadget;
 
     #[derive(Clone)]
     struct DummyCircuit<F: PrimeField> {

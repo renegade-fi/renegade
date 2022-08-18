@@ -3,6 +3,12 @@ use std::borrow::Borrow;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{prelude::AllocVar, R1CSVar, uint64::UInt64, uint8::UInt8};
 use ark_relations::r1cs::{SynthesisError, Namespace};
+use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+use num_bigint::BigUint;
+
+use crate::circuits::constants::{MAX_BALANCES, MAX_ORDERS};
+
+use super::{SystemField, poseidon::PoseidonSpongeWrapperVar};
 
 /**
  * Groups types definitions common to the circuit module
@@ -13,6 +19,66 @@ use ark_relations::r1cs::{SynthesisError, Namespace};
 pub struct Wallet {
     pub balances: Vec<Balance>,
     pub orders: Vec<Order>
+}
+
+impl Wallet {
+    // Poseidon hash of the wallet
+    pub fn hash(&self) -> BigUint {
+        // Convert wallet to a vector of u64
+        let mut hash_input = Vec::<u64>::new();
+        for balance in self.balances.iter() {
+            hash_input.append(&mut vec![balance.amount, balance.mint])
+        }
+
+        // Append empty balances up to MAX_BALANCES
+        for _ in 0..(MAX_BALANCES - self.balances.len()) {
+            hash_input.append(&mut vec![0, 0])
+        }
+
+        for order in self.orders.iter() {
+            hash_input.append(&mut vec![order.base_mint, order.quote_mint, order.side.clone() as u64, order.price, order.amount]);
+        }
+
+        // Append empty orders up to MAX_ORDERS
+        for _ in 0..(MAX_ORDERS - self.orders.len()) {
+            hash_input.append(&mut vec![0, 0, 0, 0, 0])
+        }
+
+        let mut sponge = PoseidonSponge::<SystemField>::new(&PoseidonSpongeWrapperVar::default_params());
+        for input in hash_input.iter() {
+            sponge.absorb(input)
+        }
+
+        let sponge_out = sponge.squeeze_field_elements::<SystemField>(1)[0];
+
+        // Convert to BigUInt
+        sponge_out.into()
+ 
+    }
+
+    // Poseidon hash of the orders only 
+    pub fn hash_orders(&self) -> BigUint {
+        // Convert wallet to a vector of u64
+        let mut hash_input = Vec::<u64>::new();
+        for order in self.orders.iter() {
+            hash_input.append(&mut vec![order.base_mint, order.quote_mint, order.side.clone() as u64, order.price, order.amount]);
+        }
+
+        // Append empty orders up to MAX_ORDERS
+        for _ in 0..(MAX_ORDERS - self.orders.len()) {
+            hash_input.append(&mut vec![0, 0, 0, 0, 0])
+        }
+
+        let mut sponge = PoseidonSponge::<SystemField>::new(&PoseidonSpongeWrapperVar::default_params());
+        for input in hash_input.iter() {
+            sponge.absorb(input)
+        }
+
+        let sponge_out = sponge.squeeze_field_elements::<SystemField>(1)[0];
+
+        // Convert to BigUInt
+        sponge_out.into()
+    }
 }
 
 #[derive(Debug)]
@@ -33,19 +99,33 @@ impl<F: PrimeField> AllocVar<Wallet, F> for WalletVar<F> {
         f().and_then(|wallet| {
             let cs = cs.into();
             let wallet: &Wallet = wallet.borrow();
-            let balances: Vec<BalanceVar<F>> = wallet.balances
+            let mut balances: Vec<BalanceVar<F>> = wallet.balances
                 .iter()
                 .map(|balance| {
                     BalanceVar::new_variable(cs.clone(), || Ok(balance), mode)
                 })
                 .collect::<Result<Vec<BalanceVar<F>>, SynthesisError>>()?;
+
+            // Pad to the size of MAX_BALANCES with empty balances
+            for _ in 0..(MAX_BALANCES - wallet.balances.len()) {
+                balances.push(
+                    BalanceVar::new_variable(cs.clone(), || Ok(Balance::default()), mode)?
+                )
+            }
             
-            let orders: Vec<OrderVar<F>> = wallet.orders
+            let mut orders: Vec<OrderVar<F>> = wallet.orders
                 .iter()
                 .map(|order| {
                     OrderVar::new_variable(cs.clone(), || Ok(order), mode)
                 })
                 .collect::<Result<Vec<OrderVar<F>>, SynthesisError>>()?;
+            
+            // Pad to the size of MAX_ORDERS with empty orders
+            for _ in 0..(MAX_ORDERS - wallet.orders.len()) {
+                orders.push(
+                    OrderVar::new_variable(cs.clone(), || Ok(Order::default()), mode)?
+                )
+            }
 
             Ok(Self { balances, orders })
         }) 
@@ -81,10 +161,10 @@ impl<F: PrimeField> R1CSVar<F> for WalletVar<F> {
 }
 
 // Represents a balance tuple and its analog in the constraint system
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Balance {
-    mint: u64,
-    amount: u64 
+    pub mint: u64,
+    pub amount: u64 
 }
 
 #[derive(Debug)]
@@ -140,7 +220,7 @@ impl<F: PrimeField> R1CSVar<F> for BalanceVar<F> {
 }
 
 // Represents an order and its analog in the consraint system
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Order {
     pub quote_mint: u64,
     pub base_mint: u64,
@@ -153,6 +233,28 @@ pub struct Order {
 pub enum OrderSide {
     Buy = 0,
     Sell 
+}
+
+// Default for an empty order is buy
+impl Default for OrderSide {
+    fn default() -> Self {
+        OrderSide::Buy
+    }
+}
+
+impl From<OrderSide> for u64 {
+    fn from(order_side: OrderSide) -> Self {
+        u8::from(order_side) as u64
+    }
+}
+
+impl From<OrderSide> for u8 {
+    fn from(order_side: OrderSide) -> Self {
+        match order_side {
+            OrderSide::Buy => { 0 }
+            OrderSide::Sell => { 1 }
+        }
+    }
 }
 
 #[derive(Debug)]

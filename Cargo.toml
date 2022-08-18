@@ -8,6 +8,7 @@ edition = "2018"
 [dependencies]
 ark-bn254 = { version = "0.3" }
 ark-crypto-primitives = { version = "0.3", features = ["r1cs"] }
+ark-ec = { version = "0.3" }
 ark-ed-on-bn254 = { version = "0.3" }
 ark-ff = { version = "0.3" }
 ark-groth16 = { version = "0.3" }

@@ -11,12 +11,8 @@ use ark_sponge::{
     },
 };
 
-use super::{types::WalletVar, constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3}, wallet_match::{MatchVariable, MatchResultVariable}};
+use super::{types::WalletVar, constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3}, wallet_match::MatchResultVariable};
 
-
-/**
- * Groups logic for the implementation of a Merkle hash
- */
 
 /**
  * Helpers
@@ -203,67 +199,66 @@ impl<F: PrimeField> PoseidonVectorHashGadget<F> {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use ark_r1cs_std::{prelude::{AllocVar, EqGadget}, fields::fp::FpVar, R1CSVar};
     use ark_relations::r1cs::{ConstraintSystem, SynthesisError};
-    use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
 
-    use std::result::Result;
-    use crate::circuits::{types::{Wallet, Order, OrderSide, WalletVar}, wallet_match::SystemField, poseidon::OrderHashInput};
+    use crate::circuits::{types::{Wallet, Balance, Order, OrderSide, WalletVar}, SystemField, poseidon::OrderHashInput};
 
-    use super::{PoseidonSpongeWrapperVar, PoseidonVectorHashGadget};
-
-    /**
-     * Helpers
-     */
-    fn wallet_to_u64_slice(wallet: &Wallet) -> Vec<u64> {
-        let mut result = Vec::<u64>::new();
-        for order in &wallet.orders {
-            result.append(&mut vec![order.base_mint, order.quote_mint, order.side.clone() as u64, order.price, order.amount]);
-        }
-
-        result
-    }
-
-    /**
-     * Tests
-     */
+    use super::{WalletHashInput, PoseidonSpongeWrapperVar, PoseidonVectorHashGadget};
 
     #[test]
-    fn test_constraint_hash() {
-        // Build a standard hash, as well as a hash in a constraint system and hash a wallet
+    fn test_order_hash() {
         let wallet = Wallet {
-            balances: vec![],
-            orders: vec![
-                Order { quote_mint: 1, base_mint: 2, side: OrderSide::Buy, price: 10, amount: 50 }
-            ]
+            balances: vec![ Balance { mint: 1, amount: 10 } ],
+            orders: vec![ Order { quote_mint: 1, base_mint: 2, side: OrderSide::Buy, amount: 1, price: 10 } ]
         };
 
-        // Build the sponge output outside of a constraint system
-        let mut sponge = PoseidonSponge::<SystemField>::new(&PoseidonSpongeWrapperVar::default_params());
-        let hash_inputs = wallet_to_u64_slice(&wallet);
-        for input in hash_inputs.iter() {
-            sponge.absorb(input)
-        }
+        let expected_hash = wallet.hash_orders();
 
-        let sponge_out = sponge.squeeze_field_elements::<SystemField>(1);
-
-        // Build a sponge gadget inside a constraint system
+        // Build a constraint system and hash within the cs
         let cs = ConstraintSystem::<SystemField>::new_ref();
-        let mut constraint_sponge = PoseidonSpongeWrapperVar::new(cs.clone());
 
-        let wallet_var = WalletVar::new_witness(cs.clone(), || Ok(wallet)).unwrap();
-        let constraint_hash_input = Result::<OrderHashInput<SystemField>, SynthesisError>::from(&wallet_var).unwrap();
+        let wallet_var = WalletVar::new_input(cs.clone(), || Ok(wallet)).unwrap();
 
-        let res = PoseidonVectorHashGadget::evaluate(&constraint_hash_input, &mut constraint_sponge).unwrap();
+        let mut wallet_hasher = PoseidonSpongeWrapperVar::new(cs.clone());
+        let hash_input = Result::<OrderHashInput<SystemField>, SynthesisError>::from(&wallet_var).unwrap();
+
+        let wallet_hash = PoseidonVectorHashGadget::evaluate(&hash_input, &mut wallet_hasher).unwrap();
 
         assert!(
-            res.is_eq(&FpVar::Constant(sponge_out[0]))
+            wallet_hash.is_eq(&FpVar::Constant(SystemField::from(expected_hash)))
                 .unwrap()
                 .value()
                 .unwrap()
-        );  
+        );
+    }
+
+    #[test]
+    fn test_wallet_hash() {
+        let wallet = Wallet {
+            balances: vec![ Balance { mint: 1, amount: 10 } ],
+            orders: vec![ Order { quote_mint: 1, base_mint: 2, side: OrderSide::Buy, amount: 1, price: 10 } ]
+        };
+
+        let expected_hash = wallet.hash();
+
+        // Build a constraint system and hash within the cs
+        let cs = ConstraintSystem::<SystemField>::new_ref();
+
+        let wallet_var = WalletVar::new_input(cs.clone(), || Ok(wallet)).unwrap();
+
+        let mut wallet_hasher = PoseidonSpongeWrapperVar::new(cs.clone());
+        let hash_input = Result::<WalletHashInput<SystemField>, SynthesisError>::from(&wallet_var).unwrap();
+
+        let wallet_hash = PoseidonVectorHashGadget::evaluate(&hash_input, &mut wallet_hasher).unwrap();
+
+        assert!(
+            wallet_hash.is_eq(&FpVar::Constant(SystemField::from(expected_hash)))
+                .unwrap()
+                .value()
+                .unwrap()
+        )
     }
 }

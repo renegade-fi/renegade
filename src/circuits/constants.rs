@@ -2,6 +2,12 @@ use ark_ff::PrimeField;
 use num_bigint::BigUint;
 
 /**
+ * MAX_ORDERS and MAX_BALANCES define the maximum number of balances and orders a wallet may have
+ */
+pub const MAX_ORDERS: usize = 2;
+pub const MAX_BALANCES: usize = 2;
+
+/**
  * Below are:
  *     1. The MDS matrix (https://en.wikipedia.org/wiki/MDS_matrix) used in between SBoxes
  *     2. The round constants added to the input of each round
@@ -373,8 +379,7 @@ fn field_element_from_hex_string<F: PrimeField> (byte_string: &[u8]) -> F {
 
 #[cfg(test)]
 mod test {
-    use crate::circuits::wallet_match::SystemField;
-
+    use crate::circuits::SystemField;
     use super::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3};
 
     #[test]

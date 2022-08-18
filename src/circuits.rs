@@ -1,8 +1,13 @@
-use std::{cell::{RefCell, Ref}, marker::PhantomData, alloc::System, rc::Rc};
+use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
+use ark_bn254::{Parameters, Fr as Bn254Fr};
+use ark_ec::{bn::Bn, PairingEngine};
 use ark_ff::PrimeField;
-use ark_r1cs_std::{prelude::{AllocVar, Boolean, EqGadget}, uint128::UInt128, R1CSVar, ToBitsGadget, uint64::UInt64};
+use ark_groth16::{Proof, create_random_proof, ProvingKey};
+use ark_r1cs_std::{prelude::{AllocVar, EqGadget}, R1CSVar, ToBitsGadget, uint64::UInt64, fields::fp::FpVar};
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError, ConstraintSynthesizer};
+use num_bigint::{BigUint, ToBigUint};
+use rand::rngs::OsRng;
 
 use self::{types::{WalletVar, Wallet}, wallet_match::{MatchGadget, MatchResult}, poseidon::{MatchHashInput, PoseidonSpongeWrapperVar, PoseidonVectorHashGadget, WalletHashInput}};
 
@@ -15,10 +20,16 @@ pub mod wallet_match;
 /**
  * Constants
  */
-pub const MAX_ORDERS: usize = 20;
-pub const MAX_BALANCES: usize = 20;
-pub const MAX_MATCHES: usize = MAX_ORDERS * MAX_ORDERS;
-pub type SystemField = ark_ed_on_bn254::Fr;
+pub type SystemField = Bn254Fr;
+pub type SystemPairingEngine = Bn<Parameters>;
+
+/**
+ * A helper trait common across all circuits we use to abstract the inner workings
+ * of proof generation. I.e. proving/verifying key setup, etc.
+ */
+pub trait RelayerProof {
+    // TODO
+}
 
 /**
  * ValidMatch has the following function
@@ -32,6 +43,7 @@ pub type SystemField = ark_ed_on_bn254::Fr;
  *      2. To hide the details of field selection from the consumers of this module
  */
 
+#[derive(Clone, Debug)]
 pub struct ValidMatchCircuit<> {
     match_cell: Rc<RefCell<Option<MatchResult>>>,
     match_hash_cell: Rc<RefCell<Option<u64>>>,
@@ -44,8 +56,8 @@ impl ValidMatchCircuit {
     pub fn new(
         wallet1: Wallet, 
         wallet2: Wallet,
-        wallet1_hash: u64,
-        wallet2_hash: u64,
+        wallet1_hash: BigUint,
+        wallet2_hash: BigUint,
     ) -> Self {
         let match_cell = Rc::new(RefCell::new(None));
         let match_hash_cell = Rc::new(RefCell::new(None));
@@ -70,35 +82,43 @@ impl ValidMatchCircuit {
             .generate_constraints(cs)
     }
 
+    // Creates a groth16 proof of the ValidMatch circuit
+    pub fn create_proof<E: PairingEngine<Fr = SystemField>>(&self, proving_key: &ProvingKey<E>) -> Result<Proof<E>, SynthesisError> {
+        let circuit = self.wrapped_type.take().clone();
+        let mut rng = OsRng{};
+
+        create_random_proof(circuit, &proving_key, &mut rng)
+    }
+
     // Returns the matches produced by circuit evaluation and caches the result
-    pub fn get_matches(&mut self) -> &Option<MatchResult> {
+    pub fn get_matches(&mut self) -> Option<MatchResult> {
         // Lift the value to the wrapper struct; allow it to be consumed multiple times
         if self.match_result.is_none() {
             self.match_result = self.match_cell.take()
         }
 
-        &self.match_result
+        self.match_result.clone()
     }
 
     // Returns the hash of the matches produced by circuit evaluation and caches the result
-    pub fn get_match_hash(&mut self) -> &Option<u64> {
+    pub fn get_match_hash(&mut self) -> Option<u64> {
         // Lift the value to the wrapper struct; allow it to be consumed multiple times
         if self.match_hash.is_none() {
             self.match_hash = self.match_hash_cell.take();
         }
 
-        &self.match_hash
+        self.match_hash.clone()
     }
 }
 
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct ValidMatchCircuitImpl<F: PrimeField> {
     // Input variables
     wallet1: Wallet,
     wallet2: Wallet,
-    wallet1_hash: u64,
-    wallet2_hash: u64,
+    wallet1_hash: BigUint,
+    wallet2_hash: BigUint,
 
     // Extracted variables
     pub match_cell: Rc<RefCell<Option<MatchResult>>>,
@@ -113,8 +133,8 @@ impl<F: PrimeField> Default for ValidMatchCircuitImpl<F> {
         Self {
             wallet1: Wallet::default(),
             wallet2: Wallet::default(),
-            wallet1_hash: 0,
-            wallet2_hash: 0,
+            wallet1_hash: 0.to_biguint().unwrap(),
+            wallet2_hash: 0.to_biguint().unwrap(),
             match_cell: Rc::new(RefCell::new(None)),
             match_hash_cell: Rc::new(RefCell::new(None)),
             _phantom: PhantomData
@@ -126,8 +146,8 @@ impl<F: PrimeField> ValidMatchCircuitImpl<F> {
     fn new(
         wallet1: Wallet,
         wallet2: Wallet,
-        wallet1_hash: u64,
-        wallet2_hash: u64,
+        wallet1_hash: BigUint,
+        wallet2_hash: BigUint,
         match_cell: Rc<RefCell<Option<MatchResult>>>,
         match_hash_cell: Rc<RefCell<Option<u64>>>
     ) -> Self {
@@ -149,17 +169,15 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for ValidMatchCircuitImpl<F> {
         cs: ConstraintSystemRef<F>
     ) -> Result<(), SynthesisError> {
         // Allocate the public inputs
-        let uint_hash1 = UInt64::new_input(
+        let expected_hash_1 = FpVar::new_input(
             cs.clone(), 
-            || Ok(&self.wallet1_hash)
+            || Ok(F::from(self.wallet1_hash.clone()))
         )?;
-        let expected_hash_1 = Boolean::le_bits_to_fp_var(&uint_hash1.to_bits_le())?;
 
-        let uint_hash2 = UInt64::new_input(
+        let expected_hash_2 = FpVar::new_input(
             cs.clone(), 
-            || Ok(&self.wallet2_hash)
+            || Ok(F::from(self.wallet2_hash.clone()))
         )?;
-        let expected_hash_2 = Boolean::le_bits_to_fp_var(&uint_hash2.to_bits_le())?;
 
         // Allocate the private inputs
         let wallet1_var = WalletVar::new_witness(
@@ -197,11 +215,11 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for ValidMatchCircuitImpl<F> {
         wallet2_hash.enforce_equal(&expected_hash_2)?;
 
         // Extract the match hash and the matches result
-        self.match_cell.replace(Some(matches_result.value()?));
+        self.match_cell.replace(matches_result.value().ok());
         self.match_hash_cell.replace(
-            Some(
-                UInt64::from_bits_le(&match_hash.to_bits_le()?[0..64]).value()?
-            )
+            UInt64::from_bits_le(&match_hash.to_bits_le()?[0..64])
+                .value()
+                .ok()
         );
         
         Ok(())
@@ -212,30 +230,14 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for ValidMatchCircuitImpl<F> {
  * Tests
  */
 #[cfg(test)]
-mod test {
+mod valid_match_test {
+    use ark_groth16::{generate_random_parameters, prepare_verifying_key, verify_proof};
     use ark_relations::r1cs::ConstraintSystem;
-    use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+    use rand::rngs::OsRng;
 
-    use super::{types::{Wallet, Order, OrderSide}, poseidon::PoseidonSpongeWrapperVar, SystemField, ValidMatchCircuit};
+    use crate::circuits::constants::MAX_ORDERS;
 
-    // Helper to hash a wallet
-    fn compute_wallet_hash(wallet: &Wallet) -> u64 {
-        // Convert wallet to u64
-        let mut hash_input = Vec::<u64>::new();
-        for order in &wallet.orders {
-            hash_input.append(&mut vec![order.base_mint, order.quote_mint, order.side.clone() as u64, order.price, order.amount]);
-        }
-
-        let mut sponge = PoseidonSponge::<SystemField>::new(&PoseidonSpongeWrapperVar::default_params());
-        for input in hash_input.iter() {
-            sponge.absorb(input)
-        }
-
-        let sponge_out = sponge.squeeze_field_elements::<SystemField>(1);
-
-        // Convert to u64
-        sponge_out[0].0.0[0]
-    }
+    use super::{types::{Wallet, Order, OrderSide, Balance}, SystemField, ValidMatchCircuit, ValidMatchCircuitImpl, SystemPairingEngine, constants::MAX_BALANCES};
 
     #[test]
     fn test_extract_matches() {
@@ -259,17 +261,61 @@ mod test {
         };
 
         // Compute the hashes of the wallets for input
-        let wallet1_hash = compute_wallet_hash(&wallet1);
-        let wallet2_hash = compute_wallet_hash(&wallet2);
+        let wallet1_hash = wallet1.hash();
+        let wallet2_hash = wallet2.hash();
 
         // Create a constraint system
         let cs = ConstraintSystem::new_ref();
 
         // Run the circuit and generate its constraints
-        let circuit = ValidMatchCircuit::new(wallet1, wallet2, wallet1_hash, wallet2_hash);
+        let mut circuit = ValidMatchCircuit::new(wallet1, wallet2, wallet1_hash, wallet2_hash);
         circuit.generate_constraints(cs).unwrap();
 
         let matches = circuit.get_matches().unwrap();
-        assert!(matches.matches1.len() == 2);
+        assert!(matches.matches1.len() == 2 * MAX_ORDERS * MAX_ORDERS);
+    }
+
+    #[test]
+    fn test_prove() {
+        // Build the wallets
+        let wallet1 = Wallet {
+            balances: vec![ Balance { mint: 1, amount: 70 } ],
+            orders: vec![
+                Order { 
+                    quote_mint: 1, base_mint: 2, side: OrderSide::Buy, amount: 5, price: 10,
+                }
+            ]
+        };
+
+        let wallet2 = Wallet {
+            balances: vec![ Balance { mint: 2, amount: 3 }],
+            orders: vec![
+                Order {
+                    quote_mint: 1, base_mint: 2, side: OrderSide::Sell, amount: 3, price: 8,
+                }
+            ]
+        };
+
+        let wallet1_hash = wallet1.hash();
+        let wallet2_hash = wallet2.hash();
+    
+        // Build and setup the constraint system and proof system keys
+        let circuit = ValidMatchCircuit::new(wallet1.clone(), wallet2.clone(), wallet1_hash.clone(), wallet2_hash.clone());
+
+        let mut rng = OsRng{};
+        let proving_key = generate_random_parameters::<SystemPairingEngine, _, _>(
+            ValidMatchCircuitImpl::default(), &mut rng
+        ).unwrap();
+
+        let proof = circuit.create_proof(&proving_key).unwrap();
+
+        // Verify the proof and assert validity
+        let verifying_key = prepare_verifying_key(&proving_key.vk);
+        let verification_result = verify_proof(&verifying_key, &proof, &vec![
+            SystemField::from(wallet1_hash.clone()),
+            SystemField::from(wallet2_hash.clone()),
+        ]).unwrap();
+
+        assert!(verification_result)
     }
 }
