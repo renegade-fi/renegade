@@ -191,11 +191,9 @@ impl<F: PrimeField> PoseidonVectorHashGadget<F> {
             poseidon_sponge.sponge.absorb(next_elem)?;
         }
 
-        Ok(
-            poseidon_sponge.sponge.squeeze_field_elements(1)?
-                .pop()
-                .ok_or(SynthesisError::AssignmentMissing)?
-        )
+        poseidon_sponge.sponge.squeeze_field_elements(1)?
+            .pop()
+            .ok_or(SynthesisError::AssignmentMissing)
     }
 }
 

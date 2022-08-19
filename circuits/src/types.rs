@@ -191,7 +191,7 @@ impl<F: PrimeField> AllocVar<Balance, F> for BalanceVar<F> {
             )?;
 
             let amount = UInt64::new_variable(
-                cs.clone(), 
+                cs, 
                 || Ok(balance.borrow().amount), 
                 mode
             )?;
@@ -307,7 +307,7 @@ impl<F: PrimeField> AllocVar<Order, F> for OrderVar<F> {
             )?;
 
             let amount = UInt64::new_variable(
-                cs.clone(), 
+                cs, 
                 || Ok(order.borrow().amount), 
                 mode
             )?;
@@ -362,6 +362,12 @@ impl<F: PrimeField> MatchResultVariable<F> {
     pub fn new() -> Self {
         Self { matches1: Vec::new(), matches2: Vec::new() }
     } 
+}
+
+impl<F: PrimeField> Default for MatchResultVariable<F> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<F: PrimeField> R1CSVar<F> for MatchResultVariable<F> {

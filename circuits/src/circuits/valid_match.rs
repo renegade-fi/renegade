@@ -79,10 +79,10 @@ impl ValidMatchCircuit {
 
     // Creates a groth16 proof of the ValidMatch circuit
     pub fn create_proof<E: PairingEngine<Fr = SystemField>>(&self, proving_key: &ProvingKey<E>) -> Result<Proof<E>, SynthesisError> {
-        let circuit = self.wrapped_type.take().clone();
+        let circuit = self.wrapped_type.take();
         let mut rng = OsRng{};
 
-        create_random_proof(circuit, &proving_key, &mut rng)
+        create_random_proof(circuit, proving_key, &mut rng)
     }
 
     // Returns the matches produced by circuit evaluation and caches the result
@@ -102,7 +102,7 @@ impl ValidMatchCircuit {
             self.match_hash = self.match_hash_cell.take();
         }
 
-        self.match_hash.clone()
+        self.match_hash
     }
 }
 
@@ -200,7 +200,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for ValidMatchCircuitImpl<F> {
 
         let wallet1_hash = PoseidonVectorHashGadget::evaluate(&wallet1_hash_input, &mut wallet1_hasher)?;
 
-        let mut wallet2_hasher = PoseidonSpongeWrapperVar::new(cs.clone());
+        let mut wallet2_hasher = PoseidonSpongeWrapperVar::new(cs);
         let wallet2_hash_input = Result::<WalletHashInput<F>, SynthesisError>::from(&wallet2_var)?;
 
         let wallet2_hash = PoseidonVectorHashGadget::evaluate(&wallet2_hash_input, &mut wallet2_hasher)?;
