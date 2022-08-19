@@ -89,39 +89,3 @@ pub struct HandshakeMessage {
 pub enum HandshakeOperation {
     Mpc
 }
-
-#[cfg(test)]
-mod tests {
-    use serde_json;
-    use std::{str::FromStr};
-    use libp2p::{identity, Multiaddr};
-    use crate::gossip::types::{PeerInfo, WrappedPeerId};
-
-    use super::HeartbeatMessage;
-
-    const DUMMY_MULTIADDR: &str = "/ip4/127.0.0.1/tcp/5000";
-
-    fn create_mock_heartbeat() -> HeartbeatMessage {
-        let local_key = identity::Keypair::generate_ed25519();
-        let local_peer_id = WrappedPeerId(local_key.public().to_peer_id());
-
-        let known_peers = vec![
-            PeerInfo::new(
-                local_peer_id, 
-                Multiaddr::from_str(DUMMY_MULTIADDR).expect("Cannot create multiaddr")
-            ) 
-        ];
-
-        HeartbeatMessage::new(known_peers)    
-    }
-
-    #[test]
-    fn test_heartbeat_serde() {
-        // Mock a heartbeat, serialize and deserialize
-        let mock_heartbeat = create_mock_heartbeat();
-        let serialized = serde_json::to_string(&mock_heartbeat).expect("serialization error");
-        let deserialized: HeartbeatMessage = serde_json::from_str(&serialized[..]).expect("deserialization error");
-
-        assert_eq!(1, deserialized.known_peers.len());
-    }
-}

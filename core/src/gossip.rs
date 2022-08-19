@@ -8,7 +8,7 @@ pub(crate) mod types;
 // This file groups logic for the package-public gossip interface
 use crossbeam::channel::{Sender, Receiver};
 use std::{
-    error::Error,
+    error::Error, thread,
 };
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
@@ -63,7 +63,7 @@ impl GossipServer {
 
     // Joins execution of calling thread to the execution of the GossipServer's
     // various workers
-    pub fn join(self) {
-        self.heartbeat_executor.join();
+    pub fn join(self) -> thread::Result<()> {
+        self.heartbeat_executor.join()
     }
 }

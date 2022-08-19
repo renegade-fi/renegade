@@ -18,6 +18,8 @@ use std::{
 use tokio::{
     sync::mpsc::{UnboundedReceiver},
 };
+use tracing::{event, Level};
+
 
 use crate::{
     gossip::{
@@ -172,9 +174,14 @@ impl NetworkManager {
                     .send_request(&peer_id, message);
             },
             GossipOutbound::Response { channel, message } => {
-                swarm.behaviour_mut()
+                let res = swarm.behaviour_mut()
                     .request_response
                     .send_response(channel, message);
+
+                // Log errors on response
+                if let Err(msg) = res {
+                    event!(Level::DEBUG, message = ?msg, "error sending response");
+                }
             },
 
             // Register a new peer in the distributed routing tables
@@ -221,7 +228,7 @@ impl NetworkManager {
                     GossipRequest::Heartbeat(heartbeat_message) => {
                         heartbeat_work_queue.send(
                             HeartbeatExecutorJob::HandleHeartbeatReq { peer_id: WrappedPeerId(peer_id), message: heartbeat_message, channel }
-                        );
+                        ).unwrap();
                     },
                     GossipRequest::Handshake(handshake_message) => {
                         handshake_work_queue.send(
@@ -230,7 +237,7 @@ impl NetworkManager {
                                 message: handshake_message, 
                                 response_channel: channel 
                             }
-                        );
+                        ).unwrap();
                     }
                 }
             },
@@ -241,7 +248,7 @@ impl NetworkManager {
                     GossipResponse::Heartbeat(heartbeat_message) => {
                         heartbeat_work_queue.send(
                             HeartbeatExecutorJob::HandleHeartbeatResp { peer_id: WrappedPeerId(peer_id), message: heartbeat_message }
-                        );
+                        ).unwrap();
                     },
                     GossipResponse::Handshake() => { }
                 }

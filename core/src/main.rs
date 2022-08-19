@@ -4,6 +4,7 @@ mod handshake;
 mod state;
 
 use crossbeam::channel;
+use std::error::Error;
 use tokio::sync::mpsc;
 
 use crate::{
@@ -17,7 +18,7 @@ use crate::{
 };
 
 #[tokio::main]
-async fn main() -> Result<(), String> {
+async fn main() -> Result<(), Box<dyn Error>> {
     // Parse command line arguments
     let args = config::parse_command_line_args().expect("error parsing command line args");
     println!("Relayer running with\n\t version: {}\n\t port: {}", args.version, args.port);
@@ -59,8 +60,10 @@ async fn main() -> Result<(), String> {
     );
     
     // Await termination of the submodules
-    network_manager.join();
-    gossip_server.join();
-    handshake_manager.join();
-    Err("Relayer terminated...".to_string())
+    network_manager.join().unwrap();
+    gossip_server.join().unwrap();
+    handshake_manager.join().unwrap();
+
+    // Unreachable
+    Ok(())
 }

@@ -16,7 +16,6 @@ use std::{
     thread, 
 };
 use tokio::sync::mpsc::{
-    error::SendError,
     UnboundedSender,
 };
 
@@ -125,7 +124,7 @@ impl HeartbeatProtocolExecutor {
 
     // Joins execution of the calling thread to the worker thread
     pub fn join(self) -> thread::Result<()> {
-        self.heartbeat_timer.join();
+        self.heartbeat_timer.join()?;
         self.thread_handle.join()
     }
 
@@ -156,7 +155,7 @@ impl HeartbeatProtocolExecutor {
                     );
                     network_channel.send(
                         GossipOutbound::Response { channel, message: heartbeat_resp }
-                    );
+                    ).unwrap();
 
                     // Merge newly discovered peers into local state
                     Self::merge_peers_from_message(
@@ -266,7 +265,8 @@ impl HeartbeatProtocolExecutor {
 
                 // Register the newly discovered peer with the network manager
                 // so that we can dial it on outbound heartbeats
-                network_channel.send(GossipOutbound::NewAddr { peer_id: *replica, address: replica_info.get_addr() });
+                network_channel.send(GossipOutbound::NewAddr { peer_id: *replica, address: replica_info.get_addr() })
+                    .unwrap();
             } else {
                 // Ignore this peer if peer_info was not sent for it,
                 // this is effectively useless to the local relayer without peer_info
@@ -288,7 +288,7 @@ impl HeartbeatProtocolExecutor {
         network_channel: UnboundedSender<GossipOutbound>,
         peer_expiry_cache: SharedLRUCache,
         global_state: GlobalRelayerState
-    ) -> Result<(), SendError<GossipOutbound>> {
+    ) {
         // Send heartbeat requests
         let heartbeat_message = GossipRequest::Heartbeat(
             Self::build_heartbeat_message(global_state.clone())
@@ -304,12 +304,11 @@ impl HeartbeatProtocolExecutor {
 
                 network_channel.send(
                     GossipOutbound::Request { peer_id: *peer_id, message: heartbeat_message.clone() }
-                );
+                ).unwrap();
             }
         } // locked_peer_info releases its read lock here
 
         Self::expire_peers(local_peer_id, peer_expiry_cache, global_state);
-        Ok(())
     }
 
     // Expires peers that have timed out due to consecutive failed heartbeats
@@ -399,7 +398,7 @@ impl HeartbeatTimer {
         wait_period: Duration,
     ) {
         loop {
-            job_queue.send(HeartbeatExecutorJob::ExecuteHeartbeats);
+            job_queue.send(HeartbeatExecutorJob::ExecuteHeartbeats).unwrap();
             thread::sleep(wait_period);
         }
     }

@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
     thread::{self, JoinHandle}, time::Duration
 };
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::{UnboundedSender};
 
 use crate::{
     gossip::{types::WrappedPeerId, 
@@ -56,7 +56,7 @@ impl HandshakeManager {
         // Start a timer thread
         let timer = HandshakeTimer::new(thread_pool.clone(), global_state, network_channel.clone());
         let relay = HandshakeJobRelay::new(
-            thread_pool.clone(), job_receiver, network_channel
+            thread_pool, job_receiver, network_channel
         );
 
         HandshakeManager { timer, relay } 
@@ -64,7 +64,7 @@ impl HandshakeManager {
 
     // Joins execution of the calling thread to the HandshakeManager's execution
     pub fn join(self) -> thread::Result<()> {
-        self.timer.join();
+        self.timer.join()?;
         self.relay.join()
     }
 
@@ -74,14 +74,15 @@ impl HandshakeManager {
         network_channel: UnboundedSender<GossipOutbound>
     ) {
         // Send a handshake message to the given peer_id
+        // Panic if channel closed, no way to recover
         network_channel.send(
             GossipOutbound::Request { 
                 peer_id, 
                 message: GossipRequest::Handshake(
-                    HandshakeMessage { operation: HandshakeOperation::MPC }
+                    HandshakeMessage { operation: HandshakeOperation::Mpc }
                 )
             }
-        );
+        ).unwrap();
     }
 
     pub fn respond_handshake(
@@ -92,10 +93,12 @@ impl HandshakeManager {
             HandshakeExecutionJob::ProcessHandshakeRequest { 
                 response_channel, ..
             } => {
+                // Send the message and unwrap the result; the only error type possible
+                // is that the channel is closed, so panic the thread in that case
                 network_channel.send(GossipOutbound::Response { 
                     channel: response_channel, 
                     message: GossipResponse::Handshake()
-                });
+                }).unwrap();
             }
         }
     }
