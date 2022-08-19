@@ -51,9 +51,9 @@ impl GossipServer {
         let heartbeat_executor = HeartbeatProtocolExecutor::new(
             local_peer_id,
             network_sender,
-            heartbeat_worker_sender.clone(),
+            heartbeat_worker_sender,
             heartbeat_worker_receiver,
-            global_state.clone()
+            global_state
         );
 
         Ok(Self { 

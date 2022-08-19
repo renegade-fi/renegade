@@ -54,18 +54,6 @@ pub struct HeartbeatMessage {
     pub known_peers: HashMap<String, PeerInfo>,
 }
 
-impl HeartbeatMessage {
-    pub fn new(known_peers: Vec<PeerInfo>) -> Self {
-        let mut peer_info_map = HashMap::new();
-
-        for peer in known_peers.iter() {
-            peer_info_map.insert(peer.get_peer_id().to_string(), peer.clone());
-        }
-
-        Self { known_peers: peer_info_map, managed_wallets: HashMap::new() }
-    }
-}
-
 /**
  * Implements the derivation from global state to heartbeat message.
  * The state primitive passed around to workers is of type GlobalRelayerState;
@@ -99,13 +87,7 @@ pub struct HandshakeMessage {
 // Enumerates the different operations possible via handshake
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum HandshakeOperation {
-    MPC
-}
-
-impl HandshakeMessage {
-    pub fn new(operation: HandshakeOperation) -> Self {
-        HandshakeMessage { operation }
-    }
+    Mpc
 }
 
 #[cfg(test)]

@@ -16,9 +16,6 @@ use crate::gossip::types::{PeerInfo, WrappedPeerId};
  * Constants and Types
  */
 
-// The ideal of peers that manage a given wallet in tandum
-const TARGET_WALLET_REPLICAS: usize = 5;
-
 // A type alias for the thread-safe relayer state
 pub type GlobalRelayerState = Arc<RwLock<RelayerState>>;
 

@@ -56,7 +56,7 @@ impl HandshakeManager {
         // Start a timer thread
         let timer = HandshakeTimer::new(thread_pool.clone(), global_state, network_channel.clone());
         let relay = HandshakeJobRelay::new(
-            thread_pool.clone(), job_receiver, network_channel.clone()
+            thread_pool.clone(), job_receiver, network_channel
         );
 
         HandshakeManager { timer, relay } 
