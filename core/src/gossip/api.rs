@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use libp2p::{
-    request_response::ResponseChannel, Multiaddr, noise::Handshake,
+    request_response::ResponseChannel, Multiaddr,
 };
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;

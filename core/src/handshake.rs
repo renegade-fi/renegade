@@ -71,7 +71,6 @@ impl HandshakeManager {
     // Perform a handshake, dummy job for now
     pub fn perform_handshake(
         peer_id: WrappedPeerId, 
-        thread_pool: Arc<ThreadPool>,
         network_channel: UnboundedSender<GossipOutbound>
     ) {
         // Send a handshake message to the given peer_id
@@ -160,12 +159,11 @@ impl HandshakeTimer {
                         continue;
                     }
 
-                    let pool_copy = thread_pool.clone();
                     let sender_copy = network_channel.clone();
 
                     thread_pool.install(move || { 
                         HandshakeManager::perform_handshake(
-                            peer_info.get_peer_id(), pool_copy, sender_copy
+                            peer_info.get_peer_id(), sender_copy
                         );
                     })
                 }

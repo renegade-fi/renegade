@@ -1,4 +1,3 @@
-mod circuits;
 mod config;
 mod gossip;
 mod handshake;

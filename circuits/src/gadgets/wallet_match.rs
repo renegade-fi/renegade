@@ -1,4 +1,3 @@
-use ark_ed_on_bn254;
 use ark_ff::PrimeField;
 use ark_relations::r1cs::SynthesisError;
 use ark_r1cs_std::{
@@ -7,119 +6,25 @@ use ark_r1cs_std::{
         uint64::UInt64,
         uint8::UInt8
     },
-    R1CSVar, ToBitsGadget, prelude::EqGadget
+    ToBitsGadget, prelude::EqGadget
 };
 use std::{marker::PhantomData, borrow::Borrow};
 
-use crate::circuits::{
-    constants::{MAX_BALANCES, MAX_ORDERS},
-    gadgets::{
+use crate::{
+    constants::MAX_ORDERS,
+    gadgets::util::{
         GreaterThanEqGadget,
         MaskGadget,
         MinGadget
     },
     types::{
-        OrderSide,
-        WalletVar,
+        WalletVar, MatchResultVariable, MatchVariable,
     }
 };
 
 
 /**
  * Groups together logic for computing matches between wallets
- */
-
-/**
- * Constraint system variables
- */
-
-// The result of a matches operation and its constraint system analog
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MatchResult {
-    pub matches1: Vec<Match>,
-    pub matches2: Vec<Match>
-}
-
-#[derive(Clone, Debug)]
-pub struct MatchResultVariable<F: PrimeField> {
-    pub matches1: Vec<MatchVariable<F>>,
-    pub matches2: Vec<MatchVariable<F>>
-}
-
-impl<F: PrimeField> MatchResultVariable<F> {
-    pub fn new() -> Self {
-        Self { matches1: Vec::new(), matches2: Vec::new() }
-    } 
-}
-
-impl<F: PrimeField> R1CSVar<F> for MatchResultVariable<F> {
-    type Value = MatchResult;
-
-    fn cs(&self) -> ark_relations::r1cs::ConstraintSystemRef<F> {
-        self.matches1[0].cs()
-    } 
-
-    fn is_constant(&self) -> bool {
-        self.matches1[0].is_constant()
-    }
-
-    fn value(&self) -> Result<Self::Value, SynthesisError> {
-        let matches1 = self.matches1
-            .iter()
-            .map(|match_var| match_var.value())
-            .collect::<Result<Vec<Match>, SynthesisError>>()?;
-        
-        let matches2 = self.matches2
-            .iter()
-            .map(|match_var| match_var.value())
-            .collect::<Result<Vec<Match>, SynthesisError>>()?;
-        
-        Ok ( MatchResult { matches1, matches2 } )
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Match {
-    mint: u64,
-    amount: u64,
-    side: OrderSide
-}
-
-#[derive(Debug, Clone)]
-pub struct MatchVariable<F: PrimeField> {
-    pub mint: UInt64<F>,
-    pub amount: UInt64<F>,
-    pub side: UInt8<F>
-}
-
-impl<F: PrimeField> R1CSVar<F> for MatchVariable<F> {
-    type Value = Match;
-
-    fn cs(&self) -> ark_relations::r1cs::ConstraintSystemRef<F> {
-        self.mint.cs()
-    }
-
-    fn is_constant(&self) -> bool {
-        self.mint.is_constant()
-    }
-
-    fn value(&self) -> Result<Self::Value, SynthesisError> {
-        Ok(
-            Match {
-                mint: self.mint.value()?,
-                amount: self.amount.value()?,
-                side: match self.side.value()? {
-                    0 => { Ok(OrderSide::Buy) },
-                    1 => { Ok(OrderSide::Sell) },
-                    _ => { Err(SynthesisError::Unsatisfiable) }
-                }?
-            }
-        )
-    }
-}
-
-/**
- * Gadgets
  */
 
 pub struct OrderOverlapGadget<F: PrimeField> {
@@ -274,8 +179,7 @@ mod overlap_test {
         uint8::UInt8, 
         uint64::UInt64
     };
-    use crate::circuits::SystemField;
-
+    use crate::types::SystemField;
     use super::{OrderOverlapGadget};
 
     type OverlapGadget = OrderOverlapGadget<SystemField>;
@@ -356,8 +260,8 @@ mod match_test {
     use ark_r1cs_std::{prelude::AllocVar, R1CSVar};
     use ark_relations::r1cs::ConstraintSystem;
 
-    use crate::circuits::{types::{Order, Wallet}, wallet_match::MatchResult, SystemField};
-    use super::{Match, MatchGadget, OrderSide, WalletVar};
+    use crate::types::{Order, OrderSide, Wallet, Match, SystemField};
+    use super::{MatchGadget, WalletVar};
 
     fn has_nonzero_match(matches_list: &Vec<Match>) -> bool {
         matches_list.iter()
@@ -636,7 +540,7 @@ mod proof_test {
     use rand::rngs::OsRng;
     use std::marker::PhantomData;
 
-    use crate::circuits::types::{Wallet, Order, OrderSide, WalletVar};
+    use crate::types::{Wallet, Order, OrderSide, WalletVar};
     use super::MatchGadget;
 
     #[derive(Clone)]

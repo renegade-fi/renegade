@@ -1,18 +1,21 @@
-use std::borrow::Borrow;
 
+use ark_bn254::{Fr as Bn254Fr};
 use ark_ff::PrimeField;
 use ark_r1cs_std::{prelude::AllocVar, R1CSVar, uint64::UInt64, uint8::UInt8};
 use ark_relations::r1cs::{SynthesisError, Namespace};
 use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
 use num_bigint::BigUint;
+use std::borrow::Borrow;
 
-use crate::circuits::constants::{MAX_BALANCES, MAX_ORDERS};
-
-use super::{SystemField, poseidon::PoseidonSpongeWrapperVar};
+use crate::constants::{MAX_BALANCES, MAX_ORDERS};
+use crate::gadgets::poseidon::PoseidonSpongeWrapperVar;
 
 /**
  * Groups types definitions common to the circuit module
  */
+
+// The scalar field used in the circuits
+pub type SystemField = Bn254Fr;
 
 // Represents a wallet and its analog in the constraint system
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -337,6 +340,91 @@ impl<F: PrimeField> R1CSVar<F> for OrderVar<F> {
                 }?,
                 price: self.price.value()?,
                 amount: self.price.value()?
+            }
+        )
+    }
+}
+
+// The result of a matches operation and its constraint system analog
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MatchResult {
+    pub matches1: Vec<Match>,
+    pub matches2: Vec<Match>
+}
+
+#[derive(Clone, Debug)]
+pub struct MatchResultVariable<F: PrimeField> {
+    pub matches1: Vec<MatchVariable<F>>,
+    pub matches2: Vec<MatchVariable<F>>
+}
+
+impl<F: PrimeField> MatchResultVariable<F> {
+    pub fn new() -> Self {
+        Self { matches1: Vec::new(), matches2: Vec::new() }
+    } 
+}
+
+impl<F: PrimeField> R1CSVar<F> for MatchResultVariable<F> {
+    type Value = MatchResult;
+
+    fn cs(&self) -> ark_relations::r1cs::ConstraintSystemRef<F> {
+        self.matches1[0].cs()
+    } 
+
+    fn is_constant(&self) -> bool {
+        self.matches1[0].is_constant()
+    }
+
+    fn value(&self) -> Result<Self::Value, SynthesisError> {
+        let matches1 = self.matches1
+            .iter()
+            .map(|match_var| match_var.value())
+            .collect::<Result<Vec<Match>, SynthesisError>>()?;
+        
+        let matches2 = self.matches2
+            .iter()
+            .map(|match_var| match_var.value())
+            .collect::<Result<Vec<Match>, SynthesisError>>()?;
+        
+        Ok ( MatchResult { matches1, matches2 } )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Match {
+    pub mint: u64,
+    pub amount: u64,
+    pub side: OrderSide
+}
+
+#[derive(Debug, Clone)]
+pub struct MatchVariable<F: PrimeField> {
+    pub mint: UInt64<F>,
+    pub amount: UInt64<F>,
+    pub side: UInt8<F>
+}
+
+impl<F: PrimeField> R1CSVar<F> for MatchVariable<F> {
+    type Value = Match;
+
+    fn cs(&self) -> ark_relations::r1cs::ConstraintSystemRef<F> {
+        self.mint.cs()
+    }
+
+    fn is_constant(&self) -> bool {
+        self.mint.is_constant()
+    }
+
+    fn value(&self) -> Result<Self::Value, SynthesisError> {
+        Ok(
+            Match {
+                mint: self.mint.value()?,
+                amount: self.amount.value()?,
+                side: match self.side.value()? {
+                    0 => { Ok(OrderSide::Buy) },
+                    1 => { Ok(OrderSide::Sell) },
+                    _ => { Err(SynthesisError::Unsatisfiable) }
+                }?
             }
         )
     }

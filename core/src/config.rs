@@ -1,10 +1,8 @@
-use base64;
 use clap::Parser;
 use ed25519_dalek::{SignatureError, Keypair, Sha512, Digest};
 use libp2p::{Multiaddr, PeerId};
 use serde::{Serialize, Deserialize};
-use std::{error::Error, fs};
-use toml;
+use std::error::Error;
 
 use crate::gossip::types::{PeerInfo, WrappedPeerId};
 

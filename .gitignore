@@ -1,5 +1,5 @@
-/target
-/build
+**/target
+**/build
 Cargo.lock
 .idea
 .vscode

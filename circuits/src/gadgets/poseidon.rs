@@ -11,7 +11,7 @@ use ark_sponge::{
     },
 };
 
-use super::{types::WalletVar, constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3}, wallet_match::MatchResultVariable};
+use crate::{types::{MatchResultVariable, WalletVar}, constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3}};
 
 
 /**
@@ -204,9 +204,9 @@ mod test {
     use ark_r1cs_std::{prelude::{AllocVar, EqGadget}, fields::fp::FpVar, R1CSVar};
     use ark_relations::r1cs::{ConstraintSystem, SynthesisError};
 
-    use crate::circuits::{types::{Wallet, Balance, Order, OrderSide, WalletVar}, SystemField, poseidon::OrderHashInput};
+    use crate::types::{Wallet, Balance, Order, OrderSide, WalletVar, SystemField};
 
-    use super::{WalletHashInput, PoseidonSpongeWrapperVar, PoseidonVectorHashGadget};
+    use super::{WalletHashInput, PoseidonSpongeWrapperVar, PoseidonVectorHashGadget, OrderHashInput};
 
     #[test]
     fn test_order_hash() {

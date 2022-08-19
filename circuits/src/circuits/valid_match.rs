@@ -1,7 +1,6 @@
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
-use ark_bn254::{Parameters, Fr as Bn254Fr};
-use ark_ec::{bn::Bn, PairingEngine};
+use ark_ec::{PairingEngine};
 use ark_ff::PrimeField;
 use ark_groth16::{Proof, create_random_proof, ProvingKey};
 use ark_r1cs_std::{prelude::{AllocVar, EqGadget}, R1CSVar, ToBitsGadget, uint64::UInt64, fields::fp::FpVar};
@@ -9,19 +8,15 @@ use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError, ConstraintSynthes
 use num_bigint::{BigUint, ToBigUint};
 use rand::rngs::OsRng;
 
-use self::{types::{WalletVar, Wallet}, wallet_match::{MatchGadget, MatchResult}, poseidon::{MatchHashInput, PoseidonSpongeWrapperVar, PoseidonVectorHashGadget, WalletHashInput}};
+use crate::{
+    types::{SystemField, Wallet, MatchResult, WalletVar}, 
+    gadgets::{wallet_match::MatchGadget, poseidon::{PoseidonSpongeWrapperVar, MatchHashInput, PoseidonVectorHashGadget, WalletHashInput}}
+};
 
-pub mod constants;
-pub mod gadgets;
-pub mod poseidon;
-pub mod types;
-pub mod wallet_match;
 
 /**
  * Constants
  */
-pub type SystemField = Bn254Fr;
-pub type SystemPairingEngine = Bn<Parameters>;
 
 /**
  * A helper trait common across all circuits we use to abstract the inner workings
@@ -231,13 +226,17 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for ValidMatchCircuitImpl<F> {
  */
 #[cfg(test)]
 mod valid_match_test {
+    use ark_bn254::Parameters;
+    use ark_ec::bn::Bn;
     use ark_groth16::{generate_random_parameters, prepare_verifying_key, verify_proof};
     use ark_relations::r1cs::ConstraintSystem;
     use rand::rngs::OsRng;
 
-    use crate::circuits::constants::MAX_ORDERS;
+    use crate::{types::{SystemField, Wallet, Order, OrderSide, Balance}, circuits::valid_match::ValidMatchCircuit, constants::MAX_ORDERS};
 
-    use super::{types::{Wallet, Order, OrderSide, Balance}, SystemField, ValidMatchCircuit, ValidMatchCircuitImpl, SystemPairingEngine, constants::MAX_BALANCES};
+    use super::ValidMatchCircuitImpl;
+
+    pub type SystemPairingEngine = Bn<Parameters>;
 
     #[test]
     fn test_extract_matches() {

@@ -21,6 +21,7 @@ pub const MAX_BALANCES: usize = 2;
  *     python3 calc_round_numbers.py
  * from the scripts above and taking the output for t = 3, \alpha = 5
  */
+#[allow(non_snake_case)]
 pub fn POSEIDON_MDS_MATRIX_T_3<F: PrimeField>() -> Vec<Vec<F>> {
     vec![
         vec![
@@ -42,6 +43,7 @@ pub fn POSEIDON_MDS_MATRIX_T_3<F: PrimeField>() -> Vec<Vec<F>> {
 }
 
 // Round constants for t = 3 (2-1 hash)
+#[allow(non_snake_case)]
 pub fn POSEIDON_ROUND_CONSTANTS_T_3<F: PrimeField>() -> Vec<Vec<F>> {
     vec![
         vec![
@@ -379,7 +381,7 @@ fn field_element_from_hex_string<F: PrimeField> (byte_string: &[u8]) -> F {
 
 #[cfg(test)]
 mod test {
-    use crate::circuits::SystemField;
+    use crate::types::SystemField;
     use super::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3};
 
     #[test]
