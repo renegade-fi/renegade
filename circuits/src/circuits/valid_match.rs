@@ -226,6 +226,8 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for ValidMatchCircuitImpl<F> {
  */
 #[cfg(test)]
 mod valid_match_test {
+    use std::{cell::RefCell, rc::Rc};
+
     use ark_bn254::Parameters;
     use ark_ec::bn::Bn;
     use ark_groth16::{generate_random_parameters, prepare_verifying_key, verify_proof};
@@ -241,23 +243,27 @@ mod valid_match_test {
     #[test]
     fn test_extract_matches() {
         // Build the wallets
-        let wallet1 = Wallet {
-            balances: vec![],
-            orders: vec![
+        let wallet1 = Wallet::new_with_bounds(
+            vec![] /* balances */,
+            vec![
                 Order { 
                     quote_mint: 1, base_mint: 2, side: OrderSide::Buy, amount: 5, price: 10,
                 }
-            ]
-        };
+            ] /* orders */,
+            2, /* max_balances */
+            2 /* max_orders */
+        );
 
-        let wallet2 = Wallet {
-            balances: vec![],
-            orders: vec![
+        let wallet2 = Wallet::new_with_bounds(
+            vec![], /* balances */
+            vec![
                 Order {
                     quote_mint: 1, base_mint: 2, side: OrderSide::Sell, amount: 3, price: 8,
                 }
-            ]
-        };
+            ], /* orders */
+            2, /* max_balances */
+            2 /* max_orderss */
+        );
 
         // Compute the hashes of the wallets for input
         let wallet1_hash = wallet1.hash();
@@ -277,23 +283,27 @@ mod valid_match_test {
     #[test]
     fn test_prove() {
         // Build the wallets
-        let wallet1 = Wallet {
-            balances: vec![ Balance { mint: 1, amount: 70 } ],
-            orders: vec![
+        let wallet1 = Wallet::new_with_bounds(
+            vec![ Balance { mint: 1, amount: 70 } ], /* balances */
+            vec![
                 Order { 
                     quote_mint: 1, base_mint: 2, side: OrderSide::Buy, amount: 5, price: 10,
                 }
-            ]
-        };
+            ], /* orders */
+            1, /* max_balances */
+            1 /* max_orders */
+        );
 
-        let wallet2 = Wallet {
-            balances: vec![ Balance { mint: 2, amount: 3 }],
-            orders: vec![
+        let wallet2 = Wallet::new_with_bounds(
+            vec![ Balance { mint: 2, amount: 3 }], /* balances */
+            vec![
                 Order {
                     quote_mint: 1, base_mint: 2, side: OrderSide::Sell, amount: 3, price: 8,
                 }
-            ]
-        };
+            ], /* orders */
+            1, /* max_balances */
+            1 /* max_orders */
+        );
 
         let wallet1_hash = wallet1.hash();
         let wallet2_hash = wallet2.hash();
@@ -303,7 +313,14 @@ mod valid_match_test {
 
         let mut rng = OsRng{};
         let proving_key = generate_random_parameters::<SystemPairingEngine, _, _>(
-            ValidMatchCircuitImpl::default(), &mut rng
+            ValidMatchCircuitImpl::new(
+                wallet1.clone(),
+                wallet2.clone(),
+                wallet1_hash.clone(),
+                wallet2_hash.clone(),
+                Rc::new(RefCell::new(None)),
+                Rc::new(RefCell::new(None)),
+            ), &mut rng
         ).unwrap();
 
         let proof = circuit.create_proof(&proving_key).unwrap();

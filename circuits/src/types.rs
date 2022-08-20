@@ -21,10 +21,42 @@ pub type SystemField = Bn254Fr;
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Wallet {
     pub balances: Vec<Balance>,
-    pub orders: Vec<Order>
+    pub orders: Vec<Order>,
+    // The maximum number of orders to pad up to when matching, used
+    // to shrink the complexity of unit tests
+    _max_orders: usize,
+    _max_balances: usize,
 }
 
 impl Wallet {
+    pub fn new(balances: Vec<Balance>, orders: Vec<Order>) -> Self {
+        Self { balances, orders, _max_orders: MAX_ORDERS, _max_balances: MAX_BALANCES }
+    }
+
+    // Allocates a new wallet but allows the caller to specify _max_orders and _max_balances
+    // Used in tests to limit the complexity of the match computation
+    pub fn new_with_bounds(
+        balances: Vec<Balance>,
+        orders: Vec<Order>,
+        max_balances: usize,
+        max_orders: usize
+    ) -> Self {
+        Self { balances, orders, _max_balances: max_balances, _max_orders: max_orders }
+    }
+
+    // Sets the maximum orders that this wallet is padded to when translated
+    // into a WalletVar.
+    // Used in unit tests to limit the complexity
+    pub fn set_max_orders(&mut self, max_orders: usize) {
+        assert!(max_orders >= self.orders.len());
+        self._max_orders = max_orders;
+    }
+
+    pub fn set_max_balances(&mut self, max_balances: usize) {
+        assert!(max_balances >= self.balances.len());
+        self._max_balances = max_balances;
+    }
+
     // Poseidon hash of the wallet
     pub fn hash(&self) -> BigUint {
         // Convert wallet to a vector of u64
@@ -34,7 +66,7 @@ impl Wallet {
         }
 
         // Append empty balances up to MAX_BALANCES
-        for _ in 0..(MAX_BALANCES - self.balances.len()) {
+        for _ in 0..(self._max_balances - self.balances.len()) {
             hash_input.append(&mut vec![0, 0])
         }
 
@@ -43,7 +75,7 @@ impl Wallet {
         }
 
         // Append empty orders up to MAX_ORDERS
-        for _ in 0..(MAX_ORDERS - self.orders.len()) {
+        for _ in 0..(self._max_orders - self.orders.len()) {
             hash_input.append(&mut vec![0, 0, 0, 0, 0])
         }
 
@@ -110,7 +142,7 @@ impl<F: PrimeField> AllocVar<Wallet, F> for WalletVar<F> {
                 .collect::<Result<Vec<BalanceVar<F>>, SynthesisError>>()?;
 
             // Pad to the size of MAX_BALANCES with empty balances
-            for _ in 0..(MAX_BALANCES - wallet.balances.len()) {
+            for _ in 0..(wallet._max_balances - wallet.balances.len()) {
                 balances.push(
                     BalanceVar::new_variable(cs.clone(), || Ok(Balance::default()), mode)?
                 )
@@ -124,7 +156,7 @@ impl<F: PrimeField> AllocVar<Wallet, F> for WalletVar<F> {
                 .collect::<Result<Vec<OrderVar<F>>, SynthesisError>>()?;
             
             // Pad to the size of MAX_ORDERS with empty orders
-            for _ in 0..(MAX_ORDERS - wallet.orders.len()) {
+            for _ in 0..(wallet._max_orders - wallet.orders.len()) {
                 orders.push(
                     OrderVar::new_variable(cs.clone(), || Ok(Order::default()), mode)?
                 )
@@ -159,7 +191,7 @@ impl<F: PrimeField> R1CSVar<F> for WalletVar<F> {
             .map(|order| order.value())
             .collect::<Result<Vec<Order>, SynthesisError>>()?;
         
-        Ok(Self::Value { balances, orders })
+        Ok(Self::Value::new(balances, orders))
     }
 }
 

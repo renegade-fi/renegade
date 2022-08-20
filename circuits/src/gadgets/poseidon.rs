@@ -208,10 +208,12 @@ mod test {
 
     #[test]
     fn test_order_hash() {
-        let wallet = Wallet {
-            balances: vec![ Balance { mint: 1, amount: 10 } ],
-            orders: vec![ Order { quote_mint: 1, base_mint: 2, side: OrderSide::Buy, amount: 1, price: 10 } ]
-        };
+        let wallet = Wallet::new_with_bounds(
+            vec![ Balance { mint: 1, amount: 10 } ],
+            vec![ Order { quote_mint: 1, base_mint: 2, side: OrderSide::Buy, amount: 1, price: 10 } ],
+            2, /* max_balances */
+            2, /* max_orders */
+        );
 
         let expected_hash = wallet.hash_orders();
 
@@ -235,10 +237,12 @@ mod test {
 
     #[test]
     fn test_wallet_hash() {
-        let wallet = Wallet {
-            balances: vec![ Balance { mint: 1, amount: 10 } ],
-            orders: vec![ Order { quote_mint: 1, base_mint: 2, side: OrderSide::Buy, amount: 1, price: 10 } ]
-        };
+        let wallet = Wallet::new_with_bounds(
+            vec![ Balance { mint: 1, amount: 10 } ],
+            vec![ Order { quote_mint: 1, base_mint: 2, side: OrderSide::Buy, amount: 1, price: 10 } ],
+            2, /* max_balances */
+            2, /* max_orders */
+        );
 
         let expected_hash = wallet.hash();
 

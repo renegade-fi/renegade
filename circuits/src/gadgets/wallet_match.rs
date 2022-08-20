@@ -11,7 +11,6 @@ use ark_r1cs_std::{
 use std::{marker::PhantomData, borrow::Borrow};
 
 use crate::{
-    constants::MAX_ORDERS,
     gadgets::util::{
         GreaterThanEqGadget,
         MaskGadget,
@@ -73,8 +72,8 @@ impl<F: PrimeField> MatchGadget<F> {
     ) -> Result<MatchResultVariable<F>, SynthesisError> {
         let mut result = MatchResultVariable::<F>::new(); 
 
-        for i in 0..MAX_ORDERS {
-            for j in 0..MAX_ORDERS {
+        for i in 0..wallet1.orders.len() {
+            for j in 0..wallet2.orders.len() {
                 let order1 = wallet1.orders[i].borrow();
                 let order2 = wallet2.orders[j].borrow();
 
@@ -275,19 +274,23 @@ mod match_test {
     // different mints
     fn test_match_different_mints() {
         // Build the wallets
-        let wallet1 = Wallet {
-            balances: vec![],
-            orders: vec![
+        let wallet1 = Wallet::new_with_bounds(
+            vec![], /* balances */
+            vec![
                 Order { base_mint: 1, quote_mint: 2, price: 10, amount: 1, side: OrderSide::Buy }
-            ]
-        };
+            ],
+            2, /* max_balances */
+            2, /* max_orders */
+        );
 
-        let wallet2 = Wallet {
-            balances: vec![],
-            orders: vec![
+        let wallet2 = Wallet::new_with_bounds(
+            vec![], /* balances */
+            vec![
                 Order { base_mint: 3, quote_mint: 4, price: 10, amount: 1, side: OrderSide::Sell }
-            ]
-        };
+            ],
+            2, /* max_balances */
+            2, /* max_orders */
+        );
 
         // Build the constraint system and variables
         let cs = ConstraintSystem::<SystemField>::new_ref();
@@ -312,19 +315,23 @@ mod match_test {
     // even when prices align
     fn test_match_same_side() {
         // Build the wallets
-        let wallet1 = Wallet {
-            balances: vec![],
-            orders: vec![
+        let wallet1 = Wallet::new_with_bounds(
+            vec![], /* balances */
+            vec![
                 Order { base_mint: 1, quote_mint: 2, price: 10, amount: 1, side: OrderSide::Buy }
-            ]
-        };
+            ], /* orders */
+            2, /* max_balances */
+            2, /* max_orders */
+        );
 
-        let wallet2 = Wallet {
-            balances: vec![],
-            orders: vec![
+        let wallet2 = Wallet::new_with_bounds(
+            vec![], /* balances */
+            vec![
                 Order { base_mint: 1, quote_mint: 2, price: 10, amount: 1, side: OrderSide::Buy }
-            ]
-        };
+            ], /* orders */
+            2, /* max_balances */
+            2, /* max_orders */
+        );
 
         // Build the constraint system and variables
         let cs = ConstraintSystem::<SystemField>::new_ref();
@@ -347,19 +354,23 @@ mod match_test {
     #[test]
     // Tests the case in which the order prices are not overlapping
     fn test_match_no_overlap() {
-        let wallet1 = Wallet {
-            balances: vec![],
-            orders: vec![
+        let wallet1 = Wallet::new_with_bounds(
+            vec![], /* balances */
+            vec![
                 Order { base_mint: 1, quote_mint: 2, price: 20, amount: 1, side: OrderSide::Sell }
-            ]
-        };
+            ], /* orders */
+            2, /* max_balances */
+            2, /* max_orders */
+        );
 
-        let wallet2 = Wallet {
-            balances: vec![],
-            orders: vec![
+        let wallet2 = Wallet::new_with_bounds(
+            vec![], /* balances */
+            vec![
                 Order { base_mint: 1, quote_mint: 2, price: 10, amount: 1, side: OrderSide::Buy }
-            ]
-        };
+            ], /* orders */
+            2, /* max_balances */
+            2, /* max_orders */
+        );
 
         // Build the constraint system and variables
         let cs = ConstraintSystem::<SystemField>::new_ref();
@@ -395,19 +406,23 @@ mod match_test {
         let base_mint = 1;
         let quote_mint = 2;
 
-        let wallet1 = Wallet {
-            balances: vec![],
-            orders: vec![
+        let wallet1 = Wallet::new_with_bounds(
+            vec![], /* balances */
+            vec![
                 Order { base_mint, quote_mint, price: 10, amount: 2, side: OrderSide::Sell }
-            ]
-        };
+            ], /* orders */
+            2, /* max_balances */
+            2, /* max_orders */
+        );
 
-        let wallet2 = Wallet {
-            balances: vec![],
-            orders: vec![
+        let wallet2 = Wallet::new_with_bounds(
+            vec![], /* balances */
+            vec![
                 Order { base_mint, quote_mint, price: 20, amount: 3, side: OrderSide::Buy }
-            ]
-        };
+            ], /* orders */
+            2, /* max_balances */
+            2, /* max_orders */
+        );
         
         // Build the constraint system and variables
         let cs = ConstraintSystem::<SystemField>::new_ref();
@@ -479,19 +494,23 @@ mod match_test {
         let base_mint = 1;
         let quote_mint = 2;
 
-        let wallet1 = Wallet {
-            balances: vec![],
-            orders: vec![
+        let wallet1 = Wallet::new_with_bounds(
+            vec![], /* balances */
+            vec![
                 Order { base_mint, quote_mint, price: 10, amount: 2, side: OrderSide::Sell }
-            ]
-        };
+            ], /* orders */
+            2, /* max_balances */
+            2, /* max_orders */
+        );
 
-        let wallet2 = Wallet {
-            balances: vec![],
-            orders: vec![
+        let wallet2 = Wallet::new_with_bounds(
+            vec![], /* balances */
+            vec![
                 Order { base_mint, quote_mint, price: 10, amount: 3, side: OrderSide::Buy }
-            ]
-        };
+            ], /* orders */
+            2, /* max_balances */
+            2, /* max_orders */
+        );
         
         // Build the constraint system and variables
         let cs = ConstraintSystem::<SystemField>::new_ref();
@@ -575,19 +594,23 @@ mod proof_test {
         let base_mint = 1;
         let quote_mint = 2;
 
-        let wallet1 = Wallet {
-            balances: vec![],
-            orders: vec![
+        let wallet1 = Wallet::new_with_bounds(
+            vec![], /* balances */
+            vec![
                 Order { base_mint, quote_mint, price: 10, amount: 2, side: OrderSide::Sell }
-            ]
-        };
+            ], /* orders */
+            2, /* max_balances */
+            2, /* max_orders */
+        );
 
-        let wallet2 = Wallet {
-            balances: vec![],
-            orders: vec![
+        let wallet2 = Wallet::new_with_bounds(
+            vec![], /* balances */
+            vec![
                 Order { base_mint, quote_mint, price: 10, amount: 3, side: OrderSide::Buy }
-            ]
-        };
+            ], /* orders */
+            2, /* max_balances */
+            2, /* max_orders */
+        );
         
         // Build the constraint system and variables
         let circuit = DummyCircuit { wallet1, wallet2, _phantom: PhantomData {} };
