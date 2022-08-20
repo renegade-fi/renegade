@@ -3,10 +3,6 @@ name = "circuits"
 version = "0.1.0"
 edition = "2021"
 
-[profile.bench]
-opt-level = 3 # Full optimizations
-lto = true
-
 [[bench]]
 name = "valid_match_benchmark"
 harness = false

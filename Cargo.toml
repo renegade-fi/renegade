@@ -1,6 +1,9 @@
 [workspace]
-
 members = [
 	"circuits",
 	"core"
 ]
+
+[profile.bench]
+opt-level = 3 # Full optimizations
+lto = true
