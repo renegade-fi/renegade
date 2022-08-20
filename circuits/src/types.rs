@@ -1,5 +1,6 @@
 
-use ark_bn254::{Fr as Bn254Fr};
+use ark_bn254::{Fr as Bn254Fr, Parameters};
+use ark_ec::bn::Bn;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{prelude::AllocVar, R1CSVar, uint64::UInt64, uint8::UInt8};
 use ark_relations::r1cs::{SynthesisError, Namespace};
@@ -16,6 +17,7 @@ use crate::gadgets::poseidon::PoseidonSpongeWrapperVar;
 
 // The scalar field used in the circuits
 pub type SystemField = Bn254Fr;
+pub type SystemPairingEngine = Bn<Parameters>;
 
 // Represents a wallet and its analog in the constraint system
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -30,7 +32,7 @@ pub struct Wallet {
 
 impl Wallet {
     pub fn new(balances: Vec<Balance>, orders: Vec<Order>) -> Self {
-        Self { balances, orders, _max_orders: MAX_ORDERS, _max_balances: MAX_BALANCES }
+        Self::new_with_bounds(balances, orders, MAX_BALANCES, MAX_ORDERS)
     }
 
     // Allocates a new wallet but allows the caller to specify _max_orders and _max_balances

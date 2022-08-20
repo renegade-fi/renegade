@@ -3,7 +3,13 @@ name = "circuits"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[profile.bench]
+opt-level = 3 # Full optimizations
+lto = true
+
+[[bench]]
+name = "valid_match_benchmark"
+harness = false
 
 [dependencies]
 ark-bn254 = { version = "0.3" }
@@ -16,5 +22,6 @@ ark-relations = { version = "0.3" }
 ark-r1cs-std = { version = "0.3" }
 ark-sponge = { version = "0.3" }
 
+criterion = { version = "0.3" }
 num-bigint = { version = "0.4" }
 rand = { version = "0.8" }

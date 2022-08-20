@@ -1,15 +1,15 @@
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 use ark_ec::{PairingEngine};
-use ark_ff::PrimeField;
-use ark_groth16::{Proof, create_random_proof, ProvingKey};
+use ark_ff::{PrimeField, Zero};
+use ark_groth16::{Proof, create_random_proof, ProvingKey, generate_random_parameters};
 use ark_r1cs_std::{prelude::{AllocVar, EqGadget}, R1CSVar, ToBitsGadget, uint64::UInt64, fields::fp::FpVar};
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError, ConstraintSynthesizer};
 use num_bigint::{BigUint, ToBigUint};
 use rand::rngs::OsRng;
 
 use crate::{
-    types::{SystemField, Wallet, MatchResult, WalletVar}, 
+    types::{SystemField, SystemPairingEngine, Wallet, MatchResult, WalletVar}, 
     gadgets::{wallet_match::MatchGadget, poseidon::{PoseidonSpongeWrapperVar, MatchHashInput, PoseidonVectorHashGadget, WalletHashInput}}
 };
 
@@ -68,6 +68,23 @@ impl ValidMatchCircuit {
         );
 
         Self { match_cell, match_hash_cell, match_result: None, match_hash: None, wrapped_type }
+    }
+
+    // Creates a proving key for the proof system given a circuit size
+    pub fn create_proving_key(max_balances: usize, max_orders: usize) -> Result<ProvingKey<SystemPairingEngine>, SynthesisError> {
+        let mut rng = OsRng{};
+            // Dummy wallet, circuit sizes are filled in by max_orders and max_balances
+        let dummy_wallet = Wallet::new_with_bounds(vec![], vec![], max_balances, max_orders);
+        generate_random_parameters::<SystemPairingEngine, _, _>(
+            ValidMatchCircuitImpl::new(
+                dummy_wallet.clone(),
+                dummy_wallet,
+                BigUint::zero(),  // Value does not matter here, only width of values
+                BigUint::zero(),
+                Rc::new(RefCell::new(None)),
+                Rc::new(RefCell::new(None)),
+            ), &mut rng
+        ) 
     }
 
     // Generates the circuit constraints using the witness supplied in the constructor
@@ -226,19 +243,11 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for ValidMatchCircuitImpl<F> {
  */
 #[cfg(test)]
 mod valid_match_test {
-    use std::{cell::RefCell, rc::Rc};
-
-    use ark_bn254::Parameters;
-    use ark_ec::bn::Bn;
-    use ark_groth16::{generate_random_parameters, prepare_verifying_key, verify_proof};
+    use ark_groth16::{prepare_verifying_key, verify_proof};
     use ark_relations::r1cs::ConstraintSystem;
-    use rand::rngs::OsRng;
 
     use crate::{types::{SystemField, Wallet, Order, OrderSide, Balance}, circuits::valid_match::ValidMatchCircuit, constants::MAX_ORDERS};
 
-    use super::ValidMatchCircuitImpl;
-
-    pub type SystemPairingEngine = Bn<Parameters>;
 
     #[test]
     fn test_extract_matches() {
@@ -283,6 +292,8 @@ mod valid_match_test {
     #[test]
     fn test_prove() {
         // Build the wallets
+        let max_balances = 1;
+        let max_orders = 1;
         let wallet1 = Wallet::new_with_bounds(
             vec![ Balance { mint: 1, amount: 70 } ], /* balances */
             vec![
@@ -290,8 +301,8 @@ mod valid_match_test {
                     quote_mint: 1, base_mint: 2, side: OrderSide::Buy, amount: 5, price: 10,
                 }
             ], /* orders */
-            1, /* max_balances */
-            1 /* max_orders */
+            max_balances,
+            max_orders
         );
 
         let wallet2 = Wallet::new_with_bounds(
@@ -301,8 +312,8 @@ mod valid_match_test {
                     quote_mint: 1, base_mint: 2, side: OrderSide::Sell, amount: 3, price: 8,
                 }
             ], /* orders */
-            1, /* max_balances */
-            1 /* max_orders */
+            max_balances,
+            max_orders
         );
 
         let wallet1_hash = wallet1.hash();
@@ -311,18 +322,7 @@ mod valid_match_test {
         // Build and setup the constraint system and proof system keys
         let circuit = ValidMatchCircuit::new(wallet1.clone(), wallet2.clone(), wallet1_hash.clone(), wallet2_hash.clone());
 
-        let mut rng = OsRng{};
-        let proving_key = generate_random_parameters::<SystemPairingEngine, _, _>(
-            ValidMatchCircuitImpl::new(
-                wallet1.clone(),
-                wallet2.clone(),
-                wallet1_hash.clone(),
-                wallet2_hash.clone(),
-                Rc::new(RefCell::new(None)),
-                Rc::new(RefCell::new(None)),
-            ), &mut rng
-        ).unwrap();
-
+        let proving_key = ValidMatchCircuit::create_proving_key(max_balances, max_orders).unwrap();
         let proof = circuit.create_proof(&proving_key).unwrap();
 
         // Verify the proof and assert validity
