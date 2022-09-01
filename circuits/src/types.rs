@@ -380,7 +380,7 @@ impl<F: PrimeField> R1CSVar<F> for OrderVar<F> {
 }
 
 // The result of a matches operation and its constraint system analog
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct MatchResult {
     pub matches1: Vec<Match>,
     pub matches2: Vec<Match>
@@ -390,6 +390,35 @@ pub struct MatchResult {
 pub struct MatchResultVariable<F: PrimeField> {
     pub matches1: Vec<MatchVariable<F>>,
     pub matches2: Vec<MatchVariable<F>>
+}
+
+impl<F: PrimeField> AllocVar<MatchResult, F> for MatchResultVariable<F> {
+    fn new_variable<T: Borrow<MatchResult>>(
+        cs: impl Into<Namespace<F>>,
+        f: impl FnOnce() -> Result<T, SynthesisError>,
+        mode: ark_r1cs_std::prelude::AllocationMode,
+    ) -> Result<Self, SynthesisError> 
+    {
+        f().and_then(|match_result| {
+            let cs = cs.into();
+            let match_result: &MatchResult = match_result.borrow();
+            let matches1 = match_result.matches1
+                .iter()
+                .map(|m| {
+                    MatchVariable::new_variable(cs.clone(), || { Ok(m) }, mode)
+                })
+                .collect::<Result<Vec<MatchVariable<F>>, SynthesisError>>()?;
+
+            let matches2 = match_result.matches2
+                .iter()
+                .map(|m| {
+                    MatchVariable::new_variable(cs.clone(), || { Ok(m) }, mode)
+                })
+                .collect::<Result<Vec<MatchVariable<F>>, SynthesisError>>()?;
+
+            Ok(Self { matches1, matches2 })
+        })    
+    }
 }
 
 impl<F: PrimeField> MatchResultVariable<F> {
@@ -442,6 +471,29 @@ pub struct MatchVariable<F: PrimeField> {
     pub mint: UInt64<F>,
     pub amount: UInt64<F>,
     pub side: UInt8<F>
+}
+
+impl <F: PrimeField> AllocVar<Match, F> for MatchVariable<F> {
+    fn new_variable<T: Borrow<Match>>(
+        cs: impl Into<Namespace<F>>,
+        f: impl FnOnce() -> Result<T, SynthesisError>,
+        mode: ark_r1cs_std::prelude::AllocationMode,
+    ) -> Result<Self, SynthesisError> {
+        f().and_then(|match_| {
+            let cs = cs.into();
+            let match_: &Match = match_.borrow();
+            Ok(
+                Self {
+                    mint: UInt64::new_variable(cs.clone(), || { Ok(match_.mint) }, mode)?,
+                    amount: UInt64::new_variable(cs.clone(), || { Ok(match_.amount) }, mode)?,
+                    side: match match_.side {
+                        OrderSide::Buy => { UInt8::new_variable(cs, || { Ok(0) }, mode)? }
+                        OrderSide::Sell => { UInt8::new_variable(cs, || { Ok(1) }, mode)? }
+                    }
+                }
+            )
+        })
+    }
 }
 
 impl<F: PrimeField> R1CSVar<F> for MatchVariable<F> {
