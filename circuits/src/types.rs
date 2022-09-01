@@ -459,7 +459,49 @@ impl<F: PrimeField> R1CSVar<F> for MatchResultVariable<F> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+// Represents a match on a single set of orders overlapping
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct SingleMatchResult {
+    // Specifies the asset party 1 buys
+    pub buy_side1: Match,
+    // Specifies the asset party 1 sell
+    pub sell_side1: Match,
+    // Specifies the asset party 2 buys
+    pub buy_side2: Match,
+    // Specifies the asset party 2 sells
+    pub sell_side2: Match,
+}
+
+pub struct SingleMatchResultVar<F: PrimeField> {
+    pub buy_side1: MatchVariable<F>,
+    pub sell_side1: MatchVariable<F>,
+    pub buy_side2: MatchVariable<F>,
+    pub sell_side2: MatchVariable<F>,
+}
+
+impl<F: PrimeField> AllocVar<SingleMatchResult, F> for SingleMatchResultVar<F> {
+    fn new_variable<T: Borrow<SingleMatchResult>>(
+        cs: impl Into<Namespace<F>>,
+        f: impl FnOnce() -> Result<T, SynthesisError>,
+        mode: ark_r1cs_std::prelude::AllocationMode,
+    ) -> Result<Self, SynthesisError> {
+        f().and_then(|single_match| {
+            let cs = cs.into();
+            let single_match: &SingleMatchResult = single_match.borrow();
+
+            Ok(
+                Self { 
+                    buy_side1: MatchVariable::new_variable(cs.clone(), || { Ok (single_match.buy_side1.clone()) }, mode)?,
+                    sell_side1: MatchVariable::new_variable(cs.clone(), || { Ok(single_match.sell_side1.clone()) }, mode)?,
+                    buy_side2: MatchVariable::new_variable(cs.clone(), || { Ok(single_match.buy_side2.clone()) }, mode)?,
+                    sell_side2: MatchVariable::new_variable(cs, || { Ok(single_match.sell_side2.clone()) }, mode)?
+                }
+            )
+        })
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Match {
     pub mint: u64,
     pub amount: u64,
@@ -473,7 +515,7 @@ pub struct MatchVariable<F: PrimeField> {
     pub side: UInt8<F>
 }
 
-impl <F: PrimeField> AllocVar<Match, F> for MatchVariable<F> {
+impl<F: PrimeField> AllocVar<Match, F> for MatchVariable<F> {
     fn new_variable<T: Borrow<Match>>(
         cs: impl Into<Namespace<F>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,

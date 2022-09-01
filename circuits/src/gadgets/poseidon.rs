@@ -19,11 +19,11 @@ use crate::{types::{MatchResultVariable, WalletVar}, constants::{POSEIDON_MDS_MA
 */
 
 // Converts a UInt64 constraint variable into a field element
-fn u64_to_field_element<F: PrimeField>(a: &UInt64<F>) -> Result<FpVar<F>, SynthesisError> {
+pub fn u64_to_field_element<F: PrimeField>(a: &UInt64<F>) -> Result<FpVar<F>, SynthesisError> {
     Boolean::le_bits_to_fp_var(&a.to_bits_le())
 }
 
-fn u8_to_field_element<F: PrimeField>(a: &UInt8<F>) -> Result<FpVar<F>, SynthesisError> {
+pub fn u8_to_field_element<F: PrimeField>(a: &UInt8<F>) -> Result<FpVar<F>, SynthesisError> {
    Boolean::le_bits_to_fp_var(&a.to_bits_le()?)
 }
 

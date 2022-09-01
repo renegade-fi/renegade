@@ -46,14 +46,14 @@ impl<F: PrimeField> OrderOverlapGadget<F> {
 
         // side_2 * price_1 >= side_2 * price_2
         let check1 = GreaterThanEqGadget::greater_than(
-            side2_fp.clone() * price1_fp.clone(),
-            side2_fp * price2_fp.clone()
+            &(side2_fp.clone() * price1_fp.clone()),
+            &(side2_fp * price2_fp.clone())
         )?;
 
         // side_1 * price_2 >= side_1 * price_1
         let check2 = GreaterThanEqGadget::greater_than(
-            side1_fp.clone() * price2_fp,
-            side1_fp * price1_fp
+            &(side1_fp.clone() * price2_fp),
+            &(side1_fp * price1_fp)
         )?;
 
         check1.and(&check2)

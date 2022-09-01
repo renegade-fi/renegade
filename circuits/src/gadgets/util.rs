@@ -15,13 +15,23 @@ pub struct GreaterThanEqGadget<F: PrimeField> {
 
 impl <F: PrimeField> GreaterThanEqGadget<F> {
     pub fn greater_than(
-        a: FpVar<F>,
-        b: FpVar<F>,
+        a: &FpVar<F>,
+        b: &FpVar<F>,
     ) -> Result<Boolean<F>, SynthesisError> {
         let diff = a - b;
         let diff_bytes = diff.to_bytes()?;
 
         diff_bytes[diff_bytes.len() - 1].is_eq(&UInt8::<F>::constant(0))
+    }
+
+    pub fn greater_than_u64(
+        a: &UInt64<F>,
+        b: &UInt64<F>,
+    ) -> Result<Boolean<F>, SynthesisError> {
+        let a_fp = &Boolean::le_bits_to_fp_var(&a.to_bits_le())?;
+        let b_fp = &Boolean::le_bits_to_fp_var(&b.to_bits_le())?;
+
+        Self::greater_than(a_fp, b_fp)
     }
 }
 
@@ -35,7 +45,7 @@ impl <F: PrimeField> MinGadget<F> {
         a: FpVar<F>,
         b: FpVar<F>
     ) -> Result<FpVar<F>, SynthesisError> {
-        let a_greater_than = GreaterThanEqGadget::greater_than(a.clone(), b.clone())?;
+        let a_greater_than = GreaterThanEqGadget::greater_than(&a, &b)?;
 
         FpVar::<F>::conditionally_select(
             &a_greater_than /* cond */, 
