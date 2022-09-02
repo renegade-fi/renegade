@@ -135,7 +135,6 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for SmallValidMatchCircuitImpl<F> {
         ValidMatchGadget::enforce_valid_orders(&single_match_var, &order1_var, &order2_var)?;
         
         // Validate the orders and balances in the state tree
-        
         Ok(())
     }
 }
