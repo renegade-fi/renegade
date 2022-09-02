@@ -1,7 +1,7 @@
 use ark_ff::PrimeField;
-use ark_r1cs_std::{prelude::{EqGadget, Boolean, FieldVar}, uint8::UInt8, uint64::UInt64, select::CondSelectGadget, fields::fp::FpVar, ToBitsGadget, R1CSVar};
+use ark_r1cs_std::{prelude::{EqGadget, Boolean, FieldVar}, uint8::UInt8, uint64::UInt64, select::CondSelectGadget, fields::fp::FpVar};
 use ark_relations::r1cs::SynthesisError;
-use std::{marker::PhantomData, ops::Mul};
+use std::marker::PhantomData;
 
 use crate::types::{SingleMatchResultVar, BalanceVar, OrderVar, MatchVariable, Match};
 

@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, borrow::Borrow};
+use std::{marker::PhantomData, borrow::Borrow, vec};
 
 use ark_ff::PrimeField;
 use ark_r1cs_std::{fields::fp::FpVar, prelude::Boolean, uint64::UInt64, uint8::UInt8, ToBitsGadget};
@@ -11,7 +11,7 @@ use ark_sponge::{
     },
 };
 
-use crate::{types::{MatchResultVariable, WalletVar}, constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3}};
+use crate::{types::{MatchResultVariable, WalletVar, OrderVar, Balance, BalanceVar}, constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3}};
 
 
 /**
@@ -65,6 +65,47 @@ impl<F: PrimeField> From<&WalletVar<F>> for Result<OrderHashInput<F>, SynthesisE
             .collect::<Result<Vec<()>, SynthesisError>>()?;
         
         Ok(OrderHashInput { elements })
+    }
+}
+
+impl<F: PrimeField> From<&OrderVar<F>> for Result<OrderHashInput<F>, SynthesisError> {
+    fn from(order: &OrderVar<F>) -> Self {
+        Ok( 
+            OrderHashInput { 
+                elements: vec![
+                    u64_to_field_element(&order.quote_mint)?,
+                    u64_to_field_element(&order.base_mint)?,
+                    u8_to_field_element(&order.side)?,
+                    u64_to_field_element(&order.amount)?, 
+                    u64_to_field_element(&order.price)?
+                ]
+            }
+        ) 
+    }
+}
+
+// The balance hash input hashes balance(s) in a wallet
+#[derive(Debug)]
+pub struct BalanceHashInput<F: PrimeField> {
+    elements: Vec<FpVar<F>>
+}
+
+impl<F: PrimeField> PoseidonHashInput<F> for BalanceHashInput<F> {
+    fn get_elements(&self) -> &Vec<FpVar<F>> {
+        &self.elements
+    }
+}
+
+impl<F: PrimeField> From<&BalanceVar<F>> for Result<BalanceHashInput<F>, SynthesisError> {
+    fn from(balance: &BalanceVar<F>) -> Self {
+        Ok(
+            BalanceHashInput {
+                elements: vec![
+                    u64_to_field_element(&balance.amount)?,
+                    u64_to_field_element(&balance.mint)?
+                ]
+            }
+        ) 
     }
 }
 

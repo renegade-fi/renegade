@@ -1,12 +1,14 @@
 
 use ark_bn254::{Fr as Bn254Fr, Parameters};
 use ark_ec::bn::Bn;
-use ark_ff::PrimeField;
+use ark_ff::{PrimeField, ToBytes};
 use ark_r1cs_std::{prelude::AllocVar, R1CSVar, uint64::UInt64, uint8::UInt8};
 use ark_relations::r1cs::{SynthesisError, Namespace};
 use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+use arkworks_native_gadgets::poseidon::Poseidon;
 use num_bigint::BigUint;
 use std::borrow::Borrow;
+use std::io::{Result as IOResult, Write};
 
 use crate::constants::{MAX_BALANCES, MAX_ORDERS};
 use crate::gadgets::poseidon::PoseidonSpongeWrapperVar;
@@ -17,7 +19,12 @@ use crate::gadgets::poseidon::PoseidonSpongeWrapperVar;
 
 // The scalar field used in the circuits
 pub type SystemField = Bn254Fr;
+// The pairing engine used throughout the proof system
 pub type SystemPairingEngine = Bn<Parameters>;
+// The hash type used for Merkle proofs
+pub type SystemHasher<F: PrimeField> = Poseidon<F>;
+// The depth of wallet state trees
+pub const WALLET_TREE_DEPTH: usize = 8;
 
 // Represents a wallet and its analog in the constraint system
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -204,6 +211,30 @@ pub struct Balance {
     pub amount: u64 
 }
 
+impl Balance {
+    pub fn hash(&self) -> BigUint {
+        let mut hash_input = Vec::<u64>::new();
+        hash_input.push(self.mint);
+        hash_input.push(self.amount);
+
+        let mut sponge = PoseidonSponge::<SystemField>::new(&PoseidonSpongeWrapperVar::default_params());
+        for input in hash_input.iter() {
+            sponge.absorb(input)
+        }
+
+        let sponge_out = sponge.squeeze_field_elements::<SystemField>(1)[0];
+
+        // Convert to BigUInt
+        sponge_out.into()
+    }
+}
+
+impl ToBytes for Balance {
+    fn write<W: Write>(&self, writer: W) -> IOResult<()> {
+        vec![self.mint, self.amount].write(writer)
+    }
+}
+
 #[derive(Debug)]
 pub struct BalanceVar<F: PrimeField> {
     pub mint: UInt64<F>,
@@ -264,6 +295,41 @@ pub struct Order {
     pub side: OrderSide,
     pub price: u64,
     pub amount: u64
+}
+
+impl Order {
+    pub fn hash(&self) -> BigUint {
+        let mut hash_input = Vec::<u64>::new();
+        hash_input.append(&mut vec![
+            self.quote_mint,
+            self.base_mint,
+            self.side.clone() as u64,
+            self.price,
+            self.amount
+        ]);
+
+        let mut sponge = PoseidonSponge::<SystemField>::new(&PoseidonSpongeWrapperVar::default_params());
+        for input in hash_input.iter() {
+            sponge.absorb(input)
+        }
+
+        let sponge_out = sponge.squeeze_field_elements::<SystemField>(1)[0];
+
+        // Convert to BigUInt
+        sponge_out.into()
+    }
+}
+
+impl ToBytes for Order {
+    fn write<W: Write>(&self, writer: W) -> IOResult<()> {
+        vec![
+            self.quote_mint, 
+            self.base_mint, 
+            self.side.clone() as u64, 
+            self.price, 
+            self.amount
+        ].write(writer)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

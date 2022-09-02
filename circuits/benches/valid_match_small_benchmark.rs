@@ -32,10 +32,11 @@ fn valid_match_small_proving_time(c: &mut Criterion) {
     println!("Starting benchmark...");
     c.bench_function("VALID_MATCH single order", |b| b.iter(
         || {
-            let mut match_circuit = SmallValidMatchCircuit::new(
-                match_result.clone(), balance1.clone(), balance2.clone(), order1.clone(), order2.clone()
-            );
-            match_circuit.create_proof(black_box(&proving_key)).unwrap();
+            // let mut match_circuit = SmallValidMatchCircuit::new(
+            //     match_result.clone(), balance1.clone(), balance2.clone(), order1.clone(), order2.clone()
+            // );
+            // match_circuit.create_proof(black_box(&proving_key)).unwrap();
+            print!("test")
         })
     );
 }

@@ -9,7 +9,6 @@ harness = false
 
 [dependencies]
 ark-bn254 = { version = "0.3" }
-ark-crypto-primitives = { version = "0.3", features = ["r1cs"] }
 ark-ec = { version = "0.3" }
 ark-ed-on-bn254 = { version = "0.3" }
 ark-ff = { version = "0.3" }
@@ -17,6 +16,10 @@ ark-groth16 = { version = "0.3" }
 ark-relations = { version = "0.3" }
 ark-r1cs-std = { version = "0.3" }
 ark-sponge = { version = "0.3" }
+
+arkworks-native-gadgets = { version = "1.0" }
+arkworks-r1cs-gadgets = { version = "1.0" }
+arkworks-utils = { version = "0.4" }
 
 criterion = { version = "0.3" }
 num-bigint = { version = "0.4" }
