@@ -111,16 +111,24 @@ impl<F: PrimeField> ValidMatchGadget<F> {
             &order1_buy, &execution_price2, &execution_price1
         )?;
 
+        let execution_amount = UInt64::conditionally_select(
+            &order1_buy, 
+            &single_match.buy_side1.amount, 
+            &single_match.buy_side2.amount
+        )?;
+
         // Enforce for each order in the match that the price is favorable and the mints align
-        Self::enforce_order_at_price(
+        Self::enforce_order_at_price_and_amount(
             &execution_price, 
+            &execution_amount,
             &single_match.buy_side1,
             &single_match.sell_side1, 
             order1,
         )?;
 
-        Self::enforce_order_at_price(
+        Self::enforce_order_at_price_and_amount(
             &execution_price, 
+            &execution_amount,
             &single_match.buy_side2, 
             &single_match.sell_side2, 
             order2
@@ -129,8 +137,9 @@ impl<F: PrimeField> ValidMatchGadget<F> {
         Ok(())
     }
 
-    fn enforce_order_at_price(
+    fn enforce_order_at_price_and_amount(
         price: &FpVar<F>,
+        amount: &UInt64<F>,
         buy_side_match: &MatchVariable<F>,
         sell_side_match: &MatchVariable<F>,
         order: &OrderVar<F>
@@ -152,6 +161,15 @@ impl<F: PrimeField> ValidMatchGadget<F> {
 
         buy_side_match.mint.enforce_equal(&buy_mint)?;
         sell_side_match.mint.enforce_equal(&sell_mint)?;
+
+        // Enforce that the amounts are properly aligned between match and order
+        let order_amount = UInt64::conditionally_select(
+            &is_buy, 
+            &buy_side_match.amount, 
+            &sell_side_match.amount
+        )?;
+        GreaterThanEqGadget::greater_than_u64(&order_amount, amount)?
+            .enforce_equal(&Boolean::TRUE)?;
 
         // Enforce that the price is equal or better than the limit in the order
         let order_price_fp = Boolean::le_bits_to_fp_var(&order.price.to_bits_le())?;
