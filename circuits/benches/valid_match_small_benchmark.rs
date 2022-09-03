@@ -10,20 +10,20 @@ use circuits::{
 #[allow(dead_code)]
 fn valid_match_small_proving_time(c: &mut Criterion) {
     // Create mock data to prove against
-    let QUOTE_MINT = 1;
-    let BASE_MINT = 2;
+    let quote_mint = 1;
+    let base_mint = 2;
 
-    let order1 = Order { quote_mint: QUOTE_MINT, base_mint: BASE_MINT, side: OrderSide::Buy, amount: 5, price: 11 };
-    let order2 = Order { quote_mint: QUOTE_MINT, base_mint: BASE_MINT, side: OrderSide::Sell, amount: 3, price: 9 };
+    let order1 = Order { quote_mint, base_mint, side: OrderSide::Buy, amount: 5, price: 11 };
+    let order2 = Order { quote_mint, base_mint, side: OrderSide::Sell, amount: 3, price: 9 };
 
-    let balance1 = Balance { mint: QUOTE_MINT, amount: 50 };
-    let balance2 = Balance { mint: BASE_MINT, amount: 3 };
+    let balance1 = Balance { mint: quote_mint, amount: 50 };
+    let balance2 = Balance { mint: base_mint, amount: 3 };
 
     let match_result = SingleMatchResult {
-        buy_side1: Match { mint: BASE_MINT, amount: 3, side: OrderSide::Buy },
-        sell_side1: Match { mint: QUOTE_MINT, amount: 30, side: OrderSide::Sell },
-        buy_side2: Match { mint: QUOTE_MINT, amount: 30, side: OrderSide::Buy },
-        sell_side2: Match { mint: BASE_MINT, amount: 3, side: OrderSide::Sell },
+        buy_side1: Match { mint: base_mint, amount: 3, side: OrderSide::Buy },
+        sell_side1: Match { mint: quote_mint, amount: 30, side: OrderSide::Sell },
+        buy_side2: Match { mint: quote_mint, amount: 30, side: OrderSide::Buy },
+        sell_side2: Match { mint: base_mint, amount: 3, side: OrderSide::Sell },
     };
 
     // Create fake Merkle openings for the balances and orders
@@ -42,7 +42,7 @@ fn valid_match_small_proving_time(c: &mut Criterion) {
     ).unwrap();
 
     // Create a circuit and verify that it is satisfied
-    let root = tree.root();
+    let _root = tree.root();
 
     // Build the proving key
     println!("Building circuit and proving key...");

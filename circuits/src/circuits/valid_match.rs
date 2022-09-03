@@ -320,16 +320,16 @@ mod valid_match_test {
         let wallet2_hash = wallet2.hash();
     
         // Build and setup the constraint system and proof system keys
-        let circuit = ValidMatchCircuit::new(wallet1.clone(), wallet2.clone(), wallet1_hash.clone(), wallet2_hash.clone());
+        let circuit = ValidMatchCircuit::new(wallet1, wallet2, wallet1_hash.clone(), wallet2_hash.clone());
 
         let proving_key = ValidMatchCircuit::create_proving_key(max_balances, max_orders).unwrap();
         let proof = circuit.create_proof(&proving_key).unwrap();
 
         // Verify the proof and assert validity
         let verifying_key = prepare_verifying_key(&proving_key.vk);
-        let verification_result = verify_proof(&verifying_key, &proof, &vec![
-            SystemField::from(wallet1_hash.clone()),
-            SystemField::from(wallet2_hash.clone()),
+        let verification_result = verify_proof(&verifying_key, &proof, &[
+            SystemField::from(wallet1_hash),
+            SystemField::from(wallet2_hash)
         ]).unwrap();
 
         assert!(verification_result)

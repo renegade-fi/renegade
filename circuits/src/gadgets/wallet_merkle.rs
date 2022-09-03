@@ -15,23 +15,23 @@ use super::poseidon::{PoseidonHashInput, PoseidonSpongeWrapperVar, PoseidonVecto
  * Groups gadgets that verify Merkle proofs for wallet balances and orders
  */
 
-pub struct MerklePoseidonGadget<const Depth: usize, F: PrimeField> {
+pub struct MerklePoseidonGadget<const DEPTH: usize, F: PrimeField> {
     _phantom: PhantomData<F>
 }
 
-impl<const Depth: usize, F: PrimeField> MerklePoseidonGadget<Depth, F> {
+impl<const DEPTH: usize, F: PrimeField> MerklePoseidonGadget<DEPTH, F> {
     pub fn check_opening(
-        cs: ConstraintSystemRef<F>,
+        cs: &mut ConstraintSystemRef<F>,
         leaf: &impl PoseidonHashInput<F>,
         tree_hasher: Poseidon<F>,
-        path: &PathVar<F, PoseidonGadget<F>, Depth>,
+        path: &PathVar<F, PoseidonGadget<F>, DEPTH>,
         root: &FpVar<F>,
     ) -> Result<(), SynthesisError> {
         let mut hasher = PoseidonSpongeWrapperVar::new(cs.clone());
         let hash_digest = PoseidonVectorHashGadget::evaluate(leaf, &mut hasher)?;
 
-        let tree_hasher_var = PoseidonGadget::from_native(&mut cs.clone(), tree_hasher)?;
-        path.check_membership(&root, &hash_digest, &tree_hasher_var)?
+        let tree_hasher_var = PoseidonGadget::from_native(cs, tree_hasher)?;
+        path.check_membership(root, &hash_digest, &tree_hasher_var)?
             .enforce_equal(&Boolean::TRUE)?;
 
         Ok(())

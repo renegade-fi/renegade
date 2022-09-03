@@ -3,7 +3,7 @@ use ark_r1cs_std::{prelude::{EqGadget, Boolean, FieldVar}, uint8::UInt8, uint64:
 use ark_relations::r1cs::SynthesisError;
 use std::marker::PhantomData;
 
-use crate::types::{SingleMatchResultVar, BalanceVar, OrderVar, MatchVariable, Match};
+use crate::types::{SingleMatchResultVar, BalanceVar, OrderVar, MatchVariable};
 
 use super::{util::GreaterThanEqGadget, poseidon::u64_to_field_element};
 
@@ -116,14 +116,14 @@ impl<F: PrimeField> ValidMatchGadget<F> {
             &execution_price, 
             &single_match.buy_side1,
             &single_match.sell_side1, 
-            &order1,
+            order1,
         )?;
 
         Self::enforce_order_at_price(
             &execution_price, 
             &single_match.buy_side2, 
             &single_match.sell_side2, 
-            &order2
+            order2
         )?;
 
         Ok(())
@@ -155,8 +155,8 @@ impl<F: PrimeField> ValidMatchGadget<F> {
 
         // Enforce that the price is equal or better than the limit in the order
         let order_price_fp = Boolean::le_bits_to_fp_var(&order.price.to_bits_le())?;
-        let greater_than_order = GreaterThanEqGadget::greater_than(&price, &order_price_fp)?;
-        let less_than_order = GreaterThanEqGadget::greater_than(&order_price_fp, &price)?;
+        let greater_than_order = GreaterThanEqGadget::greater_than(price, &order_price_fp)?;
+        let less_than_order = GreaterThanEqGadget::greater_than(&order_price_fp, price)?;
 
         // For sell orders, the execution price should be >= to the limit price, for buy orders we use <= 
         Boolean::conditionally_select(

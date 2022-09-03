@@ -262,7 +262,7 @@ mod match_test {
     use crate::types::{Order, OrderSide, Wallet, Match, SystemField};
     use super::{MatchGadget, WalletVar};
 
-    fn has_nonzero_match(matches_list: &Vec<Match>) -> bool {
+    fn has_nonzero_match(matches_list: &[Match]) -> bool {
         matches_list.iter()
             .any(|match_res| {
                 match_res.amount != 0 || match_res.mint != 0 || match_res.side == OrderSide::Sell // Sell side is 1
@@ -296,7 +296,7 @@ mod match_test {
         let cs = ConstraintSystem::<SystemField>::new_ref();
 
         let wallet1_var = WalletVar::new_witness(cs.clone(), || Ok(wallet1)).unwrap();
-        let wallet2_var = WalletVar::new_witness(cs.clone(), || Ok(wallet2)).unwrap();
+        let wallet2_var = WalletVar::new_witness(cs, || Ok(wallet2)).unwrap();
 
         let res = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
             .unwrap()
@@ -304,8 +304,8 @@ mod match_test {
             .unwrap();
         
         // Both matches lists should be all zeroed
-        assert!(res.matches1.len() > 0);
-        assert!(res.matches2.len() > 0);
+        assert!(!res.matches1.is_empty());
+        assert!(!res.matches2.is_empty());
         assert!(!has_nonzero_match(&res.matches1));
         assert!(!has_nonzero_match(&res.matches2));
     }
@@ -337,7 +337,7 @@ mod match_test {
         let cs = ConstraintSystem::<SystemField>::new_ref();
 
         let wallet1_var = WalletVar::new_witness(cs.clone(), || Ok(wallet1)).unwrap();
-        let wallet2_var = WalletVar::new_witness(cs.clone(), || Ok(wallet2)).unwrap();
+        let wallet2_var = WalletVar::new_witness(cs, || Ok(wallet2)).unwrap();
 
         let res = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
             .unwrap()
@@ -345,8 +345,8 @@ mod match_test {
             .unwrap();
         
         // Check that both matches lists are zeroed 
-        assert!(res.matches1.len() > 0);
-        assert!(res.matches2.len() > 0);
+        assert!(!res.matches1.is_empty());
+        assert!(!res.matches2.is_empty());
         assert!(!has_nonzero_match(&res.matches1));
         assert!(!has_nonzero_match(&res.matches2));
     }
@@ -376,15 +376,15 @@ mod match_test {
         let cs = ConstraintSystem::<SystemField>::new_ref();
 
         let wallet1_var = WalletVar::new_witness(cs.clone(), || Ok(wallet1)).unwrap();
-        let wallet2_var = WalletVar::new_witness(cs.clone(), || Ok(wallet2)).unwrap();
+        let wallet2_var = WalletVar::new_witness(cs, || Ok(wallet2)).unwrap();
 
         let res1 = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
             .unwrap()
             .value()
             .unwrap();
         
-        assert!(res1.matches1.len() > 0);
-        assert!(res1.matches2.len() > 0);
+        assert!(!res1.matches1.is_empty());
+        assert!(!res1.matches2.is_empty());
         assert!(!has_nonzero_match(&res1.matches1));
         assert!(!has_nonzero_match(&res1.matches2));
 
@@ -394,8 +394,8 @@ mod match_test {
             .value()
             .unwrap();
         
-        assert!(res2.matches1.len() > 0);
-        assert!(res2.matches2.len() > 0);
+        assert!(!res2.matches1.is_empty());
+        assert!(!res2.matches2.is_empty());
         assert!(!has_nonzero_match(&res2.matches1));
         assert!(!has_nonzero_match(&res2.matches2));
     }
@@ -428,7 +428,7 @@ mod match_test {
         let cs = ConstraintSystem::<SystemField>::new_ref();
 
         let wallet1_var = WalletVar::new_witness(cs.clone(), || Ok(wallet1)).unwrap();
-        let wallet2_var = WalletVar::new_witness(cs.clone(), || Ok(wallet2)).unwrap();
+        let wallet2_var = WalletVar::new_witness(cs, || Ok(wallet2)).unwrap();
 
         let res = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
             .unwrap()
@@ -516,7 +516,7 @@ mod match_test {
         let cs = ConstraintSystem::<SystemField>::new_ref();
 
         let wallet1_var = WalletVar::new_witness(cs.clone(), || Ok(wallet1)).unwrap();
-        let wallet2_var = WalletVar::new_witness(cs.clone(), || Ok(wallet2)).unwrap();
+        let wallet2_var = WalletVar::new_witness(cs, || Ok(wallet2)).unwrap();
 
         let res = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
             .unwrap()
@@ -575,7 +575,7 @@ mod proof_test {
             cs: ark_relations::r1cs::ConstraintSystemRef<F>
         ) -> Result<(), SynthesisError> {
             let wallet1_var = WalletVar::new_witness(cs.clone(), || Ok(&self.wallet1)).unwrap();
-            let wallet2_var = WalletVar::new_witness(cs.clone(), || Ok(&self.wallet2)).unwrap();
+            let wallet2_var = WalletVar::new_witness(cs, || Ok(&self.wallet2)).unwrap();
 
             let res = MatchGadget::compute_matches(&wallet1_var, &wallet2_var)
                 .unwrap();

@@ -11,7 +11,7 @@ use ark_sponge::{
     },
 };
 
-use crate::{types::{MatchResultVariable, WalletVar, OrderVar, Balance, BalanceVar}, constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3}};
+use crate::{types::{MatchResultVariable, WalletVar, OrderVar, BalanceVar}, constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3}};
 
 
 /**
@@ -263,7 +263,7 @@ mod test {
 
         let wallet_var = WalletVar::new_input(cs.clone(), || Ok(wallet)).unwrap();
 
-        let mut wallet_hasher = PoseidonSpongeWrapperVar::new(cs.clone());
+        let mut wallet_hasher = PoseidonSpongeWrapperVar::new(cs);
         let hash_input = Result::<OrderHashInput<SystemField>, SynthesisError>::from(&wallet_var).unwrap();
 
         let wallet_hash = PoseidonVectorHashGadget::evaluate(&hash_input, &mut wallet_hasher).unwrap();
@@ -292,7 +292,7 @@ mod test {
 
         let wallet_var = WalletVar::new_input(cs.clone(), || Ok(wallet)).unwrap();
 
-        let mut wallet_hasher = PoseidonSpongeWrapperVar::new(cs.clone());
+        let mut wallet_hasher = PoseidonSpongeWrapperVar::new(cs);
         let hash_input = Result::<WalletHashInput<SystemField>, SynthesisError>::from(&wallet_var).unwrap();
 
         let wallet_hash = PoseidonVectorHashGadget::evaluate(&hash_input, &mut wallet_hasher).unwrap();

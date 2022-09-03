@@ -1,10 +1,9 @@
+#![allow(clippy::too_many_arguments)]
 use ark_ec::PairingEngine;
 use ark_ff::{PrimeField, Zero};
 use ark_groth16::{ProvingKey, Proof, create_random_proof, generate_random_parameters};
-use ark_r1cs_std::{prelude::{AllocVar, FieldVar, EqGadget, Boolean}, fields::fp::FpVar};
+use ark_r1cs_std::{prelude::{AllocVar, EqGadget}, fields::fp::FpVar};
 use ark_relations::r1cs::{ConstraintSynthesizer, SynthesisError, ConstraintSystemRef};
-use arkworks_native_gadgets::{merkle_tree::{Path, SparseMerkleTree}, poseidon::Poseidon};
-use arkworks_r1cs_gadgets::{merkle_tree::PathVar, poseidon::{PoseidonGadget, FieldHasherGadget}};
 use num_bigint::BigUint;
 use rand::rngs::OsRng;
 use std::{cell::RefCell, marker::PhantomData};
@@ -12,11 +11,11 @@ use std::{cell::RefCell, marker::PhantomData};
 use crate::{
     types::{
         Balance, Order, BalanceVar, OrderVar, SystemField, SystemPairingEngine, 
-        SingleMatchResult, SingleMatchResultVar, WALLET_TREE_DEPTH, SystemHasher,
+        SingleMatchResult, SingleMatchResultVar, WALLET_TREE_DEPTH,
     }, 
     gadgets::{
         covered_match::ValidMatchGadget, 
-        wallet_merkle::{get_merkle_hash_params, MerklePoseidonGadget}, poseidon::{BalanceHashInput, OrderHashInput, PoseidonVectorHashGadget, PoseidonSpongeWrapperVar}
+        poseidon::{BalanceHashInput, OrderHashInput, PoseidonVectorHashGadget, PoseidonSpongeWrapperVar}
     }
 };
 
@@ -27,13 +26,6 @@ use crate::{
  */
 
 pub struct SmallValidMatchCircuit {
-    // Inputs
-    matches: SingleMatchResult,
-    balance1: Balance,
-    balance2: Balance,
-    order1: Order,
-    order2: Order,
-
     // Circuit implementation
     circuit: RefCell<SmallValidMatchCircuitImpl<WALLET_TREE_DEPTH, SystemField>>
 }
@@ -56,15 +48,15 @@ impl SmallValidMatchCircuit {
                 balance2_hash,
                 order1_hash,
                 order2_hash,
-                matches.clone(),
-                balance1.clone(),
-                balance2.clone(),
-                order1.clone(), 
-                order2.clone(),
+                matches,
+                balance1,
+                balance2,
+                order1, 
+                order2,
             )
         );
 
-        Self { matches, balance1, balance2, order1, order2, circuit }
+        Self { circuit }
     }
 
     // Creates a proving key for the proof system given a circuit size
@@ -92,7 +84,7 @@ impl SmallValidMatchCircuit {
 }
 
 #[derive(Clone)]
-struct SmallValidMatchCircuitImpl<const TreeDepth: usize, F: PrimeField> {
+struct SmallValidMatchCircuitImpl<const TREE_DEPTH: usize, F: PrimeField> {
     // Statement
     balance1_hash: BigUint,
     balance2_hash: BigUint,
@@ -110,17 +102,9 @@ struct SmallValidMatchCircuitImpl<const TreeDepth: usize, F: PrimeField> {
     _phantom: PhantomData<F>,
 }
 
-impl<const TreeDepth: usize, F: PrimeField> Default for SmallValidMatchCircuitImpl<TreeDepth, F> {
+impl<const TREE_DEPTH: usize, F: PrimeField> Default for SmallValidMatchCircuitImpl<TREE_DEPTH, F> {
     fn default() -> Self {
         // Build a zero'd tree and fake hash 
-        let empty_leaves = vec![F::zero(); 1 << (TreeDepth - 1)];
-        let hasher = Poseidon::<F>::new(get_merkle_hash_params());
-        let blank_tree = SparseMerkleTree::<F, _, TreeDepth>::new_sequential(
-            &empty_leaves, 
-            &hasher, 
-            &[0u8]
-        ).unwrap();
-
         Self {
             // Statement variables
             balance1_hash: BigUint::zero(),
@@ -140,7 +124,7 @@ impl<const TreeDepth: usize, F: PrimeField> Default for SmallValidMatchCircuitIm
     }
 }
 
-impl<const TreeDepth: usize, F: PrimeField> SmallValidMatchCircuitImpl<TreeDepth, F> {
+impl<const TREE_DEPTH: usize, F: PrimeField> SmallValidMatchCircuitImpl<TREE_DEPTH, F> {
    fn new(
         balance1_hash: BigUint,
         balance2_hash: BigUint,
@@ -167,7 +151,7 @@ impl<const TreeDepth: usize, F: PrimeField> SmallValidMatchCircuitImpl<TreeDepth
     }
 }
 
-impl<const TreeDepth: usize, F: PrimeField> ConstraintSynthesizer<F> for SmallValidMatchCircuitImpl<TreeDepth, F> {
+impl<const TREE_DEPTH: usize, F: PrimeField> ConstraintSynthesizer<F> for SmallValidMatchCircuitImpl<TREE_DEPTH, F> {
     fn generate_constraints(
         self, 
         cs: ark_relations::r1cs::ConstraintSystemRef<F>
@@ -211,7 +195,7 @@ impl<const TreeDepth: usize, F: PrimeField> ConstraintSynthesizer<F> for SmallVa
         PoseidonVectorHashGadget::evaluate(&order1_hash_input, &mut hasher3)?
             .enforce_equal(&order1_hash_var)?;
         
-        let mut hasher4 = PoseidonSpongeWrapperVar::new(cs.clone());
+        let mut hasher4 = PoseidonSpongeWrapperVar::new(cs);
         let order2_hash_input = Result::<OrderHashInput<F>, SynthesisError>::from(&order2_var)?;
         PoseidonVectorHashGadget::evaluate(&order2_hash_input, &mut hasher4)?
             .enforce_equal(&order2_hash_var)?;
@@ -225,48 +209,31 @@ impl<const TreeDepth: usize, F: PrimeField> ConstraintSynthesizer<F> for SmallVa
 #[cfg(test)]
 mod small_valid_match_test {
     use ark_groth16::{prepare_verifying_key, verify_proof};
-    use arkworks_native_gadgets::{poseidon::Poseidon, merkle_tree::SparseMerkleTree};
 
-    use crate::{types::{Order, OrderSide, Balance, Match, SingleMatchResult, SystemField, WALLET_TREE_DEPTH}, gadgets::wallet_merkle::get_merkle_hash_params};
+    use crate::types::{Order, OrderSide, Balance, Match, SingleMatchResult, SystemField};
 
     use super::SmallValidMatchCircuit;
 
     #[test]
     fn test_match() {
         // Create fake overlapping orders with a midpoint price of 10 quote/base and 4 base tokens transferred
-        let QUOTE_MINT = 1;
-        let BASE_MINT = 2;
+        let quote_mint = 1;
+        let base_mint = 2;
 
-        let order1 = Order { quote_mint: QUOTE_MINT, base_mint: BASE_MINT, side: OrderSide::Buy, amount: 5, price: 11 };
-        let order2 = Order { quote_mint: QUOTE_MINT, base_mint: BASE_MINT, side: OrderSide::Sell, amount: 3, price: 9 };
+        let order1 = Order { quote_mint, base_mint, side: OrderSide::Buy, amount: 5, price: 11 };
+        let order2 = Order { quote_mint, base_mint, side: OrderSide::Sell, amount: 3, price: 9 };
 
-        let balance1 = Balance { mint: QUOTE_MINT, amount: 50 };
-        let balance2 = Balance { mint: BASE_MINT, amount: 3 };
+        let balance1 = Balance { mint: quote_mint, amount: 50 };
+        let balance2 = Balance { mint: base_mint, amount: 3 };
 
         let match_result = SingleMatchResult {
-            buy_side1: Match { mint: BASE_MINT, amount: 3, side: OrderSide::Buy },
-            sell_side1: Match { mint: QUOTE_MINT, amount: 30, side: OrderSide::Sell },
-            buy_side2: Match { mint: QUOTE_MINT, amount: 30, side: OrderSide::Buy },
-            sell_side2: Match { mint: BASE_MINT, amount: 3, side: OrderSide::Sell },
+            buy_side1: Match { mint: base_mint, amount: 3, side: OrderSide::Buy },
+            sell_side1: Match { mint: quote_mint, amount: 30, side: OrderSide::Sell },
+            buy_side2: Match { mint: quote_mint, amount: 30, side: OrderSide::Buy },
+            sell_side2: Match { mint: base_mint, amount: 3, side: OrderSide::Sell },
         };
 
-        // Create fake Merkle openings for the balances and orders
-        let hasher = Poseidon::<SystemField>::new(get_merkle_hash_params());
-        let leaves = vec![
-            SystemField::from(balance1.hash()),
-            SystemField::from(balance2.hash()),
-            SystemField::from(order1.hash()),
-            SystemField::from(order2.hash())
-        ];
-
-        let tree = SparseMerkleTree::<SystemField, _, WALLET_TREE_DEPTH>::new_sequential(
-            &leaves,
-            &hasher,
-            &[0u8; 32]
-        ).unwrap();
-
         // Create a circuit and verify that it is satisfied
-        let root = tree.root();
         let mut circuit = SmallValidMatchCircuit::new(
             match_result, 
             balance1.clone(), 
@@ -284,7 +251,7 @@ mod small_valid_match_test {
         let proof = circuit.create_proof(&proving_key).unwrap();
 
         let verifying_key = prepare_verifying_key(&proving_key.vk);
-        let verification_result = verify_proof(&verifying_key, &proof, &vec![
+        let verification_result = verify_proof(&verifying_key, &proof, &[
             SystemField::from(balance1.hash()),
             SystemField::from(balance2.hash()),
             SystemField::from(order1.hash()),

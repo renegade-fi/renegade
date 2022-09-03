@@ -5,7 +5,6 @@ use ark_ff::{PrimeField, ToBytes};
 use ark_r1cs_std::{prelude::AllocVar, R1CSVar, uint64::UInt64, uint8::UInt8};
 use ark_relations::r1cs::{SynthesisError, Namespace};
 use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
-use arkworks_native_gadgets::poseidon::Poseidon;
 use num_bigint::BigUint;
 use std::borrow::Borrow;
 use std::io::{Result as IOResult, Write};
@@ -21,8 +20,6 @@ use crate::gadgets::poseidon::PoseidonSpongeWrapperVar;
 pub type SystemField = Bn254Fr;
 // The pairing engine used throughout the proof system
 pub type SystemPairingEngine = Bn<Parameters>;
-// The hash type used for Merkle proofs
-pub type SystemHasher<F: PrimeField> = Poseidon<F>;
 // The depth of wallet state trees
 pub const WALLET_TREE_DEPTH: usize = 8;
 
@@ -213,9 +210,7 @@ pub struct Balance {
 
 impl Balance {
     pub fn hash(&self) -> BigUint {
-        let mut hash_input = Vec::<u64>::new();
-        hash_input.push(self.mint);
-        hash_input.push(self.amount);
+        let hash_input = vec![self.mint, self.amount];
 
         let mut sponge = PoseidonSponge::<SystemField>::new(&PoseidonSpongeWrapperVar::default_params());
         for input in hash_input.iter() {
