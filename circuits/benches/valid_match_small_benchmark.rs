@@ -52,17 +52,15 @@ fn valid_match_small_proving_time(c: &mut Criterion) {
     c.bench_function("VALID_MATCH single order", |b| b.iter(
         || {
             let mut circuit = SmallValidMatchCircuit::new(
-                root.into(),
-                root.into(),
                 match_result.clone(), 
                 balance1.clone(), 
                 balance2.clone(), 
-                tree.generate_membership_proof(0 /* index */),
-                tree.generate_membership_proof(1 /* index */),
+                balance1.hash(),
+                balance2.hash(),
                 order1.clone(), 
                 order2.clone(),
-                tree.generate_membership_proof(2 /* index */),
-                tree.generate_membership_proof(3 /* index */)
+                order1.hash(),
+                order2.hash(),
             );
             circuit.create_proof(black_box(&proving_key)).unwrap();
         })

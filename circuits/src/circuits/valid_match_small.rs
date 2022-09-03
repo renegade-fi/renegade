@@ -7,7 +7,7 @@ use arkworks_native_gadgets::{merkle_tree::{Path, SparseMerkleTree}, poseidon::P
 use arkworks_r1cs_gadgets::{merkle_tree::PathVar, poseidon::{PoseidonGadget, FieldHasherGadget}};
 use num_bigint::BigUint;
 use rand::rngs::OsRng;
-use std::cell::RefCell;
+use std::{cell::RefCell, marker::PhantomData};
 
 use crate::{
     types::{
@@ -16,7 +16,7 @@ use crate::{
     }, 
     gadgets::{
         covered_match::ValidMatchGadget, 
-        wallet_merkle::{get_merkle_hash_params, MerklePoseidonGadget}, poseidon::{BalanceHashInput, OrderHashInput}
+        wallet_merkle::{get_merkle_hash_params, MerklePoseidonGadget}, poseidon::{BalanceHashInput, OrderHashInput, PoseidonVectorHashGadget, PoseidonSpongeWrapperVar}
     }
 };
 
@@ -40,31 +40,27 @@ pub struct SmallValidMatchCircuit {
 
 impl SmallValidMatchCircuit {
     pub fn new(
-        balances_root: BigUint,
-        orders_root: BigUint,
         matches: SingleMatchResult,
         balance1: Balance,
         balance2: Balance,
-        balance1_opening: Path<SystemField, SystemHasher<SystemField>, WALLET_TREE_DEPTH>,
-        balance2_opening: Path<SystemField, SystemHasher<SystemField>, WALLET_TREE_DEPTH>,
+        balance1_hash: BigUint,
+        balance2_hash: BigUint,
         order1: Order,
         order2: Order,
-        order1_opening: Path<SystemField, SystemHasher<SystemField>, WALLET_TREE_DEPTH>,
-        order2_opening: Path<SystemField, SystemHasher<SystemField>, WALLET_TREE_DEPTH>
+        order1_hash: BigUint,
+        order2_hash: BigUint,
     ) -> Self {
         let circuit = RefCell::new(
             SmallValidMatchCircuitImpl::new(
-                balances_root.clone(),
-                orders_root.clone(),
-                matches.clone(), 
-                balance1.clone(), 
-                balance2.clone(), 
-                balance1_opening.clone(),
-                balance2_opening.clone(),
+                balance1_hash,
+                balance2_hash,
+                order1_hash,
+                order2_hash,
+                matches.clone(),
+                balance1.clone(),
+                balance2.clone(),
                 order1.clone(), 
                 order2.clone(),
-                order1_opening.clone(),
-                order2_opening.clone(),
             )
         );
 
@@ -98,19 +94,20 @@ impl SmallValidMatchCircuit {
 #[derive(Clone)]
 struct SmallValidMatchCircuitImpl<const TreeDepth: usize, F: PrimeField> {
     // Statement
-    balances_root: BigUint,
-    orders_root: BigUint,
+    balance1_hash: BigUint,
+    balance2_hash: BigUint,
+    order1_hash: BigUint,
+    order2_hash: BigUint,
 
     // Witness 
     matches: SingleMatchResult,
     balance1: Balance,
     balance2: Balance,
-    balance1_opening: Path<F, SystemHasher<F>, TreeDepth>,
-    balance2_opening: Path<F, SystemHasher<F>, TreeDepth>,
     order1: Order,
     order2: Order,
-    order1_opening: Path<F, SystemHasher<F>, TreeDepth>,
-    order2_opening: Path<F, SystemHasher<F>, TreeDepth>,
+
+    // Phantom
+    _phantom: PhantomData<F>,
 }
 
 impl<const TreeDepth: usize, F: PrimeField> Default for SmallValidMatchCircuitImpl<TreeDepth, F> {
@@ -118,58 +115,54 @@ impl<const TreeDepth: usize, F: PrimeField> Default for SmallValidMatchCircuitIm
         // Build a zero'd tree and fake hash 
         let empty_leaves = vec![F::zero(); 1 << (TreeDepth - 1)];
         let hasher = Poseidon::<F>::new(get_merkle_hash_params());
-        let blank_tree = SparseMerkleTree::new_sequential(
+        let blank_tree = SparseMerkleTree::<F, _, TreeDepth>::new_sequential(
             &empty_leaves, 
             &hasher, 
             &[0u8]
         ).unwrap();
 
-        let default_path = blank_tree.generate_membership_proof(0);
-
         Self {
             // Statement variables
-            balances_root: BigUint::zero(),
-            orders_root: BigUint::zero(),
+            balance1_hash: BigUint::zero(),
+            balance2_hash: BigUint::zero(),
+            order1_hash: BigUint::zero(),
+            order2_hash: BigUint::zero(),
+
             // Witness variables
             matches: SingleMatchResult::default(),
             balance1: Balance::default(),
             balance2: Balance::default(),
-            balance1_opening: default_path.clone(),
-            balance2_opening: default_path.clone(),
             order1: Order::default(),
             order2: Order::default(),
-            order1_opening: default_path.clone(),
-            order2_opening: default_path,
+
+            _phantom: PhantomData
         } 
     }
 }
 
 impl<const TreeDepth: usize, F: PrimeField> SmallValidMatchCircuitImpl<TreeDepth, F> {
    fn new(
-        balances_root: BigUint,
-        orders_root: BigUint,
+        balance1_hash: BigUint,
+        balance2_hash: BigUint,
+        order1_hash: BigUint,
+        order2_hash: BigUint,
         matches: SingleMatchResult,
         balance1: Balance,
         balance2: Balance,
-        balance1_opening: Path<F, SystemHasher<F>, TreeDepth>,
-        balance2_opening: Path<F, SystemHasher<F>, TreeDepth>,
         order1: Order,
         order2: Order,
-        order1_opening: Path<F, SystemHasher<F>, TreeDepth>,
-        order2_opening: Path<F, SystemHasher<F>, TreeDepth>
     ) -> Self {
         Self { 
-            balances_root, 
-            orders_root, 
+            balance1_hash,
+            balance2_hash,
+            order1_hash,
+            order2_hash,
             matches, 
             balance1, 
             balance2, 
-            balance1_opening,
-            balance2_opening,
             order1, 
             order2, 
-            order1_opening,
-            order2_opening,
+            _phantom: PhantomData,
         }
     }
 }
@@ -180,12 +173,10 @@ impl<const TreeDepth: usize, F: PrimeField> ConstraintSynthesizer<F> for SmallVa
         cs: ark_relations::r1cs::ConstraintSystemRef<F>
     ) -> Result<(), SynthesisError> {
         // Statement variables
-        let balances_root_var = FpVar::new_input(
-            cs.clone(), || { Ok( F::from(self.balances_root)) }
-        )?;
-        let orders_root_var = FpVar::new_input(
-            cs.clone(), || { Ok( F::from(self.orders_root)) }
-        )?;
+        let balance1_hash_var = FpVar::new_input(cs.clone(), || { Ok(F::from(self.balance1_hash)) })?;
+        let balance2_hash_var = FpVar::new_input(cs.clone(), || { Ok(F::from(self.balance2_hash)) })?;
+        let order1_hash_var = FpVar::new_input(cs.clone(), || { Ok(F::from(self.order1_hash)) })?;
+        let order2_hash_var = FpVar::new_input(cs.clone(), || { Ok(F::from(self.order2_hash)) })?;
 
         // Witness variables
         let single_match_var = SingleMatchResultVar::new_witness(cs.clone(), || { Ok(self.matches) })?;
@@ -193,14 +184,8 @@ impl<const TreeDepth: usize, F: PrimeField> ConstraintSynthesizer<F> for SmallVa
         let balance1_var = BalanceVar::new_witness(cs.clone(), || { Ok(self.balance1) })?;
         let balance2_var = BalanceVar::new_witness(cs.clone(), || { Ok(self.balance2 )})?;
 
-        let balance1_opening_var = PathVar::new_witness(cs.clone(), || { Ok(self.balance1_opening) })?;
-        let balance2_opening_var = PathVar::new_witness(cs.clone(), || { Ok(self.balance2_opening )})?;
-
         let order1_var = OrderVar::new_witness(cs.clone(), || { Ok(self.order1) })?;
         let order2_var = OrderVar::new_witness(cs.clone(), || { Ok(self.order2) })?;
-
-        let order1_opening_var = PathVar::new_witness(cs.clone(), || { Ok(self.order1_opening )})?;
-        let order2_opening_var = PathVar::new_witness(cs.clone(), || { Ok(self.order2_opening )})?;
 
         // Check that
         // 1. The match is internally valid (sells match buys)
@@ -210,39 +195,26 @@ impl<const TreeDepth: usize, F: PrimeField> ConstraintSynthesizer<F> for SmallVa
         ValidMatchGadget::enforce_valid_balances(&single_match_var, &balance1_var, &balance2_var)?;
         ValidMatchGadget::enforce_valid_orders(&single_match_var, &order1_var, &order2_var)?;
 
-        // Check that the balances and orders are valid state elements
-        let native_hasher = Poseidon::<F>::new(get_merkle_hash_params());
-        MerklePoseidonGadget::check_opening(
-            cs.clone(), 
-            &Result::<BalanceHashInput<F>, SynthesisError>::from(&balance1_var)?, 
-            native_hasher.clone(), 
-            &balance1_opening_var, 
-            &balances_root_var
-        )?;
-
-        MerklePoseidonGadget::check_opening(
-            cs.clone(), 
-            &Result::<BalanceHashInput<F>, SynthesisError>::from(&balance2_var)?, 
-            native_hasher.clone(), 
-            &balance2_opening_var, 
-            &balances_root_var
-        )?;
+        // Check that the balances and orders hash to their input consistency values
+        let mut hasher1 = PoseidonSpongeWrapperVar::new(cs.clone());
+        let balance1_hash_input = Result::<BalanceHashInput<F>, SynthesisError>::from(&balance1_var)?;
+        PoseidonVectorHashGadget::evaluate(&balance1_hash_input, &mut hasher1)?
+            .enforce_equal(&balance1_hash_var)?;
         
-        MerklePoseidonGadget::check_opening(
-            cs.clone(), 
-            &Result::<OrderHashInput<F>, SynthesisError>::from(&order1_var)?, 
-            native_hasher.clone(), 
-            &order1_opening_var, 
-            &orders_root_var
-        )?;
-
-        MerklePoseidonGadget::check_opening(
-            cs.clone(), 
-            &Result::<OrderHashInput<F>, SynthesisError>::from(&order2_var)?, 
-            native_hasher, 
-            &order2_opening_var, 
-            &orders_root_var
-        )?;
+        let mut hasher2 = PoseidonSpongeWrapperVar::new(cs.clone());
+        let balance2_hash_input = Result::<BalanceHashInput<F>, SynthesisError>::from(&balance2_var)?;
+        PoseidonVectorHashGadget::evaluate(&balance2_hash_input, &mut hasher2)?
+            .enforce_equal(&balance2_hash_var)?;
+        
+        let mut hasher3 = PoseidonSpongeWrapperVar::new(cs.clone()); 
+        let order1_hash_input = Result::<OrderHashInput<F>, SynthesisError>::from(&order1_var)?;
+        PoseidonVectorHashGadget::evaluate(&order1_hash_input, &mut hasher3)?
+            .enforce_equal(&order1_hash_var)?;
+        
+        let mut hasher4 = PoseidonSpongeWrapperVar::new(cs.clone());
+        let order2_hash_input = Result::<OrderHashInput<F>, SynthesisError>::from(&order2_var)?;
+        PoseidonVectorHashGadget::evaluate(&order2_hash_input, &mut hasher4)?
+            .enforce_equal(&order2_hash_var)?;
 
         // Validate the orders and balances in the state tree
         Ok(())
@@ -296,17 +268,15 @@ mod small_valid_match_test {
         // Create a circuit and verify that it is satisfied
         let root = tree.root();
         let mut circuit = SmallValidMatchCircuit::new(
-            root.into(),
-            root.into(),
             match_result, 
-            balance1, 
-            balance2, 
-            tree.generate_membership_proof(0 /* index */),
-            tree.generate_membership_proof(1 /* index */),
-            order1, 
-            order2,
-            tree.generate_membership_proof(2 /* index */),
-            tree.generate_membership_proof(3 /* index */)
+            balance1.clone(), 
+            balance2.clone(), 
+            balance1.hash(),
+            balance2.hash(),
+            order1.clone(), 
+            order2.clone(),
+            order1.hash(),
+            order2.hash(),
         );
 
         // Generate a proof
@@ -315,7 +285,10 @@ mod small_valid_match_test {
 
         let verifying_key = prepare_verifying_key(&proving_key.vk);
         let verification_result = verify_proof(&verifying_key, &proof, &vec![
-            root.clone(), root.clone()
+            SystemField::from(balance1.hash()),
+            SystemField::from(balance2.hash()),
+            SystemField::from(order1.hash()),
+            SystemField::from(order2.hash())
         ]).unwrap();
 
         assert!(verification_result)
