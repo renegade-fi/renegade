@@ -194,13 +194,13 @@ impl<const TreeDepth: usize, F: PrimeField> ConstraintSynthesizer<F> for SmallVa
         let balance2_var = BalanceVar::new_witness(cs.clone(), || { Ok(self.balance2 )})?;
 
         let balance1_opening_var = PathVar::new_witness(cs.clone(), || { Ok(self.balance1_opening) })?;
-        // let balance2_opening_var = PathVar::new_witness(cs.clone(), || { Ok(self.balance2_opening )})?;
+        let balance2_opening_var = PathVar::new_witness(cs.clone(), || { Ok(self.balance2_opening )})?;
 
         let order1_var = OrderVar::new_witness(cs.clone(), || { Ok(self.order1) })?;
         let order2_var = OrderVar::new_witness(cs.clone(), || { Ok(self.order2) })?;
 
-        // let order1_opening_var = PathVar::new_witness(cs.clone(), || { Ok(self.order1_opening )})?;
-        // let order2_opening_var = PathVar::new_witness(cs.clone(), || { Ok(self.order2_opening )})?;
+        let order1_opening_var = PathVar::new_witness(cs.clone(), || { Ok(self.order1_opening )})?;
+        let order2_opening_var = PathVar::new_witness(cs.clone(), || { Ok(self.order2_opening )})?;
 
         // Check that
         // 1. The match is internally valid (sells match buys)
@@ -220,29 +220,29 @@ impl<const TreeDepth: usize, F: PrimeField> ConstraintSynthesizer<F> for SmallVa
             &balances_root_var
         )?;
 
-        // MerklePoseidonGadget::check_opening(
-        //     cs.clone(), 
-        //     &Result::<BalanceHashInput<F>, SynthesisError>::from(&balance2_var)?, 
-        //     native_hasher.clone(), 
-        //     &balance2_opening_var, 
-        //     &balances_root_var
-        // )?;
+        MerklePoseidonGadget::check_opening(
+            cs.clone(), 
+            &Result::<BalanceHashInput<F>, SynthesisError>::from(&balance2_var)?, 
+            native_hasher.clone(), 
+            &balance2_opening_var, 
+            &balances_root_var
+        )?;
         
-        // MerklePoseidonGadget::check_opening(
-        //     cs.clone(), 
-        //     &Result::<OrderHashInput<F>, SynthesisError>::from(&order1_var)?, 
-        //     native_hasher.clone(), 
-        //     &order1_opening_var, 
-        //     &orders_root_var
-        // )?;
+        MerklePoseidonGadget::check_opening(
+            cs.clone(), 
+            &Result::<OrderHashInput<F>, SynthesisError>::from(&order1_var)?, 
+            native_hasher.clone(), 
+            &order1_opening_var, 
+            &orders_root_var
+        )?;
 
-        // MerklePoseidonGadget::check_opening(
-        //     cs.clone(), 
-        //     &Result::<OrderHashInput<F>, SynthesisError>::from(&order2_var)?, 
-        //     native_hasher, 
-        //     &order2_opening_var, 
-        //     &orders_root_var
-        // )?;
+        MerklePoseidonGadget::check_opening(
+            cs.clone(), 
+            &Result::<OrderHashInput<F>, SynthesisError>::from(&order2_var)?, 
+            native_hasher, 
+            &order2_opening_var, 
+            &orders_root_var
+        )?;
 
         // Validate the orders and balances in the state tree
         Ok(())

@@ -76,8 +76,8 @@ impl<F: PrimeField> From<&OrderVar<F>> for Result<OrderHashInput<F>, SynthesisEr
                     u64_to_field_element(&order.quote_mint)?,
                     u64_to_field_element(&order.base_mint)?,
                     u8_to_field_element(&order.side)?,
-                    u64_to_field_element(&order.amount)?, 
-                    u64_to_field_element(&order.price)?
+                    u64_to_field_element(&order.price)?,
+                    u64_to_field_element(&order.amount)?
                 ]
             }
         ) 
@@ -101,8 +101,8 @@ impl<F: PrimeField> From<&BalanceVar<F>> for Result<BalanceHashInput<F>, Synthes
         Ok(
             BalanceHashInput {
                 elements: vec![
-                    u64_to_field_element(&balance.amount)?,
-                    u64_to_field_element(&balance.mint)?
+                    u64_to_field_element(&balance.mint)?,
+                    u64_to_field_element(&balance.amount)?
                 ]
             }
         ) 

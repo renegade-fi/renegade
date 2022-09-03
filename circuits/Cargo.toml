@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [[bench]]
-name = "valid_match_benchmark"
+name = "valid_match_small_benchmark"
 harness = false
 
 [dependencies]

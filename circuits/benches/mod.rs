@@ -1,1 +1,2 @@
 mod valid_match_benchmark;
+mod valid_match_small_benchmark;
