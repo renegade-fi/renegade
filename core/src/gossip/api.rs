@@ -1,14 +1,12 @@
 use std::collections::HashMap;
 
-use libp2p::{
-    request_response::ResponseChannel, Multiaddr,
-};
-use serde::{Serialize, Deserialize};
+use libp2p::{request_response::ResponseChannel, Multiaddr};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
     gossip::types::{PeerInfo, WrappedPeerId},
-    state::{WalletMetadata, RelayerState}
+    state::{RelayerState, WalletMetadata},
 };
 
 /**
@@ -20,27 +18,36 @@ use crate::{
 #[derive(Debug)]
 pub enum GossipOutbound {
     // A generic request sent to the network manager for outbound delivery
-    Request { peer_id: WrappedPeerId, message: GossipRequest },
+    Request {
+        peer_id: WrappedPeerId,
+        message: GossipRequest,
+    },
     // A generic response sent to the network manager for outbound delivery
-    Response { channel: ResponseChannel<GossipResponse>, message: GossipResponse },
+    Response {
+        channel: ResponseChannel<GossipResponse>,
+        message: GossipResponse,
+    },
     // A command signalling to the network manager that a new node has been
     // discovered at the application level. The network manager should register
     // this node with the KDHT and propagate this change
-    NewAddr { peer_id: WrappedPeerId, address: Multiaddr }
+    NewAddr {
+        peer_id: WrappedPeerId,
+        address: Multiaddr,
+    },
 }
 
 // Represents the message data passed via the network
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GossipRequest {
     Heartbeat(HeartbeatMessage),
-    Handshake(HandshakeMessage)
+    Handshake(HandshakeMessage),
 }
 
 // Enumerates the possible response types for a gossip message
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GossipResponse {
     Heartbeat(HeartbeatMessage),
-    Handshake() 
+    Handshake(),
 }
 
 // Defines the heartbeat message, both request and response take
@@ -71,21 +78,24 @@ impl From<&RelayerState> for HeartbeatMessage {
         let mut known_peers: HashMap<String, PeerInfo> = HashMap::new();
         for (peer_id, peer_info) in state.known_peers.iter() {
             known_peers.insert(peer_id.to_string(), peer_info.clone());
-        } 
+        }
 
-        HeartbeatMessage { managed_wallets: managed_wallet_metadata, known_peers } 
-    } 
+        HeartbeatMessage {
+            managed_wallets: managed_wallet_metadata,
+            known_peers,
+        }
+    }
 }
 
 // Represents a gossip message sent to initiate a handshake request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HandshakeMessage {
     // The handshake operation to perform
-    pub operation: HandshakeOperation
+    pub operation: HandshakeOperation,
 }
 
 // Enumerates the different operations possible via handshake
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum HandshakeOperation {
-    Mpc
+    Mpc,
 }

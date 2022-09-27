@@ -1,13 +1,18 @@
-
 use std::marker::PhantomData;
 
 use ark_ff::PrimeField;
-use ark_r1cs_std::{fields::fp::FpVar, prelude::{EqGadget, Boolean}};
-use ark_relations::r1cs::{SynthesisError, ConstraintSystemRef};
-use arkworks_native_gadgets::poseidon::{PoseidonParameters, sbox::PoseidonSbox, Poseidon};
-use arkworks_r1cs_gadgets::{merkle_tree::PathVar, poseidon::{PoseidonGadget, FieldHasherGadget}};
+use ark_r1cs_std::{
+    fields::fp::FpVar,
+    prelude::{Boolean, EqGadget},
+};
+use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
+use arkworks_native_gadgets::poseidon::{sbox::PoseidonSbox, Poseidon, PoseidonParameters};
+use arkworks_r1cs_gadgets::{
+    merkle_tree::PathVar,
+    poseidon::{FieldHasherGadget, PoseidonGadget},
+};
 
-use crate::constants::{POSEIDON_ROUND_CONSTANTS_T_3, POSEIDON_MDS_MATRIX_T_3};
+use crate::constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3};
 
 use super::poseidon::{PoseidonHashInput, PoseidonSpongeWrapperVar, PoseidonVectorHashGadget};
 
@@ -16,7 +21,7 @@ use super::poseidon::{PoseidonHashInput, PoseidonSpongeWrapperVar, PoseidonVecto
  */
 
 pub struct MerklePoseidonGadget<const DEPTH: usize, F: PrimeField> {
-    _phantom: PhantomData<F>
+    _phantom: PhantomData<F>,
 }
 
 impl<const DEPTH: usize, F: PrimeField> MerklePoseidonGadget<DEPTH, F> {
@@ -39,15 +44,15 @@ impl<const DEPTH: usize, F: PrimeField> MerklePoseidonGadget<DEPTH, F> {
 }
 
 pub fn get_merkle_hash_params<F: PrimeField>() -> PoseidonParameters<F> {
-    PoseidonParameters { 
+    PoseidonParameters {
         round_keys: POSEIDON_ROUND_CONSTANTS_T_3()
             .into_iter()
             .flatten()
-            .collect(), 
-        mds_matrix: POSEIDON_MDS_MATRIX_T_3(), 
-        full_rounds: 56, 
-        partial_rounds: 8, 
-        width: 3, /* t from the paper */
-        sbox: PoseidonSbox(5) /* \alpha */
+            .collect(),
+        mds_matrix: POSEIDON_MDS_MATRIX_T_3(),
+        full_rounds: 56,
+        partial_rounds: 8,
+        width: 3,              /* t from the paper */
+        sbox: PoseidonSbox(5), /* \alpha */
     }
 }

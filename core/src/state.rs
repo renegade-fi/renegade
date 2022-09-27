@@ -1,14 +1,14 @@
-use serde::{Serialize, Deserialize, };
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    sync::{Arc, RwLock}, str::FromStr
+    str::FromStr,
+    sync::{Arc, RwLock},
 };
 
 use crate::gossip::types::{PeerInfo, WrappedPeerId};
 
-
 /**
- * This file groups type definitions and helpers around global state that 
+ * This file groups type definitions and helpers around global state that
  * is passed around throughout the code
  */
 
@@ -53,7 +53,7 @@ pub struct WalletMetadata {
 impl RelayerState {
     pub fn initialize_global_state(
         managed_wallet_ids: Vec<String>,
-        bootstrap_servers: Vec<PeerInfo>
+        bootstrap_servers: Vec<PeerInfo>,
     ) -> GlobalRelayerState {
         // Setup initial wallets
         let mut managed_wallets = HashMap::new();
@@ -61,7 +61,7 @@ impl RelayerState {
             let wallet_id = uuid::Uuid::from_str(wallet_id).expect("could not parse wallet ID");
             let wal = Wallet {
                 wallet_id,
-                metadata: WalletMetadata { replicas: vec![] } 
+                metadata: WalletMetadata { replicas: vec![] },
             };
             managed_wallets.insert(wallet_id, wal);
         }
@@ -72,14 +72,10 @@ impl RelayerState {
             known_peers.insert(server.get_peer_id(), server.clone());
         }
 
-        Arc::new(
-            RwLock::new(
-                Self { 
-                    local_peer_id: None,
-                    managed_wallets, 
-                    known_peers,
-                }
-            )
-        )
+        Arc::new(RwLock::new(Self {
+            local_peer_id: None,
+            managed_wallets,
+            known_peers,
+        }))
     }
 }

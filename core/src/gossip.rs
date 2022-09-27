@@ -1,27 +1,18 @@
 pub(crate) mod api;
 mod composed_protocol;
-mod heartbeat_protocol;
 mod errors;
+mod heartbeat_protocol;
 pub(crate) mod network_manager;
 pub(crate) mod types;
 
 // This file groups logic for the package-public gossip interface
-use crossbeam::channel::{Sender, Receiver};
-use std::{
-    error::Error, thread,
-};
+use crossbeam::channel::{Receiver, Sender};
+use std::{error::Error, thread};
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
-use crate::{
-    gossip::{
-        heartbeat_protocol::{
-            HeartbeatProtocolExecutor
-        },
-    },
-    state::GlobalRelayerState,
-};
+use crate::{gossip::heartbeat_protocol::HeartbeatProtocolExecutor, state::GlobalRelayerState};
 
-use self::{heartbeat_protocol::HeartbeatExecutorJob, api::GossipOutbound, types::WrappedPeerId};
+use self::{api::GossipOutbound, heartbeat_protocol::HeartbeatExecutorJob, types::WrappedPeerId};
 
 pub struct GossipServer {
     // Executors
@@ -35,7 +26,7 @@ impl GossipServer {
         global_state: GlobalRelayerState,
         heartbeat_worker_sender: Sender<HeartbeatExecutorJob>,
         heartbeat_worker_receiver: Receiver<HeartbeatExecutorJob>,
-        network_sender: TokioSender<GossipOutbound>
+        network_sender: TokioSender<GossipOutbound>,
     ) -> Result<Self, Box<dyn Error>> {
         // Register self as replicator of owned wallets using peer info from network manager
         {
@@ -53,12 +44,10 @@ impl GossipServer {
             network_sender,
             heartbeat_worker_sender,
             heartbeat_worker_receiver,
-            global_state
+            global_state,
         );
 
-        Ok(Self { 
-            heartbeat_executor,
-        })
+        Ok(Self { heartbeat_executor })
     }
 
     // Joins execution of calling thread to the execution of the GossipServer's

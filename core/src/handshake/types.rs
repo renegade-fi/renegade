@@ -1,8 +1,8 @@
 use libp2p::request_response::ResponseChannel;
 
 use crate::gossip::{
-    api::{HandshakeMessage, GossipResponse},
-    types::WrappedPeerId, 
+    api::{GossipResponse, HandshakeMessage},
+    types::WrappedPeerId,
 };
 
 /**
@@ -14,6 +14,6 @@ pub enum HandshakeExecutionJob {
     ProcessHandshakeRequest {
         peer_id: WrappedPeerId,
         message: HandshakeMessage,
-        response_channel: ResponseChannel<GossipResponse>
-    }
+        response_channel: ResponseChannel<GossipResponse>,
+    },
 }

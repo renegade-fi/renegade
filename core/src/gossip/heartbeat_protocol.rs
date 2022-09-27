@@ -1,32 +1,22 @@
 // Groups the logic behind the gossip protocol specification
-use crossbeam::{channel::{
-    Sender,
-    Receiver, 
-}};
-use libp2p::{
-    request_response::ResponseChannel,
-};
-use lru::{
-    LruCache
-};
+use crossbeam::channel::{Receiver, Sender};
+use libp2p::request_response::ResponseChannel;
+use lru::LruCache;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
-    time::{Duration, SystemTime, UNIX_EPOCH}, 
-    thread, 
+    thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::sync::mpsc::{
-    UnboundedSender,
-};
+use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     gossip::{
-        api::{GossipRequest, GossipResponse, GossipOutbound, HeartbeatMessage},
+        api::{GossipOutbound, GossipRequest, GossipResponse, HeartbeatMessage},
         types::{PeerInfo, WrappedPeerId},
     },
     state::{GlobalRelayerState, RelayerState},
 };
-
 
 /**
  * Constants
@@ -36,15 +26,15 @@ use crate::{
 const NANOS_PER_MILLI: u64 = 1_000_000;
 
 // The interval at which to send heartbeats to known peers
-const HEARTBEAT_INTERVAL_MS: u64 = 3000;  // 3 seconds
+const HEARTBEAT_INTERVAL_MS: u64 = 3000; // 3 seconds
 
-// The amount of time without a successful heartbeat before the local 
+// The amount of time without a successful heartbeat before the local
 // relayer should assume its peer has failed
-const HEARTBEAT_FAILURE_MS: u64 = 10000;  // 10 seconds
+const HEARTBEAT_FAILURE_MS: u64 = 10000; // 10 seconds
 
 // The minimum amount of time between a peer's expiry and when it can be
 // added back to the peer info
-const EXPIRY_INVISIBILITY_WINDOW_MS: u64 = 10_000;  // 10 seconds
+const EXPIRY_INVISIBILITY_WINDOW_MS: u64 = 10_000; // 10 seconds
 const EXPIRY_CACHE_SIZE: usize = 100;
 
 /**
@@ -66,12 +56,15 @@ fn get_current_time_seconds() -> u64 {
 // Job types
 pub enum HeartbeatExecutorJob {
     ExecuteHeartbeats,
-    HandleHeartbeatReq{ 
-        peer_id: WrappedPeerId, 
-        message: HeartbeatMessage, 
-        channel: ResponseChannel<GossipResponse> 
+    HandleHeartbeatReq {
+        peer_id: WrappedPeerId,
+        message: HeartbeatMessage,
+        channel: ResponseChannel<GossipResponse>,
     },
-    HandleHeartbeatResp{ peer_id: WrappedPeerId, message: HeartbeatMessage },
+    HandleHeartbeatResp {
+        peer_id: WrappedPeerId,
+        message: HeartbeatMessage,
+    },
 }
 
 // Type aliases for shared objects
@@ -82,7 +75,7 @@ pub struct HeartbeatProtocolExecutor {
     // The handle of the worker thread executing heartbeat jobs
     thread_handle: thread::JoinHandle<()>,
     // The timer that enqueues heartbeat jobs periodically for the worker
-    heartbeat_timer: HeartbeatTimer
+    heartbeat_timer: HeartbeatTimer,
 }
 
 impl HeartbeatProtocolExecutor {
@@ -92,26 +85,23 @@ impl HeartbeatProtocolExecutor {
         network_channel: UnboundedSender<GossipOutbound>,
         job_sender: Sender<HeartbeatExecutorJob>,
         job_receiver: Receiver<HeartbeatExecutorJob>,
-        global_state: GlobalRelayerState
-    ) -> Self { 
+        global_state: GlobalRelayerState,
+    ) -> Self {
         // Tracks recently expired peers and blocks them from being re-registered
         // until the state has synced. Maps peer_id to expiry time
-        let peer_expiry_cache: SharedLRUCache = Arc::new(
-            RwLock::new(
-                LruCache::new(EXPIRY_CACHE_SIZE)
-            )
-        );
+        let peer_expiry_cache: SharedLRUCache =
+            Arc::new(RwLock::new(LruCache::new(EXPIRY_CACHE_SIZE)));
 
         let thread_handle = {
             thread::Builder::new()
                 .name("heartbeat-executor".to_string())
-                .spawn(move || { 
+                .spawn(move || {
                     Self::executor_loop(
                         local_peer_id,
                         job_receiver,
                         network_channel,
                         peer_expiry_cache,
-                        global_state
+                        global_state,
                     );
                 })
                 .unwrap()
@@ -119,7 +109,10 @@ impl HeartbeatProtocolExecutor {
 
         let heartbeat_timer = HeartbeatTimer::new(job_sender, HEARTBEAT_INTERVAL_MS);
 
-        Self { thread_handle, heartbeat_timer }
+        Self {
+            thread_handle,
+            heartbeat_timer,
+        }
     }
 
     // Joins execution of the calling thread to the worker thread
@@ -128,13 +121,13 @@ impl HeartbeatProtocolExecutor {
         self.thread_handle.join()
     }
 
-    // Runs the executor loop 
+    // Runs the executor loop
     fn executor_loop(
         local_peer_id: WrappedPeerId,
         job_receiver: Receiver<HeartbeatExecutorJob>,
         network_channel: UnboundedSender<GossipOutbound>,
         peer_expiry_cache: SharedLRUCache,
-        global_state: GlobalRelayerState
+        global_state: GlobalRelayerState,
     ) {
         println!("Starting executor loop for heartbeat protocol executor...");
         loop {
@@ -145,35 +138,40 @@ impl HeartbeatProtocolExecutor {
                         local_peer_id,
                         network_channel.clone(),
                         peer_expiry_cache.clone(),
-                        global_state.clone()
+                        global_state.clone(),
                     );
-                },
-                HeartbeatExecutorJob::HandleHeartbeatReq { message, channel, .. } => {
+                }
+                HeartbeatExecutorJob::HandleHeartbeatReq {
+                    message, channel, ..
+                } => {
                     // Respond on the channel given in the request
-                    let heartbeat_resp = GossipResponse::Heartbeat(
-                        Self::build_heartbeat_message(global_state.clone())
-                    );
-                    network_channel.send(
-                        GossipOutbound::Response { channel, message: heartbeat_resp }
-                    ).unwrap();
+                    let heartbeat_resp = GossipResponse::Heartbeat(Self::build_heartbeat_message(
+                        global_state.clone(),
+                    ));
+                    network_channel
+                        .send(GossipOutbound::Response {
+                            channel,
+                            message: heartbeat_resp,
+                        })
+                        .unwrap();
 
                     // Merge newly discovered peers into local state
                     Self::merge_peers_from_message(
-                        local_peer_id, 
+                        local_peer_id,
                         &message,
                         network_channel.clone(),
                         peer_expiry_cache.clone(),
-                        global_state.clone()
+                        global_state.clone(),
                     )
-                },
+                }
                 HeartbeatExecutorJob::HandleHeartbeatResp { peer_id, message } => {
                     Self::record_heartbeat(peer_id, global_state.clone());
                     Self::merge_peers_from_message(
-                        local_peer_id, 
+                        local_peer_id,
                         &message,
                         network_channel.clone(),
                         peer_expiry_cache.clone(),
-                        global_state.clone()
+                        global_state.clone(),
                     )
                 }
             }
@@ -198,7 +196,7 @@ impl HeartbeatProtocolExecutor {
         message: &HeartbeatMessage,
         network_channel: UnboundedSender<GossipOutbound>,
         peer_expiry_cache: SharedLRUCache,
-        global_state: GlobalRelayerState
+        global_state: GlobalRelayerState,
     ) {
         let mut locked_state = global_state.write().unwrap();
         let mut locked_expiry_cache = peer_expiry_cache.write().unwrap();
@@ -207,18 +205,21 @@ impl HeartbeatProtocolExecutor {
         for (wallet_id, _) in locked_state.managed_wallets.clone().iter() {
             match message.managed_wallets.get(wallet_id) {
                 // Peer does not replicate this wallet
-                None => { println!("Skipping, peer doesn't contain wallet"); continue; },
+                None => {
+                    println!("Skipping, peer doesn't contain wallet");
+                    continue;
+                }
 
                 // Peer replicates this wallet, add any unknown replicas to local state
                 Some(wallet_metadata) => {
                     Self::merge_replicas_for_wallet(
                         *wallet_id,
                         local_peer_id,
-                        &wallet_metadata.replicas, 
-                        &message.known_peers, 
+                        &wallet_metadata.replicas,
+                        &message.known_peers,
                         network_channel.clone(),
-                        &mut *locked_expiry_cache, 
-                        &mut *locked_state
+                        &mut *locked_expiry_cache,
+                        &mut *locked_state,
                     );
                 }
             }
@@ -265,7 +266,11 @@ impl HeartbeatProtocolExecutor {
 
                 // Register the newly discovered peer with the network manager
                 // so that we can dial it on outbound heartbeats
-                network_channel.send(GossipOutbound::NewAddr { peer_id: *replica, address: replica_info.get_addr() })
+                network_channel
+                    .send(GossipOutbound::NewAddr {
+                        peer_id: *replica,
+                        address: replica_info.get_addr(),
+                    })
                     .unwrap();
             } else {
                 // Ignore this peer if peer_info was not sent for it,
@@ -274,11 +279,13 @@ impl HeartbeatProtocolExecutor {
             }
 
             // Add new peer as a replica of the wallet in the wallet's metadata
-            global_state.managed_wallets.get_mut(&wallet_id)
-                                        .expect("")
-                                        .metadata
-                                        .replicas
-                                        .push(*replica);
+            global_state
+                .managed_wallets
+                .get_mut(&wallet_id)
+                .expect("")
+                .metadata
+                .replicas
+                .push(*replica);
         }
     }
 
@@ -287,24 +294,29 @@ impl HeartbeatProtocolExecutor {
         local_peer_id: WrappedPeerId,
         network_channel: UnboundedSender<GossipOutbound>,
         peer_expiry_cache: SharedLRUCache,
-        global_state: GlobalRelayerState
+        global_state: GlobalRelayerState,
     ) {
         // Send heartbeat requests
-        let heartbeat_message = GossipRequest::Heartbeat(
-            Self::build_heartbeat_message(global_state.clone())
-        );
+        let heartbeat_message =
+            GossipRequest::Heartbeat(Self::build_heartbeat_message(global_state.clone()));
 
         {
             let locked_state = global_state.read().unwrap();
-            println!("\n\nSending heartbeats, I know {} peers...", locked_state.known_peers.len() - 1);
+            println!(
+                "\n\nSending heartbeats, I know {} peers...",
+                locked_state.known_peers.len() - 1
+            );
             for (peer_id, _) in locked_state.known_peers.iter() {
                 if *peer_id == local_peer_id {
                     continue;
                 }
 
-                network_channel.send(
-                    GossipOutbound::Request { peer_id: *peer_id, message: heartbeat_message.clone() }
-                ).unwrap();
+                network_channel
+                    .send(GossipOutbound::Request {
+                        peer_id: *peer_id,
+                        message: heartbeat_message.clone(),
+                    })
+                    .unwrap();
             }
         } // locked_peer_info releases its read lock here
 
@@ -315,7 +327,7 @@ impl HeartbeatProtocolExecutor {
     fn expire_peers(
         local_peer_id: WrappedPeerId,
         peer_expiry_cache: SharedLRUCache,
-        global_state: GlobalRelayerState
+        global_state: GlobalRelayerState,
     ) {
         let now = get_current_time_seconds();
         let mut peers_to_expire = Vec::new();
@@ -330,11 +342,11 @@ impl HeartbeatProtocolExecutor {
                     peers_to_expire.push(*peer_id);
                 }
             }
-        } // locked_peer_info releases read lock 
+        } // locked_peer_info releases read lock
 
         // Short cct to avoid acquiring locks if not necessary
         if peers_to_expire.is_empty() {
-            return
+            return;
         }
 
         let mut locked_state = global_state.write().unwrap();
@@ -353,24 +365,19 @@ impl HeartbeatProtocolExecutor {
         let locked_state = global_state.read().unwrap();
         HeartbeatMessage::from(&*locked_state)
     }
-
 }
-
 
 /**
  * HeartbeatTimer handles the process of enqueuing jobs to perform
  * a heartbeat on regular intervals
  */
 struct HeartbeatTimer {
-    thread_handle: thread::JoinHandle<()>
+    thread_handle: thread::JoinHandle<()>,
 }
 
 impl HeartbeatTimer {
     // Constructor
-    pub fn new(
-        job_queue: Sender<HeartbeatExecutorJob>,
-        interval_ms: u64 
-    ) -> Self { 
+    pub fn new(job_queue: Sender<HeartbeatExecutorJob>, interval_ms: u64) -> Self {
         // Narrowing cast is okay, precision is not important here
         let duration_seconds = interval_ms / 1000;
         let duration_nanos = (interval_ms % 1000 * NANOS_PER_MILLI) as u32;
@@ -378,11 +385,11 @@ impl HeartbeatTimer {
 
         // Begin the timing loop
         let thread_handle = thread::Builder::new()
-                                    .name("heartbeat-timer".to_string())
-                                    .spawn(move || {
-                                        Self::execution_loop(job_queue, wait_period);
-                                    })
-                                    .unwrap();
+            .name("heartbeat-timer".to_string())
+            .spawn(move || {
+                Self::execution_loop(job_queue, wait_period);
+            })
+            .unwrap();
 
         Self { thread_handle }
     }
@@ -393,12 +400,11 @@ impl HeartbeatTimer {
     }
 
     // Main timing loop
-    fn execution_loop(
-        job_queue: Sender<HeartbeatExecutorJob>,
-        wait_period: Duration,
-    ) {
+    fn execution_loop(job_queue: Sender<HeartbeatExecutorJob>, wait_period: Duration) {
         loop {
-            job_queue.send(HeartbeatExecutorJob::ExecuteHeartbeats).unwrap();
+            job_queue
+                .send(HeartbeatExecutorJob::ExecuteHeartbeats)
+                .unwrap();
             thread::sleep(wait_period);
         }
     }

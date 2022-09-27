@@ -1,11 +1,14 @@
 use libp2p::{Multiaddr, PeerId};
-use serde::{Serialize, Deserialize, de::{Visitor, Error as SerdeErr}};
+use serde::{
+    de::{Error as SerdeErr, Visitor},
+    Deserialize, Serialize,
+};
 use std::{
+    fmt::Display,
     ops::Deref,
     sync::atomic::{AtomicU64, Ordering},
-    time::{SystemTime, UNIX_EPOCH}, fmt::Display
+    time::{SystemTime, UNIX_EPOCH},
 };
-
 
 // Contains information about connected peers
 #[derive(Debug, Serialize, Deserialize)]
@@ -18,18 +21,15 @@ pub struct PeerInfo {
 
     // Last time a successful hearbeat was received from this peer
     #[serde(skip)]
-    last_heartbeat: AtomicU64
+    last_heartbeat: AtomicU64,
 }
 
 impl PeerInfo {
-    pub fn new(
-        peer_id: WrappedPeerId,
-        addr: Multiaddr,
-    ) -> Self {
-        Self { 
+    pub fn new(peer_id: WrappedPeerId, addr: Multiaddr) -> Self {
+        Self {
             addr,
             peer_id,
-            last_heartbeat: AtomicU64::new(current_time_seconds()), 
+            last_heartbeat: AtomicU64::new(current_time_seconds()),
         }
     }
 
@@ -44,7 +44,8 @@ impl PeerInfo {
 
     // Records a successful heartbeat
     pub fn successful_heartbeat(&mut self) {
-        self.last_heartbeat.store(current_time_seconds(), Ordering::Relaxed);
+        self.last_heartbeat
+            .store(current_time_seconds(), Ordering::Relaxed);
     }
 
     pub fn get_last_heartbeat(&self) -> u64 {
@@ -55,11 +56,11 @@ impl PeerInfo {
 // Clones PeerInfo to reference the curren time for the last heartbeat
 impl Clone for PeerInfo {
     fn clone(&self) -> Self {
-        Self { 
+        Self {
             peer_id: self.peer_id,
             addr: self.addr.clone(),
-            last_heartbeat: AtomicU64::new(self.last_heartbeat.load(Ordering::Relaxed))
-        } 
+            last_heartbeat: AtomicU64::new(self.last_heartbeat.load(Ordering::Relaxed)),
+        }
     }
 }
 
@@ -90,8 +91,8 @@ impl Display for WrappedPeerId {
 // Serialize PeerIDs
 impl Serialize for WrappedPeerId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer 
+    where
+        S: serde::Serializer,
     {
         let bytes = self.to_bytes();
         serializer.serialize_bytes(&bytes)
@@ -101,8 +102,8 @@ impl Serialize for WrappedPeerId {
 // Deserialize PeerIDs
 impl<'de> Deserialize<'de> for WrappedPeerId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de> 
+    where
+        D: serde::Deserializer<'de>,
     {
         deserializer.deserialize_seq(PeerIDVisitor)
     }
@@ -119,8 +120,8 @@ impl<'de> Visitor<'de> for PeerIDVisitor {
     }
 
     fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-        where
-            A: serde::de::SeqAccess<'de>, 
+    where
+        A: serde::de::SeqAccess<'de>,
     {
         let mut bytes_vec = Vec::new();
         while let Some(value) = seq.next_element()? {
@@ -128,13 +129,12 @@ impl<'de> Visitor<'de> for PeerIDVisitor {
         }
 
         if let Ok(peer_id) = PeerId::from_bytes(&bytes_vec[..]) {
-            return Ok(WrappedPeerId(peer_id))
+            return Ok(WrappedPeerId(peer_id));
         }
 
         Err(SerdeErr::custom("deserializing byte array to PeerID"))
     }
 }
-
 
 /**
  * Helpers
@@ -143,7 +143,7 @@ impl<'de> Visitor<'de> for PeerIDVisitor {
 // Returns a u64 representing the current unix timestamp in seconds
 fn current_time_seconds() -> u64 {
     SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("negative timestamp")
-                .as_secs()
+        .duration_since(UNIX_EPOCH)
+        .expect("negative timestamp")
+        .as_secs()
 }

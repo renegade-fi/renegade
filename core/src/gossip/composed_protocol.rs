@@ -1,30 +1,18 @@
 use async_trait::async_trait;
 use libp2p::{
     core::upgrade::{read_length_prefixed, write_length_prefixed},
-    futures::{
-        AsyncRead,
-        AsyncWrite,
-        AsyncWriteExt
-    },
-    kad::{
-        Kademlia,
-        record::store::MemoryStore, KademliaEvent
-    }, 
-    NetworkBehaviour,
-    PeerId,
+    futures::{AsyncRead, AsyncWrite, AsyncWriteExt},
+    kad::{record::store::MemoryStore, Kademlia, KademliaEvent},
     request_response::{
-        RequestResponse, 
-        RequestResponseCodec,
-        RequestResponseEvent, 
-        ProtocolName,
-        ProtocolSupport
-    }
+        ProtocolName, ProtocolSupport, RequestResponse, RequestResponseCodec, RequestResponseEvent,
+    },
+    NetworkBehaviour, PeerId,
 };
 use std::iter;
 
 use crate::gossip::api::{GossipRequest, GossipResponse};
 
-/** 
+/**
  * Constants
  */
 
@@ -40,9 +28,8 @@ const MAX_MESSAGE_SIZE: usize = 1_000_000_000;
  *      3. GossipSub: a decentralized pubsub protocol, used for broadcast primitives.
  */
 
-
- #[derive(NetworkBehaviour)]
- #[behaviour(out_event = "ComposedProtocolEvent")]
+#[derive(NetworkBehaviour)]
+#[behaviour(out_event = "ComposedProtocolEvent")]
 pub struct ComposedNetworkBehavior {
     pub request_response: RequestResponse<RelayerGossipCodec>,
     pub kademlia_dht: Kademlia<MemoryStore>,
@@ -56,20 +43,23 @@ impl ComposedNetworkBehavior {
                 RelayerGossipProtocol::new(ProtocolVersion::Version1),
                 ProtocolSupport::Full,
             )),
-            Default::default()
+            Default::default(),
         );
 
         let memory_store = MemoryStore::new(peer_id);
         let kademlia_dht = Kademlia::new(peer_id, memory_store);
 
-        Self { request_response, kademlia_dht }
+        Self {
+            request_response,
+            kademlia_dht,
+        }
     }
 }
 
 #[derive(Debug)]
 pub enum ComposedProtocolEvent {
     RequestResponse(RequestResponseEvent<GossipRequest, GossipResponse>),
-    Kademlia(KademliaEvent)
+    Kademlia(KademliaEvent),
 }
 
 /*
@@ -100,7 +90,7 @@ pub enum ProtocolVersion {
 // Represents the gossip protocol
 #[derive(Debug, Clone)]
 pub struct RelayerGossipProtocol {
-    version: ProtocolVersion
+    version: ProtocolVersion,
 }
 
 impl RelayerGossipProtocol {
@@ -112,15 +102,14 @@ impl RelayerGossipProtocol {
 impl ProtocolName for RelayerGossipProtocol {
     fn protocol_name(&self) -> &[u8] {
         match self.version {
-            ProtocolVersion::Version1 => b"/relayer-gossip/1.0"
+            ProtocolVersion::Version1 => b"/relayer-gossip/1.0",
         }
     }
 }
 
 #[derive(Clone)]
 // The request/response codec used in the gossip protocol
-pub struct RelayerGossipCodec {
-}
+pub struct RelayerGossipCodec {}
 
 impl RelayerGossipCodec {
     pub fn new() -> Self {
@@ -141,7 +130,7 @@ impl RequestResponseCodec for RelayerGossipCodec {
         io: &mut T,
     ) -> Result<Self::Request, std::io::Error>
     where
-        T: AsyncRead + Unpin + Send
+        T: AsyncRead + Unpin + Send,
     {
         let req_data = read_length_prefixed(io, MAX_MESSAGE_SIZE).await?;
         let deserialized: GossipRequest = serde_json::from_slice(&req_data).unwrap();
@@ -149,13 +138,13 @@ impl RequestResponseCodec for RelayerGossipCodec {
     }
 
     // Deserializes a read response
-    async fn read_response<T> (
+    async fn read_response<T>(
         &mut self,
         _: &RelayerGossipProtocol,
-        io: &mut T
+        io: &mut T,
     ) -> Result<Self::Response, std::io::Error>
     where
-        T: AsyncRead + Unpin + Send
+        T: AsyncRead + Unpin + Send,
     {
         let resp_data = read_length_prefixed(io, MAX_MESSAGE_SIZE).await?;
         let deserialized: GossipResponse = serde_json::from_slice(&resp_data).unwrap();
@@ -163,14 +152,14 @@ impl RequestResponseCodec for RelayerGossipCodec {
     }
 
     // Serializes a write request
-    async fn write_request<T> (
+    async fn write_request<T>(
         &mut self,
         _: &RelayerGossipProtocol,
         io: &mut T,
         req: Self::Request,
     ) -> Result<(), std::io::Error>
     where
-        T: AsyncWrite + Unpin + Send
+        T: AsyncWrite + Unpin + Send,
     {
         // Serialize the data and write to socket
         let serialized = serde_json::to_string(&req).unwrap();

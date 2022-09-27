@@ -3,34 +3,22 @@ use futures::executor::block_on;
 use libp2p::{
     futures::StreamExt,
     identity,
-    Multiaddr, 
-    PeerId,
     request_response::{RequestResponseEvent, RequestResponseMessage},
-    Swarm, 
-    swarm::SwarmEvent, 
+    swarm::SwarmEvent,
+    Multiaddr, PeerId, Swarm,
 };
-use std::{
-    thread::{
-        Builder,
-        JoinHandle, self,
-    }, 
-};
-use tokio::{
-    sync::mpsc::{UnboundedReceiver},
-};
+use std::thread::{self, Builder, JoinHandle};
+use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{event, Level};
-
 
 use crate::{
     gossip::{
-        composed_protocol::{
-            ComposedNetworkBehavior, ComposedProtocolEvent
-        }, 
-        types::{PeerInfo, WrappedPeerId}, 
-        heartbeat_protocol::HeartbeatExecutorJob
-
-    }, 
-    state::GlobalRelayerState, handshake::types::HandshakeExecutionJob
+        composed_protocol::{ComposedNetworkBehavior, ComposedProtocolEvent},
+        heartbeat_protocol::HeartbeatExecutorJob,
+        types::{PeerInfo, WrappedPeerId},
+    },
+    handshake::types::HandshakeExecutionJob,
+    state::GlobalRelayerState,
 };
 
 use super::api::{GossipOutbound, GossipRequest, GossipResponse};
@@ -41,7 +29,7 @@ pub struct NetworkManager {
     pub local_peer_id: WrappedPeerId,
 
     // The join handle of the executor loop
-    pub thread_handle: JoinHandle<()> 
+    pub thread_handle: JoinHandle<()>,
 }
 
 // The NetworkManager handles both incoming and outbound messages to the p2p network
@@ -73,12 +61,15 @@ impl NetworkManager {
         let mut behavior = ComposedNetworkBehavior::new(*local_peer_id);
 
         // Add all addresses for bootstrap servers
-        for (peer_id, peer_info) in global_state.read()
-                                        .unwrap()
-                                        .known_peers.iter()
-        {
-            println!("Adding {:?}: {} to routing table...", peer_id, peer_info.get_addr());
-            behavior.kademlia_dht.add_address(peer_id, peer_info.get_addr());
+        for (peer_id, peer_info) in global_state.read().unwrap().known_peers.iter() {
+            println!(
+                "Adding {:?}: {} to routing table...",
+                peer_id,
+                peer_info.get_addr()
+            );
+            behavior
+                .kademlia_dht
+                .add_address(peer_id, peer_info.get_addr());
         }
 
         // Connect the behavior and the transport via swarm
@@ -89,31 +80,31 @@ impl NetworkManager {
         swarm.listen_on(addr.clone())?;
 
         // Add self to known peers
-        global_state.write()
+        global_state
+            .write()
             .unwrap()
             .known_peers
-            .insert(
-                local_peer_id, PeerInfo::new(local_peer_id, addr)
-            );
+            .insert(local_peer_id, PeerInfo::new(local_peer_id, addr));
 
         // Start up the worker thread
         let thread_handle = Builder::new()
             .name("network-manager".to_string())
             .spawn(move || {
                 // Block on this to execute the future in a separate thread
-                block_on(
-                    Self::executor_loop(
-                        local_peer_id,
-                        swarm,
-                        send_channel,
-                        heartbeat_work_queue,
-                        handshake_work_queue,
-                    ) 
-                )
+                block_on(Self::executor_loop(
+                    local_peer_id,
+                    swarm,
+                    send_channel,
+                    heartbeat_work_queue,
+                    handshake_work_queue,
+                ))
             })
             .unwrap();
-        
-        Ok(Self { local_peer_id, thread_handle })
+
+        Ok(Self {
+            local_peer_id,
+            thread_handle,
+        })
     }
 
     // Joins the calling thread to the execution of the network manager loop
@@ -131,7 +122,7 @@ impl NetworkManager {
         mut swarm: Swarm<ComposedNetworkBehavior>,
         mut send_channel: UnboundedReceiver<GossipOutbound>,
         heartbeat_work_queue: Sender<HeartbeatExecutorJob>,
-        handshake_work_queue: Sender<HandshakeExecutionJob>
+        handshake_work_queue: Sender<HandshakeExecutionJob>,
     ) {
         println!("Starting executor loop for network manager...");
         loop {
@@ -141,7 +132,7 @@ impl NetworkManager {
                     // Forward the message
                     Self::handle_outbound_message(message, &mut swarm);
                 },
-                
+
                 // Handle network events and dispatch
                 event = swarm.select_next_some() => {
                     match event {
@@ -159,22 +150,21 @@ impl NetworkManager {
                     }
                 }
             }
-        } 
+        }
     }
 
     // Handles an outbound message from worker threads to other relayers
-    fn handle_outbound_message(
-        msg: GossipOutbound,
-        swarm: &mut Swarm<ComposedNetworkBehavior>
-    ) {
+    fn handle_outbound_message(msg: GossipOutbound, swarm: &mut Swarm<ComposedNetworkBehavior>) {
         match msg {
             GossipOutbound::Request { peer_id, message } => {
-                swarm.behaviour_mut()
+                swarm
+                    .behaviour_mut()
                     .request_response
                     .send_request(&peer_id, message);
-            },
+            }
             GossipOutbound::Response { channel, message } => {
-                let res = swarm.behaviour_mut()
+                let res = swarm
+                    .behaviour_mut()
                     .request_response
                     .send_response(channel, message);
 
@@ -182,11 +172,12 @@ impl NetworkManager {
                 if let Err(msg) = res {
                     event!(Level::DEBUG, message = ?msg, "error sending response");
                 }
-            },
+            }
 
             // Register a new peer in the distributed routing tables
             GossipOutbound::NewAddr { peer_id, address } => {
-                swarm.behaviour_mut()
+                swarm
+                    .behaviour_mut()
                     .kademlia_dht
                     .add_address(&peer_id, address);
             }
@@ -197,16 +188,21 @@ impl NetworkManager {
     fn handle_inbound_messsage(
         message: ComposedProtocolEvent,
         heartbeat_work_queue: Sender<HeartbeatExecutorJob>,
-        handshake_work_queue: Sender<HandshakeExecutionJob>
+        handshake_work_queue: Sender<HandshakeExecutionJob>,
     ) {
         match message {
             ComposedProtocolEvent::RequestResponse(request_response) => {
-                if let RequestResponseEvent::Message{ peer, message } = request_response {
-                    Self::handle_inbound_request_response_message(peer, message, heartbeat_work_queue, handshake_work_queue);
+                if let RequestResponseEvent::Message { peer, message } = request_response {
+                    Self::handle_inbound_request_response_message(
+                        peer,
+                        message,
+                        heartbeat_work_queue,
+                        handshake_work_queue,
+                    );
                 }
-            },
+            }
             // KAD events do nothing for now, routing tables are automatically updated by libp2p
-            ComposedProtocolEvent::Kademlia(_) => { }
+            ComposedProtocolEvent::Kademlia(_) => {}
         }
     }
 
@@ -223,36 +219,41 @@ impl NetworkManager {
         // Multiplex over request/response message types
         match message {
             // Handle inbound request from another peer
-            RequestResponseMessage::Request { request, channel, ..} => {
-                match request {
-                    GossipRequest::Heartbeat(heartbeat_message) => {
-                        heartbeat_work_queue.send(
-                            HeartbeatExecutorJob::HandleHeartbeatReq { peer_id: WrappedPeerId(peer_id), message: heartbeat_message, channel }
-                        ).unwrap();
-                    },
-                    GossipRequest::Handshake(handshake_message) => {
-                        handshake_work_queue.send(
-                            HandshakeExecutionJob::ProcessHandshakeRequest { 
-                                peer_id: WrappedPeerId(peer_id), 
-                                message: handshake_message, 
-                                response_channel: channel 
-                            }
-                        ).unwrap();
-                    }
+            RequestResponseMessage::Request {
+                request, channel, ..
+            } => match request {
+                GossipRequest::Heartbeat(heartbeat_message) => {
+                    heartbeat_work_queue
+                        .send(HeartbeatExecutorJob::HandleHeartbeatReq {
+                            peer_id: WrappedPeerId(peer_id),
+                            message: heartbeat_message,
+                            channel,
+                        })
+                        .unwrap();
+                }
+                GossipRequest::Handshake(handshake_message) => {
+                    handshake_work_queue
+                        .send(HandshakeExecutionJob::ProcessHandshakeRequest {
+                            peer_id: WrappedPeerId(peer_id),
+                            message: handshake_message,
+                            response_channel: channel,
+                        })
+                        .unwrap();
                 }
             },
 
-            // Handle inbound response 
-            RequestResponseMessage::Response { response, .. } => {
-                match response {
-                    GossipResponse::Heartbeat(heartbeat_message) => {
-                        heartbeat_work_queue.send(
-                            HeartbeatExecutorJob::HandleHeartbeatResp { peer_id: WrappedPeerId(peer_id), message: heartbeat_message }
-                        ).unwrap();
-                    },
-                    GossipResponse::Handshake() => { }
+            // Handle inbound response
+            RequestResponseMessage::Response { response, .. } => match response {
+                GossipResponse::Heartbeat(heartbeat_message) => {
+                    heartbeat_work_queue
+                        .send(HeartbeatExecutorJob::HandleHeartbeatResp {
+                            peer_id: WrappedPeerId(peer_id),
+                            message: heartbeat_message,
+                        })
+                        .unwrap();
                 }
-            }
+                GossipResponse::Handshake() => {}
+            },
         }
     }
 }
