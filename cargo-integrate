@@ -1,0 +1,26 @@
+#!/bin/zsh
+
+# Exit if any command fails
+set -e
+
+# Enforce arguments passed correctly
+# Should be called as `cargo integrate <package-path>` --> 2 args
+if [[ $# -lt 2 ]] ; then
+    echo 'Invalid! Correct Usage: \n\tcargo integrate <package-path>'
+    exit 0
+fi
+
+# Use BuildKit
+export DOCKER_BUILDKIT=1
+
+# Build the image
+docker build --tag "$2"-integration-test:latest -f "$2"/Dockerfile .
+
+# Stop any running compositions then re-run ours
+docker-compose \
+  --file "$2"/docker-compose.yml \
+  up \
+  --force-recreate \
+  --renew-anon-volumes \
+  --abort-on-container-exit \
+  --timeout 1

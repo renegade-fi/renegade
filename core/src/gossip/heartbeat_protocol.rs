@@ -218,8 +218,8 @@ impl HeartbeatProtocolExecutor {
                         &wallet_metadata.replicas,
                         &message.known_peers,
                         network_channel.clone(),
-                        &mut *locked_expiry_cache,
-                        &mut *locked_state,
+                        &mut locked_expiry_cache,
+                        &mut locked_state,
                     );
                 }
             }
