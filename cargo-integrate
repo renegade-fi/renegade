@@ -16,7 +16,7 @@ export DOCKER_BUILDKIT=1
 # Build the image
 docker build --tag "$2"-integration-test:latest -f "$2"/Dockerfile .
 
-# Stop any running compositions then re-run ours
+# Bring up the compose file for the target package
 docker-compose \
   --file "$2"/docker-compose.yml \
   up \

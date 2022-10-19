@@ -1,26 +1,38 @@
 /// Defines a common test harness that can be used in various packages
 #[macro_export]
-macro_rules! inegration_test_main {
+macro_rules! integration_test_main {
     // No setup or teardown
     ($cli_args:ty, $test_args:ty) => {
-        integration_test_main!($cli_args, $test_args, |_| {}, |_| {});
+        fn generic_noop<ARGS>(_: &ARGS) {}
+        integration_test_main!($cli_args, $test_args, generic_noop);
     };
 
     // Setup only
     ($cli_args:ty, $test_args:ty, $setup:ident) => {
-        integration_test_main!($cli_args, $test_args, $setup, |_| {});
+        fn generic_noop_no_args() {}
+        integration_test_main!($cli_args, $test_args, $setup, generic_noop_no_args);
     };
 
     // Allows both setup and teardown
     ($cli_args:ty, $test_args:ty, $setup:ident, $teardown:ident) => {
         use std::{borrow::Borrow, cell::RefCell, net::SocketAddr, process::exit, rc::Rc};
 
-        use clap::Parser;
         use colored::Colorize;
         use dns_lookup::lookup_host;
+        use inventory::ctor;
+
+        use $crate::types::IntegrationTest;
+
+        /// Defines a wrapper type around the test args so that the macro caller can take
+        /// inventory on the IntegrationTest type which is owned by the `integration-helpers`
+        /// package.
+        ///
+        /// This is necessary because the inventory::collect macro implements a foreign trait
+        /// on the type it accepts
+        struct TestWrapper(IntegrationTest<$test_args>);
 
         // Collect the statically defined tests into an interable
-        inventory::collect!(IntegrationTest);
+        inventory::collect!(TestWrapper);
 
         #[allow(unused_doc_comments, clippy::await_holding_refcell_ref)]
         #[tokio::main]
@@ -28,41 +40,43 @@ macro_rules! inegration_test_main {
             /**
              * Setup
              */
-            let args = $cli_args::parse();
+            let args = <$cli_args>::parse();
 
             // Call the setup callback if requested
-            $setup(args);
+            $setup(&args);
 
             /**
              * Test harness
              */
-            if args.verbose {
+            let verbose = args.verbose;
+            if verbose {
                 println!("\n\n{}\n", "Running integration tests...".blue());
             }
 
             // Assumed From<$cli_args> is implemented for $test_args
-            let test_args: $test_args = args.into()
+            let test_args: $test_args = args.clone().into();
             let mut all_success = true;
 
-            for test in inventory::iter::<IntegrationTest> {
+            for test_wrapper in inventory::iter::<TestWrapper> {
+                let test = test_wrapper.0.clone();
                 if args.borrow().test.is_some()
                     && args.borrow().test.as_deref().unwrap() != test.name
                 {
                     continue;
                 }
 
-                if args.verbose {
+                if verbose {
                     print!("Running {}... ", test.name);
                 }
                 let res: Result<(), String> = (test.test_fn)(&test_args);
-                all_success &= validate_success(res, args.party);
+                all_success &= validate_success(res, verbose);
             }
 
             // Call macro caller defined teardown
             $teardown();
 
             if all_success {
-                if args.verbose == 0 {
+                if verbose {
                     println!("\n{}", "Integration tests successful!".green(),);
                 }
 
@@ -70,6 +84,21 @@ macro_rules! inegration_test_main {
             }
 
             exit(-1);
+        }
+
+        /// Prints a success or failure message, returns true if success, false if failure
+        #[inline]
+        fn validate_success(res: Result<(), String>, verbose: bool) -> bool {
+            if res.is_ok() {
+                if verbose {
+                    println!("{}", "Success!".green());
+                }
+
+                true
+            } else {
+                println!("{}\n\t{}", "Failure...".red(), res.err().unwrap());
+                false
+            }
         }
     };
 }

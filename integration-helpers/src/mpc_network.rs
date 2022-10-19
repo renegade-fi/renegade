@@ -4,6 +4,7 @@ use std::{cell::RefCell, net::SocketAddr, rc::Rc};
 
 use curve25519_dalek::scalar::Scalar;
 use dns_lookup::lookup_host;
+use futures::executor::block_on;
 use mpc_ristretto::{
     beaver::SharedValueSource, fabric::AuthenticatedMpcFabric, network::QuicTwoPartyNet,
 };
@@ -49,7 +50,7 @@ impl SharedValueSource<Scalar> for PartyIDBeaverSource {
 
 /// Sets up a basic MPC fabric between two parties using the QUIC transport and
 /// the beaver triplet source defined above
-pub async fn setup_mpc_fabric(
+pub fn setup_mpc_fabric(
     party_id: u64,
     local_port: u64,
     peer_port: u64,
@@ -85,7 +86,7 @@ pub async fn setup_mpc_fabric(
     // Build and connect to the network
     let mut net = QuicTwoPartyNet::new(party_id, local_addr, peer_addr);
 
-    net.connect().await.unwrap();
+    block_on(net.connect()).unwrap();
 
     // Share the global mac key (hardcoded to Scalar(15))
     let net_ref = Rc::new(RefCell::new(net));
