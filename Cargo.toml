@@ -1,7 +1,8 @@
 [workspace]
 members = [
 	"circuits",
-	"core"
+	"core",
+	"integration-helpers"
 ]
 
 [profile.bench]

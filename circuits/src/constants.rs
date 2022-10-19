@@ -1,4 +1,3 @@
-use ark_ff::PrimeField;
 use num_bigint::BigUint;
 
 /**
@@ -22,7 +21,7 @@ pub const MAX_BALANCES: usize = 2;
  * from the scripts above and taking the output for t = 3, \alpha = 5
  */
 #[allow(non_snake_case)]
-pub fn POSEIDON_MDS_MATRIX_T_3<F: PrimeField>() -> Vec<Vec<F>> {
+pub fn POSEIDON_MDS_MATRIX_T_3() -> Vec<Vec<BigUint>> {
     vec![
         vec![
             field_element_from_hex_string(
@@ -62,7 +61,7 @@ pub fn POSEIDON_MDS_MATRIX_T_3<F: PrimeField>() -> Vec<Vec<F>> {
 
 // Round constants for t = 3 (2-1 hash)
 #[allow(non_snake_case)]
-pub fn POSEIDON_ROUND_CONSTANTS_T_3<F: PrimeField>() -> Vec<Vec<F>> {
+pub fn POSEIDON_ROUND_CONSTANTS_T_3() -> Vec<Vec<BigUint>> {
     vec![
         vec![
             field_element_from_hex_string(
@@ -774,19 +773,18 @@ pub fn POSEIDON_ROUND_CONSTANTS_T_3<F: PrimeField>() -> Vec<Vec<F>> {
 // Converts a literal hexidecimal string to a field element through BigUint
 // this function should only ever be called on the constants above, so we panic
 // if parsing fails
-fn field_element_from_hex_string<F: PrimeField>(byte_string: &[u8]) -> F {
-    F::from(BigUint::parse_bytes(byte_string, 16 /* radix */).unwrap())
+fn field_element_from_hex_string(byte_string: &[u8]) -> BigUint {
+    BigUint::parse_bytes(byte_string, 16 /* radix */).unwrap()
 }
 
 #[cfg(test)]
 mod test {
     use super::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3};
-    use crate::types::SystemField;
 
     #[test]
     fn test_parsing() {
         // Does not panic during parse
-        POSEIDON_MDS_MATRIX_T_3::<SystemField>();
-        POSEIDON_ROUND_CONSTANTS_T_3::<SystemField>();
+        POSEIDON_MDS_MATRIX_T_3();
+        POSEIDON_ROUND_CONSTANTS_T_3();
     }
 }
