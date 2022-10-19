@@ -1,0 +1,15 @@
+[package]
+name = "integration-helpers"
+version = "0.1.0"
+edition = "2021"
+description = "Helpers for setting up and running integration tests for the relayer"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+[dev-dependencies]
+curve25519-dalek = "2"
+dns-lookup = "1.0"
+inventory = "0.3"
+mpc-ristretto = { git = "https://github.com/renegade-fi/MPC-Ristretto" }
