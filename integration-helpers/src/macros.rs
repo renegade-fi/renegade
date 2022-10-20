@@ -34,12 +34,31 @@ macro_rules! integration_test_main {
         // Collect the statically defined tests into an interable
         inventory::collect!(TestWrapper);
 
+        /// Defines a secondary CLI that allows the test harness to simply no-op if `--skip integration`
+        /// is passed. This is useful when running only unit tests from the workspace level, i.e.:
+        ///     cargo test --workspace -- --skip integration
+        /// will properly skip tests run by this harness
+
+        #[derive(Debug, Clone, Parser)]
+        #[command(author, version, about, long_about=None)]
+        struct SkipCLI {
+            /// The skip filter placed on the tests
+            #[arg(long, value_parser)]
+            skip: String,
+        }
+
         #[allow(unused_doc_comments, clippy::await_holding_refcell_ref)]
         #[tokio::main]
         async fn main() {
             /**
              * Setup
              */
+            // Skip tests if the only CLI argument is --skip integration
+            let skip_args = SkipCLI::try_parse();
+            if skip_args.map_or(false, |x| x.skip == "integration") {
+                return;
+            }
+
             let args = <$cli_args>::parse();
 
             // Call the setup callback if requested

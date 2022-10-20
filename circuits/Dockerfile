@@ -6,11 +6,12 @@ WORKDIR /build
 COPY ./rust-toolchain ./circuits/rust-toolchain
 COPY ./integration-helpers ./integration-helpers
 
-WORKDIR /build/circuits
 # Place a set of dummy sources in the path, build the dummy executable
 # to cache built dependencies, then bulid the full executable
+WORKDIR /build/circuits
 RUN mkdir src
 RUN touch src/dummy-lib.rs
+
 RUN mkdir integration
 RUN echo 'fn main() { println!("dummy main!") }' >> integration/dummy-main.rs
 

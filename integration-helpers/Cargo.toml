@@ -6,6 +6,10 @@ description = "Helpers for setting up and running integration tests for the rela
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+name = "integration_helpers"
+path = "src/lib.rs"
+
 [dependencies]
 curve25519-dalek = "2"
 dns-lookup = "1.0"
