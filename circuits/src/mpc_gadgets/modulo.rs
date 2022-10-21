@@ -50,3 +50,16 @@ pub fn mod_2m<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     let shift_bit = Scalar::from(1u64 << m) * bit_lt(&mod_opened_value_bits, &random_bits, fabric);
     Ok(shift_bit + Scalar::from(mod_opened_value) - random_lower_bits)
 }
+
+/// Computes the input with the `m` least significant bits truncated
+pub fn truncate<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    x: &AuthenticatedScalar<N, S>,
+    m: usize,
+    fabric: SharedFabric<N, S>,
+) -> Result<AuthenticatedScalar<N, S>, MpcError> {
+    // Apply mod2m and then subtract the result to make the value divisible by a public 2^-m
+    let x_mod_2m = mod_2m(x, m, fabric)?;
+    let res = Scalar::from(1u64 << m).invert() * (x - x_mod_2m);
+
+    Ok(res)
+}
