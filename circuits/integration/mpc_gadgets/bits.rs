@@ -1,6 +1,6 @@
-//! Groups integration tests for MPC gadgets
+//! Groups integration tests for bitwise operating MPC gadgets
 
-use circuits::mpc_gadgets::bits::{bit_add, bit_xor, to_bits_le};
+use circuits::mpc_gadgets::bits::{bit_add, bit_lt, bit_xor, to_bits_le};
 use curve25519_dalek::scalar::Scalar;
 use integration_helpers::types::IntegrationTest;
 use mpc_ristretto::{
@@ -126,7 +126,7 @@ fn test_bit_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .map_err(|err| format!("Error sharing `b` bits: {:?}", err))?;
 
     // Add the bits and open the result
-    let res_bits = bit_add::<64, _, _>(
+    let res_bits = bit_add(
         shared_bits_a.as_slice()[..64].try_into().unwrap(),
         shared_bits_b.as_slice()[..64].try_into().unwrap(),
         test_args.mpc_fabric.clone(),
@@ -181,7 +181,7 @@ fn test_to_bits_le(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .borrow_fabric()
         .allocate_private_u64(0 /* owning_party */, value)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
-    let shared_bits = to_bits_le::<8, _, _>(shared_value, test_args.mpc_fabric.clone())
+    let shared_bits = to_bits_le::<8, _, _>(&shared_value, test_args.mpc_fabric.clone())
         .map_err(|err| format!("Error in to_bits_le(): {:?}", err))?;
 
     // Open the bits and compare
@@ -213,6 +213,83 @@ fn test_to_bits_le(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// Tests the bitwise less than comparator
+fn test_bit_lt(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Test equal values
+    let value = 15;
+    let equal_value1 = test_args
+        .borrow_fabric()
+        .allocate_private_u64(0 /* owning_party */, value)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    let equal_value2 = test_args
+        .borrow_fabric()
+        .allocate_private_u64(1 /* owning_party */, value)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+
+    let res = bit_lt(
+        &to_bits_le::<64, _, _>(&equal_value1, test_args.mpc_fabric.clone()).unwrap(),
+        &to_bits_le::<64, _, _>(&equal_value2, test_args.mpc_fabric.clone()).unwrap(),
+        test_args.mpc_fabric.clone(),
+    )
+    .open_and_authenticate()
+    .map_err(|err| format!("Error opening bit_lt result: {:?}", err))?;
+
+    if res.to_scalar().ne(&Scalar::zero()) {
+        return Err(format!(
+            "Expected 0, got {:?}",
+            scalar_to_u64(&res.to_scalar())
+        ));
+    }
+
+    // Test unequal values
+    let mut rng = thread_rng();
+    let value1 = rng.next_u64();
+    let value2 = rng.next_u64();
+
+    let shared_value1 = test_args
+        .borrow_fabric()
+        .allocate_private_u64(0 /* owning_party */, value1)
+        .map_err(|err| format!("Error sharing value1: {:?}", err))?;
+    let shared_value2 = test_args
+        .borrow_fabric()
+        .allocate_private_u64(1 /* owning_party */, value2)
+        .map_err(|err| format!("Error sharing value2: {:?}", err))?;
+
+    let res = bit_lt(
+        &to_bits_le::<64, _, _>(&shared_value1, test_args.mpc_fabric.clone()).unwrap(),
+        &to_bits_le::<64, _, _>(&shared_value2, test_args.mpc_fabric.clone()).unwrap(),
+        test_args.mpc_fabric.clone(),
+    )
+    .open_and_authenticate()
+    .map_err(|err| format!("Error opening bit_lt result: {:?}", err))?;
+
+    // Open the original values to get the expected result
+    let value1 = scalar_to_u64(
+        &shared_value1
+            .open_and_authenticate()
+            .map_err(|err| format!("Error opening shared value 1: {:?}", err))?
+            .to_scalar(),
+    );
+
+    let value2 = scalar_to_u64(
+        &shared_value2
+            .open_and_authenticate()
+            .map_err(|err| format!("Error opening shared value 2: {:?}", err))?
+            .to_scalar(),
+    );
+    let expected_res = value1 < value2;
+
+    if res.to_scalar().ne(&Scalar::from(expected_res as u64)) {
+        return Err(format!(
+            "Expected {:?}, got {:?}",
+            expected_res,
+            scalar_to_u64(&res.to_scalar())
+        ));
+    }
+
+    Ok(())
+}
+
 // Take inventory
 
 inventory::submit!(TestWrapper(IntegrationTest {
@@ -228,4 +305,9 @@ inventory::submit!(TestWrapper(IntegrationTest {
 inventory::submit!(TestWrapper(IntegrationTest {
     name: "mpc_gadgets::test_to_bits_le",
     test_fn: test_to_bits_le
+}));
+
+inventory::submit!(TestWrapper(IntegrationTest {
+    name: "mpc_gadgets::test_bit_lt",
+    test_fn: test_bit_lt
 }));
