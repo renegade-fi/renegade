@@ -11,6 +11,8 @@ use rand::{thread_rng, RngCore};
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
+use super::check_equal;
+
 /**
  * Helpers
  */
@@ -46,49 +48,25 @@ fn test_bit_xor(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let zero_xor_zero = bit_xor(&shared_zero, &shared_zero)
         .open_and_authenticate()
         .map_err(|err| format!("Error opening 0 \\xor 0: {:?}", err))?;
-    if zero_xor_zero.to_scalar().ne(&Scalar::zero()) {
-        return Err(format!(
-            "Expected {:?}, got {:?}",
-            0,
-            scalar_to_u64(&zero_xor_zero.to_scalar()),
-        ));
-    }
+    check_equal(&zero_xor_zero, 0)?;
 
     // 1 XOR 0 == 1
     let one_xor_zero = bit_xor(&shared_one, &shared_zero)
         .open_and_authenticate()
         .map_err(|err| format!("Error opening 1 \\xor 0: {:?}", err))?;
-    if one_xor_zero.to_scalar().ne(&Scalar::one()) {
-        return Err(format!(
-            "Expected {:?}, got {:?}",
-            1,
-            scalar_to_u64(&one_xor_zero.to_scalar())
-        ));
-    }
+    check_equal(&one_xor_zero, 1)?;
 
     // 0 XOR 1 == 1
     let zero_xor_one = bit_xor(&shared_zero, &shared_one)
         .open_and_authenticate()
         .map_err(|err| format!("Error opening 0 \\xor 1: {:?}", err))?;
-    if zero_xor_one.to_scalar().ne(&Scalar::one()) {
-        return Err(format!(
-            "Expected {:?}, got {:?}",
-            1,
-            scalar_to_u64(&zero_xor_one.to_scalar())
-        ));
-    }
+    check_equal(&zero_xor_one, 1)?;
 
     // 1 XOR 1 == 0
     let one_xor_one = bit_xor(&shared_one, &shared_one)
         .open_and_authenticate()
         .map_err(|err| format!("Error opening 1 \\xor 1: {:?}", err))?;
-    if one_xor_one.to_scalar().ne(&Scalar::zero()) {
-        return Err(format!(
-            "Expected {:?}, got {:?}",
-            0,
-            scalar_to_u64(&one_xor_one.to_scalar())
-        ));
-    }
+    check_equal(&one_xor_one, 0)?;
 
     Ok(())
 }
@@ -234,12 +212,7 @@ fn test_bit_lt(test_args: &IntegrationTestArgs) -> Result<(), String> {
     .open_and_authenticate()
     .map_err(|err| format!("Error opening bit_lt result: {:?}", err))?;
 
-    if res.to_scalar().ne(&Scalar::zero()) {
-        return Err(format!(
-            "Expected 0, got {:?}",
-            scalar_to_u64(&res.to_scalar())
-        ));
-    }
+    check_equal(&res, 0)?;
 
     // Test unequal values
     let mut rng = thread_rng();
@@ -279,13 +252,7 @@ fn test_bit_lt(test_args: &IntegrationTestArgs) -> Result<(), String> {
     );
     let expected_res = value1 < value2;
 
-    if res.to_scalar().ne(&Scalar::from(expected_res as u64)) {
-        return Err(format!(
-            "Expected {:?}, got {:?}",
-            expected_res,
-            scalar_to_u64(&res.to_scalar())
-        ));
-    }
+    check_equal(&res, expected_res as u64)?;
 
     Ok(())
 }

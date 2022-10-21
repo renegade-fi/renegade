@@ -1,12 +1,12 @@
 //! Groups integration tests for modulo MPC gadgets
-
 use circuits::mpc_gadgets::modulo::{mod_2m, truncate};
-use curve25519_dalek::scalar::Scalar;
 use integration_helpers::types::IntegrationTest;
 use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use rand::{thread_rng, Rng, RngCore};
 
 use crate::{IntegrationTestArgs, TestWrapper};
+
+use super::check_equal;
 
 /// Test the mod_2m method
 fn test_mod_2m(test_args: &IntegrationTestArgs) -> Result<(), String> {
@@ -23,13 +23,7 @@ fn test_mod_2m(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .open_and_authenticate()
         .map_err(|err| format!("Error opening the result of mod_2m: {:?}", err))?;
 
-    if value_mod_2m.to_scalar().ne(&Scalar::zero()) {
-        return Err(format!(
-            "Expected {:?}, got {:?}",
-            0,
-            scalar_to_u64(&value_mod_2m.to_scalar())
-        ));
-    }
+    check_equal(&value_mod_2m, 0)?;
 
     // Random value
     let random_value = thread_rng().next_u64();
@@ -48,16 +42,7 @@ fn test_mod_2m(test_args: &IntegrationTestArgs) -> Result<(), String> {
             .map_err(|err| format!("Error opening value: {:?}", err))?
             .to_scalar(),
     ) % (1 << m);
-    if random_value_mod_2m
-        .to_scalar()
-        .ne(&Scalar::from(expected_result))
-    {
-        return Err(format!(
-            "Expected: {:?}, got {:?}",
-            expected_result,
-            scalar_to_u64(&random_value_mod_2m.to_scalar())
-        ));
-    }
+    check_equal(&random_value_mod_2m, expected_result)?;
 
     Ok(())
 }
@@ -68,7 +53,7 @@ fn test_truncate(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let random_value = rng.next_u64();
     let random_m = rng.gen_range(1..=63) as u64;
 
-    // Party 0 choose truncated value, party 1 chooses truncation amount
+    // Party 0 chooses truncated value, party 1 chooses truncation amount
     let shared_random_value = test_args
         .borrow_fabric()
         .allocate_private_u64(0 /* owning_party */, random_value)
@@ -97,15 +82,8 @@ fn test_truncate(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .map_err(|err| format!("Error opening shared random value: {:?}", err))?
         .to_scalar();
 
-    let expected_result = Scalar::from(scalar_to_u64(&random_value) >> m);
-
-    if res.to_scalar().ne(&expected_result) {
-        return Err(format!(
-            "Expected {:?}, got {:?}",
-            scalar_to_u64(&expected_result),
-            scalar_to_u64(&res.to_scalar())
-        ));
-    }
+    let expected_result = scalar_to_u64(&random_value) >> m;
+    check_equal(&res, expected_result)?;
 
     Ok(())
 }
