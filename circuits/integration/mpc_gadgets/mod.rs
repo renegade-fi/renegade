@@ -4,6 +4,7 @@ use mpc_ristretto::{
     mpc_scalar::scalar_to_u64, network::MpcNetwork,
 };
 
+pub mod arithmetic;
 pub mod bits;
 pub mod comparators;
 pub mod modulo;
@@ -18,6 +19,36 @@ pub(crate) fn check_equal<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
             expected,
             scalar_to_u64(&x.to_scalar())
         ));
+    }
+
+    Ok(())
+}
+
+pub(crate) fn check_equal_vec<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    x: &[AuthenticatedScalar<N, S>],
+    expected: &[u64],
+) -> Result<(), String> {
+    if x.len() != expected.len() {
+        return Err(format!(
+            "expected result has length different from given result; {:?} vs {:?}",
+            expected.len(),
+            x.len()
+        ));
+    }
+    let x_u64 = x
+        .iter()
+        .map(|val| scalar_to_u64(&val.to_scalar()))
+        .collect::<Vec<_>>();
+
+    for i in 0..x.len() {
+        if x_u64[i].ne(&expected[i]) {
+            return Err(
+                format!(
+                    "Vectors differ in position {:?}: expected element {:?}, got {:?}\nFull Expected Vec: {:?}\nFull Result Vec: {:?}",
+                    i, expected[i], x_u64[i], x_u64, expected
+                )
+            );
+        }
     }
 
     Ok(())

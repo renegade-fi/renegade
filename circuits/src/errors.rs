@@ -7,6 +7,8 @@ pub enum MpcError {
     SetupError(String),
     /// Error serializing and deserializing network values
     SerializationError(String),
+    /// Represents an error during the course of an arithmetic operation
+    ArithmeticError(String),
     /// Error opening a value during circuit evaluation
     OpeningError(String),
     // TODO: remove this

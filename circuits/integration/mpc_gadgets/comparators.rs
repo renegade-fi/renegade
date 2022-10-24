@@ -11,6 +11,7 @@ use crate::{IntegrationTestArgs, TestWrapper};
 
 use super::check_equal;
 
+/// TODO: (@joeykraut) Look into this more, it may fail in certain cases
 /// Tests all the inequality comparators
 fn test_inequalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Party 0 chooses a, party 1 chooses b
