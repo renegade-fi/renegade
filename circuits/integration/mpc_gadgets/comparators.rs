@@ -1,11 +1,11 @@
 //! Groups integration tests for comparators
 
 use circuits::mpc_gadgets::comparators::{
-    greater_than, greater_than_equal, less_than, less_than_equal,
+    greater_than, greater_than_equal, kary_or, less_than, less_than_equal,
 };
 use integration_helpers::types::IntegrationTest;
 use mpc_ristretto::mpc_scalar::scalar_to_u64;
-use rand::{thread_rng, RngCore};
+use rand::{seq::SliceRandom, thread_rng, Rng, RngCore};
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
@@ -89,7 +89,60 @@ fn test_inequalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// Tests the k-ary or boolean operator
+fn test_kary_or(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // All zeros
+    let n = 10;
+    let zeros = test_args
+        .borrow_fabric()
+        .batch_allocate_private_u64s(0 /* owning_party */, &vec![0u64; n])
+        .map_err(|err| format!("Error sharing zeros: {:?}", err))?;
+    let res = kary_or(&zeros, test_args.mpc_fabric.clone())
+        .map_err(|err| format!("Error computing OR(0, ..., 0): {:?}", err))?
+        .open_and_authenticate()
+        .map_err(|err| format!("Error opening OR(0, ..., 0) result: {:?}", err))?;
+
+    check_equal(&res, 0u64)?;
+
+    // A random amount of ones
+    let mut rng = thread_rng();
+    let mut values = (0..(rng.gen_range(1..n)))
+        .map(|_| {
+            test_args
+                .borrow_fabric()
+                .allocate_private_u64(1 /* owning_party */, 1 /* value */)
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    values.append(
+        &mut (0..n - values.len())
+            .map(|_| {
+                test_args
+                    .borrow_fabric()
+                    .allocate_private_u64(1 /* owning_party */, 0 /* value */)
+                    .unwrap()
+            })
+            .collect::<Vec<_>>(),
+    );
+
+    // Randomly permute the array and compute the k-ary or
+    values.shuffle(&mut rng);
+    let res = kary_or(&values, test_args.mpc_fabric.clone())
+        .map_err(|err| format!("Error computing random k-ary OR: {:?}", err))?
+        .open_and_authenticate()
+        .map_err(|err| format!("Error opening result of random k-ary OR: {:?}", err))?;
+
+    check_equal(&res, 1)?;
+
+    Ok(())
+}
+
 inventory::submit!(TestWrapper(IntegrationTest {
     name: "mpc_gadgets::test_inequalities",
     test_fn: test_inequalities
+}));
+
+inventory::submit!(TestWrapper(IntegrationTest {
+    name: "mpc_gadgets::test_kary_or",
+    test_fn: test_kary_or
 }));
