@@ -16,7 +16,30 @@ pub fn prefix_mul<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     a: &[AuthenticatedScalar<N, S>],
     fabric: SharedFabric<N, S>,
 ) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcError> {
+    prefix_product_impl(
+        a,
+        fabric,
+        &(0usize..a.len()).collect::<Vec<_>>(), // Select all prefix products
+    )
+}
+
+/// Provides a common implementation for computing the prefix products of a series for a given set
+/// of prefixes
+///
+/// Prefixes are specified as a list pre = [pre_1, pre_2, ..., pre_k] where pre_l implies that the
+/// method returns \prod_{i=0}^l a_i in the lth element of the return vector
+///
+/// Note that each additional prefix incurs more bandwidth (although constant round)
+fn prefix_product_impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    a: &[AuthenticatedScalar<N, S>],
+    fabric: SharedFabric<N, S>,
+    pre: &[usize],
+) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcError> {
     let n = a.len();
+    assert!(
+        pre.iter().all(|x| x < &n),
+        "All prefixes requested must be in range"
+    );
 
     // Fetch one inverse pair per element from the pre-procee sour
     let (b_values, b_inv_values) = fabric
@@ -46,15 +69,25 @@ pub fn prefix_mul<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     }
 
     // Each partial product (after factors cancel) is of the form
-    //      partial_i = b_{i-1} * a_0 * ... * a_i * b_i^-1
+    //      partial_i = b_{0} * a_0 * ... * a_i * b_i^-1
     // So it must be multiplied by b_{i-1}^-1 * b_i to create a secret sharing
     // of a_0 * ... * a_i.
     // To do so, we first batch multiply b_0^-1 * b_i for i > 0
-    let cancellation_factors = AuthenticatedScalar::batch_mul(&b_inv_values[..n], &b_values[1..])
-        .map_err(|err| MpcError::ArithmeticError(format!("{:?}", err)))?;
+    let cancellation_factors = AuthenticatedScalar::batch_mul(
+        &vec![b_inv_values[0].clone(); pre.len()], // Each prefix product starts at 0
+        &pre.iter()
+            .map(|index| b_values[*index].clone())
+            .collect::<Vec<_>>(),
+    )
+    .map_err(|err| MpcError::ArithmeticError(format!("{:?}", err)))?;
+
+    let selected_partial_products = pre
+        .iter()
+        .map(|index| partial_products[*index].clone())
+        .collect::<Vec<_>>();
 
     // No communication is required here, the partial_products are public and the
     // cancellation_factors are shared, so computation can be done locally.
     // Unwrap is therefore safe
-    Ok(AuthenticatedScalar::batch_mul(&partial_products, &cancellation_factors).unwrap())
+    Ok(AuthenticatedScalar::batch_mul(&selected_partial_products, &cancellation_factors).unwrap())
 }
