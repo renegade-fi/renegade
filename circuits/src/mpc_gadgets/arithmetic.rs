@@ -7,6 +7,15 @@ use mpc_ristretto::{
 
 use crate::{errors::MpcError, mpc::SharedFabric};
 
+/// Computes the product of all elements in constant number of rounds
+///     Result = a_0 * ... * a_n
+pub fn product<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    a: &[AuthenticatedScalar<N, S>],
+    fabric: SharedFabric<N, S>,
+) -> Result<AuthenticatedScalar<N, S>, MpcError> {
+    Ok(prefix_product_impl(a, fabric, &[a.len() - 1])?[0].clone())
+}
+
 /// Computes the prefix products of the given list of elements: i.e.
 ///     Returns [c_1, .., c_D] where c_i = \prod_{j=1^i} a_j
 ///
