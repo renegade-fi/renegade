@@ -1,7 +1,7 @@
 //! Groups integration tests for comparators
 
 use circuits::mpc_gadgets::comparators::{
-    greater_than, greater_than_equal, kary_or, less_than, less_than_equal,
+    eq, eq_zero, greater_than, greater_than_equal, kary_or, less_than, less_than_equal,
 };
 use integration_helpers::types::IntegrationTest;
 use mpc_ristretto::mpc_scalar::scalar_to_u64;
@@ -89,6 +89,79 @@ fn test_inequalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// Tests the equality comparators
+fn test_equalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // 0 == 0
+    let shared_zero = test_args
+        .borrow_fabric()
+        .allocate_private_u64(0 /* owning_party */, 0u64)
+        .map_err(|err| format!("Error sharing zero: {:?}", err))?;
+    let mut res = eq_zero::<64, _, _>(&shared_zero, test_args.mpc_fabric.clone())
+        .map_err(|err| format!("Error computing 0 == 0: {:?}", err))?
+        .open_and_authenticate()
+        .map_err(|err| format!("Error opening the result of 0 == 0: {:?}", err))?;
+
+    check_equal(&res, 1)?;
+
+    // random == 0
+    let mut rng = thread_rng();
+    let shared_random = test_args
+        .borrow_fabric()
+        .allocate_private_u64(1 /* owning_party */, rng.next_u32() as u64)
+        .map_err(|err| format!("Error sharing private random value: {:?}", err))?;
+    res = eq_zero::<64, _, _>(&shared_random, test_args.mpc_fabric.clone())
+        .map_err(|err| format!("Error computing random == 0: {:?}", err))?
+        .open_and_authenticate()
+        .map_err(|err| format!("Error opening the result of random == 0: {:?}", err))?;
+
+    check_equal(&res, 0)?;
+
+    // random_1 == random_1
+    let shared_random = test_args
+        .borrow_fabric()
+        .allocate_private_u64(0 /* owning_party */, rng.next_u32() as u64)
+        .map_err(|err| format!("Error allocating shared random value: {:?}", err))?;
+    res = eq::<64, _, _>(&shared_random, &shared_random, test_args.mpc_fabric.clone())
+        .map_err(|err| format!("Error computing random_1 == random_1: {:?}", err))?
+        .open_and_authenticate()
+        .map_err(|err| {
+            format!(
+                "Error opening the result of random_1 == random_1: {:?}",
+                err
+            )
+        })?;
+
+    check_equal(&res, 1)?;
+
+    // random_1 == random_2
+    let shared_random1 = test_args
+        .borrow_fabric()
+        .allocate_private_u64(0 /* owning_party */, rng.next_u32() as u64)
+        .map_err(|err| format!("Error allocating private random value: {:?}", err))?;
+    let shared_random2 = test_args
+        .borrow_fabric()
+        .allocate_private_u64(1 /* owning_party */, rng.next_u32() as u64)
+        .map_err(|err| format!("Error sharing private random value: {:?}", err))?;
+
+    res = eq::<64, _, _>(
+        &shared_random1,
+        &shared_random2,
+        test_args.mpc_fabric.clone(),
+    )
+    .map_err(|err| format!("Error computing random_1 == random_2: {:?}", err))?
+    .open_and_authenticate()
+    .map_err(|err| {
+        format!(
+            "Error opening the result of random_1 == random_2: {:?}",
+            err
+        )
+    })?;
+
+    check_equal(&res, 0)?;
+
+    Ok(())
+}
+
 /// Tests the k-ary or boolean operator
 fn test_kary_or(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // All zeros
@@ -140,6 +213,11 @@ fn test_kary_or(test_args: &IntegrationTestArgs) -> Result<(), String> {
 inventory::submit!(TestWrapper(IntegrationTest {
     name: "mpc_gadgets::test_inequalities",
     test_fn: test_inequalities
+}));
+
+inventory::submit!(TestWrapper(IntegrationTest {
+    name: "mpc_gadgets::test_equalities",
+    test_fn: test_equalities
 }));
 
 inventory::submit!(TestWrapper(IntegrationTest {

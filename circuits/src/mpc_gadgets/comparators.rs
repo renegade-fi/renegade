@@ -11,7 +11,7 @@ use crate::{errors::MpcError, mpc::SharedFabric};
 
 use super::{
     arithmetic::product,
-    bits::{bit_xor, scalar_from_bits_le, scalar_to_bits_le},
+    bits::{bit_xor, scalar_from_bits_le, scalar_to_bits_le, to_bits_le},
     modulo::truncate,
 };
 
@@ -33,8 +33,19 @@ pub fn eq_zero<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar
     a: &AuthenticatedScalar<N, S>,
     fabric: SharedFabric<N, S>,
 ) -> Result<AuthenticatedScalar<N, S>, MpcError> {
-    // TODO: Implement K-ary OR primitive, then build this circuit
-    Err(MpcError::NotImplemented)
+    let bits = to_bits_le::<D, N, S>(a, fabric.clone())?;
+    Ok(Scalar::one() - kary_or(&bits, fabric)?)
+}
+
+/// Implements the comparator a == b
+///
+/// D represents the bitlength of the inputs
+pub fn eq<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    a: &AuthenticatedScalar<N, S>,
+    b: &AuthenticatedScalar<N, S>,
+    fabric: SharedFabric<N, S>,
+) -> Result<AuthenticatedScalar<N, S>, MpcError> {
+    eq_zero::<D, N, S>(&(a - b), fabric)
 }
 
 /// Implements the comparator a < b
