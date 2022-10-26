@@ -7,7 +7,6 @@ use std::{
 
 use curve25519_dalek::scalar::Scalar;
 use mpc_ristretto::{
-    authenticated_scalar::AuthenticatedScalar,
     beaver::SharedValueSource,
     fabric::AuthenticatedMpcFabric,
     network::{MpcNetwork, QuicTwoPartyNet},
@@ -20,8 +19,6 @@ use crate::errors::MpcError;
  * Types
  */
 
-/// The default MpcNetwork implementation used across this module
-pub type DefaultNetwork = QuicTwoPartyNet;
 /// Type alias that curries one generic out of the concern of this implementation
 #[allow(type_alias_bounds)]
 pub type MpcFabric<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> =
@@ -44,10 +41,6 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for SharedFabric<
     }
 }
 
-/// A scalar type that curries the network type out
-#[allow(type_alias_bounds)]
-pub type SharedScalar<S: SharedValueSource<Scalar>> = AuthenticatedScalar<DefaultNetwork, S>;
-
 /**
  * Generic, module level helpers
  */
@@ -57,7 +50,7 @@ pub fn new_mpc_fabric<S: SharedValueSource<Scalar>>(
     party_id: u64,
     peer_addr: SocketAddr,
     beaver_source: BeaverSource<S>,
-) -> Result<AuthenticatedMpcFabric<DefaultNetwork, S>, MpcError> {
+) -> Result<AuthenticatedMpcFabric<QuicTwoPartyNet, S>, MpcError> {
     let local_addr: SocketAddr = "192.168.0.1"
         .parse()
         .map_err(|_| MpcError::SetupError("invalid peer addr".to_string()))?;

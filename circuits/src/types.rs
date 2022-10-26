@@ -1,10 +1,12 @@
 use curve25519_dalek::scalar::Scalar;
-use mpc_ristretto::beaver::SharedValueSource;
+use mpc_ristretto::{
+    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+};
 
 use crate::{
     constants::{MAX_BALANCES, MAX_ORDERS},
-    errors::MpcError,
-    mpc::SharedScalar,
+    errors::{MpcError, TypeConversionError},
+    Allocate,
 };
 
 /**
@@ -82,8 +84,43 @@ pub struct Order {
     pub amount: u64,
 }
 
+/// Convert a vector of u64s to an Order
+impl TryFrom<&[u64]> for Order {
+    type Error = TypeConversionError;
+
+    fn try_from(value: &[u64]) -> Result<Self, Self::Error> {
+        if value.len() != 5 {
+            return Err(TypeConversionError(format!(
+                "expected array of length 5, got {:?}",
+                value.len()
+            )));
+        }
+
+        // Check that the side is 0 or 1
+        if !(value[2] == 0 || value[2] == 1) {
+            return Err(TypeConversionError(format!(
+                "Order side must be 0 or 1, got {:?}",
+                value[2]
+            )));
+        }
+
+        Ok(Self {
+            quote_mint: value[0],
+            base_mint: value[1],
+            side: if value[2] == 0 {
+                OrderSide::Buy
+            } else {
+                OrderSide::Sell
+            },
+            price: value[3],
+            amount: value[4],
+        })
+    }
+}
+
 /// Convert an order to a vector of u64s
-/// This is useful for sharing the points in an MPC circuit
+///
+/// Useful for allocating, sharing, serialization, etc
 impl From<&Order> for Vec<u64> {
     fn from(o: &Order) -> Self {
         vec![o.quote_mint, o.base_mint, o.side.into(), o.price, o.amount]
@@ -92,24 +129,26 @@ impl From<&Order> for Vec<u64> {
 
 /// Represents an order that has been allocated in an MPC network
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AuthenticatedOrder<S: SharedValueSource<Scalar>> {
+pub struct AuthenticatedOrder<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The mint (ERC-20 contract address) of the quote token
-    pub quote_mint: SharedScalar<S>,
+    pub quote_mint: AuthenticatedScalar<N, S>,
     /// The mint (ERC-20 contract address) of the base token
-    pub base_mint: SharedScalar<S>,
+    pub base_mint: AuthenticatedScalar<N, S>,
     /// The side this order is for (0 = buy, 1 = sell)
-    pub side: SharedScalar<S>,
+    pub side: AuthenticatedScalar<N, S>,
     /// The limit price to be executed at, in units of quote
-    pub price: SharedScalar<S>,
+    pub price: AuthenticatedScalar<N, S>,
     /// The amount of base currency to buy or sell
-    pub amount: SharedScalar<S>,
+    pub amount: AuthenticatedScalar<N, S>,
 }
 
 /// Attempt to parse an authenticated order from a vector of authenticated scalars
-impl<S: SharedValueSource<Scalar>> TryFrom<Vec<SharedScalar<S>>> for AuthenticatedOrder<S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> TryFrom<Vec<AuthenticatedScalar<N, S>>>
+    for AuthenticatedOrder<N, S>
+{
     type Error = MpcError;
 
-    fn try_from(value: Vec<SharedScalar<S>>) -> Result<Self, Self::Error> {
+    fn try_from(value: Vec<AuthenticatedScalar<N, S>>) -> Result<Self, Self::Error> {
         if value.len() != 5 {
             return Err(MpcError::SerializationError(format!(
                 "Expected 5 elements, got {}",
@@ -124,6 +163,24 @@ impl<S: SharedValueSource<Scalar>> TryFrom<Vec<SharedScalar<S>>> for Authenticat
             price: value[3].clone(),
             amount: value[4].clone(),
         })
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Order {
+    type Output = AuthenticatedOrder<N, S>;
+
+    fn allocate(
+        &self,
+        owning_party: u64,
+        fabric: crate::mpc::SharedFabric<N, S>,
+    ) -> Result<Self::Output, MpcError> {
+        let values_to_allocate: Vec<u64> = self.into();
+        let shared_values = fabric
+            .borrow_fabric()
+            .batch_allocate_private_u64s(owning_party, &values_to_allocate)
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+
+        Ok(Self::Output::try_from(shared_values).unwrap())
     }
 }
 
@@ -174,9 +231,35 @@ pub struct SingleMatchResult {
     pub sell_side2: Match,
 }
 
+/// Represents a single match on a set of overlapping orders
+/// with values authenticated in an MPC network
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthenticatedSingleMatchResult<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    // Specifies the asset party 1 buys
+    pub buy_side1: AuthenticatedMatch<N, S>,
+    // Specifies the asset party 1 sell
+    pub sell_side1: AuthenticatedMatch<N, S>,
+    // Specifies the asset party 2 buys
+    pub buy_side2: AuthenticatedMatch<N, S>,
+    // Specifies the asset party 2 sells
+    pub sell_side2: AuthenticatedMatch<N, S>,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Match {
     pub mint: u64,
     pub amount: u64,
     pub side: OrderSide,
+}
+
+/// Represents a match on one side of the order that is backed by authenticated,
+/// network allocated values
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthenticatedMatch<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The mint (ERC-20 token) that this match result swaps
+    pub mint: AuthenticatedScalar<N, S>,
+    /// The amount of the mint token to swap
+    pub amount: AuthenticatedScalar<N, S>,
+    /// The side (0 is buy, 1 is sell)
+    pub side: AuthenticatedScalar<N, S>,
 }

@@ -61,10 +61,10 @@ fn prefix_product_impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     // We will open these values and use them to form telescoping partial products wherein the only non-cancelled terms
     // are a b_{k-1} * b_k^-1
     let d_partial = AuthenticatedScalar::batch_mul(&b_values[..n], a)
-        .map_err(|err| MpcError::ArithmeticError(format!("{:?}", err)))?;
+        .map_err(|err| MpcError::ArithmeticError(err.to_string()))?;
 
     let d_values = AuthenticatedScalar::batch_mul(&d_partial, &b_inv_values[1..])
-        .map_err(|err| MpcError::ArithmeticError(format!("{:?}", err)))?;
+        .map_err(|err| MpcError::ArithmeticError(err.to_string()))?;
 
     let d_values_open = AuthenticatedScalar::batch_open_and_authenticate(&d_values)
         .map_err(|_| MpcError::OpeningError("error opening d_values in prefix_mul".to_string()))?;
@@ -88,7 +88,7 @@ fn prefix_product_impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
             .map(|index| b_values[*index].clone())
             .collect::<Vec<_>>(),
     )
-    .map_err(|err| MpcError::ArithmeticError(format!("{:?}", err)))?;
+    .map_err(|err| MpcError::ArithmeticError(err.to_string()))?;
 
     let selected_partial_products = pre
         .iter()

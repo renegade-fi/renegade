@@ -48,6 +48,17 @@ pub fn eq<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     eq_zero::<D, N, S>(&(a - b), fabric)
 }
 
+/// Implements the comparator a != b
+///
+/// D represents the bitlength of the inputs
+pub fn ne<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    a: &AuthenticatedScalar<N, S>,
+    b: &AuthenticatedScalar<N, S>,
+    fabric: SharedFabric<N, S>,
+) -> Result<AuthenticatedScalar<N, S>, MpcError> {
+    Ok(Scalar::one() - eq::<D, N, S>(a, b, fabric)?)
+}
+
 /// Implements the comparator a < b
 ///
 /// D represents the bitlength of a and b
@@ -105,7 +116,7 @@ pub fn kary_or<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
 ) -> Result<AuthenticatedScalar<N, S>, MpcError> {
     // Sample random blinding bits from the pre-processing functionality
     // We only need to be able to hold the maximum possible count, log_2(# of booleans)
-    let max_bits = (a.len() as f32).log2().ceil() as usize;
+    let max_bits = ((a.len() + 1) as f32).log2().ceil() as usize;
     let blinding_bits = fabric
         .borrow_fabric()
         .allocate_random_shared_bit_batch(max_bits);
@@ -119,7 +130,7 @@ pub fn kary_or<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
 
     let blinded_sum_open = blinded_sum
         .open_and_authenticate()
-        .map_err(|err| MpcError::OpeningError(format!("{:?}", err)))?;
+        .map_err(|err| MpcError::OpeningError(err.to_string()))?;
 
     // Decompose the blinded sum into bits
     let blinded_sum_bits = scalar_to_bits_le(blinded_sum_open.to_scalar())
@@ -159,8 +170,33 @@ fn constant_round_or_impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         .collect::<Vec<_>>();
 
     let monomial_product = product(&sum_monomials, fabric)
-        .map_err(|err| MpcError::ArithmeticError(format!("{:?}", err)))?;
+        .map_err(|err| MpcError::ArithmeticError(err.to_string()))?;
 
     // Flip the result
     Ok(Scalar::one() - monomial_product)
+}
+
+/// TODO: Optimize this method
+/// Computes the min of two scalars
+///
+/// D represents the bitlength of a and b
+pub fn min<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    a: &AuthenticatedScalar<N, S>,
+    b: &AuthenticatedScalar<N, S>,
+    fabric: SharedFabric<N, S>,
+) -> Result<AuthenticatedScalar<N, S>, MpcError> {
+    let a_lt_b = less_than::<D, _, _>(a, b, fabric)?;
+    Ok(&a_lt_b * a + (Scalar::one() - a_lt_b) * b)
+}
+
+/// Computes res = a if s else b
+pub fn cond_select<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    s: &AuthenticatedScalar<N, S>,
+    a: &AuthenticatedScalar<N, S>,
+    b: &AuthenticatedScalar<N, S>,
+) -> Result<AuthenticatedScalar<N, S>, MpcError> {
+    let selectors =
+        AuthenticatedScalar::batch_mul(&[a.clone(), b.clone()], &[s.clone(), Scalar::one() - s])
+            .map_err(|err| MpcError::ArithmeticError(err.to_string()))?;
+    Ok(&selectors[0] + &selectors[1])
 }

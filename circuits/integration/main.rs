@@ -1,4 +1,5 @@
 #![cfg(test)]
+mod mpc_circuits;
 mod mpc_gadgets;
 
 use std::cell::Ref;
@@ -43,6 +44,7 @@ struct CliArgs {
 struct IntegrationTestArgs {
     /// The MPC fabric to use during the course of the integration test
     pub(crate) mpc_fabric: SharedMpcFabric,
+    pub(crate) party_id: u64,
 }
 
 impl IntegrationTestArgs {
@@ -53,13 +55,17 @@ impl IntegrationTestArgs {
 
 impl From<CliArgs> for IntegrationTestArgs {
     fn from(args: CliArgs) -> Self {
+        let mpc_fabric = SharedFabric(setup_mpc_fabric(
+            args.party,
+            args.port1,
+            args.port2,
+            args.docker,
+        ));
+        let party_id = mpc_fabric.borrow_fabric().party_id();
+
         Self {
-            mpc_fabric: SharedFabric(setup_mpc_fabric(
-                args.party,
-                args.port1,
-                args.port2,
-                args.docker,
-            )),
+            mpc_fabric,
+            party_id,
         }
     }
 }
