@@ -63,3 +63,14 @@ pub fn truncate<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
 
     Ok(res)
 }
+
+/// Shifts the input right by the specified amount
+///
+/// Effectively just calls out to truncate, but is placed here for abstraction purposes
+pub fn shift_right<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    a: &AuthenticatedScalar<N, S>,
+    m: usize,
+    fabric: SharedFabric<N, S>,
+) -> Result<AuthenticatedScalar<N, S>, MpcError> {
+    truncate(a, m, fabric)
+}

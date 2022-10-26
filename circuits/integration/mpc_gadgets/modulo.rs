@@ -1,5 +1,5 @@
 //! Groups integration tests for modulo MPC gadgets
-use circuits::mpc_gadgets::modulo::{mod_2m, truncate};
+use circuits::mpc_gadgets::modulo::{mod_2m, shift_right, truncate};
 use integration_helpers::types::IntegrationTest;
 use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use rand::{thread_rng, Rng, RngCore};
@@ -88,6 +88,32 @@ fn test_truncate(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// Tests the shift right gadget
+fn test_shift_right(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Sample a random value and shift it right
+    let shift_amount = 3;
+    let mut rng = thread_rng();
+    let random_value = test_args
+        .borrow_fabric()
+        .allocate_private_u64(0 /* owning_party */, rng.next_u32() as u64)
+        .map_err(|err| format!("Error sharing private random value: {:?}", err))?;
+
+    let res = shift_right(&random_value, shift_amount, test_args.mpc_fabric.clone())
+        .map_err(|err| format!("Error computing the right shifted result: {:?}", err))?
+        .open_and_authenticate()
+        .map_err(|err| format!("Error opening and authenticating the result: {:?}", err))?;
+
+    // Open the random value and compute the expected result
+    let random_value_open = scalar_to_u64(
+        &random_value
+            .open_and_authenticate()
+            .map_err(|err| format!("Error opening expected result: {:?}", err))?
+            .to_scalar(),
+    );
+
+    check_equal(&res, random_value_open >> shift_amount)
+}
+
 inventory::submit!(TestWrapper(IntegrationTest {
     name: "mpc_gadgets::test_mod_2m",
     test_fn: test_mod_2m,
@@ -96,4 +122,9 @@ inventory::submit!(TestWrapper(IntegrationTest {
 inventory::submit!(TestWrapper(IntegrationTest {
     name: "mpc_gadgets::test_truncate",
     test_fn: test_truncate
+}));
+
+inventory::submit!(TestWrapper(IntegrationTest {
+    name: "mpc_gadgets::test_shift_right",
+    test_fn: test_shift_right
 }));
