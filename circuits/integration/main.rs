@@ -8,7 +8,7 @@ use circuits::mpc::{MpcFabric, SharedFabric};
 use clap::Parser;
 use integration_helpers::{
     integration_test_main,
-    mpc_network::{setup_mpc_fabric, PartyIDBeaverSource},
+    mpc_network::{mocks::PartyIDBeaverSource, setup_mpc_fabric},
 };
 use mpc_ristretto::network::QuicTwoPartyNet;
 

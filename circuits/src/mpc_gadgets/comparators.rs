@@ -1,7 +1,5 @@
 //! Groups logic around arithemtic comparator circuits
 
-use std::ops::Neg;
-
 use curve25519_dalek::scalar::Scalar;
 use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
@@ -21,8 +19,21 @@ use super::{
 pub fn less_than_zero<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     a: &AuthenticatedScalar<N, S>,
     fabric: SharedFabric<N, S>,
-) -> Result<AuthenticatedScalar<N, S>, MpcError> {
-    Ok(truncate(a, D - 1, fabric)?.neg())
+) -> Result<AuthenticatedScalar<N, S>, MpcError>
+where
+    [(); D - 1]: Sized,
+{
+    // Truncate the first 250 bits of the input
+    let truncated = truncate::<250, _, _>(a, fabric.clone())?;
+
+    // Because the Ristretto scalar field is a prime field of order slightly greater than 2^252
+    // values are negative if either their 251st bit or 252nd bit are set. Therefore, we truncate
+    // all bits below this and compare the value to zero.
+    ne::<2, N, S>(
+        &truncated,
+        &fabric.borrow_fabric().allocate_zero(),
+        fabric.clone(),
+    )
 }
 
 /// Implements the comparator a == 0
@@ -66,7 +77,10 @@ pub fn less_than<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scal
     a: &AuthenticatedScalar<N, S>,
     b: &AuthenticatedScalar<N, S>,
     fabric: SharedFabric<N, S>,
-) -> Result<AuthenticatedScalar<N, S>, MpcError> {
+) -> Result<AuthenticatedScalar<N, S>, MpcError>
+where
+    [(); D - 1]: Sized,
+{
     less_than_zero::<D, _, _>(&(a - b), fabric)
 }
 
@@ -77,7 +91,10 @@ pub fn less_than_equal<const D: usize, N: MpcNetwork + Send, S: SharedValueSourc
     a: &AuthenticatedScalar<N, S>,
     b: &AuthenticatedScalar<N, S>,
     fabric: SharedFabric<N, S>,
-) -> Result<AuthenticatedScalar<N, S>, MpcError> {
+) -> Result<AuthenticatedScalar<N, S>, MpcError>
+where
+    [(); D - 1]: Sized,
+{
     Ok(Scalar::one() - greater_than::<D, _, _>(a, b, fabric)?)
 }
 
@@ -88,7 +105,10 @@ pub fn greater_than<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<S
     a: &AuthenticatedScalar<N, S>,
     b: &AuthenticatedScalar<N, S>,
     fabric: SharedFabric<N, S>,
-) -> Result<AuthenticatedScalar<N, S>, MpcError> {
+) -> Result<AuthenticatedScalar<N, S>, MpcError>
+where
+    [(); D - 1]: Sized,
+{
     less_than_zero::<D, _, _>(&(b - a), fabric)
 }
 
@@ -99,7 +119,10 @@ pub fn greater_than_equal<const D: usize, N: MpcNetwork + Send, S: SharedValueSo
     a: &AuthenticatedScalar<N, S>,
     b: &AuthenticatedScalar<N, S>,
     fabric: SharedFabric<N, S>,
-) -> Result<AuthenticatedScalar<N, S>, MpcError> {
+) -> Result<AuthenticatedScalar<N, S>, MpcError>
+where
+    [(); D - 1]: Sized,
+{
     Ok(Scalar::one() - less_than::<D, _, _>(a, b, fabric)?)
 }
 
@@ -133,7 +156,7 @@ pub fn kary_or<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         .map_err(|err| MpcError::OpeningError(err.to_string()))?;
 
     // Decompose the blinded sum into bits
-    let blinded_sum_bits = scalar_to_bits_le(blinded_sum_open.to_scalar())
+    let blinded_sum_bits = scalar_to_bits_le(&blinded_sum_open.to_scalar())
         .into_iter()
         .map(|val| fabric.borrow_fabric().allocate_public_scalar(val));
 
@@ -184,7 +207,10 @@ pub fn min<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     a: &AuthenticatedScalar<N, S>,
     b: &AuthenticatedScalar<N, S>,
     fabric: SharedFabric<N, S>,
-) -> Result<AuthenticatedScalar<N, S>, MpcError> {
+) -> Result<AuthenticatedScalar<N, S>, MpcError>
+where
+    [(); D - 1]: Sized,
+{
     let a_lt_b = less_than::<D, _, _>(a, b, fabric)?;
     Ok(&a_lt_b * a + (Scalar::one() - a_lt_b) * b)
 }

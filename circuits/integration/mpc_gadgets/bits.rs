@@ -11,7 +11,7 @@ use rand::{thread_rng, RngCore};
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
-use super::check_equal;
+use super::{check_equal, check_equal_vec};
 
 /**
  * Helpers
@@ -150,6 +150,22 @@ fn test_bit_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// Tests that getting the bits of 0 returns all zeros
+fn test_bits_le_zero(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let shared_value = test_args
+        .borrow_fabric()
+        .allocate_private_u64(0 /* owning_party */, 0 /* value */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+
+    let shared_bits = to_bits_le::<250, _, _>(&shared_value, test_args.mpc_fabric.clone())
+        .map_err(|err| format!("Error computing bits(0): {:?}", err))?
+        .iter()
+        .map(|bit| bit.open_and_authenticate().unwrap())
+        .collect::<Vec<_>>();
+
+    check_equal_vec(&shared_bits, &vec![0u64; shared_bits.len()])
+}
+
 /// Tests the to_bits_le gadget
 fn test_to_bits_le(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let value = 119;
@@ -205,8 +221,8 @@ fn test_bit_lt(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
 
     let res = bit_lt(
-        &to_bits_le::<64, _, _>(&equal_value1, test_args.mpc_fabric.clone()).unwrap(),
-        &to_bits_le::<64, _, _>(&equal_value2, test_args.mpc_fabric.clone()).unwrap(),
+        &to_bits_le::<250, _, _>(&equal_value1, test_args.mpc_fabric.clone()).unwrap(),
+        &to_bits_le::<250, _, _>(&equal_value2, test_args.mpc_fabric.clone()).unwrap(),
         test_args.mpc_fabric.clone(),
     )
     .open_and_authenticate()
@@ -229,8 +245,8 @@ fn test_bit_lt(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .map_err(|err| format!("Error sharing value2: {:?}", err))?;
 
     let res = bit_lt(
-        &to_bits_le::<64, _, _>(&shared_value1, test_args.mpc_fabric.clone()).unwrap(),
-        &to_bits_le::<64, _, _>(&shared_value2, test_args.mpc_fabric.clone()).unwrap(),
+        &to_bits_le::<250, _, _>(&shared_value1, test_args.mpc_fabric.clone()).unwrap(),
+        &to_bits_le::<250, _, _>(&shared_value2, test_args.mpc_fabric.clone()).unwrap(),
         test_args.mpc_fabric.clone(),
     )
     .open_and_authenticate()
@@ -267,6 +283,11 @@ inventory::submit!(TestWrapper(IntegrationTest {
 inventory::submit!(TestWrapper(IntegrationTest {
     name: "mpc_gadgets::test_bit_add",
     test_fn: test_bit_add
+}));
+
+inventory::submit!(TestWrapper(IntegrationTest {
+    name: "mpc_gadgets::test_bits_le_zero",
+    test_fn: test_bits_le_zero
 }));
 
 inventory::submit!(TestWrapper(IntegrationTest {

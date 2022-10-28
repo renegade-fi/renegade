@@ -45,7 +45,7 @@ pub(crate) fn check_equal_vec<N: MpcNetwork + Send, S: SharedValueSource<Scalar>
             return Err(
                 format!(
                     "Vectors differ in position {:?}: expected element {:?}, got {:?}\nFull Expected Vec: {:?}\nFull Result Vec: {:?}",
-                    i, expected[i], x_u64[i], x_u64, expected
+                    i, expected[i], x_u64[i], expected, x_u64
                 )
             );
         }

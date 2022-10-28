@@ -46,7 +46,7 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     let min_amount = min::<32, _, _>(&order1.amount, &order2.amount, fabric.clone())?;
 
     // Compute execution price = (price1 + price2) / 2
-    let execution_price = shift_right(&(&order1.price + &order2.price), 2, fabric.clone())?;
+    let execution_price = shift_right::<2, _, _>(&(&order1.price + &order2.price), fabric.clone())?;
 
     Ok(aggregate_check)
 }

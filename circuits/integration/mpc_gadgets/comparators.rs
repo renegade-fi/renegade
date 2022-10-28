@@ -11,11 +11,16 @@ use crate::{IntegrationTestArgs, TestWrapper};
 
 use super::check_equal;
 
-/// TODO: (@joeykraut) Look into this more, it may fail in certain cases
 /// Tests all the inequality comparators
 fn test_inequalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Party 0 chooses a, party 1 chooses b
-    let my_random_value = thread_rng().next_u64();
+    // let my_random_value = if test_args.party_id == 0 {
+    //     485813802
+    // } else {
+    //     530804745
+    // }; // thread_rng().next_u64();
+    // Do not use all bits to avoid overflow, for the sake of testing this is okay
+    let my_random_value = test_args.borrow_fabric().party_id(); // (thread_rng().next_u32() / 4) as u64;
     let shared_a = test_args
         .borrow_fabric()
         .allocate_private_u64(0 /* owning_party */, my_random_value)
@@ -39,23 +44,24 @@ fn test_inequalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
     );
 
     // Test <
-    let lt_result = less_than::<64, _, _>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
+    let lt_result = less_than::<250, _, _>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
         .map_err(|err| format!("Error computing a < 0: {:?}", err))?
         .open_and_authenticate()
         .map_err(|err| format!("Error opening a < 0 result: {:?}", err))?;
     let mut expected_result = (opened_a < opened_b) as u64;
+
     check_equal(&lt_result, expected_result)?;
 
     // Test <= with equal values
     let mut lte_result =
-        less_than_equal::<64, _, _>(&shared_a, &shared_a, test_args.mpc_fabric.clone())
+        less_than_equal::<2504, _, _>(&shared_a, &shared_a, test_args.mpc_fabric.clone())
             .map_err(|err| format!("Error computing a <= a: {:?}", err))?
             .open_and_authenticate()
             .map_err(|err| format!("Error opening a <= a result: {:?}", err))?;
     check_equal(&lte_result, 1)?;
 
     // Test <= with random values
-    lte_result = less_than_equal::<64, _, _>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
+    lte_result = less_than_equal::<250, _, _>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
         .map_err(|err| format!("Error computing a <= b: {:?}", err))?
         .open_and_authenticate()
         .map_err(|err| format!("Error opening a <= b result: {:?}", err))?;
@@ -63,7 +69,7 @@ fn test_inequalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
     check_equal(&lte_result, expected_result)?;
 
     // Test >
-    let gt_result = greater_than::<64, _, _>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
+    let gt_result = greater_than::<250, _, _>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
         .map_err(|err| format!("Error computing a > b: {:?}", err))?
         .open_and_authenticate()
         .map_err(|err| format!("Error opening a > b result: {:?}", err))?;
@@ -71,18 +77,11 @@ fn test_inequalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
     check_equal(&gt_result, expected_result)?;
 
     // Test >= with equal values
-    let mut gte_result =
-        greater_than_equal::<64, _, _>(&shared_a, &shared_a, test_args.mpc_fabric.clone())
-            .map_err(|err| format!("Error computing a >= a: {:?}", err))?
+    let gte_result =
+        greater_than_equal::<250, _, _>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
+            .map_err(|err| format!("Error computing a >= b: {:?}", err))?
             .open_and_authenticate()
-            .map_err(|err| format!("Error opening a >= a result: {:?}", err))?;
-    check_equal(&gte_result, 1)?;
-
-    // Test >= with random values
-    gte_result = greater_than_equal::<64, _, _>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error computing a >= b: {:?}", err))?
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening a >= b result: {:?}", err))?;
+            .map_err(|err| format!("Error opening a >= b result: {:?}", err))?;
     expected_result = (opened_a >= opened_b) as u64;
     check_equal(&gte_result, expected_result)?;
 
@@ -96,7 +95,7 @@ fn test_equalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .borrow_fabric()
         .allocate_private_u64(0 /* owning_party */, 0u64)
         .map_err(|err| format!("Error sharing zero: {:?}", err))?;
-    let mut res = eq_zero::<64, _, _>(&shared_zero, test_args.mpc_fabric.clone())
+    let mut res = eq_zero::<250, _, _>(&shared_zero, test_args.mpc_fabric.clone())
         .map_err(|err| format!("Error computing 0 == 0: {:?}", err))?
         .open_and_authenticate()
         .map_err(|err| format!("Error opening the result of 0 == 0: {:?}", err))?;
@@ -109,7 +108,7 @@ fn test_equalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .borrow_fabric()
         .allocate_private_u64(1 /* owning_party */, rng.next_u32() as u64)
         .map_err(|err| format!("Error sharing private random value: {:?}", err))?;
-    res = eq_zero::<64, _, _>(&shared_random, test_args.mpc_fabric.clone())
+    res = eq_zero::<250, _, _>(&shared_random, test_args.mpc_fabric.clone())
         .map_err(|err| format!("Error computing random == 0: {:?}", err))?
         .open_and_authenticate()
         .map_err(|err| format!("Error opening the result of random == 0: {:?}", err))?;
@@ -121,7 +120,7 @@ fn test_equalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .borrow_fabric()
         .allocate_private_u64(0 /* owning_party */, rng.next_u32() as u64)
         .map_err(|err| format!("Error allocating shared random value: {:?}", err))?;
-    res = eq::<64, _, _>(&shared_random, &shared_random, test_args.mpc_fabric.clone())
+    res = eq::<250, _, _>(&shared_random, &shared_random, test_args.mpc_fabric.clone())
         .map_err(|err| format!("Error computing random_1 == random_1: {:?}", err))?
         .open_and_authenticate()
         .map_err(|err| {
@@ -143,7 +142,7 @@ fn test_equalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .allocate_private_u64(1 /* owning_party */, rng.next_u32() as u64)
         .map_err(|err| format!("Error sharing private random value: {:?}", err))?;
 
-    res = eq::<64, _, _>(
+    res = eq::<250, _, _>(
         &shared_random1,
         &shared_random2,
         test_args.mpc_fabric.clone(),
