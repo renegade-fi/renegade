@@ -20,6 +20,7 @@ macro_rules! integration_test_main {
         use colored::Colorize;
         use dns_lookup::lookup_host;
         use inventory::ctor;
+        use std::io::{stdout, Write};
 
         use $crate::types::IntegrationTest;
 
@@ -85,7 +86,10 @@ macro_rules! integration_test_main {
                 }
 
                 if verbose {
+                    // Flush the write buffer before the test executes. We print success or failure on the same
+                    // line as the "Running", but if the test panics, we want to know which test was run
                     print!("Running {}... ", test.name);
+                    stdout().flush().unwrap();
                 }
                 let res: Result<(), String> = (test.test_fn)(&test_args);
                 all_success &= validate_success(res, verbose);

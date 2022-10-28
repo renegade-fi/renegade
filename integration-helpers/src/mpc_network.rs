@@ -1,4 +1,5 @@
 //! Groups helpers for setting up and managing an MPC network
+pub mod mocks;
 
 use std::{cell::RefCell, net::SocketAddr, rc::Rc};
 
@@ -6,53 +7,31 @@ use curve25519_dalek::scalar::Scalar;
 use dns_lookup::lookup_host;
 use futures::executor::block_on;
 use mpc_ristretto::{
-    beaver::SharedValueSource, fabric::AuthenticatedMpcFabric, network::QuicTwoPartyNet,
+    beaver::SharedValueSource,
+    fabric::AuthenticatedMpcFabric,
+    network::{MpcNetwork, QuicTwoPartyNet},
 };
 
+use self::mocks::{MockMpcNet, PartyIDBeaverSource};
+
 /**
- * Helper Structs
+ * Types
  */
+#[allow(type_alias_bounds)]
+pub type SharedFabric<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> =
+    Rc<RefCell<AuthenticatedMpcFabric<N, S>>>;
 
-/// An implementation of a beaver value source that returns
-/// beaver triples (0, 0, 0) for party 0 and (1, 1, 1) for party 1
-#[derive(Debug)]
-pub struct PartyIDBeaverSource {
-    party_id: u64,
-}
-
-impl PartyIDBeaverSource {
-    pub fn new(party_id: u64) -> Self {
-        Self { party_id }
-    }
-}
-
-/// The PartyIDBeaverSource returns beaver triplets split statically between the
-/// parties. We assume a = 2, b = 3 ==> c = 6. [a] = (1, 1); [b] = (3, 0) [c] = (2, 4)
-impl SharedValueSource<Scalar> for PartyIDBeaverSource {
-    fn next_shared_bit(&mut self) -> Scalar {
-        // Simply output partyID, assume partyID \in {0, 1}
-        assert!(self.party_id == 0 || self.party_id == 1);
-        Scalar::from(self.party_id as u64)
-    }
-
-    fn next_triplet(&mut self) -> (Scalar, Scalar, Scalar) {
-        if self.party_id == 0 {
-            (Scalar::from(1u64), Scalar::from(3u64), Scalar::from(2u64))
-        } else {
-            (Scalar::from(1u64), Scalar::from(0u64), Scalar::from(4u64))
-        }
-    }
-
-    fn next_shared_inverse_pair(&mut self) -> (Scalar, Scalar) {
-        (
-            Scalar::from(self.party_id as u64),
-            Scalar::from(self.party_id as u64),
-        )
-    }
-
-    fn next_shared_value(&mut self) -> Scalar {
-        Scalar::from(self.party_id)
-    }
+/**
+ * Helpers
+ */
+/// Mocks out an MPC fabric, unlike the method below, no actual communication channel is
+/// created. The method below returns a fabric to be used in integration tests.
+pub fn mock_mpc_fabric(party_id: u64) -> SharedFabric<MockMpcNet, PartyIDBeaverSource> {
+    Rc::new(RefCell::new(AuthenticatedMpcFabric::new_with_network(
+        party_id,
+        Rc::new(RefCell::new(MockMpcNet::default())),
+        Rc::new(RefCell::new(PartyIDBeaverSource::new(party_id))),
+    )))
 }
 
 /// Sets up a basic MPC fabric between two parties using the QUIC transport and
