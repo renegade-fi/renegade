@@ -11,7 +11,6 @@ services:
         --port2 9000 
         --docker 
         --verbose
-        --test mpc_gadgets::test_mod_2m
     tty: true
   party1:
     image: circuits-integration-test:latest
@@ -24,5 +23,4 @@ services:
         --port1 9000 
         --port2 8000 
         --docker
-        --test mpc_gadgets::test_mod_2mt
     tty: true

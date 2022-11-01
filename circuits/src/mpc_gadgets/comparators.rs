@@ -39,7 +39,6 @@ where
 /// Implements the comparator a == 0
 ///
 /// D represents the bitlength of the input
-#[allow(unused_variables)]
 pub fn eq_zero<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     a: &AuthenticatedScalar<N, S>,
     fabric: SharedFabric<N, S>,

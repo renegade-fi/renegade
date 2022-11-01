@@ -15,8 +15,6 @@ pub enum MpcError {
     SetupError(String),
     /// Error sharing a privately held value
     SharingError(String),
-    // TODO: remove this
-    NotImplemented,
 }
 
 impl Display for MpcError {

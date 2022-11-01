@@ -30,6 +30,7 @@ pub struct SharedFabric<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
 );
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> SharedFabric<N, S> {
+    /// Borrow the shared MPC fabric as an immutable reference
     pub fn borrow_fabric(&self) -> Ref<MpcFabric<N, S>> {
         self.0.as_ref().borrow()
     }

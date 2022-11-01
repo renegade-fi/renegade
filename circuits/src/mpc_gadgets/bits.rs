@@ -12,6 +12,7 @@ use crate::{errors::MpcError, mpc::SharedFabric, scalar_2_to_m, SCALAR_MAX_BITS}
 /**
  * Helpers
  */
+
 /// Composes a sequence of `Scalar`s representing bits in little endian order into a single scalar
 pub(crate) fn scalar_from_bits_le<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     bits: &[AuthenticatedScalar<N, S>],
@@ -43,6 +44,7 @@ pub(crate) fn scalar_to_bits_le(a: &Scalar) -> Vec<Scalar> {
 /**
  * Gadgets
  */
+
 /// Single bit xor, assumes that `a` and `b` are scalars representing bits
 pub fn bit_xor<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     a: &AuthenticatedScalar<N, S>,
@@ -60,7 +62,11 @@ pub fn bit_add<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     b: &[AuthenticatedScalar<N, S>],
     fabric: SharedFabric<N, S>,
 ) -> (Vec<AuthenticatedScalar<N, S>>, AuthenticatedScalar<N, S>) {
-    bit_add_impl(a, b, fabric.borrow_fabric().allocate_zero())
+    bit_add_impl(
+        a,
+        b,
+        fabric.borrow_fabric().allocate_zero(), /* initial_carry */
+    )
 }
 
 /// Implementation of bit_add that exposes an extra inital_carry parameter
@@ -125,7 +131,6 @@ pub fn to_bits_le<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Sca
     let random_bits = fabric
         .borrow_fabric()
         .allocate_random_shared_bit_batch(D /* num_scalars */);
-
     let random_scalar = scalar_from_bits_le(&random_bits);
 
     // Pop a random scalar to fill in the top k - m bits
@@ -142,7 +147,7 @@ pub fn to_bits_le<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Sca
     // TODO: Do we need to `open_and_authenticate`?
     // TODO: Fix this offset
     let blinded_value = x - &blinding_factor + scalar_2_to_m(D + 1);
-    let blinded_value_open = blinded_value.open_and_authenticate().map_err(|_| {
+    let blinded_value_open = blinded_value.open().map_err(|_| {
         MpcError::OpeningError("error opening blinded value while truncating".to_string())
     })?;
 
@@ -160,6 +165,16 @@ pub fn to_bits_le<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Sca
 }
 
 /// Given two bitwise representations, computes whether the first is less than the second
+///
+/// Intuitively, we consider that a and b are in two's comlement representation. We flip all
+/// the bits of `b`; which gives us a representation of -b - 1. In two's complement, the negation
+/// of a value represents the distance of that value to the group order. If b > a; the distance
+/// from b to the group order is smaller than that of a to the group order. Adding `b`'s "distance"
+/// to `a` will then not cause an overflow (carry bit is 0). If b < a; the distance from `b` to the
+/// group order is greater than that of `a` to the group order; so adding `b`'s distance to `a`
+/// will cause an overflow.
+///
+/// Using -b - 1 instead of -b is the difference between the < and <= operators
 pub fn bit_lt<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     a: &[AuthenticatedScalar<N, S>],
     b: &[AuthenticatedScalar<N, S>],

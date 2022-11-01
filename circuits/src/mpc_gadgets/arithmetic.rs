@@ -17,7 +17,7 @@ pub fn product<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
 }
 
 /// Computes the prefix products of the given list of elements: i.e.
-///     Returns [c_1, .., c_D] where c_i = \prod_{j=1^i} a_j
+///     Returns [c_1, .., c_D] where c_i = \prod_{j=1}^i a_j
 ///
 /// This implementation is done in a constant number of rounds according to:
 /// https://iacr.org/archive/tcc2006/38760286/38760286.pdf
@@ -50,10 +50,10 @@ fn prefix_product_impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         "All prefixes requested must be in range"
     );
 
-    // Fetch one inverse pair per element from the pre-procee sour
+    // Fetch one inverse pair per element from the pre-processing source
     let (b_values, b_inv_values) = fabric
         .borrow_fabric()
-        .allocate_random_inverse_pair_batch(n + 1) // Fetch n + 1 random inverses
+        .allocate_random_inverse_pair_batch(n + 1 /* num_inverses */)
         .into_iter()
         .unzip::<_, _, Vec<_>, Vec<_>>();
 
@@ -66,7 +66,8 @@ fn prefix_product_impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     let d_values = AuthenticatedScalar::batch_mul(&d_partial, &b_inv_values[1..])
         .map_err(|err| MpcError::ArithmeticError(err.to_string()))?;
 
-    let d_values_open = AuthenticatedScalar::batch_open_and_authenticate(&d_values)
+    // TODO: Can we just call `batch_open` here and simply authenticate at the end?
+    let d_values_open = AuthenticatedScalar::batch_open(&d_values)
         .map_err(|_| MpcError::OpeningError("error opening d_values in prefix_mul".to_string()))?;
 
     // The partial products are formed by creating a series of telescoping products and then cancelling them out with the correct b_i values

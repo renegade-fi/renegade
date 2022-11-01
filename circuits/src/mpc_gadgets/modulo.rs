@@ -14,6 +14,12 @@ use crate::{
 use super::bits::scalar_from_bits_le;
 
 /// Computes the value of the input modulo 2^m
+///
+/// Blinds the value with a random scalar, opens the blinded value, applies the modulo
+/// operator, then inverts the blinding.
+///
+/// One catch is that if the resulting value of the modulo is less than the blinding
+/// factor, we have to shift the value up by one addition of the modulus.
 pub fn mod_2m<const M: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     a: &AuthenticatedScalar<N, S>,
     fabric: SharedFabric<N, S>,
@@ -36,10 +42,8 @@ pub fn mod_2m<const M: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>
     };
 
     // Generate a random upper half to the scalar
-    // If m is between 128 and 256, we split up the shift into two separate multiplications
-    // let mut random_upper_bits = fabric.borrow_fabric().allocate_random_shared_scalar();
-    // random_upper_bits *= scalar_2m;
-    let random_upper_bits = fabric.borrow_fabric().allocate_zero();
+    let mut random_upper_bits = fabric.borrow_fabric().allocate_random_shared_scalar();
+    random_upper_bits *= scalar_2m;
 
     let blinding_factor = &random_upper_bits + &random_lower_bits;
 

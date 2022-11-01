@@ -1,5 +1,7 @@
+//! Groups circuits for MPC and zero knowledge execution
 #![feature(generic_const_exprs)]
 #![allow(incomplete_features)]
+#![deny(missing_docs)]
 
 use std::ops::Neg;
 
@@ -83,6 +85,7 @@ pub fn bigint_to_scalar_bits<const D: usize>(a: &BigInt) -> Vec<Scalar> {
 
 /// Defines functionality to allocate a value within an MPC network
 pub trait Allocate<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The output type that results from allocating the value in the network
     type Output;
     /// Allocates the raw type in the network as a shared value
     fn allocate(

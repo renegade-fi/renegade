@@ -1,9 +1,9 @@
+//! Defines important constants used in the
 use num_bigint::BigUint;
 
-/**
- * MAX_ORDERS and MAX_BALANCES define the maximum number of balances and orders a wallet may have
- */
+/// The maximum number of orders allowed in a wallet
 pub const MAX_ORDERS: usize = 2;
+/// The maximum number of balances allowed in a wallet
 pub const MAX_BALANCES: usize = 2;
 
 /**
@@ -59,7 +59,7 @@ pub fn POSEIDON_MDS_MATRIX_T_3() -> Vec<Vec<BigUint>> {
     ]
 }
 
-// Round constants for t = 3 (2-1 hash)
+/// Round constants for t = 3 (2-1 hash)
 #[allow(non_snake_case)]
 pub fn POSEIDON_ROUND_CONSTANTS_T_3() -> Vec<Vec<BigUint>> {
     vec![
