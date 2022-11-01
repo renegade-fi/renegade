@@ -1,7 +1,9 @@
 //! Groups integration tests for comparators
 
+use std::borrow::Borrow;
+
 use circuits::mpc_gadgets::comparators::{
-    eq, eq_zero, greater_than, greater_than_equal, kary_or, less_than, less_than_equal,
+    cond_select, eq, eq_zero, greater_than, greater_than_equal, kary_or, less_than, less_than_equal,
 };
 use integration_helpers::types::IntegrationTest;
 use mpc_ristretto::mpc_scalar::scalar_to_u64;
@@ -209,6 +211,33 @@ fn test_kary_or(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// Tests the conditional select gadget
+fn test_cond_select(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let value1 = test_args
+        .borrow_fabric()
+        .allocate_private_u64(0 /* owning_party */, 5 /* value */)
+        .map_err(|err| format!("Error sharing value 1: {:?}", err))?;
+
+    let value2 = test_args
+        .borrow_fabric()
+        .allocate_private_u64(1 /* owning_party */, 10 /* value */)
+        .map_err(|err| format!("Error sharing value 2: {:?}", err))?;
+
+    let selector = test_args
+        .borrow_fabric()
+        .allocate_private_u64(0 /* owning_party */, 1 /* value */)
+        .map_err(|err| format!("Error sharing selector: {:?}", err))?;
+
+    let res = cond_select(&selector, &value1, &value2)
+        .map_err(|err| format!("Error computing conditional select: {:?}", err))?
+        .open_and_authenticate()
+        .map_err(|err| format!("Error opening conditional select result: {:?}", err))?;
+
+    check_equal(&res, 5)?;
+
+    Ok(())
+}
+
 inventory::submit!(TestWrapper(IntegrationTest {
     name: "mpc_gadgets::test_inequalities",
     test_fn: test_inequalities
@@ -222,4 +251,9 @@ inventory::submit!(TestWrapper(IntegrationTest {
 inventory::submit!(TestWrapper(IntegrationTest {
     name: "mpc_gadgets::test_kary_or",
     test_fn: test_kary_or
+}));
+
+inventory::submit!(TestWrapper(IntegrationTest {
+    name: "mpc_gadgets::test_cond_select",
+    test_fn: test_cond_select,
 }));
