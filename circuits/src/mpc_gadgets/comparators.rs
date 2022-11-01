@@ -1,5 +1,7 @@
 //! Groups logic around arithemtic comparator circuits
 
+use std::iter;
+
 use curve25519_dalek::scalar::Scalar;
 use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
@@ -224,4 +226,41 @@ pub fn cond_select<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         AuthenticatedScalar::batch_mul(&[a.clone(), b.clone()], &[s.clone(), Scalar::one() - s])
             .map_err(|err| MpcError::ArithmeticError(err.to_string()))?;
     Ok(&selectors[0] + &selectors[1])
+}
+
+/// Computes res = [a] if s else [b] where a and b are slices
+pub fn cond_select_vec<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    s: &AuthenticatedScalar<N, S>,
+    a: &[AuthenticatedScalar<N, S>],
+    b: &[AuthenticatedScalar<N, S>],
+) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcError> {
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "cond_select_vec requires equal length vectors"
+    );
+    // Batch mul each a value with `s` and each `b` value with 1 - s
+    let selectors = AuthenticatedScalar::batch_mul(
+        &a.iter()
+            .cloned()
+            .chain(b.iter().cloned())
+            .collect::<Vec<_>>(),
+        &iter::repeat(s.clone())
+            .take(a.len())
+            .chain(iter::repeat(Scalar::one() - s).take(b.len()))
+            .collect::<Vec<_>>(),
+    )
+    .map_err(|err| MpcError::ArithmeticError(err.to_string()))?;
+
+    // Destruct the vector by zipping its first half with its second half
+    let mut result = Vec::with_capacity(a.len());
+    for (a_selected, b_selected) in selectors[..a.len()]
+        .as_ref()
+        .iter()
+        .zip(selectors[a.len()..].iter())
+    {
+        result.push(a_selected + b_selected)
+    }
+
+    Ok(result)
 }

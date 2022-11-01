@@ -1,28 +1,21 @@
 //! Groups integration tests for comparators
 
-use std::borrow::Borrow;
-
 use circuits::mpc_gadgets::comparators::{
-    cond_select, eq, eq_zero, greater_than, greater_than_equal, kary_or, less_than, less_than_equal,
+    cond_select, cond_select_vec, eq, eq_zero, greater_than, greater_than_equal, kary_or,
+    less_than, less_than_equal,
 };
 use integration_helpers::types::IntegrationTest;
-use mpc_ristretto::mpc_scalar::scalar_to_u64;
+use mpc_ristretto::{authenticated_scalar::AuthenticatedScalar, mpc_scalar::scalar_to_u64};
 use rand::{seq::SliceRandom, thread_rng, Rng, RngCore};
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
-use super::check_equal;
+use super::{check_equal, check_equal_vec};
 
 /// Tests all the inequality comparators
 fn test_inequalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
-    // Party 0 chooses a, party 1 chooses b
-    // let my_random_value = if test_args.party_id == 0 {
-    //     485813802
-    // } else {
-    //     530804745
-    // }; // thread_rng().next_u64();
     // Do not use all bits to avoid overflow, for the sake of testing this is okay
-    let my_random_value = test_args.borrow_fabric().party_id(); // (thread_rng().next_u32() / 4) as u64;
+    let my_random_value = (thread_rng().next_u32() / 4) as u64;
     let shared_a = test_args
         .borrow_fabric()
         .allocate_private_u64(0 /* owning_party */, my_random_value)
@@ -238,6 +231,32 @@ fn test_cond_select(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// Tests the conditional vector select gadget
+fn test_cond_select_vector(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let values1 = test_args
+        .borrow_fabric()
+        .batch_allocate_private_u64s(0 /* owning_party */, &[1, 2, 3])
+        .map_err(|err| format!("Error sharing values1: {:?}", err))?;
+    let values2 = test_args
+        .borrow_fabric()
+        .batch_allocate_private_u64s(1 /* owning_party */, &[4, 5, 6])
+        .map_err(|err| format!("Error sharing values2: {:?}", err))?;
+
+    let selector = test_args
+        .borrow_fabric()
+        .allocate_private_u64(0 /* owning_party */, 0 /* value */)
+        .map_err(|err| format!("Error sharing selector: {:?}", err))?;
+
+    let res = cond_select_vec(&selector, &values1, &values2)
+        .map_err(|err| format!("Error computing cond_select_vec: {:?}", err))?;
+    let res_open = AuthenticatedScalar::batch_open_and_authenticate(&res)
+        .map_err(|err| format!("Error opening conditional select result: {:?}", err))?;
+
+    check_equal_vec(&res_open, &[4, 5, 6])?;
+
+    Ok(())
+}
+
 inventory::submit!(TestWrapper(IntegrationTest {
     name: "mpc_gadgets::test_inequalities",
     test_fn: test_inequalities
@@ -256,4 +275,9 @@ inventory::submit!(TestWrapper(IntegrationTest {
 inventory::submit!(TestWrapper(IntegrationTest {
     name: "mpc_gadgets::test_cond_select",
     test_fn: test_cond_select,
+}));
+
+inventory::submit!(TestWrapper(IntegrationTest {
+    name: "mpc_gadgets::test_cond_select_vector",
+    test_fn: test_cond_select_vector
 }));
