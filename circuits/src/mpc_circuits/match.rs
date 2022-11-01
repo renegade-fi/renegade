@@ -10,7 +10,7 @@ use crate::{
     mpc::SharedFabric,
     mpc_gadgets::{
         arithmetic::product,
-        comparators::{eq, less_than, min, ne},
+        comparators::{eq, less_than_equal, min, ne},
         modulo::shift_right,
     },
     types::AuthenticatedOrder,
@@ -63,7 +63,8 @@ fn price_overlap<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     // order. This is equivalent to:
     //      (order1.side == sell) == (order1.price <= order2.price)
     let order1_sell = &order1.side;
-    let price1_lt_price2 = less_than::<64, _, _>(&order1.price, &order2.price, fabric.clone())?;
+    let price1_lt_price2 =
+        less_than_equal::<64, _, _>(&order1.price, &order2.price, fabric.clone())?;
 
     eq::<1, _, _>(order1_sell, &price1_lt_price2, fabric)
 }
