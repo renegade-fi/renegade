@@ -17,6 +17,7 @@ pub mod mpc;
 pub mod mpc_circuits;
 pub mod mpc_gadgets;
 pub mod types;
+pub mod zk_gadgets;
 
 pub(crate) const SCALAR_MAX_BITS: usize = 252;
 
