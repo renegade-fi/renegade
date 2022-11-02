@@ -95,6 +95,21 @@ pub trait Allocate<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     ) -> Result<Self::Output, MpcError>;
 }
 
+/// Defines functionality for a shared, allocated type to be opened to another type
+///
+/// The type this is implemented for is assumed to be a secret sharing of some MPC
+/// network allocated value.
+pub trait Open {
+    /// The output type that results from opening this value
+    type Output;
+    /// The error type that results if opening fails
+    type Error;
+    /// Opens the shared type without authenticating
+    fn open(&self) -> Result<Self::Output, Self::Error>;
+    /// Opens the shared type and authenticates the result
+    fn open_and_authenticate(&self) -> Result<Self::Output, Self::Error>;
+}
+
 #[cfg(test)]
 mod test {
     use curve25519_dalek::scalar::Scalar;

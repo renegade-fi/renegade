@@ -1,9 +1,123 @@
 //! Groups integration tests for the match circuitry
 
-use circuits::{mpc_circuits::r#match::compute_match, types::Order, Allocate};
+use circuits::{
+    mpc_circuits::r#match::compute_match,
+    types::{Match, Order, OrderSide, SingleMatchResult},
+    Allocate, Open,
+};
 use integration_helpers::types::IntegrationTest;
 
-use crate::{mpc_gadgets::check_equal, IntegrationTestArgs, TestWrapper};
+use crate::{IntegrationTestArgs, TestWrapper};
+
+/**
+ * Helpers
+ */
+
+/// Checks that a given match result is empty (all zeros)
+fn check_no_match(res: &SingleMatchResult) -> Result<(), String> {
+    // Party 1 buy side
+    check_single_match(
+        &res.buy_side1,
+        &Match {
+            mint: 0,
+            amount: 0,
+            side: OrderSide::Buy,
+        },
+    )?;
+
+    // Party 1 sell side
+    check_single_match(
+        &res.sell_side1,
+        &Match {
+            mint: 0,
+            amount: 0,
+            side: OrderSide::Sell,
+        },
+    )?;
+
+    // Party 2 buy side
+    check_single_match(
+        &res.buy_side2,
+        &Match {
+            mint: 0,
+            amount: 0,
+            side: OrderSide::Buy,
+        },
+    )?;
+
+    // Party 2 sell side
+    check_single_match(
+        &res.sell_side2,
+        &Match {
+            mint: 0,
+            amount: 0,
+            side: OrderSide::Sell,
+        },
+    )?;
+
+    Ok(())
+}
+
+/// Checks that a match is correctly representing the expected result
+///
+/// For brevity, the expected result is specified as the vector:
+//      [party1_buy_mint, party1_buy_amount, party2_buy_mint, party2_buy_amount]
+fn check_match_expected_result(res: &SingleMatchResult, expected: &[u64]) -> Result<(), String> {
+    // Party 1 buy side
+    check_single_match(
+        &res.buy_side1,
+        &Match {
+            mint: expected[0],
+            amount: expected[1],
+            side: OrderSide::Buy,
+        },
+    )?;
+
+    // Party 1 sell side
+    check_single_match(
+        &res.sell_side1,
+        &Match {
+            mint: expected[2],
+            amount: expected[3],
+            side: OrderSide::Sell,
+        },
+    )?;
+
+    // Party 2 buy side
+    check_single_match(
+        &res.buy_side2,
+        &Match {
+            mint: expected[2],
+            amount: expected[3],
+            side: OrderSide::Buy,
+        },
+    )?;
+
+    // Party 2 sell side
+    check_single_match(
+        &res.sell_side2,
+        &Match {
+            mint: expected[0],
+            amount: expected[1],
+            side: OrderSide::Sell,
+        },
+    )?;
+
+    Ok(())
+}
+
+/// Checks that a single given match is the expected value
+fn check_single_match(res: &Match, expected: &Match) -> Result<(), String> {
+    if res.amount == expected.amount && res.mint == expected.mint && res.side == expected.side {
+        Ok(())
+    } else {
+        Err(format!("Expected {:?}, got {:?}", expected, res))
+    }
+}
+
+/**
+ * Tests
+ */
 
 /// Tests the match function with non overlapping orders for a variety of failure cases
 fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
@@ -72,7 +186,7 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
             .map_err(|err| format!("Error opening match result: {:?}", err))?;
 
         // Assert that no match occured
-        check_equal(&res, 0)?;
+        check_no_match(&res)?;
     }
 
     Ok(())
@@ -112,15 +226,38 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
         ],
         // Same amount
         vec![
-            1,            /* quote_mint */
-            2,            /* base_mint */
-            sel!(1, 0),   /* side */
-            10,           /* price */
-            sel!(20, 20), /* amount */
+            1,          /* quote_mint */
+            2,          /* base_mint */
+            sel!(1, 0), /* side */
+            10,         /* price */
+            20,         /* amount */
         ],
     ];
 
-    for case in test_cases.iter() {
+    // Stores the expected result for each test case as a vector
+    //      [party1_buy_mint, party1_buy_amount, party2_buy_mint, party2_buy_amount]
+    let expected_results = vec![
+        vec![
+            2,   /* party1 buy mint */
+            20,  /* party1 buy amout */
+            1,   /* party2 buy mint */
+            140, /* party2 buy amount */
+        ],
+        vec![
+            1,   /* party1 buy mint */
+            100, /* party1 buy amount */
+            2,   /* party2 buy mint */
+            10,  /* party2 buy amount */
+        ],
+        vec![
+            1,   /* party1 buy mint */
+            200, /* party1 buy amount */
+            2,   /* party2 buy mint */
+            20,  /* party2 buy amount */
+        ],
+    ];
+
+    for (case, expected_res) in test_cases.iter().zip(expected_results.iter()) {
         // Marshal into an order
         let my_order: Order = (case as &[u64]).try_into().unwrap();
         // Allocate the orders in the network
@@ -138,7 +275,7 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
             .map_err(|err| format!("Error opening match result: {:?}", err))?;
 
         // Assert that no match occured
-        check_equal(&res, 1)?;
+        check_match_expected_result(&res, expected_res)?;
     }
 
     Ok(())
