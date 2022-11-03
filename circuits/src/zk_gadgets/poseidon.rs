@@ -4,6 +4,11 @@
 //!     \alpha = 5; i.e. the s-box is x^5 \mod p. This was chosen because:
 //!     for the prime field used in Ristretto, gcd(3, p-1) = 3
 //!     whereas gcd(5, p-1) = 1, making x^5 (mod p) invertible.
+//!
+//! This implementation draws heavily from the Arkworks implementation for
+//! security and testability against a reference implementation.
+//! Their poseidon implementation can be found here:
+//!     https://github.com/arkworks-rs/sponge/blob/master/src/poseidon/mod.rs
 
 use curve25519_dalek::scalar::Scalar;
 
@@ -14,11 +19,11 @@ use crate::constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3};
  */
 
 // Computes x^a using recursive doubling
-fn scalar_exp(x: Scalar, a: u64) -> Scalar {
+fn scalar_exp(x: &Scalar, a: u64) -> Scalar {
     if a == 0 {
         Scalar::one()
     } else if a == 1 {
-        x
+        *x
     } else if a % 2 == 1 {
         let recursive_result = scalar_exp(x, (a - 1) / 2);
         recursive_result * recursive_result * x
@@ -39,8 +44,11 @@ pub struct PoseidonSpongeParameters {
     /// The exponent that parameterizes the permutation; i.e. the SBox is of the form
     ///     SBox(x) = x^\alpha (mod p)
     alpha: u64,
-    /// The rate at which we hash an input, i.e. t=2 for pure one-by-one sponge, and t=3 for 2-1 Merkle
+    /// The rate at which we hash an input, i.e. the number of field elements the sponge can
+    /// absorb in between permutations
     rate: usize,
+    /// The number of elements the sponge can squeeze out between permutations.
+    capacity: usize,
     /// The number of full rounds to use in the hasher; a full round applies the SBox to each of the
     /// elements in the input, i.e. all 3 elements if we're using a rate t = 3
     full_rounds: usize,
@@ -56,10 +64,12 @@ impl PoseidonSpongeParameters {
         mds_matrix: Vec<Vec<Scalar>>,
         alpha: u64,
         rate: usize,
+        capacity: usize,
         full_rounds: usize,
         parital_rounds: usize,
     ) -> Self {
         // Validate inputs
+        let state_width = rate + capacity;
         assert_eq!(
             full_rounds % 2,
             0,
@@ -71,10 +81,15 @@ impl PoseidonSpongeParameters {
             "must have one round constant per round"
         );
         assert!(
-            mds_matrix.len() == rate && mds_matrix.iter().all(|row| row.len() == rate),
+            round_constants.iter().all(|rc| rc.len() == state_width),
+            "round constants must be the same width as the state"
+        );
+        assert!(
+            mds_matrix.len() == state_width
+                && mds_matrix.iter().all(|row| row.len() == state_width),
             "MDS matrix must be of size rate x rate ({:?} x {:?})",
-            rate,
-            rate
+            state_width,
+            state_width
         );
 
         Self {
@@ -82,6 +97,7 @@ impl PoseidonSpongeParameters {
             mds_matrix,
             alpha,
             rate,
+            capacity,
             full_rounds,
             parital_rounds,
         }
@@ -99,7 +115,8 @@ impl Default for PoseidonSpongeParameters {
             round_constants: POSEIDON_ROUND_CONSTANTS_T_3(),
             mds_matrix: POSEIDON_MDS_MATRIX_T_3(),
             alpha: 5,
-            rate: 3,
+            rate: 2,
+            capacity: 1,
             full_rounds: 8,
             parital_rounds: 56,
         }
@@ -116,40 +133,75 @@ pub struct PoseidonHashGadget {
     params: PoseidonSpongeParameters,
     /// The hash state
     state: Vec<Scalar>,
+    /// The next index in the state to being absorbing inputs at
+    next_index: usize,
+    /// Whether the sponge is in squeezing mode. For simplicity, we disallow
+    /// the case in which a caller wishes to squeeze values and the absorb more.
+    in_squeeze_state: bool,
 }
 
 impl PoseidonHashGadget {
     /// Construct a new sponge hasher
     /// TODO: Ideally we don't pass in the fabric here, this makes the gadget non-general between
     /// AuthenticatedScalar and Scalar
-    pub fn new(params: PoseidonSpongeParameters) -> Self {
-        let inital_state = vec![Scalar::zero(); params.rate];
+    pub fn new(params: &PoseidonSpongeParameters) -> Self {
+        let inital_state = vec![Scalar::zero(); params.rate + params.capacity];
         Self {
-            params,
+            params: params.clone(),
             state: inital_state,
+            next_index: 0,
+            in_squeeze_state: false, // Start in absorb state
         }
     }
+
     /// Absorb an input into the hasher state
-    pub fn absorb(&mut self, a: &[Scalar]) {
-        assert_eq!(
-            a.len(),
-            self.params.rate,
-            "Expected input of width {:?}, got {:?}",
-            self.params.rate,
-            a.len()
+    ///
+    /// Here, we match the arkworks sponge implementation (link below) in that we absorb
+    /// until we have added one element to each element of the state; and only then do we permute.
+    /// Put differently, we wait to absorb `rate` elements between permutations.
+    ///
+    /// When squeezing, we must make sure that a permutation *does* happen in the case that
+    /// the `rate`-sized state was never filled. See the implementation below.
+    ///
+    /// Arkworks sponge poseidon: https://github.com/arkworks-rs/sponge/blob/master/src/poseidon/mod.rs
+    pub fn absorb(&mut self, a: &Scalar) {
+        assert!(
+            !self.in_squeeze_state,
+            "Cannot absorb from a sponge that has already been squeezed"
         );
 
-        // Permute on the input
-        for (state_elem, input) in self.state.iter_mut().zip(a.iter()) {
-            *state_elem += input
+        // Permute the digest state if we have filled up the `rate`-sized buffer
+        if self.next_index == self.params.rate {
+            self.permute();
+            self.next_index = 0;
         }
-        self.permute();
+
+        self.state[self.params.capacity + self.next_index] += a;
+        self.next_index += 1;
     }
 
-    /// Squeeze an element out of the hasher
-    pub fn squeeze(&mut self) -> Scalar {
-        self.permute();
-        self.state[0]
+    /// Absorb a batch of scalars into the hasher
+    pub fn absorb_batch(&mut self, a: &[Scalar]) {
+        a.iter().for_each(|val| self.absorb(val));
+    }
+
+    /// Squeeze an output from the hasher state
+    ///
+    /// A similar approach is taken here to the one in `absorb`. Specifically, we allow this method
+    /// to be called `rate` times in between permutations, to exhaust the state buffer.    pub fn squeeze(&mut self) -> Scalar {
+    fn squeeze(&mut self) -> Scalar {
+        // Once we exit the absorb state, ensure that the digest state is permuted before squeezing
+        if !self.in_squeeze_state || self.next_index == self.params.rate {
+            self.permute();
+            self.next_index = 0;
+        }
+        self.next_index += 1;
+        self.state[self.params.capacity + self.next_index - 1]
+    }
+
+    /// Squeeze a batch of outputs from the hasher
+    pub fn squeeze_batch(&mut self, num_elements: usize) -> Vec<Scalar> {
+        (0..num_elements).map(|_| self.squeeze()).collect()
     }
 
     /// Run the Poseidon permutation function
@@ -172,7 +224,7 @@ impl PoseidonHashGadget {
 
         // Compute another full_rounds / 2 rounds in which we apply the sbox to all elements
         let final_full_rounds_start = partial_rounds_end;
-        let final_full_rounds_end = partial_rounds_end + self.params.full_rounds / 2;
+        let final_full_rounds_end = self.params.parital_rounds + self.params.full_rounds;
         for round in final_full_rounds_start..final_full_rounds_end {
             self.add_round_constants(round);
             self.apply_sbox(true /* full_round */);
@@ -197,8 +249,10 @@ impl PoseidonHashGadget {
         // If this is a full round, apply the sbox to each elem
         if full_round {
             for elem in self.state.iter_mut() {
-                *elem = scalar_exp(*elem, self.params.alpha);
+                *elem = scalar_exp(elem, self.params.alpha);
             }
+        } else {
+            self.state[0] = scalar_exp(&self.state[0], self.params.alpha)
         }
     }
 
@@ -224,12 +278,76 @@ impl PoseidonHashGadget {
 
 #[cfg(test)]
 mod posiedon_tests {
+    use ark_ff::fields::{Fp256, MontBackend, MontConfig};
+    use ark_sponge::{
+        poseidon::{PoseidonConfig, PoseidonSponge},
+        CryptographicSponge,
+    };
     use curve25519_dalek::scalar::Scalar;
-    use rand_core::OsRng;
+    use num_bigint::{BigInt, BigUint};
+    use rand::{thread_rng, Rng, RngCore};
 
-    use crate::scalar_to_bigint;
+    use crate::{scalar_to_bigint, scalar_to_biguint};
 
     use super::{PoseidonHashGadget, PoseidonSpongeParameters};
+
+    /// Defines a custom Arkworks field with the same modulus as the Dalek Ristretto group
+    ///
+    /// This is necessary for testing against Arkworks, otherwise the values will not be directly comparable
+    #[derive(MontConfig)]
+    #[modulus = "7237005577332262213973186563042994240857116359379907606001950938285454250989"]
+    #[generator = "2"]
+    struct TestFieldConfig;
+
+    type TestField = Fp256<MontBackend<TestFieldConfig, 4>>;
+
+    /**
+     * Helpers
+     */
+
+    /// Converts a dalek scalar to an arkworks ff element
+    fn scalar_to_prime_field(a: &Scalar) -> TestField {
+        Fp256::from(scalar_to_biguint(a))
+    }
+
+    /// Converts a nested vector of Dalek scalars to arkworks field elements
+    fn convert_scalars_nested_vec(a: &Vec<Vec<Scalar>>) -> Vec<Vec<TestField>> {
+        let mut res = Vec::with_capacity(a.len());
+        for row in a.iter() {
+            let mut row_res = Vec::with_capacity(row.len());
+            for val in row.iter() {
+                row_res.push(scalar_to_prime_field(val))
+            }
+
+            res.push(row_res);
+        }
+
+        res
+    }
+
+    /// Converts a set of Poseidon parameters encoded as scalars to parameters encoded as field elements
+    fn convert_params(native_params: &PoseidonSpongeParameters) -> PoseidonConfig<TestField> {
+        PoseidonConfig::new(
+            native_params.full_rounds,
+            native_params.parital_rounds,
+            native_params.alpha,
+            convert_scalars_nested_vec(&native_params.mds_matrix),
+            convert_scalars_nested_vec(&native_params.round_constants),
+            2,
+            1,
+        )
+    }
+
+    /// Convert an arkworks prime field element to a bigint
+    fn felt_to_bigint(element: &TestField) -> BigInt {
+        let felt_biguint = Into::<BigUint>::into(*element);
+        felt_biguint.into()
+    }
+
+    /// Compares a Dalek Scalar to an Arkworks field element
+    fn compare_scalar_to_felt(scalar: &Scalar, felt: &TestField) -> bool {
+        scalar_to_bigint(scalar).eq(&felt_to_bigint(felt))
+    }
 
     /// Ensure that the default parameters pass the validation checks
     #[test]
@@ -240,32 +358,43 @@ mod posiedon_tests {
             default_params.mds_matrix,
             default_params.alpha,
             default_params.rate,
+            default_params.capacity,
             default_params.full_rounds,
             default_params.parital_rounds,
         );
     }
 
-    /// Tests that the poseidon hash returns as expected
-    /// TODO: Correctness
+    /// Tests the input against the Arkworks implementation of the Poseidon hash
     #[test]
-    fn test_absorb_and_squeeze() {
-        let default_params = PoseidonSpongeParameters::default();
-        let mut hasher = PoseidonHashGadget::new(default_params);
+    fn test_against_arkworks() {
+        let native_parameters = PoseidonSpongeParameters::default();
+        let arkworks_params = convert_params(&native_parameters);
 
-        // Generate 15 random elements, will be absorbed in groups of 3
-        let n = 15;
-        let mut rng = OsRng {};
+        // Generate a random number of random elements
+        let mut rng = thread_rng();
+        let n = rng.gen_range(1..101);
         let mut random_vec = Vec::with_capacity(n);
         for _ in 0..n {
-            random_vec.push(Scalar::random(&mut rng));
+            random_vec.push(rng.next_u64());
         }
 
-        // Hash the random elements
-        for i in (0..n).step_by(3) {
-            hasher.absorb(&[random_vec[i], random_vec[i + 1], random_vec[i + 2]]);
+        // Hash and squeeze with arkworks first
+        let mut arkworks_poseidon = PoseidonSponge::new(&arkworks_params);
+        for random_elem in random_vec.iter() {
+            // Cast to i128 first to ensure that the value is not represented as a negative
+            arkworks_poseidon.absorb(&TestField::from(*random_elem as i128));
         }
 
-        let squeezed = scalar_to_bigint(&hasher.squeeze());
-        println!("Hash out: {:?}", squeezed);
+        let arkworks_squeezed: TestField =
+            arkworks_poseidon.squeeze_field_elements(1 /* num_elements */)[0];
+
+        // Hash and squeeze in native hasher
+        let mut native_poseidon = PoseidonHashGadget::new(&native_parameters);
+        for random_elem in random_vec.iter() {
+            native_poseidon.absorb(&Scalar::from(*random_elem))
+        }
+
+        let native_squeezed = native_poseidon.squeeze();
+        assert!(compare_scalar_to_felt(&native_squeezed, &arkworks_squeezed));
     }
 }

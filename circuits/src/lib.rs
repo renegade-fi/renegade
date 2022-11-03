@@ -9,7 +9,7 @@ use curve25519_dalek::scalar::Scalar;
 use errors::MpcError;
 use mpc::SharedFabric;
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
-use num_bigint::{BigInt, Sign};
+use num_bigint::{BigInt, BigUint, Sign};
 
 pub mod constants;
 pub mod errors;
@@ -37,12 +37,17 @@ pub fn scalar_2_to_m(m: usize) -> Scalar {
         Scalar::from(1u128 << 127) * Scalar::from(1u128 << (m - 127))
     } else {
         Scalar::from(1u128 << m)
-    }
+    }   
 }
 
 /// Convert a scalar to a BigInt
 pub fn scalar_to_bigint(a: &Scalar) -> BigInt {
     BigInt::from_signed_bytes_le(&a.to_bytes())
+}
+
+/// Convert a scalar to a BigUint
+pub fn scalar_to_biguint(a: &Scalar) -> BigUint {
+    BigUint::from_bytes_le(&a.to_bytes())
 }
 
 /// Convert a bigint to a scalar

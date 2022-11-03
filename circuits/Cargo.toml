@@ -12,6 +12,8 @@ num-bigint = { version = "0.4", features = ["rand"] }
 rand = { version = "0.8" }
 
 [dev-dependencies]
+ark-ff = { git = "https://github.com/arkworks-rs/algebra" }
+ark-sponge = { git = "https://github.com/arkworks-rs/sponge" }
 clap = { version = "4.0", features = ["derive"] }
 colored = "2"
 ctor = "0.1"
