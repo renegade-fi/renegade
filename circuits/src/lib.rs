@@ -112,7 +112,7 @@ pub trait Open {
 }
 
 #[cfg(test)]
-mod test {
+mod circuits_test {
     use curve25519_dalek::scalar::Scalar;
     use num_bigint::BigInt;
     use rand::{thread_rng, Rng, RngCore};
