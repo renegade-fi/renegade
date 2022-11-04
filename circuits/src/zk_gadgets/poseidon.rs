@@ -195,6 +195,7 @@ impl PoseidonHashGadget {
         if !self.in_squeeze_state || self.next_index == self.params.rate {
             self.permute();
             self.next_index = 0;
+            self.in_squeeze_state = true;
         }
         self.next_index += 1;
         self.state[self.params.capacity + self.next_index - 1]
@@ -382,7 +383,8 @@ mod posiedon_tests {
         // Hash and squeeze with arkworks first
         let mut arkworks_poseidon = PoseidonSponge::new(&arkworks_params);
         for random_elem in random_vec.iter() {
-            // Cast to i128 first to ensure that the value is not represented as a negative
+            // Arkworks Fp256 does not implement From<u64> so we have to
+            // cast to i128 first to ensure that the value is not represented as a negative
             arkworks_poseidon.absorb(&TestField::from(*random_elem as i128));
         }
 
