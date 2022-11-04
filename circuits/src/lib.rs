@@ -37,7 +37,7 @@ pub fn scalar_2_to_m(m: usize) -> Scalar {
         Scalar::from(1u128 << 127) * Scalar::from(1u128 << (m - 127))
     } else {
         Scalar::from(1u128 << m)
-    }   
+    }
 }
 
 /// Convert a scalar to a BigInt
