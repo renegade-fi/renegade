@@ -29,3 +29,14 @@ tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
 name = "integration"
 path = "integration/main.rs"
 harness = false
+
+# Patches normally only belong in the workspace root. However, we run integration
+# tests outside the context of a workspace (i.e. as a standalone crate), so these
+# crate patches are duplicated in the crate-local Cargo.toml 
+[patch.crates-io]
+ark-std = { git = "https://github.com/arkworks-rs/std" }
+ark-ff = { git = "https://github.com/arkworks-rs/algebra" }
+ark-ec = { git = "https://github.com/arkworks-rs/algebra" }
+ark-serialize = { git = "https://github.com/arkworks-rs/algebra" }
+ark-r1cs-std = { git = "https://github.com/arkworks-rs/r1cs-std" }
+ark-relations =  { git = "https://github.com/arkworks-rs/snark"}

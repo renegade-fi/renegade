@@ -47,7 +47,8 @@ pub struct PoseidonSpongeParameters {
     /// The rate at which we hash an input, i.e. the number of field elements the sponge can
     /// absorb in between permutations
     rate: usize,
-    /// The number of elements the sponge can squeeze out between permutations.
+    /// The security capacity of the sponge, the width of the state that is neither absorbed
+    /// into, nor squeezed from
     capacity: usize,
     /// The number of full rounds to use in the hasher; a full round applies the SBox to each of the
     /// elements in the input, i.e. all 3 elements if we're using a rate t = 3
