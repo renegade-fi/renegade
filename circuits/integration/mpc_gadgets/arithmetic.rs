@@ -1,9 +1,15 @@
 //! Groups integration tests for arithmetic gadets used in the MPC circuits
 
-use circuits::mpc_gadgets::arithmetic::{prefix_mul, product};
-use integration_helpers::types::IntegrationTest;
+use circuits::{
+    mpc_gadgets::arithmetic::{pow, prefix_mul, product},
+    scalar_to_biguint,
+};
+use integration_helpers::{
+    mpc_network::field::get_ristretto_group_modulus, types::IntegrationTest,
+};
 use mpc_ristretto::{authenticated_scalar::AuthenticatedScalar, mpc_scalar::scalar_to_u64};
-use rand::{thread_rng, Rng};
+use num_bigint::BigUint;
+use rand::{thread_rng, Rng, RngCore};
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
@@ -85,6 +91,43 @@ fn test_prefix_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// Tests the exponentiation gadget
+fn test_pow(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Party 0 selects a base and party 0 selects an exponent
+    let mut rng = thread_rng();
+    let random_base = test_args
+        .borrow_fabric()
+        .allocate_private_u64(0 /* owning_party */, rng.next_u64())
+        .map_err(|err| format!("Error sharing base: {:?}", err))?;
+
+    let random_exp = scalar_to_u64(
+        &test_args
+            .borrow_fabric()
+            .allocate_private_u64(1 /* owning_party */, rng.next_u32() as u64)
+            .map_err(|err| format!("Error sharing exponent: {:?}", err))?
+            .open_and_authenticate()
+            .map_err(|err| format!("Error opening exponent: {:?}", err))?
+            .to_scalar(),
+    );
+
+    let res = pow(&random_base, random_exp, test_args.mpc_fabric.clone())
+        .open_and_authenticate()
+        .map_err(|err| format!("Error opening result: {:?}", err))?;
+
+    // Open the random input and compute the expected result
+    let random_base_open = random_base
+        .open_and_authenticate()
+        .map_err(|err| format!("Error opening random base: {:?}", err))?;
+
+    let expected_res = scalar_to_biguint(&random_base_open.to_scalar())
+        .modpow(&BigUint::from(random_exp), &get_ristretto_group_modulus());
+    if scalar_to_biguint(&res.to_scalar()).ne(&expected_res) {
+        return Err(format!("Expected {:?}, got {:?}", expected_res, res));
+    }
+
+    Ok(())
+}
+
 // Take inventory
 inventory::submit!(TestWrapper(IntegrationTest {
     name: "mpc_gadgets::arithmetic::test_product",
@@ -94,4 +137,9 @@ inventory::submit!(TestWrapper(IntegrationTest {
 inventory::submit!(TestWrapper(IntegrationTest {
     name: "mpc_gadgets::arithmetic::test_previx_mul",
     test_fn: test_prefix_mul
+}));
+
+inventory::submit!(TestWrapper(IntegrationTest {
+    name: "mpc_gadgets::arithmetic::test_pow",
+    test_fn: test_pow
 }));

@@ -101,3 +101,22 @@ fn prefix_product_impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     // Unwrap is therefore safe
     Ok(AuthenticatedScalar::batch_mul(&selected_partial_products, &cancellation_factors).unwrap())
 }
+
+/// Computes a^n using a recursive squaring approach for a public parameter exponent
+pub fn pow<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    a: &AuthenticatedScalar<N, S>,
+    n: u64,
+    fabric: SharedFabric<N, S>,
+) -> AuthenticatedScalar<N, S> {
+    if n == 0 {
+        fabric.borrow_fabric().allocate_zero()
+    } else if n == 1 {
+        a.clone()
+    } else if n % 2 == 0 {
+        let recursive_res = pow(a, n / 2, fabric);
+        &recursive_res * &recursive_res
+    } else {
+        let recursive_res = pow(a, (n - 1) / 2, fabric);
+        &recursive_res * &recursive_res * a
+    }
+}
