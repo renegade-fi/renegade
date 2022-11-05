@@ -17,3 +17,4 @@ dns-lookup = "1.0"
 futures = "0.3"
 inventory = "0.3"
 mpc-ristretto = { git = "https://github.com/renegade-fi/MPC-Ristretto" }
+num-bigint = { version = "0.4", features = ["rand"] }

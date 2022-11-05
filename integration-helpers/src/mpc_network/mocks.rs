@@ -1,3 +1,5 @@
+//! Mocks of various types used throughout the implementation of the MPC Network
+
 use async_trait::async_trait;
 use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar};
 use mpc_ristretto::{beaver::SharedValueSource, error::MpcNetworkError, network::MpcNetwork};
@@ -10,6 +12,7 @@ pub struct PartyIDBeaverSource {
 }
 
 impl PartyIDBeaverSource {
+    /// Create a new beaver source given the local party_id
     pub fn new(party_id: u64) -> Self {
         Self { party_id }
     }
@@ -52,6 +55,7 @@ pub struct MockMpcNet {
 }
 
 impl MockMpcNet {
+    /// Constructor
     pub fn new() -> Self {
         Self {
             mock_scalars: vec![],
@@ -59,10 +63,18 @@ impl MockMpcNet {
         }
     }
 
+    /// Add scalars to the mock response buffer
+    ///
+    /// Subsequent calls to the MpcNetwork interface that expect a non-empty
+    /// Scalar response will drain from this buffer.
     pub fn add_mock_scalars(&mut self, scalars: Vec<Scalar>) {
         self.mock_scalars.extend_from_slice(&scalars);
     }
 
+    /// Add Ristretto points to the mock response buffer
+    ///
+    /// Subsequent calls to the MpcNetwork interface that expect a non-empty
+    /// RistrettoPoint response will drain from this buffer
     pub fn add_mock_points(&mut self, points: Vec<RistrettoPoint>) {
         self.mock_points.extend_from_slice(&points);
     }

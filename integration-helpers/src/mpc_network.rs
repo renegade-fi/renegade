@@ -1,4 +1,5 @@
 //! Groups helpers for setting up and managing an MPC network
+pub mod field;
 pub mod mocks;
 
 use std::{cell::RefCell, net::SocketAddr, rc::Rc};

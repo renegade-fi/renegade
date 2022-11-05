@@ -1,3 +1,5 @@
+//! Groups test related helper macros into a module
+
 /// Defines a common test harness that can be used in various packages
 #[macro_export]
 macro_rules! integration_test_main {

@@ -9,6 +9,8 @@
 /// at runtime
 #[derive(Clone, Copy)]
 pub struct IntegrationTest<FnArgs> {
+    /// The semantic of the test, displayed in the test logs
     pub name: &'static str,
+    /// The callback used by the harness to run the test
     pub test_fn: fn(&FnArgs) -> Result<(), String>,
 }
