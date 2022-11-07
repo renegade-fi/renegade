@@ -10,26 +10,38 @@
 //! Their poseidon implementation can be found here:
 //!     https://github.com/arkworks-rs/sponge/blob/master/src/poseidon/mod.rs
 
-use curve25519_dalek::scalar::Scalar;
+use std::cell::Ref;
 
-use crate::constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3};
+use curve25519_dalek::scalar::Scalar;
+use mpc_ristretto::{
+    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+};
+
+use crate::{
+    constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3},
+    mpc::{MpcFabric, SharedFabric},
+};
 
 /**
  * Helpers
  */
 
 // Computes x^a using recursive doubling
-fn scalar_exp(x: &Scalar, a: u64) -> Scalar {
+fn scalar_exp<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    x: &AuthenticatedScalar<N, S>,
+    a: u64,
+    fabric: SharedFabric<N, S>,
+) -> AuthenticatedScalar<N, S> {
     if a == 0 {
-        Scalar::one()
+        fabric.borrow_fabric().allocate_public_u64(1 /* value */)
     } else if a == 1 {
-        *x
+        x.clone()
     } else if a % 2 == 1 {
-        let recursive_result = scalar_exp(x, (a - 1) / 2);
-        recursive_result * recursive_result * x
+        let recursive_result = scalar_exp(x, (a - 1) / 2, fabric);
+        &recursive_result * &recursive_result * x
     } else {
-        let recursive_result = scalar_exp(x, a / 2);
-        recursive_result * recursive_result
+        let recursive_result = scalar_exp(x, a / 2, fabric);
+        &recursive_result * &recursive_result
     }
 }
 
@@ -129,30 +141,40 @@ impl Default for PoseidonSpongeParameters {
 ///
 /// TODO: This should ideally work for both AuthenticatedScalars and Scalars
 #[derive(Clone, Debug)]
-pub struct PoseidonHashGadget {
+pub struct AuthenticatedPoseidonHasher<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The parameterization of the hash function
     params: PoseidonSpongeParameters,
     /// The hash state
-    state: Vec<Scalar>,
+    state: Vec<AuthenticatedScalar<N, S>>,
     /// The next index in the state to being absorbing inputs at
     next_index: usize,
     /// Whether the sponge is in squeezing mode. For simplicity, we disallow
     /// the case in which a caller wishes to squeeze values and the absorb more.
     in_squeeze_state: bool,
+    /// A reference to the shared MPC fabric that the computation variables are allocated in
+    fabric: SharedFabric<N, S>,
 }
 
-impl PoseidonHashGadget {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHasher<N, S> {
     /// Construct a new sponge hasher
     /// TODO: Ideally we don't pass in the fabric here, this makes the gadget non-general between
     /// AuthenticatedScalar and Scalar
-    pub fn new(params: &PoseidonSpongeParameters) -> Self {
-        let inital_state = vec![Scalar::zero(); params.rate + params.capacity];
+    pub fn new(params: &PoseidonSpongeParameters, fabric: SharedFabric<N, S>) -> Self {
+        let inital_state = fabric
+            .borrow_fabric()
+            .allocate_zeros(params.rate + params.capacity);
         Self {
             params: params.clone(),
             state: inital_state,
             next_index: 0,
             in_squeeze_state: false, // Start in absorb state
+            fabric,
         }
+    }
+
+    /// Borrow a reference to the shared fabric
+    fn borrow_fabric(&self) -> Ref<MpcFabric<N, S>> {
+        self.fabric.borrow_fabric()
     }
 
     /// Absorb an input into the hasher state
@@ -165,7 +187,7 @@ impl PoseidonHashGadget {
     /// the `rate`-sized state was never filled. See the implementation below.
     ///
     /// Arkworks sponge poseidon: https://github.com/arkworks-rs/sponge/blob/master/src/poseidon/mod.rs
-    pub fn absorb(&mut self, a: &Scalar) {
+    pub fn absorb(&mut self, a: &AuthenticatedScalar<N, S>) {
         assert!(
             !self.in_squeeze_state,
             "Cannot absorb from a sponge that has already been squeezed"
@@ -182,7 +204,7 @@ impl PoseidonHashGadget {
     }
 
     /// Absorb a batch of scalars into the hasher
-    pub fn absorb_batch(&mut self, a: &[Scalar]) {
+    pub fn absorb_batch(&mut self, a: &[AuthenticatedScalar<N, S>]) {
         a.iter().for_each(|val| self.absorb(val));
     }
 
@@ -190,7 +212,7 @@ impl PoseidonHashGadget {
     ///
     /// A similar approach is taken here to the one in `absorb`. Specifically, we allow this method
     /// to be called `rate` times in between permutations, to exhaust the state buffer.    pub fn squeeze(&mut self) -> Scalar {
-    fn squeeze(&mut self) -> Scalar {
+    fn squeeze(&mut self) -> AuthenticatedScalar<N, S> {
         // Once we exit the absorb state, ensure that the digest state is permuted before squeezing
         if !self.in_squeeze_state || self.next_index == self.params.rate {
             self.permute();
@@ -198,11 +220,11 @@ impl PoseidonHashGadget {
             self.in_squeeze_state = true;
         }
         self.next_index += 1;
-        self.state[self.params.capacity + self.next_index - 1]
+        self.state[self.params.capacity + self.next_index - 1].clone()
     }
 
     /// Squeeze a batch of outputs from the hasher
-    pub fn squeeze_batch(&mut self, num_elements: usize) -> Vec<Scalar> {
+    pub fn squeeze_batch(&mut self, num_elements: usize) -> Vec<AuthenticatedScalar<N, S>> {
         (0..num_elements).map(|_| self.squeeze()).collect()
     }
 
@@ -251,10 +273,10 @@ impl PoseidonHashGadget {
         // If this is a full round, apply the sbox to each elem
         if full_round {
             for elem in self.state.iter_mut() {
-                *elem = scalar_exp(elem, self.params.alpha);
+                *elem = scalar_exp(elem, self.params.alpha, self.fabric.clone());
             }
         } else {
-            self.state[0] = scalar_exp(&self.state[0], self.params.alpha)
+            self.state[0] = scalar_exp(&self.state[0], self.params.alpha, self.fabric.clone())
         }
     }
 
@@ -263,7 +285,7 @@ impl PoseidonHashGadget {
     fn apply_mds(&mut self) {
         let mut res = Vec::with_capacity(self.params.rate);
         for row in self.params.mds_matrix.iter() {
-            let mut row_inner_product = Scalar::zero();
+            let mut row_inner_product = self.borrow_fabric().allocate_zero();
             for (a, b) in row.iter().zip(self.state.iter()) {
                 row_inner_product += a * b;
             }
@@ -286,12 +308,13 @@ mod posiedon_tests {
         CryptographicSponge,
     };
     use curve25519_dalek::scalar::Scalar;
+    use integration_helpers::mpc_network::mock_mpc_fabric;
     use num_bigint::{BigInt, BigUint};
     use rand::{thread_rng, Rng, RngCore};
 
-    use crate::{scalar_to_bigint, scalar_to_biguint};
+    use crate::{mpc::SharedFabric, scalar_to_bigint, scalar_to_biguint};
 
-    use super::{PoseidonHashGadget, PoseidonSpongeParameters};
+    use super::{AuthenticatedPoseidonHasher, PoseidonSpongeParameters};
 
     /// Defines a custom Arkworks field with the same modulus as the Dalek Ristretto group
     ///
@@ -335,8 +358,8 @@ mod posiedon_tests {
             native_params.alpha,
             convert_scalars_nested_vec(&native_params.mds_matrix),
             convert_scalars_nested_vec(&native_params.round_constants),
-            2,
-            1,
+            native_params.rate,
+            native_params.capacity,
         )
     }
 
@@ -392,12 +415,19 @@ mod posiedon_tests {
             arkworks_poseidon.squeeze_field_elements(1 /* num_elements */)[0];
 
         // Hash and squeeze in native hasher
-        let mut native_poseidon = PoseidonHashGadget::new(&native_parameters);
+        let mock_fabric = mock_mpc_fabric(0 /* party_id */);
+        let mut native_poseidon =
+            AuthenticatedPoseidonHasher::new(&native_parameters, SharedFabric(mock_fabric.clone()));
         for random_elem in random_vec.iter() {
-            native_poseidon.absorb(&Scalar::from(*random_elem))
+            native_poseidon.absorb(
+                &mock_fabric
+                    .as_ref()
+                    .borrow()
+                    .allocate_public_u64(*random_elem),
+            )
         }
 
-        let native_squeezed = native_poseidon.squeeze();
+        let native_squeezed = native_poseidon.squeeze().to_scalar();
         assert!(compare_scalar_to_felt(&native_squeezed, &arkworks_squeezed));
     }
 }

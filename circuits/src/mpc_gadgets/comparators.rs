@@ -149,8 +149,9 @@ pub fn kary_or<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         * fabric.borrow_fabric().allocate_random_shared_scalar();
 
     // Blind the sum of all booleans and open the result
-    let sum_a = a.iter().sum();
-    let blinded_sum = &sum_a + &blinding_value + &blinding_value_upper_bits;
+    let sum_a: AuthenticatedScalar<N, S> = a.iter().sum();
+    let blinded_sum: AuthenticatedScalar<N, S> =
+        &sum_a + &blinding_value + &blinding_value_upper_bits;
 
     let blinded_sum_open = blinded_sum
         .open_and_authenticate()

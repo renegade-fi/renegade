@@ -74,7 +74,7 @@ fn prefix_product_impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     let mut partial_products = Vec::with_capacity(n);
     let mut accumulator = fabric.borrow_fabric().allocate_public_u64(1);
     for d_value in d_values_open.iter() {
-        accumulator = accumulator * d_value;
+        accumulator *= d_value;
         partial_products.push(accumulator.clone());
     }
 
