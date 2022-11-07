@@ -49,25 +49,25 @@ fn scalar_exp<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PoseidonSpongeParameters {
     /// The round constants added to the elements in between both full and partial rounds
-    round_constants: Vec<Vec<Scalar>>,
+    pub round_constants: Vec<Vec<Scalar>>,
     /// The MDS (maximum distance separable) matrix that is used as a mix layer
     /// i.e. after the substitution box is applied and gives \vec{x} we take MDS * \vec{x}
-    mds_matrix: Vec<Vec<Scalar>>,
+    pub mds_matrix: Vec<Vec<Scalar>>,
     /// The exponent that parameterizes the permutation; i.e. the SBox is of the form
     ///     SBox(x) = x^\alpha (mod p)
-    alpha: u64,
+    pub alpha: u64,
     /// The rate at which we hash an input, i.e. the number of field elements the sponge can
     /// absorb in between permutations
-    rate: usize,
+    pub rate: usize,
     /// The security capacity of the sponge, the width of the state that is neither absorbed
     /// into, nor squeezed from
-    capacity: usize,
+    pub capacity: usize,
     /// The number of full rounds to use in the hasher; a full round applies the SBox to each of the
     /// elements in the input, i.e. all 3 elements if we're using a rate t = 3
-    full_rounds: usize,
+    pub full_rounds: usize,
     /// The number of partial rounds to use in the hasher; a partial round applies the SBox to only the
     /// last element of the input
-    parital_rounds: usize,
+    pub parital_rounds: usize,
 }
 
 impl PoseidonSpongeParameters {
@@ -212,7 +212,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHa
     ///
     /// A similar approach is taken here to the one in `absorb`. Specifically, we allow this method
     /// to be called `rate` times in between permutations, to exhaust the state buffer.    pub fn squeeze(&mut self) -> Scalar {
-    fn squeeze(&mut self) -> AuthenticatedScalar<N, S> {
+    pub fn squeeze(&mut self) -> AuthenticatedScalar<N, S> {
         // Once we exit the absorb state, ensure that the digest state is permuted before squeezing
         if !self.in_squeeze_state || self.next_index == self.params.rate {
             self.permute();
