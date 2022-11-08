@@ -155,6 +155,7 @@ pub struct AuthenticatedPoseidonHasher<N: MpcNetwork + Send, S: SharedValueSourc
     fabric: SharedFabric<N, S>,
 }
 
+/// Native implementation, can be done outside the context of a constraint system
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHasher<N, S> {
     /// Construct a new sponge hasher
     /// TODO: Ideally we don't pass in the fabric here, this makes the gadget non-general between

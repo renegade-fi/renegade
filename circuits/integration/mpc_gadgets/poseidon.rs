@@ -5,8 +5,8 @@ use ark_sponge::{
     CryptographicSponge,
 };
 use circuits::{
+    mpc_gadgets::poseidon::{AuthenticatedPoseidonHasher, PoseidonSpongeParameters},
     scalar_to_bigint,
-    zk_gadgets::poseidon::{AuthenticatedPoseidonHasher, PoseidonSpongeParameters},
 };
 use curve25519_dalek::scalar::Scalar;
 use integration_helpers::types::IntegrationTest;
@@ -124,6 +124,6 @@ fn test_hash(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
 // Take inventory
 inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_gadgets::test_hash",
+    name: "mpc_gadgets::test_hash",
     test_fn: test_hash
 }));
