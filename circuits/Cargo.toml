@@ -6,10 +6,13 @@ edition = "2021"
 [dependencies]
 bitvec = "1.0"
 curve25519-dalek = "2"
+itertools = "0.10"
+merlin = "2.0"
 mpc-ristretto = { git = "https://github.com/renegade-fi/MPC-Ristretto" }
 mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
 num-bigint = { version = "0.4", features = ["rand"] }
 rand = { version = "0.8" }
+rand_core = "0.5"
 
 [dev-dependencies]
 ark-ff = { git = "https://github.com/arkworks-rs/algebra" }
@@ -22,7 +25,6 @@ dns-lookup = "1.0"
 integration-helpers = { path = "../integration-helpers" }
 inventory = "0.3"
 rand = "0.8"
-rand_core = "0.5"
 tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
 
 [[test]]
