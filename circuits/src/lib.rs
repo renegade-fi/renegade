@@ -167,16 +167,82 @@ pub trait SingleProverCircuit {
 
 #[cfg(test)]
 pub(crate) mod test_helpers {
+    use ark_ff::{Fp256, MontBackend, MontConfig};
+    use ark_sponge::poseidon::PoseidonConfig;
+    use curve25519_dalek::scalar::Scalar;
     use merlin::Transcript;
     use mpc_bulletproof::{
         r1cs::{Prover, Verifier},
         r1cs_mpc::R1CSError,
         PedersenGens,
     };
+    use num_bigint::{BigInt, BigUint};
 
-    use crate::SingleProverCircuit;
+    use crate::{
+        mpc_gadgets::poseidon::PoseidonSpongeParameters, scalar_to_bigint, scalar_to_biguint,
+        SingleProverCircuit,
+    };
 
     const TRANSCRIPT_SEED: &str = "test";
+
+    /// Defines a custom Arkworks field with the same modulus as the Dalek Ristretto group
+    ///
+    /// This is necessary for testing against Arkworks, otherwise the values will not be directly comparable
+    #[derive(MontConfig)]
+    #[modulus = "7237005577332262213973186563042994240857116359379907606001950938285454250989"]
+    #[generator = "2"]
+    pub(crate) struct TestFieldConfig;
+    pub(crate) type TestField = Fp256<MontBackend<TestFieldConfig, 4>>;
+
+    /**
+     * Helpers
+     */
+
+    /// Converts a dalek scalar to an arkworks ff element
+    pub(crate) fn scalar_to_prime_field(a: &Scalar) -> TestField {
+        Fp256::from(scalar_to_biguint(a))
+    }
+
+    /// Converts a nested vector of Dalek scalars to arkworks field elements
+    pub(crate) fn convert_scalars_nested_vec(a: &Vec<Vec<Scalar>>) -> Vec<Vec<TestField>> {
+        let mut res = Vec::with_capacity(a.len());
+        for row in a.iter() {
+            let mut row_res = Vec::with_capacity(row.len());
+            for val in row.iter() {
+                row_res.push(scalar_to_prime_field(val))
+            }
+
+            res.push(row_res);
+        }
+
+        res
+    }
+
+    /// Converts a set of Poseidon parameters encoded as scalars to parameters encoded as field elements
+    pub(crate) fn convert_params(
+        native_params: &PoseidonSpongeParameters,
+    ) -> PoseidonConfig<TestField> {
+        PoseidonConfig::new(
+            native_params.full_rounds,
+            native_params.parital_rounds,
+            native_params.alpha,
+            convert_scalars_nested_vec(&native_params.mds_matrix),
+            convert_scalars_nested_vec(&native_params.round_constants),
+            native_params.rate,
+            native_params.capacity,
+        )
+    }
+
+    /// Convert an arkworks prime field element to a bigint
+    pub(crate) fn felt_to_bigint(element: &TestField) -> BigInt {
+        let felt_biguint = Into::<BigUint>::into(*element);
+        felt_biguint.into()
+    }
+
+    /// Compares a Dalek Scalar to an Arkworks field element
+    pub(crate) fn compare_scalar_to_felt(scalar: &Scalar, felt: &TestField) -> bool {
+        scalar_to_bigint(scalar).eq(&felt_to_bigint(felt))
+    }
 
     /// Abstracts over the flow of proving and verifying a circuit given
     /// a valid statement + witness assignment
