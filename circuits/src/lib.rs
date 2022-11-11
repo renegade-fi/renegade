@@ -6,9 +6,13 @@
 
 use std::ops::Neg;
 
-use curve25519_dalek::scalar::Scalar;
+use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use errors::MpcError;
 use mpc::SharedFabric;
+use mpc_bulletproof::{
+    r1cs::{Prover, R1CSProof, Verifier},
+    r1cs_mpc::R1CSError,
+};
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 use num_bigint::{BigInt, BigUint, Sign};
 
@@ -115,6 +119,51 @@ pub trait Open {
     fn open(&self) -> Result<Self::Output, Self::Error>;
     /// Opens the shared type and authenticates the result
     fn open_and_authenticate(&self) -> Result<Self::Output, Self::Error>;
+}
+
+/// Defines the abstraction of a Circuit.
+///
+/// A circuit represents a provable unit, a complete NP statement that takes as input
+/// a series of values, commits to them, and applies constraints
+///
+/// The input types are broken out into the witness type and the statement type.
+/// The witness type represents the secret witness that the prover has access to but
+/// that the verifier does not. The statement is the set of public inputs and any
+/// other circuit meta-parameters that both prover and verifier have access to.
+pub trait SingleProverCircuit {
+    /// The witness type, given only to the prover, which generates a blinding commitment
+    /// that can be given to the verifier
+    type Witness;
+    /// The statement type, given to both the prover and verifier, parameterizes the underlying
+    /// NP statement being proven
+    type Statement;
+
+    /// The size of the bulletproof generators that must be allocated
+    /// to fully compute a proof or verification of the statement
+    ///
+    /// This is a function of circuit size
+    const BP_GENS_SIZE: usize;
+
+    /// Generate a proof of the statement represented by the circuit
+    ///
+    /// Returns both the commitment to the inputs, as well as the proof itself
+    fn prove(
+        &self,
+        witness: Self::Witness,
+        statement: Self::Statement,
+        prover: Prover,
+    ) -> Result<(Vec<CompressedRistretto>, R1CSProof), R1CSError>;
+    /// Verify a proof of the statement represented by the circuit
+    ///
+    /// The verifier has access to the statement variables, but only hiding (and binding)
+    /// commitments to the witness variables
+    fn verify(
+        &self,
+        witness_commitments: &[CompressedRistretto],
+        statement: Self::Statement,
+        proof: R1CSProof,
+        verifier: Verifier,
+    ) -> Result<(), R1CSError>;
 }
 
 #[cfg(test)]
