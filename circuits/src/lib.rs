@@ -179,8 +179,8 @@ pub(crate) mod test_helpers {
     use num_bigint::{BigInt, BigUint};
 
     use crate::{
-        mpc_gadgets::poseidon::PoseidonSpongeParameters, scalar_to_bigint, scalar_to_biguint,
-        SingleProverCircuit,
+        bigint_to_scalar, mpc_gadgets::poseidon::PoseidonSpongeParameters, scalar_to_bigint,
+        scalar_to_biguint, SingleProverCircuit,
     };
 
     const TRANSCRIPT_SEED: &str = "test";
@@ -237,6 +237,12 @@ pub(crate) mod test_helpers {
     pub(crate) fn felt_to_bigint(element: &TestField) -> BigInt {
         let felt_biguint = Into::<BigUint>::into(*element);
         felt_biguint.into()
+    }
+
+    /// Convert an arkworks prime field element to a scalar
+    pub(crate) fn felt_to_scalar(element: &TestField) -> Scalar {
+        let felt_bigint = felt_to_bigint(element);
+        bigint_to_scalar(&felt_bigint)
     }
 
     /// Compares a Dalek Scalar to an Arkworks field element
