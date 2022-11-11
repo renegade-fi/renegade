@@ -94,7 +94,6 @@ impl SingleProverCircuit for ExpGadget {
     const BP_GENS_CAPACITY: usize = 64;
 
     fn prove(
-        &self,
         witness: Self::Witness,
         statement: Self::Statement,
         mut prover: Prover,
@@ -126,7 +125,6 @@ impl SingleProverCircuit for ExpGadget {
     }
 
     fn verify(
-        &self,
         witness_commitments: &[CompressedRistretto],
         statement: Self::Statement,
         proof: R1CSProof,
@@ -197,14 +195,33 @@ mod arithmetic_tests {
         let expected_scalar = bigint_to_scalar(&expected_res.into());
 
         // Create the circuit
-        bulletproof_prove_and_verify(
+        bulletproof_prove_and_verify::<ExpGadget>(
             ExpGadgetWitness { x: random_value },
             ExpGadgetStatement {
                 alpha: alpha as u64,
                 expected_out: expected_scalar,
             },
-            ExpGadget {},
         )
         .unwrap();
+    }
+
+    /// Tests that a single prover exp does not verify for incorrect values
+    #[test]
+    fn test_single_prover_exp_failure() {
+        // Gerneate a random input
+        let mut rng = OsRng {};
+        let alpha = rng.next_u32();
+        let random_value = Scalar::random(&mut rng);
+        let random_out = Scalar::random(&mut rng);
+
+        let res = bulletproof_prove_and_verify::<ExpGadget>(
+            ExpGadgetWitness { x: random_value },
+            ExpGadgetStatement {
+                alpha: alpha as u64,
+                expected_out: random_out,
+            },
+        );
+
+        assert!(res.is_err());
     }
 }

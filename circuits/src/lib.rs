@@ -149,7 +149,6 @@ pub trait SingleProverCircuit {
     ///
     /// Returns both the commitment to the inputs, as well as the proof itself
     fn prove(
-        &self,
         witness: Self::Witness,
         statement: Self::Statement,
         prover: Prover,
@@ -159,7 +158,6 @@ pub trait SingleProverCircuit {
     /// The verifier has access to the statement variables, but only hiding (and binding)
     /// commitments to the witness variables
     fn verify(
-        &self,
         witness_commitments: &[CompressedRistretto],
         statement: Self::Statement,
         proof: R1CSProof,
@@ -185,22 +183,19 @@ pub(crate) mod test_helpers {
     pub(crate) fn bulletproof_prove_and_verify<C: SingleProverCircuit>(
         witness: C::Witness,
         statement: C::Statement,
-        circuit_instance: C,
     ) -> Result<(), R1CSError> {
         let mut transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
         let pc_gens = PedersenGens::default();
         let prover = Prover::new(&pc_gens, &mut transcript);
 
         // Prove the statement
-        let (witness_commitments, proof) = circuit_instance
-            .prove(witness, statement.clone(), prover)
-            .unwrap();
+        let (witness_commitments, proof) = C::prove(witness, statement.clone(), prover).unwrap();
 
         // Verify the statement with a fresh transcript
         let mut verifier_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
         let verifier = Verifier::new(&pc_gens, &mut verifier_transcript);
 
-        circuit_instance.verify(&witness_commitments, statement, proof, verifier)
+        C::verify(&witness_commitments, statement, proof, verifier)
     }
 }
 
