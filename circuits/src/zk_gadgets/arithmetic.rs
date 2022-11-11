@@ -91,7 +91,7 @@ impl SingleProverCircuit for ExpGadget {
     type Witness = ExpGadgetWitness;
     type Statement = ExpGadgetStatement;
 
-    const BP_GENS_SIZE: usize = 64;
+    const BP_GENS_CAPACITY: usize = 64;
 
     fn prove(
         &self,
@@ -116,8 +116,8 @@ impl SingleProverCircuit for ExpGadget {
         Self::generate_constraints(&mut prover, x_var, out_var, statement.alpha);
 
         let bp_gens = BulletproofGens::new(
-            Self::BP_GENS_SIZE, /* gens_capacity */
-            1,                  /* party_capacity */
+            Self::BP_GENS_CAPACITY, /* gens_capacity */
+            1,                      /* party_capacity */
         );
         let proof = prover.prove(&bp_gens)?;
 
@@ -141,8 +141,8 @@ impl SingleProverCircuit for ExpGadget {
         Self::generate_constraints(&mut verifier, x_var, out_var, statement.alpha);
 
         let bp_gens = BulletproofGens::new(
-            Self::BP_GENS_SIZE, /* gens_capacity */
-            1,                  /* party_capacity */
+            Self::BP_GENS_CAPACITY, /* gens_capacity */
+            1,                      /* party_capacity */
         );
         verifier.verify(&proof, &bp_gens)
     }
@@ -176,19 +176,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiproverExpGadget<N,
 mod arithmetic_tests {
     use curve25519_dalek::scalar::Scalar;
     use integration_helpers::mpc_network::field::get_ristretto_group_modulus;
-    use merlin::Transcript;
-    use mpc_bulletproof::{
-        r1cs::{Prover, Verifier},
-        PedersenGens,
-    };
     use num_bigint::BigUint;
     use rand_core::{OsRng, RngCore};
 
-    use crate::{bigint_to_scalar, scalar_to_biguint, SingleProverCircuit};
+    use crate::{bigint_to_scalar, scalar_to_biguint, test_helpers::bulletproof_prove_and_verify};
 
     use super::{ExpGadget, ExpGadgetStatement, ExpGadgetWitness};
-
-    const TRANSCRIPT_SEED: &str = "test";
 
     /// Tests the single prover exponentiation gadget
     #[test]
@@ -204,26 +197,14 @@ mod arithmetic_tests {
         let expected_scalar = bigint_to_scalar(&expected_res.into());
 
         // Create the circuit
-        let mut transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
-        let pc_gens = PedersenGens::default();
-        let prover = Prover::new(&pc_gens, &mut transcript);
-        let circuit = ExpGadget {};
-        let statement = ExpGadgetStatement {
-            alpha: alpha as u64,
-            expected_out: expected_scalar,
-        };
-
-        // Prove the statement
-        let (witness_commitments, proof) = circuit
-            .prove(ExpGadgetWitness { x: random_value }, statement, prover)
-            .unwrap();
-
-        // Verify the statement with a fresh transcript
-        let mut verifier_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
-        let verifier = Verifier::new(&pc_gens, &mut verifier_transcript);
-
-        circuit
-            .verify(&witness_commitments, statement, proof, verifier)
-            .unwrap();
+        bulletproof_prove_and_verify(
+            ExpGadgetWitness { x: random_value },
+            ExpGadgetStatement {
+                alpha: alpha as u64,
+                expected_out: expected_scalar,
+            },
+            ExpGadget {},
+        )
+        .unwrap();
     }
 }

@@ -136,13 +136,14 @@ pub trait SingleProverCircuit {
     type Witness;
     /// The statement type, given to both the prover and verifier, parameterizes the underlying
     /// NP statement being proven
-    type Statement;
+    type Statement: Clone;
 
     /// The size of the bulletproof generators that must be allocated
     /// to fully compute a proof or verification of the statement
     ///
-    /// This is a function of circuit size
-    const BP_GENS_SIZE: usize;
+    /// This is a function of circuit depth, one generator is needed per
+    /// multiplication gate (roughly)
+    const BP_GENS_CAPACITY: usize;
 
     /// Generate a proof of the statement represented by the circuit
     ///
@@ -164,6 +165,43 @@ pub trait SingleProverCircuit {
         proof: R1CSProof,
         verifier: Verifier,
     ) -> Result<(), R1CSError>;
+}
+
+#[cfg(test)]
+pub(crate) mod test_helpers {
+    use merlin::Transcript;
+    use mpc_bulletproof::{
+        r1cs::{Prover, Verifier},
+        r1cs_mpc::R1CSError,
+        PedersenGens,
+    };
+
+    use crate::SingleProverCircuit;
+
+    const TRANSCRIPT_SEED: &str = "test";
+
+    /// Abstracts over the flow of proving and verifying a circuit given
+    /// a valid statement + witness assignment
+    pub(crate) fn bulletproof_prove_and_verify<C: SingleProverCircuit>(
+        witness: C::Witness,
+        statement: C::Statement,
+        circuit_instance: C,
+    ) -> Result<(), R1CSError> {
+        let mut transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
+        let pc_gens = PedersenGens::default();
+        let prover = Prover::new(&pc_gens, &mut transcript);
+
+        // Prove the statement
+        let (witness_commitments, proof) = circuit_instance
+            .prove(witness, statement.clone(), prover)
+            .unwrap();
+
+        // Verify the statement with a fresh transcript
+        let mut verifier_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
+        let verifier = Verifier::new(&pc_gens, &mut verifier_transcript);
+
+        circuit_instance.verify(&witness_commitments, statement, proof, verifier)
+    }
 }
 
 #[cfg(test)]
