@@ -77,7 +77,7 @@ impl ExpGadget {
 #[derive(Clone, Debug)]
 pub struct ExpGadgetWitness {
     /// Exponentiation base
-    x: Scalar,
+    pub x: Scalar,
 }
 
 /// The statement type for the ExpGadget circuit implementation
@@ -87,9 +87,9 @@ pub struct ExpGadgetWitness {
 #[derive(Copy, Clone, Debug)]
 pub struct ExpGadgetStatement {
     /// Exponent
-    alpha: u64,
+    pub alpha: u64,
     /// Expected result
-    expected_out: Scalar,
+    pub expected_out: Scalar,
 }
 
 impl SingleProverCircuit for ExpGadget {
@@ -200,7 +200,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 #[derive(Clone, Debug)]
 pub struct MultiproverExpWitness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// Exponentiation base
-    x: AuthenticatedScalar<N, S>,
+    pub x: AuthenticatedScalar<N, S>,
 }
 
 impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<'a, N, S>
@@ -232,7 +232,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
                 &witness.x,
                 &fabric
                     .borrow_fabric()
-                    .allocate_public_scalar(Scalar::random(&mut rng)),
+                    .allocate_preshared_scalar(Scalar::random(&mut rng)),
             )
             .map_err(MultiproverError::Mpc)?;
 
