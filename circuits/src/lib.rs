@@ -343,6 +343,7 @@ pub(crate) mod test_helpers {
 
     /// Abstracts over the flow of collaboratively proving and locally verifying
     /// the statement specified by a given circuit
+    #[allow(unused)]
     pub fn mulitprover_prove_and_verify<'a, N, S, C>(
         witness: C::Witness,
         statement: C::Statement,

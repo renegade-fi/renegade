@@ -7,13 +7,18 @@ use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::r1cs::{
     LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
 };
-use mpc_bulletproof::r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem};
+use mpc_bulletproof::r1cs_mpc::{
+    MpcConstraintSystem, MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem,
+    MultiproverError, R1CSError, SharedR1CSProof,
+};
 use mpc_bulletproof::BulletproofGens;
+use mpc_ristretto::authenticated_ristretto::AuthenticatedCompressedRistretto;
+use mpc_ristretto::authenticated_scalar::AuthenticatedScalar;
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 use rand_core::OsRng;
 
 use crate::mpc::SharedFabric;
-use crate::SingleProverCircuit;
+use crate::{MultiProverCircuit, SingleProverCircuit};
 
 /**
  * Single prover implementation
@@ -149,14 +154,16 @@ impl SingleProverCircuit for ExpGadget {
 /// A multiprover implementation of the exp gadget
 ///
 /// TODO: Implementation
-pub struct MultiproverExpGadget<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
-    _phantom: PhantomData<(N, S)>,
+pub struct MultiproverExpGadget<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> {
+    _phantom: PhantomData<&'a (N, S)>,
 }
 
 #[allow(unused_variables)]
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiproverExpGadget<N, S> {
+impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
+    MultiproverExpGadget<'a, N, S>
+{
     /// Apply the gadget to the input
-    pub fn gadget<'a, CS, L>(
+    pub fn gadget<CS, L>(
         cs: &mut CS,
         x: L,
         alpha: u64,
@@ -166,7 +173,98 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiproverExpGadget<N,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
         L: Into<MpcLinearCombination<N, S>>,
     {
-        MpcLinearCombination::from_scalar(Scalar::zero(), fabric.0)
+        if alpha == 0 {
+            MpcLinearCombination::from_scalar(Scalar::one(), fabric.0)
+        } else if alpha == 1 {
+            x.into()
+        } else if alpha % 2 == 0 {
+            let recursive_result = MultiproverExpGadget::gadget(cs, x, alpha / 2, fabric);
+            let (_, _, out_var) = cs.multiply(&recursive_result, &recursive_result);
+            out_var.into()
+        } else {
+            let x_lc = x.into();
+            let recursive_result =
+                MultiproverExpGadget::gadget(cs, x_lc.clone(), (alpha - 1) / 2, fabric);
+            let (_, _, out_var1) = cs.multiply(&recursive_result, &recursive_result);
+            let (_, _, out_var2) = cs.multiply(&out_var1.into(), &x_lc);
+            out_var2.into()
+        }
+    }
+}
+
+/// The witness type for the ExpGadget in the multiprover setting
+///
+/// This type is essentially the same witness type as the witness for
+/// the single prover setting, but using the authenticated, secret shared
+/// field
+#[derive(Clone, Debug)]
+pub struct MultiproverExpWitness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// Exponentiation base
+    x: AuthenticatedScalar<N, S>,
+}
+
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<'a, N, S>
+    for MultiproverExpGadget<'a, N, S>
+{
+    /// Witness is the secret shared version of the single-prover witness, and the
+    /// statement is the same as the single-prover case
+    type Witness = MultiproverExpWitness<N, S>;
+    type Statement = ExpGadgetStatement;
+
+    const BP_GENS_CAPACITY: usize = 2048;
+
+    fn prove(
+        witness: Self::Witness,
+        statement: Self::Statement,
+        mut prover: MpcProver<'a, '_, '_, N, S>,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<
+        (
+            Vec<AuthenticatedCompressedRistretto<N, S>>,
+            SharedR1CSProof<N, S>,
+        ),
+        MultiproverError,
+    > {
+        // Commit to the input
+        let mut rng = OsRng {};
+        let (witness_commit, witness_var) = prover
+            .commit_preshared(
+                &witness.x,
+                &fabric
+                    .borrow_fabric()
+                    .allocate_public_scalar(Scalar::random(&mut rng)),
+            )
+            .map_err(MultiproverError::Mpc)?;
+
+        // Commit to the public expected hash output
+        // TODO: update this with a correct commit_public impl
+        let (_, output_var) = prover
+            .commit_preshared(
+                &fabric
+                    .borrow_fabric()
+                    .allocate_public_scalar(statement.expected_out),
+                &fabric.borrow_fabric().allocate_public_scalar(Scalar::one()),
+            )
+            .map_err(MultiproverError::Mpc)?;
+
+        // Apply the constraints to the prover
+        let res = Self::gadget(&mut prover, witness_var, statement.alpha, fabric);
+        prover.constrain(res - output_var);
+
+        // Prove the statement
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        let proof = prover.prove(&bp_gens)?;
+
+        Ok((vec![witness_commit], proof))
+    }
+
+    fn verify(
+        witness_commitments: &[CompressedRistretto],
+        statement: Self::Statement,
+        proof: R1CSProof,
+        verifier: Verifier,
+    ) -> Result<(), R1CSError> {
+        ExpGadget::verify(witness_commitments, statement, proof, verifier)
     }
 }
 
