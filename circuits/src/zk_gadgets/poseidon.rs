@@ -1,20 +1,29 @@
 //! Groups logic for adding Poseidon hash function constraints to a Bulletproof
 //! constraint system
 
+use std::marker::PhantomData;
+
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{
         LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
     },
-    r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, MpcVariable, R1CSError},
+    r1cs_mpc::{
+        MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MpcVariable,
+        MultiproverError, R1CSError, SharedR1CSProof,
+    },
     BulletproofGens,
 };
-use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
+use mpc_ristretto::{
+    authenticated_ristretto::AuthenticatedCompressedRistretto,
+    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+};
 use rand_core::OsRng;
 
 use crate::{
-    mpc::SharedFabric, mpc_gadgets::poseidon::PoseidonSpongeParameters, SingleProverCircuit,
+    mpc::SharedFabric, mpc_gadgets::poseidon::PoseidonSpongeParameters, MultiProverCircuit,
+    SingleProverCircuit,
 };
 
 use super::arithmetic::{ExpGadget, MultiproverExpGadget};
@@ -300,7 +309,11 @@ impl SingleProverCircuit for PoseidonHashGadget {
 ///
 /// This version of the gadget is used for the multi-prover case, i.e in an MPC execution
 #[derive(Debug)]
-pub struct MultiproverPoseidonHasherGadget<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+pub struct MultiproverPoseidonHashGadget<
+    'a,
+    N: 'a + MpcNetwork + Send,
+    S: 'a + SharedValueSource<Scalar>,
+> {
     /// The parameterization of the hash function
     params: PoseidonSpongeParameters,
     /// The hash state
@@ -312,10 +325,12 @@ pub struct MultiproverPoseidonHasherGadget<N: MpcNetwork + Send, S: SharedValueS
     in_squeeze_state: bool,
     /// A reference to the shared MPC fabric that the computation variables are allocated in
     fabric: SharedFabric<N, S>,
+    /// Phantom for the lifetime parameter
+    _phantom: PhantomData<&'a ()>,
 }
 
 impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
-    MultiproverPoseidonHasherGadget<N, S>
+    MultiproverPoseidonHashGadget<'a, N, S>
 {
     /// Construct a new hash gadget with the given parameterization
     pub fn new(params: PoseidonSpongeParameters, fabric: SharedFabric<N, S>) -> Self {
@@ -329,7 +344,20 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
             next_index: 0,
             in_squeeze_state: false, // Start in absorb state
             fabric,
+            _phantom: PhantomData,
         }
+    }
+
+    /// Hashes the payload and then constrains the squeezed output to be the provided
+    /// expected output.
+    pub fn hash<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
+        &mut self,
+        cs: &mut CS,
+        hash_input: &[MpcVariable<N, S>],
+        expected_output: &MpcVariable<N, S>,
+    ) -> Result<(), R1CSError> {
+        self.batch_absorb(cs, hash_input)?;
+        self.constrained_squeeze(cs, expected_output)
     }
 
     /// Absorb an input into the hasher state
@@ -494,6 +522,77 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         }
 
         Ok(())
+    }
+}
+
+/// The witness type for the multiprover Poseidon gadget
+#[derive(Clone, Debug)]
+pub struct MultiproverPoseidonWitness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The preimage (input) to the hash function
+    preimage: Vec<AuthenticatedScalar<N, S>>,
+}
+
+impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProverCircuit<'a, N, S>
+    for MultiproverPoseidonHashGadget<'a, N, S>
+{
+    /// Witenss is as the witness in the single prover case, except for the facts that hte underlying scalar
+    /// field is the authenticated and shared Ristretto scalar field.
+    ///
+    /// The Statement, on the other hand, is entirely public; and therefore the same type as the single prover.
+    type Witness = MultiproverPoseidonWitness<N, S>;
+    type Statement = PoseidonGadgetStatement;
+
+    const BP_GENS_CAPACITY: usize = 2048;
+
+    fn prove(
+        witness: Self::Witness,
+        statement: Self::Statement,
+        mut prover: MpcProver<'a, '_, '_, N, S>,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<
+        (
+            Vec<AuthenticatedCompressedRistretto<N, S>>,
+            SharedR1CSProof<N, S>,
+        ),
+        MultiproverError,
+    > {
+        // Commit to the hash input and expected output
+        let mut rng = OsRng {};
+        let blinders = (0..witness.preimage.len())
+            .map(|_| {
+                fabric
+                    .borrow_fabric()
+                    .allocate_public_scalar(Scalar::random(&mut rng))
+            })
+            .collect_vec();
+
+        let (witness_commits, witness_vars) = prover
+            .batch_commit_preshared(&witness.preimage, &blinders)
+            .map_err(MultiproverError::Mpc)?;
+
+        // TODO: If bug, public commit might be broken here
+        let (_, out_var) = prover.commit_public(statement.expected_out, Scalar::one());
+
+        // Create a hasher and apply the constraints
+        let mut hasher = MultiproverPoseidonHashGadget::new(statement.params, fabric);
+        hasher
+            .hash(&mut prover, &witness_vars, &out_var)
+            .map_err(MultiproverError::ProverError)?;
+
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        let proof = prover.prove(&bp_gens)?;
+
+        Ok((witness_commits, proof))
+    }
+
+    fn verify(
+        witness_commitments: &[CompressedRistretto],
+        statement: Self::Statement,
+        proof: R1CSProof,
+        verifier: Verifier,
+    ) -> Result<(), R1CSError> {
+        // Forward to the single prover gadget
+        PoseidonHashGadget::verify(witness_commitments, statement, proof, verifier)
     }
 }
 
