@@ -11,9 +11,12 @@ use errors::MpcError;
 use mpc::SharedFabric;
 use mpc_bulletproof::{
     r1cs::{Prover, R1CSProof, Verifier},
-    r1cs_mpc::R1CSError,
+    r1cs_mpc::{MpcProver, MultiproverError, R1CSError, SharedR1CSProof},
 };
-use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
+use mpc_ristretto::{
+    authenticated_ristretto::AuthenticatedCompressedRistretto, beaver::SharedValueSource,
+    network::MpcNetwork,
+};
 use num_bigint::{BigInt, BigUint, Sign};
 
 pub mod constants;
@@ -153,6 +156,7 @@ pub trait SingleProverCircuit {
         statement: Self::Statement,
         prover: Prover,
     ) -> Result<(Vec<CompressedRistretto>, R1CSProof), R1CSError>;
+
     /// Verify a proof of the statement represented by the circuit
     ///
     /// The verifier has access to the statement variables, but only hiding (and binding)
@@ -164,6 +168,68 @@ pub trait SingleProverCircuit {
         verifier: Verifier,
     ) -> Result<(), R1CSError>;
 }
+
+/// Defines the abstraction of a Circuit that is evaluated in a multiprover setting
+///
+/// A circuit represents a provable unit, a complete NP statement that takes as input
+/// a series of values, commits to them, and applies constraints.
+///
+/// The input types are broken out into the witness type and the statement type.
+/// The witness type represents the secret witness that the prover has access to but
+/// that the verifier does not. The statement is the set of public inputs and any
+/// other circuit meta-parameters that both prover and verifier have access to.
+pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> {
+    /// The witness type, given only to the prover, which generates a blinding commitment
+    /// that can be given to the verifier
+    type Witness;
+    /// The statement type, given to both the prover and verifier, parameterizes the underlying
+    /// NP statement being proven
+    type Statement: Clone;
+
+    /// The size of the bulletproof generators that must be allocated
+    /// to fully compute a proof or verification of the statement
+    ///
+    /// This is a function of circuit depth, one generator is needed per
+    /// multiplication gate (roughly)
+    const BP_GENS_CAPACITY: usize;
+
+    /// Generate a proof of the statement represented by the circuit
+    ///
+    /// Returns both the commitment to the inputs, as well as the proof itself
+    #[allow(clippy::type_complexity)]
+    fn prove(
+        witness: Self::Witness,
+        statement: Self::Statement,
+        prover: MpcProver<'a, '_, '_, N, S>,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<
+        (
+            Vec<AuthenticatedCompressedRistretto<N, S>>,
+            SharedR1CSProof<N, S>,
+        ),
+        MultiproverError,
+    >;
+
+    /// Verify a proof of the statement represented by the circuit
+    ///
+    /// The verifier has access to the statement variables, but only hiding (and binding)
+    /// commitments to the witness variables
+    ///
+    /// The verifier in this case provides the same interface as the single prover case.
+    /// The proof and commitments to the witness should be "opened" by having the MPC
+    /// parties reconstruct the underlying secret from their shares. Then the opened
+    /// proof and commitments can be passed to the verifier.
+    fn verify(
+        witness_commitments: &[CompressedRistretto],
+        statement: Self::Statement,
+        proof: R1CSProof,
+        verifier: Verifier,
+    ) -> Result<(), R1CSError>;
+}
+
+/**
+ * Test helpers
+ */
 
 #[cfg(test)]
 pub(crate) mod test_helpers {
