@@ -238,14 +238,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
 
         // Commit to the public expected hash output
         // TODO: update this with a correct commit_public impl
-        let (_, output_var) = prover
-            .commit_preshared(
-                &fabric
-                    .borrow_fabric()
-                    .allocate_public_scalar(statement.expected_out),
-                &fabric.borrow_fabric().allocate_public_scalar(Scalar::one()),
-            )
-            .map_err(MultiproverError::Mpc)?;
+        let (_, output_var) = prover.commit_public(statement.expected_out);
 
         // Apply the constraints to the prover
         let res = Self::gadget(&mut prover, witness_var, statement.alpha, fabric);

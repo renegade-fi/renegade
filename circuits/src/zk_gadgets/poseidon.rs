@@ -1,6 +1,7 @@
 //! Groups logic for adding Poseidon hash function constraints to a Bulletproof
 //! constraint system
 
+use core::num;
 use std::marker::PhantomData;
 
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
@@ -106,13 +107,12 @@ impl PoseidonHashGadget {
         a.iter().try_for_each(|val| self.absorb(cs, *val))
     }
 
-    /// Squeeze an output from the hasher, and constraint its value to equal the
-    /// provided statement variable.
-    pub fn constrained_squeeze<CS: RandomizableConstraintSystem>(
+    /// Squeeze an element from the sponge and return its representation in the constraint
+    /// system
+    pub fn squeeze<CS: RandomizableConstraintSystem>(
         &mut self,
         cs: &mut CS,
-        expected: Variable,
-    ) -> Result<(), R1CSError> {
+    ) -> Result<LinearCombination, R1CSError> {
         // Once we exit the absorb state, ensure that the digest state is permuted before squeezing
         if !self.in_squeeze_state || self.next_index == self.params.rate {
             self.permute(cs)?;
@@ -120,7 +120,33 @@ impl PoseidonHashGadget {
             self.in_squeeze_state = true;
         }
 
-        cs.constrain(self.state[self.params.capacity + self.next_index].clone() - expected);
+        Ok(self.state[self.params.capacity + self.next_index].clone())
+    }
+
+    /// Squeeze a batch of elements from the sponge and return their representation in the
+    /// constraint system
+    pub fn batch_squeeze<CS: RandomizableConstraintSystem>(
+        &mut self,
+        cs: &mut CS,
+        num_elements: usize,
+    ) -> Result<Vec<LinearCombination>, R1CSError> {
+        let mut res = Vec::with_capacity(num_elements);
+        for _ in 0..num_elements {
+            res.push(self.squeeze(cs)?)
+        }
+
+        Ok(res)
+    }
+
+    /// Squeeze an output from the hasher, and constraint its value to equal the
+    /// provided statement variable.
+    pub fn constrained_squeeze<CS: RandomizableConstraintSystem>(
+        &mut self,
+        cs: &mut CS,
+        expected: Variable,
+    ) -> Result<(), R1CSError> {
+        let squeezed_elem = self.squeeze(cs)?;
+        cs.constrain(squeezed_elem - expected);
         Ok(())
     }
 
