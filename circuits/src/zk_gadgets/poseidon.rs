@@ -567,8 +567,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProv
             .batch_commit_preshared(&witness.preimage, &blinders)
             .map_err(MultiproverError::Mpc)?;
 
-        // TODO: If bug, public commit might be broken here
-        let (_, out_var) = prover.commit_public(statement.expected_out, Scalar::one());
+        let (_, out_var) = prover.commit_public(statement.expected_out);
 
         // Create a hasher and apply the constraints
         let mut hasher = MultiproverPoseidonHashGadget::new(statement.params, fabric);
