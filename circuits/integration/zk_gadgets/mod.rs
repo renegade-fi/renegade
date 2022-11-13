@@ -1,4 +1,6 @@
 //! Groups tests for zero knowledge proof gadgets
+mod arithmetic;
+mod poseidon;
 
 use circuits::{mpc::SharedFabric, MultiProverCircuit};
 use curve25519_dalek::scalar::Scalar;
@@ -13,7 +15,6 @@ use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto, beaver::SharedValueSource,
     network::MpcNetwork,
 };
-mod arithmetic;
 
 const TRANSCRIPT_SEED: &str = "test";
 

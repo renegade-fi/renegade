@@ -27,7 +27,9 @@ use super::{
  */
 
 /// Converts a set of Poseidon parameters encoded as scalars to parameters encoded as field elements
-fn convert_params(native_params: &PoseidonSpongeParameters) -> PoseidonConfig<TestField> {
+pub(crate) fn convert_params(
+    native_params: &PoseidonSpongeParameters,
+) -> PoseidonConfig<TestField> {
     PoseidonConfig::new(
         native_params.full_rounds,
         native_params.parital_rounds,

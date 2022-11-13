@@ -1,5 +1,5 @@
 use ark_ff::fields::{Fp256, MontBackend, MontConfig};
-use circuits::{scalar_to_bigint, scalar_to_biguint};
+use circuits::{bigint_to_scalar, scalar_to_bigint, scalar_to_biguint};
 use curve25519_dalek::scalar::Scalar;
 use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource,
@@ -27,12 +27,16 @@ pub(crate) type TestField = Fp256<MontBackend<TestFieldConfig, 4>>;
  */
 
 /// Converts a dalek scalar to an arkworks ff element
-fn scalar_to_prime_field(a: &Scalar) -> TestField {
+pub(crate) fn scalar_to_prime_field(a: &Scalar) -> TestField {
     Fp256::from(scalar_to_biguint(a))
 }
 
+pub(crate) fn prime_field_to_scalar(a: &TestField) -> Scalar {
+    bigint_to_scalar(&felt_to_bigint(a))
+}
+
 /// Converts a nested vector of Dalek scalars to arkworks field elements
-fn convert_scalars_nested_vec(a: &Vec<Vec<Scalar>>) -> Vec<Vec<TestField>> {
+pub(crate) fn convert_scalars_nested_vec(a: &Vec<Vec<Scalar>>) -> Vec<Vec<TestField>> {
     let mut res = Vec::with_capacity(a.len());
     for row in a.iter() {
         let mut row_res = Vec::with_capacity(row.len());
@@ -47,13 +51,13 @@ fn convert_scalars_nested_vec(a: &Vec<Vec<Scalar>>) -> Vec<Vec<TestField>> {
 }
 
 /// Convert an arkworks prime field element to a bigint
-fn felt_to_bigint(element: &TestField) -> BigInt {
+pub(crate) fn felt_to_bigint(element: &TestField) -> BigInt {
     let felt_biguint = Into::<BigUint>::into(*element);
     felt_biguint.into()
 }
 
 /// Compares a Dalek Scalar to an Arkworks field element
-fn compare_scalar_to_felt(scalar: &Scalar, felt: &TestField) -> bool {
+pub(crate) fn compare_scalar_to_felt(scalar: &Scalar, felt: &TestField) -> bool {
     scalar_to_bigint(scalar).eq(&felt_to_bigint(felt))
 }
 

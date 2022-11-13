@@ -230,7 +230,7 @@ impl PoseidonHashGadget {
 #[derive(Clone, Debug)]
 pub struct PoseidonGadgetWitness {
     /// Preimage
-    preimage: Vec<Scalar>,
+    pub preimage: Vec<Scalar>,
 }
 
 /// The statement variable (public variable) for the argument, consisting
@@ -238,9 +238,9 @@ pub struct PoseidonGadgetWitness {
 #[derive(Clone, Debug)]
 pub struct PoseidonGadgetStatement {
     /// Expected output of applying the Poseidon hash to the preimage
-    expected_out: Scalar,
+    pub expected_out: Scalar,
     /// The hash parameters that parameterize the Poseidon permutation
-    params: PoseidonSpongeParameters,
+    pub params: PoseidonSpongeParameters,
 }
 
 impl SingleProverCircuit for PoseidonHashGadget {
@@ -510,17 +510,14 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     ///
     /// This step is applied after the sbox is applied to the state
     fn apply_mds(&mut self) -> Result<(), R1CSError> {
+        let mut new_state = vec![MpcLinearCombination::<N, S>::default(); self.state.len()];
         for (i, row) in self.params.mds_matrix.iter().enumerate() {
-            let mut row_inner_product =
-                MpcLinearCombination::from_scalar(Scalar::zero(), self.fabric.0.clone());
-
             for (a, b) in row.iter().zip(self.state.iter()) {
-                row_inner_product += *a * b
+                new_state[i] += *a * b
             }
-
-            self.state[i] = row_inner_product;
         }
 
+        self.state = new_state;
         Ok(())
     }
 }
@@ -529,7 +526,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 #[derive(Clone, Debug)]
 pub struct MultiproverPoseidonWitness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The preimage (input) to the hash function
-    preimage: Vec<AuthenticatedScalar<N, S>>,
+    pub preimage: Vec<AuthenticatedScalar<N, S>>,
 }
 
 impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProverCircuit<'a, N, S>
@@ -562,7 +559,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProv
             .map(|_| {
                 fabric
                     .borrow_fabric()
-                    .allocate_public_scalar(Scalar::random(&mut rng))
+                    .allocate_preshared_scalar(Scalar::random(&mut rng))
             })
             .collect_vec();
 
