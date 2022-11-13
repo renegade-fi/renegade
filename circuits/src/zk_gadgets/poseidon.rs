@@ -1,7 +1,6 @@
 //! Groups logic for adding Poseidon hash function constraints to a Bulletproof
 //! constraint system
 
-use core::num;
 use std::marker::PhantomData;
 
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
@@ -65,21 +64,25 @@ impl PoseidonHashGadget {
     }
 
     /// Hashes the given input and constraints the result to equal the expected output
-    pub fn hash<CS: RandomizableConstraintSystem>(
+    pub fn hash<L, CS>(
         &mut self,
         cs: &mut CS,
-        hash_input: &[Variable],
-        expected_output: &Variable,
-    ) -> Result<(), R1CSError> {
+        hash_input: &[L],
+        expected_output: L,
+    ) -> Result<(), R1CSError>
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
         self.batch_absorb(cs, hash_input)?;
-        self.constrained_squeeze(cs, *expected_output)
+        self.constrained_squeeze(cs, expected_output.into())
     }
 
     /// Absorb an input into the hasher state
-    pub fn absorb<CS: RandomizableConstraintSystem>(
+    pub fn absorb<L: Into<LinearCombination>, CS: RandomizableConstraintSystem>(
         &mut self,
         cs: &mut CS,
-        a: Variable,
+        a: L,
     ) -> Result<(), R1CSError> {
         assert!(
             !self.in_squeeze_state,
@@ -99,12 +102,13 @@ impl PoseidonHashGadget {
     }
 
     /// Absorb a batch of inputs into the hasher state
-    pub fn batch_absorb<CS: RandomizableConstraintSystem>(
-        &mut self,
-        cs: &mut CS,
-        a: &[Variable],
-    ) -> Result<(), R1CSError> {
-        a.iter().try_for_each(|val| self.absorb(cs, *val))
+    pub fn batch_absorb<L, CS>(&mut self, cs: &mut CS, a: &[L]) -> Result<(), R1CSError>
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        a.iter()
+            .try_for_each(|val| self.absorb(cs, Into::<LinearCombination>::into(val.clone())))
     }
 
     /// Squeeze an element from the sponge and return its representation in the constraint
@@ -140,10 +144,10 @@ impl PoseidonHashGadget {
 
     /// Squeeze an output from the hasher, and constraint its value to equal the
     /// provided statement variable.
-    pub fn constrained_squeeze<CS: RandomizableConstraintSystem>(
+    pub fn constrained_squeeze<L: Into<LinearCombination>, CS: RandomizableConstraintSystem>(
         &mut self,
         cs: &mut CS,
-        expected: Variable,
+        expected: L,
     ) -> Result<(), R1CSError> {
         let squeezed_elem = self.squeeze(cs)?;
         cs.constrain(squeezed_elem - expected);
@@ -152,14 +156,18 @@ impl PoseidonHashGadget {
 
     /// Squeeze a set of elements from the hasher, and constraint the elements to be equal
     /// to the provided statement variables
-    pub fn batch_constrained_squeeze<CS: RandomizableConstraintSystem>(
+    pub fn batch_constrained_squeeze<L, CS>(
         &mut self,
         cs: &mut CS,
-        expected: &[Variable],
-    ) -> Result<(), R1CSError> {
+        expected: &[L],
+    ) -> Result<(), R1CSError>
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
         expected
             .iter()
-            .try_for_each(|val| self.constrained_squeeze(cs, *val))
+            .try_for_each(|val| self.constrained_squeeze(cs, val.clone()))
     }
 
     /// Permute the digest by applying the Poseidon round function
@@ -293,7 +301,7 @@ impl SingleProverCircuit for PoseidonHashGadget {
 
         // Apply the constraints to the proof system
         let mut hasher = PoseidonHashGadget::new(statement.params);
-        hasher.hash(&mut prover, &preimage_vars, &out_var)?;
+        hasher.hash(&mut prover, &preimage_vars, out_var)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -319,7 +327,7 @@ impl SingleProverCircuit for PoseidonHashGadget {
 
         // Build a hasher and apply the constraints
         let mut hasher = PoseidonHashGadget::new(statement.params);
-        hasher.hash(&mut verifier, &witness_vars, &output_var)?;
+        hasher.hash(&mut verifier, &witness_vars, output_var)?;
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
