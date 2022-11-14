@@ -17,6 +17,7 @@ use super::poseidon::PoseidonHashGadget;
 
 /// The single-prover hash gadget, computes the Merkle root of a leaf given a path
 /// of sister nodes
+/// TODO: Add path selection variables
 pub struct PoseidonMerkleHashGadget {}
 
 impl PoseidonMerkleHashGadget {
@@ -111,7 +112,7 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
     type Statement = MerkleStatement;
     type Witness = MerkleWitness;
 
-    const BP_GENS_CAPACITY: usize = 1024;
+    const BP_GENS_CAPACITY: usize = 4096;
 
     fn prove(
         witness: Self::Witness,
@@ -167,12 +168,11 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
         mut verifier: Verifier,
     ) -> Result<(), R1CSError> {
         // Commit to the witness
-        let opening_vars = witness_commitments[..statement.tree_height - 1]
+        let leaf_vars = witness_commitments[statement.tree_height - 1..]
             .iter()
             .map(|comm| verifier.commit(*comm))
             .collect_vec();
-
-        let leaf_vars = witness_commitments[statement.tree_height - 1..]
+        let opening_vars = witness_commitments[..statement.tree_height - 1]
             .iter()
             .map(|comm| verifier.commit(*comm))
             .collect_vec();
@@ -190,5 +190,87 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         verifier.verify(&proof, &bp_gens)
+    }
+}
+
+#[cfg(test)]
+mod merkle_test {
+    use ark_crypto_primitives::{
+        crh::poseidon::{TwoToOneCRH, CRH},
+        merkle_tree::{Config, IdentityDigestConverter},
+        MerkleTree,
+    };
+    use curve25519_dalek::scalar::Scalar;
+    use itertools::Itertools;
+    use rand_core::OsRng;
+
+    use crate::{
+        mpc_gadgets::poseidon::PoseidonSpongeParameters,
+        test_helpers::{
+            bulletproof_prove_and_verify, convert_params, felt_to_scalar, scalar_to_prime_field,
+            TestField,
+        },
+        zk_gadgets::merkle::PoseidonMerkleHashGadget,
+    };
+
+    use super::{MerkleStatement, MerkleWitness};
+
+    struct MerkleConfig {}
+    impl Config for MerkleConfig {
+        type Leaf = [TestField];
+        type LeafDigest = TestField;
+        type InnerDigest = TestField;
+
+        type LeafHash = CRH<TestField>;
+        type TwoToOneHash = TwoToOneCRH<TestField>;
+        type LeafInnerDigestConverter = IdentityDigestConverter<TestField>;
+    }
+
+    #[test]
+    fn test_against_arkworks() {
+        // A random input at the leaf
+        let mut rng = OsRng {};
+        let n = 6;
+        let tree_height = 10;
+        let leaf_data = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
+
+        // Compute the correct root via Arkworks
+        let poseidon_config = PoseidonSpongeParameters::default();
+        let arkworks_params = convert_params(&poseidon_config);
+
+        let arkworks_leaf_data = leaf_data.iter().map(scalar_to_prime_field).collect_vec();
+
+        let mut merkle_tree =
+            MerkleTree::<MerkleConfig>::blank(&arkworks_params, &arkworks_params, tree_height)
+                .unwrap();
+
+        merkle_tree
+            .update(0 /* index */, &arkworks_leaf_data)
+            .unwrap();
+
+        let expected_root = felt_to_scalar(&merkle_tree.root());
+        let opening = merkle_tree.generate_proof(0 /* index */).unwrap();
+        let mut opening_scalars = opening
+            .auth_path
+            .iter()
+            .rev() // Path comes in reverse
+            .map(felt_to_scalar)
+            .collect_vec();
+
+        // Add a zero to the opening scalar for the next leaf
+        opening_scalars.insert(0, Scalar::zero());
+
+        // Prove and verify the statement
+        let witness = MerkleWitness {
+            leaf_data,
+            opening: opening_scalars,
+        };
+
+        let statement = MerkleStatement {
+            expected_root,
+            tree_height,
+        };
+
+        bulletproof_prove_and_verify::<PoseidonMerkleHashGadget>(witness, statement).unwrap();
     }
 }
