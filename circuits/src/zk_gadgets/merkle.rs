@@ -202,6 +202,7 @@ mod merkle_test {
     };
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
+    use mpc_bulletproof::r1cs_mpc::R1CSError;
     use rand_core::OsRng;
 
     use crate::{
@@ -272,5 +273,55 @@ mod merkle_test {
         };
 
         bulletproof_prove_and_verify::<PoseidonMerkleHashGadget>(witness, statement).unwrap();
+    }
+
+    #[test]
+    fn test_invalid_witness() {
+        // A random input at the leaf
+        let mut rng = OsRng {};
+        let n = 6;
+        let tree_height = 10;
+        let leaf_data = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
+
+        // Compute the correct root via Arkworks
+        let poseidon_config = PoseidonSpongeParameters::default();
+        let arkworks_params = convert_params(&poseidon_config);
+
+        let arkworks_leaf_data = leaf_data.iter().map(scalar_to_prime_field).collect_vec();
+
+        let mut merkle_tree =
+            MerkleTree::<MerkleConfig>::blank(&arkworks_params, &arkworks_params, tree_height)
+                .unwrap();
+
+        merkle_tree
+            .update(0 /* index */, &arkworks_leaf_data)
+            .unwrap();
+
+        // Random (incorrect) root
+        let expected_root = Scalar::random(&mut rng);
+        let opening = merkle_tree.generate_proof(0 /* index */).unwrap();
+        let mut opening_scalars = opening
+            .auth_path
+            .iter()
+            .rev() // Path comes in reverse
+            .map(felt_to_scalar)
+            .collect_vec();
+
+        // Add a zero to the opening scalar for the next leaf
+        opening_scalars.insert(0, Scalar::zero());
+
+        // Prove and verify the statement
+        let witness = MerkleWitness {
+            leaf_data,
+            opening: opening_scalars,
+        };
+
+        let statement = MerkleStatement {
+            expected_root,
+            tree_height,
+        };
+
+        let res = bulletproof_prove_and_verify::<PoseidonMerkleHashGadget>(witness, statement);
+        assert_eq!(res, Err(R1CSError::VerificationError));
     }
 }
