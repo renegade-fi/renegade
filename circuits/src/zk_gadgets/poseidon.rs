@@ -384,22 +384,26 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
     /// Hashes the payload and then constrains the squeezed output to be the provided
     /// expected output.
-    pub fn hash<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
+    pub fn hash<L, CS>(
         &mut self,
         cs: &mut CS,
-        hash_input: &[MpcVariable<N, S>],
-        expected_output: &MpcVariable<N, S>,
-    ) -> Result<(), R1CSError> {
+        hash_input: &[L],
+        expected_output: &L,
+    ) -> Result<(), R1CSError>
+    where
+        L: Into<MpcLinearCombination<N, S>> + Clone,
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+    {
         self.batch_absorb(cs, hash_input)?;
-        self.constrained_squeeze(cs, expected_output)
+        self.constrained_squeeze(cs, expected_output.clone())
     }
 
     /// Absorb an input into the hasher state
-    pub fn absorb<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
-        &mut self,
-        cs: &mut CS,
-        a: &MpcVariable<N, S>,
-    ) -> Result<(), R1CSError> {
+    pub fn absorb<'b, L, CS>(&mut self, cs: &mut CS, a: L) -> Result<(), R1CSError>
+    where
+        L: Into<MpcLinearCombination<N, S>> + Clone,
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+    {
         assert!(
             !self.in_squeeze_state,
             "Cannot absorb from a sponge that has already been squeezed"
@@ -412,27 +416,25 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         }
 
         let access_index = self.next_index + self.params.capacity;
-        self.state[access_index] = &self.state[access_index] + a;
+        self.state[access_index] = &self.state[access_index] + a.into();
         self.next_index += 1;
         Ok(())
     }
 
     /// Absorb a batch of inputs into the hasher state
-    pub fn batch_absorb<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
-        &mut self,
-        cs: &mut CS,
-        a: &[MpcVariable<N, S>],
-    ) -> Result<(), R1CSError> {
-        a.iter().try_for_each(|val| self.absorb(cs, val))
+    pub fn batch_absorb<L, CS>(&mut self, cs: &mut CS, a: &[L]) -> Result<(), R1CSError>
+    where
+        L: Into<MpcLinearCombination<N, S>> + Clone,
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+    {
+        a.iter().try_for_each(|val| self.absorb(cs, val.clone()))
     }
 
-    /// Squeeze an output from the hasher, and constraint its value to equal the
-    /// provided statement variable.
-    pub fn constrained_squeeze<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
-        &mut self,
-        cs: &mut CS,
-        expected: &MpcVariable<N, S>,
-    ) -> Result<(), R1CSError> {
+    /// Squeeze an output from the hasher and return to the caller
+    pub fn squeeze<CS>(&mut self, cs: &mut CS) -> Result<MpcLinearCombination<N, S>, R1CSError>
+    where
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+    {
         // Once we exit the absorb state, ensure that the digest state is permuted before squeezing
         if !self.in_squeeze_state || self.next_index == self.params.rate {
             self.permute(cs)?;
@@ -440,20 +442,49 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
             self.in_squeeze_state = true;
         }
 
-        cs.constrain(&self.state[self.params.capacity + self.next_index] - expected);
+        Ok(self.state[self.params.capacity + self.next_index].clone())
+    }
+
+    /// Squeeze an output from the hasher, and constraint its value to equal the
+    /// provided statement variable.
+    pub fn constrained_squeeze<L, CS>(&mut self, cs: &mut CS, expected: L) -> Result<(), R1CSError>
+    where
+        L: Into<MpcLinearCombination<N, S>> + Clone,
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+    {
+        let squeezed = self.squeeze(cs)?;
+        cs.constrain(squeezed - expected);
         Ok(())
+    }
+
+    /// Squeeze a batch of elements from the hasher
+    pub fn batch_squeeze<CS>(
+        &mut self,
+        cs: &mut CS,
+        num_elems: usize,
+    ) -> Result<Vec<MpcLinearCombination<N, S>>, R1CSError>
+    where
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+    {
+        (0..num_elems)
+            .map(|_| self.squeeze(cs))
+            .collect::<Result<Vec<_>, R1CSError>>()
     }
 
     /// Squeeze a set of elements from the hasher, and constraint the elements to be equal
     /// to the provided statement variables
-    pub fn batch_constrained_squeeze<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
+    pub fn batch_constrained_squeeze<L, CS>(
         &mut self,
         cs: &mut CS,
         expected: &[MpcVariable<N, S>],
-    ) -> Result<(), R1CSError> {
+    ) -> Result<(), R1CSError>
+    where
+        L: Into<MpcLinearCombination<N, S>> + Clone,
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+    {
         expected
             .iter()
-            .try_for_each(|val| self.constrained_squeeze(cs, val))
+            .try_for_each(|val| self.constrained_squeeze(cs, val.clone()))
     }
 
     /// Permute the digest by applying the Poseidon round function

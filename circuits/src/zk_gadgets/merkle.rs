@@ -6,15 +6,25 @@ use mpc_bulletproof::{
     r1cs::{
         LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
     },
-    r1cs_mpc::R1CSError,
+    r1cs_mpc::{
+        MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MpcVariable,
+        MultiproverError, R1CSError, SharedR1CSProof,
+    },
     BulletproofGens,
 };
+use mpc_ristretto::{
+    authenticated_ristretto::AuthenticatedCompressedRistretto,
+    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+};
 use rand_core::OsRng;
-use std::ops::Neg;
+use std::{marker::PhantomData, ops::Neg};
 
-use crate::{mpc_gadgets::poseidon::PoseidonSpongeParameters, SingleProverCircuit};
+use crate::{
+    mpc::SharedFabric, mpc_gadgets::poseidon::PoseidonSpongeParameters, MultiProverCircuit,
+    SingleProverCircuit,
+};
 
-use super::poseidon::PoseidonHashGadget;
+use super::poseidon::{MultiproverPoseidonHashGadget, PoseidonHashGadget};
 
 /// The single-prover hash gadget, computes the Merkle root of a leaf given a path
 /// of sister nodes
@@ -262,6 +272,235 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         verifier.verify(&proof, &bp_gens)
+    }
+}
+
+/// Mulitprover gadget for Merkle proofs inside of a collaborative Bulletproof
+pub struct MultiproverPoseidonMerkleGadget<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    _phantom: &'a PhantomData<(N, S)>,
+}
+
+impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
+    MultiproverPoseidonMerkleGadget<'a, N, S>
+{
+    /// Compute the root of the tree given the leaf node and the path of
+    /// sister nodes leading to the root
+    pub fn compute_root<L, CS>(
+        cs: &mut CS,
+        leaf_node: Vec<L>,
+        opening: Vec<MpcVariable<N, S>>,
+        opening_indices: Vec<MpcVariable<N, S>>,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<MpcLinearCombination<N, S>, R1CSError>
+    where
+        L: Into<MpcLinearCombination<N, S>> + Clone,
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+    {
+        assert_eq!(opening.len(), opening_indices.len());
+
+        // Hash the leaf_node into a field element
+        let mut current_hash = Self::leaf_hash(&leaf_node, cs, fabric.clone())?;
+        for (path_elem, lr_select) in opening.into_iter().zip(opening_indices.into_iter()) {
+            // Select the left and right hand sides based on whether this node in the opening represents the
+            // left or right hand child of its parent
+            let (lhs, rhs) = Self::select_left_right(
+                cs,
+                current_hash.clone(),
+                path_elem.into(),
+                lr_select.into(),
+                fabric.clone(),
+            );
+            current_hash = Self::hash_internal_nodes(&lhs, &rhs, cs, fabric.clone())?;
+        }
+
+        Ok(current_hash)
+    }
+
+    /// Selects whether to place the current hash on the left or right hand
+    /// side of the 2-1 hash.
+    ///
+    /// This is based on whether the current hash represents the left or right
+    /// child of its parent to be computed
+    fn select_left_right<L, CS>(
+        cs: &mut CS,
+        current_hash: L,
+        sister_node: L,
+        lr_select: L,
+        fabric: SharedFabric<N, S>,
+    ) -> (MpcLinearCombination<N, S>, MpcLinearCombination<N, S>)
+    where
+        L: Into<MpcLinearCombination<N, S>> + Clone,
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+    {
+        let current_hash_lc = current_hash.into();
+        let sister_node_lc = sister_node.into();
+        let lr_select_lc = lr_select.into();
+
+        // If lr_select == 0 { current_hash } else { sister_node }
+        //      ==> current_hash * (1 - lr_select) + sister_node * lr_select
+        let (_, _, left_child_term1) = cs.multiply(
+            &current_hash_lc,
+            &(lr_select_lc.clone().neg()
+                + MpcLinearCombination::from_scalar(Scalar::one(), fabric.0)),
+        );
+        let (_, _, left_child_term2) = cs.multiply(&sister_node_lc, &lr_select_lc);
+
+        let left_child = left_child_term1 + left_child_term2;
+
+        // If lr_select == 0 { sister_node } else { current_hash }
+        // We can avoid an extra multiplication here, because we know the lhs term, the rhs term is
+        // equal to the other term, which can be computed by addition alone
+        //      rhs = a + b - lhs
+        let right_child = current_hash_lc + sister_node_lc - left_child.clone();
+        (left_child, right_child)
+    }
+
+    /// Compute the root and constrain it to an expected value
+    pub fn compute_and_constrain_root<L, CS>(
+        cs: &mut CS,
+        leaf_node: Vec<L>,
+        opening: Vec<MpcVariable<N, S>>,
+        opening_indices: Vec<MpcVariable<N, S>>,
+        expected_root: L,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<(), R1CSError>
+    where
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L: Into<MpcLinearCombination<N, S>> + Clone,
+    {
+        let root = Self::compute_root(cs, leaf_node, opening, opening_indices, fabric)?;
+        cs.constrain(expected_root.into() - root);
+
+        Ok(())
+    }
+
+    /// Hash the value at the leaf into a bulletproof constraint value
+    fn leaf_hash<L, CS>(
+        values: &[L],
+        cs: &mut CS,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<MpcLinearCombination<N, S>, R1CSError>
+    where
+        L: Into<MpcLinearCombination<N, S>> + Clone,
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+    {
+        // Build a sponge hasher
+        let hasher_params = PoseidonSpongeParameters::default();
+        let mut hasher = MultiproverPoseidonHashGadget::new(hasher_params, fabric);
+        hasher.batch_absorb(cs, values)?;
+
+        hasher.squeeze(cs)
+    }
+
+    /// Hash two internal nodes in the (binary) Merkle tree, giving the tree value at
+    /// the parent node
+    fn hash_internal_nodes<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
+        left: &MpcLinearCombination<N, S>,
+        right: &MpcLinearCombination<N, S>,
+        cs: &mut CS,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<MpcLinearCombination<N, S>, R1CSError> {
+        let hasher_params = PoseidonSpongeParameters::default();
+        let mut hasher = MultiproverPoseidonHashGadget::new(hasher_params, fabric);
+        hasher.batch_absorb(cs, &[left.clone(), right.clone()])?;
+
+        hasher.squeeze(cs)
+    }
+}
+
+/// The witness to the statement defined by the Merkle gadget; that is one of
+/// Merkle inclusion
+#[derive(Clone, Debug)]
+pub struct MultiproverMerkleWitness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The opening from the leaf node to the root, i.e. the set of sister nodes
+    /// that hash together with the input from the leaf to the root
+    pub opening: Vec<AuthenticatedScalar<N, S>>,
+    /// The opening indices from the leaf node to the root, each value is zero or
+    /// one: 0 indicating that the node in the opening at index i is a left hand
+    /// child of its parent, 1 indicating it's a right hand child
+    pub opening_indices: Vec<AuthenticatedScalar<N, S>>,
+    /// The preimage for the leaf i.e. the value that is sponge hashed into the leaf
+    pub leaf_data: Vec<AuthenticatedScalar<N, S>>,
+}
+
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<'a, N, S>
+    for MultiproverPoseidonMerkleGadget<'a, N, S>
+{
+    type Witness = MultiproverMerkleWitness<N, S>;
+    type Statement = MerkleStatement;
+
+    const BP_GENS_CAPACITY: usize = 8192;
+
+    fn prove(
+        witness: Self::Witness,
+        statement: Self::Statement,
+        mut prover: MpcProver<'a, '_, '_, N, S>,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<
+        (
+            Vec<AuthenticatedCompressedRistretto<N, S>>,
+            SharedR1CSProof<N, S>,
+        ),
+        MultiproverError,
+    > {
+        assert_eq!(witness.opening.len(), witness.opening_indices.len());
+
+        // Commit to the private variables all together to save communication
+        let mut rng = OsRng {};
+        let opening_length = witness.opening.len();
+        let num_witness_commits = 2 * opening_length + witness.leaf_data.len();
+
+        let (witness_comm, witness_vars) = prover
+            .batch_commit_preshared(
+                &witness
+                    .opening
+                    .into_iter()
+                    .chain(witness.opening_indices.into_iter())
+                    .chain(witness.leaf_data.into_iter())
+                    .collect_vec(),
+                &(0..num_witness_commits)
+                    .map(|_| {
+                        fabric
+                            .borrow_fabric()
+                            .allocate_preshared_scalar(Scalar::random(&mut rng))
+                    })
+                    .collect_vec(),
+            )
+            .map_err(MultiproverError::Mpc)?;
+
+        // Split commitments back into unchained variables
+        let opening_vars = witness_vars[..opening_length].to_vec();
+        let indices_vars = witness_vars[opening_length..2 * opening_length].to_vec();
+        let leaf_data_vars = witness_vars[2 * opening_length..].to_vec();
+
+        let (_, root_var) = prover.commit_public(statement.expected_root);
+
+        // Apply the constraints
+        Self::compute_and_constrain_root(
+            &mut prover,
+            leaf_data_vars,
+            opening_vars,
+            indices_vars,
+            root_var,
+            fabric,
+        )
+        .map_err(MultiproverError::ProverError)?;
+
+        // Prove the statement
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        let proof = prover.prove(&bp_gens)?;
+
+        Ok((witness_comm, proof))
+    }
+
+    fn verify(
+        witness_commitments: &[CompressedRistretto],
+        statement: Self::Statement,
+        proof: R1CSProof,
+        verifier: Verifier,
+    ) -> Result<(), R1CSError> {
+        // Forward to the single prover verifier
+        PoseidonMerkleHashGadget::verify(witness_commitments, statement, proof, verifier)
     }
 }
 
