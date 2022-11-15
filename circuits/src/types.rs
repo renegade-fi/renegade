@@ -10,6 +10,7 @@ use mpc_ristretto::{
 use crate::{
     constants::{MAX_BALANCES, MAX_ORDERS},
     errors::{MpcError, TypeConversionError},
+    mpc::SharedFabric,
     Allocate, Open,
 };
 
@@ -77,6 +78,81 @@ pub struct Balance {
     pub mint: u64,
     /// The amount of the given token stored in this balance
     pub amount: u64,
+}
+
+/// Convert a vector of u64s to a Balance
+impl TryFrom<&[u64]> for Balance {
+    type Error = TypeConversionError;
+
+    fn try_from(values: &[u64]) -> Result<Self, Self::Error> {
+        if values.len() != 2 {
+            return Err(TypeConversionError(format!(
+                "expected array of length 2, got {:?}",
+                values.len()
+            )));
+        }
+
+        Ok(Self {
+            mint: values[0],
+            amount: values[1],
+        })
+    }
+}
+
+impl From<&Balance> for Vec<u64> {
+    fn from(balance: &Balance) -> Self {
+        vec![balance.mint, balance.amount]
+    }
+}
+
+/// Represents a balance tuple that has been allocated in the network as
+/// and authenticated field element
+#[derive(Clone, Debug)]
+pub struct AuthenticatedBalance<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The mint (ERC-20 token address) of the token in the balance
+    pub mint: AuthenticatedScalar<N, S>,
+    /// The amount of the given token stored in this balance
+    pub amount: AuthenticatedScalar<N, S>,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> TryFrom<&[AuthenticatedScalar<N, S>]>
+    for AuthenticatedBalance<N, S>
+{
+    type Error = MpcError;
+
+    fn try_from(values: &[AuthenticatedScalar<N, S>]) -> Result<Self, Self::Error> {
+        if values.len() != 2 {
+            return Err(MpcError::SerializationError(format!(
+                "Expected 2 values, got {:?}",
+                values.len()
+            )));
+        }
+
+        Ok(Self {
+            mint: values[0].clone(),
+            amount: values[1].clone(),
+        })
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Balance {
+    type Output = AuthenticatedBalance<N, S>;
+
+    fn allocate(
+        &self,
+        owning_party: u64,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self::Output, MpcError> {
+        let authenticated_values = fabric
+            .borrow_fabric()
+            .batch_allocate_private_u64s(owning_party, &[self.mint, self.amount])
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+
+        Ok(Self::Output {
+            mint: authenticated_values[0].clone(),
+            amount: authenticated_values[1].clone(),
+        })
+    }
 }
 
 /// Represents an order and its analog in the consraint system
