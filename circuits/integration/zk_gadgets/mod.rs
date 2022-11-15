@@ -1,5 +1,6 @@
 //! Groups tests for zero knowledge proof gadgets
 mod arithmetic;
+mod merkle;
 mod poseidon;
 
 use circuits::{mpc::SharedFabric, MultiProverCircuit};
