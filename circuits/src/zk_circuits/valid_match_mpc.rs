@@ -12,7 +12,7 @@ use std::marker::PhantomData;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
-    r1cs::{R1CSProof, Verifier},
+    r1cs::{LinearCombination, R1CSProof, RandomizableConstraintSystem, Verifier},
     r1cs_mpc::{
         MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MultiproverError,
         R1CSError, SharedR1CSProof,
@@ -29,7 +29,7 @@ use crate::{
     mpc::SharedFabric,
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
     types::{AuthenticatedMatch, Balance, Order},
-    zk_gadgets::poseidon::MultiproverPoseidonHashGadget,
+    zk_gadgets::poseidon::{MultiproverPoseidonHashGadget, PoseidonHashGadget},
     MultiProverCircuit,
 };
 
@@ -66,6 +66,24 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         let hash_params = PoseidonSpongeParameters::default();
         let mut hasher = MultiproverPoseidonHashGadget::new(hash_params, fabric);
         hasher.hash(cs, input, expected_out)
+    }
+
+    /// The single prover version of the input consistency check
+    ///
+    /// Used to apply constraints to a verifier or for local testing
+    pub(crate) fn input_consistency_single_prover<L, CS>(
+        cs: &mut CS,
+        input: &[L],
+        expected_out: &L,
+    ) -> Result<(), R1CSError>
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        // Build a hasher and constrain the hash of the input to equal the expected output
+        let hash_params = PoseidonSpongeParameters::default();
+        let mut hasher = PoseidonHashGadget::new(hash_params);
+        hasher.hash(cs, input, expected_out.clone())
     }
 }
 
@@ -190,6 +208,34 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         proof: R1CSProof,
         mut verifier: Verifier,
     ) -> Result<(), R1CSError> {
-        unimplemented!("verifier not implemented")
+        // Commit to the input variables from the provers
+        let witness_vars = witness_commitments
+            .iter()
+            .map(|comm| verifier.commit(*comm))
+            .collect_vec();
+
+        // Split witness into consituent parts
+        let inputs_per_party = ORDER_LENGTH_SCALARS + BALANCE_LEGNTH_SCALARS;
+
+        let party0_order = witness_vars[..ORDER_LENGTH_SCALARS].to_vec();
+        let party0_balance = witness_vars[ORDER_LENGTH_SCALARS..inputs_per_party].to_vec();
+        let party1_order =
+            witness_vars[inputs_per_party..inputs_per_party + ORDER_LENGTH_SCALARS].to_vec();
+        let party1_balance = witness_vars[inputs_per_party + ORDER_LENGTH_SCALARS..].to_vec();
+
+        // Commit to the statement variables
+        let hash_o1_var = verifier.commit_public(statement.hash_order1);
+        let hash_b1_var = verifier.commit_public(statement.hash_balance1);
+        let hash_o2_var = verifier.commit_public(statement.hash_order2);
+        let hash_b2_var = verifier.commit_public(statement.hash_balance2);
+
+        // Apply constraints to the verifier
+        Self::input_consistency_single_prover(&mut verifier, &party0_order, &hash_o1_var)?;
+        Self::input_consistency_single_prover(&mut verifier, &party0_balance, &hash_b1_var)?;
+        Self::input_consistency_single_prover(&mut verifier, &party1_order, &hash_o2_var)?;
+        Self::input_consistency_single_prover(&mut verifier, &party1_balance, &hash_b2_var)?;
+
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        verifier.verify(&proof, &bp_gens)
     }
 }
