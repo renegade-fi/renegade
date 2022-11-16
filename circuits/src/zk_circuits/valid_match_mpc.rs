@@ -28,13 +28,13 @@ use rand_core::OsRng;
 use crate::{
     mpc::SharedFabric,
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    types::{AuthenticatedMatch, Balance, Order},
+    types::{AuthenticatedMatch, Balance, BalanceVar, Order, OrderVar},
     zk_gadgets::poseidon::{MultiproverPoseidonHashGadget, PoseidonHashGadget},
     MultiProverCircuit,
 };
 
-const ORDER_LENGTH_SCALARS: usize = 3; // mint, amount, direction
-const BALANCE_LEGNTH_SCALARS: usize = 2; // amount, direction
+const ORDER_LENGTH_SCALARS: usize = 5; // mint1, mint2, direction, price, amount
+const BALANCE_LENGTH_SCALARS: usize = 2; // amount, direction
 
 /// The circuitry for the valid match
 ///
@@ -97,10 +97,10 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 #[derive(Clone, Debug)]
 pub struct ValidMatchMpcWitness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The local party's order that was matched by MPC
-    pub my_order: Order,
+    pub my_order: OrderVar,
     /// A balance known by the local party that covers the position
     /// expressed in their order
-    pub my_balance: Balance,
+    pub my_balance: BalanceVar,
     /// The result of running a match MPC on the given orders
     ///
     /// We do not open this value before proving so that we can avoid leaking information
@@ -147,15 +147,14 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
     > {
         // Commit to party 0's inputs first, then party 1's inputs
         let mut rng = OsRng {};
-        let blinders = (0..ORDER_LENGTH_SCALARS + BALANCE_LEGNTH_SCALARS)
+        let blinders = (0..ORDER_LENGTH_SCALARS + BALANCE_LENGTH_SCALARS)
             .map(|_| Scalar::random(&mut rng))
             .collect_vec();
 
         // The input values of the local party
-        let my_input_values = Into::<Vec<u64>>::into(&witness.my_order)
+        let my_input_values = Into::<Vec<Scalar>>::into(&witness.my_order)
             .into_iter()
-            .chain(Into::<Vec<u64>>::into(&witness.my_balance).into_iter())
-            .map(Scalar::from)
+            .chain(Into::<Vec<Scalar>>::into(&witness.my_balance).into_iter())
             .collect_vec();
 
         let (party0_comm, party0_vars) = prover
@@ -215,7 +214,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
             .collect_vec();
 
         // Split witness into consituent parts
-        let inputs_per_party = ORDER_LENGTH_SCALARS + BALANCE_LEGNTH_SCALARS;
+        let inputs_per_party = ORDER_LENGTH_SCALARS + BALANCE_LENGTH_SCALARS;
 
         let party0_order = witness_vars[..ORDER_LENGTH_SCALARS].to_vec();
         let party0_balance = witness_vars[ORDER_LENGTH_SCALARS..inputs_per_party].to_vec();

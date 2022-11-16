@@ -105,6 +105,41 @@ impl From<&Balance> for Vec<u64> {
     }
 }
 
+/// A balance with values represented in the scalar field of the Dalek
+/// Ristretto group
+#[derive(Clone, Debug)]
+pub struct BalanceVar {
+    /// The mint (ERC-20 token address) of the token in the balance
+    pub mint: Scalar,
+    /// The amount of the given token stored in this balance
+    pub amount: Scalar,
+}
+
+/// Convert a vector of u64s to a Balance
+impl TryFrom<&[Scalar]> for BalanceVar {
+    type Error = TypeConversionError;
+
+    fn try_from(values: &[Scalar]) -> Result<Self, Self::Error> {
+        if values.len() != 2 {
+            return Err(TypeConversionError(format!(
+                "expected array of length 2, got {:?}",
+                values.len()
+            )));
+        }
+
+        Ok(Self {
+            mint: values[0],
+            amount: values[1],
+        })
+    }
+}
+
+impl From<&BalanceVar> for Vec<Scalar> {
+    fn from(balance: &BalanceVar) -> Self {
+        vec![balance.mint, balance.amount]
+    }
+}
+
 /// Represents a balance tuple that has been allocated in the network as
 /// and authenticated field element
 #[derive(Clone, Debug)]
@@ -210,6 +245,61 @@ impl TryFrom<&[u64]> for Order {
 impl From<&Order> for Vec<u64> {
     fn from(o: &Order) -> Self {
         vec![o.quote_mint, o.base_mint, o.side.into(), o.price, o.amount]
+    }
+}
+
+/// An order in which all the values are represented as elements of the
+/// Dalek Ristretto scalar field
+#[derive(Clone, Debug)]
+pub struct OrderVar {
+    /// The mint (ERC-20 contract address) of the quote token
+    pub quote_mint: Scalar,
+    /// The mint (ERC-20 contract address) of the base token
+    pub base_mint: Scalar,
+    /// The side this order is for (0 = buy, 1 = sell)
+    pub side: Scalar,
+    /// The limit price to be executed at, in units of quote
+    pub price: Scalar,
+    /// The amount of base currency to buy or sell
+    pub amount: Scalar,
+}
+
+/// Convert a vector of u64s to an Order
+impl TryFrom<&[Scalar]> for OrderVar {
+    type Error = TypeConversionError;
+
+    fn try_from(value: &[Scalar]) -> Result<Self, Self::Error> {
+        if value.len() != 5 {
+            return Err(TypeConversionError(format!(
+                "expected array of length 5, got {:?}",
+                value.len()
+            )));
+        }
+
+        // Check that the side is 0 or 1
+        if !(value[2] == Scalar::zero() || value[2] == Scalar::one()) {
+            return Err(TypeConversionError(format!(
+                "Order side must be 0 or 1, got {:?}",
+                value[2]
+            )));
+        }
+
+        Ok(Self {
+            quote_mint: value[0],
+            base_mint: value[1],
+            side: value[2],
+            price: value[3],
+            amount: value[4],
+        })
+    }
+}
+
+/// Convert an order to a vector of u64s
+///
+/// Useful for allocating, sharing, serialization, etc
+impl From<&OrderVar> for Vec<Scalar> {
+    fn from(o: &OrderVar) -> Self {
+        vec![o.quote_mint, o.base_mint, o.side, o.price, o.amount]
     }
 }
 

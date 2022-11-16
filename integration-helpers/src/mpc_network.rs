@@ -8,6 +8,7 @@ use curve25519_dalek::scalar::Scalar;
 use dns_lookup::lookup_host;
 use futures::executor::block_on;
 use mpc_ristretto::{
+    authenticated_scalar::AuthenticatedScalar,
     beaver::SharedValueSource,
     fabric::AuthenticatedMpcFabric,
     network::{MpcNetwork, QuicTwoPartyNet},
@@ -25,6 +26,46 @@ pub type SharedFabric<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> =
 /**
  * Helpers
  */
+
+/// Helper to share a plaintext value with the peer over a fabric
+///
+/// This method is inefficient, but practical for tests
+pub fn share_plaintext_scalar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    value: Scalar,
+    owning_party: u64,
+    fabric: SharedFabric<N, S>,
+) -> Scalar {
+    fabric
+        .as_ref()
+        .borrow()
+        .allocate_private_scalar(owning_party, value)
+        .unwrap()
+        .open()
+        .unwrap()
+        .to_scalar()
+}
+
+/// Helper to share a batch of plaintext values with the peer over a fabric
+///
+/// As above, this method is relatively inefficient, but okay for tests
+pub fn batch_share_plaintext_scalar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    values: &[Scalar],
+    owning_party: u64,
+    fabric: SharedFabric<N, S>,
+) -> Vec<Scalar> {
+    let shared_values = fabric
+        .as_ref()
+        .borrow()
+        .batch_allocate_private_scalars(owning_party, values)
+        .unwrap();
+
+    AuthenticatedScalar::batch_open(&shared_values)
+        .unwrap()
+        .iter()
+        .map(|val| val.to_scalar())
+        .collect::<Vec<_>>()
+}
+
 /// Mocks out an MPC fabric, unlike the method below, no actual communication channel is
 /// created. The method below returns a fabric to be used in integration tests.
 pub fn mock_mpc_fabric(party_id: u64) -> SharedFabric<MockMpcNet, PartyIDBeaverSource> {
