@@ -10,7 +10,7 @@ use circuits::{
     },
 };
 use curve25519_dalek::scalar::Scalar;
-use integration_helpers::{mpc_network::share_plaintext_scalar, types::IntegrationTest};
+use integration_helpers::{mpc_network::batch_share_plaintext_scalar, types::IntegrationTest};
 use itertools::Itertools;
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 use rand_core::OsRng;
@@ -64,40 +64,32 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
     let my_random_order = random_scalars(ORDER_LENGTH_SCALARS);
     let my_random_balance = random_scalars(BALANCE_LENGTH_SCALARS);
     let my_random_fee = random_scalars(FEE_LENGTH_SCALARS);
+    let my_wallet_randomness = random_scalars(1 /* n */);
 
     // Hash the values with Arkworks hasher to get an expected input consistency value
     let my_order_hash = hash_values_arkworks(&my_random_order);
     let my_balance_hash = hash_values_arkworks(&my_random_balance);
     let my_fee_hash = hash_values_arkworks(&my_random_fee);
+    let my_randomness_hash = hash_values_arkworks(&my_wallet_randomness);
 
     // Share random hashes to build the statement
-    let p0_order_hash = share_plaintext_scalar(
-        my_order_hash,
+    let p0_values = batch_share_plaintext_scalar(
+        &[
+            my_order_hash,
+            my_balance_hash,
+            my_fee_hash,
+            my_randomness_hash,
+        ],
         0, /* owning_party */
         test_args.mpc_fabric.0.clone(),
     );
-    let p0_balance_hash = share_plaintext_scalar(
-        my_balance_hash,
-        0, /* owning_party */
-        test_args.mpc_fabric.0.clone(),
-    );
-    let p0_fee_hash = share_plaintext_scalar(
-        my_fee_hash,
-        0, /* owning_party */
-        test_args.mpc_fabric.0.clone(),
-    );
-    let p1_order_hash = share_plaintext_scalar(
-        my_order_hash,
-        1, /* owning_party */
-        test_args.mpc_fabric.0.clone(),
-    );
-    let p1_balance_hash = share_plaintext_scalar(
-        my_balance_hash,
-        1, /* owning_party */
-        test_args.mpc_fabric.0.clone(),
-    );
-    let p1_fee_hash = share_plaintext_scalar(
-        my_fee_hash,
+    let p1_values = batch_share_plaintext_scalar(
+        &[
+            my_order_hash,
+            my_balance_hash,
+            my_fee_hash,
+            my_randomness_hash,
+        ],
         1, /* owning_party */
         test_args.mpc_fabric.0.clone(),
     );
@@ -124,12 +116,14 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
     };
 
     let statement = ValidMatchMpcStatement {
-        hash_order1: p0_order_hash,
-        hash_balance1: p0_balance_hash,
-        hash_fee1: p0_fee_hash,
-        hash_order2: p1_order_hash,
-        hash_balance2: p1_balance_hash,
-        hash_fee2: p1_fee_hash,
+        hash_order1: p0_values[0],
+        hash_balance1: p0_values[1],
+        hash_fee1: p0_values[2],
+        hash_randomness1: p0_values[3],
+        hash_order2: p1_values[0],
+        hash_balance2: p1_values[1],
+        hash_fee2: p1_values[2],
+        hash_randomness2: p1_values[3],
     };
 
     multiprover_prove_and_verify::<'_, _, _, ValidMatchMpcCircuit<'_, _, _>>(

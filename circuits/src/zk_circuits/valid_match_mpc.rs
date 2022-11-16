@@ -28,7 +28,10 @@ use rand_core::OsRng;
 use crate::{
     mpc::SharedFabric,
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    types::{AuthenticatedMatch, Balance, BalanceVar, FeeVar, Order, OrderVar},
+    types::{
+        AuthenticatedMatch, AuthenticatedSingleMatchResult, Balance, BalanceVar, FeeVar, Order,
+        OrderVar,
+    },
     zk_gadgets::poseidon::{MultiproverPoseidonHashGadget, PoseidonHashGadget},
     MultiProverCircuit,
 };
@@ -124,12 +127,16 @@ pub struct ValidMatchMpcStatement {
     pub hash_balance1: Scalar,
     /// The expected hash of the first party's fee
     pub hash_fee1: Scalar,
+    /// The expected hash of the first party's randomness
+    pub hash_randomness1: Scalar,
     /// The expected hash of the second order
     pub hash_order2: Scalar,
     /// The expected hash of the sceond balance
     pub hash_balance2: Scalar,
     /// The expected hash of the second party's fee
     pub hash_fee2: Scalar,
+    /// The expected hash of the second party's randomness
+    pub hash_randomness2: Scalar,
 }
 
 /// Prover implementation of the Valid Match circuit
