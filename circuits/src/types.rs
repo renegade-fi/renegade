@@ -6,6 +6,7 @@ use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource,
     mpc_scalar::scalar_to_u64, network::MpcNetwork,
 };
+use num_bigint::BigUint;
 
 use crate::{
     constants::{MAX_BALANCES, MAX_ORDERS},
@@ -141,7 +142,7 @@ impl From<&BalanceVar> for Vec<Scalar> {
 }
 
 /// Represents a balance tuple that has been allocated in the network as
-/// and authenticated field element
+/// an authenticated field element
 #[derive(Clone, Debug)]
 pub struct AuthenticatedBalance<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The mint (ERC-20 token address) of the token in the balance
@@ -388,6 +389,150 @@ impl From<OrderSide> for u8 {
             OrderSide::Buy => 0,
             OrderSide::Sell => 1,
         }
+    }
+}
+
+/// Represents a fee-tuple in the state
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Fee {
+    /// The public settle key of the cluster collecting fees
+    pub settle_key: BigUint,
+    /// The mint (ERC-20 Address) of the token used to pay gas
+    pub gas_addr: BigUint,
+    /// The amount of the mint token to use for gas
+    pub gas_token_amount: u64,
+    /// The percentage fee that the cluster may take upon match
+    /// For now this is encoded as a u64, which represents a
+    /// fixed point rational under the hood
+    pub percentage_fee: u64,
+}
+
+impl TryFrom<&[u64]> for Fee {
+    type Error = TypeConversionError;
+
+    fn try_from(values: &[u64]) -> Result<Self, Self::Error> {
+        if values.len() != 4 {
+            return Err(TypeConversionError(format!(
+                "expected array of length 4, got {:?}",
+                values.len()
+            )));
+        }
+
+        Ok(Self {
+            settle_key: BigUint::from(values[0]),
+            gas_addr: BigUint::from(values[1]),
+            gas_token_amount: values[2],
+            percentage_fee: values[3],
+        })
+    }
+}
+
+impl From<&Fee> for Vec<u64> {
+    fn from(fee: &Fee) -> Self {
+        vec![
+            fee.settle_key.clone().try_into().unwrap(),
+            fee.gas_addr.clone().try_into().unwrap(),
+            fee.gas_token_amount,
+            fee.percentage_fee,
+        ]
+    }
+}
+
+/// A fee with values represented in the scalar field of the Dalek
+/// Ristretto group
+#[derive(Clone, Debug)]
+pub struct FeeVar {
+    /// The public settle key of the cluster collecting fees
+    pub settle_key: Scalar,
+    /// The mint (ERC-20 Address) of the token used to pay gas
+    pub gas_addr: Scalar,
+    /// The amount of the mint token to use for gas
+    pub gas_token_amount: Scalar,
+    /// The percentage fee that the cluster may take upon match
+    /// For now this is encoded as a u64, which represents a
+    /// fixed point rational under the hood
+    pub percentage_fee: Scalar,
+}
+
+impl TryFrom<&[Scalar]> for FeeVar {
+    type Error = TypeConversionError;
+
+    fn try_from(values: &[Scalar]) -> Result<Self, Self::Error> {
+        if values.len() != 4 {
+            return Err(TypeConversionError(format!(
+                "expected array of length 4, got {:?}",
+                values.len()
+            )));
+        }
+
+        Ok(Self {
+            settle_key: values[0],
+            gas_addr: values[1],
+            gas_token_amount: values[2],
+            percentage_fee: values[3],
+        })
+    }
+}
+
+impl From<&FeeVar> for Vec<Scalar> {
+    fn from(fee: &FeeVar) -> Self {
+        vec![
+            fee.settle_key,
+            fee.gas_addr,
+            fee.gas_token_amount,
+            fee.percentage_fee,
+        ]
+    }
+}
+
+/// Represents a fee tuple that has been allocated in the network as
+/// an Authenticated field element
+#[derive(Clone, Debug)]
+pub struct AuthenticatedFee<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The public settle key of the cluster collecting fees
+    pub settle_key: AuthenticatedScalar<N, S>,
+    /// The mint (ERC-20 Address) of the token used to pay gas
+    pub gas_addr: AuthenticatedScalar<N, S>,
+    /// The amount of the mint token to use for gas
+    pub gas_token_amount: AuthenticatedScalar<N, S>,
+    /// The percentage fee that the cluster may take upon match
+    /// For now this is encoded as a u64, which represents a
+    /// fixed point rational under the hood
+    pub percentage_fee: AuthenticatedScalar<N, S>,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> TryFrom<&[AuthenticatedScalar<N, S>]>
+    for AuthenticatedFee<N, S>
+{
+    type Error = MpcError;
+
+    fn try_from(values: &[AuthenticatedScalar<N, S>]) -> Result<Self, Self::Error> {
+        if values.len() != 4 {
+            return Err(MpcError::SerializationError(format!(
+                "Expected 4 values, got {:?}",
+                values.len()
+            )));
+        }
+
+        Ok(Self {
+            settle_key: values[0].clone(),
+            gas_addr: values[1].clone(),
+            gas_token_amount: values[2].clone(),
+            percentage_fee: values[3].clone(),
+        })
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<&AuthenticatedFee<N, S>>
+    for Vec<AuthenticatedScalar<N, S>>
+{
+    fn from(fee: &AuthenticatedFee<N, S>) -> Self {
+        vec![
+            fee.settle_key.clone(),
+            fee.gas_addr.clone(),
+            fee.gas_token_amount.clone(),
+            fee.percentage_fee.clone(),
+        ]
     }
 }
 
