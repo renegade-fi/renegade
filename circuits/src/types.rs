@@ -65,31 +65,6 @@ pub struct BalanceVar {
     pub amount: Scalar,
 }
 
-/// Convert a vector of u64s to a Balance
-impl TryFrom<&[Scalar]> for BalanceVar {
-    type Error = TypeConversionError;
-
-    fn try_from(values: &[Scalar]) -> Result<Self, Self::Error> {
-        if values.len() != 2 {
-            return Err(TypeConversionError(format!(
-                "expected array of length 2, got {:?}",
-                values.len()
-            )));
-        }
-
-        Ok(Self {
-            mint: values[0],
-            amount: values[1],
-        })
-    }
-}
-
-impl From<&BalanceVar> for Vec<Scalar> {
-    fn from(balance: &BalanceVar) -> Self {
-        vec![balance.mint, balance.amount]
-    }
-}
-
 /// Represents a balance tuple that has been allocated in the network as
 /// an authenticated field element
 #[derive(Clone, Debug)]
@@ -307,22 +282,6 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Orde
             .map_err(|err| MpcError::SharingError(err.to_string()))?;
 
         Ok(Self::Output::try_from(shared_values).unwrap())
-    }
-}
-
-/// The side of the market a given order is on
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OrderSide {
-    /// Buy side
-    Buy = 0,
-    /// Sell side
-    Sell,
-}
-
-// Default for an empty order is buy
-impl Default for OrderSide {
-    fn default() -> Self {
-        OrderSide::Buy
     }
 }
 

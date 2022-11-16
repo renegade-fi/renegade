@@ -11,20 +11,24 @@ use errors::MpcError;
 use mpc::SharedFabric;
 use mpc_bulletproof::{
     r1cs::{Prover, R1CSProof, Verifier},
-    r1cs_mpc::{MpcProver, MultiproverError, R1CSError, SharedR1CSProof},
+    r1cs_mpc::{
+        MpcProver, MpcRandomizableConstraintSystem, MultiproverError, R1CSError, SharedR1CSProof,
+    },
 };
 use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto, beaver::SharedValueSource,
     network::MpcNetwork,
 };
 use num_bigint::{BigInt, BigUint, Sign};
+use rand_core::{CryptoRng, RngCore};
 
 pub mod constants;
 pub mod errors;
 pub mod mpc;
 pub mod mpc_circuits;
 pub mod mpc_gadgets;
-pub mod types;
+// pub mod types;
+pub mod types2;
 pub mod zk_circuits;
 pub mod zk_gadgets;
 
@@ -98,16 +102,64 @@ pub fn bigint_to_scalar_bits<const D: usize>(a: &BigInt) -> Vec<Scalar> {
  * Trait definitions
  */
 
+/// Defines functionality to allocate a value within a single-prover constraint system
+pub trait CommitProver {
+    /// The type that results from committing to the base type
+    type VarType;
+    type CommitType;
+    type ErrorType;
+
+    /// Commit to the base type in the constraint system
+    ///
+    /// Returns a tuple holding both the var type (used for operations)
+    /// within the constraint system, and the commit type; which is passed
+    /// to the verifier to use as hidden values
+    fn commit_prover<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType>;
+}
+
+/// Defines functionality to commit to a value in a verifier's constraint system
+pub trait CommitVerifier {
+    /// The type that results from committing to the implementation types
+    type VarType;
+    type ErrorType;
+
+    /// Commit to a hidden value in the Verifier
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType>;
+}
+
 /// Defines functionality to allocate a value within an MPC network
 pub trait Allocate<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The output type that results from allocating the value in the network
-    type Output;
+    type SharedType;
+    type ErrorType;
+
     /// Allocates the raw type in the network as a shared value
     fn allocate(
         &self,
         owning_party: u64,
         fabric: SharedFabric<N, S>,
-    ) -> Result<Self::Output, MpcError>;
+    ) -> Result<Self::SharedType, Self::ErrorType>;
+}
+
+/// Defines functionality to allocate a base type as a shared committment in a multi-prover
+/// constraint system
+pub trait CommitSharedProver<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The type that results from committing to the base type
+    type SharedVarType;
+    type CommitType;
+    type ErrorType;
+
+    /// Commit to the base type in the constraint system
+    fn commit<R: RngCore + CryptoRng>(
+        &self,
+        owning_party: u64,
+        rng: &mut R,
+        prover: &mut MpcProver<N, S>,
+    ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType>;
 }
 
 /// Defines functionality for a shared, allocated type to be opened to another type
