@@ -4,7 +4,7 @@ use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
 use circuits::{
     mpc::SharedFabric,
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    types::{AuthenticatedMatch, BalanceVar, OrderVar},
+    types::{AuthenticatedMatch, BalanceVar, FeeVar, OrderVar},
     zk_circuits::valid_match_mpc::{
         ValidMatchMpcCircuit, ValidMatchMpcStatement, ValidMatchMpcWitness,
     },
@@ -23,6 +23,7 @@ use crate::{
 
 const ORDER_LENGTH_SCALARS: usize = 5; // mint1, mint2, direction, price, amount
 const BALANCE_LENGTH_SCALARS: usize = 2; // amount, direction
+const FEE_LENGTH_SCALARS: usize = 4; // settle_key, gas_addr, gas_token_amount, percentage_fee
 
 /// Hashes the payload of `Scalar`s via the Arkworks Poseidon sponge implementation
 /// Returns the result, re-cast into the Dalek Ristretto scalar field
@@ -62,10 +63,12 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
     // TODO: These values should be valid inputs, not random
     let my_random_order = random_scalars(ORDER_LENGTH_SCALARS);
     let my_random_balance = random_scalars(BALANCE_LENGTH_SCALARS);
+    let my_random_fee = random_scalars(FEE_LENGTH_SCALARS);
 
     // Hash the values with Arkworks hasher to get an expected input consistency value
     let my_order_hash = hash_values_arkworks(&my_random_order);
     let my_balance_hash = hash_values_arkworks(&my_random_balance);
+    let my_fee_hash = hash_values_arkworks(&my_random_fee);
 
     // Share random hashes to build the statement
     let p0_order_hash = share_plaintext_scalar(
@@ -78,6 +81,11 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
         0, /* owning_party */
         test_args.mpc_fabric.0.clone(),
     );
+    let p0_fee_hash = share_plaintext_scalar(
+        my_fee_hash,
+        0, /* owning_party */
+        test_args.mpc_fabric.0.clone(),
+    );
     let p1_order_hash = share_plaintext_scalar(
         my_order_hash,
         1, /* owning_party */
@@ -85,6 +93,11 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
     );
     let p1_balance_hash = share_plaintext_scalar(
         my_balance_hash,
+        1, /* owning_party */
+        test_args.mpc_fabric.0.clone(),
+    );
+    let p1_fee_hash = share_plaintext_scalar(
+        my_fee_hash,
         1, /* owning_party */
         test_args.mpc_fabric.0.clone(),
     );
@@ -101,14 +114,22 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
             mint: my_random_balance[0],
             amount: my_random_balance[1],
         },
+        my_fee: FeeVar {
+            settle_key: my_random_fee[0],
+            gas_addr: my_random_fee[1],
+            gas_token_amount: my_random_fee[2],
+            percentage_fee: my_random_fee[3],
+        },
         match_res: random_authenticated_match(test_args.mpc_fabric.clone()),
     };
 
     let statement = ValidMatchMpcStatement {
         hash_order1: p0_order_hash,
         hash_balance1: p0_balance_hash,
+        hash_fee1: p0_fee_hash,
         hash_order2: p1_order_hash,
         hash_balance2: p1_balance_hash,
+        hash_fee2: p1_fee_hash,
     };
 
     multiprover_prove_and_verify::<'_, _, _, ValidMatchMpcCircuit<'_, _, _>>(
