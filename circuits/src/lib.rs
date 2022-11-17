@@ -7,13 +7,11 @@
 use std::ops::Neg;
 
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
-use errors::MpcError;
+use errors::{ProverError, VerifierError};
 use mpc::SharedFabric;
 use mpc_bulletproof::{
     r1cs::{Prover, R1CSProof, Verifier},
-    r1cs_mpc::{
-        MpcProver, MpcRandomizableConstraintSystem, MultiproverError, R1CSError, SharedR1CSProof,
-    },
+    r1cs_mpc::{MpcProver, SharedR1CSProof},
 };
 use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto, beaver::SharedValueSource,
@@ -27,8 +25,7 @@ pub mod errors;
 pub mod mpc;
 pub mod mpc_circuits;
 pub mod mpc_gadgets;
-// pub mod types;
-pub mod types2;
+pub mod types;
 pub mod zk_circuits;
 pub mod zk_gadgets;
 
@@ -208,7 +205,7 @@ pub trait SingleProverCircuit {
         witness: Self::Witness,
         statement: Self::Statement,
         prover: Prover,
-    ) -> Result<(Vec<CompressedRistretto>, R1CSProof), R1CSError>;
+    ) -> Result<(Vec<CompressedRistretto>, R1CSProof), ProverError>;
 
     /// Verify a proof of the statement represented by the circuit
     ///
@@ -219,7 +216,7 @@ pub trait SingleProverCircuit {
         statement: Self::Statement,
         proof: R1CSProof,
         verifier: Verifier,
-    ) -> Result<(), R1CSError>;
+    ) -> Result<(), VerifierError>;
 }
 
 /// Defines the abstraction of a Circuit that is evaluated in a multiprover setting
@@ -260,7 +257,7 @@ pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueS
             Vec<AuthenticatedCompressedRistretto<N, S>>,
             SharedR1CSProof<N, S>,
         ),
-        MultiproverError,
+        ProverError,
     >;
 
     /// Verify a proof of the statement represented by the circuit
@@ -277,7 +274,7 @@ pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueS
         statement: Self::Statement,
         proof: R1CSProof,
         verifier: Verifier,
-    ) -> Result<(), R1CSError>;
+    ) -> Result<(), VerifierError>;
 }
 
 /**
@@ -292,14 +289,13 @@ pub(crate) mod test_helpers {
     use merlin::Transcript;
     use mpc_bulletproof::{
         r1cs::{Prover, Verifier},
-        r1cs_mpc::R1CSError,
         PedersenGens,
     };
     use num_bigint::{BigInt, BigUint};
 
     use crate::{
-        bigint_to_scalar, mpc_gadgets::poseidon::PoseidonSpongeParameters, scalar_to_bigint,
-        scalar_to_biguint, SingleProverCircuit,
+        bigint_to_scalar, errors::VerifierError, mpc_gadgets::poseidon::PoseidonSpongeParameters,
+        scalar_to_bigint, scalar_to_biguint, SingleProverCircuit,
     };
 
     const TRANSCRIPT_SEED: &str = "test";
@@ -374,7 +370,7 @@ pub(crate) mod test_helpers {
     pub fn bulletproof_prove_and_verify<C: SingleProverCircuit>(
         witness: C::Witness,
         statement: C::Statement,
-    ) -> Result<(), R1CSError> {
+    ) -> Result<(), VerifierError> {
         let mut transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
         let pc_gens = PedersenGens::default();
         let prover = Prover::new(&pc_gens, &mut transcript);

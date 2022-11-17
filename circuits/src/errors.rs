@@ -1,6 +1,6 @@
 //! Groups error types for the circuits crate
 
-use std::fmt::{write, Display, Formatter, Result};
+use std::fmt::{Display, Formatter, Result};
 
 use mpc_bulletproof::r1cs_mpc::R1CSError;
 
