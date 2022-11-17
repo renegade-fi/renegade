@@ -13,7 +13,10 @@ use crate::{
         comparators::{cond_select_vec, eq, less_than_equal, min, ne},
         modulo::shift_right,
     },
-    types::{AuthenticatedMatch, AuthenticatedOrder, AuthenticatedSingleMatchResult},
+    types::{
+        order::AuthenticatedOrder,
+        r#match::{AuthenticatedMatch, AuthenticatedSingleMatchResult},
+    },
 };
 
 /// Executes a match computation that returns matches from a given order intersection
