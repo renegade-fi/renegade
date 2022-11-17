@@ -2,7 +2,7 @@
 
 use std::fmt::{Display, Formatter, Result};
 
-use mpc_bulletproof::r1cs_mpc::R1CSError;
+use mpc_bulletproof::r1cs_mpc::{MultiproverError, R1CSError};
 
 /// Represents an error during the course of an MPC circuit execution
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,6 +31,8 @@ pub enum ProverError {
     /// An error during the course of a multi-prover execution that results
     /// from the MPC network itself
     Mpc(MpcError),
+    /// An error that occurs from the execution of a collaborative proof
+    Collaborative(MultiproverError),
     /// An error that occurs from an R1CS error directly
     R1CS(R1CSError),
 }

@@ -20,8 +20,10 @@ use rand_core::OsRng;
 use std::{marker::PhantomData, ops::Neg};
 
 use crate::{
-    mpc::SharedFabric, mpc_gadgets::poseidon::PoseidonSpongeParameters, MultiProverCircuit,
-    SingleProverCircuit,
+    errors::{MpcError, ProverError, VerifierError},
+    mpc::SharedFabric,
+    mpc_gadgets::poseidon::PoseidonSpongeParameters,
+    MultiProverCircuit, SingleProverCircuit,
 };
 
 use super::poseidon::{MultiproverPoseidonHashGadget, PoseidonHashGadget};
@@ -174,6 +176,7 @@ pub struct MerkleStatement {
 impl SingleProverCircuit for PoseidonMerkleHashGadget {
     type Statement = MerkleStatement;
     type Witness = MerkleWitness;
+    type WitnessCommitment = Vec<CompressedRistretto>;
 
     const BP_GENS_CAPACITY: usize = 8192;
 
@@ -181,7 +184,7 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
         witness: Self::Witness,
         statement: Self::Statement,
         mut prover: Prover,
-    ) -> Result<(Vec<CompressedRistretto>, R1CSProof), R1CSError> {
+    ) -> Result<(Vec<CompressedRistretto>, R1CSProof), ProverError> {
         // Commit to the witness
         let mut rng = OsRng {};
         let leaf_data_length = witness.leaf_data.len();
@@ -216,11 +219,12 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
             opening_vars,
             indices_vars,
             root_var,
-        )?;
+        )
+        .map_err(ProverError::R1CS);
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens)?;
+        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
 
         Ok((
             opening_comm
@@ -233,11 +237,11 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
     }
 
     fn verify(
-        witness_commitments: &[CompressedRistretto],
+        witness_commitments: Vec<CompressedRistretto>,
         statement: Self::Statement,
         proof: R1CSProof,
         mut verifier: Verifier,
-    ) -> Result<(), R1CSError> {
+    ) -> Result<(), VerifierError> {
         // Commit to the witness
         // The first <tree-height> vars are the opening
         let opening_len = statement.tree_height - 1;
@@ -267,11 +271,14 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
             opening_vars,
             indices_vars,
             root_var,
-        )?;
+        )
+        .map_err(VerifierError::R1CS)?;
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        verifier.verify(&proof, &bp_gens)
+        verifier
+            .verify(&proof, &bp_gens)
+            .map_err(VerifierError::R1CS)
     }
 }
 
@@ -427,6 +434,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
     for MultiproverPoseidonMerkleGadget<'a, N, S>
 {
     type Witness = MultiproverMerkleWitness<N, S>;
+    type WitnessCommitment = Vec<AuthenticatedCompressedRistretto<N, S>>;
     type Statement = MerkleStatement;
 
     const BP_GENS_CAPACITY: usize = 8192;
@@ -441,7 +449,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
             Vec<AuthenticatedCompressedRistretto<N, S>>,
             SharedR1CSProof<N, S>,
         ),
-        MultiproverError,
+        ProverError,
     > {
         assert_eq!(witness.opening.len(), witness.opening_indices.len());
 
@@ -466,7 +474,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
                     })
                     .collect_vec(),
             )
-            .map_err(MultiproverError::Mpc)?;
+            .map_err(|err| ProverError::Mpc(MpcError::SharingError(err.to_string())))?;
 
         // Split commitments back into unchained variables
         let opening_vars = witness_vars[..opening_length].to_vec();
@@ -484,21 +492,21 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
             root_var,
             fabric,
         )
-        .map_err(MultiproverError::ProverError)?;
+        .map_err(ProverError::R1CS)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens)?;
+        let proof = prover.prove(&bp_gens).map_err(ProverError::Collaborative)?;
 
         Ok((witness_comm, proof))
     }
 
     fn verify(
-        witness_commitments: &[CompressedRistretto],
+        witness_commitments: Vec<CompressedRistretto>,
         statement: Self::Statement,
         proof: R1CSProof,
         verifier: Verifier,
-    ) -> Result<(), R1CSError> {
+    ) -> Result<(), VerifierError> {
         // Forward to the single prover verifier
         PoseidonMerkleHashGadget::verify(witness_commitments, statement, proof, verifier)
     }
@@ -518,6 +526,7 @@ mod merkle_test {
     use rand_core::OsRng;
 
     use crate::{
+        errors::VerifierError,
         mpc_gadgets::poseidon::PoseidonSpongeParameters,
         test_helpers::{
             bulletproof_prove_and_verify, convert_params, felt_to_scalar, scalar_to_prime_field,
@@ -678,6 +687,6 @@ mod merkle_test {
         };
 
         let res = bulletproof_prove_and_verify::<PoseidonMerkleHashGadget>(witness, statement);
-        assert_eq!(res, Err(R1CSError::VerificationError));
+        assert_eq!(res, Err(VerifierError::R1CS(R1CSError::VerificationError)));
     }
 }

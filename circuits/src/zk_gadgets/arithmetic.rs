@@ -17,6 +17,7 @@ use mpc_ristretto::authenticated_scalar::AuthenticatedScalar;
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 use rand_core::OsRng;
 
+use crate::errors::{MpcError, ProverError, VerifierError};
 use crate::mpc::SharedFabric;
 use crate::{MultiProverCircuit, SingleProverCircuit};
 
@@ -95,6 +96,7 @@ pub struct ExpGadgetStatement {
 impl SingleProverCircuit for ExpGadget {
     type Witness = ExpGadgetWitness;
     type Statement = ExpGadgetStatement;
+    type WitnessCommitment = CompressedRistretto;
 
     const BP_GENS_CAPACITY: usize = 64;
 
@@ -102,13 +104,7 @@ impl SingleProverCircuit for ExpGadget {
         witness: Self::Witness,
         statement: Self::Statement,
         mut prover: Prover,
-    ) -> Result<
-        (
-            Vec<curve25519_dalek::ristretto::CompressedRistretto>,
-            mpc_bulletproof::r1cs::R1CSProof,
-        ),
-        mpc_bulletproof::r1cs_mpc::R1CSError,
-    > {
+    ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
         // Commit to the input and expected output
         let mut rng = OsRng {};
         let blinding_factor = Scalar::random(&mut rng);
@@ -123,21 +119,20 @@ impl SingleProverCircuit for ExpGadget {
             Self::BP_GENS_CAPACITY, /* gens_capacity */
             1,                      /* party_capacity */
         );
-        let proof = prover.prove(&bp_gens)?;
+        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
 
         // Only return the commitment to the witness, the verifier will separately commit to the statement input
-        Ok((vec![x_commit, out_commit], proof))
+        Ok((x_commit, proof))
     }
 
     fn verify(
-        witness_commitments: &[CompressedRistretto],
+        witness_commitment: CompressedRistretto,
         statement: Self::Statement,
         proof: R1CSProof,
         mut verifier: Verifier,
-    ) -> Result<(), mpc_bulletproof::r1cs_mpc::R1CSError> {
+    ) -> Result<(), VerifierError> {
         // Commit to the result in the verifier
-        let x_var = verifier.commit(witness_commitments[0]); // The input `x`
-                                                             // let out_var = verifier.commit(witness_commitments[1]); // The output `y`
+        let x_var = verifier.commit(witness_commitment); // The input `x`
         let out_var = verifier.commit_public(statement.expected_out);
 
         // Generate the constraints for the circuit
@@ -147,7 +142,9 @@ impl SingleProverCircuit for ExpGadget {
             Self::BP_GENS_CAPACITY, /* gens_capacity */
             1,                      /* party_capacity */
         );
-        verifier.verify(&proof, &bp_gens)
+        verifier
+            .verify(&proof, &bp_gens)
+            .map_err(VerifierError::R1CS)
     }
 }
 
@@ -209,6 +206,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
     /// Witness is the secret shared version of the single-prover witness, and the
     /// statement is the same as the single-prover case
     type Witness = MultiproverExpWitness<N, S>;
+    type WitnessCommitment = AuthenticatedCompressedRistretto<N, S>;
     type Statement = ExpGadgetStatement;
 
     const BP_GENS_CAPACITY: usize = 2048;
@@ -220,10 +218,10 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
         fabric: SharedFabric<N, S>,
     ) -> Result<
         (
-            Vec<AuthenticatedCompressedRistretto<N, S>>,
+            AuthenticatedCompressedRistretto<N, S>,
             SharedR1CSProof<N, S>,
         ),
-        MultiproverError,
+        ProverError,
     > {
         // Commit to the input
         let mut rng = OsRng {};
@@ -234,7 +232,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
                     .borrow_fabric()
                     .allocate_preshared_scalar(Scalar::random(&mut rng)),
             )
-            .map_err(MultiproverError::Mpc)?;
+            .map_err(|err| ProverError::Mpc(MpcError::SharingError(err.to_string())))?;
 
         // Commit to the public expected hash output
         // TODO: update this with a correct commit_public impl
@@ -246,17 +244,17 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens)?;
+        let proof = prover.prove(&bp_gens).map_err(ProverError::Collaborative)?;
 
-        Ok((vec![witness_commit], proof))
+        Ok((witness_commit, proof))
     }
 
     fn verify(
-        witness_commitments: &[CompressedRistretto],
+        witness_commitments: CompressedRistretto,
         statement: Self::Statement,
         proof: R1CSProof,
         verifier: Verifier,
-    ) -> Result<(), R1CSError> {
+    ) -> Result<(), VerifierError> {
         ExpGadget::verify(witness_commitments, statement, proof, verifier)
     }
 }

@@ -102,10 +102,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> TryFrom<&[Authenticated
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open
     for AuthenticatedSingleMatchResult<N, S>
 {
-    type Output = SingleMatchResult;
+    type OpenOutput = SingleMatchResult;
     type Error = MpcError;
 
-    fn open(&self) -> Result<Self::Output, Self::Error> {
+    fn open(&self) -> Result<Self::OpenOutput, Self::Error> {
         // Flatten the values into a shape that can be batch opened
         let flattened_self: Vec<AuthenticatedScalar<_, _>> = self.into();
         // Open the values and cast them to u64
@@ -119,7 +119,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open
         TryFrom::<&[u64]>::try_from(&opened_values)
     }
 
-    fn open_and_authenticate(&self) -> Result<Self::Output, Self::Error> {
+    fn open_and_authenticate(&self) -> Result<Self::OpenOutput, Self::Error> {
         // Flatten the values into a shape that can be batch opened
         let flattened_self: Vec<AuthenticatedScalar<_, _>> = self.into();
         // Open the values and cast them to u64

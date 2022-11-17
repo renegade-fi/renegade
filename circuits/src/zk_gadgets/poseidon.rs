@@ -22,8 +22,10 @@ use mpc_ristretto::{
 use rand_core::OsRng;
 
 use crate::{
-    mpc::SharedFabric, mpc_gadgets::poseidon::PoseidonSpongeParameters, MultiProverCircuit,
-    SingleProverCircuit,
+    errors::{MpcError, ProverError, VerifierError},
+    mpc::SharedFabric,
+    mpc_gadgets::poseidon::PoseidonSpongeParameters,
+    MultiProverCircuit, SingleProverCircuit,
 };
 
 use super::arithmetic::{ExpGadget, MultiproverExpGadget};
@@ -279,6 +281,7 @@ pub struct PoseidonGadgetStatement {
 
 impl SingleProverCircuit for PoseidonHashGadget {
     type Witness = PoseidonGadgetWitness;
+    type WitnessCommitment = Vec<CompressedRistretto>;
     type Statement = PoseidonGadgetStatement;
 
     const BP_GENS_CAPACITY: usize = 2048;
@@ -287,7 +290,7 @@ impl SingleProverCircuit for PoseidonHashGadget {
         witness: Self::Witness,
         statement: Self::Statement,
         mut prover: Prover,
-    ) -> Result<(Vec<CompressedRistretto>, R1CSProof), R1CSError> {
+    ) -> Result<(Vec<CompressedRistretto>, R1CSProof), ProverError> {
         // Commit to the preimage
         let mut rng = OsRng {};
         let (preimage_commits, preimage_vars): (Vec<CompressedRistretto>, Vec<Variable>) = witness
@@ -301,21 +304,23 @@ impl SingleProverCircuit for PoseidonHashGadget {
 
         // Apply the constraints to the proof system
         let mut hasher = PoseidonHashGadget::new(statement.params);
-        hasher.hash(&mut prover, &preimage_vars, out_var)?;
+        hasher
+            .hash(&mut prover, &preimage_vars, out_var)
+            .map_err(ProverError::R1CS)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens)?;
+        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
 
         Ok((preimage_commits, proof))
     }
 
     fn verify(
-        witness_commitments: &[CompressedRistretto],
+        witness_commitments: Vec<CompressedRistretto>,
         statement: Self::Statement,
         proof: R1CSProof,
         mut verifier: Verifier,
-    ) -> Result<(), R1CSError> {
+    ) -> Result<(), VerifierError> {
         // Commit to the preimage from the existing witness commitments
         let witness_vars = witness_commitments
             .iter()
@@ -327,11 +332,15 @@ impl SingleProverCircuit for PoseidonHashGadget {
 
         // Build a hasher and apply the constraints
         let mut hasher = PoseidonHashGadget::new(statement.params);
-        hasher.hash(&mut verifier, &witness_vars, output_var)?;
+        hasher
+            .hash(&mut verifier, &witness_vars, output_var)
+            .map_err(VerifierError::R1CS)?;
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        verifier.verify(&proof, &bp_gens)
+        verifier
+            .verify(&proof, &bp_gens)
+            .map_err(VerifierError::R1CS)
     }
 }
 
@@ -602,6 +611,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProv
     ///
     /// The Statement, on the other hand, is entirely public; and therefore the same type as the single prover.
     type Witness = MultiproverPoseidonWitness<N, S>;
+    type WitnessCommitment = Vec<AuthenticatedCompressedRistretto<N, S>>;
     type Statement = PoseidonGadgetStatement;
 
     const BP_GENS_CAPACITY: usize = 2048;
@@ -616,7 +626,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProv
             Vec<AuthenticatedCompressedRistretto<N, S>>,
             SharedR1CSProof<N, S>,
         ),
-        MultiproverError,
+        ProverError,
     > {
         // Commit to the hash input and expected output
         let mut rng = OsRng {};
@@ -630,7 +640,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProv
 
         let (witness_commits, witness_vars) = prover
             .batch_commit_preshared(&witness.preimage, &blinders)
-            .map_err(MultiproverError::Mpc)?;
+            .map_err(|err| ProverError::Mpc(MpcError::SharingError(err.to_string())))?;
 
         let (_, out_var) = prover.commit_public(statement.expected_out);
 
@@ -638,20 +648,20 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProv
         let mut hasher = MultiproverPoseidonHashGadget::new(statement.params, fabric);
         hasher
             .hash(&mut prover, &witness_vars, &out_var)
-            .map_err(MultiproverError::ProverError)?;
+            .map_err(ProverError::R1CS)?;
 
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens)?;
+        let proof = prover.prove(&bp_gens).map_err(ProverError::Collaborative)?;
 
         Ok((witness_commits, proof))
     }
 
     fn verify(
-        witness_commitments: &[CompressedRistretto],
+        witness_commitments: Vec<CompressedRistretto>,
         statement: Self::Statement,
         proof: R1CSProof,
         verifier: Verifier,
-    ) -> Result<(), R1CSError> {
+    ) -> Result<(), VerifierError> {
         // Forward to the single prover gadget
         PoseidonHashGadget::verify(witness_commitments, statement, proof, verifier)
     }

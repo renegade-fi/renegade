@@ -7,7 +7,8 @@
 use std::ops::Neg;
 
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
-use errors::{ProverError, VerifierError};
+use errors::{MpcError, ProverError, VerifierError};
+use itertools::Itertools;
 use mpc::SharedFabric;
 use mpc_bulletproof::{
     r1cs::{Prover, R1CSProof, Verifier},
@@ -165,13 +166,59 @@ pub trait CommitSharedProver<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
 /// network allocated value.
 pub trait Open {
     /// The output type that results from opening this value
-    type Output;
+    type OpenOutput;
     /// The error type that results if opening fails
     type Error;
     /// Opens the shared type without authenticating
-    fn open(&self) -> Result<Self::Output, Self::Error>;
+    fn open(&self) -> Result<Self::OpenOutput, Self::Error>;
     /// Opens the shared type and authenticates the result
-    fn open_and_authenticate(&self) -> Result<Self::Output, Self::Error>;
+    fn open_and_authenticate(&self) -> Result<Self::OpenOutput, Self::Error>;
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open
+    for AuthenticatedCompressedRistretto<N, S>
+{
+    type OpenOutput = CompressedRistretto;
+    type Error = MpcError;
+
+    fn open(&self) -> Result<Self::OpenOutput, Self::Error> {
+        Ok(self
+            .open()
+            .map_err(|err| MpcError::OpeningError(err.to_string()))?
+            .value())
+    }
+
+    fn open_and_authenticate(&self) -> Result<Self::OpenOutput, Self::Error> {
+        Ok(self
+            .open_and_authenticate()
+            .map_err(|err| MpcError::OpeningError(err.to_string()))?
+            .value())
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open
+    for Vec<AuthenticatedCompressedRistretto<N, S>>
+{
+    type OpenOutput = Vec<CompressedRistretto>;
+    type Error = MpcError;
+
+    fn open(&self) -> Result<Self::OpenOutput, Self::Error> {
+        Ok(AuthenticatedCompressedRistretto::batch_open(&self)
+            .map_err(|err| MpcError::OpeningError(err.to_string()))?
+            .iter()
+            .map(|comm| comm.value())
+            .collect_vec())
+    }
+
+    fn open_and_authenticate(&self) -> Result<Self::OpenOutput, Self::Error> {
+        Ok(
+            AuthenticatedCompressedRistretto::batch_open_and_authenticate(&self)
+                .map_err(|err| MpcError::OpeningError(err.to_string()))?
+                .iter()
+                .map(|comm| comm.value())
+                .collect_vec(),
+        )
+    }
 }
 
 /// Defines the abstraction of a Circuit.
@@ -190,6 +237,11 @@ pub trait SingleProverCircuit {
     /// The statement type, given to both the prover and verifier, parameterizes the underlying
     /// NP statement being proven
     type Statement: Clone;
+    /// The data type of the output committment from the prover.
+    ///
+    /// The prover commits to the witness and sends this commitment to the verifier, this type
+    /// is the structure in which that commitment is sent
+    type WitnessCommitment;
 
     /// The size of the bulletproof generators that must be allocated
     /// to fully compute a proof or verification of the statement
@@ -205,14 +257,14 @@ pub trait SingleProverCircuit {
         witness: Self::Witness,
         statement: Self::Statement,
         prover: Prover,
-    ) -> Result<(Vec<CompressedRistretto>, R1CSProof), ProverError>;
+    ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError>;
 
     /// Verify a proof of the statement represented by the circuit
     ///
     /// The verifier has access to the statement variables, but only hiding (and binding)
     /// commitments to the witness variables
     fn verify(
-        witness_commitments: &[CompressedRistretto],
+        witness_commitment: Self::WitnessCommitment,
         statement: Self::Statement,
         proof: R1CSProof,
         verifier: Verifier,
@@ -235,6 +287,11 @@ pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueS
     /// The statement type, given to both the prover and verifier, parameterizes the underlying
     /// NP statement being proven
     type Statement: Clone;
+    /// The data type of the output committment from the prover.
+    ///
+    /// The prover commits to the witness and sends this commitment to the verifier, this type
+    /// is the structure in which that commitment is sent
+    type WitnessCommitment: Open;
 
     /// The size of the bulletproof generators that must be allocated
     /// to fully compute a proof or verification of the statement
@@ -252,13 +309,7 @@ pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueS
         statement: Self::Statement,
         prover: MpcProver<'a, '_, '_, N, S>,
         fabric: SharedFabric<N, S>,
-    ) -> Result<
-        (
-            Vec<AuthenticatedCompressedRistretto<N, S>>,
-            SharedR1CSProof<N, S>,
-        ),
-        ProverError,
-    >;
+    ) -> Result<(Self::WitnessCommitment, SharedR1CSProof<N, S>), ProverError>;
 
     /// Verify a proof of the statement represented by the circuit
     ///
@@ -270,7 +321,7 @@ pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueS
     /// parties reconstruct the underlying secret from their shares. Then the opened
     /// proof and commitments can be passed to the verifier.
     fn verify(
-        witness_commitments: &[CompressedRistretto],
+        witness_commitments: <Self::WitnessCommitment as Open>::OpenOutput,
         statement: Self::Statement,
         proof: R1CSProof,
         verifier: Verifier,
@@ -376,13 +427,13 @@ pub(crate) mod test_helpers {
         let prover = Prover::new(&pc_gens, &mut transcript);
 
         // Prove the statement
-        let (witness_commitments, proof) = C::prove(witness, statement.clone(), prover).unwrap();
+        let (witness_commitment, proof) = C::prove(witness, statement.clone(), prover).unwrap();
 
         // Verify the statement with a fresh transcript
         let mut verifier_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
         let verifier = Verifier::new(&pc_gens, &mut verifier_transcript);
 
-        C::verify(&witness_commitments, statement, proof, verifier)
+        C::verify(witness_commitment, statement, proof, verifier)
     }
 }
 #[cfg(test)]
