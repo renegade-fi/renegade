@@ -35,13 +35,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
         rng: &mut R,
         prover: &mut MpcProver<N, S>,
     ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType> {
-        let order = self.0;
-        let balance = self.1;
-        let fee = self.2;
+        let order = &self.0;
+        let balance = &self.1;
+        let fee = &self.2;
 
         let num_committed_elements = 5 /* order */ + 2 /* balance */ + 4 /* fee */;
         let blinders = (0..num_committed_elements)
-            .map(|_| Scalar::random(&mut rng))
+            .map(|_| Scalar::random(rng))
             .collect_vec();
 
         let (shared_comm, shared_vars) = prover
@@ -66,41 +66,41 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
 
         let vars = (
             AuthenticatedOrderVar {
-                quote_mint: shared_vars[0],
-                base_mint: shared_vars[1],
-                side: shared_vars[2],
-                price: shared_vars[3],
-                amount: shared_vars[4],
+                quote_mint: shared_vars[0].to_owned(),
+                base_mint: shared_vars[1].to_owned(),
+                side: shared_vars[2].to_owned(),
+                price: shared_vars[3].to_owned(),
+                amount: shared_vars[4].to_owned(),
             },
             AuthenticatedBalanceVar {
-                mint: shared_vars[5],
-                amount: shared_vars[6],
+                mint: shared_vars[5].to_owned(),
+                amount: shared_vars[6].to_owned(),
             },
             AuthenticatedFeeVar {
-                settle_key: shared_vars[7],
-                gas_addr: shared_vars[8],
-                gas_token_amount: shared_vars[9],
-                percentage_fee: shared_vars[10],
+                settle_key: shared_vars[7].to_owned(),
+                gas_addr: shared_vars[8].to_owned(),
+                gas_token_amount: shared_vars[9].to_owned(),
+                percentage_fee: shared_vars[10].to_owned(),
             },
         );
 
         let comms = (
             AuthenticatedCommittedOrder {
-                quote_mint: shared_comm[0],
-                base_mint: shared_comm[1],
-                side: shared_comm[2],
-                price: shared_comm[3],
-                amount: shared_comm[4],
+                quote_mint: shared_comm[0].to_owned(),
+                base_mint: shared_comm[1].to_owned(),
+                side: shared_comm[2].to_owned(),
+                price: shared_comm[3].to_owned(),
+                amount: shared_comm[4].to_owned(),
             },
             AuthenticatedCommittedBalance {
-                mint: shared_comm[5],
-                amount: shared_comm[6],
+                mint: shared_comm[5].to_owned(),
+                amount: shared_comm[6].to_owned(),
             },
             AuthenticatedCommittedFee {
-                settle_key: shared_comm[7],
-                gas_addr: shared_comm[8],
-                gas_token_amount: shared_comm[9],
-                percentage_fee: shared_comm[10],
+                settle_key: shared_comm[7].to_owned(),
+                gas_addr: shared_comm[8].to_owned(),
+                gas_token_amount: shared_comm[9].to_owned(),
+                percentage_fee: shared_comm[10].to_owned(),
             },
         );
 

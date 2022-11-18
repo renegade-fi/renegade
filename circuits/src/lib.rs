@@ -104,7 +104,9 @@ pub fn bigint_to_scalar_bits<const D: usize>(a: &BigInt) -> Vec<Scalar> {
 pub trait CommitProver {
     /// The type that results from committing to the base type
     type VarType;
+    /// The type that consists of Pedersen commitments to the base type
     type CommitType;
+    /// The error thrown by the commit method
     type ErrorType;
 
     /// Commit to the base type in the constraint system
@@ -123,6 +125,7 @@ pub trait CommitProver {
 pub trait CommitVerifier {
     /// The type that results from committing to the implementation types
     type VarType;
+    /// The type of error thrown when committing fails
     type ErrorType;
 
     /// Commit to a hidden value in the Verifier
@@ -133,6 +136,7 @@ pub trait CommitVerifier {
 pub trait Allocate<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The output type that results from allocating the value in the network
     type SharedType;
+    /// The type of error thrown when allocation fails
     type ErrorType;
 
     /// Allocates the raw type in the network as a shared value
@@ -148,7 +152,9 @@ pub trait Allocate<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
 pub trait CommitSharedProver<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The type that results from committing to the base type
     type SharedVarType;
+    /// The type consisting of Pedersen commitments to the base type
     type CommitType;
+    /// The type of error that is thrown when committing fails
     type ErrorType;
 
     /// Commit to the base type in the constraint system
@@ -170,26 +176,27 @@ pub trait Open {
     /// The error type that results if opening fails
     type Error;
     /// Opens the shared type without authenticating
-    fn open(&self) -> Result<Self::OpenOutput, Self::Error>;
+    fn open(self) -> Result<Self::OpenOutput, Self::Error>;
     /// Opens the shared type and authenticates the result
-    fn open_and_authenticate(&self) -> Result<Self::OpenOutput, Self::Error>;
+    fn open_and_authenticate(self) -> Result<Self::OpenOutput, Self::Error>;
 }
 
+#[allow(clippy::needless_borrow)]
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open
     for AuthenticatedCompressedRistretto<N, S>
 {
     type OpenOutput = CompressedRistretto;
     type Error = MpcError;
 
-    fn open(&self) -> Result<Self::OpenOutput, Self::Error> {
-        Ok(self
+    fn open(self) -> Result<Self::OpenOutput, Self::Error> {
+        Ok((&self)
             .open()
             .map_err(|err| MpcError::OpeningError(err.to_string()))?
             .value())
     }
 
-    fn open_and_authenticate(&self) -> Result<Self::OpenOutput, Self::Error> {
-        Ok(self
+    fn open_and_authenticate(self) -> Result<Self::OpenOutput, Self::Error> {
+        Ok((&self)
             .open_and_authenticate()
             .map_err(|err| MpcError::OpeningError(err.to_string()))?
             .value())
@@ -202,7 +209,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open
     type OpenOutput = Vec<CompressedRistretto>;
     type Error = MpcError;
 
-    fn open(&self) -> Result<Self::OpenOutput, Self::Error> {
+    fn open(self) -> Result<Self::OpenOutput, Self::Error> {
         Ok(AuthenticatedCompressedRistretto::batch_open(&self)
             .map_err(|err| MpcError::OpeningError(err.to_string()))?
             .iter()
@@ -210,7 +217,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open
             .collect_vec())
     }
 
-    fn open_and_authenticate(&self) -> Result<Self::OpenOutput, Self::Error> {
+    fn open_and_authenticate(self) -> Result<Self::OpenOutput, Self::Error> {
         Ok(
             AuthenticatedCompressedRistretto::batch_open_and_authenticate(&self)
                 .map_err(|err| MpcError::OpeningError(err.to_string()))?

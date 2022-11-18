@@ -2,7 +2,10 @@
 
 use circuits::{
     mpc_circuits::r#match::compute_match,
-    types::{Match, Order, OrderSide, SingleMatchResult},
+    types::{
+        order::{Order, OrderSide},
+        r#match::{Match, SingleMatchResult},
+    },
     Allocate, Open,
 };
 use integration_helpers::types::IntegrationTest;

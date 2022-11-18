@@ -115,6 +115,18 @@ pub struct OrderVar {
     pub amount: Variable,
 }
 
+impl From<OrderVar> for Vec<Variable> {
+    fn from(order: OrderVar) -> Self {
+        vec![
+            order.quote_mint,
+            order.base_mint,
+            order.side,
+            order.price,
+            order.amount,
+        ]
+    }
+}
+
 impl CommitProver for Order {
     type VarType = OrderVar;
     type CommitType = CommittedOrder;
@@ -126,15 +138,14 @@ impl CommitProver for Order {
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
         let (quote_comm, quote_var) =
-            prover.commit(Scalar::from(self.quote_mint), Scalar::random(&mut rng));
+            prover.commit(Scalar::from(self.quote_mint), Scalar::random(rng));
         let (base_comm, base_var) =
-            prover.commit(Scalar::from(self.base_mint), Scalar::random(&mut rng));
+            prover.commit(Scalar::from(self.base_mint), Scalar::random(rng));
         let (side_comm, side_var) =
-            prover.commit(Scalar::from(self.side as u64), Scalar::random(&mut rng));
-        let (price_comm, price_var) =
-            prover.commit(Scalar::from(self.price), Scalar::random(&mut rng));
+            prover.commit(Scalar::from(self.side as u64), Scalar::random(rng));
+        let (price_comm, price_var) = prover.commit(Scalar::from(self.price), Scalar::random(rng));
         let (amount_comm, amount_var) =
-            prover.commit(Scalar::from(self.amount), Scalar::random(&mut rng));
+            prover.commit(Scalar::from(self.amount), Scalar::random(rng));
 
         Ok((
             OrderVar {
@@ -230,11 +241,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Orde
             .map_err(|err| MpcError::SharingError(err.to_string()))?;
 
         Ok(Self::SharedType {
-            quote_mint: shared_values[0],
-            base_mint: shared_values[1],
-            side: shared_values[2],
-            price: shared_values[3],
-            amount: shared_values[4],
+            quote_mint: shared_values[0].to_owned(),
+            base_mint: shared_values[1].to_owned(),
+            side: shared_values[2].to_owned(),
+            price: shared_values[3].to_owned(),
+            amount: shared_values[4].to_owned(),
         })
     }
 }
@@ -255,6 +266,20 @@ pub struct AuthenticatedOrderVar<N: MpcNetwork + Send, S: SharedValueSource<Scal
     pub amount: MpcVariable<N, S>,
 }
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedOrderVar<N, S>>
+    for Vec<MpcVariable<N, S>>
+{
+    fn from(order: AuthenticatedOrderVar<N, S>) -> Self {
+        vec![
+            order.quote_mint,
+            order.base_mint,
+            order.side,
+            order.price,
+            order.amount,
+        ]
+    }
+}
+
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S> for Order {
     type SharedVarType = AuthenticatedOrderVar<N, S>;
     type CommitType = AuthenticatedCommittedOrder<N, S>;
@@ -266,7 +291,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
         rng: &mut R,
         prover: &mut MpcProver<N, S>,
     ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType> {
-        let blinders = (0..5).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let blinders = (0..5).map(|_| Scalar::random(rng)).collect_vec();
         let (shared_comm, shared_vars) = prover
             .batch_commit(
                 owning_party,
@@ -283,25 +308,25 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
 
         Ok((
             AuthenticatedOrderVar {
-                quote_mint: shared_vars[0],
-                base_mint: shared_vars[1],
-                side: shared_vars[2],
-                price: shared_vars[3],
-                amount: shared_vars[4],
+                quote_mint: shared_vars[0].to_owned(),
+                base_mint: shared_vars[1].to_owned(),
+                side: shared_vars[2].to_owned(),
+                price: shared_vars[3].to_owned(),
+                amount: shared_vars[4].to_owned(),
             },
             AuthenticatedCommittedOrder {
-                quote_mint: shared_comm[0],
-                base_mint: shared_comm[1],
-                side: shared_comm[2],
-                price: shared_comm[3],
-                amount: shared_comm[4],
+                quote_mint: shared_comm[0].to_owned(),
+                base_mint: shared_comm[1].to_owned(),
+                side: shared_comm[2].to_owned(),
+                price: shared_comm[3].to_owned(),
+                amount: shared_comm[4].to_owned(),
             },
         ))
     }
 }
 
 /// Represents an order that has been committed to in a multi-prover constraint system
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct AuthenticatedCommittedOrder<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The mint (ERC-20 contract address) of the quote token
     pub quote_mint: AuthenticatedCompressedRistretto<N, S>,
@@ -315,6 +340,34 @@ pub struct AuthenticatedCommittedOrder<N: MpcNetwork + Send, S: SharedValueSourc
     pub amount: AuthenticatedCompressedRistretto<N, S>,
 }
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone
+    for AuthenticatedCommittedOrder<N, S>
+{
+    fn clone(&self) -> Self {
+        Self {
+            quote_mint: self.quote_mint.clone(),
+            base_mint: self.base_mint.clone(),
+            side: self.side.clone(),
+            price: self.price.clone(),
+            amount: self.amount.clone(),
+        }
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedCommittedOrder<N, S>>
+    for Vec<AuthenticatedCompressedRistretto<N, S>>
+{
+    fn from(order: AuthenticatedCommittedOrder<N, S>) -> Self {
+        vec![
+            order.quote_mint,
+            order.base_mint,
+            order.side,
+            order.price,
+            order.amount,
+        ]
+    }
+}
+
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
     for AuthenticatedCommittedOrder<N, S>
 {
@@ -322,13 +375,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
     type ErrorType = MpcError;
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        let opened_commit = AuthenticatedCompressedRistretto::batch_open_and_authenticate(&[
-            self.quote_mint,
-            self.base_mint,
-            self.side,
-            self.price,
-            self.amount,
-        ])
+        let opened_commit = AuthenticatedCompressedRistretto::batch_open_and_authenticate(&Into::<
+            Vec<AuthenticatedCompressedRistretto<N, S>>,
+        >::into(
+            self.clone(),
+        ))
         .map_err(|err| MpcError::SharingError(err.to_string()))?;
 
         let quote_var = verifier.commit(opened_commit[0].value());

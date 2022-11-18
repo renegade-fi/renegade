@@ -7,8 +7,8 @@ use mpc_bulletproof::{
         LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
     },
     r1cs_mpc::{
-        MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MpcVariable,
-        MultiproverError, R1CSError, SharedR1CSProof,
+        MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MpcVariable, R1CSError,
+        SharedR1CSProof,
     },
     BulletproofGens,
 };
@@ -220,7 +220,7 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
             indices_vars,
             root_var,
         )
-        .map_err(ProverError::R1CS);
+        .map_err(ProverError::R1CS)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);

@@ -7,15 +7,15 @@
 // TODO: Remove this lint allowance
 #![allow(unused)]
 
-use std::marker::PhantomData;
+use std::{borrow::Borrow, marker::PhantomData};
 
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
-    r1cs::{LinearCombination, R1CSProof, RandomizableConstraintSystem, Verifier},
+    r1cs::{LinearCombination, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
     r1cs_mpc::{
-        MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MultiproverError,
-        R1CSError, SharedR1CSProof,
+        MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MpcVariable,
+        MultiproverError, R1CSError, SharedR1CSProof,
     },
     BulletproofGens,
 };
@@ -26,14 +26,17 @@ use mpc_ristretto::{
 use rand_core::OsRng;
 
 use crate::{
+    errors::{MpcError, ProverError, VerifierError},
     mpc::SharedFabric,
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
     types::{
-        AuthenticatedMatch, AuthenticatedSingleMatchResult, Balance, BalanceVar, FeeVar, Order,
-        OrderVar,
+        balance::{AuthenticatedBalance, AuthenticatedCommittedBalance, Balance, CommittedBalance},
+        fee::{AuthenticatedCommittedFee, AuthenticatedFee, CommittedFee, Fee},
+        order::{AuthenticatedCommittedOrder, AuthenticatedOrder, CommittedOrder, Order},
+        r#match::AuthenticatedMatch,
     },
     zk_gadgets::poseidon::{MultiproverPoseidonHashGadget, PoseidonHashGadget},
-    MultiProverCircuit,
+    CommitSharedProver, CommitVerifier, MultiProverCircuit, Open,
 };
 
 const ORDER_LENGTH_SCALARS: usize = 5; // mint1, mint2, direction, price, amount
@@ -101,12 +104,12 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 #[derive(Clone, Debug)]
 pub struct ValidMatchMpcWitness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The local party's order that was matched by MPC
-    pub my_order: OrderVar,
+    pub my_order: Order,
     /// A balance known by the local party that covers the position
     /// expressed in their order
-    pub my_balance: BalanceVar,
+    pub my_balance: Balance,
     /// A fee that covers the gas and transaction fee of the local party
-    pub my_fee: FeeVar,
+    pub my_fee: Fee,
     /// The result of running a match MPC on the given orders
     ///
     /// We do not open this value before proving so that we can avoid leaking information
@@ -114,9 +117,134 @@ pub struct ValidMatchMpcWitness<N: MpcNetwork + Send, S: SharedValueSource<Scala
     pub match_res: AuthenticatedMatch<N, S>,
 }
 
+/// Represents a commitment to the VALID MATCH MPC witness
+#[derive(Clone, Debug)]
+pub struct ValidMatchCommitmentShared<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// A commitment to the first party's order
+    pub order1: AuthenticatedCommittedOrder<N, S>,
+    /// A commitment to the first party's balance
+    pub balance1: AuthenticatedCommittedBalance<N, S>,
+    /// A commitment to the first party's fee
+    pub fee1: AuthenticatedCommittedFee<N, S>,
+    /// A commitment to the second party's order
+    pub order2: AuthenticatedCommittedOrder<N, S>,
+    /// A commitment to the second party's balance
+    pub balance2: AuthenticatedCommittedBalance<N, S>,
+    /// A commitment to the first party's fee
+    pub fee2: AuthenticatedCommittedFee<N, S>,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<ValidMatchCommitmentShared<N, S>>
+    for Vec<AuthenticatedCompressedRistretto<N, S>>
+{
+    fn from(commit: ValidMatchCommitmentShared<N, S>) -> Self {
+        let order1_vec = Into::<Vec<_>>::into(commit.order1);
+        let balance1_vec = Into::<Vec<_>>::into(commit.balance1);
+        let fee1_vec = Into::<Vec<_>>::into(commit.fee1);
+        let order2_vec = Into::<Vec<_>>::into(commit.order2);
+        let balance2_vec = Into::<Vec<_>>::into(commit.balance2);
+        let fee2_vec = Into::<Vec<_>>::into(commit.fee2);
+
+        order1_vec
+            .into_iter()
+            .chain(balance1_vec.into_iter())
+            .chain(fee1_vec.into_iter())
+            .chain(order2_vec.into_iter())
+            .chain(balance2_vec.into_iter())
+            .chain(fee2_vec.into_iter())
+            .collect_vec()
+    }
+}
+
+/// An opened committment to the VALID MATCH MPC witness
+#[derive(Clone, Debug)]
+pub struct ValidMatchCommitment {
+    /// A commitment to the first party's order
+    pub order1: CommittedOrder,
+    /// A commitment to the first party's balance
+    pub balance1: CommittedBalance,
+    /// A commitment to the first party's fee
+    pub fee1: CommittedFee,
+    /// A commitment to the second party's order
+    pub order2: CommittedOrder,
+    /// A commitment to the second party's balance
+    pub balance2: CommittedBalance,
+    /// A commitment to the first party's fee
+    pub fee2: CommittedFee,
+}
+
+impl From<&[CompressedRistretto]> for ValidMatchCommitment {
+    fn from(commitments: &[CompressedRistretto]) -> Self {
+        Self {
+            order1: CommittedOrder {
+                quote_mint: commitments[0],
+                base_mint: commitments[1],
+                side: commitments[2],
+                price: commitments[3],
+                amount: commitments[4],
+            },
+            balance1: CommittedBalance {
+                mint: commitments[5],
+                amount: commitments[6],
+            },
+            fee1: CommittedFee {
+                settle_key: commitments[7],
+                gas_addr: commitments[8],
+                gas_token_amount: commitments[9],
+                percentage_fee: commitments[10],
+            },
+            order2: CommittedOrder {
+                quote_mint: commitments[11],
+                base_mint: commitments[12],
+                side: commitments[13],
+                price: commitments[14],
+                amount: commitments[15],
+            },
+            balance2: CommittedBalance {
+                mint: commitments[16],
+                amount: commitments[17],
+            },
+            fee2: CommittedFee {
+                settle_key: commitments[18],
+                gas_addr: commitments[19],
+                gas_token_amount: commitments[20],
+                percentage_fee: commitments[21],
+            },
+        }
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open for ValidMatchCommitmentShared<N, S> {
+    type OpenOutput = ValidMatchCommitment;
+    type Error = MpcError;
+
+    fn open(self) -> Result<Self::OpenOutput, Self::Error> {
+        let all_commitments: Vec<AuthenticatedCompressedRistretto<N, S>> = self.into();
+        let opened_values: Vec<CompressedRistretto> =
+            AuthenticatedCompressedRistretto::batch_open(&all_commitments)
+                .map_err(|err| MpcError::SharingError(err.to_string()))?
+                .into_iter()
+                .map(|val| val.value())
+                .collect();
+
+        Ok(Into::<ValidMatchCommitment>::into(opened_values.borrow()))
+    }
+
+    fn open_and_authenticate(self) -> Result<Self::OpenOutput, Self::Error> {
+        let all_commitments: Vec<AuthenticatedCompressedRistretto<_, _>> = self.into();
+        let opened_values: Vec<CompressedRistretto> =
+            AuthenticatedCompressedRistretto::batch_open_and_authenticate(&all_commitments)
+                .map_err(|err| MpcError::SharingError(err.to_string()))?
+                .into_iter()
+                .map(|val| val.value())
+                .collect();
+
+        Ok(Into::<ValidMatchCommitment>::into(opened_values.borrow()))
+    }
+}
+
 /// The parameterization for the VALID MATCH MPC statement
 ///
-/// TODO: Add in fee tuple input consistency values
 /// TODO: Add in midpoint oracle prices
 /// TODO: Commitments to the randomness
 #[derive(Debug, Clone)]
@@ -145,6 +273,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
 {
     type Statement = ValidMatchMpcStatement;
     type Witness = ValidMatchMpcWitness<N, S>;
+    type WitnessCommitment = ValidMatchCommitmentShared<N, S>;
+
     const BP_GENS_CAPACITY: usize = 16384;
 
     fn prove(
@@ -152,44 +282,28 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         statement: Self::Statement,
         mut prover: MpcProver<'a, '_, '_, N, S>,
         fabric: SharedFabric<N, S>,
-    ) -> Result<
-        (
-            Vec<AuthenticatedCompressedRistretto<N, S>>,
-            SharedR1CSProof<N, S>,
-        ),
-        MultiproverError,
-    > {
+    ) -> Result<(ValidMatchCommitmentShared<N, S>, SharedR1CSProof<N, S>), ProverError> {
         // Commit to party 0's inputs first, then party 1's inputs
         let mut rng = OsRng {};
-        let blinders = (0..ORDER_LENGTH_SCALARS + BALANCE_LENGTH_SCALARS + FEE_LENGTH_SCALARS)
-            .map(|_| Scalar::random(&mut rng))
-            .collect_vec();
 
-        // The input values of the local party
-        let my_input_values = Into::<Vec<Scalar>>::into(&witness.my_order)
-            .into_iter()
-            .chain(Into::<Vec<Scalar>>::into(&witness.my_balance).into_iter())
-            .chain(Into::<Vec<Scalar>>::into(&witness.my_fee).into_iter())
-            .collect_vec();
+        let (party0_vars, party0_comm) = (
+            witness.my_order.clone(),
+            witness.my_balance.clone(),
+            witness.my_fee.clone(),
+        )
+            .commit(0 /* owning_party */, &mut rng, &mut prover)
+            .map_err(ProverError::Mpc)?;
+        let (party1_vars, party1_comm) = (witness.my_order, witness.my_balance, witness.my_fee)
+            .commit(1 /* owning_party */, &mut rng, &mut prover)
+            .map_err(ProverError::Mpc)?;
 
-        let (party0_comm, party0_vars) = prover
-            .batch_commit(0 /* owning_party */, &my_input_values, &blinders)
-            .map_err(MultiproverError::Mpc)?;
-
-        let (party1_comm, party1_vars) = prover
-            .batch_commit(1 /* owning_party */, &my_input_values, &blinders)
-            .map_err(MultiproverError::Mpc)?;
-
-        let party0_order = party0_vars[..ORDER_LENGTH_SCALARS].to_vec();
-        let party0_balance = party0_vars
-            [ORDER_LENGTH_SCALARS..ORDER_LENGTH_SCALARS + BALANCE_LENGTH_SCALARS]
-            .to_vec();
-        let party0_fee = party0_vars[ORDER_LENGTH_SCALARS + BALANCE_LENGTH_SCALARS..].to_vec();
-        let party1_order = party1_vars[..ORDER_LENGTH_SCALARS].to_vec();
-        let party1_balance = party1_vars
-            [ORDER_LENGTH_SCALARS..ORDER_LENGTH_SCALARS + BALANCE_LENGTH_SCALARS]
-            .to_vec();
-        let party1_fee = party1_vars[ORDER_LENGTH_SCALARS + BALANCE_LENGTH_SCALARS..].to_vec();
+        // Destructure the committed values
+        let party0_order = party0_vars.0;
+        let party0_balance = party0_vars.1;
+        let party0_fee = party0_vars.2;
+        let party1_order = party1_vars.0;
+        let party1_balance = party1_vars.1;
+        let party1_fee = party1_vars.2;
 
         // Commit to the public statement variables
         let (_, hash_o1_var) = prover.commit_public(statement.hash_order1);
@@ -200,63 +314,99 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         let (_, hash_f2_var) = prover.commit_public(statement.hash_fee2);
 
         // Check input consistency on all orders, balances, and fees
-        Self::input_consistency_check(&mut prover, &party0_order, &hash_o1_var, fabric.clone())
-            .map_err(MultiproverError::ProverError)?;
-        Self::input_consistency_check(&mut prover, &party0_balance, &hash_b1_var, fabric.clone())
-            .map_err(MultiproverError::ProverError)?;
-        Self::input_consistency_check(&mut prover, &party0_fee, &hash_f1_var, fabric.clone())
-            .map_err(MultiproverError::ProverError)?;
-        Self::input_consistency_check(&mut prover, &party1_order, &hash_o2_var, fabric.clone())
-            .map_err(MultiproverError::ProverError)?;
-        Self::input_consistency_check(&mut prover, &party1_balance, &hash_b2_var, fabric.clone())
-            .map_err(MultiproverError::ProverError)?;
-        Self::input_consistency_check(&mut prover, &party1_fee, &hash_f2_var, fabric)
-            .map_err(MultiproverError::ProverError)?;
+        Self::input_consistency_check(
+            &mut prover,
+            &Into::<Vec<MpcVariable<_, _>>>::into(party0_order),
+            &hash_o1_var,
+            fabric.clone(),
+        )
+        .map_err(ProverError::R1CS)?;
+        Self::input_consistency_check(
+            &mut prover,
+            &Into::<Vec<MpcVariable<_, _>>>::into(party0_balance),
+            &hash_b1_var,
+            fabric.clone(),
+        )
+        .map_err(ProverError::R1CS)?;
+        Self::input_consistency_check(
+            &mut prover,
+            &Into::<Vec<MpcVariable<_, _>>>::into(party0_fee),
+            &hash_f1_var,
+            fabric.clone(),
+        )
+        .map_err(ProverError::R1CS)?;
+        Self::input_consistency_check(
+            &mut prover,
+            &Into::<Vec<MpcVariable<_, _>>>::into(party1_order),
+            &hash_o2_var,
+            fabric.clone(),
+        )
+        .map_err(ProverError::R1CS)?;
+        Self::input_consistency_check(
+            &mut prover,
+            &Into::<Vec<MpcVariable<_, _>>>::into(party1_balance),
+            &hash_b2_var,
+            fabric.clone(),
+        )
+        .map_err(ProverError::R1CS)?;
+        Self::input_consistency_check(
+            &mut prover,
+            &Into::<Vec<MpcVariable<_, _>>>::into(party1_fee),
+            &hash_f2_var,
+            fabric,
+        )
+        .map_err(ProverError::R1CS)?;
 
         // TODO: Check that the balances cover the orders
 
         // Prover the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens)?;
+        let proof = prover.prove(&bp_gens).map_err(ProverError::Collaborative)?;
 
         Ok((
-            party0_comm
-                .into_iter()
-                .chain(party1_comm.into_iter())
-                .collect(),
+            ValidMatchCommitmentShared {
+                order1: party0_comm.0,
+                balance1: party0_comm.1,
+                fee1: party0_comm.2,
+                order2: party1_comm.0,
+                balance2: party1_comm.1,
+                fee2: party1_comm.2,
+            },
             proof,
         ))
     }
 
     fn verify(
-        witness_commitments: &[CompressedRistretto],
+        witness_commitment: ValidMatchCommitment,
         statement: Self::Statement,
         proof: R1CSProof,
         mut verifier: Verifier,
-    ) -> Result<(), R1CSError> {
+    ) -> Result<(), VerifierError> {
         // Commit to the input variables from the provers
-        let witness_vars = witness_commitments
-            .iter()
-            .map(|comm| verifier.commit(*comm))
-            .collect_vec();
-
-        // Split witness into consituent parts
-        let inputs_per_party = ORDER_LENGTH_SCALARS + BALANCE_LENGTH_SCALARS + FEE_LENGTH_SCALARS;
-
-        let party0_order = witness_vars[..ORDER_LENGTH_SCALARS].to_vec();
-        let party0_balance = witness_vars
-            [ORDER_LENGTH_SCALARS..ORDER_LENGTH_SCALARS + BALANCE_LENGTH_SCALARS]
-            .to_vec();
-        let party0_fee =
-            witness_vars[ORDER_LENGTH_SCALARS + BALANCE_LENGTH_SCALARS..inputs_per_party].to_vec();
-        let party1_order =
-            witness_vars[inputs_per_party..inputs_per_party + ORDER_LENGTH_SCALARS].to_vec();
-        let party1_balance = witness_vars[inputs_per_party + ORDER_LENGTH_SCALARS
-            ..inputs_per_party + ORDER_LENGTH_SCALARS + BALANCE_LENGTH_SCALARS]
-            .to_vec();
-        let party1_fee = witness_vars
-            [inputs_per_party + ORDER_LENGTH_SCALARS + BALANCE_LENGTH_SCALARS..]
-            .to_vec();
+        let party0_order = witness_commitment
+            .order1
+            .commit_verifier(&mut verifier)
+            .unwrap();
+        let party0_balance = witness_commitment
+            .balance1
+            .commit_verifier(&mut verifier)
+            .unwrap();
+        let party0_fee = witness_commitment
+            .fee1
+            .commit_verifier(&mut verifier)
+            .unwrap();
+        let party1_order = witness_commitment
+            .order2
+            .commit_verifier(&mut verifier)
+            .unwrap();
+        let party1_balance = witness_commitment
+            .balance2
+            .commit_verifier(&mut verifier)
+            .unwrap();
+        let party1_fee = witness_commitment
+            .fee2
+            .commit_verifier(&mut verifier)
+            .unwrap();
 
         // Commit to the statement variables
         let hash_o1_var = verifier.commit_public(statement.hash_order1);
@@ -267,14 +417,46 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         let hash_f2_var = verifier.commit_public(statement.hash_fee2);
 
         // Apply constraints to the verifier
-        Self::input_consistency_single_prover(&mut verifier, &party0_order, &hash_o1_var)?;
-        Self::input_consistency_single_prover(&mut verifier, &party0_balance, &hash_b1_var)?;
-        Self::input_consistency_single_prover(&mut verifier, &party0_fee, &hash_f1_var)?;
-        Self::input_consistency_single_prover(&mut verifier, &party1_order, &hash_o2_var)?;
-        Self::input_consistency_single_prover(&mut verifier, &party1_balance, &hash_b2_var)?;
-        Self::input_consistency_single_prover(&mut verifier, &party1_fee, &hash_f2_var)?;
+        Self::input_consistency_single_prover(
+            &mut verifier,
+            &Into::<Vec<Variable>>::into(party0_order),
+            &hash_o1_var,
+        )
+        .map_err(VerifierError::R1CS)?;
+        Self::input_consistency_single_prover(
+            &mut verifier,
+            &Into::<Vec<Variable>>::into(party0_balance),
+            &hash_b1_var,
+        )
+        .map_err(VerifierError::R1CS)?;
+        Self::input_consistency_single_prover(
+            &mut verifier,
+            &Into::<Vec<Variable>>::into(party0_fee),
+            &hash_f1_var,
+        )
+        .map_err(VerifierError::R1CS)?;
+        Self::input_consistency_single_prover(
+            &mut verifier,
+            &Into::<Vec<Variable>>::into(party1_order),
+            &hash_o2_var,
+        )
+        .map_err(VerifierError::R1CS)?;
+        Self::input_consistency_single_prover(
+            &mut verifier,
+            &Into::<Vec<Variable>>::into(party1_balance),
+            &hash_b2_var,
+        )
+        .map_err(VerifierError::R1CS)?;
+        Self::input_consistency_single_prover(
+            &mut verifier,
+            &Into::<Vec<Variable>>::into(party1_fee),
+            &hash_f2_var,
+        )
+        .map_err(VerifierError::R1CS)?;
 
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        verifier.verify(&proof, &bp_gens)
+        verifier
+            .verify(&proof, &bp_gens)
+            .map_err(VerifierError::R1CS)
     }
 }

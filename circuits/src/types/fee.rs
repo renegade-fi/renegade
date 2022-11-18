@@ -80,6 +80,17 @@ pub struct FeeVar {
     pub percentage_fee: Variable,
 }
 
+impl From<FeeVar> for Vec<Variable> {
+    fn from(fee: FeeVar) -> Self {
+        vec![
+            fee.settle_key,
+            fee.gas_addr,
+            fee.gas_token_amount,
+            fee.percentage_fee,
+        ]
+    }
+}
+
 impl CommitProver for Fee {
     type VarType = FeeVar;
     type CommitType = CommittedFee;
@@ -91,15 +102,13 @@ impl CommitProver for Fee {
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
         let (settle_comm, settle_var) =
-            prover.commit(bigint_to_scalar(&self.settle_key), Scalar::random(&mut rng));
+            prover.commit(bigint_to_scalar(&self.settle_key), Scalar::random(rng));
         let (addr_comm, addr_var) =
-            prover.commit(bigint_to_scalar(&self.gas_addr), Scalar::random(&mut rng));
-        let (amount_comm, amount_var) = prover.commit(
-            Scalar::from(self.gas_token_amount),
-            Scalar::random(&mut rng),
-        );
+            prover.commit(bigint_to_scalar(&self.gas_addr), Scalar::random(rng));
+        let (amount_comm, amount_var) =
+            prover.commit(Scalar::from(self.gas_token_amount), Scalar::random(rng));
         let (percent_comm, percent_var) =
-            prover.commit(Scalar::from(self.percentage_fee), Scalar::random(&mut rng));
+            prover.commit(Scalar::from(self.percentage_fee), Scalar::random(rng));
 
         Ok((
             FeeVar {
@@ -131,6 +140,25 @@ pub struct CommittedFee {
     /// For now this is encoded as a u64, which represents a
     /// fixed point rational under the hood
     pub percentage_fee: CompressedRistretto,
+}
+
+impl CommitVerifier for CommittedFee {
+    type VarType = FeeVar;
+    type ErrorType = (); // Does not error
+
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
+        let settle_var = verifier.commit(self.settle_key);
+        let addr_var = verifier.commit(self.gas_addr);
+        let amount_var = verifier.commit(self.gas_token_amount);
+        let percentage_var = verifier.commit(self.percentage_fee);
+
+        Ok(FeeVar {
+            settle_key: settle_var,
+            gas_addr: addr_var,
+            gas_token_amount: amount_var,
+            percentage_fee: percentage_var,
+        })
+    }
 }
 
 /// A fee with values that have been allocated in an MPC network
@@ -171,10 +199,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Fee 
             .map_err(|err| MpcError::SharingError(err.to_string()))?;
 
         Ok(AuthenticatedFee {
-            settle_key: shared_values[0],
-            gas_addr: shared_values[1],
-            gas_token_amount: shared_values[2],
-            percentage_fee: shared_values[3],
+            settle_key: shared_values[0].to_owned(),
+            gas_addr: shared_values[1].to_owned(),
+            gas_token_amount: shared_values[2].to_owned(),
+            percentage_fee: shared_values[3].to_owned(),
         })
     }
 }
@@ -195,6 +223,19 @@ pub struct AuthenticatedFeeVar<N: MpcNetwork + Send, S: SharedValueSource<Scalar
     pub percentage_fee: MpcVariable<N, S>,
 }
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedFeeVar<N, S>>
+    for Vec<MpcVariable<N, S>>
+{
+    fn from(fee: AuthenticatedFeeVar<N, S>) -> Self {
+        vec![
+            fee.settle_key,
+            fee.gas_addr,
+            fee.gas_token_amount,
+            fee.percentage_fee,
+        ]
+    }
+}
+
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S> for Fee {
     type SharedVarType = AuthenticatedFeeVar<N, S>;
     type CommitType = AuthenticatedCommittedFee<N, S>;
@@ -206,7 +247,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
         rng: &mut R,
         prover: &mut MpcProver<N, S>,
     ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType> {
-        let blinders = (0..4).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let blinders = (0..4).map(|_| Scalar::random(rng)).collect_vec();
         let (shared_comm, shared_vars) = prover
             .batch_commit(
                 owning_party,
@@ -222,16 +263,17 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
 
         Ok((
             AuthenticatedFeeVar {
-                settle_key: shared_vars[0],
-                gas_addr: shared_vars[1],
-                gas_token_amount: shared_vars[2],
-                percentage_fee: shared_vars[3],
+                settle_key: shared_vars[0].to_owned(),
+                gas_addr: shared_vars[1].to_owned(),
+                gas_token_amount: shared_vars[2].to_owned(),
+                percentage_fee: shared_vars[3].to_owned(),
             },
+            // TODO: implement clone for AuthenticatedCompressedRistretto
             AuthenticatedCommittedFee {
-                settle_key: shared_comm[0],
-                gas_addr: shared_comm[1],
-                gas_token_amount: shared_comm[2],
-                percentage_fee: shared_comm[3],
+                settle_key: shared_comm[0].to_owned(),
+                gas_addr: shared_comm[1].to_owned(),
+                gas_token_amount: shared_comm[2].to_owned(),
+                percentage_fee: shared_comm[3].to_owned(),
             },
         ))
     }
@@ -252,6 +294,19 @@ pub struct AuthenticatedCommittedFee<N: MpcNetwork + Send, S: SharedValueSource<
     pub percentage_fee: AuthenticatedCompressedRistretto<N, S>,
 }
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedCommittedFee<N, S>>
+    for Vec<AuthenticatedCompressedRistretto<N, S>>
+{
+    fn from(commit: AuthenticatedCommittedFee<N, S>) -> Self {
+        vec![
+            commit.settle_key,
+            commit.gas_addr,
+            commit.gas_token_amount,
+            commit.percentage_fee,
+        ]
+    }
+}
+
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
     for AuthenticatedCommittedFee<N, S>
 {
@@ -260,10 +315,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
         let opened_values = AuthenticatedCompressedRistretto::batch_open_and_authenticate(&[
-            self.settle_key,
-            self.gas_addr,
-            self.gas_token_amount,
-            self.percentage_fee,
+            self.settle_key.clone(),
+            self.gas_addr.clone(),
+            self.gas_token_amount.clone(),
+            self.percentage_fee.clone(),
         ])
         .map_err(|err| MpcError::SharingError(err.to_string()))?;
 

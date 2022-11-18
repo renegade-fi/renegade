@@ -3,19 +3,15 @@ mod arithmetic;
 mod merkle;
 mod poseidon;
 
-use circuits::{mpc::SharedFabric, MultiProverCircuit};
+use circuits::{mpc::SharedFabric, MultiProverCircuit, Open};
 use curve25519_dalek::scalar::Scalar;
-use itertools::Itertools;
 use merlin::Transcript;
 use mpc_bulletproof::{
     r1cs::Verifier,
-    r1cs_mpc::{MpcProver, MultiproverError},
+    r1cs_mpc::{MpcProver, MultiproverError, R1CSError},
     PedersenGens,
 };
-use mpc_ristretto::{
-    authenticated_ristretto::AuthenticatedCompressedRistretto, beaver::SharedValueSource,
-    network::MpcNetwork,
-};
+use mpc_ristretto::{beaver::SharedValueSource, error::MpcError, network::MpcNetwork};
 
 const TRANSCRIPT_SEED: &str = "test";
 
@@ -40,22 +36,20 @@ where
     let prover = MpcProver::new_with_fabric(fabric.0.clone(), &mut transcript, &pc_gens);
 
     // Prove the statement
-    let (witness_commitments, proof) =
-        C::prove(witness, statement.clone(), prover, fabric).unwrap();
+    let (witness_commitment, proof) = C::prove(witness, statement.clone(), prover, fabric).unwrap();
 
     // Open the proof and commitments
     let opened_proof = proof.open()?;
-    let opened_commits =
-        AuthenticatedCompressedRistretto::batch_open_and_authenticate(&witness_commitments)
-            .map_err(MultiproverError::Mpc)?
-            .iter()
-            .map(|comm| comm.value())
-            .collect_vec();
+    let opened_commit = witness_commitment.open_and_authenticate().map_err(|_| {
+        MultiproverError::Mpc(MpcError::ArithmeticError(
+            "error opening commitments".to_string(),
+        ))
+    })?;
 
     // Verify the statement with a fresh transcript
     let mut verifier_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
     let verifier = Verifier::new(&pc_gens, &mut verifier_transcript);
 
-    C::verify(&opened_commits, statement, opened_proof, verifier)
-        .map_err(MultiproverError::ProverError)
+    C::verify(opened_commit, statement, opened_proof, verifier)
+        .map_err(|_| MultiproverError::ProverError(R1CSError::VerificationError))
 }

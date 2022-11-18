@@ -10,8 +10,8 @@ use mpc_bulletproof::{
         LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
     },
     r1cs_mpc::{
-        MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MpcVariable,
-        MultiproverError, R1CSError, SharedR1CSProof,
+        MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MpcVariable, R1CSError,
+        SharedR1CSProof,
     },
     BulletproofGens,
 };

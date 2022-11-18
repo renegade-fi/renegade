@@ -9,7 +9,7 @@ use mpc_bulletproof::r1cs::{
 };
 use mpc_bulletproof::r1cs_mpc::{
     MpcConstraintSystem, MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem,
-    MultiproverError, R1CSError, SharedR1CSProof,
+    SharedR1CSProof,
 };
 use mpc_bulletproof::BulletproofGens;
 use mpc_ristretto::authenticated_ristretto::AuthenticatedCompressedRistretto;
@@ -110,7 +110,7 @@ impl SingleProverCircuit for ExpGadget {
         let blinding_factor = Scalar::random(&mut rng);
 
         let (x_commit, x_var) = prover.commit(witness.x, blinding_factor);
-        let (out_commit, out_var) = prover.commit_public(statement.expected_out);
+        let (_, out_var) = prover.commit_public(statement.expected_out);
 
         // Generate the constraints for the circuit
         Self::generate_constraints(&mut prover, x_var, out_var, statement.alpha);

@@ -1,5 +1,4 @@
 //! Groups the type definitions for matches
-use std::borrow::Borrow;
 
 use crate::{errors::MpcError, Open};
 use curve25519_dalek::scalar::Scalar;
@@ -60,15 +59,15 @@ pub struct AuthenticatedSingleMatchResult<N: MpcNetwork + Send, S: SharedValueSo
 }
 
 /// Serialization to a vector of authenticated scalars
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<&AuthenticatedSingleMatchResult<N, S>>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedSingleMatchResult<N, S>>
     for Vec<AuthenticatedScalar<N, S>>
 {
-    fn from(match_res: &AuthenticatedSingleMatchResult<N, S>) -> Self {
+    fn from(match_res: AuthenticatedSingleMatchResult<N, S>) -> Self {
         let mut res = Vec::with_capacity(3 * 4 /* 3 scalars for 4 matches */);
-        res.append(&mut match_res.buy_side1.borrow().into());
-        res.append(&mut match_res.sell_side1.borrow().into());
-        res.append(&mut match_res.buy_side2.borrow().into());
-        res.append(&mut match_res.sell_side2.borrow().into());
+        res.append(&mut match_res.buy_side1.into());
+        res.append(&mut match_res.sell_side1.into());
+        res.append(&mut match_res.buy_side2.into());
+        res.append(&mut match_res.sell_side2.into());
 
         res
     }
@@ -105,7 +104,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open
     type OpenOutput = SingleMatchResult;
     type Error = MpcError;
 
-    fn open(&self) -> Result<Self::OpenOutput, Self::Error> {
+    fn open(self) -> Result<Self::OpenOutput, Self::Error> {
         // Flatten the values into a shape that can be batch opened
         let flattened_self: Vec<AuthenticatedScalar<_, _>> = self.into();
         // Open the values and cast them to u64
@@ -119,7 +118,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open
         TryFrom::<&[u64]>::try_from(&opened_values)
     }
 
-    fn open_and_authenticate(&self) -> Result<Self::OpenOutput, Self::Error> {
+    fn open_and_authenticate(self) -> Result<Self::OpenOutput, Self::Error> {
         // Flatten the values into a shape that can be batch opened
         let flattened_self: Vec<AuthenticatedScalar<_, _>> = self.into();
         // Open the values and cast them to u64
@@ -189,11 +188,11 @@ pub struct AuthenticatedMatch<N: MpcNetwork + Send, S: SharedValueSource<Scalar>
 }
 
 /// Serialization for opening and sending across the MPC network
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<&AuthenticatedMatch<N, S>>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedMatch<N, S>>
     for Vec<AuthenticatedScalar<N, S>>
 {
-    fn from(val: &AuthenticatedMatch<N, S>) -> Self {
-        vec![val.mint.clone(), val.amount.clone(), val.side.clone()]
+    fn from(val: AuthenticatedMatch<N, S>) -> Self {
+        vec![val.mint, val.amount, val.side]
     }
 }
 

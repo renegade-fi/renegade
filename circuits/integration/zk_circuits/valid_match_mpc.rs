@@ -4,7 +4,12 @@ use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
 use circuits::{
     mpc::SharedFabric,
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    types::{AuthenticatedMatch, BalanceVar, FeeVar, OrderVar},
+    types::{
+        balance::Balance,
+        fee::Fee,
+        order::{Order, OrderSide},
+        r#match::AuthenticatedMatch,
+    },
     zk_circuits::valid_match_mpc::{
         ValidMatchMpcCircuit, ValidMatchMpcStatement, ValidMatchMpcWitness,
     },
@@ -13,7 +18,8 @@ use curve25519_dalek::scalar::Scalar;
 use integration_helpers::{mpc_network::batch_share_plaintext_scalar, types::IntegrationTest};
 use itertools::Itertools;
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
-use rand_core::OsRng;
+use num_bigint::BigInt;
+use rand_core::{OsRng, RngCore};
 
 use crate::{
     mpc_gadgets::{poseidon::convert_params, prime_field_to_scalar, scalar_to_prime_field},
@@ -27,8 +33,11 @@ const FEE_LENGTH_SCALARS: usize = 4; // settle_key, gas_addr, gas_token_amount, 
 
 /// Hashes the payload of `Scalar`s via the Arkworks Poseidon sponge implementation
 /// Returns the result, re-cast into the Dalek Ristretto scalar field
-fn hash_values_arkworks(values: &[Scalar]) -> Scalar {
-    let arkworks_input = values.iter().map(scalar_to_prime_field).collect_vec();
+fn hash_values_arkworks(values: &[u64]) -> Scalar {
+    let arkworks_input = values
+        .iter()
+        .map(|val| scalar_to_prime_field(&Scalar::from(*val)))
+        .collect_vec();
     let arkworks_params = convert_params(&PoseidonSpongeParameters::default());
 
     let mut arkworks_hasher = PoseidonSponge::new(&arkworks_params);
@@ -40,9 +49,9 @@ fn hash_values_arkworks(values: &[Scalar]) -> Scalar {
 }
 
 /// Sample a random sequence of scalars
-fn random_scalars(n: usize) -> Vec<Scalar> {
+fn random_u64s(n: usize) -> Vec<u64> {
     let mut rng = OsRng {};
-    (0..n).map(|_| Scalar::random(&mut rng)).collect_vec()
+    (0..n).map(|_| rng.next_u64()).collect_vec()
 }
 
 /// Generates a random authenticated match with dummy data
@@ -61,10 +70,11 @@ fn random_authenticated_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>
 /// Tests that the valid match MPC circuit proves and verifies given a correct witness
 fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // TODO: These values should be valid inputs, not random
-    let my_random_order = random_scalars(ORDER_LENGTH_SCALARS);
-    let my_random_balance = random_scalars(BALANCE_LENGTH_SCALARS);
-    let my_random_fee = random_scalars(FEE_LENGTH_SCALARS);
-    let my_wallet_randomness = random_scalars(1 /* n */);
+    let mut my_random_order = random_u64s(ORDER_LENGTH_SCALARS);
+    my_random_order[2] = 1; // Sell side at random
+    let my_random_balance = random_u64s(BALANCE_LENGTH_SCALARS);
+    let my_random_fee = random_u64s(FEE_LENGTH_SCALARS);
+    let my_wallet_randomness = random_u64s(1 /* n */);
 
     // Hash the values with Arkworks hasher to get an expected input consistency value
     let my_order_hash = hash_values_arkworks(&my_random_order);
@@ -95,20 +105,20 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
     );
 
     let witness = ValidMatchMpcWitness {
-        my_order: OrderVar {
+        my_order: Order {
             quote_mint: my_random_order[0],
             base_mint: my_random_order[1],
-            side: my_random_order[2],
+            side: OrderSide::Sell,
             price: my_random_order[3],
             amount: my_random_order[4],
         },
-        my_balance: BalanceVar {
+        my_balance: Balance {
             mint: my_random_balance[0],
             amount: my_random_balance[1],
         },
-        my_fee: FeeVar {
-            settle_key: my_random_fee[0],
-            gas_addr: my_random_fee[1],
+        my_fee: Fee {
+            settle_key: BigInt::from(my_random_fee[0]),
+            gas_addr: BigInt::from(my_random_fee[1]),
             gas_token_amount: my_random_fee[2],
             percentage_fee: my_random_fee[3],
         },

@@ -62,6 +62,12 @@ pub struct BalanceVar {
     pub amount: Variable,
 }
 
+impl From<BalanceVar> for Vec<Variable> {
+    fn from(balance: BalanceVar) -> Self {
+        vec![balance.mint, balance.amount]
+    }
+}
+
 impl CommitProver for Balance {
     type VarType = BalanceVar;
     type CommitType = CommittedBalance;
@@ -72,10 +78,9 @@ impl CommitProver for Balance {
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (mint_comm, mint_var) =
-            prover.commit(Scalar::from(self.mint), Scalar::random(&mut rng));
+        let (mint_comm, mint_var) = prover.commit(Scalar::from(self.mint), Scalar::random(rng));
         let (amount_comm, amount_var) =
-            prover.commit(Scalar::from(self.amount), Scalar::random(&mut rng));
+            prover.commit(Scalar::from(self.amount), Scalar::random(rng));
 
         Ok((
             BalanceVar {
@@ -132,12 +137,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Bala
         let shared_values = fabric
             .borrow_fabric()
             .batch_allocate_private_u64s(owning_party, &[self.amount, self.mint])
-            .map_err(|err| MpcError::SharingError(err.to_string()))?
-            .to_owned();
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
 
         Ok(Self::SharedType {
-            mint: shared_values[0],
-            amount: shared_values[1],
+            mint: shared_values[0].to_owned(),
+            amount: shared_values[1].to_owned(),
         })
     }
 }
@@ -152,6 +156,14 @@ pub struct AuthenticatedBalanceVar<N: MpcNetwork + Send, S: SharedValueSource<Sc
     pub amount: MpcVariable<N, S>,
 }
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedBalanceVar<N, S>>
+    for Vec<MpcVariable<N, S>>
+{
+    fn from(balance: AuthenticatedBalanceVar<N, S>) -> Self {
+        vec![balance.mint, balance.amount]
+    }
+}
+
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S> for Balance {
     type SharedVarType = AuthenticatedBalanceVar<N, S>;
     type CommitType = AuthenticatedCommittedBalance<N, S>;
@@ -163,7 +175,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
         rng: &mut R,
         prover: &mut MpcProver<N, S>,
     ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType> {
-        let blinders = &[Scalar::random(&mut rng), Scalar::random(&mut rng)];
+        let blinders = &[Scalar::random(rng), Scalar::random(rng)];
         let (shared_comm, shared_vars) = prover
             .batch_commit(
                 owning_party,
@@ -174,12 +186,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
 
         Ok((
             AuthenticatedBalanceVar {
-                mint: shared_vars[0],
-                amount: shared_vars[1],
+                mint: shared_vars[0].to_owned(),
+                amount: shared_vars[1].to_owned(),
             },
             AuthenticatedCommittedBalance {
-                mint: shared_comm[0],
-                amount: shared_comm[1],
+                mint: shared_comm[0].to_owned(),
+                amount: shared_comm[1].to_owned(),
             },
         ))
     }
@@ -194,6 +206,14 @@ pub struct AuthenticatedCommittedBalance<N: MpcNetwork + Send, S: SharedValueSou
     pub amount: AuthenticatedCompressedRistretto<N, S>,
 }
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedCommittedBalance<N, S>>
+    for Vec<AuthenticatedCompressedRistretto<N, S>>
+{
+    fn from(commit: AuthenticatedCommittedBalance<N, S>) -> Self {
+        vec![commit.mint, commit.amount]
+    }
+}
+
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
     for AuthenticatedCommittedBalance<N, S>
 {
@@ -203,8 +223,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
         // Open the committments
         let opened_commit = AuthenticatedCompressedRistretto::batch_open_and_authenticate(&[
-            self.mint,
-            self.amount,
+            self.mint.clone(),
+            self.amount.clone(),
         ])
         .map_err(|err| MpcError::SharingError(err.to_string()))?;
 
