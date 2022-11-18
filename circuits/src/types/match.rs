@@ -9,10 +9,8 @@ use mpc_ristretto::{
 };
 use num_bigint::BigInt;
 
-use super::{
-    fee::{AuthenticatedFee, Fee},
-    order::OrderSide,
-};
+/// The number of scalars in a match tuple for serialization/deserialization
+const MATCH_SIZE_SCALARS: usize = 5;
 
 /// Represents the match result of a matching MPC in the cleartext
 /// in which two tokens are exchanged
@@ -29,18 +27,14 @@ pub struct MatchResult {
     /// The direction of the match, 0 implies that party 1 buys the quote and
     /// sells the base; 1 implies that party 2 buys the base and sells the quote
     pub direction: u64, // Binary
-    /// The first party's fee tuple, payable to the first party's executing relayer
-    pub fee1: Fee,
-    /// The second party's ifee tuple, payable to the second party's executing relayer
-    pub fee2: Fee,
 }
 
 impl TryFrom<&[u64]> for MatchResult {
     type Error = MpcError;
 
     fn try_from(values: &[u64]) -> Result<Self, Self::Error> {
-        // 13 total values
-        if values.len() != 13 {
+        // MATCH_SIZE_SCALARS total values
+        if values.len() != MATCH_SIZE_SCALARS {
             return Err(MpcError::SerializationError(format!(
                 "Expected 12 values, got {:?}",
                 values.len()
@@ -53,8 +47,6 @@ impl TryFrom<&[u64]> for MatchResult {
             quote_amount: values[2],
             base_amount: values[3],
             direction: values[4],
-            fee1: Fee::try_from(&values[5..9]).unwrap(),
-            fee2: Fee::try_from(&values[9..]).unwrap(),
         })
     }
 }
@@ -74,10 +66,6 @@ pub struct AuthenticatedMatchResult<N: MpcNetwork + Send, S: SharedValueSource<S
     /// The direction of the match, 0 implies that party 1 buys the quote and
     /// sells the base; 1 implies that party 2 buys the base and sells the quote
     pub direction: AuthenticatedScalar<N, S>, // Binary
-    /// The first party's fee tuple, payable to the first party's executing relayer
-    pub fee1: AuthenticatedFee<N, S>,
-    /// The second party's ifee tuple, payable to the second party's executing relayer
-    pub fee2: AuthenticatedFee<N, S>,
 }
 
 /// Serialization to a vector of authenticated scalars
@@ -91,8 +79,6 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedMatch
         res.push(match_res.quote_amount);
         res.push(match_res.base_amount);
         res.push(match_res.direction);
-        res.append(&mut match_res.fee1.into());
-        res.append(&mut match_res.fee2.into());
 
         res
     }
@@ -105,8 +91,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> TryFrom<&[Authenticated
     type Error = MpcError;
 
     fn try_from(values: &[AuthenticatedScalar<N, S>]) -> Result<Self, Self::Error> {
-        // 13 values in the match tuple
-        if values.len() != 13 {
+        // MATCH_SIZE_SCALARS values in the match tuple
+        if values.len() != MATCH_SIZE_SCALARS {
             return Err(MpcError::SerializationError(format!(
                 "Expected 12 elements, got {:?}",
                 values.len()
@@ -114,13 +100,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> TryFrom<&[Authenticated
         }
 
         Ok(Self {
-            quote_mint: values[0],
-            quote_amount: values[1],
-            base_mint: values[2],
-            base_amount: values[3],
-            direction: values[4],
-            fee1: AuthenticatedFee::from(&values[5..9]),
-            fee2: AuthenticatedFee::from(&values[9..]),
+            quote_mint: values[0].clone(),
+            quote_amount: values[1].clone(),
+            base_mint: values[2].clone(),
+            base_amount: values[3].clone(),
+            direction: values[4].clone(),
         })
     }
 }
@@ -156,90 +140,5 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open for AuthenticatedM
 
         // Deserialize back into result type
         TryFrom::<&[u64]>::try_from(&opened_values)
-    }
-}
-
-/// A single match which specifies the token transferred, amount, and direction of transfer
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Match {
-    /// The mint (ERC-20) of the token transferred by this match
-    pub mint: u64,
-    /// The amount of the token transferred by this match
-    pub amount: u64,
-    /// The direction (buy or sell) of the transfer that this match results in
-    pub side: OrderSide,
-}
-
-/// Deserialization from a list of u64s to a Match
-impl TryFrom<&[u64]> for Match {
-    type Error = MpcError;
-
-    fn try_from(value: &[u64]) -> Result<Self, Self::Error> {
-        if value.len() != 3 {
-            return Err(MpcError::SerializationError(format!(
-                "Expected 3 elements, got {:?}",
-                value.len()
-            )));
-        }
-
-        if value[2] != 0 && value[2] != 1 {
-            return Err(MpcError::SerializationError(format!(
-                "Expected order side to be 0 or 1, got {:?}",
-                value[2]
-            )));
-        }
-
-        Ok(Match {
-            mint: value[0],
-            amount: value[1],
-            side: if value[2] == 0 {
-                OrderSide::Buy
-            } else {
-                OrderSide::Sell
-            },
-        })
-    }
-}
-
-/// Represents a match on one side of the order that is backed by authenticated,
-/// network allocated values
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AuthenticatedMatch<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
-    /// The mint (ERC-20 token) that this match result swaps
-    pub mint: AuthenticatedScalar<N, S>,
-    /// The amount of the mint token to swap
-    pub amount: AuthenticatedScalar<N, S>,
-    /// The side (0 is buy, 1 is sell)
-    pub side: AuthenticatedScalar<N, S>,
-}
-
-/// Serialization for opening and sending across the MPC network
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedMatch<N, S>>
-    for Vec<AuthenticatedScalar<N, S>>
-{
-    fn from(val: AuthenticatedMatch<N, S>) -> Self {
-        vec![val.mint, val.amount, val.side]
-    }
-}
-
-/// Deserialization from a list of shared values
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> TryFrom<&[AuthenticatedScalar<N, S>]>
-    for AuthenticatedMatch<N, S>
-{
-    type Error = MpcError;
-
-    fn try_from(value: &[AuthenticatedScalar<N, S>]) -> Result<Self, Self::Error> {
-        if value.len() != 3 {
-            return Err(MpcError::SerializationError(format!(
-                "Expected 3 values, got {:?}",
-                value.len()
-            )));
-        }
-
-        Ok(AuthenticatedMatch {
-            mint: value[0].clone(),
-            amount: value[1].clone(),
-            side: value[2].clone(),
-        })
     }
 }

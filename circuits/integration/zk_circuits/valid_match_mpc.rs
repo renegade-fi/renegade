@@ -8,7 +8,7 @@ use circuits::{
         balance::Balance,
         fee::Fee,
         order::{Order, OrderSide},
-        r#match::AuthenticatedMatch,
+        r#match::AuthenticatedMatchResult,
     },
     zk_circuits::valid_match_mpc::{
         ValidMatchMpcCircuit, ValidMatchMpcStatement, ValidMatchMpcWitness,
@@ -58,12 +58,15 @@ fn random_u64s(n: usize) -> Vec<u64> {
 /// TODO: Remove this method once the full test is in place
 fn random_authenticated_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     fabric: SharedFabric<N, S>,
-) -> AuthenticatedMatch<N, S> {
+) -> AuthenticatedMatchResult<N, S> {
+    let mut rng = OsRng {};
     let borrow = fabric.borrow_fabric();
-    AuthenticatedMatch {
-        mint: borrow.allocate_public_u64(0),
-        amount: borrow.allocate_public_u64(0),
-        side: borrow.allocate_public_u64(0),
+    AuthenticatedMatchResult {
+        quote_mint: borrow.allocate_public_u64(rng.next_u64()),
+        base_mint: borrow.allocate_public_u64(rng.next_u64()),
+        quote_amount: borrow.allocate_public_u64(rng.next_u64()),
+        base_amount: borrow.allocate_public_u64(rng.next_u64()),
+        direction: borrow.allocate_public_u64(rng.next_u64()),
     }
 }
 

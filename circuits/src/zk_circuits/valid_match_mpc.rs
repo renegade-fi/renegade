@@ -33,7 +33,7 @@ use crate::{
         balance::{AuthenticatedBalance, AuthenticatedCommittedBalance, Balance, CommittedBalance},
         fee::{AuthenticatedCommittedFee, AuthenticatedFee, CommittedFee, Fee},
         order::{AuthenticatedCommittedOrder, AuthenticatedOrder, CommittedOrder, Order},
-        r#match::AuthenticatedMatch,
+        r#match::AuthenticatedMatchResult,
     },
     zk_gadgets::poseidon::{MultiproverPoseidonHashGadget, PoseidonHashGadget},
     CommitSharedProver, CommitVerifier, MultiProverCircuit, Open,
@@ -114,7 +114,7 @@ pub struct ValidMatchMpcWitness<N: MpcNetwork + Send, S: SharedValueSource<Scala
     ///
     /// We do not open this value before proving so that we can avoid leaking information
     /// before the collaborative proof has finished
-    pub match_res: AuthenticatedMatch<N, S>,
+    pub match_res: AuthenticatedMatchResult<N, S>,
 }
 
 /// Represents a commitment to the VALID MATCH MPC witness

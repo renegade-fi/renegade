@@ -2,13 +2,11 @@
 
 use circuits::{
     mpc_circuits::r#match::compute_match,
-    types::{
-        order::{Order, OrderSide},
-        r#match::{Match, SingleMatchResult},
-    },
+    types::{order::Order, r#match::MatchResult},
     Allocate, Open,
 };
 use integration_helpers::types::IntegrationTest;
+use num_bigint::BigInt;
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
@@ -17,44 +15,16 @@ use crate::{IntegrationTestArgs, TestWrapper};
  */
 
 /// Checks that a given match result is empty (all zeros)
-fn check_no_match(res: &SingleMatchResult) -> Result<(), String> {
+fn check_no_match(res: &MatchResult) -> Result<(), String> {
     // Party 1 buy side
     check_single_match(
-        &res.buy_side1,
-        &Match {
-            mint: 0,
-            amount: 0,
-            side: OrderSide::Buy,
-        },
-    )?;
-
-    // Party 1 sell side
-    check_single_match(
-        &res.sell_side1,
-        &Match {
-            mint: 0,
-            amount: 0,
-            side: OrderSide::Sell,
-        },
-    )?;
-
-    // Party 2 buy side
-    check_single_match(
-        &res.buy_side2,
-        &Match {
-            mint: 0,
-            amount: 0,
-            side: OrderSide::Buy,
-        },
-    )?;
-
-    // Party 2 sell side
-    check_single_match(
-        &res.sell_side2,
-        &Match {
-            mint: 0,
-            amount: 0,
-            side: OrderSide::Sell,
+        res,
+        &MatchResult {
+            quote_mint: BigInt::from(0u64),
+            base_mint: BigInt::from(0u64),
+            quote_amount: 0,
+            base_amount: 0,
+            direction: 0,
         },
     )?;
 
@@ -65,44 +35,16 @@ fn check_no_match(res: &SingleMatchResult) -> Result<(), String> {
 ///
 /// For brevity, the expected result is specified as the vector:
 //      [party1_buy_mint, party1_buy_amount, party2_buy_mint, party2_buy_amount]
-fn check_match_expected_result(res: &SingleMatchResult, expected: &[u64]) -> Result<(), String> {
+fn check_match_expected_result(res: &MatchResult, expected: &[u64]) -> Result<(), String> {
     // Party 1 buy side
     check_single_match(
-        &res.buy_side1,
-        &Match {
-            mint: expected[0],
-            amount: expected[1],
-            side: OrderSide::Buy,
-        },
-    )?;
-
-    // Party 1 sell side
-    check_single_match(
-        &res.sell_side1,
-        &Match {
-            mint: expected[2],
-            amount: expected[3],
-            side: OrderSide::Sell,
-        },
-    )?;
-
-    // Party 2 buy side
-    check_single_match(
-        &res.buy_side2,
-        &Match {
-            mint: expected[2],
-            amount: expected[3],
-            side: OrderSide::Buy,
-        },
-    )?;
-
-    // Party 2 sell side
-    check_single_match(
-        &res.sell_side2,
-        &Match {
-            mint: expected[0],
-            amount: expected[1],
-            side: OrderSide::Sell,
+        res,
+        &MatchResult {
+            quote_mint: BigInt::from(expected[0]),
+            base_mint: BigInt::from(expected[1]),
+            quote_amount: expected[2],
+            base_amount: expected[3],
+            direction: expected[4],
         },
     )?;
 
@@ -110,8 +52,8 @@ fn check_match_expected_result(res: &SingleMatchResult, expected: &[u64]) -> Res
 }
 
 /// Checks that a single given match is the expected value
-fn check_single_match(res: &Match, expected: &Match) -> Result<(), String> {
-    if res.amount == expected.amount && res.mint == expected.mint && res.side == expected.side {
+fn check_single_match(res: &MatchResult, expected: &MatchResult) -> Result<(), String> {
+    if res.eq(expected) {
         Ok(())
     } else {
         Err(format!("Expected {:?}, got {:?}", expected, res))
@@ -241,22 +183,25 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
     //      [party1_buy_mint, party1_buy_amount, party2_buy_mint, party2_buy_amount]
     let expected_results = vec![
         vec![
-            2,   /* party1 buy mint */
-            20,  /* party1 buy amout */
-            1,   /* party2 buy mint */
-            140, /* party2 buy amount */
+            1,   /* quote mint */
+            2,   /* base mint */
+            140, /* quote mint exchanged */
+            20,  /* base mint exchanged */
+            0,   /* quote buying party */
         ],
         vec![
-            1,   /* party1 buy mint */
-            100, /* party1 buy amount */
-            2,   /* party2 buy mint */
-            10,  /* party2 buy amount */
+            1,   /* quote mint */
+            2,   /* base mint */
+            100, /* quote mint exchanged */
+            10,  /* base mint exchanged */
+            1,   /* quote buying party */
         ],
         vec![
-            1,   /* party1 buy mint */
-            200, /* party1 buy amount */
-            2,   /* party2 buy mint */
-            20,  /* party2 buy amount */
+            1,   /* quote mint */
+            2,   /* base mint */
+            200, /* quote mint exchanged */
+            20,  /* base mint exchanged */
+            1,   /* quote buying party */
         ],
     ];
 
