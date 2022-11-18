@@ -176,6 +176,32 @@ pub struct AuthenticatedFee<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> 
     pub percentage_fee: AuthenticatedScalar<N, S>,
 }
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedFee<N, S>>
+    for Vec<AuthenticatedScalar<N, S>>
+{
+    fn from(fee: AuthenticatedFee<N, S>) -> Self {
+        vec![
+            fee.settle_key,
+            fee.gas_addr,
+            fee.gas_token_amount,
+            fee.percentage_fee,
+        ]
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<&[AuthenticatedScalar<N, S>]>
+    for AuthenticatedFee<N, S>
+{
+    fn from(values: &[AuthenticatedScalar<N, S>]) -> Self {
+        Self {
+            settle_key: values[0].to_owned(),
+            gas_addr: values[1].to_owned(),
+            gas_token_amount: values[2].to_owned(),
+            percentage_fee: values[3].to_owned(),
+        }
+    }
+}
+
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Fee {
     type SharedType = AuthenticatedFee<N, S>;
     type ErrorType = MpcError;

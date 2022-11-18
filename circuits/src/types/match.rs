@@ -7,67 +7,92 @@ use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource,
     mpc_scalar::scalar_to_u64, network::MpcNetwork,
 };
+use num_bigint::BigInt;
 
-use super::order::OrderSide;
+use super::{
+    fee::{AuthenticatedFee, Fee},
+    order::OrderSide,
+};
 
-/// Represents a match on a single set of orders overlapping
+/// Represents the match result of a matching MPC in the cleartext
+/// in which two tokens are exchanged
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct SingleMatchResult {
-    /// Specifies the asset party 1 buys
-    pub buy_side1: Match,
-    /// Specifies the asset party 1 sell
-    pub sell_side1: Match,
-    /// Specifies the asset party 2 buys
-    pub buy_side2: Match,
-    /// Specifies the asset party 2 sells
-    pub sell_side2: Match,
+pub struct MatchResult {
+    /// The mint of the order token in the asset pair being matched
+    pub quote_mint: BigInt,
+    /// The mint of the base token in the asset pair being matched
+    pub base_mint: BigInt,
+    /// The amount of the quote token exchanged by this match
+    pub quote_amount: u64,
+    /// The amount of the base token exchanged by this match
+    pub base_amount: u64,
+    /// The direction of the match, 0 implies that party 1 buys the quote and
+    /// sells the base; 1 implies that party 2 buys the base and sells the quote
+    pub direction: u64, // Binary
+    /// The first party's fee tuple, payable to the first party's executing relayer
+    pub fee1: Fee,
+    /// The second party's ifee tuple, payable to the second party's executing relayer
+    pub fee2: Fee,
 }
 
-impl TryFrom<&[u64]> for SingleMatchResult {
+impl TryFrom<&[u64]> for MatchResult {
     type Error = MpcError;
 
-    fn try_from(value: &[u64]) -> Result<Self, Self::Error> {
-        // 4 matches, 3 values each
-        if value.len() != 3 * 4 {
+    fn try_from(values: &[u64]) -> Result<Self, Self::Error> {
+        // 13 total values
+        if values.len() != 13 {
             return Err(MpcError::SerializationError(format!(
                 "Expected 12 values, got {:?}",
-                value.len()
+                values.len()
             )));
         }
 
-        Ok(SingleMatchResult {
-            buy_side1: Match::try_from(&value[..3])?,
-            sell_side1: Match::try_from(&value[3..6])?,
-            buy_side2: Match::try_from(&value[6..9])?,
-            sell_side2: Match::try_from(&value[9..])?,
+        Ok(MatchResult {
+            quote_mint: BigInt::from(values[0]),
+            base_mint: BigInt::from(values[1]),
+            quote_amount: values[2],
+            base_amount: values[3],
+            direction: values[4],
+            fee1: Fee::try_from(&values[5..9]).unwrap(),
+            fee2: Fee::try_from(&values[9..]).unwrap(),
         })
     }
 }
 
-/// Represents a single match on a set of overlapping orders
+/// Represents a single match on a pair of overlapping orders
 /// with values authenticated in an MPC network
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AuthenticatedSingleMatchResult<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
-    /// Specifies the asset party 1 buys
-    pub buy_side1: AuthenticatedMatch<N, S>,
-    /// Specifies the asset party 1 sell
-    pub sell_side1: AuthenticatedMatch<N, S>,
-    /// Specifies the asset party 2 buys
-    pub buy_side2: AuthenticatedMatch<N, S>,
-    /// Specifies the asset party 2 sells
-    pub sell_side2: AuthenticatedMatch<N, S>,
+#[derive(Debug, Clone)]
+pub struct AuthenticatedMatchResult<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The mint of the order token in the asset pair being matched
+    pub quote_mint: AuthenticatedScalar<N, S>,
+    /// The mint of the base token in the asset pair being matched
+    pub base_mint: AuthenticatedScalar<N, S>,
+    /// The amount of the quote token exchanged by this match
+    pub quote_amount: AuthenticatedScalar<N, S>,
+    /// The amount of the base token exchanged by this match
+    pub base_amount: AuthenticatedScalar<N, S>,
+    /// The direction of the match, 0 implies that party 1 buys the quote and
+    /// sells the base; 1 implies that party 2 buys the base and sells the quote
+    pub direction: AuthenticatedScalar<N, S>, // Binary
+    /// The first party's fee tuple, payable to the first party's executing relayer
+    pub fee1: AuthenticatedFee<N, S>,
+    /// The second party's ifee tuple, payable to the second party's executing relayer
+    pub fee2: AuthenticatedFee<N, S>,
 }
 
 /// Serialization to a vector of authenticated scalars
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedSingleMatchResult<N, S>>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedMatchResult<N, S>>
     for Vec<AuthenticatedScalar<N, S>>
 {
-    fn from(match_res: AuthenticatedSingleMatchResult<N, S>) -> Self {
+    fn from(match_res: AuthenticatedMatchResult<N, S>) -> Self {
         let mut res = Vec::with_capacity(3 * 4 /* 3 scalars for 4 matches */);
-        res.append(&mut match_res.buy_side1.into());
-        res.append(&mut match_res.sell_side1.into());
-        res.append(&mut match_res.buy_side2.into());
-        res.append(&mut match_res.sell_side2.into());
+        res.push(match_res.quote_mint);
+        res.push(match_res.base_mint);
+        res.push(match_res.quote_amount);
+        res.push(match_res.base_amount);
+        res.push(match_res.direction);
+        res.append(&mut match_res.fee1.into());
+        res.append(&mut match_res.fee2.into());
 
         res
     }
@@ -75,33 +100,34 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedSingl
 
 /// Deserialization from a vector of authenticated scalars
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> TryFrom<&[AuthenticatedScalar<N, S>]>
-    for AuthenticatedSingleMatchResult<N, S>
+    for AuthenticatedMatchResult<N, S>
 {
     type Error = MpcError;
 
-    fn try_from(value: &[AuthenticatedScalar<N, S>]) -> Result<Self, Self::Error> {
-        // 4 matches, 3 elements each
-        if value.len() != 3 * 4 {
+    fn try_from(values: &[AuthenticatedScalar<N, S>]) -> Result<Self, Self::Error> {
+        // 13 values in the match tuple
+        if values.len() != 13 {
             return Err(MpcError::SerializationError(format!(
                 "Expected 12 elements, got {:?}",
-                value.len()
+                values.len()
             )));
         }
 
         Ok(Self {
-            buy_side1: AuthenticatedMatch::try_from(&value[..3])?,
-            sell_side1: AuthenticatedMatch::try_from(&value[3..6])?,
-            buy_side2: AuthenticatedMatch::try_from(&value[8..9])?,
-            sell_side2: AuthenticatedMatch::try_from(&value[9..])?,
+            quote_mint: values[0],
+            quote_amount: values[1],
+            base_mint: values[2],
+            base_amount: values[3],
+            direction: values[4],
+            fee1: AuthenticatedFee::from(&values[5..9]),
+            fee2: AuthenticatedFee::from(&values[9..]),
         })
     }
 }
 
 /// Implementation of opening for the single match result
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open
-    for AuthenticatedSingleMatchResult<N, S>
-{
-    type OpenOutput = SingleMatchResult;
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open for AuthenticatedMatchResult<N, S> {
+    type OpenOutput = MatchResult;
     type Error = MpcError;
 
     fn open(self) -> Result<Self::OpenOutput, Self::Error> {
