@@ -148,12 +148,21 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Bala
 
 /// Represents a balance that has been allocated in an MPC network
 /// and committed to in a multi-prover constraint system
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct AuthenticatedBalanceVar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// the mint (erc-20 token address) of the token in the balance
     pub mint: MpcVariable<N, S>,
     /// the amount of the given token stored in this balance
     pub amount: MpcVariable<N, S>,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for AuthenticatedBalanceVar<N, S> {
+    fn clone(&self) -> Self {
+        Self {
+            mint: self.mint.clone(),
+            amount: self.amount.clone(),
+        }
+    }
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedBalanceVar<N, S>>

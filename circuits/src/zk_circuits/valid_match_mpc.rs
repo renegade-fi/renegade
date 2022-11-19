@@ -30,11 +30,18 @@ use crate::{
     mpc::SharedFabric,
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
     types::{
-        balance::{AuthenticatedBalance, AuthenticatedCommittedBalance, Balance, CommittedBalance},
+        balance::{
+            AuthenticatedBalance, AuthenticatedBalanceVar, AuthenticatedCommittedBalance, Balance,
+            BalanceVar, CommittedBalance,
+        },
         fee::{AuthenticatedCommittedFee, AuthenticatedFee, CommittedFee, Fee},
-        order::{AuthenticatedCommittedOrder, AuthenticatedOrder, CommittedOrder, Order},
+        order::{
+            AuthenticatedCommittedOrder, AuthenticatedOrder, AuthenticatedOrderVar, CommittedOrder,
+            Order, OrderVar,
+        },
         r#match::{
-            AuthenticatedCommittedMatchResult, AuthenticatedMatchResult, CommittedMatchResult,
+            AuthenticatedCommittedMatchResult, AuthenticatedMatchResult,
+            AuthenticatedMatchResultVar, CommittedMatchResult, MatchResultVar,
         },
     },
     zk_gadgets::poseidon::{MultiproverPoseidonHashGadget, PoseidonHashGadget},
@@ -93,6 +100,53 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         let hash_params = PoseidonSpongeParameters::default();
         let mut hasher = PoseidonHashGadget::new(hash_params);
         hasher.hash(cs, input, expected_out.clone())
+    }
+
+    /// The order crossing check, verifies that the matches result is valid given the orders
+    /// and balances of the two parties
+    pub fn matching_engine_check<CS>(
+        cs: &mut CS,
+        order1: AuthenticatedOrderVar<N, S>,
+        order2: AuthenticatedOrderVar<N, S>,
+        balance1: AuthenticatedBalanceVar<N, S>,
+        balance2: AuthenticatedBalanceVar<N, S>,
+        matches: AuthenticatedMatchResultVar<N, S>,
+    ) -> Result<(), R1CSError>
+    where
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+    {
+        // Check that both orders are for the matched asset pair
+        cs.constrain(&order1.quote_mint - &matches.quote_mint);
+        cs.constrain(&order1.base_mint - &matches.base_mint);
+        cs.constrain(&order2.quote_mint - &matches.quote_mint);
+        cs.constrain(&order2.base_mint - &matches.base_mint);
+
+        // Check that the balances cover the positions expressed in the orders
+
+        Ok(())
+    }
+
+    /// The order crossing check, for a single prover
+    ///
+    /// Used to apply constraints to the verifier
+    pub fn matching_engine_check_single_prover<CS>(
+        cs: &mut CS,
+        order1: OrderVar,
+        order2: OrderVar,
+        balance1: BalanceVar,
+        balance2: BalanceVar,
+        matches: MatchResultVar,
+    ) -> Result<(), R1CSError>
+    where
+        CS: RandomizableConstraintSystem,
+    {
+        // Check that both of the orders are for the matched asset pair
+        cs.constrain(order1.quote_mint - matches.quote_mint);
+        cs.constrain(order1.base_mint - matches.base_mint);
+        cs.constrain(order2.quote_mint - matches.quote_mint);
+        cs.constrain(order2.base_mint - matches.base_mint);
+
+        Ok(())
     }
 }
 
@@ -336,14 +390,14 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         // Check input consistency on all orders, balances, and fees
         Self::input_consistency_check(
             &mut prover,
-            &Into::<Vec<MpcVariable<_, _>>>::into(party0_order),
+            &Into::<Vec<MpcVariable<_, _>>>::into(party0_order.clone()),
             &hash_o1_var,
             fabric.clone(),
         )
         .map_err(ProverError::R1CS)?;
         Self::input_consistency_check(
             &mut prover,
-            &Into::<Vec<MpcVariable<_, _>>>::into(party0_balance),
+            &Into::<Vec<MpcVariable<_, _>>>::into(party0_balance.clone()),
             &hash_b1_var,
             fabric.clone(),
         )
@@ -357,14 +411,14 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         .map_err(ProverError::R1CS)?;
         Self::input_consistency_check(
             &mut prover,
-            &Into::<Vec<MpcVariable<_, _>>>::into(party1_order),
+            &Into::<Vec<MpcVariable<_, _>>>::into(party1_order.clone()),
             &hash_o2_var,
             fabric.clone(),
         )
         .map_err(ProverError::R1CS)?;
         Self::input_consistency_check(
             &mut prover,
-            &Into::<Vec<MpcVariable<_, _>>>::into(party1_balance),
+            &Into::<Vec<MpcVariable<_, _>>>::into(party1_balance.clone()),
             &hash_b2_var,
             fabric.clone(),
         )
@@ -378,6 +432,15 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         .map_err(ProverError::R1CS)?;
 
         // TODO: Check that the balances cover the orders
+        Self::matching_engine_check(
+            &mut prover,
+            party0_order,
+            party1_order,
+            party0_balance,
+            party1_balance,
+            match_var,
+        )
+        .map_err(ProverError::R1CS)?;
 
         // Prover the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -445,13 +508,13 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         // Apply constraints to the verifier
         Self::input_consistency_single_prover(
             &mut verifier,
-            &Into::<Vec<Variable>>::into(party0_order),
+            &Into::<Vec<Variable>>::into(party0_order.clone()),
             &hash_o1_var,
         )
         .map_err(VerifierError::R1CS)?;
         Self::input_consistency_single_prover(
             &mut verifier,
-            &Into::<Vec<Variable>>::into(party0_balance),
+            &Into::<Vec<Variable>>::into(party0_balance.clone()),
             &hash_b1_var,
         )
         .map_err(VerifierError::R1CS)?;
@@ -463,13 +526,13 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         .map_err(VerifierError::R1CS)?;
         Self::input_consistency_single_prover(
             &mut verifier,
-            &Into::<Vec<Variable>>::into(party1_order),
+            &Into::<Vec<Variable>>::into(party1_order.clone()),
             &hash_o2_var,
         )
         .map_err(VerifierError::R1CS)?;
         Self::input_consistency_single_prover(
             &mut verifier,
-            &Into::<Vec<Variable>>::into(party1_balance),
+            &Into::<Vec<Variable>>::into(party1_balance.clone()),
             &hash_b2_var,
         )
         .map_err(VerifierError::R1CS)?;
@@ -477,6 +540,17 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
             &mut verifier,
             &Into::<Vec<Variable>>::into(party1_fee),
             &hash_f2_var,
+        )
+        .map_err(VerifierError::R1CS)?;
+
+        // Check that the matches value is properly formed
+        Self::matching_engine_check_single_prover(
+            &mut verifier,
+            party0_order,
+            party1_order,
+            party0_balance,
+            party1_balance,
+            match_res_var,
         )
         .map_err(VerifierError::R1CS)?;
 

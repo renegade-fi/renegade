@@ -235,7 +235,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Fee 
 
 /// Represents a fee that has been allocated in an MPC network and committed to in
 /// a multi-prover constraint system
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct AuthenticatedFeeVar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The public settle key of the cluster collecting fees
     pub settle_key: MpcVariable<N, S>,
@@ -247,6 +247,17 @@ pub struct AuthenticatedFeeVar<N: MpcNetwork + Send, S: SharedValueSource<Scalar
     /// For now this is encoded as a u64, which represents a
     /// fixed point rational under the hood
     pub percentage_fee: MpcVariable<N, S>,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for AuthenticatedFeeVar<N, S> {
+    fn clone(&self) -> Self {
+        Self {
+            settle_key: self.settle_key.clone(),
+            gas_addr: self.gas_addr.clone(),
+            gas_token_amount: self.gas_token_amount.clone(),
+            percentage_fee: self.percentage_fee.clone(),
+        }
+    }
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedFeeVar<N, S>>

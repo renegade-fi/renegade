@@ -252,7 +252,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Orde
 
 /// Represents an order that has been allocated in an MPC network and committed to
 /// in a multi-prover constraint system
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct AuthenticatedOrderVar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The mint (ERC-20 contract address) of the quote token
     pub quote_mint: MpcVariable<N, S>,
@@ -264,6 +264,18 @@ pub struct AuthenticatedOrderVar<N: MpcNetwork + Send, S: SharedValueSource<Scal
     pub price: MpcVariable<N, S>,
     /// The amount of base currency to buy or sell
     pub amount: MpcVariable<N, S>,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for AuthenticatedOrderVar<N, S> {
+    fn clone(&self) -> Self {
+        Self {
+            quote_mint: self.quote_mint.clone(),
+            base_mint: self.base_mint.clone(),
+            side: self.side.clone(),
+            price: self.price.clone(),
+            amount: self.amount.clone(),
+        }
+    }
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedOrderVar<N, S>>
