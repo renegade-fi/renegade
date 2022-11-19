@@ -631,11 +631,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProv
         // Commit to the hash input and expected output
         let mut rng = OsRng {};
         let blinders = (0..witness.preimage.len())
-            .map(|_| {
-                fabric
-                    .borrow_fabric()
-                    .allocate_preshared_scalar(Scalar::random(&mut rng))
-            })
+            .map(|_| Scalar::random(&mut rng))
             .collect_vec();
 
         let (witness_commits, witness_vars) = prover

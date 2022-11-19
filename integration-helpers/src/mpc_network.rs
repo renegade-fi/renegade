@@ -7,10 +7,12 @@ use std::{cell::RefCell, net::SocketAddr, rc::Rc};
 use curve25519_dalek::scalar::Scalar;
 use dns_lookup::lookup_host;
 use futures::executor::block_on;
+use itertools::Itertools;
 use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar,
     beaver::SharedValueSource,
     fabric::AuthenticatedMpcFabric,
+    mpc_scalar::scalar_to_u64,
     network::{MpcNetwork, QuicTwoPartyNet},
 };
 
@@ -26,6 +28,35 @@ pub type SharedFabric<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> =
 /**
  * Helpers
  */
+
+/// Helper to share a plaintext u64 value with the peer over a fabric
+pub fn share_plaintext_u64<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    value: u64,
+    owning_party: u64,
+    fabric: SharedFabric<N, S>,
+) -> u64 {
+    scalar_to_u64(&share_plaintext_scalar(
+        Scalar::from(value),
+        owning_party,
+        fabric,
+    ))
+}
+
+/// Helper to share a batch of plaintext u64s with the peer over the fabric
+pub fn batch_share_plaintext_u64<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    values: &[u64],
+    owning_party: u64,
+    fabric: SharedFabric<N, S>,
+) -> Vec<u64> {
+    batch_share_plaintext_scalar(
+        &values.iter().cloned().map(Scalar::from).collect_vec(),
+        owning_party,
+        fabric,
+    )
+    .iter()
+    .map(scalar_to_u64)
+    .collect_vec()
+}
 
 /// Helper to share a plaintext value with the peer over a fabric
 ///

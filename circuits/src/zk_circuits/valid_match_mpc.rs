@@ -33,7 +33,9 @@ use crate::{
         balance::{AuthenticatedBalance, AuthenticatedCommittedBalance, Balance, CommittedBalance},
         fee::{AuthenticatedCommittedFee, AuthenticatedFee, CommittedFee, Fee},
         order::{AuthenticatedCommittedOrder, AuthenticatedOrder, CommittedOrder, Order},
-        r#match::AuthenticatedMatchResult,
+        r#match::{
+            AuthenticatedCommittedMatchResult, AuthenticatedMatchResult, CommittedMatchResult,
+        },
     },
     zk_gadgets::poseidon::{MultiproverPoseidonHashGadget, PoseidonHashGadget},
     CommitSharedProver, CommitVerifier, MultiProverCircuit, Open,
@@ -132,6 +134,8 @@ pub struct ValidMatchCommitmentShared<N: MpcNetwork + Send, S: SharedValueSource
     pub balance2: AuthenticatedCommittedBalance<N, S>,
     /// A commitment to the first party's fee
     pub fee2: AuthenticatedCommittedFee<N, S>,
+    /// A commitment to the match result from the MPC
+    pub match_result: AuthenticatedCommittedMatchResult<N, S>,
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<ValidMatchCommitmentShared<N, S>>
@@ -144,6 +148,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<ValidMatchCommitme
         let order2_vec = Into::<Vec<_>>::into(commit.order2);
         let balance2_vec = Into::<Vec<_>>::into(commit.balance2);
         let fee2_vec = Into::<Vec<_>>::into(commit.fee2);
+        let match_vec = Into::<Vec<_>>::into(commit.match_result);
 
         order1_vec
             .into_iter()
@@ -152,6 +157,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<ValidMatchCommitme
             .chain(order2_vec.into_iter())
             .chain(balance2_vec.into_iter())
             .chain(fee2_vec.into_iter())
+            .chain(match_vec.into_iter())
             .collect_vec()
     }
 }
@@ -171,6 +177,8 @@ pub struct ValidMatchCommitment {
     pub balance2: CommittedBalance,
     /// A commitment to the first party's fee
     pub fee2: CommittedFee,
+    /// A commitment to the match result
+    pub match_result: CommittedMatchResult,
 }
 
 impl From<&[CompressedRistretto]> for ValidMatchCommitment {
@@ -209,6 +217,13 @@ impl From<&[CompressedRistretto]> for ValidMatchCommitment {
                 gas_addr: commitments[19],
                 gas_token_amount: commitments[20],
                 percentage_fee: commitments[21],
+            },
+            match_result: CommittedMatchResult {
+                quote_mint: commitments[22],
+                base_mint: commitments[23],
+                quote_amount: commitments[24],
+                base_amount: commitments[25],
+                direction: commitments[26],
             },
         }
     }
@@ -297,6 +312,11 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
             .commit(1 /* owning_party */, &mut rng, &mut prover)
             .map_err(ProverError::Mpc)?;
 
+        let (match_var, match_commit) = witness
+            .match_res
+            .commit(0 /* owning_party */, &mut rng, &mut prover)
+            .map_err(ProverError::Mpc)?;
+
         // Destructure the committed values
         let party0_order = party0_vars.0;
         let party0_balance = party0_vars.1;
@@ -371,6 +391,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
                 order2: party1_comm.0,
                 balance2: party1_comm.1,
                 fee2: party1_comm.2,
+                match_result: match_commit,
             },
             proof,
         ))
@@ -405,6 +426,11 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
             .unwrap();
         let party1_fee = witness_commitment
             .fee2
+            .commit_verifier(&mut verifier)
+            .unwrap();
+
+        let match_res_var = witness_commitment
+            .match_result
             .commit_verifier(&mut verifier)
             .unwrap();
 

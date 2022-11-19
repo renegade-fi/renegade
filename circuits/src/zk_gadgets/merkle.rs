@@ -467,11 +467,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
                     .chain(witness.leaf_data.into_iter())
                     .collect_vec(),
                 &(0..num_witness_commits)
-                    .map(|_| {
-                        fabric
-                            .borrow_fabric()
-                            .allocate_preshared_scalar(Scalar::random(&mut rng))
-                    })
+                    .map(|_| Scalar::random(&mut rng))
                     .collect_vec(),
             )
             .map_err(|err| ProverError::Mpc(MpcError::SharingError(err.to_string())))?;
