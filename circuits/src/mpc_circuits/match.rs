@@ -47,10 +47,6 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     // The amount of quote token exchanged
     let quote_exchanged = &min_base_amount * &execution_price;
 
-    // Auxiliary variables to help with proof generation
-    let max_amount_minus_min =
-        &order1.amount + &order2.amount - Scalar::from(2u64) * &min_base_amount;
-
     // Zero out the orders if any of the initial checks failed
     let masked_output = cond_select_vec(
         &aggregate_check,
@@ -60,10 +56,9 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
             quote_exchanged,
             min_base_amount, // Base amount exchanged
             order1.side.clone(),
-            max_amount_minus_min,
             execution_price,
         ],
-        &fabric.borrow_fabric().allocate_zeros(5 /* num_zeros */),
+        &fabric.borrow_fabric().allocate_zeros(6 /* num_zeros */),
     )
     .map_err(|err| MpcError::ArithmeticError(err.to_string()))?;
 

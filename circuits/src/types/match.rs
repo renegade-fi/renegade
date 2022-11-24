@@ -17,7 +17,7 @@ use num_bigint::BigInt;
 use rand_core::{CryptoRng, RngCore};
 
 /// The number of scalars in a match tuple for serialization/deserialization
-const MATCH_SIZE_SCALARS: usize = 5;
+const MATCH_SIZE_SCALARS: usize = 6;
 
 /// Represents the match result of a matching MPC in the cleartext
 /// in which two tokens are exchanged
@@ -34,6 +34,13 @@ pub struct MatchResult {
     /// The direction of the match, 0 implies that party 1 buys the quote and
     /// sells the base; 1 implies that party 2 buys the base and sells the quote
     pub direction: u64, // Binary
+
+    /// The following are supporting variables, derivable from the above, but useful for
+    /// shrinking the size of the zero knowledge circuit. As well, they are computed during
+    /// the course of the MPC, so it encurs no extra cost to include them in the witness
+
+    /// The execution price; the midpoint between two limit prices if they cross
+    pub execution_price: u64,
 }
 
 impl TryFrom<&[u64]> for MatchResult {
@@ -43,7 +50,8 @@ impl TryFrom<&[u64]> for MatchResult {
         // MATCH_SIZE_SCALARS total values
         if values.len() != MATCH_SIZE_SCALARS {
             return Err(MpcError::SerializationError(format!(
-                "Expected 12 values, got {:?}",
+                "Expected {:?} values, got {:?}",
+                MATCH_SIZE_SCALARS,
                 values.len()
             )));
         }
@@ -54,6 +62,7 @@ impl TryFrom<&[u64]> for MatchResult {
             quote_amount: values[2],
             base_amount: values[3],
             direction: values[4],
+            execution_price: values[5],
         })
     }
 }
@@ -88,6 +97,8 @@ pub struct CommittedMatchResult {
     /// The direction of the match, 0 implies that party 1 buys the quote and
     /// sells the base; 1 implies that party 2 buys the base and sells the quote
     pub direction: CompressedRistretto, // Binary
+    /// The execution price; the midpoint between two limit prices if they cross
+    pub execution_price: CompressedRistretto,
 }
 
 impl CommitVerifier for CommittedMatchResult {
@@ -126,6 +137,8 @@ pub struct AuthenticatedMatchResult<N: MpcNetwork + Send, S: SharedValueSource<S
     /// The direction of the match, 0 implies that party 1 buys the quote and
     /// sells the base; 1 implies that party 2 buys the base and sells the quote
     pub direction: AuthenticatedScalar<N, S>, // Binary
+    /// The execution price; the midpoint between two limit prices if they cross
+    pub execution_price: AuthenticatedScalar<N, S>,
 }
 
 /// Serialization to a vector of authenticated scalars
@@ -133,12 +146,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedMatch
     for Vec<AuthenticatedScalar<N, S>>
 {
     fn from(match_res: AuthenticatedMatchResult<N, S>) -> Self {
-        let mut res = Vec::with_capacity(3 * 4 /* 3 scalars for 4 matches */);
+        let mut res = Vec::with_capacity(MATCH_SIZE_SCALARS);
         res.push(match_res.quote_mint);
         res.push(match_res.base_mint);
         res.push(match_res.quote_amount);
         res.push(match_res.base_amount);
         res.push(match_res.direction);
+        res.push(match_res.execution_price);
 
         res
     }
@@ -154,7 +168,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> TryFrom<&[Authenticated
         // MATCH_SIZE_SCALARS values in the match tuple
         if values.len() != MATCH_SIZE_SCALARS {
             return Err(MpcError::SerializationError(format!(
-                "Expected 12 elements, got {:?}",
+                "Expected {:?} elements, got {:?}",
+                MATCH_SIZE_SCALARS,
                 values.len()
             )));
         }
@@ -165,6 +180,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> TryFrom<&[Authenticated
             base_mint: values[2].clone(),
             base_amount: values[3].clone(),
             direction: values[4].clone(),
+            execution_price: values[5].clone(),
         })
     }
 }
@@ -217,7 +233,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
         rng: &mut R,
         prover: &mut MpcProver<N, S>,
     ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType> {
-        let blinders = (0..5).map(|_| Scalar::random(rng)).collect_vec();
+        let blinders = (0..6).map(|_| Scalar::random(rng)).collect_vec();
         let (commitments, vars) = prover
             .batch_commit_preshared(
                 &[
@@ -226,6 +242,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                     self.quote_amount.clone(),
                     self.base_amount.clone(),
                     self.direction.clone(),
+                    self.execution_price.clone(),
                 ],
                 &blinders,
             )
@@ -238,6 +255,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 quote_amount: vars[2].to_owned(),
                 base_amount: vars[3].to_owned(),
                 direction: vars[4].to_owned(),
+                execution_price: vars[5].to_owned(),
             },
             AuthenticatedCommittedMatchResult {
                 quote_mint: commitments[0].to_owned(),
@@ -245,6 +263,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 quote_amount: commitments[2].to_owned(),
                 base_amount: commitments[3].to_owned(),
                 direction: commitments[4].to_owned(),
+                execution_price: commitments[5].to_owned(),
             },
         ))
     }
@@ -265,6 +284,8 @@ pub struct AuthenticatedMatchResultVar<N: MpcNetwork + Send, S: SharedValueSourc
     /// The direction of the match, 0 implies that party 1 buys the quote and
     /// sells the base; 1 implies that party 2 buys the base and sells the quote
     pub direction: MpcVariable<N, S>, // Binary
+    /// The execution price; the midpoint between two limit prices if they cross
+    pub execution_price: MpcVariable<N, S>,
 }
 
 /// Represents a Pedersen committment to a match result in a shared constraint system
@@ -281,6 +302,8 @@ pub struct AuthenticatedCommittedMatchResult<N: MpcNetwork + Send, S: SharedValu
     /// The direction of the match, 0 implies that party 1 buys the quote and
     /// sells the base; 1 implies that party 2 buys the base and sells the quote
     pub direction: AuthenticatedCompressedRistretto<N, S>, // Binary
+    /// The execution price; the midpoint between two limit prices if they cross
+    pub execution_price: AuthenticatedCompressedRistretto<N, S>,
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
@@ -293,6 +316,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
             match_res.quote_amount,
             match_res.base_amount,
             match_res.direction,
+            match_res.execution_price,
         ]
     }
 }

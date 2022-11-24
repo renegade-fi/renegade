@@ -25,6 +25,7 @@ fn check_no_match(res: &MatchResult) -> Result<(), String> {
             quote_amount: 0,
             base_amount: 0,
             direction: 0,
+            execution_price: 0,
         },
     )?;
 
@@ -45,6 +46,7 @@ fn check_match_expected_result(res: &MatchResult, expected: &[u64]) -> Result<()
             quote_amount: expected[2],
             base_amount: expected[3],
             direction: expected[4],
+            execution_price: expected[5],
         },
     )?;
 
@@ -188,6 +190,7 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
             140, /* quote mint exchanged */
             20,  /* base mint exchanged */
             0,   /* quote buying party */
+            7,   /* execution price */
         ],
         vec![
             1,   /* quote mint */
@@ -195,6 +198,7 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
             100, /* quote mint exchanged */
             10,  /* base mint exchanged */
             1,   /* quote buying party */
+            10,  /* execution price */
         ],
         vec![
             1,   /* quote mint */
@@ -202,6 +206,7 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
             200, /* quote mint exchanged */
             20,  /* base mint exchanged */
             1,   /* quote buying party */
+            10,  /* execution price */
         ],
     ];
 

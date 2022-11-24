@@ -44,7 +44,10 @@ use crate::{
             AuthenticatedMatchResultVar, CommittedMatchResult, MatchResultVar,
         },
     },
-    zk_gadgets::poseidon::{MultiproverPoseidonHashGadget, PoseidonHashGadget},
+    zk_gadgets::{
+        comparators::MultiproverMinGadget,
+        poseidon::{MultiproverPoseidonHashGadget, PoseidonHashGadget},
+    },
     CommitSharedProver, CommitVerifier, MultiProverCircuit, Open,
 };
 
@@ -73,7 +76,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         input: &[L],
         expected_out: &L,
         fabric: SharedFabric<N, S>,
-    ) -> Result<(), R1CSError>
+    ) -> Result<(), ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
@@ -111,7 +114,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         balance1: AuthenticatedBalanceVar<N, S>,
         balance2: AuthenticatedBalanceVar<N, S>,
         matches: AuthenticatedMatchResultVar<N, S>,
-    ) -> Result<(), R1CSError>
+        fabric: SharedFabric<N, S>,
+    ) -> Result<(), ProverError>
     where
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
@@ -121,7 +125,27 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         cs.constrain(&order2.quote_mint - &matches.quote_mint);
         cs.constrain(&order2.base_mint - &matches.base_mint);
 
-        // Check that the balances cover the positions expressed in the orders
+        // Check that the orders are on opposite sides of the market. It is assumed that order
+        // sides are already constrained to be binary when they are submitted. More broadly it
+        // is assumed that orders are well formed, checking this amounts to checking their inclusion
+        // in the state tree, which is done in `input_consistency_check`
+        cs.constrain(&order1.side + order2.side - MpcVariable::one(fabric.0.clone()));
+
+        // Check that price is correctly computed to be the midpoint
+        // i.e. price1 + price2 = 2 * execution_price
+        cs.constrain(&order1.price + &order2.price - Scalar::from(2u64) * matches.execution_price);
+
+        // Constrain the base match amount to the minimum of the two orders
+        let min_amount = MultiproverMinGadget::<'_, 32 /* bits */, _, _>::min(
+            cs,
+            order1.amount,
+            order2.amount,
+            fabric,
+        )?;
+        cs.constrain(matches.base_amount - min_amount);
+
+        // Check that the direction of the match is the same as the first party's direction
+        cs.constrain(matches.direction - order1.side);
 
         Ok(())
     }
@@ -278,6 +302,7 @@ impl From<&[CompressedRistretto]> for ValidMatchCommitment {
                 quote_amount: commitments[24],
                 base_amount: commitments[25],
                 direction: commitments[26],
+                execution_price: commitments[27],
             },
         }
     }
@@ -393,43 +418,37 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
             &Into::<Vec<MpcVariable<_, _>>>::into(party0_order.clone()),
             &hash_o1_var,
             fabric.clone(),
-        )
-        .map_err(ProverError::R1CS)?;
+        )?;
         Self::input_consistency_check(
             &mut prover,
             &Into::<Vec<MpcVariable<_, _>>>::into(party0_balance.clone()),
             &hash_b1_var,
             fabric.clone(),
-        )
-        .map_err(ProverError::R1CS)?;
+        )?;
         Self::input_consistency_check(
             &mut prover,
             &Into::<Vec<MpcVariable<_, _>>>::into(party0_fee),
             &hash_f1_var,
             fabric.clone(),
-        )
-        .map_err(ProverError::R1CS)?;
+        )?;
         Self::input_consistency_check(
             &mut prover,
             &Into::<Vec<MpcVariable<_, _>>>::into(party1_order.clone()),
             &hash_o2_var,
             fabric.clone(),
-        )
-        .map_err(ProverError::R1CS)?;
+        )?;
         Self::input_consistency_check(
             &mut prover,
             &Into::<Vec<MpcVariable<_, _>>>::into(party1_balance.clone()),
             &hash_b2_var,
             fabric.clone(),
-        )
-        .map_err(ProverError::R1CS)?;
+        )?;
         Self::input_consistency_check(
             &mut prover,
             &Into::<Vec<MpcVariable<_, _>>>::into(party1_fee),
             &hash_f2_var,
-            fabric,
-        )
-        .map_err(ProverError::R1CS)?;
+            fabric.clone(),
+        )?;
 
         // TODO: Check that the balances cover the orders
         Self::matching_engine_check(
@@ -439,8 +458,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
             party0_balance,
             party1_balance,
             match_var,
-        )
-        .map_err(ProverError::R1CS)?;
+            fabric,
+        )?;
 
         // Prover the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);

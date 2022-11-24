@@ -75,6 +75,7 @@ fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
                 min_amount,         // base exchanged
                 price * min_amount, // quote exchanged
                 my_order.side as u64,
+                price,
             ],
         )
         .map_err(|err| format!("Error sharing authenticated match result: {:?}", err))?;
@@ -85,6 +86,7 @@ fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         quote_amount: shared_values[2].to_owned(),
         base_amount: shared_values[3].to_owned(),
         direction: shared_values[4].to_owned(),
+        execution_price: shared_values[5].to_owned(),
     })
 }
 
