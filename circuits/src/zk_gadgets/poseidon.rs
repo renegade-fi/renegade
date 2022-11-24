@@ -398,7 +398,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         cs: &mut CS,
         hash_input: &[L],
         expected_output: &L,
-    ) -> Result<(), R1CSError>
+    ) -> Result<(), ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
@@ -408,7 +408,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     }
 
     /// Absorb an input into the hasher state
-    pub fn absorb<'b, L, CS>(&mut self, cs: &mut CS, a: L) -> Result<(), R1CSError>
+    pub fn absorb<'b, L, CS>(&mut self, cs: &mut CS, a: L) -> Result<(), ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
@@ -431,7 +431,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     }
 
     /// Absorb a batch of inputs into the hasher state
-    pub fn batch_absorb<L, CS>(&mut self, cs: &mut CS, a: &[L]) -> Result<(), R1CSError>
+    pub fn batch_absorb<L, CS>(&mut self, cs: &mut CS, a: &[L]) -> Result<(), ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
@@ -440,7 +440,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     }
 
     /// Squeeze an output from the hasher and return to the caller
-    pub fn squeeze<CS>(&mut self, cs: &mut CS) -> Result<MpcLinearCombination<N, S>, R1CSError>
+    pub fn squeeze<CS>(&mut self, cs: &mut CS) -> Result<MpcLinearCombination<N, S>, ProverError>
     where
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
@@ -456,7 +456,11 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
     /// Squeeze an output from the hasher, and constraint its value to equal the
     /// provided statement variable.
-    pub fn constrained_squeeze<L, CS>(&mut self, cs: &mut CS, expected: L) -> Result<(), R1CSError>
+    pub fn constrained_squeeze<L, CS>(
+        &mut self,
+        cs: &mut CS,
+        expected: L,
+    ) -> Result<(), ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
@@ -471,13 +475,13 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         &mut self,
         cs: &mut CS,
         num_elems: usize,
-    ) -> Result<Vec<MpcLinearCombination<N, S>>, R1CSError>
+    ) -> Result<Vec<MpcLinearCombination<N, S>>, ProverError>
     where
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
         (0..num_elems)
             .map(|_| self.squeeze(cs))
-            .collect::<Result<Vec<_>, R1CSError>>()
+            .collect::<Result<Vec<_>, ProverError>>()
     }
 
     /// Squeeze a set of elements from the hasher, and constraint the elements to be equal
@@ -486,7 +490,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         &mut self,
         cs: &mut CS,
         expected: &[MpcVariable<N, S>],
-    ) -> Result<(), R1CSError>
+    ) -> Result<(), ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
@@ -500,12 +504,12 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     fn permute<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
         &mut self,
         cs: &mut CS,
-    ) -> Result<(), R1CSError> {
+    ) -> Result<(), ProverError> {
         // Compute full_rounds / 2 rounds in which the sbox is applied to all elements
         for round in 0..self.params.full_rounds / 2 {
             self.add_round_constants(round);
             self.apply_sbox(cs, true /* full_round */)?;
-            self.apply_mds()?;
+            self.apply_mds();
         }
 
         // Compute partial_rounds rounds in which the sbox is applied to only the last element
@@ -514,7 +518,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         for round in partial_rounds_start..partial_rounds_end {
             self.add_round_constants(round);
             self.apply_sbox(cs, false /* full_round */)?;
-            self.apply_mds()?;
+            self.apply_mds();
         }
 
         // Compute another full_rounds / 2 rounds in which we apply the sbox to all elements
@@ -523,7 +527,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         for round in final_full_rounds_start..final_full_rounds_end {
             self.add_round_constants(round);
             self.apply_sbox(cs, true /* full_round */)?;
-            self.apply_mds()?;
+            self.apply_mds();
         }
 
         Ok(())
@@ -553,7 +557,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         &mut self,
         cs: &mut CS,
         full_round: bool,
-    ) -> Result<(), R1CSError> {
+    ) -> Result<(), ProverError> {
         // If this is a full round, apply the sbox to each elem
         if full_round {
             self.state = self
@@ -567,14 +571,14 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
                         self.fabric.clone(),
                     )
                 })
-                .collect_vec();
+                .collect::<Result<Vec<_>, ProverError>>()?;
         } else {
             self.state[0] = MultiproverExpGadget::gadget(
                 cs,
                 self.state[0].clone(),
                 self.params.alpha,
                 self.fabric.clone(),
-            )
+            )?
         }
 
         Ok(())
@@ -583,7 +587,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     /// Multiply the state by the MDS (Maximum Distance Separable) matrix
     ///
     /// This step is applied after the sbox is applied to the state
-    fn apply_mds(&mut self) -> Result<(), R1CSError> {
+    fn apply_mds(&mut self) {
         let mut new_state = vec![MpcLinearCombination::<N, S>::default(); self.state.len()];
         for (i, row) in self.params.mds_matrix.iter().enumerate() {
             for (a, b) in row.iter().zip(self.state.iter()) {
@@ -592,7 +596,6 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         }
 
         self.state = new_state;
-        Ok(())
     }
 }
 
@@ -642,9 +645,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProv
 
         // Create a hasher and apply the constraints
         let mut hasher = MultiproverPoseidonHashGadget::new(statement.params, fabric);
-        hasher
-            .hash(&mut prover, &witness_vars, &out_var)
-            .map_err(ProverError::R1CS)?;
+        hasher.hash(&mut prover, &witness_vars, &out_var)?;
 
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         let proof = prover.prove(&bp_gens).map_err(ProverError::Collaborative)?;

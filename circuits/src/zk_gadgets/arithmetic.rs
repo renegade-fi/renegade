@@ -165,26 +165,32 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         x: L,
         alpha: u64,
         fabric: SharedFabric<N, S>,
-    ) -> MpcLinearCombination<N, S>
+    ) -> Result<MpcLinearCombination<N, S>, ProverError>
     where
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
         L: Into<MpcLinearCombination<N, S>>,
     {
         if alpha == 0 {
-            MpcLinearCombination::from_scalar(Scalar::one(), fabric.0)
+            Ok(MpcLinearCombination::from_scalar(Scalar::one(), fabric.0))
         } else if alpha == 1 {
-            x.into()
+            Ok(x.into())
         } else if alpha % 2 == 0 {
-            let recursive_result = MultiproverExpGadget::gadget(cs, x, alpha / 2, fabric);
-            let (_, _, out_var) = cs.multiply(&recursive_result, &recursive_result);
-            out_var.into()
+            let recursive_result = MultiproverExpGadget::gadget(cs, x, alpha / 2, fabric)?;
+            let (_, _, out_var) = cs
+                .multiply(&recursive_result, &recursive_result)
+                .map_err(ProverError::Collaborative)?;
+            Ok(out_var.into())
         } else {
             let x_lc = x.into();
             let recursive_result =
-                MultiproverExpGadget::gadget(cs, x_lc.clone(), (alpha - 1) / 2, fabric);
-            let (_, _, out_var1) = cs.multiply(&recursive_result, &recursive_result);
-            let (_, _, out_var2) = cs.multiply(&out_var1.into(), &x_lc);
-            out_var2.into()
+                MultiproverExpGadget::gadget(cs, x_lc.clone(), (alpha - 1) / 2, fabric)?;
+            let (_, _, out_var1) = cs
+                .multiply(&recursive_result, &recursive_result)
+                .map_err(ProverError::Collaborative)?;
+            let (_, _, out_var2) = cs
+                .multiply(&out_var1.into(), &x_lc)
+                .map_err(ProverError::Collaborative)?;
+            Ok(out_var2.into())
         }
     }
 }
@@ -234,7 +240,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
         let (_, output_var) = prover.commit_public(statement.expected_out);
 
         // Apply the constraints to the prover
-        let res = Self::gadget(&mut prover, witness_var, statement.alpha, fabric);
+        let res = Self::gadget(&mut prover, witness_var, statement.alpha, fabric)?;
         prover.constrain(res - output_var);
 
         // Prove the statement

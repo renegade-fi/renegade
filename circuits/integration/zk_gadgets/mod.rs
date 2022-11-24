@@ -1,6 +1,7 @@
 //! Groups tests for zero knowledge proof gadgets
 mod arithmetic;
 pub mod bits;
+mod comparators;
 mod merkle;
 mod poseidon;
 

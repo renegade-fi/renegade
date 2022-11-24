@@ -8,16 +8,22 @@ use mpc_bulletproof::{
         ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
         Verifier,
     },
-    r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, R1CSError},
+    r1cs_mpc::{
+        MpcConstraintSystem, MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem,
+        R1CSError, SharedR1CSProof,
+    },
     BulletproofGens,
 };
-use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
+use mpc_ristretto::{
+    authenticated_ristretto::AuthenticatedCompressedRistretto,
+    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+};
 use rand_core::OsRng;
 
 use crate::{
-    errors::{ProverError, VerifierError},
+    errors::{MpcError, ProverError, VerifierError},
     mpc::SharedFabric,
-    SingleProverCircuit, SCALAR_MAX_BITS,
+    MultiProverCircuit, SingleProverCircuit, SCALAR_MAX_BITS,
 };
 
 use super::{
@@ -52,15 +58,14 @@ impl<const D: usize> LessThanZeroGadget<D> {
 /// D is the bitlength of the input
 pub struct MultiproverLessThanZeroGadget<
     'a,
-    const D: usize,
     N: 'a + MpcNetwork + Send,
     S: 'a + SharedValueSource<Scalar>,
 > {
     _phantom: &'a PhantomData<(N, S)>,
 }
 
-impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
-    MultiproverLessThanZeroGadget<'a, D, N, S>
+impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
+    MultiproverLessThanZeroGadget<'a, N, S>
 {
     /// Computes a < 0
     pub fn less_than_zero<L, CS>(
@@ -74,7 +79,7 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
     {
         let bits = MultiproverToBitsGadget::<'_, SCALAR_MAX_BITS, _, _>::to_bits(cs, a, fabric)?;
 
-        MultiproverOrGate::or(cs, bits[250].to_owned(), bits[251].to_owned())
+        MultiproverOrGate::or(cs, bits[251].to_owned(), bits[252].to_owned())
     }
 }
 
@@ -118,11 +123,7 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
         L: Into<MpcLinearCombination<N, S>>,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
-        MultiproverLessThanZeroGadget::<'_, D, _, _>::less_than_zero(
-            cs,
-            a.into() - b.into(),
-            fabric,
-        )
+        MultiproverLessThanZeroGadget::<'_, _, _>::less_than_zero(cs, a.into() - b.into(), fabric)
     }
 }
 
@@ -157,7 +158,7 @@ pub struct MinGadgetWitness {
 impl<const D: usize> SingleProverCircuit for MinGadget<D> {
     type Statement = Scalar; // The expected minimum of the two
     type Witness = MinGadgetWitness; // The two elements
-    type WitnessCommitment = [CompressedRistretto; 2];
+    type WitnessCommitment = Vec<CompressedRistretto>;
 
     const BP_GENS_CAPACITY: usize = 256;
 
@@ -183,7 +184,7 @@ impl<const D: usize> SingleProverCircuit for MinGadget<D> {
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
 
-        Ok(([a_comm, b_comm], proof))
+        Ok((vec![a_comm, b_comm], proof))
     }
 
     fn verify(
@@ -256,6 +257,68 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
             .map_err(ProverError::Collaborative)?;
 
         Ok(a_term + b_term)
+    }
+}
+
+/// The witness type for a collaborative proof of expected = min(a, b)
+/// for private, shared a and b
+pub struct MultiproverMinWitness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The first value
+    pub a: AuthenticatedScalar<N, S>,
+    /// The second value
+    pub b: AuthenticatedScalar<N, S>,
+}
+
+impl<'a, const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
+    MultiProverCircuit<'a, N, S> for MultiproverMinGadget<'a, D, N, S>
+{
+    type Statement = Scalar;
+    type Witness = MultiproverMinWitness<N, S>;
+    type WitnessCommitment = Vec<AuthenticatedCompressedRistretto<N, S>>;
+
+    const BP_GENS_CAPACITY: usize = 512;
+
+    fn prove(
+        witness: Self::Witness,
+        statement: Self::Statement,
+        mut prover: MpcProver<'a, '_, '_, N, S>,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<(Self::WitnessCommitment, SharedR1CSProof<N, S>), ProverError> {
+        // Commit to the witness
+        let mut rng = OsRng {};
+        let (witness_comms, witness_vars) = prover
+            .batch_commit_preshared(
+                &[witness.a, witness.b],
+                &[Scalar::random(&mut rng), Scalar::random(&mut rng)],
+            )
+            .map_err(|err| ProverError::Mpc(MpcError::SharingError(err.to_string())))?;
+
+        let (_, statement_var) = prover.commit_public(statement);
+
+        // Apply the constraints
+        let res = Self::min(
+            &mut prover,
+            witness_vars[0].to_owned(),
+            witness_vars[1].to_owned(),
+            fabric,
+        )?;
+
+        prover.constrain(res - statement_var);
+
+        // Prove the statement
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        let proof = prover.prove(&bp_gens).map_err(ProverError::Collaborative)?;
+
+        Ok((witness_comms, proof))
+    }
+
+    fn verify(
+        witness_commitments: <Self::WitnessCommitment as crate::Open>::OpenOutput,
+        statement: Self::Statement,
+        proof: R1CSProof,
+        verifier: Verifier,
+    ) -> Result<(), VerifierError> {
+        MinGadget::<D>::verify(witness_commitments, statement, proof, verifier)
     }
 }
 

@@ -1,13 +1,19 @@
 //! Groups logic around translating between Scalars and bits
 
-use bitvec::order::Lsb0;
-use bitvec::slice::BitSlice;
+use std::cmp;
+
+use bitvec::{order::Lsb0, slice::BitSlice};
 use curve25519_dalek::scalar::Scalar;
 use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
 
 use crate::{errors::MpcError, mpc::SharedFabric, scalar_2_to_m, SCALAR_MAX_BITS};
+
+// We only sample a blinding factor in the range [0, 2^252] because not all values
+// with the final bit (253rd) of the value make valid scalars. The scalar field is
+// of size 2^252 + \delta
+const BLINDING_FACTOR_MAX_BITS: usize = 252;
 
 /**
  * Helpers
@@ -34,11 +40,35 @@ pub(crate) fn scalar_from_bits_le<N: MpcNetwork + Send, S: SharedValueSource<Sca
 /// Returns a list of `Scalar`s representing the `m` least signficant bits of `a`
 pub(crate) fn scalar_to_bits_le(a: &Scalar) -> Vec<Scalar> {
     // The byte (8 bit) boundary we must iterate through to fetch `M` bits
-    BitSlice::<_, Lsb0>::from_slice(a.as_bytes())
+    let bits = BitSlice::<_, Lsb0>::from_slice(a.as_bytes())
         .iter()
         .by_vals()
         .map(|bit| if bit { Scalar::one() } else { Scalar::zero() })
-        .collect::<Vec<Scalar>>()
+        .collect::<Vec<Scalar>>();
+
+    bits
+}
+
+/// Converts the input bitvector to be exactly of the given length
+///
+/// If the bitvector is shorter than the desired length, it is padded with
+/// zeros. If the bitvectors is longer than the desired length, it is truncated
+pub(crate) fn resize_bitvector_to_length<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    mut bitvec: Vec<AuthenticatedScalar<N, S>>,
+    desired_length: usize,
+    fabric: SharedFabric<N, S>,
+) -> Vec<AuthenticatedScalar<N, S>> {
+    // Push allocated zeros to the end of the array
+    if bitvec.len() < desired_length {
+        bitvec.append(
+            &mut fabric
+                .borrow_fabric()
+                .allocate_zeros(desired_length - bitvec.len()),
+        )
+    }
+
+    // Truncate in the case that the desired length results in a shrinking
+    bitvec[..desired_length].to_vec()
 }
 
 /**
@@ -115,9 +145,9 @@ pub fn to_bits_le<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Sca
     fabric: SharedFabric<N, S>,
 ) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcError> {
     assert!(
-        D < SCALAR_MAX_BITS - 1,
+        D <= SCALAR_MAX_BITS,
         "Can only support scalars of up to {:?} bits",
-        SCALAR_MAX_BITS - 1
+        SCALAR_MAX_BITS
     );
     // If x is public, compute the bits locally
     if x.is_public() {
@@ -128,9 +158,12 @@ pub fn to_bits_le<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Sca
     }
 
     // Sample a random batch of bits and create a random m-bit shared scalar
-    let random_bits = fabric
-        .borrow_fabric()
-        .allocate_random_shared_bit_batch(D /* num_scalars */);
+    let random_bits =
+        fabric
+            .borrow_fabric()
+            .allocate_random_shared_bit_batch(
+                cmp::min(D, BLINDING_FACTOR_MAX_BITS), /* num_scalars */
+            );
     let random_scalar = scalar_from_bits_le(&random_bits);
 
     // Pop a random scalar to fill in the top k - m bits
@@ -156,8 +189,8 @@ pub fn to_bits_le<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Sca
         .borrow_fabric()
         .batch_allocate_public_scalar(&scalar_to_bits_le(&blinded_value_open.to_scalar()));
     let (bits, _) = bit_add(
-        blinded_value_bits[..D].try_into().unwrap(),
-        random_bits[..D].try_into().unwrap(),
+        &resize_bitvector_to_length(blinded_value_bits, D, fabric.clone()),
+        &resize_bitvector_to_length(random_bits, D, fabric.clone()),
         fabric,
     );
 
@@ -202,7 +235,7 @@ mod tests {
     use num_bigint::BigInt;
     use rand::{thread_rng, Rng, RngCore};
 
-    use crate::{bigint_to_scalar, scalar_to_bigint, SCALAR_MAX_BITS};
+    use crate::{bigint_to_scalar, scalar_to_bigint};
 
     use super::{scalar_from_bits_le, scalar_to_bits_le};
 
@@ -243,7 +276,7 @@ mod tests {
     fn test_scalar_from_bits() {
         let mock_fabric = mock_mpc_fabric(0 /* party_id */);
         let mut rng = thread_rng();
-        let random_bits = (0..SCALAR_MAX_BITS)
+        let random_bits = (0..252)
             .map(|_| rng.gen_bool(0.5 /* p */) as u64)
             .collect::<Vec<_>>();
 

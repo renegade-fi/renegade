@@ -298,7 +298,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         opening: Vec<MpcVariable<N, S>>,
         opening_indices: Vec<MpcVariable<N, S>>,
         fabric: SharedFabric<N, S>,
-    ) -> Result<MpcLinearCombination<N, S>, R1CSError>
+    ) -> Result<MpcLinearCombination<N, S>, ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
@@ -316,7 +316,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
                 path_elem.into(),
                 lr_select.into(),
                 fabric.clone(),
-            );
+            )?;
             current_hash = Self::hash_internal_nodes(&lhs, &rhs, cs, fabric.clone())?;
         }
 
@@ -328,13 +328,14 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     ///
     /// This is based on whether the current hash represents the left or right
     /// child of its parent to be computed
+    #[allow(clippy::type_complexity)]
     fn select_left_right<L, CS>(
         cs: &mut CS,
         current_hash: L,
         sister_node: L,
         lr_select: L,
         fabric: SharedFabric<N, S>,
-    ) -> (MpcLinearCombination<N, S>, MpcLinearCombination<N, S>)
+    ) -> Result<(MpcLinearCombination<N, S>, MpcLinearCombination<N, S>), ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
@@ -345,12 +346,16 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
         // If lr_select == 0 { current_hash } else { sister_node }
         //      ==> current_hash * (1 - lr_select) + sister_node * lr_select
-        let (_, _, left_child_term1) = cs.multiply(
-            &current_hash_lc,
-            &(lr_select_lc.clone().neg()
-                + MpcLinearCombination::from_scalar(Scalar::one(), fabric.0)),
-        );
-        let (_, _, left_child_term2) = cs.multiply(&sister_node_lc, &lr_select_lc);
+        let (_, _, left_child_term1) = cs
+            .multiply(
+                &current_hash_lc,
+                &(lr_select_lc.clone().neg()
+                    + MpcLinearCombination::from_scalar(Scalar::one(), fabric.0)),
+            )
+            .map_err(ProverError::Collaborative)?;
+        let (_, _, left_child_term2) = cs
+            .multiply(&sister_node_lc, &lr_select_lc)
+            .map_err(ProverError::Collaborative)?;
 
         let left_child = left_child_term1 + left_child_term2;
 
@@ -359,7 +364,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // equal to the other term, which can be computed by addition alone
         //      rhs = a + b - lhs
         let right_child = current_hash_lc + sister_node_lc - left_child.clone();
-        (left_child, right_child)
+        Ok((left_child, right_child))
     }
 
     /// Compute the root and constrain it to an expected value
@@ -370,7 +375,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         opening_indices: Vec<MpcVariable<N, S>>,
         expected_root: L,
         fabric: SharedFabric<N, S>,
-    ) -> Result<(), R1CSError>
+    ) -> Result<(), ProverError>
     where
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
         L: Into<MpcLinearCombination<N, S>> + Clone,
@@ -386,7 +391,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         values: &[L],
         cs: &mut CS,
         fabric: SharedFabric<N, S>,
-    ) -> Result<MpcLinearCombination<N, S>, R1CSError>
+    ) -> Result<MpcLinearCombination<N, S>, ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
@@ -406,7 +411,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         right: &MpcLinearCombination<N, S>,
         cs: &mut CS,
         fabric: SharedFabric<N, S>,
-    ) -> Result<MpcLinearCombination<N, S>, R1CSError> {
+    ) -> Result<MpcLinearCombination<N, S>, ProverError> {
         let hasher_params = PoseidonSpongeParameters::default();
         let mut hasher = MultiproverPoseidonHashGadget::new(hasher_params, fabric);
         hasher.batch_absorb(cs, &[left.clone(), right.clone()])?;
@@ -487,8 +492,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
             indices_vars,
             root_var,
             fabric,
-        )
-        .map_err(ProverError::R1CS)?;
+        )?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);

@@ -49,7 +49,7 @@ fn test_inequalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Test <= with equal values
     let mut lte_result =
-        less_than_equal::<2504, _, _>(&shared_a, &shared_a, test_args.mpc_fabric.clone())
+        less_than_equal::<250, _, _>(&shared_a, &shared_a, test_args.mpc_fabric.clone())
             .map_err(|err| format!("Error computing a <= a: {:?}", err))?
             .open_and_authenticate()
             .map_err(|err| format!("Error opening a <= a result: {:?}", err))?;

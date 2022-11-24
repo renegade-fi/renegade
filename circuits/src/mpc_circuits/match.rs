@@ -41,11 +41,15 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     )?;
 
     // Compute the amount and execution price that will be swapped if the above checks pass
-    let base_exchanged = min::<32, _, _>(&order1.amount, &order2.amount, fabric.clone())?;
+    let min_base_amount = min::<32, _, _>(&order1.amount, &order2.amount, fabric.clone())?;
     // Compute execution price = (price1 + price2) / 2
     let execution_price = shift_right::<1, _, _>(&(&order1.price + &order2.price), fabric.clone())?;
     // The amount of quote token exchanged
-    let quote_exchanged = &base_exchanged * &execution_price;
+    let quote_exchanged = &min_base_amount * &execution_price;
+
+    // Auxiliary variables to help with proof generation
+    let max_amount_minus_min =
+        &order1.amount + &order2.amount - Scalar::from(2u64) * &min_base_amount;
 
     // Zero out the orders if any of the initial checks failed
     let masked_output = cond_select_vec(
@@ -54,8 +58,10 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
             order1.quote_mint.clone(),
             order1.base_mint.clone(),
             quote_exchanged,
-            base_exchanged,
+            min_base_amount, // Base amount exchanged
             order1.side.clone(),
+            max_amount_minus_min,
+            execution_price,
         ],
         &fabric.borrow_fabric().allocate_zeros(5 /* num_zeros */),
     )
@@ -67,6 +73,7 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         quote_amount: masked_output[2].to_owned(),
         base_amount: masked_output[3].to_owned(),
         direction: masked_output[4].to_owned(),
+        execution_price: masked_output[5].to_owned(),
     })
 }
 

@@ -39,12 +39,9 @@ pub(crate) const SCALAR_MAX_BITS: usize = 253;
 
 /// Represents 2^m as a scalar
 pub fn scalar_2_to_m(m: usize) -> Scalar {
-    assert!(
-        m < SCALAR_MAX_BITS,
-        "Cannot fill scalar with greater than {:?} bits, got {:?}",
-        SCALAR_MAX_BITS,
-        m,
-    );
+    if m >= SCALAR_MAX_BITS {
+        return Scalar::zero();
+    }
     if (128..SCALAR_MAX_BITS).contains(&m) {
         Scalar::from(1u128 << 127) * Scalar::from(1u128 << (m - 127))
     } else {
