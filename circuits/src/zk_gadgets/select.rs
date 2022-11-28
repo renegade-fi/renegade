@@ -281,6 +281,49 @@ impl SingleProverCircuit for CondSelectVectorGadget {
     }
 }
 
+/// A multiprover variant of the CondSelectVectorGadget
+///
+/// TODO: Optimize this by batching
+pub struct MultiproverCondSelectVectorGadget<
+    'a,
+    N: 'a + MpcNetwork + Send,
+    S: 'a + SharedValueSource<Scalar>,
+> {
+    _phantom: &'a PhantomData<(N, S)>,
+}
+
+impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
+    MultiproverCondSelectVectorGadget<'a, N, S>
+{
+    /// Implements the control flow block if selector { a } else { b }
+    /// where `a` and `b` are vectors
+    pub fn select<L, CS>(
+        cs: &mut CS,
+        a: Vec<L>,
+        b: Vec<L>,
+        selector: L,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Vec<MpcLinearCombination<N, S>>, ProverError>
+    where
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L: Into<MpcLinearCombination<N, S>> + Clone,
+    {
+        assert_eq!(a.len(), b.len(), "a and b must be of equal length");
+        let mut selected = Vec::with_capacity(a.len());
+        for (a_val, b_val) in a.into_iter().zip(b.into_iter()) {
+            selected.push(MultiproverCondSelectGadget::select(
+                cs,
+                a_val,
+                b_val,
+                selector.clone(),
+                fabric.clone(),
+            )?)
+        }
+
+        Ok(selected)
+    }
+}
+
 #[cfg(test)]
 mod cond_select_test {
     use curve25519_dalek::scalar::Scalar;
