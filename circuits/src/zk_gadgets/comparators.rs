@@ -293,13 +293,13 @@ mod comparators_test {
         // Test with a negative value
         let value2 = value1.neg();
         let witness = GreaterThanEqZeroWitness { val: value2 };
-        assert!(if let Err(VerifierError::R1CS(_)) =
-            bulletproof_prove_and_verify::<GreaterThanEqZeroGadget<64 /* bitlength */>>(witness, ())
-        {
-            true
-        } else {
-            false
-        });
+        assert!(matches!(
+            bulletproof_prove_and_verify::<GreaterThanEqZeroGadget<64 /* bitlength */>>(
+                witness,
+                ()
+            ),
+            Err(VerifierError::R1CS(_))
+        ));
     }
 
     /// Test the greater than or equal to constraint
@@ -324,12 +324,9 @@ mod comparators_test {
 
         // Test with an invalid witness
         let witness = GreaterThanEqWitness { a: min, b: max };
-        assert!(if let Err(VerifierError::R1CS(_)) =
-            bulletproof_prove_and_verify::<GreaterThanEqGadget<64 /* bitlength */>>(witness, ())
-        {
-            true
-        } else {
-            false
-        });
+        assert!(matches!(
+            bulletproof_prove_and_verify::<GreaterThanEqGadget<64 /* bitlength */>>(witness, ()),
+            Err(VerifierError::R1CS(_))
+        ));
     }
 }
