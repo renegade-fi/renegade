@@ -33,8 +33,8 @@ pub struct MatchResult {
     pub quote_amount: u64,
     /// The amount of the base token exchanged by this match
     pub base_amount: u64,
-    /// The direction of the match, 0 implies that party 1 buys the quote and
-    /// sells the base; 1 implies that party 2 buys the base and sells the quote
+    /// The direction of the match, 0 implies that party 1 buys the base and
+    /// sells the quote; 1 implies that party 2 buys the base and sells the quote
     pub direction: u64, // Binary
 
     /// The following are supporting variables, derivable from the above, but useful for
@@ -90,8 +90,8 @@ pub struct MatchResultVar {
     pub quote_amount: Variable,
     /// The amount of the base token exchanged by this match
     pub base_amount: Variable,
-    /// The direction of the match, 0 implies that party 1 buys the quote and
-    /// sells the base; 1 implies that party 2 buys the base and sells the quote
+    /// The direction of the match, 0 implies that party 1 buys the base and
+    /// sells the quote; 1 implies that party 2 buys the base and sells the quote
     pub direction: Variable, // Binary
     /// The execution price; the midpoint between two limit prices if they cross
     pub execution_price: Variable,
@@ -116,8 +116,8 @@ pub struct CommittedMatchResult {
     pub quote_amount: CompressedRistretto,
     /// The amount of the base token exchanged by this match
     pub base_amount: CompressedRistretto,
-    /// The direction of the match, 0 implies that party 1 buys the quote and
-    /// sells the base; 1 implies that party 2 buys the base and sells the quote
+    /// The direction of the match, 0 implies that party 1 buys the base and
+    /// sells the quote; 1 implies that party 2 buys the base and sells the quote
     pub direction: CompressedRistretto, // Binary
     /// The execution price; the midpoint between two limit prices if they cross
     pub execution_price: CompressedRistretto,
@@ -170,8 +170,8 @@ pub struct AuthenticatedMatchResult<N: MpcNetwork + Send, S: SharedValueSource<S
     pub quote_amount: AuthenticatedScalar<N, S>,
     /// The amount of the base token exchanged by this match
     pub base_amount: AuthenticatedScalar<N, S>,
-    /// The direction of the match, 0 implies that party 1 buys the quote and
-    /// sells the base; 1 implies that party 2 buys the base and sells the quote
+    /// The direction of the match, 0 implies that party 1 buys the base and
+    /// sells the quote; 1 implies that party 2 buys the base and sells the quote
     pub direction: AuthenticatedScalar<N, S>, // Binary
     /// The execution price; the midpoint between two limit prices if they cross
     pub execution_price: AuthenticatedScalar<N, S>,
@@ -337,8 +337,8 @@ pub struct AuthenticatedMatchResultVar<N: MpcNetwork + Send, S: SharedValueSourc
     pub quote_amount: MpcVariable<N, S>,
     /// The amount of the base token exchanged by this match
     pub base_amount: MpcVariable<N, S>,
-    /// The direction of the match, 0 implies that party 1 buys the quote and
-    /// sells the base; 1 implies that party 2 buys the base and sells the quote
+    /// The direction of the match, 0 implies that party 1 buys the base and
+    /// sells the quote; 1 implies that party 2 buys the base and sells the quote
     pub direction: MpcVariable<N, S>, // Binary
     /// The execution price; the midpoint between two limit prices if they cross
     pub execution_price: MpcVariable<N, S>,
@@ -363,8 +363,8 @@ pub struct AuthenticatedCommittedMatchResult<N: MpcNetwork + Send, S: SharedValu
     pub quote_amount: AuthenticatedCompressedRistretto<N, S>,
     /// The amount of the base token exchanged by this match
     pub base_amount: AuthenticatedCompressedRistretto<N, S>,
-    /// The direction of the match, 0 implies that party 1 buys the quote and
-    /// sells the base; 1 implies that party 2 buys the base and sells the quote
+    /// The direction of the match, 0 implies that party 1 buys the base and
+    /// sells the quote; 1 implies that party 2 buys the base and sells the quote
     pub direction: AuthenticatedCompressedRistretto<N, S>, // Binary
     /// The execution price; the midpoint between two limit prices if they cross
     pub execution_price: AuthenticatedCompressedRistretto<N, S>,

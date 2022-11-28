@@ -6,7 +6,6 @@ use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
 use circuits::{
     mpc::SharedFabric,
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    scalar_to_bigint,
     types::{
         balance::Balance,
         fee::Fee,

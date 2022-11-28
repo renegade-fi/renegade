@@ -30,8 +30,14 @@ use mpc_ristretto::{
 use rand_core::OsRng;
 
 use crate::scalar_to_bigint;
-use crate::zk_gadgets::comparators::{GreaterThanEqZeroGadget, MultiproverGreaterThanEqZeroGadget};
-use crate::zk_gadgets::select::{CondSelectGadget, MultiproverCondSelectGadget};
+use crate::zk_gadgets::comparators::{
+    GreaterThanEqGadget, GreaterThanEqZeroGadget, MultiproverGreaterThanEqGadget,
+    MultiproverGreaterThanEqZeroGadget,
+};
+use crate::zk_gadgets::select::{
+    CondSelectGadget, CondSelectVectorGadget, MultiproverCondSelectGadget,
+    MultiproverCondSelectVectorGadget,
+};
 use crate::{
     errors::{MpcError, ProverError, VerifierError},
     mpc::SharedFabric,
@@ -130,7 +136,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         cs.constrain(&order2.base_mint - &matches.base_mint);
 
         // Check that the direction of the match is the same as the first party's direction
-        cs.constrain(matches.direction - &order1.side);
+        cs.constrain(&matches.direction - &order1.side);
 
         // Check that the orders are on opposite sides of the market. It is assumed that order
         // sides are already constrained to be binary when they are submitted. More broadly it
@@ -190,12 +196,65 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         cs.constrain(lhs - rhs);
 
         // The quote amount should then equal the price multiplied by the base amount
-        // let (_, _, expected_quote_amount) = cs
-        //     .multiply(&matches.base_amount.into(), &matches.execution_price.into())
-        //     .map_err(ProverError::Collaborative)?;
-        // cs.constrain(expected_quote_amount - matches.quote_amount);
+        let (_, _, expected_quote_amount) = cs
+            .multiply(
+                &matches.base_amount.clone().into(),
+                &matches.execution_price.into(),
+            )
+            .map_err(ProverError::Collaborative)?;
+        cs.constrain(expected_quote_amount - &matches.quote_amount);
 
-        // TODO: Ensure the balances cover the orders
+        // Ensure the balances cover the orders
+        // 1. Mux between the (mint, amount) pairs that the parties are expected to cover by the
+        // direction of the order
+
+        // The selections in the case that party 0 is on the buy side of the match
+        let party0_buy_side_selection = vec![
+            matches.base_mint.clone(),
+            matches.base_amount.clone(),
+            matches.quote_mint.clone(),
+            matches.quote_amount.clone(),
+        ];
+
+        let party1_buy_side_selection = vec![
+            matches.quote_mint.clone(),
+            matches.quote_amount.clone(),
+            matches.base_mint.clone(),
+            matches.base_amount.clone(),
+        ];
+
+        let selected_values = MultiproverCondSelectVectorGadget::select(
+            cs,
+            party0_buy_side_selection,
+            party1_buy_side_selection,
+            matches.direction,
+            fabric.clone(),
+        )?;
+
+        // Destructure the conditional selection
+        let party0_buy_mint = selected_values[0].to_owned();
+        let party0_buy_amount = selected_values[1].to_owned();
+        let party1_buy_mint = selected_values[2].to_owned();
+        let party1_buy_amount = selected_values[3].to_owned();
+
+        // Constrain the mints on the balances to be correct
+        cs.constrain(&party0_buy_mint - &balance1.mint);
+        cs.constrain(&party1_buy_mint - &balance2.mint);
+
+        // Constrain the amounts of the balances to subsume the obligations from the match
+        MultiproverGreaterThanEqGadget::<'_, 64 /* bitlength */, N, S>::constrain_greater_than_eq(
+            cs,
+            balance1.amount.into(),
+            party0_buy_amount,
+            fabric.clone(),
+        );
+
+        MultiproverGreaterThanEqGadget::<'_, 64 /* bitlength */, N, S>::constrain_greater_than_eq(
+            cs,
+            balance2.amount.into(),
+            party1_buy_amount,
+            fabric,
+        );
 
         Ok(())
     }
@@ -270,6 +329,60 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         let lhs = Scalar::from(2u64) * matches.base_amount;
         let rhs = order1.amount + order2.amount - matches.max_minus_min_amount;
         cs.constrain(lhs - rhs);
+
+        // The quote amount should then equal the price multiplied by the base amount
+        let (_, _, expected_quote_amount) =
+            cs.multiply(matches.base_amount.into(), matches.execution_price.into());
+        cs.constrain(expected_quote_amount - matches.quote_amount);
+
+        // Ensure that the balances cover the obligations from the match
+        // 1. Mux between the (mint, amount) pairs that the parties are expected to cover by the
+        // direction of the order
+
+        // The selections in the case that party 0 is on the buy side of the match
+        let party0_buy_side_selection = vec![
+            matches.base_mint,
+            matches.base_amount,
+            matches.quote_mint,
+            matches.quote_amount,
+        ];
+
+        let party1_buy_side_selection = vec![
+            matches.quote_mint,
+            matches.quote_amount,
+            matches.base_mint,
+            matches.base_amount,
+        ];
+
+        let selected_values = CondSelectVectorGadget::select(
+            cs,
+            party0_buy_side_selection,
+            party1_buy_side_selection,
+            matches.direction,
+        );
+
+        // Destructure the conditional selection
+        let party0_buy_mint = selected_values[0].to_owned();
+        let party0_buy_amount = selected_values[1].to_owned();
+        let party1_buy_mint = selected_values[2].to_owned();
+        let party1_buy_amount = selected_values[3].to_owned();
+
+        // Constrain the mints on the balances to be correct
+        cs.constrain(party0_buy_mint - balance1.mint);
+        cs.constrain(party1_buy_mint - balance2.mint);
+
+        // Constrain the amounts of the balances to subsume the obligations from the match
+        GreaterThanEqGadget::<64 /* bitlength */>::constrain_greater_than_eq(
+            cs,
+            balance1.amount.into(),
+            party0_buy_amount,
+        );
+
+        GreaterThanEqGadget::<64 /* bitlength */>::constrain_greater_than_eq(
+            cs,
+            balance2.amount.into(),
+            party1_buy_amount,
+        );
 
         Ok(())
     }

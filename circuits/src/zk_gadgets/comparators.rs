@@ -163,7 +163,7 @@ pub struct GreaterThanEqGadget<const D: usize> {}
 
 impl<const D: usize> GreaterThanEqGadget<D> {
     /// Constrains the values to satisfy a >= b
-    pub fn constrain_greater_than<L, CS>(cs: &mut CS, a: L, b: L)
+    pub fn constrain_greater_than_eq<L, CS>(cs: &mut CS, a: L, b: L)
     where
         CS: RandomizableConstraintSystem,
         L: Into<LinearCombination> + Clone,
@@ -200,7 +200,7 @@ impl<const D: usize> SingleProverCircuit for GreaterThanEqGadget<D> {
         let (b_comm, b_var) = prover.commit(witness.b, Scalar::random(&mut rng));
 
         // Apply the constraints
-        Self::constrain_greater_than(&mut prover, a_var, b_var);
+        Self::constrain_greater_than_eq(&mut prover, a_var, b_var);
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -220,7 +220,7 @@ impl<const D: usize> SingleProverCircuit for GreaterThanEqGadget<D> {
         let b_var = verifier.commit(witness_commitment[1]);
 
         // Apply the constraints
-        Self::constrain_greater_than(&mut verifier, a_var, b_var);
+        Self::constrain_greater_than_eq(&mut verifier, a_var, b_var);
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -246,7 +246,7 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
     MultiproverGreaterThanEqGadget<'a, D, N, S>
 {
     /// Constrain the relation a >= b
-    pub fn constrain_greater_than_zero<L, CS>(
+    pub fn constrain_greater_than_eq<L, CS>(
         cs: &mut CS,
         a: L,
         b: L,

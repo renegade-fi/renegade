@@ -193,7 +193,7 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
             2,   /* base mint */
             140, /* quote mint exchanged */
             20,  /* base mint exchanged */
-            0,   /* quote buying party */
+            0,   /* base buying party */
             7,   /* execution price */
             10,  /* min_minus_max_amount */
             0,   /* min_amount_index */
@@ -203,7 +203,7 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
             2,   /* base mint */
             100, /* quote mint exchanged */
             10,  /* base mint exchanged */
-            1,   /* quote buying party */
+            1,   /* base buying party */
             10,  /* execution price */
             10,  /* min_minus_max_amount */
             0,   /* min_amount_index */
@@ -213,7 +213,7 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
             2,   /* base mint */
             200, /* quote mint exchanged */
             20,  /* base mint exchanged */
-            1,   /* quote buying party */
+            1,   /* base buying party */
             10,  /* execution price */
             0,   /* min_minus_max_amount */
             1,   /* min_amount_index */
