@@ -154,15 +154,20 @@ pub struct CondSelectVectorGadget {}
 
 impl CondSelectVectorGadget {
     /// Implements the control flow statement if selector { a } else { b }
-    pub fn select<L, CS>(cs: &mut CS, a: Vec<L>, b: Vec<L>, selector: L) -> Vec<LinearCombination>
+    pub fn select<L, CS>(cs: &mut CS, a: &[L], b: &[L], selector: L) -> Vec<LinearCombination>
     where
         CS: RandomizableConstraintSystem,
         L: Into<LinearCombination> + Clone,
     {
         assert_eq!(a.len(), b.len(), "a and b must be of equal length");
         let mut selected = Vec::with_capacity(a.len());
-        for (a_val, b_val) in a.into_iter().zip(b.into_iter()) {
-            selected.push(CondSelectGadget::select(cs, a_val, b_val, selector.clone()))
+        for (a_val, b_val) in a.iter().zip(b.iter()) {
+            selected.push(CondSelectGadget::select(
+                cs,
+                a_val.clone(),
+                b_val.clone(),
+                selector.clone(),
+            ))
         }
 
         selected
@@ -220,7 +225,7 @@ impl SingleProverCircuit for CondSelectVectorGadget {
             .unzip();
 
         // Apply the constraints
-        let res = Self::select(&mut prover, a_vars, b_vars, sel_var);
+        let res = Self::select(&mut prover, &a_vars, &b_vars, sel_var);
         for (res_var, expected_var) in res.into_iter().zip(expected_vars.into_iter()) {
             prover.constrain(res_var - expected_var);
         }
@@ -268,7 +273,7 @@ impl SingleProverCircuit for CondSelectVectorGadget {
             .collect_vec();
 
         // Apply the constraints
-        let res = Self::select(&mut verifier, a_vars, b_vars, sel_var);
+        let res = Self::select(&mut verifier, &a_vars, &b_vars, sel_var);
         for (res_val, expected_val) in res.into_iter().zip(expected_vars.into_iter()) {
             verifier.constrain(res_val - expected_val);
         }
@@ -299,8 +304,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     /// where `a` and `b` are vectors
     pub fn select<L, CS>(
         cs: &mut CS,
-        a: Vec<L>,
-        b: Vec<L>,
+        a: &[L],
+        b: &[L],
         selector: L,
         fabric: SharedFabric<N, S>,
     ) -> Result<Vec<MpcLinearCombination<N, S>>, ProverError>
@@ -310,11 +315,11 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     {
         assert_eq!(a.len(), b.len(), "a and b must be of equal length");
         let mut selected = Vec::with_capacity(a.len());
-        for (a_val, b_val) in a.into_iter().zip(b.into_iter()) {
+        for (a_val, b_val) in a.iter().zip(b.iter()) {
             selected.push(MultiproverCondSelectGadget::select(
                 cs,
-                a_val,
-                b_val,
+                a_val.clone(),
+                b_val.clone(),
                 selector.clone(),
                 fabric.clone(),
             )?)

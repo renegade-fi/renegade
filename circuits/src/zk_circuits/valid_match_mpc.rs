@@ -144,6 +144,26 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // in the state tree, which is done in `input_consistency_check`
         cs.constrain(&order1.side + order2.side - MpcVariable::one(fabric.0.clone()));
 
+        // Check that the prices of the orders overlap
+        // 1. Mux buy/sell side based on the direction of the match
+        let prices = MultiproverCondSelectVectorGadget::select(
+            cs,
+            &[order2.price.clone(), order1.price.clone()],
+            &[order1.price.clone(), order2.price.clone()],
+            matches.direction.clone(),
+            fabric.clone(),
+        )?;
+        let buy_side_price = prices[0].to_owned();
+        let sell_side_price = prices[1].to_owned();
+
+        // 2. Enforce that the buy side price is greater than or equal to the sell side price
+        MultiproverGreaterThanEqGadget::<'_, 64 /* bitlength */, N, S>::constrain_greater_than_eq(
+            cs,
+            buy_side_price,
+            sell_side_price,
+            fabric.clone(),
+        )?;
+
         // Check that price is correctly computed to be the midpoint
         // i.e. price1 + price2 = 2 * execution_price
         cs.constrain(&order1.price + &order2.price - Scalar::from(2u64) * &matches.execution_price);
@@ -225,8 +245,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
         let selected_values = MultiproverCondSelectVectorGadget::select(
             cs,
-            party0_buy_side_selection,
-            party1_buy_side_selection,
+            &party0_buy_side_selection,
+            &party1_buy_side_selection,
             matches.direction,
             fabric.clone(),
         )?;
@@ -284,6 +304,24 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
         // Check that the orders are in opposite directions
         cs.constrain(order1.side + order2.side - Scalar::one());
+
+        // Check that the prices of the orders overlap
+        // 1. Mux buy/sell side based on the direction of the match
+        let prices = CondSelectVectorGadget::select(
+            cs,
+            &[order2.price, order1.price],
+            &[order1.price, order2.price],
+            matches.direction,
+        );
+        let buy_side_price = prices[0].to_owned();
+        let sell_side_price = prices[1].to_owned();
+
+        // 2. Enforce that the buy side price is greater than or equal to the sell side price
+        GreaterThanEqGadget::<64 /* bitlength */>::constrain_greater_than_eq(
+            cs,
+            buy_side_price,
+            sell_side_price,
+        );
 
         // Constrain the execution price to the midpoint of the two order prices
         cs.constrain(order1.price + order2.price - Scalar::from(2u64) * matches.execution_price);
@@ -356,8 +394,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
         let selected_values = CondSelectVectorGadget::select(
             cs,
-            party0_buy_side_selection,
-            party1_buy_side_selection,
+            &party0_buy_side_selection,
+            &party1_buy_side_selection,
             matches.direction,
         );
 
@@ -666,7 +704,6 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
             fabric.clone(),
         )?;
 
-        // TODO: Check that the balances cover the orders
         Self::matching_engine_check(
             &mut prover,
             party0_order,

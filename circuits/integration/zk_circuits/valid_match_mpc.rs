@@ -181,12 +181,11 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
         };
     }
 
-    // TODO: These values should be valid inputs, not random
     let my_order = vec![
         1,            // quote mint
         2,            // base mint
         sel!(0, 1),   // market side
-        sel!(6, 10),  // price
+        sel!(10, 6),  // price
         sel!(20, 30), // amount
     ];
     let my_balance = vec![
