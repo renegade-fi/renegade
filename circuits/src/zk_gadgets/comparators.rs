@@ -156,16 +156,127 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
     }
 }
 
+/// Enforces the constraint a >= b
+///
+/// `D` is the bitlength of the values being compared
+pub struct GreaterThanEqGadget<const D: usize> {}
+
+impl<const D: usize> GreaterThanEqGadget<D> {
+    /// Constrains the values to satisfy a >= b
+    pub fn constrain_greater_than<L, CS>(cs: &mut CS, a: L, b: L)
+    where
+        CS: RandomizableConstraintSystem,
+        L: Into<LinearCombination> + Clone,
+    {
+        GreaterThanEqZeroGadget::<D>::constrain_greater_than_zero(cs, a.into() - b.into());
+    }
+}
+
+/// The witness for the statement a >= b; used for testing
+///
+/// Here, both `a` and `b` are private variables
+#[allow(missing_docs)]
+#[derive(Clone, Debug)]
+pub struct GreaterThanEqWitness {
+    pub a: Scalar,
+    pub b: Scalar,
+}
+
+impl<const D: usize> SingleProverCircuit for GreaterThanEqGadget<D> {
+    type Statement = ();
+    type Witness = GreaterThanEqWitness;
+    type WitnessCommitment = Vec<CompressedRistretto>;
+
+    const BP_GENS_CAPACITY: usize = 64;
+
+    fn prove(
+        witness: Self::Witness,
+        _: Self::Statement,
+        mut prover: Prover,
+    ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
+        // Commit to the witness
+        let mut rng = OsRng {};
+        let (a_comm, a_var) = prover.commit(witness.a, Scalar::random(&mut rng));
+        let (b_comm, b_var) = prover.commit(witness.b, Scalar::random(&mut rng));
+
+        // Apply the constraints
+        Self::constrain_greater_than(&mut prover, a_var, b_var);
+
+        // Prove the statement
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
+
+        Ok((vec![a_comm, b_comm], proof))
+    }
+
+    fn verify(
+        witness_commitment: Self::WitnessCommitment,
+        _: Self::Statement,
+        proof: R1CSProof,
+        mut verifier: Verifier,
+    ) -> Result<(), VerifierError> {
+        // Commit to the witness
+        let a_var = verifier.commit(witness_commitment[0]);
+        let b_var = verifier.commit(witness_commitment[1]);
+
+        // Apply the constraints
+        Self::constrain_greater_than(&mut verifier, a_var, b_var);
+
+        // Verify the proof
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        verifier
+            .verify(&proof, &bp_gens)
+            .map_err(VerifierError::R1CS)
+    }
+}
+
+/// A multiprover variant of the GreaterThanEqGadget
+///
+/// `D` is the bitlength of the input values
+pub struct MultiproverGreaterThanEqGadget<
+    'a,
+    const D: usize,
+    N: 'a + MpcNetwork + Send,
+    S: 'a + SharedValueSource<Scalar>,
+> {
+    _phantom: &'a PhantomData<(N, S)>,
+}
+
+impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
+    MultiproverGreaterThanEqGadget<'a, D, N, S>
+{
+    /// Constrain the relation a >= b
+    pub fn constrain_greater_than_zero<L, CS>(
+        cs: &mut CS,
+        a: L,
+        b: L,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<(), ProverError>
+    where
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L: Into<MpcLinearCombination<N, S>> + Clone,
+    {
+        MultiproverGreaterThanEqZeroGadget::<'a, D, N, S>::constrain_greater_than_zero(
+            cs,
+            a.into() - b.into(),
+            fabric,
+        )
+    }
+}
+
 #[cfg(test)]
 mod comparators_test {
-    use std::ops::Neg;
+    use std::{cmp, ops::Neg};
 
     use curve25519_dalek::scalar::Scalar;
     use rand_core::{OsRng, RngCore};
 
     use crate::{errors::VerifierError, test_helpers::bulletproof_prove_and_verify};
 
-    use super::{GreaterThanEqZeroGadget, GreaterThanEqZeroWitness};
+    use super::{
+        GreaterThanEqGadget, GreaterThanEqWitness, GreaterThanEqZeroGadget,
+        GreaterThanEqZeroWitness,
+    };
 
     /// Test the greater than zero constraint
     #[test]
@@ -184,6 +295,37 @@ mod comparators_test {
         let witness = GreaterThanEqZeroWitness { val: value2 };
         assert!(if let Err(VerifierError::R1CS(_)) =
             bulletproof_prove_and_verify::<GreaterThanEqZeroGadget<64 /* bitlength */>>(witness, ())
+        {
+            true
+        } else {
+            false
+        });
+    }
+
+    /// Test the greater than or equal to constraint
+    #[test]
+    fn test_greater_than_eq() {
+        let mut rng = OsRng {};
+        let a = rng.next_u64();
+        let b = rng.next_u64();
+
+        let max = Scalar::from(cmp::max(a, b));
+        let min = Scalar::from(cmp::min(a, b));
+
+        // Test first with a valid witness
+        let witness = GreaterThanEqWitness { a: max, b: min };
+        bulletproof_prove_and_verify::<GreaterThanEqGadget<64 /* bitlength */>>(witness, ())
+            .unwrap();
+
+        // Test with equal values
+        let witness = GreaterThanEqWitness { a: max, b: max };
+        bulletproof_prove_and_verify::<GreaterThanEqGadget<64 /* bitlength */>>(witness, ())
+            .unwrap();
+
+        // Test with an invalid witness
+        let witness = GreaterThanEqWitness { a: min, b: max };
+        assert!(if let Err(VerifierError::R1CS(_)) =
+            bulletproof_prove_and_verify::<GreaterThanEqGadget<64 /* bitlength */>>(witness, ())
         {
             true
         } else {
