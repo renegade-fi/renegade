@@ -32,6 +32,8 @@ pub mod zk_gadgets;
 
 /// The highest possible set bit in the Dalek scalar field
 pub(crate) const SCALAR_MAX_BITS: usize = 253;
+/// The highest possible set bit for a positive scalar
+pub(crate) const POSITIVE_SCALAR_MAX_BITS: usize = 251;
 
 /**
  * Helpers
