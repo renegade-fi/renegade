@@ -6,6 +6,7 @@ use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
 use circuits::{
     mpc::SharedFabric,
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
+    scalar_to_bigint,
     types::{
         balance::Balance,
         fee::Fee,
@@ -72,8 +73,8 @@ fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
             &[
                 my_order.quote_mint,
                 my_order.base_mint,
-                min_amount,         // base exchanged
                 price * min_amount, // quote exchanged
+                min_amount,         // base exchanged
                 my_order.side as u64,
                 price,
                 cmp::max(party0_values[2], party1_values[2]) - min_amount,

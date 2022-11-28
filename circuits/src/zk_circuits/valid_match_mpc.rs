@@ -9,6 +9,7 @@
 
 use std::{borrow::Borrow, marker::PhantomData};
 
+use curve25519_dalek::digest::generic_array::typenum::private::IsLessOrEqualPrivate;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::r1cs::ConstraintSystem;
@@ -28,6 +29,7 @@ use mpc_ristretto::{
 };
 use rand_core::OsRng;
 
+use crate::scalar_to_bigint;
 use crate::zk_gadgets::comparators::{GreaterThanEqZeroGadget, MultiproverGreaterThanEqZeroGadget};
 use crate::zk_gadgets::select::{CondSelectGadget, MultiproverCondSelectGadget};
 use crate::{
@@ -138,7 +140,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
         // Check that price is correctly computed to be the midpoint
         // i.e. price1 + price2 = 2 * execution_price
-        cs.constrain(&order1.price + &order2.price - Scalar::from(2u64) * matches.execution_price);
+        cs.constrain(&order1.price + &order2.price - Scalar::from(2u64) * &matches.execution_price);
 
         // Constrain the min_amount_order_index to be binary
         // i.e. 0 === min_amount_order_index * (1 - min_amount_order_index)
@@ -175,8 +177,25 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         MultiproverGreaterThanEqZeroGadget::<'_, 32 /* bitlength */, _, _>::constrain_greater_than_zero(
             cs,
             matches.max_minus_min_amount.clone(),
-            fabric,
+            fabric.clone(),
         )?;
+
+        // 3. Constrain the executed base amount to be the minimum of the two order amounts
+        // We use the identity
+        //      min(a, b) = 1/2 * (a + b - [max(a, b) - min(a, b)])
+        // Above we are given max(a, b) - min(a, b), so we can enforce the constraint
+        //      2 * executed_amount = amount1 + amount2 - max_minus_min_amount
+        let lhs = Scalar::from(2u64) * &matches.base_amount;
+        let rhs = &order1.amount + &order2.amount - &matches.max_minus_min_amount;
+        cs.constrain(lhs - rhs);
+
+        // The quote amount should then equal the price multiplied by the base amount
+        // let (_, _, expected_quote_amount) = cs
+        //     .multiply(&matches.base_amount.into(), &matches.execution_price.into())
+        //     .map_err(ProverError::Collaborative)?;
+        // cs.constrain(expected_quote_amount - matches.quote_amount);
+
+        // TODO: Ensure the balances cover the orders
 
         Ok(())
     }
@@ -242,6 +261,15 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
             cs,
             matches.max_minus_min_amount,
         );
+
+        // 3. Constrain the executed base amount to be the minimum of the two order amounts
+        // We use the identity
+        //      min(a, b) = 1/2 * (a + b - [max(a, b) - min(a, b)])
+        // Above we are given max(a, b) - min(a, b), so we can enforce the constraint
+        //      2 * executed_amount = amount1 + amount2 - max_minus_min_amount
+        let lhs = Scalar::from(2u64) * matches.base_amount;
+        let rhs = order1.amount + order2.amount - matches.max_minus_min_amount;
+        cs.constrain(lhs - rhs);
 
         Ok(())
     }
