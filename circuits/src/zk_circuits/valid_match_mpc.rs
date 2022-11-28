@@ -28,6 +28,7 @@ use mpc_ristretto::{
 };
 use rand_core::OsRng;
 
+use crate::zk_gadgets::comparators::{GreaterThanEqZeroGadget, MultiproverGreaterThanEqZeroGadget};
 use crate::zk_gadgets::select::{CondSelectGadget, MultiproverCondSelectGadget};
 use crate::{
     errors::{MpcError, ProverError, VerifierError},
@@ -126,6 +127,9 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         cs.constrain(&order2.quote_mint - &matches.quote_mint);
         cs.constrain(&order2.base_mint - &matches.base_mint);
 
+        // Check that the direction of the match is the same as the first party's direction
+        cs.constrain(matches.direction - &order1.side);
+
         // Check that the orders are on opposite sides of the market. It is assumed that order
         // sides are already constrained to be binary when they are submitted. More broadly it
         // is assumed that orders are well formed, checking this amounts to checking their inclusion
@@ -164,9 +168,15 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         cs.constrain(&max_minus_min_expected - &matches.max_minus_min_amount);
 
         // 2. Constrain the max_minus_min_amount value to be positive
-
-        // Check that the direction of the match is the same as the first party's direction
-        cs.constrain(matches.direction - order1.side);
+        // This, along with the previous check, constrain `max_minus_min_amount` to be computed correctly.
+        // I.e. the above constraint forces `max_minus_min_amount` to be either max(amounts) - min(amounts)
+        // or min(amounts) - max(amounts).
+        // Constraining the value to be positive forces it to be equal to max(amounts) - min(amounts)
+        MultiproverGreaterThanEqZeroGadget::<'_, 32 /* bitlength */, _, _>::constrain_greater_than_zero(
+            cs,
+            matches.max_minus_min_amount.clone(),
+            fabric,
+        )?;
 
         Ok(())
     }
@@ -190,6 +200,9 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         cs.constrain(order1.base_mint - matches.base_mint);
         cs.constrain(order2.quote_mint - matches.quote_mint);
         cs.constrain(order2.base_mint - matches.base_mint);
+
+        // Constrain the direction of the match to the direction of the first party's order
+        cs.constrain(matches.direction - order1.side);
 
         // Check that the orders are in opposite directions
         cs.constrain(order1.side + order2.side - Scalar::one());
@@ -220,8 +233,15 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         );
         cs.constrain(max_minus_min_expected - matches.max_minus_min_amount);
 
-        // Constrain the direction of the match to the direction of the first party's order
-        cs.constrain(matches.direction - order1.side);
+        // 2. Constrain the max_minus_min_amount value to be positive
+        // This, along with the previous check, constrain `max_minus_min_amount` to be computed correctly.
+        // I.e. the above constraint forces `max_minus_min_amount` to be either max(amounts) - min(amounts)
+        // or min(amounts) - max(amounts).
+        // Constraining the value to be positive forces it to be equal to max(amounts) - min(amounts)
+        GreaterThanEqZeroGadget::<32 /* bitlength */>::constrain_greater_than_zero(
+            cs,
+            matches.max_minus_min_amount,
+        );
 
         Ok(())
     }
