@@ -76,6 +76,8 @@ fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
                 price * min_amount, // quote exchanged
                 my_order.side as u64,
                 price,
+                cmp::max(party0_values[2], party1_values[2]) - min_amount,
+                if party0_values[2] == min_amount { 0 } else { 1 },
             ],
         )
         .map_err(|err| format!("Error sharing authenticated match result: {:?}", err))?;
@@ -87,6 +89,8 @@ fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         base_amount: shared_values[3].to_owned(),
         direction: shared_values[4].to_owned(),
         execution_price: shared_values[5].to_owned(),
+        min_minus_max_amount: shared_values[6].to_owned(),
+        min_amount_order_index: shared_values[7].to_owned(),
     })
 }
 
@@ -182,7 +186,7 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
         1,            // quote mint
         2,            // base mint
         sel!(0, 1),   // market side
-        sel!(5, 10),  // price
+        sel!(6, 10),  // price
         sel!(20, 30), // amount
     ];
     let my_balance = vec![
@@ -200,9 +204,13 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
         Order {
             quote_mint: my_order[0],
             base_mint: my_order[1],
-            side: sel!(OrderSide::Buy, OrderSide::Sell),
-            price: my_order[2],
-            amount: my_order[3],
+            side: if my_order[2] == 0 {
+                OrderSide::Buy
+            } else {
+                OrderSide::Sell
+            },
+            price: my_order[3],
+            amount: my_order[4],
         },
         Balance {
             mint: my_balance[0],

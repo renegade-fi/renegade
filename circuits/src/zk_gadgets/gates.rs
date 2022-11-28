@@ -25,7 +25,7 @@ impl OrGate {
         CS: RandomizableConstraintSystem,
     {
         let (a, b, a_times_b) = cs.multiply(a.into(), b.into());
-        a + b - Scalar::from(2u64) * a_times_b
+        a + b - a_times_b
     }
 }
 
@@ -41,12 +41,12 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> Multiprov
     /// constrained elsewhere in the calling circuit
     pub fn or<L, CS>(cs: &mut CS, a: L, b: L) -> Result<MpcLinearCombination<N, S>, ProverError>
     where
-        L: Into<MpcLinearCombination<N, S>>,
+        L: Into<MpcLinearCombination<N, S>> + Clone,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
         let (a, b, a_times_b) = cs
             .multiply(&a.into(), &b.into())
             .map_err(ProverError::Collaborative)?;
-        Ok(a + b - Scalar::from(2u64) * a_times_b)
+        Ok(&a + &b - a_times_b)
     }
 }

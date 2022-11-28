@@ -4,6 +4,7 @@ use std::cmp;
 
 use bitvec::{order::Lsb0, slice::BitSlice};
 use curve25519_dalek::scalar::Scalar;
+
 use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
@@ -145,7 +146,7 @@ pub fn to_bits_le<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Sca
     fabric: SharedFabric<N, S>,
 ) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcError> {
     assert!(
-        D <= SCALAR_MAX_BITS,
+        D < SCALAR_MAX_BITS,
         "Can only support scalars of up to {:?} bits",
         SCALAR_MAX_BITS
     );

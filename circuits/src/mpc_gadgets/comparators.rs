@@ -204,17 +204,24 @@ fn constant_round_or_impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
 /// TODO: Optimize this method
 /// Computes the min of two scalars
 ///
+/// Returns the minimum element and the index of the minimum, i.e.
+/// if the a < b then 0 else 1
+///
 /// D represents the bitlength of a and b
+#[allow(clippy::type_complexity)]
 pub fn min<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     a: &AuthenticatedScalar<N, S>,
     b: &AuthenticatedScalar<N, S>,
     fabric: SharedFabric<N, S>,
-) -> Result<AuthenticatedScalar<N, S>, MpcError>
+) -> Result<(AuthenticatedScalar<N, S>, AuthenticatedScalar<N, S>), MpcError>
 where
     [(); D - 1]: Sized,
 {
     let a_lt_b = less_than::<D, _, _>(a, b, fabric)?;
-    Ok(&a_lt_b * a + (Scalar::one() - a_lt_b) * b)
+    Ok((
+        Scalar::from(1u64) - a_lt_b.clone(),
+        &a_lt_b * a + (Scalar::one() - a_lt_b) * b,
+    ))
 }
 
 /// Computes res = a if s else b

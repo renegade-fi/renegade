@@ -13,7 +13,10 @@ use crate::{
         comparators::{cond_select_vec, eq, less_than_equal, min, ne},
         modulo::shift_right,
     },
-    types::{order::AuthenticatedOrder, r#match::AuthenticatedMatchResult},
+    types::{
+        order::AuthenticatedOrder,
+        r#match::{AuthenticatedMatchResult, MATCH_SIZE_SCALARS},
+    },
 };
 
 /// Executes a match computation that returns matches from a given order intersection
@@ -41,7 +44,13 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     )?;
 
     // Compute the amount and execution price that will be swapped if the above checks pass
-    let min_base_amount = min::<32, _, _>(&order1.amount, &order2.amount, fabric.clone())?;
+    let (min_index, min_base_amount) =
+        min::<32, _, _>(&order1.amount, &order2.amount, fabric.clone())?;
+
+    // The maximum of the two amounts minus the minimum of the two amounts
+    let min_minus_max_amount =
+        &order1.amount + &order2.amount - Scalar::from(2u64) * &min_base_amount;
+
     // Compute execution price = (price1 + price2) / 2
     let execution_price = shift_right::<1, _, _>(&(&order1.price + &order2.price), fabric.clone())?;
     // The amount of quote token exchanged
@@ -57,8 +66,12 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
             min_base_amount, // Base amount exchanged
             order1.side.clone(),
             execution_price,
+            min_minus_max_amount,
+            min_index,
         ],
-        &fabric.borrow_fabric().allocate_zeros(6 /* num_zeros */),
+        &fabric
+            .borrow_fabric()
+            .allocate_zeros(MATCH_SIZE_SCALARS /* num_zeros */),
     )
     .map_err(|err| MpcError::ArithmeticError(err.to_string()))?;
 
@@ -69,6 +82,8 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         base_amount: masked_output[3].to_owned(),
         direction: masked_output[4].to_owned(),
         execution_price: masked_output[5].to_owned(),
+        min_minus_max_amount: masked_output[6].to_owned(),
+        min_amount_order_index: masked_output[7].to_owned(),
     })
 }
 
