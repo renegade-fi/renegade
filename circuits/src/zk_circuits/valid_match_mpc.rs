@@ -628,51 +628,43 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         let (_, hash_b2_var) = prover.commit_public(statement.hash_balance2);
         let (_, hash_f2_var) = prover.commit_public(statement.hash_fee2);
 
-        /* Dummy constraint, remove me */
-        let (_, _, dummy) = prover
-            .multiply(
-                &hash_o1_var.into(),
-                &MpcLinearCombination::from_scalar(Scalar::zero(), fabric.0.clone()),
-            )
-            .unwrap();
-        prover.constrain(dummy.into());
         // Check input consistency on all orders, balances, and fees
-        // Self::input_consistency_check(
-        //     &mut prover,
-        //     &Into::<Vec<MpcVariable<_, _>>>::into(party0_order.clone()),
-        //     &hash_o1_var,
-        //     fabric.clone(),
-        // )?;
-        // Self::input_consistency_check(
-        //     &mut prover,
-        //     &Into::<Vec<MpcVariable<_, _>>>::into(party0_balance.clone()),
-        //     &hash_b1_var,
-        //     fabric.clone(),
-        // )?;
-        // Self::input_consistency_check(
-        //     &mut prover,
-        //     &Into::<Vec<MpcVariable<_, _>>>::into(party0_fee),
-        //     &hash_f1_var,
-        //     fabric.clone(),
-        // )?;
-        // Self::input_consistency_check(
-        //     &mut prover,
-        //     &Into::<Vec<MpcVariable<_, _>>>::into(party1_order.clone()),
-        //     &hash_o2_var,
-        //     fabric.clone(),
-        // )?;
-        // Self::input_consistency_check(
-        //     &mut prover,
-        //     &Into::<Vec<MpcVariable<_, _>>>::into(party1_balance.clone()),
-        //     &hash_b2_var,
-        //     fabric.clone(),
-        // )?;
-        // Self::input_consistency_check(
-        //     &mut prover,
-        //     &Into::<Vec<MpcVariable<_, _>>>::into(party1_fee),
-        //     &hash_f2_var,
-        //     fabric.clone(),
-        // )?;
+        Self::input_consistency_check(
+            &mut prover,
+            &Into::<Vec<MpcVariable<_, _>>>::into(party0_order.clone()),
+            &hash_o1_var,
+            fabric.clone(),
+        )?;
+        Self::input_consistency_check(
+            &mut prover,
+            &Into::<Vec<MpcVariable<_, _>>>::into(party0_balance.clone()),
+            &hash_b1_var,
+            fabric.clone(),
+        )?;
+        Self::input_consistency_check(
+            &mut prover,
+            &Into::<Vec<MpcVariable<_, _>>>::into(party0_fee),
+            &hash_f1_var,
+            fabric.clone(),
+        )?;
+        Self::input_consistency_check(
+            &mut prover,
+            &Into::<Vec<MpcVariable<_, _>>>::into(party1_order.clone()),
+            &hash_o2_var,
+            fabric.clone(),
+        )?;
+        Self::input_consistency_check(
+            &mut prover,
+            &Into::<Vec<MpcVariable<_, _>>>::into(party1_balance.clone()),
+            &hash_b2_var,
+            fabric.clone(),
+        )?;
+        Self::input_consistency_check(
+            &mut prover,
+            &Into::<Vec<MpcVariable<_, _>>>::into(party1_fee),
+            &hash_f2_var,
+            fabric.clone(),
+        )?;
 
         // TODO: Check that the balances cover the orders
         Self::matching_engine_check(
@@ -748,47 +740,43 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         let hash_b2_var = verifier.commit_public(statement.hash_balance2);
         let hash_f2_var = verifier.commit_public(statement.hash_fee2);
 
-        /* Dummy constraint, remove me */
-        let (_, _, dummy) = verifier.multiply(hash_o1_var.into(), Scalar::zero().into());
-        verifier.constrain(dummy.into());
-
         // Apply constraints to the verifier
-        // Self::input_consistency_single_prover(
-        //     &mut verifier,
-        //     &Into::<Vec<Variable>>::into(party0_order.clone()),
-        //     &hash_o1_var,
-        // )
-        // .map_err(VerifierError::R1CS)?;
-        // Self::input_consistency_single_prover(
-        //     &mut verifier,
-        //     &Into::<Vec<Variable>>::into(party0_balance.clone()),
-        //     &hash_b1_var,
-        // )
-        // .map_err(VerifierError::R1CS)?;
-        // Self::input_consistency_single_prover(
-        //     &mut verifier,
-        //     &Into::<Vec<Variable>>::into(party0_fee),
-        //     &hash_f1_var,
-        // )
-        // .map_err(VerifierError::R1CS)?;
-        // Self::input_consistency_single_prover(
-        //     &mut verifier,
-        //     &Into::<Vec<Variable>>::into(party1_order.clone()),
-        //     &hash_o2_var,
-        // )
-        // .map_err(VerifierError::R1CS)?;
-        // Self::input_consistency_single_prover(
-        //     &mut verifier,
-        //     &Into::<Vec<Variable>>::into(party1_balance.clone()),
-        //     &hash_b2_var,
-        // )
-        // .map_err(VerifierError::R1CS)?;
-        // Self::input_consistency_single_prover(
-        //     &mut verifier,
-        //     &Into::<Vec<Variable>>::into(party1_fee),
-        //     &hash_f2_var,
-        // )
-        // .map_err(VerifierError::R1CS)?;
+        Self::input_consistency_single_prover(
+            &mut verifier,
+            &Into::<Vec<Variable>>::into(party0_order.clone()),
+            &hash_o1_var,
+        )
+        .map_err(VerifierError::R1CS)?;
+        Self::input_consistency_single_prover(
+            &mut verifier,
+            &Into::<Vec<Variable>>::into(party0_balance.clone()),
+            &hash_b1_var,
+        )
+        .map_err(VerifierError::R1CS)?;
+        Self::input_consistency_single_prover(
+            &mut verifier,
+            &Into::<Vec<Variable>>::into(party0_fee),
+            &hash_f1_var,
+        )
+        .map_err(VerifierError::R1CS)?;
+        Self::input_consistency_single_prover(
+            &mut verifier,
+            &Into::<Vec<Variable>>::into(party1_order.clone()),
+            &hash_o2_var,
+        )
+        .map_err(VerifierError::R1CS)?;
+        Self::input_consistency_single_prover(
+            &mut verifier,
+            &Into::<Vec<Variable>>::into(party1_balance.clone()),
+            &hash_b2_var,
+        )
+        .map_err(VerifierError::R1CS)?;
+        Self::input_consistency_single_prover(
+            &mut verifier,
+            &Into::<Vec<Variable>>::into(party1_fee),
+            &hash_f2_var,
+        )
+        .map_err(VerifierError::R1CS)?;
 
         // Check that the matches value is properly formed
         Self::matching_engine_check_single_prover(
