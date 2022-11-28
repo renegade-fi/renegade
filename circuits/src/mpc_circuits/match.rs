@@ -48,7 +48,7 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         min::<32, _, _>(&order1.amount, &order2.amount, fabric.clone())?;
 
     // The maximum of the two amounts minus the minimum of the two amounts
-    let min_minus_max_amount =
+    let max_minus_min_amount =
         &order1.amount + &order2.amount - Scalar::from(2u64) * &min_base_amount;
 
     // Compute execution price = (price1 + price2) / 2
@@ -66,7 +66,7 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
             min_base_amount, // Base amount exchanged
             order1.side.clone(),
             execution_price,
-            min_minus_max_amount,
+            max_minus_min_amount,
             min_index,
         ],
         &fabric
@@ -82,7 +82,7 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         base_amount: masked_output[3].to_owned(),
         direction: masked_output[4].to_owned(),
         execution_price: masked_output[5].to_owned(),
-        min_minus_max_amount: masked_output[6].to_owned(),
+        max_minus_min_amount: masked_output[6].to_owned(),
         min_amount_order_index: masked_output[7].to_owned(),
     })
 }

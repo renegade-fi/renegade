@@ -5,3 +5,4 @@ pub mod comparators;
 pub mod gates;
 pub mod merkle;
 pub mod poseidon;
+pub mod select;

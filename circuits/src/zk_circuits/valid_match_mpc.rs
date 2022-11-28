@@ -28,6 +28,7 @@ use mpc_ristretto::{
 };
 use rand_core::OsRng;
 
+use crate::zk_gadgets::select::{CondSelectGadget, MultiproverCondSelectGadget};
 use crate::{
     errors::{MpcError, ProverError, VerifierError},
     mpc::SharedFabric,
@@ -129,11 +130,40 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // sides are already constrained to be binary when they are submitted. More broadly it
         // is assumed that orders are well formed, checking this amounts to checking their inclusion
         // in the state tree, which is done in `input_consistency_check`
-        cs.constrain(&order1.side + order2.side - MpcVariable::one(fabric.0));
+        cs.constrain(&order1.side + order2.side - MpcVariable::one(fabric.0.clone()));
 
         // Check that price is correctly computed to be the midpoint
         // i.e. price1 + price2 = 2 * execution_price
         cs.constrain(&order1.price + &order2.price - Scalar::from(2u64) * matches.execution_price);
+
+        // Constrain the min_amount_order_index to be binary
+        // i.e. 0 === min_amount_order_index * (1 - min_amount_order_index)
+        let (_, _, mul_out) = cs
+            .multiply(
+                &matches.min_amount_order_index.clone().into(),
+                &(MpcLinearCombination::from_scalar(Scalar::one(), fabric.0.clone())
+                    - &matches.min_amount_order_index),
+            )
+            .map_err(ProverError::Collaborative)?;
+        cs.constrain(mul_out.into());
+
+        // Check that the amount of base currency exchanged is equal to the minimum of the two
+        // order's amounts
+
+        // 1. Constraint he max_minus_min_amount to be correctly computed with respect to the argmin
+        // witness variable min_amount_order_index
+        let max_minus_min1 = &order1.amount - &order2.amount;
+        let max_minus_min2 = &order2.amount - &order1.amount;
+        let max_minus_min_expected = MultiproverCondSelectGadget::select(
+            cs,
+            max_minus_min1,
+            max_minus_min2,
+            matches.min_amount_order_index.into(),
+            fabric.clone(),
+        )?;
+        cs.constrain(&max_minus_min_expected - &matches.max_minus_min_amount);
+
+        // 2. Constrain the max_minus_min_amount value to be positive
 
         // Check that the direction of the match is the same as the first party's direction
         cs.constrain(matches.direction - order1.side);
@@ -166,6 +196,29 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
         // Constrain the execution price to the midpoint of the two order prices
         cs.constrain(order1.price + order2.price - Scalar::from(2u64) * matches.execution_price);
+
+        // Constrain the min_amount_order_index to be binary
+        // i.e. 0 === min_amount_order_index * (1 - min_amount_order_index)
+        let (_, _, mul_out) = cs.multiply(
+            matches.min_amount_order_index.into(),
+            Scalar::one() - matches.min_amount_order_index,
+        );
+        cs.constrain(mul_out.into());
+
+        // Check that the amount of base currency exchanged is equal to the minimum of the two
+        // order's amounts
+
+        // 1. Constraint he max_minus_min_amount to be correctly computed with respect to the argmin
+        // witness variable min_amount_order_index
+        let max_minus_min1 = order1.amount - order2.amount;
+        let max_minus_min2 = order2.amount - order1.amount;
+        let max_minus_min_expected = CondSelectGadget::select(
+            cs,
+            max_minus_min1,
+            max_minus_min2,
+            matches.min_amount_order_index.into(),
+        );
+        cs.constrain(max_minus_min_expected - matches.max_minus_min_amount);
 
         // Constrain the direction of the match to the direction of the first party's order
         cs.constrain(matches.direction - order1.side);
@@ -303,7 +356,7 @@ impl From<&[CompressedRistretto]> for ValidMatchCommitment {
                 base_amount: commitments[25],
                 direction: commitments[26],
                 execution_price: commitments[27],
-                min_minus_max_amount: commitments[28],
+                max_minus_min_amount: commitments[28],
                 min_amount_order_index: commitments[29],
             },
         }

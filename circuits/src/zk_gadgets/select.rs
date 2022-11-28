@@ -1,17 +1,22 @@
 //! Groups gadgets for conditional selection
 
+use std::marker::PhantomData;
+
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use mpc_bulletproof::{
     r1cs::{
         ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
         Variable, Verifier,
     },
+    r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem},
     BulletproofGens,
 };
+use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 use rand_core::OsRng;
 
 use crate::{
     errors::{ProverError, VerifierError},
+    mpc::SharedFabric,
     SingleProverCircuit,
 };
 
@@ -19,7 +24,8 @@ use crate::{
 pub struct CondSelectGadget {}
 
 impl CondSelectGadget {
-    fn select<L, CS>(cs: &mut CS, a: L, b: L, selector: L) -> LinearCombination
+    /// Computes the control flow statement if selector { a } else { b }
+    pub fn select<L, CS>(cs: &mut CS, a: L, b: L, selector: L) -> LinearCombination
     where
         L: Into<LinearCombination> + Clone,
         CS: RandomizableConstraintSystem,
@@ -99,6 +105,45 @@ impl SingleProverCircuit for CondSelectGadget {
         verifier
             .verify(&proof, &bp_gens)
             .map_err(VerifierError::R1CS)
+    }
+}
+
+/// A multiprover version of the conditional select gadget
+pub struct MultiproverCondSelectGadget<
+    'a,
+    N: 'a + MpcNetwork + Send,
+    S: 'a + SharedValueSource<Scalar>,
+> {
+    _phantom: &'a PhantomData<(N, S)>,
+}
+
+impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
+    MultiproverCondSelectGadget<'a, N, S>
+{
+    /// Computes the control flow statement if selector { a } else { b }
+    pub fn select<L, CS>(
+        cs: &mut CS,
+        a: L,
+        b: L,
+        selector: L,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<MpcLinearCombination<N, S>, ProverError>
+    where
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L: Into<MpcLinearCombination<N, S>> + Clone,
+    {
+        // Computes selector * a + (1 - selector) * b
+        let (_, _, mul1_out) = cs
+            .multiply(&a.into(), &selector.clone().into())
+            .map_err(ProverError::Collaborative)?;
+        let (_, _, mul2_out) = cs
+            .multiply(
+                &b.into(),
+                &(MpcLinearCombination::from_scalar(Scalar::one(), fabric.0) - selector.into()),
+            )
+            .map_err(ProverError::Collaborative)?;
+
+        Ok(mul1_out + mul2_out)
     }
 }
 

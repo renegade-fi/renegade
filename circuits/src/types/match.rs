@@ -47,7 +47,7 @@ pub struct MatchResult {
     /// We include it here to tame some of the non-linearity of the zk circuit, i.e. we
     /// can shortcut some of the computation and implicitly constrain the match result
     /// with this extra value
-    pub min_minus_max_amount: u32,
+    pub max_minus_min_amount: u32,
     /// The index of the order (0 or 1) that has the minimum amount, i.e. the order that is
     /// completely filled by this match
     pub min_amount_order_index: u8,
@@ -73,7 +73,7 @@ impl TryFrom<&[u64]> for MatchResult {
             base_amount: values[3],
             direction: values[4],
             execution_price: values[5],
-            min_minus_max_amount: values[6] as u32,
+            max_minus_min_amount: values[6] as u32,
             min_amount_order_index: values[7] as u8,
         })
     }
@@ -99,7 +99,7 @@ pub struct MatchResultVar {
     /// We include it here to tame some of the non-linearity of the zk circuit, i.e. we
     /// can shortcut some of the computation and implicitly constrain the match result
     /// with this extra value
-    pub min_minus_max_amount: Variable,
+    pub max_minus_min_amount: Variable,
     /// The index of the order (0 or 1) that has the minimum amount, i.e. the order that is
     /// completely filled by this match
     pub min_amount_order_index: Variable,
@@ -125,7 +125,7 @@ pub struct CommittedMatchResult {
     /// We include it here to tame some of the non-linearity of the zk circuit, i.e. we
     /// can shortcut some of the computation and implicitly constrain the match result
     /// with this extra value
-    pub min_minus_max_amount: CompressedRistretto,
+    pub max_minus_min_amount: CompressedRistretto,
     /// The index of the order (0 or 1) that has the minimum amount, i.e. the order that is
     /// completely filled by this match
     pub min_amount_order_index: CompressedRistretto,
@@ -142,7 +142,7 @@ impl CommitVerifier for CommittedMatchResult {
         let base_amount_var = verifier.commit(self.base_amount);
         let direction_var = verifier.commit(self.direction);
         let price_var = verifier.commit(self.execution_price);
-        let min_minus_max_var = verifier.commit(self.min_minus_max_amount);
+        let min_minus_max_var = verifier.commit(self.max_minus_min_amount);
         let min_index_var = verifier.commit(self.min_amount_order_index);
 
         Ok(MatchResultVar {
@@ -152,7 +152,7 @@ impl CommitVerifier for CommittedMatchResult {
             base_amount: base_amount_var,
             direction: direction_var,
             execution_price: price_var,
-            min_minus_max_amount: min_minus_max_var,
+            max_minus_min_amount: min_minus_max_var,
             min_amount_order_index: min_index_var,
         })
     }
@@ -179,7 +179,7 @@ pub struct AuthenticatedMatchResult<N: MpcNetwork + Send, S: SharedValueSource<S
     /// We include it here to tame some of the non-linearity of the zk circuit, i.e. we
     /// can shortcut some of the computation and implicitly constrain the match result
     /// with this extra value
-    pub min_minus_max_amount: AuthenticatedScalar<N, S>,
+    pub max_minus_min_amount: AuthenticatedScalar<N, S>,
     /// The index of the order (0 or 1) that has the minimum amount, i.e. the order that is
     /// completely filled by this match
     pub min_amount_order_index: AuthenticatedScalar<N, S>,
@@ -197,7 +197,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedMatch
         res.push(match_res.base_amount);
         res.push(match_res.direction);
         res.push(match_res.execution_price);
-        res.push(match_res.min_minus_max_amount);
+        res.push(match_res.max_minus_min_amount);
         res.push(match_res.min_amount_order_index);
 
         res
@@ -227,7 +227,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> TryFrom<&[Authenticated
             base_amount: values[3].clone(),
             direction: values[4].clone(),
             execution_price: values[5].clone(),
-            min_minus_max_amount: values[6].clone(),
+            max_minus_min_amount: values[6].clone(),
             min_amount_order_index: values[7].clone(),
         })
     }
@@ -293,7 +293,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                     self.base_amount.clone(),
                     self.direction.clone(),
                     self.execution_price.clone(),
-                    self.min_minus_max_amount.clone(),
+                    self.max_minus_min_amount.clone(),
                     self.min_amount_order_index.clone(),
                 ],
                 &blinders,
@@ -308,7 +308,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 base_amount: vars[3].to_owned(),
                 direction: vars[4].to_owned(),
                 execution_price: vars[5].to_owned(),
-                min_minus_max_amount: vars[6].to_owned(),
+                max_minus_min_amount: vars[6].to_owned(),
                 min_amount_order_index: vars[7].to_owned(),
             },
             AuthenticatedCommittedMatchResult {
@@ -318,7 +318,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 base_amount: commitments[3].to_owned(),
                 direction: commitments[4].to_owned(),
                 execution_price: commitments[5].to_owned(),
-                min_minus_max_amount: commitments[6].to_owned(),
+                max_minus_min_amount: commitments[6].to_owned(),
                 min_amount_order_index: commitments[7].to_owned(),
             },
         ))
@@ -346,7 +346,7 @@ pub struct AuthenticatedMatchResultVar<N: MpcNetwork + Send, S: SharedValueSourc
     /// We include it here to tame some of the non-linearity of the zk circuit, i.e. we
     /// can shortcut some of the computation and implicitly constrain the match result
     /// with this extra value
-    pub min_minus_max_amount: MpcVariable<N, S>,
+    pub max_minus_min_amount: MpcVariable<N, S>,
     /// The index of the order (0 or 1) that has the minimum amount, i.e. the order that is
     /// completely filled by this match
     pub min_amount_order_index: MpcVariable<N, S>,
@@ -372,7 +372,7 @@ pub struct AuthenticatedCommittedMatchResult<N: MpcNetwork + Send, S: SharedValu
     /// We include it here to tame some of the non-linearity of the zk circuit, i.e. we
     /// can shortcut some of the computation and implicitly constrain the match result
     /// with this extra value
-    pub min_minus_max_amount: AuthenticatedCompressedRistretto<N, S>,
+    pub max_minus_min_amount: AuthenticatedCompressedRistretto<N, S>,
     /// The index of the order (0 or 1) that has the minimum amount, i.e. the order that is
     /// completely filled by this match
     pub min_amount_order_index: AuthenticatedCompressedRistretto<N, S>,
@@ -389,7 +389,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
             match_res.base_amount,
             match_res.direction,
             match_res.execution_price,
-            match_res.min_minus_max_amount,
+            match_res.max_minus_min_amount,
             match_res.min_amount_order_index,
         ]
     }

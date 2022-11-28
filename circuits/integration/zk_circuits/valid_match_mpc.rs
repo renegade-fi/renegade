@@ -89,7 +89,7 @@ fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         base_amount: shared_values[3].to_owned(),
         direction: shared_values[4].to_owned(),
         execution_price: shared_values[5].to_owned(),
-        min_minus_max_amount: shared_values[6].to_owned(),
+        max_minus_min_amount: shared_values[6].to_owned(),
         min_amount_order_index: shared_values[7].to_owned(),
     })
 }
