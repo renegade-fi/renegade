@@ -1,9 +1,12 @@
-#![deny(unsafe_code)]
+//! The entrypoint to the relayer, starts the coordinator thread which manages all other worker threads
+
+#![deny(unsafe_code, missing_docs)]
 
 mod config;
 mod gossip;
 mod handshake;
 mod state;
+mod worker;
 
 use crossbeam::channel;
 use std::error::Error;
