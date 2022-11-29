@@ -1,22 +1,17 @@
-pub(crate) mod api;
-mod composed_protocol;
-mod errors;
-mod heartbeat_protocol;
-pub(crate) mod network_manager;
-pub(crate) mod types;
-
-// This file groups logic for the package-public gossip interface
+//! Groups logic for the package-public gossip interface
 use crossbeam::channel::{Receiver, Sender};
 use std::{error::Error, thread};
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
-use crate::{gossip::heartbeat_protocol::HeartbeatProtocolExecutor, state::GlobalRelayerState};
+use crate::{api::gossip::GossipOutbound, state::GlobalRelayerState};
 
-use self::{api::GossipOutbound, heartbeat_protocol::HeartbeatExecutorJob, types::WrappedPeerId};
+use super::{
+    heartbeat_executor::HeartbeatProtocolExecutor, jobs::HeartbeatExecutorJob, types::WrappedPeerId,
+};
 
 pub struct GossipServer {
     // Executors
-    heartbeat_executor: heartbeat_protocol::HeartbeatProtocolExecutor,
+    heartbeat_executor: HeartbeatProtocolExecutor,
 }
 
 impl GossipServer {

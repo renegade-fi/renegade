@@ -2,9 +2,11 @@
 
 #![deny(unsafe_code, missing_docs)]
 
+mod api;
 mod config;
 mod gossip;
 mod handshake;
+mod network_manager;
 mod state;
 mod worker;
 
@@ -13,8 +15,8 @@ use std::error::Error;
 use tokio::sync::mpsc;
 
 use crate::{
-    gossip::{api::GossipOutbound, network_manager::NetworkManager, GossipServer},
-    handshake::HandshakeManager,
+    api::gossip::GossipOutbound, gossip::server::GossipServer,
+    handshake::manager::HandshakeManager, network_manager::manager::NetworkManager,
     state::RelayerState,
 };
 

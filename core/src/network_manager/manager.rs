@@ -1,7 +1,6 @@
 use crossbeam::channel::Sender;
-use futures::executor::block_on;
+use futures::{executor::block_on, StreamExt};
 use libp2p::{
-    futures::StreamExt,
     identity,
     request_response::{RequestResponseEvent, RequestResponseMessage},
     swarm::SwarmEvent,
@@ -12,16 +11,16 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{event, Level};
 
 use crate::{
+    api::gossip::{GossipOutbound, GossipRequest, GossipResponse},
     gossip::{
-        composed_protocol::{ComposedNetworkBehavior, ComposedProtocolEvent},
-        heartbeat_protocol::HeartbeatExecutorJob,
+        jobs::HeartbeatExecutorJob,
         types::{PeerInfo, WrappedPeerId},
     },
-    handshake::types::HandshakeExecutionJob,
+    handshake::jobs::HandshakeExecutionJob,
     state::GlobalRelayerState,
 };
 
-use super::api::{GossipOutbound, GossipRequest, GossipResponse};
+use super::composed_protocol::{ComposedNetworkBehavior, ComposedProtocolEvent};
 
 // Groups logic around monitoring and requesting the network
 pub struct NetworkManager {

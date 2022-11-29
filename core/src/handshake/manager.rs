@@ -1,5 +1,3 @@
-pub(crate) mod types;
-
 use crossbeam::channel::Receiver;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::{
@@ -10,16 +8,15 @@ use std::{
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
-    gossip::{
-        api::{
-            GossipOutbound, GossipRequest, GossipResponse, HandshakeMessage, HandshakeOperation,
-        },
-        types::WrappedPeerId,
+    api::{
+        gossip::{GossipOutbound, GossipRequest, GossipResponse},
+        handshake::{HandshakeMessage, HandshakeOperation},
     },
+    gossip::types::WrappedPeerId,
     state::GlobalRelayerState,
 };
 
-use self::types::HandshakeExecutionJob;
+use super::jobs::HandshakeExecutionJob;
 
 /**
  * Groups logic for handshakes executed through a threadpool at period intervals

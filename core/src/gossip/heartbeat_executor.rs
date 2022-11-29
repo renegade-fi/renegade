@@ -1,6 +1,5 @@
 // Groups the logic behind the gossip protocol specification
 use crossbeam::channel::{Receiver, Sender};
-use libp2p::request_response::ResponseChannel;
 use lru::LruCache;
 use std::{
     collections::HashMap,
@@ -11,12 +10,15 @@ use std::{
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
-    gossip::{
-        api::{GossipOutbound, GossipRequest, GossipResponse, HeartbeatMessage},
-        types::{PeerInfo, WrappedPeerId},
+    api::{
+        gossip::{GossipOutbound, GossipRequest, GossipResponse},
+        hearbeat::HeartbeatMessage,
     },
+    gossip::types::{PeerInfo, WrappedPeerId},
     state::{GlobalRelayerState, RelayerState},
 };
+
+use super::jobs::HeartbeatExecutorJob;
 
 /**
  * Constants
@@ -52,20 +54,6 @@ fn get_current_time_seconds() -> u64 {
 /**
  * Heartbeat protocol execution and implementation
  */
-
-// Job types
-pub enum HeartbeatExecutorJob {
-    ExecuteHeartbeats,
-    HandleHeartbeatReq {
-        peer_id: WrappedPeerId,
-        message: HeartbeatMessage,
-        channel: ResponseChannel<GossipResponse>,
-    },
-    HandleHeartbeatResp {
-        peer_id: WrappedPeerId,
-        message: HeartbeatMessage,
-    },
-}
 
 // Type aliases for shared objects
 type SharedLRUCache = Arc<RwLock<LruCache<WrappedPeerId, u64>>>;

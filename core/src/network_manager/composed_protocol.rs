@@ -10,7 +10,7 @@ use libp2p::{
 };
 use std::iter;
 
-use crate::gossip::api::{GossipRequest, GossipResponse};
+use crate::api::gossip::{GossipRequest, GossipResponse};
 
 /**
  * Constants

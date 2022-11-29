@@ -1,8 +1,8 @@
 use libp2p::request_response::ResponseChannel;
 
-use crate::gossip::{
-    api::{GossipResponse, HandshakeMessage},
-    types::WrappedPeerId,
+use crate::{
+    api::{gossip::GossipResponse, handshake::HandshakeMessage},
+    gossip::types::WrappedPeerId,
 };
 
 /**
