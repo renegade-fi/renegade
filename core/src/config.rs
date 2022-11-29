@@ -1,3 +1,5 @@
+//! Groups configurations used throughout the relayer passed to the CLI
+
 use clap::Parser;
 use ed25519_dalek::{Digest, Keypair, Sha512, SignatureError};
 use libp2p::{Multiaddr, PeerId};

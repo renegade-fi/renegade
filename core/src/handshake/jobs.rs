@@ -1,3 +1,5 @@
+//! Defines jobs that other workers in the relayer may enqueue for the handshake module
+
 use libp2p::request_response::ResponseChannel;
 
 use crate::{

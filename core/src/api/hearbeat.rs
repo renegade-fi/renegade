@@ -1,3 +1,5 @@
+//! Groups API definitions for heartbeat requests and responses
+
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};

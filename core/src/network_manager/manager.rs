@@ -1,3 +1,5 @@
+//! The network manager handles lower level interaction with the p2p network
+
 use crossbeam::channel::Sender;
 use futures::{executor::block_on, StreamExt};
 use libp2p::{

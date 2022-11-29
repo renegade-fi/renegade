@@ -1,3 +1,6 @@
+//! Defines an abstraction over the various APIs from other workers
+//! into a single request/response + broadcast protocol
+
 use async_trait::async_trait;
 use libp2p::{
     core::upgrade::{read_length_prefixed, write_length_prefixed},

@@ -1,4 +1,5 @@
-// Groups the logic behind the gossip protocol specification
+//! Groups the logic behind the gossip protocol specification
+
 use crossbeam::channel::{Receiver, Sender};
 use lru::LruCache;
 use std::{

@@ -1,3 +1,5 @@
+//! Groups API definitions for standard gossip network requests/responses
+
 use libp2p::{request_response::ResponseChannel, Multiaddr};
 use serde::{Deserialize, Serialize};
 

@@ -1,6 +1,6 @@
 //! The entrypoint to the relayer, starts the coordinator thread which manages all other worker threads
-
-#![deny(unsafe_code, missing_docs)]
+#![deny(unsafe_code)]
+#![deny(missing_docs)]
 
 mod api;
 mod config;

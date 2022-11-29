@@ -1,3 +1,5 @@
+//! Groups gossip error definitions
+
 use std::fmt;
 
 // Defines an error for Gossip operation

@@ -1,3 +1,6 @@
+//! This file groups type definitions and helpers around global state that
+//! is passed around throughout the code
+
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -6,11 +9,6 @@ use std::{
 };
 
 use crate::gossip::types::{PeerInfo, WrappedPeerId};
-
-/**
- * This file groups type definitions and helpers around global state that
- * is passed around throughout the code
- */
 
 /**
  * Constants and Types

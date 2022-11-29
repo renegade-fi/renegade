@@ -1,3 +1,5 @@
+//! Groups the types used to represent the gossip network primitives
+
 use libp2p::{Multiaddr, PeerId};
 use serde::{
     de::{Error as SerdeErr, Visitor},

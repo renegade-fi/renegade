@@ -1,3 +1,4 @@
+//! Groups API definitions for handshake request response
 use serde::{Deserialize, Serialize};
 
 // Represents a gossip message sent to initiate a handshake request

@@ -1,4 +1,5 @@
-//! Groups logic for the package-public gossip interface
+//! The gossip server manages the general gossip network interaction of a single p2p node
+
 use crossbeam::channel::{Receiver, Sender};
 use std::{error::Error, thread};
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
