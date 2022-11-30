@@ -25,6 +25,9 @@ pub struct GossipServerConfig {
     pub(crate) heartbeat_worker_receiver: Receiver<HeartbeatExecutorJob>,
     /// A job queue to send outbound network requests on
     pub(crate) network_sender: TokioSender<GossipOutbound>,
+    /// The channel on which the coordinator may mandate that the
+    /// gossip server cancel its execution
+    pub(crate) cancel_channel: Receiver<()>,
 }
 
 impl Worker for GossipServer {

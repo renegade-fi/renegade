@@ -27,6 +27,9 @@ pub struct HandshakeManagerConfig {
     pub network_channel: UnboundedSender<GossipOutbound>,
     /// The job queue on which to receive handshake requrests
     pub job_receiver: Receiver<HandshakeExecutionJob>,
+    /// The channel on which the coordinator may mandate that the
+    /// handshake manager cancel its execution
+    pub(crate) cancel_channel: Receiver<()>,
 }
 
 impl Worker for HandshakeManager {

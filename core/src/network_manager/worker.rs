@@ -2,7 +2,7 @@
 
 use std::thread::{Builder, JoinHandle};
 
-use crossbeam::channel::Sender;
+use crossbeam::channel::{Receiver, Sender};
 use futures::executor::block_on;
 use libp2p::{identity, Multiaddr, Swarm};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -38,6 +38,9 @@ pub struct NetworkManagerConfig {
     pub(crate) handshake_work_queue: Sender<HandshakeExecutionJob>,
     /// The global shared state of the local relayer
     pub(crate) global_state: GlobalRelayerState,
+    /// The channel on which the coordinator can send a cancel signal to
+    /// all network worker threads
+    pub(crate) cancel_channel: Receiver<()>,
 }
 
 impl Worker for NetworkManager {
