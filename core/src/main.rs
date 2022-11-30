@@ -4,18 +4,21 @@
 
 mod api;
 mod config;
+mod error;
 mod gossip;
 mod handshake;
 mod network_manager;
 mod state;
 mod worker;
 
+use std::{thread, time::Duration};
+
 use crossbeam::channel;
+use error::CoordinatorError;
 use gossip::worker::GossipServerConfig;
 use handshake::worker::HandshakeManagerConfig;
 use network_manager::worker::NetworkManagerConfig;
-use std::error::Error;
-use tokio::sync::mpsc;
+use tokio::{select, sync::mpsc};
 
 use crate::{
     api::gossip::GossipOutbound,
@@ -25,6 +28,9 @@ use crate::{
     state::RelayerState,
     worker::{watch_worker, Worker},
 };
+
+/// The amount of time to wait between sending teardown signals and terminating execution
+const TERMINATION_TIMEOUT_MS: u64 = 10_000; // 10 seconds
 
 /// The entrypoint to the relayer's execution
 ///
@@ -39,7 +45,7 @@ use crate::{
 ///     3. Allocate and start the worker's execution
 ///     4. Allocate a thread to monitor the worker for faults
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<(), CoordinatorError> {
     // Parse command line arguments
     let args = config::parse_command_line_args().expect("error parsing command line args");
     println!(
@@ -58,15 +64,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Start the network manager
     let (network_cancel_sender, network_cancel_receiver) = channel::bounded(1 /* capacity */);
-    let mut network_manager = NetworkManager::new(NetworkManagerConfig {
+    let network_manager_config = NetworkManagerConfig {
         port: args.port,
         send_channel: Some(network_receiver),
         heartbeat_work_queue: heartbeat_worker_sender.clone(),
         handshake_work_queue: handshake_worker_sender,
         global_state: global_state.clone(),
         cancel_channel: network_cancel_receiver,
-    })
-    .expect("failed to build network manager");
+    };
+    let mut network_manager =
+        NetworkManager::new(network_manager_config).expect("failed to build network manager");
     network_manager
         .start()
         .expect("failed to start network manager");
@@ -110,11 +117,64 @@ async fn main() -> Result<(), Box<dyn Error>> {
         mpsc::channel(1 /* buffer size */);
     watch_worker::<HandshakeManager>(&mut handshake_manager, handshake_failure_sender);
 
-    // Await termination of the submodules
-    network_failure_receiver.recv().await.unwrap();
-    gossip_failure_receiver.recv().await.unwrap();
-    handshake_failure_receiver.recv().await.unwrap();
+    // Hold onto copies of the cancel channels for use at teardown
+    let cancel_channels = vec![
+        network_cancel_sender.clone(),
+        gossip_cancel_sender.clone(),
+        handshake_cancel_sender.clone(),
+    ];
 
-    // Unreachable
-    Ok(())
+    // Await module termination, and send a cancel signal for any modules that
+    // have been detected to fault
+    let recovery_loop = || async move {
+        loop {
+            select! {
+                _ = network_failure_receiver.recv() => {
+                    network_cancel_sender.send(())
+                        .map_err(|err| CoordinatorError::CancelError(err.to_string()))?;
+                    network_manager = recover_worker(network_manager)?;
+                }
+                _ = gossip_failure_receiver.recv() => {
+                    gossip_cancel_sender.send(())
+                        .map_err(|err| CoordinatorError::CancelError(err.to_string()))?;
+                    gossip_server = recover_worker(gossip_server)?;
+                }
+                _ = handshake_failure_receiver.recv() => {
+                    handshake_cancel_sender.send(())
+                        .map_err(|err| CoordinatorError::CancelError(err.to_string()))?;
+                    handshake_manager = recover_worker(handshake_manager)?;
+                }
+            };
+        }
+    };
+
+    // Wait for an error, log the error, and teardown the relayer
+    let loop_res: Result<(), CoordinatorError> = recovery_loop().await;
+    let err = loop_res.err().unwrap();
+    println!("Error in coordinator thread: {:?}", err);
+
+    // Send cancel signals to all workers
+    for cancel_channel in cancel_channels.iter() {
+        cancel_channel
+            .send(())
+            .map_err(|err| CoordinatorError::CancelError(err.to_string()))?;
+    }
+
+    // Give workers time to teardown execution then terminate
+    println!("Tearing down workers...");
+    thread::sleep(Duration::from_millis(TERMINATION_TIMEOUT_MS));
+    println!("Terminating...");
+
+    Err(err)
+}
+
+/// Attempt to recover a failed module by cleaning up its resources and re-allocating it
+fn recover_worker<W: Worker>(failed_worker: W) -> Result<W, CoordinatorError> {
+    if !failed_worker.is_recoverable() {
+        return Err(CoordinatorError::RecoveryError(
+            "worker is not recoverable".to_string(),
+        ));
+    }
+
+    Ok(failed_worker.recover())
 }

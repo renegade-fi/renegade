@@ -21,9 +21,6 @@ pub trait Worker {
     where
         Self: Sized;
 
-    /// Returns whether or not the implementing type is recoverable
-    fn is_recoverable(&self) -> bool;
-
     /// Called to begin a worker, returns a JoinHandle to be waited on
     fn start(&mut self) -> Result<(), Self::Error>;
 
@@ -31,6 +28,22 @@ pub trait Worker {
     ///
     /// Returns a set of join handles, each of which is to be watched
     fn join(&mut self) -> Vec<JoinHandle<Self::Error>>;
+
+    /// Returns whether or not the implementing type is recoverable
+    fn is_recoverable(&self) -> bool;
+
+    /// Recover the worker by re-allocating it
+    ///
+    /// This method consumes the worker instance so that it can transfer ownership
+    /// of any re-usable components.
+    ///
+    /// The return value of this method should be a fresh instance of the worker
+    fn recover(self) -> Self
+    where
+        Self: Sized,
+    {
+        unimplemented!("recover not implemented for worker")
+    }
 
     /// Called to cleanup the resources a worker owns when the worker crashes
     fn cleanup(&mut self) -> Result<(), Self::Error>;

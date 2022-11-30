@@ -70,8 +70,11 @@ impl Worker for NetworkManager {
         })
     }
 
+    /// The network manager is not recoverable because restarting it requires re-allocating its
+    /// work queue. This would require updating any senders on this queue as well, it is simpler
+    /// to just fail
     fn is_recoverable(&self) -> bool {
-        true
+        false
     }
 
     fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
