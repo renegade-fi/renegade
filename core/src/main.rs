@@ -11,13 +11,17 @@ mod state;
 mod worker;
 
 use crossbeam::channel;
+use network_manager::worker::NetworkManagerConfig;
 use std::error::Error;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::{
-    api::gossip::GossipOutbound, gossip::server::GossipServer,
-    handshake::manager::HandshakeManager, network_manager::manager::NetworkManager,
+    api::gossip::GossipOutbound,
+    gossip::server::GossipServer,
+    handshake::manager::HandshakeManager,
+    network_manager::manager::NetworkManager,
     state::RelayerState,
+    worker::{watch_worker, Worker},
 };
 
 #[tokio::main]
@@ -39,15 +43,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (handshake_worker_sender, handshake_worker_receiver) = channel::unbounded();
 
     // Start the network manager
-    let network_manager = NetworkManager::new(
-        args.port,
-        network_receiver,
-        heartbeat_worker_sender.clone(),
-        handshake_worker_sender.clone(),
-        global_state.clone(),
-    )
-    .await
-    .expect("error building network manager");
+    let mut network_manager = NetworkManager::new(NetworkManagerConfig {
+        port: args.port,
+        send_channel: Some(network_receiver),
+        heartbeat_work_queue: heartbeat_worker_sender.clone(),
+        handshake_work_queue: handshake_worker_sender.clone(),
+        global_state: global_state.clone(),
+    })
+    .expect("failed to build network manager");
+    network_manager
+        .start()
+        .expect("failed to start network manager");
+
+    // Watch the thread
+    let (network_failure_sender, network_failure_receiver) = oneshot::channel();
+    watch_worker::<NetworkManager>(network_manager.join(), network_failure_sender);
 
     // Start the gossip server
     let gossip_server = GossipServer::new(
@@ -68,9 +78,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     );
 
     // Await termination of the submodules
-    network_manager.join().unwrap();
     gossip_server.join().unwrap();
     handshake_manager.join().unwrap();
+    network_failure_receiver.blocking_recv().unwrap();
 
     // Unreachable
     Ok(())

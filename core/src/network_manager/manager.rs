@@ -1,130 +1,57 @@
 //! The network manager handles lower level interaction with the p2p network
 
 use crossbeam::channel::Sender;
-use futures::{executor::block_on, StreamExt};
+use futures::StreamExt;
 use libp2p::{
-    identity,
+    identity::Keypair,
     request_response::{RequestResponseEvent, RequestResponseMessage},
     swarm::SwarmEvent,
-    Multiaddr, PeerId, Swarm,
+    PeerId, Swarm,
 };
-use std::thread::{self, Builder, JoinHandle};
+use std::thread::JoinHandle;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{event, Level};
 
 use crate::{
     api::gossip::{GossipOutbound, GossipRequest, GossipResponse},
-    gossip::{
-        jobs::HeartbeatExecutorJob,
-        types::{PeerInfo, WrappedPeerId},
-    },
+    gossip::{jobs::HeartbeatExecutorJob, types::WrappedPeerId},
     handshake::jobs::HandshakeExecutionJob,
-    state::GlobalRelayerState,
 };
 
-use super::composed_protocol::{ComposedNetworkBehavior, ComposedProtocolEvent};
+use super::{
+    composed_protocol::{ComposedNetworkBehavior, ComposedProtocolEvent},
+    error::NetworkManagerError,
+    worker::NetworkManagerConfig,
+};
 
 // Groups logic around monitoring and requesting the network
 pub struct NetworkManager {
-    // The peerId of the locally running node
-    pub local_peer_id: WrappedPeerId,
-
-    // The join handle of the executor loop
-    pub thread_handle: JoinHandle<()>,
+    /// The config passed from the coordinator thread
+    pub(super) config: NetworkManagerConfig,
+    /// The peerId of the locally running node
+    pub(crate) local_peer_id: WrappedPeerId,
+    /// The public key of the local peer
+    pub(super) local_keypair: Keypair,
+    /// The join handle of the executor loop
+    pub(super) thread_handle: Option<JoinHandle<NetworkManagerError>>,
 }
 
 // The NetworkManager handles both incoming and outbound messages to the p2p network
 // It accepts events from workers elsewhere in the relayer that are to be propagated
 // out to the network; as well as listening on the network for messages from other peers.
 impl NetworkManager {
-    pub async fn new(
-        port: u32,
-        send_channel: UnboundedReceiver<GossipOutbound>,
-        heartbeat_work_queue: Sender<HeartbeatExecutorJob>,
-        handshake_work_queue: Sender<HandshakeExecutionJob>,
-        global_state: GlobalRelayerState,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        // Build the peer keys
-        let local_key = identity::Keypair::generate_ed25519();
-        let local_peer_id = WrappedPeerId(local_key.public().to_peer_id());
-        println!("peer ID: {:?}", local_peer_id);
-
-        // Update global state with newly assigned peerID
-        {
-            let mut locked_state = global_state.write().expect("global state lock poisoned");
-            locked_state.local_peer_id = Some(local_peer_id);
-        } // locked_state released here
-
-        // Transport is TCP for now, this will eventually move to QUIC
-        let transport = libp2p::development_transport(local_key).await?;
-
-        // Behavior is a composed behavior of RequestResponse with Kademlia
-        let mut behavior = ComposedNetworkBehavior::new(*local_peer_id);
-
-        // Add all addresses for bootstrap servers
-        for (peer_id, peer_info) in global_state.read().unwrap().known_peers.iter() {
-            println!(
-                "Adding {:?}: {} to routing table...",
-                peer_id,
-                peer_info.get_addr()
-            );
-            behavior
-                .kademlia_dht
-                .add_address(peer_id, peer_info.get_addr());
-        }
-
-        // Connect the behavior and the transport via swarm
-        // and begin listening for requests
-        let mut swarm = Swarm::new(transport, behavior, *local_peer_id);
-        let hostport = format!("/ip4/127.0.0.1/tcp/{}", port);
-        let addr: Multiaddr = hostport.parse()?;
-        swarm.listen_on(addr.clone())?;
-
-        // Add self to known peers
-        global_state
-            .write()
-            .unwrap()
-            .known_peers
-            .insert(local_peer_id, PeerInfo::new(local_peer_id, addr));
-
-        // Start up the worker thread
-        let thread_handle = Builder::new()
-            .name("network-manager".to_string())
-            .spawn(move || {
-                // Block on this to execute the future in a separate thread
-                block_on(Self::executor_loop(
-                    local_peer_id,
-                    swarm,
-                    send_channel,
-                    heartbeat_work_queue,
-                    handshake_work_queue,
-                ))
-            })
-            .unwrap();
-
-        Ok(Self {
-            local_peer_id,
-            thread_handle,
-        })
-    }
-
-    // Joins the calling thread to the execution of the network manager loop
-    pub fn join(self) -> thread::Result<()> {
-        self.thread_handle.join()
-    }
-
     // The main loop in which the worker thread processes requests
     // The worker handles two types of events:
     //      1. Events from the network; which it dispatches to appropriate handler threads
     //      2. Events from workers to be sent over the network
     // It handles these in the tokio select! macro below
-    async fn executor_loop(
+    pub(super) async fn executor_loop(
         local_peer_id: WrappedPeerId,
         mut swarm: Swarm<ComposedNetworkBehavior>,
         mut send_channel: UnboundedReceiver<GossipOutbound>,
         heartbeat_work_queue: Sender<HeartbeatExecutorJob>,
         handshake_work_queue: Sender<HandshakeExecutionJob>,
-    ) {
+    ) -> Result<(), NetworkManagerError> {
         println!("Starting executor loop for network manager...");
         loop {
             tokio::select! {
