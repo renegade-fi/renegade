@@ -9,7 +9,7 @@ use libp2p::{
     PeerId, Swarm,
 };
 use std::thread::JoinHandle;
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
 use tracing::{event, Level};
 
 use crate::{
@@ -34,6 +34,8 @@ pub struct NetworkManager {
     pub(super) local_keypair: Keypair,
     /// The join handle of the executor loop
     pub(super) thread_handle: Option<JoinHandle<NetworkManagerError>>,
+    /// The join handle of the cancellation relay
+    pub(super) cancellation_relay_handle: Option<JoinHandle<NetworkManagerError>>,
 }
 
 // The NetworkManager handles both incoming and outbound messages to the p2p network
@@ -51,12 +53,14 @@ impl NetworkManager {
         mut send_channel: UnboundedReceiver<GossipOutbound>,
         heartbeat_work_queue: Sender<HeartbeatExecutorJob>,
         handshake_work_queue: Sender<HandshakeExecutionJob>,
-    ) -> Result<(), NetworkManagerError> {
+        mut cancel: Receiver<()>,
+    ) -> NetworkManagerError {
         println!("Starting executor loop for network manager...");
         loop {
             tokio::select! {
                 // Handle network requests from worker components of the relayer
                 Some(message) = send_channel.recv() => {
+                    // Check that
                     // Forward the message
                     Self::handle_outbound_message(message, &mut swarm);
                 },
@@ -76,6 +80,11 @@ impl NetworkManager {
                         },
                         _ => {  }
                     }
+                }
+
+                // Handle a cancel signal from the coordinator
+                _ = cancel.recv() => {
+                    return NetworkManagerError::Cancelled("received cancel signal".to_string())
                 }
             }
         }

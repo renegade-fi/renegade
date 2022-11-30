@@ -5,7 +5,7 @@ use std::thread::{Builder, JoinHandle};
 use crossbeam::channel::{Receiver, Sender};
 use futures::executor::block_on;
 use libp2p::{identity, Multiaddr, Swarm};
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::{self, UnboundedReceiver};
 
 use crate::{
     api::gossip::GossipOutbound,
@@ -67,6 +67,7 @@ impl Worker for NetworkManager {
             local_peer_id,
             local_keypair,
             thread_handle: None,
+            cancellation_relay_handle: None,
         })
     }
 
@@ -79,7 +80,10 @@ impl Worker for NetworkManager {
 
     fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
         // Allow panic if server is not started yet
-        vec![self.thread_handle.take().unwrap()]
+        vec![
+            self.thread_handle.take().unwrap(),
+            self.cancellation_relay_handle.take().unwrap(),
+        ]
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
@@ -120,6 +124,26 @@ impl Worker for NetworkManager {
             .known_peers
             .insert(self.local_peer_id, PeerInfo::new(self.local_peer_id, addr));
 
+        // Start up a cancel forwarder, this thread forwards from a crossbeam cancel
+        // channel to an async queue to shim between blocking and async interfaces
+        // TODO: Maybe use crossfire for this instead
+        let (async_cancel_sender, async_cancel_receiver) = mpsc::channel(1 /* buffer size */);
+        let blocking_cancel_channel = self.config.cancel_channel.clone();
+        let cancel_forward_handle = Builder::new()
+            .name("network-manager cancellation relay".to_string())
+            .spawn(move || {
+                if let Err(err) = blocking_cancel_channel.recv() {
+                    return NetworkManagerError::CancelForwardFailed(err.to_string());
+                }
+                if let Err(err) = async_cancel_sender.blocking_send(()) {
+                    return NetworkManagerError::CancelForwardFailed(err.to_string());
+                }
+
+                NetworkManagerError::Cancelled("received cancel signal".to_string())
+            })
+            .unwrap();
+        self.cancellation_relay_handle = Some(cancel_forward_handle);
+
         // Start up the worker thread
         let peer_id_copy = self.local_peer_id;
         let heartbeat_work_queue = self.config.heartbeat_work_queue.clone();
@@ -137,9 +161,8 @@ impl Worker for NetworkManager {
                     send_channel,
                     heartbeat_work_queue,
                     handshake_work_queue,
+                    async_cancel_receiver,
                 ))
-                .err()
-                .unwrap()
             })
             .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 

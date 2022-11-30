@@ -7,6 +7,10 @@ use std::fmt::Display;
 pub enum NetworkManagerError {
     /// An error while setting up the network manager
     SetupError(String),
+    /// An error originating from a cancel signal
+    Cancelled(String),
+    /// An error forwarding a cancel signal to the network worker
+    CancelForwardFailed(String),
 }
 
 impl Display for NetworkManagerError {
