@@ -4,32 +4,24 @@
 //! See the whitepaper (https://renegade.fi/whitepaper.pdf) appendix A.5
 //! for a formal specification
 
-// TODO: Remove this lint allowance
-#![allow(unused)]
-
 use std::{borrow::Borrow, marker::PhantomData};
 
-use curve25519_dalek::digest::generic_array::typenum::private::IsLessOrEqualPrivate;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
-use mpc_bulletproof::r1cs::ConstraintSystem;
-use mpc_bulletproof::r1cs_mpc::MpcConstraintSystem;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
     r1cs_mpc::{
-        MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MpcVariable,
-        MultiproverError, R1CSError, SharedR1CSProof,
+        MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MpcVariable, R1CSError,
+        SharedR1CSProof,
     },
     BulletproofGens,
 };
-use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto, beaver::SharedValueSource,
     network::MpcNetwork,
 };
 use rand_core::OsRng;
 
-use crate::scalar_to_bigint;
 use crate::zk_gadgets::comparators::{
     GreaterThanEqGadget, GreaterThanEqZeroGadget, MultiproverGreaterThanEqGadget,
     MultiproverGreaterThanEqZeroGadget,
@@ -44,13 +36,12 @@ use crate::{
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
     types::{
         balance::{
-            AuthenticatedBalance, AuthenticatedBalanceVar, AuthenticatedCommittedBalance, Balance,
-            BalanceVar, CommittedBalance,
+            AuthenticatedBalanceVar, AuthenticatedCommittedBalance, Balance, BalanceVar,
+            CommittedBalance,
         },
-        fee::{AuthenticatedCommittedFee, AuthenticatedFee, CommittedFee, Fee},
+        fee::{AuthenticatedCommittedFee, CommittedFee, Fee},
         order::{
-            AuthenticatedCommittedOrder, AuthenticatedOrder, AuthenticatedOrderVar, CommittedOrder,
-            Order, OrderVar,
+            AuthenticatedCommittedOrder, AuthenticatedOrderVar, CommittedOrder, Order, OrderVar,
         },
         r#match::{
             AuthenticatedCommittedMatchResult, AuthenticatedMatchResult,
@@ -60,10 +51,6 @@ use crate::{
     zk_gadgets::poseidon::{MultiproverPoseidonHashGadget, PoseidonHashGadget},
     CommitSharedProver, CommitVerifier, MultiProverCircuit, Open,
 };
-
-const ORDER_LENGTH_SCALARS: usize = 5; // mint1, mint2, direction, price, amount
-const BALANCE_LENGTH_SCALARS: usize = 2; // amount, direction
-const FEE_LENGTH_SCALARS: usize = 4; // settle_key, gas_addr, gas_token_amount, percentage_fee
 
 /// The circuitry for the valid match
 ///
@@ -267,14 +254,14 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
             balance1.amount.into(),
             party0_buy_amount,
             fabric.clone(),
-        );
+        )?;
 
         MultiproverGreaterThanEqGadget::<'_, 64 /* bitlength */, N, S>::constrain_greater_than_eq(
             cs,
             balance2.amount.into(),
             party1_buy_amount,
             fabric,
-        );
+        )?;
 
         Ok(())
     }

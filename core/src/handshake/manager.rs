@@ -1,9 +1,6 @@
 //! The handshake module handles the execution of handshakes from negotiating
 //! a pair of orders to match, all the way through settling any resulting match
 
-//! TODO: Remove this lint allowance
-#![allow(unused)]
-
 use crossbeam::channel::Receiver;
 use rayon::ThreadPool;
 use std::{

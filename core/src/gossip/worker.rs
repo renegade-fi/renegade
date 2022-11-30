@@ -58,7 +58,7 @@ impl Worker for GossipServer {
     }
 
     fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
-        vec![self.heartbeat_executor.take().unwrap().join()]
+        self.heartbeat_executor.take().unwrap().join()
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {

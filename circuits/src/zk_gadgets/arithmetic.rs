@@ -155,7 +155,6 @@ pub struct MultiproverExpGadget<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedVal
     _phantom: PhantomData<&'a (N, S)>,
 }
 
-#[allow(unused_variables)]
 impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     MultiproverExpGadget<'a, N, S>
 {

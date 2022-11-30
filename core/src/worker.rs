@@ -53,14 +53,12 @@ pub trait Worker {
 ///
 /// A worker may have more than one join handle in the case that it spawns
 /// multiple sub-worker threads. Each will be individually watched
-#[allow(unused_must_use)]
 pub fn watch_worker<W: Worker>(worker: &mut W, failure_channel: Sender<()>) {
-    //
     for join_handle in worker.join() {
         let channel_clone = failure_channel.clone();
         thread::spawn(move || {
-            join_handle.join();
-            channel_clone.send(());
+            join_handle.join().unwrap();
+            channel_clone.blocking_send(()).unwrap();
         });
     }
 }

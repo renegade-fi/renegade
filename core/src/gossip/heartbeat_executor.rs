@@ -1,6 +1,4 @@
 //! Groups the logic behind the gossip protocol specification
-#![allow(unused)]
-
 use crossbeam::channel::{Receiver, Sender};
 use lru::LruCache;
 use std::{
@@ -65,7 +63,7 @@ type SharedLRUCache = Arc<RwLock<LruCache<WrappedPeerId, u64>>>;
 #[derive(Debug)]
 pub struct HeartbeatProtocolExecutor {
     /// The handle of the worker thread executing heartbeat jobs
-    thread_handle: thread::JoinHandle<GossipError>,
+    thread_handle: Option<JoinHandle<GossipError>>,
     /// The timer that enqueues heartbeat jobs periodically for the worker
     heartbeat_timer: HeartbeatTimer,
 }
@@ -104,14 +102,17 @@ impl HeartbeatProtocolExecutor {
         let heartbeat_timer = HeartbeatTimer::new(job_sender, HEARTBEAT_INTERVAL_MS);
 
         Ok(Self {
-            thread_handle,
+            thread_handle: Some(thread_handle),
             heartbeat_timer,
         })
     }
 
     // Joins execution of the calling thread to the worker thread
-    pub fn join(self) -> JoinHandle<GossipError> {
-        self.thread_handle
+    pub fn join(&mut self) -> Vec<JoinHandle<GossipError>> {
+        vec![
+            self.thread_handle.take().unwrap(),
+            self.heartbeat_timer.join_handle(),
+        ]
     }
 
     // Runs the executor loop
@@ -379,7 +380,7 @@ impl HeartbeatProtocolExecutor {
 /// a heartbeat on regular intervals
 #[derive(Debug)]
 struct HeartbeatTimer {
-    thread_handle: thread::JoinHandle<()>,
+    thread_handle: Option<JoinHandle<GossipError>>,
 }
 
 impl HeartbeatTimer {
@@ -393,25 +394,28 @@ impl HeartbeatTimer {
         // Begin the timing loop
         let thread_handle = thread::Builder::new()
             .name("heartbeat-timer".to_string())
-            .spawn(move || {
-                Self::execution_loop(job_queue, wait_period);
-            })
+            .spawn(move || Self::execution_loop(job_queue, wait_period))
             .unwrap();
 
-        Self { thread_handle }
+        Self {
+            thread_handle: Some(thread_handle),
+        }
     }
 
     // Joins the calling thread's execution to the execution of the HeartbeatTimer
-    pub fn join(self) -> thread::Result<()> {
-        self.thread_handle.join()
+    pub fn join_handle(&mut self) -> JoinHandle<GossipError> {
+        self.thread_handle.take().unwrap()
     }
 
     // Main timing loop
-    fn execution_loop(job_queue: Sender<HeartbeatExecutorJob>, wait_period: Duration) {
+    fn execution_loop(
+        job_queue: Sender<HeartbeatExecutorJob>,
+        wait_period: Duration,
+    ) -> GossipError {
         loop {
-            job_queue
-                .send(HeartbeatExecutorJob::ExecuteHeartbeats)
-                .unwrap();
+            if let Err(err) = job_queue.send(HeartbeatExecutorJob::ExecuteHeartbeats) {
+                return GossipError::TimerFailed(err.to_string());
+            }
             thread::sleep(wait_period);
         }
     }

@@ -9,6 +9,8 @@ pub enum GossipError {
     ServerSetupError(String),
     /// An error resulting from a cancellation signal
     Cancelled(String),
+    /// Timer failed to send a heartbeat
+    TimerFailed(String),
 }
 
 impl fmt::Display for GossipError {
