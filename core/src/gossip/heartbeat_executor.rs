@@ -18,6 +18,7 @@ use crate::{
     },
     gossip::types::{PeerInfo, WrappedPeerId},
     state::{GlobalRelayerState, RelayerState},
+    CancelChannel,
 };
 
 use super::{errors::GossipError, jobs::HeartbeatExecutorJob};
@@ -63,9 +64,9 @@ type SharedLRUCache = Arc<RwLock<LruCache<WrappedPeerId, u64>>>;
 // Executes the heartbeat protocols
 #[derive(Debug)]
 pub struct HeartbeatProtocolExecutor {
-    // The handle of the worker thread executing heartbeat jobs
+    /// The handle of the worker thread executing heartbeat jobs
     thread_handle: thread::JoinHandle<GossipError>,
-    // The timer that enqueues heartbeat jobs periodically for the worker
+    /// The timer that enqueues heartbeat jobs periodically for the worker
     heartbeat_timer: HeartbeatTimer,
 }
 
@@ -77,6 +78,7 @@ impl HeartbeatProtocolExecutor {
         job_sender: Sender<HeartbeatExecutorJob>,
         job_receiver: Receiver<HeartbeatExecutorJob>,
         global_state: GlobalRelayerState,
+        cancel_channel: Receiver<()>,
     ) -> Result<Self, GossipError> {
         // Tracks recently expired peers and blocks them from being re-registered
         // until the state has synced. Maps peer_id to expiry time
@@ -93,6 +95,7 @@ impl HeartbeatProtocolExecutor {
                         network_channel,
                         peer_expiry_cache,
                         global_state,
+                        cancel_channel,
                     )
                 })
                 .map_err(|err| GossipError::ServerSetupError(err.to_string()))
@@ -118,10 +121,25 @@ impl HeartbeatProtocolExecutor {
         network_channel: UnboundedSender<GossipOutbound>,
         peer_expiry_cache: SharedLRUCache,
         global_state: GlobalRelayerState,
+        cancel: CancelChannel,
     ) -> GossipError {
         println!("Starting executor loop for heartbeat protocol executor...");
+        // We check for cancels both before receiving a job (so that we don't sleep after cancellation)
+        // and after a receiving a job (so that we avoid unnecessary work)
         loop {
+            // Check for cancel before sleeping
+            if !cancel.is_empty() {
+                return GossipError::Cancelled("received cancel signal".to_string());
+            }
+
+            // Dequeue the next job
             let job = job_receiver.recv().expect("recv should not panic");
+
+            // Check for cancel after receiving job
+            if !cancel.is_empty() {
+                return GossipError::Cancelled("received cancel signal".to_string());
+            }
+
             match job {
                 HeartbeatExecutorJob::ExecuteHeartbeats => {
                     Self::send_heartbeats(

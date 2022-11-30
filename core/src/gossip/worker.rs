@@ -5,7 +5,9 @@ use std::thread::JoinHandle;
 use crossbeam::channel::{Receiver, Sender};
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
-use crate::{api::gossip::GossipOutbound, state::GlobalRelayerState, worker::Worker};
+use crate::{
+    api::gossip::GossipOutbound, state::GlobalRelayerState, worker::Worker, CancelChannel,
+};
 
 use super::{
     errors::GossipError, heartbeat_executor::HeartbeatProtocolExecutor, jobs::HeartbeatExecutorJob,
@@ -27,7 +29,7 @@ pub struct GossipServerConfig {
     pub(crate) network_sender: TokioSender<GossipOutbound>,
     /// The channel on which the coordinator may mandate that the
     /// gossip server cancel its execution
-    pub(crate) cancel_channel: Receiver<()>,
+    pub(crate) cancel_channel: CancelChannel,
 }
 
 impl Worker for GossipServer {
@@ -68,6 +70,7 @@ impl Worker for GossipServer {
             self.config.heartbeat_worker_sender.clone(),
             self.config.heartbeat_worker_receiver.clone(),
             self.config.global_state.clone(),
+            self.config.cancel_channel.clone(),
         )?;
         self.heartbeat_executor = Some(heartbeat_executor);
 

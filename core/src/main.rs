@@ -13,7 +13,7 @@ mod worker;
 
 use std::{thread, time::Duration};
 
-use crossbeam::channel;
+use crossbeam::channel::{self, Receiver};
 use error::CoordinatorError;
 use gossip::worker::GossipServerConfig;
 use handshake::worker::HandshakeManagerConfig;
@@ -28,6 +28,9 @@ use crate::{
     state::RelayerState,
     worker::{watch_worker, Worker},
 };
+
+/// A type alias for an empty channel used to signal cancellation to workers
+pub(crate) type CancelChannel = Receiver<()>;
 
 /// The amount of time to wait between sending teardown signals and terminating execution
 const TERMINATION_TIMEOUT_MS: u64 = 10_000; // 10 seconds
