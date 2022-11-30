@@ -12,6 +12,7 @@ mod worker;
 
 use crossbeam::channel;
 use gossip::worker::GossipServerConfig;
+use handshake::worker::HandshakeManagerConfig;
 use network_manager::worker::NetworkManagerConfig;
 use std::error::Error;
 use tokio::sync::{mpsc, oneshot};
@@ -76,13 +77,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
     watch_worker::<GossipServer>(gossip_server.join(), gossip_failure_sender);
 
     // Start the handshake manager
-    let handshake_manager =
-        HandshakeManager::new(global_state, network_sender, handshake_worker_receiver);
+    let mut handshake_manager = HandshakeManager::new(HandshakeManagerConfig {
+        global_state,
+        network_channel: network_sender,
+        job_receiver: handshake_worker_receiver,
+    })
+    .expect("failed to build handshake manager");
+    handshake_manager
+        .start()
+        .expect("failed to start handshake manager");
+    let (handshake_failure_sender, handshake_failure_receiver) = oneshot::channel();
+    watch_worker::<HandshakeManager>(handshake_manager.join(), handshake_failure_sender);
 
     // Await termination of the submodules
-    handshake_manager.join().unwrap();
-    network_failure_receiver.blocking_recv().unwrap();
-    gossip_failure_receiver.blocking_recv().unwrap();
+    network_failure_receiver.await.unwrap();
+    gossip_failure_receiver.await.unwrap();
+    handshake_failure_receiver.await.unwrap();
 
     // Unreachable
     Ok(())

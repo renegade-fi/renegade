@@ -1,8 +1,11 @@
 //! The handshake module handles the execution of handshakes from negotiating
 //! a pair of orders to match, all the way through settling any resulting match
 
+//! TODO: Remove this lint allowance
+#![allow(unused)]
+
 use crossbeam::channel::Receiver;
-use rayon::{ThreadPool, ThreadPoolBuilder};
+use rayon::ThreadPool;
 use std::{
     sync::Arc,
     thread::{self, JoinHandle},
@@ -19,14 +22,11 @@ use crate::{
     state::GlobalRelayerState,
 };
 
-use super::jobs::HandshakeExecutionJob;
+use super::{error::HandshakeManagerError, jobs::HandshakeExecutionJob};
 
 /**
  * Groups logic for handshakes executed through a threadpool at period intervals
  */
-
-// The number of threads executing handshakes
-const NUM_HANDSHAKE_THREADS: usize = 8;
 
 // The interval at which to initiate handshakes
 const HANDSHAKE_INTERVAL_MS: u64 = 5000;
@@ -34,39 +34,11 @@ const HANDSHAKE_INTERVAL_MS: u64 = 5000;
 const NANOS_PER_MILLI: u64 = 1_000_000;
 
 pub struct HandshakeManager {
-    timer: HandshakeTimer,
-    relay: HandshakeJobRelay,
+    pub(super) timer: HandshakeTimer,
+    pub(super) relay: HandshakeJobRelay,
 }
 
 impl HandshakeManager {
-    pub fn new(
-        global_state: GlobalRelayerState,
-        network_channel: UnboundedSender<GossipOutbound>,
-        job_receiver: Receiver<HandshakeExecutionJob>,
-    ) -> Self {
-        // Build a thread pool to handle handshake operations
-        println!("Starting execution loop for handshake protocol executor...");
-
-        let thread_pool = Arc::new(
-            ThreadPoolBuilder::new()
-                .num_threads(NUM_HANDSHAKE_THREADS)
-                .build()
-                .unwrap(),
-        );
-
-        // Start a timer thread
-        let timer = HandshakeTimer::new(thread_pool.clone(), global_state, network_channel.clone());
-        let relay = HandshakeJobRelay::new(thread_pool, job_receiver, network_channel);
-
-        HandshakeManager { timer, relay }
-    }
-
-    // Joins execution of the calling thread to the HandshakeManager's execution
-    pub fn join(self) -> thread::Result<()> {
-        self.timer.join()?;
-        self.relay.join()
-    }
-
     // Perform a handshake, dummy job for now
     pub fn perform_handshake(
         peer_id: WrappedPeerId,
@@ -108,8 +80,8 @@ impl HandshakeManager {
 /**
  * Implements a timer that periodically enqueues jobs to the threadpool
  */
-struct HandshakeTimer {
-    thread_handle: thread::JoinHandle<()>,
+pub(super) struct HandshakeTimer {
+    thread_handle: thread::JoinHandle<HandshakeManagerError>,
 }
 
 impl HandshakeTimer {
@@ -117,7 +89,7 @@ impl HandshakeTimer {
         thread_pool: Arc<ThreadPool>,
         global_state: GlobalRelayerState,
         network_channel: UnboundedSender<GossipOutbound>,
-    ) -> Self {
+    ) -> Result<Self, HandshakeManagerError> {
         let interval_seconds = HANDSHAKE_INTERVAL_MS / 1000;
         let interval_nanos = (HANDSHAKE_INTERVAL_MS % 1000 * NANOS_PER_MILLI) as u32;
 
@@ -129,13 +101,13 @@ impl HandshakeTimer {
             .spawn(move || {
                 Self::execution_loop(refresh_interval, thread_pool, global_state, network_channel)
             })
-            .unwrap();
+            .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
 
-        HandshakeTimer { thread_handle }
+        Ok(HandshakeTimer { thread_handle })
     }
 
-    pub fn join(self) -> thread::Result<()> {
-        self.thread_handle.join()
+    pub fn join_handle(self) -> JoinHandle<HandshakeManagerError> {
+        self.thread_handle
     }
 
     // The execution loop of the timer, periodically enqueues handshake jobs
@@ -144,7 +116,7 @@ impl HandshakeTimer {
         thread_pool: Arc<ThreadPool>,
         global_state: GlobalRelayerState,
         network_channel: UnboundedSender<GossipOutbound>,
-    ) {
+    ) -> HandshakeManagerError {
         // Get local peer ID, skip handshaking with self
         let local_peer_id: WrappedPeerId;
         {
@@ -181,8 +153,8 @@ impl HandshakeTimer {
  * Implements a listener that relays from a crossbeam channel to the handshake threadpool
  * Used as a layer of indirection to provide a consistent interface at the network level
  */
-struct HandshakeJobRelay {
-    thread_handle: JoinHandle<()>,
+pub(super) struct HandshakeJobRelay {
+    thread_handle: Option<JoinHandle<HandshakeManagerError>>,
 }
 
 impl HandshakeJobRelay {
@@ -190,25 +162,27 @@ impl HandshakeJobRelay {
         thread_pool: Arc<ThreadPool>,
         job_channel: Receiver<HandshakeExecutionJob>,
         network_channel: UnboundedSender<GossipOutbound>,
-    ) -> Self {
+    ) -> Result<Self, HandshakeManagerError> {
         let thread_handle = thread::Builder::new()
             .name("handshake-job-relay".to_string())
             .spawn(move || Self::execution_loop(thread_pool, job_channel, network_channel))
-            .unwrap();
+            .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
 
-        HandshakeJobRelay { thread_handle }
+        Ok(HandshakeJobRelay {
+            thread_handle: Some(thread_handle),
+        })
     }
 
     // Joins execution of the calling thread to the execution loop
-    pub fn join(self) -> thread::Result<()> {
-        self.thread_handle.join()
+    pub fn join_handle(&mut self) -> JoinHandle<HandshakeManagerError> {
+        self.thread_handle.take().unwrap()
     }
 
     fn execution_loop(
         thread_pool: Arc<ThreadPool>,
         job_channel: Receiver<HandshakeExecutionJob>,
         network_channel: UnboundedSender<GossipOutbound>,
-    ) {
+    ) -> HandshakeManagerError {
         loop {
             // Wait for the next message and forward to the thread pool
             let job = job_channel.recv().unwrap();
