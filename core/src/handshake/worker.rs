@@ -52,9 +52,14 @@ impl Worker for HandshakeManager {
             thread_pool.clone(),
             config.global_state,
             config.network_channel.clone(),
+            config.cancel_channel.clone(),
         )?;
-        let relay =
-            HandshakeJobRelay::new(thread_pool, config.job_receiver, config.network_channel)?;
+        let relay = HandshakeJobRelay::new(
+            thread_pool,
+            config.job_receiver,
+            config.network_channel,
+            config.cancel_channel,
+        )?;
 
         Ok(HandshakeManager { timer, relay })
     }

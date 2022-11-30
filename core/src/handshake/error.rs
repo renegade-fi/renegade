@@ -7,6 +7,8 @@ use std::fmt::Display;
 pub enum HandshakeManagerError {
     /// Error while setting up the handshake manager
     SetupError(String),
+    /// Error resulting from a cancellation signal
+    Cancelled(String),
 }
 
 impl Display for HandshakeManagerError {

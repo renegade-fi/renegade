@@ -20,6 +20,7 @@ use crate::{
     },
     gossip::types::WrappedPeerId,
     state::GlobalRelayerState,
+    CancelChannel,
 };
 
 use super::{error::HandshakeManagerError, jobs::HandshakeExecutionJob};
@@ -89,6 +90,7 @@ impl HandshakeTimer {
         thread_pool: Arc<ThreadPool>,
         global_state: GlobalRelayerState,
         network_channel: UnboundedSender<GossipOutbound>,
+        cancel: CancelChannel,
     ) -> Result<Self, HandshakeManagerError> {
         let interval_seconds = HANDSHAKE_INTERVAL_MS / 1000;
         let interval_nanos = (HANDSHAKE_INTERVAL_MS % 1000 * NANOS_PER_MILLI) as u32;
@@ -99,7 +101,13 @@ impl HandshakeTimer {
         let thread_handle = thread::Builder::new()
             .name("handshake-manager-timer".to_string())
             .spawn(move || {
-                Self::execution_loop(refresh_interval, thread_pool, global_state, network_channel)
+                Self::execution_loop(
+                    refresh_interval,
+                    thread_pool,
+                    global_state,
+                    network_channel,
+                    cancel,
+                )
             })
             .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
 
@@ -118,6 +126,7 @@ impl HandshakeTimer {
         thread_pool: Arc<ThreadPool>,
         global_state: GlobalRelayerState,
         network_channel: UnboundedSender<GossipOutbound>,
+        cancel: CancelChannel,
     ) -> HandshakeManagerError {
         // Get local peer ID, skip handshaking with self
         let local_peer_id: WrappedPeerId;
@@ -146,7 +155,15 @@ impl HandshakeTimer {
                 }
             } // locked_state released here
 
+            // Check for a cancel signal before sleeping and after
+            if !cancel.is_empty() {
+                return HandshakeManagerError::Cancelled("received cancel signal".to_string());
+            }
+
             thread::sleep(refresh_interval);
+            if !cancel.is_empty() {
+                return HandshakeManagerError::Cancelled("received cancel signal".to_string());
+            }
         }
     }
 }
@@ -164,10 +181,11 @@ impl HandshakeJobRelay {
         thread_pool: Arc<ThreadPool>,
         job_channel: Receiver<HandshakeExecutionJob>,
         network_channel: UnboundedSender<GossipOutbound>,
+        cancel: CancelChannel,
     ) -> Result<Self, HandshakeManagerError> {
         let thread_handle = thread::Builder::new()
             .name("handshake-job-relay".to_string())
-            .spawn(move || Self::execution_loop(thread_pool, job_channel, network_channel))
+            .spawn(move || Self::execution_loop(thread_pool, job_channel, network_channel, cancel))
             .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
 
         Ok(HandshakeJobRelay {
@@ -184,8 +202,14 @@ impl HandshakeJobRelay {
         thread_pool: Arc<ThreadPool>,
         job_channel: Receiver<HandshakeExecutionJob>,
         network_channel: UnboundedSender<GossipOutbound>,
+        cancel: CancelChannel,
     ) -> HandshakeManagerError {
         loop {
+            // Check if the coordinator has cancelled the handshake manager
+            if !cancel.is_empty() {
+                return HandshakeManagerError::Cancelled("received cancel signal".to_string());
+            }
+
             // Wait for the next message and forward to the thread pool
             let job = job_channel.recv().unwrap();
             let channel_copy = network_channel.clone();
