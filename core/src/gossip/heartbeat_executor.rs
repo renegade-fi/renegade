@@ -1,11 +1,12 @@
 //! Groups the logic behind the gossip protocol specification
+#![allow(unused)]
 
 use crossbeam::channel::{Receiver, Sender};
 use lru::LruCache;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
-    thread,
+    thread::{self, JoinHandle},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::mpsc::UnboundedSender;
@@ -19,7 +20,7 @@ use crate::{
     state::{GlobalRelayerState, RelayerState},
 };
 
-use super::jobs::HeartbeatExecutorJob;
+use super::{errors::GossipError, jobs::HeartbeatExecutorJob};
 
 /**
  * Constants
@@ -60,9 +61,10 @@ fn get_current_time_seconds() -> u64 {
 type SharedLRUCache = Arc<RwLock<LruCache<WrappedPeerId, u64>>>;
 
 // Executes the heartbeat protocols
+#[derive(Debug)]
 pub struct HeartbeatProtocolExecutor {
     // The handle of the worker thread executing heartbeat jobs
-    thread_handle: thread::JoinHandle<()>,
+    thread_handle: thread::JoinHandle<GossipError>,
     // The timer that enqueues heartbeat jobs periodically for the worker
     heartbeat_timer: HeartbeatTimer,
 }
@@ -75,7 +77,7 @@ impl HeartbeatProtocolExecutor {
         job_sender: Sender<HeartbeatExecutorJob>,
         job_receiver: Receiver<HeartbeatExecutorJob>,
         global_state: GlobalRelayerState,
-    ) -> Self {
+    ) -> Result<Self, GossipError> {
         // Tracks recently expired peers and blocks them from being re-registered
         // until the state has synced. Maps peer_id to expiry time
         let peer_expiry_cache: SharedLRUCache =
@@ -91,23 +93,22 @@ impl HeartbeatProtocolExecutor {
                         network_channel,
                         peer_expiry_cache,
                         global_state,
-                    );
+                    )
                 })
-                .unwrap()
-        };
+                .map_err(|err| GossipError::ServerSetupError(err.to_string()))
+        }?;
 
         let heartbeat_timer = HeartbeatTimer::new(job_sender, HEARTBEAT_INTERVAL_MS);
 
-        Self {
+        Ok(Self {
             thread_handle,
             heartbeat_timer,
-        }
+        })
     }
 
     // Joins execution of the calling thread to the worker thread
-    pub fn join(self) -> thread::Result<()> {
-        self.heartbeat_timer.join()?;
-        self.thread_handle.join()
+    pub fn join(self) -> JoinHandle<GossipError> {
+        self.thread_handle
     }
 
     // Runs the executor loop
@@ -117,7 +118,7 @@ impl HeartbeatProtocolExecutor {
         network_channel: UnboundedSender<GossipOutbound>,
         peer_expiry_cache: SharedLRUCache,
         global_state: GlobalRelayerState,
-    ) {
+    ) -> GossipError {
         println!("Starting executor loop for heartbeat protocol executor...");
         loop {
             let job = job_receiver.recv().expect("recv should not panic");
@@ -356,10 +357,9 @@ impl HeartbeatProtocolExecutor {
     }
 }
 
-/**
- * HeartbeatTimer handles the process of enqueuing jobs to perform
- * a heartbeat on regular intervals
- */
+/// HeartbeatTimer handles the process of enqueuing jobs to perform
+/// a heartbeat on regular intervals
+#[derive(Debug)]
 struct HeartbeatTimer {
     thread_handle: thread::JoinHandle<()>,
 }
