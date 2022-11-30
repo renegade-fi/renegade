@@ -1,5 +1,7 @@
 //! Implements the `Worker` trait for the GossipServer
 
+use std::thread::JoinHandle;
+
 use crossbeam::channel::{Receiver, Sender};
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
@@ -50,8 +52,8 @@ impl Worker for GossipServer {
         true
     }
 
-    fn join(&mut self) -> std::thread::JoinHandle<Self::Error> {
-        self.heartbeat_executor.take().unwrap().join()
+    fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
+        vec![self.heartbeat_executor.take().unwrap().join()]
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {

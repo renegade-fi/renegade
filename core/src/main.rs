@@ -15,7 +15,7 @@ use gossip::worker::GossipServerConfig;
 use handshake::worker::HandshakeManagerConfig;
 use network_manager::worker::NetworkManagerConfig;
 use std::error::Error;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 
 use crate::{
     api::gossip::GossipOutbound,
@@ -58,8 +58,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .expect("failed to start network manager");
 
     // Watch the thread
-    let (network_failure_sender, network_failure_receiver) = oneshot::channel();
-    watch_worker::<NetworkManager>(network_manager.join(), network_failure_sender);
+    let (network_failure_sender, mut network_failure_receiver) =
+        mpsc::channel(1 /* buffer size */);
+    watch_worker::<NetworkManager>(&mut network_manager, network_failure_sender);
 
     // Start the gossip server
     let mut gossip_server = GossipServer::new(GossipServerConfig {
@@ -73,8 +74,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     gossip_server
         .start()
         .expect("failed to start gossip server");
-    let (gossip_failure_sender, gossip_failure_receiver) = oneshot::channel();
-    watch_worker::<GossipServer>(gossip_server.join(), gossip_failure_sender);
+    let (gossip_failure_sender, mut gossip_failure_receiver) =
+        mpsc::channel(1 /* buffer size */);
+    watch_worker::<GossipServer>(&mut gossip_server, gossip_failure_sender);
 
     // Start the handshake manager
     let mut handshake_manager = HandshakeManager::new(HandshakeManagerConfig {
@@ -86,13 +88,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     handshake_manager
         .start()
         .expect("failed to start handshake manager");
-    let (handshake_failure_sender, handshake_failure_receiver) = oneshot::channel();
-    watch_worker::<HandshakeManager>(handshake_manager.join(), handshake_failure_sender);
+    let (handshake_failure_sender, mut handshake_failure_receiver) =
+        mpsc::channel(1 /* buffer size */);
+    watch_worker::<HandshakeManager>(&mut handshake_manager, handshake_failure_sender);
 
     // Await termination of the submodules
-    network_failure_receiver.await.unwrap();
-    gossip_failure_receiver.await.unwrap();
-    handshake_failure_receiver.await.unwrap();
+    network_failure_receiver.recv().await.unwrap();
+    gossip_failure_receiver.recv().await.unwrap();
+    handshake_failure_receiver.recv().await.unwrap();
 
     // Unreachable
     Ok(())

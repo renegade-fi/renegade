@@ -60,8 +60,8 @@ impl Worker for HandshakeManager {
         true
     }
 
-    fn join(&mut self) -> JoinHandle<Self::Error> {
-        self.relay.join_handle()
+    fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
+        vec![self.relay.join_handle(), self.timer.join_handle()]
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {

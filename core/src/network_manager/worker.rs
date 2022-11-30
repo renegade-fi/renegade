@@ -71,9 +71,9 @@ impl Worker for NetworkManager {
         true
     }
 
-    fn join(&mut self) -> JoinHandle<Self::Error> {
+    fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
         // Allow panic if server is not started yet
-        self.thread_handle.take().unwrap()
+        vec![self.thread_handle.take().unwrap()]
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {

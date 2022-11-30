@@ -81,7 +81,7 @@ impl HandshakeManager {
  * Implements a timer that periodically enqueues jobs to the threadpool
  */
 pub(super) struct HandshakeTimer {
-    thread_handle: thread::JoinHandle<HandshakeManagerError>,
+    thread_handle: Option<thread::JoinHandle<HandshakeManagerError>>,
 }
 
 impl HandshakeTimer {
@@ -103,11 +103,13 @@ impl HandshakeTimer {
             })
             .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
 
-        Ok(HandshakeTimer { thread_handle })
+        Ok(HandshakeTimer {
+            thread_handle: Some(thread_handle),
+        })
     }
 
-    pub fn join_handle(self) -> JoinHandle<HandshakeManagerError> {
-        self.thread_handle
+    pub fn join_handle(&mut self) -> JoinHandle<HandshakeManagerError> {
+        self.thread_handle.take().unwrap()
     }
 
     // The execution loop of the timer, periodically enqueues handshake jobs
