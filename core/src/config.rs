@@ -50,19 +50,15 @@ struct Cli {
 // Defines the system config for the relayer
 #[derive(Debug)]
 pub struct RelayerConfig {
-    // Software version of the relayer
+    /// Software version of the relayer
     pub version: String,
-
-    // Bootstrap servers that the peer should connect to
+    /// Bootstrap servers that the peer should connect to
     pub bootstrap_servers: Vec<PeerInfo>,
-
-    // The port to listen on
+    /// The port to listen on
     pub port: u32,
-
-    // The wallet IDs to manage locally
+    /// The wallet IDs to manage locally
     pub wallet_ids: Vec<String>,
-
-    // The cluster keypair
+    /// The cluster keypair
     pub cluster_keypair: Option<Keypair>,
 }
 

@@ -93,7 +93,8 @@ impl Worker for NetworkManager {
             .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
         // Behavior is a composed behavior of RequestResponse with Kademlia
-        let mut behavior = ComposedNetworkBehavior::new(*self.local_peer_id);
+        let mut behavior =
+            ComposedNetworkBehavior::new(*self.local_peer_id, self.local_keypair.clone())?;
 
         // Add any bootstrap addresses to the peer info table
         for (peer_id, peer_info) in self.config.global_state.read().unwrap().known_peers.iter() {

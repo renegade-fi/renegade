@@ -5,6 +5,8 @@ use async_trait::async_trait;
 use libp2p::{
     core::upgrade::{read_length_prefixed, write_length_prefixed},
     futures::{AsyncRead, AsyncWrite, AsyncWriteExt},
+    gossipsub::{Gossipsub, GossipsubConfig, GossipsubEvent, MessageAuthenticity},
+    identity::Keypair,
     kad::{record::store::MemoryStore, Kademlia, KademliaEvent},
     request_response::{
         ProtocolName, ProtocolSupport, RequestResponse, RequestResponseCodec, RequestResponseEvent,
@@ -14,6 +16,8 @@ use libp2p::{
 use std::iter;
 
 use crate::api::gossip::{GossipRequest, GossipResponse};
+
+use super::error::NetworkManagerError;
 
 /**
  * Constants
@@ -36,10 +40,12 @@ const MAX_MESSAGE_SIZE: usize = 1_000_000_000;
 pub struct ComposedNetworkBehavior {
     pub request_response: RequestResponse<RelayerGossipCodec>,
     pub kademlia_dht: Kademlia<MemoryStore>,
+    pub pubsub: Gossipsub,
 }
 
 impl ComposedNetworkBehavior {
-    pub fn new(peer_id: PeerId) -> Self {
+    pub fn new(peer_id: PeerId, keypair: Keypair) -> Result<Self, NetworkManagerError> {
+        // Construct the point-to-point request response protocol
         let request_response = RequestResponse::new(
             RelayerGossipCodec::new(),
             iter::once((
@@ -49,20 +55,31 @@ impl ComposedNetworkBehavior {
             Default::default(),
         );
 
+        // Construct the peer info KDHT
         let memory_store = MemoryStore::new(peer_id);
         let kademlia_dht = Kademlia::new(peer_id, memory_store);
 
-        Self {
+        // Construct the pubsub network behavior
+        let pubsub = Gossipsub::new(
+            MessageAuthenticity::Signed(keypair),
+            GossipsubConfig::default(),
+        )
+        .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
+
+        Ok(Self {
             request_response,
             kademlia_dht,
-        }
+            pubsub,
+        })
     }
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum ComposedProtocolEvent {
     RequestResponse(RequestResponseEvent<GossipRequest, GossipResponse>),
     Kademlia(KademliaEvent),
+    PubSub(GossipsubEvent),
 }
 
 /*
@@ -77,6 +94,12 @@ impl From<KademliaEvent> for ComposedProtocolEvent {
 impl From<RequestResponseEvent<GossipRequest, GossipResponse>> for ComposedProtocolEvent {
     fn from(e: RequestResponseEvent<GossipRequest, GossipResponse>) -> Self {
         ComposedProtocolEvent::RequestResponse(e)
+    }
+}
+
+impl From<GossipsubEvent> for ComposedProtocolEvent {
+    fn from(e: GossipsubEvent) -> Self {
+        ComposedProtocolEvent::PubSub(e)
     }
 }
 
