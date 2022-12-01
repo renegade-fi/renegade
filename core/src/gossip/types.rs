@@ -169,12 +169,18 @@ impl<'de> Visitor<'de> for ClusterIdVisitor {
         formatter.write_str("expected ClusterId encoded as bytes")
     }
 
-    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
     where
-        E: SerdeErr,
+        A: serde::de::SeqAccess<'de>,
     {
-        let key = PublicKey::from_bytes(v).map_err(|err| SerdeErr::custom(err.to_string()))?;
-        Ok(ClusterId(key))
+        let mut bytes_vec = Vec::new();
+        while let Some(value) = seq.next_element()? {
+            bytes_vec.push(value);
+        }
+
+        Ok(ClusterId(PublicKey::from_bytes(&bytes_vec[..]).map_err(
+            |_| SerdeErr::custom("deserializing byte array to PublicKey"),
+        )?))
     }
 }
 
