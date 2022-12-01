@@ -13,6 +13,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use crate::api::cluster_management::CLUSTER_MANAGEMENT_TOPIC_PREFIX;
+
 // Contains information about connected peers
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PeerInfo {
@@ -150,6 +152,11 @@ impl ClusterId {
     pub fn new(cluster_pubkey: PublicKey) -> Self {
         let encoded_key = base64::encode(cluster_pubkey.as_bytes());
         Self(encoded_key)
+    }
+
+    /// Get the cluster management pubsub topic name for the cluster idenified
+    pub fn get_management_topic(&self) -> String {
+        format!("{}-{}", CLUSTER_MANAGEMENT_TOPIC_PREFIX, self.0)
     }
 }
 

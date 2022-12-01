@@ -6,12 +6,21 @@ use crossbeam::channel::{Receiver, Sender};
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use crate::{
-    api::gossip::GossipOutbound, state::GlobalRelayerState, worker::Worker, CancelChannel,
+    api::{
+        cluster_management::ClusterJoinMessage,
+        gossip::{GossipOutbound, PubsubMessage},
+    },
+    state::GlobalRelayerState,
+    worker::Worker,
+    CancelChannel,
 };
 
 use super::{
-    errors::GossipError, heartbeat_executor::HeartbeatProtocolExecutor, jobs::HeartbeatExecutorJob,
-    server::GossipServer, types::WrappedPeerId,
+    errors::GossipError,
+    heartbeat_executor::HeartbeatProtocolExecutor,
+    jobs::HeartbeatExecutorJob,
+    server::GossipServer,
+    types::{ClusterId, WrappedPeerId},
 };
 
 /// The configuration passed from the coordinator to the GossipServer
@@ -19,6 +28,8 @@ use super::{
 pub struct GossipServerConfig {
     /// The libp2p PeerId of the local peer
     pub(crate) local_peer_id: WrappedPeerId,
+    /// The cluster ID of the local peer
+    pub(crate) cluster_id: ClusterId,
     /// A reference to the relayer-global state
     pub(crate) global_state: GlobalRelayerState,
     /// A job queue to send outbound heartbeat requests on
@@ -73,6 +84,20 @@ impl Worker for GossipServer {
             self.config.cancel_channel.clone(),
         )?;
         self.heartbeat_executor = Some(heartbeat_executor);
+
+        // Publish a message to the network indicating intent to join the cluster
+        let join_message = GossipOutbound::Pubsub {
+            topic: self.config.cluster_id.get_management_topic(),
+            message: PubsubMessage::Join(ClusterJoinMessage {
+                cluster_id: self.config.cluster_id.clone(),
+                node_id: self.config.local_peer_id,
+                auth_challenge: vec![],
+            }),
+        };
+        self.config
+            .network_sender
+            .send(join_message)
+            .map_err(|err| GossipError::ServerSetupError(err.to_string()))?;
 
         Ok(())
     }
