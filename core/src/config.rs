@@ -22,36 +22,30 @@ const DUMMY_MESSAGE: &str = "signature check";
 /// The CLI argument name for the config file
 const CONFIG_FILE_ARG: &str = "--config-file";
 
-// Defines the relayer system command line interface
+/// Defines the relayer system command line interface
 #[derive(Debug, Parser, Serialize, Deserialize)]
 #[clap(author, version, about, long_about = None)]
 struct Cli {
     #[clap(short, long, value_parser)]
-    // The bootstrap servers that the peer should dial initially
+    /// The bootstrap servers that the peer should dial initially
     pub bootstrap_servers: Option<Vec<String>>,
-
     #[clap(long, value_parser)]
-    // An auxiliary config file to read from
+    /// An auxiliary config file to read from
     pub config_file: Option<String>,
-
     #[clap(long = "private-key", value_parser)]
-    // The cluster private key to use
+    /// The cluster private key to use
     pub cluster_private_key: Option<String>,
-
     #[clap(long = "public-key", value_parser)]
-    // The cluster public key to use
+    /// The cluster public key to use
     pub cluster_public_key: Option<String>,
-
     #[clap(short, long, value_parser, default_value = "12345")]
-    // The port to listen on
+    /// The port to listen on
     pub port: u32,
-
     #[clap(short, long, value_parser)]
-    // The software version of the relayer
+    /// The software version of the relayer
     pub version: Option<String>,
-
     #[clap(short, long, value_parser)]
-    // The wallet IDs to manage locally
+    /// The wallet IDs to manage locally
     pub wallet_ids: Option<Vec<String>>,
 }
 
@@ -92,8 +86,6 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
     let mut full_args = vec![command_line_args.remove(0)];
     full_args.extend(config_file_args);
     full_args.extend(command_line_args);
-
-    println!("args: {:?}", full_args);
 
     let cli_args = Cli::parse_from(full_args);
 
