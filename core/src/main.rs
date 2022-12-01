@@ -134,17 +134,17 @@ async fn main() -> Result<(), CoordinatorError> {
             select! {
                 _ = network_failure_receiver.recv() => {
                     network_cancel_sender.send(())
-                        .map_err(|err| CoordinatorError::CancelError(err.to_string()))?;
+                        .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
                     network_manager = recover_worker(network_manager)?;
                 }
                 _ = gossip_failure_receiver.recv() => {
                     gossip_cancel_sender.send(())
-                        .map_err(|err| CoordinatorError::CancelError(err.to_string()))?;
+                        .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
                     gossip_server = recover_worker(gossip_server)?;
                 }
                 _ = handshake_failure_receiver.recv() => {
                     handshake_cancel_sender.send(())
-                        .map_err(|err| CoordinatorError::CancelError(err.to_string()))?;
+                        .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
                     handshake_manager = recover_worker(handshake_manager)?;
                 }
             };
@@ -160,7 +160,7 @@ async fn main() -> Result<(), CoordinatorError> {
     for cancel_channel in cancel_channels.iter() {
         cancel_channel
             .send(())
-            .map_err(|err| CoordinatorError::CancelError(err.to_string()))?;
+            .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
     }
 
     // Give workers time to teardown execution then terminate
@@ -174,7 +174,7 @@ async fn main() -> Result<(), CoordinatorError> {
 /// Attempt to recover a failed module by cleaning up its resources and re-allocating it
 fn recover_worker<W: Worker>(failed_worker: W) -> Result<W, CoordinatorError> {
     if !failed_worker.is_recoverable() {
-        return Err(CoordinatorError::RecoveryError(
+        return Err(CoordinatorError::Recovery(
             "worker is not recoverable".to_string(),
         ));
     }

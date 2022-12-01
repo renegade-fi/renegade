@@ -4,15 +4,23 @@ use clap::Parser;
 use ed25519_dalek::{Digest, Keypair, Sha512, SignatureError};
 use libp2p::{Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
-use std::error::Error;
+use std::{
+    env::{self},
+    fs,
+};
+use toml::{value::Map, Value};
 
-use crate::gossip::types::{PeerInfo, WrappedPeerId};
+use crate::{
+    error::CoordinatorError,
+    gossip::types::{PeerInfo, WrappedPeerId},
+};
 
-// The default version of the node
+/// The default version of the node
 const DEFAULT_VERSION: &str = "1";
-
-// The dummy message used for checking elliptic curve key pairs
+/// The dummy message used for checking elliptic curve key pairs
 const DUMMY_MESSAGE: &str = "signature check";
+/// The CLI argument name for the config file
+const CONFIG_FILE_ARG: &str = "--config-file";
 
 // Defines the relayer system command line interface
 #[derive(Debug, Parser, Serialize, Deserialize)]
@@ -22,7 +30,7 @@ struct Cli {
     // The bootstrap servers that the peer should dial initially
     pub bootstrap_servers: Option<Vec<String>>,
 
-    #[clap(short, long, value_parser)]
+    #[clap(long, value_parser)]
     // An auxiliary config file to read from
     pub config_file: Option<String>,
 
@@ -62,9 +70,32 @@ pub struct RelayerConfig {
     pub cluster_keypair: Option<Keypair>,
 }
 
-// Parses command line args into the node config
-pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, Box<dyn Error>> {
-    let cli_args = Cli::parse();
+/// Parses command line args into the node config
+///
+/// We allow for configurations to come from both a config file and overrides
+/// on the command line directly. To support this, we first read configuration
+/// options from the config file, prepend them to the cli args string, and parse
+/// using the `overrides_with("self")` option so that cli args (which come after
+/// config file args) take precedence.
+pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError> {
+    // Parse args from command line and config file, place the config file args
+    // *before* the command line args so that clap will give precedence to the
+    // command line arguments
+    // However, the first argument from the command line is the executable name, so
+    // place this before all args
+    let mut command_line_args: Vec<String> = env::args_os()
+        .into_iter()
+        .map(|val| val.to_str().unwrap().to_string())
+        .collect();
+    let config_file_args = config_file_args(&command_line_args)?;
+
+    let mut full_args = vec![command_line_args.remove(0)];
+    full_args.extend(config_file_args);
+    full_args.extend(command_line_args);
+
+    println!("args: {:?}", full_args);
+
+    let cli_args = Cli::parse_from(full_args);
 
     // Parse the bootstrap servers into multiaddrs
     let mut parsed_bootstrap_addrs: Vec<PeerInfo> = Vec::new();
@@ -108,6 +139,87 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, Box<dyn Error>> {
     };
 
     Ok(Box::new(config))
+}
+
+/// Parse args from a config file
+fn config_file_args(cli_args: &[String]) -> Result<Vec<String>, CoordinatorError> {
+    // Find a match for the config file argument
+    let mut found = false;
+    let mut index = 0;
+
+    for arg in cli_args.iter() {
+        index += 1;
+        // If we find "--config-file", the next argument is the file to read from
+        if arg == CONFIG_FILE_ARG {
+            found = true;
+            break;
+        }
+    }
+
+    // No config file found
+    if !found {
+        return Ok(vec![]);
+    }
+
+    // Read in the config file
+    let file_contents = fs::read_to_string(cli_args[index].clone())
+        .map_err(|err| CoordinatorError::ConfigParse(err.to_string()))?;
+
+    let config_kv_pairs: Map<_, _> = toml::from_str(&file_contents)
+        .map_err(|err| CoordinatorError::ConfigParse(err.to_string()))?;
+
+    let mut config_file_args: Vec<String> = Vec::with_capacity(config_kv_pairs.len());
+    for (toml_key, value) in config_kv_pairs.iter() {
+        // Format the TOML key into --key
+        let cli_arg = format!("--{}", toml_key);
+
+        // Parse the values for this TOML entry into a CLI-style vector of strings
+        let values: Vec<String> = match value {
+            // Just the flag, i.e. --flag
+            Value::Boolean(_) => vec![cli_arg],
+            // Parse all values into multiple repititions, i.e. --key val1 --key val2 ...
+            Value::Array(arr) => {
+                let mut res: Vec<String> = Vec::new();
+                for val in arr.iter() {
+                    res.push(cli_arg.clone());
+                    res.push(toml_value_to_string(val)?);
+                }
+
+                res
+            }
+            // All other type may simply be parsed as --key val
+            _ => {
+                vec![
+                    cli_arg.clone(),
+                    toml_value_to_string(value).map_err(|_| {
+                        CoordinatorError::ConfigParse(format!(
+                            "error parsing config value: {:?} = {:?}",
+                            cli_arg, value
+                        ))
+                    })?,
+                ]
+            }
+        };
+
+        config_file_args.extend(values);
+    }
+
+    Ok(config_file_args)
+}
+
+/// Helper method to convert a toml value to a string
+fn toml_value_to_string(val: &Value) -> Result<String, CoordinatorError> {
+    Ok(match val {
+        Value::String(val) => val.clone(),
+        Value::Integer(val) => format!("{:?}", val),
+        Value::Float(val) => format!("{:?}", val),
+        Value::Boolean(val) => format!("{:?}", val),
+        _ => {
+            return Err(CoordinatorError::ConfigParse(
+                "unsupported value".to_string(),
+            ));
+        }
+    })
 }
 
 // Runtime validation of the keypair passed into the relayer via config

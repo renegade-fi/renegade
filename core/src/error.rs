@@ -6,9 +6,11 @@ use std::fmt::Display;
 #[derive(Clone, Debug)]
 pub enum CoordinatorError {
     /// Error attemting to recover a failed worker
-    RecoveryError(String),
+    Recovery(String),
     /// Failure to send a cancel signal to a worker
-    CancelError(String),
+    CancelSend(String),
+    /// Failure to parse config correctly
+    ConfigParse(String),
 }
 
 impl Error for CoordinatorError {}
