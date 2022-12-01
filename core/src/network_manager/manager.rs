@@ -13,7 +13,7 @@ use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
 use tracing::{event, Level};
 
 use crate::{
-    api::gossip::{GossipOutbound, GossipRequest, GossipResponse},
+    api::gossip::{GossipOutbound, GossipOutbound::Pubsub, GossipRequest, GossipResponse},
     gossip::{
         jobs::HeartbeatExecutorJob,
         types::{ClusterId, WrappedPeerId},
@@ -115,7 +115,10 @@ impl NetworkManager {
                     event!(Level::DEBUG, message = ?msg, "error sending response");
                 }
             }
-
+            Pubsub { topic, message } => {
+                // TODO: Implement this
+                println!("Received {:?} pubsub oubound message: {:?}", topic, message);
+            }
             // Register a new peer in the distributed routing tables
             GossipOutbound::NewAddr { peer_id, address } => {
                 swarm
