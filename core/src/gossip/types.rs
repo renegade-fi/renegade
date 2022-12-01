@@ -1,12 +1,13 @@
 //! Groups the types used to represent the gossip network primitives
 
+use ed25519_dalek::PublicKey;
 use libp2p::{Multiaddr, PeerId};
 use serde::{
     de::{Error as SerdeErr, Visitor},
     Deserialize, Serialize,
 };
 use std::{
-    fmt::Display,
+    fmt::{Display, Formatter, Result as FmtResult},
     ops::Deref,
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
@@ -15,22 +16,23 @@ use std::{
 // Contains information about connected peers
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PeerInfo {
-    // The identifier used by libp2p for a peer
+    /// The identifier used by libp2p for a peer
     peer_id: WrappedPeerId,
-
-    // The multiaddr of the peer
+    /// The multiaddr of the peer
     addr: Multiaddr,
-
-    // Last time a successful hearbeat was received from this peer
+    /// Last time a successful hearbeat was received from this peer
     #[serde(skip)]
     last_heartbeat: AtomicU64,
+    /// The ID of the cluster the peer belongs to
+    cluster_id: ClusterId,
 }
 
 impl PeerInfo {
-    pub fn new(peer_id: WrappedPeerId, addr: Multiaddr) -> Self {
+    pub fn new(peer_id: WrappedPeerId, cluster_id: ClusterId, addr: Multiaddr) -> Self {
         Self {
             addr,
             peer_id,
+            cluster_id,
             last_heartbeat: AtomicU64::new(current_time_seconds()),
         }
     }
@@ -62,6 +64,7 @@ impl Clone for PeerInfo {
             peer_id: self.peer_id,
             addr: self.addr.clone(),
             last_heartbeat: AtomicU64::new(self.last_heartbeat.load(Ordering::Relaxed)),
+            cluster_id: self.cluster_id.clone(),
         }
     }
 }
@@ -85,7 +88,7 @@ impl Deref for WrappedPeerId {
 }
 
 impl Display for WrappedPeerId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> FmtResult {
         self.0.fmt(f)
     }
 }
@@ -117,7 +120,7 @@ impl<'de> Visitor<'de> for PeerIDVisitor {
     type Value = WrappedPeerId;
 
     // Debug message
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn expecting(&self, formatter: &mut Formatter) -> FmtResult {
         formatter.write_str("a libp2p::PeerID encoded as a byte array")
     }
 
@@ -135,6 +138,43 @@ impl<'de> Visitor<'de> for PeerIDVisitor {
         }
 
         Err(SerdeErr::custom("deserializing byte array to PeerID"))
+    }
+}
+/// A type alias for the cluster identifier
+#[derive(Clone, Debug)]
+pub struct ClusterId(pub PublicKey);
+
+impl Serialize for ClusterId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_bytes(self.0.as_bytes())
+    }
+}
+
+impl<'de> Deserialize<'de> for ClusterId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_bytes(ClusterIdVisitor)
+    }
+}
+
+struct ClusterIdVisitor;
+impl<'de> Visitor<'de> for ClusterIdVisitor {
+    type Value = ClusterId;
+    fn expecting(&self, formatter: &mut Formatter) -> FmtResult {
+        formatter.write_str("expected ClusterId encoded as bytes")
+    }
+
+    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+    where
+        E: SerdeErr,
+    {
+        let key = PublicKey::from_bytes(v).map_err(|err| SerdeErr::custom(err.to_string()))?;
+        Ok(ClusterId(key))
     }
 }
 

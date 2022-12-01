@@ -3,6 +3,7 @@
 use clap::Parser;
 use ed25519_dalek::{Digest, Keypair, Sha512, SignatureError};
 use libp2p::{Multiaddr, PeerId};
+use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 use std::{
     env::{self},
@@ -12,7 +13,7 @@ use toml::{value::Map, Value};
 
 use crate::{
     error::CoordinatorError,
-    gossip::types::{PeerInfo, WrappedPeerId},
+    gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
 };
 
 /// The default version of the node
@@ -61,7 +62,7 @@ pub struct RelayerConfig {
     /// The wallet IDs to manage locally
     pub wallet_ids: Vec<String>,
     /// The cluster keypair
-    pub cluster_keypair: Option<Keypair>,
+    pub cluster_keypair: Keypair,
 }
 
 /// Parses command line args into the node config
@@ -89,22 +90,10 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
 
     let cli_args = Cli::parse_from(full_args);
 
-    // Parse the bootstrap servers into multiaddrs
-    let mut parsed_bootstrap_addrs: Vec<PeerInfo> = Vec::new();
-    for addr in cli_args.bootstrap_servers.unwrap_or_default().iter() {
-        let parsed_addr: Multiaddr = addr
-            .parse()
-            .expect("Invalid address passed as --bootstrap-server");
-        let peer_id = PeerId::try_from_multiaddr(&parsed_addr)
-            .expect("Invalid address passed as --bootstrap-server");
-        println!("parsed peer {}: {}", peer_id, parsed_addr);
-        parsed_bootstrap_addrs.push(PeerInfo::new(WrappedPeerId(peer_id), parsed_addr));
-    }
-
     // Parse the cluster keypair from CLI args
     // dalek library expects a packed byte array of [PRIVATE_KEY||PUBLIC_KEY]
-    let mut wrapped_keypair: Option<Keypair> = None;
-    if cli_args.cluster_public_key.is_some() && cli_args.cluster_private_key.is_some() {
+    let keypair = if cli_args.cluster_public_key.is_some() && cli_args.cluster_private_key.is_some()
+    {
         let mut public_key: Vec<u8> = base64::decode(cli_args.cluster_public_key.unwrap()).unwrap();
         let mut private_key: Vec<u8> =
             base64::decode(cli_args.cluster_private_key.unwrap()).unwrap();
@@ -117,7 +106,26 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
             panic!("cluster keypair invalid")
         }
 
-        wrapped_keypair = Some(keypair)
+        keypair
+    } else {
+        let mut rng = OsRng {};
+        Keypair::generate(&mut rng)
+    };
+
+    // Parse the bootstrap servers into multiaddrs
+    let mut parsed_bootstrap_addrs: Vec<PeerInfo> = Vec::new();
+    for addr in cli_args.bootstrap_servers.unwrap_or_default().iter() {
+        let parsed_addr: Multiaddr = addr
+            .parse()
+            .expect("Invalid address passed as --bootstrap-server");
+        let peer_id = PeerId::try_from_multiaddr(&parsed_addr)
+            .expect("Invalid address passed as --bootstrap-server");
+        println!("parsed peer {}: {}", peer_id, parsed_addr);
+        parsed_bootstrap_addrs.push(PeerInfo::new(
+            WrappedPeerId(peer_id),
+            ClusterId(keypair.public),
+            parsed_addr,
+        ));
     }
 
     let config = RelayerConfig {
@@ -127,7 +135,7 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
         bootstrap_servers: parsed_bootstrap_addrs,
         port: cli_args.port,
         wallet_ids: cli_args.wallet_ids.unwrap_or_default(),
-        cluster_keypair: wrapped_keypair,
+        cluster_keypair: keypair,
     };
 
     Ok(Box::new(config))

@@ -22,7 +22,7 @@ use tokio::{select, sync::mpsc};
 
 use crate::{
     api::gossip::GossipOutbound,
-    gossip::server::GossipServer,
+    gossip::{server::GossipServer, types::ClusterId},
     handshake::manager::HandshakeManager,
     network_manager::manager::NetworkManager,
     state::RelayerState,
@@ -57,8 +57,11 @@ async fn main() -> Result<(), CoordinatorError> {
     );
 
     // Construct the global state
-    let global_state =
-        RelayerState::initialize_global_state(args.wallet_ids, args.bootstrap_servers);
+    let global_state = RelayerState::initialize_global_state(
+        args.wallet_ids,
+        args.bootstrap_servers,
+        ClusterId(args.cluster_keypair.public),
+    );
 
     // Build communication primitives
     let (network_sender, network_receiver) = mpsc::unbounded_channel::<GossipOutbound>();
@@ -69,6 +72,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (network_cancel_sender, network_cancel_receiver) = channel::bounded(1 /* capacity */);
     let network_manager_config = NetworkManagerConfig {
         port: args.port,
+        cluster_id: ClusterId(args.cluster_keypair.public),
         send_channel: Some(network_receiver),
         heartbeat_work_queue: heartbeat_worker_sender.clone(),
         handshake_work_queue: handshake_worker_sender,

@@ -8,13 +8,13 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::gossip::types::{PeerInfo, WrappedPeerId};
+use crate::gossip::types::{ClusterId, PeerInfo, WrappedPeerId};
 
 /**
  * Constants and Types
  */
 
-// A type alias for the thread-safe relayer state
+/// A type alias for the thread-safe relayer state
 pub type GlobalRelayerState = Arc<RwLock<RelayerState>>;
 
 /**
@@ -25,25 +25,27 @@ pub type GlobalRelayerState = Arc<RwLock<RelayerState>>;
 #[derive(Debug, Serialize, Deserialize)]
 // The top level object in the global state tree
 pub struct RelayerState {
-    // The libp2p peerID assigned to the localhost
+    /// The libp2p peerID assigned to the localhost
     pub local_peer_id: Option<WrappedPeerId>,
-    // The list of wallets managed by the sending relayer
+    /// The cluster id of the local relayer
+    pub local_cluster_id: ClusterId,
+    /// The list of wallets managed by the sending relayer
     pub managed_wallets: HashMap<uuid::Uuid, Wallet>,
-    // The set of peers known to the sending relayer
+    /// The set of peers known to the sending relayer
     pub known_peers: HashMap<WrappedPeerId, PeerInfo>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 // Represents a wallet managed by the local relayer
 pub struct Wallet {
-    // Wallet metadata; replicas, trusted peers, etc
+    /// Wallet metadata; replicas, trusted peers, etc
     pub metadata: WalletMetadata,
-    // Wallet id will eventually be replaced, for now it is UUID
+    /// Wallet id will eventually be replaced, for now it is UUID
     pub wallet_id: uuid::Uuid,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-// Metadata relevant to the wallet's network state
+/// Metadata relevant to the wallet's network state
 pub struct WalletMetadata {
     pub replicas: Vec<WrappedPeerId>,
 }
@@ -52,6 +54,7 @@ impl RelayerState {
     pub fn initialize_global_state(
         managed_wallet_ids: Vec<String>,
         bootstrap_servers: Vec<PeerInfo>,
+        cluster_id: ClusterId,
     ) -> GlobalRelayerState {
         // Setup initial wallets
         let mut managed_wallets = HashMap::new();
@@ -74,6 +77,7 @@ impl RelayerState {
             local_peer_id: None,
             managed_wallets,
             known_peers,
+            local_cluster_id: cluster_id,
         }))
     }
 }

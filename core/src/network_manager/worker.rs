@@ -11,7 +11,7 @@ use crate::{
     api::gossip::GossipOutbound,
     gossip::{
         jobs::HeartbeatExecutorJob,
-        types::{PeerInfo, WrappedPeerId},
+        types::{ClusterId, PeerInfo, WrappedPeerId},
     },
     handshake::jobs::HandshakeExecutionJob,
     network_manager::composed_protocol::ComposedNetworkBehavior,
@@ -26,6 +26,8 @@ use super::{error::NetworkManagerError, manager::NetworkManager};
 pub struct NetworkManagerConfig {
     /// The port to listen for inbound traffic on
     pub(crate) port: u32,
+    /// The cluster ID of the local peer
+    pub(crate) cluster_id: ClusterId,
     /// The channel on which to receive requests from other workers
     /// for outbound traffic
     /// This is wrapped in an option to allow the worker thread to take
@@ -63,6 +65,7 @@ impl Worker for NetworkManager {
         } // locked_state released here
 
         Ok(Self {
+            cluster_id: config.cluster_id.clone(),
             config,
             local_peer_id,
             local_keypair,
@@ -123,7 +126,10 @@ impl Worker for NetworkManager {
             .write()
             .unwrap()
             .known_peers
-            .insert(self.local_peer_id, PeerInfo::new(self.local_peer_id, addr));
+            .insert(
+                self.local_peer_id,
+                PeerInfo::new(self.local_peer_id, self.cluster_id.clone(), addr),
+            );
 
         // Start up a cancel forwarder, this thread forwards from a crossbeam cancel
         // channel to an async queue to shim between blocking and async interfaces

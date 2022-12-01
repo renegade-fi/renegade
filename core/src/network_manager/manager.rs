@@ -14,7 +14,10 @@ use tracing::{event, Level};
 
 use crate::{
     api::gossip::{GossipOutbound, GossipRequest, GossipResponse},
-    gossip::{jobs::HeartbeatExecutorJob, types::WrappedPeerId},
+    gossip::{
+        jobs::HeartbeatExecutorJob,
+        types::{ClusterId, WrappedPeerId},
+    },
     handshake::jobs::HandshakeExecutionJob,
 };
 
@@ -30,6 +33,8 @@ pub struct NetworkManager {
     pub(super) config: NetworkManagerConfig,
     /// The peerId of the locally running node
     pub(crate) local_peer_id: WrappedPeerId,
+    /// The cluster ID of the local perr
+    pub(crate) cluster_id: ClusterId,
     /// The public key of the local peer
     pub(super) local_keypair: Keypair,
     /// The join handle of the executor loop
