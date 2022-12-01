@@ -142,7 +142,16 @@ impl<'de> Visitor<'de> for PeerIDVisitor {
 }
 /// A type alias for the cluster identifier
 #[derive(Clone, Debug)]
-pub struct ClusterId(pub PublicKey);
+pub struct ClusterId(String);
+
+impl ClusterId {
+    /// Construct a clusterID, it's more readable and debuggable to compress the
+    /// public key into a base64 encoded representation than to use the value directly
+    pub fn new(cluster_pubkey: PublicKey) -> Self {
+        let encoded_key = base64::encode(cluster_pubkey.as_bytes());
+        Self(encoded_key)
+    }
+}
 
 impl Serialize for ClusterId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -178,9 +187,10 @@ impl<'de> Visitor<'de> for ClusterIdVisitor {
             bytes_vec.push(value);
         }
 
-        Ok(ClusterId(PublicKey::from_bytes(&bytes_vec[..]).map_err(
-            |_| SerdeErr::custom("deserializing byte array to PublicKey"),
-        )?))
+        Ok(ClusterId::new(
+            PublicKey::from_bytes(&bytes_vec[..])
+                .map_err(|_| SerdeErr::custom("deserializing byte array to PublicKey"))?,
+        ))
     }
 }
 

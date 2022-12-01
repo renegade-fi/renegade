@@ -1,3 +1,7 @@
 port = 8000
 wallet-ids = ["8aa4691e-dd9e-4c31-b1fa-5ae1ba53d128"]
 version = 0
+
+# A base64 encoded dummy keypair
+cluster-public-key = "ksPP4AJGbB1bUj5acbZ8Ngzy7mCSM3xvE9FDwb5zH0c="
+cluster-private-key = "knbytV3abagdJsXKqkL5dkXWaMxho3f8O+85LMr/P+s="

@@ -22,7 +22,7 @@ use tokio::{select, sync::mpsc};
 
 use crate::{
     api::gossip::GossipOutbound,
-    gossip::{server::GossipServer, types::ClusterId},
+    gossip::server::GossipServer,
     handshake::manager::HandshakeManager,
     network_manager::manager::NetworkManager,
     state::RelayerState,
@@ -52,15 +52,15 @@ async fn main() -> Result<(), CoordinatorError> {
     // Parse command line arguments
     let args = config::parse_command_line_args().expect("error parsing command line args");
     println!(
-        "Relayer running with\n\t version: {}\n\t port: {}",
-        args.version, args.port
+        "Relayer running with\n\t version: {}\n\t port: {}\n\t cluster: {:?}",
+        args.version, args.port, args.cluster_id
     );
 
     // Construct the global state
     let global_state = RelayerState::initialize_global_state(
         args.wallet_ids,
         args.bootstrap_servers,
-        ClusterId(args.cluster_keypair.public),
+        args.cluster_id.clone(),
     );
 
     // Build communication primitives
@@ -72,7 +72,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (network_cancel_sender, network_cancel_receiver) = channel::bounded(1 /* capacity */);
     let network_manager_config = NetworkManagerConfig {
         port: args.port,
-        cluster_id: ClusterId(args.cluster_keypair.public),
+        cluster_id: args.cluster_id,
         send_channel: Some(network_receiver),
         heartbeat_work_queue: heartbeat_worker_sender.clone(),
         handshake_work_queue: handshake_worker_sender,

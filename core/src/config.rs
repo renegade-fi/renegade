@@ -33,10 +33,10 @@ struct Cli {
     #[clap(long, value_parser)]
     /// An auxiliary config file to read from
     pub config_file: Option<String>,
-    #[clap(long = "private-key", value_parser)]
+    #[clap(long = "cluster-private-key", value_parser)]
     /// The cluster private key to use
     pub cluster_private_key: Option<String>,
-    #[clap(long = "public-key", value_parser)]
+    #[clap(long = "cluster-public-key", value_parser)]
     /// The cluster public key to use
     pub cluster_public_key: Option<String>,
     #[clap(short, long, value_parser, default_value = "12345")]
@@ -63,6 +63,8 @@ pub struct RelayerConfig {
     pub wallet_ids: Vec<String>,
     /// The cluster keypair
     pub cluster_keypair: Keypair,
+    /// The cluster ID, a parsed version of the cluster's pubkey
+    pub cluster_id: ClusterId,
 }
 
 /// Parses command line args into the node config
@@ -111,6 +113,7 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
         let mut rng = OsRng {};
         Keypair::generate(&mut rng)
     };
+    let cluster_id = ClusterId::new(keypair.public);
 
     // Parse the bootstrap servers into multiaddrs
     let mut parsed_bootstrap_addrs: Vec<PeerInfo> = Vec::new();
@@ -123,7 +126,7 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
         println!("parsed peer {}: {}", peer_id, parsed_addr);
         parsed_bootstrap_addrs.push(PeerInfo::new(
             WrappedPeerId(peer_id),
-            ClusterId(keypair.public),
+            cluster_id.clone(),
             parsed_addr,
         ));
     }
@@ -136,6 +139,7 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
         port: cli_args.port,
         wallet_ids: cli_args.wallet_ids.unwrap_or_default(),
         cluster_keypair: keypair,
+        cluster_id,
     };
 
     Ok(Box::new(config))
