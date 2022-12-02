@@ -68,7 +68,10 @@ pub enum GossipResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PubsubMessage {
     /// A message indicating that the publisher intends to join the given cluster
-    Join(ClusterJoinMessage),
+    ///
+    /// The first element is the message body, the second is a byte encoded
+    /// signature of the message body using the cluster's private key
+    Join(ClusterJoinMessage, Vec<u8>),
 }
 
 /// Explicit byte serialization and deserialization

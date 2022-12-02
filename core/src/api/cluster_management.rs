@@ -4,11 +4,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::gossip::types::{ClusterId, WrappedPeerId};
 
-/// An authentication challenge that the joining node signs with the cluster
-/// private key in order to prove it is authorized to join the cluster
-/// TODO: Remove this lint allowance
-#[allow(dead_code)]
-pub const CLUSTER_JOIN_CHALLENGE_DIGEST: &str = "join cluster";
 /// The topic prefix for the cluster management pubsub topic
 ///
 /// The actual topic name will have the cluster ID postfixed; i.e.
@@ -20,8 +15,12 @@ pub const CLUSTER_MANAGEMENT_TOPIC_PREFIX: &str = "cluster-management";
 pub struct ClusterJoinMessage {
     /// The ID of the cluster being joined
     pub cluster_id: ClusterId,
-    /// The ID of the node joining the cluster
-    pub node_id: WrappedPeerId,
-    /// The result of the auth challenge, a signature of the challenge constant
-    pub auth_challenge: Vec<u8>,
+    /// The peer ID of the node joining the cluster
+    pub peer_id: WrappedPeerId,
+}
+
+impl From<&ClusterJoinMessage> for Vec<u8> {
+    fn from(message: &ClusterJoinMessage) -> Self {
+        serde_json::to_vec(&message).unwrap()
+    }
 }

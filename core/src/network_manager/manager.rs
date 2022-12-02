@@ -15,11 +15,8 @@ use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
 use tracing::{event, Level};
 
 use crate::{
-    api::{
-        cluster_management::CLUSTER_JOIN_CHALLENGE_DIGEST,
-        gossip::{
-            GossipOutbound, GossipOutbound::Pubsub, GossipRequest, GossipResponse, PubsubMessage,
-        },
+    api::gossip::{
+        GossipOutbound, GossipOutbound::Pubsub, GossipRequest, GossipResponse, PubsubMessage,
     },
     gossip::{
         jobs::HeartbeatExecutorJob,
@@ -176,6 +173,7 @@ impl NetworkManager {
             ComposedProtocolEvent::PubSub(msg) => {
                 if let GossipsubEvent::Message { message, .. } = msg {
                     if let Err(err) = Self::handle_inbound_pubsub_message(message) {
+                        println!("Pubsub handler failed: {:?}", err);
                         event!(Level::ERROR, message = ?err, "error handling pubsub message");
                     }
                 }
@@ -246,22 +244,27 @@ impl NetworkManager {
         // Deserialize into API types
         let event: PubsubMessage = message.data.into();
         match event {
-            PubsubMessage::Join(join_message) => {
+            PubsubMessage::Join(join_message, signature) => {
                 // Authenticate the join request
                 let pubkey = join_message
                     .cluster_id
                     .get_public_key()
                     .map_err(|err| NetworkManagerError::SerializeDeserialize(err.to_string()))?;
 
-                let join_signature = Signature::from_bytes(&join_message.auth_challenge)
+                let join_signature = Signature::from_bytes(&signature)
                     .map_err(|err| NetworkManagerError::SerializeDeserialize(err.to_string()))?;
 
                 // Hash the message and verify the input
                 let mut hash_digest: Sha512 = Sha512::new();
-                hash_digest.update(CLUSTER_JOIN_CHALLENGE_DIGEST);
+                hash_digest.update(&Into::<Vec<u8>>::into(&join_message));
                 pubkey
                     .verify_prehashed(hash_digest, None, &join_signature)
                     .map_err(|err| NetworkManagerError::Authentication(err.to_string()))?;
+
+                println!(
+                    "Peer {:?} joined cluster: {:?}",
+                    join_message.peer_id, join_message.cluster_id
+                );
             }
         }
 
