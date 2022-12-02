@@ -29,6 +29,17 @@ pub struct PeerInfo {
     cluster_id: ClusterId,
 }
 
+impl Eq for PeerInfo {}
+impl PartialEq for PeerInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.peer_id == other.peer_id
+            && self.addr == other.addr
+            && self.last_heartbeat.load(Ordering::Relaxed)
+                == other.last_heartbeat.load(Ordering::Relaxed)
+            && self.cluster_id == other.cluster_id
+    }
+}
+
 impl PeerInfo {
     pub fn new(peer_id: WrappedPeerId, cluster_id: ClusterId, addr: Multiaddr) -> Self {
         Self {
@@ -143,7 +154,7 @@ impl<'de> Visitor<'de> for PeerIDVisitor {
     }
 }
 /// A type alias for the cluster identifier
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClusterId(String);
 
 impl ClusterId {
@@ -160,47 +171,6 @@ impl ClusterId {
     }
 }
 
-impl Serialize for ClusterId {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_bytes(self.0.as_bytes())
-    }
-}
-
-impl<'de> Deserialize<'de> for ClusterId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_bytes(ClusterIdVisitor)
-    }
-}
-
-struct ClusterIdVisitor;
-impl<'de> Visitor<'de> for ClusterIdVisitor {
-    type Value = ClusterId;
-    fn expecting(&self, formatter: &mut Formatter) -> FmtResult {
-        formatter.write_str("expected ClusterId encoded as bytes")
-    }
-
-    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-    where
-        A: serde::de::SeqAccess<'de>,
-    {
-        let mut bytes_vec = Vec::new();
-        while let Some(value) = seq.next_element()? {
-            bytes_vec.push(value);
-        }
-
-        Ok(ClusterId::new(
-            PublicKey::from_bytes(&bytes_vec[..])
-                .map_err(|_| SerdeErr::custom("deserializing byte array to PublicKey"))?,
-        ))
-    }
-}
-
 /**
  * Helpers
  */
@@ -211,4 +181,38 @@ fn current_time_seconds() -> u64 {
         .duration_since(UNIX_EPOCH)
         .expect("negative timestamp")
         .as_secs()
+}
+
+#[cfg(test)]
+mod types_test {
+    use std::sync::atomic::AtomicU64;
+
+    use ed25519_dalek::Keypair as DalekKeypair;
+    use libp2p::{identity::Keypair, Multiaddr, PeerId};
+    use rand_core::OsRng;
+
+    use super::{ClusterId, PeerInfo, WrappedPeerId};
+
+    /// Tests that message serialization and deserialization works properly
+    #[test]
+    fn test_serialize_deserialize() {
+        let mut rng = OsRng {};
+        let random_keypair = DalekKeypair::generate(&mut rng);
+        let libp2p_keypair = Keypair::generate_ed25519();
+
+        let peer_id = WrappedPeerId(PeerId::from_public_key(&libp2p_keypair.public()));
+        let cluster_id = ClusterId::new(random_keypair.public);
+
+        let peer_info = PeerInfo {
+            peer_id,
+            cluster_id,
+            last_heartbeat: AtomicU64::new(0),
+            addr: Multiaddr::empty(),
+        };
+
+        let serialized = serde_json::to_string(&peer_info).unwrap();
+        let deserialized: PeerInfo = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(peer_info, deserialized)
+    }
 }

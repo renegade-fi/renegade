@@ -147,7 +147,9 @@ impl NetworkManager {
                 }
             }
             // Pubsub events currently do nothing
-            ComposedProtocolEvent::PubSub(_) => {}
+            ComposedProtocolEvent::PubSub(event) => {
+                println!("got pubsub event: {:?}", event);
+            }
             // KAD events do nothing for now, routing tables are automatically updated by libp2p
             ComposedProtocolEvent::Kademlia(_) => {}
         }
