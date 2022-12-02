@@ -1,3 +1,0 @@
-[submodule "multiprover-snark"]
-	path = multiprover-snark
-	url = git@github.com:otter-cash/multiprover-snark.git
