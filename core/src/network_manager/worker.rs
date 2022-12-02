@@ -73,6 +73,7 @@ impl Worker for NetworkManager {
             cluster_id: config.cluster_id.clone(),
             config,
             local_peer_id,
+            local_addr: Multiaddr::empty(),
             local_keypair,
             thread_handle: None,
             cancellation_relay_handle: None,
@@ -121,6 +122,7 @@ impl Worker for NetworkManager {
         let mut swarm = Swarm::new(transport, behavior, *self.local_peer_id);
         let hostport = format!("/ip4/127.0.0.1/tcp/{}", self.config.port);
         let addr: Multiaddr = hostport.parse().unwrap();
+        self.local_addr = addr.clone();
         swarm
             .listen_on(addr.clone())
             .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;

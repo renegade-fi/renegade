@@ -1,5 +1,6 @@
 //! Groups message definitions for cluster management, mostly pubsub
 
+use libp2p::Multiaddr;
 use serde::{Deserialize, Serialize};
 
 use crate::gossip::types::{ClusterId, WrappedPeerId};
@@ -17,6 +18,8 @@ pub struct ClusterJoinMessage {
     pub cluster_id: ClusterId,
     /// The peer ID of the node joining the cluster
     pub peer_id: WrappedPeerId,
+    /// The address that the new peer can be dialed at
+    pub addr: Multiaddr,
 }
 
 impl From<&ClusterJoinMessage> for Vec<u8> {

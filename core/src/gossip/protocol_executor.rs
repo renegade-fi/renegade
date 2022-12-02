@@ -19,7 +19,10 @@ use crate::{
     CancelChannel,
 };
 
-use super::{errors::GossipError, jobs::GossipServerJob};
+use super::{
+    errors::GossipError,
+    jobs::{ClusterManagementJob, GossipServerJob},
+};
 
 /**
  * Constants
@@ -149,7 +152,9 @@ impl GossipProtocolExecutor {
                     );
                 }
                 GossipServerJob::Cluster(job) => {
-                    println!("Received cluster management job: {:?}", job);
+                    if let Err(err) = Self::handle_cluster_management_job(job, &global_state) {
+                        return err;
+                    }
                 }
                 GossipServerJob::HandleHeartbeatReq {
                     message, channel, ..
@@ -406,6 +411,28 @@ impl GossipProtocolExecutor {
     fn build_heartbeat_message(global_state: &RelayerState) -> HeartbeatMessage {
         // Deref to remove lock guard then reference to borrow
         HeartbeatMessage::from(global_state)
+    }
+
+    /// Handles an incoming cluster management job
+    fn handle_cluster_management_job(
+        job: ClusterManagementJob,
+        global_state: &RelayerState,
+    ) -> Result<(), GossipError> {
+        match job {
+            ClusterManagementJob::ClusterJoinRequest(req) => {
+                // The cluster join request is authenticated at the network layer
+                // by the `NetworkManager`, so no authentication needs to be done.
+                // Simply update the local peer info to reflect the new node's membership
+                {
+                    let mut locked_peers = global_state.write_known_peers();
+                    locked_peers
+                        .entry(req.peer_id)
+                        .or_insert_with(|| PeerInfo::new(req.peer_id, req.cluster_id, req.addr));
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

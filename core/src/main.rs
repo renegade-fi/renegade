@@ -98,6 +98,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (gossip_cancel_sender, gossip_cancel_receiver) = channel::bounded(1 /* capacity */);
     let mut gossip_server = GossipServer::new(GossipServerConfig {
         local_peer_id: network_manager.local_peer_id,
+        local_addr: network_manager.local_addr.clone(),
         cluster_id: args.cluster_id,
         cluster_keypair: args.cluster_keypair,
         global_state: global_state.clone(),

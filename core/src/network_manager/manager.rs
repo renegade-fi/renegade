@@ -8,7 +8,7 @@ use libp2p::{
     identity::Keypair,
     request_response::{RequestResponseEvent, RequestResponseMessage},
     swarm::SwarmEvent,
-    PeerId, Swarm,
+    Multiaddr, PeerId, Swarm,
 };
 use std::thread::JoinHandle;
 use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
@@ -37,6 +37,8 @@ pub struct NetworkManager {
     pub(super) config: NetworkManagerConfig,
     /// The peerId of the locally running node
     pub(crate) local_peer_id: WrappedPeerId,
+    /// The multiaddr of the local peer
+    pub(crate) local_addr: Multiaddr,
     /// The cluster ID of the local perr
     pub(crate) cluster_id: ClusterId,
     /// The public key of the local peer

@@ -4,6 +4,7 @@ use std::thread::JoinHandle;
 
 use crossbeam::channel::{Receiver, Sender};
 use ed25519_dalek::Keypair;
+use libp2p::Multiaddr;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use crate::{
@@ -13,8 +14,8 @@ use crate::{
 
 use super::{
     errors::GossipError,
-    heartbeat_executor::GossipProtocolExecutor,
     jobs::GossipServerJob,
+    protocol_executor::GossipProtocolExecutor,
     server::GossipServer,
     types::{ClusterId, WrappedPeerId},
 };
@@ -24,6 +25,8 @@ use super::{
 pub struct GossipServerConfig {
     /// The libp2p PeerId of the local peer
     pub(crate) local_peer_id: WrappedPeerId,
+    /// The multiaddr of the local peer
+    pub(crate) local_addr: Multiaddr,
     /// The cluster ID of the local peer
     pub(crate) cluster_id: ClusterId,
     /// The keypair of the local peer's cluster
@@ -62,7 +65,7 @@ impl Worker for GossipServer {
 
         Ok(Self {
             config,
-            heartbeat_executor: None,
+            protocol_executor: None,
         })
     }
 
@@ -71,13 +74,13 @@ impl Worker for GossipServer {
     }
 
     fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
-        self.heartbeat_executor.take().unwrap().join()
+        self.protocol_executor.take().unwrap().join()
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
         // Start the heartbeat executor, this worker manages pinging peers and responding to
         // heartbeat requests from peers
-        let heartbeat_executor = GossipProtocolExecutor::new(
+        let protocol_executor = GossipProtocolExecutor::new(
             self.config.local_peer_id,
             self.config.network_sender.clone(),
             self.config.heartbeat_worker_sender.clone(),
@@ -85,7 +88,7 @@ impl Worker for GossipServer {
             self.config.global_state.clone(),
             self.config.cancel_channel.clone(),
         )?;
-        self.heartbeat_executor = Some(heartbeat_executor);
+        self.protocol_executor = Some(protocol_executor);
 
         // Wait for the local peer to handshake with known other peers
         // before sending a cluster membership message

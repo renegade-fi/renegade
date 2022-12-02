@@ -10,7 +10,7 @@ use crate::api::{
 };
 
 use super::{
-    errors::GossipError, heartbeat_executor::GossipProtocolExecutor, worker::GossipServerConfig,
+    errors::GossipError, protocol_executor::GossipProtocolExecutor, worker::GossipServerConfig,
 };
 
 /// The amount of time to wait for the node to find peers before sending
@@ -22,8 +22,8 @@ const PUBSUB_WARMUP_TIME_MS: u64 = 5_000; // 5 seconds
 pub struct GossipServer {
     /// The config for the Gossip Server
     pub(super) config: GossipServerConfig,
-    /// The heartbeat executor, handles request/response for heartbeats
-    pub(super) heartbeat_executor: Option<GossipProtocolExecutor>,
+    /// The protocol executor, handles request/response for the gossip protocol
+    pub(super) protocol_executor: Option<GossipProtocolExecutor>,
 }
 
 impl GossipServer {
@@ -41,6 +41,7 @@ impl GossipServer {
         let message_body = ClusterJoinMessage {
             cluster_id: self.config.cluster_id.clone(),
             peer_id: self.config.local_peer_id,
+            addr: self.config.local_addr.clone(),
         };
 
         // Sign the challenge message, this is used by recipients to validate that
