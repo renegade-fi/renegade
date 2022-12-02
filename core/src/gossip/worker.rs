@@ -6,7 +6,10 @@ use crossbeam::channel::{Receiver, Sender};
 use ed25519_dalek::Keypair;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
-use crate::{api::gossip::GossipOutbound, state::RelayerState, worker::Worker, CancelChannel};
+use crate::{
+    api::gossip::GossipOutbound, state::RelayerState, types::SystemBusMessage, worker::Worker,
+    CancelChannel,
+};
 
 use super::{
     errors::GossipError,
@@ -33,6 +36,13 @@ pub struct GossipServerConfig {
     pub(crate) heartbeat_worker_receiver: Receiver<HeartbeatExecutorJob>,
     /// A job queue to send outbound network requests on
     pub(crate) network_sender: TokioSender<GossipOutbound>,
+    /// The system bus to which all workers have access
+    /// Sender
+    #[allow(dead_code)]
+    pub(crate) system_bus_sender: Sender<SystemBusMessage>,
+    /// Receiver
+    #[allow(dead_code)]
+    pub(crate) system_bus_receiver: Receiver<SystemBusMessage>,
     /// The channel on which the coordinator may mandate that the
     /// gossip server cancel its execution
     pub(crate) cancel_channel: CancelChannel,

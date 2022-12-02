@@ -9,6 +9,7 @@ mod gossip;
 mod handshake;
 mod network_manager;
 mod state;
+mod types;
 mod worker;
 
 use std::{thread, time::Duration};
@@ -64,6 +65,8 @@ async fn main() -> Result<(), CoordinatorError> {
     );
 
     // Build communication primitives
+    // First, the global shared mpmc bus that all workers have access to
+    let (system_bus_sender, system_bus_receiver) = channel::unbounded();
     let (network_sender, network_receiver) = mpsc::unbounded_channel::<GossipOutbound>();
     let (heartbeat_worker_sender, heartbeat_worker_receiver) = channel::unbounded();
     let (handshake_worker_sender, handshake_worker_receiver) = channel::unbounded();
@@ -76,6 +79,8 @@ async fn main() -> Result<(), CoordinatorError> {
         send_channel: Some(network_receiver),
         heartbeat_work_queue: heartbeat_worker_sender.clone(),
         handshake_work_queue: handshake_worker_sender,
+        system_bus_sender: system_bus_sender.clone(),
+        system_bus_receiver: system_bus_receiver.clone(),
         global_state: global_state.clone(),
         cancel_channel: network_cancel_receiver,
     };
@@ -99,6 +104,8 @@ async fn main() -> Result<(), CoordinatorError> {
         heartbeat_worker_sender,
         heartbeat_worker_receiver,
         network_sender: network_sender.clone(),
+        system_bus_sender: system_bus_sender.clone(),
+        system_bus_receiver: system_bus_receiver.clone(),
         cancel_channel: gossip_cancel_receiver,
     })
     .expect("failed to build gossip server");
@@ -116,6 +123,8 @@ async fn main() -> Result<(), CoordinatorError> {
         global_state,
         network_channel: network_sender,
         job_receiver: handshake_worker_receiver,
+        system_bus_sender,
+        system_bus_receiver,
         cancel_channel: handshake_cancel_receiver,
     })
     .expect("failed to build handshake manager");
