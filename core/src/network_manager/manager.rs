@@ -19,7 +19,7 @@ use crate::{
         GossipOutbound, GossipOutbound::Pubsub, GossipRequest, GossipResponse, PubsubMessage,
     },
     gossip::{
-        jobs::HeartbeatExecutorJob,
+        jobs::{ClusterManagementJob, GossipServerJob},
         types::{ClusterId, WrappedPeerId},
     },
     handshake::jobs::HandshakeExecutionJob,
@@ -75,7 +75,7 @@ impl NetworkManager {
         local_peer_id: WrappedPeerId,
         mut swarm: Swarm<ComposedNetworkBehavior>,
         mut send_channel: UnboundedReceiver<GossipOutbound>,
-        heartbeat_work_queue: Sender<HeartbeatExecutorJob>,
+        gossip_work_queue: Sender<GossipServerJob>,
         handshake_work_queue: Sender<HandshakeExecutionJob>,
         mut cancel: Receiver<()>,
     ) -> NetworkManagerError {
@@ -95,7 +95,7 @@ impl NetworkManager {
                         SwarmEvent::Behaviour(event) => {
                             Self::handle_inbound_messsage(
                                 event,
-                                heartbeat_work_queue.clone(),
+                                gossip_work_queue.clone(),
                                 handshake_work_queue.clone()
                             )
                         },
@@ -155,7 +155,7 @@ impl NetworkManager {
     /// Handles a network event from the relayer's protocol
     fn handle_inbound_messsage(
         message: ComposedProtocolEvent,
-        heartbeat_work_queue: Sender<HeartbeatExecutorJob>,
+        gossip_work_queue: Sender<GossipServerJob>,
         handshake_work_queue: Sender<HandshakeExecutionJob>,
     ) {
         match message {
@@ -164,7 +164,7 @@ impl NetworkManager {
                     Self::handle_inbound_request_response_message(
                         peer,
                         message,
-                        heartbeat_work_queue,
+                        gossip_work_queue,
                         handshake_work_queue,
                     );
                 }
@@ -172,7 +172,9 @@ impl NetworkManager {
             // Pubsub events currently do nothing
             ComposedProtocolEvent::PubSub(msg) => {
                 if let GossipsubEvent::Message { message, .. } = msg {
-                    if let Err(err) = Self::handle_inbound_pubsub_message(message) {
+                    if let Err(err) =
+                        Self::handle_inbound_pubsub_message(message, gossip_work_queue)
+                    {
                         println!("Pubsub handler failed: {:?}", err);
                         event!(Level::ERROR, message = ?err, "error handling pubsub message");
                     }
@@ -191,7 +193,7 @@ impl NetworkManager {
     fn handle_inbound_request_response_message(
         peer_id: PeerId,
         message: RequestResponseMessage<GossipRequest, GossipResponse>,
-        heartbeat_work_queue: Sender<HeartbeatExecutorJob>,
+        gossip_work_queue: Sender<GossipServerJob>,
         handshake_work_queue: Sender<HandshakeExecutionJob>,
     ) {
         // Multiplex over request/response message types
@@ -201,8 +203,8 @@ impl NetworkManager {
                 request, channel, ..
             } => match request {
                 GossipRequest::Heartbeat(heartbeat_message) => {
-                    heartbeat_work_queue
-                        .send(HeartbeatExecutorJob::HandleHeartbeatReq {
+                    gossip_work_queue
+                        .send(GossipServerJob::HandleHeartbeatReq {
                             peer_id: WrappedPeerId(peer_id),
                             message: heartbeat_message,
                             channel,
@@ -223,8 +225,8 @@ impl NetworkManager {
             // Handle inbound response
             RequestResponseMessage::Response { response, .. } => match response {
                 GossipResponse::Heartbeat(heartbeat_message) => {
-                    heartbeat_work_queue
-                        .send(HeartbeatExecutorJob::HandleHeartbeatResp {
+                    gossip_work_queue
+                        .send(GossipServerJob::HandleHeartbeatResp {
                             peer_id: WrappedPeerId(peer_id),
                             message: heartbeat_message,
                         })
@@ -240,7 +242,10 @@ impl NetworkManager {
      */
 
     /// Handle an incoming network request for a pubsub message
-    fn handle_inbound_pubsub_message(message: GossipsubMessage) -> Result<(), NetworkManagerError> {
+    fn handle_inbound_pubsub_message(
+        message: GossipsubMessage,
+        gossip_work_queue: Sender<GossipServerJob>,
+    ) -> Result<(), NetworkManagerError> {
         // Deserialize into API types
         let event: PubsubMessage = message.data.into();
         match event {
@@ -261,10 +266,12 @@ impl NetworkManager {
                     .verify_prehashed(hash_digest, None, &join_signature)
                     .map_err(|err| NetworkManagerError::Authentication(err.to_string()))?;
 
-                println!(
-                    "Peer {:?} joined cluster: {:?}",
-                    join_message.peer_id, join_message.cluster_id
-                );
+                // Forward the request to the gossip server to update relevant gossip state
+                gossip_work_queue
+                    .send(GossipServerJob::Cluster(
+                        ClusterManagementJob::ClusterJoinRequest(join_message),
+                    ))
+                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
             }
         }
 

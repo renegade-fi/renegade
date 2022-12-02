@@ -5,16 +5,18 @@ use std::fmt::Display;
 /// The generic error type for the network manager
 #[derive(Clone, Debug)]
 pub enum NetworkManagerError {
-    /// An error while setting up the network manager
-    SetupError(String),
+    /// Authentication error, e.g. failed signature verification
+    Authentication(String),
     /// An error originating from a cancel signal
     Cancelled(String),
     /// An error forwarding a cancel signal to the network worker
     CancelForwardFailed(String),
+    /// Error forwarding a job from the network layer to a worker
+    EnqueueJob(String),
     /// Serialization/Deserialization error
     SerializeDeserialize(String),
-    /// Authentication error, e.g. failed signature verification
-    Authentication(String),
+    /// An error while setting up the network manager
+    SetupError(String),
 }
 
 impl Display for NetworkManagerError {

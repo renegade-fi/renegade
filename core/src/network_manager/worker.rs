@@ -10,7 +10,7 @@ use tokio::sync::mpsc::{self, UnboundedReceiver};
 use crate::{
     api::gossip::GossipOutbound,
     gossip::{
-        jobs::HeartbeatExecutorJob,
+        jobs::GossipServerJob,
         types::{ClusterId, PeerInfo, WrappedPeerId},
     },
     handshake::jobs::HandshakeExecutionJob,
@@ -36,7 +36,7 @@ pub struct NetworkManagerConfig {
     /// will be left with `None` after this happens
     pub(crate) send_channel: Option<UnboundedReceiver<GossipOutbound>>,
     /// The work queue to forward inbound hearbeat requests to
-    pub(crate) heartbeat_work_queue: Sender<HeartbeatExecutorJob>,
+    pub(crate) heartbeat_work_queue: Sender<GossipServerJob>,
     /// The work queue to forward inbound handshake requests to
     pub(crate) handshake_work_queue: Sender<HandshakeExecutionJob>,
     /// The system bus to which all workers have access

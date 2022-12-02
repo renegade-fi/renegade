@@ -10,7 +10,7 @@ use crate::api::{
 };
 
 use super::{
-    errors::GossipError, heartbeat_executor::HeartbeatProtocolExecutor, worker::GossipServerConfig,
+    errors::GossipError, heartbeat_executor::GossipProtocolExecutor, worker::GossipServerConfig,
 };
 
 /// The amount of time to wait for the node to find peers before sending
@@ -23,7 +23,7 @@ pub struct GossipServer {
     /// The config for the Gossip Server
     pub(super) config: GossipServerConfig,
     /// The heartbeat executor, handles request/response for heartbeats
-    pub(super) heartbeat_executor: Option<HeartbeatProtocolExecutor>,
+    pub(super) heartbeat_executor: Option<GossipProtocolExecutor>,
 }
 
 impl GossipServer {

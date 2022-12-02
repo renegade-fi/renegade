@@ -19,7 +19,7 @@ use crate::{
     CancelChannel,
 };
 
-use super::{errors::GossipError, jobs::HeartbeatExecutorJob};
+use super::{errors::GossipError, jobs::GossipServerJob};
 
 /**
  * Constants
@@ -59,20 +59,20 @@ type SharedLRUCache = Arc<RwLock<LruCache<WrappedPeerId, u64>>>;
 
 /// Executes the heartbeat protocols
 #[derive(Debug)]
-pub struct HeartbeatProtocolExecutor {
+pub struct GossipProtocolExecutor {
     /// The handle of the worker thread executing heartbeat jobs
     thread_handle: Option<JoinHandle<GossipError>>,
     /// The timer that enqueues heartbeat jobs periodically for the worker
     heartbeat_timer: HeartbeatTimer,
 }
 
-impl HeartbeatProtocolExecutor {
+impl GossipProtocolExecutor {
     /// Creates a new executor
     pub fn new(
         local_peer_id: WrappedPeerId,
         network_channel: UnboundedSender<GossipOutbound>,
-        job_sender: Sender<HeartbeatExecutorJob>,
-        job_receiver: Receiver<HeartbeatExecutorJob>,
+        job_sender: Sender<GossipServerJob>,
+        job_receiver: Receiver<GossipServerJob>,
         global_state: RelayerState,
         cancel_channel: Receiver<()>,
     ) -> Result<Self, GossipError> {
@@ -116,7 +116,7 @@ impl HeartbeatProtocolExecutor {
     /// Runs the executor loop
     fn executor_loop(
         local_peer_id: WrappedPeerId,
-        job_receiver: Receiver<HeartbeatExecutorJob>,
+        job_receiver: Receiver<GossipServerJob>,
         network_channel: UnboundedSender<GossipOutbound>,
         peer_expiry_cache: SharedLRUCache,
         global_state: RelayerState,
@@ -140,7 +140,7 @@ impl HeartbeatProtocolExecutor {
             }
 
             match job {
-                HeartbeatExecutorJob::ExecuteHeartbeats => {
+                GossipServerJob::ExecuteHeartbeats => {
                     Self::send_heartbeats(
                         local_peer_id,
                         network_channel.clone(),
@@ -148,7 +148,10 @@ impl HeartbeatProtocolExecutor {
                         global_state.clone(),
                     );
                 }
-                HeartbeatExecutorJob::HandleHeartbeatReq {
+                GossipServerJob::Cluster(job) => {
+                    println!("Received cluster management job: {:?}", job);
+                }
+                GossipServerJob::HandleHeartbeatReq {
                     message, channel, ..
                 } => {
                     // Respond on the channel given in the request
@@ -170,7 +173,7 @@ impl HeartbeatProtocolExecutor {
                         global_state.clone(),
                     )
                 }
-                HeartbeatExecutorJob::HandleHeartbeatResp { peer_id, message } => {
+                GossipServerJob::HandleHeartbeatResp { peer_id, message } => {
                     Self::record_heartbeat(peer_id, global_state.clone());
                     Self::merge_peers_from_message(
                         local_peer_id,
@@ -416,7 +419,7 @@ struct HeartbeatTimer {
 
 impl HeartbeatTimer {
     /// Constructor
-    pub fn new(job_queue: Sender<HeartbeatExecutorJob>, interval_ms: u64) -> Self {
+    pub fn new(job_queue: Sender<GossipServerJob>, interval_ms: u64) -> Self {
         // Narrowing cast is okay, precision is not important here
         let duration_seconds = interval_ms / 1000;
         let duration_nanos = (interval_ms % 1000 * NANOS_PER_MILLI) as u32;
@@ -439,12 +442,9 @@ impl HeartbeatTimer {
     }
 
     /// Main timing loop
-    fn execution_loop(
-        job_queue: Sender<HeartbeatExecutorJob>,
-        wait_period: Duration,
-    ) -> GossipError {
+    fn execution_loop(job_queue: Sender<GossipServerJob>, wait_period: Duration) -> GossipError {
         loop {
-            if let Err(err) = job_queue.send(HeartbeatExecutorJob::ExecuteHeartbeats) {
+            if let Err(err) = job_queue.send(GossipServerJob::ExecuteHeartbeats) {
                 return GossipError::TimerFailed(err.to_string());
             }
             thread::sleep(wait_period);

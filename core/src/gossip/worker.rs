@@ -13,8 +13,8 @@ use crate::{
 
 use super::{
     errors::GossipError,
-    heartbeat_executor::HeartbeatProtocolExecutor,
-    jobs::HeartbeatExecutorJob,
+    heartbeat_executor::GossipProtocolExecutor,
+    jobs::GossipServerJob,
     server::GossipServer,
     types::{ClusterId, WrappedPeerId},
 };
@@ -31,9 +31,9 @@ pub struct GossipServerConfig {
     /// A reference to the relayer-global state
     pub(crate) global_state: RelayerState,
     /// A job queue to send outbound heartbeat requests on
-    pub(crate) heartbeat_worker_sender: Sender<HeartbeatExecutorJob>,
+    pub(crate) heartbeat_worker_sender: Sender<GossipServerJob>,
     /// A job queue to receive inbound heartbeat requests on
-    pub(crate) heartbeat_worker_receiver: Receiver<HeartbeatExecutorJob>,
+    pub(crate) heartbeat_worker_receiver: Receiver<GossipServerJob>,
     /// A job queue to send outbound network requests on
     pub(crate) network_sender: TokioSender<GossipOutbound>,
     /// The system bus to which all workers have access
@@ -77,7 +77,7 @@ impl Worker for GossipServer {
     fn start(&mut self) -> Result<(), Self::Error> {
         // Start the heartbeat executor, this worker manages pinging peers and responding to
         // heartbeat requests from peers
-        let heartbeat_executor = HeartbeatProtocolExecutor::new(
+        let heartbeat_executor = GossipProtocolExecutor::new(
             self.config.local_peer_id,
             self.config.network_sender.clone(),
             self.config.heartbeat_worker_sender.clone(),
