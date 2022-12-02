@@ -89,6 +89,13 @@ impl Clone for PeerInfo {
 /// Wraps PeerID so that we can implement various traits on the type
 pub struct WrappedPeerId(pub PeerId);
 
+impl WrappedPeerId {
+    /// Create a random PeerID and wrap it
+    pub fn random() -> Self {
+        Self(PeerId::random())
+    }
+}
+
 /// Deref so that the wrapped type can be referenced
 impl Deref for WrappedPeerId {
     type Target = PeerId;

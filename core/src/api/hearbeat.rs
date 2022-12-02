@@ -21,20 +21,17 @@ pub struct HeartbeatMessage {
     pub known_peers: HashMap<String, PeerInfo>,
 }
 
-/// Implements the derivation from global state to heartbeat message.
-/// The state primitive passed around to workers is of type GlobalRelayerState;
-/// this is an Arc<RwLock> wrapper around RelayerState. The caller of this cast
-/// should handle locking the object
+/// The derivation from global state to heartbeat message
 impl From<&RelayerState> for HeartbeatMessage {
     fn from(state: &RelayerState) -> Self {
         let mut managed_wallet_metadata: HashMap<Uuid, WalletMetadata> = HashMap::new();
-        for (wallet_id, wallet) in state.managed_wallets.iter() {
+        for (wallet_id, wallet) in state.read_managed_wallets().iter() {
             managed_wallet_metadata.insert(*wallet_id, wallet.metadata.clone());
         }
 
         // Convert peer info keys to strings for serialization/deserialization
-        let mut known_peers: HashMap<String, PeerInfo> = HashMap::new();
-        for (peer_id, peer_info) in state.known_peers.iter() {
+        let mut known_peers = HashMap::new();
+        for (peer_id, peer_info) in state.read_known_peers().iter() {
             known_peers.insert(peer_id.to_string(), peer_info.clone());
         }
 

@@ -6,9 +6,7 @@ use crossbeam::channel::{Receiver, Sender};
 use ed25519_dalek::Keypair;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
-use crate::{
-    api::gossip::GossipOutbound, state::GlobalRelayerState, worker::Worker, CancelChannel,
-};
+use crate::{api::gossip::GossipOutbound, state::RelayerState, worker::Worker, CancelChannel};
 
 use super::{
     errors::GossipError,
@@ -28,7 +26,7 @@ pub struct GossipServerConfig {
     /// The keypair of the local peer's cluster
     pub(crate) cluster_keypair: Keypair,
     /// A reference to the relayer-global state
-    pub(crate) global_state: GlobalRelayerState,
+    pub(crate) global_state: RelayerState,
     /// A job queue to send outbound heartbeat requests on
     pub(crate) heartbeat_worker_sender: Sender<HeartbeatExecutorJob>,
     /// A job queue to receive inbound heartbeat requests on
@@ -47,11 +45,8 @@ impl Worker for GossipServer {
     fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
         // Register self as replicator of owned wallets using peer info from network manager
         {
-            let global_copy = config.global_state.clone();
-            let mut locked_global_state = global_copy.write().expect("global state lock poisoned");
-
-            for (_, wallet) in locked_global_state.managed_wallets.iter_mut() {
-                wallet.metadata.replicas.push(config.local_peer_id);
+            for (_, wallet) in config.global_state.write_managed_wallets().iter_mut() {
+                wallet.metadata.replicas.insert(config.local_peer_id);
             }
         } // locked_global_state released
 

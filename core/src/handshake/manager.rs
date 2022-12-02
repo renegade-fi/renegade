@@ -16,7 +16,7 @@ use crate::{
         handshake::{HandshakeMessage, HandshakeOperation},
     },
     gossip::types::WrappedPeerId,
-    state::GlobalRelayerState,
+    state::RelayerState,
     CancelChannel,
 };
 
@@ -87,7 +87,7 @@ impl HandshakeTimer {
     /// Construct a new timer
     pub fn new(
         thread_pool: Arc<ThreadPool>,
-        global_state: GlobalRelayerState,
+        global_state: RelayerState,
         network_channel: UnboundedSender<GossipOutbound>,
         cancel: CancelChannel,
     ) -> Result<Self, HandshakeManagerError> {
@@ -125,24 +125,28 @@ impl HandshakeTimer {
     fn execution_loop(
         refresh_interval: Duration,
         thread_pool: Arc<ThreadPool>,
-        global_state: GlobalRelayerState,
+        global_state: RelayerState,
         network_channel: UnboundedSender<GossipOutbound>,
         cancel: CancelChannel,
     ) -> HandshakeManagerError {
         // Get local peer ID, skip handshaking with self
         let local_peer_id: WrappedPeerId;
         {
-            let locked_state = global_state.read().expect("global state lock poisoned");
-            local_peer_id = locked_state
+            local_peer_id = *global_state
                 .local_peer_id
-                .expect("local PeerID not assigned");
+                .read()
+                .expect("global state lock poisoned");
         } // locked_state released here
 
         // Enqueue refreshes periodically
         loop {
             {
-                let locked_state = global_state.read().expect("global state lock poisoned");
-                for (_, peer_info) in locked_state.known_peers.iter() {
+                for (_, peer_info) in global_state
+                    .known_peers
+                    .read()
+                    .expect("known peers lock poisoned")
+                    .iter()
+                {
                     // Skip handshaking with self
                     if peer_info.get_peer_id() == local_peer_id {
                         continue;

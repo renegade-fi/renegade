@@ -3,10 +3,11 @@
 
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     str::FromStr,
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
+use uuid::Uuid;
 
 use crate::gossip::types::{ClusterId, PeerInfo, WrappedPeerId};
 
@@ -14,25 +15,28 @@ use crate::gossip::types::{ClusterId, PeerInfo, WrappedPeerId};
  * Constants and Types
  */
 
-/// A type alias for the thread-safe relayer state
-pub type GlobalRelayerState = Arc<RwLock<RelayerState>>;
+/// A type alias for a shared element, wrapped in a readers-writer mutex
+pub type Shared<T> = Arc<RwLock<T>>;
+/// Wrap an abstract value in a shared lock
+fn new_shared<T>(wrapped: T) -> Shared<T> {
+    Arc::new(RwLock::new(wrapped))
+}
 
-/**
- * State objects
- * Use #[serde(skip)] to maintain private state
- */
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 /// The top level object in the global state tree
+///
+/// The implementation of `RelayerState` handles locking various
+/// state elements. This is mostly for convenience but also to
+/// decouple the locking implementation with the readers/writers
 pub struct RelayerState {
     /// The libp2p peerID assigned to the localhost
-    pub local_peer_id: Option<WrappedPeerId>,
+    pub local_peer_id: Shared<WrappedPeerId>,
     /// The cluster id of the local relayer
-    pub local_cluster_id: ClusterId,
+    pub local_cluster_id: Shared<ClusterId>,
     /// The list of wallets managed by the sending relayer
-    pub managed_wallets: HashMap<uuid::Uuid, Wallet>,
+    pub managed_wallets: Shared<HashMap<Uuid, Wallet>>,
     /// The set of peers known to the sending relayer
-    pub known_peers: HashMap<WrappedPeerId, PeerInfo>,
+    pub known_peers: Shared<HashMap<WrappedPeerId, PeerInfo>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -41,14 +45,14 @@ pub struct Wallet {
     /// Wallet metadata; replicas, trusted peers, etc
     pub metadata: WalletMetadata,
     /// Wallet id will eventually be replaced, for now it is UUID
-    pub wallet_id: uuid::Uuid,
+    pub wallet_id: Uuid,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 /// Metadata relevant to the wallet's network state
 pub struct WalletMetadata {
     /// The peers which are believed by the local node to be replicating a given wallet
-    pub replicas: Vec<WrappedPeerId>,
+    pub replicas: HashSet<WrappedPeerId>,
 }
 
 impl RelayerState {
@@ -57,14 +61,16 @@ impl RelayerState {
         managed_wallet_ids: Vec<String>,
         bootstrap_servers: Vec<PeerInfo>,
         cluster_id: ClusterId,
-    ) -> GlobalRelayerState {
+    ) -> Self {
         // Setup initial wallets
         let mut managed_wallets = HashMap::new();
         for wallet_id in managed_wallet_ids.iter() {
             let wallet_id = uuid::Uuid::from_str(wallet_id).expect("could not parse wallet ID");
             let wal = Wallet {
                 wallet_id,
-                metadata: WalletMetadata { replicas: vec![] },
+                metadata: WalletMetadata {
+                    replicas: HashSet::new(),
+                },
             };
             managed_wallets.insert(wallet_id, wal);
         }
@@ -75,11 +81,70 @@ impl RelayerState {
             known_peers.insert(server.get_peer_id(), server.clone());
         }
 
-        Arc::new(RwLock::new(Self {
-            local_peer_id: None,
-            managed_wallets,
-            known_peers,
-            local_cluster_id: cluster_id,
-        }))
+        Self {
+            // Replaced buy a correct value when network manager initializes
+            local_peer_id: new_shared(WrappedPeerId::random()),
+            managed_wallets: new_shared(managed_wallets),
+            known_peers: new_shared(known_peers),
+            local_cluster_id: new_shared(cluster_id),
+        }
+    }
+
+    /// Acquire a read lock on `local_peer_id`
+    /// TODO: Remove the lint allowance
+    #[allow(dead_code)]
+    pub fn read_peer_id(&self) -> RwLockReadGuard<WrappedPeerId> {
+        self.local_peer_id
+            .read()
+            .expect("local_peer_id lock poisoned")
+    }
+
+    /// Acquire a write lock on `local_peer_id`
+    pub fn write_peer_id(&self) -> RwLockWriteGuard<WrappedPeerId> {
+        self.local_peer_id
+            .write()
+            .expect("local_peer_id lock poisoned")
+    }
+
+    /// Acquire a read lock on `cluster_id`
+    /// TODO: Remove the lint allowance
+    #[allow(dead_code)]
+    pub fn read_cluster_id(&self) -> RwLockReadGuard<ClusterId> {
+        self.local_cluster_id
+            .read()
+            .expect("cluster_id lock poisoned")
+    }
+
+    /// Acquire a write lock on `cluster_id`
+    /// TODO: Remove the lint allowance
+    #[allow(dead_code)]
+    pub fn write_cluster_id(&self) -> RwLockWriteGuard<ClusterId> {
+        self.local_cluster_id
+            .write()
+            .expect("cluster_id lock poisoned")
+    }
+
+    /// Acquire a read lock on `managed_wallets`
+    pub fn read_managed_wallets(&self) -> RwLockReadGuard<HashMap<Uuid, Wallet>> {
+        self.managed_wallets
+            .read()
+            .expect("managed_wallets lock poisoned")
+    }
+
+    /// Acquire a write lock on `managed_wallets`
+    pub fn write_managed_wallets(&self) -> RwLockWriteGuard<HashMap<Uuid, Wallet>> {
+        self.managed_wallets
+            .write()
+            .expect("managed_wallets lock poisoned")
+    }
+
+    /// Acquire a read lock on `known_peers`
+    pub fn read_known_peers(&self) -> RwLockReadGuard<HashMap<WrappedPeerId, PeerInfo>> {
+        self.known_peers.read().expect("known_peers lock poisoned")
+    }
+
+    /// Acquire a write lock on `known_peers`
+    pub fn write_known_peers(&self) -> RwLockWriteGuard<HashMap<WrappedPeerId, PeerInfo>> {
+        self.known_peers.write().expect("known_peers lock poisoned")
     }
 }

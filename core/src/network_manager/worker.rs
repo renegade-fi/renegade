@@ -15,7 +15,7 @@ use crate::{
     },
     handshake::jobs::HandshakeExecutionJob,
     network_manager::composed_protocol::ComposedNetworkBehavior,
-    state::GlobalRelayerState,
+    state::RelayerState,
     worker::Worker,
 };
 
@@ -39,7 +39,7 @@ pub struct NetworkManagerConfig {
     /// The work queue to forward inbound handshake requests to
     pub(crate) handshake_work_queue: Sender<HandshakeExecutionJob>,
     /// The global shared state of the local relayer
-    pub(crate) global_state: GlobalRelayerState,
+    pub(crate) global_state: RelayerState,
     /// The channel on which the coordinator can send a cancel signal to
     /// all network worker threads
     pub(crate) cancel_channel: Receiver<()>,
@@ -57,11 +57,8 @@ impl Worker for NetworkManager {
 
         // Update global state with newly assigned peerID
         {
-            let mut locked_state = config
-                .global_state
-                .write()
-                .expect("global state lock poisoned");
-            locked_state.local_peer_id = Some(local_peer_id);
+            let mut locked_peer_id = config.global_state.write_peer_id();
+            *locked_peer_id = local_peer_id;
         } // locked_state released here
 
         Ok(Self {
@@ -100,7 +97,7 @@ impl Worker for NetworkManager {
             ComposedNetworkBehavior::new(*self.local_peer_id, self.local_keypair.clone())?;
 
         // Add any bootstrap addresses to the peer info table
-        for (peer_id, peer_info) in self.config.global_state.read().unwrap().known_peers.iter() {
+        for (peer_id, peer_info) in self.config.global_state.read_known_peers().iter() {
             println!(
                 "Adding {:?}: {} to routing table...",
                 peer_id,
@@ -121,15 +118,10 @@ impl Worker for NetworkManager {
             .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
         // Add self to known peers
-        self.config
-            .global_state
-            .write()
-            .unwrap()
-            .known_peers
-            .insert(
-                self.local_peer_id,
-                PeerInfo::new(self.local_peer_id, self.cluster_id.clone(), addr),
-            );
+        self.config.global_state.write_known_peers().insert(
+            self.local_peer_id,
+            PeerInfo::new(self.local_peer_id, self.cluster_id.clone(), addr),
+        );
 
         // Subscribe to all relevant topics
         self.setup_pubsub_subscriptions(&mut swarm)?;

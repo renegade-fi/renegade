@@ -9,7 +9,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::{
     api::gossip::GossipOutbound,
     handshake::manager::{HandshakeJobRelay, HandshakeTimer},
-    state::GlobalRelayerState,
+    state::RelayerState,
     worker::Worker,
 };
 
@@ -22,7 +22,7 @@ const NUM_HANDSHAKE_THREADS: usize = 8;
 #[derive(Debug)]
 pub struct HandshakeManagerConfig {
     /// The relayer-global state
-    pub global_state: GlobalRelayerState,
+    pub global_state: RelayerState,
     /// The channel on which to send outbound network requests
     pub network_channel: UnboundedSender<GossipOutbound>,
     /// The job queue on which to receive handshake requrests
