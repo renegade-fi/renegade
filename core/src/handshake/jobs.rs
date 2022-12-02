@@ -7,15 +7,16 @@ use crate::{
     gossip::types::WrappedPeerId,
 };
 
-/**
- * This file groups type definitions for the handshake module
- */
-
-// Represents a job for the handshake manager's thread pool to execute
+/// Represents a job for the handshake manager's thread pool to execute
+#[derive(Debug)]
 pub enum HandshakeExecutionJob {
+    /// Process a handshake request
     ProcessHandshakeRequest {
+        /// The peer requesting to handshake
         peer_id: WrappedPeerId,
+        /// The handshake request message contents
         message: HandshakeMessage,
+        /// The channel on which to send the response
         response_channel: ResponseChannel<GossipResponse>,
     },
 }

@@ -15,7 +15,7 @@ use std::{
 
 use crate::api::cluster_management::CLUSTER_MANAGEMENT_TOPIC_PREFIX;
 
-// Contains information about connected peers
+/// Contains information about connected peers
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PeerInfo {
     /// The identifier used by libp2p for a peer
@@ -41,6 +41,7 @@ impl PartialEq for PeerInfo {
 }
 
 impl PeerInfo {
+    /// Construct a new PeerInfo object
     pub fn new(peer_id: WrappedPeerId, cluster_id: ClusterId, addr: Multiaddr) -> Self {
         Self {
             addr,
@@ -50,27 +51,29 @@ impl PeerInfo {
         }
     }
 
-    // Getters and Setters
+    /// Getters and Setters
     pub fn get_peer_id(&self) -> WrappedPeerId {
         self.peer_id
     }
 
+    /// Get the address stored in the PeerInfo
     pub fn get_addr(&self) -> Multiaddr {
         self.addr.clone()
     }
 
-    // Records a successful heartbeat
+    /// Records a successful heartbeat
     pub fn successful_heartbeat(&mut self) {
         self.last_heartbeat
             .store(current_time_seconds(), Ordering::Relaxed);
     }
 
+    /// Get the last time a heartbeat was recorded for this peer
     pub fn get_last_heartbeat(&self) -> u64 {
         self.last_heartbeat.load(Ordering::Relaxed)
     }
 }
 
-// Clones PeerInfo to reference the curren time for the last heartbeat
+/// Clones PeerInfo to reference the current time for the last heartbeat
 impl Clone for PeerInfo {
     fn clone(&self) -> Self {
         Self {
@@ -82,16 +85,11 @@ impl Clone for PeerInfo {
     }
 }
 
-/**
- * An implementation of a wrapper type that allows us to implement traits
- * on top of the existing libp2p PeerID type
- */
-
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
-// Wraps PeerID so that we can implement various traits on the type
+/// Wraps PeerID so that we can implement various traits on the type
 pub struct WrappedPeerId(pub PeerId);
 
-// Deref so that the wrapped type can be referenced
+/// Deref so that the wrapped type can be referenced
 impl Deref for WrappedPeerId {
     type Target = PeerId;
 
@@ -106,7 +104,7 @@ impl Display for WrappedPeerId {
     }
 }
 
-// Serialize PeerIDs
+/// Serialize PeerIDs
 impl Serialize for WrappedPeerId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -117,7 +115,7 @@ impl Serialize for WrappedPeerId {
     }
 }
 
-// Deserialize PeerIDs
+/// Deserialize PeerIDs
 impl<'de> Deserialize<'de> for WrappedPeerId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -127,12 +125,11 @@ impl<'de> Deserialize<'de> for WrappedPeerId {
     }
 }
 
-// Visitor struct for help deserializing PeerIDs
+/// Visitor struct for help deserializing PeerIDs
 struct PeerIDVisitor;
 impl<'de> Visitor<'de> for PeerIDVisitor {
     type Value = WrappedPeerId;
 
-    // Debug message
     fn expecting(&self, formatter: &mut Formatter) -> FmtResult {
         formatter.write_str("a libp2p::PeerID encoded as a byte array")
     }
@@ -181,7 +178,7 @@ impl ClusterId {
  * Helpers
  */
 
-// Returns a u64 representing the current unix timestamp in seconds
+/// Returns a u64 representing the current unix timestamp in seconds
 fn current_time_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

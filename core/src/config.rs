@@ -50,7 +50,7 @@ struct Cli {
     pub wallet_ids: Option<Vec<String>>,
 }
 
-// Defines the system config for the relayer
+/// Defines the system config for the relayer
 #[derive(Debug)]
 pub struct RelayerConfig {
     /// Software version of the relayer
@@ -226,8 +226,8 @@ fn toml_value_to_string(val: &Value) -> Result<String, CoordinatorError> {
     })
 }
 
-// Runtime validation of the keypair passed into the relayer via config
-// Sign a simple request and verify the signature
+/// Runtime validation of the keypair passed into the relayer via config
+/// Sign a simple request and verify the signature
 fn validate_keypair(keypair: &Keypair) -> Result<(), SignatureError> {
     // Hash the message
     let mut hash_digest: Sha512 = Sha512::new();

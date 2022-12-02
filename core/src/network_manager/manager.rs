@@ -34,7 +34,7 @@ use super::{
     worker::NetworkManagerConfig,
 };
 
-// Groups logic around monitoring and requesting the network
+/// Groups logic around monitoring and requesting the network
 pub struct NetworkManager {
     /// The config passed from the coordinator thread
     pub(super) config: NetworkManagerConfig,
@@ -189,6 +189,7 @@ impl NetworkManager {
      * Request/Response event handlers
      */
 
+    /// Handle an incoming message from the network's request/response protocol
     fn handle_inbound_request_response_message(
         peer_id: PeerId,
         message: RequestResponseMessage<GossipRequest, GossipResponse>,
@@ -240,6 +241,7 @@ impl NetworkManager {
      * Pubsub handlers
      */
 
+    /// Handle an incoming network request for a pubsub message
     fn handle_inbound_pubsub_message(message: GossipsubMessage) -> Result<(), NetworkManagerError> {
         // Deserialize into API types
         let event: PubsubMessage = message.data.into();

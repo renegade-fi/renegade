@@ -23,7 +23,7 @@ pub type GlobalRelayerState = Arc<RwLock<RelayerState>>;
  */
 
 #[derive(Debug, Serialize, Deserialize)]
-// The top level object in the global state tree
+/// The top level object in the global state tree
 pub struct RelayerState {
     /// The libp2p peerID assigned to the localhost
     pub local_peer_id: Option<WrappedPeerId>,
@@ -36,7 +36,7 @@ pub struct RelayerState {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-// Represents a wallet managed by the local relayer
+/// Represents a wallet managed by the local relayer
 pub struct Wallet {
     /// Wallet metadata; replicas, trusted peers, etc
     pub metadata: WalletMetadata,
@@ -47,10 +47,12 @@ pub struct Wallet {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 /// Metadata relevant to the wallet's network state
 pub struct WalletMetadata {
+    /// The peers which are believed by the local node to be replicating a given wallet
     pub replicas: Vec<WrappedPeerId>,
 }
 
 impl RelayerState {
+    /// Initialize the global state at startup
     pub fn initialize_global_state(
         managed_wallet_ids: Vec<String>,
         bootstrap_servers: Vec<PeerInfo>,

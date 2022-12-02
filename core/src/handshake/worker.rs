@@ -15,7 +15,7 @@ use crate::{
 
 use super::{error::HandshakeManagerError, jobs::HandshakeExecutionJob, manager::HandshakeManager};
 
-// The number of threads executing handshakes
+/// The number of threads executing handshakes
 const NUM_HANDSHAKE_THREADS: usize = 8;
 
 /// The config type for the handshake manager

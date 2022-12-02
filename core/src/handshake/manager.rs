@@ -22,22 +22,22 @@ use crate::{
 
 use super::{error::HandshakeManagerError, jobs::HandshakeExecutionJob};
 
-/**
- * Groups logic for handshakes executed through a threadpool at period intervals
- */
-
-// The interval at which to initiate handshakes
+/// The interval at which to initiate handshakes
 const HANDSHAKE_INTERVAL_MS: u64 = 5000;
-
+/// Number of nanoseconds in a millisecond, for convenienc
 const NANOS_PER_MILLI: u64 = 1_000_000;
 
+/// Manages requests to handshake from a peer and sends outbound requests to initiate
+/// a handshake
 pub struct HandshakeManager {
+    /// The hanshake timer; periodically enqueues outbound handshake requests
     pub(super) timer: HandshakeTimer,
+    /// The job realay; provides a shim between the network interface and the manager
     pub(super) relay: HandshakeJobRelay,
 }
 
 impl HandshakeManager {
-    // Perform a handshake, dummy job for now
+    /// Perform a handshake, dummy job for now
     pub fn perform_handshake(
         peer_id: WrappedPeerId,
         network_channel: UnboundedSender<GossipOutbound>,
@@ -54,6 +54,7 @@ impl HandshakeManager {
             .unwrap();
     }
 
+    /// Respond to a handshake request from a peer
     pub fn respond_handshake(
         job: HandshakeExecutionJob,
         network_channel: UnboundedSender<GossipOutbound>,
@@ -75,14 +76,15 @@ impl HandshakeManager {
     }
 }
 
-/**
- * Implements a timer that periodically enqueues jobs to the threadpool
- */
+/// Implements a timer that periodically enqueues jobs to the threadpool that
+/// tell the manager to send outbound handshake requests
 pub(super) struct HandshakeTimer {
+    /// The join handle of the thread executing timer interrupts
     thread_handle: Option<thread::JoinHandle<HandshakeManagerError>>,
 }
 
 impl HandshakeTimer {
+    /// Construct a new timer
     pub fn new(
         thread_pool: Arc<ThreadPool>,
         global_state: GlobalRelayerState,
@@ -113,11 +115,13 @@ impl HandshakeTimer {
         })
     }
 
+    /// Consume the join handle for the executor thread, this leaves no join handle in
+    /// its place, meaning this can only be called once
     pub fn join_handle(&mut self) -> JoinHandle<HandshakeManagerError> {
         self.thread_handle.take().unwrap()
     }
 
-    // The execution loop of the timer, periodically enqueues handshake jobs
+    /// The execution loop of the timer, periodically enqueues handshake jobs
     fn execution_loop(
         refresh_interval: Duration,
         thread_pool: Arc<ThreadPool>,
@@ -165,15 +169,15 @@ impl HandshakeTimer {
     }
 }
 
-/**
- * Implements a listener that relays from a crossbeam channel to the handshake threadpool
- * Used as a layer of indirection to provide a consistent interface at the network level
- */
+/// Implements a listener that relays from a crossbeam channel to the handshake threadpool
+/// Used as a layer of indirection to provide a consistent interface at the network level
 pub(super) struct HandshakeJobRelay {
+    /// The join handle of the thread executing the handshake relay
     thread_handle: Option<JoinHandle<HandshakeManagerError>>,
 }
 
 impl HandshakeJobRelay {
+    /// Create a new job relay
     pub fn new(
         thread_pool: Arc<ThreadPool>,
         job_channel: Receiver<HandshakeExecutionJob>,
@@ -190,11 +194,13 @@ impl HandshakeJobRelay {
         })
     }
 
-    // Joins execution of the calling thread to the execution loop
+    /// Consumes the join handle that the executor operates on, leaving `None` in its
+    /// place. This means that this method may only be called once
     pub fn join_handle(&mut self) -> JoinHandle<HandshakeManagerError> {
         self.thread_handle.take().unwrap()
     }
 
+    /// The main execution loop, listens on the channel and forwards jobs to the handshake manager
     fn execution_loop(
         thread_pool: Arc<ThreadPool>,
         job_channel: Receiver<HandshakeExecutionJob>,

@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-// Defines an error for Gossip operation
+/// Defines an error for Gossip operation
 #[derive(Clone, Debug)]
 pub enum GossipError {
     /// An error setting up the gossip server

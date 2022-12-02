@@ -3,6 +3,7 @@
 use std::error::Error;
 use std::fmt::Display;
 
+/// An error type at the coordinator level
 #[derive(Clone, Debug)]
 pub enum CoordinatorError {
     /// Error attemting to recover a failed worker

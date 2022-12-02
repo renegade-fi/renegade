@@ -25,26 +25,24 @@ use super::{errors::GossipError, jobs::HeartbeatExecutorJob};
  * Constants
  */
 
-// Nanoseconds in a millisecond, as an unsigned 64bit integer
+/// Nanoseconds in a millisecond, as an unsigned 64bit integer
 const NANOS_PER_MILLI: u64 = 1_000_000;
-
-// The interval at which to send heartbeats to known peers
+/// The interval at which to send heartbeats to known peers
 const HEARTBEAT_INTERVAL_MS: u64 = 3000; // 3 seconds
-
-// The amount of time without a successful heartbeat before the local
-// relayer should assume its peer has failed
+/// The amount of time without a successful heartbeat before the local
+/// relayer should assume its peer has failed
 const HEARTBEAT_FAILURE_MS: u64 = 10000; // 10 seconds
-
-// The minimum amount of time between a peer's expiry and when it can be
-// added back to the peer info
+/// The minimum amount of time between a peer's expiry and when it can be
+/// added back to the peer info
 const EXPIRY_INVISIBILITY_WINDOW_MS: u64 = 10_000; // 10 seconds
+/// The size of the peer expiry cache to keep around
 const EXPIRY_CACHE_SIZE: usize = 100;
 
 /**
  * Helpers
  */
 
-// Returns the current unix timestamp in seconds, represented as u64
+/// Returns the current unix timestamp in seconds, represented as u64
 fn get_current_time_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -56,10 +54,10 @@ fn get_current_time_seconds() -> u64 {
  * Heartbeat protocol execution and implementation
  */
 
-// Type aliases for shared objects
+/// Type aliases for shared objects
 type SharedLRUCache = Arc<RwLock<LruCache<WrappedPeerId, u64>>>;
 
-// Executes the heartbeat protocols
+/// Executes the heartbeat protocols
 #[derive(Debug)]
 pub struct HeartbeatProtocolExecutor {
     /// The handle of the worker thread executing heartbeat jobs
@@ -69,7 +67,7 @@ pub struct HeartbeatProtocolExecutor {
 }
 
 impl HeartbeatProtocolExecutor {
-    // Creates a new executor
+    /// Creates a new executor
     pub fn new(
         local_peer_id: WrappedPeerId,
         network_channel: UnboundedSender<GossipOutbound>,
@@ -107,7 +105,7 @@ impl HeartbeatProtocolExecutor {
         })
     }
 
-    // Joins execution of the calling thread to the worker thread
+    /// Joins execution of the calling thread to the worker thread
     pub fn join(&mut self) -> Vec<JoinHandle<GossipError>> {
         vec![
             self.thread_handle.take().unwrap(),
@@ -115,7 +113,7 @@ impl HeartbeatProtocolExecutor {
         ]
     }
 
-    // Runs the executor loop
+    /// Runs the executor loop
     fn executor_loop(
         local_peer_id: WrappedPeerId,
         job_receiver: Receiver<HeartbeatExecutorJob>,
@@ -187,7 +185,7 @@ impl HeartbeatProtocolExecutor {
         }
     }
 
-    // Records a successful heartbeat
+    /// Records a successful heartbeat
     fn record_heartbeat(peer_id: WrappedPeerId, global_state: GlobalRelayerState) {
         let mut locked_state = global_state.write().unwrap();
         if let Some(peer_info) = locked_state.known_peers.get_mut(&peer_id) {
@@ -195,11 +193,11 @@ impl HeartbeatProtocolExecutor {
         }
     }
 
-    // Sync the replication state when a heartbeat is received
-    // Effectively:
-    //  For each wallet that the local relayer manages:
-    //      1. Check if the peer sent a replication list for this wallet
-    //      2. Add any new peers from that list to the local state
+    /// Sync the replication state when a heartbeat is received
+    /// Effectively:
+    ///  For each wallet that the local relayer manages:
+    ///      1. Check if the peer sent a replication list for this wallet
+    ///      2. Add any new peers from that list to the local state
     fn merge_peers_from_message(
         local_peer_id: WrappedPeerId,
         message: &HeartbeatMessage,
@@ -235,9 +233,9 @@ impl HeartbeatProtocolExecutor {
         }
     }
 
-    // Merges the replicating peers for a given wallet
-    // The typing of the arguments implies that the values passed in are already
-    // locked by the caller
+    /// Merges the replicating peers for a given wallet
+    /// The typing of the arguments implies that the values passed in are already
+    /// locked by the caller
     fn merge_replicas_for_wallet(
         wallet_id: uuid::Uuid,
         local_peer_id: WrappedPeerId,
@@ -298,7 +296,7 @@ impl HeartbeatProtocolExecutor {
         }
     }
 
-    // Sends heartbeat message to peers to exchange network information and ensure liveness
+    /// Sends heartbeat message to peers to exchange network information and ensure liveness
     fn send_heartbeats(
         local_peer_id: WrappedPeerId,
         network_channel: UnboundedSender<GossipOutbound>,
@@ -332,7 +330,7 @@ impl HeartbeatProtocolExecutor {
         Self::expire_peers(local_peer_id, peer_expiry_cache, global_state);
     }
 
-    // Expires peers that have timed out due to consecutive failed heartbeats
+    /// Expires peers that have timed out due to consecutive failed heartbeats
     fn expire_peers(
         local_peer_id: WrappedPeerId,
         peer_expiry_cache: SharedLRUCache,
@@ -368,7 +366,7 @@ impl HeartbeatProtocolExecutor {
         }
     }
 
-    // Constructs a heartbeat message from local state
+    /// Constructs a heartbeat message from local state
     fn build_heartbeat_message(global_state: GlobalRelayerState) -> HeartbeatMessage {
         // Deref to remove lock guard then reference to borrow
         let locked_state = global_state.read().unwrap();
@@ -380,11 +378,12 @@ impl HeartbeatProtocolExecutor {
 /// a heartbeat on regular intervals
 #[derive(Debug)]
 struct HeartbeatTimer {
+    /// The join handle of the thread executing the timer
     thread_handle: Option<JoinHandle<GossipError>>,
 }
 
 impl HeartbeatTimer {
-    // Constructor
+    /// Constructor
     pub fn new(job_queue: Sender<HeartbeatExecutorJob>, interval_ms: u64) -> Self {
         // Narrowing cast is okay, precision is not important here
         let duration_seconds = interval_ms / 1000;
@@ -402,12 +401,12 @@ impl HeartbeatTimer {
         }
     }
 
-    // Joins the calling thread's execution to the execution of the HeartbeatTimer
+    /// Joins the calling thread's execution to the execution of the HeartbeatTimer
     pub fn join_handle(&mut self) -> JoinHandle<GossipError> {
         self.thread_handle.take().unwrap()
     }
 
-    // Main timing loop
+    /// Main timing loop
     fn execution_loop(
         job_queue: Sender<HeartbeatExecutorJob>,
         wait_period: Duration,
