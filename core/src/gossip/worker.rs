@@ -6,13 +6,7 @@ use crossbeam::channel::{Receiver, Sender};
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use crate::{
-    api::{
-        cluster_management::ClusterJoinMessage,
-        gossip::{GossipOutbound, PubsubMessage},
-    },
-    state::GlobalRelayerState,
-    worker::Worker,
-    CancelChannel,
+    api::gossip::GossipOutbound, state::GlobalRelayerState, worker::Worker, CancelChannel,
 };
 
 use super::{
@@ -85,19 +79,9 @@ impl Worker for GossipServer {
         )?;
         self.heartbeat_executor = Some(heartbeat_executor);
 
-        // Publish a message to the network indicating intent to join the cluster
-        let join_message = GossipOutbound::Pubsub {
-            topic: self.config.cluster_id.get_management_topic(),
-            message: PubsubMessage::Join(ClusterJoinMessage {
-                cluster_id: self.config.cluster_id.clone(),
-                node_id: self.config.local_peer_id,
-                auth_challenge: vec![],
-            }),
-        };
-        self.config
-            .network_sender
-            .send(join_message)
-            .map_err(|err| GossipError::ServerSetupError(err.to_string()))?;
+        // Wait for the local peer to handshake with known other peers
+        // before sending a cluster membership message
+        self.warmup_then_join_cluster();
 
         Ok(())
     }

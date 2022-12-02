@@ -3,6 +3,7 @@
 use crossbeam::channel::Sender;
 use futures::StreamExt;
 use libp2p::{
+    gossipsub::Sha256Topic,
     identity::Keypair,
     request_response::{RequestResponseEvent, RequestResponseMessage},
     swarm::SwarmEvent,
@@ -43,15 +44,30 @@ pub struct NetworkManager {
     pub(super) cancellation_relay_handle: Option<JoinHandle<NetworkManagerError>>,
 }
 
-// The NetworkManager handles both incoming and outbound messages to the p2p network
-// It accepts events from workers elsewhere in the relayer that are to be propagated
-// out to the network; as well as listening on the network for messages from other peers.
+/// The NetworkManager handles both incoming and outbound messages to the p2p network
+/// It accepts events from workers elsewhere in the relayer that are to be propagated
+/// out to the network; as well as listening on the network for messages from other peers.
 impl NetworkManager {
-    // The main loop in which the worker thread processes requests
-    // The worker handles two types of events:
-    //      1. Events from the network; which it dispatches to appropriate handler threads
-    //      2. Events from workers to be sent over the network
-    // It handles these in the tokio select! macro below
+    /// Setup pubsub subscriptions for the network manager
+    pub(super) fn setup_pubsub_subscriptions(
+        &self,
+        swarm: &mut Swarm<ComposedNetworkBehavior>,
+    ) -> Result<(), NetworkManagerError> {
+        // Cluster management topic for the local peer's cluster
+        swarm
+            .behaviour_mut()
+            .pubsub
+            .subscribe(&Sha256Topic::new(self.cluster_id.get_management_topic()))
+            .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
+
+        Ok(())
+    }
+
+    /// The main loop in which the worker thread processes requests
+    /// The worker handles two types of events:
+    ///      1. Events from the network; which it dispatches to appropriate handler threads
+    ///      2. Events from workers to be sent over the network
+    /// It handles these in the tokio select! macro below
     pub(super) async fn executor_loop(
         local_peer_id: WrappedPeerId,
         mut swarm: Swarm<ComposedNetworkBehavior>,
@@ -95,7 +111,7 @@ impl NetworkManager {
         }
     }
 
-    // Handles an outbound message from worker threads to other relayers
+    /// Handles an outbound message from worker threads to other relayers
     fn handle_outbound_message(msg: GossipOutbound, swarm: &mut Swarm<ComposedNetworkBehavior>) {
         match msg {
             GossipOutbound::Request { peer_id, message } => {
@@ -116,8 +132,12 @@ impl NetworkManager {
                 }
             }
             Pubsub { topic, message } => {
-                // TODO: Implement this
-                println!("Received {:?} pubsub oubound message: {:?}", topic, message);
+                let topic = Sha256Topic::new(topic);
+                let res = swarm.behaviour_mut().pubsub.publish(topic, message);
+
+                if let Err(msg) = res {
+                    event!(Level::ERROR, message = ?msg, "error broadcasting pubsub message")
+                }
             }
             // Register a new peer in the distributed routing tables
             GossipOutbound::NewAddr { peer_id, address } => {
@@ -129,7 +149,7 @@ impl NetworkManager {
         }
     }
 
-    // Handles a network event from the relayer's protocol
+    /// Handles a network event from the relayer's protocol
     fn handle_inbound_messsage(
         message: ComposedProtocolEvent,
         heartbeat_work_queue: Sender<HeartbeatExecutorJob>,
@@ -147,9 +167,7 @@ impl NetworkManager {
                 }
             }
             // Pubsub events currently do nothing
-            ComposedProtocolEvent::PubSub(event) => {
-                println!("got pubsub event: {:?}", event);
-            }
+            ComposedProtocolEvent::PubSub(_) => {}
             // KAD events do nothing for now, routing tables are automatically updated by libp2p
             ComposedProtocolEvent::Kademlia(_) => {}
         }

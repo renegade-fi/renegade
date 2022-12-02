@@ -61,3 +61,19 @@ pub enum GossipResponse {
 pub enum PubsubMessage {
     Join(ClusterJoinMessage),
 }
+
+/// Explicit byte serialization and deserialization
+///
+/// libp2p gossipsub interface expects a type that can be cast
+/// to and from bytes
+impl From<PubsubMessage> for Vec<u8> {
+    fn from(message: PubsubMessage) -> Self {
+        serde_json::to_vec(&message).unwrap()
+    }
+}
+
+impl From<Vec<u8>> for PubsubMessage {
+    fn from(buf: Vec<u8>) -> Self {
+        serde_json::from_slice(&buf).unwrap()
+    }
+}

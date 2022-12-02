@@ -131,6 +131,9 @@ impl Worker for NetworkManager {
                 PeerInfo::new(self.local_peer_id, self.cluster_id.clone(), addr),
             );
 
+        // Subscribe to all relevant topics
+        self.setup_pubsub_subscriptions(&mut swarm)?;
+
         // Start up a cancel forwarder, this thread forwards from a crossbeam cancel
         // channel to an async queue to shim between blocking and async interfaces
         // TODO: Maybe use crossfire for this instead
