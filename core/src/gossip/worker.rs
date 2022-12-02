@@ -3,6 +3,7 @@
 use std::thread::JoinHandle;
 
 use crossbeam::channel::{Receiver, Sender};
+use ed25519_dalek::Keypair;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use crate::{
@@ -24,6 +25,8 @@ pub struct GossipServerConfig {
     pub(crate) local_peer_id: WrappedPeerId,
     /// The cluster ID of the local peer
     pub(crate) cluster_id: ClusterId,
+    /// The keypair of the local peer's cluster
+    pub(crate) cluster_keypair: Keypair,
     /// A reference to the relayer-global state
     pub(crate) global_state: GlobalRelayerState,
     /// A job queue to send outbound heartbeat requests on

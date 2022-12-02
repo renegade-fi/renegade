@@ -94,6 +94,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let mut gossip_server = GossipServer::new(GossipServerConfig {
         local_peer_id: network_manager.local_peer_id,
         cluster_id: args.cluster_id,
+        cluster_keypair: args.cluster_keypair,
         global_state: global_state.clone(),
         heartbeat_worker_sender,
         heartbeat_worker_receiver,

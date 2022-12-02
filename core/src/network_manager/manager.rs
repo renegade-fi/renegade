@@ -1,9 +1,10 @@
 //! The network manager handles lower level interaction with the p2p network
 
 use crossbeam::channel::Sender;
+use ed25519_dalek::{Digest, Sha512, Signature};
 use futures::StreamExt;
 use libp2p::{
-    gossipsub::Sha256Topic,
+    gossipsub::{GossipsubEvent, GossipsubMessage, Sha256Topic},
     identity::Keypair,
     request_response::{RequestResponseEvent, RequestResponseMessage},
     swarm::SwarmEvent,
@@ -14,7 +15,12 @@ use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
 use tracing::{event, Level};
 
 use crate::{
-    api::gossip::{GossipOutbound, GossipOutbound::Pubsub, GossipRequest, GossipResponse},
+    api::{
+        cluster_management::CLUSTER_JOIN_CHALLENGE_DIGEST,
+        gossip::{
+            GossipOutbound, GossipOutbound::Pubsub, GossipRequest, GossipResponse, PubsubMessage,
+        },
+    },
     gossip::{
         jobs::HeartbeatExecutorJob,
         types::{ClusterId, WrappedPeerId},
@@ -167,7 +173,13 @@ impl NetworkManager {
                 }
             }
             // Pubsub events currently do nothing
-            ComposedProtocolEvent::PubSub(_) => {}
+            ComposedProtocolEvent::PubSub(msg) => {
+                if let GossipsubEvent::Message { message, .. } = msg {
+                    if let Err(err) = Self::handle_inbound_pubsub_message(message) {
+                        event!(Level::ERROR, message = ?err, "error handling pubsub message");
+                    }
+                }
+            }
             // KAD events do nothing for now, routing tables are automatically updated by libp2p
             ComposedProtocolEvent::Kademlia(_) => {}
         }
@@ -222,5 +234,35 @@ impl NetworkManager {
                 GossipResponse::Handshake() => {}
             },
         }
+    }
+
+    /**
+     * Pubsub handlers
+     */
+
+    fn handle_inbound_pubsub_message(message: GossipsubMessage) -> Result<(), NetworkManagerError> {
+        // Deserialize into API types
+        let event: PubsubMessage = message.data.into();
+        match event {
+            PubsubMessage::Join(join_message) => {
+                // Authenticate the join request
+                let pubkey = join_message
+                    .cluster_id
+                    .get_public_key()
+                    .map_err(|err| NetworkManagerError::SerializeDeserialize(err.to_string()))?;
+
+                let join_signature = Signature::from_bytes(&join_message.auth_challenge)
+                    .map_err(|err| NetworkManagerError::SerializeDeserialize(err.to_string()))?;
+
+                // Hash the message and verify the input
+                let mut hash_digest: Sha512 = Sha512::new();
+                hash_digest.update(CLUSTER_JOIN_CHALLENGE_DIGEST);
+                pubkey
+                    .verify_prehashed(hash_digest, None, &join_signature)
+                    .map_err(|err| NetworkManagerError::Authentication(err.to_string()))?;
+            }
+        }
+
+        Ok(())
     }
 }

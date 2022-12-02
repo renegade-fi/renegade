@@ -1,6 +1,6 @@
 //! Groups the types used to represent the gossip network primitives
 
-use ed25519_dalek::PublicKey;
+use ed25519_dalek::{PublicKey, SignatureError};
 use libp2p::{Multiaddr, PeerId};
 use serde::{
     de::{Error as SerdeErr, Visitor},
@@ -168,6 +168,12 @@ impl ClusterId {
     /// Get the cluster management pubsub topic name for the cluster idenified
     pub fn get_management_topic(&self) -> String {
         format!("{}-{}", CLUSTER_MANAGEMENT_TOPIC_PREFIX, self.0)
+    }
+
+    /// Get the public key represented by this cluster
+    pub fn get_public_key(&self) -> Result<PublicKey, SignatureError> {
+        let decoded_key = base64::decode(&self.0).map_err(|_| SignatureError::new())?;
+        PublicKey::from_bytes(&decoded_key)
     }
 }
 

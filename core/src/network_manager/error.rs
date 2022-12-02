@@ -11,6 +11,10 @@ pub enum NetworkManagerError {
     Cancelled(String),
     /// An error forwarding a cancel signal to the network worker
     CancelForwardFailed(String),
+    /// Serialization/Deserialization error
+    SerializeDeserialize(String),
+    /// Authentication error, e.g. failed signature verification
+    Authentication(String),
 }
 
 impl Display for NetworkManagerError {

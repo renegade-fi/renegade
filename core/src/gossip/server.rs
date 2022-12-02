@@ -2,8 +2,10 @@
 
 use std::{thread, time::Duration};
 
+use ed25519_dalek::{Digest, Sha512};
+
 use crate::api::{
-    cluster_management::ClusterJoinMessage,
+    cluster_management::{ClusterJoinMessage, CLUSTER_JOIN_CHALLENGE_DIGEST},
     gossip::{GossipOutbound, PubsubMessage},
 };
 
@@ -29,10 +31,26 @@ impl GossipServer {
     /// a graph of a few peers), and then publish an event to join the
     /// local cluster
     pub(super) fn warmup_then_join_cluster(&self) {
+        // Copy items so they may be moved into the spawned threadd
         let cluster_id_copy = self.config.cluster_id.clone();
         let peer_id_copy = self.config.local_peer_id;
         let network_sender_copy = self.config.network_sender.clone();
         let cluster_management_topic = self.config.cluster_id.get_management_topic();
+
+        // Sign the challenge message, this is used by recipients to validate that
+        // the local party is authorized to join the target cluster
+        // Hash the message
+        // TODO: This signature should include the full message, including peerID so that it cannot
+        // be spoofed
+        let mut hash_digest: Sha512 = Sha512::new();
+        hash_digest.update(CLUSTER_JOIN_CHALLENGE_DIGEST);
+
+        // Sign and verify with keypair
+        let sig = self
+            .config
+            .cluster_keypair
+            .sign_prehashed(hash_digest, None /* context */)
+            .unwrap();
 
         // Spawn a thread that will wait some time until the peer has warmed up into the network
         // and then emit a pubsub
@@ -46,7 +64,7 @@ impl GossipServer {
                 message: PubsubMessage::Join(ClusterJoinMessage {
                     cluster_id: cluster_id_copy,
                     node_id: peer_id_copy,
-                    auth_challenge: vec![],
+                    auth_challenge: sig.to_bytes().to_vec(),
                 }),
             };
             network_sender_copy
