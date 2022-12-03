@@ -84,6 +84,7 @@ impl GossipProtocolExecutor {
         // until the state has synced. Maps peer_id to expiry time
         let peer_expiry_cache: SharedLRUCache =
             Arc::new(RwLock::new(LruCache::new(EXPIRY_CACHE_SIZE)));
+        let state_clone = global_state.clone();
 
         let thread_handle = {
             thread::Builder::new()
@@ -94,14 +95,14 @@ impl GossipProtocolExecutor {
                         job_receiver,
                         network_channel,
                         peer_expiry_cache,
-                        global_state,
+                        state_clone,
                         cancel_channel,
                     )
                 })
                 .map_err(|err| GossipError::ServerSetupError(err.to_string()))
         }?;
 
-        let heartbeat_timer = HeartbeatTimer::new(job_sender, HEARTBEAT_INTERVAL_MS);
+        let heartbeat_timer = HeartbeatTimer::new(job_sender, HEARTBEAT_INTERVAL_MS, global_state);
 
         Ok(Self {
             thread_handle: Some(thread_handle),
@@ -144,8 +145,9 @@ impl GossipProtocolExecutor {
             }
 
             match job {
-                GossipServerJob::ExecuteHeartbeats => {
-                    Self::send_heartbeats(
+                GossipServerJob::ExecuteHeartbeat(peer_id) => {
+                    Self::send_heartbeat(
+                        peer_id,
                         local_peer_id,
                         network_channel.clone(),
                         peer_expiry_cache.clone(),
@@ -447,77 +449,53 @@ impl GossipProtocolExecutor {
     }
 
     /// Sends heartbeat message to peers to exchange network information and ensure liveness
-    fn send_heartbeats(
+    fn send_heartbeat(
+        recipient_peer_id: WrappedPeerId,
         local_peer_id: WrappedPeerId,
         network_channel: UnboundedSender<GossipOutbound>,
         peer_expiry_cache: SharedLRUCache,
         global_state: &RelayerState,
     ) {
-        // Send heartbeat requests
+        if recipient_peer_id == local_peer_id {
+            return;
+        }
+
         let heartbeat_message =
             GossipRequest::Heartbeat(Self::build_heartbeat_message(global_state));
+        network_channel
+            .send(GossipOutbound::Request {
+                peer_id: recipient_peer_id,
+                message: heartbeat_message,
+            })
+            .unwrap();
 
-        {
-            let locked_peers = global_state.read_known_peers();
-            let locked_cluster_metadata = global_state.read_cluster_metadata();
-            println!(
-                "\n\nSending heartbeats, I know {} peers...\nI know {} peers in my cluster...",
-                locked_peers.len() - 1,
-                locked_cluster_metadata.known_members.len() - 1,
-            );
-            for (peer_id, _) in locked_peers.iter() {
-                if *peer_id == local_peer_id {
-                    continue;
-                }
-
-                network_channel
-                    .send(GossipOutbound::Request {
-                        peer_id: *peer_id,
-                        message: heartbeat_message.clone(),
-                    })
-                    .unwrap();
-            }
-        } // state locks released
-
-        Self::expire_peers(local_peer_id, peer_expiry_cache, global_state);
+        Self::maybe_expire_peer(recipient_peer_id, peer_expiry_cache, global_state);
     }
 
     /// Expires peers that have timed out due to consecutive failed heartbeats
-    fn expire_peers(
-        local_peer_id: WrappedPeerId,
+    fn maybe_expire_peer(
+        peer_id: WrappedPeerId,
         peer_expiry_cache: SharedLRUCache,
         global_state: &RelayerState,
     ) {
         let now = get_current_time_seconds();
-        let mut peers_to_expire = Vec::new();
         {
-            for (peer_id, peer_info) in global_state.read_known_peers().iter() {
-                if *peer_id == local_peer_id {
-                    continue;
-                }
-
-                if now - peer_info.get_last_heartbeat() >= HEARTBEAT_FAILURE_MS / 1000 {
-                    peers_to_expire.push(*peer_id);
-                }
+            let locked_peer_index = global_state.read_known_peers();
+            let peer_info = locked_peer_index.get(&peer_id).unwrap();
+            if now - peer_info.get_last_heartbeat() < HEARTBEAT_FAILURE_MS / 1000 {
+                return;
             }
-        } // state locks releaseds
-
-        // Short cct to avoid acquiring locks if not necessary
-        if peers_to_expire.is_empty() {
-            return;
         }
 
         // Remove expired peers from global state
-        global_state.remove_peers(&peers_to_expire);
+        global_state.remove_peers(&[peer_id]);
 
         // Add peers to expiry cache for the duration of their invisibility window. This ensures that
         // we do not add the expired peer back to the global state until some time has elapsed. Without
         // this check, another peer may send us a heartbeat attesting to the expired peer's liveness,
         // having itself not expired the peer locally.
         let mut locked_expiry_cache = peer_expiry_cache.write().unwrap();
-        for peer in peers_to_expire {
-            locked_expiry_cache.put(peer, now);
-        }
+        locked_expiry_cache.put(peer_id, now);
     }
 
     /// Constructs a heartbeat message from local state
@@ -562,7 +540,11 @@ struct HeartbeatTimer {
 
 impl HeartbeatTimer {
     /// Constructor
-    pub fn new(job_queue: Sender<GossipServerJob>, interval_ms: u64) -> Self {
+    pub fn new(
+        job_queue: Sender<GossipServerJob>,
+        interval_ms: u64,
+        global_state: RelayerState,
+    ) -> Self {
         // Narrowing cast is okay, precision is not important here
         let duration_seconds = interval_ms / 1000;
         let duration_nanos = (interval_ms % 1000 * NANOS_PER_MILLI) as u32;
@@ -571,7 +553,7 @@ impl HeartbeatTimer {
         // Begin the timing loop
         let thread_handle = thread::Builder::new()
             .name("heartbeat-timer".to_string())
-            .spawn(move || Self::execution_loop(job_queue, wait_period))
+            .spawn(move || Self::execution_loop(job_queue, wait_period, global_state))
             .unwrap();
 
         Self {
@@ -585,10 +567,31 @@ impl HeartbeatTimer {
     }
 
     /// Main timing loop
-    fn execution_loop(job_queue: Sender<GossipServerJob>, wait_period: Duration) -> GossipError {
+    fn execution_loop(
+        job_queue: Sender<GossipServerJob>,
+        wait_period: Duration,
+        global_state: RelayerState,
+    ) -> GossipError {
         loop {
-            if let Err(err) = job_queue.send(GossipServerJob::ExecuteHeartbeats) {
-                return GossipError::TimerFailed(err.to_string());
+            {
+                let locked_peer_info = global_state.read_known_peers();
+                let locked_cluster_metadata = global_state.read_cluster_metadata();
+                println!(
+                    "Sending heartbeats, I know:\n\t{:?} peers total\n\t{:?} peers in my cluster",
+                    locked_peer_info.len(),
+                    locked_cluster_metadata.known_members.len()
+                );
+
+                for peer_id in locked_peer_info.keys() {
+                    // Do not heartbeat with self
+                    if peer_id.eq(&global_state.read_peer_id()) {
+                        continue;
+                    }
+
+                    if let Err(err) = job_queue.send(GossipServerJob::ExecuteHeartbeat(*peer_id)) {
+                        return GossipError::TimerFailed(err.to_string());
+                    }
+                }
             }
             thread::sleep(wait_period);
         }

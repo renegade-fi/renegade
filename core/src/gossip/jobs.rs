@@ -12,8 +12,8 @@ use super::types::WrappedPeerId;
 /// Defines a heartbeat job that can be enqueued by other workers in a relayer
 #[derive(Debug)]
 pub enum GossipServerJob {
-    /// Job type for the heartbeat executor to send outbound heartbeat requests to peers
-    ExecuteHeartbeats,
+    /// Job type for the heartbeat executor to send an outbound heartbeat request
+    ExecuteHeartbeat(WrappedPeerId),
     /// Handle an incoming cluster management job
     Cluster(ClusterManagementJob),
     /// Handle an incoming heartbeat request from a peer
