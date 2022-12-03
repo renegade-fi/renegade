@@ -61,6 +61,11 @@ impl PeerInfo {
         self.addr.clone()
     }
 
+    /// Get the ID of the cluster this peer belongs to
+    pub fn get_cluster_id(&self) -> ClusterId {
+        self.cluster_id.clone()
+    }
+
     /// Records a successful heartbeat
     pub fn successful_heartbeat(&mut self) {
         self.last_heartbeat

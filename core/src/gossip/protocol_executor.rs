@@ -501,13 +501,16 @@ impl GossipProtocolExecutor {
             return;
         }
 
-        let mut locked_peer_info = global_state.write_known_peers();
-        let mut locked_expiry_cache = peer_expiry_cache.write().unwrap();
+        // Remove expired peers from global state
+        global_state.remove_peers(&peers_to_expire);
 
-        // Acquire a write lock and update peer info
-        for peer in peers_to_expire.iter() {
-            locked_peer_info.remove(peer);
-            locked_expiry_cache.put(*peer, now);
+        // Add peers to expiry cache for the duration of their invisibility window. This ensures that
+        // we do not add the expired peer back to the global state until some time has elapsed. Without
+        // this check, another peer may send us a heartbeat attesting to the expired peer's liveness,
+        // having itself not expired the peer locally.
+        let mut locked_expiry_cache = peer_expiry_cache.write().unwrap();
+        for peer in peers_to_expire {
+            locked_expiry_cache.put(peer, now);
         }
     }
 

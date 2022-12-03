@@ -77,6 +77,21 @@ impl RelayerState {
         }
     }
 
+    /// Expire a set of peers that have been determined to have failed
+    pub fn remove_peers(&self, peers: &[WrappedPeerId]) {
+        // Lock the peer info and cluster metadata
+        let mut locked_peer_info = self.write_known_peers();
+        let mut locked_cluster_metadata = self.write_cluster_metadata();
+
+        for peer in peers.iter() {
+            if let Some(info) = locked_peer_info.remove(peer) {
+                if info.get_cluster_id() == locked_cluster_metadata.id {
+                    locked_cluster_metadata.known_members.remove(peer);
+                }
+            }
+        }
+    }
+
     /// Acquire a read lock on `local_peer_id`
     /// TODO: Remove the lint allowance
     #[allow(dead_code)]
