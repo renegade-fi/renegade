@@ -11,7 +11,7 @@ use crate::{
     api::gossip::GossipOutbound,
     gossip::{
         jobs::GossipServerJob,
-        types::{ClusterId, PeerInfo, WrappedPeerId},
+        types::{ClusterId, WrappedPeerId},
     },
     handshake::jobs::HandshakeExecutionJob,
     network_manager::composed_protocol::ComposedNetworkBehavior,
@@ -124,14 +124,11 @@ impl Worker for NetworkManager {
         let addr: Multiaddr = hostport.parse().unwrap();
         self.local_addr = addr.clone();
         swarm
-            .listen_on(addr.clone())
+            .listen_on(addr)
             .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
-        // Add self to known peers
-        self.config.global_state.write_known_peers().insert(
-            self.local_peer_id,
-            PeerInfo::new(self.local_peer_id, self.cluster_id.clone(), addr),
-        );
+        // After assigning address and peer ID, update the global state
+        self.update_global_state_after_startup();
 
         // Subscribe to all relevant topics
         self.setup_pubsub_subscriptions(&mut swarm)?;

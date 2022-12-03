@@ -37,22 +37,8 @@ pub struct RelayerState {
     pub managed_wallets: Shared<HashMap<Uuid, Wallet>>,
     /// The set of peers known to the sending relayer
     pub known_peers: Shared<HashMap<WrappedPeerId, PeerInfo>>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-/// Represents a wallet managed by the local relayer
-pub struct Wallet {
-    /// Wallet metadata; replicas, trusted peers, etc
-    pub metadata: WalletMetadata,
-    /// Wallet id will eventually be replaced, for now it is UUID
-    pub wallet_id: Uuid,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-/// Metadata relevant to the wallet's network state
-pub struct WalletMetadata {
-    /// The peers which are believed by the local node to be replicating a given wallet
-    pub replicas: HashSet<WrappedPeerId>,
+    /// Information about the local peer's cluster
+    pub cluster_metadata: Shared<ClusterMetadata>,
 }
 
 impl RelayerState {
@@ -86,7 +72,8 @@ impl RelayerState {
             local_peer_id: new_shared(WrappedPeerId::random()),
             managed_wallets: new_shared(managed_wallets),
             known_peers: new_shared(known_peers),
-            local_cluster_id: new_shared(cluster_id),
+            local_cluster_id: new_shared(cluster_id.clone()),
+            cluster_metadata: new_shared(ClusterMetadata::new(cluster_id)),
         }
     }
 
@@ -146,5 +133,58 @@ impl RelayerState {
     /// Acquire a write lock on `known_peers`
     pub fn write_known_peers(&self) -> RwLockWriteGuard<HashMap<WrappedPeerId, PeerInfo>> {
         self.known_peers.write().expect("known_peers lock poisoned")
+    }
+
+    /// Acquire a read lock on `cluster_metadata`
+    pub fn read_cluster_metadata(&self) -> RwLockReadGuard<ClusterMetadata> {
+        self.cluster_metadata
+            .read()
+            .expect("cluster_metadata lock poisoned")
+    }
+
+    /// Acquire a write lock on `cluster_metadata`
+    pub fn write_cluster_metadata(&self) -> RwLockWriteGuard<ClusterMetadata> {
+        self.cluster_metadata
+            .write()
+            .expect("cluster_metadata lock poisoned")
+    }
+}
+/// Represents a wallet managed by the local relayer
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Wallet {
+    /// Wallet metadata; replicas, trusted peers, etc
+    pub metadata: WalletMetadata,
+    /// Wallet id will eventually be replaced, for now it is UUID
+    pub wallet_id: Uuid,
+}
+
+/// Metadata relevant to the wallet's network state
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WalletMetadata {
+    /// The peers which are believed by the local node to be replicating a given wallet
+    pub replicas: HashSet<WrappedPeerId>,
+}
+
+/// Metadata about the local peer's cluster
+#[derive(Clone, Debug)]
+pub struct ClusterMetadata {
+    /// The cluster ID
+    pub id: ClusterId,
+    /// The known peers that are members of this cluster
+    pub known_members: HashSet<WrappedPeerId>,
+}
+
+impl ClusterMetadata {
+    /// Create a new, empty cluster metadata instance
+    pub fn new(cluster_id: ClusterId) -> Self {
+        Self {
+            id: cluster_id,
+            known_members: HashSet::new(),
+        }
+    }
+
+    /// Add a member to the cluster
+    pub fn add_member(&mut self, peer_id: WrappedPeerId) {
+        self.known_members.insert(peer_id);
     }
 }

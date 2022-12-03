@@ -20,7 +20,7 @@ use crate::{
     },
     gossip::{
         jobs::{ClusterManagementJob, GossipServerJob},
-        types::{ClusterId, WrappedPeerId},
+        types::{ClusterId, PeerInfo, WrappedPeerId},
     },
     handshake::jobs::HandshakeExecutionJob,
 };
@@ -53,6 +53,25 @@ pub struct NetworkManager {
 /// It accepts events from workers elsewhere in the relayer that are to be propagated
 /// out to the network; as well as listening on the network for messages from other peers.
 impl NetworkManager {
+    /// Setup global state after peer_id and address have been assigned
+    pub(super) fn update_global_state_after_startup(&self) {
+        // Add self to peer info index
+        self.config.global_state.write_known_peers().insert(
+            self.local_peer_id,
+            PeerInfo::new(
+                self.local_peer_id,
+                self.cluster_id.clone(),
+                self.local_addr.clone(),
+            ),
+        );
+
+        // Add self to cluster metadata
+        self.config
+            .global_state
+            .write_cluster_metadata()
+            .add_member(self.local_peer_id);
+    }
+
     /// Setup pubsub subscriptions for the network manager
     pub(super) fn setup_pubsub_subscriptions(
         &self,

@@ -351,9 +351,11 @@ impl GossipProtocolExecutor {
 
         {
             let locked_peers = global_state.read_known_peers();
+            let locked_cluster_peers = global_state.read_cluster_metadata();
             println!(
-                "\n\nSending heartbeats, I know {} peers...",
-                locked_peers.len() - 1
+                "\n\nSending heartbeats, I know {} peers...\nI know {} peers in my cluster...",
+                locked_peers.len() - 1,
+                locked_cluster_peers.known_members.len() - 1,
             );
             for (peer_id, _) in locked_peers.iter() {
                 if *peer_id == local_peer_id {
@@ -425,6 +427,10 @@ impl GossipProtocolExecutor {
                 // Simply update the local peer info to reflect the new node's membership
                 {
                     let mut locked_peers = global_state.write_known_peers();
+                    let mut locked_cluster_metadata = global_state.write_cluster_metadata();
+
+                    // Insert the new peer into the cluster metadata and peer metadata
+                    locked_cluster_metadata.add_member(req.peer_id);
                     locked_peers
                         .entry(req.peer_id)
                         .or_insert_with(|| PeerInfo::new(req.peer_id, req.cluster_id, req.addr));
