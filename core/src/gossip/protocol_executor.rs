@@ -149,7 +149,7 @@ impl GossipProtocolExecutor {
                         local_peer_id,
                         network_channel.clone(),
                         peer_expiry_cache.clone(),
-                        global_state.clone(),
+                        &global_state,
                     );
                 }
                 GossipServerJob::Cluster(job) => {
@@ -344,14 +344,10 @@ impl GossipProtocolExecutor {
                     peer_expiry_cache,
                     network_channel.clone(),
                 );
-            } else {
-                // Ignore this peer if peer_info was not sent for it,
-                // this is effectively useless to the local relayer without peer_info
-                continue;
-            }
 
-            // Add new peer as a replica of the wallet in the wallet's metadata
-            known_replicas.insert(*replica);
+                // Add new peer as a replica of the wallet in the wallet's metadata
+                known_replicas.insert(*replica);
+            }
         }
     }
 
@@ -384,20 +380,24 @@ impl GossipProtocolExecutor {
         let mut locked_expiry_cache = peer_expiry_cache.write().unwrap();
 
         for cluster_peer in incoming_cluster_info.known_members.iter() {
+            // Ignore known peers
             if locked_cluster_metadata.has_member(cluster_peer) {
                 continue;
             }
-            locked_cluster_metadata.add_member(*cluster_peer);
 
-            // Index the new peer in the peer info state
+            // Ignore new peers when the request does not include peer metadata
             if let Some(new_peer_info) = incoming_peer_info.get(&cluster_peer.to_string()) {
-                Self::add_new_peer(
+                // Do not add the peer to cluster metadata if indexing the peer fails; this happens
+                // if the peer is recently expired and its invisibility window has not elapsed
+                if Self::add_new_peer(
                     *cluster_peer,
                     new_peer_info.clone(),
                     &mut locked_peer_info,
                     &mut locked_expiry_cache,
                     network_channel.clone(),
-                )
+                ) {
+                    locked_cluster_metadata.add_member(*cluster_peer);
+                }
             }
         }
     }
@@ -409,17 +409,21 @@ impl GossipProtocolExecutor {
     /// sending a heartbeat may not have expired the faulty peer yet, and may still
     /// send the faulty peer as a known peer. So we exclude thought-to-be-faulty
     /// peers for an "invisibility window"
+    ///
+    /// Returns a boolean indicating whether the peer is now indexed in the peer info
+    /// state. This value may be false if the peer has been recently expired and its
+    /// invisibility window has not elapsed
     fn add_new_peer(
         new_peer_id: WrappedPeerId,
         new_peer_info: PeerInfo,
         known_peer_info: &mut HashMap<WrappedPeerId, PeerInfo>,
         peer_expiry_cache: &mut LruCache<WrappedPeerId, u64>,
         network_channel: UnboundedSender<GossipOutbound>,
-    ) {
+    ) -> bool {
         let now = get_current_time_seconds();
         if let Some(expired_at) = peer_expiry_cache.get(&new_peer_id) {
             if now - *expired_at <= EXPIRY_INVISIBILITY_WINDOW_MS / 1000 {
-                return;
+                return false;
             }
 
             // Remove the peer from the expiry cache if its invisibility window has elapsed
@@ -438,6 +442,8 @@ impl GossipProtocolExecutor {
                 })
                 .unwrap();
         };
+
+        true
     }
 
     /// Sends heartbeat message to peers to exchange network information and ensure liveness
@@ -445,19 +451,19 @@ impl GossipProtocolExecutor {
         local_peer_id: WrappedPeerId,
         network_channel: UnboundedSender<GossipOutbound>,
         peer_expiry_cache: SharedLRUCache,
-        global_state: RelayerState,
+        global_state: &RelayerState,
     ) {
         // Send heartbeat requests
         let heartbeat_message =
-            GossipRequest::Heartbeat(Self::build_heartbeat_message(&global_state));
+            GossipRequest::Heartbeat(Self::build_heartbeat_message(global_state));
 
         {
             let locked_peers = global_state.read_known_peers();
-            let locked_cluster_peers = global_state.read_cluster_metadata();
+            let locked_cluster_metadata = global_state.read_cluster_metadata();
             println!(
                 "\n\nSending heartbeats, I know {} peers...\nI know {} peers in my cluster...",
                 locked_peers.len() - 1,
-                locked_cluster_peers.known_members.len() - 1,
+                locked_cluster_metadata.known_members.len() - 1,
             );
             for (peer_id, _) in locked_peers.iter() {
                 if *peer_id == local_peer_id {
@@ -480,7 +486,7 @@ impl GossipProtocolExecutor {
     fn expire_peers(
         local_peer_id: WrappedPeerId,
         peer_expiry_cache: SharedLRUCache,
-        global_state: RelayerState,
+        global_state: &RelayerState,
     ) {
         let now = get_current_time_seconds();
         let mut peers_to_expire = Vec::new();
