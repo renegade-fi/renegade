@@ -184,7 +184,7 @@ impl ClusterMetadata {
     }
 
     /// Returns whether the given peer is a known member of the cluster
-    pub fn is_member(&self, peer_id: &WrappedPeerId) -> bool {
+    pub fn has_member(&self, peer_id: &WrappedPeerId) -> bool {
         self.known_members.contains(peer_id)
     }
 
