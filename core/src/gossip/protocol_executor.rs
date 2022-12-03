@@ -2,12 +2,13 @@
 use crossbeam::channel::{Receiver, Sender};
 use lru::LruCache;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap, HashSet},
     sync::{Arc, RwLock},
     thread::{self, JoinHandle},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::mpsc::UnboundedSender;
+use uuid::Uuid;
 
 use crate::{
     api::{
@@ -15,7 +16,7 @@ use crate::{
         hearbeat::HeartbeatMessage,
     },
     gossip::types::{PeerInfo, WrappedPeerId},
-    state::RelayerState,
+    state::{ClusterMetadata, RelayerState, WalletMetadata},
     CancelChannel,
 };
 
@@ -204,12 +205,90 @@ impl GossipProtocolExecutor {
     ///  For each wallet that the local relayer manages:
     ///      1. Check if the peer sent a replication list for this wallet
     ///      2. Add any new peers from that list to the local state
+    /// TODO: There is probably a cleaner way to do this
     fn merge_peers_from_message(
         local_peer_id: WrappedPeerId,
         message: &HeartbeatMessage,
         network_channel: UnboundedSender<GossipOutbound>,
         peer_expiry_cache: SharedLRUCache,
         global_state: RelayerState,
+    ) {
+        // Merge wallet information and peer info
+        Self::merge_wallets(
+            local_peer_id,
+            &message.managed_wallets,
+            &message.known_peers,
+            network_channel.clone(),
+            peer_expiry_cache.clone(),
+            &global_state,
+        );
+
+        // Merge cluster information into the local cluster
+        Self::merge_cluster_metadata(
+            &message.cluster_metadata,
+            &message.known_peers,
+            network_channel,
+            peer_expiry_cache,
+            &global_state,
+        )
+    }
+
+    /// Merges cluster information from an incoming heartbeat request with the locally
+    /// stored wallet information
+    fn merge_cluster_metadata(
+        incoming_cluster_info: &ClusterMetadata,
+        incoming_peer_info: &HashMap<String, PeerInfo>,
+        network_channel: UnboundedSender<GossipOutbound>,
+        peer_expiry_cache: SharedLRUCache,
+        global_state: &RelayerState,
+    ) {
+        {
+            let locked_cluster_metadata = global_state.read_cluster_metadata();
+            // Short cct if the metadata is for a different cluster or if all peers are already accounted for
+            if locked_cluster_metadata.id != incoming_cluster_info.id
+                || locked_cluster_metadata
+                    .known_members
+                    .is_superset(&incoming_cluster_info.known_members)
+            {
+                return;
+            }
+        } // locked_cluster_metadata released here
+
+        // Add missing members to cluster metadata
+        let mut locked_peer_info = global_state.write_known_peers();
+        let mut locked_cluster_metadata = global_state.write_cluster_metadata();
+        let mut locked_expiry_cache = peer_expiry_cache.write().unwrap();
+
+        for cluster_peer in incoming_cluster_info.known_members.iter() {
+            if locked_cluster_metadata.is_member(cluster_peer) {
+                continue;
+            }
+            locked_cluster_metadata.add_member(*cluster_peer);
+
+            // Index the new peer in the peer info state
+            if let Some(new_peer_info) = incoming_peer_info.get(&cluster_peer.to_string()) {
+                Self::add_new_peer(
+                    *cluster_peer,
+                    new_peer_info.clone(),
+                    &mut locked_peer_info,
+                    &mut locked_expiry_cache,
+                    network_channel.clone(),
+                )
+            }
+        }
+    }
+
+    /// Merges the wallet information from an incoming heartbeat with the locally
+    /// stored wallet information
+    ///
+    /// In specific, the local peer must update its replicas list for any wallet it manages
+    fn merge_wallets(
+        local_peer_id: WrappedPeerId,
+        peer_wallets: &HashMap<Uuid, WalletMetadata>,
+        incoming_peer_info: &HashMap<String, PeerInfo>,
+        network_channel: UnboundedSender<GossipOutbound>,
+        peer_expiry_cache: SharedLRUCache,
+        global_state: &RelayerState,
     ) {
         // Loop over locally replicated wallets, check for new peers in each wallet
         // We break this down into two phases, in the first phase, the local peer determines which
@@ -224,7 +303,7 @@ impl GossipProtocolExecutor {
         {
             let locked_wallets = global_state.read_managed_wallets();
             for (wallet_id, wallet_info) in locked_wallets.iter() {
-                match message.managed_wallets.get(wallet_id) {
+                match peer_wallets.get(wallet_id) {
                     // Peer does not replicate this wallet
                     None => {
                         continue;
@@ -261,8 +340,7 @@ impl GossipProtocolExecutor {
                 .expect("missing wallet ID")
                 .metadata
                 .replicas;
-            let message_replicas = &message
-                .managed_wallets
+            let message_replicas = &peer_wallets
                 .get(&wallet)
                 .expect("missing wallet ID")
                 .replicas;
@@ -272,7 +350,7 @@ impl GossipProtocolExecutor {
                 local_replicas,
                 message_replicas,
                 &mut locked_peers,
-                &message.known_peers,
+                incoming_peer_info,
                 network_channel.clone(),
                 &mut locked_expiry_cache,
             )
@@ -291,22 +369,11 @@ impl GossipProtocolExecutor {
         network_channel: UnboundedSender<GossipOutbound>,
         peer_expiry_cache: &mut LruCache<WrappedPeerId, u64>,
     ) {
-        let now = get_current_time_seconds();
-
         // Loop over replicas that the peer knows about for this wallet
         for replica in new_replicas.iter() {
             // Skip local peer and peers already known
             if *replica == local_peer_id || known_replicas.contains(replica) {
                 continue;
-            }
-
-            // Do not add new peers that have been recently expired. It is possibly they have
-            // not expired on the other peer, in which case we may receive heartbeats containing
-            // peers that have already expired
-            if let Some(expired_at) = peer_expiry_cache.get(replica) {
-                if now - *expired_at <= EXPIRY_INVISIBILITY_WINDOW_MS / 1000 {
-                    continue;
-                }
             }
 
             // Add new peer to globally maintained peer info map
@@ -315,18 +382,13 @@ impl GossipProtocolExecutor {
                 let mut peer_info_copy = replica_info.clone();
                 peer_info_copy.successful_heartbeat();
 
-                if !known_peer_info.contains_key(replica) {
-                    known_peer_info.insert(*replica, peer_info_copy);
-
-                    // Register the newly discovered peer with the network manager
-                    // so that we can dial it on outbound heartbeats
-                    network_channel
-                        .send(GossipOutbound::NewAddr {
-                            peer_id: *replica,
-                            address: replica_info.get_addr(),
-                        })
-                        .unwrap();
-                }
+                Self::add_new_peer(
+                    *replica,
+                    peer_info_copy,
+                    known_peer_info,
+                    peer_expiry_cache,
+                    network_channel.clone(),
+                );
             } else {
                 // Ignore this peer if peer_info was not sent for it,
                 // this is effectively useless to the local relayer without peer_info
@@ -336,6 +398,41 @@ impl GossipProtocolExecutor {
             // Add new peer as a replica of the wallet in the wallet's metadata
             known_replicas.insert(*replica);
         }
+    }
+
+    /// Index a new peer if:
+    ///     1. The peer is not already in the known peers
+    ///     2. The peer has not been recently expired by the local party
+    /// The second condition is necessary because if we expire a peer, the party
+    /// sending a heartbeat may not have expired the faulty peer yet, and may still
+    /// send the faulty peer as a known peer. So we exclude thought-to-be-faulty
+    /// peers for an "invisibility window"
+    fn add_new_peer(
+        new_peer_id: WrappedPeerId,
+        new_peer_info: PeerInfo,
+        known_peer_info: &mut HashMap<WrappedPeerId, PeerInfo>,
+        peer_expiry_cache: &mut LruCache<WrappedPeerId, u64>,
+        network_channel: UnboundedSender<GossipOutbound>,
+    ) {
+        let now = get_current_time_seconds();
+        if let Some(expired_at) = peer_expiry_cache.get(&new_peer_id) {
+            if now - *expired_at <= EXPIRY_INVISIBILITY_WINDOW_MS / 1000 {
+                return;
+            }
+        }
+
+        if let Entry::Vacant(e) = known_peer_info.entry(new_peer_id) {
+            e.insert(new_peer_info.clone());
+
+            // Register the newly discovered peer with the network manager
+            // so that we can dial it on outbound heartbeats
+            network_channel
+                .send(GossipOutbound::NewAddr {
+                    peer_id: new_peer_id,
+                    address: new_peer_info.get_addr(),
+                })
+                .unwrap();
+        };
     }
 
     /// Sends heartbeat message to peers to exchange network information and ensure liveness

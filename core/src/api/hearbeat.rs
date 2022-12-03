@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::{
     gossip::types::PeerInfo,
-    state::{RelayerState, WalletMetadata},
+    state::{ClusterMetadata, RelayerState, WalletMetadata},
 };
 
 /// Defines the heartbeat message, both request and response take
@@ -19,6 +19,8 @@ pub struct HeartbeatMessage {
     /// The set of peers known to the sending relayer
     /// PeerID is converted to string for serialization
     pub known_peers: HashMap<String, PeerInfo>,
+    /// The metadata that the local peer has about its own cluster
+    pub cluster_metadata: ClusterMetadata,
 }
 
 /// The derivation from global state to heartbeat message
@@ -38,6 +40,7 @@ impl From<&RelayerState> for HeartbeatMessage {
         HeartbeatMessage {
             managed_wallets: managed_wallet_metadata,
             known_peers,
+            cluster_metadata: state.read_cluster_metadata().clone(),
         }
     }
 }

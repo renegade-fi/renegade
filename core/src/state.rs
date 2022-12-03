@@ -166,7 +166,7 @@ pub struct WalletMetadata {
 }
 
 /// Metadata about the local peer's cluster
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ClusterMetadata {
     /// The cluster ID
     pub id: ClusterId,
@@ -181,6 +181,11 @@ impl ClusterMetadata {
             id: cluster_id,
             known_members: HashSet::new(),
         }
+    }
+
+    /// Returns whether the given peer is a known member of the cluster
+    pub fn is_member(&self, peer_id: &WrappedPeerId) -> bool {
+        self.known_members.contains(peer_id)
     }
 
     /// Add a member to the cluster
