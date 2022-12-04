@@ -59,6 +59,7 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Construct the global state
     let global_state = RelayerState::initialize_global_state(
+        args.debug,
         args.wallet_ids,
         args.bootstrap_servers,
         args.cluster_id.clone(),

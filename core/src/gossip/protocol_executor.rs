@@ -574,15 +574,11 @@ impl HeartbeatTimer {
     ) -> GossipError {
         loop {
             {
-                let locked_peer_info = global_state.read_known_peers();
-                let locked_cluster_metadata = global_state.read_cluster_metadata();
-                println!(
-                    "Sending heartbeats, I know:\n\t{:?} peers total\n\t{:?} peers in my cluster",
-                    locked_peer_info.len(),
-                    locked_cluster_metadata.known_members.len()
-                );
+                // Log the state if in debug mode
+                global_state.print_screen();
 
-                for peer_id in locked_peer_info.keys() {
+                // Enqueue a heartbeat job for each known peer
+                for peer_id in global_state.read_known_peers().keys() {
                     // Do not heartbeat with self
                     if peer_id.eq(&global_state.read_peer_id()) {
                         continue;

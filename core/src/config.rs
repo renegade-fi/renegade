@@ -39,6 +39,9 @@ struct Cli {
     #[clap(long = "cluster-public-key", value_parser)]
     /// The cluster public key to use
     pub cluster_public_key: Option<String>,
+    #[clap(short, long, value_parser)]
+    /// Whether or not to run the relayer in debug mode
+    pub debug: bool,
     #[clap(short, long, value_parser, default_value = "12345")]
     /// The port to listen on
     pub port: u32,
@@ -65,6 +68,8 @@ pub struct RelayerConfig {
     pub cluster_keypair: Keypair,
     /// The cluster ID, a parsed version of the cluster's pubkey
     pub cluster_id: ClusterId,
+    /// Whether or not the relayer is in debug mode
+    pub debug: bool,
 }
 
 /// Parses command line args into the node config
@@ -140,6 +145,7 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
         wallet_ids: cli_args.wallet_ids.unwrap_or_default(),
         cluster_keypair: keypair,
         cluster_id,
+        debug: cli_args.debug,
     };
 
     Ok(Box::new(config))

@@ -4,8 +4,10 @@
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
+    fmt::{Display, Formatter, Result as FmtResult},
     str::FromStr,
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    time::{SystemTime, UNIX_EPOCH},
 };
 use uuid::Uuid;
 
@@ -22,13 +24,15 @@ fn new_shared<T>(wrapped: T) -> Shared<T> {
     Arc::new(RwLock::new(wrapped))
 }
 
-#[derive(Clone, Debug)]
 /// The top level object in the global state tree
 ///
 /// The implementation of `RelayerState` handles locking various
 /// state elements. This is mostly for convenience but also to
 /// decouple the locking implementation with the readers/writers
+#[derive(Clone, Debug)]
 pub struct RelayerState {
+    /// Whether or not the relayer is in debug mode
+    pub debug: bool,
     /// The libp2p peerID assigned to the localhost
     pub local_peer_id: Shared<WrappedPeerId>,
     /// The cluster id of the local relayer
@@ -41,9 +45,76 @@ pub struct RelayerState {
     pub cluster_metadata: Shared<ClusterMetadata>,
 }
 
+impl Display for RelayerState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.write_str("Local Relayer State:\n")?;
+        f.write_fmt(format_args!(
+            "\tListening on: {}/p2p/{}\n",
+            self.read_known_peers()
+                .get(&self.read_peer_id())
+                .unwrap()
+                .get_addr(),
+            self.read_peer_id().0
+        ))?;
+        f.write_fmt(format_args!("\tPeerId: {}\n", self.read_peer_id().0))?;
+        f.write_fmt(format_args!("\tClusterId: {:?}\n", self.read_cluster_id()))?;
+
+        // Write wallet info to the format
+        f.write_str("\n\tManaged Wallets:\n")?;
+        for (wallet_id, wallet) in self.read_managed_wallets().iter() {
+            f.write_fmt(format_args!(
+                "\t\t- {:?}: {{\n\t\t\treplicas: [\n",
+                wallet_id
+            ))?;
+            for replica in wallet.metadata.replicas.iter() {
+                f.write_fmt(format_args!("\t\t\t\t{}\n", replica.0))?;
+            }
+
+            f.write_str("\t\t\t]\n\t\t}")?;
+        }
+        f.write_str("\n\n\n")?;
+
+        // Write the known peers to the format
+        f.write_str("\tKnown Peers:\n")?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("negative timestamp")
+            .as_secs();
+        for (peer_id, peer_info) in self.read_known_peers().iter() {
+            let last_heartbeat_elapsed = if peer_id.ne(&self.read_peer_id()) {
+                (now - peer_info.get_last_heartbeat()) * 1000
+            } else {
+                0
+            };
+
+            f.write_fmt(format_args!(
+                "\t\t- {}: \n\t\t\tlast_heartbeat: {:?}ms \n\t\t\tcluster_id: {:?} }}\n\n",
+                peer_id.0,
+                last_heartbeat_elapsed,
+                peer_info.get_cluster_id()
+            ))?;
+        }
+        f.write_str("\n\n")?;
+
+        // Write cluster metadata to the format
+        f.write_fmt(format_args!(
+            "\tCluster Metadata (ID = {:?})\n",
+            self.read_cluster_metadata().id
+        ))?;
+        f.write_str("\t\tMembers: [\n")?;
+        for member in self.read_cluster_metadata().known_members.iter() {
+            f.write_fmt(format_args!("\t\t\t{}\n", member.0))?;
+        }
+        f.write_str("\t\t]")?;
+
+        Ok(())
+    }
+}
+
 impl RelayerState {
     /// Initialize the global state at startup
     pub fn initialize_global_state(
+        debug: bool,
         managed_wallet_ids: Vec<String>,
         bootstrap_servers: Vec<PeerInfo>,
         cluster_id: ClusterId,
@@ -68,6 +139,7 @@ impl RelayerState {
         }
 
         Self {
+            debug,
             // Replaced buy a correct value when network manager initializes
             local_peer_id: new_shared(WrappedPeerId::random()),
             managed_wallets: new_shared(managed_wallets),
@@ -90,6 +162,17 @@ impl RelayerState {
                 }
             }
         }
+    }
+
+    /// Print the local relayer state to the screen for debugging
+    pub fn print_screen(&self) {
+        if !self.debug {
+            return;
+        }
+
+        print!("{}[2J", 27 as char);
+        print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
+        println!("{}", self);
     }
 
     /// Acquire a read lock on `local_peer_id`
