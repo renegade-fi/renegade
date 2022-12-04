@@ -32,10 +32,10 @@ use super::{
 /// Nanoseconds in a millisecond, as an unsigned 64bit integer
 const NANOS_PER_MILLI: u64 = 1_000_000;
 /// The interval at which to send heartbeats to known peers
-const HEARTBEAT_INTERVAL_MS: u64 = 3000; // 3 seconds
+const HEARTBEAT_INTERVAL_MS: u64 = 500; // 1 seconds
 /// The amount of time without a successful heartbeat before the local
 /// relayer should assume its peer has failed
-const HEARTBEAT_FAILURE_MS: u64 = 10000; // 10 seconds
+const HEARTBEAT_FAILURE_MS: u64 = 2000; // 3 seconds
 /// The minimum amount of time between a peer's expiry and when it can be
 /// added back to the peer info
 const EXPIRY_INVISIBILITY_WINDOW_MS: u64 = 10_000; // 10 seconds
