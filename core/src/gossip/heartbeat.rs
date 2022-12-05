@@ -1,29 +1,29 @@
-//! Groups the logic behind the gossip protocol specification
-use crossbeam::channel::{Receiver, Sender};
-use lru::LruCache;
+//! Groups gossip server logic for the heartbeat protocol
+
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
-    sync::{Arc, RwLock},
     thread::{self, JoinHandle},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+use crossbeam::channel::Sender;
+use lru::LruCache;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
 use crate::{
     api::{
-        cluster_management::{ClusterJoinMessage, ReplicateMessage},
-        gossip::{GossipOutbound, GossipRequest, GossipResponse, PubsubMessage},
+        gossip::{GossipOutbound, GossipRequest},
         hearbeat::HeartbeatMessage,
     },
-    gossip::types::{PeerInfo, WrappedPeerId},
-    state::{ClusterMetadata, RelayerState, Wallet, WalletMetadata},
-    CancelChannel,
+    state::{ClusterMetadata, RelayerState, WalletMetadata},
 };
 
 use super::{
     errors::GossipError,
-    jobs::{ClusterManagementJob, GossipServerJob},
+    jobs::GossipServerJob,
+    server::{GossipProtocolExecutor, SharedLRUCache},
+    types::{PeerInfo, WrappedPeerId},
 };
 
 /**
@@ -31,17 +31,17 @@ use super::{
  */
 
 /// Nanoseconds in a millisecond, as an unsigned 64bit integer
-const NANOS_PER_MILLI: u64 = 1_000_000;
+pub(super) const NANOS_PER_MILLI: u64 = 1_000_000;
 /// The interval at which to send heartbeats to known peers
-const HEARTBEAT_INTERVAL_MS: u64 = 3_000; // 3 seconds
+pub(super) const HEARTBEAT_INTERVAL_MS: u64 = 3_000; // 3 seconds
 /// The amount of time without a successful heartbeat before the local
 /// relayer should assume its peer has failed
-const HEARTBEAT_FAILURE_MS: u64 = 7_000; // 7 seconds
+pub(super) const HEARTBEAT_FAILURE_MS: u64 = 7_000; // 7 seconds
 /// The minimum amount of time between a peer's expiry and when it can be
 /// added back to the peer info
-const EXPIRY_INVISIBILITY_WINDOW_MS: u64 = 10_000; // 10 seconds
+pub(super) const EXPIRY_INVISIBILITY_WINDOW_MS: u64 = 10_000; // 10 seconds
 /// The size of the peer expiry cache to keep around
-const EXPIRY_CACHE_SIZE: usize = 100;
+pub(super) const EXPIRY_CACHE_SIZE: usize = 100;
 
 /**
  * Helpers
@@ -55,153 +55,10 @@ fn get_current_time_seconds() -> u64 {
         .as_secs()
 }
 
-/**
- * Heartbeat protocol execution and implementation
- */
-
-/// Type aliases for shared objects
-type SharedLRUCache = Arc<RwLock<LruCache<WrappedPeerId, u64>>>;
-
-/// Executes the heartbeat protocols
-#[derive(Debug)]
-pub struct GossipProtocolExecutor {
-    /// The handle of the worker thread executing heartbeat jobs
-    thread_handle: Option<JoinHandle<GossipError>>,
-    /// The timer that enqueues heartbeat jobs periodically for the worker
-    heartbeat_timer: HeartbeatTimer,
-}
-
+/// Heartbeat implementation of the protocol executor
 impl GossipProtocolExecutor {
-    /// Creates a new executor
-    pub fn new(
-        local_peer_id: WrappedPeerId,
-        network_channel: UnboundedSender<GossipOutbound>,
-        job_sender: Sender<GossipServerJob>,
-        job_receiver: Receiver<GossipServerJob>,
-        global_state: RelayerState,
-        cancel_channel: Receiver<()>,
-    ) -> Result<Self, GossipError> {
-        // Tracks recently expired peers and blocks them from being re-registered
-        // until the state has synced. Maps peer_id to expiry time
-        let peer_expiry_cache: SharedLRUCache =
-            Arc::new(RwLock::new(LruCache::new(EXPIRY_CACHE_SIZE)));
-        let state_clone = global_state.clone();
-
-        let thread_handle = {
-            thread::Builder::new()
-                .name("heartbeat-executor".to_string())
-                .spawn(move || {
-                    Self::executor_loop(
-                        local_peer_id,
-                        job_receiver,
-                        network_channel,
-                        peer_expiry_cache,
-                        state_clone,
-                        cancel_channel,
-                    )
-                })
-                .map_err(|err| GossipError::ServerSetup(err.to_string()))
-        }?;
-
-        let heartbeat_timer = HeartbeatTimer::new(job_sender, HEARTBEAT_INTERVAL_MS, global_state);
-
-        Ok(Self {
-            thread_handle: Some(thread_handle),
-            heartbeat_timer,
-        })
-    }
-
-    /// Joins execution of the calling thread to the worker thread
-    pub fn join(&mut self) -> Vec<JoinHandle<GossipError>> {
-        vec![
-            self.thread_handle.take().unwrap(),
-            self.heartbeat_timer.join_handle(),
-        ]
-    }
-
-    /// Runs the executor loop
-    fn executor_loop(
-        local_peer_id: WrappedPeerId,
-        job_receiver: Receiver<GossipServerJob>,
-        network_channel: UnboundedSender<GossipOutbound>,
-        peer_expiry_cache: SharedLRUCache,
-        global_state: RelayerState,
-        cancel: CancelChannel,
-    ) -> GossipError {
-        println!("Starting executor loop for heartbeat protocol executor...");
-        // We check for cancels both before receiving a job (so that we don't sleep after cancellation)
-        // and after a receiving a job (so that we avoid unnecessary work)
-        loop {
-            // Check for cancel before sleeping
-            if !cancel.is_empty() {
-                return GossipError::Cancelled("received cancel signal".to_string());
-            }
-
-            // Dequeue the next job
-            let job = job_receiver.recv().expect("recv should not panic");
-
-            // Check for cancel after receiving job
-            if !cancel.is_empty() {
-                return GossipError::Cancelled("received cancel signal".to_string());
-            }
-
-            match job {
-                GossipServerJob::ExecuteHeartbeat(peer_id) => {
-                    Self::send_heartbeat(
-                        peer_id,
-                        local_peer_id,
-                        network_channel.clone(),
-                        peer_expiry_cache.clone(),
-                        &global_state,
-                    );
-                }
-                GossipServerJob::Cluster(job) => {
-                    if let Err(err) = Self::handle_cluster_management_job(
-                        job,
-                        network_channel.clone(),
-                        &global_state,
-                    ) {
-                        return err;
-                    }
-                }
-                GossipServerJob::HandleHeartbeatReq {
-                    message, channel, ..
-                } => {
-                    // Respond on the channel given in the request
-                    let heartbeat_resp =
-                        GossipResponse::Heartbeat(Self::build_heartbeat_message(&global_state));
-                    network_channel
-                        .send(GossipOutbound::Response {
-                            channel,
-                            message: heartbeat_resp,
-                        })
-                        .unwrap();
-
-                    // Merge newly discovered peers into local state
-                    Self::merge_peers_from_message(
-                        local_peer_id,
-                        &message,
-                        network_channel.clone(),
-                        peer_expiry_cache.clone(),
-                        global_state.clone(),
-                    )
-                }
-                GossipServerJob::HandleHeartbeatResp { peer_id, message } => {
-                    Self::record_heartbeat(peer_id, global_state.clone());
-                    Self::merge_peers_from_message(
-                        local_peer_id,
-                        &message,
-                        network_channel.clone(),
-                        peer_expiry_cache.clone(),
-                        global_state.clone(),
-                    )
-                }
-            }
-        }
-    }
-
     /// Records a successful heartbeat
-    fn record_heartbeat(peer_id: WrappedPeerId, global_state: RelayerState) {
+    pub(super) fn record_heartbeat(peer_id: WrappedPeerId, global_state: RelayerState) {
         if let Some(peer_info) = global_state.read_known_peers().get(&peer_id) {
             peer_info.successful_heartbeat();
         }
@@ -213,7 +70,7 @@ impl GossipProtocolExecutor {
     ///      1. Check if the peer sent a replication list for this wallet
     ///      2. Add any new peers from that list to the local state
     /// TODO: There is probably a cleaner way to do this
-    fn merge_peers_from_message(
+    pub(super) fn merge_state_from_message(
         local_peer_id: WrappedPeerId,
         message: &HeartbeatMessage,
         network_channel: UnboundedSender<GossipOutbound>,
@@ -454,7 +311,7 @@ impl GossipProtocolExecutor {
     }
 
     /// Sends heartbeat message to peers to exchange network information and ensure liveness
-    fn send_heartbeat(
+    pub(super) fn send_heartbeat(
         recipient_peer_id: WrappedPeerId,
         local_peer_id: WrappedPeerId,
         network_channel: UnboundedSender<GossipOutbound>,
@@ -504,139 +361,15 @@ impl GossipProtocolExecutor {
     }
 
     /// Constructs a heartbeat message from local state
-    fn build_heartbeat_message(global_state: &RelayerState) -> HeartbeatMessage {
+    pub(super) fn build_heartbeat_message(global_state: &RelayerState) -> HeartbeatMessage {
         HeartbeatMessage::from(global_state)
-    }
-
-    /// Handles an incoming cluster management job
-    fn handle_cluster_management_job(
-        job: ClusterManagementJob,
-        network_channel: UnboundedSender<GossipOutbound>,
-        global_state: &RelayerState,
-    ) -> Result<(), GossipError> {
-        match job {
-            ClusterManagementJob::ClusterJoinRequest(req) => {
-                Self::handle_cluster_join_job(req, global_state, network_channel)?;
-            }
-            ClusterManagementJob::ReplicateRequest(req) => {
-                Self::handle_replicate_request(req, global_state, network_channel)?;
-            }
-            ClusterManagementJob::AddWalletReplica { wallet_id, peer_id } => {
-                Self::handle_add_replica_job(peer_id, wallet_id, global_state)
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Handles a cluster management job to add a new node to the local peer's cluster
-    fn handle_cluster_join_job(
-        message: ClusterJoinMessage,
-        global_state: &RelayerState,
-        network_channel: UnboundedSender<GossipOutbound>,
-    ) -> Result<(), GossipError> {
-        {
-            // The cluster join request is authenticated at the network layer
-            // by the `NetworkManager`, so no authentication needs to be done.
-            // Simply update the local peer info to reflect the new node's membership
-            let mut locked_peers = global_state.write_known_peers();
-            let mut locked_cluster_metadata = global_state.write_cluster_metadata();
-
-            // Insert the new peer into the cluster metadata and peer metadata
-            locked_cluster_metadata.add_member(message.peer_id);
-            locked_peers.entry(message.peer_id).or_insert_with(|| {
-                PeerInfo::new(
-                    message.peer_id,
-                    message.cluster_id.clone(),
-                    message.addr.clone(),
-                )
-            });
-        }
-
-        // Request that the peer replicate all locally replicated wallets
-        let locked_wallets = global_state.read_managed_wallets();
-        let wallets: Vec<Wallet> = locked_wallets.values().cloned().collect();
-        Self::send_replicate_request(message.peer_id, wallets, network_channel)
-    }
-
-    /// Send a request to the given peer to replicate a set of wallets
-    fn send_replicate_request(
-        peer: WrappedPeerId,
-        wallets: Vec<Wallet>,
-        network_channel: UnboundedSender<GossipOutbound>,
-    ) -> Result<(), GossipError> {
-        network_channel
-            .send(GossipOutbound::Request {
-                peer_id: peer,
-                message: GossipRequest::Replicate(ReplicateMessage { wallets }),
-            })
-            .map_err(|err| GossipError::SendMessage(err.to_string()))
-    }
-
-    /// Handles a request from a peer to replicate a given set of wallets
-    fn handle_replicate_request(
-        req: ReplicateMessage,
-        global_state: &RelayerState,
-        network_channel: UnboundedSender<GossipOutbound>,
-    ) -> Result<(), GossipError> {
-        // Add wallets to global state
-        let mut wallets_locked = global_state.write_managed_wallets();
-        for wallet in req.wallets.iter() {
-            if let Entry::Vacant(e) = wallets_locked.entry(wallet.wallet_id) {
-                e.insert(wallet.clone());
-            }
-
-            wallets_locked
-                .get_mut(&wallet.wallet_id)
-                .unwrap()
-                .metadata
-                .replicas
-                .insert(*global_state.read_peer_id());
-        }
-
-        // Broadcast a message to the network indicating that the wallet is now replicated
-        let topic = global_state
-            .read_cluster_metadata()
-            .id
-            .get_management_topic();
-
-        network_channel
-            .send(GossipOutbound::Pubsub {
-                topic,
-                message: PubsubMessage::Replicated {
-                    peer_id: *global_state.read_peer_id(),
-                    wallets: req.wallets,
-                },
-            })
-            .map_err(|err| GossipError::SendMessage(err.to_string()))?;
-
-        Ok(())
-    }
-
-    /// Handles an incoming job to update a wallet's replicas with a newly added peer
-    fn handle_add_replica_job(
-        peer_id: WrappedPeerId,
-        wallet_id: Uuid,
-        global_state: &RelayerState,
-    ) {
-        let mut locked_wallets = global_state.write_managed_wallets();
-        if !locked_wallets.contains_key(&wallet_id) {
-            return;
-        }
-
-        locked_wallets
-            .get_mut(&wallet_id)
-            .unwrap()
-            .metadata
-            .replicas
-            .insert(peer_id);
     }
 }
 
 /// HeartbeatTimer handles the process of enqueuing jobs to perform
 /// a heartbeat on regular intervals
 #[derive(Debug)]
-struct HeartbeatTimer {
+pub(super) struct HeartbeatTimer {
     /// The join handle of the thread executing the timer
     thread_handle: Option<JoinHandle<GossipError>>,
 }

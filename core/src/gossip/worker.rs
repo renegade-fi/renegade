@@ -15,8 +15,7 @@ use crate::{
 use super::{
     errors::GossipError,
     jobs::GossipServerJob,
-    protocol_executor::GossipProtocolExecutor,
-    server::GossipServer,
+    server::{GossipProtocolExecutor, GossipServer},
     types::{ClusterId, WrappedPeerId},
 };
 
