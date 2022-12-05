@@ -3,7 +3,10 @@
 use libp2p::Multiaddr;
 use serde::{Deserialize, Serialize};
 
-use crate::gossip::types::{ClusterId, WrappedPeerId};
+use crate::{
+    gossip::types::{ClusterId, WrappedPeerId},
+    state::Wallet,
+};
 
 /// The topic prefix for the cluster management pubsub topic
 ///
@@ -26,4 +29,11 @@ impl From<&ClusterJoinMessage> for Vec<u8> {
     fn from(message: &ClusterJoinMessage) -> Self {
         serde_json::to_vec(&message).unwrap()
     }
+}
+
+/// A message asking a peer to replicate a set of wallets
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReplicateMessage {
+    /// The wallets needing replication
+    pub wallets: Vec<Wallet>,
 }

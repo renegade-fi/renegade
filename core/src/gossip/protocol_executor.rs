@@ -12,11 +12,12 @@ use uuid::Uuid;
 
 use crate::{
     api::{
+        cluster_management::{ClusterJoinMessage, ReplicateMessage},
         gossip::{GossipOutbound, GossipRequest, GossipResponse},
         hearbeat::HeartbeatMessage,
     },
     gossip::types::{PeerInfo, WrappedPeerId},
-    state::{ClusterMetadata, RelayerState, WalletMetadata},
+    state::{ClusterMetadata, RelayerState, Wallet, WalletMetadata},
     CancelChannel,
 };
 
@@ -32,10 +33,10 @@ use super::{
 /// Nanoseconds in a millisecond, as an unsigned 64bit integer
 const NANOS_PER_MILLI: u64 = 1_000_000;
 /// The interval at which to send heartbeats to known peers
-const HEARTBEAT_INTERVAL_MS: u64 = 500; // 1 seconds
+const HEARTBEAT_INTERVAL_MS: u64 = 3_000; // 3 seconds
 /// The amount of time without a successful heartbeat before the local
 /// relayer should assume its peer has failed
-const HEARTBEAT_FAILURE_MS: u64 = 2000; // 3 seconds
+const HEARTBEAT_FAILURE_MS: u64 = 7_000; // 7 seconds
 /// The minimum amount of time between a peer's expiry and when it can be
 /// added back to the peer info
 const EXPIRY_INVISIBILITY_WINDOW_MS: u64 = 10_000; // 10 seconds
@@ -99,7 +100,7 @@ impl GossipProtocolExecutor {
                         cancel_channel,
                     )
                 })
-                .map_err(|err| GossipError::ServerSetupError(err.to_string()))
+                .map_err(|err| GossipError::ServerSetup(err.to_string()))
         }?;
 
         let heartbeat_timer = HeartbeatTimer::new(job_sender, HEARTBEAT_INTERVAL_MS, global_state);
@@ -155,7 +156,11 @@ impl GossipProtocolExecutor {
                     );
                 }
                 GossipServerJob::Cluster(job) => {
-                    if let Err(err) = Self::handle_cluster_management_job(job, &global_state) {
+                    if let Err(err) = Self::handle_cluster_management_job(
+                        job,
+                        network_channel.clone(),
+                        &global_state,
+                    ) {
                         return err;
                     }
                 }
@@ -506,26 +511,86 @@ impl GossipProtocolExecutor {
     /// Handles an incoming cluster management job
     fn handle_cluster_management_job(
         job: ClusterManagementJob,
+        network_channel: UnboundedSender<GossipOutbound>,
         global_state: &RelayerState,
     ) -> Result<(), GossipError> {
         match job {
             ClusterManagementJob::ClusterJoinRequest(req) => {
-                // The cluster join request is authenticated at the network layer
-                // by the `NetworkManager`, so no authentication needs to be done.
-                // Simply update the local peer info to reflect the new node's membership
-                {
-                    let mut locked_peers = global_state.write_known_peers();
-                    let mut locked_cluster_metadata = global_state.write_cluster_metadata();
-
-                    // Insert the new peer into the cluster metadata and peer metadata
-                    locked_cluster_metadata.add_member(req.peer_id);
-                    locked_peers
-                        .entry(req.peer_id)
-                        .or_insert_with(|| PeerInfo::new(req.peer_id, req.cluster_id, req.addr));
-                }
+                Self::handle_cluster_join_job(req, network_channel, global_state)?;
+            }
+            ClusterManagementJob::ReplicateRequest(req) => {
+                Self::handle_replicate_request(req, global_state)?;
             }
         }
 
+        Ok(())
+    }
+
+    /// Handles a cluster management job to add a new node to the local peer's cluster
+    fn handle_cluster_join_job(
+        message: ClusterJoinMessage,
+        network_channel: UnboundedSender<GossipOutbound>,
+        global_state: &RelayerState,
+    ) -> Result<(), GossipError> {
+        {
+            // The cluster join request is authenticated at the network layer
+            // by the `NetworkManager`, so no authentication needs to be done.
+            // Simply update the local peer info to reflect the new node's membership
+            let mut locked_peers = global_state.write_known_peers();
+            let mut locked_cluster_metadata = global_state.write_cluster_metadata();
+
+            // Insert the new peer into the cluster metadata and peer metadata
+            locked_cluster_metadata.add_member(message.peer_id);
+            locked_peers.entry(message.peer_id).or_insert_with(|| {
+                PeerInfo::new(
+                    message.peer_id,
+                    message.cluster_id.clone(),
+                    message.addr.clone(),
+                )
+            });
+        }
+
+        // Request that the peer replicate all locally replicated wallets
+        let locked_wallets = global_state.read_managed_wallets();
+        let wallets: Vec<Wallet> = locked_wallets.values().cloned().collect();
+        Self::send_replicate_request(message.peer_id, wallets, network_channel)
+    }
+
+    /// Send a request to the given peer to replicate a set of wallets
+    fn send_replicate_request(
+        peer: WrappedPeerId,
+        wallets: Vec<Wallet>,
+        network_channel: UnboundedSender<GossipOutbound>,
+    ) -> Result<(), GossipError> {
+        network_channel
+            .send(GossipOutbound::Request {
+                peer_id: peer,
+                message: GossipRequest::Replicate(ReplicateMessage { wallets }),
+            })
+            .map_err(|err| GossipError::SendMessage(err.to_string()))
+    }
+
+    /// Handles a request from a peer to replicate a given set of wallets
+    fn handle_replicate_request(
+        req: ReplicateMessage,
+        global_state: &RelayerState,
+    ) -> Result<(), GossipError> {
+        // Add wallets to global state
+        let mut wallets_locked = global_state.write_managed_wallets();
+        for wallet in req.wallets {
+            if let Entry::Vacant(e) = wallets_locked.entry(wallet.wallet_id) {
+                e.insert(wallet.clone());
+            }
+
+            wallets_locked
+                .get_mut(&wallet.wallet_id)
+                .unwrap()
+                .metadata
+                .replicas
+                .insert(*global_state.read_peer_id());
+        }
+
+        // TODO: Broadcast `REPLICATED` message for peers to update
         Ok(())
     }
 }

@@ -241,6 +241,13 @@ impl NetworkManager {
                         })
                         .unwrap();
                 }
+                GossipRequest::Replicate(replicate_message) => {
+                    gossip_work_queue
+                        .send(GossipServerJob::Cluster(
+                            ClusterManagementJob::ReplicateRequest(replicate_message),
+                        ))
+                        .unwrap();
+                }
             },
 
             // Handle inbound response

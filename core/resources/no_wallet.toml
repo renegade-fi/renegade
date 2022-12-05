@@ -1,0 +1,7 @@
+port = 9000
+version = 0
+debug = true
+
+# A base64 encoded dummy keypair
+cluster-public-key = "ksPP4AJGbB1bUj5acbZ8Ngzy7mCSM3xvE9FDwb5zH0c="
+cluster-private-key = "knbytV3abagdJsXKqkL5dkXWaMxho3f8O+85LMr/P+s="

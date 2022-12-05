@@ -4,7 +4,9 @@
 use libp2p::request_response::ResponseChannel;
 
 use crate::api::{
-    cluster_management::ClusterJoinMessage, gossip::GossipResponse, hearbeat::HeartbeatMessage,
+    cluster_management::{ClusterJoinMessage, ReplicateMessage},
+    gossip::GossipResponse,
+    hearbeat::HeartbeatMessage,
 };
 
 use super::types::WrappedPeerId;
@@ -39,4 +41,6 @@ pub enum GossipServerJob {
 pub enum ClusterManagementJob {
     /// A request from a peer to join the local peer's cluster
     ClusterJoinRequest(ClusterJoinMessage),
+    /// Replicate a set of wallets forwarded from a peer
+    ReplicateRequest(ReplicateMessage),
 }

@@ -183,7 +183,7 @@ impl RelayerState {
 
         Self {
             debug,
-            // Replaced buy a correct value when network manager initializes
+            // Replaced by a correct value when network manager initializes
             local_peer_id: new_shared(WrappedPeerId::random()),
             managed_wallets: new_shared(managed_wallets),
             known_peers: new_shared(known_peers),
@@ -222,6 +222,8 @@ impl RelayerState {
             return;
         }
 
+        // Terminal control emissions to clear the terminal screen and
+        // move the cursor to position (1, 1), then print self
         print!("{}[2J", 27 as char);
         print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
         println!("{}", self);

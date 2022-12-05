@@ -70,7 +70,7 @@ impl GossipServer {
             };
             network_sender_copy
                 .send(join_message)
-                .map_err(|err| GossipError::ServerSetupError(err.to_string()))
+                .map_err(|err| GossipError::ServerSetup(err.to_string()))
                 .unwrap();
         });
     }
