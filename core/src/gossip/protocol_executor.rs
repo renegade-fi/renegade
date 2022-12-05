@@ -202,7 +202,7 @@ impl GossipProtocolExecutor {
 
     /// Records a successful heartbeat
     fn record_heartbeat(peer_id: WrappedPeerId, global_state: RelayerState) {
-        if let Some(peer_info) = global_state.write_known_peers().get_mut(&peer_id) {
+        if let Some(peer_info) = global_state.read_known_peers().get(&peer_id) {
             peer_info.successful_heartbeat();
         }
     }
@@ -341,7 +341,7 @@ impl GossipProtocolExecutor {
             // Add new peer to globally maintained peer info map
             if let Some(replica_info) = new_replica_peer_info.get(&replica.to_string()) {
                 // Copy the peer info and record a dummy heartbeat to prevent immediate expiration
-                let mut peer_info_copy = replica_info.clone();
+                let peer_info_copy = replica_info.clone();
                 peer_info_copy.successful_heartbeat();
 
                 Self::add_new_peer(

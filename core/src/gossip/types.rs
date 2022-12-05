@@ -67,7 +67,7 @@ impl PeerInfo {
     }
 
     /// Records a successful heartbeat
-    pub fn successful_heartbeat(&mut self) {
+    pub fn successful_heartbeat(&self) {
         self.last_heartbeat
             .store(current_time_seconds(), Ordering::Relaxed);
     }
