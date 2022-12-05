@@ -3,7 +3,7 @@
 use libp2p::{request_response::ResponseChannel, Multiaddr};
 use serde::{Deserialize, Serialize};
 
-use crate::gossip::types::WrappedPeerId;
+use crate::{gossip::types::WrappedPeerId, state::Wallet};
 
 use super::{
     cluster_management::{ClusterJoinMessage, ReplicateMessage},
@@ -76,6 +76,14 @@ pub enum PubsubMessage {
     /// The first element is the message body, the second is a byte encoded
     /// signature of the message body using the cluster's private key
     Join(ClusterJoinMessage, Vec<u8>),
+    /// A message indicating that the publisher has replicated the wallets contained
+    /// in the message body
+    Replicated {
+        /// The wallets that the peer has newly replicated
+        wallets: Vec<Wallet>,
+        /// The peer that is now replicating the wallet
+        peer_id: WrappedPeerId,
+    },
 }
 
 /// Explicit byte serialization and deserialization

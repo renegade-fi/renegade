@@ -301,6 +301,17 @@ impl NetworkManager {
                     ))
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
             }
+            PubsubMessage::Replicated { peer_id, wallets } => {
+                // Forward a message to the gossip server to update its gossip state
+                // We forward one message per wallet
+                for wallet_id in wallets.iter().map(|wallet| wallet.wallet_id) {
+                    gossip_work_queue
+                        .send(GossipServerJob::Cluster(
+                            ClusterManagementJob::AddWalletReplica { wallet_id, peer_id },
+                        ))
+                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
+                }
+            }
         }
 
         Ok(())

@@ -2,6 +2,7 @@
 //! These jobs are enqueued for execution by other workers within the relayer
 
 use libp2p::request_response::ResponseChannel;
+use uuid::Uuid;
 
 use crate::api::{
     cluster_management::{ClusterJoinMessage, ReplicateMessage},
@@ -39,6 +40,14 @@ pub enum GossipServerJob {
 /// Defines a job schedule for a cluster management task
 #[derive(Clone, Debug)]
 pub enum ClusterManagementJob {
+    /// Add a replica for a given wallet to the state and begin gossip operations
+    /// for that wallet
+    AddWalletReplica {
+        /// The ID fo the wallet that is newly replicated
+        wallet_id: Uuid,
+        /// The ID of the peer that has just replicated the wallet
+        peer_id: WrappedPeerId,
+    },
     /// A request from a peer to join the local peer's cluster
     ClusterJoinRequest(ClusterJoinMessage),
     /// Replicate a set of wallets forwarded from a peer

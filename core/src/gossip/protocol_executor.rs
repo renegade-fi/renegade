@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::{
     api::{
         cluster_management::{ClusterJoinMessage, ReplicateMessage},
-        gossip::{GossipOutbound, GossipRequest, GossipResponse},
+        gossip::{GossipOutbound, GossipRequest, GossipResponse, PubsubMessage},
         hearbeat::HeartbeatMessage,
     },
     gossip::types::{PeerInfo, WrappedPeerId},
@@ -516,10 +516,13 @@ impl GossipProtocolExecutor {
     ) -> Result<(), GossipError> {
         match job {
             ClusterManagementJob::ClusterJoinRequest(req) => {
-                Self::handle_cluster_join_job(req, network_channel, global_state)?;
+                Self::handle_cluster_join_job(req, global_state, network_channel)?;
             }
             ClusterManagementJob::ReplicateRequest(req) => {
-                Self::handle_replicate_request(req, global_state)?;
+                Self::handle_replicate_request(req, global_state, network_channel)?;
+            }
+            ClusterManagementJob::AddWalletReplica { wallet_id, peer_id } => {
+                Self::handle_add_replica_job(peer_id, wallet_id, global_state)
             }
         }
 
@@ -529,8 +532,8 @@ impl GossipProtocolExecutor {
     /// Handles a cluster management job to add a new node to the local peer's cluster
     fn handle_cluster_join_job(
         message: ClusterJoinMessage,
-        network_channel: UnboundedSender<GossipOutbound>,
         global_state: &RelayerState,
+        network_channel: UnboundedSender<GossipOutbound>,
     ) -> Result<(), GossipError> {
         {
             // The cluster join request is authenticated at the network layer
@@ -574,10 +577,11 @@ impl GossipProtocolExecutor {
     fn handle_replicate_request(
         req: ReplicateMessage,
         global_state: &RelayerState,
+        network_channel: UnboundedSender<GossipOutbound>,
     ) -> Result<(), GossipError> {
         // Add wallets to global state
         let mut wallets_locked = global_state.write_managed_wallets();
-        for wallet in req.wallets {
+        for wallet in req.wallets.iter() {
             if let Entry::Vacant(e) = wallets_locked.entry(wallet.wallet_id) {
                 e.insert(wallet.clone());
             }
@@ -590,8 +594,42 @@ impl GossipProtocolExecutor {
                 .insert(*global_state.read_peer_id());
         }
 
-        // TODO: Broadcast `REPLICATED` message for peers to update
+        // Broadcast a message to the network indicating that the wallet is now replicated
+        let topic = global_state
+            .read_cluster_metadata()
+            .id
+            .get_management_topic();
+
+        network_channel
+            .send(GossipOutbound::Pubsub {
+                topic,
+                message: PubsubMessage::Replicated {
+                    peer_id: *global_state.read_peer_id(),
+                    wallets: req.wallets,
+                },
+            })
+            .map_err(|err| GossipError::SendMessage(err.to_string()))?;
+
         Ok(())
+    }
+
+    /// Handles an incoming job to update a wallet's replicas with a newly added peer
+    fn handle_add_replica_job(
+        peer_id: WrappedPeerId,
+        wallet_id: Uuid,
+        global_state: &RelayerState,
+    ) {
+        let mut locked_wallets = global_state.write_managed_wallets();
+        if !locked_wallets.contains_key(&wallet_id) {
+            return;
+        }
+
+        locked_wallets
+            .get_mut(&wallet_id)
+            .unwrap()
+            .metadata
+            .replicas
+            .insert(peer_id);
     }
 }
 
