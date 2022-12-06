@@ -1,7 +1,7 @@
 //! The network manager handles lower level interaction with the p2p network
 
 use crossbeam::channel::Sender;
-use ed25519_dalek::{Signature, Verifier};
+use ed25519_dalek::{Keypair as SigKeypair, Signature, Signer, Verifier};
 use futures::StreamExt;
 use libp2p::{
     gossipsub::{GossipsubEvent, GossipsubMessage, Sha256Topic},
@@ -97,6 +97,7 @@ impl NetworkManager {
     /// It handles these in the tokio select! macro below
     pub(super) async fn executor_loop(
         local_peer_id: WrappedPeerId,
+        cluster_key: SigKeypair,
         mut swarm: Swarm<ComposedNetworkBehavior>,
         mut send_channel: UnboundedReceiver<GossipOutbound>,
         gossip_work_queue: Sender<GossipServerJob>,
@@ -108,9 +109,10 @@ impl NetworkManager {
             tokio::select! {
                 // Handle network requests from worker components of the relayer
                 Some(message) = send_channel.recv() => {
-                    // Check that
                     // Forward the message
-                    Self::handle_outbound_message(message, &mut swarm);
+                    if let Err(err) = Self::handle_outbound_message(message, &cluster_key, &mut swarm) {
+                        return err
+                    }
                 },
 
                 // Handle network events and dispatch
@@ -139,32 +141,58 @@ impl NetworkManager {
     }
 
     /// Handles an outbound message from worker threads to other relayers
-    fn handle_outbound_message(msg: GossipOutbound, swarm: &mut Swarm<ComposedNetworkBehavior>) {
+    fn handle_outbound_message(
+        msg: GossipOutbound,
+        cluster_key: &SigKeypair,
+        swarm: &mut Swarm<ComposedNetworkBehavior>,
+    ) -> Result<(), NetworkManagerError> {
         match msg {
             GossipOutbound::Request { peer_id, message } => {
                 swarm
                     .behaviour_mut()
                     .request_response
                     .send_request(&peer_id, message);
-            }
-            GossipOutbound::Response { channel, message } => {
-                let res = swarm
-                    .behaviour_mut()
-                    .request_response
-                    .send_response(channel, message);
 
-                // Log errors on response
-                if let Err(msg) = res {
-                    event!(Level::DEBUG, message = ?msg, "error sending response");
-                }
+                Ok(())
             }
-            Pubsub { topic, message } => {
+            GossipOutbound::Response { channel, message } => swarm
+                .behaviour_mut()
+                .request_response
+                .send_response(channel, message)
+                .map_err(|_| {
+                    NetworkManagerError::Network(
+                        "error sending response, channel closed".to_string(),
+                    )
+                }),
+            Pubsub { topic, mut message } => {
+                // If the message is a cluster management message; the network manager should attach a signature
+                #[allow(irrefutable_let_patterns)]
+                if let PubsubMessage::ClusterManagement {
+                    cluster_id,
+                    message: body,
+                    ..
+                } = message
+                {
+                    // Sign the message with the cluster key
+                    let signature = cluster_key
+                        .sign(&Into::<Vec<u8>>::into(&body))
+                        .to_bytes()
+                        .to_vec();
+
+                    message = PubsubMessage::ClusterManagement {
+                        cluster_id,
+                        signature,
+                        message: body,
+                    }
+                }
+
                 let topic = Sha256Topic::new(topic);
-                let res = swarm.behaviour_mut().pubsub.publish(topic, message);
-
-                if let Err(msg) = res {
-                    event!(Level::ERROR, message = ?msg, "error broadcasting pubsub message")
-                }
+                swarm
+                    .behaviour_mut()
+                    .pubsub
+                    .publish(topic, message)
+                    .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
+                Ok(())
             }
             // Register a new peer in the distributed routing tables
             GossipOutbound::NewAddr { peer_id, address } => {
@@ -172,6 +200,8 @@ impl NetworkManager {
                     .behaviour_mut()
                     .kademlia_dht
                     .add_address(&peer_id, address);
+
+                Ok(())
             }
         }
     }

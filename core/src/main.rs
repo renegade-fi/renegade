@@ -77,6 +77,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let network_manager_config = NetworkManagerConfig {
         port: args.port,
         cluster_id: args.cluster_id.clone(),
+        cluster_keypair: Some(args.cluster_keypair),
         send_channel: Some(network_receiver),
         heartbeat_work_queue: heartbeat_worker_sender.clone(),
         handshake_work_queue: handshake_worker_sender,

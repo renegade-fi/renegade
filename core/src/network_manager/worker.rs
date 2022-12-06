@@ -3,6 +3,7 @@
 use std::thread::{Builder, JoinHandle};
 
 use crossbeam::channel::{Receiver, Sender};
+use ed25519_dalek::Keypair;
 use futures::executor::block_on;
 use libp2p::{identity, Multiaddr, Swarm};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
@@ -29,6 +30,9 @@ pub struct NetworkManagerConfig {
     pub(crate) port: u32,
     /// The cluster ID of the local peer
     pub(crate) cluster_id: ClusterId,
+    /// The cluster keypair, wrapped in an option to allow the worker thread to
+    /// take ownership of the keypair
+    pub(crate) cluster_keypair: Option<Keypair>,
     /// The channel on which to receive requests from other workers
     /// for outbound traffic
     /// This is wrapped in an option to allow the worker thread to take
@@ -157,7 +161,8 @@ impl Worker for NetworkManager {
         let peer_id_copy = self.local_peer_id;
         let heartbeat_work_queue = self.config.heartbeat_work_queue.clone();
         let handshake_work_queue = self.config.handshake_work_queue.clone();
-        // Take ownership of the work queue
+        // Take ownership of the work queue and the cluster keypair
+        let cluster_keypair = self.config.cluster_keypair.take().unwrap();
         let send_channel = self.config.send_channel.take().unwrap();
 
         let thread_handle = Builder::new()
@@ -166,6 +171,7 @@ impl Worker for NetworkManager {
                 // Block on this to execute the future in a separate thread
                 block_on(Self::executor_loop(
                     peer_id_copy,
+                    cluster_keypair,
                     swarm,
                     send_channel,
                     heartbeat_work_queue,

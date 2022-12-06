@@ -13,6 +13,8 @@ pub enum NetworkManagerError {
     CancelForwardFailed(String),
     /// Error forwarding a job from the network layer to a worker
     EnqueueJob(String),
+    /// An error with the underlying network operation
+    Network(String),
     /// Serialization/Deserialization error
     SerializeDeserialize(String),
     /// An error while setting up the network manager
