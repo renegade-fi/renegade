@@ -85,7 +85,7 @@ pub enum PubsubMessage {
 
 impl PubsubMessage {
     /// Create a new cluster management message signed with the cluster private key
-    pub fn new_cluster_management_message(
+    pub fn new_cluster_management(
         cluster_key: &Keypair,
         message: ClusterManagementMessage,
     ) -> Result<PubsubMessage, SignatureError> {
@@ -101,6 +101,19 @@ impl PubsubMessage {
             signature,
             message,
         })
+    }
+
+    /// Create a new cluster management message with an empty signature; the assumption being
+    /// that a lower level module will fill in the signature
+    pub fn new_cluster_management_unsigned(
+        cluster_id: ClusterId,
+        message: ClusterManagementMessage,
+    ) -> PubsubMessage {
+        PubsubMessage::ClusterManagement {
+            cluster_id,
+            signature: vec![],
+            message,
+        }
     }
 }
 

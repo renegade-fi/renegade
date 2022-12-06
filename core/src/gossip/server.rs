@@ -10,13 +10,12 @@ use std::{
 };
 
 use crossbeam::channel::{Receiver, Sender};
-use ed25519_dalek::{Digest, Sha512};
 use lru::LruCache;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     api::{
-        cluster_management::ClusterJoinMessage,
+        cluster_management::{ClusterJoinMessage, ClusterManagementMessage},
         gossip::{GossipOutbound, GossipResponse, PubsubMessage},
     },
     state::RelayerState,
@@ -56,30 +55,19 @@ impl GossipServer {
         let network_sender_copy = self.config.network_sender.clone();
         let cluster_management_topic = self.config.cluster_id.get_management_topic();
 
-        // Sign outside the thread to avoid unnecessarily transferring ownership to the thread
-        // Build the message indicating that the local peer intends to join the given
-        // cluster
+        // Construct the message outside of the thread to avoid messy ownership copies
         let message_body = ClusterJoinMessage {
             cluster_id: self.config.cluster_id.clone(),
             peer_id: self.config.local_peer_id,
             addr: self.config.local_addr.clone(),
         };
-
-        // Sign the challenge message, this is used by recipients to validate that
-        // the local party is authorized to join the target cluster
-        // 1. Hash the message
-        let mut hash_digest: Sha512 = Sha512::new();
-        hash_digest.update(&Into::<Vec<u8>>::into(&message_body));
-
-        // 2. Sign and verify with keypair
-        let sig = self
-            .config
-            .cluster_keypair
-            .sign_prehashed(hash_digest, None /* context */)
-            .unwrap();
+        let message = PubsubMessage::new_cluster_management_unsigned(
+            self.config.cluster_id.clone(),
+            ClusterManagementMessage::Join(message_body),
+        );
 
         // Spawn a thread that will wait some time until the peer has warmed up into the network
-        // and then emit a pubsub
+        // and then emit a pubsub even indicating it has joined its cluster
         thread::spawn(move || {
             // Wait for the network to warmup
             thread::sleep(Duration::from_millis(PUBSUB_WARMUP_TIME_MS));
@@ -87,7 +75,7 @@ impl GossipServer {
             // Forward the message to the network manager for delivery
             let join_message = GossipOutbound::Pubsub {
                 topic: cluster_management_topic,
-                message: PubsubMessage::Join(message_body, sig.to_bytes().to_vec()),
+                message,
             };
             network_sender_copy
                 .send(join_message)

@@ -118,7 +118,7 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
         let mut rng = OsRng {};
         Keypair::generate(&mut rng)
     };
-    let cluster_id = ClusterId::new(keypair.public);
+    let cluster_id = ClusterId::new(&keypair.public);
 
     // Parse the bootstrap servers into multiaddrs
     let mut parsed_bootstrap_addrs: Vec<PeerInfo> = Vec::new();

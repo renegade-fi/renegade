@@ -1,7 +1,7 @@
 //! The network manager handles lower level interaction with the p2p network
 
 use crossbeam::channel::Sender;
-use ed25519_dalek::{Digest, Sha512, Signature, Verifier};
+use ed25519_dalek::{Signature, Verifier};
 use futures::StreamExt;
 use libp2p::{
     gossipsub::{GossipsubEvent, GossipsubMessage, Sha256Topic},
@@ -318,7 +318,7 @@ impl NetworkManager {
                                         peer_id,
                                     },
                                 ))
-                                .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()));
+                                .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
                         }
                     }
                 }

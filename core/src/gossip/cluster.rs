@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::{
     api::{
-        cluster_management::{ClusterJoinMessage, ReplicateMessage},
+        cluster_management::{ClusterJoinMessage, ClusterManagementMessage, ReplicateMessage},
         gossip::{GossipOutbound, GossipRequest, PubsubMessage},
     },
     state::{RelayerState, Wallet},
@@ -113,15 +113,16 @@ impl GossipProtocolExecutor {
             .read_cluster_metadata()
             .id
             .get_management_topic();
+        let message = PubsubMessage::new_cluster_management_unsigned(
+            global_state.read_cluster_id().clone(),
+            ClusterManagementMessage::Replicated {
+                wallets: req.wallets,
+                peer_id: *global_state.read_peer_id(),
+            },
+        );
 
         network_channel
-            .send(GossipOutbound::Pubsub {
-                topic,
-                message: PubsubMessage::Replicated {
-                    peer_id: *global_state.read_peer_id(),
-                    wallets: req.wallets,
-                },
-            })
+            .send(GossipOutbound::Pubsub { topic, message })
             .map_err(|err| GossipError::SendMessage(err.to_string()))?;
 
         Ok(())

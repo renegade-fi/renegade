@@ -101,7 +101,6 @@ async fn main() -> Result<(), CoordinatorError> {
         local_peer_id: network_manager.local_peer_id,
         local_addr: network_manager.local_addr.clone(),
         cluster_id: args.cluster_id,
-        cluster_keypair: args.cluster_keypair,
         global_state: global_state.clone(),
         heartbeat_worker_sender,
         heartbeat_worker_receiver,

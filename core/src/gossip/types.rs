@@ -169,7 +169,7 @@ pub struct ClusterId(String);
 impl ClusterId {
     /// Construct a clusterID, it's more readable and debuggable to compress the
     /// public key into a base64 encoded representation than to use the value directly
-    pub fn new(cluster_pubkey: PublicKey) -> Self {
+    pub fn new(cluster_pubkey: &PublicKey) -> Self {
         let encoded_key = base64::encode(cluster_pubkey.as_bytes());
         Self(encoded_key)
     }
@@ -216,7 +216,7 @@ mod types_test {
         let libp2p_keypair = Keypair::generate_ed25519();
 
         let peer_id = WrappedPeerId(PeerId::from_public_key(&libp2p_keypair.public()));
-        let cluster_id = ClusterId::new(random_keypair.public);
+        let cluster_id = ClusterId::new(&random_keypair.public);
 
         let peer_info = PeerInfo {
             peer_id,
