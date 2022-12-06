@@ -12,7 +12,7 @@ use libp2p::{
 };
 use std::thread::JoinHandle;
 use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
-use tracing::{event, Level};
+use tracing::{debug, event, Level};
 
 use crate::{
     api::{
@@ -111,7 +111,7 @@ impl NetworkManager {
                 Some(message) = send_channel.recv() => {
                     // Forward the message
                     if let Err(err) = Self::handle_outbound_message(message, &cluster_key, &mut swarm) {
-                        return err
+                        debug!("Error sending outbound message: {}", err.to_string());
                     }
                 },
 
