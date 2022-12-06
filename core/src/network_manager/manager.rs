@@ -1,7 +1,7 @@
 //! The network manager handles lower level interaction with the p2p network
 
 use crossbeam::channel::Sender;
-use ed25519_dalek::{Digest, Sha512, Signature};
+use ed25519_dalek::{Digest, Sha512, Signature, Verifier};
 use futures::StreamExt;
 use libp2p::{
     gossipsub::{GossipsubEvent, GossipsubMessage, Sha256Topic},
@@ -15,8 +15,11 @@ use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
 use tracing::{event, Level};
 
 use crate::{
-    api::gossip::{
-        GossipOutbound, GossipOutbound::Pubsub, GossipRequest, GossipResponse, PubsubMessage,
+    api::{
+        cluster_management::ClusterManagementMessage,
+        gossip::{
+            GossipOutbound, GossipOutbound::Pubsub, GossipRequest, GossipResponse, PubsubMessage,
+        },
     },
     gossip::{
         jobs::{ClusterManagementJob, GossipServerJob},
@@ -277,39 +280,47 @@ impl NetworkManager {
         // Deserialize into API types
         let event: PubsubMessage = message.data.into();
         match event {
-            PubsubMessage::Join(join_message, signature) => {
-                // Authenticate the join request
-                let pubkey = join_message
-                    .cluster_id
+            PubsubMessage::ClusterManagement {
+                cluster_id,
+                signature,
+                message,
+            } => {
+                // All cluster management messages are signed with the cluster private key for authentication
+                // Parse the public key and signature from the payload
+                let pubkey = cluster_id
                     .get_public_key()
                     .map_err(|err| NetworkManagerError::SerializeDeserialize(err.to_string()))?;
-
-                let join_signature = Signature::from_bytes(&signature)
+                let parsed_signature = Signature::from_bytes(&signature)
                     .map_err(|err| NetworkManagerError::SerializeDeserialize(err.to_string()))?;
 
-                // Hash the message and verify the input
-                let mut hash_digest: Sha512 = Sha512::new();
-                hash_digest.update(&Into::<Vec<u8>>::into(&join_message));
+                // Verify the signature
                 pubkey
-                    .verify_prehashed(hash_digest, None, &join_signature)
+                    .verify(&Into::<Vec<u8>>::into(&message), &parsed_signature)
                     .map_err(|err| NetworkManagerError::Authentication(err.to_string()))?;
 
-                // Forward the request to the gossip server to update relevant gossip state
-                gossip_work_queue
-                    .send(GossipServerJob::Cluster(
-                        ClusterManagementJob::ClusterJoinRequest(join_message),
-                    ))
-                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
-            }
-            PubsubMessage::Replicated { peer_id, wallets } => {
-                // Forward a message to the gossip server to update its gossip state
-                // We forward one message per wallet
-                for wallet_id in wallets.iter().map(|wallet| wallet.wallet_id) {
-                    gossip_work_queue
-                        .send(GossipServerJob::Cluster(
-                            ClusterManagementJob::AddWalletReplica { wallet_id, peer_id },
-                        ))
-                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
+                // Forward the management message to the gossip server for processing
+                match message {
+                    ClusterManagementMessage::Join(join_request) => {
+                        // Forward directly
+                        gossip_work_queue
+                            .send(GossipServerJob::Cluster(
+                                ClusterManagementJob::ClusterJoinRequest(join_request),
+                            ))
+                            .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
+                    }
+                    ClusterManagementMessage::Replicated { wallets, peer_id } => {
+                        // Forward one job per replicated wallet; makes gossip server implementation clenaer
+                        for wallet in wallets.into_iter() {
+                            gossip_work_queue
+                                .send(GossipServerJob::Cluster(
+                                    ClusterManagementJob::AddWalletReplica {
+                                        wallet_id: wallet.wallet_id,
+                                        peer_id,
+                                    },
+                                ))
+                                .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()));
+                        }
+                    }
                 }
             }
         }

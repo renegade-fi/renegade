@@ -4,10 +4,7 @@ use ed25519_dalek::{Digest, Keypair, Sha512, SignatureError};
 use libp2p::{request_response::ResponseChannel, Multiaddr};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    gossip::types::{ClusterId, WrappedPeerId},
-    state::Wallet,
-};
+use crate::gossip::types::{ClusterId, WrappedPeerId};
 
 use super::{
     cluster_management::{ClusterManagementMessage, ReplicateMessage},
@@ -89,7 +86,6 @@ pub enum PubsubMessage {
 impl PubsubMessage {
     /// Create a new cluster management message signed with the cluster private key
     pub fn new_cluster_management_message(
-        cluster_id: ClusterId,
         cluster_key: &Keypair,
         message: ClusterManagementMessage,
     ) -> Result<PubsubMessage, SignatureError> {
@@ -101,7 +97,7 @@ impl PubsubMessage {
             .to_vec();
 
         Ok(PubsubMessage::ClusterManagement {
-            cluster_id,
+            cluster_id: ClusterId::new(&cluster_key.public),
             signature,
             message,
         })
