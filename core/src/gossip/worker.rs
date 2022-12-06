@@ -69,6 +69,10 @@ impl Worker for GossipServer {
         true
     }
 
+    fn name(&self) -> String {
+        "gossip-server-main".to_string()
+    }
+
     fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
         self.protocol_executor.take().unwrap().join()
     }

@@ -76,6 +76,10 @@ impl Worker for HandshakeManager {
         true
     }
 
+    fn name(&self) -> String {
+        "handshake-manager-main".to_string()
+    }
+
     fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
         vec![self.relay.join_handle(), self.timer.join_handle()]
     }

@@ -175,9 +175,8 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Send cancel signals to all workers
     for cancel_channel in cancel_channels.iter() {
-        cancel_channel
-            .send(())
-            .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
+        #[allow(unused_must_use)]
+        cancel_channel.send(());
     }
 
     // Give workers time to teardown execution then terminate
@@ -191,9 +190,10 @@ async fn main() -> Result<(), CoordinatorError> {
 /// Attempt to recover a failed module by cleaning up its resources and re-allocating it
 fn recover_worker<W: Worker>(failed_worker: W) -> Result<W, CoordinatorError> {
     if !failed_worker.is_recoverable() {
-        return Err(CoordinatorError::Recovery(
-            "worker is not recoverable".to_string(),
-        ));
+        return Err(CoordinatorError::Recovery(format!(
+            "worker {} is not recoverable",
+            failed_worker.name()
+        )));
     }
 
     Ok(failed_worker.recover())

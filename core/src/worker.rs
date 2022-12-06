@@ -3,7 +3,7 @@
 
 use std::{
     fmt::Debug,
-    thread::{self, JoinHandle},
+    thread::{Builder, JoinHandle},
 };
 
 use tokio::sync::mpsc::Sender;
@@ -23,6 +23,9 @@ pub trait Worker {
 
     /// Called to begin a worker, returns a JoinHandle to be waited on
     fn start(&mut self) -> Result<(), Self::Error>;
+
+    /// Returns a name by which the worker can be identified
+    fn name(&self) -> String;
 
     /// Called to join the calling thread's execution to the execution of the worker
     ///
@@ -54,11 +57,18 @@ pub trait Worker {
 /// A worker may have more than one join handle in the case that it spawns
 /// multiple sub-worker threads. Each will be individually watched
 pub fn watch_worker<W: Worker>(worker: &mut W, failure_channel: Sender<()>) {
+    let watcher_name = format!("{}-watcher", worker.name());
     for join_handle in worker.join() {
         let channel_clone = failure_channel.clone();
-        thread::spawn(move || {
-            join_handle.join().unwrap();
-            channel_clone.blocking_send(()).unwrap();
-        });
+        let name_clone = watcher_name.clone();
+
+        Builder::new()
+            .name(watcher_name.clone())
+            .spawn(move || {
+                join_handle.join().unwrap();
+                channel_clone.blocking_send(()).unwrap();
+                println!("{} exited", name_clone);
+            })
+            .unwrap();
     }
 }

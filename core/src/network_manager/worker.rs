@@ -91,6 +91,10 @@ impl Worker for NetworkManager {
         false
     }
 
+    fn name(&self) -> String {
+        "network-manager-main".to_string()
+    }
+
     fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
         // Allow panic if server is not started yet
         vec![
