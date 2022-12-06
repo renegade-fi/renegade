@@ -17,7 +17,10 @@ use libp2p::{
     },
     NetworkBehaviour, PeerId,
 };
-use std::iter;
+use std::{
+    io::{Error as IoError, ErrorKind},
+    iter,
+};
 
 use crate::api::gossip::{GossipRequest, GossipResponse};
 
@@ -164,11 +167,15 @@ impl RequestResponseCodec for RelayerGossipCodec {
         &mut self,
         _: &RelayerGossipProtocol,
         io: &mut T,
-    ) -> Result<Self::Request, std::io::Error>
+    ) -> Result<Self::Request, IoError>
     where
         T: AsyncRead + Unpin + Send,
     {
         let req_data = read_length_prefixed(io, MAX_MESSAGE_SIZE).await?;
+        if req_data.is_empty() {
+            return Err(IoError::new(ErrorKind::InvalidData, "empty request"));
+        }
+
         let deserialized: GossipRequest = serde_json::from_slice(&req_data).unwrap();
         Ok(deserialized)
     }
@@ -178,11 +185,15 @@ impl RequestResponseCodec for RelayerGossipCodec {
         &mut self,
         _: &RelayerGossipProtocol,
         io: &mut T,
-    ) -> Result<Self::Response, std::io::Error>
+    ) -> Result<Self::Response, IoError>
     where
         T: AsyncRead + Unpin + Send,
     {
         let resp_data = read_length_prefixed(io, MAX_MESSAGE_SIZE).await?;
+        if resp_data.is_empty() {
+            return Err(IoError::new(ErrorKind::InvalidData, "empty response"));
+        }
+
         let deserialized: GossipResponse = serde_json::from_slice(&resp_data).unwrap();
         Ok(deserialized)
     }
@@ -193,7 +204,7 @@ impl RequestResponseCodec for RelayerGossipCodec {
         _: &RelayerGossipProtocol,
         io: &mut T,
         req: Self::Request,
-    ) -> Result<(), std::io::Error>
+    ) -> Result<(), IoError>
     where
         T: AsyncWrite + Unpin + Send,
     {
@@ -211,7 +222,7 @@ impl RequestResponseCodec for RelayerGossipCodec {
         _: &RelayerGossipProtocol,
         io: &mut T,
         resp: Self::Response,
-    ) -> Result<(), std::io::Error>
+    ) -> Result<(), IoError>
     where
         T: AsyncWrite + Unpin + Send,
     {
