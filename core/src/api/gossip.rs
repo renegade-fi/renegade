@@ -1,12 +1,16 @@
 //! Groups API definitions for standard gossip network requests/responses
 
+use ed25519_dalek::{Digest, Keypair, Sha512, SignatureError};
 use libp2p::{request_response::ResponseChannel, Multiaddr};
 use serde::{Deserialize, Serialize};
 
-use crate::{gossip::types::WrappedPeerId, state::Wallet};
+use crate::{
+    gossip::types::{ClusterId, WrappedPeerId},
+    state::Wallet,
+};
 
 use super::{
-    cluster_management::{ClusterJoinMessage, ReplicateMessage},
+    cluster_management::{ClusterManagementMessage, ReplicateMessage},
     handshake::HandshakeMessage,
     hearbeat::HeartbeatMessage,
 };
@@ -71,19 +75,37 @@ pub enum GossipResponse {
 /// Represents a pubsub message flooded through the network
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PubsubMessage {
-    /// A message indicating that the publisher intends to join the given cluster
-    ///
-    /// The first element is the message body, the second is a byte encoded
-    /// signature of the message body using the cluster's private key
-    Join(ClusterJoinMessage, Vec<u8>),
-    /// A message indicating that the publisher has replicated the wallets contained
-    /// in the message body
-    Replicated {
-        /// The wallets that the peer has newly replicated
-        wallets: Vec<Wallet>,
-        /// The peer that is now replicating the wallet
-        peer_id: WrappedPeerId,
+    /// A message broadcast to indicate an even relevant to cluster management
+    ClusterManagement {
+        /// The ID of the cluster this message is intended for
+        cluster_id: ClusterId,
+        /// The signature of the message body using the cluster's private key
+        signature: Vec<u8>,
+        /// The message body
+        message: ClusterManagementMessage,
     },
+}
+
+impl PubsubMessage {
+    /// Create a new cluster management message signed with the cluster private key
+    pub fn new_cluster_management_message(
+        cluster_id: ClusterId,
+        cluster_key: &Keypair,
+        message: ClusterManagementMessage,
+    ) -> Result<PubsubMessage, SignatureError> {
+        let mut hash_digest: Sha512 = Sha512::new();
+        hash_digest.update(&Into::<Vec<u8>>::into(&message));
+        let signature = cluster_key
+            .sign_prehashed(hash_digest, None)?
+            .to_bytes()
+            .to_vec();
+
+        Ok(PubsubMessage::ClusterManagement {
+            cluster_id,
+            signature,
+            message,
+        })
+    }
 }
 
 /// Explicit byte serialization and deserialization

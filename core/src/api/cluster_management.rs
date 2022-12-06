@@ -14,6 +14,27 @@ use crate::{
 ///     cluster-management-{cluster_id}
 pub const CLUSTER_MANAGEMENT_TOPIC_PREFIX: &str = "cluster-management";
 
+/// Represents a message containing cluster management information
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ClusterManagementMessage {
+    /// A cluster join message, indicating that a peer wishes to join
+    Join(ClusterJoinMessage),
+    /// A message indicating that the publisher has replicated the wallets contained
+    /// in the message body
+    Replicated {
+        /// The wallets that the peer has newly replicated
+        wallets: Vec<Wallet>,
+        /// The peer that is now replicating the wallet
+        peer_id: WrappedPeerId,
+    },
+}
+
+impl From<&ClusterManagementMessage> for Vec<u8> {
+    fn from(message: &ClusterManagementMessage) -> Self {
+        serde_json::to_vec(&message).unwrap()
+    }
+}
+
 /// Repesents a pubsub message broadcast when a node joins a cluster
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ClusterJoinMessage {
