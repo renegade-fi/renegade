@@ -46,111 +46,48 @@ pub struct RelayerState {
     pub cluster_metadata: Shared<ClusterMetadata>,
 }
 
-impl Display for RelayerState {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.write_fmt(format_args!(
-            "{}Local Relayer State:{}\n",
-            color::Fg(color::Cyan),
-            color::Fg(color::Reset),
-        ))?;
-        f.write_fmt(format_args!(
-            "\t{}Listening on:{} {}/p2p/{}\n",
-            color::Fg(color::LightGreen),
-            color::Fg(color::Reset),
-            self.read_known_peers()
-                .get(&self.read_peer_id())
-                .unwrap()
-                .get_addr(),
-            self.read_peer_id().0
-        ))?;
-        f.write_fmt(format_args!(
-            "\t{}PeerId:{} {}\n",
-            color::Fg(color::LightGreen),
-            color::Fg(color::Reset),
-            self.read_peer_id().0
-        ))?;
-        f.write_fmt(format_args!(
-            "\t{}ClusterId:{} {:?}\n",
-            color::Fg(color::LightGreen),
-            color::Fg(color::Reset),
-            self.read_cluster_id()
-        ))?;
+/// Represents a wallet managed by the local relayer
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Wallet {
+    /// Wallet metadata; replicas, trusted peers, etc
+    pub metadata: WalletMetadata,
+    /// Wallet id will eventually be replaced, for now it is UUID
+    pub wallet_id: Uuid,
+}
 
-        // Write wallet info to the format
-        f.write_fmt(format_args!(
-            "\n\t{}Managed Wallets:{}\n",
-            color::Fg(color::LightGreen),
-            color::Fg(color::Reset)
-        ))?;
-        for (wallet_id, wallet) in self.read_managed_wallets().iter() {
-            f.write_fmt(format_args!(
-                "\t\t- {}{:?}:{} {{\n\t\t\t{}replicas{}: [\n",
-                color::Fg(color::LightYellow),
-                wallet_id,
-                color::Fg(color::Reset),
-                color::Fg(color::Blue),
-                color::Fg(color::Reset),
-            ))?;
-            for replica in wallet.metadata.replicas.iter() {
-                f.write_fmt(format_args!("\t\t\t\t{}\n", replica.0))?;
-            }
+/// Metadata relevant to the wallet's network state
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WalletMetadata {
+    /// The peers which are believed by the local node to be replicating a given wallet
+    pub replicas: HashSet<WrappedPeerId>,
+}
 
-            f.write_str("\t\t\t]\n\t\t}")?;
+/// Metadata about the local peer's cluster
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ClusterMetadata {
+    /// The cluster ID
+    pub id: ClusterId,
+    /// The known peers that are members of this cluster
+    pub known_members: HashSet<WrappedPeerId>,
+}
+
+impl ClusterMetadata {
+    /// Create a new, empty cluster metadata instance
+    pub fn new(cluster_id: ClusterId) -> Self {
+        Self {
+            id: cluster_id,
+            known_members: HashSet::new(),
         }
-        f.write_str("\n\n\n")?;
+    }
 
-        // Write the known peers to the format
-        f.write_fmt(format_args!(
-            "\t{}Known Peers{}:\n",
-            color::Fg(color::LightGreen),
-            color::Fg(color::LightGreen)
-        ))?;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("negative timestamp")
-            .as_secs();
-        for (peer_id, peer_info) in self.read_known_peers().iter() {
-            let last_heartbeat_elapsed = if peer_id.ne(&self.read_peer_id()) {
-                (now - peer_info.get_last_heartbeat()) * 1000
-            } else {
-                0
-            };
+    /// Returns whether the given peer is a known member of the cluster
+    pub fn has_member(&self, peer_id: &WrappedPeerId) -> bool {
+        self.known_members.contains(peer_id)
+    }
 
-            f.write_fmt(format_args!(
-                "\t\t- {}{}{}: \n\t\t\t{}last_heartbeat{}: {:?}ms \n\t\t\t{}cluster_id{}: {:?} }}\n\n",
-                color::Fg(color::LightYellow),
-                peer_id.0,
-                color::Fg(color::Reset),
-                color::Fg(color::Blue),
-                color::Fg(color::Reset),
-                last_heartbeat_elapsed,
-                color::Fg(color::Blue),
-                color::Fg(color::Reset),
-                peer_info.get_cluster_id(),
-            ))?;
-        }
-        f.write_str("\n\n")?;
-
-        // Write cluster metadata to the format
-        f.write_fmt(format_args!(
-            "\t{}Cluster Metadata{} (ID = {}{:?}{})\n",
-            color::Fg(color::LightGreen),
-            color::Fg(color::Reset),
-            color::Fg(color::LightYellow),
-            self.read_cluster_metadata().id,
-            color::Fg(color::Reset)
-        ))?;
-        f.write_fmt(format_args!(
-            "\t\t{}Members{}: [\n",
-            color::Fg(color::LightYellow),
-            color::Fg(color::Reset)
-        ))?;
-        for member in self.read_cluster_metadata().known_members.iter() {
-            f.write_fmt(format_args!("\t\t\t{}\n", member.0))?;
-        }
-        f.write_str("\t\t]")?;
-
-        Ok(())
+    /// Add a member to the cluster
+    pub fn add_member(&mut self, peer_id: WrappedPeerId) {
+        self.known_members.insert(peer_id);
     }
 }
 
@@ -301,47 +238,112 @@ impl RelayerState {
             .expect("cluster_metadata lock poisoned")
     }
 }
-/// Represents a wallet managed by the local relayer
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Wallet {
-    /// Wallet metadata; replicas, trusted peers, etc
-    pub metadata: WalletMetadata,
-    /// Wallet id will eventually be replaced, for now it is UUID
-    pub wallet_id: Uuid,
-}
 
-/// Metadata relevant to the wallet's network state
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WalletMetadata {
-    /// The peers which are believed by the local node to be replicating a given wallet
-    pub replicas: HashSet<WrappedPeerId>,
-}
+/// Display implementation for easy-to-read command line print-out
+impl Display for RelayerState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.write_fmt(format_args!(
+            "{}Local Relayer State:{}\n",
+            color::Fg(color::Cyan),
+            color::Fg(color::Reset),
+        ))?;
+        f.write_fmt(format_args!(
+            "\t{}Listening on:{} {}/p2p/{}\n",
+            color::Fg(color::LightGreen),
+            color::Fg(color::Reset),
+            self.read_known_peers()
+                .get(&self.read_peer_id())
+                .unwrap()
+                .get_addr(),
+            self.read_peer_id().0
+        ))?;
+        f.write_fmt(format_args!(
+            "\t{}PeerId:{} {}\n",
+            color::Fg(color::LightGreen),
+            color::Fg(color::Reset),
+            self.read_peer_id().0
+        ))?;
+        f.write_fmt(format_args!(
+            "\t{}ClusterId:{} {:?}\n",
+            color::Fg(color::LightGreen),
+            color::Fg(color::Reset),
+            self.read_cluster_id()
+        ))?;
 
-/// Metadata about the local peer's cluster
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ClusterMetadata {
-    /// The cluster ID
-    pub id: ClusterId,
-    /// The known peers that are members of this cluster
-    pub known_members: HashSet<WrappedPeerId>,
-}
+        // Write wallet info to the format
+        f.write_fmt(format_args!(
+            "\n\t{}Managed Wallets:{}\n",
+            color::Fg(color::LightGreen),
+            color::Fg(color::Reset)
+        ))?;
+        for (wallet_id, wallet) in self.read_managed_wallets().iter() {
+            f.write_fmt(format_args!(
+                "\t\t- {}{:?}:{} {{\n\t\t\t{}replicas{}: [\n",
+                color::Fg(color::LightYellow),
+                wallet_id,
+                color::Fg(color::Reset),
+                color::Fg(color::Blue),
+                color::Fg(color::Reset),
+            ))?;
+            for replica in wallet.metadata.replicas.iter() {
+                f.write_fmt(format_args!("\t\t\t\t{}\n", replica.0))?;
+            }
 
-impl ClusterMetadata {
-    /// Create a new, empty cluster metadata instance
-    pub fn new(cluster_id: ClusterId) -> Self {
-        Self {
-            id: cluster_id,
-            known_members: HashSet::new(),
+            f.write_str("\t\t\t]\n\t\t}")?;
         }
-    }
+        f.write_str("\n\n\n")?;
 
-    /// Returns whether the given peer is a known member of the cluster
-    pub fn has_member(&self, peer_id: &WrappedPeerId) -> bool {
-        self.known_members.contains(peer_id)
-    }
+        // Write the known peers to the format
+        f.write_fmt(format_args!(
+            "\t{}Known Peers{}:\n",
+            color::Fg(color::LightGreen),
+            color::Fg(color::LightGreen)
+        ))?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("negative timestamp")
+            .as_secs();
+        for (peer_id, peer_info) in self.read_known_peers().iter() {
+            let last_heartbeat_elapsed = if peer_id.ne(&self.read_peer_id()) {
+                (now - peer_info.get_last_heartbeat()) * 1000
+            } else {
+                0
+            };
 
-    /// Add a member to the cluster
-    pub fn add_member(&mut self, peer_id: WrappedPeerId) {
-        self.known_members.insert(peer_id);
+            f.write_fmt(format_args!(
+                "\t\t- {}{}{}: \n\t\t\t{}last_heartbeat{}: {:?}ms \n\t\t\t{}cluster_id{}: {:?} }}\n\n",
+                color::Fg(color::LightYellow),
+                peer_id.0,
+                color::Fg(color::Reset),
+                color::Fg(color::Blue),
+                color::Fg(color::Reset),
+                last_heartbeat_elapsed,
+                color::Fg(color::Blue),
+                color::Fg(color::Reset),
+                peer_info.get_cluster_id(),
+            ))?;
+        }
+        f.write_str("\n\n")?;
+
+        // Write cluster metadata to the format
+        f.write_fmt(format_args!(
+            "\t{}Cluster Metadata{} (ID = {}{:?}{})\n",
+            color::Fg(color::LightGreen),
+            color::Fg(color::Reset),
+            color::Fg(color::LightYellow),
+            self.read_cluster_metadata().id,
+            color::Fg(color::Reset)
+        ))?;
+        f.write_fmt(format_args!(
+            "\t\t{}Members{}: [\n",
+            color::Fg(color::LightYellow),
+            color::Fg(color::Reset)
+        ))?;
+        for member in self.read_cluster_metadata().known_members.iter() {
+            f.write_fmt(format_args!("\t\t\t{}\n", member.0))?;
+        }
+        f.write_str("\t\t]")?;
+
+        Ok(())
     }
 }

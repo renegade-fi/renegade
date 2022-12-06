@@ -5,12 +5,12 @@ use libp2p::request_response::ResponseChannel;
 use uuid::Uuid;
 
 use crate::api::{
-    cluster_management::{ClusterJoinMessage, ReplicateMessage},
+    cluster_management::{ClusterJoinMessage, ReplicateRequestBody},
     gossip::GossipResponse,
     hearbeat::HeartbeatMessage,
 };
 
-use super::types::WrappedPeerId;
+use super::types::{ClusterId, WrappedPeerId};
 
 /// Defines a heartbeat job that can be enqueued by other workers in a relayer
 #[derive(Debug)]
@@ -49,7 +49,7 @@ pub enum ClusterManagementJob {
         peer_id: WrappedPeerId,
     },
     /// A request from a peer to join the local peer's cluster
-    ClusterJoinRequest(ClusterJoinMessage),
+    ClusterJoinRequest(ClusterId, ClusterJoinMessage),
     /// Replicate a set of wallets forwarded from a peer
-    ReplicateRequest(ReplicateMessage),
+    ReplicateRequest(ReplicateRequestBody),
 }

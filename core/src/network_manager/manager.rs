@@ -16,7 +16,7 @@ use tracing::{debug, event, Level};
 
 use crate::{
     api::{
-        cluster_management::ClusterManagementMessage,
+        cluster_management::{ClusterManagementMessage, ReplicatedMessage},
         gossip::{
             GossipOutbound, GossipOutbound::Pubsub, GossipRequest, GossipResponse, PubsubMessage,
         },
@@ -334,11 +334,14 @@ impl NetworkManager {
                         // Forward directly
                         gossip_work_queue
                             .send(GossipServerJob::Cluster(
-                                ClusterManagementJob::ClusterJoinRequest(join_request),
+                                ClusterManagementJob::ClusterJoinRequest(cluster_id, join_request),
                             ))
                             .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
                     }
-                    ClusterManagementMessage::Replicated { wallets, peer_id } => {
+                    ClusterManagementMessage::Replicated(ReplicatedMessage {
+                        wallets,
+                        peer_id,
+                    }) => {
                         // Forward one job per replicated wallet; makes gossip server implementation clenaer
                         for wallet in wallets.into_iter() {
                             gossip_work_queue

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::gossip::types::{ClusterId, WrappedPeerId};
 
 use super::{
-    cluster_management::{ClusterManagementMessage, ReplicateMessage},
+    cluster_management::{ClusterManagementMessage, ReplicateRequestBody},
     handshake::HandshakeMessage,
     hearbeat::HeartbeatMessage,
 };
@@ -57,7 +57,7 @@ pub enum GossipRequest {
     /// A request from a peer initiating a handshake
     Handshake(HandshakeMessage),
     /// A request that a peer replicate a set of wallets
-    Replicate(ReplicateMessage),
+    Replicate(ReplicateRequestBody),
 }
 
 /// Represents the possible response types for a request-response message

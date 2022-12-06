@@ -56,8 +56,8 @@ impl GossipServer {
         let cluster_management_topic = self.config.cluster_id.get_management_topic();
 
         // Construct the message outside of the thread to avoid messy ownership copies
+        // The cluster ID is automatically appended at the network layer
         let message_body = ClusterJoinMessage {
-            cluster_id: self.config.cluster_id.clone(),
             peer_id: self.config.local_peer_id,
             addr: self.config.local_addr.clone(),
         };
@@ -182,15 +182,6 @@ impl GossipProtocolExecutor {
                         &global_state,
                     );
                 }
-                GossipServerJob::Cluster(job) => {
-                    if let Err(err) = Self::handle_cluster_management_job(
-                        job,
-                        network_channel.clone(),
-                        &global_state,
-                    ) {
-                        return err;
-                    }
-                }
                 GossipServerJob::HandleHeartbeatReq {
                     message, channel, ..
                 } => {
@@ -222,6 +213,15 @@ impl GossipProtocolExecutor {
                         peer_expiry_cache.clone(),
                         global_state.clone(),
                     )
+                }
+                GossipServerJob::Cluster(job) => {
+                    if let Err(err) = Self::handle_cluster_management_job(
+                        job,
+                        network_channel.clone(),
+                        &global_state,
+                    ) {
+                        return err;
+                    }
                 }
             }
         }

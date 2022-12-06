@@ -3,10 +3,7 @@
 use libp2p::Multiaddr;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    gossip::types::{ClusterId, WrappedPeerId},
-    state::Wallet,
-};
+use crate::{gossip::types::WrappedPeerId, state::Wallet};
 
 /// The topic prefix for the cluster management pubsub topic
 ///
@@ -21,12 +18,7 @@ pub enum ClusterManagementMessage {
     Join(ClusterJoinMessage),
     /// A message indicating that the publisher has replicated the wallets contained
     /// in the message body
-    Replicated {
-        /// The wallets that the peer has newly replicated
-        wallets: Vec<Wallet>,
-        /// The peer that is now replicating the wallet
-        peer_id: WrappedPeerId,
-    },
+    Replicated(ReplicatedMessage),
 }
 
 impl From<&ClusterManagementMessage> for Vec<u8> {
@@ -38,8 +30,6 @@ impl From<&ClusterManagementMessage> for Vec<u8> {
 /// Repesents a pubsub message broadcast when a node joins a cluster
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ClusterJoinMessage {
-    /// The ID of the cluster being joined
-    pub cluster_id: ClusterId,
     /// The peer ID of the node joining the cluster
     pub peer_id: WrappedPeerId,
     /// The address that the new peer can be dialed at
@@ -52,9 +42,18 @@ impl From<&ClusterJoinMessage> for Vec<u8> {
     }
 }
 
+/// Represents a message indicating a given peer has replicated a set of wallets
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReplicatedMessage {
+    /// The wallets that the peer has newly replicated
+    pub wallets: Vec<Wallet>,
+    /// The peer that is now replicating the wallet
+    pub peer_id: WrappedPeerId,
+}
+
 /// A message asking a peer to replicate a set of wallets
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ReplicateMessage {
+pub struct ReplicateRequestBody {
     /// The wallets needing replication
     pub wallets: Vec<Wallet>,
 }
