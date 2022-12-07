@@ -31,6 +31,10 @@ impl GossipProtocolExecutor {
         global_state: &RelayerState,
     ) -> Result<(), GossipError> {
         match job {
+            ClusterManagementJob::ClusterAuthSuccess(cluster_id, peer_id) => {
+                Self::add_peer_to_cluster(peer_id, cluster_id, global_state, network_channel)?;
+            }
+
             ClusterManagementJob::ClusterJoinRequest(cluster_id, req) => {
                 Self::handle_cluster_join_job(cluster_id, req, global_state, network_channel)?;
             }
@@ -59,15 +63,19 @@ impl GossipProtocolExecutor {
             return Ok(());
         }
 
-        {
-            // The cluster join request is authenticated at the network layer
-            // by the `NetworkManager`, so no authentication needs to be done.
-            // Simply update the local peer info to reflect the new node's membership
-            let mut locked_peers = global_state.write_known_peers();
-            let mut locked_cluster_metadata = global_state.write_cluster_metadata();
+        // Add the peer to the cluster metadata
+        Self::add_peer_to_cluster(
+            message.peer_id,
+            cluster_id.clone(),
+            global_state,
+            network_channel.clone(),
+        )?;
 
-            // Insert the new peer into the cluster metadata and peer metadata
-            locked_cluster_metadata.add_member(message.peer_id);
+        // Add the peer to the known peers index
+        {
+            let mut locked_peers = global_state.write_known_peers();
+
+            // Insert the new peer into the peer metadata
             locked_peers.entry(message.peer_id).or_insert_with(|| {
                 PeerInfo::new(message.peer_id, cluster_id, message.addr.clone())
             });
@@ -77,6 +85,34 @@ impl GossipProtocolExecutor {
         let locked_wallets = global_state.read_managed_wallets();
         let wallets: Vec<Wallet> = locked_wallets.values().cloned().collect();
         Self::send_replicate_request(message.peer_id, wallets, network_channel)
+    }
+
+    /// Add a peer to the given cluster
+    fn add_peer_to_cluster(
+        peer_id: WrappedPeerId,
+        cluster_id: ClusterId,
+        global_state: &RelayerState,
+        network_channel: UnboundedSender<GossipOutbound>,
+    ) -> Result<(), GossipError> {
+        // Ignore messages sent for a different cluster
+        if cluster_id != *global_state.read_cluster_id() {
+            return Ok(());
+        }
+
+        {
+            // The cluster join request is authenticated at the network layer
+            // by the `NetworkManager`, so no authentication needs to be done.
+            // Simply update the local peer info to reflect the new node's membership
+            let mut locked_cluster_metadata = global_state.write_cluster_metadata();
+
+            // Insert the new peer into the cluster metadata and peer metadata
+            locked_cluster_metadata.add_member(peer_id);
+        }
+
+        // Request that the peer replicate all locally replicated wallets
+        let locked_wallets = global_state.read_managed_wallets();
+        let wallets: Vec<Wallet> = locked_wallets.values().cloned().collect();
+        Self::send_replicate_request(peer_id, wallets, network_channel)
     }
 
     /// Send a request to the given peer to replicate a set of wallets

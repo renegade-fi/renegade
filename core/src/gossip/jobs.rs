@@ -1,7 +1,7 @@
 //! Groups job definitions for the gossip server
 //! These jobs are enqueued for execution by other workers within the relayer
 
-use libp2p::request_response::ResponseChannel;
+use libp2p::{request_response::ResponseChannel, PeerId};
 use uuid::Uuid;
 
 use crate::api::{
@@ -48,6 +48,9 @@ pub enum ClusterManagementJob {
         /// The ID of the peer that has just replicated the wallet
         peer_id: WrappedPeerId,
     },
+    /// A job indicating that a peer has successfully authenticated into the cluster
+    /// from a previous outbound cluster auth request
+    ClusterAuthSuccess(ClusterId, WrappedPeerId),
     /// A request from a peer to join the local peer's cluster
     ClusterJoinRequest(ClusterId, ClusterJoinMessage),
     /// Replicate a set of wallets forwarded from a peer

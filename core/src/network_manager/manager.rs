@@ -351,7 +351,15 @@ impl NetworkManager {
                         .verify(&Into::<Vec<u8>>::into(&auth_response.body), &signature)
                         .map_err(|err| NetworkManagerError::Authentication(err.to_string()))?;
 
-                    // TODO: Forward a job to to the gossip manager to add this node to the cluster
+                    // Forward a job to the gossip server to update its cluster information
+                    gossip_work_queue
+                        .send(GossipServerJob::Cluster(
+                            ClusterManagementJob::ClusterAuthSuccess(
+                                auth_response.body.cluster_id,
+                                auth_response.body.peer_id,
+                            ),
+                        ))
+                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
 
                     Ok(())
                 }
