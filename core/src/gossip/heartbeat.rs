@@ -196,16 +196,18 @@ impl GossipProtocolExecutor {
                 let peer_info_copy = replica_info.clone();
                 peer_info_copy.successful_heartbeat();
 
-                Self::add_new_peer(
+                // Skip adding the peer to the replicas list if the peer has recently been expired
+                // (function returns false)
+                if Self::add_new_peer(
                     *replica,
                     peer_info_copy,
                     known_peer_info,
                     peer_expiry_cache,
                     network_channel.clone(),
-                );
-
-                // Add new peer as a replica of the wallet in the wallet's metadata
-                known_replicas.insert(*replica);
+                ) {
+                    // Add new peer as a replica of the wallet in the wallet's metadata
+                    known_replicas.insert(*replica);
+                }
             }
         }
     }
