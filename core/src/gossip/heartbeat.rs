@@ -386,29 +386,53 @@ impl HeartbeatTimer {
     }
 
     /// Main timing loop
+    ///
+    /// We space out the heartbeat requests to give a better traffic pattern. This means that in each
+    /// time quantum, one heartbeat is scheduled. We compute the length of a time quantum with respect
+    /// to the heartbeat period constant defined above. That is, we specify the interval in between
+    /// heartbeats for a given peer, and space out all heartbeats in that interval
     fn execution_loop(
         job_queue: Sender<GossipServerJob>,
         wait_period: Duration,
         global_state: RelayerState,
     ) -> GossipError {
+        let mut peer_index = 0;
         loop {
-            {
-                // Log the state if in debug mode
-                global_state.print_screen();
-
+            let (peer_count, next_peer_id) = {
                 // Enqueue a heartbeat job for each known peer
-                for peer_id in global_state.read_known_peers().keys() {
-                    // Do not heartbeat with self
-                    if peer_id.eq(&global_state.read_peer_id()) {
-                        continue;
-                    }
+                let peer_info_locked = global_state.read_known_peers();
+                let next_peer_id = peer_info_locked.keys().nth(peer_index);
 
-                    if let Err(err) = job_queue.send(GossipServerJob::ExecuteHeartbeat(*peer_id)) {
-                        return GossipError::TimerFailed(err.to_string());
-                    }
+                // Skip if we have overflowed the list or if the next peer is the local peer (don't heartbeat self)
+                if next_peer_id.is_none() || *next_peer_id.unwrap() == *global_state.read_peer_id()
+                {
+                    (peer_info_locked.len(), None)
+                } else {
+                    #[allow(clippy::unnecessary_unwrap)]
+                    (peer_info_locked.len(), Some(*next_peer_id.unwrap()))
+                }
+            }; // peer_info_locked released
+
+            // Enqueue a job to send the heartbeat
+            if let Some(peer_id) = next_peer_id {
+                if let Err(err) = job_queue.send(GossipServerJob::ExecuteHeartbeat(peer_id)) {
+                    return GossipError::TimerFailed(err.to_string());
                 }
             }
-            thread::sleep(wait_period);
+
+            // Do not simply (index + 1) % count; this will skip the first few elements if the list of known
+            // peers has shrunk since the last iteration
+            peer_index += 1;
+            if peer_index >= peer_count {
+                peer_index = 0;
+
+                // Log the state if in debug mode once per heartbeat period
+                global_state.print_screen();
+            }
+
+            // Compute the time quantum to sleep for, may change between loops if peers are added or removed
+            let current_time_quantum = wait_period / (peer_count as u32);
+            thread::sleep(current_time_quantum);
         }
     }
 }
