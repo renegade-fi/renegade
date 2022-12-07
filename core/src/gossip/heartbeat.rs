@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::{
     api::{
+        cluster_management::ClusterAuthRequest,
         gossip::{GossipOutbound, GossipRequest},
         hearbeat::HeartbeatMessage,
     },
@@ -76,25 +77,19 @@ impl GossipProtocolExecutor {
         network_channel: UnboundedSender<GossipOutbound>,
         peer_expiry_cache: SharedLRUCache,
         global_state: RelayerState,
-    ) {
+    ) -> Result<(), GossipError> {
         // Merge wallet information and peer info
         Self::merge_wallets(
             local_peer_id,
             &message.managed_wallets,
             &message.known_peers,
             network_channel.clone(),
-            peer_expiry_cache.clone(),
+            peer_expiry_cache,
             &global_state,
         );
 
         // Merge cluster information into the local cluster
-        Self::merge_cluster_metadata(
-            &message.cluster_metadata,
-            &message.known_peers,
-            network_channel,
-            peer_expiry_cache,
-            &global_state,
-        )
+        Self::merge_cluster_metadata(&message.cluster_metadata, network_channel, &global_state)
     }
 
     /// Merges the wallet information from an incoming heartbeat with the locally
@@ -219,51 +214,36 @@ impl GossipProtocolExecutor {
     /// stored wallet information
     fn merge_cluster_metadata(
         incoming_cluster_info: &ClusterMetadata,
-        incoming_peer_info: &HashMap<String, PeerInfo>,
         network_channel: UnboundedSender<GossipOutbound>,
-        peer_expiry_cache: SharedLRUCache,
         global_state: &RelayerState,
-    ) {
+    ) -> Result<(), GossipError> {
         // As in the `merge_wallets` implementation, we avoid acquiring a write lock on any state elements
         // if possible to avoid contention in the common (no updates) case
+        let mut peers_to_add = Vec::new();
         {
             let locked_cluster_metadata = global_state.read_cluster_metadata();
-            // Short cct if the metadata is for a different cluster or if all peers are already accounted for
-            if locked_cluster_metadata.id != incoming_cluster_info.id
-                || locked_cluster_metadata
-                    .known_members
-                    .is_superset(&incoming_cluster_info.known_members)
-            {
-                return;
+            for peer in incoming_cluster_info.known_members.iter() {
+                if !locked_cluster_metadata.has_member(peer) {
+                    peers_to_add.push(*peer)
+                }
             }
         } // locked_cluster_metadata released here
 
-        // Add missing members to cluster metadata
-        let mut locked_peer_info = global_state.write_known_peers();
-        let mut locked_cluster_metadata = global_state.write_cluster_metadata();
-        let mut locked_expiry_cache = peer_expiry_cache.write().unwrap();
+        // Request cluster authentication for each new cluster peer
+        let auth_request = GossipRequest::ClusterAuth(ClusterAuthRequest {
+            cluster_id: global_state.read_cluster_id().clone(),
+        });
 
-        for cluster_peer in incoming_cluster_info.known_members.iter() {
-            // Ignore known peers
-            if locked_cluster_metadata.has_member(cluster_peer) {
-                continue;
-            }
-
-            // Ignore new peers when the request does not include peer metadata
-            if let Some(new_peer_info) = incoming_peer_info.get(&cluster_peer.to_string()) {
-                // Do not add the peer to cluster metadata if indexing the peer fails; this happens
-                // if the peer is recently expired and its invisibility window has not elapsed
-                if Self::add_new_peer(
-                    *cluster_peer,
-                    new_peer_info.clone(),
-                    &mut locked_peer_info,
-                    &mut locked_expiry_cache,
-                    network_channel.clone(),
-                ) {
-                    locked_cluster_metadata.add_member(*cluster_peer);
-                }
-            }
+        for peer in peers_to_add.into_iter() {
+            network_channel
+                .send(GossipOutbound::Request {
+                    peer_id: peer,
+                    message: auth_request.clone(),
+                })
+                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
         }
+
+        Ok(())
     }
 
     /// Index a new peer if:
@@ -317,9 +297,9 @@ impl GossipProtocolExecutor {
         network_channel: UnboundedSender<GossipOutbound>,
         peer_expiry_cache: SharedLRUCache,
         global_state: &RelayerState,
-    ) {
+    ) -> Result<(), GossipError> {
         if recipient_peer_id == local_peer_id {
-            return;
+            return Ok(());
         }
 
         let heartbeat_message =
@@ -329,9 +309,10 @@ impl GossipProtocolExecutor {
                 peer_id: recipient_peer_id,
                 message: heartbeat_message,
             })
-            .unwrap();
+            .map_err(|err| GossipError::SendMessage(err.to_string()))?;
 
         Self::maybe_expire_peer(recipient_peer_id, peer_expiry_cache, global_state);
+        Ok(())
     }
 
     /// Expires peers that have timed out due to consecutive failed heartbeats

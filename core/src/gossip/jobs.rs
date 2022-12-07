@@ -1,7 +1,7 @@
 //! Groups job definitions for the gossip server
 //! These jobs are enqueued for execution by other workers within the relayer
 
-use libp2p::{request_response::ResponseChannel, PeerId};
+use libp2p::request_response::ResponseChannel;
 use uuid::Uuid;
 
 use crate::api::{

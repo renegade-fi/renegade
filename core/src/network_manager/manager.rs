@@ -1,7 +1,7 @@
 //! The network manager handles lower level interaction with the p2p network
 
 use crossbeam::channel::Sender;
-use ed25519_dalek::{Digest, Keypair as SigKeypair, Sha512, Signature, Signer, Verifier};
+use ed25519_dalek::{Keypair as SigKeypair, Signature, Signer, Verifier};
 use futures::StreamExt;
 use libp2p::{
     gossipsub::{GossipsubEvent, GossipsubMessage, Sha256Topic},
@@ -12,7 +12,7 @@ use libp2p::{
 };
 use std::thread::JoinHandle;
 use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
-use tracing::{debug, event, Level};
+use tracing::debug;
 
 use crate::{
     api::{

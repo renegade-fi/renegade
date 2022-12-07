@@ -172,28 +172,26 @@ impl GossipProtocolExecutor {
                 return GossipError::Cancelled("received cancel signal".to_string());
             }
 
-            match job {
-                GossipServerJob::ExecuteHeartbeat(peer_id) => {
-                    Self::send_heartbeat(
-                        peer_id,
-                        local_peer_id,
-                        network_channel.clone(),
-                        peer_expiry_cache.clone(),
-                        &global_state,
-                    );
-                }
+            let res = match job {
+                GossipServerJob::ExecuteHeartbeat(peer_id) => Self::send_heartbeat(
+                    peer_id,
+                    local_peer_id,
+                    network_channel.clone(),
+                    peer_expiry_cache.clone(),
+                    &global_state,
+                ),
                 GossipServerJob::HandleHeartbeatReq {
                     message, channel, ..
                 } => {
                     // Respond on the channel given in the request
                     let heartbeat_resp =
                         GossipResponse::Heartbeat(Self::build_heartbeat_message(&global_state));
-                    network_channel
+                    let res = network_channel
                         .send(GossipOutbound::Response {
                             channel,
                             message: heartbeat_resp,
                         })
-                        .unwrap();
+                        .map_err(|err| GossipError::SendMessage(err.to_string()));
 
                     // Merge newly discovered peers into local state
                     Self::merge_state_from_message(
@@ -203,6 +201,7 @@ impl GossipProtocolExecutor {
                         peer_expiry_cache.clone(),
                         global_state.clone(),
                     )
+                    .and(res)
                 }
                 GossipServerJob::HandleHeartbeatResp { peer_id, message } => {
                     Self::record_heartbeat(peer_id, global_state.clone());
@@ -215,14 +214,15 @@ impl GossipProtocolExecutor {
                     )
                 }
                 GossipServerJob::Cluster(job) => {
-                    if let Err(err) = Self::handle_cluster_management_job(
-                        job,
-                        network_channel.clone(),
-                        &global_state,
-                    ) {
-                        return err;
-                    }
+                    Self::handle_cluster_management_job(job, network_channel.clone(), &global_state)
                 }
+            };
+
+            if let Err(err) = res {
+                println!(
+                    "Error in gossip server execution loop: {:?}",
+                    err.to_string()
+                );
             }
         }
     }
