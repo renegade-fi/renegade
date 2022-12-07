@@ -1,7 +1,8 @@
 //! Groups gossip server logic for the heartbeat protocol
 
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap},
+    str::FromStr,
     thread::{self, JoinHandle},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -72,38 +73,78 @@ impl GossipProtocolExecutor {
     ///      2. Add any new peers from that list to the local state
     /// TODO: There is probably a cleaner way to do this
     pub(super) fn merge_state_from_message(
-        local_peer_id: WrappedPeerId,
         message: &HeartbeatMessage,
         network_channel: UnboundedSender<GossipOutbound>,
         peer_expiry_cache: SharedLRUCache,
         global_state: RelayerState,
     ) -> Result<(), GossipError> {
-        // Merge wallet information and peer info
-        Self::merge_wallets(
-            local_peer_id,
-            &message.managed_wallets,
+        // Merge the peer info first
+        Self::merge_peer_index(
             &message.known_peers,
             network_channel.clone(),
             peer_expiry_cache,
             &global_state,
-        );
+        )?;
+
+        // Merge wallet information and peer info
+        Self::merge_wallets(&message.managed_wallets, &global_state);
 
         // Merge cluster information into the local cluster
         Self::merge_cluster_metadata(&message.cluster_metadata, network_channel, &global_state)
+    }
+
+    /// Merges the list of known peers from an incoming heartbeat with the local
+    /// peer index
+    fn merge_peer_index(
+        incoming_peer_info: &HashMap<String, PeerInfo>,
+        network_channel: UnboundedSender<GossipOutbound>,
+        peer_expiry_cache: SharedLRUCache,
+        global_state: &RelayerState,
+    ) -> Result<(), GossipError> {
+        // Acquire only a read lock to determine if the local peer index is out of date. If so, upgrade to
+        // a write lock and update the local index
+        let mut peers_to_add = Vec::new();
+        {
+            let locked_peer_info = global_state.read_known_peers();
+            for peer_id in incoming_peer_info.keys() {
+                let parsed_peer_id = WrappedPeerId::from_str(peer_id)
+                    .map_err(|err| GossipError::Parse(err.to_string()))?;
+
+                if !locked_peer_info.contains_key(&parsed_peer_id) {
+                    peers_to_add.push(parsed_peer_id);
+                }
+            }
+        } // locked_peer_info released
+
+        // Acquire a write lock if there are new peers to merge from the message
+        if peers_to_add.is_empty() {
+            return Ok(());
+        }
+
+        let mut locked_peer_info = global_state.write_known_peers();
+        let mut locked_expiry_cache = peer_expiry_cache
+            .write()
+            .expect("peer expiry cache lock poisoned");
+        for peer_id in peers_to_add.into_iter() {
+            let new_peer_info = incoming_peer_info.get(&peer_id.to_string()).unwrap();
+            Self::add_new_peer(
+                peer_id,
+                new_peer_info.clone(),
+                &mut locked_peer_info,
+                &mut locked_expiry_cache,
+                network_channel.clone(),
+            );
+        }
+
+        Ok(())
     }
 
     /// Merges the wallet information from an incoming heartbeat with the locally
     /// stored wallet information
     ///
     /// In specific, the local peer must update its replicas list for any wallet it manages
-    fn merge_wallets(
-        local_peer_id: WrappedPeerId,
-        peer_wallets: &HashMap<Uuid, WalletMetadata>,
-        incoming_peer_info: &HashMap<String, PeerInfo>,
-        network_channel: UnboundedSender<GossipOutbound>,
-        peer_expiry_cache: SharedLRUCache,
-        global_state: &RelayerState,
-    ) {
+    /// TODO: Look up peer info locally
+    fn merge_wallets(peer_wallets: &HashMap<Uuid, WalletMetadata>, global_state: &RelayerState) {
         // Loop over locally replicated wallets, check for new peers in each wallet
         // We break this down into two phases, in the first phase, the local peer determines which
         // wallets it must merge in order to receive updated replicas.
@@ -145,8 +186,7 @@ impl GossipProtocolExecutor {
 
         // Update all wallets that were determined to be missing known peer replicas
         let mut locked_wallets = global_state.write_managed_wallets();
-        let mut locked_peers = global_state.write_known_peers();
-        let mut locked_expiry_cache = peer_expiry_cache.write().unwrap();
+        let locked_peers = global_state.read_known_peers();
 
         for wallet in wallets_to_merge {
             let local_replicas = &mut locked_wallets
@@ -159,55 +199,16 @@ impl GossipProtocolExecutor {
                 .expect("missing wallet ID")
                 .replicas;
 
-            Self::merge_replicas_for_wallet(
-                local_peer_id,
-                local_replicas,
-                message_replicas,
-                &mut locked_peers,
-                incoming_peer_info,
-                network_channel.clone(),
-                &mut locked_expiry_cache,
-            )
-        }
-    }
-
-    /// Merges the replicating peers for a given wallet
-    /// The typing of the arguments implies that the values passed in are already
-    /// locked by the caller
-    fn merge_replicas_for_wallet(
-        local_peer_id: WrappedPeerId,
-        known_replicas: &mut HashSet<WrappedPeerId>,
-        new_replicas: &HashSet<WrappedPeerId>,
-        known_peer_info: &mut HashMap<WrappedPeerId, PeerInfo>,
-        new_replica_peer_info: &HashMap<String, PeerInfo>,
-        network_channel: UnboundedSender<GossipOutbound>,
-        peer_expiry_cache: &mut LruCache<WrappedPeerId, u64>,
-    ) {
-        // Loop over replicas that the peer knows about for this wallet
-        for replica in new_replicas.iter() {
-            // Skip local peer and peers already known
-            if *replica == local_peer_id || known_replicas.contains(replica) {
-                continue;
-            }
-
-            // Add new peer to globally maintained peer info map
-            if let Some(replica_info) = new_replica_peer_info.get(&replica.to_string()) {
-                // Copy the peer info and record a dummy heartbeat to prevent immediate expiration
-                let peer_info_copy = replica_info.clone();
-                peer_info_copy.successful_heartbeat();
-
-                // Skip adding the peer to the replicas list if the peer has recently been expired
-                // (function returns false)
-                if Self::add_new_peer(
-                    *replica,
-                    peer_info_copy,
-                    known_peer_info,
-                    peer_expiry_cache,
-                    network_channel.clone(),
-                ) {
-                    // Add new peer as a replica of the wallet in the wallet's metadata
-                    known_replicas.insert(*replica);
+            for replica in message_replicas {
+                // Skip replicas for which we don't have peer information. This can happen either because
+                // the message failed to include peer info for a replica; or because the given replica is
+                // in an expiry invisibility window for the local node. In either case, if we don't have
+                // peer info, knowing about the replica is useless because we cannot dial it.
+                if !locked_peers.contains_key(replica) {
+                    continue;
                 }
+
+                local_replicas.insert(*replica);
             }
         }
     }
@@ -277,6 +278,8 @@ impl GossipProtocolExecutor {
         }
 
         if let Entry::Vacant(e) = known_peer_info.entry(new_peer_id) {
+            // Record a dummy heartbeat to ensure the peer doesn't immediately timeout, then add to index
+            new_peer_info.successful_heartbeat();
             e.insert(new_peer_info.clone());
 
             // Register the newly discovered peer with the network manager

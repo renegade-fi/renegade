@@ -195,7 +195,6 @@ impl GossipProtocolExecutor {
 
                     // Merge newly discovered peers into local state
                     Self::merge_state_from_message(
-                        local_peer_id,
                         &message,
                         network_channel.clone(),
                         peer_expiry_cache.clone(),
@@ -206,7 +205,6 @@ impl GossipProtocolExecutor {
                 GossipServerJob::HandleHeartbeatResp { peer_id, message } => {
                     Self::record_heartbeat(peer_id, global_state.clone());
                     Self::merge_state_from_message(
-                        local_peer_id,
                         &message,
                         network_channel.clone(),
                         peer_expiry_cache.clone(),

@@ -2,6 +2,7 @@
 
 use ed25519_dalek::{PublicKey, SignatureError};
 use libp2p::{Multiaddr, PeerId};
+use libp2p_core::ParseError as PeerIdParseError;
 use serde::{
     de::{Error as SerdeErr, Visitor},
     Deserialize, Serialize,
@@ -9,6 +10,7 @@ use serde::{
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     ops::Deref,
+    str::FromStr,
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -98,6 +100,14 @@ impl WrappedPeerId {
     /// Create a random PeerID and wrap it
     pub fn random() -> Self {
         Self(PeerId::random())
+    }
+}
+
+impl FromStr for WrappedPeerId {
+    type Err = PeerIdParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(WrappedPeerId(PeerId::from_str(s)?))
     }
 }
 
