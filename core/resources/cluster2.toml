@@ -1,0 +1,8 @@
+port = 9000
+wallet-ids = ["79d19103-1040-4a37-b35d-56218fb38cfc"]
+version = 0
+debug = true
+
+# A base64 encoded dummy keypair
+cluster-public-key = "Ny3zHyKDIpoVwFtAZda9aiavMECEdreTQmO1UDN6RZ8="
+cluster-private-key = "BpLAiCutcO0svpbcM252KwoCMaMW41HD/VLSchyFkkg="
