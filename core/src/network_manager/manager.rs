@@ -1,7 +1,7 @@
 //! The network manager handles lower level interaction with the p2p network
 
 use crossbeam::channel::Sender;
-use ed25519_dalek::{Keypair as SigKeypair, Signature, Signer, Verifier};
+use ed25519_dalek::{Digest, Keypair as SigKeypair, Sha512, Signature, Signer, Verifier};
 use futures::StreamExt;
 use libp2p::{
     gossipsub::{GossipsubEvent, GossipsubMessage, Sha256Topic},
@@ -16,7 +16,10 @@ use tracing::{debug, event, Level};
 
 use crate::{
     api::{
-        cluster_management::{ClusterManagementMessage, ReplicatedMessage},
+        cluster_management::{
+            ClusterAuthResponse, ClusterAuthResponseBody, ClusterManagementMessage,
+            ReplicatedMessage,
+        },
         gossip::{
             GossipOutbound, GossipOutbound::Pubsub, GossipRequest, GossipResponse, PubsubMessage,
         },
@@ -121,8 +124,11 @@ impl NetworkManager {
                         SwarmEvent::Behaviour(event) => {
                             Self::handle_inbound_messsage(
                                 event,
+                                local_peer_id,
+                                &cluster_key,
                                 gossip_work_queue.clone(),
-                                handshake_work_queue.clone()
+                                handshake_work_queue.clone(),
+                                &mut swarm,
                             )
                         },
                         SwarmEvent::NewListenAddr { address, .. } => {
@@ -209,8 +215,11 @@ impl NetworkManager {
     /// Handles a network event from the relayer's protocol
     fn handle_inbound_messsage(
         message: ComposedProtocolEvent,
+        local_peer_id: WrappedPeerId,
+        cluster_key: &SigKeypair,
         gossip_work_queue: Sender<GossipServerJob>,
         handshake_work_queue: Sender<HandshakeExecutionJob>,
+        swarm: &mut Swarm<ComposedNetworkBehavior>,
     ) {
         match message {
             ComposedProtocolEvent::RequestResponse(request_response) => {
@@ -218,8 +227,11 @@ impl NetworkManager {
                     Self::handle_inbound_request_response_message(
                         peer,
                         message,
+                        local_peer_id,
+                        cluster_key,
                         gossip_work_queue,
                         handshake_work_queue,
+                        swarm,
                     );
                 }
             }
@@ -247,8 +259,11 @@ impl NetworkManager {
     fn handle_inbound_request_response_message(
         peer_id: PeerId,
         message: RequestResponseMessage<GossipRequest, GossipResponse>,
+        local_peer_id: WrappedPeerId,
+        cluster_key: &SigKeypair,
         gossip_work_queue: Sender<GossipServerJob>,
         handshake_work_queue: Sender<HandshakeExecutionJob>,
+        swarm: &mut Swarm<ComposedNetworkBehavior>,
     ) {
         // Multiplex over request/response message types
         match message {
@@ -256,6 +271,34 @@ impl NetworkManager {
             RequestResponseMessage::Request {
                 request, channel, ..
             } => match request {
+                // Fulfill cluster auth requests directly in the network manager; it has direct
+                // access to the private key
+                GossipRequest::ClusterAuth(auth_message) => {
+                    // If the auth message is not for the local peer's cluster, ignore it
+                    let local_cluster_id = ClusterId::new(&cluster_key.public);
+                    if auth_message.cluster_id != local_cluster_id {
+                        return;
+                    }
+
+                    // Otherwise, sign a response of (peer_id, cluster_id)
+                    let body = ClusterAuthResponseBody {
+                        peer_id: local_peer_id,
+                        cluster_id: local_cluster_id,
+                    };
+
+                    let signature = cluster_key
+                        .sign(&Into::<Vec<u8>>::into(&body))
+                        .to_bytes()
+                        .to_vec();
+                    let resp = GossipResponse::ClusterAuth(ClusterAuthResponse { body, signature });
+
+                    swarm
+                        .behaviour_mut()
+                        .request_response
+                        .send_response(channel, resp)
+                        .unwrap();
+                }
+
                 GossipRequest::Heartbeat(heartbeat_message) => {
                     gossip_work_queue
                         .send(GossipServerJob::HandleHeartbeatReq {

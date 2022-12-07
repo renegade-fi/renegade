@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use crate::gossip::types::{ClusterId, WrappedPeerId};
 
 use super::{
-    cluster_management::{ClusterManagementMessage, ReplicateRequestBody},
+    cluster_management::{
+        ClusterAuthRequest, ClusterAuthResponse, ClusterManagementMessage, ReplicateRequestBody,
+    },
     handshake::HandshakeMessage,
     hearbeat::HeartbeatMessage,
 };
@@ -52,6 +54,8 @@ pub enum GossipOutbound {
 /// request-response protocol
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GossipRequest {
+    /// A request from a peer to prove that the local peer is part of the given cluster
+    ClusterAuth(ClusterAuthRequest),
     /// A request from a peer initiating a heartbeat
     Heartbeat(HeartbeatMessage),
     /// A request from a peer initiating a handshake
@@ -63,6 +67,8 @@ pub enum GossipRequest {
 /// Represents the possible response types for a request-response message
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GossipResponse {
+    /// A repsonse from a peer proving that they are authroized to join a given cluster
+    ClusterAuth(ClusterAuthResponse),
     /// A response from a peer to a sender's heartbeat request
     Heartbeat(HeartbeatMessage),
     /// A response from a peer to a sender's handshake request
