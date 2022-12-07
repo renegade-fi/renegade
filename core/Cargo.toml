@@ -12,7 +12,21 @@ clap = { version = "3.2.8", features = ["derive"] }
 crossbeam = { version = "0.8.1" }
 ed25519-dalek = { version = "1.0.1" }
 futures = { version = "0.3.21" }
-libp2p = { version = "0.46.1", features = ["tcp-tokio", "mdns"] }
+libp2p = { version = "0.50", features = [
+    "async-std",
+    "dns",
+    "gossipsub", 
+    "kad",
+    "mplex",
+    "noise", 
+    "request-response", 
+    "tcp",
+    "websocket",
+    "yamux",
+]}
+libp2p-core = { version = "0.38" }
+libp2p-swarm = { version = "0.41" }
+libp2p-swarm-derive = { version = "0.31" }
 lru = { version = "0.7.7" }
 num-bigint = { version = "0.4.3" }
 once_cell = "1.5"

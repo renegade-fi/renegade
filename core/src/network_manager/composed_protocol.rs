@@ -15,8 +15,9 @@ use libp2p::{
     request_response::{
         ProtocolName, ProtocolSupport, RequestResponse, RequestResponseCodec, RequestResponseEvent,
     },
-    NetworkBehaviour, PeerId,
+    PeerId,
 };
+use libp2p_swarm_derive::NetworkBehaviour;
 use std::{
     io::{Error as IoError, ErrorKind},
     iter,
