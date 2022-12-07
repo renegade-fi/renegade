@@ -37,6 +37,12 @@ use super::{
     worker::NetworkManagerConfig,
 };
 
+/// An error sending a response through the swarm
+const ERR_SENDING_RESPONSE: &str = "error sending response, channel closed";
+/// Error emitted when a peer requests the local peer to prove auth for a different cluster
+/// than its own
+const ERR_WRONG_CLUSTER: &str = "cluster ID requested does not match local cluster ID";
+
 /// Groups logic around monitoring and requesting the network
 pub struct NetworkManager {
     /// The config passed from the coordinator thread
@@ -122,14 +128,16 @@ impl NetworkManager {
                 event = swarm.select_next_some() => {
                     match event {
                         SwarmEvent::Behaviour(event) => {
-                            Self::handle_inbound_messsage(
+                            if let Err(err) = Self::handle_inbound_messsage(
                                 event,
                                 local_peer_id,
                                 &cluster_key,
                                 gossip_work_queue.clone(),
                                 handshake_work_queue.clone(),
                                 &mut swarm,
-                            )
+                            ) {
+                                debug!("error in network manager: {:?}", err);
+                            }
                         },
                         SwarmEvent::NewListenAddr { address, .. } => {
                             println!("Listening on {}/p2p/{}\n", address, local_peer_id);
@@ -220,7 +228,7 @@ impl NetworkManager {
         gossip_work_queue: Sender<GossipServerJob>,
         handshake_work_queue: Sender<HandshakeExecutionJob>,
         swarm: &mut Swarm<ComposedNetworkBehavior>,
-    ) {
+    ) -> Result<(), NetworkManagerError> {
         match message {
             ComposedProtocolEvent::RequestResponse(request_response) => {
                 if let RequestResponseEvent::Message { peer, message } = request_response {
@@ -232,22 +240,21 @@ impl NetworkManager {
                         gossip_work_queue,
                         handshake_work_queue,
                         swarm,
-                    );
+                    )?;
                 }
+
+                Ok(())
             }
             // Pubsub events currently do nothing
             ComposedProtocolEvent::PubSub(msg) => {
                 if let GossipsubEvent::Message { message, .. } = msg {
-                    if let Err(err) =
-                        Self::handle_inbound_pubsub_message(message, gossip_work_queue)
-                    {
-                        println!("Pubsub handler failed: {:?}", err);
-                        event!(Level::ERROR, message = ?err, "error handling pubsub message");
-                    }
+                    Self::handle_inbound_pubsub_message(message, gossip_work_queue)?;
                 }
+
+                Ok(())
             }
             // KAD events do nothing for now, routing tables are automatically updated by libp2p
-            ComposedProtocolEvent::Kademlia(_) => {}
+            ComposedProtocolEvent::Kademlia(_) => Ok(()),
         }
     }
 
@@ -264,7 +271,7 @@ impl NetworkManager {
         gossip_work_queue: Sender<GossipServerJob>,
         handshake_work_queue: Sender<HandshakeExecutionJob>,
         swarm: &mut Swarm<ComposedNetworkBehavior>,
-    ) {
+    ) -> Result<(), NetworkManagerError> {
         // Multiplex over request/response message types
         match message {
             // Handle inbound request from another peer
@@ -277,7 +284,9 @@ impl NetworkManager {
                     // If the auth message is not for the local peer's cluster, ignore it
                     let local_cluster_id = ClusterId::new(&cluster_key.public);
                     if auth_message.cluster_id != local_cluster_id {
-                        return;
+                        return Err(NetworkManagerError::Authentication(
+                            ERR_WRONG_CLUSTER.to_string(),
+                        ));
                     }
 
                     // Otherwise, sign a response of (peer_id, cluster_id)
@@ -296,47 +305,65 @@ impl NetworkManager {
                         .behaviour_mut()
                         .request_response
                         .send_response(channel, resp)
-                        .unwrap();
+                        .map_err(|_| NetworkManagerError::Network(ERR_SENDING_RESPONSE.to_string()))
                 }
 
-                GossipRequest::Heartbeat(heartbeat_message) => {
-                    gossip_work_queue
-                        .send(GossipServerJob::HandleHeartbeatReq {
-                            peer_id: WrappedPeerId(peer_id),
-                            message: heartbeat_message,
-                            channel,
-                        })
-                        .unwrap();
-                }
-                GossipRequest::Handshake(handshake_message) => {
-                    handshake_work_queue
-                        .send(HandshakeExecutionJob::ProcessHandshakeRequest {
-                            peer_id: WrappedPeerId(peer_id),
-                            message: handshake_message,
-                            response_channel: channel,
-                        })
-                        .unwrap();
-                }
-                GossipRequest::Replicate(replicate_message) => {
-                    gossip_work_queue
-                        .send(GossipServerJob::Cluster(
-                            ClusterManagementJob::ReplicateRequest(replicate_message),
-                        ))
-                        .unwrap();
-                }
+                GossipRequest::Heartbeat(heartbeat_message) => gossip_work_queue
+                    .send(GossipServerJob::HandleHeartbeatReq {
+                        peer_id: WrappedPeerId(peer_id),
+                        message: heartbeat_message,
+                        channel,
+                    })
+                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
+
+                GossipRequest::Handshake(handshake_message) => handshake_work_queue
+                    .send(HandshakeExecutionJob::ProcessHandshakeRequest {
+                        peer_id: WrappedPeerId(peer_id),
+                        message: handshake_message,
+                        response_channel: channel,
+                    })
+                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
+
+                GossipRequest::Replicate(replicate_message) => gossip_work_queue
+                    .send(GossipServerJob::Cluster(
+                        ClusterManagementJob::ReplicateRequest(replicate_message),
+                    ))
+                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
             },
 
             // Handle inbound response
             RequestResponseMessage::Response { response, .. } => match response {
-                GossipResponse::Heartbeat(heartbeat_message) => {
-                    gossip_work_queue
-                        .send(GossipServerJob::HandleHeartbeatResp {
-                            peer_id: WrappedPeerId(peer_id),
-                            message: heartbeat_message,
-                        })
-                        .unwrap();
+                GossipResponse::ClusterAuth(auth_response) => {
+                    // Verify the signature
+                    let pubkey = auth_response
+                        .body
+                        .cluster_id
+                        .get_public_key()
+                        .map_err(|err| {
+                            NetworkManagerError::SerializeDeserialize(err.to_string())
+                        })?;
+                    let signature =
+                        Signature::from_bytes(&auth_response.signature).map_err(|err| {
+                            NetworkManagerError::SerializeDeserialize(err.to_string())
+                        })?;
+
+                    pubkey
+                        .verify(&Into::<Vec<u8>>::into(&auth_response.body), &signature)
+                        .map_err(|err| NetworkManagerError::Authentication(err.to_string()))?;
+
+                    // TODO: Forward a job to to the gossip manager to add this node to the cluster
+
+                    Ok(())
                 }
-                GossipResponse::Handshake() => {}
+
+                GossipResponse::Heartbeat(heartbeat_message) => gossip_work_queue
+                    .send(GossipServerJob::HandleHeartbeatResp {
+                        peer_id: WrappedPeerId(peer_id),
+                        message: heartbeat_message,
+                    })
+                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
+
+                GossipResponse::Handshake() => Ok(()),
             },
         }
     }
