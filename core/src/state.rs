@@ -96,7 +96,6 @@ impl RelayerState {
     pub fn initialize_global_state(
         debug: bool,
         managed_wallet_ids: Vec<String>,
-        bootstrap_servers: Vec<PeerInfo>,
         cluster_id: ClusterId,
     ) -> Self {
         // Setup initial wallets
@@ -112,18 +111,12 @@ impl RelayerState {
             managed_wallets.insert(wallet_id, wal);
         }
 
-        // Setup initial set of known peers to be the bootstrap servers
-        let mut known_peers = HashMap::<WrappedPeerId, PeerInfo>::new();
-        for server in bootstrap_servers.iter() {
-            known_peers.insert(server.get_peer_id(), server.clone());
-        }
-
         Self {
             debug,
             // Replaced by a correct value when network manager initializes
             local_peer_id: new_shared(WrappedPeerId::random()),
             managed_wallets: new_shared(managed_wallets),
-            known_peers: new_shared(known_peers),
+            known_peers: new_shared(HashMap::new()),
             local_cluster_id: new_shared(cluster_id.clone()),
             cluster_metadata: new_shared(ClusterMetadata::new(cluster_id)),
         }

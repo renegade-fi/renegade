@@ -7,7 +7,13 @@ use libp2p::Multiaddr;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use crate::{
-    api::gossip::GossipOutbound, state::RelayerState, types::SystemBusMessage, worker::Worker,
+    api::{
+        gossip::{GossipOutbound, GossipRequest},
+        hearbeat::BootstrapRequest,
+    },
+    state::RelayerState,
+    types::SystemBusMessage,
+    worker::Worker,
     CancelChannel,
 };
 
@@ -15,7 +21,7 @@ use super::{
     errors::GossipError,
     jobs::GossipServerJob,
     server::{GossipProtocolExecutor, GossipServer},
-    types::{ClusterId, WrappedPeerId},
+    types::{ClusterId, PeerInfo, WrappedPeerId},
 };
 
 /// The configuration passed from the coordinator to the GossipServer
@@ -27,6 +33,8 @@ pub struct GossipServerConfig {
     pub(crate) local_addr: Multiaddr,
     /// The cluster ID of the local peer
     pub(crate) cluster_id: ClusterId,
+    /// The servers to bootrap into the network with
+    pub(crate) bootstrap_servers: Vec<PeerInfo>,
     /// A reference to the relayer-global state
     pub(crate) global_state: RelayerState,
     /// A job queue to send outbound heartbeat requests on
@@ -89,6 +97,34 @@ impl Worker for GossipServer {
             self.config.cancel_channel.clone(),
         )?;
         self.protocol_executor = Some(protocol_executor);
+
+        // Bootstrap into the network in two steps:
+        //  1. Forward all bootstrap addresses to the network manager so it may dial them
+        //  2. Send bootstrap requests to all bootstrapping peers
+        // Wait until all peers have been indexed before sending requests to give async network
+        // manager time to index the peers in the case that these messages are processed concurrently
+        for boostrap_peer in self.config.bootstrap_servers.iter() {
+            self.config
+                .network_sender
+                .send(GossipOutbound::NewAddr {
+                    peer_id: boostrap_peer.get_peer_id(),
+                    address: boostrap_peer.get_addr(),
+                })
+                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
+        }
+
+        let req = BootstrapRequest {
+            peer_id: self.config.local_peer_id,
+        };
+        for bootstrap_peer in self.config.bootstrap_servers.iter() {
+            self.config
+                .network_sender
+                .send(GossipOutbound::Request {
+                    peer_id: bootstrap_peer.get_peer_id(),
+                    message: GossipRequest::Boostrap(req.clone()),
+                })
+                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
+        }
 
         // Wait for the local peer to handshake with known other peers
         // before sending a cluster membership message

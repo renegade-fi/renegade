@@ -58,12 +58,8 @@ async fn main() -> Result<(), CoordinatorError> {
     );
 
     // Construct the global state
-    let global_state = RelayerState::initialize_global_state(
-        args.debug,
-        args.wallet_ids,
-        args.bootstrap_servers,
-        args.cluster_id.clone(),
-    );
+    let global_state =
+        RelayerState::initialize_global_state(args.debug, args.wallet_ids, args.cluster_id.clone());
 
     // Build communication primitives
     // First, the global shared mpmc bus that all workers have access to
@@ -102,6 +98,7 @@ async fn main() -> Result<(), CoordinatorError> {
         local_peer_id: network_manager.local_peer_id,
         local_addr: network_manager.local_addr.clone(),
         cluster_id: args.cluster_id,
+        bootstrap_servers: args.bootstrap_servers,
         global_state: global_state.clone(),
         heartbeat_worker_sender,
         heartbeat_worker_receiver,
