@@ -160,8 +160,6 @@ impl RelayerState {
     }
 
     /// Acquire a read lock on `local_peer_id`
-    /// TODO: Remove the lint allowance
-    #[allow(dead_code)]
     pub fn read_peer_id(&self) -> RwLockReadGuard<WrappedPeerId> {
         self.local_peer_id
             .read()
@@ -176,20 +174,9 @@ impl RelayerState {
     }
 
     /// Acquire a read lock on `cluster_id`
-    /// TODO: Remove the lint allowance
-    #[allow(dead_code)]
     pub fn read_cluster_id(&self) -> RwLockReadGuard<ClusterId> {
         self.local_cluster_id
             .read()
-            .expect("cluster_id lock poisoned")
-    }
-
-    /// Acquire a write lock on `cluster_id`
-    /// TODO: Remove the lint allowance
-    #[allow(dead_code)]
-    pub fn write_cluster_id(&self) -> RwLockWriteGuard<ClusterId> {
-        self.local_cluster_id
-            .write()
             .expect("cluster_id lock poisoned")
     }
 
