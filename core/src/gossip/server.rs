@@ -24,7 +24,9 @@ use crate::{
 
 use super::{
     errors::GossipError,
-    heartbeat::{HeartbeatTimer, EXPIRY_CACHE_SIZE, HEARTBEAT_INTERVAL_MS},
+    heartbeat::{
+        HeartbeatTimer, CLUSTER_HEARTBEAT_INTERVAL_MS, EXPIRY_CACHE_SIZE, HEARTBEAT_INTERVAL_MS,
+    },
     jobs::GossipServerJob,
     types::WrappedPeerId,
     worker::GossipServerConfig,
@@ -130,7 +132,12 @@ impl GossipProtocolExecutor {
                 .map_err(|err| GossipError::ServerSetup(err.to_string()))
         }?;
 
-        let heartbeat_timer = HeartbeatTimer::new(job_sender, HEARTBEAT_INTERVAL_MS, global_state);
+        let heartbeat_timer = HeartbeatTimer::new(
+            job_sender,
+            CLUSTER_HEARTBEAT_INTERVAL_MS,
+            HEARTBEAT_INTERVAL_MS,
+            global_state,
+        );
 
         Ok(Self {
             thread_handle: Some(thread_handle),
@@ -140,10 +147,9 @@ impl GossipProtocolExecutor {
 
     /// Joins execution of the calling thread to the worker thread
     pub fn join(&mut self) -> Vec<JoinHandle<GossipError>> {
-        vec![
-            self.thread_handle.take().unwrap(),
-            self.heartbeat_timer.join_handle(),
-        ]
+        let mut handles = vec![self.thread_handle.take().unwrap()];
+        handles.append(&mut self.heartbeat_timer.join_handle());
+        handles
     }
 
     /// Runs the executor loop
