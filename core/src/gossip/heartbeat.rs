@@ -187,6 +187,7 @@ impl GossipProtocolExecutor {
         // Update all wallets that were determined to be missing known peer replicas
         let mut locked_wallets = global_state.write_managed_wallets();
         let locked_peers = global_state.read_known_peers();
+        let locked_cluster_metadata = global_state.read_cluster_metadata();
 
         for wallet in wallets_to_merge {
             let local_replicas = &mut locked_wallets
@@ -204,7 +205,12 @@ impl GossipProtocolExecutor {
                 // the message failed to include peer info for a replica; or because the given replica is
                 // in an expiry invisibility window for the local node. In either case, if we don't have
                 // peer info, knowing about the replica is useless because we cannot dial it.
-                if !locked_peers.contains_key(replica) {
+                //
+                // We also skip replicas not from the same cluster, as each cluster assumes it is the sole
+                // replicator of the wallets it owns
+                if !locked_peers.contains_key(replica)
+                    || !locked_cluster_metadata.known_members.contains(replica)
+                {
                     continue;
                 }
 
