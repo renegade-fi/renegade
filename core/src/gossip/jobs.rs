@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::api::{
     cluster_management::{ClusterJoinMessage, ReplicateRequestBody},
     gossip::GossipResponse,
-    hearbeat::HeartbeatMessage,
+    hearbeat::{BootstrapRequest, HeartbeatMessage},
 };
 
 use super::types::{ClusterId, WrappedPeerId};
@@ -15,10 +15,12 @@ use super::types::{ClusterId, WrappedPeerId};
 /// Defines a heartbeat job that can be enqueued by other workers in a relayer
 #[derive(Debug)]
 pub enum GossipServerJob {
-    /// Job type for the heartbeat executor to send an outbound heartbeat request
-    ExecuteHeartbeat(WrappedPeerId),
+    /// Handle a job to boostrap a newly added peer
+    Bootstrap(BootstrapRequest, ResponseChannel<GossipResponse>),
     /// Handle an incoming cluster management job
     Cluster(ClusterManagementJob),
+    /// Job type for the heartbeat executor to send an outbound heartbeat request
+    ExecuteHeartbeat(WrappedPeerId),
     /// Handle an incoming heartbeat request from a peer
     HandleHeartbeatReq {
         /// The peer sending the request

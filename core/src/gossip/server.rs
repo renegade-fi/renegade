@@ -173,6 +173,17 @@ impl GossipProtocolExecutor {
             }
 
             let res = match job {
+                GossipServerJob::Bootstrap(_, response_channel) => {
+                    // Send a heartbeat response for simplicity
+                    let heartbeat_resp =
+                        GossipResponse::Heartbeat(Self::build_heartbeat_message(&global_state));
+                    network_channel
+                        .send(GossipOutbound::Response {
+                            channel: response_channel,
+                            message: heartbeat_resp,
+                        })
+                        .map_err(|err| GossipError::SendMessage(err.to_string()))
+                }
                 GossipServerJob::ExecuteHeartbeat(peer_id) => Self::send_heartbeat(
                     peer_id,
                     local_peer_id,

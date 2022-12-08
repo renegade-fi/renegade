@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    gossip::types::PeerInfo,
+    gossip::types::{PeerInfo, WrappedPeerId},
     state::{ClusterMetadata, RelayerState, WalletMetadata},
 };
 
@@ -43,4 +43,11 @@ impl From<&RelayerState> for HeartbeatMessage {
             cluster_metadata: state.read_cluster_metadata().clone(),
         }
     }
+}
+
+/// Defines a request to bootstrap the cluster state from the recipient
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BootstrapRequest {
+    /// The requester's peer ID
+    pub peer_id: WrappedPeerId,
 }

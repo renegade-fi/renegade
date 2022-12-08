@@ -278,6 +278,11 @@ impl NetworkManager {
             RequestResponseMessage::Request {
                 request, channel, ..
             } => match request {
+                // Forward the bootstrap request directly to the gossip server
+                GossipRequest::Boostrap(req) => gossip_work_queue
+                    .send(GossipServerJob::Bootstrap(req, channel))
+                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
+
                 // Fulfill cluster auth requests directly in the network manager; it has direct
                 // access to the private key
                 GossipRequest::ClusterAuth(auth_message) => {

@@ -11,7 +11,7 @@ use super::{
         ClusterAuthRequest, ClusterAuthResponse, ClusterManagementMessage, ReplicateRequestBody,
     },
     handshake::HandshakeMessage,
-    hearbeat::HeartbeatMessage,
+    hearbeat::{BootstrapRequest, HeartbeatMessage},
 };
 
 /// Represents an outbound gossip message, either a request to a peer
@@ -54,6 +54,8 @@ pub enum GossipOutbound {
 /// request-response protocol
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GossipRequest {
+    /// A request from a peer to bootstrap the network state from the recipient
+    Boostrap(BootstrapRequest),
     /// A request from a peer to prove that the local peer is part of the given cluster
     ClusterAuth(ClusterAuthRequest),
     /// A request from a peer initiating a heartbeat
