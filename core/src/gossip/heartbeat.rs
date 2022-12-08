@@ -25,7 +25,7 @@ use super::{
     errors::GossipError,
     jobs::GossipServerJob,
     server::{GossipProtocolExecutor, SharedLRUCache},
-    types::{PeerInfo, WrappedPeerId},
+    types::{ClusterId, PeerInfo, WrappedPeerId},
 };
 
 /**
@@ -133,12 +133,13 @@ impl GossipProtocolExecutor {
         for peer_id in peers_to_add.into_iter() {
             let new_peer_info = incoming_peer_info.get(&peer_id.to_string()).unwrap();
             Self::add_new_peer(
+                global_state.read_cluster_id().clone(),
                 peer_id,
                 new_peer_info.clone(),
                 &mut locked_peer_info,
                 &mut locked_expiry_cache,
                 network_channel.clone(),
-            );
+            )?;
         }
 
         Ok(())
@@ -231,6 +232,13 @@ impl GossipProtocolExecutor {
         network_channel: UnboundedSender<GossipOutbound>,
         global_state: &RelayerState,
     ) -> Result<(), GossipError> {
+        // Skip merge if the cluster message is not from a peer in the local node's cluster
+        {
+            if incoming_cluster_info.id != *global_state.read_cluster_id() {
+                return Ok(());
+            }
+        } // cluster_id lock released
+
         // As in the `merge_wallets` implementation, we avoid acquiring a write lock on any state elements
         // if possible to avoid contention in the common (no updates) case
         let mut peers_to_add = Vec::new();
@@ -272,16 +280,17 @@ impl GossipProtocolExecutor {
     /// state. This value may be false if the peer has been recently expired and its
     /// invisibility window has not elapsed
     fn add_new_peer(
+        local_cluster_id: ClusterId,
         new_peer_id: WrappedPeerId,
         new_peer_info: PeerInfo,
         known_peer_info: &mut HashMap<WrappedPeerId, PeerInfo>,
         peer_expiry_cache: &mut LruCache<WrappedPeerId, u64>,
         network_channel: UnboundedSender<GossipOutbound>,
-    ) -> bool {
+    ) -> Result<bool, GossipError> {
         let now = get_current_time_seconds();
         if let Some(expired_at) = peer_expiry_cache.get(&new_peer_id) {
             if now - *expired_at <= EXPIRY_INVISIBILITY_WINDOW_MS / 1000 {
-                return false;
+                return Ok(false);
             }
 
             // Remove the peer from the expiry cache if its invisibility window has elapsed
@@ -300,10 +309,22 @@ impl GossipProtocolExecutor {
                     peer_id: new_peer_id,
                     address: new_peer_info.get_addr(),
                 })
-                .unwrap();
+                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
         };
 
-        true
+        // If the peer is also part of the local cluster, send a cluster auth request
+        if new_peer_info.get_cluster_id() == local_cluster_id {
+            network_channel
+                .send(GossipOutbound::Request {
+                    peer_id: new_peer_id,
+                    message: GossipRequest::ClusterAuth(ClusterAuthRequest {
+                        cluster_id: local_cluster_id,
+                    }),
+                })
+                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
+        }
+
+        Ok(true)
     }
 
     /// Sends heartbeat message to peers to exchange network information and ensure liveness
