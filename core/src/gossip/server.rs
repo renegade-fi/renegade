@@ -4,6 +4,7 @@
 //! loop of the workers
 
 use std::{
+    num::NonZeroUsize,
     sync::{Arc, RwLock},
     thread::{self, JoinHandle},
     time::Duration,
@@ -112,8 +113,9 @@ impl GossipProtocolExecutor {
     ) -> Result<Self, GossipError> {
         // Tracks recently expired peers and blocks them from being re-registered
         // until the state has synced. Maps peer_id to expiry time
-        let peer_expiry_cache: SharedLRUCache =
-            Arc::new(RwLock::new(LruCache::new(EXPIRY_CACHE_SIZE)));
+        let peer_expiry_cache: SharedLRUCache = Arc::new(RwLock::new(LruCache::new(
+            NonZeroUsize::new(EXPIRY_CACHE_SIZE).unwrap(),
+        )));
         let state_clone = global_state.clone();
 
         let thread_handle = {
