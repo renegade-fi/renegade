@@ -51,6 +51,8 @@ pub struct RelayerState {
     pub matched_order_pairs: Shared<Vec<(OrderIdentifier, OrderIdentifier)>>,
     /// The set of peers known to the sending relayer
     pub known_peers: Shared<HashMap<WrappedPeerId, PeerInfo>>,
+    /// Priorities for scheduling handshakes with each peer
+    pub handshake_priorities: Shared<HashMap<WrappedPeerId, u64>>,
     /// Information about the local peer's cluster
     pub cluster_metadata: Shared<ClusterMetadata>,
 }
@@ -129,6 +131,7 @@ impl RelayerState {
             managed_order_ids: new_shared((0..3).map(|_| Uuid::new_v4()).collect()),
             matched_order_pairs: new_shared(vec![]),
             known_peers: new_shared(HashMap::new()),
+            handshake_priorities: new_shared(HashMap::new()),
             local_cluster_id: new_shared(cluster_id.clone()),
             cluster_metadata: new_shared(ClusterMetadata::new(cluster_id)),
         }
@@ -156,6 +159,14 @@ impl RelayerState {
                 wallet.metadata.replicas.remove(peer);
             }
         }
+
+        // Remove the handshake priority entry for the peer
+        {
+            let mut locked_handshake_priorities = self.write_handshake_priorities();
+            for peer in peers.iter() {
+                locked_handshake_priorities.remove(peer);
+            }
+        } // locked_handshake_priorities released
     }
 
     /// Print the local relayer state to the screen for debugging
@@ -239,6 +250,20 @@ impl RelayerState {
     /// Acquire a write lock on `known_peers`
     pub fn write_known_peers(&self) -> RwLockWriteGuard<HashMap<WrappedPeerId, PeerInfo>> {
         self.known_peers.write().expect("known_peers lock poisoned")
+    }
+
+    /// Acquire a read lock on `handshake_priorities`
+    pub fn read_handshake_priorities(&self) -> RwLockReadGuard<HashMap<WrappedPeerId, u64>> {
+        self.handshake_priorities
+            .read()
+            .expect("handshake_priorities lock poisoned")
+    }
+
+    /// Acquire a write lock on `handshake_priorities`
+    pub fn write_handshake_priorities(&self) -> RwLockWriteGuard<HashMap<WrappedPeerId, u64>> {
+        self.handshake_priorities
+            .write()
+            .expect("handshake_prioritites lock poisoned")
     }
 
     /// Acquire a read lock on `cluster_metadata`
