@@ -46,6 +46,9 @@ pub struct RelayerState {
     /// Dummy list of known order identifiers
     /// TODO: Remove and replace handshake logic with order commitments
     pub managed_order_ids: Shared<Vec<OrderIdentifier>>,
+    /// A list of matched orders
+    /// TODO: Remove this
+    pub matched_order_pairs: Shared<Vec<(OrderIdentifier, OrderIdentifier)>>,
     /// The set of peers known to the sending relayer
     pub known_peers: Shared<HashMap<WrappedPeerId, PeerInfo>>,
     /// Information about the local peer's cluster
@@ -124,6 +127,7 @@ impl RelayerState {
             managed_wallets: new_shared(managed_wallets),
             // TODO: Remove this and replace with real data
             managed_order_ids: new_shared((0..3).map(|_| Uuid::new_v4()).collect()),
+            matched_order_pairs: new_shared(vec![]),
             known_peers: new_shared(HashMap::new()),
             local_cluster_id: new_shared(cluster_id.clone()),
             cluster_metadata: new_shared(ClusterMetadata::new(cluster_id)),
@@ -209,6 +213,24 @@ impl RelayerState {
             .expect("managed_order_ids lock poisoned")
     }
 
+    /// Acquire a read lock on `matched_order_pairs`
+    pub fn read_matched_order_pairs(
+        &self,
+    ) -> RwLockReadGuard<Vec<(OrderIdentifier, OrderIdentifier)>> {
+        self.matched_order_pairs
+            .read()
+            .expect("matched_order_pairs lock poisoned")
+    }
+
+    /// Acquire a write lock on `matched_order_pairs`
+    pub fn write_matched_order_paris(
+        &self,
+    ) -> RwLockWriteGuard<Vec<(OrderIdentifier, OrderIdentifier)>> {
+        self.matched_order_pairs
+            .write()
+            .expect("matched_order_pairs lock poisoned")
+    }
+
     /// Acquire a read lock on `known_peers`
     pub fn read_known_peers(&self) -> RwLockReadGuard<HashMap<WrappedPeerId, PeerInfo>> {
         self.known_peers.read().expect("known_peers lock poisoned")
@@ -288,7 +310,7 @@ impl Display for RelayerState {
         }
         f.write_str("\n\n\n")?;
 
-        // Write wallet info to the format
+        // Write order info to the format
         f.write_fmt(format_args!(
             "\n\t{}Managed Orders:{}\n",
             color::Fg(color::LightGreen),
@@ -299,6 +321,22 @@ impl Display for RelayerState {
                 "\t\t- {}{:?}{}\n",
                 color::Fg(color::LightYellow),
                 order_id,
+                color::Fg(color::Reset),
+            ))?;
+        }
+
+        // Write historically matched orders to the format
+        f.write_fmt(format_args!(
+            "\n\t{}Matched Order Pairs:{}\n",
+            color::Fg(color::LightGreen),
+            color::Fg(color::Reset),
+        ))?;
+        for (o1, o2) in self.read_matched_order_pairs().iter() {
+            f.write_fmt(format_args!(
+                "\t\t - {}({:?}, {:?}){}\n",
+                color::Fg(color::LightYellow),
+                o1,
+                o2,
                 color::Fg(color::Reset),
             ))?;
         }

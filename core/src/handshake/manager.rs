@@ -176,6 +176,11 @@ impl HandshakeManager {
                     .expect("handshake_cache lock poisoned")
                     .push(order1, order2);
 
+                // Write to global state for debugging
+                global_state
+                    .write_matched_order_paris()
+                    .push((order1, order2));
+
                 // Send back the message as an ack
                 Ok(Some(HandshakeMessage::ExecutionFinished { order1, order2 }))
             }
@@ -186,6 +191,11 @@ impl HandshakeManager {
                     .write()
                     .expect("handshake_cache lock poiseoned")
                     .push(order1, order2);
+
+                // Write to global state for debugging
+                global_state
+                    .write_matched_order_paris()
+                    .push((order1, order2));
 
                 Ok(None)
             }
