@@ -322,10 +322,10 @@ impl NetworkManager {
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
 
                 GossipRequest::Handshake(handshake_message) => handshake_work_queue
-                    .send(HandshakeExecutionJob::ProcessHandshakeRequest {
+                    .send(HandshakeExecutionJob::ProcessHandshakeMessage {
                         peer_id: WrappedPeerId(peer_id),
                         message: handshake_message,
-                        response_channel: channel,
+                        response_channel: Some(channel),
                     })
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
 
@@ -376,7 +376,14 @@ impl NetworkManager {
                     })
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
 
-                GossipResponse::Handshake() => Ok(()),
+                GossipResponse::Handshake(message) => handshake_work_queue
+                    .send(HandshakeExecutionJob::ProcessHandshakeMessage {
+                        peer_id: WrappedPeerId(peer_id),
+                        message,
+                        // The handshake should response via a new request sent on the network manager channel
+                        response_channel: None,
+                    })
+                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
             },
         }
     }

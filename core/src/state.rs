@@ -12,7 +12,10 @@ use std::{
 use termion::color;
 use uuid::Uuid;
 
-use crate::gossip::types::{ClusterId, PeerInfo, WrappedPeerId};
+use crate::{
+    gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
+    handshake::manager::OrderIdentifier,
+};
 
 /**
  * Constants and Types
@@ -40,6 +43,9 @@ pub struct RelayerState {
     pub local_cluster_id: Shared<ClusterId>,
     /// The list of wallets managed by the sending relayer
     pub managed_wallets: Shared<HashMap<Uuid, Wallet>>,
+    /// Dummy list of known order identifiers
+    /// TODO: Remove and replace handshake logic with order commitments
+    pub managed_order_ids: Shared<Vec<OrderIdentifier>>,
     /// The set of peers known to the sending relayer
     pub known_peers: Shared<HashMap<WrappedPeerId, PeerInfo>>,
     /// Information about the local peer's cluster
@@ -116,6 +122,8 @@ impl RelayerState {
             // Replaced by a correct value when network manager initializes
             local_peer_id: new_shared(WrappedPeerId::random()),
             managed_wallets: new_shared(managed_wallets),
+            // TODO: Remove this and replace with real data
+            managed_order_ids: new_shared((0..3).map(|_| Uuid::new_v4()).collect()),
             known_peers: new_shared(HashMap::new()),
             local_cluster_id: new_shared(cluster_id.clone()),
             cluster_metadata: new_shared(ClusterMetadata::new(cluster_id)),
@@ -192,6 +200,13 @@ impl RelayerState {
         self.managed_wallets
             .write()
             .expect("managed_wallets lock poisoned")
+    }
+
+    /// Acquire a read lock on `managed_order_ids`
+    pub fn read_managed_order_ids(&self) -> RwLockReadGuard<Vec<OrderIdentifier>> {
+        self.managed_order_ids
+            .read()
+            .expect("managed_order_ids lock poisoned")
     }
 
     /// Acquire a read lock on `known_peers`
@@ -273,6 +288,22 @@ impl Display for RelayerState {
         }
         f.write_str("\n\n\n")?;
 
+        // Write wallet info to the format
+        f.write_fmt(format_args!(
+            "\n\t{}Managed Orders:{}\n",
+            color::Fg(color::LightGreen),
+            color::Fg(color::Reset)
+        ))?;
+        for order_id in self.read_managed_order_ids().iter() {
+            f.write_fmt(format_args!(
+                "\t\t- {}{:?}{}\n",
+                color::Fg(color::LightYellow),
+                order_id,
+                color::Fg(color::Reset),
+            ))?;
+        }
+
+        f.write_str("\n\n\n")?;
         // Write the known peers to the format
         f.write_fmt(format_args!(
             "\t{}Known Peers{}:\n",

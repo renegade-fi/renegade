@@ -74,7 +74,7 @@ pub enum GossipResponse {
     /// A response from a peer to a sender's heartbeat request
     Heartbeat(HeartbeatMessage),
     /// A response from a peer to a sender's handshake request
-    Handshake(),
+    Handshake(HandshakeMessage),
 }
 
 /// Represents a pubsub message flooded through the network

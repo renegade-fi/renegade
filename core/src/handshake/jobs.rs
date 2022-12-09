@@ -11,12 +11,15 @@ use crate::{
 #[derive(Debug)]
 pub enum HandshakeExecutionJob {
     /// Process a handshake request
-    ProcessHandshakeRequest {
+    ProcessHandshakeMessage {
         /// The peer requesting to handshake
         peer_id: WrappedPeerId,
         /// The handshake request message contents
         message: HandshakeMessage,
         /// The channel on which to send the response
-        response_channel: ResponseChannel<GossipResponse>,
+        ///
+        /// If the channel is `None`, the response should be forwarded
+        /// as a new gossip request to the network manager directly
+        response_channel: Option<ResponseChannel<GossipResponse>>,
     },
 }
