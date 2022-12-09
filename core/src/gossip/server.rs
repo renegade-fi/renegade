@@ -53,7 +53,20 @@ impl GossipServer {
     /// Waits for the local node to warm up in the network (build up
     /// a graph of a few peers), and then publish an event to join the
     /// local cluster
-    pub(super) fn warmup_then_join_cluster(&self) {
+    pub(super) fn warmup_then_join_cluster(
+        &self,
+        global_state: &RelayerState,
+        heartbeat_work_queue: Sender<GossipServerJob>,
+    ) -> Result<(), GossipError> {
+        // Advertise presence of new, local node by sending a heartbeat to all known peers
+        {
+            for (peer_id, _) in global_state.read_known_peers().iter() {
+                heartbeat_work_queue
+                    .send(GossipServerJob::ExecuteHeartbeat(*peer_id))
+                    .map_err(|err| GossipError::SendMessage(err.to_string()))?;
+            }
+        } // known_peers lock released
+
         // Copy items so they may be moved into the spawned threadd
         let network_sender_copy = self.config.network_sender.clone();
         let cluster_management_topic = self.config.cluster_id.get_management_topic();
@@ -75,6 +88,8 @@ impl GossipServer {
             // Wait for the network to warmup
             thread::sleep(Duration::from_millis(PUBSUB_WARMUP_TIME_MS));
 
+            // Send a heartbeat request
+
             // Forward the message to the network manager for delivery
             let join_message = GossipOutbound::Pubsub {
                 topic: cluster_management_topic,
@@ -85,6 +100,8 @@ impl GossipServer {
                 .map_err(|err| GossipError::ServerSetup(err.to_string()))
                 .unwrap();
         });
+
+        Ok(())
     }
 }
 

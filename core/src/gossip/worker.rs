@@ -128,7 +128,10 @@ impl Worker for GossipServer {
 
         // Wait for the local peer to handshake with known other peers
         // before sending a cluster membership message
-        self.warmup_then_join_cluster();
+        self.warmup_then_join_cluster(
+            &self.config.global_state,
+            self.config.heartbeat_worker_sender.clone(),
+        )?;
 
         Ok(())
     }
