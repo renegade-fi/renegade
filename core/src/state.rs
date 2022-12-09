@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap, HashSet},
     fmt::{Display, Formatter, Result as FmtResult},
     str::FromStr,
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::{
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
-    handshake::manager::OrderIdentifier,
+    handshake::manager::{OrderIdentifier, DEFAULT_HANDSHAKE_PRIORITY},
 };
 
 /**
@@ -52,7 +52,7 @@ pub struct RelayerState {
     /// The set of peers known to the sending relayer
     pub known_peers: Shared<HashMap<WrappedPeerId, PeerInfo>>,
     /// Priorities for scheduling handshakes with each peer
-    pub handshake_priorities: Shared<HashMap<WrappedPeerId, u64>>,
+    pub handshake_priorities: Shared<HashMap<WrappedPeerId, i32>>,
     /// Information about the local peer's cluster
     pub cluster_metadata: Shared<ClusterMetadata>,
 }
@@ -134,6 +134,38 @@ impl RelayerState {
             handshake_priorities: new_shared(HashMap::new()),
             local_cluster_id: new_shared(cluster_id.clone()),
             cluster_metadata: new_shared(ClusterMetadata::new(cluster_id)),
+        }
+    }
+
+    /// Add a set of new peers to the global state
+    pub fn add_peers(
+        &self,
+        peer_ids: &[WrappedPeerId],
+        peer_info: &HashMap<WrappedPeerId, PeerInfo>,
+    ) {
+        let local_cluster_id = { self.read_cluster_id().clone() };
+        let mut locked_peer_info = self.write_known_peers();
+        let mut locked_handshake_priorities = self.write_handshake_priorities();
+
+        for peer in peer_ids.iter() {
+            if let Entry::Vacant(e) = locked_peer_info.entry(*peer) {
+                if let Some(info) = peer_info.get(peer) {
+                    // Record a dummy heartbeat to setup the initial state
+                    info.successful_heartbeat();
+                    e.insert(info.clone());
+                } else {
+                    // If peer info was not sent with the new peer message; skip adding 
+                    // any information about the peer
+                    continue;
+                }
+            }
+
+            // Skip cluster peers (we don't need to handshake with them) and peers that already have assigned
+            // priorities
+            if let Entry::Vacant(e) = locked_handshake_priorities.entry(*peer) 
+                && locked_peer_info.get(peer).unwrap().get_cluster_id() != local_cluster_id {
+                e.insert(DEFAULT_HANDSHAKE_PRIORITY);
+            }
         }
     }
 
@@ -253,14 +285,14 @@ impl RelayerState {
     }
 
     /// Acquire a read lock on `handshake_priorities`
-    pub fn read_handshake_priorities(&self) -> RwLockReadGuard<HashMap<WrappedPeerId, u64>> {
+    pub fn read_handshake_priorities(&self) -> RwLockReadGuard<HashMap<WrappedPeerId, i32>> {
         self.handshake_priorities
             .read()
             .expect("handshake_priorities lock poisoned")
     }
 
     /// Acquire a write lock on `handshake_priorities`
-    pub fn write_handshake_priorities(&self) -> RwLockWriteGuard<HashMap<WrappedPeerId, u64>> {
+    pub fn write_handshake_priorities(&self) -> RwLockWriteGuard<HashMap<WrappedPeerId, i32>> {
         self.handshake_priorities
             .write()
             .expect("handshake_prioritites lock poisoned")

@@ -1,6 +1,7 @@
 //! The entrypoint to the relayer, starts the coordinator thread which manages all other worker threads
 #![deny(unsafe_code)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![feature(let_chains)]
 
 mod api;
 mod config;

@@ -27,6 +27,8 @@ use super::{
     jobs::HandshakeExecutionJob,
 };
 
+/// The default priority of a newly added node in the handshake priority list
+pub const DEFAULT_HANDSHAKE_PRIORITY: i32 = 0;
 /// The size of the LRU handshake cache
 pub(super) const HANDSHAKE_CACHE_SIZE: usize = 500;
 /// The interval at which to initiate handshakes

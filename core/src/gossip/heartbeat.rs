@@ -1,14 +1,13 @@
 //! Groups gossip server logic for the heartbeat protocol
 
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::HashMap,
     str::FromStr,
     thread::{self, JoinHandle},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use crossbeam::channel::Sender;
-use lru::LruCache;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
@@ -83,9 +82,18 @@ impl GossipProtocolExecutor {
         peer_expiry_cache: SharedLRUCache,
         global_state: RelayerState,
     ) -> Result<(), GossipError> {
+        // Peer info is deserialized as a mapping keyed with strings instead of WrappedPeerId
+        // Convert the keys to WrappedPeerIds before merging the state for easy comparison
+        let mut incoming_peer_info: HashMap<WrappedPeerId, PeerInfo> = HashMap::new();
+        for (str_peer_id, peer_info) in message.known_peers.clone().into_iter() {
+            let peer_id = WrappedPeerId::from_str(&str_peer_id)
+                .map_err(|err| GossipError::Parse(err.to_string()))?;
+            incoming_peer_info.insert(peer_id, peer_info);
+        }
+
         // Merge the peer info first
         Self::merge_peer_index(
-            &message.known_peers,
+            &incoming_peer_info,
             network_channel.clone(),
             peer_expiry_cache,
             &global_state,
@@ -101,7 +109,7 @@ impl GossipProtocolExecutor {
     /// Merges the list of known peers from an incoming heartbeat with the local
     /// peer index
     fn merge_peer_index(
-        incoming_peer_info: &HashMap<String, PeerInfo>,
+        incoming_peer_info: &HashMap<WrappedPeerId, PeerInfo>,
         network_channel: UnboundedSender<GossipOutbound>,
         peer_expiry_cache: SharedLRUCache,
         global_state: &RelayerState,
@@ -112,11 +120,8 @@ impl GossipProtocolExecutor {
         {
             let locked_peer_info = global_state.read_known_peers();
             for peer_id in incoming_peer_info.keys() {
-                let parsed_peer_id = WrappedPeerId::from_str(peer_id)
-                    .map_err(|err| GossipError::Parse(err.to_string()))?;
-
-                if !locked_peer_info.contains_key(&parsed_peer_id) {
-                    peers_to_add.push(parsed_peer_id);
+                if !locked_peer_info.contains_key(peer_id) {
+                    peers_to_add.push(*peer_id);
                 }
             }
         } // locked_peer_info released
@@ -126,21 +131,14 @@ impl GossipProtocolExecutor {
             return Ok(());
         }
 
-        let mut locked_peer_info = global_state.write_known_peers();
-        let mut locked_expiry_cache = peer_expiry_cache
-            .write()
-            .expect("peer expiry cache lock poisoned");
-        for peer_id in peers_to_add.into_iter() {
-            let new_peer_info = incoming_peer_info.get(&peer_id.to_string()).unwrap();
-            Self::add_new_peer(
-                global_state.read_cluster_id().clone(),
-                peer_id,
-                new_peer_info.clone(),
-                &mut locked_peer_info,
-                &mut locked_expiry_cache,
-                network_channel.clone(),
-            )?;
-        }
+        Self::add_new_peers(
+            &peers_to_add,
+            incoming_peer_info,
+            global_state.read_cluster_id().clone(),
+            global_state,
+            peer_expiry_cache,
+            network_channel,
+        )?;
 
         Ok(())
     }
@@ -279,46 +277,55 @@ impl GossipProtocolExecutor {
     /// Returns a boolean indicating whether the peer is now indexed in the peer info
     /// state. This value may be false if the peer has been recently expired and its
     /// invisibility window has not elapsed
-    fn add_new_peer(
+    fn add_new_peers(
+        new_peer_ids: &[WrappedPeerId],
+        new_peer_info: &HashMap<WrappedPeerId, PeerInfo>,
         local_cluster_id: ClusterId,
-        new_peer_id: WrappedPeerId,
-        new_peer_info: PeerInfo,
-        known_peer_info: &mut HashMap<WrappedPeerId, PeerInfo>,
-        peer_expiry_cache: &mut LruCache<WrappedPeerId, u64>,
+        global_state: &RelayerState,
+        peer_expiry_cache: SharedLRUCache,
         network_channel: UnboundedSender<GossipOutbound>,
     ) -> Result<bool, GossipError> {
+        // Filter out peers that are in their expiry window
         let now = get_current_time_seconds();
-        if let Some(expired_at) = peer_expiry_cache.get(&new_peer_id) {
-            if now - *expired_at <= EXPIRY_INVISIBILITY_WINDOW_MS / 1000 {
-                return Ok(false);
-            }
+        let filtered_peers = {
+            let mut locked_expiry_cache = peer_expiry_cache
+                .write()
+                .expect("peer_expiry_cache lock poisoned");
 
-            // Remove the peer from the expiry cache if its invisibility window has elapsed
-            peer_expiry_cache.pop_entry(&new_peer_id);
-        }
+            new_peer_ids
+                .iter()
+                .filter(|peer_id| {
+                    if let Some(expired_at) = locked_expiry_cache.get(*peer_id) {
+                        if now - *expired_at <= EXPIRY_INVISIBILITY_WINDOW_MS / 1000 {
+                            return false;
+                        }
 
-        if let Entry::Vacant(e) = known_peer_info.entry(new_peer_id) {
-            // Record a dummy heartbeat to ensure the peer doesn't immediately timeout, then add to index
-            new_peer_info.successful_heartbeat();
-            e.insert(new_peer_info.clone());
-
-            // Register the newly discovered peer with the network manager
-            // so that we can dial it on outbound heartbeats
-            network_channel
-                .send(GossipOutbound::NewAddr {
-                    peer_id: new_peer_id,
-                    address: new_peer_info.get_addr(),
+                        // Remove the peer from the expiry cache if its invisibility window has elapsed
+                        locked_expiry_cache.pop_entry(*peer_id);
+                    }
+                    true
                 })
-                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
-        };
+                .cloned()
+                .collect::<Vec<_>>()
+        }; // locked_expiry_cache released
 
-        // If the peer is also part of the local cluster, send a cluster auth request
-        if new_peer_info.get_cluster_id() == local_cluster_id {
+        // Add the filtered peers to the global state
+        global_state.add_peers(&filtered_peers, new_peer_info);
+
+        // Send cluster auth requests to new peers that are part of the local node's cluster
+        let my_cluster_id = { global_state.read_cluster_id().clone() };
+        for cluster_peer in filtered_peers.iter().filter(|peer_id| {
+            if let Some(peer_info) = new_peer_info.get(peer_id) {
+                peer_info.get_cluster_id() == my_cluster_id
+            } else {
+                false
+            }
+        }) {
             network_channel
                 .send(GossipOutbound::Request {
-                    peer_id: new_peer_id,
+                    peer_id: *cluster_peer,
                     message: GossipRequest::ClusterAuth(ClusterAuthRequest {
-                        cluster_id: local_cluster_id,
+                        cluster_id: local_cluster_id.clone(),
                     }),
                 })
                 .map_err(|err| GossipError::SendMessage(err.to_string()))?;
