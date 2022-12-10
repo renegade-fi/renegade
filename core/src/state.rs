@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     fmt::{Display, Formatter, Result as FmtResult},
+    num::NonZeroU32,
     str::FromStr,
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
     time::{SystemTime, UNIX_EPOCH},
@@ -52,7 +53,7 @@ pub struct RelayerState {
     /// The set of peers known to the sending relayer
     pub known_peers: Shared<HashMap<WrappedPeerId, PeerInfo>>,
     /// Priorities for scheduling handshakes with each peer
-    pub handshake_priorities: Shared<HashMap<WrappedPeerId, i32>>,
+    pub handshake_priorities: Shared<HashMap<WrappedPeerId, NonZeroU32>>,
     /// Information about the local peer's cluster
     pub cluster_metadata: Shared<ClusterMetadata>,
 }
@@ -154,7 +155,7 @@ impl RelayerState {
                     info.successful_heartbeat();
                     e.insert(info.clone());
                 } else {
-                    // If peer info was not sent with the new peer message; skip adding 
+                    // If peer info was not sent with the new peer message; skip adding
                     // any information about the peer
                     continue;
                 }
@@ -162,9 +163,9 @@ impl RelayerState {
 
             // Skip cluster peers (we don't need to handshake with them) and peers that already have assigned
             // priorities
-            if let Entry::Vacant(e) = locked_handshake_priorities.entry(*peer) 
+            if let Entry::Vacant(e) = locked_handshake_priorities.entry(*peer)
                 && locked_peer_info.get(peer).unwrap().get_cluster_id() != local_cluster_id {
-                e.insert(DEFAULT_HANDSHAKE_PRIORITY);
+                e.insert(NonZeroU32::new(DEFAULT_HANDSHAKE_PRIORITY).unwrap());
             }
         }
     }
@@ -285,14 +286,16 @@ impl RelayerState {
     }
 
     /// Acquire a read lock on `handshake_priorities`
-    pub fn read_handshake_priorities(&self) -> RwLockReadGuard<HashMap<WrappedPeerId, i32>> {
+    pub fn read_handshake_priorities(&self) -> RwLockReadGuard<HashMap<WrappedPeerId, NonZeroU32>> {
         self.handshake_priorities
             .read()
             .expect("handshake_priorities lock poisoned")
     }
 
     /// Acquire a write lock on `handshake_priorities`
-    pub fn write_handshake_priorities(&self) -> RwLockWriteGuard<HashMap<WrappedPeerId, i32>> {
+    pub fn write_handshake_priorities(
+        &self,
+    ) -> RwLockWriteGuard<HashMap<WrappedPeerId, NonZeroU32>> {
         self.handshake_priorities
             .write()
             .expect("handshake_prioritites lock poisoned")

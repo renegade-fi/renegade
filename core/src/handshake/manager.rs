@@ -2,7 +2,7 @@
 //! a pair of orders to match, all the way through settling any resulting match
 
 use crossbeam::channel::Receiver;
-use rand::seq::SliceRandom;
+use rand::{distributions::WeightedIndex, prelude::Distribution, rngs::OsRng, seq::SliceRandom};
 use rayon::ThreadPool;
 use std::{
     sync::Arc,
@@ -28,11 +28,11 @@ use super::{
 };
 
 /// The default priority of a newly added node in the handshake priority list
-pub const DEFAULT_HANDSHAKE_PRIORITY: i32 = 0;
+pub const DEFAULT_HANDSHAKE_PRIORITY: u32 = 10;
 /// The size of the LRU handshake cache
 pub(super) const HANDSHAKE_CACHE_SIZE: usize = 500;
-/// The interval at which to initiate handshakes
-pub(super) const HANDSHAKE_INTERVAL_MS: u64 = 10_000; // 10 seconds
+/// How frequently a new handshake is initiated from the local peer
+pub(super) const HANDSHAKE_INTERVAL_MS: u64 = 2_000; // 2 seconds
 /// Number of nanoseconds in a millisecond, for convenienc
 const NANOS_PER_MILLI: u64 = 1_000_000;
 
@@ -258,40 +258,36 @@ impl HandshakeTimer {
         network_channel: UnboundedSender<GossipOutbound>,
         cancel: CancelChannel,
     ) -> HandshakeManagerError {
-        // Get local peer ID, skip handshaking with self
-        let local_peer_id: WrappedPeerId;
-        {
-            local_peer_id = *global_state
-                .local_peer_id
-                .read()
-                .expect("global state lock poisoned");
-        } // locked_state released here
-
-        // Enqueue refreshes periodically
+        let mut rng = OsRng {};
+        // Enqueue handshakes periodically
         loop {
-            {
-                for (_, peer_info) in global_state
-                    .known_peers
-                    .read()
-                    .expect("known peers lock poisoned")
-                    .iter()
-                {
-                    // Skip handshaking with self
-                    if peer_info.get_peer_id() == local_peer_id {
-                        continue;
-                    }
+            // Sample a peer to handshake with
+            let random_peer = {
+                let locked_priorities = global_state.read_handshake_priorities();
+                let mut peers = Vec::with_capacity(locked_priorities.len());
+                let mut priorities: Vec<u32> = Vec::with_capacity(locked_priorities.len());
 
-                    let sender_copy = network_channel.clone();
-                    let state_copy = global_state.clone();
-                    thread_pool.install(move || {
-                        HandshakeManager::perform_handshake(
-                            peer_info.get_peer_id(),
-                            state_copy,
-                            sender_copy,
-                        );
-                    })
+                for (peer, priority) in locked_priorities.iter() {
+                    peers.push(*peer);
+                    priorities.push((*priority).into());
                 }
-            } // locked_state released here
+
+                if !peers.is_empty() {
+                    let distribution = WeightedIndex::new(&priorities).unwrap();
+                    Some(*peers.get(distribution.sample(&mut rng)).unwrap())
+                } else {
+                    None
+                }
+            }; // locked_priorities released
+
+            // Enqueue a job to handshake with the randomly selected peer
+            if let Some(selected_peer) = random_peer {
+                let sender_copy = network_channel.clone();
+                let state_copy = global_state.clone();
+                thread_pool.install(move || {
+                    HandshakeManager::perform_handshake(selected_peer, state_copy, sender_copy);
+                });
+            }
 
             // Check for a cancel signal before sleeping and after
             if !cancel.is_empty() {
