@@ -14,6 +14,7 @@ use toml::{value::Map, Value};
 use crate::{
     error::CoordinatorError,
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
+    state::Wallet,
 };
 
 /// The default version of the node
@@ -49,8 +50,9 @@ struct Cli {
     /// The software version of the relayer
     pub version: Option<String>,
     #[clap(short, long, value_parser)]
-    /// The wallet IDs to manage locally
-    pub wallet_ids: Option<Vec<String>>,
+    /// A file holding a json representation of the wallets the local node
+    /// should manage
+    pub wallet_file: Option<String>,
 }
 
 /// Defines the system config for the relayer
@@ -63,7 +65,7 @@ pub struct RelayerConfig {
     /// The port to listen on
     pub port: u32,
     /// The wallet IDs to manage locally
-    pub wallet_ids: Vec<String>,
+    pub wallets: Vec<Wallet>,
     /// The cluster keypair
     pub cluster_keypair: Keypair,
     /// The cluster ID, a parsed version of the cluster's pubkey
@@ -142,7 +144,7 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
             .unwrap_or_else(|| String::from(DEFAULT_VERSION)),
         bootstrap_servers: parsed_bootstrap_addrs,
         port: cli_args.port,
-        wallet_ids: cli_args.wallet_ids.unwrap_or_default(),
+        wallets: parse_wallet_file(cli_args.wallet_file)?,
         cluster_keypair: keypair,
         cluster_id,
         debug: cli_args.debug,
@@ -215,6 +217,18 @@ fn config_file_args(cli_args: &[String]) -> Result<Vec<String>, CoordinatorError
     }
 
     Ok(config_file_args)
+}
+
+/// Parse a file holding wallet data
+fn parse_wallet_file(file_name: Option<String>) -> Result<Vec<Wallet>, CoordinatorError> {
+    if file_name.is_none() {
+        return Ok(Vec::new());
+    }
+
+    let file_data = fs::read_to_string(file_name.unwrap())
+        .map_err(|err| CoordinatorError::ConfigParse(err.to_string()))?;
+
+    serde_json::from_str(&file_data).map_err(|err| CoordinatorError::ConfigParse(err.to_string()))
 }
 
 /// Helper method to convert a toml value to a string

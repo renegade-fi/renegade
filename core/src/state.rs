@@ -7,7 +7,6 @@ use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     fmt::{Display, Formatter, Result as FmtResult},
     num::NonZeroU32,
-    str::FromStr,
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -47,9 +46,6 @@ pub struct RelayerState {
     pub local_addr: Shared<Multiaddr>,
     /// The list of wallets managed by the sending relayer
     pub managed_wallets: Shared<HashMap<Uuid, Wallet>>,
-    /// Dummy list of known order identifiers
-    /// TODO: Remove and replace handshake logic with order commitments
-    pub managed_order_ids: Shared<Vec<OrderIdentifier>>,
     /// A list of matched orders
     /// TODO: Remove this
     pub matched_order_pairs: Shared<Vec<(OrderIdentifier, OrderIdentifier)>>,
@@ -64,10 +60,12 @@ pub struct RelayerState {
 /// Represents a wallet managed by the local relayer
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Wallet {
-    /// Wallet metadata; replicas, trusted peers, etc
-    pub metadata: WalletMetadata,
     /// Wallet id will eventually be replaced, for now it is UUID
     pub wallet_id: Uuid,
+    /// A list of orders in this wallet
+    pub orders: Vec<OrderIdentifier>,
+    /// Wallet metadata; replicas, trusted peers, etc
+    pub metadata: WalletMetadata,
 }
 
 /// Metadata relevant to the wallet's network state
@@ -110,21 +108,14 @@ impl RelayerState {
     /// Initialize the global state at startup
     pub fn initialize_global_state(
         debug: bool,
-        managed_wallet_ids: Vec<String>,
+        wallets: Vec<Wallet>,
         cluster_id: ClusterId,
     ) -> Self {
         // Setup initial wallets
-        let mut managed_wallets = HashMap::new();
-        for wallet_id in managed_wallet_ids.iter() {
-            let wallet_id = uuid::Uuid::from_str(wallet_id).expect("could not parse wallet ID");
-            let wal = Wallet {
-                wallet_id,
-                metadata: WalletMetadata {
-                    replicas: HashSet::new(),
-                },
-            };
-            managed_wallets.insert(wallet_id, wal);
-        }
+        let managed_wallets = wallets
+            .into_iter()
+            .map(|wallet| (wallet.wallet_id, wallet))
+            .collect();
 
         Self {
             debug,
@@ -133,8 +124,6 @@ impl RelayerState {
             local_cluster_id: new_shared(cluster_id.clone()),
             local_addr: new_shared(Multiaddr::empty()),
             managed_wallets: new_shared(managed_wallets),
-            // TODO: Remove this and replace with real data
-            managed_order_ids: new_shared((0..3).map(|_| Uuid::new_v4()).collect()),
             matched_order_pairs: new_shared(vec![]),
             known_peers: new_shared(HashMap::new()),
             handshake_priorities: new_shared(HashMap::new()),
@@ -221,6 +210,16 @@ impl RelayerState {
         } // locked_handshake_priorities released
     }
 
+    /// Get a list of order IDs managed by the local peer
+    pub fn get_managed_order_ids(&self) -> Vec<OrderIdentifier> {
+        let mut res = Vec::new();
+        for (_, wallet) in self.read_managed_wallets().iter() {
+            res.append(&mut wallet.orders.clone());
+        }
+
+        res
+    }
+
     /// Print the local relayer state to the screen for debugging
     pub fn print_screen(&self) {
         if !self.debug {
@@ -277,13 +276,6 @@ impl RelayerState {
         self.managed_wallets
             .write()
             .expect("managed_wallets lock poisoned")
-    }
-
-    /// Acquire a read lock on `managed_order_ids`
-    pub fn read_managed_order_ids(&self) -> RwLockReadGuard<Vec<OrderIdentifier>> {
-        self.managed_order_ids
-            .read()
-            .expect("managed_order_ids lock poisoned")
     }
 
     /// Acquire a read lock on `matched_order_pairs`
@@ -398,21 +390,6 @@ impl Display for RelayerState {
             f.write_str("\t\t\t]\n\t\t}")?;
         }
         f.write_str("\n\n\n")?;
-
-        // Write order info to the format
-        f.write_fmt(format_args!(
-            "\n\t{}Managed Orders:{}\n",
-            color::Fg(color::LightGreen),
-            color::Fg(color::Reset)
-        ))?;
-        for order_id in self.read_managed_order_ids().iter() {
-            f.write_fmt(format_args!(
-                "\t\t- {}{:?}{}\n",
-                color::Fg(color::LightYellow),
-                order_id,
-                color::Fg(color::Reset),
-            ))?;
-        }
 
         // Write historically matched orders to the format
         f.write_fmt(format_args!(

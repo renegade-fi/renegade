@@ -55,9 +55,8 @@ impl HandshakeManager {
         global_state: RelayerState,
         network_channel: UnboundedSender<GossipOutbound>,
     ) {
-        // TODO: dummy data, remove
-        let locked_order_ids = global_state.read_managed_order_ids();
-        let my_order = *locked_order_ids.choose(&mut rand::thread_rng()).unwrap();
+        let managed_orders = global_state.get_managed_order_ids();
+        let my_order = *managed_orders.choose(&mut rand::thread_rng()).unwrap();
 
         // Send a handshake message to the given peer_id
         // Panic if channel closed, no way to recover
@@ -130,7 +129,7 @@ impl HandshakeManager {
                     let locked_handshake_cache = handshake_cache
                         .read()
                         .expect("handshake_cache lock poisoned");
-                    for order in global_state.read_managed_order_ids().iter() {
+                    for order in global_state.get_managed_order_ids().iter() {
                         if !locked_handshake_cache.contains(*order, peer_order) {
                             proposed_order = Some(*order);
                             break;

@@ -60,7 +60,7 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Construct the global state
     let global_state =
-        RelayerState::initialize_global_state(args.debug, args.wallet_ids, args.cluster_id.clone());
+        RelayerState::initialize_global_state(args.debug, args.wallets, args.cluster_id.clone());
 
     // Build communication primitives
     // First, the global shared mpmc bus that all workers have access to

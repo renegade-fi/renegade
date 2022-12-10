@@ -1,0 +1,13 @@
+[
+    {
+        "wallet_id": "8aa4691e-dd9e-4c31-b1fa-5ae1ba53d128",
+        "orders": [
+            "13b6f558-d480-4289-ab12-05b020d1afab",
+            "db9e4b26-49a9-4730-a0ca-9c173771b237",
+            "33745b31-d4a2-47bb-b764-8a53a3fd3310"
+        ],
+        "metadata": {
+            "replicas": []
+        }
+    }
+]
