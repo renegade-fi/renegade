@@ -147,7 +147,6 @@ impl GossipProtocolExecutor {
     /// stored wallet information
     ///
     /// In specific, the local peer must update its replicas list for any wallet it manages
-    /// TODO: Look up peer info locally
     fn merge_wallets(peer_wallets: &HashMap<Uuid, WalletMetadata>, global_state: &RelayerState) {
         // Loop over locally replicated wallets, check for new peers in each wallet
         // We break this down into two phases, in the first phase, the local peer determines which
@@ -286,6 +285,7 @@ impl GossipProtocolExecutor {
         network_channel: UnboundedSender<GossipOutbound>,
     ) -> Result<bool, GossipError> {
         // Filter out peers that are in their expiry window
+        // or those that are missing peer info
         let now = get_current_time_seconds();
         let filtered_peers = {
             let mut locked_expiry_cache = peer_expiry_cache
@@ -303,24 +303,40 @@ impl GossipProtocolExecutor {
                         // Remove the peer from the expiry cache if its invisibility window has elapsed
                         locked_expiry_cache.pop_entry(*peer_id);
                     }
-                    true
+
+                    // Filter out the peer if the message including it did not attach peer info
+                    new_peer_info.contains_key(*peer_id)
                 })
                 .cloned()
                 .collect::<Vec<_>>()
         }; // locked_expiry_cache released
 
-        // Add the filtered peers to the global state
-        global_state.add_peers(&filtered_peers, new_peer_info);
+        // Add all filtered peers to the network manager's address table
+        Self::add_new_addrs(&filtered_peers, new_peer_info, network_channel.clone())?;
 
-        // Send cluster auth requests to new peers that are part of the local node's cluster
+        // We separate out cluster peers from non-cluster peers. Non-cluster peers may be added to the
+        // state immediately. Cluster peers must prove their authentication in the cluster by signing
+        // a cluster auth message
         let my_cluster_id = { global_state.read_cluster_id().clone() };
-        for cluster_peer in filtered_peers.iter().filter(|peer_id| {
-            if let Some(peer_info) = new_peer_info.get(peer_id) {
-                peer_info.get_cluster_id() == my_cluster_id
-            } else {
-                false
+        let mut non_cluster_peers = Vec::new();
+        let mut cluster_peers = Vec::new();
+
+        for peer in filtered_peers.iter() {
+            // Skip if the heartbeat contains no peer info
+            if let Some(info) = new_peer_info.get(peer) {
+                if info.get_cluster_id() == my_cluster_id {
+                    cluster_peers.push(*peer);
+                } else {
+                    non_cluster_peers.push(*peer);
+                }
             }
-        }) {
+        }
+
+        // Add the non-cluster peers to the global state
+        global_state.add_peers(&non_cluster_peers, new_peer_info);
+
+        // Send cluster auth requests to all peers claiming to be in the local peer's cluster
+        for cluster_peer in cluster_peers.iter() {
             network_channel
                 .send(GossipOutbound::Request {
                     peer_id: *cluster_peer,
@@ -332,6 +348,24 @@ impl GossipProtocolExecutor {
         }
 
         Ok(true)
+    }
+
+    /// Adds new addresses to the address index in the network manager so that they may be dialed on outbound
+    fn add_new_addrs(
+        peer_ids: &[WrappedPeerId],
+        peer_info: &HashMap<WrappedPeerId, PeerInfo>,
+        network_channel: UnboundedSender<GossipOutbound>,
+    ) -> Result<(), GossipError> {
+        for peer in peer_ids.iter() {
+            network_channel
+                .send(GossipOutbound::NewAddr {
+                    peer_id: *peer,
+                    address: peer_info.get(peer).unwrap().get_addr(),
+                })
+                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
+        }
+
+        Ok(())
     }
 
     /// Sends heartbeat message to peers to exchange network information and ensure liveness

@@ -131,6 +131,7 @@ impl Worker for NetworkManager {
         let hostport = format!("/ip4/127.0.0.1/tcp/{}", self.config.port);
         let addr: Multiaddr = hostport.parse().unwrap();
         self.local_addr = addr.clone();
+        *self.config.global_state.write_local_addr() = self.local_addr.clone();
         swarm
             .listen_on(addr)
             .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
@@ -163,6 +164,7 @@ impl Worker for NetworkManager {
 
         // Start up the worker thread
         let peer_id_copy = self.local_peer_id;
+        let state_copy = self.config.global_state.clone();
         let heartbeat_work_queue = self.config.heartbeat_work_queue.clone();
         let handshake_work_queue = self.config.handshake_work_queue.clone();
         // Take ownership of the work queue and the cluster keypair
@@ -180,6 +182,7 @@ impl Worker for NetworkManager {
                     send_channel,
                     heartbeat_work_queue,
                     handshake_work_queue,
+                    state_copy,
                     async_cancel_receiver,
                 ))
             })

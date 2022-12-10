@@ -10,6 +10,7 @@ use libp2p::{
     swarm::SwarmEvent,
     Multiaddr, PeerId, Swarm,
 };
+
 use std::thread::JoinHandle;
 use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
 use tracing::debug;
@@ -29,6 +30,7 @@ use crate::{
         types::{ClusterId, PeerInfo, WrappedPeerId},
     },
     handshake::jobs::HandshakeExecutionJob,
+    state::RelayerState,
 };
 
 use super::{
@@ -104,6 +106,7 @@ impl NetworkManager {
     ///      1. Events from the network; which it dispatches to appropriate handler threads
     ///      2. Events from workers to be sent over the network
     /// It handles these in the tokio select! macro below
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn executor_loop(
         local_peer_id: WrappedPeerId,
         cluster_key: SigKeypair,
@@ -111,6 +114,7 @@ impl NetworkManager {
         mut send_channel: UnboundedReceiver<GossipOutbound>,
         gossip_work_queue: Sender<GossipServerJob>,
         handshake_work_queue: Sender<HandshakeExecutionJob>,
+        global_state: RelayerState,
         mut cancel: Receiver<()>,
     ) -> NetworkManagerError {
         println!("Starting executor loop for network manager...");
@@ -130,10 +134,10 @@ impl NetworkManager {
                         SwarmEvent::Behaviour(event) => {
                             if let Err(err) = Self::handle_inbound_messsage(
                                 event,
-                                local_peer_id,
                                 &cluster_key,
                                 gossip_work_queue.clone(),
                                 handshake_work_queue.clone(),
+                                &global_state,
                                 &mut swarm,
                             ) {
                                 debug!("error in network manager: {:?}", err);
@@ -223,10 +227,10 @@ impl NetworkManager {
     /// Handles a network event from the relayer's protocol
     fn handle_inbound_messsage(
         message: ComposedProtocolEvent,
-        local_peer_id: WrappedPeerId,
         cluster_key: &SigKeypair,
         gossip_work_queue: Sender<GossipServerJob>,
         handshake_work_queue: Sender<HandshakeExecutionJob>,
+        global_state: &RelayerState,
         swarm: &mut Swarm<ComposedNetworkBehavior>,
     ) -> Result<(), NetworkManagerError> {
         match message {
@@ -235,10 +239,10 @@ impl NetworkManager {
                     Self::handle_inbound_request_response_message(
                         peer,
                         message,
-                        local_peer_id,
                         cluster_key,
                         gossip_work_queue,
                         handshake_work_queue,
+                        global_state,
                         swarm,
                     )?;
                 }
@@ -266,10 +270,10 @@ impl NetworkManager {
     fn handle_inbound_request_response_message(
         peer_id: PeerId,
         message: RequestResponseMessage<GossipRequest, GossipResponse>,
-        local_peer_id: WrappedPeerId,
         cluster_key: &SigKeypair,
         gossip_work_queue: Sender<GossipServerJob>,
         handshake_work_queue: Sender<HandshakeExecutionJob>,
+        global_state: &RelayerState,
         swarm: &mut Swarm<ComposedNetworkBehavior>,
     ) -> Result<(), NetworkManagerError> {
         // Multiplex over request/response message types
@@ -287,7 +291,7 @@ impl NetworkManager {
                 // access to the private key
                 GossipRequest::ClusterAuth(auth_message) => {
                     // If the auth message is not for the local peer's cluster, ignore it
-                    let local_cluster_id = ClusterId::new(&cluster_key.public);
+                    let local_cluster_id = { global_state.read_cluster_id().clone() };
                     if auth_message.cluster_id != local_cluster_id {
                         return Err(NetworkManagerError::Authentication(
                             ERR_WRONG_CLUSTER.to_string(),
@@ -296,7 +300,8 @@ impl NetworkManager {
 
                     // Otherwise, sign a response of (peer_id, cluster_id)
                     let body = ClusterAuthResponseBody {
-                        peer_id: local_peer_id,
+                        peer_id: *global_state.read_peer_id(),
+                        peer_info: global_state.get_local_peer_info(),
                         cluster_id: local_cluster_id,
                     };
 
@@ -362,6 +367,7 @@ impl NetworkManager {
                             ClusterManagementJob::ClusterAuthSuccess(
                                 auth_response.body.cluster_id,
                                 auth_response.body.peer_id,
+                                auth_response.body.peer_info,
                             ),
                         ))
                         .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;

@@ -1,6 +1,7 @@
 //! This file groups type definitions and helpers around global state that
 //! is passed around throughout the code
 
+use libp2p::Multiaddr;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
@@ -42,6 +43,8 @@ pub struct RelayerState {
     pub local_peer_id: Shared<WrappedPeerId>,
     /// The cluster id of the local relayer
     pub local_cluster_id: Shared<ClusterId>,
+    /// The listening address of the local relayer
+    pub local_addr: Shared<Multiaddr>,
     /// The list of wallets managed by the sending relayer
     pub managed_wallets: Shared<HashMap<Uuid, Wallet>>,
     /// Dummy list of known order identifiers
@@ -127,15 +130,31 @@ impl RelayerState {
             debug,
             // Replaced by a correct value when network manager initializes
             local_peer_id: new_shared(WrappedPeerId::random()),
+            local_cluster_id: new_shared(cluster_id.clone()),
+            local_addr: new_shared(Multiaddr::empty()),
             managed_wallets: new_shared(managed_wallets),
             // TODO: Remove this and replace with real data
             managed_order_ids: new_shared((0..3).map(|_| Uuid::new_v4()).collect()),
             matched_order_pairs: new_shared(vec![]),
             known_peers: new_shared(HashMap::new()),
             handshake_priorities: new_shared(HashMap::new()),
-            local_cluster_id: new_shared(cluster_id.clone()),
             cluster_metadata: new_shared(ClusterMetadata::new(cluster_id)),
         }
+    }
+
+    /// Get the local peer's info
+    pub fn get_local_peer_info(&self) -> PeerInfo {
+        PeerInfo::new(
+            *self.read_peer_id(),
+            self.read_cluster_id().clone(),
+            self.read_local_addr().clone(),
+        )
+    }
+
+    /// Add a single peer to the global state
+    pub fn add_single_peer(&self, peer_id: WrappedPeerId, peer_info: PeerInfo) {
+        let info_map = HashMap::from([(peer_id, peer_info)]);
+        self.add_peers(&[peer_id], &info_map);
     }
 
     /// Add a set of new peers to the global state
@@ -236,6 +255,16 @@ impl RelayerState {
             .expect("cluster_id lock poisoned")
     }
 
+    /// Acquire a read lock on `local_addr`
+    pub fn read_local_addr(&self) -> RwLockReadGuard<Multiaddr> {
+        self.local_addr.read().expect("local_addr lock poisoned")
+    }
+
+    /// Acquire a write lock on `local_addr`
+    pub fn write_local_addr(&self) -> RwLockWriteGuard<Multiaddr> {
+        self.local_addr.write().expect("local_addr lock poisoned")
+    }
+
     /// Acquire a read lock on `managed_wallets`
     pub fn read_managed_wallets(&self) -> RwLockReadGuard<HashMap<Uuid, Wallet>> {
         self.managed_wallets
@@ -267,7 +296,7 @@ impl RelayerState {
     }
 
     /// Acquire a write lock on `matched_order_pairs`
-    pub fn write_matched_order_paris(
+    pub fn write_matched_order_pairs(
         &self,
     ) -> RwLockWriteGuard<Vec<(OrderIdentifier, OrderIdentifier)>> {
         self.matched_order_pairs

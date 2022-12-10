@@ -75,6 +75,11 @@ impl GossipServer {
         // The cluster ID is automatically appended at the network layer
         let message_body = ClusterJoinMessage {
             peer_id: self.config.local_peer_id,
+            peer_info: global_state
+                .read_known_peers()
+                .get(&self.config.local_peer_id)
+                .unwrap()
+                .clone(),
             addr: self.config.local_addr.clone(),
         };
         let message = PubsubMessage::new_cluster_management_unsigned(

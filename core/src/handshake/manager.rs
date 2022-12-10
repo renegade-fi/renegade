@@ -180,7 +180,7 @@ impl HandshakeManager {
 
                 // Write to global state for debugging
                 global_state
-                    .write_matched_order_paris()
+                    .write_matched_order_pairs()
                     .push((order1, order2));
 
                 // Send back the message as an ack
@@ -196,7 +196,7 @@ impl HandshakeManager {
 
                 // Write to global state for debugging
                 global_state
-                    .write_matched_order_paris()
+                    .write_matched_order_pairs()
                     .push((order1, order2));
 
                 Ok(None)

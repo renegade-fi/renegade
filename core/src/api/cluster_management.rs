@@ -4,7 +4,7 @@ use libp2p::Multiaddr;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    gossip::types::{ClusterId, WrappedPeerId},
+    gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
     state::Wallet,
 };
 
@@ -35,6 +35,8 @@ impl From<&ClusterManagementMessage> for Vec<u8> {
 pub struct ClusterJoinMessage {
     /// The peer ID of the node joining the cluster
     pub peer_id: WrappedPeerId,
+    /// The info of the peer joining the cluster
+    pub peer_info: PeerInfo,
     /// The address that the new peer can be dialed at
     pub addr: Multiaddr,
 }
@@ -88,6 +90,8 @@ pub struct ClusterAuthResponseBody {
     pub cluster_id: ClusterId,
     /// The ID of the peer proving authorization
     pub peer_id: WrappedPeerId,
+    /// The peer info of the peer authenticating into the cluster
+    pub peer_info: PeerInfo,
 }
 
 // Explicit byte serializtaion for hashing and signing
