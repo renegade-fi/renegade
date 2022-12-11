@@ -7,6 +7,8 @@ use crate::{
     gossip::types::WrappedPeerId,
 };
 
+use super::manager::OrderIdentifier;
+
 /// Represents a job for the handshake manager's thread pool to execute
 #[derive(Debug)]
 pub enum HandshakeExecutionJob {
@@ -21,5 +23,13 @@ pub enum HandshakeExecutionJob {
         /// If the channel is `None`, the response should be forwarded
         /// as a new gossip request to the network manager directly
         response_channel: Option<ResponseChannel<GossipResponse>>,
+    },
+    /// Update the handshake cache with an entry from an order pair that a cluster
+    /// peer has executed
+    CacheEntry {
+        /// The first of the orders matched
+        order1: OrderIdentifier,
+        /// The second of the orderes matched
+        order2: OrderIdentifier,
     },
 }

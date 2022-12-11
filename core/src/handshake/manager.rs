@@ -14,7 +14,8 @@ use uuid::Uuid;
 
 use crate::{
     api::{
-        gossip::{GossipOutbound, GossipRequest, GossipResponse},
+        cluster_management::ClusterManagementMessage,
+        gossip::{GossipOutbound, GossipRequest, GossipResponse, PubsubMessage},
         handshake::HandshakeMessage,
     },
     gossip::types::WrappedPeerId,
@@ -84,7 +85,12 @@ impl HandshakeManager {
                 response_channel,
             } => {
                 // Get a response for the message and forward it to the network
-                let resp = Self::handle_handshake_message(message, global_state, handshake_cache)?;
+                let resp = Self::handle_handshake_message(
+                    message,
+                    global_state,
+                    handshake_cache,
+                    network_channel.clone(),
+                )?;
                 if let Some(response_message) = resp {
                     let outbound_request = if let Some(channel) = response_channel {
                         GossipOutbound::Response {
@@ -105,6 +111,15 @@ impl HandshakeManager {
 
                 Ok(())
             }
+
+            HandshakeExecutionJob::CacheEntry { order1, order2 } => {
+                handshake_cache
+                    .write()
+                    .expect("handshake_cache lock poisoned")
+                    .push(order1, order2);
+
+                Ok(())
+            }
         }
     }
 
@@ -116,6 +131,7 @@ impl HandshakeManager {
         message: HandshakeMessage,
         global_state: RelayerState,
         handshake_cache: SharedHandshakeCache<OrderIdentifier>,
+        network_channel: UnboundedSender<GossipOutbound>,
     ) -> Result<Option<HandshakeMessage>, HandshakeManagerError> {
         match message {
             // A peer has requested a match, find an order that has not already been matched with theirs
@@ -197,6 +213,18 @@ impl HandshakeManager {
                 global_state
                     .write_matched_order_pairs()
                     .push((order1, order2));
+
+                // Send a message to cluster peers indicating the handshake has finished
+                let locked_cluster_id = global_state.read_cluster_id();
+                network_channel
+                    .send(GossipOutbound::Pubsub {
+                        topic: locked_cluster_id.get_management_topic(),
+                        message: PubsubMessage::new_cluster_management_unsigned(
+                            locked_cluster_id.clone(),
+                            ClusterManagementMessage::CacheSync(order1, order2),
+                        ),
+                    })
+                    .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
                 Ok(None)
             }

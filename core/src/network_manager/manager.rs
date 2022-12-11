@@ -252,7 +252,11 @@ impl NetworkManager {
             // Pubsub events currently do nothing
             ComposedProtocolEvent::PubSub(msg) => {
                 if let GossipsubEvent::Message { message, .. } = msg {
-                    Self::handle_inbound_pubsub_message(message, gossip_work_queue)?;
+                    Self::handle_inbound_pubsub_message(
+                        message,
+                        gossip_work_queue,
+                        handshake_work_queue,
+                    )?;
                 }
 
                 Ok(())
@@ -402,6 +406,7 @@ impl NetworkManager {
     fn handle_inbound_pubsub_message(
         message: GossipsubMessage,
         gossip_work_queue: Sender<GossipServerJob>,
+        handshake_work_queue: Sender<HandshakeExecutionJob>,
     ) -> Result<(), NetworkManagerError> {
         // Deserialize into API types
         let event: PubsubMessage = message.data.into();
@@ -424,8 +429,8 @@ impl NetworkManager {
                     .verify(&Into::<Vec<u8>>::into(&message), &parsed_signature)
                     .map_err(|err| NetworkManagerError::Authentication(err.to_string()))?;
 
-                // Forward the management message to the gossip server for processing
                 match message {
+                    // Forward the management message to the gossip server for processing
                     ClusterManagementMessage::Join(join_request) => {
                         // Forward directly
                         gossip_work_queue
@@ -434,6 +439,8 @@ impl NetworkManager {
                             ))
                             .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
                     }
+
+                    // Forward the management message to the gossip server for processing
                     ClusterManagementMessage::Replicated(ReplicatedMessage {
                         wallets,
                         peer_id,
@@ -450,6 +457,12 @@ impl NetworkManager {
                                 .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
                         }
                     }
+
+                    // Forward the cache sync message to the handshake manager to update the local
+                    // cache copy
+                    ClusterManagementMessage::CacheSync(order1, order2) => handshake_work_queue
+                        .send(HandshakeExecutionJob::CacheEntry { order1, order2 })
+                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?,
                 }
             }
         }

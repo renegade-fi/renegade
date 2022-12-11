@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
+    handshake::manager::OrderIdentifier,
     state::Wallet,
 };
 
@@ -22,6 +23,12 @@ pub enum ClusterManagementMessage {
     /// A message indicating that the publisher has replicated the wallets contained
     /// in the message body
     Replicated(ReplicatedMessage),
+    /// A cache synchronization update wherein the sender informs its cluster peers that
+    /// it has run the match computation on a given pair of orders
+    ///
+    /// The peers should cache this order pair as completed, and not initiate handshakes
+    /// with other peers on this order
+    CacheSync(OrderIdentifier, OrderIdentifier),
 }
 
 impl From<&ClusterManagementMessage> for Vec<u8> {
