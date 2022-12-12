@@ -1,5 +1,6 @@
 //! Groups API definitions for handshake request response
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::handshake::manager::OrderIdentifier;
 
@@ -8,6 +9,9 @@ use crate::handshake::manager::OrderIdentifier;
 pub enum HandshakeMessage {
     /// An MPC operation to be performed during handshake
     InitiateMatch {
+        /// The request identifier that will be used to track and index handshake
+        /// communications
+        request_id: Uuid,
         /// An order local to the sender, that the sender wants to computed matches for
         sender_order: OrderIdentifier,
     },
@@ -16,6 +20,9 @@ pub enum HandshakeMessage {
     /// If all orders in the local peer's book have already been matched
     /// against the requestsed order, send back `None`
     ProposeMatchCandidate {
+        /// The request identifier that will be used to track and index handshake
+        /// communications
+        request_id: Uuid,
         /// The recipient's order that the sender is proposing a match with
         peer_order: OrderIdentifier,
         /// The sender's order that it wishes to match against the receiver's
@@ -26,6 +33,9 @@ pub enum HandshakeMessage {
     },
     /// Go forward with a handshake after a proposed order pair is setup
     ExecuteMatch {
+        /// The request identifier that will be used to track and index handshake
+        /// communications
+        request_id: Uuid,
         /// A flag indicating that the order pair has already been matched
         ///
         /// In this case, the peers will not attempt to match the orders, as they have
@@ -42,6 +52,9 @@ pub enum HandshakeMessage {
     },
     /// Ack that a match has been executed on two orders
     ExecutionFinished {
+        /// The request identifier that will be used to track and index handshake
+        /// communications
+        request_id: Uuid,
         /// The first order matched
         order1: OrderIdentifier,
         /// The second order matched

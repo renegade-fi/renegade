@@ -61,10 +61,12 @@ impl HandshakeManager {
 
         // Send a handshake message to the given peer_id
         // Panic if channel closed, no way to recover
+        let request_id = Uuid::new_v4();
         network_channel
             .send(GossipOutbound::Request {
                 peer_id,
                 message: GossipRequest::Handshake(HandshakeMessage::InitiateMatch {
+                    request_id,
                     sender_order: my_order,
                 }),
             })
@@ -137,6 +139,7 @@ impl HandshakeManager {
             // A peer has requested a match, find an order that has not already been matched with theirs
             // and propose it back to the peer
             HandshakeMessage::InitiateMatch {
+                request_id,
                 sender_order: peer_order,
             } => {
                 // TODO: Dummy data, remove this
@@ -156,6 +159,7 @@ impl HandshakeManager {
                 // Send the message and unwrap the result; the only error type possible
                 // is that the channel is closed, so panic the thread in that case
                 Ok(Some(HandshakeMessage::ProposeMatchCandidate {
+                    request_id,
                     sender_order: proposed_order,
                     peer_order,
                 }))
@@ -164,6 +168,7 @@ impl HandshakeManager {
             // A peer has responded to the local node's InitiateMatch message with a proposed match pair.
             // Check that their proposal has not already been matched and then signal to begin the match
             HandshakeMessage::ProposeMatchCandidate {
+                request_id,
                 peer_order: my_order,
                 sender_order,
             } => {
@@ -177,6 +182,7 @@ impl HandshakeManager {
                     }; // locked_handshake_cache released
 
                     Ok(Some(HandshakeMessage::ExecuteMatch {
+                        request_id,
                         previously_matched,
                         order1: my_order,
                         order2: peer_order,
@@ -186,7 +192,12 @@ impl HandshakeManager {
                 }
             }
 
-            HandshakeMessage::ExecuteMatch { order1, order2, .. } => {
+            HandshakeMessage::ExecuteMatch {
+                request_id,
+                order1,
+                order2,
+                ..
+            } => {
                 // Cache the result of a handshake
                 handshake_cache
                     .write()
@@ -199,10 +210,14 @@ impl HandshakeManager {
                     .push((order1, order2));
 
                 // Send back the message as an ack
-                Ok(Some(HandshakeMessage::ExecutionFinished { order1, order2 }))
+                Ok(Some(HandshakeMessage::ExecutionFinished {
+                    request_id,
+                    order1,
+                    order2,
+                }))
             }
 
-            HandshakeMessage::ExecutionFinished { order1, order2 } => {
+            HandshakeMessage::ExecutionFinished { order1, order2, .. } => {
                 // Cache the order pair as completed
                 handshake_cache
                     .write()
