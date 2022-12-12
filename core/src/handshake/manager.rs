@@ -25,7 +25,7 @@ use crate::{
 
 use super::{
     error::HandshakeManagerError, handshake_cache::SharedHandshakeCache,
-    jobs::HandshakeExecutionJob,
+    jobs::HandshakeExecutionJob, state::HandshakeStateIndex,
 };
 
 /// The default priority of a newly added node in the handshake priority list
@@ -53,6 +53,7 @@ impl HandshakeManager {
     /// Perform a handshake, dummy job for now
     pub fn perform_handshake(
         peer_id: WrappedPeerId,
+        handshake_state_index: HandshakeStateIndex,
         global_state: RelayerState,
         network_channel: UnboundedSender<GossipOutbound>,
     ) {
@@ -71,11 +72,14 @@ impl HandshakeManager {
                 }),
             })
             .unwrap();
+
+        handshake_state_index.new_handshake(request_id);
     }
 
     /// Handle a handshake message from the peer
     pub fn handle_handshake_job(
         job: HandshakeExecutionJob,
+        handshake_state_index: HandshakeStateIndex,
         global_state: RelayerState,
         handshake_cache: SharedHandshakeCache<OrderIdentifier>,
         network_channel: UnboundedSender<GossipOutbound>,
@@ -89,6 +93,7 @@ impl HandshakeManager {
                 // Get a response for the message and forward it to the network
                 let resp = Self::handle_handshake_message(
                     message,
+                    handshake_state_index,
                     global_state,
                     handshake_cache,
                     network_channel.clone(),
@@ -131,6 +136,7 @@ impl HandshakeManager {
     /// The caller should handle forwarding the response onto the network
     pub fn handle_handshake_message(
         message: HandshakeMessage,
+        handshake_state_index: HandshakeStateIndex,
         global_state: RelayerState,
         handshake_cache: SharedHandshakeCache<OrderIdentifier>,
         network_channel: UnboundedSender<GossipOutbound>,
@@ -142,7 +148,6 @@ impl HandshakeManager {
                 request_id,
                 sender_order: peer_order,
             } => {
-                // TODO: Dummy data, remove this
                 let mut proposed_order = None;
                 {
                     let locked_handshake_cache = handshake_cache
@@ -155,6 +160,11 @@ impl HandshakeManager {
                         }
                     }
                 } // locked_handshake_cache released
+
+                // Update the state machine for a newly created handshake
+                if let Some(..) = proposed_order {
+                    handshake_state_index.new_handshake(request_id)
+                }
 
                 // Send the message and unwrap the result; the only error type possible
                 // is that the channel is closed, so panic the thread in that case
@@ -209,6 +219,9 @@ impl HandshakeManager {
                     .write_matched_order_pairs()
                     .push((order1, order2));
 
+                // Place the handshake in the execution state
+                handshake_state_index.in_progress(&request_id);
+
                 // Send back the message as an ack
                 Ok(Some(HandshakeMessage::ExecutionFinished {
                     request_id,
@@ -217,7 +230,11 @@ impl HandshakeManager {
                 }))
             }
 
-            HandshakeMessage::ExecutionFinished { order1, order2, .. } => {
+            HandshakeMessage::ExecutionFinished {
+                order1,
+                order2,
+                request_id,
+            } => {
                 // Cache the order pair as completed
                 handshake_cache
                     .write()
@@ -228,6 +245,9 @@ impl HandshakeManager {
                 global_state
                     .write_matched_order_pairs()
                     .push((order1, order2));
+
+                // Update the state of the handshake in the completed state
+                handshake_state_index.completed(&request_id);
 
                 // Send a message to cluster peers indicating the handshake has finished
                 let locked_cluster_id = global_state.read_cluster_id();
@@ -258,6 +278,7 @@ impl HandshakeTimer {
     /// Construct a new timer
     pub fn new(
         thread_pool: Arc<ThreadPool>,
+        handshake_state_index: HandshakeStateIndex,
         global_state: RelayerState,
         network_channel: UnboundedSender<GossipOutbound>,
         cancel: CancelChannel,
@@ -273,6 +294,7 @@ impl HandshakeTimer {
             .spawn(move || {
                 Self::execution_loop(
                     refresh_interval,
+                    handshake_state_index,
                     thread_pool,
                     global_state,
                     network_channel,
@@ -295,6 +317,7 @@ impl HandshakeTimer {
     /// The execution loop of the timer, periodically enqueues handshake jobs
     fn execution_loop(
         refresh_interval: Duration,
+        handshake_state_index: HandshakeStateIndex,
         thread_pool: Arc<ThreadPool>,
         global_state: RelayerState,
         network_channel: UnboundedSender<GossipOutbound>,
@@ -325,9 +348,15 @@ impl HandshakeTimer {
             // Enqueue a job to handshake with the randomly selected peer
             if let Some(selected_peer) = random_peer {
                 let sender_copy = network_channel.clone();
+                let handshake_state_copy = handshake_state_index.clone();
                 let state_copy = global_state.clone();
                 thread_pool.install(move || {
-                    HandshakeManager::perform_handshake(selected_peer, state_copy, sender_copy);
+                    HandshakeManager::perform_handshake(
+                        selected_peer,
+                        handshake_state_copy,
+                        state_copy,
+                        sender_copy,
+                    );
                 });
             }
 
@@ -356,6 +385,7 @@ impl HandshakeJobRelay {
     pub fn new(
         thread_pool: Arc<ThreadPool>,
         handshake_cache: SharedHandshakeCache<OrderIdentifier>,
+        handshake_state_index: HandshakeStateIndex,
         job_channel: Receiver<HandshakeExecutionJob>,
         network_channel: UnboundedSender<GossipOutbound>,
         global_state: RelayerState,
@@ -367,6 +397,7 @@ impl HandshakeJobRelay {
                 Self::execution_loop(
                     thread_pool,
                     handshake_cache,
+                    handshake_state_index,
                     job_channel,
                     network_channel,
                     global_state,
@@ -390,6 +421,7 @@ impl HandshakeJobRelay {
     fn execution_loop(
         thread_pool: Arc<ThreadPool>,
         handshake_cache: SharedHandshakeCache<OrderIdentifier>,
+        handshake_state_index: HandshakeStateIndex,
         job_channel: Receiver<HandshakeExecutionJob>,
         network_channel: UnboundedSender<GossipOutbound>,
         global_state: RelayerState,
@@ -403,6 +435,7 @@ impl HandshakeJobRelay {
 
             // Wait for the next message and forward to the thread pool
             let job = job_channel.recv().unwrap();
+            let handshake_state_clone = handshake_state_index.clone();
             let state_clone = global_state.clone();
             let cache_clone = handshake_cache.clone();
             let channel_clone = network_channel.clone();
@@ -410,6 +443,7 @@ impl HandshakeJobRelay {
             thread_pool.install(move || {
                 if let Err(err) = HandshakeManager::handle_handshake_job(
                     job,
+                    handshake_state_clone,
                     state_clone,
                     cache_clone,
                     channel_clone,

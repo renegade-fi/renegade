@@ -14,6 +14,7 @@ use crate::{
     handshake::{
         handshake_cache::HandshakeCache,
         manager::{HandshakeJobRelay, HandshakeTimer, HANDSHAKE_CACHE_SIZE},
+        state::HandshakeStateIndex,
     },
     state::RelayerState,
     types::SystemBusMessage,
@@ -65,9 +66,13 @@ impl Worker for HandshakeManager {
         // been determined not to intersect
         let handshake_cache = Arc::new(RwLock::new(HandshakeCache::new(HANDSHAKE_CACHE_SIZE)));
 
+        // The handshake state cache; tracks in-flight handshakes state, fields, etc
+        let handshake_state_index = HandshakeStateIndex::new();
+
         // Start a timer thread, periodically asks workers to begin handshakes with peers
         let timer = HandshakeTimer::new(
             thread_pool.clone(),
+            handshake_state_index.clone(),
             config.global_state.clone(),
             config.network_channel.clone(),
             config.cancel_channel.clone(),
@@ -75,6 +80,7 @@ impl Worker for HandshakeManager {
         let relay = HandshakeJobRelay::new(
             thread_pool,
             handshake_cache,
+            handshake_state_index,
             config.job_receiver,
             config.network_channel,
             config.global_state,
