@@ -16,7 +16,11 @@ use mpc_ristretto::network::QuicTwoPartyNet;
 use portpicker::Port;
 
 use std::{net::SocketAddr, thread::JoinHandle};
-use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
+use tokio::{
+    runtime::Runtime,
+    sync::mpsc::{Receiver, UnboundedReceiver},
+    task::JoinHandle as TokioJoinHandle,
+};
 use tracing::debug;
 
 use crate::{
@@ -87,9 +91,12 @@ pub struct NetworkManager {
     /// The public key of the local peer
     pub(super) local_keypair: Keypair,
     /// The join handle of the executor loop
-    pub(super) thread_handle: Option<JoinHandle<NetworkManagerError>>,
+    pub(super) thread_handle: Option<TokioJoinHandle<NetworkManagerError>>,
     /// The join handle of the cancellation relay
     pub(super) cancellation_relay_handle: Option<JoinHandle<NetworkManagerError>>,
+    /// The Tokio runtime executing the network manager's operations, stored here
+    /// to avoid dropping the runtime during execution
+    pub(super) tokio_runtime: Option<Runtime>,
 }
 
 /// The NetworkManager handles both incoming and outbound messages to the p2p network
