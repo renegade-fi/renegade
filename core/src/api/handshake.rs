@@ -1,14 +1,17 @@
 //! Groups API definitions for handshake request response
+use portpicker::Port;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::handshake::manager::OrderIdentifier;
+use crate::{gossip::types::WrappedPeerId, handshake::manager::OrderIdentifier};
 
 /// Enumerates the different operations possible via handshake
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum HandshakeMessage {
     /// An MPC operation to be performed during handshake
     InitiateMatch {
+        /// The ID of the peer initiating the match
+        peer_id: WrappedPeerId,
         /// The request identifier that will be used to track and index handshake
         /// communications
         request_id: Uuid,
@@ -20,6 +23,8 @@ pub enum HandshakeMessage {
     /// If all orders in the local peer's book have already been matched
     /// against the requestsed order, send back `None`
     ProposeMatchCandidate {
+        /// The ID of the peer proposing a match candidate
+        peer_id: WrappedPeerId,
         /// The request identifier that will be used to track and index handshake
         /// communications
         request_id: Uuid,
@@ -33,9 +38,13 @@ pub enum HandshakeMessage {
     },
     /// Go forward with a handshake after a proposed order pair is setup
     ExecuteMatch {
+        /// The ID of the peer ACKing the proposal
+        peer_id: WrappedPeerId,
         /// The request identifier that will be used to track and index handshake
         /// communications
         request_id: Uuid,
+        /// The port that the sender can be dialed on to begin the request
+        port: Port,
         /// A flag indicating that the order pair has already been matched
         ///
         /// In this case, the peers will not attempt to match the orders, as they have
@@ -52,6 +61,8 @@ pub enum HandshakeMessage {
     },
     /// Ack that a match has been executed on two orders
     ExecutionFinished {
+        /// The ID of the peer reporting execution to have finished
+        peer_id: WrappedPeerId,
         /// The request identifier that will be used to track and index handshake
         /// communications
         request_id: Uuid,

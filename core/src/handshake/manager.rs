@@ -2,6 +2,7 @@
 //! a pair of orders to match, all the way through settling any resulting match
 
 use crossbeam::channel::Receiver;
+use portpicker::pick_unused_port;
 use rand::{distributions::WeightedIndex, prelude::Distribution, rngs::OsRng, seq::SliceRandom};
 use rayon::ThreadPool;
 use std::{
@@ -15,7 +16,7 @@ use uuid::Uuid;
 use crate::{
     api::{
         cluster_management::ClusterManagementMessage,
-        gossip::{GossipOutbound, GossipRequest, GossipResponse, PubsubMessage},
+        gossip::{ConnectionRole, GossipOutbound, GossipRequest, GossipResponse, PubsubMessage},
         handshake::HandshakeMessage,
     },
     gossip::types::WrappedPeerId,
@@ -67,6 +68,7 @@ impl HandshakeManager {
             .send(GossipOutbound::Request {
                 peer_id,
                 message: GossipRequest::Handshake(HandshakeMessage::InitiateMatch {
+                    peer_id: *global_state.read_peer_id(),
                     request_id,
                     sender_order: my_order,
                 }),
@@ -147,6 +149,7 @@ impl HandshakeManager {
             HandshakeMessage::InitiateMatch {
                 request_id,
                 sender_order: peer_order,
+                ..
             } => {
                 let mut proposed_order = None;
                 {
@@ -169,6 +172,7 @@ impl HandshakeManager {
                 // Send the message and unwrap the result; the only error type possible
                 // is that the channel is closed, so panic the thread in that case
                 Ok(Some(HandshakeMessage::ProposeMatchCandidate {
+                    peer_id: *global_state.read_peer_id(),
                     request_id,
                     sender_order: proposed_order,
                     peer_order,
@@ -178,9 +182,11 @@ impl HandshakeManager {
             // A peer has responded to the local node's InitiateMatch message with a proposed match pair.
             // Check that their proposal has not already been matched and then signal to begin the match
             HandshakeMessage::ProposeMatchCandidate {
+                peer_id,
                 request_id,
                 peer_order: my_order,
                 sender_order,
+                ..
             } => {
                 // If sender_order is None, the peer has no order to match with ours
                 if let Some(peer_order) = sender_order {
@@ -191,8 +197,23 @@ impl HandshakeManager {
                         locked_handshake_cache.contains(my_order, peer_order)
                     }; // locked_handshake_cache released
 
+                    // Choose a random open port to receive the connection on
+                    // the peer port can be a dummy value as the local node will take the role
+                    // of listener in the connection setup
+                    let local_port = pick_unused_port().expect("all ports taken");
+                    network_channel
+                        .send(GossipOutbound::BrokerMpcNet {
+                            peer_id,
+                            peer_port: 0,
+                            local_port,
+                            local_role: ConnectionRole::Listener,
+                        })
+                        .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
+
                     Ok(Some(HandshakeMessage::ExecuteMatch {
+                        peer_id: *global_state.read_peer_id(),
                         request_id,
+                        port: local_port,
                         previously_matched,
                         order1: my_order,
                         order2: peer_order,
@@ -203,7 +224,9 @@ impl HandshakeManager {
             }
 
             HandshakeMessage::ExecuteMatch {
+                peer_id,
                 request_id,
+                port,
                 order1,
                 order2,
                 ..
@@ -222,8 +245,20 @@ impl HandshakeManager {
                 // Place the handshake in the execution state
                 handshake_state_index.in_progress(&request_id);
 
+                // Choose a local port to execute the handshake on
+                let local_port = pick_unused_port().expect("all ports used");
+                network_channel
+                    .send(GossipOutbound::BrokerMpcNet {
+                        peer_id,
+                        peer_port: port,
+                        local_port,
+                        local_role: ConnectionRole::Dialer,
+                    })
+                    .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
+
                 // Send back the message as an ack
                 Ok(Some(HandshakeMessage::ExecutionFinished {
+                    peer_id: *global_state.read_peer_id(),
                     request_id,
                     order1,
                     order2,
@@ -234,6 +269,7 @@ impl HandshakeManager {
                 order1,
                 order2,
                 request_id,
+                ..
             } => {
                 // Cache the order pair as completed
                 handshake_cache

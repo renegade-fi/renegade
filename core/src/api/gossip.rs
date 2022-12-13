@@ -2,6 +2,7 @@
 
 use ed25519_dalek::{Digest, Keypair, Sha512, SignatureError};
 use libp2p::{request_response::ResponseChannel, Multiaddr};
+use portpicker::Port;
 use serde::{Deserialize, Serialize};
 
 use crate::gossip::types::{ClusterId, WrappedPeerId};
@@ -48,6 +49,29 @@ pub enum GossipOutbound {
         /// The new address
         address: Multiaddr,
     },
+    /// A command signalling to the network manager to open up a QUIC connection and build
+    /// an MPC network instance to handshake over
+    BrokerMpcNet {
+        /// The ID of the peer to dial
+        peer_id: WrappedPeerId,
+        /// The port that the peer has exposed to dial on
+        peer_port: Port,
+        /// The local port that should be used to accept the strem
+        local_port: Port,
+        /// The role of the local node in the connection setup
+        local_role: ConnectionRole,
+    },
+}
+
+/// The role in an MPC network setup; either Dialer or Listener depending on which node
+/// initiates the connection
+#[derive(Clone, Debug)]
+pub enum ConnectionRole {
+    /// Dials the peer, initiating the connection
+    /// The dialer also plays the role of the king in the subsequent MPC computation
+    Dialer,
+    /// Listens for an inbound connection from the dialer
+    Listener,
 }
 
 /// Represents a request delivered point-to-point through the libp2p

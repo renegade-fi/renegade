@@ -22,7 +22,8 @@ use crate::{
             ReplicatedMessage,
         },
         gossip::{
-            GossipOutbound, GossipOutbound::Pubsub, GossipRequest, GossipResponse, PubsubMessage,
+            ConnectionRole, GossipOutbound, GossipOutbound::Pubsub, GossipRequest, GossipResponse,
+            PubsubMessage,
         },
     },
     gossip::{
@@ -218,6 +219,27 @@ impl NetworkManager {
                     .behaviour_mut()
                     .kademlia_dht
                     .add_address(&peer_id, address);
+
+                Ok(())
+            }
+
+            // Build an MPC net for the given peers to communicate over
+            // TODO: Implement dialer/listener setup
+            #[allow(unused_variables)]
+            GossipOutbound::BrokerMpcNet {
+                peer_id,
+                peer_port,
+                local_port,
+                local_role,
+            } => {
+                match local_role {
+                    ConnectionRole::Dialer => {
+                        println!("Dialing peer: {:?}", peer_id)
+                    }
+                    ConnectionRole::Listener => {
+                        println!("Waiting for peer to contact me: {:?}", peer_id)
+                    }
+                }
 
                 Ok(())
             }
