@@ -6,10 +6,7 @@ use crossbeam::channel::{Receiver, Sender};
 use ed25519_dalek::Keypair;
 use futures::executor::block_on;
 use libp2p::{identity, Multiaddr, Swarm};
-use tokio::{
-    runtime::Builder as TokioBuilder,
-    sync::mpsc::{self, UnboundedReceiver},
-};
+use tokio::sync::mpsc::{self, UnboundedReceiver};
 
 use crate::{
     api::gossip::GossipOutbound,
@@ -27,9 +24,6 @@ use crate::{
 use super::{
     composed_protocol::ProtocolVersion, error::NetworkManagerError, manager::NetworkManager,
 };
-
-/// The number of worker threads backing the Tokio runtime that the network manager executes in
-pub(super) const TOKIO_NETWORK_WORKERS: usize = 5;
 
 /// The worker configuration for the newtork manager
 #[derive(Debug)]
@@ -89,7 +83,6 @@ impl Worker for NetworkManager {
             local_keypair,
             thread_handle: None,
             cancellation_relay_handle: None,
-            tokio_runtime: None,
         })
     }
 
@@ -105,16 +98,9 @@ impl Worker for NetworkManager {
     }
 
     fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
-        // Wrap the tokio join handle in a blocked thread handle
-        let async_handle = self.thread_handle.take().unwrap();
-        let wrapper_handle = Builder::new()
-            .name("network-manager-async-wrapper".to_string())
-            .spawn(move || block_on(async_handle).unwrap())
-            .unwrap();
-
         // Allow panic if server is not started yet
         vec![
-            wrapper_handle,
+            self.thread_handle.take().unwrap(),
             self.cancellation_relay_handle.take().unwrap(),
         ]
     }
@@ -190,28 +176,23 @@ impl Worker for NetworkManager {
         let cluster_keypair = self.config.cluster_keypair.take().unwrap();
         let send_channel = self.config.send_channel.take().unwrap();
 
-        // Build a custom tokio runtime to manage the network
-        let tokio_runtime = TokioBuilder::new_multi_thread()
-            .thread_name("network-manager-runtime")
-            .worker_threads(TOKIO_NETWORK_WORKERS)
-            .build()
+        let thread_handle = Builder::new()
+            .name("network-manager-main-loop".to_string())
+            .spawn(move || {
+                // Block on this to execute the future in a separate thread
+                block_on(Self::executor_loop(
+                    peer_id_copy,
+                    cluster_keypair,
+                    swarm,
+                    send_channel,
+                    heartbeat_work_queue,
+                    handshake_work_queue,
+                    state_copy,
+                    async_cancel_receiver,
+                ))
+            })
             .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
-        let thread_handle = tokio_runtime.spawn_blocking(move || {
-            // Block on this to execute the future in a separate thread
-            block_on(Self::executor_loop(
-                peer_id_copy,
-                cluster_keypair,
-                swarm,
-                send_channel,
-                heartbeat_work_queue,
-                handshake_work_queue,
-                state_copy,
-                async_cancel_receiver,
-            ))
-        });
-
-        self.tokio_runtime = Some(tokio_runtime);
         self.thread_handle = Some(thread_handle);
         Ok(())
     }

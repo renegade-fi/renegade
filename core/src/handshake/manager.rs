@@ -2,6 +2,7 @@
 //! a pair of orders to match, all the way through settling any resulting match
 
 use crossbeam::channel::Receiver;
+use futures::executor::block_on;
 use portpicker::pick_unused_port;
 use rand::{distributions::WeightedIndex, prelude::Distribution, rngs::OsRng, seq::SliceRandom};
 use rayon::ThreadPool;
@@ -129,6 +130,15 @@ impl HandshakeManager {
 
                 Ok(())
             }
+
+            HandshakeExecutionJob::MpcNetSetup { mut net } => {
+                println!("network setup: {:?}", net);
+                block_on(net.connect())
+                    .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
+
+                println!("net connected");
+                Ok(())
+            }
         }
     }
 
@@ -201,6 +211,7 @@ impl HandshakeManager {
                     // the peer port can be a dummy value as the local node will take the role
                     // of listener in the connection setup
                     let local_port = pick_unused_port().expect("all ports taken");
+                    println!("Sending broker request");
                     network_channel
                         .send(GossipOutbound::BrokerMpcNet {
                             peer_id,
@@ -247,6 +258,7 @@ impl HandshakeManager {
 
                 // Choose a local port to execute the handshake on
                 let local_port = pick_unused_port().expect("all ports used");
+                println!("Sending broker request 2");
                 network_channel
                     .send(GossipOutbound::BrokerMpcNet {
                         peer_id,

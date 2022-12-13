@@ -16,11 +16,7 @@ use mpc_ristretto::network::QuicTwoPartyNet;
 use portpicker::Port;
 
 use std::{net::SocketAddr, thread::JoinHandle};
-use tokio::{
-    runtime::Runtime,
-    sync::mpsc::{Receiver, UnboundedReceiver},
-    task::JoinHandle as TokioJoinHandle,
-};
+use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
 use tracing::debug;
 
 use crate::{
@@ -91,12 +87,9 @@ pub struct NetworkManager {
     /// The public key of the local peer
     pub(super) local_keypair: Keypair,
     /// The join handle of the executor loop
-    pub(super) thread_handle: Option<TokioJoinHandle<NetworkManagerError>>,
+    pub(super) thread_handle: Option<JoinHandle<NetworkManagerError>>,
     /// The join handle of the cancellation relay
     pub(super) cancellation_relay_handle: Option<JoinHandle<NetworkManagerError>>,
-    /// The Tokio runtime executing the network manager's operations, stored here
-    /// to avoid dropping the runtime during execution
-    pub(super) tokio_runtime: Option<Runtime>,
 }
 
 /// The NetworkManager handles both incoming and outbound messages to the p2p network
@@ -159,7 +152,7 @@ impl NetworkManager {
                 // Handle network requests from worker components of the relayer
                 Some(message) = send_channel.recv() => {
                     // Forward the message
-                    if let Err(err) = Self::handle_outbound_message(message, &cluster_key, &mut swarm).await {
+                    if let Err(err) = Self::handle_outbound_message(message, &cluster_key, handshake_work_queue.clone(), &mut swarm).await {
                         debug!("Error sending outbound message: {}", err.to_string());
                     }
                 },
@@ -198,6 +191,7 @@ impl NetworkManager {
     async fn handle_outbound_message(
         msg: GossipOutbound,
         cluster_key: &SigKeypair,
+        handshake_work_queue: Sender<HandshakeExecutionJob>,
         swarm: &mut Swarm<ComposedNetworkBehavior>,
     ) -> Result<(), NetworkManagerError> {
         match msg {
@@ -259,7 +253,6 @@ impl NetworkManager {
             }
 
             // Build an MPC net for the given peers to communicate over
-            // TODO: Implement dialer/listener setup
             #[allow(unused_variables)]
             GossipOutbound::BrokerMpcNet {
                 peer_id,
@@ -271,6 +264,7 @@ impl NetworkManager {
                 let local_addr: SocketAddr = format!("127.0.0.1:{:?}", local_port).parse().unwrap();
 
                 // Connect on a side-channel to the peer
+                println!("Connecting net");
                 let mpc_net = match local_role {
                     ConnectionRole::Dialer => {
                         // Retrieve known dialable addresses for the peer from the network behavior
@@ -286,26 +280,18 @@ impl NetworkManager {
                             })?;
 
                         // Build an MPC net and dial the connection as the king party
-                        let mut net = QuicTwoPartyNet::new(party_id, local_addr, peer_addr);
-                        net.connect()
-                            .await
-                            .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
-
-                        net
+                        QuicTwoPartyNet::new(party_id, local_addr, peer_addr)
                     }
                     ConnectionRole::Listener => {
                         // As the listener, the peer address is inconsequential, and can be a dummy value
                         let peer_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-                        let mut net = QuicTwoPartyNet::new(party_id, local_addr, peer_addr);
-                        net.connect()
-                            .await
-                            .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
-                        net
+                        QuicTwoPartyNet::new(party_id, local_addr, peer_addr)
                     }
                 };
 
-                println!("net connected: {:?}", mpc_net);
-
+                handshake_work_queue
+                    .send(HandshakeExecutionJob::MpcNetSetup { net: mpc_net })
+                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
                 Ok(())
             }
         }

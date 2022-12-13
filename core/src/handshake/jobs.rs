@@ -1,6 +1,7 @@
 //! Defines jobs that other workers in the relayer may enqueue for the handshake module
 
 use libp2p::request_response::ResponseChannel;
+use mpc_ristretto::network::QuicTwoPartyNet;
 
 use crate::{
     api::{gossip::GossipResponse, handshake::HandshakeMessage},
@@ -23,6 +24,12 @@ pub enum HandshakeExecutionJob {
         /// If the channel is `None`, the response should be forwarded
         /// as a new gossip request to the network manager directly
         response_channel: Option<ResponseChannel<GossipResponse>>,
+    },
+    /// Indicates that the network manager has setup an MPC net and the receiving thread
+    /// may begin executing a match over this network
+    MpcNetSetup {
+        /// The net that was setup for the party
+        net: QuicTwoPartyNet,
     },
     /// Update the handshake cache with an entry from an order pair that a cluster
     /// peer has executed
