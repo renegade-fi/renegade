@@ -10,6 +10,7 @@ use libp2p::{
     core::upgrade::{read_length_prefixed, write_length_prefixed},
     futures::{AsyncRead, AsyncWrite, AsyncWriteExt},
     gossipsub::{Gossipsub, GossipsubConfig, GossipsubEvent, MessageAuthenticity},
+    identify::{Behaviour as IdentifyProtocol, Config as IdentifyConfig, Event as IdentifyEvent},
     identity::Keypair,
     kad::{record::store::MemoryStore, Kademlia, KademliaEvent},
     request_response::{
@@ -19,6 +20,7 @@ use libp2p::{
 };
 use libp2p_swarm_derive::NetworkBehaviour;
 use std::{
+    fmt::{Display, Formatter},
     io::{Error as IoError, ErrorKind},
     iter,
 };
@@ -47,16 +49,23 @@ pub struct ComposedNetworkBehavior {
     pub kademlia_dht: Kademlia<MemoryStore>,
     /// The Gossipsub behavior; used for broadcast (pubsub) primitives
     pub pubsub: Gossipsub,
+    /// The identify protocol behavior, used for getting publicly facing information
+    /// about the local node
+    pub identify: IdentifyProtocol,
 }
 
 impl ComposedNetworkBehavior {
     /// Construct the behavior
-    pub fn new(peer_id: PeerId, keypair: Keypair) -> Result<Self, NetworkManagerError> {
+    pub fn new(
+        peer_id: PeerId,
+        protocol_version: ProtocolVersion,
+        keypair: Keypair,
+    ) -> Result<Self, NetworkManagerError> {
         // Construct the point-to-point request response protocol
         let request_response = RequestResponse::new(
             RelayerGossipCodec::new(),
             iter::once((
-                RelayerGossipProtocol::new(ProtocolVersion::Version0),
+                RelayerGossipProtocol::new(protocol_version),
                 ProtocolSupport::Full,
             )),
             Default::default(),
@@ -68,15 +77,23 @@ impl ComposedNetworkBehavior {
 
         // Construct the pubsub network behavior
         let pubsub = Gossipsub::new(
-            MessageAuthenticity::Signed(keypair),
+            MessageAuthenticity::Signed(keypair.clone()),
             GossipsubConfig::default(),
         )
         .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
+
+        // The identify protocol; used to allow the local node to gain publically facing info
+        // about itself; i.e. dialable IP
+        let identify = IdentifyProtocol::new(IdentifyConfig::new(
+            protocol_version.to_string(),
+            keypair.public(),
+        ));
 
         Ok(Self {
             request_response,
             kademlia_dht,
             pubsub,
+            identify,
         })
     }
 }
@@ -92,6 +109,8 @@ pub enum ComposedProtocolEvent {
     Kademlia(KademliaEvent),
     /// An event from the pubsub behavior; broadcast
     PubSub(GossipsubEvent),
+    /// An event from the identify behavior
+    Identify(IdentifyEvent),
 }
 
 /// Composed event trait implementations; simply choose the correct enum value
@@ -113,15 +132,29 @@ impl From<GossipsubEvent> for ComposedProtocolEvent {
     }
 }
 
+impl From<IdentifyEvent> for ComposedProtocolEvent {
+    fn from(e: IdentifyEvent) -> Self {
+        ComposedProtocolEvent::Identify(e)
+    }
+}
+
 /**
  * Heartbeat protocol versioning, metadata, and codec
  */
 
 /// Specifies versioning information about the protocol
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum ProtocolVersion {
     /// The version of the protocol in use
     Version0,
+}
+
+impl Display for ProtocolVersion {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ProtocolVersion::Version0 => "0.0.0",
+        })
+    }
 }
 
 /// Represents the gossip protocol

@@ -263,6 +263,10 @@ impl NetworkManager {
             }
             // KAD events do nothing for now, routing tables are automatically updated by libp2p
             ComposedProtocolEvent::Kademlia(_) => Ok(()),
+
+            // Identify events do nothing for now, the behavior automatically updates the `external_addresses`
+            // field in the swarm
+            ComposedProtocolEvent::Identify(_) => Ok(()),
         }
     }
 

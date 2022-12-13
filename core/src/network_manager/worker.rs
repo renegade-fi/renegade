@@ -21,7 +21,9 @@ use crate::{
     worker::Worker,
 };
 
-use super::{error::NetworkManagerError, manager::NetworkManager};
+use super::{
+    composed_protocol::ProtocolVersion, error::NetworkManagerError, manager::NetworkManager,
+};
 
 /// The worker configuration for the newtork manager
 #[derive(Debug)]
@@ -110,8 +112,11 @@ impl Worker for NetworkManager {
             .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
         // Behavior is a composed behavior of RequestResponse with Kademlia
-        let mut behavior =
-            ComposedNetworkBehavior::new(*self.local_peer_id, self.local_keypair.clone())?;
+        let mut behavior = ComposedNetworkBehavior::new(
+            *self.local_peer_id,
+            ProtocolVersion::Version0,
+            self.local_keypair.clone(),
+        )?;
 
         // Add any bootstrap addresses to the peer info table
         for (peer_id, peer_info) in self.config.global_state.read_known_peers().iter() {
