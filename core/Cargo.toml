@@ -29,6 +29,7 @@ libp2p-core = { version = "0.38" }
 libp2p-swarm = { version = "0.41" }
 libp2p-swarm-derive = { version = "0.31" }
 lru = { version = "0.8" }
+mpc-ristretto = { git = "https://github.com/renegade-fi/MPC-Ristretto" }
 num-bigint = { version = "0.4.3" }
 once_cell = "1.5"
 portpicker = "0.1"

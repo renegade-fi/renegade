@@ -6,12 +6,16 @@ use futures::StreamExt;
 use libp2p::{
     gossipsub::{GossipsubEvent, GossipsubMessage, Sha256Topic},
     identity::Keypair,
+    multiaddr::Protocol,
     request_response::{RequestResponseEvent, RequestResponseMessage},
     swarm::SwarmEvent,
     Multiaddr, PeerId, Swarm,
 };
+use libp2p_swarm::NetworkBehaviour;
+use mpc_ristretto::network::QuicTwoPartyNet;
+use portpicker::Port;
 
-use std::thread::JoinHandle;
+use std::{net::SocketAddr, thread::JoinHandle};
 use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
 use tracing::debug;
 
@@ -40,11 +44,35 @@ use super::{
     worker::NetworkManagerConfig,
 };
 
+/// Occurs when a peer cannot be dialed because their address is not indexed in
+/// the network behavior
+const ERR_NO_KNOWN_ADDR: &str = "no known address for peer";
+/// Error parsing an address from Multiaddr to Socketaddr
+const ERR_PARSING_ADDR: &str = "could not parse Multiaddr to SocketAddr";
 /// An error sending a response through the swarm
 const ERR_SENDING_RESPONSE: &str = "error sending response, channel closed";
 /// Error emitted when a peer requests the local peer to prove auth for a different cluster
 /// than its own
 const ERR_WRONG_CLUSTER: &str = "cluster ID requested does not match local cluster ID";
+
+/**
+ * Helpers
+ */
+fn multiaddr_to_socketaddr(mut addr: Multiaddr, port: Port) -> Option<SocketAddr> {
+    while let Some(protoc) = addr.pop() {
+        match protoc {
+            Protocol::Ip4(ip4_addr) => return Some(SocketAddr::new(ip4_addr.into(), port)),
+            Protocol::Ip6(ip6_addr) => return Some(SocketAddr::new(ip6_addr.into(), port)),
+            _ => {}
+        }
+    }
+
+    None
+}
+
+/**
+ * Manager
+ */
 
 /// Groups logic around monitoring and requesting the network
 pub struct NetworkManager {
@@ -124,7 +152,7 @@ impl NetworkManager {
                 // Handle network requests from worker components of the relayer
                 Some(message) = send_channel.recv() => {
                     // Forward the message
-                    if let Err(err) = Self::handle_outbound_message(message, &cluster_key, &mut swarm) {
+                    if let Err(err) = Self::handle_outbound_message(message, &cluster_key, &mut swarm).await {
                         debug!("Error sending outbound message: {}", err.to_string());
                     }
                 },
@@ -160,7 +188,7 @@ impl NetworkManager {
     }
 
     /// Handles an outbound message from worker threads to other relayers
-    fn handle_outbound_message(
+    async fn handle_outbound_message(
         msg: GossipOutbound,
         cluster_key: &SigKeypair,
         swarm: &mut Swarm<ComposedNetworkBehavior>,
@@ -232,14 +260,44 @@ impl NetworkManager {
                 local_port,
                 local_role,
             } => {
-                match local_role {
+                let party_id = local_role.get_party_id();
+                let local_addr: SocketAddr = format!("127.0.0.1:{:?}", local_port).parse().unwrap();
+
+                // Connect on a side-channel to the peer
+                let mpc_net = match local_role {
                     ConnectionRole::Dialer => {
-                        println!("Dialing peer: {:?}", peer_id)
+                        // Retrieve known dialable addresses for the peer from the network behavior
+                        let all_peer_addrs = swarm.behaviour_mut().addresses_of_peer(&peer_id);
+                        let peer_multiaddr = all_peer_addrs.get(0).ok_or_else(|| {
+                            NetworkManagerError::Network(ERR_NO_KNOWN_ADDR.to_string())
+                        })?;
+                        let peer_addr = multiaddr_to_socketaddr(peer_multiaddr.clone(), peer_port)
+                            .ok_or_else(|| {
+                                NetworkManagerError::SerializeDeserialize(
+                                    ERR_PARSING_ADDR.to_string(),
+                                )
+                            })?;
+
+                        // Build an MPC net and dial the connection as the king party
+                        let mut net = QuicTwoPartyNet::new(party_id, local_addr, peer_addr);
+                        net.connect()
+                            .await
+                            .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
+
+                        net
                     }
                     ConnectionRole::Listener => {
-                        println!("Waiting for peer to contact me: {:?}", peer_id)
+                        // As the listener, the peer address is inconsequential, and can be a dummy value
+                        let peer_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+                        let mut net = QuicTwoPartyNet::new(party_id, local_addr, peer_addr);
+                        net.connect()
+                            .await
+                            .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
+                        net
                     }
-                }
+                };
+
+                println!("net connected: {:?}", mpc_net);
 
                 Ok(())
             }

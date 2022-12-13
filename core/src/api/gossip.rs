@@ -74,6 +74,17 @@ pub enum ConnectionRole {
     Listener,
 }
 
+impl ConnectionRole {
+    /// Get the party_id for an MPC dialed up through this connection
+    pub fn get_party_id(&self) -> u64 {
+        match self {
+            // Party 0 dials party 1
+            ConnectionRole::Dialer => 0,
+            ConnectionRole::Listener => 1,
+        }
+    }
+}
+
 /// Represents a request delivered point-to-point through the libp2p
 /// request-response protocol
 #[derive(Debug, Clone, Serialize, Deserialize)]
