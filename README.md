@@ -15,13 +15,13 @@
 
 <div>
   <img
-    href="https://github.com/renegade-fi/renegade/actions/workflows/test.yml/badge.svg"
+    src="https://github.com/renegade-fi/renegade/actions/workflows/test.yml/badge.svg"
   />
   <img
-    href="https://github.com/renegade-fi/renegade/actions/workflows/clippy.yml/badge.svg"
+    src="https://github.com/renegade-fi/renegade/actions/workflows/clippy.yml/badge.svg"
   />
   <img
-    href="https://github.com/renegade-fi/darkpool-relayer/actions/workflows/rustfmt.yml/badge.svg"
+    src="https://github.com/renegade-fi/darkpool-relayer/actions/workflows/rustfmt.yml/badge.svg"
   />
   <a href="https://twitter.com/renegade_fi" target="_blank">
     <img src="https://img.shields.io/twitter/follow/renegade_fi?style=social" />
