@@ -7,6 +7,8 @@ use crate::{gossip::types::WrappedPeerId, handshake::manager::OrderIdentifier};
 /// Enumerates the different operations possible via handshake
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum HandshakeMessage {
+    /// A generic ACK to attest to liveness during handshake execution
+    Ack,
     /// An MPC operation to be performed during handshake
     InitiateMatch {
         /// The ID of the peer initiating the match
@@ -47,15 +49,6 @@ pub enum HandshakeMessage {
         /// The first order to attempt to match
         order1: OrderIdentifier,
         /// The second order to attempt to match
-        order2: OrderIdentifier,
-    },
-    /// Ack that a match has been executed on two orders
-    ExecutionFinished {
-        /// The ID of the peer reporting execution to have finished
-        peer_id: WrappedPeerId,
-        /// The first order matched
-        order1: OrderIdentifier,
-        /// The second order matched
         order2: OrderIdentifier,
     },
 }

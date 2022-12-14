@@ -32,9 +32,44 @@ impl HandshakeStateIndex {
     }
 
     /// Adds a new handshake to the state
-    pub fn new_handshake(&self, request_id: Uuid, order_id: OrderIdentifier, order: Order) {
+    pub fn new_handshake(&self, request_id: Uuid, local_order_id: OrderIdentifier, order: Order) {
+        // Use a dummy value for the peer order until it is negotiated
+        self.new_handshake_with_peer_order(request_id, Uuid::default(), local_order_id, order)
+    }
+
+    /// Adds a new handshake to the state where the peer's order is already known (e.g. the peer initiated the handshake)
+    pub fn new_handshake_with_peer_order(
+        &self,
+        request_id: Uuid,
+        peer_order_id: OrderIdentifier,
+        local_order_id: OrderIdentifier,
+        order: Order,
+    ) {
         let mut locked_state = self.state_map.write().expect("state_map lock poisoned");
-        locked_state.insert(request_id, HandshakeState::new(request_id, order_id, order));
+        locked_state.insert(
+            request_id,
+            HandshakeState::new(request_id, peer_order_id, local_order_id, order),
+        );
+    }
+
+    /// Update a request to fill in a peer's order_id that has been decided on
+    pub fn update_peer_order_id(
+        &self,
+        request_id: &Uuid,
+        order_id: OrderIdentifier,
+    ) -> Result<(), HandshakeManagerError> {
+        let mut locked_state = self.state_map.write().expect("state_map lock poisoned");
+        if let State::MatchInProgress { peer_order_id, .. } = &mut locked_state
+            .get_mut(request_id)
+            .ok_or_else(|| {
+                HandshakeManagerError::InvalidRequest(format!("request_id {:?}", request_id))
+            })?
+            .state
+        {
+            *peer_order_id = order_id;
+        }
+
+        Ok(())
     }
 
     /// Removes a handshake after processing is complete; either by match completion or error
@@ -92,6 +127,8 @@ pub enum State {
     ///     1. A pair of orders is successfully decided on to execute matches
     ///     2. No pair of unmatched orders is found
     OrderNegotiation {
+        /// The identifier of the order that the remote peer has proposed for match
+        peer_order_id: OrderIdentifier,
         /// The identifier of the order that the local peer has proposed for match
         local_order_id: OrderIdentifier,
         /// The order being matched on
@@ -103,6 +140,8 @@ pub enum State {
     MatchInProgress {
         /// The identifier of the order that the local peer has proposed for match
         local_order_id: OrderIdentifier,
+        /// The identifier of the order that the peer has proposed for the match
+        peer_order_id: OrderIdentifier,
         /// The order being matched on
         local_order: Order,
     },
@@ -118,11 +157,17 @@ pub enum State {
 
 impl HandshakeState {
     /// Create a new handshake in the order negotiation state
-    pub fn new(request_id: Uuid, order_id: OrderIdentifier, order: Order) -> Self {
+    pub fn new(
+        request_id: Uuid,
+        peer_order_id: OrderIdentifier,
+        local_order_id: OrderIdentifier,
+        order: Order,
+    ) -> Self {
         Self {
             request_id,
             state: State::OrderNegotiation {
-                local_order_id: order_id,
+                peer_order_id,
+                local_order_id,
                 local_order: order,
             },
         }
@@ -132,12 +177,14 @@ impl HandshakeState {
     pub fn in_progress(&mut self) {
         // Assert valid transition
         if let State::OrderNegotiation {
+            peer_order_id,
             local_order_id,
             local_order,
         } = self.state.clone()
         {
             self.state = State::MatchInProgress {
                 local_order_id,
+                peer_order_id,
                 local_order,
             };
         } else {

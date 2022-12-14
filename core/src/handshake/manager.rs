@@ -1,13 +1,13 @@
 //! The handshake module handles the execution of handshakes from negotiating
 //! a pair of orders to match, all the way through settling any resulting match
 
-use circuits::types::order::Order;
+use circuits::{
+    mpc::SharedFabric, mpc_circuits::r#match::compute_match, types::order::Order, Allocate, Open,
+};
 use crossbeam::channel::Receiver;
 use futures::executor::block_on;
 use integration_helpers::mpc_network::mocks::PartyIDBeaverSource;
-use mpc_ristretto::{
-    fabric::AuthenticatedMpcFabric, mpc_scalar::scalar_to_u64, network::QuicTwoPartyNet,
-};
+use mpc_ristretto::{fabric::AuthenticatedMpcFabric, network::QuicTwoPartyNet};
 use portpicker::pick_unused_port;
 use rand::{distributions::WeightedIndex, prelude::Distribution, rngs::OsRng, seq::SliceRandom};
 use rayon::ThreadPool;
@@ -201,7 +201,14 @@ impl HandshakeManager {
                     .unwrap()
                     .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
 
-                Ok(())
+                // Record the match in the cache
+                Self::record_completed_match(
+                    request_id,
+                    handshake_state_index,
+                    handshake_cache,
+                    global_state,
+                    network_channel,
+                )
             }
         }
     }
@@ -219,6 +226,9 @@ impl HandshakeManager {
         network_channel: UnboundedSender<GossipOutbound>,
     ) -> Result<Option<HandshakeMessage>, HandshakeManagerError> {
         match message {
+            // ACK does not need to be handled
+            HandshakeMessage::Ack => Ok(None),
+
             // A peer has requested a match, find an order that has not already been matched with theirs
             // and propose it back to the peer
             HandshakeMessage::InitiateMatch {
@@ -326,41 +336,7 @@ impl HandshakeManager {
                     .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
                 // Send back the message as an ack
-                Ok(Some(HandshakeMessage::ExecutionFinished {
-                    peer_id: *global_state.read_peer_id(),
-                    order1,
-                    order2,
-                }))
-            }
-
-            HandshakeMessage::ExecutionFinished { order1, order2, .. } => {
-                // Cache the order pair as completed
-                handshake_cache
-                    .write()
-                    .expect("handshake_cache lock poiseoned")
-                    .push(order1, order2);
-
-                // Write to global state for debugging
-                global_state
-                    .write_matched_order_pairs()
-                    .push((order1, order2));
-
-                // Update the state of the handshake in the completed state
-                handshake_state_index.completed(&request_id);
-
-                // Send a message to cluster peers indicating the handshake has finished
-                let locked_cluster_id = global_state.read_cluster_id();
-                network_channel
-                    .send(GossipOutbound::Pubsub {
-                        topic: locked_cluster_id.get_management_topic(),
-                        message: PubsubMessage::new_cluster_management_unsigned(
-                            locked_cluster_id.clone(),
-                            ClusterManagementMessage::CacheSync(order1, order2),
-                        ),
-                    })
-                    .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
-
-                Ok(None)
+                Ok(Some(HandshakeMessage::Ack))
             }
         }
     }
@@ -371,7 +347,7 @@ impl HandshakeManager {
         local_order: Order,
         mut mpc_net: QuicTwoPartyNet,
     ) -> Result<(), HandshakeManagerError> {
-        println!("Matching on order: {:?}", local_order);
+        println!("Matching order...\n");
         // Connect the network
         block_on(mpc_net.connect())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
@@ -384,23 +360,71 @@ impl HandshakeManager {
             Rc::new(RefCell::new(mpc_net)),
             Rc::new(RefCell::new(beaver_source)),
         );
+        let shared_fabric = SharedFabric::new(fabric);
 
-        // Simple computation
-        let p1_value = fabric
-            .allocate_private_u64(0 /* owning_party */, party_id)
+        let shared_order1 = local_order
+            .allocate(0 /* owning_party */, shared_fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let p2_value = fabric
-            .allocate_private_u64(1 /* owning_party */, party_id)
+        let shared_order2 = local_order
+            .allocate(1 /* owning_party */, shared_fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let const_value = fabric.allocate_public_u64(10);
 
-        let res = (p1_value + p2_value) * const_value;
-        let open_res = res
+        let match_res = compute_match(&shared_order1, &shared_order2, shared_fabric)
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?
             .open_and_authenticate()
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let res_u64 = scalar_to_u64(&open_res.to_scalar());
 
-        println!("Got MPC res: {:?}", res_u64);
+        println!("Got MPC res: {:?}", match_res);
+        Ok(())
+    }
+
+    /// Record a match as completed in the various state objects
+    fn record_completed_match(
+        request_id: Uuid,
+        handshake_state_index: HandshakeStateIndex,
+        handshake_cache: SharedHandshakeCache<OrderIdentifier>,
+        global_state: RelayerState,
+        network_channel: UnboundedSender<GossipOutbound>,
+    ) -> Result<(), HandshakeManagerError> {
+        // Get the order IDs from the state machine
+        if let State::MatchInProgress {
+            local_order_id,
+            peer_order_id,
+            ..
+        } = handshake_state_index
+            .get_state(&request_id)
+            .ok_or_else(|| {
+                HandshakeManagerError::InvalidRequest(format!("request_id {:?}", request_id))
+            })?
+            .state
+        {
+            // Cache the order pair as completed
+            handshake_cache
+                .write()
+                .expect("handshake_cache lock poiseoned")
+                .push(local_order_id, peer_order_id);
+
+            // Write to global state for debugging
+            global_state
+                .write_matched_order_pairs()
+                .push((local_order_id, peer_order_id));
+
+            // Update the state of the handshake in the completed state
+            handshake_state_index.completed(&request_id);
+
+            // Send a message to cluster peers indicating the handshake has finished
+            let locked_cluster_id = global_state.read_cluster_id();
+            network_channel
+                .send(GossipOutbound::Pubsub {
+                    topic: locked_cluster_id.get_management_topic(),
+                    message: PubsubMessage::new_cluster_management_unsigned(
+                        locked_cluster_id.clone(),
+                        ClusterManagementMessage::CacheSync(local_order_id, peer_order_id),
+                    ),
+                })
+                .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
+        }
+
         Ok(())
     }
 }
