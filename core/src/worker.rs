@@ -65,7 +65,8 @@ pub fn watch_worker<W: Worker>(worker: &mut W, failure_channel: Sender<()>) {
         Builder::new()
             .name(watcher_name.clone())
             .spawn(move || {
-                join_handle.join().unwrap();
+                #[allow(unused_must_use)]
+                join_handle.join();
                 channel_clone.blocking_send(()).unwrap();
                 println!("{} exited", name_clone);
             })
