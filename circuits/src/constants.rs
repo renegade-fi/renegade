@@ -774,9 +774,9 @@ pub fn POSEIDON_ROUND_CONSTANTS_T_3() -> Vec<Vec<Scalar>> {
     ]
 }
 
-// Converts a literal hexidecimal string to a field element through BigUint
-// this function should only ever be called on the constants above, so we panic
-// if parsing fails
+/// Converts a literal hexidecimal string to a field element through BigUint
+/// this function should only ever be called on the constants above, so we panic
+/// if parsing fails
 fn field_element_from_hex_string(byte_string: &[u8]) -> Scalar {
     bigint_to_scalar(&BigInt::parse_bytes(byte_string, 16 /* radix */).unwrap())
 }

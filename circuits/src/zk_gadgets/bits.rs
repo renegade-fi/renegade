@@ -143,6 +143,7 @@ pub struct MultiproverToBitsGadget<
     N: MpcNetwork + Send,
     S: SharedValueSource<Scalar>,
 > {
+    /// Phantom
     _phantom: &'a PhantomData<(N, S)>,
 }
 

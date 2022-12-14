@@ -284,6 +284,7 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
 
 /// Mulitprover gadget for Merkle proofs inside of a collaborative Bulletproof
 pub struct MultiproverPoseidonMerkleGadget<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// Phantom
     _phantom: &'a PhantomData<(N, S)>,
 }
 

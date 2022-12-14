@@ -115,6 +115,7 @@ pub struct MultiproverGreaterThanEqZeroGadget<
     N: 'a + MpcNetwork + Send,
     S: 'a + SharedValueSource<Scalar>,
 > {
+    /// Phantom
     _phantom: &'a PhantomData<(N, S)>,
 }
 
@@ -175,7 +176,7 @@ impl<const D: usize> GreaterThanEqGadget<D> {
 /// The witness for the statement a >= b; used for testing
 ///
 /// Here, both `a` and `b` are private variables
-#[allow(missing_docs)]
+#[allow(missing_docs, clippy::missing_docs_in_private_items)]
 #[derive(Clone, Debug)]
 pub struct GreaterThanEqWitness {
     pub a: Scalar,
@@ -239,6 +240,7 @@ pub struct MultiproverGreaterThanEqGadget<
     N: 'a + MpcNetwork + Send,
     S: 'a + SharedValueSource<Scalar>,
 > {
+    /// Phantom
     _phantom: &'a PhantomData<(N, S)>,
 }
 

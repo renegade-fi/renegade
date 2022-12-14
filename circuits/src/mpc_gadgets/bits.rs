@@ -11,9 +11,9 @@ use mpc_ristretto::{
 
 use crate::{errors::MpcError, mpc::SharedFabric, scalar_2_to_m, SCALAR_MAX_BITS};
 
-// We only sample a blinding factor in the range [0, 2^252] because not all values
-// with the final bit (253rd) of the value make valid scalars. The scalar field is
-// of size 2^252 + \delta
+/// We only sample a blinding factor in the range [0, 2^252] because not all values
+/// with the final bit (253rd) of the value make valid scalars. The scalar field is
+/// of size 2^252 + \delta
 const BLINDING_FACTOR_MAX_BITS: usize = 252;
 
 /**

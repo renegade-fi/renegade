@@ -42,14 +42,18 @@ impl CondSelectGadget {
 /// The witness for the testing statement in which a, b, and selector are private
 #[derive(Clone, Debug)]
 pub struct CondSelectWitness {
+    /// The first option in the selection
     a: Scalar,
+    /// The second option in the selection
     b: Scalar,
+    /// The selector; decides between the two options
     selector: Scalar,
 }
 
 /// The statement of the expected result from a CondSelectGadget
 #[derive(Clone, Debug)]
 pub struct CondSelectStatement {
+    /// The expected selection from the gadget
     expected: Scalar,
 }
 
@@ -115,6 +119,7 @@ pub struct MultiproverCondSelectGadget<
     N: 'a + MpcNetwork + Send,
     S: 'a + SharedValueSource<Scalar>,
 > {
+    /// Phantom
     _phantom: &'a PhantomData<(N, S)>,
 }
 
@@ -178,14 +183,18 @@ impl CondSelectVectorGadget {
 /// equal to an expected value
 #[derive(Clone, Debug)]
 pub struct CondSelectVectorWitness {
+    /// The first vector option in the selection
     a: Vec<Scalar>,
+    /// The second vector option in the selection
     b: Vec<Scalar>,
+    /// The selector bit; decides which vector to select
     selector: Scalar,
 }
 
 /// The statement parameterization as described in the struct above
 #[derive(Clone, Debug)]
 pub struct CondSelectVectorStatement {
+    /// The expected output from the selection
     expected: Vec<Scalar>,
 }
 
@@ -294,6 +303,7 @@ pub struct MultiproverCondSelectVectorGadget<
     N: 'a + MpcNetwork + Send,
     S: 'a + SharedValueSource<Scalar>,
 > {
+    /// Phantom
     _phantom: &'a PhantomData<(N, S)>,
 }
 

@@ -58,6 +58,7 @@ use crate::{
 /// implements the Multiprover circuit trait
 #[derive(Clone, Debug)]
 pub struct ValidMatchMpcCircuit<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// Phantom
     _phantom: &'a PhantomData<(N, S)>,
 }
 

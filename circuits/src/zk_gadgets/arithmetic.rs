@@ -56,6 +56,7 @@ impl ExpGadget {
         }
     }
 
+    /// Generate the constraints for the ExpGadget statement
     fn generate_constraints<CS: RandomizableConstraintSystem>(
         cs: &mut CS,
         x_var: Variable,
@@ -152,6 +153,7 @@ impl SingleProverCircuit for ExpGadget {
 ///
 /// TODO: Implementation
 pub struct MultiproverExpGadget<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> {
+    /// Phantom
     _phantom: PhantomData<&'a (N, S)>,
 }
 

@@ -31,6 +31,7 @@ impl OrGate {
 
 /// Represents an OR gate in a multi-prover constraint system
 pub struct MultiproverOrGate<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// Phantom
     _phantom: &'a PhantomData<(N, S)>,
 }
 

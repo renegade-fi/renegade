@@ -2,6 +2,7 @@
 #![feature(generic_const_exprs)]
 #![allow(incomplete_features)]
 #![deny(missing_docs)]
+#![deny(clippy::missing_docs_in_private_items)]
 #![deny(unsafe_code)]
 
 use std::ops::Neg;
