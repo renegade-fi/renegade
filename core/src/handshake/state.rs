@@ -59,7 +59,7 @@ impl HandshakeStateIndex {
         order_id: OrderIdentifier,
     ) -> Result<(), HandshakeManagerError> {
         let mut locked_state = self.state_map.write().expect("state_map lock poisoned");
-        if let State::MatchInProgress { peer_order_id, .. } = &mut locked_state
+        if let State::OrderNegotiation { peer_order_id, .. } = &mut locked_state
             .get_mut(request_id)
             .ok_or_else(|| {
                 HandshakeManagerError::InvalidRequest(format!("request_id {:?}", request_id))

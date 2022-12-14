@@ -250,7 +250,8 @@ impl HandshakeManager {
 
                 // Update the state machine for a newly created handshake
                 if let Some((order_id, order)) = proposed_order.clone() {
-                    handshake_state_index.new_handshake(request_id, order_id, order)
+                    handshake_state_index
+                        .new_handshake_with_peer_order(request_id, peer_order, order_id, order)
                 }
 
                 // Send the message and unwrap the result; the only error type possible
@@ -272,12 +273,19 @@ impl HandshakeManager {
             } => {
                 // If sender_order is None, the peer has no order to match with ours
                 if let Some(peer_order) = sender_order {
+                    // Now that the peer has negotiated an order to match, update the state machine
+                    handshake_state_index.update_peer_order_id(&request_id, peer_order)?;
+
                     let previously_matched = {
                         let locked_handshake_cache = handshake_cache
                             .read()
                             .expect("handshake_cache lock poisoned");
                         locked_handshake_cache.contains(my_order, peer_order)
                     }; // locked_handshake_cache released
+
+                    if previously_matched {
+                        handshake_state_index.completed(&request_id);
+                    }
 
                     // Choose a random open port to receive the connection on
                     // the peer port can be a dummy value as the local node will take the role
@@ -317,11 +325,6 @@ impl HandshakeManager {
                     .write()
                     .expect("handshake_cache lock poisoned")
                     .push(order1, order2);
-
-                // Write to global state for debugging
-                global_state
-                    .write_matched_order_pairs()
-                    .push((order1, order2));
 
                 // Choose a local port to execute the handshake on
                 let local_port = pick_unused_port().expect("all ports used");
