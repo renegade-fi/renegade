@@ -15,10 +15,11 @@ use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
 use rand_core::{CryptoRng, RngCore};
+use serde::{Deserialize, Serialize};
 
 /// Represents the base type of an open order, including the asset pair, the amount, price,
 /// and direction
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Order {
     /// The mint (ERC-20 contract address) of the quote token
     pub quote_mint: u64,
@@ -76,7 +77,7 @@ impl From<&Order> for Vec<u64> {
 }
 
 /// The side of the market a given order is on
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OrderSide {
     /// Buy side
     Buy = 0,

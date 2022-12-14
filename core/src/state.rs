@@ -1,6 +1,7 @@
 //! This file groups type definitions and helpers around global state that
 //! is passed around throughout the code
 
+use circuits::types::order::Order;
 use libp2p::Multiaddr;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -63,7 +64,7 @@ pub struct Wallet {
     /// Wallet id will eventually be replaced, for now it is UUID
     pub wallet_id: Uuid,
     /// A list of orders in this wallet
-    pub orders: Vec<OrderIdentifier>,
+    pub orders: HashMap<OrderIdentifier, Order>,
     /// Wallet metadata; replicas, trusted peers, etc
     pub metadata: WalletMetadata,
 }
@@ -214,7 +215,7 @@ impl RelayerState {
     pub fn get_managed_order_ids(&self) -> Vec<OrderIdentifier> {
         let mut res = Vec::new();
         for (_, wallet) in self.read_managed_wallets().iter() {
-            res.append(&mut wallet.orders.clone());
+            res.append(&mut wallet.orders.keys().cloned().collect());
         }
 
         res
