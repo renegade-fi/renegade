@@ -91,7 +91,7 @@ impl Worker for HandshakeManager {
     }
 
     fn is_recoverable(&self) -> bool {
-        true
+        false
     }
 
     fn name(&self) -> String {

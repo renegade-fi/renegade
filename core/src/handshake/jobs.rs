@@ -28,6 +28,8 @@ pub enum HandshakeExecutionJob {
     /// Indicates that the network manager has setup an MPC net and the receiving thread
     /// may begin executing a match over this network
     MpcNetSetup {
+        /// The ID of the local peer in the subsequent MPC computation
+        party_id: u64,
         /// The net that was setup for the party
         net: QuicTwoPartyNet,
     },

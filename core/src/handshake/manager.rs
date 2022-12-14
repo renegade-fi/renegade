@@ -3,15 +3,21 @@
 
 use crossbeam::channel::Receiver;
 use futures::executor::block_on;
+use integration_helpers::mpc_network::mocks::PartyIDBeaverSource;
+use mpc_ristretto::{
+    fabric::AuthenticatedMpcFabric, mpc_scalar::scalar_to_u64, network::QuicTwoPartyNet,
+};
 use portpicker::pick_unused_port;
 use rand::{distributions::WeightedIndex, prelude::Distribution, rngs::OsRng, seq::SliceRandom};
 use rayon::ThreadPool;
 use std::{
+    cell::RefCell,
+    rc::Rc,
     sync::Arc,
     thread::{self, JoinHandle},
     time::Duration,
 };
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::{runtime::Builder as TokioBuilder, sync::mpsc::UnboundedSender};
 use uuid::Uuid;
 
 use crate::{
@@ -131,12 +137,26 @@ impl HandshakeManager {
                 Ok(())
             }
 
-            HandshakeExecutionJob::MpcNetSetup { mut net } => {
-                println!("network setup: {:?}", net);
-                block_on(net.connect())
+            HandshakeExecutionJob::MpcNetSetup { party_id, net } => {
+                // Build a tokio runtime in the current thread for the MPC to run inside of
+                // This is necessary to allow quinn access to a Tokio reactor at runtime
+                let tid = thread::current().id();
+                let tokio_runtime = TokioBuilder::new_multi_thread()
+                    .thread_name(format!("handshake-mpc-{:?}", tid))
+                    .enable_io()
+                    .enable_time()
+                    .build()
                     .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
 
-                println!("net connected");
+                // Wrap the current thread's execution in a Tokio blocking thread
+                // let execution_future = Self::execute_match_mpc(party_id, net);
+                let join_handle =
+                    tokio_runtime.spawn_blocking(move || Self::execute_match_mpc(party_id, net));
+
+                block_on(join_handle)
+                    .unwrap()
+                    .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
+
                 Ok(())
             }
         }
@@ -211,7 +231,6 @@ impl HandshakeManager {
                     // the peer port can be a dummy value as the local node will take the role
                     // of listener in the connection setup
                     let local_port = pick_unused_port().expect("all ports taken");
-                    println!("Sending broker request");
                     network_channel
                         .send(GossipOutbound::BrokerMpcNet {
                             peer_id,
@@ -258,7 +277,6 @@ impl HandshakeManager {
 
                 // Choose a local port to execute the handshake on
                 let local_port = pick_unused_port().expect("all ports used");
-                println!("Sending broker request 2");
                 network_channel
                     .send(GossipOutbound::BrokerMpcNet {
                         peer_id,
@@ -312,6 +330,43 @@ impl HandshakeManager {
                 Ok(None)
             }
         }
+    }
+
+    /// Execute the match MPC over the provisioned QUIC stream
+    fn execute_match_mpc(
+        party_id: u64,
+        mut mpc_net: QuicTwoPartyNet,
+    ) -> Result<(), HandshakeManagerError> {
+        // Connect the network
+        block_on(mpc_net.connect())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+
+        // Build a fabric
+        // TODO: Replace the dummy beaver source
+        let beaver_source = PartyIDBeaverSource::new(party_id);
+        let fabric = AuthenticatedMpcFabric::new_with_network(
+            party_id,
+            Rc::new(RefCell::new(mpc_net)),
+            Rc::new(RefCell::new(beaver_source)),
+        );
+
+        // Simple computation
+        let p1_value = fabric
+            .allocate_private_u64(0 /* owning_party */, party_id)
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let p2_value = fabric
+            .allocate_private_u64(1 /* owning_party */, party_id)
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let const_value = fabric.allocate_public_u64(10);
+
+        let res = (p1_value + p2_value) * const_value;
+        let open_res = res
+            .open_and_authenticate()
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let res_u64 = scalar_to_u64(&open_res.to_scalar());
+
+        println!("Got MPC res: {:?}", res_u64);
+        Ok(())
     }
 }
 

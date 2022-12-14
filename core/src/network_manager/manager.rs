@@ -264,7 +264,6 @@ impl NetworkManager {
                 let local_addr: SocketAddr = format!("127.0.0.1:{:?}", local_port).parse().unwrap();
 
                 // Connect on a side-channel to the peer
-                println!("Connecting net");
                 let mpc_net = match local_role {
                     ConnectionRole::Dialer => {
                         // Retrieve known dialable addresses for the peer from the network behavior
@@ -289,8 +288,13 @@ impl NetworkManager {
                     }
                 };
 
+                // After the dependencies are injected into the network; forward it to the handshake manager to
+                // dial the peer and begin the MPC
                 handshake_work_queue
-                    .send(HandshakeExecutionJob::MpcNetSetup { net: mpc_net })
+                    .send(HandshakeExecutionJob::MpcNetSetup {
+                        party_id,
+                        net: mpc_net,
+                    })
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
                 Ok(())
             }

@@ -5,6 +5,8 @@ use std::fmt::Display;
 /// The core error type for the handshake manager
 #[derive(Clone, Debug)]
 pub enum HandshakeManagerError {
+    /// Error in MPC networking
+    MpcNetwork(String),
     /// Error sending a message to the network
     SendMessage(String),
     /// Error while setting up the handshake manager
