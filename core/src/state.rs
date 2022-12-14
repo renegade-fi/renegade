@@ -212,10 +212,10 @@ impl RelayerState {
     }
 
     /// Get a list of order IDs managed by the local peer
-    pub fn get_managed_order_ids(&self) -> Vec<OrderIdentifier> {
+    pub fn get_managed_order_ids(&self) -> Vec<(OrderIdentifier, Order)> {
         let mut res = Vec::new();
         for (_, wallet) in self.read_managed_wallets().iter() {
-            res.append(&mut wallet.orders.keys().cloned().collect());
+            res.append(&mut wallet.orders.clone().into_iter().collect());
         }
 
         res

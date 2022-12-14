@@ -2,6 +2,7 @@
 
 use libp2p::request_response::ResponseChannel;
 use mpc_ristretto::network::QuicTwoPartyNet;
+use uuid::Uuid;
 
 use crate::{
     api::{gossip::GossipResponse, handshake::HandshakeMessage},
@@ -15,6 +16,9 @@ use super::manager::OrderIdentifier;
 pub enum HandshakeExecutionJob {
     /// Process a handshake request
     ProcessHandshakeMessage {
+        /// The request identifier that will be used to track and index handshake
+        /// communications
+        request_id: Uuid,
         /// The peer requesting to handshake
         peer_id: WrappedPeerId,
         /// The handshake request message contents
@@ -28,6 +32,8 @@ pub enum HandshakeExecutionJob {
     /// Indicates that the network manager has setup an MPC net and the receiving thread
     /// may begin executing a match over this network
     MpcNetSetup {
+        /// The ID of the handshake request that this connection has been allocated for
+        request_id: Uuid,
         /// The ID of the local peer in the subsequent MPC computation
         party_id: u64,
         /// The net that was setup for the party

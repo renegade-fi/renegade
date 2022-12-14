@@ -1,7 +1,6 @@
 //! Groups API definitions for handshake request response
 use portpicker::Port;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::{gossip::types::WrappedPeerId, handshake::manager::OrderIdentifier};
 
@@ -12,9 +11,6 @@ pub enum HandshakeMessage {
     InitiateMatch {
         /// The ID of the peer initiating the match
         peer_id: WrappedPeerId,
-        /// The request identifier that will be used to track and index handshake
-        /// communications
-        request_id: Uuid,
         /// An order local to the sender, that the sender wants to computed matches for
         sender_order: OrderIdentifier,
     },
@@ -25,9 +21,6 @@ pub enum HandshakeMessage {
     ProposeMatchCandidate {
         /// The ID of the peer proposing a match candidate
         peer_id: WrappedPeerId,
-        /// The request identifier that will be used to track and index handshake
-        /// communications
-        request_id: Uuid,
         /// The recipient's order that the sender is proposing a match with
         peer_order: OrderIdentifier,
         /// The sender's order that it wishes to match against the receiver's
@@ -40,9 +33,6 @@ pub enum HandshakeMessage {
     ExecuteMatch {
         /// The ID of the peer ACKing the proposal
         peer_id: WrappedPeerId,
-        /// The request identifier that will be used to track and index handshake
-        /// communications
-        request_id: Uuid,
         /// The port that the sender can be dialed on to begin the request
         port: Port,
         /// A flag indicating that the order pair has already been matched
@@ -63,9 +53,6 @@ pub enum HandshakeMessage {
     ExecutionFinished {
         /// The ID of the peer reporting execution to have finished
         peer_id: WrappedPeerId,
-        /// The request identifier that will be used to track and index handshake
-        /// communications
-        request_id: Uuid,
         /// The first order matched
         order1: OrderIdentifier,
         /// The second order matched

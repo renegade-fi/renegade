@@ -9,7 +9,8 @@ use std::{
 
 use crate::state::Shared;
 
-use super::error::HandshakeManagerError;
+use super::{error::HandshakeManagerError, manager::OrderIdentifier};
+use circuits::types::order::Order;
 use uuid::Uuid;
 
 /// Holds state information for all in-flight handshake correspondences
@@ -31,9 +32,9 @@ impl HandshakeStateIndex {
     }
 
     /// Adds a new handshake to the state
-    pub fn new_handshake(&self, request_id: Uuid) {
+    pub fn new_handshake(&self, request_id: Uuid, order_id: OrderIdentifier, order: Order) {
         let mut locked_state = self.state_map.write().expect("state_map lock poisoned");
-        locked_state.insert(request_id, HandshakeState::new(request_id));
+        locked_state.insert(request_id, HandshakeState::new(request_id, order_id, order));
     }
 
     /// Removes a handshake after processing is complete; either by match completion or error
@@ -90,11 +91,21 @@ pub enum State {
     /// This state is exited when either:
     ///     1. A pair of orders is successfully decided on to execute matches
     ///     2. No pair of unmatched orders is found
-    OrderNegotiation {},
+    OrderNegotiation {
+        /// The identifier of the order that the local peer has proposed for match
+        local_order_id: OrderIdentifier,
+        /// The order being matched on
+        local_order: Order,
+    },
     /// This state is entered when an order pair has been successfully negotiated, and the
     /// match computation has begun. This state is either exited by a sucessful match or
     /// an error
-    MatchInProgress {},
+    MatchInProgress {
+        /// The identifier of the order that the local peer has proposed for match
+        local_order_id: OrderIdentifier,
+        /// The order being matched on
+        local_order: Order,
+    },
     /// This state signals that the handshake has completed successfully one way or another;
     /// either by successful match, or because no non-cached order pairs were found
     Completed {},
@@ -107,22 +118,31 @@ pub enum State {
 
 impl HandshakeState {
     /// Create a new handshake in the order negotiation state
-    pub fn new(request_id: Uuid) -> Self {
+    pub fn new(request_id: Uuid, order_id: OrderIdentifier, order: Order) -> Self {
         Self {
             request_id,
-            state: State::OrderNegotiation {},
+            state: State::OrderNegotiation {
+                local_order_id: order_id,
+                local_order: order,
+            },
         }
     }
 
     /// Transition the state to MatchInProgress
     pub fn in_progress(&mut self) {
         // Assert valid transition
-        assert!(
-            std::matches!(self.state, State::OrderNegotiation { .. }),
-            "in_progress may only be called on a handshake in the `OrderNegotiation` state"
-        );
-
-        self.state = State::MatchInProgress {};
+        if let State::OrderNegotiation {
+            local_order_id,
+            local_order,
+        } = self.state.clone()
+        {
+            self.state = State::MatchInProgress {
+                local_order_id,
+                local_order,
+            };
+        } else {
+            panic!("in_progress may only be called on a handshake in the `OrderNegotiation` state");
+        };
     }
 
     /// Transition the state to Completed

@@ -4,6 +4,7 @@ use ed25519_dalek::{Digest, Keypair, Sha512, SignatureError};
 use libp2p::{request_response::ResponseChannel, Multiaddr};
 use portpicker::Port;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::gossip::types::{ClusterId, WrappedPeerId};
 
@@ -52,6 +53,8 @@ pub enum GossipOutbound {
     /// A command signalling to the network manager to open up a QUIC connection and build
     /// an MPC network instance to handshake over
     BrokerMpcNet {
+        /// The ID of the ongoing handshake
+        request_id: Uuid,
         /// The ID of the peer to dial
         peer_id: WrappedPeerId,
         /// The port that the peer has exposed to dial on
@@ -96,7 +99,12 @@ pub enum GossipRequest {
     /// A request from a peer initiating a heartbeat
     Heartbeat(HeartbeatMessage),
     /// A request from a peer initiating a handshake
-    Handshake(HandshakeMessage),
+    Handshake {
+        /// The request ID; used track handshakes across events
+        request_id: Uuid,
+        /// The message contents
+        message: HandshakeMessage,
+    },
     /// A request that a peer replicate a set of wallets
     Replicate(ReplicateRequestBody),
 }
@@ -109,7 +117,12 @@ pub enum GossipResponse {
     /// A response from a peer to a sender's heartbeat request
     Heartbeat(HeartbeatMessage),
     /// A response from a peer to a sender's handshake request
-    Handshake(HandshakeMessage),
+    Handshake {
+        /// The request ID; used track handshakes across events
+        request_id: Uuid,
+        /// The message contents
+        message: HandshakeMessage,
+    },
 }
 
 /// Represents a pubsub message flooded through the network

@@ -255,6 +255,7 @@ impl NetworkManager {
             // Build an MPC net for the given peers to communicate over
             #[allow(unused_variables)]
             GossipOutbound::BrokerMpcNet {
+                request_id,
                 peer_id,
                 peer_port,
                 local_port,
@@ -292,6 +293,7 @@ impl NetworkManager {
                 // dial the peer and begin the MPC
                 handshake_work_queue
                     .send(HandshakeExecutionJob::MpcNetSetup {
+                        request_id,
                         party_id,
                         net: mpc_net,
                     })
@@ -411,10 +413,14 @@ impl NetworkManager {
                     })
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
 
-                GossipRequest::Handshake(handshake_message) => handshake_work_queue
+                GossipRequest::Handshake {
+                    request_id,
+                    message,
+                } => handshake_work_queue
                     .send(HandshakeExecutionJob::ProcessHandshakeMessage {
+                        request_id,
                         peer_id: WrappedPeerId(peer_id),
-                        message: handshake_message,
+                        message,
                         response_channel: Some(channel),
                     })
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
@@ -467,8 +473,12 @@ impl NetworkManager {
                     })
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
 
-                GossipResponse::Handshake(message) => handshake_work_queue
+                GossipResponse::Handshake {
+                    request_id,
+                    message,
+                } => handshake_work_queue
                     .send(HandshakeExecutionJob::ProcessHandshakeMessage {
+                        request_id,
                         peer_id: WrappedPeerId(peer_id),
                         message,
                         // The handshake should response via a new request sent on the network manager channel

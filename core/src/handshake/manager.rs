@@ -1,6 +1,7 @@
 //! The handshake module handles the execution of handshakes from negotiating
 //! a pair of orders to match, all the way through settling any resulting match
 
+use circuits::types::order::Order;
 use crossbeam::channel::Receiver;
 use futures::executor::block_on;
 use integration_helpers::mpc_network::mocks::PartyIDBeaverSource;
@@ -32,8 +33,10 @@ use crate::{
 };
 
 use super::{
-    error::HandshakeManagerError, handshake_cache::SharedHandshakeCache,
-    jobs::HandshakeExecutionJob, state::HandshakeStateIndex,
+    error::HandshakeManagerError,
+    handshake_cache::SharedHandshakeCache,
+    jobs::HandshakeExecutionJob,
+    state::{HandshakeStateIndex, State},
 };
 
 /// The default priority of a newly added node in the handshake priority list
@@ -66,7 +69,10 @@ impl HandshakeManager {
         network_channel: UnboundedSender<GossipOutbound>,
     ) {
         let managed_orders = global_state.get_managed_order_ids();
-        let my_order = *managed_orders.choose(&mut rand::thread_rng()).unwrap();
+        let my_order = managed_orders
+            .choose(&mut rand::thread_rng())
+            .unwrap()
+            .to_owned();
 
         // Send a handshake message to the given peer_id
         // Panic if channel closed, no way to recover
@@ -74,15 +80,17 @@ impl HandshakeManager {
         network_channel
             .send(GossipOutbound::Request {
                 peer_id,
-                message: GossipRequest::Handshake(HandshakeMessage::InitiateMatch {
-                    peer_id: *global_state.read_peer_id(),
+                message: GossipRequest::Handshake {
                     request_id,
-                    sender_order: my_order,
-                }),
+                    message: HandshakeMessage::InitiateMatch {
+                        peer_id: *global_state.read_peer_id(),
+                        sender_order: my_order.0,
+                    },
+                },
             })
             .unwrap();
 
-        handshake_state_index.new_handshake(request_id);
+        handshake_state_index.new_handshake(request_id, my_order.0, my_order.1);
     }
 
     /// Handle a handshake message from the peer
@@ -95,12 +103,14 @@ impl HandshakeManager {
     ) -> Result<(), HandshakeManagerError> {
         match job {
             HandshakeExecutionJob::ProcessHandshakeMessage {
+                request_id,
                 peer_id,
                 message,
                 response_channel,
             } => {
                 // Get a response for the message and forward it to the network
                 let resp = Self::handle_handshake_message(
+                    request_id,
                     message,
                     handshake_state_index,
                     global_state,
@@ -111,12 +121,18 @@ impl HandshakeManager {
                     let outbound_request = if let Some(channel) = response_channel {
                         GossipOutbound::Response {
                             channel,
-                            message: GossipResponse::Handshake(response_message),
+                            message: GossipResponse::Handshake {
+                                request_id,
+                                message: response_message,
+                            },
                         }
                     } else {
                         GossipOutbound::Request {
                             peer_id,
-                            message: GossipRequest::Handshake(response_message),
+                            message: GossipRequest::Handshake {
+                                request_id,
+                                message: response_message,
+                            },
                         }
                     };
 
@@ -137,7 +153,36 @@ impl HandshakeManager {
                 Ok(())
             }
 
-            HandshakeExecutionJob::MpcNetSetup { party_id, net } => {
+            HandshakeExecutionJob::MpcNetSetup {
+                request_id,
+                party_id,
+                net,
+            } => {
+                // Place the handshake in the execution state
+                handshake_state_index.in_progress(&request_id);
+
+                // Fetch the local handshake state to get an order for the MPC
+                let order_state =
+                    handshake_state_index
+                        .get_state(&request_id)
+                        .ok_or_else(|| {
+                            HandshakeManagerError::InvalidRequest(format!(
+                                "request_id: {:?}",
+                                request_id
+                            ))
+                        })?;
+
+                let local_order = {
+                    if let State::MatchInProgress { local_order, .. } = order_state.state {
+                        Some(local_order)
+                    } else {
+                        None
+                    }
+                }
+                .ok_or_else(|| {
+                    HandshakeManagerError::InvalidRequest(format!("request_id: {}", request_id))
+                })?;
+
                 // Build a tokio runtime in the current thread for the MPC to run inside of
                 // This is necessary to allow quinn access to a Tokio reactor at runtime
                 let tid = thread::current().id();
@@ -149,9 +194,8 @@ impl HandshakeManager {
                     .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
 
                 // Wrap the current thread's execution in a Tokio blocking thread
-                // let execution_future = Self::execute_match_mpc(party_id, net);
-                let join_handle =
-                    tokio_runtime.spawn_blocking(move || Self::execute_match_mpc(party_id, net));
+                let join_handle = tokio_runtime
+                    .spawn_blocking(move || Self::execute_match_mpc(party_id, local_order, net));
 
                 block_on(join_handle)
                     .unwrap()
@@ -167,6 +211,7 @@ impl HandshakeManager {
     /// Returns an optional response; none if no response is to be sent
     /// The caller should handle forwarding the response onto the network
     pub fn handle_handshake_message(
+        request_id: Uuid,
         message: HandshakeMessage,
         handshake_state_index: HandshakeStateIndex,
         global_state: RelayerState,
@@ -177,7 +222,6 @@ impl HandshakeManager {
             // A peer has requested a match, find an order that has not already been matched with theirs
             // and propose it back to the peer
             HandshakeMessage::InitiateMatch {
-                request_id,
                 sender_order: peer_order,
                 ..
             } => {
@@ -186,25 +230,24 @@ impl HandshakeManager {
                     let locked_handshake_cache = handshake_cache
                         .read()
                         .expect("handshake_cache lock poisoned");
-                    for order in global_state.get_managed_order_ids().iter() {
-                        if !locked_handshake_cache.contains(*order, peer_order) {
-                            proposed_order = Some(*order);
+                    for (order_id, order) in global_state.get_managed_order_ids().iter() {
+                        if !locked_handshake_cache.contains(*order_id, peer_order) {
+                            proposed_order = Some((*order_id, order.clone()));
                             break;
                         }
                     }
                 } // locked_handshake_cache released
 
                 // Update the state machine for a newly created handshake
-                if let Some(..) = proposed_order {
-                    handshake_state_index.new_handshake(request_id)
+                if let Some((order_id, order)) = proposed_order.clone() {
+                    handshake_state_index.new_handshake(request_id, order_id, order)
                 }
 
                 // Send the message and unwrap the result; the only error type possible
                 // is that the channel is closed, so panic the thread in that case
                 Ok(Some(HandshakeMessage::ProposeMatchCandidate {
                     peer_id: *global_state.read_peer_id(),
-                    request_id,
-                    sender_order: proposed_order,
+                    sender_order: proposed_order.map(|(order_id, _)| order_id),
                     peer_order,
                 }))
             }
@@ -213,7 +256,6 @@ impl HandshakeManager {
             // Check that their proposal has not already been matched and then signal to begin the match
             HandshakeMessage::ProposeMatchCandidate {
                 peer_id,
-                request_id,
                 peer_order: my_order,
                 sender_order,
                 ..
@@ -233,6 +275,7 @@ impl HandshakeManager {
                     let local_port = pick_unused_port().expect("all ports taken");
                     network_channel
                         .send(GossipOutbound::BrokerMpcNet {
+                            request_id,
                             peer_id,
                             peer_port: 0,
                             local_port,
@@ -242,7 +285,6 @@ impl HandshakeManager {
 
                     Ok(Some(HandshakeMessage::ExecuteMatch {
                         peer_id: *global_state.read_peer_id(),
-                        request_id,
                         port: local_port,
                         previously_matched,
                         order1: my_order,
@@ -255,7 +297,6 @@ impl HandshakeManager {
 
             HandshakeMessage::ExecuteMatch {
                 peer_id,
-                request_id,
                 port,
                 order1,
                 order2,
@@ -272,13 +313,11 @@ impl HandshakeManager {
                     .write_matched_order_pairs()
                     .push((order1, order2));
 
-                // Place the handshake in the execution state
-                handshake_state_index.in_progress(&request_id);
-
                 // Choose a local port to execute the handshake on
                 let local_port = pick_unused_port().expect("all ports used");
                 network_channel
                     .send(GossipOutbound::BrokerMpcNet {
+                        request_id,
                         peer_id,
                         peer_port: port,
                         local_port,
@@ -289,18 +328,12 @@ impl HandshakeManager {
                 // Send back the message as an ack
                 Ok(Some(HandshakeMessage::ExecutionFinished {
                     peer_id: *global_state.read_peer_id(),
-                    request_id,
                     order1,
                     order2,
                 }))
             }
 
-            HandshakeMessage::ExecutionFinished {
-                order1,
-                order2,
-                request_id,
-                ..
-            } => {
+            HandshakeMessage::ExecutionFinished { order1, order2, .. } => {
                 // Cache the order pair as completed
                 handshake_cache
                     .write()
@@ -335,8 +368,10 @@ impl HandshakeManager {
     /// Execute the match MPC over the provisioned QUIC stream
     fn execute_match_mpc(
         party_id: u64,
+        local_order: Order,
         mut mpc_net: QuicTwoPartyNet,
     ) -> Result<(), HandshakeManagerError> {
+        println!("Matching on order: {:?}", local_order);
         // Connect the network
         block_on(mpc_net.connect())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
