@@ -1,5 +1,6 @@
 //! Groups helpers used for integration testing
 #![deny(missing_docs)]
+#![deny(clippy::missing_docs_in_private_items)]
 #![deny(unsafe_code)]
 
 pub mod macros;

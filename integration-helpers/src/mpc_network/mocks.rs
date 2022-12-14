@@ -8,6 +8,7 @@ use mpc_ristretto::{beaver::SharedValueSource, error::MpcNetworkError, network::
 /// beaver triples (0, 0, 0) for party 0 and (1, 1, 1) for party 1
 #[derive(Debug)]
 pub struct PartyIDBeaverSource {
+    /// The ID of the local party
     party_id: u64,
 }
 
@@ -50,7 +51,11 @@ impl SharedValueSource<Scalar> for PartyIDBeaverSource {
 /// Mocks out an MPC network and allows creation of mock values from the peer
 #[derive(Clone, Debug, Default)]
 pub struct MockMpcNet {
+    /// A list of scalars to be drained when the interface expects to
+    /// receive a scalar
     mock_scalars: Vec<Scalar>,
+    /// A list of Ristretto points to be drained when the interface expects to
+    /// receive a point
     mock_points: Vec<RistrettoPoint>,
 }
 

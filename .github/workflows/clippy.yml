@@ -14,4 +14,9 @@ jobs:
       - uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features -- -D warnings
+          args: >
+            --all-features -- 
+            -D warnings 
+            -D unsafe_code 
+            -D missing_docs
+            -D clippy::missing_docs_in_private_items
