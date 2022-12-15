@@ -6,11 +6,13 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+ark-serialize = "0.3"
 async-trait = "0.1.56"
 base64 = { version = "0.13" }
 circuits = { path = "../circuits" }
 clap = { version = "3.2.8", features = ["derive"] }
 crossbeam = { version = "0.8.1" }
+crypto = { path = "../crypto" }
 ed25519-dalek = { version = "1.0.1" }
 futures = { version = "0.3.21" }
 integration-helpers = { path = "../integration-helpers" }
