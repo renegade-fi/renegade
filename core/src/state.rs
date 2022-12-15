@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::{
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
-    handshake::manager::{OrderIdentifier, DEFAULT_HANDSHAKE_PRIORITY},
+    handshake::{manager::DEFAULT_HANDSHAKE_PRIORITY, types::OrderIdentifier},
 };
 
 /**
