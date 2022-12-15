@@ -15,6 +15,9 @@ use mpc_ristretto::{fabric::AuthenticatedMpcFabric, network::QuicTwoPartyNet};
 
 use super::{error::HandshakeManagerError, manager::HandshakeManager};
 
+/// The party_id of the leader (aka dialer/king) in the MPC computation
+pub(crate) const KING: u64 = 0;
+
 /// Match-centric implementations for the handshake manager
 impl HandshakeManager {
     /// Execute the match MPC over the provisioned QUIC stream
@@ -64,6 +67,7 @@ impl HandshakeManager {
         fee: Fee,
         match_res: MatchResult,
     ) -> Result<(), HandshakeManagerError> {
+        // Build the statement of VALID MATCH MPC
         unimplemented!("")
     }
 }

@@ -7,12 +7,13 @@ use circuits::types::{
     order::{Order, OrderSide},
 };
 use crossbeam::channel::Receiver;
+use crypto::hash::poseidon_hash_default_params;
 use futures::executor::block_on;
 
 use portpicker::pick_unused_port;
 use rand::{
     distributions::WeightedIndex, prelude::Distribution, rngs::OsRng, seq::IteratorRandom,
-    thread_rng,
+    thread_rng, RngCore,
 };
 use rayon::ThreadPool;
 use std::{
@@ -35,8 +36,11 @@ use crate::{
 };
 
 use super::{
-    error::HandshakeManagerError, handshake_cache::SharedHandshakeCache,
-    jobs::HandshakeExecutionJob, state::HandshakeStateIndex,
+    error::HandshakeManagerError,
+    handshake_cache::SharedHandshakeCache,
+    jobs::HandshakeExecutionJob,
+    state::HandshakeStateIndex,
+    types::{HashOutput, OrderIdentifier},
 };
 
 /// The default priority of a newly added node in the handshake priority list
@@ -47,9 +51,6 @@ pub(super) const HANDSHAKE_CACHE_SIZE: usize = 500;
 pub(super) const HANDSHAKE_INTERVAL_MS: u64 = 2_000; // 2 seconds
 /// Number of nanoseconds in a millisecond, for convenienc
 const NANOS_PER_MILLI: u64 = 1_000_000;
-
-/// TODO: Update this with a commitment to an order, UUID for testing
-pub type OrderIdentifier = Uuid;
 
 /// Manages requests to handshake from a peer and sends outbound requests to initiate
 /// a handshake
@@ -74,6 +75,16 @@ impl HandshakeManager {
             handshake_cache,
             &global_state,
         ) {
+            // Hash the balance, order, fee, and wallet randomness
+            // TODO: Replace the randomness here with true wallet-specific randomness
+            let mut rng = thread_rng();
+            let randomness = rng.next_u64();
+
+            let order_hash = HashOutput(poseidon_hash_default_params(&order));
+            let balance_hash = HashOutput(poseidon_hash_default_params(&balance));
+            let fee_hash = HashOutput(poseidon_hash_default_params(&fee));
+            let randomness_hash = HashOutput(poseidon_hash_default_params(vec![randomness]));
+
             // Send a handshake message to the given peer_id
             // Panic if channel closed, no way to recover
             let request_id = Uuid::new_v4();
@@ -85,12 +96,26 @@ impl HandshakeManager {
                         message: HandshakeMessage::InitiateMatch {
                             peer_id: *global_state.read_peer_id(),
                             sender_order: order_id,
+                            order_hash,
+                            balance_hash,
+                            fee_hash,
+                            randomness_hash,
                         },
                     },
                 })
                 .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
-            handshake_state_index.new_handshake(request_id, order_id, order, balance, fee);
+            handshake_state_index.new_handshake(
+                request_id,
+                order_id,
+                order,
+                balance,
+                fee,
+                order_hash,
+                balance_hash,
+                fee_hash,
+                randomness_hash,
+            );
         }
 
         Ok(())
@@ -232,14 +257,42 @@ impl HandshakeManager {
             // and propose it back to the peer
             HandshakeMessage::InitiateMatch {
                 sender_order: peer_order,
+                order_hash: peer_order_hash,
+                balance_hash: peer_balance_hash,
+                fee_hash: peer_fee_hash,
+                randomness_hash: peer_randomness_hash,
                 ..
             } => {
                 if let Some((order_id, order, balance, fee)) =
                     Self::choose_order_balance_fee(Some(peer_order), handshake_cache, &global_state)
                 {
+                    // Hash the balance, order, fee, and wallet randomness
+                    // TODO: Replace the randomness here with true wallet-specific randomness
+                    let mut rng = thread_rng();
+                    let randomness = rng.next_u64();
+
+                    let order_hash = HashOutput(poseidon_hash_default_params(&order));
+                    let balance_hash = HashOutput(poseidon_hash_default_params(&balance));
+                    let fee_hash = HashOutput(poseidon_hash_default_params(&fee));
+                    let randomness_hash =
+                        HashOutput(poseidon_hash_default_params(vec![randomness]));
+
                     // Add the new handshake to the state machine index
-                    handshake_state_index.new_handshake_with_peer_order(
-                        request_id, peer_order, order_id, order, balance, fee,
+                    handshake_state_index.new_handshake_with_peer_info(
+                        request_id,
+                        peer_order,
+                        order_id,
+                        order,
+                        balance,
+                        fee,
+                        order_hash,
+                        balance_hash,
+                        fee_hash,
+                        randomness_hash,
+                        peer_order_hash,
+                        peer_balance_hash,
+                        peer_fee_hash,
+                        peer_randomness_hash,
                     );
 
                     // Respond with the selected order pair
@@ -247,6 +300,10 @@ impl HandshakeManager {
                         peer_id: *global_state.read_peer_id(),
                         peer_order,
                         sender_order: Some(order_id),
+                        order_hash: Some(order_hash),
+                        balance_hash: Some(balance_hash),
+                        fee_hash: Some(fee_hash),
+                        randomness_hash: Some(randomness_hash),
                     }))
                 } else {
                     // Send back a cache feedback message so that the peer may cache this order pair as completed
@@ -254,6 +311,10 @@ impl HandshakeManager {
                         peer_id: *global_state.read_peer_id(),
                         peer_order,
                         sender_order: None,
+                        order_hash: None,
+                        balance_hash: None,
+                        fee_hash: None,
+                        randomness_hash: None,
                     }))
                 }
             }
@@ -264,12 +325,22 @@ impl HandshakeManager {
                 peer_id,
                 peer_order: my_order,
                 sender_order,
-                ..
+                order_hash: peer_order_hash,
+                balance_hash: peer_balance_hash,
+                fee_hash: peer_fee_hash,
+                randomness_hash: peer_randomness_hash,
             } => {
                 // If sender_order is None, the peer has no order to match with ours
                 if let Some(peer_order) = sender_order {
                     // Now that the peer has negotiated an order to match, update the state machine
-                    handshake_state_index.update_peer_order_id(&request_id, peer_order)?;
+                    handshake_state_index.update_peer_info(
+                        &request_id,
+                        peer_order,
+                        peer_order_hash.unwrap(),
+                        peer_balance_hash.unwrap(),
+                        peer_fee_hash.unwrap(),
+                        peer_randomness_hash.unwrap(),
+                    )?;
 
                     let previously_matched = {
                         let locked_handshake_cache = handshake_cache

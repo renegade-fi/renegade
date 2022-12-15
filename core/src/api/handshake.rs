@@ -41,6 +41,14 @@ pub enum HandshakeMessage {
         /// Set to `None` by the sender if all locally held orders are cached
         /// as already matched with the `peer_order`
         sender_order: Option<OrderIdentifier>,
+        /// A hash commitment to the sender's order
+        order_hash: Option<HashOutput>,
+        /// A hash commitment to the sender's balance
+        balance_hash: Option<HashOutput>,
+        /// A hash commitment to the sender's fee
+        fee_hash: Option<HashOutput>,
+        /// A hash commitment to the sender's randomness
+        randomness_hash: Option<HashOutput>,
     },
     /// Go forward with a handshake after a proposed order pair is setup
     ExecuteMatch {
