@@ -9,10 +9,11 @@ use crate::{
     gossip::types::WrappedPeerId,
 };
 
-use super::manager::OrderIdentifier;
+use super::types::OrderIdentifier;
 
 /// Represents a job for the handshake manager's thread pool to execute
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum HandshakeExecutionJob {
     /// Process a handshake request
     ProcessHandshakeMessage {

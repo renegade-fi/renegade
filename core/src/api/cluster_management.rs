@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
-    handshake::manager::OrderIdentifier,
+    handshake::types::OrderIdentifier,
     state::Wallet,
 };
 

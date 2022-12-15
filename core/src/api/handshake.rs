@@ -2,7 +2,10 @@
 use portpicker::Port;
 use serde::{Deserialize, Serialize};
 
-use crate::{gossip::types::WrappedPeerId, handshake::manager::OrderIdentifier};
+use crate::{
+    gossip::types::WrappedPeerId,
+    handshake::types::{HashOutput, OrderIdentifier},
+};
 
 /// Enumerates the different operations possible via handshake
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,6 +18,14 @@ pub enum HandshakeMessage {
         peer_id: WrappedPeerId,
         /// An order local to the sender, that the sender wants to computed matches for
         sender_order: OrderIdentifier,
+        /// A hash commitment to the sender's order
+        order_hash: HashOutput,
+        /// A hash commitment to the sender's balance
+        balance_hash: HashOutput,
+        /// A hash commitment to the sender's fee
+        fee_hash: HashOutput,
+        /// A hash commitment to the sender's randomness
+        randomness_hash: HashOutput,
     },
     /// Propose an order to match with an order sent in InitiateMatch
     ///
