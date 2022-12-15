@@ -1,7 +1,7 @@
 //! This file groups type definitions and helpers around global state that
 //! is passed around throughout the code
 
-use circuits::types::order::Order;
+use circuits::types::{balance::Balance, fee::Fee, order::Order};
 use libp2p::Multiaddr;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -65,6 +65,10 @@ pub struct Wallet {
     pub wallet_id: Uuid,
     /// A list of orders in this wallet
     pub orders: HashMap<OrderIdentifier, Order>,
+    /// A list of the balacnes in this wallet
+    pub balances: Vec<Balance>,
+    /// A list of the fees in this wallet
+    pub fees: Vec<Fee>,
     /// Wallet metadata; replicas, trusted peers, etc
     pub metadata: WalletMetadata,
 }

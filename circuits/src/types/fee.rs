@@ -17,10 +17,11 @@ use mpc_ristretto::{
 };
 use num_bigint::BigInt;
 use rand_core::{CryptoRng, RngCore};
+use serde::{Deserialize, Serialize};
 
 /// Represents a fee-tuple in the state, i.e. a commitment to pay a relayer for a given
 /// match
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Fee {
     /// The public settle key of the cluster collecting fees
     pub settle_key: BigInt,

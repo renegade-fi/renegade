@@ -10,6 +10,7 @@ use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
 use rand_core::{CryptoRng, RngCore};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::{MpcError, TypeConversionError},
@@ -19,7 +20,7 @@ use crate::{
 
 /// Represents the base type of a balance in tuple holding a reference to the
 /// ERC-20 token and its amount
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Balance {
     /// The mint (ERC-20 token address) of the token in the balance
     pub mint: u64,

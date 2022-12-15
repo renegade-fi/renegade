@@ -10,6 +10,28 @@
                 "amount": 20
             }
         },
+        "balances": [
+            {
+                "mint": 1,
+                "amount": 200
+            }
+        ],
+        "fees": [
+            {
+                "settle_key": [
+                    0,
+                    []
+                ],
+                "gas_addr": [
+                    1,
+                    [
+                        1
+                    ]
+                ],
+                "gas_token_amount": 3,
+                "percentage_fee": 1
+            }
+        ],
         "metadata": {
             "replicas": []
         }

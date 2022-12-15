@@ -10,7 +10,7 @@ itertools = "0.10"
 merlin = "2.0"
 mpc-ristretto = { git = "https://github.com/renegade-fi/MPC-Ristretto" }
 mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
-num-bigint = { version = "0.4", features = ["rand"] }
+num-bigint = { version = "0.4", features = ["rand", "serde"] }
 rand = { version = "0.8" }
 rand_core = "0.5"
 serde = { version = "1.0.139", features = ["serde_derive"] }
