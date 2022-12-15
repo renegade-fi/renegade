@@ -4,10 +4,8 @@ use ark_sponge::{
     poseidon::{PoseidonConfig, PoseidonSponge},
     CryptographicSponge,
 };
-use circuits::{
-    mpc_gadgets::poseidon::{AuthenticatedPoseidonHasher, PoseidonSpongeParameters},
-    scalar_to_bigint,
-};
+use circuits::mpc_gadgets::poseidon::{AuthenticatedPoseidonHasher, PoseidonSpongeParameters};
+use crypto::fields::{prime_field_to_bigint, scalar_to_bigint};
 use curve25519_dalek::scalar::Scalar;
 use integration_helpers::types::IntegrationTest;
 use mpc_ristretto::{
@@ -18,8 +16,7 @@ use rand::{thread_rng, RngCore};
 use crate::{IntegrationTestArgs, TestWrapper};
 
 use super::{
-    compare_scalar_to_felt, convert_scalars_nested_vec, felt_to_bigint, scalar_to_prime_field,
-    TestField,
+    compare_scalar_to_felt, convert_scalars_nested_vec, scalar_to_prime_field, DalekRistrettoField,
 };
 
 /**
@@ -29,7 +26,7 @@ use super::{
 /// Converts a set of Poseidon parameters encoded as scalars to parameters encoded as field elements
 pub(crate) fn convert_params(
     native_params: &PoseidonSpongeParameters,
-) -> PoseidonConfig<TestField> {
+) -> PoseidonConfig<DalekRistrettoField> {
     PoseidonConfig::new(
         native_params.full_rounds,
         native_params.parital_rounds,
@@ -63,7 +60,7 @@ fn check_against_arkworks_hash<N: MpcNetwork + Send, S: SharedValueSource<Scalar
         arkworks_poseidon.absorb(input_elem);
     }
 
-    let arkworks_squeezed: TestField =
+    let arkworks_squeezed: DalekRistrettoField =
         arkworks_poseidon.squeeze_field_elements(1 /* num_elements */)[0];
 
     // Open the given result and compare to the computed result
@@ -75,7 +72,7 @@ fn check_against_arkworks_hash<N: MpcNetwork + Send, S: SharedValueSource<Scalar
         return Err(format!(
             "Expected {:?}, got {:?}",
             scalar_to_bigint(&result_open.to_scalar()),
-            felt_to_bigint(&arkworks_squeezed)
+            prime_field_to_bigint(&arkworks_squeezed)
         ));
     }
 

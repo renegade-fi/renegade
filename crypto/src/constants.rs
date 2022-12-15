@@ -1,8 +1,8 @@
 //! Defines important constants used in the
-use curve25519_dalek::scalar::Scalar;
-use num_bigint::BigInt;
 
-use crate::bigint_to_scalar;
+use num_bigint::BigUint;
+
+use crate::fields::DalekRistrettoField;
 
 /// The maximum number of orders allowed in a wallet
 pub const MAX_ORDERS: usize = 2;
@@ -25,7 +25,7 @@ pub const MAX_BALANCES: usize = 2;
  * from the scripts above and taking the output for t = 3, \alpha = 5
  */
 #[allow(non_snake_case)]
-pub fn POSEIDON_MDS_MATRIX_T_3() -> Vec<Vec<Scalar>> {
+pub fn POSEIDON_MDS_MATRIX_T_3() -> Vec<Vec<DalekRistrettoField>> {
     vec![
         vec![
             field_element_from_hex_string(
@@ -65,7 +65,7 @@ pub fn POSEIDON_MDS_MATRIX_T_3() -> Vec<Vec<Scalar>> {
 
 /// Round constants for t = 3 (2-1 hash)
 #[allow(non_snake_case)]
-pub fn POSEIDON_ROUND_CONSTANTS_T_3() -> Vec<Vec<Scalar>> {
+pub fn POSEIDON_ROUND_CONSTANTS_T_3() -> Vec<Vec<DalekRistrettoField>> {
     vec![
         vec![
             field_element_from_hex_string(
@@ -777,8 +777,8 @@ pub fn POSEIDON_ROUND_CONSTANTS_T_3() -> Vec<Vec<Scalar>> {
 /// Converts a literal hexidecimal string to a field element through BigUint
 /// this function should only ever be called on the constants above, so we panic
 /// if parsing fails
-fn field_element_from_hex_string(byte_string: &[u8]) -> Scalar {
-    bigint_to_scalar(&BigInt::parse_bytes(byte_string, 16 /* radix */).unwrap())
+fn field_element_from_hex_string(byte_string: &[u8]) -> DalekRistrettoField {
+    DalekRistrettoField::from(BigUint::parse_bytes(byte_string, 16 /* radix */).unwrap())
 }
 
 #[cfg(test)]

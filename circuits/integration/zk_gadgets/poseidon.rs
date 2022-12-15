@@ -8,6 +8,7 @@ use circuits::{
     },
 };
 
+use crypto::fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField};
 use curve25519_dalek::scalar::Scalar;
 use integration_helpers::types::IntegrationTest;
 use itertools::Itertools;
@@ -15,10 +16,7 @@ use mpc_bulletproof::r1cs_mpc::{MultiproverError, R1CSError};
 use mpc_ristretto::authenticated_scalar::AuthenticatedScalar;
 use rand_core::{OsRng, RngCore};
 
-use crate::{
-    mpc_gadgets::{poseidon::convert_params, prime_field_to_scalar, scalar_to_prime_field},
-    IntegrationTestArgs, TestWrapper,
-};
+use crate::{mpc_gadgets::poseidon::convert_params, IntegrationTestArgs, TestWrapper};
 
 use super::multiprover_prove_and_verify;
 
@@ -63,8 +61,9 @@ fn test_poseidon_multiprover(test_args: &IntegrationTestArgs) -> Result<(), Stri
     for input in arkworks_input {
         arkworks_hasher.absorb(&input);
     }
-    let expected_scalar =
-        prime_field_to_scalar(&arkworks_hasher.squeeze_field_elements(1 /* num_elements */)[0]);
+    let expected_scalar = prime_field_to_scalar(
+        &arkworks_hasher.squeeze_field_elements::<DalekRistrettoField>(1 /* num_elements */)[0],
+    );
 
     // Prove the statement
     let witness = MultiproverPoseidonWitness {

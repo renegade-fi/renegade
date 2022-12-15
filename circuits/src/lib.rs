@@ -5,8 +5,6 @@
 #![deny(clippy::missing_docs_in_private_items)]
 #![deny(unsafe_code)]
 
-use std::ops::Neg;
-
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use errors::{MpcError, ProverError, VerifierError};
 use itertools::Itertools;
@@ -19,10 +17,9 @@ use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto, beaver::SharedValueSource,
     network::MpcNetwork,
 };
-use num_bigint::{BigInt, BigUint, Sign};
+
 use rand_core::{CryptoRng, RngCore};
 
-pub mod constants;
 pub mod errors;
 pub mod mpc;
 pub mod mpc_circuits;
@@ -50,51 +47,6 @@ pub fn scalar_2_to_m(m: usize) -> Scalar {
     } else {
         Scalar::from(1u128 << m)
     }
-}
-
-/// Convert a scalar to a BigInt
-pub fn scalar_to_bigint(a: &Scalar) -> BigInt {
-    BigInt::from_signed_bytes_le(&a.to_bytes())
-}
-
-/// Convert a scalar to a BigUint
-pub fn scalar_to_biguint(a: &Scalar) -> BigUint {
-    BigUint::from_bytes_le(&a.to_bytes())
-}
-
-/// Convert a bigint to a scalar
-pub fn bigint_to_scalar(a: &BigInt) -> Scalar {
-    let (sign, mut bytes) = a.to_bytes_le();
-    if bytes.len() < 32 {
-        zero_pad_bytes(&mut bytes, 32)
-    }
-
-    let scalar = Scalar::from_bytes_mod_order(bytes[..32].try_into().unwrap());
-
-    match sign {
-        Sign::Minus => scalar.neg(),
-        _ => scalar,
-    }
-}
-
-/// Pad an array up to the desired length with zeros
-fn zero_pad_bytes(unpadded_buf: &mut Vec<u8>, n: usize) {
-    unpadded_buf.append(&mut vec![0u8; n - unpadded_buf.len()])
-}
-
-/// Convert a bigint to a vector of bits, encoded as scalars
-pub fn bigint_to_scalar_bits<const D: usize>(a: &BigInt) -> Vec<Scalar> {
-    let mut res = Vec::with_capacity(D);
-    // Reverse the iterator; BigInt::bits expects big endian
-    for i in 0..D {
-        res.push(if a.bit(i as u64) {
-            Scalar::one()
-        } else {
-            Scalar::zero()
-        })
-    }
-
-    res
 }
 
 /**
@@ -342,86 +294,25 @@ pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueS
 
 #[cfg(test)]
 pub(crate) mod test_helpers {
-    use ark_ff::{Fp256, MontBackend, MontConfig};
-    use ark_sponge::poseidon::PoseidonConfig;
+    use crypto::fields::{prime_field_to_bigint, scalar_to_bigint, DalekRistrettoField};
     use curve25519_dalek::scalar::Scalar;
     use merlin::Transcript;
     use mpc_bulletproof::{
         r1cs::{Prover, Verifier},
         PedersenGens,
     };
-    use num_bigint::{BigInt, BigUint};
 
-    use crate::{
-        bigint_to_scalar, errors::VerifierError, mpc_gadgets::poseidon::PoseidonSpongeParameters,
-        scalar_to_bigint, scalar_to_biguint, SingleProverCircuit,
-    };
+    use crate::{errors::VerifierError, SingleProverCircuit};
 
     const TRANSCRIPT_SEED: &str = "test";
-
-    /// Defines a custom Arkworks field with the same modulus as the Dalek Ristretto group
-    ///
-    /// This is necessary for testing against Arkworks, otherwise the values will not be directly comparable
-    #[derive(MontConfig)]
-    #[modulus = "7237005577332262213973186563042994240857116359379907606001950938285454250989"]
-    #[generator = "2"]
-    pub(crate) struct TestFieldConfig;
-    pub(crate) type TestField = Fp256<MontBackend<TestFieldConfig, 4>>;
 
     /**
      * Helpers
      */
 
-    /// Converts a dalek scalar to an arkworks ff element
-    pub(crate) fn scalar_to_prime_field(a: &Scalar) -> TestField {
-        Fp256::from(scalar_to_biguint(a))
-    }
-
-    /// Converts a nested vector of Dalek scalars to arkworks field elements
-    pub(crate) fn convert_scalars_nested_vec(a: &Vec<Vec<Scalar>>) -> Vec<Vec<TestField>> {
-        let mut res = Vec::with_capacity(a.len());
-        for row in a.iter() {
-            let mut row_res = Vec::with_capacity(row.len());
-            for val in row.iter() {
-                row_res.push(scalar_to_prime_field(val))
-            }
-
-            res.push(row_res);
-        }
-
-        res
-    }
-
-    /// Converts a set of Poseidon parameters encoded as scalars to parameters encoded as field elements
-    pub(crate) fn convert_params(
-        native_params: &PoseidonSpongeParameters,
-    ) -> PoseidonConfig<TestField> {
-        PoseidonConfig::new(
-            native_params.full_rounds,
-            native_params.parital_rounds,
-            native_params.alpha,
-            convert_scalars_nested_vec(&native_params.mds_matrix),
-            convert_scalars_nested_vec(&native_params.round_constants),
-            native_params.rate,
-            native_params.capacity,
-        )
-    }
-
-    /// Convert an arkworks prime field element to a bigint
-    pub(crate) fn felt_to_bigint(element: &TestField) -> BigInt {
-        let felt_biguint = Into::<BigUint>::into(*element);
-        felt_biguint.into()
-    }
-
-    /// Convert an arkworks prime field element to a scalar
-    pub(crate) fn felt_to_scalar(element: &TestField) -> Scalar {
-        let felt_bigint = felt_to_bigint(element);
-        bigint_to_scalar(&felt_bigint)
-    }
-
     /// Compares a Dalek Scalar to an Arkworks field element
-    pub(crate) fn compare_scalar_to_felt(scalar: &Scalar, felt: &TestField) -> bool {
-        scalar_to_bigint(scalar).eq(&felt_to_bigint(felt))
+    pub(crate) fn compare_scalar_to_felt(scalar: &Scalar, felt: &DalekRistrettoField) -> bool {
+        scalar_to_bigint(scalar).eq(&prime_field_to_bigint(felt))
     }
 
     /// Abstracts over the flow of proving and verifying a circuit given
@@ -446,11 +337,11 @@ pub(crate) mod test_helpers {
 }
 #[cfg(test)]
 mod circuits_test {
-    use curve25519_dalek::scalar::Scalar;
+    use crypto::fields::bigint_to_scalar;
     use num_bigint::BigInt;
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::{thread_rng, Rng};
 
-    use crate::{bigint_to_scalar, bigint_to_scalar_bits, scalar_2_to_m, scalar_to_bigint};
+    use crate::scalar_2_to_m;
 
     #[test]
     fn test_scalar_2_to_m() {
@@ -459,45 +350,5 @@ mod circuits_test {
 
         let expected = bigint_to_scalar(&(BigInt::from(1u64) << rand_m));
         assert_eq!(res, expected);
-    }
-
-    #[test]
-    fn test_scalar_to_bigint() {
-        let rand_val = thread_rng().next_u64();
-        let res = scalar_to_bigint(&Scalar::from(rand_val));
-
-        assert_eq!(res, BigInt::from(rand_val));
-    }
-
-    #[test]
-    fn test_bigint_to_scalar() {
-        let rand_val = thread_rng().next_u64();
-        let res = bigint_to_scalar(&BigInt::from(rand_val));
-
-        assert_eq!(res, Scalar::from(rand_val));
-    }
-
-    #[test]
-    fn test_bigint_to_scalar_bits() {
-        let mut rng = thread_rng();
-        let random_scalar_bits = (0..256)
-            .map(|_| rng.gen_bool(0.5 /* p */) as u64)
-            .collect::<Vec<_>>();
-
-        let random_bigint = random_scalar_bits
-            .iter()
-            .rev()
-            .cloned()
-            .map(BigInt::from)
-            .fold(BigInt::from(0u64), |acc, val| acc * 2 + val);
-        let scalar_bits = random_scalar_bits
-            .into_iter()
-            .map(Scalar::from)
-            .collect::<Vec<_>>();
-
-        let res = bigint_to_scalar_bits::<256 /* bits */>(&random_bigint);
-
-        assert_eq!(res.len(), scalar_bits.len());
-        assert_eq!(res, scalar_bits);
     }
 }

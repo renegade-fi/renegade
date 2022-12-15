@@ -11,6 +11,7 @@ use circuits::{
         MerkleStatement, MultiproverMerkleWitness, MultiproverPoseidonMerkleGadget,
     },
 };
+use crypto::fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField};
 use curve25519_dalek::scalar::Scalar;
 use integration_helpers::types::IntegrationTest;
 use itertools::Itertools;
@@ -18,27 +19,24 @@ use rand::{thread_rng, Rng};
 use rand_core::OsRng;
 
 use crate::{
-    mpc_gadgets::{
-        poseidon::convert_params, prime_field_to_scalar, scalar_to_prime_field, TestField,
-    },
-    zk_gadgets::multiprover_prove_and_verify,
+    mpc_gadgets::poseidon::convert_params, zk_gadgets::multiprover_prove_and_verify,
     IntegrationTestArgs, TestWrapper,
 };
 
 /// The Merkle hash config for the specific instance of the Merkle hasher
 struct MerkleConfig {}
 impl Config for MerkleConfig {
-    type Leaf = [TestField];
-    type LeafDigest = TestField;
-    type InnerDigest = TestField;
+    type Leaf = [DalekRistrettoField];
+    type LeafDigest = DalekRistrettoField;
+    type InnerDigest = DalekRistrettoField;
 
-    type LeafHash = CRH<TestField>;
-    type TwoToOneHash = TwoToOneCRH<TestField>;
-    type LeafInnerDigestConverter = IdentityDigestConverter<TestField>;
+    type LeafHash = CRH<DalekRistrettoField>;
+    type TwoToOneHash = TwoToOneCRH<DalekRistrettoField>;
+    type LeafInnerDigestConverter = IdentityDigestConverter<DalekRistrettoField>;
 }
 
 /// Create a list of random field elements
-fn random_field_elements(num_elements: usize) -> Vec<TestField> {
+fn random_field_elements(num_elements: usize) -> Vec<DalekRistrettoField> {
     let mut rng = OsRng {};
     (0..num_elements)
         .map(|_| scalar_to_prime_field(&Scalar::random(&mut rng)))
@@ -76,7 +74,7 @@ fn test_multiprover_merkle(test_args: &IntegrationTestArgs) -> Result<(), String
 
     let mut ark_leaf_data = Vec::with_capacity(num_leaves);
     for i in 0..num_leaves {
-        let leaf_data: [TestField; leaf_size] =
+        let leaf_data: [DalekRistrettoField; leaf_size] =
             (*random_field_elements(leaf_size)).try_into().unwrap();
         merkle_tree.update(i, &leaf_data).unwrap();
         ark_leaf_data.push(leaf_data);
@@ -110,7 +108,8 @@ fn test_multiprover_merkle(test_args: &IntegrationTestArgs) -> Result<(), String
     } else {
         ark_leaf_data[random_index - 1]
     };
-    let sister_leaf_hash: TestField = CRH::evaluate(&arkworks_params, sister_leaf_data).unwrap();
+    let sister_leaf_hash: DalekRistrettoField =
+        CRH::evaluate(&arkworks_params, sister_leaf_data).unwrap();
 
     opening_scalars.insert(0, prime_field_to_scalar(&sister_leaf_hash));
     let opening_indices = get_opening_indices(random_index, tree_height - 1);

@@ -12,21 +12,21 @@
 
 use std::cell::Ref;
 
+use ark_ff::PrimeField;
+use ark_sponge::poseidon::PoseidonConfig;
+use crypto::{fields::prime_field_to_scalar, hash::default_poseidon_params};
 use curve25519_dalek::scalar::Scalar;
 use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
 
-use crate::{
-    constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3},
-    mpc::{MpcFabric, SharedFabric},
-};
+use crate::mpc::{MpcFabric, SharedFabric};
 
 /**
  * Helpers
  */
 
-// Computes x^a using recursive doubling
+/// Computes x^a using recursive doubling
 fn scalar_exp<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     x: &AuthenticatedScalar<N, S>,
     a: u64,
@@ -43,6 +43,36 @@ fn scalar_exp<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         let recursive_result = scalar_exp(x, a / 2, fabric);
         &recursive_result * &recursive_result
     }
+}
+
+/// Convert Arkworks Poseidon parameterization to a Dalek Scalar compatible version
+fn convert_poseidon_params<F: PrimeField>(
+    ark_config: PoseidonConfig<F>,
+) -> PoseidonSpongeParameters {
+    PoseidonSpongeParameters::new(
+        convert_scalars_nested_vec(&ark_config.ark),
+        convert_scalars_nested_vec(&ark_config.mds),
+        ark_config.alpha,
+        ark_config.rate,
+        ark_config.capacity,
+        ark_config.full_rounds,
+        ark_config.partial_rounds,
+    )
+}
+
+/// Convert a vector of Arkworks field elements to a vector of Dalek field elements
+fn convert_scalars_nested_vec<F: PrimeField>(a: &Vec<Vec<F>>) -> Vec<Vec<Scalar>> {
+    let mut res = Vec::with_capacity(a.len());
+    for row in a.iter() {
+        let mut row_res = Vec::with_capacity(row.len());
+        for val in row.iter() {
+            row_res.push(prime_field_to_scalar(val))
+        }
+
+        res.push(row_res);
+    }
+
+    res
 }
 
 /// The parameters for the Poseidon sponge construction
@@ -124,15 +154,8 @@ impl PoseidonSpongeParameters {
 
 impl Default for PoseidonSpongeParameters {
     fn default() -> Self {
-        Self {
-            round_constants: POSEIDON_ROUND_CONSTANTS_T_3(),
-            mds_matrix: POSEIDON_MDS_MATRIX_T_3(),
-            alpha: 5,
-            rate: 2,
-            capacity: 1,
-            full_rounds: 8,
-            parital_rounds: 56,
-        }
+        let arkworks_defaults = default_poseidon_params();
+        convert_poseidon_params(arkworks_defaults)
     }
 }
 
@@ -304,13 +327,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHa
 #[cfg(test)]
 mod posiedon_tests {
     use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+    use crypto::{fields::DalekRistrettoField, hash::default_poseidon_params};
     use integration_helpers::mpc_network::mock_mpc_fabric;
     use rand::{thread_rng, Rng, RngCore};
 
-    use crate::{
-        mpc::SharedFabric,
-        test_helpers::{compare_scalar_to_felt, convert_params, TestField},
-    };
+    use crate::{mpc::SharedFabric, test_helpers::compare_scalar_to_felt};
 
     use super::{AuthenticatedPoseidonHasher, PoseidonSpongeParameters};
 
@@ -333,7 +354,7 @@ mod posiedon_tests {
     #[test]
     fn test_against_arkworks() {
         let native_parameters = PoseidonSpongeParameters::default();
-        let arkworks_params = convert_params(&native_parameters);
+        let arkworks_params = default_poseidon_params();
 
         // Generate a random number of random elements
         let mut rng = thread_rng();
@@ -348,10 +369,10 @@ mod posiedon_tests {
         for random_elem in random_vec.iter() {
             // Arkworks Fp256 does not implement From<u64> so we have to
             // cast to i128 first to ensure that the value is not represented as a negative
-            arkworks_poseidon.absorb(&TestField::from(*random_elem as i128));
+            arkworks_poseidon.absorb(&DalekRistrettoField::from(*random_elem as i128));
         }
 
-        let arkworks_squeezed: TestField =
+        let arkworks_squeezed: DalekRistrettoField =
             arkworks_poseidon.squeeze_field_elements(1 /* num_elements */)[0];
 
         // Hash and squeeze in native hasher

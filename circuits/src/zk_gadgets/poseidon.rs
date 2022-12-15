@@ -667,13 +667,16 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProv
 #[cfg(test)]
 mod single_prover_test {
     use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+    use crypto::{
+        fields::{prime_field_to_scalar, DalekRistrettoField},
+        hash::default_poseidon_params,
+    };
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
     use rand_core::{OsRng, RngCore};
 
     use crate::{
-        mpc_gadgets::poseidon::PoseidonSpongeParameters,
-        test_helpers::{bulletproof_prove_and_verify, convert_params, felt_to_scalar, TestField},
+        mpc_gadgets::poseidon::PoseidonSpongeParameters, test_helpers::bulletproof_prove_and_verify,
     };
 
     use super::{PoseidonGadgetStatement, PoseidonGadgetWitness, PoseidonHashGadget};
@@ -686,17 +689,17 @@ mod single_prover_test {
         let random_elems = (0..n).map(|_| rng.next_u64()).collect_vec();
 
         // Compute the hash via Arkworks for expected result
-        let arkworks_params = convert_params(&PoseidonSpongeParameters::default());
+        let arkworks_params = default_poseidon_params();
         let mut arkworks_hasher = PoseidonSponge::new(&arkworks_params);
 
         for elem in random_elems.iter() {
-            arkworks_hasher.absorb(&TestField::from(*elem as i128));
+            arkworks_hasher.absorb(&DalekRistrettoField::from(*elem as i128));
         }
 
-        let expected_result: TestField =
+        let expected_result: DalekRistrettoField =
             arkworks_hasher.squeeze_field_elements(1 /* num_elements */)[0];
 
-        let expected_scalar = felt_to_scalar(&expected_result);
+        let expected_scalar = prime_field_to_scalar(&expected_result);
 
         bulletproof_prove_and_verify::<PoseidonHashGadget>(
             PoseidonGadgetWitness {

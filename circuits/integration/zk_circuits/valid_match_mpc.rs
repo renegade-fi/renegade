@@ -16,6 +16,7 @@ use circuits::{
         ValidMatchMpcCircuit, ValidMatchMpcStatement, ValidMatchMpcWitness,
     },
 };
+use crypto::fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField};
 use curve25519_dalek::scalar::Scalar;
 use integration_helpers::{
     mpc_network::{batch_share_plaintext_scalar, batch_share_plaintext_u64},
@@ -27,8 +28,7 @@ use num_bigint::BigInt;
 use rand_core::{OsRng, RngCore};
 
 use crate::{
-    mpc_gadgets::{poseidon::convert_params, prime_field_to_scalar, scalar_to_prime_field},
-    zk_gadgets::multiprover_prove_and_verify,
+    mpc_gadgets::poseidon::convert_params, zk_gadgets::multiprover_prove_and_verify,
     IntegrationTestArgs, TestWrapper,
 };
 
@@ -46,7 +46,9 @@ fn hash_values_arkworks(values: &[u64]) -> Scalar {
         arkworks_hasher.absorb(val)
     }
 
-    prime_field_to_scalar(&arkworks_hasher.squeeze_field_elements(1 /* num_elements */)[0])
+    prime_field_to_scalar(
+        &arkworks_hasher.squeeze_field_elements::<DalekRistrettoField>(1 /* num_elements */)[0],
+    )
 }
 
 /// Creates an authenticated match from an order in each relayer
