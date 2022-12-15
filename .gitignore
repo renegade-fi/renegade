@@ -4,3 +4,4 @@ Cargo.lock
 .idea
 .vscode
 *.sw[a-p]
+api_keys.env
