@@ -1,6 +1,7 @@
+on: push
+
 name: Rustfmt
 
-on: push
 jobs:
   format:
     runs-on: ubuntu-latest
