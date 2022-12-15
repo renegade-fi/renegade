@@ -65,8 +65,8 @@ pub struct Wallet {
     pub wallet_id: Uuid,
     /// A list of orders in this wallet
     pub orders: HashMap<OrderIdentifier, Order>,
-    /// A list of the balacnes in this wallet
-    pub balances: Vec<Balance>,
+    /// A mapping of mint (u64) to Balance information
+    pub balances: HashMap<u64, Balance>,
     /// A list of the fees in this wallet
     pub fees: Vec<Fee>,
     /// Wallet metadata; replicas, trusted peers, etc
@@ -213,16 +213,6 @@ impl RelayerState {
                 locked_handshake_priorities.remove(peer);
             }
         } // locked_handshake_priorities released
-    }
-
-    /// Get a list of order IDs managed by the local peer
-    pub fn get_managed_order_ids(&self) -> Vec<(OrderIdentifier, Order)> {
-        let mut res = Vec::new();
-        for (_, wallet) in self.read_managed_wallets().iter() {
-            res.append(&mut wallet.orders.clone().into_iter().collect());
-        }
-
-        res
     }
 
     /// Print the local relayer state to the screen for debugging

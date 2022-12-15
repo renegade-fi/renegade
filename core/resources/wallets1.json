@@ -10,12 +10,12 @@
                 "amount": 20
             }
         },
-        "balances": [
-            {
+        "balances": {
+            "1": {
                 "mint": 1,
                 "amount": 200
             }
-        ],
+        },
         "fees": [
             {
                 "settle_key": [

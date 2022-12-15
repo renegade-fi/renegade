@@ -1,19 +1,21 @@
 //! The handshake module handles the execution of handshakes from negotiating
 //! a pair of orders to match, all the way through settling any resulting match
 
-use circuits::{
-    mpc::SharedFabric, mpc_circuits::r#match::compute_match, types::order::Order, Allocate, Open,
+use circuits::types::{
+    balance::Balance,
+    fee::Fee,
+    order::{Order, OrderSide},
 };
 use crossbeam::channel::Receiver;
 use futures::executor::block_on;
-use integration_helpers::mpc_network::mocks::PartyIDBeaverSource;
-use mpc_ristretto::{fabric::AuthenticatedMpcFabric, network::QuicTwoPartyNet};
+
 use portpicker::pick_unused_port;
-use rand::{distributions::WeightedIndex, prelude::Distribution, rngs::OsRng, seq::SliceRandom};
+use rand::{
+    distributions::WeightedIndex, prelude::Distribution, rngs::OsRng, seq::IteratorRandom,
+    thread_rng,
+};
 use rayon::ThreadPool;
 use std::{
-    cell::RefCell,
-    rc::Rc,
     sync::Arc,
     thread::{self, JoinHandle},
     time::Duration,
@@ -33,10 +35,8 @@ use crate::{
 };
 
 use super::{
-    error::HandshakeManagerError,
-    handshake_cache::SharedHandshakeCache,
-    jobs::HandshakeExecutionJob,
-    state::{HandshakeStateIndex, State},
+    error::HandshakeManagerError, handshake_cache::SharedHandshakeCache,
+    jobs::HandshakeExecutionJob, state::HandshakeStateIndex,
 };
 
 /// The default priority of a newly added node in the handshake priority list
@@ -65,32 +65,35 @@ impl HandshakeManager {
     pub fn perform_handshake(
         peer_id: WrappedPeerId,
         handshake_state_index: HandshakeStateIndex,
+        handshake_cache: SharedHandshakeCache<OrderIdentifier>,
         global_state: RelayerState,
         network_channel: UnboundedSender<GossipOutbound>,
-    ) {
-        let managed_orders = global_state.get_managed_order_ids();
-        let my_order = managed_orders
-            .choose(&mut rand::thread_rng())
-            .unwrap()
-            .to_owned();
-
-        // Send a handshake message to the given peer_id
-        // Panic if channel closed, no way to recover
-        let request_id = Uuid::new_v4();
-        network_channel
-            .send(GossipOutbound::Request {
-                peer_id,
-                message: GossipRequest::Handshake {
-                    request_id,
-                    message: HandshakeMessage::InitiateMatch {
-                        peer_id: *global_state.read_peer_id(),
-                        sender_order: my_order.0,
+    ) -> Result<(), HandshakeManagerError> {
+        if let Some((order_id, order, balance, fee)) = Self::choose_order_balance_fee(
+            None, /* peer_order */
+            handshake_cache,
+            &global_state,
+        ) {
+            // Send a handshake message to the given peer_id
+            // Panic if channel closed, no way to recover
+            let request_id = Uuid::new_v4();
+            network_channel
+                .send(GossipOutbound::Request {
+                    peer_id,
+                    message: GossipRequest::Handshake {
+                        request_id,
+                        message: HandshakeMessage::InitiateMatch {
+                            peer_id: *global_state.read_peer_id(),
+                            sender_order: order_id,
+                        },
                     },
-                },
-            })
-            .unwrap();
+                })
+                .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
-        handshake_state_index.new_handshake(request_id, my_order.0, my_order.1);
+            handshake_state_index.new_handshake(request_id, order_id, order, balance, fee);
+        }
+
+        Ok(())
     }
 
     /// Handle a handshake message from the peer
@@ -172,17 +175,6 @@ impl HandshakeManager {
                             ))
                         })?;
 
-                let local_order = {
-                    if let State::MatchInProgress { local_order, .. } = order_state.state {
-                        Some(local_order)
-                    } else {
-                        None
-                    }
-                }
-                .ok_or_else(|| {
-                    HandshakeManagerError::InvalidRequest(format!("request_id: {}", request_id))
-                })?;
-
                 // Build a tokio runtime in the current thread for the MPC to run inside of
                 // This is necessary to allow quinn access to a Tokio reactor at runtime
                 let tid = thread::current().id();
@@ -194,8 +186,15 @@ impl HandshakeManager {
                     .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
 
                 // Wrap the current thread's execution in a Tokio blocking thread
-                let join_handle = tokio_runtime
-                    .spawn_blocking(move || Self::execute_match_mpc(party_id, local_order, net));
+                let join_handle = tokio_runtime.spawn_blocking(move || {
+                    Self::execute_match_mpc(
+                        party_id,
+                        order_state.order,
+                        order_state.balance,
+                        order_state.fee,
+                        net,
+                    )
+                });
 
                 block_on(join_handle)
                     .unwrap()
@@ -235,32 +234,28 @@ impl HandshakeManager {
                 sender_order: peer_order,
                 ..
             } => {
-                let mut proposed_order = None;
+                if let Some((order_id, order, balance, fee)) =
+                    Self::choose_order_balance_fee(Some(peer_order), handshake_cache, &global_state)
                 {
-                    let locked_handshake_cache = handshake_cache
-                        .read()
-                        .expect("handshake_cache lock poisoned");
-                    for (order_id, order) in global_state.get_managed_order_ids().iter() {
-                        if !locked_handshake_cache.contains(*order_id, peer_order) {
-                            proposed_order = Some((*order_id, order.clone()));
-                            break;
-                        }
-                    }
-                } // locked_handshake_cache released
+                    // Add the new handshake to the state machine index
+                    handshake_state_index.new_handshake_with_peer_order(
+                        request_id, peer_order, order_id, order, balance, fee,
+                    );
 
-                // Update the state machine for a newly created handshake
-                if let Some((order_id, order)) = proposed_order.clone() {
-                    handshake_state_index
-                        .new_handshake_with_peer_order(request_id, peer_order, order_id, order)
+                    // Respond with the selected order pair
+                    Ok(Some(HandshakeMessage::ProposeMatchCandidate {
+                        peer_id: *global_state.read_peer_id(),
+                        peer_order,
+                        sender_order: Some(order_id),
+                    }))
+                } else {
+                    // Send back a cache feedback message so that the peer may cache this order pair as completed
+                    Ok(Some(HandshakeMessage::ProposeMatchCandidate {
+                        peer_id: *global_state.read_peer_id(),
+                        peer_order,
+                        sender_order: None,
+                    }))
                 }
-
-                // Send the message and unwrap the result; the only error type possible
-                // is that the channel is closed, so panic the thread in that case
-                Ok(Some(HandshakeMessage::ProposeMatchCandidate {
-                    peer_id: *global_state.read_peer_id(),
-                    sender_order: proposed_order.map(|(order_id, _)| order_id),
-                    peer_order,
-                }))
             }
 
             // A peer has responded to the local node's InitiateMatch message with a proposed match pair.
@@ -344,41 +339,80 @@ impl HandshakeManager {
         }
     }
 
-    /// Execute the match MPC over the provisioned QUIC stream
-    fn execute_match_mpc(
-        party_id: u64,
-        local_order: Order,
-        mut mpc_net: QuicTwoPartyNet,
-    ) -> Result<(), HandshakeManagerError> {
-        println!("Matching order...\n");
-        // Connect the network
-        block_on(mpc_net.connect())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+    /// Chooses an order, balance, and fee to match against
+    ///
+    /// The `peer_order` field is optional; for a peer initiating a handshake; the peer will not know
+    /// the peer's proposed order, so it should just choose an order randomly
+    fn choose_order_balance_fee(
+        peer_order: Option<OrderIdentifier>,
+        handshake_cache: SharedHandshakeCache<OrderIdentifier>,
+        global_state: &RelayerState,
+    ) -> Option<(OrderIdentifier, Order, Balance, Fee)> {
+        println!("Choosing balance and fee");
+        let mut rng = thread_rng();
+        let mut proposed_order = None;
 
-        // Build a fabric
-        // TODO: Replace the dummy beaver source
-        let beaver_source = PartyIDBeaverSource::new(party_id);
-        let fabric = AuthenticatedMpcFabric::new_with_network(
-            party_id,
-            Rc::new(RefCell::new(mpc_net)),
-            Rc::new(RefCell::new(beaver_source)),
-        );
-        let shared_fabric = SharedFabric::new(fabric);
+        let selected_wallet = {
+            let locked_wallets = global_state.read_managed_wallets();
+            let locked_handshake_cache = handshake_cache
+                .read()
+                .expect("handshake_cache lock poisoned");
 
-        let shared_order1 = local_order
-            .allocate(0 /* owning_party */, shared_fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let shared_order2 = local_order
-            .allocate(1 /* owning_party */, shared_fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+            // TODO: This choice gives single orders in a wallet a higher chance of being chosen than
+            // one with many peer-orders in the wallet, fix this.
+            // Choose a random wallet
+            let random_wallet_id = *locked_wallets.keys().choose(&mut rng)?;
 
-        let match_res = compute_match(&shared_order1, &shared_order2, shared_fabric)
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?
-            .open_and_authenticate()
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+            // Choose an order in that wallet
+            for (order_id, order) in locked_wallets.get(&random_wallet_id).unwrap().orders.iter() {
+                if peer_order.is_none()
+                    || !locked_handshake_cache.contains(*order_id, peer_order.unwrap())
+                {
+                    proposed_order = Some((*order_id, order.clone()));
+                    break;
+                }
+            }
 
-        println!("Got MPC res: {:?}", match_res);
-        Ok(())
+            random_wallet_id
+        }; // locked_wallets, locked_handshake_cache released
+
+        // Find a balance and fee for this chosen order
+        let (order_id, order) = proposed_order?;
+        let (balance, fee) = Self::get_balance_and_fee(&order, selected_wallet, global_state)?;
+
+        Some((order_id, order, balance, fee))
+    }
+
+    /// Find a balance and fee for the given order
+    fn get_balance_and_fee(
+        order: &Order,
+        wallet_id: Uuid,
+        global_state: &RelayerState,
+    ) -> Option<(Balance, Fee)> {
+        let locked_wallets = global_state.read_managed_wallets();
+        let selected_wallet = locked_wallets.get(&wallet_id)?;
+
+        // The mint the local party will be spending
+        let order_mint = match order.side {
+            OrderSide::Buy => order.quote_mint,
+            OrderSide::Sell => order.base_mint,
+        };
+
+        // The maximum quantity of the mint that the local party will be spending
+        let order_amount = match order.side {
+            OrderSide::Buy => order.amount * order.price,
+            OrderSide::Sell => order.amount,
+        };
+
+        let balance = selected_wallet.balances.get(&order_mint)?;
+        if balance.amount < order_amount {
+            return None;
+        }
+
+        // Choose the first fee for simplicity
+        let fee = selected_wallet.fees.get(0 /* index */)?;
+
+        Some((balance.clone(), fee.clone()))
     }
 
     /// Record a match as completed in the various state objects
@@ -390,43 +424,37 @@ impl HandshakeManager {
         network_channel: UnboundedSender<GossipOutbound>,
     ) -> Result<(), HandshakeManagerError> {
         // Get the order IDs from the state machine
-        if let State::MatchInProgress {
-            local_order_id,
-            peer_order_id,
-            ..
-        } = handshake_state_index
+        let state = handshake_state_index
             .get_state(&request_id)
             .ok_or_else(|| {
                 HandshakeManagerError::InvalidRequest(format!("request_id {:?}", request_id))
-            })?
-            .state
-        {
-            // Cache the order pair as completed
-            handshake_cache
-                .write()
-                .expect("handshake_cache lock poiseoned")
-                .push(local_order_id, peer_order_id);
+            })?;
 
-            // Write to global state for debugging
-            global_state
-                .write_matched_order_pairs()
-                .push((local_order_id, peer_order_id));
+        // Cache the order pair as completed
+        handshake_cache
+            .write()
+            .expect("handshake_cache lock poiseoned")
+            .push(state.local_order_id, state.peer_order_id);
 
-            // Update the state of the handshake in the completed state
-            handshake_state_index.completed(&request_id);
+        // Write to global state for debugging
+        global_state
+            .write_matched_order_pairs()
+            .push((state.local_order_id, state.peer_order_id));
 
-            // Send a message to cluster peers indicating the handshake has finished
-            let locked_cluster_id = global_state.read_cluster_id();
-            network_channel
-                .send(GossipOutbound::Pubsub {
-                    topic: locked_cluster_id.get_management_topic(),
-                    message: PubsubMessage::new_cluster_management_unsigned(
-                        locked_cluster_id.clone(),
-                        ClusterManagementMessage::CacheSync(local_order_id, peer_order_id),
-                    ),
-                })
-                .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
-        }
+        // Update the state of the handshake in the completed state
+        handshake_state_index.completed(&request_id);
+
+        // Send a message to cluster peers indicating the handshake has finished
+        let locked_cluster_id = global_state.read_cluster_id();
+        network_channel
+            .send(GossipOutbound::Pubsub {
+                topic: locked_cluster_id.get_management_topic(),
+                message: PubsubMessage::new_cluster_management_unsigned(
+                    locked_cluster_id.clone(),
+                    ClusterManagementMessage::CacheSync(state.local_order_id, state.peer_order_id),
+                ),
+            })
+            .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
         Ok(())
     }
@@ -444,6 +472,7 @@ impl HandshakeTimer {
     pub fn new(
         thread_pool: Arc<ThreadPool>,
         handshake_state_index: HandshakeStateIndex,
+        handshake_cache: SharedHandshakeCache<OrderIdentifier>,
         global_state: RelayerState,
         network_channel: UnboundedSender<GossipOutbound>,
         cancel: CancelChannel,
@@ -460,6 +489,7 @@ impl HandshakeTimer {
                 Self::execution_loop(
                     refresh_interval,
                     handshake_state_index,
+                    handshake_cache,
                     thread_pool,
                     global_state,
                     network_channel,
@@ -483,6 +513,7 @@ impl HandshakeTimer {
     fn execution_loop(
         refresh_interval: Duration,
         handshake_state_index: HandshakeStateIndex,
+        handshake_cache: SharedHandshakeCache<OrderIdentifier>,
         thread_pool: Arc<ThreadPool>,
         global_state: RelayerState,
         network_channel: UnboundedSender<GossipOutbound>,
@@ -513,15 +544,19 @@ impl HandshakeTimer {
             // Enqueue a job to handshake with the randomly selected peer
             if let Some(selected_peer) = random_peer {
                 let sender_copy = network_channel.clone();
+                let handshake_cache_copy = handshake_cache.clone();
                 let handshake_state_copy = handshake_state_index.clone();
                 let state_copy = global_state.clone();
                 thread_pool.install(move || {
-                    HandshakeManager::perform_handshake(
+                    if let Err(err) = HandshakeManager::perform_handshake(
                         selected_peer,
                         handshake_state_copy,
+                        handshake_cache_copy,
                         state_copy,
                         sender_copy,
-                    );
+                    ) {
+                        println!("Error in handshake thread pool: {:?}", err.to_string());
+                    }
                 });
             }
 

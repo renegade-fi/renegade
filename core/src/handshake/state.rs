@@ -10,7 +10,7 @@ use std::{
 use crate::state::Shared;
 
 use super::{error::HandshakeManagerError, manager::OrderIdentifier};
-use circuits::types::order::Order;
+use circuits::types::{balance::Balance, fee::Fee, order::Order};
 use uuid::Uuid;
 
 /// Holds state information for all in-flight handshake correspondences
@@ -32,9 +32,23 @@ impl HandshakeStateIndex {
     }
 
     /// Adds a new handshake to the state
-    pub fn new_handshake(&self, request_id: Uuid, local_order_id: OrderIdentifier, order: Order) {
+    pub fn new_handshake(
+        &self,
+        request_id: Uuid,
+        local_order_id: OrderIdentifier,
+        order: Order,
+        balance: Balance,
+        fee: Fee,
+    ) {
         // Use a dummy value for the peer order until it is negotiated
-        self.new_handshake_with_peer_order(request_id, Uuid::default(), local_order_id, order)
+        self.new_handshake_with_peer_order(
+            request_id,
+            Uuid::default(),
+            local_order_id,
+            order,
+            balance,
+            fee,
+        )
     }
 
     /// Adds a new handshake to the state where the peer's order is already known (e.g. the peer initiated the handshake)
@@ -44,11 +58,20 @@ impl HandshakeStateIndex {
         peer_order_id: OrderIdentifier,
         local_order_id: OrderIdentifier,
         order: Order,
+        balance: Balance,
+        fee: Fee,
     ) {
         let mut locked_state = self.state_map.write().expect("state_map lock poisoned");
         locked_state.insert(
             request_id,
-            HandshakeState::new(request_id, peer_order_id, local_order_id, order),
+            HandshakeState::new(
+                request_id,
+                peer_order_id,
+                local_order_id,
+                order,
+                balance,
+                fee,
+            ),
         );
     }
 
@@ -59,15 +82,10 @@ impl HandshakeStateIndex {
         order_id: OrderIdentifier,
     ) -> Result<(), HandshakeManagerError> {
         let mut locked_state = self.state_map.write().expect("state_map lock poisoned");
-        if let State::OrderNegotiation { peer_order_id, .. } = &mut locked_state
-            .get_mut(request_id)
-            .ok_or_else(|| {
-                HandshakeManagerError::InvalidRequest(format!("request_id {:?}", request_id))
-            })?
-            .state
-        {
-            *peer_order_id = order_id;
-        }
+        let state_entry = locked_state.get_mut(request_id).ok_or_else(|| {
+            HandshakeManagerError::InvalidRequest(format!("request_id {:?}", request_id))
+        })?;
+        state_entry.peer_order_id = order_id;
 
         Ok(())
     }
@@ -115,6 +133,16 @@ pub struct HandshakeState {
     /// The request identifier of the handshake, used to uniquely identify a handshake
     /// correspondence between peers
     pub request_id: Uuid,
+    /// The identifier of the order that the remote peer has proposed for match
+    pub peer_order_id: OrderIdentifier,
+    /// The identifier of the order that the local peer has proposed for match
+    pub local_order_id: OrderIdentifier,
+    /// The local peer's order being matched on
+    pub order: Order,
+    /// The local peer's balance, covering their side of the order
+    pub balance: Balance,
+    /// The local peer's fee, paid out to the contract and the executing node
+    pub fee: Fee,
     /// The current state information of the
     pub state: State,
 }
@@ -126,33 +154,16 @@ pub enum State {
     /// This state is exited when either:
     ///     1. A pair of orders is successfully decided on to execute matches
     ///     2. No pair of unmatched orders is found
-    OrderNegotiation {
-        /// The identifier of the order that the remote peer has proposed for match
-        peer_order_id: OrderIdentifier,
-        /// The identifier of the order that the local peer has proposed for match
-        local_order_id: OrderIdentifier,
-        /// The order being matched on
-        local_order: Order,
-    },
+    OrderNegotiation,
     /// This state is entered when an order pair has been successfully negotiated, and the
     /// match computation has begun. This state is either exited by a sucessful match or
     /// an error
-    MatchInProgress {
-        /// The identifier of the order that the local peer has proposed for match
-        local_order_id: OrderIdentifier,
-        /// The identifier of the order that the peer has proposed for the match
-        peer_order_id: OrderIdentifier,
-        /// The order being matched on
-        local_order: Order,
-    },
+    MatchInProgress,
     /// This state signals that the handshake has completed successfully one way or another;
     /// either by successful match, or because no non-cached order pairs were found
-    Completed {},
+    Completed,
     /// This state is entered if an error occurs somewhere throughout the handshake execution
-    Error {
-        /// The error that caused the state transition to `Error`
-        err: HandshakeManagerError,
-    },
+    Error(HandshakeManagerError),
 }
 
 impl HandshakeState {
@@ -162,34 +173,28 @@ impl HandshakeState {
         peer_order_id: OrderIdentifier,
         local_order_id: OrderIdentifier,
         order: Order,
+        balance: Balance,
+        fee: Fee,
     ) -> Self {
         Self {
             request_id,
-            state: State::OrderNegotiation {
-                peer_order_id,
-                local_order_id,
-                local_order: order,
-            },
+            peer_order_id,
+            local_order_id,
+            order,
+            balance,
+            fee,
+            state: State::OrderNegotiation,
         }
     }
 
     /// Transition the state to MatchInProgress
     pub fn in_progress(&mut self) {
         // Assert valid transition
-        if let State::OrderNegotiation {
-            peer_order_id,
-            local_order_id,
-            local_order,
-        } = self.state.clone()
-        {
-            self.state = State::MatchInProgress {
-                local_order_id,
-                peer_order_id,
-                local_order,
-            };
-        } else {
-            panic!("in_progress may only be called on a handshake in the `OrderNegotiation` state");
-        };
+        assert!(
+            std::matches!(self.state, State::OrderNegotiation),
+            "in_progress may only be called on a handshake in the `OrderNegotiation` state"
+        );
+        self.state = State::MatchInProgress;
     }
 
     /// Transition the state to Completed
@@ -201,11 +206,11 @@ impl HandshakeState {
             "completed may only be called on a handshake in OrderNegotiation or MatchInProgress state"
         );
 
-        self.state = State::Completed {};
+        self.state = State::Completed;
     }
 
     /// Transition the state to Error
     pub fn error(&mut self, err: HandshakeManagerError) {
-        self.state = State::Error { err };
+        self.state = State::Error(err);
     }
 }

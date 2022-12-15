@@ -73,6 +73,7 @@ impl Worker for HandshakeManager {
         let timer = HandshakeTimer::new(
             thread_pool.clone(),
             handshake_state_index.clone(),
+            handshake_cache.clone(),
             config.global_state.clone(),
             config.network_channel.clone(),
             config.cancel_channel.clone(),
