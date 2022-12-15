@@ -1,7 +1,10 @@
 //! Implementations of cryptographic hash functions
 
-use ark_sponge::poseidon::PoseidonConfig;
-use curve25519_dalek::scalar::Scalar;
+use ark_sponge::{
+    poseidon::{PoseidonConfig, PoseidonSponge},
+    CryptographicSponge,
+};
+use itertools::Itertools;
 
 use crate::{
     constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3},
@@ -15,8 +18,19 @@ use crate::{
 ///
 /// We require that the input be castable to a vector of u64s; this is to
 /// match the hashes defined in the ZK circuitry
-pub fn poseidon_hash_default_params<T: Into<Vec<u64>>>(val: T) -> Scalar {
-    unimplemented!("")
+pub fn poseidon_hash_default_params<T: Into<Vec<u64>>>(val: T) -> DalekRistrettoField {
+    let hashable_values: Vec<u64> = val.into();
+    let arkworks_input = hashable_values
+        .into_iter()
+        .map(DalekRistrettoField::from)
+        .collect_vec();
+
+    let mut arkworks_hasher = PoseidonSponge::new(&default_poseidon_params());
+    for val in arkworks_input.iter() {
+        arkworks_hasher.absorb(val)
+    }
+
+    arkworks_hasher.squeeze_field_elements(1 /* num_elements */)[0]
 }
 
 /// Returns a default set of arkworks params
@@ -36,20 +50,3 @@ pub fn default_poseidon_params() -> PoseidonConfig<DalekRistrettoField> {
         1,                              /* capacity */
     )
 }
-
-// /// Hashes the payload of `Scalar`s via the Arkworks Poseidon sponge implementation
-// /// Returns the result, re-cast into the Dalek Ristretto scalar field
-// fn hash_values_arkworks(values: &[u64]) -> Scalar {
-//     let arkworks_input = values
-//         .iter()
-//         .map(|val| scalar_to_prime_field(&Scalar::from(*val)))
-//         .collect_vec();
-//     let arkworks_params = convert_params(&PoseidonSpongeParameters::default());
-
-//     let mut arkworks_hasher = PoseidonSponge::new(&arkworks_params);
-//     for val in arkworks_input.iter() {
-//         arkworks_hasher.absorb(val)
-//     }
-
-//     prime_field_to_scalar(&arkworks_hasher.squeeze_field_elements(1 /* num_elements */)[0])
-// }
