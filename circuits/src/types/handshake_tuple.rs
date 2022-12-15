@@ -1,6 +1,7 @@
 //! Groups trait and type definitions for the handshake tuple
 
-use crate::{bigint_to_scalar, errors::MpcError, CommitSharedProver};
+use crate::{errors::MpcError, CommitSharedProver};
+use crypto::fields::bigint_to_scalar;
 use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 use mpc_bulletproof::r1cs_mpc::MpcProver;

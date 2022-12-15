@@ -1,6 +1,7 @@
 //! Groups gadgets for going from scalar -> bits and from bits -> scalar
 use std::marker::PhantomData;
 
+use crypto::fields::bigint_to_scalar;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
@@ -22,7 +23,6 @@ use num_bigint::BigInt;
 use rand_core::OsRng;
 
 use crate::{
-    bigint_to_scalar,
     errors::{MpcError, ProverError, VerifierError},
     mpc::SharedFabric,
     mpc_gadgets::bits::{scalar_to_bits_le, to_bits_le},
@@ -234,12 +234,11 @@ impl<'a, const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
 
 #[cfg(test)]
 mod bits_test {
+    use crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
     use curve25519_dalek::scalar::Scalar;
     use rand_core::{OsRng, RngCore};
 
-    use crate::{
-        bigint_to_scalar_bits, scalar_to_bigint, test_helpers::bulletproof_prove_and_verify,
-    };
+    use crate::test_helpers::bulletproof_prove_and_verify;
 
     use super::{ToBitsGadget, ToBitsStatement};
 

@@ -263,12 +263,13 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
 
 #[cfg(test)]
 mod arithmetic_tests {
+    use crypto::fields::{bigint_to_scalar, scalar_to_biguint};
     use curve25519_dalek::scalar::Scalar;
     use integration_helpers::mpc_network::field::get_ristretto_group_modulus;
     use num_bigint::BigUint;
     use rand_core::{OsRng, RngCore};
 
-    use crate::{bigint_to_scalar, scalar_to_biguint, test_helpers::bulletproof_prove_and_verify};
+    use crate::test_helpers::bulletproof_prove_and_verify;
 
     use super::{ExpGadget, ExpGadgetStatement, ExpGadgetWitness};
 

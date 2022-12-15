@@ -4,6 +4,7 @@ FROM rust:1.63-slim-buster AS builder
 # Create a build dir and add local dependencies
 WORKDIR /build
 COPY ./rust-toolchain ./circuits/rust-toolchain
+COPY ./crypto ./crypto
 COPY ./integration-helpers ./integration-helpers
 
 # Place a set of dummy sources in the path, build the dummy executable

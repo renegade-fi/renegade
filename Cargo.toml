@@ -2,6 +2,7 @@
 members = [
 	"circuits",
 	"core",
+	"crypto",
 	"integration-helpers"
 ]
 

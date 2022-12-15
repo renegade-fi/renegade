@@ -1,8 +1,8 @@
 //! Groups gadgets around arithemtic integration tests
-use circuits::{
-    bigint_to_scalar, scalar_to_bigint,
-    zk_gadgets::arithmetic::{ExpGadgetStatement, MultiproverExpGadget, MultiproverExpWitness},
+use circuits::zk_gadgets::arithmetic::{
+    ExpGadgetStatement, MultiproverExpGadget, MultiproverExpWitness,
 };
+use crypto::fields::{bigint_to_scalar, scalar_to_bigint};
 use curve25519_dalek::scalar::Scalar;
 use integration_helpers::{
     mpc_network::field::get_ristretto_group_modulus, types::IntegrationTest,

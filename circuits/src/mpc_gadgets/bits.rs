@@ -230,13 +230,12 @@ pub fn bit_lt<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
 mod tests {
     use std::iter;
 
+    use crypto::fields::{bigint_to_scalar, scalar_to_bigint};
     use curve25519_dalek::scalar::Scalar;
     use integration_helpers::mpc_network::mock_mpc_fabric;
     use mpc_ristretto::mpc_scalar::scalar_to_u64;
     use num_bigint::BigInt;
     use rand::{thread_rng, Rng, RngCore};
-
-    use crate::{bigint_to_scalar, scalar_to_bigint};
 
     use super::{scalar_from_bits_le, scalar_to_bits_le};
 

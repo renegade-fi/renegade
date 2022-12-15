@@ -1,9 +1,6 @@
 //! Groups integration tests for modulo MPC gadgets
-use circuits::{
-    bigint_to_scalar,
-    mpc_gadgets::modulo::{mod_2m, shift_right, truncate},
-    scalar_to_bigint,
-};
+use circuits::mpc_gadgets::modulo::{mod_2m, shift_right, truncate};
+use crypto::fields::{bigint_to_scalar, scalar_to_bigint};
 use integration_helpers::types::IntegrationTest;
 use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use num_bigint::{BigInt, RandomBits};

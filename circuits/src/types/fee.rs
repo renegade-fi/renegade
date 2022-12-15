@@ -1,10 +1,10 @@
 //! Groups the base type and derived types for the `Fee` entity
 use crate::{
-    bigint_to_scalar,
     errors::{MpcError, TypeConversionError},
     mpc::SharedFabric,
     Allocate, CommitProver, CommitSharedProver, CommitVerifier,
 };
+use crypto::fields::bigint_to_scalar;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{

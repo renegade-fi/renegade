@@ -520,6 +520,10 @@ mod merkle_test {
         merkle_tree::{Config, IdentityDigestConverter},
         CRHScheme, MerkleTree,
     };
+    use crypto::{
+        fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField},
+        hash::default_poseidon_params,
+    };
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
     use mpc_bulletproof::r1cs_mpc::R1CSError;
@@ -527,12 +531,7 @@ mod merkle_test {
     use rand_core::OsRng;
 
     use crate::{
-        errors::VerifierError,
-        mpc_gadgets::poseidon::PoseidonSpongeParameters,
-        test_helpers::{
-            bulletproof_prove_and_verify, convert_params, felt_to_scalar, scalar_to_prime_field,
-            TestField,
-        },
+        errors::VerifierError, test_helpers::bulletproof_prove_and_verify,
         zk_gadgets::merkle::PoseidonMerkleHashGadget,
     };
 
@@ -540,17 +539,17 @@ mod merkle_test {
 
     struct MerkleConfig {}
     impl Config for MerkleConfig {
-        type Leaf = [TestField];
-        type LeafDigest = TestField;
-        type InnerDigest = TestField;
+        type Leaf = [DalekRistrettoField];
+        type LeafDigest = DalekRistrettoField;
+        type InnerDigest = DalekRistrettoField;
 
-        type LeafHash = CRH<TestField>;
-        type TwoToOneHash = TwoToOneCRH<TestField>;
-        type LeafInnerDigestConverter = IdentityDigestConverter<TestField>;
+        type LeafHash = CRH<DalekRistrettoField>;
+        type TwoToOneHash = TwoToOneCRH<DalekRistrettoField>;
+        type LeafInnerDigestConverter = IdentityDigestConverter<DalekRistrettoField>;
     }
 
     /// Create a random sequence of field elements
-    fn random_field_elements(n: usize) -> Vec<TestField> {
+    fn random_field_elements(n: usize) -> Vec<DalekRistrettoField> {
         let mut rng = OsRng {};
         (0..n)
             .map(|_| scalar_to_prime_field(&Scalar::random(&mut rng)))
@@ -580,8 +579,7 @@ mod merkle_test {
         let tree_height = 10;
 
         // Build a random Merkle tree via arkworks
-        let poseidon_config = PoseidonSpongeParameters::default();
-        let arkworks_params = convert_params(&poseidon_config);
+        let arkworks_params = default_poseidon_params();
 
         let mut merkle_tree =
             MerkleTree::<MerkleConfig>::blank(&arkworks_params, &arkworks_params, tree_height)
@@ -589,7 +587,7 @@ mod merkle_test {
 
         let mut ark_leaf_data = Vec::with_capacity(num_leaves);
         for i in 0..num_leaves {
-            let leaf_data: [TestField; leaf_size] =
+            let leaf_data: [DalekRistrettoField; leaf_size] =
                 (*random_field_elements(leaf_size)).try_into().unwrap();
             merkle_tree.update(i, &leaf_data).unwrap();
             ark_leaf_data.push(leaf_data);
@@ -597,13 +595,13 @@ mod merkle_test {
 
         // Generate a proof for a random index and prove it in the native gadget
         let random_index = thread_rng().gen_range(0..num_leaves);
-        let expected_root = felt_to_scalar(&merkle_tree.root());
+        let expected_root = prime_field_to_scalar(&merkle_tree.root());
         let opening = merkle_tree.generate_proof(random_index).unwrap();
         let mut opening_scalars = opening
             .auth_path
             .iter()
             .rev() // Path comes in reverse
-            .map(felt_to_scalar)
+            .map(prime_field_to_scalar)
             .collect_vec();
 
         // Hash the sister leaf of the given scalar
@@ -612,15 +610,15 @@ mod merkle_test {
         } else {
             ark_leaf_data[random_index - 1]
         };
-        let sister_leaf_hash: TestField =
+        let sister_leaf_hash: DalekRistrettoField =
             CRH::evaluate(&arkworks_params, sister_leaf_data).unwrap();
 
-        opening_scalars.insert(0, felt_to_scalar(&sister_leaf_hash));
+        opening_scalars.insert(0, prime_field_to_scalar(&sister_leaf_hash));
 
         // Convert the leaf data for the given leaf to scalars
         let leaf_data = ark_leaf_data[random_index]
             .iter()
-            .map(felt_to_scalar)
+            .map(prime_field_to_scalar)
             .collect_vec();
 
         // Prove and verify the statement
@@ -647,8 +645,7 @@ mod merkle_test {
         let leaf_data = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
 
         // Compute the correct root via Arkworks
-        let poseidon_config = PoseidonSpongeParameters::default();
-        let arkworks_params = convert_params(&poseidon_config);
+        let arkworks_params = default_poseidon_params();
 
         let arkworks_leaf_data = leaf_data.iter().map(scalar_to_prime_field).collect_vec();
 
@@ -667,7 +664,7 @@ mod merkle_test {
             .auth_path
             .iter()
             .rev() // Path comes in reverse
-            .map(felt_to_scalar)
+            .map(prime_field_to_scalar)
             .collect_vec();
 
         // Add a zero to the opening scalar for the next leaf

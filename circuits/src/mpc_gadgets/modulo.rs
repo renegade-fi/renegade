@@ -1,5 +1,6 @@
 //! Groups logic for computing modulo and truncation operators
 
+use crypto::fields::{bigint_to_scalar, bigint_to_scalar_bits, scalar_to_bigint};
 use curve25519_dalek::scalar::Scalar;
 use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
@@ -7,8 +8,7 @@ use mpc_ristretto::{
 use num_bigint::BigInt;
 
 use crate::{
-    bigint_to_scalar, bigint_to_scalar_bits, errors::MpcError, mpc::SharedFabric,
-    mpc_gadgets::bits::bit_lt, scalar_2_to_m, scalar_to_bigint, SCALAR_MAX_BITS,
+    errors::MpcError, mpc::SharedFabric, mpc_gadgets::bits::bit_lt, scalar_2_to_m, SCALAR_MAX_BITS,
 };
 
 use super::bits::scalar_from_bits_le;

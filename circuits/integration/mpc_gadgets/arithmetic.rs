@@ -1,9 +1,7 @@
 //! Groups integration tests for arithmetic gadets used in the MPC circuits
 
-use circuits::{
-    mpc_gadgets::arithmetic::{pow, prefix_mul, product},
-    scalar_to_biguint,
-};
+use circuits::mpc_gadgets::arithmetic::{pow, prefix_mul, product};
+use crypto::fields::scalar_to_biguint;
 use integration_helpers::{
     mpc_network::field::get_ristretto_group_modulus, types::IntegrationTest,
 };
