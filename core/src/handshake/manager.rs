@@ -44,6 +44,9 @@ use super::{
 
 /// The default priority of a newly added node in the handshake priority list
 pub const DEFAULT_HANDSHAKE_PRIORITY: u32 = 10;
+/// The amount of time to mark an order pair as invisible for; giving the peer
+/// time to complete a match on this pair
+pub(super) const HANDSHAKE_INVISIBILITY_WINDOW_MS: u64 = 120_000; // 2 minutes
 /// The size of the LRU handshake cache
 pub(super) const HANDSHAKE_CACHE_SIZE: usize = 500;
 /// How frequently a new handshake is initiated from the local peer
@@ -178,15 +181,25 @@ impl HandshakeManager {
                 handshake_cache
                     .write()
                     .expect("handshake_cache lock poisoned")
-                    .push(order1, order2);
+                    .mark_completed(order1, order2);
 
                 Ok(())
             }
 
             // A peer has initiated a match on the given order pair; place this order pair in an invisibility
             // window, i.e. do not initiate matches on this pair
-            #[allow(unused)]
-            HandshakeExecutionJob::PeerMatchInProgress { order1, order2 } => Ok(()),
+            HandshakeExecutionJob::PeerMatchInProgress { order1, order2 } => {
+                handshake_cache
+                    .write()
+                    .expect("handshake_cache lock poisoned")
+                    .mark_invisible(
+                        order1,
+                        order2,
+                        Duration::from_millis(HANDSHAKE_INVISIBILITY_WINDOW_MS),
+                    );
+
+                Ok(())
+            }
 
             // Indicates that the network manager has setup a network connection for a handshake to execute over
             // the local peer should connect and go forward with the MPC
@@ -282,6 +295,18 @@ impl HandshakeManager {
                         peer_randomness_hash,
                     );
 
+                    // Send a pubsub message indicating intent to match on the given order pair
+                    let cluster_id = { global_state.read_cluster_id().clone() };
+                    network_channel
+                        .send(GossipOutbound::Pubsub {
+                            topic: cluster_id.get_management_topic(),
+                            message: PubsubMessage::new_cluster_management_unsigned(
+                                cluster_id,
+                                ClusterManagementMessage::MatchInProgress(order_id, peer_order),
+                            ),
+                        })
+                        .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
+
                     // Respond with the selected order pair
                     Ok(Some(HandshakeMessage::ProposeMatchCandidate {
                         peer_id: *global_state.read_peer_id(),
@@ -355,6 +380,18 @@ impl HandshakeManager {
                         })
                         .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
+                    // Send a pubsub message indicating intent to match on the given order pair
+                    let cluster_id = { global_state.read_cluster_id().clone() };
+                    network_channel
+                        .send(GossipOutbound::Pubsub {
+                            topic: cluster_id.get_management_topic(),
+                            message: PubsubMessage::new_cluster_management_unsigned(
+                                cluster_id,
+                                ClusterManagementMessage::MatchInProgress(my_order, peer_order),
+                            ),
+                        })
+                        .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
+
                     Ok(Some(HandshakeMessage::ExecuteMatch {
                         peer_id: *global_state.read_peer_id(),
                         port: local_port,
@@ -378,7 +415,7 @@ impl HandshakeManager {
                 handshake_cache
                     .write()
                     .expect("handshake_cache lock poisoned")
-                    .push(order1, order2);
+                    .mark_completed(order1, order2);
 
                 // Choose a local port to execute the handshake on
                 let local_port = pick_unused_port().expect("all ports used");
@@ -492,7 +529,7 @@ impl HandshakeManager {
         handshake_cache
             .write()
             .expect("handshake_cache lock poiseoned")
-            .push(state.local_order_id, state.peer_order_id);
+            .mark_completed(state.local_order_id, state.peer_order_id);
 
         // Write to global state for debugging
         global_state
