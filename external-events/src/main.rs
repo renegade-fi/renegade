@@ -20,16 +20,19 @@ fn main() {
         PriceReporter::new(Token::ETH, Token::USDC, Exchange::Coinbase).unwrap();
     loop {
         thread::sleep(time::Duration::from_millis(100));
+        let binance_midpoint = binance_reporter
+            .get_current_report()
+            .unwrap()
+            .midpoint_price;
+        let coinbase_midpoint = coinbase_reporter
+            .get_current_report()
+            .unwrap()
+            .midpoint_price;
         println!(
-            "Midpoint: Binance = {:.4}, Coinbase = {:.4}",
-            binance_reporter
-                .get_current_report()
-                .unwrap()
-                .midpoint_price,
-            coinbase_reporter
-                .get_current_report()
-                .unwrap()
-                .midpoint_price
+            "Midpoint: Binance = {:.4}, Coinbase = {:.4}, Diff = {:.4}bp",
+            binance_midpoint,
+            coinbase_midpoint,
+            (coinbase_midpoint - binance_midpoint) / binance_midpoint * 10_000.0,
         );
     }
 }

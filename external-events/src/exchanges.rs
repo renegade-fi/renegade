@@ -2,7 +2,7 @@ use chrono::DateTime;
 use hmac_sha256::HMAC;
 use ring_channel::{ring_channel, RingReceiver, RingSender};
 use serde_json::{self, json, Value};
-use std::num::NonZeroUsize;
+use std::{collections::HashMap, num::NonZeroUsize};
 use std::{
     env,
     net::TcpStream,
@@ -26,7 +26,7 @@ type WebSocket = WebSocketGeneric<MaybeTlsStream<TcpStream>>;
 /// The type of exchange. Note that `Exchange` is the abstract enum for all exchanges that are
 /// supported, whereas the `ExchangeConnection` is the actual instantiation of a websocket price
 /// stream from an `Exchange`.
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Exchange {
     Binance,
     Coinbase,
@@ -65,7 +65,7 @@ impl ExchangeConnection {
         }
 
         // Get initial ExchangeHandler state and include in a new ExchangeConnection.
-        let exchange_connection = match exchange {
+        let mut exchange_connection = match exchange {
             Exchange::Binance => ExchangeConnection {
                 binance_handler: Some(BinanceHandler::new()),
                 coinbase_handler: None,
@@ -86,7 +86,7 @@ impl ExchangeConnection {
     }
 
     fn handle_exchange_message(
-        &self,
+        &mut self,
         price_report_sender: &mut RingSender<PriceReport>,
         message: Message,
     ) {
@@ -94,9 +94,9 @@ impl ExchangeConnection {
         let message_json = serde_json::from_str(&message_str).unwrap();
 
         let price_report = {
-            if let Some(binance_handler) = self.binance_handler {
+            if let Some(binance_handler) = &mut self.binance_handler {
                 binance_handler.handle_exchange_message(message_json)
-            } else if let Some(coinbase_handler) = self.coinbase_handler {
+            } else if let Some(coinbase_handler) = &mut self.coinbase_handler {
                 coinbase_handler.handle_exchange_message(message_json)
             } else {
                 panic!("Unreachable.");
@@ -111,29 +111,30 @@ impl ExchangeConnection {
 
 trait ExchangeHandlerApi {
     const WSS_URL: &'static str;
-    fn websocket_subscribe(socket: &mut WebSocket) -> Result<(), ReporterError>;
     fn new() -> Self;
+    /// Send any initial subscription messages to the websocket after it has been created.
+    fn websocket_subscribe(socket: &mut WebSocket) -> Result<(), ReporterError>;
     /// Handle an inbound message from the exchange by parsing it into a PriceReport and publishing
     /// the PriceReport into the ring buffer channel.
-    fn handle_exchange_message(&self, message_json: Value) -> Option<PriceReport>;
+    fn handle_exchange_message(&mut self, message_json: Value) -> Option<PriceReport>;
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct BinanceHandler {}
 impl ExchangeHandlerApi for BinanceHandler {
     const WSS_URL: &'static str = "wss://stream.binance.com:443/ws/ethbusd@bookTicker";
-
-    fn websocket_subscribe(_socket: &mut WebSocket) -> Result<(), ReporterError> {
-        // Binance begins streaming prices immediately; no initial subscribe message needed.
-        Ok(())
-    }
 
     fn new() -> Self {
         // BinanceHandler has no internal state.
         Self {}
     }
 
-    fn handle_exchange_message(&self, message_json: Value) -> Option<PriceReport> {
+    fn websocket_subscribe(_socket: &mut WebSocket) -> Result<(), ReporterError> {
+        // Binance begins streaming prices immediately; no initial subscribe message needed.
+        Ok(())
+    }
+
+    fn handle_exchange_message(&mut self, message_json: Value) -> Option<PriceReport> {
         let best_bid: f32 = match message_json["b"].as_str() {
             None => {
                 return None;
@@ -154,10 +155,22 @@ impl ExchangeHandlerApi for BinanceHandler {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct CoinbaseHandler {}
+#[derive(Clone, Debug)]
+struct CoinbaseHandler {
+    // Note: The reason we use String's for price_level is because using f32 as a key produces
+    // collision issues.
+    order_book_bids: HashMap<String, f32>,
+    order_book_offers: HashMap<String, f32>,
+}
 impl ExchangeHandlerApi for CoinbaseHandler {
     const WSS_URL: &'static str = "wss://advanced-trade-ws.coinbase.com";
+
+    fn new() -> Self {
+        Self {
+            order_book_bids: HashMap::new(),
+            order_book_offers: HashMap::new(),
+        }
+    }
 
     fn websocket_subscribe(socket: &mut WebSocket) -> Result<(), ReporterError> {
         let product_ids = "ETH-USD";
@@ -183,12 +196,8 @@ impl ExchangeHandlerApi for CoinbaseHandler {
         Ok(())
     }
 
-    fn new() -> Self {
-        Self {}
-    }
-
-    fn handle_exchange_message(&self, message_json: Value) -> Option<PriceReport> {
-        // Extract the list of events and compute the best bid and offer.
+    fn handle_exchange_message(&mut self, message_json: Value) -> Option<PriceReport> {
+        // Extract the list of events and update the order book.
         let coinbase_events = match &message_json["events"] {
             Value::Array(coinbase_events) => match &coinbase_events[0]["updates"] {
                 Value::Array(coinbase_events) => coinbase_events,
@@ -200,29 +209,50 @@ impl ExchangeHandlerApi for CoinbaseHandler {
                 return None;
             }
         };
-        let mut best_bid: f32 = 0.0;
-        let mut best_offer: f32 = f32::INFINITY;
         for coinbase_event in coinbase_events {
-            let (price_level, side) =
-                match (&coinbase_event["price_level"], &coinbase_event["side"]) {
-                    (Value::String(price_level), Value::String(side)) => {
-                        (price_level.parse::<f32>().unwrap(), side)
-                    }
-                    _ => {
-                        return None;
-                    }
-                };
-            match &side[..] {
-                "offer" => {
-                    best_offer = f32::min(best_offer, price_level);
+            let (price_level, new_quantity, side) = match (
+                &coinbase_event["price_level"],
+                &coinbase_event["new_quantity"],
+                &coinbase_event["side"],
+            ) {
+                (Value::String(price_level), Value::String(new_quantity), Value::String(side)) => (
+                    price_level.to_string(),
+                    new_quantity.parse::<f32>().unwrap(),
+                    side,
+                ),
+                _ => {
+                    return None;
                 }
+            };
+            match &side[..] {
                 "bid" => {
-                    best_bid = f32::max(best_bid, price_level);
+                    self.order_book_bids
+                        .insert(price_level.clone(), new_quantity);
+                    if new_quantity == 0.0 {
+                        self.order_book_bids.remove(&price_level);
+                    }
+                }
+                "offer" => {
+                    self.order_book_offers
+                        .insert(price_level.clone(), new_quantity);
+                    if new_quantity == 0.0 {
+                        self.order_book_offers.remove(&price_level);
+                    }
                 }
                 _ => {
                     return None;
                 }
             }
+        }
+
+        // Given the new order book, compute the best bid and offer.
+        let mut best_bid: f32 = 0.0;
+        let mut best_offer: f32 = f32::INFINITY;
+        for (price_level, _quantity) in &self.order_book_bids {
+            best_bid = f32::max(best_bid, price_level.parse::<f32>().unwrap());
+        }
+        for (price_level, _quantity) in &self.order_book_offers {
+            best_offer = f32::min(best_offer, price_level.parse::<f32>().unwrap());
         }
 
         let reported_timestamp =
