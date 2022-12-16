@@ -6,7 +6,12 @@ use std::{cell::RefCell, rc::Rc, thread};
 use circuits::{
     mpc::SharedFabric,
     mpc_circuits::r#match::compute_match,
+    multiprover_prove,
     types::{balance::Balance, fee::Fee, order::Order, r#match::AuthenticatedMatchResult},
+    verify_collaborative_proof,
+    zk_circuits::valid_match_mpc::{
+        ValidMatchMpcCircuit, ValidMatchMpcStatement, ValidMatchMpcWitness,
+    },
     Allocate, Open,
 };
 use curve25519_dalek::scalar::Scalar;
@@ -50,9 +55,9 @@ impl HandshakeManager {
             Self::execute_match_impl(party_id, handshake_state.to_owned(), mpc_net)
         });
 
-        block_on(join_handle)
-            .unwrap()
-            .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
+        block_on(join_handle).unwrap()?;
+        println!("Finished match!");
+
         Ok(())
     }
 
@@ -79,13 +84,23 @@ impl HandshakeManager {
         let shared_fabric = SharedFabric::new(fabric);
 
         // Run the mpc to get a match result
-        let match_res = Self::execute_match_mpc(&handshake_state.order, shared_fabric)?;
+        let match_res = Self::execute_match_mpc(&handshake_state.order, shared_fabric.clone())?;
         let match_res_open = match_res
+            .clone()
             .open_and_authenticate()
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
         println!("Got MPC res: {:?}", match_res_open);
-        Ok(())
+
+        let statement = handshake_state.build_valid_match_statement(party_id);
+        Self::prove_valid_match(
+            handshake_state.order,
+            handshake_state.balance,
+            handshake_state.fee,
+            statement,
+            match_res,
+            shared_fabric,
+        )
     }
 
     /// Execute the match MPC over the provisioned QUIC stream
@@ -108,12 +123,45 @@ impl HandshakeManager {
     #[allow(unused)]
     #[allow(unused_variables)]
     fn prove_valid_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-        order: &Order,
-        balance: &Balance,
-        fee: &Fee,
+        order: Order,
+        balance: Balance,
+        fee: Fee,
+        statement: ValidMatchMpcStatement,
         match_res: AuthenticatedMatchResult<N, S>,
+        fabric: SharedFabric<N, S>,
     ) -> Result<(), HandshakeManagerError> {
-        // Build the statement of VALID MATCH MPC
-        unimplemented!("")
+        println!("proving...");
+
+        // Build a witness to the VALID MATCH MPC statement
+        let witness = ValidMatchMpcWitness {
+            my_order: order,
+            my_balance: balance,
+            my_fee: fee,
+            match_res,
+        };
+
+        // Prove the statement
+        let (witness_commitment, proof) = multiprover_prove::<
+            '_,
+            N,
+            S,
+            ValidMatchMpcCircuit<'_, N, S>,
+        >(witness, statement.clone(), fabric)
+        .map_err(|err| HandshakeManagerError::Multiprover(err.to_string()))?;
+
+        // Open the proof and verify it
+        let opened_commit = witness_commitment
+            .open_and_authenticate()
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let opened_proof = proof
+            .open()
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+
+        verify_collaborative_proof::<'_, N, S, ValidMatchMpcCircuit<'_, N, S>>(
+            statement,
+            opened_commit,
+            opened_proof,
+        )
+        .map_err(|err| HandshakeManagerError::VerificationError(err.to_string()))
     }
 }

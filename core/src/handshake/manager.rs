@@ -396,7 +396,6 @@ impl HandshakeManager {
         handshake_cache: SharedHandshakeCache<OrderIdentifier>,
         global_state: &RelayerState,
     ) -> Option<(OrderIdentifier, Order, Balance, Fee)> {
-        println!("Choosing balance and fee");
         let mut rng = thread_rng();
         let mut proposed_order = None;
 
