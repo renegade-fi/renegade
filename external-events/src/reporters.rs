@@ -1,8 +1,11 @@
-use ring_channel::{ring_channel, RingReceiver};
+use ring_channel::RingReceiver;
 use serde::{Deserialize, Serialize};
-use std::num::NonZeroUsize;
 
-use crate::{errors::ReporterError, exchanges::Exchange, tokens::Token};
+use crate::{
+    errors::ReporterError,
+    exchanges::{Exchange, ExchangeConnection},
+    tokens::Token,
+};
 
 /// The PriceReport is the universal format for price feeds from all external exchanges.
 #[derive(Clone, Debug, Default, Copy, Serialize, Deserialize)]
@@ -36,9 +39,7 @@ impl PriceReporter {
         base_token: Token,
         exchange: Exchange,
     ) -> Result<Self, ReporterError> {
-        let (mut price_report_sender, price_report_receiver) =
-            ring_channel::<PriceReport>(NonZeroUsize::new(1).unwrap());
-        exchange.setup_exchange_connection(price_report_sender)?;
+        let price_report_receiver = ExchangeConnection::new(exchange)?;
         Ok(Self {
             exchange,
             quote_token,
