@@ -18,6 +18,8 @@ fn main() {
         PriceReporter::new(Token::ETH, Token::USDC, Exchange::Binance).unwrap();
     let mut coinbase_reporter =
         PriceReporter::new(Token::ETH, Token::USDC, Exchange::Coinbase).unwrap();
+    let mut kraken_reporter =
+        PriceReporter::new(Token::ETH, Token::USDC, Exchange::Kraken).unwrap();
     loop {
         thread::sleep(time::Duration::from_millis(100));
         let binance_midpoint = binance_reporter
@@ -28,11 +30,10 @@ fn main() {
             .get_current_report()
             .unwrap()
             .midpoint_price;
+        let kraken_midpoint = kraken_reporter.get_current_report().unwrap().midpoint_price;
         println!(
-            "Midpoint: Binance = {:.4}, Coinbase = {:.4}, Diff = {:.4}bp",
-            binance_midpoint,
-            coinbase_midpoint,
-            (coinbase_midpoint - binance_midpoint) / binance_midpoint * 10_000.0,
+            "B = {:.4}, C = {:.4}, K = {:.4}",
+            binance_midpoint, coinbase_midpoint, kraken_midpoint,
         );
     }
 }
