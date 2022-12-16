@@ -40,6 +40,14 @@ pub enum HandshakeExecutionJob {
         /// The net that was setup for the party
         net: QuicTwoPartyNet,
     },
+    /// Indicates that a cluster replica has initiated a match on the given order pair.
+    /// The local peer should not schedule this order pair for a match for some duration
+    PeerMatchInProgress {
+        /// The first of the orders in the pair
+        order1: OrderIdentifier,
+        /// The second of the orderes in the pair
+        order2: OrderIdentifier,
+    },
     /// Update the handshake cache with an entry from an order pair that a cluster
     /// peer has executed
     CacheEntry {

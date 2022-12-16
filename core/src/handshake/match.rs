@@ -108,6 +108,7 @@ impl HandshakeManager {
         local_order: &Order,
         fabric: SharedFabric<N, S>,
     ) -> Result<AuthenticatedMatchResult<N, S>, HandshakeManagerError> {
+        // Allocate the orders in the MPC fabric
         let shared_order1 = local_order
             .allocate(0 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
@@ -115,6 +116,7 @@ impl HandshakeManager {
             .allocate(1 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
+        // Run the circuit
         compute_match(&shared_order1, &shared_order2, fabric)
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))
     }
