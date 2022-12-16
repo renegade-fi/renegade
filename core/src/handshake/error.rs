@@ -5,11 +5,15 @@ use std::fmt::Display;
 /// The core error type for the handshake manager
 #[derive(Clone, Debug)]
 pub enum HandshakeManagerError {
+    /// An error while collaboratively proving a statement
+    Multiprover(String),
     /// An invalid request ID was passed in a message; i.e. the request ID is not known
     /// to the local state machine
     InvalidRequest(String),
     /// Error in MPC networking
     MpcNetwork(String),
+    /// Error verifying a proof
+    VerificationError(String),
     /// Error sending a message to the network
     SendMessage(String),
     /// Error while setting up the handshake manager

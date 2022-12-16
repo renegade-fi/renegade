@@ -160,7 +160,7 @@ impl CommitVerifier for CommittedMatchResult {
 
 /// Represents a single match on a pair of overlapping orders
 /// with values authenticated in an MPC network
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct AuthenticatedMatchResult<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The mint of the order token in the asset pair being matched
     pub quote_mint: AuthenticatedScalar<N, S>,
@@ -183,6 +183,23 @@ pub struct AuthenticatedMatchResult<N: MpcNetwork + Send, S: SharedValueSource<S
     /// The index of the order (0 or 1) that has the minimum amount, i.e. the order that is
     /// completely filled by this match
     pub min_amount_order_index: AuthenticatedScalar<N, S>,
+}
+
+/// A custom clone implementation; necessary because the MpcNetwork will not generally implement
+/// clone
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for AuthenticatedMatchResult<N, S> {
+    fn clone(&self) -> Self {
+        Self {
+            quote_mint: self.quote_mint.clone(),
+            base_mint: self.base_mint.clone(),
+            quote_amount: self.quote_amount.clone(),
+            base_amount: self.base_amount.clone(),
+            direction: self.direction.clone(),
+            execution_price: self.execution_price.clone(),
+            max_minus_min_amount: self.max_minus_min_amount.clone(),
+            min_amount_order_index: self.min_amount_order_index.clone(),
+        }
+    }
 }
 
 /// Serialization to a vector of authenticated scalars

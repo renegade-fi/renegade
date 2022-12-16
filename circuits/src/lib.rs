@@ -8,10 +8,12 @@
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use errors::{MpcError, ProverError, VerifierError};
 use itertools::Itertools;
+use merlin::Transcript;
 use mpc::SharedFabric;
 use mpc_bulletproof::{
     r1cs::{Prover, R1CSProof, Verifier},
     r1cs_mpc::{MpcProver, SharedR1CSProof},
+    PedersenGens,
 };
 use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto, beaver::SharedValueSource,
@@ -32,6 +34,8 @@ pub mod zk_gadgets;
 pub(crate) const SCALAR_MAX_BITS: usize = 253;
 /// The highest possible set bit for a positive scalar
 pub(crate) const POSITIVE_SCALAR_MAX_BITS: usize = 251;
+/// The seed for a fiat-shamir transcript
+pub(crate) const TRANSCRIPT_SEED: &str = "merlin seed";
 
 /**
  * Helpers
@@ -47,6 +51,44 @@ pub fn scalar_2_to_m(m: usize) -> Scalar {
     } else {
         Scalar::from(1u128 << m)
     }
+}
+
+/// Abstracts over the flow of collaboratively proving a generic circuit
+pub fn multiprover_prove<'a, N, S, C>(
+    witness: C::Witness,
+    statement: C::Statement,
+    fabric: SharedFabric<N, S>,
+) -> Result<(C::WitnessCommitment, SharedR1CSProof<N, S>), ProverError>
+where
+    N: MpcNetwork + Send,
+    S: SharedValueSource<Scalar>,
+    C: MultiProverCircuit<'a, N, S>,
+{
+    let mut transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
+    let pc_gens = PedersenGens::default();
+    let prover = MpcProver::new_with_fabric(fabric.0.clone(), &mut transcript, &pc_gens);
+
+    // Prove the statement
+    C::prove(witness, statement.clone(), prover, fabric)
+}
+
+/// Abstracts over the flow of verifying a circuit
+pub fn verify_collaborative_proof<'a, N, S, C>(
+    statement: C::Statement,
+    witness_commitment: <C::WitnessCommitment as Open>::OpenOutput,
+    proof: R1CSProof,
+) -> Result<(), VerifierError>
+where
+    C: MultiProverCircuit<'a, N, S>,
+    N: MpcNetwork + Send,
+    S: SharedValueSource<Scalar>,
+{
+    // Verify the statement with a fresh transcript
+    let mut verifier_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
+    let pc_gens = PedersenGens::default();
+    let verifier = Verifier::new(&pc_gens, &mut verifier_transcript);
+
+    C::verify(witness_commitment, statement, proof, verifier)
 }
 
 /**
