@@ -8,7 +8,6 @@ use circuits::types::{
 };
 use crossbeam::channel::Receiver;
 use crypto::hash::poseidon_hash_default_params;
-use futures::executor::block_on;
 
 use portpicker::pick_unused_port;
 use rand::{
@@ -21,7 +20,7 @@ use std::{
     thread::{self, JoinHandle},
     time::Duration,
 };
-use tokio::{runtime::Builder as TokioBuilder, sync::mpsc::UnboundedSender};
+use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
 use crate::{
@@ -200,30 +199,8 @@ impl HandshakeManager {
                             ))
                         })?;
 
-                // Build a tokio runtime in the current thread for the MPC to run inside of
-                // This is necessary to allow quinn access to a Tokio reactor at runtime
-                let tid = thread::current().id();
-                let tokio_runtime = TokioBuilder::new_multi_thread()
-                    .thread_name(format!("handshake-mpc-{:?}", tid))
-                    .enable_io()
-                    .enable_time()
-                    .build()
-                    .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
-
-                // Wrap the current thread's execution in a Tokio blocking thread
-                let join_handle = tokio_runtime.spawn_blocking(move || {
-                    Self::execute_match_mpc(
-                        party_id,
-                        order_state.order,
-                        order_state.balance,
-                        order_state.fee,
-                        net,
-                    )
-                });
-
-                block_on(join_handle)
-                    .unwrap()
-                    .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
+                // Run the MPC match process
+                Self::execute_match(party_id, order_state, net)?;
 
                 // Record the match in the cache
                 Self::record_completed_match(
