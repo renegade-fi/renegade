@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ark-ff = { git = "https://github.com/arkworks-rs/algebra" }
-ark-sponge = { git = "https://github.com/arkworks-rs/sponge" }
+ark-ff = { git = "https://github.com/arkworks-rs/algebra", rev = "6e3e804" }
+ark-sponge = { git = "https://github.com/arkworks-rs/sponge", rev = "2d5f91b" }
 bitvec = "1.0"
 crypto = { path = "../crypto" }
 curve25519-dalek = "2"
@@ -19,7 +19,7 @@ rand_core = "0.5"
 serde = { version = "1.0.139", features = ["serde_derive"] }
 
 [dev-dependencies]
-ark-crypto-primitives = { git = "https://github.com/arkworks-rs/crypto-primitives" }
+ark-crypto-primitives = { git = "https://github.com/arkworks-rs/crypto-primitives", rev = "bd44745" }
 clap = { version = "4.0", features = ["derive"] }
 colored = "2"
 ctor = "0.1"
@@ -39,11 +39,11 @@ harness = false
 # tests outside the context of a workspace (i.e. as a standalone crate), so these
 # crate patches are duplicated in the crate-local Cargo.toml 
 [patch.crates-io]
-ark-std = { git = "https://github.com/arkworks-rs/std" }
-ark-ff = { git = "https://github.com/arkworks-rs/algebra" }
-ark-ec = { git = "https://github.com/arkworks-rs/algebra" }
-ark-serialize = { git = "https://github.com/arkworks-rs/algebra" }
+ark-std = { git = "https://github.com/arkworks-rs/std", rev = "7019830" }
+ark-ff = { git = "https://github.com/arkworks-rs/algebra", rev = "6e3e804" }
+ark-ec = { git = "https://github.com/arkworks-rs/algebra", rev = "6e3e804" }
+ark-serialize = { git = "https://github.com/arkworks-rs/algebra", rev = "6e3e804" }
 ark-snark = { git = "git+https://github.com/arkworks-rs/snark", rev = "f6df807" }
-ark-sponge = { git = "https://github.com/arkworks-rs/sponge" }
-ark-r1cs-std = { git = "https://github.com/arkworks-rs/r1cs-std" }
+ark-sponge = { git = "https://github.com/arkworks-rs/sponge", rev = "2d5f91b" }
+ark-r1cs-std = { git = "https://github.com/arkworks-rs/r1cs-std", rev = "38b0057" }
 ark-relations =  { git = "https://github.com/arkworks-rs/snark", rev = "f6df807" }
