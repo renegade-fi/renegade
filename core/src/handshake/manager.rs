@@ -129,6 +129,7 @@ impl HandshakeManager {
         network_channel: UnboundedSender<GossipOutbound>,
     ) -> Result<(), HandshakeManagerError> {
         match job {
+            // Indicates that a peer has sent a message during the course of a handshake
             HandshakeExecutionJob::ProcessHandshakeMessage {
                 request_id,
                 peer_id,
@@ -171,6 +172,8 @@ impl HandshakeManager {
                 Ok(())
             }
 
+            // A peer has completed a match on the given order pair; cache this match pair as completed
+            // and do not schedule the pair going forward
             HandshakeExecutionJob::CacheEntry { order1, order2 } => {
                 handshake_cache
                     .write()
@@ -180,6 +183,13 @@ impl HandshakeManager {
                 Ok(())
             }
 
+            // A peer has initiated a match on the given order pair; place this order pair in an invisibility
+            // window, i.e. do not initiate matches on this pair
+            #[allow(unused)]
+            HandshakeExecutionJob::PeerMatchInProgress { order1, order2 } => Ok(()),
+
+            // Indicates that the network manager has setup a network connection for a handshake to execute over
+            // the local peer should connect and go forward with the MPC
             HandshakeExecutionJob::MpcNetSetup {
                 request_id,
                 party_id,
@@ -283,7 +293,8 @@ impl HandshakeManager {
                         randomness_hash: Some(randomness_hash),
                     }))
                 } else {
-                    // Send back a cache feedback message so that the peer may cache this order pair as completed
+                    // Send an explicit empty message back so that the remote peer may cache their order as being
+                    // already cached with all of the local peer's orders
                     Ok(Some(HandshakeMessage::ProposeMatchCandidate {
                         peer_id: *global_state.read_peer_id(),
                         peer_order,
@@ -491,7 +502,9 @@ impl HandshakeManager {
         // Update the state of the handshake in the completed state
         handshake_state_index.completed(&request_id);
 
-        // Send a message to cluster peers indicating the handshake has finished
+        // Send a message to cluster peers indicating that the local peer has completed a match
+        // Cluster peers should cache the matched order pair as completed and not initiate matches
+        // on this pair going forward
         let locked_cluster_id = global_state.read_cluster_id();
         network_channel
             .send(GossipOutbound::Pubsub {

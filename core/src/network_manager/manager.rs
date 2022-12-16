@@ -554,6 +554,14 @@ impl NetworkManager {
                     ClusterManagementMessage::CacheSync(order1, order2) => handshake_work_queue
                         .send(HandshakeExecutionJob::CacheEntry { order1, order2 })
                         .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?,
+
+                    // Forward the match in progress message to the handshake manager so that it can avoid
+                    // scheduling a duplicate handshake for the given order pair
+                    ClusterManagementMessage::MatchInProgress(order1, order2) => {
+                        handshake_work_queue
+                            .send(HandshakeExecutionJob::PeerMatchInProgress { order1, order2 })
+                            .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?
+                    }
                 }
             }
         }

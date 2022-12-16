@@ -23,6 +23,13 @@ pub enum ClusterManagementMessage {
     /// A message indicating that the publisher has replicated the wallets contained
     /// in the message body
     Replicated(ReplicatedMessage),
+    /// A message to cluster peers indicating that the publisher has begun a handshake
+    /// on the given order pair
+    ///
+    /// Recipients should place this order pair in an invisibility window and not schedule
+    /// it for handshake until the invisibility period has elapsed and either resulted in
+    /// a match or an error
+    MatchInProgress(OrderIdentifier, OrderIdentifier),
     /// A cache synchronization update wherein the sender informs its cluster peers that
     /// it has run the match computation on a given pair of orders
     ///
