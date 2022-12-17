@@ -12,7 +12,7 @@ use std::{
 use tungstenite::{connect, stream::MaybeTlsStream, Message, WebSocket as WebSocketGeneric};
 use url::Url;
 
-use crate::{errors::ReporterError, reporters::PriceReport};
+use crate::{errors::ReporterError, reporters::PriceReport, tokens::Token};
 
 fn get_current_time() -> u128 {
     SystemTime::now()
@@ -26,14 +26,15 @@ type WebSocket = WebSocketGeneric<MaybeTlsStream<TcpStream>>;
 /// The type of exchange. Note that `Exchange` is the abstract enum for all exchanges that are
 /// supported, whereas the `ExchangeConnection` is the actual instantiation of a websocket price
 /// stream from an `Exchange`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Exchange {
     Binance,
     Coinbase,
     Kraken,
     // Okx,
-    // KuCoin,
+    // Kucoin,
     // Huobi,
+    // Bybit,
     // Uniswap,
 }
 
@@ -41,12 +42,19 @@ pub enum Exchange {
 /// `ExchangeConnection::new(exchange: Exchange)` only returns a ring buffer channel receiver; the
 /// ExchangeConnection is never directly accessed, and all data is reported only via this receiver.
 pub struct ExchangeConnection {
+    quote_token: Token,
+    base_token: Token,
+    exchange: Exchange,
     binance_handler: Option<BinanceHandler>,
     coinbase_handler: Option<CoinbaseHandler>,
     kraken_handler: Option<KrakenHandler>,
 }
 impl ExchangeConnection {
-    pub fn new(exchange: Exchange) -> Result<RingReceiver<PriceReport>, ReporterError> {
+    pub fn new(
+        quote_token: Token,
+        base_token: Token,
+        exchange: Exchange,
+    ) -> Result<RingReceiver<PriceReport>, ReporterError> {
         // Create the ring buffer.
         let (mut price_report_sender, price_report_receiver) =
             ring_channel::<PriceReport>(NonZeroUsize::new(1).unwrap());
@@ -70,16 +78,25 @@ impl ExchangeConnection {
         // Get initial ExchangeHandler state and include in a new ExchangeConnection.
         let mut exchange_connection = match exchange {
             Exchange::Binance => ExchangeConnection {
+                quote_token,
+                base_token,
+                exchange,
                 binance_handler: Some(BinanceHandler::new()),
                 coinbase_handler: None,
                 kraken_handler: None,
             },
             Exchange::Coinbase => ExchangeConnection {
+                quote_token,
+                base_token,
+                exchange,
                 binance_handler: None,
                 coinbase_handler: Some(CoinbaseHandler::new()),
                 kraken_handler: None,
             },
             Exchange::Kraken => ExchangeConnection {
+                quote_token,
+                base_token,
+                exchange,
                 binance_handler: None,
                 coinbase_handler: None,
                 kraken_handler: Some(KrakenHandler::new()),
@@ -115,7 +132,8 @@ impl ExchangeConnection {
             }
         };
 
-        if let Some(price_report) = price_report {
+        if let Some(mut price_report) = price_report {
+            price_report.local_timestamp = get_current_time();
             price_report_sender.send(price_report).unwrap();
         }
     }
@@ -162,7 +180,7 @@ impl ExchangeHandlerApi for BinanceHandler {
         Some(PriceReport {
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: None,
-            local_timestamp: get_current_time(),
+            local_timestamp: Default::default(),
         })
     }
 }
@@ -278,7 +296,7 @@ impl ExchangeHandlerApi for CoinbaseHandler {
         Some(PriceReport {
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: Some(reported_timestamp.try_into().unwrap()),
-            local_timestamp: get_current_time(),
+            local_timestamp: Default::default(),
         })
     }
 }
@@ -330,7 +348,7 @@ impl ExchangeHandlerApi for KrakenHandler {
         Some(PriceReport {
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: Some((reported_timestamp_seconds * 1000.0) as u128),
-            local_timestamp: get_current_time(),
+            local_timestamp: Default::default(),
         })
     }
 }

@@ -1,5 +1,6 @@
-use ring_channel::RingReceiver;
-use serde::{Deserialize, Serialize};
+use ring_channel::{ring_channel, RingReceiver};
+use stats::median;
+use std::{collections::HashMap, num::NonZeroUsize, thread};
 
 use crate::{
     errors::ReporterError,
@@ -8,7 +9,7 @@ use crate::{
 };
 
 /// The PriceReport is the universal format for price feeds from all external exchanges.
-#[derive(Clone, Debug, Default, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct PriceReport {
     /// The midpoint price of the exchange's order book.
     pub midpoint_price: f32,
@@ -18,51 +19,111 @@ pub struct PriceReport {
     pub reported_timestamp: Option<u128>,
 }
 
-/// The PriceReporter is responsible for opening a websocket connection to the specified exchange,
-/// translating messages into PriceReport's, and reporting recent prices.
+/// The PriceReporter is responsible for opening websocket connection(s) to the specified
+/// exchange(s), translating messages into PriceReport's, and reporting recent prices.
 #[derive(Clone, Debug)]
 pub struct PriceReporter {
-    pub exchange: Exchange,
     pub quote_token: Token,
     pub base_token: Token,
-    /// Ring buffer of PriceReports, for cross-thread communication between websocket stream and
-    /// price report consumer(s).
-    price_report_receiver: RingReceiver<PriceReport>,
-    /// The current PriceReport.
-    price_report_latest: PriceReport,
+    pub exchanges: Vec<Exchange>,
+    /// Ring buffer of the median of all PriceReports.
+    median_price_report_receiver: RingReceiver<PriceReport>,
+    /// The current median PriceReport.
+    median_price_report_latest: PriceReport,
 }
-
 impl PriceReporter {
     /// Given a token pair and exchange identifier, create a new PriceReporter.
     pub fn new(
         quote_token: Token,
         base_token: Token,
-        exchange: Exchange,
+        exchanges: Option<Vec<Exchange>>,
     ) -> Result<Self, ReporterError> {
-        let price_report_receiver = ExchangeConnection::new(exchange)?;
+        // If the given exchanges were None, then use all exchanges by default.
+        let exchanges = match exchanges {
+            Some(exchanges) => exchanges,
+            None => vec![Exchange::Binance, Exchange::Coinbase, Exchange::Kraken],
+        };
+
+        // Create the RingBuffer for the aggregate stream of all updates.
+        let (mut all_price_reports_sender, mut all_price_reports_receiver) =
+            ring_channel::<(PriceReport, Exchange)>(NonZeroUsize::new(1).unwrap());
+
+        // Pipe all individual price_report_receiver into the aggregate all_price_reports_sender
+        for exchange in exchanges.to_vec() {
+            let mut price_report_receiver =
+                ExchangeConnection::new(quote_token, base_token, exchange).unwrap();
+            let mut all_price_reports_sender_clone = all_price_reports_sender.clone();
+            thread::spawn(move || loop {
+                let price_report_recv = price_report_receiver.recv().unwrap();
+                all_price_reports_sender_clone
+                    .send((price_report_recv, exchange))
+                    .unwrap();
+            });
+        }
+
+        // Create the RingBuffer for the median price (to be consumed by end-users).
+        let (mut median_price_report_sender, median_price_report_receiver) =
+            ring_channel::<PriceReport>(NonZeroUsize::new(1).unwrap());
+
+        // Process the aggregate stream and send the aggregate median to the
+        // median_price_report_sender.
+        thread::spawn(move || {
+            let mut latest_price_reports = HashMap::<Exchange, PriceReport>::new();
+            loop {
+                // Receive a new PriceReport from the aggregate stream.
+                let (price_report_recv, exchange_recv) = all_price_reports_receiver.recv().unwrap();
+                latest_price_reports.insert(exchange_recv, price_report_recv);
+
+                // Compute a new median and send it to the median_price_report_sender buffer.
+                let median_midpoint_price = median(
+                    latest_price_reports
+                        .values()
+                        .map(|price_report| price_report.midpoint_price),
+                )
+                .unwrap();
+                let median_local_timestamp = median(
+                    latest_price_reports
+                        .values()
+                        .map(|price_report| price_report.local_timestamp),
+                )
+                .unwrap();
+                let median_reported_timestamp_unwrapped = median(
+                    latest_price_reports
+                        .values()
+                        .map(|price_report| price_report.reported_timestamp)
+                        .filter(|reported_timestamp| reported_timestamp.is_some())
+                        .map(|reported_timestamp| reported_timestamp.unwrap()),
+                );
+                let median_reported_timestamp = match median_reported_timestamp_unwrapped {
+                    Some(median_reported_timestamp) => Some(median_reported_timestamp as u128),
+                    None => None,
+                };
+                median_price_report_sender
+                    .send(PriceReport {
+                        midpoint_price: median_midpoint_price as f32,
+                        local_timestamp: median_local_timestamp as u128,
+                        reported_timestamp: median_reported_timestamp,
+                    })
+                    .unwrap();
+            }
+        });
+
         Ok(Self {
-            exchange,
             quote_token,
             base_token,
-            price_report_receiver,
-            price_report_latest: PriceReport::default(),
+            exchanges,
+            median_price_report_receiver,
+            median_price_report_latest: PriceReport::default(),
         })
     }
 
-    /// Nonblocking report of the latest price. Tries to read from the ring buffer; if a new
+    /// Nonblocking report of the latest median price. Tries to read from the ring buffer; if a new
     /// message exists, update the current price_report.
     pub fn get_current_report(&mut self) -> Result<PriceReport, ReporterError> {
-        let price_report_recv = self.price_report_receiver.try_recv();
-        if price_report_recv.is_ok() {
-            self.price_report_latest = price_report_recv.unwrap();
+        let median_price_report_recv = self.median_price_report_receiver.try_recv();
+        if median_price_report_recv.is_ok() {
+            self.median_price_report_latest = median_price_report_recv.unwrap();
         }
-        Ok(self.price_report_latest)
+        Ok(self.median_price_report_latest)
     }
-}
-
-/// The MedianPriceReporter is reponsible for creating PriceReporter's for each individual
-/// supported exchange, and aggregating prices into a global median.
-pub struct MedianPriceReporter {
-    pub quote_token: Token,
-    pub base_token: Token,
 }
