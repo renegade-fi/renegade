@@ -25,6 +25,7 @@ use tokio::{select, sync::mpsc};
 
 use crate::{
     api::gossip::GossipOutbound,
+    api_server::{server::ApiServer, worker::ApiServerConfig},
     gossip::server::GossipServer,
     handshake::manager::HandshakeManager,
     network_manager::manager::NetworkManager,
@@ -136,11 +137,23 @@ async fn main() -> Result<(), CoordinatorError> {
         mpsc::channel(1 /* buffer size */);
     watch_worker::<HandshakeManager>(&mut handshake_manager, handshake_failure_sender);
 
+    // Start the API server
+    let (api_cancel_sender, api_cancel_receiver) = channel::bounded(1 /* capacity */);
+    let mut api_server = ApiServer::new(ApiServerConfig {
+        http_port: 3000,
+        cancel_channel: api_cancel_receiver,
+    })
+    .expect("failed to build api server");
+    api_server.start().expect("failed to start api server");
+    let (api_failure_sender, mut api_failure_receiver) = mpsc::channel(1 /* buffer_size */);
+    watch_worker::<ApiServer>(&mut api_server, api_failure_sender);
+
     // Hold onto copies of the cancel channels for use at teardown
     let cancel_channels = vec![
         network_cancel_sender.clone(),
         gossip_cancel_sender.clone(),
         handshake_cancel_sender.clone(),
+        api_cancel_sender.clone(),
     ];
 
     // Await module termination, and send a cancel signal for any modules that
@@ -162,6 +175,11 @@ async fn main() -> Result<(), CoordinatorError> {
                     handshake_cancel_sender.send(())
                         .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
                     handshake_manager = recover_worker(handshake_manager)?;
+                }
+                _ = api_failure_receiver.recv() => {
+                    api_cancel_sender.send(())
+                        .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
+                    api_server = recover_worker(api_server)?;
                 }
             };
         }
