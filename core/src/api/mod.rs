@@ -5,3 +5,4 @@ pub mod cluster_management;
 pub mod gossip;
 pub mod handshake;
 pub mod hearbeat;
+pub mod http;

@@ -66,7 +66,7 @@ impl Worker for ApiServer {
                 Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
                     let global_state = global_state.clone();
                     async move {
-                        Ok::<_, Error>(match Self::handle_http_req(req, &global_state) {
+                        Ok::<_, Error>(match Self::handle_http_req(req, &global_state).await {
                             Ok(resp) => resp,
                             Err(err) => Response::builder()
                                 .status(StatusCode::INTERNAL_SERVER_ERROR)
