@@ -6,6 +6,7 @@ use std::{
     thread::{self, JoinHandle},
 };
 
+use crossbeam::channel::Receiver;
 use futures::executor::block_on;
 use hyper::{
     server::conn::AddrStream,
@@ -26,6 +27,8 @@ const HTTP_SERVER_NUM_THREADS: usize = 1;
 pub struct ApiServerConfig {
     /// The port that the HTTP server should listen on
     pub http_port: u16,
+    /// The channel to receive cancellation signals on from the coordinator
+    pub cancel_channel: Receiver<()>,
 }
 
 impl Worker for ApiServer {
