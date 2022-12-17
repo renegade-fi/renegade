@@ -4,6 +4,7 @@
 #![feature(let_chains)]
 
 mod api;
+mod api_server;
 mod config;
 mod error;
 mod gossip;

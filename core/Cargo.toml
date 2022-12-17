@@ -16,6 +16,7 @@ crypto = { path = "../crypto" }
 curve25519-dalek = "2"
 ed25519-dalek = { version = "1.0.1" }
 futures = { version = "0.3.21" }
+hyper = { version = "0.14", features = ["http1", "http2", "server", "tcp"] }
 integration-helpers = { path = "../integration-helpers" }
 libp2p = { version = "0.50", features = [
     "async-std",
