@@ -14,14 +14,15 @@ use crate::{exchanges::Exchange, reporters::PriceReporter, tokens::Token};
 
 fn main() {
     from_filename("api_keys.env").ok();
+    let mut median_reporter = PriceReporter::new(Token::ETH, Token::USDC, None).unwrap();
     let mut binance_reporter =
-        PriceReporter::new(Token::ETH, Token::USDC, Exchange::Binance).unwrap();
+        PriceReporter::new(Token::ETH, Token::USDC, Some(vec![Exchange::Binance])).unwrap();
     let mut coinbase_reporter =
-        PriceReporter::new(Token::ETH, Token::USDC, Exchange::Coinbase).unwrap();
+        PriceReporter::new(Token::ETH, Token::USDC, Some(vec![Exchange::Coinbase])).unwrap();
     let mut kraken_reporter =
-        PriceReporter::new(Token::ETH, Token::USDC, Exchange::Kraken).unwrap();
+        PriceReporter::new(Token::ETH, Token::USDC, Some(vec![Exchange::Kraken])).unwrap();
     loop {
-        thread::sleep(time::Duration::from_millis(100));
+        let median_midpoint = median_reporter.get_current_report().unwrap().midpoint_price;
         let binance_midpoint = binance_reporter
             .get_current_report()
             .unwrap()
@@ -32,8 +33,9 @@ fn main() {
             .midpoint_price;
         let kraken_midpoint = kraken_reporter.get_current_report().unwrap().midpoint_price;
         println!(
-            "B = {:.4}, C = {:.4}, K = {:.4}",
-            binance_midpoint, coinbase_midpoint, kraken_midpoint,
+            "M = {:.4} (B = {:.4}, C = {:.4}, K = {:.4})",
+            median_midpoint, binance_midpoint, coinbase_midpoint, kraken_midpoint,
         );
+        thread::sleep(time::Duration::from_millis(100));
     }
 }
