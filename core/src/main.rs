@@ -122,7 +122,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (handshake_cancel_sender, handshake_cancel_receiver) =
         channel::bounded(1 /* capacity */);
     let mut handshake_manager = HandshakeManager::new(HandshakeManagerConfig {
-        global_state,
+        global_state: global_state.clone(),
         network_channel: network_sender,
         job_receiver: handshake_worker_receiver,
         system_bus_sender,
@@ -141,6 +141,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (api_cancel_sender, api_cancel_receiver) = channel::bounded(1 /* capacity */);
     let mut api_server = ApiServer::new(ApiServerConfig {
         http_port: 3000,
+        global_state: global_state.clone(),
         cancel_channel: api_cancel_receiver,
     })
     .expect("failed to build api server");

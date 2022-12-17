@@ -11,11 +11,11 @@ use futures::executor::block_on;
 use hyper::{
     server::conn::AddrStream,
     service::{make_service_fn, service_fn},
-    Body, Error, Request, Response, Server,
+    Body, Error, Request, Response, Server, StatusCode,
 };
 use tokio::runtime::Builder as TokioBuilder;
 
-use crate::worker::Worker;
+use crate::{state::RelayerState, worker::Worker};
 
 use super::{error::ApiServerError, server::ApiServer};
 
@@ -27,6 +27,8 @@ const HTTP_SERVER_NUM_THREADS: usize = 1;
 pub struct ApiServerConfig {
     /// The port that the HTTP server should listen on
     pub http_port: u16,
+    /// The relayer-global state
+    pub global_state: RelayerState,
     /// The channel to receive cancellation signals on from the coordinator
     pub cancel_channel: Receiver<()>,
 }
@@ -44,6 +46,7 @@ impl Worker for ApiServer {
         let builder = Server::bind(&addr);
 
         Ok(Self {
+            config,
             http_server_builder: Some(builder),
             http_server_join_handle: None,
             http_server_runtime: None,
@@ -53,11 +56,26 @@ impl Worker for ApiServer {
     fn start(&mut self) -> Result<(), Self::Error> {
         // Take ownership of the http server, begin listening
         let server_builder = self.http_server_builder.take().unwrap();
-        let make_service = make_service_fn(|_: &AddrStream| async {
-            Ok::<_, Infallible>(service_fn(|_req: Request<Body>| async move {
-                let response = Response::new(Body::from("Test response"));
-                Ok::<_, Error>(response)
-            }))
+
+        // Clone the global state and move it into each layer of the callback so that each
+        // scope has its own copy of the global state
+        let global_state = self.config.global_state.clone();
+        let make_service = make_service_fn(move |_: &AddrStream| {
+            let global_state = global_state.clone();
+            async move {
+                Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
+                    let global_state = global_state.clone();
+                    async move {
+                        Ok::<_, Error>(match Self::handle_http_req(req, &global_state) {
+                            Ok(resp) => resp,
+                            Err(err) => Response::builder()
+                                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                .body(Body::from(err.to_string()))
+                                .unwrap(),
+                        })
+                    }
+                }))
+            }
         });
 
         // Spawn a tokio thread pool to run the server in
@@ -77,7 +95,6 @@ impl Worker for ApiServer {
 
         self.http_server_join_handle = Some(thread_handle);
         self.http_server_runtime = Some(tokio_runtime);
-
         Ok(())
     }
 
