@@ -1,9 +1,9 @@
 //! Abstracts routing logic from the HTTP server
 
-use std::{collections::HashMap, fmt::Display, marker::PhantomData};
+use std::{collections::HashMap, fmt::Display};
 
 use async_trait::async_trait;
-use hyper::{Body, Request, Response, StatusCode};
+use hyper::{Body, Method, Request, Response, StatusCode};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /**
@@ -41,7 +41,7 @@ fn build_500_response() -> Response<Body> {
 /// A handler is attached to a route and handles the process of translating an
 /// abstract request type into a response
 #[async_trait]
-pub trait Handler {
+pub trait Handler: Send + Sync {
     /// The handler method for the request/response on the handler's route
     async fn handle(&self, req: Request<Body>) -> Response<Body>;
 }
@@ -101,25 +101,30 @@ impl<
 /// to the appropriate handler
 pub struct Router {
     /// The routing information, mapping endpoint to handler
-    routes: HashMap<String, Box<dyn Handler>>,
+    routes: HashMap<(Method, String), Box<dyn Handler>>,
 }
 
 impl Router {
     /// Create a new router with no routes established
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             routes: HashMap::new(),
         }
     }
 
     /// Add a route to the router
-    fn add_route<H: Handler + 'static>(&mut self, route: String, handler: H) {
-        self.routes.insert(route, Box::new(handler));
+    pub fn add_route<H: Handler + 'static>(&mut self, method: Method, route: String, handler: H) {
+        self.routes.insert((method, route), Box::new(handler));
     }
 
     /// Route a request to a handler
-    async fn handle_req(&self, route: String, req: Request<Body>) -> Response<Body> {
-        if let Some(handler) = self.routes.get(&route) {
+    pub async fn handle_req(
+        &self,
+        method: Method,
+        route: String,
+        req: Request<Body>,
+    ) -> Response<Body> {
+        if let Some(handler) = self.routes.get(&(method, route)) {
             handler.as_ref().handle(req).await
         } else {
             build_404_response()
