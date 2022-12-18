@@ -14,28 +14,45 @@ use crate::{exchanges::Exchange, reporters::PriceReporter, tokens::Token};
 
 fn main() {
     from_filename("api_keys.env").ok();
-    let mut median_reporter = PriceReporter::new(Token::ETH, Token::USDC, None).unwrap();
-    let mut binance_reporter =
+
+    // Create a few different reporters and receivers.
+    let median_reporter = PriceReporter::new(Token::ETH, Token::USDC, None).unwrap();
+    let binance_reporter =
         PriceReporter::new(Token::ETH, Token::USDC, Some(vec![Exchange::Binance])).unwrap();
-    let mut coinbase_reporter =
+    let coinbase_reporter =
         PriceReporter::new(Token::ETH, Token::USDC, Some(vec![Exchange::Coinbase])).unwrap();
-    let mut kraken_reporter =
+    let kraken_reporter =
         PriceReporter::new(Token::ETH, Token::USDC, Some(vec![Exchange::Kraken])).unwrap();
-    loop {
-        let median_midpoint = median_reporter.get_current_report().unwrap().midpoint_price;
-        let binance_midpoint = binance_reporter
-            .get_current_report()
-            .unwrap()
-            .midpoint_price;
-        let coinbase_midpoint = coinbase_reporter
-            .get_current_report()
-            .unwrap()
-            .midpoint_price;
-        let kraken_midpoint = kraken_reporter.get_current_report().unwrap().midpoint_price;
+
+    let mut median_receiver = median_reporter.create_new_receiver();
+    // let mut binance_receiver = binance_reporter.create_new_receiver();
+    // let mut coinbase_receiver = coinbase_reporter.create_new_receiver();
+    // let mut kraken_receiver = kraken_reporter.create_new_receiver();
+
+    // Poll prices.
+    // thread::spawn(move || loop {
+    //     thread::sleep(time::Duration::from_millis(100));
+    //     let median_report = median_reporter.peek().unwrap();
+    //     let binance_report = binance_reporter.peek().unwrap();
+    //     let coinbase_report = coinbase_reporter.peek().unwrap();
+    //     let kraken_report = kraken_reporter.peek().unwrap();
+    //     println!(
+    //         "Polled Median: {:.4} (B {:.4} C {:.4} K {:.4})",
+    //         median_report.midpoint_price,
+    //         binance_report.midpoint_price,
+    //         coinbase_report.midpoint_price,
+    //         kraken_report.midpoint_price
+    //     );
+    // });
+
+    // Stream prices.
+    thread::spawn(move || loop {
+        let median_report = median_receiver.recv().unwrap();
         println!(
-            "M = {:.4} (B = {:.4}, C = {:.4}, K = {:.4})",
-            median_midpoint, binance_midpoint, coinbase_midpoint, kraken_midpoint,
+            "Stream Median: {:.4} {}",
+            median_report.midpoint_price, median_report.local_timestamp
         );
-        thread::sleep(time::Duration::from_millis(100));
-    }
+    });
+
+    loop {}
 }
