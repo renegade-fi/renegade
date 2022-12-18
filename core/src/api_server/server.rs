@@ -1,8 +1,10 @@
 //! The core logic behind the APIServer's implementation
 
+use std::sync::Arc;
+
 use hyper::{
     server::{conn::AddrIncoming, Builder},
-    Body, Method, Request, Response, StatusCode,
+    Body, Method, Request, Response,
 };
 use tokio::{runtime::Runtime, task::JoinHandle as TokioJoinHandle};
 
@@ -11,7 +13,11 @@ use crate::{
     state::RelayerState,
 };
 
-use super::{error::ApiServerError, worker::ApiServerConfig};
+use super::{
+    error::ApiServerError,
+    routes::{Router, TypedHandler},
+    worker::ApiServerConfig,
+};
 
 /// Accepts inbound HTTP requests and websocket subscriptions and
 /// serves requests from those connections
@@ -31,59 +37,53 @@ pub struct ApiServer {
 }
 
 impl ApiServer {
-    /// Handles an incoming HTTP request
-    pub(super) async fn handle_http_req(
-        req: Request<Body>,
-        global_state: &RelayerState,
-    ) -> Result<Response<Body>, ApiServerError> {
-        match (req.method(), req.uri().path()) {
-            (&Method::POST, "/replicas") => {
-                Ok(Self::handle_get_wallet_info(req, global_state).await)
-            }
-            _ => Ok(Response::builder()
-                .status(StatusCode::NOT_FOUND)
-                .body(Body::empty())
-                .unwrap()),
-        }
+    /// Sets up the routes that the API service exposes in the router
+    pub(super) fn setup_routes(router: &mut Router, global_state: RelayerState) {
+        // The "/replicas" route
+        router.add_route(
+            Method::POST,
+            "/replicas".to_string(),
+            ReplicasHandler::new(global_state),
+        )
     }
 
-    /// Handles a request to "/replicas"
-    ///
-    /// Request is of the form { wallet_id: uuid }
-    ///
-    /// Returns the replicas of a wallet with the fields
-    ///     - wallet_id: <uuid>
-    ///     - replicas: [uuid]
-    async fn handle_get_wallet_info(
-        req: Request<Body>,
-        global_state: &RelayerState,
-    ) -> Response<Body> {
-        let body = hyper::body::to_bytes(req.into_body()).await;
-        if body.is_err() {
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::empty())
-                .unwrap();
-        }
+    /// Handles an incoming HTTP request
+    pub(super) async fn handle_http_req(req: Request<Body>, router: Arc<Router>) -> Response<Body> {
+        // Route the request
+        router
+            .handle_req(req.method().to_owned(), req.uri().path().to_string(), req)
+            .await
+    }
+}
 
-        let deserialized = serde_json::from_slice(&body.unwrap());
-        if deserialized.is_err() {
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::empty())
-                .unwrap();
-        }
+/// Handler for the replicas route, returns the number of replicas a given wallet has
+#[derive(Clone, Debug)]
+pub struct ReplicasHandler {
+    /// The global state of the relayer, used to query information for requests
+    global_state: RelayerState,
+}
 
-        let req_body: GetReplicasRequest = deserialized.unwrap();
+impl ReplicasHandler {
+    /// Create a new handler for "/replicas"
+    fn new(global_state: RelayerState) -> Self {
+        Self { global_state }
+    }
+}
+
+impl TypedHandler for ReplicasHandler {
+    type Request = GetReplicasRequest;
+    type Response = GetReplicasResponse;
+    type Error = ApiServerError;
+
+    fn handle_typed(&self, req: Self::Request) -> Result<Self::Response, Self::Error> {
         let replicas = if let Some(wallet_info) =
-            global_state.read_managed_wallets().get(&req_body.wallet_id)
+            self.global_state.read_managed_wallets().get(&req.wallet_id)
         {
             wallet_info.metadata.replicas.clone().into_iter().collect()
         } else {
             vec![]
         };
 
-        let resp = GetReplicasResponse { replicas };
-        Response::new(Body::from(serde_json::to_vec(&resp).unwrap()))
+        Ok(GetReplicasResponse { replicas })
     }
 }

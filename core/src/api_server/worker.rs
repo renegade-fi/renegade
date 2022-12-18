@@ -3,6 +3,7 @@
 use std::{
     convert::Infallible,
     net::SocketAddr,
+    sync::Arc,
     thread::{self, JoinHandle},
 };
 
@@ -11,13 +12,13 @@ use futures::executor::block_on;
 use hyper::{
     server::conn::AddrStream,
     service::{make_service_fn, service_fn},
-    Body, Error, Request, Response, Server, StatusCode,
+    Body, Error, Request, Server,
 };
 use tokio::runtime::Builder as TokioBuilder;
 
 use crate::{state::RelayerState, worker::Worker};
 
-use super::{error::ApiServerError, server::ApiServer};
+use super::{error::ApiServerError, routes::Router, server::ApiServer};
 
 /// The number of threads backing the HTTP server
 const HTTP_SERVER_NUM_THREADS: usize = 1;
@@ -57,23 +58,20 @@ impl Worker for ApiServer {
         // Take ownership of the http server, begin listening
         let server_builder = self.http_server_builder.take().unwrap();
 
+        // Build the routes for the HTTP server
+        let mut router = Router::new();
+        Self::setup_routes(&mut router, self.config.global_state.clone());
+
+        let shared_router = Arc::new(router);
+
         // Clone the global state and move it into each layer of the callback so that each
         // scope has its own copy of the global state
-        let global_state = self.config.global_state.clone();
         let make_service = make_service_fn(move |_: &AddrStream| {
-            let global_state = global_state.clone();
+            let shared_router = shared_router.clone();
             async move {
                 Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
-                    let global_state = global_state.clone();
-                    async move {
-                        Ok::<_, Error>(match Self::handle_http_req(req, &global_state).await {
-                            Ok(resp) => resp,
-                            Err(err) => Response::builder()
-                                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                .body(Body::from(err.to_string()))
-                                .unwrap(),
-                        })
-                    }
+                    let shared_router = shared_router.clone();
+                    async move { Ok::<_, Error>(Self::handle_http_req(req, shared_router).await) }
                 }))
             }
         });
