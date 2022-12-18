@@ -53,7 +53,12 @@ impl PriceReporter {
         // If the given exchanges are None, then use all exchanges by default.
         let exchanges = match exchanges {
             Some(exchanges) => exchanges,
-            None => vec![Exchange::Binance, Exchange::Coinbase, Exchange::Kraken],
+            None => vec![
+                Exchange::Binance,
+                Exchange::Coinbase,
+                Exchange::Kraken,
+                Exchange::Okx,
+            ],
         };
 
         // Create the RingBuffer for the aggregate stream of all updates.
