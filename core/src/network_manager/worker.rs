@@ -29,7 +29,7 @@ use super::{
 #[derive(Debug)]
 pub struct NetworkManagerConfig {
     /// The port to listen for inbound traffic on
-    pub(crate) port: u32,
+    pub(crate) port: u16,
     /// The cluster ID of the local peer
     pub(crate) cluster_id: ClusterId,
     /// The cluster keypair, wrapped in an option to allow the worker thread to

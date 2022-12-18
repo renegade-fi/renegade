@@ -43,9 +43,12 @@ struct Cli {
     #[clap(short, long, value_parser)]
     /// Whether or not to run the relayer in debug mode
     pub debug: bool,
-    #[clap(short, long, value_parser, default_value = "12345")]
-    /// The port to listen on
-    pub port: u32,
+    #[clap(short, long, value_parser, default_value = "8000")]
+    /// The port to listen on for libp2p
+    pub p2p_port: u16,
+    #[clap(short, long, value_parser, default_value = "3000")]
+    /// The port to listen on for the externally facing HTTP API
+    pub http_port: u16,
     #[clap(short, long, value_parser)]
     /// The software version of the relayer
     pub version: Option<String>,
@@ -62,8 +65,10 @@ pub struct RelayerConfig {
     pub version: String,
     /// Bootstrap servers that the peer should connect to
     pub bootstrap_servers: Vec<PeerInfo>,
-    /// The port to listen on
-    pub port: u32,
+    /// The port to listen on for libp2p
+    pub p2p_port: u16,
+    /// The port to listen on for the externally facing HTTP API
+    pub http_port: u16,
     /// The wallet IDs to manage locally
     pub wallets: Vec<Wallet>,
     /// The cluster keypair
@@ -143,7 +148,8 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
             .version
             .unwrap_or_else(|| String::from(DEFAULT_VERSION)),
         bootstrap_servers: parsed_bootstrap_addrs,
-        port: cli_args.port,
+        p2p_port: cli_args.p2p_port,
+        http_port: cli_args.http_port,
         wallets: parse_wallet_file(cli_args.wallet_file)?,
         cluster_keypair: keypair,
         cluster_id,

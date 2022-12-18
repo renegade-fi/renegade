@@ -57,7 +57,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let args = config::parse_command_line_args().expect("error parsing command line args");
     println!(
         "Relayer running with\n\t version: {}\n\t port: {}\n\t cluster: {:?}",
-        args.version, args.port, args.cluster_id
+        args.version, args.p2p_port, args.cluster_id
     );
 
     // Construct the global state
@@ -74,7 +74,7 @@ async fn main() -> Result<(), CoordinatorError> {
     // Start the network manager
     let (network_cancel_sender, network_cancel_receiver) = channel::bounded(1 /* capacity */);
     let network_manager_config = NetworkManagerConfig {
-        port: args.port,
+        port: args.p2p_port,
         cluster_id: args.cluster_id.clone(),
         cluster_keypair: Some(args.cluster_keypair),
         send_channel: Some(network_receiver),
@@ -140,7 +140,7 @@ async fn main() -> Result<(), CoordinatorError> {
     // Start the API server
     let (api_cancel_sender, api_cancel_receiver) = channel::bounded(1 /* capacity */);
     let mut api_server = ApiServer::new(ApiServerConfig {
-        http_port: 3000,
+        http_port: args.http_port,
         global_state: global_state.clone(),
         cancel_channel: api_cancel_receiver,
     })
