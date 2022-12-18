@@ -31,7 +31,7 @@ pub enum Exchange {
     Binance,
     Coinbase,
     Kraken,
-    // Okx,
+    Okx,
     // Kucoin,
     // Huobi,
     // Bybit,
@@ -48,6 +48,7 @@ pub struct ExchangeConnection {
     binance_handler: Option<BinanceHandler>,
     coinbase_handler: Option<CoinbaseHandler>,
     kraken_handler: Option<KrakenHandler>,
+    okx_handler: Option<OkxHandler>,
 }
 impl ExchangeConnection {
     pub fn new(
@@ -64,6 +65,7 @@ impl ExchangeConnection {
             Exchange::Binance => BinanceHandler::WSS_URL,
             Exchange::Coinbase => CoinbaseHandler::WSS_URL,
             Exchange::Kraken => KrakenHandler::WSS_URL,
+            Exchange::Okx => OkxHandler::WSS_URL,
         };
         let url = Url::parse(&wss_url).unwrap();
         let (mut socket, _response) = connect(url).or(Err(ReporterError::ConnectionFailure))?;
@@ -73,6 +75,7 @@ impl ExchangeConnection {
             Exchange::Binance => BinanceHandler::websocket_subscribe(&mut socket)?,
             Exchange::Coinbase => CoinbaseHandler::websocket_subscribe(&mut socket)?,
             Exchange::Kraken => KrakenHandler::websocket_subscribe(&mut socket)?,
+            Exchange::Okx => OkxHandler::websocket_subscribe(&mut socket)?,
         }
 
         // Get initial ExchangeHandler state and include in a new ExchangeConnection.
@@ -84,6 +87,7 @@ impl ExchangeConnection {
                 binance_handler: Some(BinanceHandler::new()),
                 coinbase_handler: None,
                 kraken_handler: None,
+                okx_handler: None,
             },
             Exchange::Coinbase => ExchangeConnection {
                 quote_token,
@@ -92,6 +96,7 @@ impl ExchangeConnection {
                 binance_handler: None,
                 coinbase_handler: Some(CoinbaseHandler::new()),
                 kraken_handler: None,
+                okx_handler: None,
             },
             Exchange::Kraken => ExchangeConnection {
                 quote_token,
@@ -100,6 +105,16 @@ impl ExchangeConnection {
                 binance_handler: None,
                 coinbase_handler: None,
                 kraken_handler: Some(KrakenHandler::new()),
+                okx_handler: None,
+            },
+            Exchange::Okx => ExchangeConnection {
+                quote_token,
+                base_token,
+                exchange,
+                binance_handler: None,
+                coinbase_handler: None,
+                kraken_handler: None,
+                okx_handler: Some(OkxHandler::new()),
             },
         };
 
@@ -127,6 +142,8 @@ impl ExchangeConnection {
                 coinbase_handler.handle_exchange_message(message_json)
             } else if let Some(kraken_handler) = &mut self.kraken_handler {
                 kraken_handler.handle_exchange_message(message_json)
+            } else if let Some(okx_handler) = &mut self.okx_handler {
+                okx_handler.handle_exchange_message(message_json)
             } else {
                 panic!("Unreachable.");
             }
@@ -315,9 +332,9 @@ impl ExchangeHandlerApi for KrakenHandler {
         let subscribe_str = json!({
             "event": "subscribe",
             "pair": [ pair ],
-            "subscription": json!({
+            "subscription": {
                 "name": "spread",
-            })
+            },
         })
         .to_string();
         socket
@@ -340,6 +357,58 @@ impl ExchangeHandlerApi for KrakenHandler {
             }
         };
         let reported_timestamp_seconds = match &message_json[1][2] {
+            Value::String(reported_timestamp) => reported_timestamp.parse::<f32>().unwrap(),
+            _ => {
+                return None;
+            }
+        };
+        Some(PriceReport {
+            midpoint_price: (best_bid + best_offer) / 2.0,
+            reported_timestamp: Some((reported_timestamp_seconds * 1000.0) as u128),
+            local_timestamp: Default::default(),
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+struct OkxHandler;
+impl ExchangeHandlerApi for OkxHandler {
+    const WSS_URL: &'static str = "wss://ws.okx.com:8443/ws/v5/public";
+
+    fn new() -> Self {
+        Self {}
+    }
+
+    fn websocket_subscribe(socket: &mut WebSocket) -> Result<(), ReporterError> {
+        let pair = "ETH-USDT";
+        let subscribe_str = json!({
+            "op": "subscribe",
+            "args": [{
+                "channel": "bbo-tbt",
+                "instId": pair,
+            }],
+        })
+        .to_string();
+        socket
+            .write_message(Message::Text(subscribe_str))
+            .or(Err(ReporterError::ConnectionFailure))?;
+        Ok(())
+    }
+
+    fn handle_exchange_message(&mut self, message_json: Value) -> Option<PriceReport> {
+        let best_bid = match &message_json["data"][0]["bids"][0][0] {
+            Value::String(best_bid) => best_bid.parse::<f32>().unwrap(),
+            _ => {
+                return None;
+            }
+        };
+        let best_offer = match &message_json["data"][0]["asks"][0][0] {
+            Value::String(best_offer) => best_offer.parse::<f32>().unwrap(),
+            _ => {
+                return None;
+            }
+        };
+        let reported_timestamp_seconds = match &message_json["data"][0]["ts"] {
             Value::String(reported_timestamp) => reported_timestamp.parse::<f32>().unwrap(),
             _ => {
                 return None;
