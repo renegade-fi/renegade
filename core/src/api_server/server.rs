@@ -1,6 +1,6 @@
 //! The core logic behind the APIServer's implementation
 
-use std::{collections::HashSet, net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
 use futures::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
@@ -22,6 +22,8 @@ use crate::{
         websocket::{SubscriptionMessage, SubscriptionResponse},
     },
     state::RelayerState,
+    system_bus::{SystemBus, TopicReader},
+    types::SystemBusMessage,
 };
 
 use super::{
@@ -51,7 +53,10 @@ pub struct ApiServer {
 
 impl ApiServer {
     /// The main execution loop for the websocket server
-    pub(super) async fn websocket_execution_loop(addr: SocketAddr) -> Result<(), ApiServerError> {
+    pub(super) async fn websocket_execution_loop(
+        addr: SocketAddr,
+        system_bus: SystemBus<SystemBusMessage>,
+    ) -> Result<(), ApiServerError> {
         // Bind to the addr
         let listener = TcpListener::bind(addr)
             .await
@@ -59,7 +64,7 @@ impl ApiServer {
 
         // Loop over incoming streams
         while let Ok((stream, _)) = listener.accept().await {
-            tokio::spawn(Self::serve_websocket(stream));
+            tokio::spawn(Self::serve_websocket(stream, system_bus.clone()));
         }
 
         // If the listener fails, the server has failed
@@ -69,7 +74,10 @@ impl ApiServer {
     }
 
     /// Serve a websocket connection from a front end
-    async fn serve_websocket(incoming_stream: TcpStream) -> Result<(), ApiServerError> {
+    async fn serve_websocket(
+        incoming_stream: TcpStream,
+        system_bus: SystemBus<SystemBusMessage>,
+    ) -> Result<(), ApiServerError> {
         // Accept the websocket upgrade and split into read/write streams
         let websocket_stream = accept_async(incoming_stream)
             .await
@@ -78,11 +86,11 @@ impl ApiServer {
 
         // The websocket client will add subscriptions throughout the communication; this tracks the
         // active subscriptions that the local connection has open
-        let mut subscriptions: HashSet<String> = HashSet::new();
+        let mut subscriptions: HashMap<String, TopicReader<SystemBusMessage>> = HashMap::new();
 
         // Send test messages in a loop
         let mut interval = tokio::time::interval(Duration::from_millis(5000));
-        let message = Message::Text("test".to_string());
+        let message = Message::Text("heartbeat".to_string());
         loop {
             tokio::select! {
                 // Read side
@@ -96,7 +104,7 @@ impl ApiServer {
                             let message_unwrapped = msg.unwrap();
                             match message_unwrapped {
                                 Message::Close(_) => break,
-                                _ => Self::handle_incoming_ws_message(message_unwrapped, &mut subscriptions, &mut write_stream).await?,
+                                _ => Self::handle_incoming_ws_message(message_unwrapped, &mut subscriptions, &mut write_stream, system_bus.clone()).await?,
                             };
                         }
 
@@ -120,16 +128,20 @@ impl ApiServer {
     /// Handle an incoming websocket message
     async fn handle_incoming_ws_message(
         message: Message,
-        client_subscriptions: &mut HashSet<String>,
+        client_subscriptions: &mut HashMap<String, TopicReader<SystemBusMessage>>,
         write_stream: &mut SplitSink<WebSocketStream<TcpStream>, Message>,
+        system_bus: SystemBus<SystemBusMessage>,
     ) -> Result<(), ApiServerError> {
         if let Message::Text(msg_text) = message {
             // Deserialize the message body and dispatch to a handler for a response
             let deserialized: Result<SubscriptionMessage, _> = serde_json::from_str(&msg_text);
             let resp = match deserialized {
                 Ok(message_body) => {
-                    let response =
-                        Self::handle_subscription_message(message_body, client_subscriptions);
+                    let response = Self::handle_subscription_message(
+                        message_body,
+                        client_subscriptions,
+                        system_bus,
+                    );
                     let response_ser = serde_json::to_string(&response)
                         .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
 
@@ -152,16 +164,22 @@ impl ApiServer {
     /// Handles an incoming subscribe/unsubscribe message
     fn handle_subscription_message(
         message: SubscriptionMessage,
-        client_subscriptions: &mut HashSet<String>,
+        client_subscriptions: &mut HashMap<String, TopicReader<SystemBusMessage>>,
+        system_bus: SystemBus<SystemBusMessage>,
     ) -> SubscriptionResponse {
         // Update local subscriptions
         match message {
-            SubscriptionMessage::Subscribe { topic } => client_subscriptions.insert(topic),
-            SubscriptionMessage::Unsubscribe { topic } => client_subscriptions.remove(&topic),
+            SubscriptionMessage::Subscribe { topic } => {
+                let topic_reader = system_bus.subscribe(topic.clone());
+                client_subscriptions.insert(topic, topic_reader);
+            }
+            SubscriptionMessage::Unsubscribe { topic } => {
+                client_subscriptions.remove(&topic);
+            }
         };
 
         SubscriptionResponse {
-            subscriptions: client_subscriptions.iter().cloned().collect(),
+            subscriptions: client_subscriptions.keys().cloned().collect(),
         }
     }
 

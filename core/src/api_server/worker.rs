@@ -16,7 +16,7 @@ use hyper::{
 };
 use tokio::runtime::Builder as TokioBuilder;
 
-use crate::{state::RelayerState, worker::Worker};
+use crate::{state::RelayerState, system_bus::SystemBus, types::SystemBusMessage, worker::Worker};
 
 use super::{error::ApiServerError, routes::Router, server::ApiServer};
 
@@ -32,6 +32,10 @@ pub struct ApiServerConfig {
     pub websocket_port: u16,
     /// The relayer-global state
     pub global_state: RelayerState,
+    /// The system pubsub bus that all workers have access to
+    /// The ApiServer uses this bus to forward internal events onto open
+    /// websocket connections
+    pub system_bus: SystemBus<SystemBusMessage>,
     /// The channel to receive cancellation signals on from the coordinator
     pub cancel_channel: Receiver<()>,
 }
@@ -99,9 +103,10 @@ impl Worker for ApiServer {
             .parse()
             .unwrap();
 
+        let system_bus_clone = self.config.system_bus.clone();
         let websocket_thread_handle = tokio_runtime.spawn_blocking(move || {
             block_on(async {
-                if let Err(err) = Self::websocket_execution_loop(addr).await {
+                if let Err(err) = Self::websocket_execution_loop(addr, system_bus_clone).await {
                     return ApiServerError::WebsocketServerFailure(err.to_string());
                 }
 
