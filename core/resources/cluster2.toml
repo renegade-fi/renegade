@@ -1,5 +1,6 @@
 p2p-port = 8001 
 http-port = 3001
+websocket-port = 4001
 version = 0
 debug = true
 wallet-file = "./core/resources/wallets2.json"

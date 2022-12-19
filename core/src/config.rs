@@ -43,16 +43,19 @@ struct Cli {
     #[clap(short, long, value_parser)]
     /// Whether or not to run the relayer in debug mode
     pub debug: bool,
-    #[clap(short, long, value_parser, default_value = "8000")]
+    #[clap(short = 'p', long, value_parser, default_value = "8000")]
     /// The port to listen on for libp2p
     pub p2p_port: u16,
-    #[clap(short, long, value_parser, default_value = "3000")]
+    #[clap(long, value_parser, default_value = "3000")]
     /// The port to listen on for the externally facing HTTP API
     pub http_port: u16,
+    /// The port to listen on for the externally facing websocket API
+    #[clap(long, value_parser, default_value = "4000")]
+    pub websocket_port: u16,
     #[clap(short, long, value_parser)]
     /// The software version of the relayer
     pub version: Option<String>,
-    #[clap(short, long, value_parser)]
+    #[clap(long, value_parser)]
     /// A file holding a json representation of the wallets the local node
     /// should manage
     pub wallet_file: Option<String>,
@@ -69,6 +72,8 @@ pub struct RelayerConfig {
     pub p2p_port: u16,
     /// The port to listen on for the externally facing HTTP API
     pub http_port: u16,
+    /// The port to listen on for the externally facing websocket API
+    pub websocket_port: u16,
     /// The wallet IDs to manage locally
     pub wallets: Vec<Wallet>,
     /// The cluster keypair
@@ -150,6 +155,7 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
         bootstrap_servers: parsed_bootstrap_addrs,
         p2p_port: cli_args.p2p_port,
         http_port: cli_args.http_port,
+        websocket_port: cli_args.websocket_port,
         wallets: parse_wallet_file(cli_args.wallet_file)?,
         cluster_keypair: keypair,
         cluster_id,
