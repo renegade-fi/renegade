@@ -21,7 +21,7 @@ use crate::{state::RelayerState, worker::Worker};
 use super::{error::ApiServerError, routes::Router, server::ApiServer};
 
 /// The number of threads backing the HTTP server
-const HTTP_SERVER_NUM_THREADS: usize = 1;
+const API_SERVER_NUM_THREADS: usize = 2;
 
 /// The worker config for the ApiServer
 #[derive(Clone, Debug)]
@@ -52,7 +52,8 @@ impl Worker for ApiServer {
             config,
             http_server_builder: Some(builder),
             http_server_join_handle: None,
-            http_server_runtime: None,
+            websocket_server_join_handle: None,
+            server_runtime: None,
         })
     }
 
@@ -80,12 +81,12 @@ impl Worker for ApiServer {
 
         // Spawn a tokio thread pool to run the server in
         let tokio_runtime = TokioBuilder::new_multi_thread()
-            .worker_threads(HTTP_SERVER_NUM_THREADS)
+            .worker_threads(API_SERVER_NUM_THREADS)
             .enable_io()
             .enable_time()
             .build()
             .map_err(|err| ApiServerError::Setup(err.to_string()))?;
-        let thread_handle = tokio_runtime.spawn_blocking(move || {
+        let http_thread_handle = tokio_runtime.spawn_blocking(move || {
             let server = server_builder.serve(make_service);
             if let Err(err) = block_on(server) {
                 return ApiServerError::HttpServerFailure(err.to_string());
@@ -93,8 +94,26 @@ impl Worker for ApiServer {
             ApiServerError::HttpServerFailure("http server spuriously shut down".to_string())
         });
 
-        self.http_server_join_handle = Some(thread_handle);
-        self.http_server_runtime = Some(tokio_runtime);
+        // Start up the websocket server
+        let addr: SocketAddr = format!("127.0.0.1:{:?}", self.config.websocket_port)
+            .parse()
+            .unwrap();
+
+        let websocket_thread_handle = tokio_runtime.spawn_blocking(move || {
+            block_on(async {
+                if let Err(err) = Self::websocket_execution_loop(addr).await {
+                    return ApiServerError::WebsocketServerFailure(err.to_string());
+                }
+
+                ApiServerError::WebsocketServerFailure(
+                    "websocket server spuriously shut down".to_string(),
+                )
+            })
+        });
+
+        self.http_server_join_handle = Some(http_thread_handle);
+        self.websocket_server_join_handle = Some(websocket_thread_handle);
+        self.server_runtime = Some(tokio_runtime);
         Ok(())
     }
 
@@ -104,9 +123,14 @@ impl Worker for ApiServer {
 
     fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
         // Wrap the Tokio join handle in a wrapper thread
-        let join_handle = self.http_server_join_handle.take().unwrap();
-        let wrapper = thread::spawn(move || block_on(join_handle).unwrap());
-        vec![wrapper]
+        // TODO: We can probably do this without a wrapper thread
+        let join_handle1 = self.http_server_join_handle.take().unwrap();
+        let join_handle2 = self.websocket_server_join_handle.take().unwrap();
+
+        let wrapper1 = thread::spawn(move || block_on(join_handle1).unwrap());
+        let wrapper2 = thread::spawn(move || block_on(join_handle2).unwrap());
+
+        vec![wrapper1, wrapper2]
     }
 
     fn is_recoverable(&self) -> bool {
