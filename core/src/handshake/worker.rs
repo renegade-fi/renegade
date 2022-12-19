@@ -5,7 +5,7 @@ use std::{
     thread::JoinHandle,
 };
 
-use crossbeam::channel::{Receiver, Sender};
+use crossbeam::channel::Receiver;
 use rayon::ThreadPoolBuilder;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -17,6 +17,7 @@ use crate::{
         state::HandshakeStateIndex,
     },
     state::RelayerState,
+    system_bus::SystemBus,
     types::SystemBusMessage,
     worker::Worker,
 };
@@ -36,12 +37,7 @@ pub struct HandshakeManagerConfig {
     /// The job queue on which to receive handshake requrests
     pub job_receiver: Receiver<HandshakeExecutionJob>,
     /// The system bus to which all workers have access
-    /// Sender
-    #[allow(dead_code)]
-    pub(crate) system_bus_sender: Sender<SystemBusMessage>,
-    /// Receiver
-    #[allow(dead_code)]
-    pub(crate) system_bus_receiver: Receiver<SystemBusMessage>,
+    pub system_bus: SystemBus<SystemBusMessage>,
     /// The channel on which the coordinator may mandate that the
     /// handshake manager cancel its execution
     pub(crate) cancel_channel: Receiver<()>,

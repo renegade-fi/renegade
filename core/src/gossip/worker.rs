@@ -12,7 +12,6 @@ use crate::{
         hearbeat::BootstrapRequest,
     },
     state::RelayerState,
-    types::SystemBusMessage,
     worker::Worker,
     CancelChannel,
 };
@@ -43,13 +42,6 @@ pub struct GossipServerConfig {
     pub(crate) heartbeat_worker_receiver: Receiver<GossipServerJob>,
     /// A job queue to send outbound network requests on
     pub(crate) network_sender: TokioSender<GossipOutbound>,
-    /// The system bus to which all workers have access
-    /// Sender
-    #[allow(dead_code)]
-    pub(crate) system_bus_sender: Sender<SystemBusMessage>,
-    /// Receiver
-    #[allow(dead_code)]
-    pub(crate) system_bus_receiver: Receiver<SystemBusMessage>,
     /// The channel on which the coordinator may mandate that the
     /// gossip server cancel its execution
     pub(crate) cancel_channel: CancelChannel,

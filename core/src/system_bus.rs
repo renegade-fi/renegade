@@ -186,7 +186,7 @@ impl<M: Clone + Sync> TopicFabric<M> {
 /// The system bus abstracts over an embedded pubsub functionality
 ///
 /// Note that publishing to a topic with no subscribers is a no-op
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SystemBus<M> {
     /// The topic mesh connects publishers to subscribers, it is concretely implemented
     /// as a mapping from topic name (String) to a bus (single-producer, multi-consumer)

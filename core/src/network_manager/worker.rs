@@ -17,7 +17,6 @@ use crate::{
     handshake::jobs::HandshakeExecutionJob,
     network_manager::composed_protocol::ComposedNetworkBehavior,
     state::RelayerState,
-    types::SystemBusMessage,
     worker::Worker,
 };
 
@@ -45,13 +44,6 @@ pub struct NetworkManagerConfig {
     pub(crate) heartbeat_work_queue: Sender<GossipServerJob>,
     /// The work queue to forward inbound handshake requests to
     pub(crate) handshake_work_queue: Sender<HandshakeExecutionJob>,
-    /// The system bus to which all workers have access
-    /// Sender
-    #[allow(dead_code)]
-    pub(crate) system_bus_sender: Sender<SystemBusMessage>,
-    /// Receiver
-    #[allow(dead_code)]
-    pub(crate) system_bus_receiver: Receiver<SystemBusMessage>,
     /// The global shared state of the local relayer
     pub(crate) global_state: RelayerState,
     /// The channel on which the coordinator can send a cancel signal to
