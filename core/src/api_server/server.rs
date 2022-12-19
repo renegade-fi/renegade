@@ -1,7 +1,8 @@
 //! The core logic behind the APIServer's implementation
 
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
+use futures_util::{SinkExt, StreamExt};
 use hyper::{
     server::{conn::AddrIncoming, Builder},
     Body, Method, Request, Response,
@@ -11,6 +12,8 @@ use tokio::{
     runtime::Runtime,
     task::JoinHandle as TokioJoinHandle,
 };
+use tokio_tungstenite::accept_async;
+use tungstenite::Message;
 
 use crate::{
     api::http::{GetReplicasRequest, GetReplicasResponse},
@@ -63,7 +66,41 @@ impl ApiServer {
 
     /// Serve a websocket connection from a front end
     async fn serve_websocket(incoming_stream: TcpStream) -> Result<(), ApiServerError> {
-        println!("Incoming stream: {:?}", incoming_stream);
+        // Accept the websocket upgrade and split into read/write streams
+        let websocket_stream = accept_async(incoming_stream)
+            .await
+            .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
+        let (mut write_stream, mut read_stream) = websocket_stream.split();
+
+        // Send test messages in a loop
+        let mut interval = tokio::time::interval(Duration::from_millis(5000));
+        let message = Message::Text("test".to_string());
+        loop {
+            tokio::select! {
+                // Read side
+                message = read_stream.next() => {
+                    match message {
+                        Some(msg) => {
+                            if let Ok(Message::Close { .. }) = msg {
+                                break;
+                            }
+
+                            println!("Received message: {:?}", msg)
+                        }
+
+                        // None is returned when the connection is closed or a critical error
+                        // occured. In either case the server side may hang up
+                        None => break
+                    }
+                }
+
+                // Sender push side
+                _ = interval.tick() => {
+                    write_stream.send(message.clone()).await.unwrap();
+                }
+            }
+        }
+
         Ok(())
     }
 
