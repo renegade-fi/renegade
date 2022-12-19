@@ -9,6 +9,8 @@ pub enum ApiServerError {
     Setup(String),
     /// HTTP server has failed
     HttpServerFailure(String),
+    /// Websocket server has failed
+    WebsocketServerFailure(String),
 }
 
 impl Display for ApiServerError {

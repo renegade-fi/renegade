@@ -1,12 +1,16 @@
 //! The core logic behind the APIServer's implementation
 
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use hyper::{
     server::{conn::AddrIncoming, Builder},
     Body, Method, Request, Response,
 };
-use tokio::{runtime::Runtime, task::JoinHandle as TokioJoinHandle};
+use tokio::{
+    net::{TcpListener, TcpStream},
+    runtime::Runtime,
+    task::JoinHandle as TokioJoinHandle,
+};
 
 use crate::{
     api::http::{GetReplicasRequest, GetReplicasResponse},
@@ -32,11 +36,37 @@ pub struct ApiServer {
     pub(super) http_server_builder: Option<Builder<AddrIncoming>>,
     /// The join handle for the http server
     pub(super) http_server_join_handle: Option<TokioJoinHandle<ApiServerError>>,
+    /// The join handle for the websocket server
+    pub(super) websocket_server_join_handle: Option<TokioJoinHandle<ApiServerError>>,
     /// The tokio runtime that the http server runs inside of
-    pub(super) http_server_runtime: Option<Runtime>,
+    pub(super) server_runtime: Option<Runtime>,
 }
 
 impl ApiServer {
+    /// The main execution loop for the websocket server
+    pub(super) async fn websocket_execution_loop(addr: SocketAddr) -> Result<(), ApiServerError> {
+        // Bind to the addr
+        let listener = TcpListener::bind(addr)
+            .await
+            .map_err(|err| ApiServerError::Setup(err.to_string()))?;
+
+        // Loop over incoming streams
+        while let Ok((stream, _)) = listener.accept().await {
+            tokio::spawn(Self::serve_websocket(stream));
+        }
+
+        // If the listener fails, the server has failed
+        Err(ApiServerError::WebsocketServerFailure(
+            "websocket server spuriously shutdown".to_string(),
+        ))
+    }
+
+    /// Serve a websocket connection from a front end
+    async fn serve_websocket(incoming_stream: TcpStream) -> Result<(), ApiServerError> {
+        println!("Incoming stream: {:?}", incoming_stream);
+        Ok(())
+    }
+
     /// Sets up the routes that the API service exposes in the router
     pub(super) fn setup_routes(router: &mut Router, global_state: RelayerState) {
         // The "/replicas" route

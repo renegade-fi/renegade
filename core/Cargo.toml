@@ -50,4 +50,5 @@ termion = "2.0"
 tokio = { version = "1", features = ["full"] }
 toml = { version = "0.5.9" }
 tracing = { version = "0.1", features = ["log"] }
+tokio-tungstenite = { version = "0.18" }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
