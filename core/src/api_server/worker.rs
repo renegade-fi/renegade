@@ -28,6 +28,8 @@ const HTTP_SERVER_NUM_THREADS: usize = 1;
 pub struct ApiServerConfig {
     /// The port that the HTTP server should listen on
     pub http_port: u16,
+    /// The port that the websocket server should listen on
+    pub websocket_port: u16,
     /// The relayer-global state
     pub global_state: RelayerState,
     /// The channel to receive cancellation signals on from the coordinator

@@ -142,6 +142,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (api_cancel_sender, api_cancel_receiver) = channel::bounded(1 /* capacity */);
     let mut api_server = ApiServer::new(ApiServerConfig {
         http_port: args.http_port,
+        websocket_port: args.websocket_port,
         global_state: global_state.clone(),
         cancel_channel: api_cancel_receiver,
     })
