@@ -18,3 +18,11 @@ pub enum SubscriptionMessage {
         topic: String,
     },
 }
+
+/// A message that is sent in response to a SubscriptionMessage, notifies the client
+/// of the now active subscriptions after a subscribe/unsubscripe message is applied
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SubscriptionResponse {
+    /// The subscriptions that remain after applying the requested update
+    pub subscriptions: Vec<String>,
+}

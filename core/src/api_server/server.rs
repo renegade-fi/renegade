@@ -2,6 +2,7 @@
 
 use std::{collections::HashSet, net::SocketAddr, sync::Arc, time::Duration};
 
+use futures::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use hyper::{
     server::{conn::AddrIncoming, Builder},
@@ -12,13 +13,13 @@ use tokio::{
     runtime::Runtime,
     task::JoinHandle as TokioJoinHandle,
 };
-use tokio_tungstenite::accept_async;
+use tokio_tungstenite::{accept_async, WebSocketStream};
 use tungstenite::Message;
 
 use crate::{
     api::{
         http::{GetReplicasRequest, GetReplicasResponse},
-        websocket::SubscriptionMessage,
+        websocket::{SubscriptionMessage, SubscriptionResponse},
     },
     state::RelayerState,
 };
@@ -94,20 +95,9 @@ impl ApiServer {
 
                             let message_unwrapped = msg.unwrap();
                             match message_unwrapped {
-                                Message::Text(body) => {
-                                    let subscribe_message: SubscriptionMessage = serde_json::from_str(&body).unwrap();
-                                    println!("Subscribe message: {:?}", subscribe_message);
-
-                                    match subscribe_message {
-                                        SubscriptionMessage::Subscribe { topic } => subscriptions.insert(topic),
-                                        SubscriptionMessage::Unsubscribe { topic } => subscriptions.remove(&topic),
-                                    };
-
-                                    write_stream.send(Message::Text(format!("subscriptions: {:?}", subscriptions.iter().collect::<Vec<_>>()))).await.unwrap();
-                                }
                                 Message::Close(_) => break,
-                                _ => continue
-                            }
+                                _ => Self::handle_incoming_ws_message(message_unwrapped, &mut subscriptions, &mut write_stream).await?,
+                            };
                         }
 
                         // None is returned when the connection is closed or a critical error
@@ -125,6 +115,54 @@ impl ApiServer {
 
         println!("Finished connection...\n\n");
         Ok(())
+    }
+
+    /// Handle an incoming websocket message
+    async fn handle_incoming_ws_message(
+        message: Message,
+        client_subscriptions: &mut HashSet<String>,
+        write_stream: &mut SplitSink<WebSocketStream<TcpStream>, Message>,
+    ) -> Result<(), ApiServerError> {
+        if let Message::Text(msg_text) = message {
+            // Deserialize the message body and dispatch to a handler for a response
+            let deserialized: Result<SubscriptionMessage, _> = serde_json::from_str(&msg_text);
+            let resp = match deserialized {
+                Ok(message_body) => {
+                    let response =
+                        Self::handle_subscription_message(message_body, client_subscriptions);
+                    let response_ser = serde_json::to_string(&response)
+                        .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
+
+                    Message::Text(response_ser)
+                }
+
+                Err(e) => Message::Text(format!("Invalid request: {}", e)),
+            };
+
+            // Write the response onto the websocket
+            write_stream
+                .send(resp)
+                .await
+                .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    /// Handles an incoming subscribe/unsubscribe message
+    fn handle_subscription_message(
+        message: SubscriptionMessage,
+        client_subscriptions: &mut HashSet<String>,
+    ) -> SubscriptionResponse {
+        // Update local subscriptions
+        match message {
+            SubscriptionMessage::Subscribe { topic } => client_subscriptions.insert(topic),
+            SubscriptionMessage::Unsubscribe { topic } => client_subscriptions.remove(&topic),
+        };
+
+        SubscriptionResponse {
+            subscriptions: client_subscriptions.iter().cloned().collect(),
+        }
     }
 
     /// Sets up the routes that the API service exposes in the router
