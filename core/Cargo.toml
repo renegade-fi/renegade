@@ -9,6 +9,7 @@ edition = "2018"
 ark-serialize = "0.3"
 async-trait = "0.1.56"
 base64 = { version = "0.13" }
+bus = { version = "2.3" }
 circuits = { path = "../circuits" }
 clap = { version = "3.2.8", features = ["derive"] }
 crossbeam = { version = "0.8.1" }
