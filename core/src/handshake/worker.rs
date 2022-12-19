@@ -81,6 +81,7 @@ impl Worker for HandshakeManager {
             config.job_receiver,
             config.network_channel,
             config.global_state,
+            config.system_bus,
             config.cancel_channel,
         )?;
 

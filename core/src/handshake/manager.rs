@@ -31,6 +31,8 @@ use crate::{
     },
     gossip::types::WrappedPeerId,
     state::RelayerState,
+    system_bus::SystemBus,
+    types::{SystemBusMessage, HANDSHAKE_STATUS_TOPIC},
     CancelChannel,
 };
 
@@ -130,6 +132,7 @@ impl HandshakeManager {
         global_state: RelayerState,
         handshake_cache: SharedHandshakeCache<OrderIdentifier>,
         network_channel: UnboundedSender<GossipOutbound>,
+        system_bus: SystemBus<SystemBusMessage>,
     ) -> Result<(), HandshakeManagerError> {
         match job {
             // Indicates that a peer has sent a message during the course of a handshake
@@ -222,6 +225,15 @@ impl HandshakeManager {
                             ))
                         })?;
 
+                // Publish an internal event signalling that a match is beginning
+                system_bus.publish(
+                    HANDSHAKE_STATUS_TOPIC.to_string(),
+                    SystemBusMessage::HandshakeInProgress {
+                        local_order_id: order_state.local_order_id,
+                        peer_order_id: order_state.peer_order_id,
+                    },
+                );
+
                 // Run the MPC match process
                 Self::execute_match(party_id, order_state, net)?;
 
@@ -232,6 +244,7 @@ impl HandshakeManager {
                     handshake_cache,
                     global_state,
                     network_channel,
+                    system_bus,
                 )
             }
         }
@@ -517,6 +530,7 @@ impl HandshakeManager {
         handshake_cache: SharedHandshakeCache<OrderIdentifier>,
         global_state: RelayerState,
         network_channel: UnboundedSender<GossipOutbound>,
+        system_bus: SystemBus<SystemBusMessage>,
     ) -> Result<(), HandshakeManagerError> {
         // Get the order IDs from the state machine
         let state = handshake_state_index
@@ -552,6 +566,15 @@ impl HandshakeManager {
                 ),
             })
             .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
+
+        // Publish an internal event indicating that the handshake has completed
+        system_bus.publish(
+            HANDSHAKE_STATUS_TOPIC.to_string(),
+            SystemBusMessage::HandshakeCompleted {
+                local_order_id: state.local_order_id,
+                peer_order_id: state.peer_order_id,
+            },
+        );
 
         Ok(())
     }
@@ -679,6 +702,7 @@ pub(super) struct HandshakeJobRelay {
 
 impl HandshakeJobRelay {
     /// Create a new job relay
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         thread_pool: Arc<ThreadPool>,
         handshake_cache: SharedHandshakeCache<OrderIdentifier>,
@@ -686,6 +710,7 @@ impl HandshakeJobRelay {
         job_channel: Receiver<HandshakeExecutionJob>,
         network_channel: UnboundedSender<GossipOutbound>,
         global_state: RelayerState,
+        system_bus: SystemBus<SystemBusMessage>,
         cancel: CancelChannel,
     ) -> Result<Self, HandshakeManagerError> {
         let thread_handle = thread::Builder::new()
@@ -698,6 +723,7 @@ impl HandshakeJobRelay {
                     job_channel,
                     network_channel,
                     global_state,
+                    system_bus,
                     cancel,
                 )
             })
@@ -715,6 +741,7 @@ impl HandshakeJobRelay {
     }
 
     /// The main execution loop, listens on the channel and forwards jobs to the handshake manager
+    #[allow(clippy::too_many_arguments)]
     fn execution_loop(
         thread_pool: Arc<ThreadPool>,
         handshake_cache: SharedHandshakeCache<OrderIdentifier>,
@@ -722,6 +749,7 @@ impl HandshakeJobRelay {
         job_channel: Receiver<HandshakeExecutionJob>,
         network_channel: UnboundedSender<GossipOutbound>,
         global_state: RelayerState,
+        system_bus: SystemBus<SystemBusMessage>,
         cancel: CancelChannel,
     ) -> HandshakeManagerError {
         loop {
@@ -736,6 +764,7 @@ impl HandshakeJobRelay {
             let state_clone = global_state.clone();
             let cache_clone = handshake_cache.clone();
             let channel_clone = network_channel.clone();
+            let bus_clone = system_bus.clone();
 
             thread_pool.install(move || {
                 if let Err(err) = HandshakeManager::handle_handshake_job(
@@ -744,6 +773,7 @@ impl HandshakeJobRelay {
                     state_clone,
                     cache_clone,
                     channel_clone,
+                    bus_clone,
                 ) {
                     println!("Error handling handshake job: {}", err);
                 }
