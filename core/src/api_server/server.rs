@@ -1,6 +1,6 @@
 //! The core logic behind the APIServer's implementation
 
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::HashSet, net::SocketAddr, sync::Arc, time::Duration};
 
 use futures_util::{SinkExt, StreamExt};
 use hyper::{
@@ -16,7 +16,10 @@ use tokio_tungstenite::accept_async;
 use tungstenite::Message;
 
 use crate::{
-    api::http::{GetReplicasRequest, GetReplicasResponse},
+    api::{
+        http::{GetReplicasRequest, GetReplicasResponse},
+        websocket::SubscriptionMessage,
+    },
     state::RelayerState,
 };
 
@@ -72,6 +75,10 @@ impl ApiServer {
             .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
         let (mut write_stream, mut read_stream) = websocket_stream.split();
 
+        // The websocket client will add subscriptions throughout the communication; this tracks the
+        // active subscriptions that the local connection has open
+        let mut subscriptions: HashSet<String> = HashSet::new();
+
         // Send test messages in a loop
         let mut interval = tokio::time::interval(Duration::from_millis(5000));
         let message = Message::Text("test".to_string());
@@ -81,11 +88,26 @@ impl ApiServer {
                 message = read_stream.next() => {
                     match message {
                         Some(msg) => {
-                            if let Ok(Message::Close { .. }) = msg {
-                                break;
+                            if let Err(e) = msg {
+                                return Err(ApiServerError::WebsocketHandlerFailure(e.to_string()));
                             }
 
-                            println!("Received message: {:?}", msg)
+                            let message_unwrapped = msg.unwrap();
+                            match message_unwrapped {
+                                Message::Text(body) => {
+                                    let subscribe_message: SubscriptionMessage = serde_json::from_str(&body).unwrap();
+                                    println!("Subscribe message: {:?}", subscribe_message);
+
+                                    match subscribe_message {
+                                        SubscriptionMessage::Subscribe { topic } => subscriptions.insert(topic),
+                                        SubscriptionMessage::Unsubscribe { topic } => subscriptions.remove(&topic),
+                                    };
+
+                                    write_stream.send(Message::Text(format!("subscriptions: {:?}", subscriptions.iter().collect::<Vec<_>>()))).await.unwrap();
+                                }
+                                Message::Close(_) => break,
+                                _ => continue
+                            }
                         }
 
                         // None is returned when the connection is closed or a critical error
@@ -101,6 +123,7 @@ impl ApiServer {
             }
         }
 
+        println!("Finished connection...\n\n");
         Ok(())
     }
 

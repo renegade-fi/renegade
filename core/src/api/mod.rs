@@ -6,3 +6,4 @@ pub mod gossip;
 pub mod handshake;
 pub mod hearbeat;
 pub mod http;
+pub mod websocket;
