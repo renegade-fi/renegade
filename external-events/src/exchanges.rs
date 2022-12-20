@@ -54,9 +54,9 @@ pub struct ExchangeConnection {
     okx_handler: Option<OkxHandler>,
 }
 impl ExchangeConnection {
-    pub fn new(
-        quote_token: Token,
-        base_token: Token,
+    pub fn create_receiver(
+        _quote_token: Token,
+        _base_token: Token,
         exchange: Exchange,
     ) -> Result<RingReceiver<PriceReport>, ReporterError> {
         // Create the ring buffer.
@@ -78,7 +78,7 @@ impl ExchangeConnection {
             Exchange::Okx => OkxHandler::WSS_URL,
             _ => unreachable!(),
         };
-        let url = Url::parse(&wss_url).unwrap();
+        let url = Url::parse(wss_url).unwrap();
         let (mut socket, _response) = connect(url).or(Err(ReporterError::ConnectionFailure))?;
 
         // Send initial subscription message(s).
@@ -296,10 +296,10 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
         // Given the new order book, compute the best bid and offer.
         let mut best_bid: f32 = 0.0;
         let mut best_offer: f32 = f32::INFINITY;
-        for (price_level, _quantity) in &self.order_book_bids {
+        for price_level in self.order_book_bids.keys() {
             best_bid = f32::max(best_bid, price_level.parse::<f32>().unwrap());
         }
-        for (price_level, _quantity) in &self.order_book_offers {
+        for price_level in self.order_book_offers.keys() {
             best_offer = f32::min(best_offer, price_level.parse::<f32>().unwrap());
         }
 
@@ -501,7 +501,7 @@ impl UniswapV3Handler {
                         data: swap.data.clone().0,
                     })
                     .unwrap();
-                let mut price_report = Self::handle_event(swap);
+                let price_report = Self::handle_event(swap);
                 if let Some(mut price_report) = price_report {
                     price_report.local_timestamp = get_current_time();
                     price_report.reported_timestamp = Some(block_timestamp.as_u128());

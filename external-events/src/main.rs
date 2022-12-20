@@ -1,6 +1,7 @@
 //! This crate manages all external event reporting, including 1) price feeds from centralized
 //! exchanges, 2) StarkWare events, including nullifier reveals in order to hang up MPCs, and 3)
 //! Ethereum events, like sequencer rotation or L1 deposits.
+#![allow(clippy::empty_loop)]
 
 mod errors;
 mod exchanges;
@@ -17,17 +18,24 @@ async fn main() -> Result<(), ReporterError> {
     from_filename("api_keys.env").ok();
 
     // Create a few different reporters and receivers.
-    let median_reporter = PriceReporter::new(Token::ETH, Token::USDC, None).unwrap();
+    let median_reporter = PriceReporter::new(Token::Eth, Token::Usdc, None).unwrap();
     let binance_reporter =
-        PriceReporter::new(Token::ETH, Token::USDC, Some(vec![Exchange::Binance])).unwrap();
+        PriceReporter::new(Token::Eth, Token::Usdc, Some(vec![Exchange::Binance])).unwrap();
     let coinbase_reporter =
-        PriceReporter::new(Token::ETH, Token::USDC, Some(vec![Exchange::Coinbase])).unwrap();
+        PriceReporter::new(Token::Eth, Token::Usdc, Some(vec![Exchange::Coinbase])).unwrap();
     let kraken_reporter =
-        PriceReporter::new(Token::ETH, Token::USDC, Some(vec![Exchange::Kraken])).unwrap();
+        PriceReporter::new(Token::Eth, Token::Usdc, Some(vec![Exchange::Kraken])).unwrap();
     let okx_reporter =
-        PriceReporter::new(Token::ETH, Token::USDC, Some(vec![Exchange::Okx])).unwrap();
+        PriceReporter::new(Token::Eth, Token::Usdc, Some(vec![Exchange::Okx])).unwrap();
     let uniswapv3_reporter =
-        PriceReporter::new(Token::ETH, Token::USDC, Some(vec![Exchange::UniswapV3])).unwrap();
+        PriceReporter::new(Token::Eth, Token::Usdc, Some(vec![Exchange::UniswapV3])).unwrap();
+
+    let mut median_receiver = median_reporter.create_new_receiver();
+    // let mut binance_receiver = binance_reporter.create_new_receiver();
+    // let mut coinbase_receiver = coinbase_reporter.create_new_receiver();
+    // let mut kraken_receiver = kraken_reporter.create_new_receiver();
+    // let mut okx_receiver = okx_reporter.create_new_receiver();
+    // let mut uniswapv3_receiver = uniswapv3_reporter.create_new_receiver();
 
     // Poll prices.
     thread::spawn(move || loop {
@@ -49,21 +57,14 @@ async fn main() -> Result<(), ReporterError> {
         );
     });
 
-    // let mut median_receiver = median_reporter.create_new_receiver();
-    // let mut binance_receiver = binance_reporter.create_new_receiver();
-    // let mut coinbase_receiver = coinbase_reporter.create_new_receiver();
-    // let mut kraken_receiver = kraken_reporter.create_new_receiver();
-    // let mut okx_receiver = okx_reporter.create_new_receiver();
-    // let mut uniswapv3_receiver = uniswapv3_reporter.create_new_receiver();
-
     // Stream prices.
-    // thread::spawn(move || loop {
-    //     let median_report = median_receiver.recv().unwrap();
-    //     println!(
-    //         "Stream Median: {:.4} {}",
-    //         median_report.midpoint_price, median_report.local_timestamp
-    //     );
-    // });
+    thread::spawn(move || loop {
+        let _median_report = median_receiver.recv().unwrap();
+        // println!(
+        //     "Stream Median: {:.4} {}",
+        //     median_report.midpoint_price, median_report.local_timestamp
+        // );
+    });
 
     loop {}
 }
