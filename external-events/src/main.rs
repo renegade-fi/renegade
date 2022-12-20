@@ -1,17 +1,13 @@
-//! This crate manages all external event reporting, including 1) price feeds from centralized
-//! exchanges, 2) StarkWare events, including nullifier reveals in order to hang up MPCs, and 3)
-//! Ethereum events, like sequencer rotation or L1 deposits.
 #![allow(clippy::empty_loop)]
-
 mod errors;
 mod exchanges;
-mod reporters;
+mod reporter;
 mod tokens;
 
 use dotenv::from_filename;
 use std::{thread, time};
 
-use crate::{errors::ReporterError, exchanges::Exchange, reporters::PriceReporter, tokens::Token};
+use crate::{errors::ReporterError, exchanges::Exchange, reporter::PriceReporter, tokens::Token};
 
 #[tokio::main]
 async fn main() -> Result<(), ReporterError> {
