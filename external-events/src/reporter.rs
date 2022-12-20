@@ -36,72 +36,100 @@ pub struct PriceReporter {
     pub quote_token: Token,
     pub base_token: Token,
     pub exchanges: Vec<Exchange>,
-    /// Thread-safe vector of all senders for the median PriceReport stream. This allows for a
-    /// flexible number of data subscribers (by calling PriceReporter::create_new_receiver, which
-    /// appends a new sender to this vector).
-    median_price_report_senders: Arc<RwLock<Vec<RingSender<PriceReport>>>>,
-    /// The latest median PriceReport.
-    median_price_report_latest: Arc<RwLock<PriceReport>>,
+    /// Thread-safe HashMap between an Exchange and a vector of senders for PriceReports. As the
+    /// PriceReporter processes messages from the various exchanges, this HashMap determines where
+    /// price outputs will be sent to.
+    price_report_senders: Arc<RwLock<HashMap<Exchange, Vec<RingSender<PriceReport>>>>>,
+    /// The latest PriceReport for each Exchange. Used in order to .peek() at each data stream.
+    price_report_latest: Arc<RwLock<HashMap<Exchange, PriceReport>>>,
 }
 impl PriceReporter {
-    /// Given a token pair and exchange identifier, create a new PriceReporter.
-    pub fn new(
-        quote_token: Token,
-        base_token: Token,
-        exchanges: Option<Vec<Exchange>>,
-    ) -> Result<Self, ReporterError> {
-        // If the given exchanges are None, then use all exchanges by default.
-        let exchanges = match exchanges {
-            Some(exchanges) => exchanges,
-            None => vec![
-                Exchange::Binance,
-                Exchange::Coinbase,
-                Exchange::Kraken,
-                Exchange::Okx,
-                Exchange::UniswapV3,
-            ],
-        };
+    pub fn new(quote_token: Token, base_token: Token) -> Result<Self, ReporterError> {
+        // Use all exchanges.
+        let all_exchanges = vec![
+            Exchange::Median,
+            Exchange::Binance,
+            Exchange::Coinbase,
+            Exchange::Kraken,
+            Exchange::Okx,
+            Exchange::UniswapV3,
+        ];
 
         // Create the RingBuffer for the aggregate stream of all updates.
         let (all_price_reports_sender, mut all_price_reports_receiver) =
             new_ring_channel::<(PriceReport, Exchange)>();
 
         // Connect to all the exchanges, and pipe the price report stream from each connection into
-        // the aggregate ring buffer.
-        for exchange in exchanges.iter().copied() {
+        // the aggregate ring buffer created previously.
+        for exchange in all_exchanges.iter().copied() {
+            if exchange == Exchange::Median {
+                continue;
+            }
             let mut price_report_receiver =
                 ExchangeConnection::create_receiver(quote_token, base_token, exchange).unwrap();
             let mut all_price_reports_sender_clone = all_price_reports_sender.clone();
             thread::spawn(move || loop {
-                let price_report_recv = price_report_receiver.recv().unwrap();
+                let price_report = price_report_receiver.recv().unwrap();
                 all_price_reports_sender_clone
-                    .send((price_report_recv, exchange))
+                    .send((price_report, exchange))
                     .unwrap();
             });
         }
 
-        // Create the thread-safe vector of senders and receivers.
-        let (sender, mut receiver) = new_ring_channel::<PriceReport>();
-        let median_price_report_senders = Arc::new(RwLock::new(vec![sender]));
-        let median_price_report_senders_worker = median_price_report_senders.clone();
+        // Initialize the thread-safe HashMap's of senders and latests. This first hard-coded
+        // RingBuffer will be responsible for streaming all prices and updating the
+        // price_report_latest for peeking at each stream.
+        let mut price_report_senders_map = HashMap::<Exchange, Vec<RingSender<PriceReport>>>::new();
+        let mut price_report_receivers_map_first =
+            HashMap::<Exchange, RingReceiver<PriceReport>>::new();
+        let mut price_report_latest_map = HashMap::<Exchange, PriceReport>::new();
+        for exchange in all_exchanges.iter().copied() {
+            let (sender, receiver) = new_ring_channel::<PriceReport>();
+            price_report_senders_map.insert(exchange, vec![sender]);
+            price_report_receivers_map_first.insert(exchange, receiver);
+            price_report_latest_map.insert(exchange, PriceReport::default());
+        }
+        let price_report_senders = Arc::new(RwLock::new(price_report_senders_map));
+        let price_report_latest = Arc::new(RwLock::new(price_report_latest_map));
 
-        // The first hard-coded receiver is responsible for updating the
-        // median_price_report_latest.
-        let median_price_report_latest = Arc::new(RwLock::new(PriceReport::default()));
-        let median_price_report_latest_worker = median_price_report_latest.clone();
-        thread::spawn(move || loop {
-            let price_report = receiver.recv().unwrap();
-            *median_price_report_latest_worker.write().unwrap() = price_report;
-        });
+        // Start worker threads for each exchange that read from the first RingReceiver and update
+        // the latest prices.
+        for exchange in all_exchanges.iter().copied() {
+            let price_report_latest_ref = price_report_latest.clone();
+            let mut receiver_first = price_report_receivers_map_first.remove(&exchange).unwrap();
+            thread::spawn(move || loop {
+                let price_report = receiver_first.recv().unwrap();
+                *price_report_latest_ref
+                    .write()
+                    .unwrap()
+                    .get_mut(&exchange)
+                    .unwrap() = price_report;
+            });
+        }
 
         // Process the aggregate stream and send the aggregate median to each sender in
-        // median_price_report_channels.
+        // price_report_senders.
+        let price_report_senders_ref = price_report_senders.clone();
         thread::spawn(move || {
+            // This is our internal map from Exchange to most recent PriceReport used for
+            // calculating medians. Medians are calculated directly from the most recent valid
+            // report from each exchange; we do not do any smoothing over time.
             let mut latest_price_reports = HashMap::<Exchange, PriceReport>::new();
             loop {
                 // Receive a new PriceReport from the aggregate stream.
                 let (price_report_recv, exchange_recv) = all_price_reports_receiver.recv().unwrap();
                 latest_price_reports.insert(exchange_recv, price_report_recv);
+
+                // Before we calculate medians, pass the PriceReport directly through to each
+                // RingBuffer sender for the given exchange.
+                for sender in price_report_senders_ref
+                    .write()
+                    .unwrap()
+                    .get_mut(&exchange_recv)
+                    .unwrap()
+                {
+                    sender.send(price_report_recv).unwrap();
+                }
 
                 // Compute a new median and send it to the median_price_report_sender buffer.
                 let median_midpoint_price = median(
@@ -129,10 +157,11 @@ impl PriceReporter {
                     local_timestamp: median_local_timestamp as u128,
                     reported_timestamp: median_reported_timestamp,
                 };
-                for sender in median_price_report_senders_worker
+                for sender in price_report_senders_ref
                     .write()
                     .unwrap()
-                    .iter_mut()
+                    .get_mut(&Exchange::Median)
+                    .unwrap()
                 {
                     sender.send(median_price_report).unwrap();
                 }
@@ -142,22 +171,44 @@ impl PriceReporter {
         Ok(Self {
             quote_token,
             base_token,
-            exchanges,
-            median_price_report_senders,
-            median_price_report_latest,
+            exchanges: all_exchanges,
+            price_report_senders,
+            price_report_latest,
         })
     }
 
     /// Creates a new ring buffer to report median prices and returns the receiver for consumption
     /// by the callee.
-    pub fn create_new_receiver(&self) -> RingReceiver<PriceReport> {
+    pub fn create_new_receiver(&self, exchange: Exchange) -> RingReceiver<PriceReport> {
         let (sender, receiver) = new_ring_channel::<PriceReport>();
-        (*self.median_price_report_senders.write().unwrap()).push(sender);
+        (*self.price_report_senders.write().unwrap())
+            .get_mut(&exchange)
+            .unwrap()
+            .push(sender);
         receiver
     }
 
-    /// Nonblocking report of the latest median price.
-    pub fn peek(&self) -> Result<PriceReport, ReporterError> {
-        Ok(*self.median_price_report_latest.read().unwrap())
+    /// Nonblocking report of the latest price for a particular exchange.
+    pub fn peek(&self, exchange: Exchange) -> Result<PriceReport, ReporterError> {
+        Ok(*(*self.price_report_latest.read().unwrap())
+            .get(&exchange)
+            .unwrap())
+    }
+
+    /// Nonblocking report of the latest price for all exchanges.
+    pub fn peek_all(&self) -> Result<HashMap<Exchange, PriceReport>, ReporterError> {
+        let all_exchanges = vec![
+            Exchange::Median,
+            Exchange::Binance,
+            Exchange::Coinbase,
+            Exchange::Kraken,
+            Exchange::Okx,
+            Exchange::UniswapV3,
+        ];
+        let mut peek_all = HashMap::<Exchange, PriceReport>::new();
+        for exchange in all_exchanges {
+            peek_all.insert(exchange, self.peek(exchange)?);
+        }
+        Ok(peek_all)
     }
 }

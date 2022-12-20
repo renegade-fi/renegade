@@ -29,6 +29,7 @@ pub fn get_current_time() -> u128 {
 /// stream from an `Exchange`.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Exchange {
+    Median, /* Special exchange that aggregates the rest. */
     Binance,
     Coinbase,
     Kraken,
