@@ -68,9 +68,9 @@ impl PriceReporter {
 
         // Connect to all the exchanges, and pipe the price report stream from each connection into
         // the aggregate ring buffer.
-        for exchange in exchanges.to_vec() {
+        for exchange in exchanges.iter().copied() {
             let mut price_report_receiver =
-                ExchangeConnection::new(quote_token, base_token, exchange).unwrap();
+                ExchangeConnection::create_receiver(quote_token, base_token, exchange).unwrap();
             let mut all_price_reports_sender_clone = all_price_reports_sender.clone();
             thread::spawn(move || loop {
                 let price_report_recv = price_report_receiver.recv().unwrap();
@@ -116,17 +116,14 @@ impl PriceReporter {
                         .map(|price_report| price_report.local_timestamp),
                 )
                 .unwrap();
-                let median_reported_timestamp_unwrapped = median(
+                let median_reported_timestamp = median(
                     latest_price_reports
                         .values()
                         .map(|price_report| price_report.reported_timestamp)
                         .filter(|reported_timestamp| reported_timestamp.is_some())
-                        .map(|reported_timestamp| reported_timestamp.unwrap()),
-                );
-                let median_reported_timestamp = match median_reported_timestamp_unwrapped {
-                    Some(median_reported_timestamp) => Some(median_reported_timestamp as u128),
-                    None => None,
-                };
+                        .flatten(),
+                )
+                .map(|timestamp| timestamp as u128);
                 let median_price_report = PriceReport {
                     midpoint_price: median_midpoint_price as f32,
                     local_timestamp: median_local_timestamp as u128,
