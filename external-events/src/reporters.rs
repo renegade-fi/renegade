@@ -3,7 +3,7 @@ use stats::median;
 use std::{
     collections::HashMap,
     num::NonZeroUsize,
-    sync::{Arc, Mutex},
+    sync::{Arc, RwLock},
     thread,
 };
 
@@ -39,9 +39,9 @@ pub struct PriceReporter {
     /// Thread-safe vector of all senders for the median PriceReport stream. This allows for a
     /// flexible number of data subscribers (by calling PriceReporter::create_new_receiver, which
     /// appends a new sender to this vector).
-    median_price_report_senders: Arc<Mutex<Vec<RingSender<PriceReport>>>>,
+    median_price_report_senders: Arc<RwLock<Vec<RingSender<PriceReport>>>>,
     /// The latest median PriceReport.
-    median_price_report_latest: Arc<Mutex<PriceReport>>,
+    median_price_report_latest: Arc<RwLock<PriceReport>>,
 }
 impl PriceReporter {
     /// Given a token pair and exchange identifier, create a new PriceReporter.
@@ -82,16 +82,16 @@ impl PriceReporter {
 
         // Create the thread-safe vector of senders and receivers.
         let (sender, mut receiver) = new_ring_channel::<PriceReport>();
-        let median_price_report_senders = Arc::new(Mutex::new(vec![sender]));
+        let median_price_report_senders = Arc::new(RwLock::new(vec![sender]));
         let median_price_report_senders_worker = median_price_report_senders.clone();
 
         // The first hard-coded receiver is responsible for updating the
         // median_price_report_latest.
-        let median_price_report_latest = Arc::new(Mutex::new(PriceReport::default()));
+        let median_price_report_latest = Arc::new(RwLock::new(PriceReport::default()));
         let median_price_report_latest_worker = median_price_report_latest.clone();
         thread::spawn(move || loop {
             let price_report = receiver.recv().unwrap();
-            *median_price_report_latest_worker.lock().unwrap() = price_report;
+            *median_price_report_latest_worker.write().unwrap() = price_report;
         });
 
         // Process the aggregate stream and send the aggregate median to each sender in
@@ -130,7 +130,7 @@ impl PriceReporter {
                     reported_timestamp: median_reported_timestamp,
                 };
                 for sender in median_price_report_senders_worker
-                    .lock()
+                    .write()
                     .unwrap()
                     .iter_mut()
                 {
@@ -152,15 +152,12 @@ impl PriceReporter {
     /// by the callee.
     pub fn create_new_receiver(&self) -> RingReceiver<PriceReport> {
         let (sender, receiver) = new_ring_channel::<PriceReport>();
-        self.median_price_report_senders
-            .lock()
-            .unwrap()
-            .push(sender);
+        (*self.median_price_report_senders.write().unwrap()).push(sender);
         receiver
     }
 
     /// Nonblocking report of the latest median price.
     pub fn peek(&self) -> Result<PriceReport, ReporterError> {
-        Ok(*self.median_price_report_latest.lock().unwrap())
+        Ok(*self.median_price_report_latest.read().unwrap())
     }
 }
