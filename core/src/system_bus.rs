@@ -19,7 +19,7 @@ use std::{
         atomic::{AtomicU16, Ordering},
         Arc, RwLock, RwLockReadGuard, RwLockWriteGuard,
     },
-    task::{Context, Poll},
+    task::{Context, Poll, Waker},
 };
 use tokio::macros::support::poll_fn;
 
@@ -43,6 +43,9 @@ pub struct TopicReader<M> {
     /// When the reader is dropped we decrement this value in the parent struct so that
     /// the topic may be deallocated if we are the last reader
     num_readers: Arc<AtomicU16>,
+    /// The list of wakers on the given topic; the reader should add itself to the waker
+    /// queue when it is polled and returns pending
+    topic_wakers: Shared<Vec<Waker>>,
     /// A reference to the system bus's topic mesh; readers hold this reference so that they
     /// may deallocate the topic when dropped if they are the last reader on the topic
     topic_mesh: Shared<HashMap<String, Shared<TopicFabric<M>>>>,
@@ -56,6 +59,7 @@ impl<M: Clone + Sync> TopicReader<M> {
         topic_name: String,
         bus_reader: BusReader<M>,
         num_readers: Arc<AtomicU16>,
+        topic_wakers: Shared<Vec<Waker>>,
         topic_mesh: Shared<HashMap<String, Shared<TopicFabric<M>>>>,
     ) -> Self {
         // Increment num_readers in the topic mesh now that the local thread is reading
@@ -65,6 +69,7 @@ impl<M: Clone + Sync> TopicReader<M> {
             reader: bus_reader,
             buffered_message: RefCell::new(None),
             num_readers,
+            topic_wakers,
             topic_mesh,
         }
     }
@@ -97,7 +102,7 @@ impl<M: Clone + Sync> TopicReader<M> {
 
     /// Poll the underlying bus, wrapped in `PollFn` to give an async interface
     /// to the reader
-    fn poll_bus(&mut self, _: &mut Context<'_>) -> Poll<M> {
+    fn poll_bus(&mut self, cx: &mut Context<'_>) -> Poll<M> {
         // If we have previously buffered a message for delivery; take ownership of
         // the message and leave `None` in its place
         if self.buffered_message.borrow().is_some() {
@@ -108,6 +113,13 @@ impl<M: Clone + Sync> TopicReader<M> {
         if let Ok(message) = self.reader.try_recv() {
             Poll::Ready(message)
         } else {
+            // Add the local task waker to the list of waiting wakers for the topic
+            let mut locked_topic_wakers = self
+                .topic_wakers
+                .write()
+                .expect("topic_wakers lock poisoned");
+            locked_topic_wakers.push(cx.waker().clone());
+
             Poll::Pending
         }
     }
@@ -153,6 +165,8 @@ pub struct TopicFabric<M> {
     bus: Bus<M>,
     /// The number of readers on the given topic
     num_readers: Arc<AtomicU16>,
+    /// The wakers for the tasks that are actively waiting on the topic
+    wakers: Shared<Vec<Waker>>,
     /// A reference to the parent mesh that this topic is stored in
     ///
     /// Topics store these references so that they may deallocate themselves
@@ -170,6 +184,7 @@ impl<M: Clone + Sync> TopicFabric<M> {
             topic_name,
             bus: Bus::new(BUS_BUFFER_SIZE),
             num_readers: Arc::new(AtomicU16::new(0 /* val */)),
+            wakers: Arc::new(RwLock::new(Vec::new())),
             topic_mesh,
         }
     }
@@ -180,13 +195,21 @@ impl<M: Clone + Sync> TopicFabric<M> {
             self.topic_name.clone(),
             self.bus.add_rx(),
             self.num_readers.clone(),
+            self.wakers.clone(),
             self.topic_mesh.clone(),
         )
     }
 
     /// Write a message onto the topic bus
     pub fn write_message(&mut self, message: M) {
-        self.bus.broadcast(message)
+        // Push the message onto the bus
+        self.bus.broadcast(message);
+
+        // Wake all the readers waiting on a message
+        let mut locked_wakers = self.wakers.write().expect("wakers lock poisoned");
+        for waker in locked_wakers.drain(0..) {
+            waker.wake()
+        }
     }
 
     /// Get the number of readers of the topic
@@ -238,7 +261,7 @@ impl<M: Clone + Sync> SystemBus<M> {
             .unwrap()
             .write()
             .expect("topic_entry lock poisoned");
-        locked_topic.write_message(message)
+        locked_topic.write_message(message);
     }
 
     /// Subscribe to a topic, returns a pollable future
