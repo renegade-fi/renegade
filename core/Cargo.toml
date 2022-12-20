@@ -17,7 +17,6 @@ crypto = { path = "../crypto" }
 curve25519-dalek = "2"
 ed25519-dalek = { version = "1.0.1" }
 futures = { version = "0.3.21" }
-futures-sink = { version = "0.3" }
 futures-util = { version = "0.3" }
 hyper = { version = "0.14", features = ["http1", "http2", "server", "tcp"] }
 integration-helpers = { path = "../integration-helpers" }
@@ -52,6 +51,7 @@ termion = "2.0"
 tokio = { version = "1", features = ["full"] }
 toml = { version = "0.5.9" }
 tracing = { version = "0.1", features = ["log"] }
+tokio-stream = { version = "0.1" }
 tokio-tungstenite = { version = "0.18" }
 tungstenite = { version = "0.18" }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }

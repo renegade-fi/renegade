@@ -10,9 +10,11 @@
 #![allow(dead_code)]
 
 use bus::{Bus, BusReader};
+use futures::Stream;
 use std::{
     cell::RefCell,
     collections::HashMap,
+    pin::Pin,
     sync::{
         atomic::{AtomicU16, Ordering},
         Arc, RwLock, RwLockReadGuard, RwLockWriteGuard,
@@ -45,6 +47,8 @@ pub struct TopicReader<M> {
     /// may deallocate the topic when dropped if they are the last reader on the topic
     topic_mesh: Shared<HashMap<String, Shared<TopicFabric<M>>>>,
 }
+
+impl<M> Unpin for TopicReader<M> {}
 
 impl<M: Clone + Sync> TopicReader<M> {
     /// Construct a new reader for a topic
@@ -106,6 +110,14 @@ impl<M: Clone + Sync> TopicReader<M> {
         } else {
             Poll::Pending
         }
+    }
+}
+
+impl<M: Clone + Sync> Stream for TopicReader<M> {
+    type Item = M;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.poll_bus(cx).map(|message| Some(message))
     }
 }
 
