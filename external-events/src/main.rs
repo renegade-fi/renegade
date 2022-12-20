@@ -10,9 +10,10 @@ mod tokens;
 use dotenv::from_filename;
 use std::{thread, time};
 
-use crate::{exchanges::Exchange, reporters::PriceReporter, tokens::Token};
+use crate::{errors::ReporterError, exchanges::Exchange, reporters::PriceReporter, tokens::Token};
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<(), ReporterError> {
     from_filename("api_keys.env").ok();
 
     // Create a few different reporters and receivers.
@@ -25,12 +26,8 @@ fn main() {
         PriceReporter::new(Token::ETH, Token::USDC, Some(vec![Exchange::Kraken])).unwrap();
     let okx_reporter =
         PriceReporter::new(Token::ETH, Token::USDC, Some(vec![Exchange::Okx])).unwrap();
-
-    let mut median_receiver = median_reporter.create_new_receiver();
-    // let mut binance_receiver = binance_reporter.create_new_receiver();
-    // let mut coinbase_receiver = coinbase_reporter.create_new_receiver();
-    // let mut kraken_receiver = kraken_reporter.create_new_receiver();
-    // let mut okx_receiver = okx_reporter.create_new_receiver();
+    let uniswapv3_reporter =
+        PriceReporter::new(Token::ETH, Token::USDC, Some(vec![Exchange::UniswapV3])).unwrap();
 
     // Poll prices.
     thread::spawn(move || loop {
@@ -40,15 +37,24 @@ fn main() {
         let coinbase_report = coinbase_reporter.peek().unwrap();
         let kraken_report = kraken_reporter.peek().unwrap();
         let okx_report = okx_reporter.peek().unwrap();
+        let uniswapv3_report = uniswapv3_reporter.peek().unwrap();
         println!(
-            "Polled Median: {:.3}  ( B {:.3} C {:.3} K {:.3} O {:.3} )",
+            "Polled Median: {:.3}  ( B {:.3} C {:.3} K {:.3} O {:.3} U {:.3} )",
             median_report.midpoint_price,
             binance_report.midpoint_price,
             coinbase_report.midpoint_price,
             kraken_report.midpoint_price,
             okx_report.midpoint_price,
+            uniswapv3_report.midpoint_price,
         );
     });
+
+    // let mut median_receiver = median_reporter.create_new_receiver();
+    // let mut binance_receiver = binance_reporter.create_new_receiver();
+    // let mut coinbase_receiver = coinbase_reporter.create_new_receiver();
+    // let mut kraken_receiver = kraken_reporter.create_new_receiver();
+    // let mut okx_receiver = okx_reporter.create_new_receiver();
+    // let mut uniswapv3_receiver = uniswapv3_reporter.create_new_receiver();
 
     // Stream prices.
     // thread::spawn(move || loop {

@@ -58,6 +58,7 @@ impl PriceReporter {
                 Exchange::Coinbase,
                 Exchange::Kraken,
                 Exchange::Okx,
+                Exchange::UniswapV3,
             ],
         };
 
