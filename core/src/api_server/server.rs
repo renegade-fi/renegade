@@ -1,6 +1,6 @@
 //! The core logic behind the APIServer's implementation
 
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc};
 
 use futures::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
@@ -13,6 +13,7 @@ use tokio::{
     runtime::Runtime,
     task::JoinHandle as TokioJoinHandle,
 };
+use tokio_stream::StreamMap;
 use tokio_tungstenite::{accept_async, WebSocketStream};
 use tungstenite::Message;
 
@@ -31,6 +32,9 @@ use super::{
     routes::{Router, TypedHandler},
     worker::ApiServerConfig,
 };
+
+/// The dummy stream used to seed the websocket subscriptions `StreamMap`
+const DUMMY_SUBSCRIPTION_TOPIC: &str = "dummy-topic";
 
 /// Accepts inbound HTTP requests and websocket subscriptions and
 /// serves requests from those connections
@@ -64,123 +68,15 @@ impl ApiServer {
 
         // Loop over incoming streams
         while let Ok((stream, _)) = listener.accept().await {
-            tokio::spawn(Self::serve_websocket(stream, system_bus.clone()));
+            // Create a new handler on this stream
+            let handler = WebsocketHandler::new(stream, system_bus.clone());
+            tokio::spawn(handler.start());
         }
 
         // If the listener fails, the server has failed
         Err(ApiServerError::WebsocketServerFailure(
             "websocket server spuriously shutdown".to_string(),
         ))
-    }
-
-    /// Serve a websocket connection from a front end
-    async fn serve_websocket(
-        incoming_stream: TcpStream,
-        system_bus: SystemBus<SystemBusMessage>,
-    ) -> Result<(), ApiServerError> {
-        // Accept the websocket upgrade and split into read/write streams
-        let websocket_stream = accept_async(incoming_stream)
-            .await
-            .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
-        let (mut write_stream, mut read_stream) = websocket_stream.split();
-
-        // The websocket client will add subscriptions throughout the communication; this tracks the
-        // active subscriptions that the local connection has open
-        let mut subscriptions: HashMap<String, TopicReader<SystemBusMessage>> = HashMap::new();
-
-        // Send test messages in a loop
-        let mut interval = tokio::time::interval(Duration::from_millis(5000));
-        let message = Message::Text("heartbeat".to_string());
-        loop {
-            tokio::select! {
-                // Read side
-                message = read_stream.next() => {
-                    match message {
-                        Some(msg) => {
-                            if let Err(e) = msg {
-                                return Err(ApiServerError::WebsocketHandlerFailure(e.to_string()));
-                            }
-
-                            let message_unwrapped = msg.unwrap();
-                            match message_unwrapped {
-                                Message::Close(_) => break,
-                                _ => Self::handle_incoming_ws_message(message_unwrapped, &mut subscriptions, &mut write_stream, system_bus.clone()).await?,
-                            };
-                        }
-
-                        // None is returned when the connection is closed or a critical error
-                        // occured. In either case the server side may hang up
-                        None => break
-                    }
-                }
-
-                // Sender push side
-                _ = interval.tick() => {
-                    write_stream.send(message.clone()).await.unwrap();
-                }
-            }
-        }
-
-        println!("Finished connection...\n\n");
-        Ok(())
-    }
-
-    /// Handle an incoming websocket message
-    async fn handle_incoming_ws_message(
-        message: Message,
-        client_subscriptions: &mut HashMap<String, TopicReader<SystemBusMessage>>,
-        write_stream: &mut SplitSink<WebSocketStream<TcpStream>, Message>,
-        system_bus: SystemBus<SystemBusMessage>,
-    ) -> Result<(), ApiServerError> {
-        if let Message::Text(msg_text) = message {
-            // Deserialize the message body and dispatch to a handler for a response
-            let deserialized: Result<SubscriptionMessage, _> = serde_json::from_str(&msg_text);
-            let resp = match deserialized {
-                Ok(message_body) => {
-                    let response = Self::handle_subscription_message(
-                        message_body,
-                        client_subscriptions,
-                        system_bus,
-                    );
-                    let response_ser = serde_json::to_string(&response)
-                        .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
-
-                    Message::Text(response_ser)
-                }
-
-                Err(e) => Message::Text(format!("Invalid request: {}", e)),
-            };
-
-            // Write the response onto the websocket
-            write_stream
-                .send(resp)
-                .await
-                .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
-        }
-
-        Ok(())
-    }
-
-    /// Handles an incoming subscribe/unsubscribe message
-    fn handle_subscription_message(
-        message: SubscriptionMessage,
-        client_subscriptions: &mut HashMap<String, TopicReader<SystemBusMessage>>,
-        system_bus: SystemBus<SystemBusMessage>,
-    ) -> SubscriptionResponse {
-        // Update local subscriptions
-        match message {
-            SubscriptionMessage::Subscribe { topic } => {
-                let topic_reader = system_bus.subscribe(topic.clone());
-                client_subscriptions.insert(topic, topic_reader);
-            }
-            SubscriptionMessage::Unsubscribe { topic } => {
-                client_subscriptions.remove(&topic);
-            }
-        };
-
-        SubscriptionResponse {
-            subscriptions: client_subscriptions.keys().cloned().collect(),
-        }
     }
 
     /// Sets up the routes that the API service exposes in the router
@@ -199,6 +95,168 @@ impl ApiServer {
         router
             .handle_req(req.method().to_owned(), req.uri().path().to_string(), req)
             .await
+    }
+}
+
+/// Handler for connections to the websocket server
+#[derive(Debug)]
+pub struct WebsocketHandler {
+    /// The TCP stream underlying the websocket that has been opened
+    tcp_stream: Option<TcpStream>,
+    /// The system bus to recieve events on
+    system_bus: SystemBus<SystemBusMessage>,
+}
+
+impl WebsocketHandler {
+    /// Create a new websocket handler
+    pub fn new(inbound_stream: TcpStream, system_bus: SystemBus<SystemBusMessage>) -> Self {
+        Self {
+            tcp_stream: Some(inbound_stream),
+            system_bus,
+        }
+    }
+
+    /// Start the websocket handler and run it
+    ///
+    /// Consumes the reference to the handler
+    pub async fn start(mut self) -> Result<(), ApiServerError> {
+        // Accept the websocket upgrade and split into read/write streams
+        let tcp_stream = self.tcp_stream.take().unwrap();
+        let websocket_stream = accept_async(tcp_stream)
+            .await
+            .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
+        let (mut write_stream, mut read_stream) = websocket_stream.split();
+
+        // The websocket client will add subscriptions throughout the communication; this tracks the
+        // active subscriptions that the local connection has open
+        let mut subscriptions = StreamMap::new();
+
+        // The `StreamMap` future implementation will return `Poll::Ready(None)` if no streams are
+        // registered, indicating that the mapped stream is empty. We would prefer it to return
+        // `Poll::Pending` in this case, so we enter a dummy stream into the map.
+        let dummy_reader = self
+            .system_bus
+            .subscribe(DUMMY_SUBSCRIPTION_TOPIC.to_string());
+        subscriptions.insert(DUMMY_SUBSCRIPTION_TOPIC.to_string(), dummy_reader);
+
+        // Begin the listener loop
+        loop {
+            tokio::select! {
+                // Next subscription event from the system bus
+                Some((_, event)) = subscriptions.next() => {
+                    self.push_subscribed_event(event, &mut write_stream).await?;
+                }
+
+                // Next message from the client side of the websocket
+                message = read_stream.next() => {
+                    match message {
+                        Some(msg) => {
+                            if let Err(e) = msg {
+                                return Err(ApiServerError::WebsocketHandlerFailure(e.to_string()));
+                            }
+
+                            let message_unwrapped = msg.unwrap();
+                            match message_unwrapped {
+                                Message::Close(_) => break,
+                                _ => {
+                                    let bus_clone = self.system_bus.clone();
+                                    self.handle_incoming_ws_message(message_unwrapped, &mut subscriptions, &mut write_stream, bus_clone).await?;
+                                }
+                            };
+                        }
+
+                        // None is returned when the connection is closed or a critical error
+                        // occured. In either case the server side may hang up
+                        None => break
+                    }
+                }
+            };
+        }
+
+        Ok(())
+    }
+
+    /// Handle an incoming websocket message
+    async fn handle_incoming_ws_message(
+        &self,
+        message: Message,
+        client_subscriptions: &mut StreamMap<String, TopicReader<SystemBusMessage>>,
+        write_stream: &mut SplitSink<WebSocketStream<TcpStream>, Message>,
+        system_bus: SystemBus<SystemBusMessage>,
+    ) -> Result<(), ApiServerError> {
+        if let Message::Text(msg_text) = message {
+            // Deserialize the message body and dispatch to a handler for a response
+            let deserialized: Result<SubscriptionMessage, _> = serde_json::from_str(&msg_text);
+            let resp = match deserialized {
+                Ok(message_body) => {
+                    let response = self.handle_subscription_message(
+                        message_body,
+                        client_subscriptions,
+                        system_bus,
+                    );
+                    let response_serialized = serde_json::to_string(&response)
+                        .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
+
+                    Message::Text(response_serialized)
+                }
+
+                Err(e) => Message::Text(format!("Invalid request: {}", e)),
+            };
+
+            // Write the response onto the websocket
+            write_stream
+                .send(resp)
+                .await
+                .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    /// Handles an incoming subscribe/unsubscribe message
+    fn handle_subscription_message(
+        &self,
+        message: SubscriptionMessage,
+        client_subscriptions: &mut StreamMap<String, TopicReader<SystemBusMessage>>,
+        system_bus: SystemBus<SystemBusMessage>,
+    ) -> SubscriptionResponse {
+        // Update local subscriptions
+        match message {
+            SubscriptionMessage::Subscribe { topic } => {
+                let topic_reader = system_bus.subscribe(topic.clone());
+                client_subscriptions.insert(topic, topic_reader);
+            }
+            SubscriptionMessage::Unsubscribe { topic } => {
+                client_subscriptions.remove(&topic);
+            }
+        };
+
+        SubscriptionResponse {
+            subscriptions: client_subscriptions
+                .keys()
+                .cloned()
+                .filter(|key| DUMMY_SUBSCRIPTION_TOPIC.to_string().ne(key))
+                .collect(),
+        }
+    }
+
+    /// Push an internal event that the client is subscribed to onto the websocket
+    async fn push_subscribed_event(
+        &self,
+        event: SystemBusMessage,
+        write_stream: &mut SplitSink<WebSocketStream<TcpStream>, Message>,
+    ) -> Result<(), ApiServerError> {
+        // Serialize the message and push it onto the stream
+        let event_serialized = serde_json::to_string(&event)
+            .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
+        let message = Message::Text(event_serialized);
+
+        write_stream
+            .send(message)
+            .await
+            .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
+
+        Ok(())
     }
 }
 
