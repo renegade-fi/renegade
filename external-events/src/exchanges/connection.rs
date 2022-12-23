@@ -48,8 +48,8 @@ pub struct ExchangeConnection {
 }
 impl ExchangeConnection {
     pub fn create_receiver(
-        _quote_token: Token,
-        _base_token: Token,
+        base_token: Token,
+        quote_token: Token,
         exchange: Exchange,
     ) -> Result<RingReceiver<PriceReport>, ReporterError> {
         // Create the ring buffer.
@@ -59,7 +59,7 @@ impl ExchangeConnection {
         // UniswapV3 logic is slightly different, as we use the web3 API wrapper for convenience,
         // rather than interacting directly over websockets.
         if exchange == Exchange::UniswapV3 {
-            UniswapV3Handler::start_price_stream(price_report_sender);
+            UniswapV3Handler::start_price_stream(base_token, quote_token, price_report_sender);
             return Ok(price_report_receiver);
         }
 

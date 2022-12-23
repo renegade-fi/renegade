@@ -9,12 +9,16 @@ use std::{thread, time};
 
 use crate::{errors::ReporterError, exchanges::Exchange, reporter::PriceReporter, tokens::Token};
 
+#[macro_use]
+extern crate lazy_static;
+
 #[tokio::main]
 async fn main() -> Result<(), ReporterError> {
     from_filename("api_keys.env").ok();
 
     // Create a PriceReporter and copy a median receiver instance.
-    let price_reporter = PriceReporter::new(Token::Eth, Token::Usdc).unwrap();
+    let price_reporter =
+        PriceReporter::new(Token::from_ticker("WETH"), Token::from_ticker("USDC")).unwrap();
     let mut median_receiver = price_reporter.create_new_receiver(Exchange::Median);
 
     // Poll prices.
