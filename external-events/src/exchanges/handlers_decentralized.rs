@@ -16,8 +16,7 @@ use crate::{exchanges::connection::get_current_time, reporter::PriceReport, toke
 #[derive(Clone, Debug)]
 pub struct UniswapV3Handler;
 impl UniswapV3Handler {
-    const FACTORY_ADDRESS: &str =
-        "1f98431c8ad98523631ae4a59f267346ea31f984";
+    const FACTORY_ADDRESS: &str = "1f98431c8ad98523631ae4a59f267346ea31f984";
     const POOL_INIT_CODE_HASH: &str =
         "e34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54";
 
@@ -149,10 +148,12 @@ impl UniswapV3Handler {
         // LOW = 500
         // LOWEST = 100
         // TODO: Dynamically choose the fee tier?
-        fee[32-4..].clone_from_slice(&500_u32.to_be_bytes());
+        fee[32 - 4..].clone_from_slice(&500_u32.to_be_bytes());
 
         let pool_address = create2::calc_addr_with_hash(
-            hex::decode(Self::FACTORY_ADDRESS).unwrap()[..20].try_into().unwrap(),
+            hex::decode(Self::FACTORY_ADDRESS).unwrap()[..20]
+                .try_into()
+                .unwrap(),
             &keccak256(
                 &[
                     H256::from(first_token).as_bytes(),
@@ -161,7 +162,9 @@ impl UniswapV3Handler {
                 ]
                 .concat()[..],
             ),
-            hex::decode(Self::POOL_INIT_CODE_HASH).unwrap()[..32].try_into().unwrap(),
+            hex::decode(Self::POOL_INIT_CODE_HASH).unwrap()[..32]
+                .try_into()
+                .unwrap(),
         );
         Some(H160::from(pool_address))
     }
