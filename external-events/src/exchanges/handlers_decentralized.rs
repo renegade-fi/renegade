@@ -3,7 +3,13 @@ use create2;
 use futures::{executor::block_on, StreamExt};
 use hex;
 use ring_channel::RingSender;
-use std::{env, str::FromStr, thread};
+use std::{
+    cmp::Ordering,
+    env,
+    str::FromStr,
+    sync::{Arc, Mutex},
+    thread,
+};
 use web3::{
     self, ethabi,
     signing::keccak256,
@@ -29,6 +35,7 @@ impl UniswapV3Handler {
         let ethereum_wss_url = env::var("ETHEREUM_MAINNET_WSS").unwrap();
         let transport = block_on(web3::transports::WebSocket::new(&ethereum_wss_url)).unwrap();
         let web3_connection = Web3::new(transport);
+        let web3_connection = Arc::new(Mutex::new(web3_connection));
 
         // Derive the Uniswap pool address from this Token pair.
         let pool_address = Self::get_pool_address(base_token, quote_token).unwrap();
@@ -78,30 +85,79 @@ impl UniswapV3Handler {
         let swap_topic_filter = swap_event_abi
             .filter(ethabi::RawTopicFilter::default())
             .unwrap();
-        let swap_filter = web3::types::FilterBuilder::default()
+        let swap_filter_builder = web3::types::FilterBuilder::default()
             .address(vec![pool_address])
-            .topic_filter(swap_topic_filter)
-            .build();
-        let swap_filter =
-            block_on(web3_connection.eth_filter().create_logs_filter(swap_filter)).unwrap();
+            .topic_filter(swap_topic_filter);
 
+        let guard = web3_connection.lock().unwrap();
+        let swap_filter = block_on(
+            guard
+                .eth_filter()
+                .create_logs_filter(swap_filter_builder.build()),
+        )
+        .unwrap();
+
+        let current_block = block_on(guard.eth().block_number()).unwrap();
+
+        // Since it may be a while until we receive our first Swap event, we send the most recent
+        // historic Swap as the current price.
+        let swap_filter_builder = swap_filter_builder
+            .from_block(web3::types::BlockNumber::Number(current_block - 100))
+            .to_block(web3::types::BlockNumber::Latest);
+        let swap_filter_recents = block_on(
+            guard
+                .eth_filter()
+                .create_logs_filter(swap_filter_builder.build()),
+        )
+        .unwrap();
+        drop(guard);
+
+        // Process the most recent Swaps, then start streaming events from the swap_filter.
+        let web3_connection_copy = web3_connection.clone();
         thread::spawn(move || {
+            // Process the most recent Swap.
+            let mut swap_filter_recent_events = block_on(swap_filter_recents.logs()).unwrap();
+            swap_filter_recent_events.sort_by(|a, b| {
+                if a.block_number < b.block_number {
+                    return Ordering::Less;
+                } else if a.block_number > b.block_number {
+                    return Ordering::Greater;
+                } else if a.transaction_index < b.transaction_index {
+                    return Ordering::Greater;
+                } else if a.transaction_index > b.transaction_index {
+                    return Ordering::Less;
+                }
+                Ordering::Equal
+            });
+            let swap = swap_filter_recent_events.pop();
+            if swap.is_some() {
+                let swap = swap.unwrap();
+                let block_id = BlockId::Number(BlockNumber::Number(swap.block_number.unwrap()));
+                let block_timestamp =
+                    block_on(web3_connection.lock().unwrap().eth().block(block_id))
+                        .unwrap()
+                        .unwrap()
+                        .timestamp;
+                let price_report = Self::handle_event(swap, swap_event_abi.clone());
+                if let Some(mut price_report) = price_report {
+                    price_report.local_timestamp = get_current_time();
+                    price_report.reported_timestamp = Some(block_timestamp.as_u128());
+                    sender.send(price_report).unwrap();
+                }
+            }
+
+            // Start streaming.
             let swap_stream = swap_filter.stream(Duration::new(1, 0));
             futures::pin_mut!(swap_stream);
             loop {
                 let swap = block_on(swap_stream.next()).unwrap().unwrap();
                 let block_id = BlockId::Number(BlockNumber::Number(swap.block_number.unwrap()));
-                let block_timestamp = block_on(web3_connection.eth().block(block_id))
-                    .unwrap()
-                    .unwrap()
-                    .timestamp;
-                let swap = swap_event_abi
-                    .parse_log(ethabi::RawLog {
-                        topics: swap.topics.clone(),
-                        data: swap.data.clone().0,
-                    })
-                    .unwrap();
-                let price_report = Self::handle_event(swap);
+                let block_timestamp =
+                    block_on(web3_connection_copy.lock().unwrap().eth().block(block_id))
+                        .unwrap()
+                        .unwrap()
+                        .timestamp;
+                let price_report = Self::handle_event(swap, swap_event_abi.clone());
                 if let Some(mut price_report) = price_report {
                     price_report.local_timestamp = get_current_time();
                     price_report.reported_timestamp = Some(block_timestamp.as_u128());
@@ -111,7 +167,16 @@ impl UniswapV3Handler {
         });
     }
 
-    fn handle_event(swap: ethabi::Log) -> Option<PriceReport> {
+    fn handle_event(
+        swap: web3::types::Log,
+        swap_event_abi: web3::ethabi::Event,
+    ) -> Option<PriceReport> {
+        let swap = swap_event_abi
+            .parse_log(ethabi::RawLog {
+                topics: swap.topics.clone(),
+                data: swap.data.clone().0,
+            })
+            .unwrap();
         // Extract the `sqrtPriceX96` and convert it to the marginal price of the Uniswapv3 pool,
         // as per: https://docs.uniswap.org/sdk/v3/guides/fetching-prices#understanding-sqrtprice
         let sqrt_price_x96 = &swap.params[4].value;
