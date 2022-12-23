@@ -119,7 +119,9 @@ impl Token {
     /// Given a Renegade-native ticker, returns a new Token.
     pub fn from_ticker(ticker: &str) -> Self {
         // TODO: More gracefully fail if a user does not supply a valid ticker.
-        let addr = ADDR_TICKER_BIMAP.get_by_right(&String::from(ticker)).unwrap();
+        let addr = ADDR_TICKER_BIMAP
+            .get_by_right(&String::from(ticker))
+            .unwrap();
         Self {
             addr: addr.to_string(),
         }
@@ -138,7 +140,9 @@ impl Token {
     }
 
     pub fn get_decimals(&self) -> Option<u8> {
-        ADDR_DECIMALS_MAP.get(self.get_addr()).map(|decimals| *decimals)
+        ADDR_DECIMALS_MAP
+            .get(self.get_addr())
+            .map(|decimals| *decimals)
     }
 
     /// Returns true if the Token has a Renegade-native ticker.
