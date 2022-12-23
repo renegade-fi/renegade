@@ -1,26 +1,40 @@
 use core::time::Duration;
+use create2;
 use futures::{executor::block_on, StreamExt};
+use hex;
 use ring_channel::RingSender;
-use std::{str::FromStr, thread};
+use std::{env, str::FromStr, thread};
 use web3::{
     self, ethabi,
-    types::{BlockId, BlockNumber, H160, U256},
+    signing::keccak256,
+    types::{BlockId, BlockNumber, H160, H256, U256},
     Web3,
 };
 
-use crate::{exchanges::connection::get_current_time, reporter::PriceReport};
+use crate::{exchanges::connection::get_current_time, reporter::PriceReport, tokens::Token};
 
 #[derive(Clone, Debug)]
 pub struct UniswapV3Handler;
 impl UniswapV3Handler {
-    const WSS_URL: &'static str = "wss://mainnet.infura.io/ws/v3/68c04ec6f9ce42c5becbed52a464ef81";
-    const ETH_USDC_ADDR: &'static str = "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640";
-    const BASE_DECIMALS: u8 = 18; /* i.e. WETH */
-    const QUOTE_DECIMALS: u8 = 6; /* i.e. USDC */
+    const FACTORY_ADDRESS: &str =
+        "1f98431c8ad98523631ae4a59f267346ea31f984";
+    const POOL_INIT_CODE_HASH: &str =
+        "e34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54";
 
-    pub fn start_price_stream(mut sender: RingSender<PriceReport>) {
-        let transport = block_on(web3::transports::WebSocket::new(Self::WSS_URL)).unwrap();
+    pub fn start_price_stream(
+        base_token: Token,
+        quote_token: Token,
+        mut sender: RingSender<PriceReport>,
+    ) {
+        // Create the Web3 connection.
+        let ethereum_wss_url = env::var("ETHEREUM_MAINNET_WSS").unwrap();
+        let transport = block_on(web3::transports::WebSocket::new(&ethereum_wss_url)).unwrap();
         let web3_connection = Web3::new(transport);
+
+        // Derive the Uniswap pool address from this Token pair.
+        let pool_address = Self::get_pool_address(base_token, quote_token).unwrap();
+
+        // Create a filter for Uniswap `Swap` events on this pool.
         let swap_event_abi = ethabi::Event {
             name: String::from("Swap"),
             inputs: vec![
@@ -66,7 +80,7 @@ impl UniswapV3Handler {
             .filter(ethabi::RawTopicFilter::default())
             .unwrap();
         let swap_filter = web3::types::FilterBuilder::default()
-            .address(vec![H160::from_str(Self::ETH_USDC_ADDR).unwrap()])
+            .address(vec![pool_address])
             .topic_filter(swap_topic_filter)
             .build();
         let swap_filter =
@@ -106,15 +120,49 @@ impl UniswapV3Handler {
             ethabi::Token::Uint(sqrt_price_x96) => sqrt_price_x96,
             _ => unreachable!(),
         };
-        let price_numerator = U256::from(10).pow(U256::from(Self::BASE_DECIMALS))
-            * U256::from(2).pow(U256::from(192));
+        let price_numerator = U256::from(2).pow(U256::from(192));
         let price_denominator = U256::from(sqrt_price_x96).pow(U256::from(2));
+        // The best way to convert U256 to f64 is unfortunately to parse via Strings. Big L.
+        let price_numerator: f64 = price_numerator.to_string().parse().unwrap();
+        let price_denominator: f64 = price_denominator.to_string().parse().unwrap();
+        // Note that this price does not adjust for ERC-20 decimals yet.
         let price = price_numerator / price_denominator;
-        let price = price.as_u32() as f32 / 10_f32.powf(Self::QUOTE_DECIMALS.into());
         Some(PriceReport {
-            midpoint_price: price,
+            midpoint_price: price as f64,
             reported_timestamp: None,
             local_timestamp: Default::default(),
         })
+    }
+
+    fn get_pool_address(base_token: Token, quote_token: Token) -> Option<H160> {
+        let base_token_addr = H160::from_str(base_token.get_addr()).unwrap();
+        let quote_token_addr = H160::from_str(quote_token.get_addr()).unwrap();
+        let (first_token, second_token) = if base_token_addr > quote_token_addr {
+            (quote_token_addr, base_token_addr)
+        } else {
+            (base_token_addr, quote_token_addr)
+        };
+        let mut fee = [0_u8; 32];
+        // Fee tiers;
+        // HIGH = 10000
+        // MEDIUM = 3000
+        // LOW = 500
+        // LOWEST = 100
+        // TODO: Dynamically choose the fee tier?
+        fee[32-4..].clone_from_slice(&500_u32.to_be_bytes());
+
+        let pool_address = create2::calc_addr_with_hash(
+            hex::decode(Self::FACTORY_ADDRESS).unwrap()[..20].try_into().unwrap(),
+            &keccak256(
+                &[
+                    H256::from(first_token).as_bytes(),
+                    H256::from(second_token).as_bytes(),
+                    &fee,
+                ]
+                .concat()[..],
+            ),
+            hex::decode(Self::POOL_INIT_CODE_HASH).unwrap()[..32].try_into().unwrap(),
+        );
+        Some(H160::from(pool_address))
     }
 }

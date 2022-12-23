@@ -6,11 +6,14 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bimap = "0.6.2"
 chrono = "0.4.23"
+create2 = "0.0.2"
 dotenv = "0.15.0"
 futures = "0.3.25"
 hex = "0.3.1"
 hmac-sha256 = "1.1.6"
+lazy_static = "1.4.0"
 ring-channel = "0.11.0"
 serde = "1.0.139"
 serde_json = "1.0"

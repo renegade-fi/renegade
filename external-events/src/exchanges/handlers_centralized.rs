@@ -36,13 +36,13 @@ impl CentralizedExchangeHandler for BinanceHandler {
     }
 
     fn handle_exchange_message(&mut self, message_json: Value) -> Option<PriceReport> {
-        let best_bid: f32 = match message_json["b"].as_str() {
+        let best_bid: f64 = match message_json["b"].as_str() {
             None => {
                 return None;
             }
             Some(best_bid_str) => best_bid_str.parse().unwrap(),
         };
-        let best_offer: f32 = match message_json["a"].as_str() {
+        let best_offer: f64 = match message_json["a"].as_str() {
             None => {
                 return None;
             }
@@ -147,13 +147,13 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
         }
 
         // Given the new order book, compute the best bid and offer.
-        let mut best_bid: f32 = 0.0;
-        let mut best_offer: f32 = f32::INFINITY;
+        let mut best_bid: f64 = 0.0;
+        let mut best_offer: f64 = f64::INFINITY;
         for price_level in self.order_book_bids.keys() {
-            best_bid = f32::max(best_bid, price_level.parse::<f32>().unwrap());
+            best_bid = f64::max(best_bid, price_level.parse::<f64>().unwrap());
         }
         for price_level in self.order_book_offers.keys() {
-            best_offer = f32::min(best_offer, price_level.parse::<f32>().unwrap());
+            best_offer = f64::min(best_offer, price_level.parse::<f64>().unwrap());
         }
 
         let reported_timestamp =
@@ -199,13 +199,13 @@ impl CentralizedExchangeHandler for KrakenHandler {
 
     fn handle_exchange_message(&mut self, message_json: Value) -> Option<PriceReport> {
         let best_bid = match &message_json[1][0] {
-            Value::String(best_bid) => best_bid.parse::<f32>().unwrap(),
+            Value::String(best_bid) => best_bid.parse::<f64>().unwrap(),
             _ => {
                 return None;
             }
         };
         let best_offer = match &message_json[1][1] {
-            Value::String(best_offer) => best_offer.parse::<f32>().unwrap(),
+            Value::String(best_offer) => best_offer.parse::<f64>().unwrap(),
             _ => {
                 return None;
             }
@@ -251,13 +251,13 @@ impl CentralizedExchangeHandler for OkxHandler {
 
     fn handle_exchange_message(&mut self, message_json: Value) -> Option<PriceReport> {
         let best_bid = match &message_json["data"][0]["bids"][0][0] {
-            Value::String(best_bid) => best_bid.parse::<f32>().unwrap(),
+            Value::String(best_bid) => best_bid.parse::<f64>().unwrap(),
             _ => {
                 return None;
             }
         };
         let best_offer = match &message_json["data"][0]["asks"][0][0] {
-            Value::String(best_offer) => best_offer.parse::<f32>().unwrap(),
+            Value::String(best_offer) => best_offer.parse::<f64>().unwrap(),
             _ => {
                 return None;
             }
