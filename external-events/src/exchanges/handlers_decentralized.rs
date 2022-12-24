@@ -38,7 +38,7 @@ impl UniswapV3Handler {
         let web3_connection = Arc::new(Mutex::new(web3_connection));
 
         // Derive the Uniswap pool address from this Token pair.
-        let pool_address = Self::get_pool_address(base_token, quote_token).unwrap();
+        let (pool_address, is_flipped) = Self::get_pool_address(base_token, quote_token).unwrap();
 
         // Create a filter for Uniswap `Swap` events on this pool.
         let swap_event_abi = ethabi::Event {
@@ -130,15 +130,14 @@ impl UniswapV3Handler {
                 Ordering::Equal
             });
             let swap = swap_filter_recent_events.pop();
-            if swap.is_some() {
-                let swap = swap.unwrap();
+            if let Some(swap) = swap {
                 let block_id = BlockId::Number(BlockNumber::Number(swap.block_number.unwrap()));
                 let block_timestamp =
                     block_on(web3_connection.lock().unwrap().eth().block(block_id))
                         .unwrap()
                         .unwrap()
                         .timestamp;
-                let price_report = Self::handle_event(swap, swap_event_abi.clone());
+                let price_report = Self::handle_event(swap, is_flipped, swap_event_abi.clone());
                 if let Some(mut price_report) = price_report {
                     price_report.local_timestamp = get_current_time();
                     price_report.reported_timestamp = Some(block_timestamp.as_u128());
@@ -157,7 +156,7 @@ impl UniswapV3Handler {
                         .unwrap()
                         .unwrap()
                         .timestamp;
-                let price_report = Self::handle_event(swap, swap_event_abi.clone());
+                let price_report = Self::handle_event(swap, is_flipped, swap_event_abi.clone());
                 if let Some(mut price_report) = price_report {
                     price_report.local_timestamp = get_current_time();
                     price_report.reported_timestamp = Some(block_timestamp.as_u128());
@@ -169,6 +168,7 @@ impl UniswapV3Handler {
 
     fn handle_event(
         swap: web3::types::Log,
+        is_flipped: bool,
         swap_event_abi: web3::ethabi::Event,
     ) -> Option<PriceReport> {
         let swap = swap_event_abi
@@ -184,8 +184,13 @@ impl UniswapV3Handler {
             ethabi::Token::Uint(sqrt_price_x96) => sqrt_price_x96,
             _ => unreachable!(),
         };
-        let price_numerator = U256::from(2).pow(U256::from(192));
-        let price_denominator = U256::from(sqrt_price_x96).pow(U256::from(2));
+        let price_numerator = U256::from(sqrt_price_x96).pow(U256::from(2));
+        let price_denominator = U256::from(2).pow(U256::from(192));
+        let (price_numerator, price_denominator) = if is_flipped {
+            (price_denominator, price_numerator)
+        } else {
+            (price_numerator, price_denominator)
+        };
         // The best way to convert U256 to f64 is unfortunately to parse via Strings. Big L.
         let price_numerator: f64 = price_numerator.to_string().parse().unwrap();
         let price_denominator: f64 = price_denominator.to_string().parse().unwrap();
@@ -198,10 +203,15 @@ impl UniswapV3Handler {
         })
     }
 
-    fn get_pool_address(base_token: Token, quote_token: Token) -> Option<H160> {
+    /// Given the base_token and quote_token, finds the address of the UniswapV3 pool with highest
+    /// TVL among all fee tiers (1bp, 5bp, 30bp, 100bp). In addition, we return a boolean
+    /// is_flipped that reflects whether the assets are flipped (i.e., quote per base) in the
+    /// Uniswap pool.
+    fn get_pool_address(base_token: Token, quote_token: Token) -> Option<(H160, bool)> {
         let base_token_addr = H160::from_str(base_token.get_addr()).unwrap();
         let quote_token_addr = H160::from_str(quote_token.get_addr()).unwrap();
-        let (first_token, second_token) = if base_token_addr > quote_token_addr {
+        let is_flipped = base_token_addr > quote_token_addr;
+        let (first_token, second_token) = if is_flipped {
             (quote_token_addr, base_token_addr)
         } else {
             (base_token_addr, quote_token_addr)
@@ -231,6 +241,6 @@ impl UniswapV3Handler {
                 .try_into()
                 .unwrap(),
         );
-        Some(H160::from(pool_address))
+        Some((H160::from(pool_address), is_flipped))
     }
 }
