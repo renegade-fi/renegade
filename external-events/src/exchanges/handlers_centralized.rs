@@ -5,14 +5,19 @@ use std::{collections::HashMap, env, net::TcpStream};
 use tungstenite::{stream::MaybeTlsStream, Message, WebSocket as WebSocketGeneric};
 
 use crate::{
-    errors::ReporterError, exchanges::connection::get_current_time, reporter::PriceReport,
+    errors::ReporterError,
+    exchanges::{connection::get_current_time, Exchange},
+    reporter::PriceReport,
+    tokens::Token,
 };
 
 type WebSocket = WebSocketGeneric<MaybeTlsStream<TcpStream>>;
 
 pub trait CentralizedExchangeHandler {
-    const WSS_URL: &'static str;
-    fn new() -> Self;
+    /// Create a new Handler.
+    fn new(base_token: Token, quote_token: Token) -> Self;
+    /// Get the websocket URL to connect to.
+    fn websocket_url(&self) -> String;
     /// Send any initial subscription messages to the websocket after it has been created.
     fn websocket_subscribe(socket: &mut WebSocket) -> Result<(), ReporterError>;
     /// Handle an inbound message from the exchange by parsing it into a PriceReport and publishing
@@ -21,13 +26,32 @@ pub trait CentralizedExchangeHandler {
 }
 
 #[derive(Clone, Debug)]
-pub struct BinanceHandler;
+pub struct BinanceHandler {
+    base_token: Token,
+    quote_token: Token,
+}
 impl CentralizedExchangeHandler for BinanceHandler {
-    const WSS_URL: &'static str = "wss://stream.binance.com:443/ws/ethbusd@bookTicker";
+    fn new(base_token: Token, quote_token: Token) -> Self {
+        Self {
+            base_token,
+            quote_token,
+        }
+    }
 
-    fn new() -> Self {
-        // BinanceHandler has no internal state.
-        Self {}
+    fn websocket_url(&self) -> String {
+        let base_ticker = self
+            .base_token
+            .get_exchange_ticker(Exchange::Binance)
+            .unwrap();
+        let quote_ticker = self
+            .quote_token
+            .get_exchange_ticker(Exchange::Binance)
+            .unwrap();
+        String::from(format!(
+            "wss://stream.binance.com:443/ws/{}{}@bookTicker",
+            base_ticker.to_lowercase(),
+            quote_ticker.to_lowercase()
+        ))
     }
 
     fn websocket_subscribe(_socket: &mut WebSocket) -> Result<(), ReporterError> {
@@ -64,13 +88,15 @@ pub struct CoinbaseHandler {
     order_book_offers: HashMap<String, f32>,
 }
 impl CentralizedExchangeHandler for CoinbaseHandler {
-    const WSS_URL: &'static str = "wss://advanced-trade-ws.coinbase.com";
-
-    fn new() -> Self {
+    fn new(base_token: Token, quote_token: Token) -> Self {
         Self {
             order_book_bids: HashMap::new(),
             order_book_offers: HashMap::new(),
         }
+    }
+
+    fn websocket_url(&self) -> String {
+        String::from("wss://advanced-trade-ws.coinbase.com")
     }
 
     fn websocket_subscribe(socket: &mut WebSocket) -> Result<(), ReporterError> {
@@ -93,7 +119,7 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
         .to_string();
         socket
             .write_message(Message::Text(subscribe_str))
-            .or(Err(ReporterError::ConnectionFailure))?;
+            .or(Err(ReporterError::ConnectionHangup))?;
         Ok(())
     }
 
@@ -175,10 +201,12 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
 #[derive(Clone, Debug)]
 pub struct KrakenHandler;
 impl CentralizedExchangeHandler for KrakenHandler {
-    const WSS_URL: &'static str = "wss://ws.kraken.com";
-
-    fn new() -> Self {
+    fn new(base_token: Token, quote_token: Token) -> Self {
         Self {}
+    }
+
+    fn websocket_url(&self) -> String {
+        String::from("wss://ws.kraken.com")
     }
 
     fn websocket_subscribe(socket: &mut WebSocket) -> Result<(), ReporterError> {
@@ -193,7 +221,7 @@ impl CentralizedExchangeHandler for KrakenHandler {
         .to_string();
         socket
             .write_message(Message::Text(subscribe_str))
-            .or(Err(ReporterError::ConnectionFailure))?;
+            .or(Err(ReporterError::ConnectionHangup))?;
         Ok(())
     }
 
@@ -227,10 +255,12 @@ impl CentralizedExchangeHandler for KrakenHandler {
 #[derive(Clone, Debug)]
 pub struct OkxHandler;
 impl CentralizedExchangeHandler for OkxHandler {
-    const WSS_URL: &'static str = "wss://ws.okx.com:8443/ws/v5/public";
-
-    fn new() -> Self {
+    fn new(base_token: Token, quote_token: Token) -> Self {
         Self {}
+    }
+
+    fn websocket_url(&self) -> String {
+        String::from("wss://ws.okx.com:8443/ws/v5/public")
     }
 
     fn websocket_subscribe(socket: &mut WebSocket) -> Result<(), ReporterError> {
@@ -245,7 +275,7 @@ impl CentralizedExchangeHandler for OkxHandler {
         .to_string();
         socket
             .write_message(Message::Text(subscribe_str))
-            .or(Err(ReporterError::ConnectionFailure))?;
+            .or(Err(ReporterError::ConnectionHangup))?;
         Ok(())
     }
 

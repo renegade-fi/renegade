@@ -102,7 +102,7 @@ impl UniswapV3Handler {
         // Since it may be a while until we receive our first Swap event, we send the most recent
         // historic Swap as the current price.
         let swap_filter_builder = swap_filter_builder
-            .from_block(web3::types::BlockNumber::Number(current_block - 100))
+            .from_block(web3::types::BlockNumber::Number(current_block - 10000))
             .to_block(web3::types::BlockNumber::Latest);
         let swap_filter_recents = block_on(
             guard
@@ -223,7 +223,7 @@ impl UniswapV3Handler {
         // LOW = 500
         // LOWEST = 100
         // TODO: Dynamically choose the fee tier?
-        fee[32 - 4..].clone_from_slice(&500_u32.to_be_bytes());
+        fee[32 - 4..].clone_from_slice(&3000_u32.to_be_bytes());
 
         let pool_address = create2::calc_addr_with_hash(
             hex::decode(Self::FACTORY_ADDRESS).unwrap()[..20]

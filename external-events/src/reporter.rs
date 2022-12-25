@@ -28,6 +28,22 @@ pub struct PriceReport {
     pub reported_timestamp: Option<u128>,
 }
 
+/// The state of the PriceReporter. The Nominal state means that it's OK to query .peek() and
+/// proceed with MPCs at the given median price. If .peek() is queried while the PriceReport is in
+/// a non-Nominal state, an error will be thrown.
+#[derive(Clone, Debug)]
+pub enum PriceReporterState {
+    /// Enough reporters are correctly reporting to construct a median price.
+    Nominal,
+    /// Not enough data has yet to be reported from the ExchangeConnections.
+    NoDataReported,
+    /// The last received PriceReport is too stale.
+    DataTooStale,
+    /// There has been too much deviation in the prices between the exchanges; holding off until
+    /// prices stabilize.
+    TooMuchDeviation,
+}
+
 /// The PriceReporter is responsible for opening websocket connection(s) to the specified
 /// exchange(s), translating individual PriceReport's into aggregate median PriceReport's, and
 /// opening and closing channels for end-consumers to listen to the price feeds.

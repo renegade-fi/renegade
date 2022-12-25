@@ -63,16 +63,61 @@ impl ExchangeConnection {
             return Ok(price_report_receiver);
         }
 
-        // Retrieve the websocket URL and connect to it.
-        let wss_url = match exchange {
-            Exchange::Binance => BinanceHandler::WSS_URL,
-            Exchange::Coinbase => CoinbaseHandler::WSS_URL,
-            Exchange::Kraken => KrakenHandler::WSS_URL,
-            Exchange::Okx => OkxHandler::WSS_URL,
+        // Get initial ExchangeHandler state and include in a new ExchangeConnection.
+        let mut exchange_connection = match exchange {
+            Exchange::Binance => ExchangeConnection {
+                binance_handler: Some(BinanceHandler::new(base_token, quote_token)),
+                coinbase_handler: None,
+                kraken_handler: None,
+                okx_handler: None,
+            },
+            Exchange::Coinbase => ExchangeConnection {
+                binance_handler: None,
+                coinbase_handler: Some(CoinbaseHandler::new(base_token, quote_token)),
+                kraken_handler: None,
+                okx_handler: None,
+            },
+            Exchange::Kraken => ExchangeConnection {
+                binance_handler: None,
+                coinbase_handler: None,
+                kraken_handler: Some(KrakenHandler::new(base_token, quote_token)),
+                okx_handler: None,
+            },
+            Exchange::Okx => ExchangeConnection {
+                binance_handler: None,
+                coinbase_handler: None,
+                kraken_handler: None,
+                okx_handler: Some(OkxHandler::new(base_token, quote_token)),
+            },
             _ => unreachable!(),
         };
-        let url = Url::parse(wss_url).unwrap();
-        let (mut socket, _response) = connect(url).or(Err(ReporterError::ConnectionFailure))?;
+
+        // Retrieve the websocket URL and connect to it.
+        let wss_url = match exchange {
+            Exchange::Binance => exchange_connection
+                .binance_handler
+                .as_ref()
+                .unwrap()
+                .websocket_url(),
+            Exchange::Coinbase => exchange_connection
+                .coinbase_handler
+                .as_ref()
+                .unwrap()
+                .websocket_url(),
+            Exchange::Kraken => exchange_connection
+                .kraken_handler
+                .as_ref()
+                .unwrap()
+                .websocket_url(),
+            Exchange::Okx => exchange_connection
+                .okx_handler
+                .as_ref()
+                .unwrap()
+                .websocket_url(),
+            _ => unreachable!(),
+        };
+        let url = Url::parse(&wss_url).unwrap();
+        let (mut socket, _response) = connect(url).or(Err(ReporterError::HandshakeFailure))?;
 
         // Send initial subscription message(s).
         match exchange {
@@ -82,35 +127,6 @@ impl ExchangeConnection {
             Exchange::Okx => OkxHandler::websocket_subscribe(&mut socket)?,
             _ => unreachable!(),
         }
-
-        // Get initial ExchangeHandler state and include in a new ExchangeConnection.
-        let mut exchange_connection = match exchange {
-            Exchange::Binance => ExchangeConnection {
-                binance_handler: Some(BinanceHandler::new()),
-                coinbase_handler: None,
-                kraken_handler: None,
-                okx_handler: None,
-            },
-            Exchange::Coinbase => ExchangeConnection {
-                binance_handler: None,
-                coinbase_handler: Some(CoinbaseHandler::new()),
-                kraken_handler: None,
-                okx_handler: None,
-            },
-            Exchange::Kraken => ExchangeConnection {
-                binance_handler: None,
-                coinbase_handler: None,
-                kraken_handler: Some(KrakenHandler::new()),
-                okx_handler: None,
-            },
-            Exchange::Okx => ExchangeConnection {
-                binance_handler: None,
-                coinbase_handler: None,
-                kraken_handler: None,
-                okx_handler: Some(OkxHandler::new()),
-            },
-            _ => unreachable!(),
-        };
 
         // Start listening for inbound messages.
         thread::spawn(move || loop {
