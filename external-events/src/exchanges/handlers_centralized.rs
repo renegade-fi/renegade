@@ -1,5 +1,7 @@
 use chrono::DateTime;
+use futures::executor::block_on;
 use hmac_sha256::HMAC;
+use reqwest;
 use serde_json::{self, json, Value};
 use std::{collections::HashMap, env, net::TcpStream};
 use tungstenite::{stream::MaybeTlsStream, Message, WebSocket as WebSocketGeneric};
@@ -18,6 +20,10 @@ pub trait CentralizedExchangeHandler {
     fn new(base_token: Token, quote_token: Token) -> Self;
     /// Get the websocket URL to connect to.
     fn websocket_url(&self) -> String;
+    /// Certain exchanges report the most recent price immediately after subscribing to the
+    /// websocket. If the exchange requires an initial request to get caught up with exchange
+    /// state, we query that here.
+    fn pre_stream_price_report(&mut self) -> Option<PriceReport>;
     /// Send any initial subscription messages to the websocket after it has been created.
     fn websocket_subscribe(socket: &mut WebSocket) -> Result<(), ReporterError>;
     /// Handle an inbound message from the exchange by parsing it into a PriceReport and publishing
@@ -52,6 +58,41 @@ impl CentralizedExchangeHandler for BinanceHandler {
             base_ticker.to_lowercase(),
             quote_ticker.to_lowercase()
         ))
+    }
+
+    fn pre_stream_price_report(&mut self) -> Option<PriceReport> {
+        // TODO: This is duplicate code, condense it.
+        let base_ticker = self
+            .base_token
+            .get_exchange_ticker(Exchange::Binance)
+            .unwrap();
+        let quote_ticker = self
+            .quote_token
+            .get_exchange_ticker(Exchange::Binance)
+            .unwrap();
+        let request_url = format!(
+            "https://api.binance.com/api/v3/ticker/bookTicker?symbol={}{}",
+            base_ticker, quote_ticker
+        );
+        let message_json: Value =
+            block_on(block_on(reqwest::get(request_url)).unwrap().json()).unwrap();
+        let best_bid: f64 = match message_json["bidPrice"].as_str() {
+            None => {
+                return None;
+            }
+            Some(best_bid_str) => best_bid_str.parse().unwrap(),
+        };
+        let best_offer: f64 = match message_json["askPrice"].as_str() {
+            None => {
+                return None;
+            }
+            Some(best_offer_str) => best_offer_str.parse().unwrap(),
+        };
+        Some(PriceReport {
+            midpoint_price: (best_bid + best_offer) / 2.0,
+            reported_timestamp: None,
+            local_timestamp: get_current_time(),
+        })
     }
 
     fn websocket_subscribe(_socket: &mut WebSocket) -> Result<(), ReporterError> {
@@ -97,6 +138,10 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
 
     fn websocket_url(&self) -> String {
         String::from("wss://advanced-trade-ws.coinbase.com")
+    }
+
+    fn pre_stream_price_report(&mut self) -> Option<PriceReport> {
+        None
     }
 
     fn websocket_subscribe(socket: &mut WebSocket) -> Result<(), ReporterError> {
@@ -209,6 +254,10 @@ impl CentralizedExchangeHandler for KrakenHandler {
         String::from("wss://ws.kraken.com")
     }
 
+    fn pre_stream_price_report(&mut self) -> Option<PriceReport> {
+        None
+    }
+
     fn websocket_subscribe(socket: &mut WebSocket) -> Result<(), ReporterError> {
         let pair = "ETH/USD";
         let subscribe_str = json!({
@@ -261,6 +310,10 @@ impl CentralizedExchangeHandler for OkxHandler {
 
     fn websocket_url(&self) -> String {
         String::from("wss://ws.okx.com:8443/ws/v5/public")
+    }
+
+    fn pre_stream_price_report(&mut self) -> Option<PriceReport> {
+        None
     }
 
     fn websocket_subscribe(socket: &mut WebSocket) -> Result<(), ReporterError> {

@@ -2,7 +2,7 @@ use ring_channel::{ring_channel, RingReceiver, RingSender};
 use std::{
     num::NonZeroUsize,
     thread,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{self, SystemTime, UNIX_EPOCH},
 };
 use tungstenite::{connect, Message};
 use url::Url;
@@ -91,6 +91,42 @@ impl ExchangeConnection {
             },
             _ => unreachable!(),
         };
+
+        // Retrieve the optional pre-stream PriceReport.
+        let pre_stream_price_report = match exchange {
+            Exchange::Binance => exchange_connection
+                .binance_handler
+                .as_mut()
+                .unwrap()
+                .pre_stream_price_report(),
+            Exchange::Coinbase => exchange_connection
+                .coinbase_handler
+                .as_mut()
+                .unwrap()
+                .pre_stream_price_report(),
+            Exchange::Kraken => exchange_connection
+                .kraken_handler
+                .as_mut()
+                .unwrap()
+                .pre_stream_price_report(),
+            Exchange::Okx => exchange_connection
+                .okx_handler
+                .as_mut()
+                .unwrap()
+                .pre_stream_price_report(),
+            _ => unreachable!(),
+        };
+        if let Some(pre_stream_price_report) = pre_stream_price_report {
+            let mut price_report_sender_clone = price_report_sender.clone();
+            thread::spawn(move || {
+                // TODO: Sleeping is a somewhat hacky way of ensuring that the
+                // pre_stream_price_report is received.
+                thread::sleep(time::Duration::from_millis(5000));
+                price_report_sender_clone
+                    .send(pre_stream_price_report)
+                    .unwrap();
+            });
+        }
 
         // Retrieve the websocket URL and connect to it.
         let wss_url = match exchange {

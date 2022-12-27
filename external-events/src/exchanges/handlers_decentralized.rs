@@ -41,7 +41,6 @@ impl UniswapV3Handler {
         // Derive the Uniswap pool address from this Token pair.
         let (pool_address, is_flipped) =
             Self::get_pool_address(base_token, quote_token, web3_connection.clone()).unwrap();
-        println!("pool_add = {:?}", pool_address);
 
         // Create a filter for Uniswap `Swap` events on this pool.
         let swap_event_abi = ethabi::Event {
@@ -282,8 +281,6 @@ impl UniswapV3Handler {
 
         // Given the derived pool addresses and base balances, pick the pool address with the
         // highest base balance.
-        println!("pool_addresses = {:?}", pool_addresses);
-        println!("base_balances = {:?}", base_balances);
         let mut max_base_balance = U256::zero();
         let mut max_pool_idx: usize = 0;
         for i in 0..4 {
