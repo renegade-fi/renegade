@@ -256,10 +256,16 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
 }
 
 #[derive(Clone, Debug)]
-pub struct KrakenHandler;
+pub struct KrakenHandler {
+    base_token: Token,
+    quote_token: Token,
+}
 impl CentralizedExchangeHandler for KrakenHandler {
     fn new(base_token: Token, quote_token: Token) -> Self {
-        Self {}
+        Self {
+            base_token,
+            quote_token,
+        }
     }
 
     fn websocket_url(&self) -> String {
@@ -271,7 +277,15 @@ impl CentralizedExchangeHandler for KrakenHandler {
     }
 
     fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ReporterError> {
-        let pair = "ETH/USD";
+        let base_ticker = self
+            .base_token
+            .get_exchange_ticker(Exchange::Coinbase)
+            .unwrap();
+        let quote_ticker = self
+            .quote_token
+            .get_exchange_ticker(Exchange::Coinbase)
+            .unwrap();
+        let pair = format!("{}/{}", base_ticker, quote_ticker);
         let subscribe_str = json!({
             "event": "subscribe",
             "pair": [ pair ],

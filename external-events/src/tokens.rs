@@ -48,7 +48,7 @@ static ERC20_DATA: &[(
         "WBTC",
         ExchangeTicker::Renamed("BTC"),
         ExchangeTicker::Renamed("BTC"),
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Renamed("BTC"),
         ExchangeTicker::Unsupported,
     ),
     (
@@ -57,7 +57,7 @@ static ERC20_DATA: &[(
         "WETH",
         ExchangeTicker::Renamed("ETH"),
         ExchangeTicker::Renamed("ETH"),
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Renamed("ETH"),
         ExchangeTicker::Unsupported,
     ),
     (
@@ -75,7 +75,7 @@ static ERC20_DATA: &[(
         "MATIC",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -84,7 +84,7 @@ static ERC20_DATA: &[(
         "FTM",
         ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -93,7 +93,7 @@ static ERC20_DATA: &[(
         "GNO",
         ExchangeTicker::Unsupported,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     /* LSDs */
@@ -112,7 +112,7 @@ static ERC20_DATA: &[(
         "LDO",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     /* Stables */
@@ -122,7 +122,7 @@ static ERC20_DATA: &[(
         "USDC",
         ExchangeTicker::Renamed("BUSD"),
         ExchangeTicker::Renamed("USD"),
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Renamed("USD"),
         ExchangeTicker::Unsupported,
     ),
     (
@@ -131,7 +131,7 @@ static ERC20_DATA: &[(
         "USDT",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -150,7 +150,7 @@ static ERC20_DATA: &[(
         "BAND",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -159,7 +159,7 @@ static ERC20_DATA: &[(
         "LINK",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     /* DeFi Trading */
@@ -169,7 +169,7 @@ static ERC20_DATA: &[(
         "UNI",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -178,7 +178,7 @@ static ERC20_DATA: &[(
         "CRV",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -187,7 +187,7 @@ static ERC20_DATA: &[(
         "DYDX",
         ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -196,7 +196,7 @@ static ERC20_DATA: &[(
         "SUSHI",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -205,7 +205,7 @@ static ERC20_DATA: &[(
         "1INCH",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -214,7 +214,7 @@ static ERC20_DATA: &[(
         "BAL",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -223,7 +223,7 @@ static ERC20_DATA: &[(
         "HFT",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -232,7 +232,7 @@ static ERC20_DATA: &[(
         "PERP",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -241,7 +241,7 @@ static ERC20_DATA: &[(
         "WOO",
         ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -250,7 +250,7 @@ static ERC20_DATA: &[(
         "ZRX",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     /* DeFi Lending */
@@ -260,7 +260,7 @@ static ERC20_DATA: &[(
         "AAVE",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -269,7 +269,7 @@ static ERC20_DATA: &[(
         "COMP",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -278,7 +278,7 @@ static ERC20_DATA: &[(
         "MKR",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -287,7 +287,7 @@ static ERC20_DATA: &[(
         "YFI",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -296,7 +296,7 @@ static ERC20_DATA: &[(
         "SPELL",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     /* DeFi Lending Undercollateralized */
@@ -306,7 +306,7 @@ static ERC20_DATA: &[(
         "TRU",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -325,7 +325,7 @@ static ERC20_DATA: &[(
         "SNX",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -334,7 +334,7 @@ static ERC20_DATA: &[(
         "REP",
         ExchangeTicker::Unsupported,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -353,7 +353,7 @@ static ERC20_DATA: &[(
         "REN",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -362,7 +362,7 @@ static ERC20_DATA: &[(
         "STG",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -371,7 +371,7 @@ static ERC20_DATA: &[(
         "QNT",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     /* L2s */
@@ -381,7 +381,7 @@ static ERC20_DATA: &[(
         "LRC",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -390,7 +390,7 @@ static ERC20_DATA: &[(
         "BOBA",
         ExchangeTicker::Unsupported,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     /* NFTs */
@@ -400,7 +400,7 @@ static ERC20_DATA: &[(
         "APE",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -409,7 +409,7 @@ static ERC20_DATA: &[(
         "AXS",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -418,7 +418,7 @@ static ERC20_DATA: &[(
         "ENJ",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -427,7 +427,7 @@ static ERC20_DATA: &[(
         "RARE",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     /* Misc */
@@ -437,7 +437,7 @@ static ERC20_DATA: &[(
         "SHIB",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -455,7 +455,7 @@ static ERC20_DATA: &[(
         "OMG",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -464,7 +464,7 @@ static ERC20_DATA: &[(
         "GRT",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -473,7 +473,7 @@ static ERC20_DATA: &[(
         "ENS",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -482,7 +482,7 @@ static ERC20_DATA: &[(
         "MANA",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -491,7 +491,7 @@ static ERC20_DATA: &[(
         "GALA",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -500,7 +500,7 @@ static ERC20_DATA: &[(
         "RAD",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -509,7 +509,7 @@ static ERC20_DATA: &[(
         "AUDIO",
         ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
     (
@@ -518,7 +518,7 @@ static ERC20_DATA: &[(
         "BAT",
         ExchangeTicker::Same,
         ExchangeTicker::Same,
-        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
 ];
