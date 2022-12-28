@@ -18,7 +18,7 @@ async fn main() -> Result<(), ReporterError> {
 
     // Create a PriceReporter and copy a median receiver instance.
     let price_reporter =
-        PriceReporter::new(Token::from_ticker("WETH"), Token::from_ticker("USDC")).unwrap();
+        PriceReporter::new(Token::from_ticker("STG"), Token::from_ticker("USDC")).unwrap();
     let mut median_receiver = price_reporter.create_new_receiver(Exchange::Median);
 
     // Poll prices.

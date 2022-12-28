@@ -157,12 +157,32 @@ impl ExchangeConnection {
 
         // Send initial subscription message(s).
         match exchange {
-            Exchange::Binance => BinanceHandler::websocket_subscribe(&mut socket)?,
-            Exchange::Coinbase => CoinbaseHandler::websocket_subscribe(&mut socket)?,
-            Exchange::Kraken => KrakenHandler::websocket_subscribe(&mut socket)?,
-            Exchange::Okx => OkxHandler::websocket_subscribe(&mut socket)?,
+            Exchange::Binance => exchange_connection
+                .binance_handler
+                .as_ref()
+                .unwrap()
+                .websocket_subscribe(&mut socket)
+                .unwrap(),
+            Exchange::Coinbase => exchange_connection
+                .coinbase_handler
+                .as_ref()
+                .unwrap()
+                .websocket_subscribe(&mut socket)
+                .unwrap(),
+            Exchange::Kraken => exchange_connection
+                .kraken_handler
+                .as_ref()
+                .unwrap()
+                .websocket_subscribe(&mut socket)
+                .unwrap(),
+            Exchange::Okx => exchange_connection
+                .okx_handler
+                .as_ref()
+                .unwrap()
+                .websocket_subscribe(&mut socket)
+                .unwrap(),
             _ => unreachable!(),
-        }
+        };
 
         // Start listening for inbound messages.
         thread::spawn(move || loop {

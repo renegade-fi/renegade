@@ -25,7 +25,7 @@ pub trait CentralizedExchangeHandler {
     /// state, we query that here.
     fn pre_stream_price_report(&mut self) -> Option<PriceReport>;
     /// Send any initial subscription messages to the websocket after it has been created.
-    fn websocket_subscribe(socket: &mut WebSocket) -> Result<(), ReporterError>;
+    fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ReporterError>;
     /// Handle an inbound message from the exchange by parsing it into a PriceReport and publishing
     /// the PriceReport into the ring buffer channel.
     fn handle_exchange_message(&mut self, message_json: Value) -> Option<PriceReport>;
@@ -95,7 +95,7 @@ impl CentralizedExchangeHandler for BinanceHandler {
         })
     }
 
-    fn websocket_subscribe(_socket: &mut WebSocket) -> Result<(), ReporterError> {
+    fn websocket_subscribe(&self, _socket: &mut WebSocket) -> Result<(), ReporterError> {
         // Binance begins streaming prices immediately; no initial subscribe message needed.
         Ok(())
     }
@@ -123,6 +123,8 @@ impl CentralizedExchangeHandler for BinanceHandler {
 
 #[derive(Clone, Debug)]
 pub struct CoinbaseHandler {
+    base_token: Token,
+    quote_token: Token,
     // Note: The reason we use String's for price_level is because using f32 as a key produces
     // collision issues.
     order_book_bids: HashMap<String, f32>,
@@ -131,6 +133,8 @@ pub struct CoinbaseHandler {
 impl CentralizedExchangeHandler for CoinbaseHandler {
     fn new(base_token: Token, quote_token: Token) -> Self {
         Self {
+            base_token,
+            quote_token,
             order_book_bids: HashMap::new(),
             order_book_offers: HashMap::new(),
         }
@@ -144,8 +148,16 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
         None
     }
 
-    fn websocket_subscribe(socket: &mut WebSocket) -> Result<(), ReporterError> {
-        let product_ids = "ETH-USD";
+    fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ReporterError> {
+        let base_ticker = self
+            .base_token
+            .get_exchange_ticker(Exchange::Coinbase)
+            .unwrap();
+        let quote_ticker = self
+            .quote_token
+            .get_exchange_ticker(Exchange::Coinbase)
+            .unwrap();
+        let product_ids = format!("{}-{}", base_ticker, quote_ticker);
         let channel = "level2";
         let timestamp = (get_current_time() / 1000).to_string();
         let signature_bytes = HMAC::mac(
@@ -258,7 +270,7 @@ impl CentralizedExchangeHandler for KrakenHandler {
         None
     }
 
-    fn websocket_subscribe(socket: &mut WebSocket) -> Result<(), ReporterError> {
+    fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ReporterError> {
         let pair = "ETH/USD";
         let subscribe_str = json!({
             "event": "subscribe",
@@ -316,7 +328,7 @@ impl CentralizedExchangeHandler for OkxHandler {
         None
     }
 
-    fn websocket_subscribe(socket: &mut WebSocket) -> Result<(), ReporterError> {
+    fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ReporterError> {
         let pair = "ETH-USDT";
         let subscribe_str = json!({
             "op": "subscribe",
