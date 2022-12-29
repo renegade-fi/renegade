@@ -349,14 +349,8 @@ impl CentralizedExchangeHandler for OkxHandler {
     }
 
     fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ReporterError> {
-        let base_ticker = self
-            .base_token
-            .get_exchange_ticker(Exchange::Okx)
-            .unwrap();
-        let quote_ticker = self
-            .quote_token
-            .get_exchange_ticker(Exchange::Okx)
-            .unwrap();
+        let base_ticker = self.base_token.get_exchange_ticker(Exchange::Okx).unwrap();
+        let quote_ticker = self.quote_token.get_exchange_ticker(Exchange::Okx).unwrap();
         let pair = format!("{}-{}", base_ticker, quote_ticker);
         let subscribe_str = json!({
             "op": "subscribe",
