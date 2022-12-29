@@ -279,11 +279,11 @@ impl CentralizedExchangeHandler for KrakenHandler {
     fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ReporterError> {
         let base_ticker = self
             .base_token
-            .get_exchange_ticker(Exchange::Coinbase)
+            .get_exchange_ticker(Exchange::Kraken)
             .unwrap();
         let quote_ticker = self
             .quote_token
-            .get_exchange_ticker(Exchange::Coinbase)
+            .get_exchange_ticker(Exchange::Kraken)
             .unwrap();
         let pair = format!("{}/{}", base_ticker, quote_ticker);
         let subscribe_str = json!({
@@ -328,10 +328,16 @@ impl CentralizedExchangeHandler for KrakenHandler {
 }
 
 #[derive(Clone, Debug)]
-pub struct OkxHandler;
+pub struct OkxHandler {
+    base_token: Token,
+    quote_token: Token,
+}
 impl CentralizedExchangeHandler for OkxHandler {
     fn new(base_token: Token, quote_token: Token) -> Self {
-        Self {}
+        Self {
+            base_token,
+            quote_token,
+        }
     }
 
     fn websocket_url(&self) -> String {
@@ -343,7 +349,15 @@ impl CentralizedExchangeHandler for OkxHandler {
     }
 
     fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ReporterError> {
-        let pair = "ETH-USDT";
+        let base_ticker = self
+            .base_token
+            .get_exchange_ticker(Exchange::Okx)
+            .unwrap();
+        let quote_ticker = self
+            .quote_token
+            .get_exchange_ticker(Exchange::Okx)
+            .unwrap();
+        let pair = format!("{}-{}", base_ticker, quote_ticker);
         let subscribe_str = json!({
             "op": "subscribe",
             "args": [{
@@ -352,6 +366,7 @@ impl CentralizedExchangeHandler for OkxHandler {
             }],
         })
         .to_string();
+        println!("okx subscribe_str = {:?}", subscribe_str);
         socket
             .write_message(Message::Text(subscribe_str))
             .or(Err(ReporterError::ConnectionHangup))?;
