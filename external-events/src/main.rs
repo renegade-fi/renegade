@@ -4,55 +4,65 @@ mod exchanges;
 mod reporter;
 mod tokens;
 
-use dotenv::from_filename;
 use std::{thread, time};
 
-use crate::{errors::ReporterError, exchanges::Exchange, reporter::PriceReporter, tokens::Token};
+use crate::{
+    exchanges::{Exchange, ALL_EXCHANGES},
+    reporter::PriceReporter,
+    tokens::Token,
+};
 
 #[macro_use]
 extern crate lazy_static;
 
-#[tokio::main]
-async fn main() -> Result<(), ReporterError> {
-    from_filename("api_keys.env").ok();
+async fn poll_or_stream_prices(should_poll: bool) {
+    let price_reporter = PriceReporter::new(Token::from_ticker("WETH"), Token::from_ticker("USDC"));
 
-    // Create a PriceReporter and copy a median receiver instance.
-    let price_reporter =
-        PriceReporter::new(Token::from_ticker("WETH"), Token::from_ticker("USDC")).unwrap();
-    let mut median_receiver = price_reporter.create_new_receiver(Exchange::Median);
-
-    // Poll prices.
-    thread::spawn(move || loop {
-        thread::sleep(time::Duration::from_millis(100));
-        let price_reports = price_reporter.peek_all().unwrap();
-        println!(
-            "Polled Median: {:.3} (B{:.3} C{:.3} K{:.3} O{:.3} U{:.3})",
-            price_reports.get(&Exchange::Median).unwrap().midpoint_price,
-            price_reports
-                .get(&Exchange::Binance)
-                .unwrap()
-                .midpoint_price,
-            price_reports
-                .get(&Exchange::Coinbase)
-                .unwrap()
-                .midpoint_price,
-            price_reports.get(&Exchange::Kraken).unwrap().midpoint_price,
-            price_reports.get(&Exchange::Okx).unwrap().midpoint_price,
-            price_reports
-                .get(&Exchange::UniswapV3)
-                .unwrap()
-                .midpoint_price,
-        );
-    });
-
-    // Stream prices.
-    thread::spawn(move || loop {
-        // let median_report = median_receiver.recv().unwrap();
-        // println!(
-        //     "Stream Median: {:.4} {}",
-        //     median_report.midpoint_price, median_report.local_timestamp
-        // );
-    });
+    if should_poll {
+        thread::spawn(move || loop {
+            let exchange_states = price_reporter.peek_all_exchanges();
+            let median_price_report = price_reporter.peek_median();
+            println!("{}", "=".repeat(80));
+            println!("Median: {}", median_price_report);
+            println!("{}", "-".repeat(80));
+            println!(
+                "{:<14} | {:<14} | {:<14} | {:<14} | {:<14}",
+                format!("{}", exchange_states.get(&Exchange::Binance).unwrap()),
+                format!("{}", exchange_states.get(&Exchange::Coinbase).unwrap()),
+                format!("{}", exchange_states.get(&Exchange::Kraken).unwrap()),
+                format!("{}", exchange_states.get(&Exchange::Okx).unwrap()),
+                format!("{}", exchange_states.get(&Exchange::UniswapV3).unwrap()),
+            );
+            thread::sleep(time::Duration::from_millis(100));
+        });
+    } else {
+        let mut median_receiver = price_reporter.create_new_median_receiver();
+        thread::spawn(move || loop {
+            let median_report = median_receiver.recv().unwrap();
+            println!(
+                "{:<10} {:.4} {}",
+                "Median:", median_report.midpoint_price, median_report.local_timestamp
+            );
+        });
+        for exchange in ALL_EXCHANGES.iter() {
+            let mut receiver = price_reporter.create_new_exchange_receiver(*exchange);
+            thread::spawn(move || loop {
+                let report = receiver.recv().unwrap();
+                println!(
+                    "{:<10} {:.4} {}",
+                    format!("{}:", exchange),
+                    report.midpoint_price,
+                    report.local_timestamp
+                );
+            });
+        }
+    }
 
     loop {}
+}
+
+#[tokio::main]
+async fn main() {
+    dotenv::from_filename("secrets.env").expect("Cannot read secrets from secrets.env");
+    poll_or_stream_prices(true).await;
 }

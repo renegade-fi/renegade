@@ -1,25 +1,43 @@
+use futures::stream::{select_all, StreamExt};
 use ring_channel::{ring_channel, RingReceiver, RingSender};
 use stats::median;
 use std::{
     collections::HashMap,
+    fmt::{self, Display},
     num::NonZeroUsize,
     sync::{Arc, RwLock},
     thread,
 };
 
 use crate::{
-    errors::ReporterError,
-    exchanges::{Exchange, ExchangeConnection},
+    exchanges::{
+        get_current_time, Exchange, ExchangeConnection, ExchangeConnectionState, ALL_EXCHANGES,
+    },
     tokens::Token,
 };
+
+/// If none of the ExchangeConnections have reported an update within MAX_REPORT_AGE (in
+/// milliseconds), we pause matches until we receive a more recent price. Note that this threshold
+/// cannot be too aggresive, as certain long-tail asset pairs legitimately do not update that
+/// often.
+static MAX_REPORT_AGE: u128 = 5000;
+/// If we do not have at least MIN_CONNECTIONS reports, we pause matches until we have enough
+/// reports. This only applies to Named tokens, as Unnamed tokens simply use UniswapV3.
+static MIN_CONNECTIONS: usize = 3;
+/// If a single PriceReport is more than MAX_DEVIATION (as a fraction) away from the midpoint, then
+/// we pause matches until the prices stabilize. By default, we use 10bp.
+static MAX_DEVIATION: f64 = 0.001;
 
 fn new_ring_channel<T>() -> (RingSender<T>, RingReceiver<T>) {
     ring_channel::<T>(NonZeroUsize::new(1).unwrap())
 }
 
 /// The PriceReport is the universal format for price feeds from all external exchanges.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PriceReport {
+    /// The Exchange that this PriceReport came from. If the PriceReport is a median aggregate,
+    /// then the exchange is None.
+    pub exchange: Option<Exchange>,
     /// The midpoint price of the exchange's order book.
     pub midpoint_price: f64,
     /// The time that this update was received by the relayer node.
@@ -28,20 +46,34 @@ pub struct PriceReport {
     pub reported_timestamp: Option<u128>,
 }
 
-/// The state of the PriceReporter. The Nominal state means that it's OK to query .peek() and
-/// proceed with MPCs at the given median price. If .peek() is queried while the PriceReport is in
-/// a non-Nominal state, an error will be thrown.
+/// The state of the PriceReporter. The Nominal state means that enough ExchangeConnections are
+/// reporting recent prices, so it is OK to proceed with MPCs at the given median price.
 #[derive(Clone, Debug)]
 pub enum PriceReporterState {
     /// Enough reporters are correctly reporting to construct a median price.
-    Nominal,
-    /// Not enough data has yet to be reported from the ExchangeConnections.
-    NoDataReported,
-    /// The last received PriceReport is too stale.
-    DataTooStale,
+    Nominal(PriceReport),
+    /// Not enough data has yet to be reported from the ExchangeConnections. Includes the number of
+    /// ExchangeConnection reporters.
+    NotEnoughDataReported(usize),
+    /// At least one of the ExchangeConnection has not reported a recent enough report. Includes
+    /// the current time_diff in milliseconds.
+    DataTooStale(u128),
     /// There has been too much deviation in the prices between the exchanges; holding off until
-    /// prices stabilize.
-    TooMuchDeviation,
+    /// prices stabilize. Includes the current deviation as a fraction.
+    TooMuchDeviation(f64),
+}
+impl Display for PriceReporterState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let fmt_str = match self {
+            PriceReporterState::Nominal(price_report) => {
+                format!("{:.4}", price_report.midpoint_price)
+            }
+            PriceReporterState::NotEnoughDataReported(_) => String::from("NotEnoughDataReported"),
+            PriceReporterState::DataTooStale(_) => String::from("DataTooStale"),
+            PriceReporterState::TooMuchDeviation(_) => String::from("TooMuchDeviation"),
+        };
+        write!(f, "{}", fmt_str)
+    }
 }
 
 /// The PriceReporter is responsible for opening websocket connection(s) to the specified
@@ -51,171 +83,258 @@ pub enum PriceReporterState {
 pub struct PriceReporter {
     base_token: Token,
     quote_token: Token,
-    /// Thread-safe HashMap between an Exchange and a vector of senders for PriceReports. As the
-    /// PriceReporter processes messages from the various exchanges, this HashMap determines where
-    /// price outputs will be sent to.
-    price_report_senders: Arc<RwLock<HashMap<Exchange, Vec<RingSender<PriceReport>>>>>,
+    /// Thread-safe HashMap between each Exchange and a vector of senders for PriceReports. As the
+    /// PriceReporter processes messages from the various ExchangeConnections, this HashMap
+    /// determines where PriceReport outputs will be sent to.
+    price_report_exchanges_senders: Arc<RwLock<HashMap<Exchange, Vec<RingSender<PriceReport>>>>>,
+    /// Thread-safe vector of senders for the median PriceReport. The PriceReporter will consume
+    /// PriceReports from each ExchangeConnection, and whenever a valid median can be constructed (enough
+    /// data from each ExchangeConnection, not too much variance, etc.), the median PriceReport
+    /// will be sent to each each RingSender<PriceReport>.
+    price_report_median_senders: Arc<RwLock<Vec<RingSender<PriceReport>>>>,
     /// The latest PriceReport for each Exchange. Used in order to .peek() at each data stream.
-    price_report_latest: Arc<RwLock<HashMap<Exchange, PriceReport>>>,
+    price_report_exchanges_latest: Arc<RwLock<HashMap<Exchange, PriceReport>>>,
 }
 impl PriceReporter {
-    pub fn new(base_token: Token, quote_token: Token) -> Result<Self, ReporterError> {
-        // Use all exchanges.
-        let all_exchanges = vec![
-            Exchange::Median,
-            Exchange::Binance,
-            Exchange::Coinbase,
-            Exchange::Kraken,
-            Exchange::Okx,
-            Exchange::UniswapV3,
-        ];
+    pub fn new(base_token: Token, quote_token: Token) -> Self {
+        let is_named = base_token.is_named() && quote_token.is_named();
+        let (base_token_decimals, quote_token_decimals) =
+            (base_token.get_decimals(), quote_token.get_decimals());
 
-        // Create the RingBuffer for the aggregate stream of all updates.
+        // We create an aggregate RingBuffer<PriceReport> that unifies all ExchangeConnection
+        // streams.
         let (all_price_reports_sender, mut all_price_reports_receiver) =
-            new_ring_channel::<(PriceReport, Exchange)>();
+            new_ring_channel::<PriceReport>();
 
         // Connect to all the exchanges, and pipe the price report stream from each connection into
         // the aggregate ring buffer created previously.
-        for exchange in all_exchanges.iter().copied() {
-            if exchange == Exchange::Median {
-                continue;
-            }
+        for exchange in ALL_EXCHANGES.iter() {
             let mut price_report_receiver = ExchangeConnection::create_receiver(
                 base_token.clone(),
                 quote_token.clone(),
-                exchange,
-            )
-            .unwrap();
+                *exchange,
+            );
             let mut all_price_reports_sender_clone = all_price_reports_sender.clone();
             thread::spawn(move || loop {
                 let price_report = price_report_receiver.recv().unwrap();
-                all_price_reports_sender_clone
-                    .send((price_report, exchange))
-                    .unwrap();
+                all_price_reports_sender_clone.send(price_report).unwrap();
             });
         }
+        drop(all_price_reports_sender);
 
-        // Initialize the thread-safe HashMap's of senders and latests. This first hard-coded
-        // RingBuffer will be responsible for streaming all prices and updating the
-        // price_report_latest for peeking at each stream.
-        let mut price_report_senders_map = HashMap::<Exchange, Vec<RingSender<PriceReport>>>::new();
-        let mut price_report_receivers_map_first =
-            HashMap::<Exchange, RingReceiver<PriceReport>>::new();
-        let mut price_report_latest_map = HashMap::<Exchange, PriceReport>::new();
-        for exchange in all_exchanges.iter().copied() {
-            let (sender, receiver) = new_ring_channel::<PriceReport>();
-            price_report_senders_map.insert(exchange, vec![sender]);
-            price_report_receivers_map_first.insert(exchange, receiver);
-            price_report_latest_map.insert(exchange, PriceReport::default());
+        // Create the price_report_exchanges_senders, and start a thread that consumes messages
+        // from all_price_reports_receiver and sends the PriceReports to each sender. The senders
+        // vector for each Exchange is currently empty, but we will soon populate with two ring
+        // buffers. More can be added dynamically (e.g., for websocket price streaming) using
+        // PriceReporter::create_new_exchange_receiver.
+        let price_report_exchanges_senders = Arc::new(RwLock::new(HashMap::<
+            Exchange,
+            Vec<RingSender<PriceReport>>,
+        >::new()));
+        for exchange in ALL_EXCHANGES.iter() {
+            price_report_exchanges_senders
+                .write()
+                .unwrap()
+                .insert(*exchange, vec![]);
         }
-        let price_report_senders = Arc::new(RwLock::new(price_report_senders_map));
-        let price_report_latest = Arc::new(RwLock::new(price_report_latest_map));
+        let price_report_exchanges_senders_clone = price_report_exchanges_senders.clone();
+        thread::spawn(move || loop {
+            // Receive a new (Exchange, PriceReport) from the aggregate stream.
+            let mut price_report = all_price_reports_receiver.recv().unwrap();
+            let exchange = price_report.exchange.unwrap();
+            // If the exchange is UniswapV3 and the token pair is Named, adjust the reported price
+            // for the decimals.
+            if exchange == Exchange::UniswapV3 && is_named {
+                price_report.midpoint_price *= 10_f64.powf(
+                    f64::from(base_token_decimals.unwrap())
+                        - f64::from(quote_token_decimals.unwrap()),
+                );
+            }
+            // Send this PriceReport to every RingSender<PriceReport> in
+            // price_report_exchanges_senders.
+            for sender in price_report_exchanges_senders_clone
+                .write()
+                .unwrap()
+                .get_mut(&exchange)
+                .unwrap()
+                .iter_mut()
+            {
+                sender.send(price_report).unwrap();
+            }
+        });
 
-        // Start worker threads for each exchange that read from the first RingReceiver and update
-        // the latest prices.
-        for exchange in all_exchanges.iter().copied() {
-            let price_report_latest_ref = price_report_latest.clone();
-            let mut receiver_first = price_report_receivers_map_first.remove(&exchange).unwrap();
+        // The first set of ring buffers that we will include in price_report_exchanges_senders will simply
+        // consume all PriceReports and write them directly to price_report_exchanges_latest.
+        let price_report_exchanges_latest =
+            Arc::new(RwLock::new(HashMap::<Exchange, PriceReport>::new()));
+        for exchange in ALL_EXCHANGES.iter() {
+            // Initialize the latest PriceReport to be PriceReport::default.
+            price_report_exchanges_latest
+                .write()
+                .unwrap()
+                .insert(*exchange, PriceReport::default());
+            // Create a new ring buffer. Insert the sender into the price_report_exchanges_senders,
+            // and start a thread that reads from the reader and writes to
+            // price_report_exchanges_latest.
+            let (sender, mut receiver) = new_ring_channel::<PriceReport>();
+            price_report_exchanges_senders
+                .write()
+                .unwrap()
+                .get_mut(exchange)
+                .unwrap()
+                .push(sender);
+            let price_report_exchanges_latest_clone = price_report_exchanges_latest.clone();
             thread::spawn(move || loop {
-                let price_report = receiver_first.recv().unwrap();
-                *price_report_latest_ref
+                let price_report = receiver.recv().unwrap();
+                price_report_exchanges_latest_clone
                     .write()
                     .unwrap()
-                    .get_mut(&exchange)
-                    .unwrap() = price_report;
+                    .insert(*exchange, price_report);
             });
         }
 
-        // Process the aggregate stream and send the aggregate median to each sender in
-        // price_report_senders.
-        let price_report_senders_ref = price_report_senders.clone();
-        let is_named = base_token.is_named() && quote_token.is_named();
-        let base_decimals = base_token.get_decimals();
-        let quote_decimals = quote_token.get_decimals();
-        thread::spawn(move || {
-            // This is our internal map from Exchange to most recent PriceReport used for
-            // calculating medians. Medians are calculated directly from the most recent valid
-            // report from each exchange; we do not do any smoothing over time.
-            let mut latest_price_reports = HashMap::<Exchange, PriceReport>::new();
+        // The second set of ring buffers that we will include in price_report_exchanges_senders
+        // will consume all PriceReports, compute a median PriceReport, and write it to all
+        // price_report_median_senders. The price_report_median_senders vector is currently empty,
+        // but we will soon populate it with a ring buffer.
+        let price_report_median_senders: Arc<RwLock<Vec<RingSender<PriceReport>>>> =
+            Arc::new(RwLock::new(vec![]));
+        let mut price_report_median_receivers: Vec<RingReceiver<PriceReport>> = vec![];
+        for exchange in ALL_EXCHANGES.iter() {
+            let (sender, receiver) = new_ring_channel::<PriceReport>();
+            price_report_exchanges_senders
+                .write()
+                .unwrap()
+                .get_mut(exchange)
+                .unwrap()
+                .push(sender);
+            price_report_median_receivers.push(receiver);
+        }
+        let mut price_report_median_receivers = select_all(price_report_median_receivers);
+        let price_report_median_senders_clone = price_report_median_senders.clone();
+        tokio::spawn(async move {
+            let mut current_price_reports = HashMap::<Exchange, PriceReport>::new();
+            for exchange in ALL_EXCHANGES.iter() {
+                current_price_reports.insert(*exchange, PriceReport::default());
+            }
             loop {
-                // Receive a new PriceReport from the aggregate stream.
-                let (mut price_report_recv, exchange_recv) =
-                    all_price_reports_receiver.recv().unwrap();
-
-                // If the received Exchange is UniswapV3 and we are using a Named token pair, then
-                // adjust the price in accordance with the decimals.
-                if exchange_recv == Exchange::UniswapV3 && is_named {
-                    price_report_recv.midpoint_price *= 10_f64.powf(
-                        f64::from(base_decimals.unwrap()) - f64::from(quote_decimals.unwrap()),
-                    );
-                }
-                latest_price_reports.insert(exchange_recv, price_report_recv);
-
-                // Before we calculate medians, pass the PriceReport directly through to each
-                // RingBuffer sender for the given exchange.
-                for sender in price_report_senders_ref
-                    .write()
-                    .unwrap()
-                    .get_mut(&exchange_recv)
-                    .unwrap()
-                {
-                    sender.send(price_report_recv).unwrap();
-                }
-
-                // Compute a new median and send it to the median_price_report_sender buffer.
-                let median_midpoint_price = median(
-                    latest_price_reports
-                        .values()
-                        .map(|price_report| price_report.midpoint_price),
-                )
-                .unwrap();
-                let median_local_timestamp = median(
-                    latest_price_reports
-                        .values()
-                        .map(|price_report| price_report.local_timestamp),
-                )
-                .unwrap();
-                let median_reported_timestamp = median(
-                    latest_price_reports
-                        .values()
-                        .map(|price_report| price_report.reported_timestamp)
-                        .filter(|reported_timestamp| reported_timestamp.is_some())
-                        .flatten(),
-                )
-                .map(|timestamp| timestamp as u128);
-                let median_price_report = PriceReport {
-                    midpoint_price: median_midpoint_price as f64,
-                    local_timestamp: median_local_timestamp as u128,
-                    reported_timestamp: median_reported_timestamp,
-                };
-                for sender in price_report_senders_ref
-                    .write()
-                    .unwrap()
-                    .get_mut(&Exchange::Median)
-                    .unwrap()
-                {
-                    sender.send(median_price_report).unwrap();
+                futures::select! {
+                    price_report = price_report_median_receivers.next() => {
+                        current_price_reports.insert(price_report.unwrap().exchange.unwrap(), price_report.unwrap());
+                        let price_reporter_state = Self::compute_price_reporter_state(current_price_reports.clone(), is_named);
+                        if let PriceReporterState::Nominal(price_report) = price_reporter_state {
+                            for sender in price_report_median_senders_clone.write().unwrap().iter_mut() {
+                                sender.send(price_report).unwrap();
+                            }
+                        }
+                    }
                 }
             }
         });
 
-        Ok(Self {
+        Self {
             base_token,
             quote_token,
-            price_report_senders,
-            price_report_latest,
-        })
+            price_report_exchanges_senders,
+            price_report_median_senders,
+            price_report_exchanges_latest,
+        }
     }
 
-    /// Creates a new ring buffer to report median prices and returns the receiver for consumption
-    /// by the callee.
-    pub fn create_new_receiver(&self, exchange: Exchange) -> RingReceiver<PriceReport> {
-        let (sender, receiver) = new_ring_channel::<PriceReport>();
-        (*self.price_report_senders.write().unwrap())
-            .get_mut(&exchange)
-            .unwrap()
-            .push(sender);
-        receiver
+    /// Helper function to translate PriceReports into ExchangeConnectionStates.
+    fn price_report_to_exchange_connection_state(
+        price_reports: HashMap<Exchange, PriceReport>,
+    ) -> HashMap<Exchange, ExchangeConnectionState> {
+        let mut exchange_connection_states = HashMap::<Exchange, ExchangeConnectionState>::new();
+        for (exchange, price_report) in price_reports {
+            let exchange_connection_state = if price_report == PriceReport::default() {
+                ExchangeConnectionState::NoDataReported
+            } else {
+                ExchangeConnectionState::Nominal(price_report)
+            };
+            exchange_connection_states.insert(exchange, exchange_connection_state);
+        }
+        exchange_connection_states
+    }
+
+    /// Given a PriceReport for each Exchange, compute the current PriceReporterState. We check for
+    /// various issues (delayed prices, no data yet received, etc.), and if no issues are found,
+    /// compute the median PriceReport.
+    fn compute_price_reporter_state(
+        current_price_reports: HashMap<Exchange, PriceReport>,
+        is_named: bool,
+    ) -> PriceReporterState {
+        // If the Token pair is Unnamed, then we simply report the UniswapV3 price if one exists.
+        if !is_named {
+            let uniswapv3_price_report = current_price_reports.get(&Exchange::UniswapV3).unwrap();
+            if *uniswapv3_price_report == PriceReport::default() {
+                return PriceReporterState::NotEnoughDataReported(0);
+            } else {
+                return PriceReporterState::Nominal(*uniswapv3_price_report);
+            }
+        }
+
+        // Collect all non-zero PriceReports and ensure that we have enough.
+        let non_zero_price_reports = current_price_reports
+            .values()
+            .cloned()
+            .filter(|price_report| *price_report != PriceReport::default())
+            .collect::<Vec<PriceReport>>();
+        if non_zero_price_reports.len() < MIN_CONNECTIONS {
+            return PriceReporterState::NotEnoughDataReported(non_zero_price_reports.len());
+        }
+
+        // Check that the most recent PriceReport timestamp is not too old.
+        let most_recent_report = current_price_reports
+            .values()
+            .map(|price_report| price_report.local_timestamp)
+            .fold(u128::MIN, |a, b| a.max(b));
+        let time_diff = get_current_time() - most_recent_report;
+        if time_diff > MAX_REPORT_AGE {
+            return PriceReporterState::DataTooStale(time_diff);
+        }
+
+        // Compute the medians.
+        let median_midpoint_price = median(
+            non_zero_price_reports
+                .iter()
+                .map(|price_report| price_report.midpoint_price),
+        )
+        .unwrap();
+        let median_local_timestamp = median(
+            non_zero_price_reports
+                .iter()
+                .map(|price_report| price_report.local_timestamp),
+        )
+        .unwrap();
+        let median_reported_timestamp = median(
+            non_zero_price_reports
+                .iter()
+                .map(|price_report| price_report.reported_timestamp)
+                .filter(|reported_timestamp| reported_timestamp.is_some())
+                .flatten(),
+        )
+        .map(|timestamp| timestamp as u128);
+
+        // Ensure that there is not too much deviation between the non-zero PriceReports.
+        let max_deviation = non_zero_price_reports
+            .iter()
+            .map(|price_report| {
+                (price_report.midpoint_price - median_midpoint_price).abs() / median_midpoint_price
+            })
+            .fold(f64::MIN, |a, b| a.max(b));
+        if max_deviation > MAX_DEVIATION {
+            return PriceReporterState::TooMuchDeviation(max_deviation);
+        }
+
+        let median_price_report = PriceReport {
+            exchange: None,
+            midpoint_price: median_midpoint_price as f64,
+            local_timestamp: median_local_timestamp as u128,
+            reported_timestamp: median_reported_timestamp,
+        };
+
+        PriceReporterState::Nominal(median_price_report)
     }
 
     /// Returns if this PriceReport is of a "Named" token pair (as opposed to an "Unnamed" pair).
@@ -226,27 +345,39 @@ impl PriceReporter {
         self.base_token.is_named() && self.quote_token.is_named()
     }
 
-    /// Nonblocking report of the latest price for a particular exchange.
-    pub fn peek(&self, exchange: Exchange) -> Result<PriceReport, ReporterError> {
-        Ok(*(*self.price_report_latest.read().unwrap())
-            .get(&exchange)
-            .unwrap())
+    /// Creates a new RingReceiver<PriceReport> that streams all raw PriceReports from the
+    /// specified Exchange.
+    pub fn create_new_exchange_receiver(&self, exchange: Exchange) -> RingReceiver<PriceReport> {
+        let (sender, receiver) = new_ring_channel::<PriceReport>();
+        (*self.price_report_exchanges_senders.write().unwrap())
+            .get_mut(&exchange)
+            .unwrap()
+            .push(sender);
+        receiver
     }
 
-    /// Nonblocking report of the latest price for all exchanges.
-    pub fn peek_all(&self) -> Result<HashMap<Exchange, PriceReport>, ReporterError> {
-        let all_exchanges = vec![
-            Exchange::Median,
-            Exchange::Binance,
-            Exchange::Coinbase,
-            Exchange::Kraken,
-            Exchange::Okx,
-            Exchange::UniswapV3,
-        ];
-        let mut peek_all = HashMap::<Exchange, PriceReport>::new();
-        for exchange in all_exchanges {
-            peek_all.insert(exchange, self.peek(exchange)?);
-        }
-        Ok(peek_all)
+    /// Creates a new RingReceiver<PriceReport> that streams all valid median PriceReports.
+    /// Importantly, note that this RingReceiver only streams _valid_ medians: If there is not
+    /// enough data or too much deviation, then streaming will be paused until the
+    /// ExchangeConnections recover to a Nominal state.
+    pub fn create_new_median_receiver(&self) -> RingReceiver<PriceReport> {
+        let (sender, receiver) = new_ring_channel::<PriceReport>();
+        (*self.price_report_median_senders.write().unwrap()).push(sender);
+        receiver
+    }
+
+    /// Nonblocking report of the latest PriceReporterState for the median.
+    pub fn peek_median(&self) -> PriceReporterState {
+        Self::compute_price_reporter_state(
+            self.price_report_exchanges_latest.read().unwrap().clone(),
+            self.is_named(),
+        )
+    }
+
+    /// Nonblocking report of the latest ExchangeConnectionState for all exchanges.
+    pub fn peek_all_exchanges(&self) -> HashMap<Exchange, ExchangeConnectionState> {
+        Self::price_report_to_exchange_connection_state(
+            self.price_report_exchanges_latest.read().unwrap().clone(),
+        )
     }
 }

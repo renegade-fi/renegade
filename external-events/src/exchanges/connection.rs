@@ -1,5 +1,6 @@
 use ring_channel::{ring_channel, RingReceiver, RingSender};
 use std::{
+    fmt::{self, Display},
     num::NonZeroUsize,
     thread,
     time::{self, SystemTime, UNIX_EPOCH},
@@ -8,7 +9,6 @@ use tungstenite::{connect, Message};
 use url::Url;
 
 use crate::{
-    errors::ReporterError,
     exchanges::handlers_centralized::{
         BinanceHandler, CentralizedExchangeHandler, CoinbaseHandler, KrakenHandler, OkxHandler,
     },
@@ -29,12 +29,53 @@ pub fn get_current_time() -> u128 {
 /// stream from an `Exchange`.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Exchange {
-    Median, /* Special exchange that aggregates the rest. */
     Binance,
     Coinbase,
     Kraken,
     Okx,
     UniswapV3,
+}
+impl Display for Exchange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let fmt_str = match self {
+            Exchange::Binance => String::from("Binance"),
+            Exchange::Coinbase => String::from("Coinbase"),
+            Exchange::Kraken => String::from("Kraken"),
+            Exchange::Okx => String::from("Okx"),
+            Exchange::UniswapV3 => String::from("UniswapV3"),
+        };
+        write!(f, "{}", fmt_str)
+    }
+}
+
+pub static ALL_EXCHANGES: &[Exchange] = &[
+    Exchange::Binance,
+    Exchange::Coinbase,
+    Exchange::Kraken,
+    Exchange::Okx,
+    Exchange::UniswapV3,
+];
+
+/// The state of an ExchangeConnection. Note that the ExchangeConnection itself simply streams news
+/// PriceReports, and the task of determining if the PriceReports have yet to arrive is the job of
+/// the PriceReporter.
+#[derive(Clone, Copy, Debug)]
+pub enum ExchangeConnectionState {
+    /// The ExchangeConnection is reporting as normal.
+    Nominal(PriceReport),
+    /// No data has yet to be reported from the ExchangeConnection.
+    NoDataReported,
+}
+impl Display for ExchangeConnectionState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let fmt_str = match self {
+            ExchangeConnectionState::Nominal(price_report) => {
+                format!("{:.4}", price_report.midpoint_price)
+            }
+            ExchangeConnectionState::NoDataReported => String::from("NoDataReported"),
+        };
+        write!(f, "{}", fmt_str)
+    }
 }
 
 /// A connection to an `Exchange`. Note that creating an `ExchangeConnection` via
@@ -47,11 +88,14 @@ pub struct ExchangeConnection {
     okx_handler: Option<OkxHandler>,
 }
 impl ExchangeConnection {
+    /// Create a new ExchangeConnection, returning the RingReceiver of PriceReports. Note that the
+    /// role of the ExchangeConnection is to simply stream PriceReports as they come, and does not
+    /// do any staleness testing or cross-Exchange deviation checks.
     pub fn create_receiver(
         base_token: Token,
         quote_token: Token,
         exchange: Exchange,
-    ) -> Result<RingReceiver<PriceReport>, ReporterError> {
+    ) -> RingReceiver<PriceReport> {
         // Create the ring buffer.
         let (mut price_report_sender, price_report_receiver) =
             ring_channel::<PriceReport>(NonZeroUsize::new(1).unwrap());
@@ -59,8 +103,9 @@ impl ExchangeConnection {
         // UniswapV3 logic is slightly different, as we use the web3 API wrapper for convenience,
         // rather than interacting directly over websockets.
         if exchange == Exchange::UniswapV3 {
-            UniswapV3Handler::start_price_stream(base_token, quote_token, price_report_sender);
-            return Ok(price_report_receiver);
+            UniswapV3Handler::start_price_stream(base_token, quote_token, price_report_sender)
+                .unwrap();
+            return price_report_receiver;
         }
 
         // Get initial ExchangeHandler state and include in a new ExchangeConnection.
@@ -153,7 +198,20 @@ impl ExchangeConnection {
             _ => unreachable!(),
         };
         let url = Url::parse(&wss_url).unwrap();
-        let (mut socket, _response) = connect(url).or(Err(ReporterError::HandshakeFailure))?;
+        let (mut socket, _response) = {
+            let connection = connect(url);
+            if let Ok(connection) = connection {
+                connection
+            } else if exchange == Exchange::Binance {
+                panic!(
+                    "You are likely attempting to connect from an IP address blacklisted by \
+                    Binance (e.g., anything US-based). Cannot connect to the remote URL: {}",
+                    wss_url
+                );
+            } else {
+                panic!("Cannot connect to the remote URL: {}", wss_url);
+            }
+        };
 
         // Send initial subscription message(s).
         match exchange {
@@ -190,7 +248,7 @@ impl ExchangeConnection {
             exchange_connection.handle_exchange_message(&mut price_report_sender, message);
         });
 
-        Ok(price_report_receiver)
+        price_report_receiver
     }
 
     fn handle_exchange_message(
