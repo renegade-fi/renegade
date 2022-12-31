@@ -1,7 +1,6 @@
 use chrono::DateTime;
 use futures::executor::block_on;
 use hmac_sha256::HMAC;
-use reqwest;
 use serde_json::{self, json, Value};
 use std::{collections::HashMap, env, net::TcpStream};
 use tungstenite::{stream::MaybeTlsStream, Message, WebSocket as WebSocketGeneric};
@@ -53,11 +52,11 @@ impl CentralizedExchangeHandler for BinanceHandler {
             .quote_token
             .get_exchange_ticker(Exchange::Binance)
             .unwrap();
-        String::from(format!(
+        format!(
             "wss://stream.binance.com:443/ws/{}{}@bookTicker",
             base_ticker.to_lowercase(),
             quote_ticker.to_lowercase()
-        ))
+        )
     }
 
     fn pre_stream_price_report(&mut self) -> Option<PriceReport> {
@@ -89,6 +88,7 @@ impl CentralizedExchangeHandler for BinanceHandler {
             Some(best_offer_str) => best_offer_str.parse().unwrap(),
         };
         Some(PriceReport {
+            exchange: Some(Exchange::Binance),
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: None,
             local_timestamp: get_current_time(),
@@ -114,6 +114,7 @@ impl CentralizedExchangeHandler for BinanceHandler {
             Some(best_offer_str) => best_offer_str.parse().unwrap(),
         };
         Some(PriceReport {
+            exchange: Some(Exchange::Binance),
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: None,
             local_timestamp: Default::default(),
@@ -248,6 +249,7 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
             }
             .timestamp_millis();
         Some(PriceReport {
+            exchange: Some(Exchange::Coinbase),
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: Some(reported_timestamp.try_into().unwrap()),
             local_timestamp: Default::default(),
@@ -320,6 +322,7 @@ impl CentralizedExchangeHandler for KrakenHandler {
             }
         };
         Some(PriceReport {
+            exchange: Some(Exchange::Kraken),
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: Some((reported_timestamp_seconds * 1000.0) as u128),
             local_timestamp: Default::default(),
@@ -360,7 +363,6 @@ impl CentralizedExchangeHandler for OkxHandler {
             }],
         })
         .to_string();
-        println!("okx subscribe_str = {:?}", subscribe_str);
         socket
             .write_message(Message::Text(subscribe_str))
             .or(Err(ReporterError::ConnectionHangup))?;
@@ -387,6 +389,7 @@ impl CentralizedExchangeHandler for OkxHandler {
             }
         };
         Some(PriceReport {
+            exchange: Some(Exchange::Okx),
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: Some((reported_timestamp_seconds * 1000.0) as u128),
             local_timestamp: Default::default(),

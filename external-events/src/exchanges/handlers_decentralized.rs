@@ -1,7 +1,5 @@
 use core::time::Duration;
-use create2;
 use futures::{executor::block_on, StreamExt};
-use hex;
 use ring_channel::RingSender;
 use std::{
     cmp::Ordering,
@@ -17,7 +15,12 @@ use web3::{
     Web3,
 };
 
-use crate::{exchanges::connection::get_current_time, reporter::PriceReport, tokens::Token};
+use crate::{
+    errors::ReporterError,
+    exchanges::{connection::get_current_time, Exchange},
+    reporter::PriceReport,
+    tokens::Token,
+};
 
 #[derive(Clone, Debug)]
 pub struct UniswapV3Handler;
@@ -31,7 +34,7 @@ impl UniswapV3Handler {
         base_token: Token,
         quote_token: Token,
         mut sender: RingSender<PriceReport>,
-    ) {
+    ) -> Result<(), ReporterError> {
         // Create the Web3 connection.
         let ethereum_wss_url = env::var("ETHEREUM_MAINNET_WSS").unwrap();
         let transport = block_on(web3::transports::WebSocket::new(&ethereum_wss_url)).unwrap();
@@ -123,9 +126,9 @@ impl UniswapV3Handler {
             swap_filter_recent_events.sort_by(|a, b| {
                 if a.block_number < b.block_number {
                     return Ordering::Less;
-                } else if a.block_number > b.block_number {
-                    return Ordering::Greater;
-                } else if a.transaction_index < b.transaction_index {
+                } else if a.block_number > b.block_number
+                    || a.transaction_index < b.transaction_index
+                {
                     return Ordering::Greater;
                 } else if a.transaction_index > b.transaction_index {
                     return Ordering::Less;
@@ -167,6 +170,8 @@ impl UniswapV3Handler {
                 }
             }
         });
+
+        Ok(())
     }
 
     fn handle_event(
@@ -176,8 +181,8 @@ impl UniswapV3Handler {
     ) -> Option<PriceReport> {
         let swap = swap_event_abi
             .parse_log(ethabi::RawLog {
-                topics: swap.topics.clone(),
-                data: swap.data.clone().0,
+                topics: swap.topics,
+                data: swap.data.0,
             })
             .unwrap();
         // Extract the `sqrtPriceX96` and convert it to the marginal price of the Uniswapv3 pool,
@@ -200,6 +205,7 @@ impl UniswapV3Handler {
         // Note that this price does not adjust for ERC-20 decimals yet.
         let price = price_numerator / price_denominator;
         Some(PriceReport {
+            exchange: Some(Exchange::UniswapV3),
             midpoint_price: price as f64,
             reported_timestamp: None,
             local_timestamp: Default::default(),
@@ -253,15 +259,16 @@ impl UniswapV3Handler {
         // Fetch the base balance from each pool address.
         let erc20_contract = ethabi::Contract::load(Self::ERC20_ABI.as_bytes()).unwrap();
         let base_balances = pool_addresses.map(|pool_address| {
-            let mut base_balance_call_request = web3::types::CallRequest::default();
-            base_balance_call_request.to = Some(web3::types::Address::from(base_token_addr));
-            base_balance_call_request.data = Some(web3::types::Bytes(
-                erc20_contract
-                    .function("balanceOf")
-                    .unwrap()
-                    .encode_input(&[ethabi::token::Token::Address(pool_address)])
-                    .unwrap(),
-            ));
+            let base_balance_call_request = web3::types::CallRequest::builder()
+                .to(base_token_addr)
+                .data(web3::types::Bytes(
+                    erc20_contract
+                        .function("balanceOf")
+                        .unwrap()
+                        .encode_input(&[ethabi::token::Token::Address(pool_address)])
+                        .unwrap(),
+                ))
+                .build();
             let base_balance = block_on(
                 web3_connection
                     .lock()
@@ -283,12 +290,12 @@ impl UniswapV3Handler {
         // highest base balance.
         let mut max_base_balance = U256::zero();
         let mut max_pool_idx: usize = 0;
-        for i in 0..4 {
-            if base_balances[i] > max_base_balance {
-                max_base_balance = base_balances[i];
+        for (i, base_balance) in base_balances.into_iter().enumerate() {
+            if base_balance > max_base_balance {
+                max_base_balance = base_balance;
                 max_pool_idx = i;
             }
         }
-        Some((H160::from(pool_addresses[max_pool_idx]), is_flipped))
+        Some((pool_addresses[max_pool_idx], is_flipped))
     }
 }

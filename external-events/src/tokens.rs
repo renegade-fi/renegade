@@ -594,7 +594,7 @@ pub struct Token {
 }
 impl Token {
     /// Given an ERC-20 contract address, returns a new Token.
-    pub fn from_addr(addr: &str) -> Self {
+    pub fn _from_addr(addr: &str) -> Self {
         Self {
             addr: String::from(addr),
         }
@@ -605,7 +605,7 @@ impl Token {
         // TODO: More gracefully fail if a user does not supply a valid ticker.
         let addr = ADDR_TICKER_BIMAP
             .get_by_right(&String::from(ticker))
-            .unwrap();
+            .expect("Ticker is not supported; specify unnamed token by ERC-20 address using from_addr instead.");
         Self {
             addr: addr.to_string(),
         }
@@ -624,9 +624,7 @@ impl Token {
     }
 
     pub fn get_decimals(&self) -> Option<u8> {
-        ADDR_DECIMALS_MAP
-            .get(self.get_addr())
-            .map(|decimals| *decimals)
+        ADDR_DECIMALS_MAP.get(self.get_addr()).copied()
     }
 
     /// Returns true if the Token has a Renegade-native ticker.
@@ -636,7 +634,7 @@ impl Token {
 
     /// Returns the ticker, in accordance with what each Exchange expects. This requires
     /// hard-coding and manual lookup, since CEXes typically do not support indexing by ERC-20
-    /// address.
+    /// address. If the ticker is not supported by the Exchange, returns None.
     pub fn get_exchange_ticker(&self, exchange: Exchange) -> Option<String> {
         // If there is not a Renegade-native ticker, then the token must be Unnamed.
         if !self.is_named() {
