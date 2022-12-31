@@ -6,7 +6,7 @@ use std::{collections::HashMap, env, net::TcpStream};
 use tungstenite::{stream::MaybeTlsStream, Message, WebSocket as WebSocketGeneric};
 
 use crate::{
-    errors::ReporterError,
+    errors::ExchangeConnectionError,
     exchanges::{connection::get_current_time, Exchange},
     reporter::PriceReport,
     tokens::Token,
@@ -22,12 +22,15 @@ pub trait CentralizedExchangeHandler {
     /// Certain exchanges report the most recent price immediately after subscribing to the
     /// websocket. If the exchange requires an initial request to get caught up with exchange
     /// state, we query that here.
-    fn pre_stream_price_report(&mut self) -> Option<PriceReport>;
+    fn pre_stream_price_report(&mut self) -> Result<Option<PriceReport>, ExchangeConnectionError>;
     /// Send any initial subscription messages to the websocket after it has been created.
-    fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ReporterError>;
+    fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ExchangeConnectionError>;
     /// Handle an inbound message from the exchange by parsing it into a PriceReport and publishing
     /// the PriceReport into the ring buffer channel.
-    fn handle_exchange_message(&mut self, message_json: Value) -> Option<PriceReport>;
+    fn handle_exchange_message(
+        &mut self,
+        message_json: Value,
+    ) -> Result<Option<PriceReport>, ExchangeConnectionError>;
 }
 
 #[derive(Clone, Debug)]
@@ -44,14 +47,8 @@ impl CentralizedExchangeHandler for BinanceHandler {
     }
 
     fn websocket_url(&self) -> String {
-        let base_ticker = self
-            .base_token
-            .get_exchange_ticker(Exchange::Binance)
-            .unwrap();
-        let quote_ticker = self
-            .quote_token
-            .get_exchange_ticker(Exchange::Binance)
-            .unwrap();
+        let base_ticker = self.base_token.get_exchange_ticker(Exchange::Binance);
+        let quote_ticker = self.quote_token.get_exchange_ticker(Exchange::Binance);
         format!(
             "wss://stream.binance.com:443/ws/{}{}@bookTicker",
             base_ticker.to_lowercase(),
@@ -59,66 +56,67 @@ impl CentralizedExchangeHandler for BinanceHandler {
         )
     }
 
-    fn pre_stream_price_report(&mut self) -> Option<PriceReport> {
+    fn pre_stream_price_report(&mut self) -> Result<Option<PriceReport>, ExchangeConnectionError> {
         // TODO: This is duplicate code, condense it.
-        let base_ticker = self
-            .base_token
-            .get_exchange_ticker(Exchange::Binance)
-            .unwrap();
-        let quote_ticker = self
-            .quote_token
-            .get_exchange_ticker(Exchange::Binance)
-            .unwrap();
+        let base_ticker = self.base_token.get_exchange_ticker(Exchange::Binance);
+        let quote_ticker = self.quote_token.get_exchange_ticker(Exchange::Binance);
         let request_url = format!(
             "https://api.binance.com/api/v3/ticker/bookTicker?symbol={}{}",
             base_ticker, quote_ticker
         );
-        let message_json: Value =
-            block_on(block_on(reqwest::get(request_url)).unwrap().json()).unwrap();
+        let message_json: Value = block_on(
+            block_on(reqwest::get(request_url))
+                .or(Err(ExchangeConnectionError::ConnectionHangup))?
+                .json(),
+        )
+        .or(Err(ExchangeConnectionError::InvalidMessage))?;
         let best_bid: f64 = match message_json["bidPrice"].as_str() {
             None => {
-                return None;
+                return Err(ExchangeConnectionError::InvalidMessage);
             }
             Some(best_bid_str) => best_bid_str.parse().unwrap(),
         };
         let best_offer: f64 = match message_json["askPrice"].as_str() {
             None => {
-                return None;
+                return Err(ExchangeConnectionError::InvalidMessage);
             }
             Some(best_offer_str) => best_offer_str.parse().unwrap(),
         };
-        Some(PriceReport {
+        Ok(Some(PriceReport {
             exchange: Some(Exchange::Binance),
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: None,
             local_timestamp: get_current_time(),
-        })
+        }))
     }
 
-    fn websocket_subscribe(&self, _socket: &mut WebSocket) -> Result<(), ReporterError> {
+    fn websocket_subscribe(&self, _socket: &mut WebSocket) -> Result<(), ExchangeConnectionError> {
         // Binance begins streaming prices immediately; no initial subscribe message needed.
         Ok(())
     }
 
-    fn handle_exchange_message(&mut self, message_json: Value) -> Option<PriceReport> {
+    fn handle_exchange_message(
+        &mut self,
+        message_json: Value,
+    ) -> Result<Option<PriceReport>, ExchangeConnectionError> {
         let best_bid: f64 = match message_json["b"].as_str() {
             None => {
-                return None;
+                return Err(ExchangeConnectionError::InvalidMessage);
             }
             Some(best_bid_str) => best_bid_str.parse().unwrap(),
         };
         let best_offer: f64 = match message_json["a"].as_str() {
             None => {
-                return None;
+                return Err(ExchangeConnectionError::InvalidMessage);
             }
             Some(best_offer_str) => best_offer_str.parse().unwrap(),
         };
-        Some(PriceReport {
+        Ok(Some(PriceReport {
             exchange: Some(Exchange::Binance),
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: None,
             local_timestamp: Default::default(),
-        })
+        }))
     }
 }
 
@@ -145,19 +143,13 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
         String::from("wss://advanced-trade-ws.coinbase.com")
     }
 
-    fn pre_stream_price_report(&mut self) -> Option<PriceReport> {
-        None
+    fn pre_stream_price_report(&mut self) -> Result<Option<PriceReport>, ExchangeConnectionError> {
+        Ok(None)
     }
 
-    fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ReporterError> {
-        let base_ticker = self
-            .base_token
-            .get_exchange_ticker(Exchange::Coinbase)
-            .unwrap();
-        let quote_ticker = self
-            .quote_token
-            .get_exchange_ticker(Exchange::Coinbase)
-            .unwrap();
+    fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ExchangeConnectionError> {
+        let base_ticker = self.base_token.get_exchange_ticker(Exchange::Coinbase);
+        let quote_ticker = self.quote_token.get_exchange_ticker(Exchange::Coinbase);
         let product_ids = format!("{}-{}", base_ticker, quote_ticker);
         let channel = "level2";
         let timestamp = (get_current_time() / 1000).to_string();
@@ -177,21 +169,24 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
         .to_string();
         socket
             .write_message(Message::Text(subscribe_str))
-            .or(Err(ReporterError::ConnectionHangup))?;
+            .or(Err(ExchangeConnectionError::ConnectionHangup))?;
         Ok(())
     }
 
-    fn handle_exchange_message(&mut self, message_json: Value) -> Option<PriceReport> {
+    fn handle_exchange_message(
+        &mut self,
+        message_json: Value,
+    ) -> Result<Option<PriceReport>, ExchangeConnectionError> {
         // Extract the list of events and update the order book.
         let coinbase_events = match &message_json["events"] {
             Value::Array(coinbase_events) => match &coinbase_events[0]["updates"] {
                 Value::Array(coinbase_events) => coinbase_events,
                 _ => {
-                    return None;
+                    return Ok(None);
                 }
             },
             _ => {
-                return None;
+                return Ok(None);
             }
         };
         for coinbase_event in coinbase_events {
@@ -206,7 +201,7 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
                     side,
                 ),
                 _ => {
-                    return None;
+                    return Err(ExchangeConnectionError::InvalidMessage);
                 }
             };
             match &side[..] {
@@ -225,7 +220,7 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
                     }
                 }
                 _ => {
-                    return None;
+                    return Err(ExchangeConnectionError::InvalidMessage);
                 }
             }
         }
@@ -240,20 +235,18 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
             best_offer = f64::min(best_offer, price_level.parse::<f64>().unwrap());
         }
 
-        let reported_timestamp =
-            match DateTime::parse_from_rfc3339(message_json["timestamp"].as_str().unwrap()) {
-                Ok(reported_timestamp) => reported_timestamp,
-                Err(_) => {
-                    return None;
-                }
-            }
+        let timestamp_str = message_json["timestamp"]
+            .as_str()
+            .ok_or(ExchangeConnectionError::InvalidMessage)?;
+        let reported_timestamp = DateTime::parse_from_rfc3339(timestamp_str)
+            .or(Err(ExchangeConnectionError::InvalidMessage))?
             .timestamp_millis();
-        Some(PriceReport {
+        Ok(Some(PriceReport {
             exchange: Some(Exchange::Coinbase),
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: Some(reported_timestamp.try_into().unwrap()),
             local_timestamp: Default::default(),
-        })
+        }))
     }
 }
 
@@ -274,19 +267,13 @@ impl CentralizedExchangeHandler for KrakenHandler {
         String::from("wss://ws.kraken.com")
     }
 
-    fn pre_stream_price_report(&mut self) -> Option<PriceReport> {
-        None
+    fn pre_stream_price_report(&mut self) -> Result<Option<PriceReport>, ExchangeConnectionError> {
+        Ok(None)
     }
 
-    fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ReporterError> {
-        let base_ticker = self
-            .base_token
-            .get_exchange_ticker(Exchange::Kraken)
-            .unwrap();
-        let quote_ticker = self
-            .quote_token
-            .get_exchange_ticker(Exchange::Kraken)
-            .unwrap();
+    fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ExchangeConnectionError> {
+        let base_ticker = self.base_token.get_exchange_ticker(Exchange::Kraken);
+        let quote_ticker = self.quote_token.get_exchange_ticker(Exchange::Kraken);
         let pair = format!("{}/{}", base_ticker, quote_ticker);
         let subscribe_str = json!({
             "event": "subscribe",
@@ -298,35 +285,44 @@ impl CentralizedExchangeHandler for KrakenHandler {
         .to_string();
         socket
             .write_message(Message::Text(subscribe_str))
-            .or(Err(ReporterError::ConnectionHangup))?;
+            .or(Err(ExchangeConnectionError::ConnectionHangup))?;
         Ok(())
     }
 
-    fn handle_exchange_message(&mut self, message_json: Value) -> Option<PriceReport> {
+    fn handle_exchange_message(
+        &mut self,
+        message_json: Value,
+    ) -> Result<Option<PriceReport>, ExchangeConnectionError> {
+        // Kraken sends status update messages. Ignore these.
+        if ["systemStatus", "subscriptionStatus", "heartbeat"]
+            .contains(&message_json["event"].as_str().unwrap_or(""))
+        {
+            return Ok(None);
+        }
         let best_bid = match &message_json[1][0] {
             Value::String(best_bid) => best_bid.parse::<f64>().unwrap(),
             _ => {
-                return None;
+                return Err(ExchangeConnectionError::InvalidMessage);
             }
         };
         let best_offer = match &message_json[1][1] {
             Value::String(best_offer) => best_offer.parse::<f64>().unwrap(),
             _ => {
-                return None;
+                return Err(ExchangeConnectionError::InvalidMessage);
             }
         };
         let reported_timestamp_seconds = match &message_json[1][2] {
             Value::String(reported_timestamp) => reported_timestamp.parse::<f32>().unwrap(),
             _ => {
-                return None;
+                return Err(ExchangeConnectionError::InvalidMessage);
             }
         };
-        Some(PriceReport {
+        Ok(Some(PriceReport {
             exchange: Some(Exchange::Kraken),
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: Some((reported_timestamp_seconds * 1000.0) as u128),
             local_timestamp: Default::default(),
-        })
+        }))
     }
 }
 
@@ -347,13 +343,13 @@ impl CentralizedExchangeHandler for OkxHandler {
         String::from("wss://ws.okx.com:8443/ws/v5/public")
     }
 
-    fn pre_stream_price_report(&mut self) -> Option<PriceReport> {
-        None
+    fn pre_stream_price_report(&mut self) -> Result<Option<PriceReport>, ExchangeConnectionError> {
+        Ok(None)
     }
 
-    fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ReporterError> {
-        let base_ticker = self.base_token.get_exchange_ticker(Exchange::Okx).unwrap();
-        let quote_ticker = self.quote_token.get_exchange_ticker(Exchange::Okx).unwrap();
+    fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ExchangeConnectionError> {
+        let base_ticker = self.base_token.get_exchange_ticker(Exchange::Okx);
+        let quote_ticker = self.quote_token.get_exchange_ticker(Exchange::Okx);
         let pair = format!("{}-{}", base_ticker, quote_ticker);
         let subscribe_str = json!({
             "op": "subscribe",
@@ -365,34 +361,41 @@ impl CentralizedExchangeHandler for OkxHandler {
         .to_string();
         socket
             .write_message(Message::Text(subscribe_str))
-            .or(Err(ReporterError::ConnectionHangup))?;
+            .or(Err(ExchangeConnectionError::ConnectionHangup))?;
         Ok(())
     }
 
-    fn handle_exchange_message(&mut self, message_json: Value) -> Option<PriceReport> {
+    fn handle_exchange_message(
+        &mut self,
+        message_json: Value,
+    ) -> Result<Option<PriceReport>, ExchangeConnectionError> {
+        // Okx sends status update messages. Ignore these.
+        if message_json["event"].as_str().unwrap_or("") == "subscribe" {
+            return Ok(None);
+        }
         let best_bid = match &message_json["data"][0]["bids"][0][0] {
             Value::String(best_bid) => best_bid.parse::<f64>().unwrap(),
             _ => {
-                return None;
+                return Err(ExchangeConnectionError::InvalidMessage);
             }
         };
         let best_offer = match &message_json["data"][0]["asks"][0][0] {
             Value::String(best_offer) => best_offer.parse::<f64>().unwrap(),
             _ => {
-                return None;
+                return Err(ExchangeConnectionError::InvalidMessage);
             }
         };
         let reported_timestamp_seconds = match &message_json["data"][0]["ts"] {
             Value::String(reported_timestamp) => reported_timestamp.parse::<f32>().unwrap(),
             _ => {
-                return None;
+                return Err(ExchangeConnectionError::InvalidMessage);
             }
         };
-        Some(PriceReport {
+        Ok(Some(PriceReport {
             exchange: Some(Exchange::Okx),
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: Some((reported_timestamp_seconds * 1000.0) as u128),
             local_timestamp: Default::default(),
-        })
+        }))
     }
 }

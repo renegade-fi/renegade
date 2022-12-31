@@ -9,6 +9,7 @@ use tungstenite::{connect, Message};
 use url::Url;
 
 use crate::{
+    errors::ExchangeConnectionError,
     exchanges::handlers_centralized::{
         BinanceHandler, CentralizedExchangeHandler, CoinbaseHandler, KrakenHandler, OkxHandler,
     },
@@ -81,6 +82,7 @@ impl Display for ExchangeConnectionState {
 /// A connection to an `Exchange`. Note that creating an `ExchangeConnection` via
 /// `ExchangeConnection::new(exchange: Exchange)` only returns a ring buffer channel receiver; the
 /// ExchangeConnection is never directly accessed, and all data is reported only via this receiver.
+#[derive(Clone, Debug)]
 pub struct ExchangeConnection {
     binance_handler: Option<BinanceHandler>,
     coinbase_handler: Option<CoinbaseHandler>,
@@ -95,7 +97,7 @@ impl ExchangeConnection {
         base_token: Token,
         quote_token: Token,
         exchange: Exchange,
-    ) -> RingReceiver<PriceReport> {
+    ) -> Result<RingReceiver<PriceReport>, ExchangeConnectionError> {
         // Create the ring buffer.
         let (mut price_report_sender, price_report_receiver) =
             ring_channel::<PriceReport>(NonZeroUsize::new(1).unwrap());
@@ -103,9 +105,8 @@ impl ExchangeConnection {
         // UniswapV3 logic is slightly different, as we use the web3 API wrapper for convenience,
         // rather than interacting directly over websockets.
         if exchange == Exchange::UniswapV3 {
-            UniswapV3Handler::start_price_stream(base_token, quote_token, price_report_sender)
-                .unwrap();
-            return price_report_receiver;
+            UniswapV3Handler::start_price_stream(base_token, quote_token, price_report_sender)?;
+            return Ok(price_report_receiver);
         }
 
         // Get initial ExchangeHandler state and include in a new ExchangeConnection.
@@ -160,7 +161,7 @@ impl ExchangeConnection {
                 .unwrap()
                 .pre_stream_price_report(),
             _ => unreachable!(),
-        };
+        }?;
         if let Some(pre_stream_price_report) = pre_stream_price_report {
             let mut price_report_sender_clone = price_report_sender.clone();
             thread::spawn(move || {
@@ -203,13 +204,15 @@ impl ExchangeConnection {
             if let Ok(connection) = connection {
                 connection
             } else if exchange == Exchange::Binance {
-                panic!(
+                println!(
                     "You are likely attempting to connect from an IP address blacklisted by \
                     Binance (e.g., anything US-based). Cannot connect to the remote URL: {}",
                     wss_url
                 );
+                return Err(ExchangeConnectionError::HandshakeFailure);
             } else {
-                panic!("Cannot connect to the remote URL: {}", wss_url);
+                println!("Cannot connect to the remote URL: {}", wss_url);
+                return Err(ExchangeConnectionError::HandshakeFailure);
             }
         };
 
@@ -219,43 +222,42 @@ impl ExchangeConnection {
                 .binance_handler
                 .as_ref()
                 .unwrap()
-                .websocket_subscribe(&mut socket)
-                .unwrap(),
+                .websocket_subscribe(&mut socket)?,
             Exchange::Coinbase => exchange_connection
                 .coinbase_handler
                 .as_ref()
                 .unwrap()
-                .websocket_subscribe(&mut socket)
-                .unwrap(),
+                .websocket_subscribe(&mut socket)?,
             Exchange::Kraken => exchange_connection
                 .kraken_handler
                 .as_ref()
                 .unwrap()
-                .websocket_subscribe(&mut socket)
-                .unwrap(),
+                .websocket_subscribe(&mut socket)?,
             Exchange::Okx => exchange_connection
                 .okx_handler
                 .as_ref()
                 .unwrap()
-                .websocket_subscribe(&mut socket)
-                .unwrap(),
+                .websocket_subscribe(&mut socket)?,
             _ => unreachable!(),
         };
 
         // Start listening for inbound messages.
         thread::spawn(move || loop {
             let message = socket.read_message().unwrap();
-            exchange_connection.handle_exchange_message(&mut price_report_sender, message);
+            // TODO: try: panic!();
+            exchange_connection
+                .handle_exchange_message(&mut price_report_sender, message)
+                .expect("TODO: Handle this better?");
         });
 
-        price_report_receiver
+        Ok(price_report_receiver)
     }
 
     fn handle_exchange_message(
         &mut self,
         price_report_sender: &mut RingSender<PriceReport>,
         message: Message,
-    ) {
+    ) -> Result<(), ExchangeConnectionError> {
         let message_str = message.into_text().unwrap();
         let message_json = serde_json::from_str(&message_str).unwrap();
 
@@ -271,11 +273,13 @@ impl ExchangeConnection {
             } else {
                 unreachable!();
             }
-        };
+        }?;
 
         if let Some(mut price_report) = price_report {
             price_report.local_timestamp = get_current_time();
             price_report_sender.send(price_report).unwrap();
         }
+
+        Ok(())
     }
 }

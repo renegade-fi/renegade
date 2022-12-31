@@ -113,7 +113,8 @@ impl PriceReporter {
                 base_token.clone(),
                 quote_token.clone(),
                 *exchange,
-            );
+            )
+            .expect("TODO: Handle failure better here; shouldn't panic here?");
             let mut all_price_reports_sender_clone = all_price_reports_sender.clone();
             thread::spawn(move || loop {
                 let price_report = price_report_receiver.recv().unwrap();

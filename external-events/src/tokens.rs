@@ -635,15 +635,25 @@ impl Token {
     /// Returns the ticker, in accordance with what each Exchange expects. This requires
     /// hard-coding and manual lookup, since CEXes typically do not support indexing by ERC-20
     /// address. If the ticker is not supported by the Exchange, returns None.
-    pub fn get_exchange_ticker(&self, exchange: Exchange) -> Option<String> {
+    pub fn get_exchange_ticker(&self, exchange: Exchange) -> String {
         // If there is not a Renegade-native ticker, then the token must be Unnamed.
         if !self.is_named() {
-            return None;
+            panic!(
+                "Tried to get_exchange_ticker({}) for an unnamed Token.",
+                exchange
+            );
         }
         EXCHANGE_TICKERS
             .get(&exchange)
             .unwrap()
             .get(self.get_ticker().unwrap())
             .cloned()
+            .unwrap_or_else(|| {
+                panic!(
+                    "Tried to get_exchange_ticker({}) for a named token, \
+                    but the token is not supported by the Exchange.",
+                    exchange
+                )
+            })
     }
 }
