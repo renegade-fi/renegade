@@ -2,24 +2,22 @@ use std::error::Error;
 use std::fmt::{self, Display};
 
 #[derive(Clone, Debug)]
-pub enum ReporterError {
+pub enum ExchangeConnectionError {
     /// An initial websocket subscription to a remote server failed.
-    _HandshakeFailure,
+    HandshakeFailure,
     /// A websocket remote connection hungup.
     ConnectionHangup,
     /// Could not parse a remote server message.
-    _InvalidMessage,
+    InvalidMessage,
 }
 
-impl Error for ReporterError {}
-impl Display for ReporterError {
+impl Error for ExchangeConnectionError {}
+impl Display for ExchangeConnectionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let display_string = match self {
-            ReporterError::_HandshakeFailure => {
-                "An initial websocket subscription to a remote server failed."
-            }
-            ReporterError::ConnectionHangup => "A websocket remote connection hungup.",
-            ReporterError::_InvalidMessage => "Could not parse a remote server message.",
+            ExchangeConnectionError::HandshakeFailure => "HandshakeFailure",
+            ExchangeConnectionError::ConnectionHangup => "ConnectionHangup",
+            ExchangeConnectionError::InvalidMessage => "InvalidMessage",
         };
         write!(f, "{}", display_string)
     }

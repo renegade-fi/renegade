@@ -16,7 +16,7 @@ use web3::{
 };
 
 use crate::{
-    errors::ReporterError,
+    errors::ExchangeConnectionError,
     exchanges::{connection::get_current_time, Exchange},
     reporter::PriceReport,
     tokens::Token,
@@ -34,16 +34,17 @@ impl UniswapV3Handler {
         base_token: Token,
         quote_token: Token,
         mut sender: RingSender<PriceReport>,
-    ) -> Result<(), ReporterError> {
+    ) -> Result<(), ExchangeConnectionError> {
         // Create the Web3 connection.
         let ethereum_wss_url = env::var("ETHEREUM_MAINNET_WSS").unwrap();
-        let transport = block_on(web3::transports::WebSocket::new(&ethereum_wss_url)).unwrap();
+        let transport = block_on(web3::transports::WebSocket::new(&ethereum_wss_url))
+            .or(Err(ExchangeConnectionError::HandshakeFailure))?;
         let web3_connection = Web3::new(transport);
         let web3_connection = Arc::new(Mutex::new(web3_connection));
 
         // Derive the Uniswap pool address from this Token pair.
         let (pool_address, is_flipped) =
-            Self::get_pool_address(base_token, quote_token, web3_connection.clone()).unwrap();
+            Self::get_pool_address(base_token, quote_token, web3_connection.clone())?;
 
         // Create a filter for Uniswap `Swap` events on this pool.
         let swap_event_abi = ethabi::Event {
@@ -220,7 +221,7 @@ impl UniswapV3Handler {
         base_token: Token,
         quote_token: Token,
         web3_connection: Arc<Mutex<Web3<web3::transports::WebSocket>>>,
-    ) -> Option<(H160, bool)> {
+    ) -> Result<(H160, bool), ExchangeConnectionError> {
         let base_token_addr = H160::from_str(base_token.get_addr()).unwrap();
         let quote_token_addr = H160::from_str(quote_token.get_addr()).unwrap();
         let is_flipped = base_token_addr > quote_token_addr;
@@ -269,21 +270,15 @@ impl UniswapV3Handler {
                         .unwrap(),
                 ))
                 .build();
-            let base_balance = block_on(
+            block_on(
                 web3_connection
                     .lock()
                     .unwrap()
                     .eth()
                     .call(base_balance_call_request, None),
             )
-            .unwrap()
-            .0;
-            assert!(
-                base_balance.len() == 32,
-                "base_balance.len() = {}, expected 32.",
-                base_balance.len()
-            );
-            U256::from(&base_balance[..32])
+            .or(Err(ExchangeConnectionError::ConnectionHangup))
+            .map(|base_balance| U256::from(&base_balance.0[..32]))
         });
 
         // Given the derived pool addresses and base balances, pick the pool address with the
@@ -291,11 +286,12 @@ impl UniswapV3Handler {
         let mut max_base_balance = U256::zero();
         let mut max_pool_idx: usize = 0;
         for (i, base_balance) in base_balances.into_iter().enumerate() {
+            let base_balance = base_balance?;
             if base_balance > max_base_balance {
                 max_base_balance = base_balance;
                 max_pool_idx = i;
             }
         }
-        Some((pool_addresses[max_pool_idx], is_flipped))
+        Ok((pool_addresses[max_pool_idx], is_flipped))
     }
 }
