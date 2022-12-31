@@ -11,9 +11,9 @@
 //! In general, Named Tokens use all exchanges where they are listed, whereas Unnamed Tokens only
 //! use Uniswap V3 for the price feed.
 use bimap::BiMap;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::exchanges::Exchange;
+use crate::exchanges::{Exchange, ALL_EXCHANGES};
 
 /// A helper enum to describe the state of each ticker on each Exchange. Same means that the ERC-20
 /// and Exchange tickers are the same, Renamed means that the Exchange ticker is different from the
@@ -630,6 +630,29 @@ impl Token {
     /// Returns true if the Token has a Renegade-native ticker.
     pub fn is_named(&self) -> bool {
         self.get_ticker().is_some()
+    }
+
+    /// Returns the set of Exchanges that support this token.
+    pub fn supported_exchanges(&self) -> HashSet<Exchange> {
+        let mut supported_exchanges = HashSet::<Exchange>::new();
+        supported_exchanges.insert(Exchange::UniswapV3);
+        if !self.is_named() {
+            return supported_exchanges;
+        }
+        for exchange in ALL_EXCHANGES.iter() {
+            if *exchange == Exchange::UniswapV3 {
+                continue;
+            }
+            if EXCHANGE_TICKERS
+                .get(exchange)
+                .unwrap()
+                .get(self.get_ticker().unwrap())
+                .is_some()
+            {
+                supported_exchanges.insert(*exchange);
+            }
+        }
+        supported_exchanges
     }
 
     /// Returns the ticker, in accordance with what each Exchange expects. This requires

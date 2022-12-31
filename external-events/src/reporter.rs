@@ -2,7 +2,7 @@ use futures::stream::{select_all, StreamExt};
 use ring_channel::{ring_channel, RingReceiver, RingSender};
 use stats::median;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::{self, Display},
     num::NonZeroUsize,
     sync::{Arc, RwLock},
@@ -83,6 +83,7 @@ impl Display for PriceReporterState {
 pub struct PriceReporter {
     base_token: Token,
     quote_token: Token,
+    supported_exchanges: HashSet<Exchange>,
     /// Thread-safe HashMap between each Exchange and a vector of senders for PriceReports. As the
     /// PriceReporter processes messages from the various ExchangeConnections, this HashMap
     /// determines where PriceReport outputs will be sent to.
@@ -106,13 +107,22 @@ impl PriceReporter {
         let (all_price_reports_sender, mut all_price_reports_receiver) =
             new_ring_channel::<PriceReport>();
 
+        // Derive the supported exchanges.
+        let base_token_supported_exchanges = base_token.supported_exchanges();
+        let quote_token_supported_exchanges = quote_token.supported_exchanges();
+        let supported_exchanges = base_token_supported_exchanges
+            .intersection(&quote_token_supported_exchanges)
+            .copied()
+            .collect::<HashSet<Exchange>>();
+
         // Connect to all the exchanges, and pipe the price report stream from each connection into
         // the aggregate ring buffer created previously.
-        for exchange in ALL_EXCHANGES.iter() {
+        let supported_exchanges_clone = supported_exchanges.clone();
+        for exchange in supported_exchanges_clone.into_iter() {
             let mut price_report_receiver = ExchangeConnection::create_receiver(
                 base_token.clone(),
                 quote_token.clone(),
-                *exchange,
+                exchange,
             )
             .expect("TODO: Handle failure better here; shouldn't panic here?");
             let mut all_price_reports_sender_clone = all_price_reports_sender.clone();
@@ -236,6 +246,7 @@ impl PriceReporter {
         Self {
             base_token,
             quote_token,
+            supported_exchanges,
             price_report_exchanges_senders,
             price_report_median_senders,
             price_report_exchanges_latest,
@@ -379,6 +390,24 @@ impl PriceReporter {
     pub fn peek_all_exchanges(&self) -> HashMap<Exchange, ExchangeConnectionState> {
         Self::price_report_to_exchange_connection_state(
             self.price_report_exchanges_latest.read().unwrap().clone(),
+        )
+    }
+
+    /// Get all Exchanges that this Token pair supports.
+    pub fn _get_supported_exchanges(&self) -> HashSet<Exchange> {
+        self.supported_exchanges.clone()
+    }
+
+    /// Get all Exchanges that are currently in a healthy state.
+    pub fn _get_healthy_exchanges(&self) -> HashSet<Exchange> {
+        HashSet::from_iter(
+            self.peek_all_exchanges()
+                .iter()
+                .filter_map(|(exchange, state)| match state {
+                    ExchangeConnectionState::Nominal(_) => Some(exchange),
+                    _ => None,
+                })
+                .copied(),
         )
     }
 }
