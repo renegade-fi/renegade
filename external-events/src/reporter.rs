@@ -3,6 +3,7 @@ use ring_channel::{ring_channel, RingReceiver, RingSender};
 use stats::median;
 use std::{
     collections::{HashMap, HashSet},
+    env,
     fmt::{self, Display},
     num::NonZeroUsize,
     sync::{Arc, RwLock},
@@ -98,6 +99,22 @@ pub struct PriceReporter {
 }
 impl PriceReporter {
     pub fn new(base_token: Token, quote_token: Token) -> Self {
+        // Validate that sufficient environment variables exist.
+        let required_env_variables = [
+            "COINBASE_API_KEY",
+            "COINBASE_API_SECRET",
+            "ETHEREUM_MAINNET_WSS",
+        ];
+        for env_variable in required_env_variables {
+            env::var(env_variable).unwrap_or_else(|_| {
+                panic!(
+                    "Could not find environment variable {} in secrets.env",
+                    env_variable,
+                )
+            });
+        }
+
+        // Pre-compute some data about the Token pair.
         let is_named = base_token.is_named() && quote_token.is_named();
         let (base_token_decimals, quote_token_decimals) =
             (base_token.get_decimals(), quote_token.get_decimals());
