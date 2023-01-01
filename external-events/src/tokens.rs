@@ -422,7 +422,7 @@ static ERC20_DATA: &[(
         ExchangeTicker::Same,
     ),
     (
-        "0xba5BDe662c17e2aDFF1075610382B9B691296350",
+        "0xba5bde662c17e2adff1075610382b9b691296350",
         18,
         "RARE",
         ExchangeTicker::Same,
@@ -596,7 +596,7 @@ impl Token {
     /// Given an ERC-20 contract address, returns a new Token.
     pub fn _from_addr(addr: &str) -> Self {
         Self {
-            addr: String::from(addr),
+            addr: String::from(addr).to_lowercase(),
         }
     }
 
