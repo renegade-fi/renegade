@@ -11,6 +11,7 @@ use std::{
 };
 
 use crate::{
+    errors::ExchangeConnectionError,
     exchanges::{
         get_current_time, Exchange, ExchangeConnection, ExchangeConnectionState, ALL_EXCHANGES,
     },
@@ -28,6 +29,9 @@ static MIN_CONNECTIONS: usize = 3;
 /// If a single PriceReport is more than MAX_DEVIATION (as a fraction) away from the midpoint, then
 /// we pause matches until the prices stabilize. By default, we use 10bp.
 static MAX_DEVIATION: f64 = 0.001;
+/// If an ExchangeConnection returns an Error, we try to restart it. After
+/// MAX_CONNNECTION_FAILURES, we panic the relayer entirely.
+static MAX_CONNECTION_FAILURES: usize = 5;
 
 fn new_ring_channel<T>() -> (RingSender<T>, RingReceiver<T>) {
     ring_channel::<T>(NonZeroUsize::new(1).unwrap())
@@ -134,19 +138,67 @@ impl PriceReporter {
 
         // Connect to all the exchanges, and pipe the price report stream from each connection into
         // the aggregate ring buffer created previously.
-        let supported_exchanges_clone = supported_exchanges.clone();
-        for exchange in supported_exchanges_clone.into_iter() {
-            let mut price_report_receiver = ExchangeConnection::create_receiver(
-                base_token.clone(),
-                quote_token.clone(),
-                exchange,
-            )
-            .expect("TODO: Handle failure better here; shouldn't panic here?");
-            let mut all_price_reports_sender_clone = all_price_reports_sender.clone();
-            thread::spawn(move || loop {
-                let price_report = price_report_receiver.recv().unwrap();
-                all_price_reports_sender_clone.send(price_report).unwrap();
+        async fn connect_to_exchange(
+            base_token: Token,
+            quote_token: Token,
+            exchange: Exchange,
+            mut all_price_reports_sender: RingSender<PriceReport>,
+        ) -> Result<(), ExchangeConnectionError> {
+            let (mut price_report_receiver, mut worker_handles) =
+                ExchangeConnection::create_receiver(base_token, quote_token, exchange).await?;
+            let worker_handle = tokio::spawn(async move {
+                loop {
+                    let price_report = price_report_receiver
+                        .recv()
+                        .or(Err(ExchangeConnectionError::ConnectionHangup))?;
+                    all_price_reports_sender.send(price_report).unwrap();
+                }
             });
+            worker_handles.push(worker_handle);
+            for joined_handle in futures::future::join_all(worker_handles).await.into_iter() {
+                if joined_handle.is_ok() {
+                    joined_handle.unwrap()?;
+                }
+            }
+            // Either the worker threads never stop running, or they error.
+            unreachable!();
+        }
+        let supported_exchanges_clone = supported_exchanges.clone();
+        // TODO: When integrating as a worker, these exchange_connection_worker_handles will need
+        // to be joined to propagate panics.
+        let mut exchange_connection_worker_handles = vec![];
+        for exchange in supported_exchanges_clone.into_iter() {
+            let base_token = base_token.clone();
+            let quote_token = quote_token.clone();
+            let all_price_reports_sender = all_price_reports_sender.clone();
+            let exchange_connection_worker_handle = tokio::spawn(async move {
+                let mut num_failures = 0;
+                loop {
+                    if num_failures >= MAX_CONNECTION_FAILURES {
+                        panic!(
+                            "The ExchangeConnection to {} had more than {} connection failures.",
+                            exchange, MAX_CONNECTION_FAILURES
+                        );
+                    }
+                    let base_token = base_token.clone();
+                    let quote_token = quote_token.clone();
+                    let all_price_reports_sender = all_price_reports_sender.clone();
+                    let exchange_connection_handle = tokio::spawn(connect_to_exchange(
+                        base_token,
+                        quote_token,
+                        exchange,
+                        all_price_reports_sender,
+                    ));
+                    let exchange_connection_error =
+                        exchange_connection_handle.await.unwrap().unwrap_err();
+                    println!(
+                        "Restarting the ExchangeConnection to {}, as it failed with {}",
+                        exchange, exchange_connection_error
+                    );
+                    num_failures += 1;
+                }
+            });
+            exchange_connection_worker_handles.push(exchange_connection_worker_handle);
         }
         drop(all_price_reports_sender);
 
@@ -411,12 +463,12 @@ impl PriceReporter {
     }
 
     /// Get all Exchanges that this Token pair supports.
-    pub fn _get_supported_exchanges(&self) -> HashSet<Exchange> {
+    pub fn get_supported_exchanges(&self) -> HashSet<Exchange> {
         self.supported_exchanges.clone()
     }
 
     /// Get all Exchanges that are currently in a healthy state.
-    pub fn _get_healthy_exchanges(&self) -> HashSet<Exchange> {
+    pub fn get_healthy_exchanges(&self) -> HashSet<Exchange> {
         HashSet::from_iter(
             self.peek_all_exchanges()
                 .iter()

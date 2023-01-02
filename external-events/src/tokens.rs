@@ -602,7 +602,6 @@ impl Token {
 
     /// Given an ERC-20 ticker, returns a new Token.
     pub fn from_ticker(ticker: &str) -> Self {
-        // TODO: More gracefully fail if a user does not supply a valid ticker.
         let addr = ADDR_TICKER_BIMAP
             .get_by_right(&String::from(ticker))
             .expect("Ticker is not supported; specify unnamed token by ERC-20 address using from_addr instead.");

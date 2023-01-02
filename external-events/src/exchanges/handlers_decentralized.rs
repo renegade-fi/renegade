@@ -1,13 +1,7 @@
 use core::time::Duration;
-use futures::{executor::block_on, StreamExt};
+use futures::StreamExt;
 use ring_channel::RingSender;
-use std::{
-    cmp::Ordering,
-    env,
-    str::FromStr,
-    sync::{Arc, Mutex},
-    thread,
-};
+use std::{cmp::Ordering, env, str::FromStr};
 use web3::{
     self, ethabi,
     signing::keccak256,
@@ -17,7 +11,10 @@ use web3::{
 
 use crate::{
     errors::ExchangeConnectionError,
-    exchanges::{connection::get_current_time, Exchange},
+    exchanges::{
+        connection::{get_current_time, WorkerHandles},
+        Exchange,
+    },
     reporter::PriceReport,
     tokens::Token,
 };
@@ -30,21 +27,20 @@ impl UniswapV3Handler {
         "e34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54";
     const ERC20_ABI: &str = r#"[{"constant":true,"inputs":[],"name":"name","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_spender","type":"address"},{"name":"_value","type":"uint256"}],"name":"approve","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"totalSupply","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_from","type":"address"},{"name":"_to","type":"address"},{"name":"_value","type":"uint256"}],"name":"transferFrom","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"symbol","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_to","type":"address"},{"name":"_value","type":"uint256"}],"name":"transfer","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"_owner","type":"address"},{"name":"_spender","type":"address"}],"name":"allowance","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"payable":true,"stateMutability":"payable","type":"fallback"},{"anonymous":false,"inputs":[{"indexed":true,"name":"owner","type":"address"},{"indexed":true,"name":"spender","type":"address"},{"indexed":false,"name":"value","type":"uint256"}],"name":"Approval","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"value","type":"uint256"}],"name":"Transfer","type":"event"}]"#;
 
-    pub fn start_price_stream(
+    pub async fn start_price_stream(
         base_token: Token,
         quote_token: Token,
         mut sender: RingSender<PriceReport>,
-    ) -> Result<(), ExchangeConnectionError> {
+    ) -> Result<WorkerHandles, ExchangeConnectionError> {
         // Create the Web3 connection.
         let ethereum_wss_url = env::var("ETHEREUM_MAINNET_WSS").unwrap();
-        let transport = block_on(web3::transports::WebSocket::new(&ethereum_wss_url))
+        let transport = web3::transports::WebSocket::new(&ethereum_wss_url)
+            .await
             .or(Err(ExchangeConnectionError::HandshakeFailure))?;
         let web3_connection = Web3::new(transport);
-        let web3_connection = Arc::new(Mutex::new(web3_connection));
-
         // Derive the Uniswap pool address from this Token pair.
         let (pool_address, is_flipped) =
-            Self::get_pool_address(base_token, quote_token, web3_connection.clone())?;
+            Self::get_pool_address(base_token, quote_token, web3_connection.clone()).await?;
 
         // Create a filter for Uniswap `Swap` events on this pool.
         let swap_event_abi = ethabi::Event {
@@ -95,15 +91,13 @@ impl UniswapV3Handler {
             .address(vec![pool_address])
             .topic_filter(swap_topic_filter);
 
-        let guard = web3_connection.lock().unwrap();
-        let swap_filter = block_on(
-            guard
-                .eth_filter()
-                .create_logs_filter(swap_filter_builder.build()),
-        )
-        .unwrap();
+        let swap_filter = web3_connection
+            .eth_filter()
+            .create_logs_filter(swap_filter_builder.build())
+            .await
+            .unwrap();
 
-        let current_block = block_on(guard.eth().block_number()).unwrap();
+        let current_block = web3_connection.eth().block_number().await.unwrap();
 
         // Since it may be a while until we receive our first Swap event, we send the most recent
         // historic Swap as the current price.
@@ -111,58 +105,56 @@ impl UniswapV3Handler {
         let swap_filter_builder = swap_filter_builder
             .from_block(web3::types::BlockNumber::Number(current_block - 1000))
             .to_block(web3::types::BlockNumber::Latest);
-        let swap_filter_recents = block_on(
-            guard
-                .eth_filter()
-                .create_logs_filter(swap_filter_builder.build()),
-        )
-        .unwrap();
-        drop(guard);
+        let swap_filter_recents = web3_connection
+            .eth_filter()
+            .create_logs_filter(swap_filter_builder.build())
+            .await
+            .unwrap();
 
-        // Process the most recent Swaps, then start streaming events from the swap_filter.
-        let web3_connection_copy = web3_connection.clone();
-        thread::spawn(move || {
-            // Process the most recent Swap.
-            let mut swap_filter_recent_events = block_on(swap_filter_recents.logs()).unwrap();
-            swap_filter_recent_events.sort_by(|a, b| {
-                if a.block_number < b.block_number {
-                    return Ordering::Less;
-                } else if a.block_number > b.block_number
-                    || a.transaction_index < b.transaction_index
-                {
-                    return Ordering::Greater;
-                } else if a.transaction_index > b.transaction_index {
-                    return Ordering::Less;
-                }
-                Ordering::Equal
-            });
-            let swap = swap_filter_recent_events.pop();
-            if let Some(swap) = swap {
-                let block_id = BlockId::Number(BlockNumber::Number(swap.block_number.unwrap()));
-                let block_timestamp =
-                    block_on(web3_connection.lock().unwrap().eth().block(block_id))
-                        .unwrap()
-                        .unwrap()
-                        .timestamp;
-                let price_report = Self::handle_event(swap, is_flipped, swap_event_abi.clone());
-                if let Some(mut price_report) = price_report {
-                    price_report.local_timestamp = get_current_time();
-                    price_report.reported_timestamp = Some(block_timestamp.as_u128());
-                    sender.send(price_report).unwrap();
-                }
+        // Process the most recent Swap.
+        let mut swap_filter_recent_events = swap_filter_recents.logs().await.unwrap();
+        swap_filter_recent_events.sort_by(|a, b| {
+            if a.block_number < b.block_number {
+                return Ordering::Less;
+            } else if a.block_number > b.block_number || a.transaction_index < b.transaction_index {
+                return Ordering::Greater;
+            } else if a.transaction_index > b.transaction_index {
+                return Ordering::Less;
             }
+            Ordering::Equal
+        });
+        let swap = swap_filter_recent_events.pop();
+        if let Some(swap) = swap {
+            let block_id = BlockId::Number(BlockNumber::Number(swap.block_number.unwrap()));
+            let block_timestamp = web3_connection
+                .eth()
+                .block(block_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .timestamp;
+            let price_report = Self::handle_event(swap, is_flipped, swap_event_abi.clone());
+            if let Some(mut price_report) = price_report {
+                price_report.local_timestamp = get_current_time();
+                price_report.reported_timestamp = Some(block_timestamp.as_u128());
+                sender.send(price_report).unwrap();
+            }
+        }
 
-            // Start streaming.
+        // Start streaming events from the swap_filter.
+        let worker_handle = tokio::spawn(async move {
             let swap_stream = swap_filter.stream(Duration::new(1, 0));
             futures::pin_mut!(swap_stream);
             loop {
-                let swap = block_on(swap_stream.next()).unwrap().unwrap();
+                let swap = swap_stream.next().await.unwrap().unwrap();
                 let block_id = BlockId::Number(BlockNumber::Number(swap.block_number.unwrap()));
-                let block_timestamp =
-                    block_on(web3_connection_copy.lock().unwrap().eth().block(block_id))
-                        .unwrap()
-                        .unwrap()
-                        .timestamp;
+                let block_timestamp = web3_connection
+                    .eth()
+                    .block(block_id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .timestamp;
                 let price_report = Self::handle_event(swap, is_flipped, swap_event_abi.clone());
                 if let Some(mut price_report) = price_report {
                     price_report.local_timestamp = get_current_time();
@@ -172,7 +164,7 @@ impl UniswapV3Handler {
             }
         });
 
-        Ok(())
+        Ok(vec![worker_handle])
     }
 
     fn handle_event(
@@ -217,10 +209,10 @@ impl UniswapV3Handler {
     /// TVL among all fee tiers (1bp, 5bp, 30bp, 100bp). In addition, we return a boolean
     /// is_flipped that reflects whether the assets are flipped (i.e., quote per base) in the
     /// Uniswap pool.
-    fn get_pool_address(
+    async fn get_pool_address(
         base_token: Token,
         quote_token: Token,
-        web3_connection: Arc<Mutex<Web3<web3::transports::WebSocket>>>,
+        web3_connection: Web3<web3::transports::WebSocket>,
     ) -> Result<(H160, bool), ExchangeConnectionError> {
         let base_token_addr = H160::from_str(base_token.get_addr()).unwrap();
         let quote_token_addr = H160::from_str(quote_token.get_addr()).unwrap();
@@ -259,26 +251,23 @@ impl UniswapV3Handler {
 
         // Fetch the base balance from each pool address.
         let erc20_contract = ethabi::Contract::load(Self::ERC20_ABI.as_bytes()).unwrap();
-        let base_balances = pool_addresses.map(|pool_address| {
+        let base_balances = pool_addresses.iter().map(|pool_address| async {
             let base_balance_call_request = web3::types::CallRequest::builder()
                 .to(base_token_addr)
                 .data(web3::types::Bytes(
                     erc20_contract
                         .function("balanceOf")
                         .unwrap()
-                        .encode_input(&[ethabi::token::Token::Address(pool_address)])
+                        .encode_input(&[ethabi::token::Token::Address(*pool_address)])
                         .unwrap(),
                 ))
                 .build();
-            block_on(
-                web3_connection
-                    .lock()
-                    .unwrap()
-                    .eth()
-                    .call(base_balance_call_request, None),
-            )
-            .or(Err(ExchangeConnectionError::ConnectionHangup))
-            .map(|base_balance| U256::from(&base_balance.0[..32]))
+            web3_connection
+                .eth()
+                .call(base_balance_call_request, None)
+                .await
+                .or(Err(ExchangeConnectionError::ConnectionHangup))
+                .map(|base_balance| U256::from(&base_balance.0[..32]))
         });
 
         // Given the derived pool addresses and base balances, pick the pool address with the
@@ -286,7 +275,7 @@ impl UniswapV3Handler {
         let mut max_base_balance = U256::zero();
         let mut max_pool_idx: usize = 0;
         for (i, base_balance) in base_balances.into_iter().enumerate() {
-            let base_balance = base_balance?;
+            let base_balance = base_balance.await?;
             if base_balance > max_base_balance {
                 max_base_balance = base_balance;
                 max_pool_idx = i;
