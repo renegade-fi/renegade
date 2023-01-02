@@ -17,8 +17,14 @@ extern crate lazy_static;
 
 async fn poll_or_stream_prices(should_poll: bool) {
     let price_reporter = PriceReporter::new(Token::from_ticker("WETH"), Token::from_ticker("USDC"));
-    println!("Supported exchanges: {:?}", price_reporter.get_supported_exchanges());
-    println!("Healthy exchanges: {:?}", price_reporter.get_healthy_exchanges());
+    println!(
+        "Supported exchanges: {:?}",
+        price_reporter.get_supported_exchanges()
+    );
+    println!(
+        "Healthy exchanges: {:?}",
+        price_reporter.get_healthy_exchanges()
+    );
 
     if should_poll {
         thread::spawn(move || loop {
