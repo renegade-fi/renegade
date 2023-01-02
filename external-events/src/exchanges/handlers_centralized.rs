@@ -1,5 +1,5 @@
+use async_trait::async_trait;
 use chrono::DateTime;
-use futures::executor::block_on;
 use hmac_sha256::HMAC;
 use serde_json::{self, json, Value};
 use std::{collections::HashMap, env, net::TcpStream};
@@ -14,6 +14,7 @@ use crate::{
 
 type WebSocket = WebSocketGeneric<MaybeTlsStream<TcpStream>>;
 
+#[async_trait]
 pub trait CentralizedExchangeHandler {
     /// Create a new Handler.
     fn new(base_token: Token, quote_token: Token) -> Self;
@@ -22,7 +23,9 @@ pub trait CentralizedExchangeHandler {
     /// Certain exchanges report the most recent price immediately after subscribing to the
     /// websocket. If the exchange requires an initial request to get caught up with exchange
     /// state, we query that here.
-    fn pre_stream_price_report(&mut self) -> Result<Option<PriceReport>, ExchangeConnectionError>;
+    async fn pre_stream_price_report(
+        &mut self,
+    ) -> Result<Option<PriceReport>, ExchangeConnectionError>;
     /// Send any initial subscription messages to the websocket after it has been created.
     fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ExchangeConnectionError>;
     /// Handle an inbound message from the exchange by parsing it into a PriceReport and publishing
@@ -38,6 +41,7 @@ pub struct BinanceHandler {
     base_token: Token,
     quote_token: Token,
 }
+#[async_trait]
 impl CentralizedExchangeHandler for BinanceHandler {
     fn new(base_token: Token, quote_token: Token) -> Self {
         Self {
@@ -56,7 +60,9 @@ impl CentralizedExchangeHandler for BinanceHandler {
         )
     }
 
-    fn pre_stream_price_report(&mut self) -> Result<Option<PriceReport>, ExchangeConnectionError> {
+    async fn pre_stream_price_report(
+        &mut self,
+    ) -> Result<Option<PriceReport>, ExchangeConnectionError> {
         // TODO: This is duplicate code, condense it.
         let base_ticker = self.base_token.get_exchange_ticker(Exchange::Binance);
         let quote_ticker = self.quote_token.get_exchange_ticker(Exchange::Binance);
@@ -64,12 +70,13 @@ impl CentralizedExchangeHandler for BinanceHandler {
             "https://api.binance.com/api/v3/ticker/bookTicker?symbol={}{}",
             base_ticker, quote_ticker
         );
-        let message_json: Value = block_on(
-            block_on(reqwest::get(request_url))
-                .or(Err(ExchangeConnectionError::ConnectionHangup))?
-                .json(),
-        )
-        .or(Err(ExchangeConnectionError::InvalidMessage))?;
+        let message_resp = reqwest::get(request_url)
+            .await
+            .or(Err(ExchangeConnectionError::ConnectionHangup))?;
+        let message_json: Value = message_resp
+            .json()
+            .await
+            .or(Err(ExchangeConnectionError::InvalidMessage))?;
         let best_bid: f64 = match message_json["bidPrice"].as_str() {
             None => {
                 return Err(ExchangeConnectionError::InvalidMessage);
@@ -129,6 +136,7 @@ pub struct CoinbaseHandler {
     order_book_bids: HashMap<String, f32>,
     order_book_offers: HashMap<String, f32>,
 }
+#[async_trait]
 impl CentralizedExchangeHandler for CoinbaseHandler {
     fn new(base_token: Token, quote_token: Token) -> Self {
         Self {
@@ -143,7 +151,9 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
         String::from("wss://advanced-trade-ws.coinbase.com")
     }
 
-    fn pre_stream_price_report(&mut self) -> Result<Option<PriceReport>, ExchangeConnectionError> {
+    async fn pre_stream_price_report(
+        &mut self,
+    ) -> Result<Option<PriceReport>, ExchangeConnectionError> {
         Ok(None)
     }
 
@@ -255,6 +265,7 @@ pub struct KrakenHandler {
     base_token: Token,
     quote_token: Token,
 }
+#[async_trait]
 impl CentralizedExchangeHandler for KrakenHandler {
     fn new(base_token: Token, quote_token: Token) -> Self {
         Self {
@@ -267,7 +278,9 @@ impl CentralizedExchangeHandler for KrakenHandler {
         String::from("wss://ws.kraken.com")
     }
 
-    fn pre_stream_price_report(&mut self) -> Result<Option<PriceReport>, ExchangeConnectionError> {
+    async fn pre_stream_price_report(
+        &mut self,
+    ) -> Result<Option<PriceReport>, ExchangeConnectionError> {
         Ok(None)
     }
 
@@ -331,6 +344,7 @@ pub struct OkxHandler {
     base_token: Token,
     quote_token: Token,
 }
+#[async_trait]
 impl CentralizedExchangeHandler for OkxHandler {
     fn new(base_token: Token, quote_token: Token) -> Self {
         Self {
@@ -343,7 +357,9 @@ impl CentralizedExchangeHandler for OkxHandler {
         String::from("wss://ws.okx.com:8443/ws/v5/public")
     }
 
-    fn pre_stream_price_report(&mut self) -> Result<Option<PriceReport>, ExchangeConnectionError> {
+    async fn pre_stream_price_report(
+        &mut self,
+    ) -> Result<Option<PriceReport>, ExchangeConnectionError> {
         Ok(None)
     }
 

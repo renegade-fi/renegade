@@ -18,6 +18,8 @@ use crate::{
     tokens::Token,
 };
 
+pub type WorkerHandles = Vec<tokio::task::JoinHandle<Result<(), ExchangeConnectionError>>>;
+
 pub fn get_current_time() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -93,11 +95,14 @@ impl ExchangeConnection {
     /// Create a new ExchangeConnection, returning the RingReceiver of PriceReports. Note that the
     /// role of the ExchangeConnection is to simply stream PriceReports as they come, and does not
     /// do any staleness testing or cross-Exchange deviation checks.
-    pub fn create_receiver(
+    pub async fn create_receiver(
         base_token: Token,
         quote_token: Token,
         exchange: Exchange,
-    ) -> Result<RingReceiver<PriceReport>, ExchangeConnectionError> {
+    ) -> Result<(RingReceiver<PriceReport>, WorkerHandles), ExchangeConnectionError> {
+        // Create the vector of JoinHandles for all spawned threads.
+        let mut worker_handles: WorkerHandles = vec![];
+
         // Create the ring buffer.
         let (mut price_report_sender, price_report_receiver) =
             ring_channel::<PriceReport>(NonZeroUsize::new(1).unwrap());
@@ -105,8 +110,10 @@ impl ExchangeConnection {
         // UniswapV3 logic is slightly different, as we use the web3 API wrapper for convenience,
         // rather than interacting directly over websockets.
         if exchange == Exchange::UniswapV3 {
-            UniswapV3Handler::start_price_stream(base_token, quote_token, price_report_sender)?;
-            return Ok(price_report_receiver);
+            let worker_handles =
+                UniswapV3Handler::start_price_stream(base_token, quote_token, price_report_sender)
+                    .await?;
+            return Ok((price_report_receiver, worker_handles));
         }
 
         // Get initial ExchangeHandler state and include in a new ExchangeConnection.
@@ -161,17 +168,20 @@ impl ExchangeConnection {
                 .unwrap()
                 .pre_stream_price_report(),
             _ => unreachable!(),
-        }?;
+        }
+        .await?;
         if let Some(pre_stream_price_report) = pre_stream_price_report {
             let mut price_report_sender_clone = price_report_sender.clone();
-            thread::spawn(move || {
+            let worker_handle = tokio::spawn(async move {
                 // TODO: Sleeping is a somewhat hacky way of ensuring that the
                 // pre_stream_price_report is received.
                 thread::sleep(time::Duration::from_millis(5000));
                 price_report_sender_clone
                     .send(pre_stream_price_report)
-                    .unwrap();
+                    .or(Err(ExchangeConnectionError::ConnectionHangup))?;
+                Ok(())
             });
+            worker_handles.push(worker_handle);
         }
 
         // Retrieve the websocket URL and connect to it.
@@ -242,15 +252,17 @@ impl ExchangeConnection {
         };
 
         // Start listening for inbound messages.
-        thread::spawn(move || loop {
-            let message = socket.read_message().unwrap();
-            // TODO: try: panic!();
-            exchange_connection
-                .handle_exchange_message(&mut price_report_sender, message)
-                .expect("TODO: Handle this better?");
+        let worker_handle = tokio::spawn(async move {
+            loop {
+                let message = socket
+                    .read_message()
+                    .or(Err(ExchangeConnectionError::ConnectionHangup))?;
+                exchange_connection.handle_exchange_message(&mut price_report_sender, message)?;
+            }
         });
+        worker_handles.push(worker_handle);
 
-        Ok(price_report_receiver)
+        Ok((price_report_receiver, worker_handles))
     }
 
     fn handle_exchange_message(
