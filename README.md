@@ -82,7 +82,7 @@ depicting both intra-cluster replication and inter-cluster MPCs.
 </div>
 
 
-## Installation
+## Relayer Development Setup 
 To run a local instance of the relayer, simply run the project in the top-level
 directory and specify a port for inbound access:
 ```
@@ -105,5 +105,4 @@ for the `circuits` crate, which holds ZK and MPC circuit definitions, run:
 ```
 cargo-integrate circuits
 ```
-
 
