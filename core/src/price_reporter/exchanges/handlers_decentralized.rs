@@ -1,7 +1,7 @@
 use core::time::Duration;
 use futures::StreamExt;
 use ring_channel::RingSender;
-use std::{cmp::Ordering, env, str::FromStr};
+use std::{cmp::Ordering, convert::TryInto, env, str::FromStr};
 use web3::{
     self, ethabi,
     signing::keccak256,
@@ -9,7 +9,7 @@ use web3::{
     Web3,
 };
 
-use crate::{
+use super::super::{
     errors::ExchangeConnectionError,
     exchanges::{
         connection::{get_current_time, WorkerHandles},
@@ -260,7 +260,8 @@ impl UniswapV3Handler {
 
         // Fetch the base balance from each pool address.
         let erc20_contract = ethabi::Contract::load(Self::ERC20_ABI.as_bytes()).unwrap();
-        let base_balances = pool_addresses.iter().map(|pool_address| async {
+        let mut base_balances = vec![];
+        for pool_address in pool_addresses.iter() {
             let base_balance_call_request = web3::types::CallRequest::builder()
                 .to(base_token_addr)
                 .data(web3::types::Bytes(
@@ -271,20 +272,20 @@ impl UniswapV3Handler {
                         .unwrap(),
                 ))
                 .build();
-            web3_connection
+            let base_balance = web3_connection
                 .eth()
                 .call(base_balance_call_request, None)
                 .await
                 .or(Err(ExchangeConnectionError::ConnectionHangup))
-                .map(|base_balance| U256::from(&base_balance.0[..32]))
-        });
+                .map(|base_balance| U256::from(&base_balance.0[..32]));
+            base_balances.push(base_balance?);
+        }
 
         // Given the derived pool addresses and base balances, pick the pool address with the
         // highest base balance.
         let mut max_base_balance = U256::zero();
         let mut max_pool_idx: usize = 0;
         for (i, base_balance) in base_balances.into_iter().enumerate() {
-            let base_balance = base_balance.await?;
             if base_balance > max_base_balance {
                 max_base_balance = base_balance;
                 max_pool_idx = i;
