@@ -12,8 +12,12 @@ use crate::{
     tokens::Token,
 };
 
+/// WebSocket type for streams from all centralized exchanges.
 type WebSocket = WebSocketGeneric<MaybeTlsStream<TcpStream>>;
 
+/// The core trait that all centralized exchange handlers implement. This allows for creation of
+/// stateful elements (e.g., a local order book), websocket URLs, pre-websocket-stream one-off
+/// price reports, and handling of remote messages.
 #[async_trait]
 pub trait CentralizedExchangeHandler {
     /// Create a new Handler.
@@ -37,8 +41,11 @@ pub trait CentralizedExchangeHandler {
 }
 
 #[derive(Clone, Debug)]
+/// The message handler for Exchange::Binance.
 pub struct BinanceHandler {
+    /// The base Token (e.g., WETH).
     base_token: Token,
+    /// The quote Token (e.g., USDC).
     quote_token: Token,
 }
 #[async_trait]
@@ -127,13 +134,18 @@ impl CentralizedExchangeHandler for BinanceHandler {
     }
 }
 
+/// The message handler for Exchange::Coinbase.
 #[derive(Clone, Debug)]
 pub struct CoinbaseHandler {
+    /// The base Token (e.g., WETH).
     base_token: Token,
+    /// The quote Token (e.g., USDC).
     quote_token: Token,
     // Note: The reason we use String's for price_level is because using f32 as a key produces
     // collision issues.
+    /// A HashMap representing the local mirroring of Coinbase's order book bids.
     order_book_bids: HashMap<String, f32>,
+    /// A HashMap representing the local mirroring of Coinbase's order book offers.
     order_book_offers: HashMap<String, f32>,
 }
 #[async_trait]
@@ -260,9 +272,12 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
     }
 }
 
+/// The message handler for Exchange::Kraken.
 #[derive(Clone, Debug)]
 pub struct KrakenHandler {
+    /// The base Token (e.g., WETH).
     base_token: Token,
+    /// The quote Token (e.g., USDC).
     quote_token: Token,
 }
 #[async_trait]
@@ -339,9 +354,12 @@ impl CentralizedExchangeHandler for KrakenHandler {
     }
 }
 
+/// The message handler for Exchange::Okx.
 #[derive(Clone, Debug)]
 pub struct OkxHandler {
+    /// The base Token (e.g., WETH).
     base_token: Token,
+    /// The quote Token (e.g., USDC).
     quote_token: Token,
 }
 #[async_trait]

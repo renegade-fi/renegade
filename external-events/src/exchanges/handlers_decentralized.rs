@@ -20,13 +20,21 @@ use crate::{
 };
 
 #[derive(Clone, Debug)]
+/// The core handler for UniswapV3, responsible for defining Swap event filters, streaming events,
+/// and parsing as PriceReports.
 pub struct UniswapV3Handler;
 impl UniswapV3Handler {
+    /// The UniswapV3 factory address.
     const FACTORY_ADDRESS: &str = "1f98431c8ad98523631ae4a59f267346ea31f984";
+    /// The UniswapV3 code hash. From:
+    /// https://docs.uniswap.org/sdk/v3/reference/overview#pool_init_code_hash
     const POOL_INIT_CODE_HASH: &str =
         "e34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54";
+    /// The standard ERC-20 JSON ABI. From:
+    /// https://gist.github.com/veox/8800debbf56e24718f9f483e1e40c35c
     const ERC20_ABI: &str = r#"[{"constant":true,"inputs":[],"name":"name","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_spender","type":"address"},{"name":"_value","type":"uint256"}],"name":"approve","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"totalSupply","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_from","type":"address"},{"name":"_to","type":"address"},{"name":"_value","type":"uint256"}],"name":"transferFrom","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"symbol","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_to","type":"address"},{"name":"_value","type":"uint256"}],"name":"transfer","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"_owner","type":"address"},{"name":"_spender","type":"address"}],"name":"allowance","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"payable":true,"stateMutability":"payable","type":"fallback"},{"anonymous":false,"inputs":[{"indexed":true,"name":"owner","type":"address"},{"indexed":true,"name":"spender","type":"address"},{"indexed":false,"name":"value","type":"uint256"}],"name":"Approval","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"value","type":"uint256"}],"name":"Transfer","type":"event"}]"#;
 
+    /// Core entrypoint to start the price stream, given a RingSender.
     pub async fn start_price_stream(
         base_token: Token,
         quote_token: Token,
@@ -167,6 +175,7 @@ impl UniswapV3Handler {
         Ok(vec![worker_handle])
     }
 
+    /// Handles a Swap event log streamed from the web3 connection.
     fn handle_event(
         swap: web3::types::Log,
         is_flipped: bool,

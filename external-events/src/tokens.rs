@@ -20,8 +20,11 @@ use crate::exchanges::{Exchange, ALL_EXCHANGES};
 /// underlying ERC-20, and Unsupported  means that the asset is not supported on the Exchange.
 #[derive(Clone, Copy, Debug)]
 enum ExchangeTicker {
+    /// The Exchange-native ticker is the same as the ERC-20 ticker.
     Same,
+    /// The Exchange-native ticker is different from the ERC-20 ticker.
     Renamed(&'static str),
+    /// The Exchange does not support this Token.
     Unsupported,
 }
 
@@ -29,9 +32,10 @@ enum ExchangeTicker {
 // a bidirectinal map between the ERC-20 contract address and the ERC-20 ticker. The second is a
 // HashMap between the ERC-20 contract address and the number of decimals (fixed-point offset). The
 // third is a HashMap between the ERC-20 ticker and each Exchange's expected name for each ticker.
-//
-// The layout of ERC20_DATA is (ERC-20 Address, Decimals, ERC-20 Ticker, Binance Ticker, Coinbase
-// Ticker, Kraken Ticker, Okx Ticker).
+
+/// The raw ERC-20 data to be parsed as heap-allocated global structs. The layout of ERC20_DATA is
+/// (ERC-20 Address, Decimals, ERC-20 Ticker, Binance Ticker, Coinbase Ticker, Kraken Ticker, Okx
+/// Ticker).
 static ERC20_DATA: &[(
     &str,
     u8,
@@ -588,6 +592,7 @@ lazy_static! {
 }
 
 #[derive(Clone, Debug)]
+/// The core Token abstraction, used for unambiguous definition of an ERC-20 asset.
 pub struct Token {
     /// The ERC-20 address of the Token.
     addr: String,
@@ -610,6 +615,7 @@ impl Token {
         }
     }
 
+    /// Returns the ERC-20 address.
     pub fn get_addr(&self) -> &str {
         &self.addr
     }
@@ -622,6 +628,7 @@ impl Token {
             .map(|ticker| &**ticker)
     }
 
+    /// Returns the ERC-20 `decimals` field, if available.
     pub fn get_decimals(&self) -> Option<u8> {
         ADDR_DECIMALS_MAP.get(self.get_addr()).copied()
     }

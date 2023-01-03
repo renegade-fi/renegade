@@ -18,8 +18,11 @@ use crate::{
     tokens::Token,
 };
 
+/// Each sub-thread spawned by an ExchangeConnection must return a vector WorkerHandles: These are
+/// used for error propagation back to the PriceReporter.
 pub type WorkerHandles = Vec<tokio::task::JoinHandle<Result<(), ExchangeConnectionError>>>;
 
+/// Helper function to get the current UNIX epoch time in milliseconds.
 pub fn get_current_time() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -32,10 +35,15 @@ pub fn get_current_time() -> u128 {
 /// stream from an `Exchange`.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Exchange {
+    /// Binance.
     Binance,
+    /// Coinbase.
     Coinbase,
+    /// Kraken.
     Kraken,
+    /// Okx.
     Okx,
+    /// UniswapV3.
     UniswapV3,
 }
 impl Display for Exchange {
@@ -51,6 +59,7 @@ impl Display for Exchange {
     }
 }
 
+/// Every Exchange.
 pub static ALL_EXCHANGES: &[Exchange] = &[
     Exchange::Binance,
     Exchange::Coinbase,
@@ -86,9 +95,13 @@ impl Display for ExchangeConnectionState {
 /// ExchangeConnection is never directly accessed, and all data is reported only via this receiver.
 #[derive(Clone, Debug)]
 pub struct ExchangeConnection {
+    /// The CentralizedExchangeHandler for Binance.
     binance_handler: Option<BinanceHandler>,
+    /// The CentralizedExchangeHandler for Coinbase.
     coinbase_handler: Option<CoinbaseHandler>,
+    /// The CentralizedExchangeHandler for Kraken.
     kraken_handler: Option<KrakenHandler>,
+    /// The CentralizedExchangeHandler for Okx.
     okx_handler: Option<OkxHandler>,
 }
 impl ExchangeConnection {
@@ -265,6 +278,7 @@ impl ExchangeConnection {
         Ok((price_report_receiver, worker_handles))
     }
 
+    /// Simple wrapper around each individual ExchangeConnection handle_exchange_message.
     fn handle_exchange_message(
         &mut self,
         price_report_sender: &mut RingSender<PriceReport>,
