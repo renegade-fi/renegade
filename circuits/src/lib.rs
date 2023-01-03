@@ -31,11 +31,11 @@ pub mod zk_circuits;
 pub mod zk_gadgets;
 
 /// The maximum number of balances allowed in a wallet
-pub const MAX_BALANCES: usize = 64;
+pub const MAX_BALANCES: usize = 5;
 /// The maximum number of fees a wallet may hold
-pub const MAX_FEES: usize = 64;
+pub const MAX_FEES: usize = 5;
 /// The maximum number of orders allowed in a wallet
-pub const MAX_ORDERS: usize = 64;
+pub const MAX_ORDERS: usize = 5;
 /// The highest possible set bit for a positive scalar
 pub(crate) const POSITIVE_SCALAR_MAX_BITS: usize = 251;
 /// The highest possible set bit in the Dalek scalar field
