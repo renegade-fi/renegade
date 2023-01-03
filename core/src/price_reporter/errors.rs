@@ -32,6 +32,13 @@ pub enum PriceReporterManagerError {
     Cancelled(String),
     /// The spawning of the initial PriceReporterManager execution thread failed
     ManagerSetup(String),
+    /// Tried to register a listener ID that is already registered
+    AlreadyListening(String),
+    /// Tried to drop a listener ID that was not listening
+    ListenerNotFound(String),
+    /// Tried to query information from a PriceReporter that does not exist. Callers should send a
+    /// StartPriceReporter job first
+    PriceReporterNotCreated(String),
     /// In one of the PriceReporters, one of the ExchangeConnections failed too many times in a
     /// row.
     TooManyFailures(ExchangeConnectionError),
@@ -44,11 +51,20 @@ impl Display for PriceReporterManagerError {
             PriceReporterManagerError::Cancelled(err) => {
                 format!("Cancelled({})", err)
             }
-            PriceReporterManagerError::TooManyFailures(exchange_connection_error) => {
-                format!("TooManyFailures({})", exchange_connection_error)
-            }
             PriceReporterManagerError::ManagerSetup(err) => {
                 format!("ManagerSetup({})", err)
+            }
+            PriceReporterManagerError::AlreadyListening(err) => {
+                format!("AlreadyListening({})", err)
+            }
+            PriceReporterManagerError::ListenerNotFound(err) => {
+                format!("ListenerNotFound({})", err)
+            }
+            PriceReporterManagerError::PriceReporterNotCreated(err) => {
+                format!("PriceReporterNotCreated({})", err)
+            }
+            PriceReporterManagerError::TooManyFailures(exchange_connection_error) => {
+                format!("TooManyFailures({})", exchange_connection_error)
             }
         };
         write!(f, "{}", display_string)

@@ -15,6 +15,7 @@ use super::{
     worker::PriceReporterManagerConfig,
 };
 
+/// A listener ID on a PriceReporter is just a UUID.
 pub type PriceReporterListenerID = Uuid;
 
 /// The PriceReporterManager worker is a wrapper around the PriceReporterManagerExecutor, handling
@@ -35,6 +36,7 @@ pub struct PriceReporterManagerExecutor {
     pub(super) registered_listeners: HashMap<(Token, Token), HashSet<PriceReporterListenerID>>,
 }
 impl PriceReporterManagerExecutor {
+    /// Creates the executor for the PriceReporterManager worker.
     pub(super) fn new() -> Result<Self, PriceReporterManagerError> {
         let spawned_price_reporters = HashMap::new();
         let registered_listeners = HashMap::new();
@@ -44,8 +46,9 @@ impl PriceReporterManagerExecutor {
         })
     }
 
+    /// Handles a job for the PriceReporterManager worker.
     pub(super) fn handle_job(
-        &self,
+        &mut self,
         job: PriceReporterManagerJob,
     ) -> Result<(), PriceReporterManagerError> {
         match job {
@@ -84,59 +87,139 @@ impl PriceReporterManagerExecutor {
         }
     }
 
-    fn start_price_reporter(
+    /// Internal helper function get a (base_token, quote_token) PriceReporter with error
+    fn get_price_reporter(
         &self,
+        base_token: Token,
+        quote_token: Token,
+    ) -> Result<&PriceReporter, PriceReporterManagerError> {
+        self.spawned_price_reporters
+            .get(&(base_token.clone(), quote_token.clone()))
+            .ok_or_else(|| {
+                PriceReporterManagerError::PriceReporterNotCreated(format!(
+                    "{:?}",
+                    (base_token, quote_token)
+                ))
+            })
+    }
+
+    /// Handler for StartPriceReporter job.
+    fn start_price_reporter(
+        &mut self,
         base_token: Token,
         quote_token: Token,
         id: Option<PriceReporterListenerID>,
         channel: Sender<()>,
     ) -> Result<(), PriceReporterManagerError> {
-        unimplemented!();
+        // If the PriceReporter does not already exist, create it
+        self.spawned_price_reporters
+            .entry((base_token.clone(), quote_token.clone()))
+            .or_insert_with(|| PriceReporter::new(base_token.clone(), quote_token.clone()));
+
+        // If there is no specified listener ID, we do not register any new IDs
+        if id.is_none() {
+            return Ok(());
+        }
+
+        // If the registered_listeners set does not already exist, create it
+        self.registered_listeners
+            .entry((base_token.clone(), quote_token.clone()))
+            .or_insert_with(HashSet::new);
+
+        // Register the new listener ID, asserting that it does not already exist
+        let newly_inserted = self
+            .registered_listeners
+            .get_mut(&(base_token, quote_token))
+            .unwrap()
+            .insert(id.unwrap());
+        if !newly_inserted {
+            return Err(PriceReporterManagerError::AlreadyListening(
+                id.unwrap().to_string(),
+            ));
+        }
+
+        // Send a response that we have handled the job
+        channel.send(()).unwrap();
+
+        Ok(())
     }
 
+    /// Handler for DropListenerID job.
     fn drop_listener_id(
-        &self,
+        &mut self,
         base_token: Token,
         quote_token: Token,
         id: PriceReporterListenerID,
         channel: Sender<()>,
     ) -> Result<(), PriceReporterManagerError> {
-        unimplemented!();
+        let was_present = self
+            .registered_listeners
+            .get_mut(&(base_token, quote_token))
+            .ok_or_else(|| PriceReporterManagerError::ListenerNotFound(id.to_string()))?
+            .remove(&id);
+
+        // If the listener ID was not present, throw an error
+        if !was_present {
+            return Err(PriceReporterManagerError::ListenerNotFound(id.to_string()));
+        }
+
+        // Send a response that we have handled the job
+        channel.send(()).unwrap();
+
+        Ok(())
     }
 
+    /// Handler for PeekMedian job.
     fn peek_median(
         &self,
         base_token: Token,
         quote_token: Token,
         channel: Sender<PriceReporterState>,
     ) -> Result<(), PriceReporterManagerError> {
-        unimplemented!();
+        let price_reporter = self.get_price_reporter(base_token, quote_token)?;
+        channel.send(price_reporter.peek_median()).unwrap();
+        Ok(())
     }
 
+    /// Handler for CreateNewMedianReceiver job.
     fn create_new_median_receiver(
         &self,
         base_token: Token,
         quote_token: Token,
         channel: Sender<RingReceiver<PriceReport>>,
     ) -> Result<(), PriceReporterManagerError> {
-        unimplemented!();
+        let price_reporter = self.get_price_reporter(base_token, quote_token)?;
+        channel
+            .send(price_reporter.create_new_median_receiver())
+            .unwrap();
+        Ok(())
     }
 
+    /// Handler for GetSupportedExchanges job.
     fn get_supported_exchanges(
         &self,
         base_token: Token,
         quote_token: Token,
         channel: Sender<HashSet<Exchange>>,
     ) -> Result<(), PriceReporterManagerError> {
-        unimplemented!();
+        let price_reporter = self.get_price_reporter(base_token, quote_token)?;
+        channel
+            .send(price_reporter.get_supported_exchanges())
+            .unwrap();
+        Ok(())
     }
 
+    /// Handler for GetHealthyExchanges job.
     fn get_healthy_exchanges(
         &self,
         base_token: Token,
         quote_token: Token,
         channel: Sender<HashSet<Exchange>>,
     ) -> Result<(), PriceReporterManagerError> {
-        unimplemented!();
+        let price_reporter = self.get_price_reporter(base_token, quote_token)?;
+        channel
+            .send(price_reporter.get_healthy_exchanges())
+            .unwrap();
+        Ok(())
     }
 }

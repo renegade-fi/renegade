@@ -9,6 +9,7 @@ use super::{
     tokens::Token,
 };
 
+/// All possible jobs that the PriceReporterManager accepts.
 #[derive(Debug)]
 pub enum PriceReporterManagerJob {
     /// Create and start a new PriceReporter for a given token pair.
