@@ -79,6 +79,5 @@ async fn poll_or_stream_prices(should_poll: bool) {
 
 #[tokio::main]
 async fn main() {
-    dotenv::from_filename("secrets.env").expect("Cannot read secrets from secrets.env");
     poll_or_stream_prices(true).await;
 }

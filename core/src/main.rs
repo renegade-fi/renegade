@@ -15,7 +15,7 @@ mod system_bus;
 mod types;
 mod worker;
 
-use std::{thread, time::Duration};
+use std::{env, thread, time::Duration};
 
 use crossbeam::channel::{self, Receiver};
 use error::CoordinatorError;
@@ -62,6 +62,22 @@ async fn main() -> Result<(), CoordinatorError> {
         "Relayer running with\n\t version: {}\n\t port: {}\n\t cluster: {:?}",
         args.version, args.p2p_port, args.cluster_id
     );
+
+    // Load secrets.env and validate that expected environment variables exist
+    dotenv::from_filename("secrets.env").expect("Cannot read secrets from secrets.env");
+    let required_env_variables = [
+        "COINBASE_API_KEY",
+        "COINBASE_API_SECRET",
+        "ETHEREUM_MAINNET_WSS",
+    ];
+    for env_variable in required_env_variables {
+        env::var(env_variable).unwrap_or_else(|_| {
+            panic!(
+                "Could not find environment variable {} in secrets.env",
+                env_variable,
+            )
+        });
+    }
 
     // Construct the global state
     let global_state =
