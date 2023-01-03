@@ -8,7 +8,7 @@ use std::{
 use tungstenite::{connect, Message};
 use url::Url;
 
-use crate::{
+use super::super::{
     errors::ExchangeConnectionError,
     exchanges::handlers_centralized::{
         BinanceHandler, CentralizedExchangeHandler, CoinbaseHandler, KrakenHandler, OkxHandler,

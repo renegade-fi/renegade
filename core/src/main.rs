@@ -10,6 +10,7 @@ mod error;
 mod gossip;
 mod handshake;
 mod network_manager;
+mod price_reporter;
 mod state;
 mod system_bus;
 mod types;
@@ -22,6 +23,7 @@ use error::CoordinatorError;
 use gossip::worker::GossipServerConfig;
 use handshake::worker::HandshakeManagerConfig;
 use network_manager::worker::NetworkManagerConfig;
+use price_reporter::worker::PriceReporterManagerConfig;
 use tokio::{select, sync::mpsc};
 
 use crate::{
@@ -30,11 +32,15 @@ use crate::{
     gossip::server::GossipServer,
     handshake::manager::HandshakeManager,
     network_manager::manager::NetworkManager,
+    price_reporter::manager::PriceReporterManager,
     state::RelayerState,
     system_bus::SystemBus,
     types::SystemBusMessage,
     worker::{watch_worker, Worker},
 };
+
+#[macro_use]
+extern crate lazy_static;
 
 /// A type alias for an empty channel used to signal cancellation to workers
 pub(crate) type CancelChannel = Receiver<()>;
@@ -89,6 +95,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (network_sender, network_receiver) = mpsc::unbounded_channel::<GossipOutbound>();
     let (heartbeat_worker_sender, heartbeat_worker_receiver) = channel::unbounded();
     let (handshake_worker_sender, handshake_worker_receiver) = channel::unbounded();
+    let (price_reporter_worker_sender, price_reporter_worker_receiver) = channel::unbounded();
 
     // Start the network manager
     let (network_cancel_sender, network_cancel_receiver) = channel::bounded(1 /* capacity */);
@@ -151,6 +158,24 @@ async fn main() -> Result<(), CoordinatorError> {
         mpsc::channel(1 /* buffer size */);
     watch_worker::<HandshakeManager>(&mut handshake_manager, handshake_failure_sender);
 
+    // Start the price reporter manager
+    let (price_reporter_cancel_sender, price_reporter_cancel_receiver) =
+        channel::bounded(1 /* capacity */);
+    let mut price_reporter_manager = PriceReporterManager::new(PriceReporterManagerConfig {
+        job_receiver: price_reporter_worker_receiver,
+        cancel_channel: price_reporter_cancel_receiver,
+    })
+    .expect("failed to build price reporter manager");
+    price_reporter_manager
+        .start()
+        .expect("failed to start price reporter manager");
+    let (price_reporter_failure_sender, mut price_reporter_failure_receiver) =
+        mpsc::channel(1 /* buffer size */);
+    watch_worker::<PriceReporterManager>(
+        &mut price_reporter_manager,
+        price_reporter_failure_sender,
+    );
+
     // Start the API server
     let (api_cancel_sender, api_cancel_receiver) = channel::bounded(1 /* capacity */);
     let mut api_server = ApiServer::new(ApiServerConfig {
@@ -170,6 +195,7 @@ async fn main() -> Result<(), CoordinatorError> {
         network_cancel_sender.clone(),
         gossip_cancel_sender.clone(),
         handshake_cancel_sender.clone(),
+        price_reporter_cancel_sender.clone(),
         api_cancel_sender.clone(),
     ];
 
@@ -192,6 +218,11 @@ async fn main() -> Result<(), CoordinatorError> {
                     handshake_cancel_sender.send(())
                         .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
                     handshake_manager = recover_worker(handshake_manager)?;
+                }
+                _ = price_reporter_failure_receiver.recv() => {
+                    price_reporter_cancel_sender.send(())
+                        .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
+                    price_reporter_manager = recover_worker(price_reporter_manager)?;
                 }
                 _ = api_failure_receiver.recv() => {
                     api_cancel_sender.send(())

@@ -4,12 +4,13 @@ use stats::median;
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Display},
+    iter::FromIterator,
     num::NonZeroUsize,
     sync::{Arc, RwLock},
     thread,
 };
 
-use crate::{
+use super::{
     errors::ExchangeConnectionError,
     exchanges::{
         get_current_time, Exchange, ExchangeConnection, ExchangeConnectionState, ALL_EXCHANGES,

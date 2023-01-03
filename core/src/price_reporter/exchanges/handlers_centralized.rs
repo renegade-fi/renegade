@@ -2,10 +2,10 @@ use async_trait::async_trait;
 use chrono::DateTime;
 use hmac_sha256::HMAC;
 use serde_json::{self, json, Value};
-use std::{collections::HashMap, env, net::TcpStream};
+use std::{collections::HashMap, convert::TryInto, env, net::TcpStream};
 use tungstenite::{stream::MaybeTlsStream, Message, WebSocket as WebSocketGeneric};
 
-use crate::{
+use super::super::{
     errors::ExchangeConnectionError,
     exchanges::{connection::get_current_time, Exchange},
     reporter::PriceReport,

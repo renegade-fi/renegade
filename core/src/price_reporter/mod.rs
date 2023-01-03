@@ -1,10 +1,10 @@
-//! This crate manages all external event reporting, including 1) price feeds from centralized
-//! exchanges, 2) StarkWare events, including nullifier reveals in order to hang up MPCs, and 3)
-//! Ethereum events, like sequencer rotation or L1 deposits.
-#[macro_use]
-extern crate lazy_static;
-mod errors;
-mod exchange_handlers;
-pub mod exchanges;
+//! The price reporter module manages all external price feeds, including PriceReporter spin-up and
+//! tear-down, websocket connections to all exchanges (both centralized and decentralized), and
+//! aggregation of individual PriceReports into medians.
+pub mod errors;
+mod exchanges;
+pub mod jobs;
+pub mod manager;
 pub mod reporter;
 pub mod tokens;
+pub mod worker;
