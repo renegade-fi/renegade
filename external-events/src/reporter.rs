@@ -33,6 +33,7 @@ static MAX_DEVIATION: f64 = 0.001;
 /// MAX_CONNNECTION_FAILURES, we panic the relayer entirely.
 static MAX_CONNECTION_FAILURES: usize = 5;
 
+/// Helper function to construct a RingChannel of size 1.
 fn new_ring_channel<T>() -> (RingSender<T>, RingReceiver<T>) {
     ring_channel::<T>(NonZeroUsize::new(1).unwrap())
 }
@@ -86,8 +87,11 @@ impl Display for PriceReporterState {
 /// opening and closing channels for end-consumers to listen to the price feeds.
 #[derive(Clone, Debug)]
 pub struct PriceReporter {
+    /// The base Token (e.g., WETH).
     base_token: Token,
+    /// The quote Token (e.g., USDC).
     quote_token: Token,
+    /// The set of supported Exchanges for this base/quote token pair.
     supported_exchanges: HashSet<Exchange>,
     /// Thread-safe HashMap between each Exchange and a vector of senders for PriceReports. As the
     /// PriceReporter processes messages from the various ExchangeConnections, this HashMap
@@ -102,6 +106,7 @@ pub struct PriceReporter {
     price_report_exchanges_latest: Arc<RwLock<HashMap<Exchange, PriceReport>>>,
 }
 impl PriceReporter {
+    /// Creates a new PriceReporter.
     pub fn new(base_token: Token, quote_token: Token) -> Self {
         // Validate that sufficient environment variables exist.
         let required_env_variables = [
@@ -138,6 +143,9 @@ impl PriceReporter {
 
         // Connect to all the exchanges, and pipe the price report stream from each connection into
         // the aggregate ring buffer created previously.
+
+        /// Connects to the given exchange, propagating errors either in initial handshakes or from
+        /// sub-threads.
         async fn connect_to_exchange(
             base_token: Token,
             quote_token: Token,

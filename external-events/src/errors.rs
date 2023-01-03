@@ -2,6 +2,8 @@ use std::error::Error;
 use std::fmt::{self, Display};
 
 #[derive(Clone, Debug)]
+/// The core error type used by the ExchangeConnection. All thrown errors are handled by the
+/// PriceReporter, either for restarts or panics upon too many consecutive errors.
 pub enum ExchangeConnectionError {
     /// An initial websocket subscription to a remote server failed.
     HandshakeFailure,

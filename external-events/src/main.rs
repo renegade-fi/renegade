@@ -1,7 +1,14 @@
+//! The ExternalEvents module exposes a PriceReporter, allowing for fault-tolerant connection to
+//! various centralized and decentralized exchanges, aggregating price feeds into
+//! peekable/streamable midpoint price reports.
 #![allow(clippy::empty_loop)]
+/// Defines the ExchangeConnectionError enum.
 mod errors;
+/// Manages all core ExchangeConnection logic.
 mod exchanges;
+/// Defines a fault-tolerant PriceReporter.
 mod reporter;
+/// Defines our ERC-20 token abstraction.
 mod tokens;
 
 use std::{thread, time};
@@ -15,6 +22,7 @@ use crate::{
 #[macro_use]
 extern crate lazy_static;
 
+/// Main entrypoint for demonstration, to be removed upon integration as a worker.
 async fn poll_or_stream_prices(should_poll: bool) {
     let price_reporter = PriceReporter::new(Token::from_ticker("WETH"), Token::from_ticker("USDC"));
     println!(
