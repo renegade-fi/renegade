@@ -46,7 +46,7 @@ impl Worker for PriceReporterManager {
 
     fn start(&mut self) -> Result<(), Self::Error> {
         // Start the loop that dispatches incoming jobs to the executor
-        let manager_executor = PriceReporterManagerExecutor::new()?;
+        let mut manager_executor = PriceReporterManagerExecutor::new()?;
         let config = self.config.clone();
         let manager_executor_handle = {
             thread::Builder::new()

@@ -11,7 +11,10 @@
 //! In general, Named Tokens use all exchanges where they are listed, whereas Unnamed Tokens only
 //! use Uniswap V3 for the price feed.
 use bimap::BiMap;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::{self, Display},
+};
 
 use super::exchanges::{Exchange, ALL_EXCHANGES};
 
@@ -591,12 +594,19 @@ lazy_static! {
     };
 }
 
-#[derive(Clone, Debug)]
 /// The core Token abstraction, used for unambiguous definition of an ERC-20 asset.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Token {
     /// The ERC-20 address of the Token.
     addr: String,
 }
+
+impl Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.addr)
+    }
+}
+
 impl Token {
     /// Given an ERC-20 contract address, returns a new Token.
     pub fn _from_addr(addr: &str) -> Self {
