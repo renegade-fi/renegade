@@ -149,7 +149,9 @@ impl PriceReporterManagerExecutor {
                     let mut last_median_price_report = PriceReport::default();
                     loop {
                         let median_price_report = median_receiver.recv().unwrap();
-                        if median_price_report.midpoint_price != last_median_price_report.midpoint_price {
+                        if median_price_report.midpoint_price
+                            != last_median_price_report.midpoint_price
+                        {
                             system_bus.publish(
                                 topic.clone(),
                                 SystemBusMessage::PriceReport(median_price_report.clone()),
