@@ -29,8 +29,8 @@ static MAX_REPORT_AGE: u128 = 5000;
 /// reports. This only applies to Named tokens, as Unnamed tokens simply use UniswapV3.
 static MIN_CONNECTIONS: usize = 3;
 /// If a single PriceReport is more than MAX_DEVIATION (as a fraction) away from the midpoint, then
-/// we pause matches until the prices stabilize. By default, we use 10bp.
-static MAX_DEVIATION: f64 = 0.001;
+/// we pause matches until the prices stabilize. By default, we use 50bp.
+static MAX_DEVIATION: f64 = 0.005;
 /// If an ExchangeConnection returns an Error, we try to restart it. After
 /// MAX_CONNNECTION_FAILURES, we panic the relayer entirely.
 static MAX_CONNECTION_FAILURES: usize = 5;

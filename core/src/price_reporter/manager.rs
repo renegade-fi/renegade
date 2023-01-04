@@ -11,7 +11,7 @@ use crate::{system_bus::SystemBus, types::SystemBusMessage};
 
 use super::{
     errors::PriceReporterManagerError,
-    exchanges::Exchange,
+    exchanges::{get_current_time, Exchange},
     jobs::PriceReporterManagerJob,
     reporter::{PriceReport, PriceReporter, PriceReporterState},
     tokens::Token,
@@ -132,21 +132,31 @@ impl PriceReporterManagerExecutor {
             .entry((base_token.clone(), quote_token.clone()))
             .or_insert_with(|| {
                 // Create the PriceReporter
-                let price_reporter =
-                    PriceReporter::new(base_token.clone(), quote_token.clone(), tokio_handle);
-                // Stream all median PriceReports to the system bus
+                let price_reporter = PriceReporter::new(
+                    base_token.clone(),
+                    quote_token.clone(),
+                    tokio_handle.clone(),
+                );
+                // Stream all median PriceReports to the system bus, only if the midpoint price
+                // changes
                 let mut median_receiver = price_reporter.create_new_median_receiver();
                 let topic = format!(
                     "price-report-{}-{}",
                     base_token.get_addr(),
                     quote_token.get_addr()
                 );
-                thread::spawn(move || loop {
-                    let median_price_report = median_receiver.recv().unwrap();
-                    system_bus.publish(
-                        topic.clone(),
-                        SystemBusMessage::PriceReport(median_price_report),
-                    );
+                tokio_handle.spawn(async move {
+                    let mut last_median_price_report = PriceReport::default();
+                    loop {
+                        let median_price_report = median_receiver.recv().unwrap();
+                        if median_price_report.midpoint_price != last_median_price_report.midpoint_price {
+                            system_bus.publish(
+                                topic.clone(),
+                                SystemBusMessage::PriceReport(median_price_report.clone()),
+                            );
+                            last_median_price_report = median_price_report;
+                        }
+                    }
                 });
                 price_reporter
             });
