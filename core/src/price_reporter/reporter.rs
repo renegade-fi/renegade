@@ -1,5 +1,6 @@
 use futures::stream::{select_all, StreamExt};
 use ring_channel::{ring_channel, RingReceiver, RingSender};
+use serde::{Deserialize, Serialize};
 use stats::median;
 use std::{
     collections::{HashMap, HashSet},
@@ -9,6 +10,7 @@ use std::{
     sync::{Arc, RwLock},
     thread,
 };
+use tokio::runtime::Handle;
 
 use super::{
     errors::ExchangeConnectionError,
@@ -39,8 +41,12 @@ fn new_ring_channel<T>() -> (RingSender<T>, RingReceiver<T>) {
 }
 
 /// The PriceReport is the universal format for price feeds from all external exchanges.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PriceReport {
+    /// The base Token
+    pub base_token: Token,
+    /// The quote Token
+    pub quote_token: Token,
     /// The Exchange that this PriceReport came from. If the PriceReport is a median aggregate,
     /// then the exchange is None.
     pub exchange: Option<Exchange>,
@@ -107,7 +113,7 @@ pub struct PriceReporter {
 }
 impl PriceReporter {
     /// Creates a new PriceReporter.
-    pub fn new(base_token: Token, quote_token: Token) -> Self {
+    pub fn new(base_token: Token, quote_token: Token, tokio_handle: Handle) -> Self {
         // Pre-compute some data about the Token pair.
         let is_named = base_token.is_named() && quote_token.is_named();
         let (base_token_decimals, quote_token_decimals) =
@@ -136,10 +142,17 @@ impl PriceReporter {
             quote_token: Token,
             exchange: Exchange,
             mut all_price_reports_sender: RingSender<PriceReport>,
+            tokio_handle: Handle,
         ) -> Result<(), ExchangeConnectionError> {
             let (mut price_report_receiver, mut worker_handles) =
-                ExchangeConnection::create_receiver(base_token, quote_token, exchange).await?;
-            let worker_handle = tokio::spawn(async move {
+                ExchangeConnection::create_receiver(
+                    base_token,
+                    quote_token,
+                    exchange,
+                    tokio_handle.clone(),
+                )
+                .await?;
+            let worker_handle = tokio_handle.spawn(async move {
                 loop {
                     let price_report = price_report_receiver
                         .recv()
@@ -149,9 +162,7 @@ impl PriceReporter {
             });
             worker_handles.push(worker_handle);
             for joined_handle in futures::future::join_all(worker_handles).await.into_iter() {
-                if joined_handle.is_ok() {
-                    joined_handle.unwrap()?;
-                }
+                joined_handle.unwrap()?;
             }
             // Either the worker threads never stop running, or they error.
             unreachable!();
@@ -164,7 +175,9 @@ impl PriceReporter {
             let base_token = base_token.clone();
             let quote_token = quote_token.clone();
             let all_price_reports_sender = all_price_reports_sender.clone();
-            let exchange_connection_worker_handle = tokio::spawn(async move {
+            let tokio_handle1 = tokio_handle.clone();
+            let tokio_handle2 = tokio_handle.clone();
+            let exchange_connection_worker_handle = tokio_handle1.spawn(async move {
                 let mut num_failures = 0;
                 loop {
                     if num_failures >= MAX_CONNECTION_FAILURES {
@@ -176,11 +189,12 @@ impl PriceReporter {
                     let base_token = base_token.clone();
                     let quote_token = quote_token.clone();
                     let all_price_reports_sender = all_price_reports_sender.clone();
-                    let exchange_connection_handle = tokio::spawn(connect_to_exchange(
+                    let exchange_connection_handle = tokio_handle2.spawn(connect_to_exchange(
                         base_token,
                         quote_token,
                         exchange,
                         all_price_reports_sender,
+                        tokio_handle2.clone(),
                     ));
                     let exchange_connection_error =
                         exchange_connection_handle.await.unwrap().unwrap_err();
@@ -232,7 +246,7 @@ impl PriceReporter {
                 .unwrap()
                 .iter_mut()
             {
-                sender.send(price_report).unwrap();
+                sender.send(price_report.clone()).unwrap();
             }
         });
 
@@ -285,7 +299,9 @@ impl PriceReporter {
         }
         let mut price_report_median_receivers = select_all(price_report_median_receivers);
         let price_report_median_senders_clone = price_report_median_senders.clone();
-        tokio::spawn(async move {
+        let base_token_clone = base_token.clone();
+        let quote_token_clone = quote_token.clone();
+        tokio_handle.spawn(async move {
             let mut current_price_reports = HashMap::<Exchange, PriceReport>::new();
             for exchange in ALL_EXCHANGES.iter() {
                 current_price_reports.insert(*exchange, PriceReport::default());
@@ -293,11 +309,11 @@ impl PriceReporter {
             loop {
                 futures::select! {
                     price_report = price_report_median_receivers.next() => {
-                        current_price_reports.insert(price_report.unwrap().exchange.unwrap(), price_report.unwrap());
-                        let price_reporter_state = Self::compute_price_reporter_state(current_price_reports.clone(), is_named);
+                        current_price_reports.insert(price_report.clone().unwrap().exchange.unwrap(), price_report.unwrap());
+                        let price_reporter_state = Self::compute_price_reporter_state(base_token_clone.clone(), quote_token_clone.clone(), current_price_reports.clone());
                         if let PriceReporterState::Nominal(price_report) = price_reporter_state {
                             for sender in price_report_median_senders_clone.write().unwrap().iter_mut() {
-                                sender.send(price_report).unwrap();
+                                sender.send(price_report.clone()).unwrap();
                             }
                         }
                     }
@@ -335,16 +351,17 @@ impl PriceReporter {
     /// various issues (delayed prices, no data yet received, etc.), and if no issues are found,
     /// compute the median PriceReport.
     fn compute_price_reporter_state(
+        base_token: Token,
+        quote_token: Token,
         current_price_reports: HashMap<Exchange, PriceReport>,
-        is_named: bool,
     ) -> PriceReporterState {
         // If the Token pair is Unnamed, then we simply report the UniswapV3 price if one exists.
-        if !is_named {
+        if !base_token.is_named() || !quote_token.is_named() {
             let uniswapv3_price_report = current_price_reports.get(&Exchange::UniswapV3).unwrap();
             if *uniswapv3_price_report == PriceReport::default() {
                 return PriceReporterState::NotEnoughDataReported(0);
             } else {
-                return PriceReporterState::Nominal(*uniswapv3_price_report);
+                return PriceReporterState::Nominal(uniswapv3_price_report.clone());
             }
         }
 
@@ -402,6 +419,8 @@ impl PriceReporter {
         }
 
         let median_price_report = PriceReport {
+            base_token,
+            quote_token,
             exchange: None,
             midpoint_price: median_midpoint_price as f64,
             local_timestamp: median_local_timestamp as u128,
@@ -443,8 +462,9 @@ impl PriceReporter {
     /// Nonblocking report of the latest PriceReporterState for the median.
     pub fn peek_median(&self) -> PriceReporterState {
         Self::compute_price_reporter_state(
+            self.base_token.clone(),
+            self.quote_token.clone(),
             self.price_report_exchanges_latest.read().unwrap().clone(),
-            self.is_named(),
         )
     }
 

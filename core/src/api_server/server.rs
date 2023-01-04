@@ -2,6 +2,7 @@
 
 use std::{net::SocketAddr, sync::Arc};
 
+use crossbeam::channel::{self, Sender};
 use futures::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use hyper::{
@@ -22,6 +23,7 @@ use crate::{
         http::{GetReplicasRequest, GetReplicasResponse},
         websocket::{SubscriptionMessage, SubscriptionResponse},
     },
+    price_reporter::{jobs::PriceReporterManagerJob, tokens::Token},
     state::RelayerState,
     system_bus::{SystemBus, TopicReader},
     types::SystemBusMessage,
@@ -59,6 +61,7 @@ impl ApiServer {
     /// The main execution loop for the websocket server
     pub(super) async fn websocket_execution_loop(
         addr: SocketAddr,
+        price_reporter_worker_sender: Sender<PriceReporterManagerJob>,
         system_bus: SystemBus<SystemBusMessage>,
     ) -> Result<(), ApiServerError> {
         // Bind to the addr
@@ -69,7 +72,11 @@ impl ApiServer {
         // Loop over incoming streams
         while let Ok((stream, _)) = listener.accept().await {
             // Create a new handler on this stream
-            let handler = WebsocketHandler::new(stream, system_bus.clone());
+            let handler = WebsocketHandler::new(
+                stream,
+                price_reporter_worker_sender.clone(),
+                system_bus.clone(),
+            );
             tokio::spawn(handler.start());
         }
 
@@ -103,15 +110,22 @@ impl ApiServer {
 pub struct WebsocketHandler {
     /// The TCP stream underlying the websocket that has been opened
     tcp_stream: Option<TcpStream>,
+    /// The worker job queue for the PriceReporterManager
+    price_reporter_worker_sender: Sender<PriceReporterManagerJob>,
     /// The system bus to recieve events on
     system_bus: SystemBus<SystemBusMessage>,
 }
 
 impl WebsocketHandler {
     /// Create a new websocket handler
-    pub fn new(inbound_stream: TcpStream, system_bus: SystemBus<SystemBusMessage>) -> Self {
+    pub fn new(
+        inbound_stream: TcpStream,
+        price_reporter_worker_sender: Sender<PriceReporterManagerJob>,
+        system_bus: SystemBus<SystemBusMessage>,
+    ) -> Self {
         Self {
             tcp_stream: Some(inbound_stream),
+            price_reporter_worker_sender,
             system_bus,
         }
     }
@@ -223,6 +237,24 @@ impl WebsocketHandler {
         // Update local subscriptions
         match message {
             SubscriptionMessage::Subscribe { topic } => {
+                // If the topic is a price-report-*, then parse the tokens, send a
+                // StartPriceReporter job, and block until confirmed
+                let topic_split: Vec<&str> = topic.split('-').collect();
+                if topic.starts_with("price-report-") && topic_split.len() == 4 {
+                    let base_token = Token::from_addr(topic_split[2]);
+                    let quote_token = Token::from_addr(topic_split[3]);
+                    let (channel_sender, channel_receiver) = channel::unbounded();
+                    self.price_reporter_worker_sender
+                        .send(PriceReporterManagerJob::StartPriceReporter {
+                            base_token,
+                            quote_token,
+                            id: None, // TODO: Store an ID for later teardown
+                            channel: channel_sender,
+                        })
+                        .unwrap();
+                    channel_receiver.recv().unwrap();
+                }
+                // Register the topic subscription
                 let topic_reader = system_bus.subscribe(topic.clone());
                 client_subscriptions.insert(topic, topic_reader);
             }

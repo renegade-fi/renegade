@@ -1,10 +1,12 @@
 use ring_channel::{ring_channel, RingReceiver, RingSender};
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::{self, Display},
     num::NonZeroUsize,
     thread,
     time::{self, SystemTime, UNIX_EPOCH},
 };
+use tokio::runtime::Handle;
 use tungstenite::{connect, Message};
 use url::Url;
 
@@ -33,7 +35,7 @@ pub fn get_current_time() -> u128 {
 /// The type of exchange. Note that `Exchange` is the abstract enum for all exchanges that are
 /// supported, whereas the `ExchangeConnection` is the actual instantiation of a websocket price
 /// stream from an `Exchange`.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub enum Exchange {
     /// Binance.
     Binance,
@@ -71,7 +73,7 @@ pub static ALL_EXCHANGES: &[Exchange] = &[
 /// The state of an ExchangeConnection. Note that the ExchangeConnection itself simply streams news
 /// PriceReports, and the task of determining if the PriceReports have yet to arrive is the job of
 /// the PriceReporter.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum ExchangeConnectionState {
     /// The ExchangeConnection is reporting as normal.
     Nominal(PriceReport),
@@ -112,6 +114,7 @@ impl ExchangeConnection {
         base_token: Token,
         quote_token: Token,
         exchange: Exchange,
+        tokio_handle: Handle,
     ) -> Result<(RingReceiver<PriceReport>, WorkerHandles), ExchangeConnectionError> {
         // Create the vector of JoinHandles for all spawned threads.
         let mut worker_handles: WorkerHandles = vec![];
@@ -185,7 +188,7 @@ impl ExchangeConnection {
         .await?;
         if let Some(pre_stream_price_report) = pre_stream_price_report {
             let mut price_report_sender_clone = price_report_sender.clone();
-            let worker_handle = tokio::spawn(async move {
+            let worker_handle = tokio_handle.spawn(async move {
                 // TODO: Sleeping is a somewhat hacky way of ensuring that the
                 // pre_stream_price_report is received.
                 thread::sleep(time::Duration::from_millis(5000));
@@ -265,7 +268,7 @@ impl ExchangeConnection {
         };
 
         // Start listening for inbound messages.
-        let worker_handle = tokio::spawn(async move {
+        let worker_handle = tokio_handle.spawn(async move {
             loop {
                 let message = socket
                     .read_message()

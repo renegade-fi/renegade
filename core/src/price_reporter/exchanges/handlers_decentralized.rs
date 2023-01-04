@@ -47,8 +47,12 @@ impl UniswapV3Handler {
             .or(Err(ExchangeConnectionError::HandshakeFailure))?;
         let web3_connection = Web3::new(transport);
         // Derive the Uniswap pool address from this Token pair.
-        let (pool_address, is_flipped) =
-            Self::get_pool_address(base_token, quote_token, web3_connection.clone()).await?;
+        let (pool_address, is_flipped) = Self::get_pool_address(
+            base_token.clone(),
+            quote_token.clone(),
+            web3_connection.clone(),
+        )
+        .await?;
 
         // Create a filter for Uniswap `Swap` events on this pool.
         let swap_event_abi = ethabi::Event {
@@ -141,7 +145,13 @@ impl UniswapV3Handler {
                 .unwrap()
                 .unwrap()
                 .timestamp;
-            let price_report = Self::handle_event(swap, is_flipped, swap_event_abi.clone());
+            let price_report = Self::handle_event(
+                base_token.clone(),
+                quote_token.clone(),
+                swap,
+                is_flipped,
+                swap_event_abi.clone(),
+            );
             if let Some(mut price_report) = price_report {
                 price_report.local_timestamp = get_current_time();
                 price_report.reported_timestamp = Some(block_timestamp.as_u128());
@@ -150,6 +160,8 @@ impl UniswapV3Handler {
         }
 
         // Start streaming events from the swap_filter.
+        let base_token_clone = base_token.clone();
+        let quote_token_clone = quote_token.clone();
         let worker_handle = tokio::spawn(async move {
             let swap_stream = swap_filter.stream(Duration::new(1, 0));
             futures::pin_mut!(swap_stream);
@@ -163,7 +175,13 @@ impl UniswapV3Handler {
                     .unwrap()
                     .unwrap()
                     .timestamp;
-                let price_report = Self::handle_event(swap, is_flipped, swap_event_abi.clone());
+                let price_report = Self::handle_event(
+                    base_token_clone.clone(),
+                    quote_token_clone.clone(),
+                    swap,
+                    is_flipped,
+                    swap_event_abi.clone(),
+                );
                 if let Some(mut price_report) = price_report {
                     price_report.local_timestamp = get_current_time();
                     price_report.reported_timestamp = Some(block_timestamp.as_u128());
@@ -177,6 +195,8 @@ impl UniswapV3Handler {
 
     /// Handles a Swap event log streamed from the web3 connection.
     fn handle_event(
+        base_token: Token,
+        quote_token: Token,
         swap: web3::types::Log,
         is_flipped: bool,
         swap_event_abi: web3::ethabi::Event,
@@ -207,6 +227,8 @@ impl UniswapV3Handler {
         // Note that this price does not adjust for ERC-20 decimals yet.
         let price = price_numerator / price_denominator;
         Some(PriceReport {
+            base_token,
+            quote_token,
             exchange: Some(Exchange::UniswapV3),
             midpoint_price: price as f64,
             reported_timestamp: None,

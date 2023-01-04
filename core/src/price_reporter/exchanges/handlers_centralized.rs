@@ -97,6 +97,8 @@ impl CentralizedExchangeHandler for BinanceHandler {
             Some(best_offer_str) => best_offer_str.parse().unwrap(),
         };
         Ok(Some(PriceReport {
+            base_token: self.base_token.clone(),
+            quote_token: self.quote_token.clone(),
             exchange: Some(Exchange::Binance),
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: None,
@@ -126,6 +128,8 @@ impl CentralizedExchangeHandler for BinanceHandler {
             Some(best_offer_str) => best_offer_str.parse().unwrap(),
         };
         Ok(Some(PriceReport {
+            base_token: self.base_token.clone(),
+            quote_token: self.quote_token.clone(),
             exchange: Some(Exchange::Binance),
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: None,
@@ -264,6 +268,8 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
             .or(Err(ExchangeConnectionError::InvalidMessage))?
             .timestamp_millis();
         Ok(Some(PriceReport {
+            base_token: self.base_token.clone(),
+            quote_token: self.quote_token.clone(),
             exchange: Some(Exchange::Coinbase),
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: Some(reported_timestamp.try_into().unwrap()),
@@ -346,6 +352,8 @@ impl CentralizedExchangeHandler for KrakenHandler {
             }
         };
         Ok(Some(PriceReport {
+            base_token: self.base_token.clone(),
+            quote_token: self.quote_token.clone(),
             exchange: Some(Exchange::Kraken),
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: Some((reported_timestamp_seconds * 1000.0) as u128),
@@ -426,6 +434,8 @@ impl CentralizedExchangeHandler for OkxHandler {
             }
         };
         Ok(Some(PriceReport {
+            base_token: self.base_token.clone(),
+            quote_token: self.quote_token.clone(),
             exchange: Some(Exchange::Okx),
             midpoint_price: (best_bid + best_offer) / 2.0,
             reported_timestamp: Some((reported_timestamp_seconds * 1000.0) as u128),
