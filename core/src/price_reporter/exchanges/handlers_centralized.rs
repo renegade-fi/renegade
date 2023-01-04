@@ -115,6 +115,9 @@ impl CentralizedExchangeHandler for BinanceHandler {
         &mut self,
         message_json: Value,
     ) -> Result<Option<PriceReport>, ExchangeConnectionError> {
+        if let Value::Number(_) = message_json {
+            return Ok(None);
+        }
         let best_bid: f64 = match message_json["b"].as_str() {
             None => {
                 return Err(ExchangeConnectionError::InvalidMessage);

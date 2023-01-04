@@ -173,8 +173,7 @@ impl UniswapV3Handler {
                     .block(block_id)
                     .await
                     .unwrap()
-                    .unwrap()
-                    .timestamp;
+                    .map_or(None, |block| Some(block.timestamp.as_u128()));
                 let price_report = Self::handle_event(
                     base_token_clone.clone(),
                     quote_token_clone.clone(),
@@ -184,7 +183,7 @@ impl UniswapV3Handler {
                 );
                 if let Some(mut price_report) = price_report {
                     price_report.local_timestamp = get_current_time();
-                    price_report.reported_timestamp = Some(block_timestamp.as_u128());
+                    price_report.reported_timestamp = block_timestamp;
                     sender.send(price_report).unwrap();
                 }
             }
