@@ -2,9 +2,12 @@ use crossbeam::channel::Sender;
 use ring_channel::RingReceiver;
 use std::{
     collections::{HashMap, HashSet},
-    thread::JoinHandle,
+    thread::{self, JoinHandle},
 };
+use tokio::runtime::{Handle, Runtime};
 use uuid::Uuid;
+
+use crate::{system_bus::SystemBus, types::SystemBusMessage};
 
 use super::{
     errors::PriceReporterManagerError,
@@ -25,11 +28,17 @@ pub struct PriceReporterManager {
     pub(super) config: PriceReporterManagerConfig,
     /// The single thread that joins all individual PriceReporter threads
     pub(super) manager_executor_handle: Option<JoinHandle<PriceReporterManagerError>>,
+    /// The tokio runtime that the manager runs inside of
+    pub(super) manager_runtime: Option<Runtime>,
 }
 
 /// The actual executor that handles incoming jobs, to create and destroy PriceReporters, and peek
 /// at PriceReports.
 pub struct PriceReporterManagerExecutor {
+    /// The global system bus
+    pub(super) system_bus: SystemBus<SystemBusMessage>,
+    /// A handle to the tokio runtime that the manager runs inside of
+    pub(super) tokio_handle: Handle,
     /// The map between base/quote token pairs and the instantiated PriceReporter
     pub(super) spawned_price_reporters: HashMap<(Token, Token), PriceReporter>,
     /// The map between base/quote token pairs and the set of registered listeners
@@ -37,10 +46,15 @@ pub struct PriceReporterManagerExecutor {
 }
 impl PriceReporterManagerExecutor {
     /// Creates the executor for the PriceReporterManager worker.
-    pub(super) fn new() -> Result<Self, PriceReporterManagerError> {
+    pub(super) fn new(
+        system_bus: SystemBus<SystemBusMessage>,
+        tokio_handle: Handle,
+    ) -> Result<Self, PriceReporterManagerError> {
         let spawned_price_reporters = HashMap::new();
         let registered_listeners = HashMap::new();
         Ok(Self {
+            system_bus,
+            tokio_handle,
             spawned_price_reporters,
             registered_listeners,
         })
@@ -112,12 +126,34 @@ impl PriceReporterManagerExecutor {
         channel: Sender<()>,
     ) -> Result<(), PriceReporterManagerError> {
         // If the PriceReporter does not already exist, create it
+        let system_bus = self.system_bus.clone();
+        let tokio_handle = self.tokio_handle.clone();
         self.spawned_price_reporters
             .entry((base_token.clone(), quote_token.clone()))
-            .or_insert_with(|| PriceReporter::new(base_token.clone(), quote_token.clone()));
+            .or_insert_with(|| {
+                // Create the PriceReporter
+                let price_reporter =
+                    PriceReporter::new(base_token.clone(), quote_token.clone(), tokio_handle);
+                // Stream all median PriceReports to the system bus
+                let mut median_receiver = price_reporter.create_new_median_receiver();
+                let topic = format!(
+                    "price-report-{}-{}",
+                    base_token.get_addr(),
+                    quote_token.get_addr()
+                );
+                thread::spawn(move || loop {
+                    let median_price_report = median_receiver.recv().unwrap();
+                    system_bus.publish(
+                        topic.clone(),
+                        SystemBusMessage::PriceReport(median_price_report),
+                    );
+                });
+                price_reporter
+            });
 
         // If there is no specified listener ID, we do not register any new IDs
         if id.is_none() {
+            channel.send(()).unwrap();
             return Ok(());
         }
 

@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::handshake::types::OrderIdentifier;
+use crate::{handshake::types::OrderIdentifier, price_reporter::reporter::PriceReport};
 
 /**
  * Topic names
@@ -30,4 +30,6 @@ pub enum SystemBusMessage {
         /// The order_id of the remote peer
         peer_order_id: OrderIdentifier,
     },
+    /// A message indicating that a new PriceReport has been published
+    PriceReport(PriceReport),
 }

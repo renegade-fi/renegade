@@ -89,8 +89,15 @@ impl<
 
         // Forward to the typed handler
         if let Ok(resp) = self.handle_typed(req_body) {
-            // Serialize the response into a body
-            Response::new(Body::from(serde_json::to_vec(&resp).unwrap()))
+            // Serialize the response into a body. We explicitly allow for all cross-origin
+            // requests, as users connecting to a locally-run node have a different origin port.
+
+            // TODO: Either remove this in the future, or ensure that no sensitive information can
+            // leak from cross-origin requests.
+            Response::builder()
+                .header("Access-Control-Allow-Origin", "*")
+                .body(Body::from(serde_json::to_vec(&resp).unwrap()))
+                .unwrap()
         } else {
             build_500_response()
         }

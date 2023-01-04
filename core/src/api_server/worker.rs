@@ -7,7 +7,7 @@ use std::{
     thread::{self, JoinHandle},
 };
 
-use crossbeam::channel::Receiver;
+use crossbeam::channel::{Receiver, Sender};
 use futures::executor::block_on;
 use hyper::{
     server::conn::AddrStream,
@@ -16,7 +16,10 @@ use hyper::{
 };
 use tokio::runtime::Builder as TokioBuilder;
 
-use crate::{state::RelayerState, system_bus::SystemBus, types::SystemBusMessage, worker::Worker};
+use crate::{
+    price_reporter::jobs::PriceReporterManagerJob, state::RelayerState, system_bus::SystemBus,
+    types::SystemBusMessage, worker::Worker,
+};
 
 use super::{error::ApiServerError, routes::Router, server::ApiServer};
 
@@ -36,6 +39,8 @@ pub struct ApiServerConfig {
     /// The ApiServer uses this bus to forward internal events onto open
     /// websocket connections
     pub system_bus: SystemBus<SystemBusMessage>,
+    /// The worker job queue for the PriceReporterManager
+    pub price_reporter_worker_sender: Sender<PriceReporterManagerJob>,
     /// The channel to receive cancellation signals on from the coordinator
     pub cancel_channel: Receiver<()>,
 }
@@ -104,9 +109,16 @@ impl Worker for ApiServer {
             .unwrap();
 
         let system_bus_clone = self.config.system_bus.clone();
+        let price_reporter_worker_sender_clone = self.config.price_reporter_worker_sender.clone();
         let websocket_thread_handle = tokio_runtime.spawn_blocking(move || {
             block_on(async {
-                if let Err(err) = Self::websocket_execution_loop(addr, system_bus_clone).await {
+                if let Err(err) = Self::websocket_execution_loop(
+                    addr,
+                    price_reporter_worker_sender_clone,
+                    system_bus_clone,
+                )
+                .await
+                {
                     return ApiServerError::WebsocketServerFailure(err.to_string());
                 }
 

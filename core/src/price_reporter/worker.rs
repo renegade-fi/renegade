@@ -1,7 +1,8 @@
 use crossbeam::channel::Receiver;
 use std::thread::{self, JoinHandle};
+use tokio::runtime::Builder as TokioBuilder;
 
-use crate::{worker::Worker, CancelChannel};
+use crate::{system_bus::SystemBus, types::SystemBusMessage, worker::Worker, CancelChannel};
 
 use super::{
     errors::PriceReporterManagerError,
@@ -9,9 +10,16 @@ use super::{
     manager::{PriceReporterManager, PriceReporterManagerExecutor},
 };
 
+/// The number of threads backing the price reporter manager
+// This should not be substantially decreased, as the threads may deadlock upon waiting for raw
+// ExchangeConnections
+const PRICE_REPORTER_MANAGER_NUM_THREADS: usize = 32;
+
 /// The config passed from the coordinator to the PriceReporterManager
 #[derive(Clone, Debug)]
 pub struct PriceReporterManagerConfig {
+    /// The global system bus
+    pub(crate) system_bus: SystemBus<SystemBusMessage>,
     /// The receiver for jobs from other workers
     pub(crate) job_receiver: Receiver<PriceReporterManagerJob>,
     /// The channel on which the coordinator may mandate that the price reporter manager cancel its
@@ -27,6 +35,7 @@ impl Worker for PriceReporterManager {
         Ok(Self {
             config,
             manager_executor_handle: None,
+            manager_runtime: None,
         })
     }
 
@@ -45,8 +54,18 @@ impl Worker for PriceReporterManager {
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
+        // Spawn a tokio thread pool to run the manager in
+        let tokio_runtime = TokioBuilder::new_multi_thread()
+            .worker_threads(PRICE_REPORTER_MANAGER_NUM_THREADS)
+            .enable_io()
+            .enable_time()
+            .build()
+            .map_err(|err| PriceReporterManagerError::ManagerSetup(err.to_string()))?;
+
         // Start the loop that dispatches incoming jobs to the executor
-        let mut manager_executor = PriceReporterManagerExecutor::new()?;
+        let tokio_handle = tokio_runtime.handle().clone();
+        let mut manager_executor =
+            PriceReporterManagerExecutor::new(self.config.system_bus.clone(), tokio_handle)?;
         let config = self.config.clone();
         let manager_executor_handle = {
             thread::Builder::new()
@@ -78,7 +97,9 @@ impl Worker for PriceReporterManager {
                 })
                 .map_err(|err| PriceReporterManagerError::ManagerSetup(err.to_string()))
         }?;
+
         self.manager_executor_handle = Some(manager_executor_handle);
+        self.manager_runtime = Some(tokio_runtime);
         Ok(())
     }
 

@@ -162,6 +162,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (price_reporter_cancel_sender, price_reporter_cancel_receiver) =
         channel::bounded(1 /* capacity */);
     let mut price_reporter_manager = PriceReporterManager::new(PriceReporterManagerConfig {
+        system_bus: system_bus.clone(),
         job_receiver: price_reporter_worker_receiver,
         cancel_channel: price_reporter_cancel_receiver,
     })
@@ -183,6 +184,7 @@ async fn main() -> Result<(), CoordinatorError> {
         websocket_port: args.websocket_port,
         global_state: global_state.clone(),
         system_bus,
+        price_reporter_worker_sender,
         cancel_channel: api_cancel_receiver,
     })
     .expect("failed to build api server");
