@@ -202,7 +202,9 @@ impl PriceReporter {
                     println!(
                         "Restarting the ExchangeConnection to {}, as it failed with {}. \
                         There are now {} failures.",
-                        exchange, exchange_connection_error, num_failures + 1
+                        exchange,
+                        exchange_connection_error,
+                        num_failures + 1
                     );
                     num_failures += 1;
                 }

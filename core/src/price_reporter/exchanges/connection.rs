@@ -300,7 +300,7 @@ impl ExchangeConnection {
         // Sometimes OKX sends an undocumented "Protocol violation" message, likely from rate
         // limiting. We ignore these.
         if message_str == "Protocol violation" {
-            return Ok(())
+            return Ok(());
         }
         let message_json = serde_json::from_str(&message_str).unwrap();
 

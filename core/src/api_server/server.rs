@@ -203,11 +203,9 @@ impl WebsocketHandler {
             let deserialized: Result<SubscriptionMessage, _> = serde_json::from_str(&msg_text);
             let resp = match deserialized {
                 Ok(message_body) => {
-                    let response = self.handle_subscription_message(
-                        message_body,
-                        client_subscriptions,
-                        system_bus,
-                    ).await;
+                    let response = self
+                        .handle_subscription_message(message_body, client_subscriptions, system_bus)
+                        .await;
                     let response_serialized = serde_json::to_string(&response)
                         .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
 
