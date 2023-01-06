@@ -8,7 +8,6 @@ use std::{
     iter::FromIterator,
     num::NonZeroUsize,
     sync::{Arc, RwLock},
-    thread,
 };
 use tokio::runtime::Handle;
 
@@ -24,10 +23,10 @@ use super::{
 /// milliseconds), we pause matches until we receive a more recent price. Note that this threshold
 /// cannot be too aggresive, as certain long-tail asset pairs legitimately do not update that
 /// often.
-static MAX_REPORT_AGE: u128 = 5000;
+static MAX_REPORT_AGE_MS: u128 = 5000;
 /// If we do not have at least MIN_CONNECTIONS reports, we pause matches until we have enough
 /// reports. This only applies to Named tokens, as Unnamed tokens simply use UniswapV3.
-static MIN_CONNECTIONS: usize = 3;
+static MIN_CONNECTIONS: usize = 0; // TODO: Refactor
 /// If a single PriceReport is more than MAX_DEVIATION (as a fraction) away from the midpoint, then
 /// we pause matches until the prices stabilize. By default, we use 50bp.
 static MAX_DEVIATION: f64 = 0.005;
@@ -42,6 +41,7 @@ fn new_ring_channel<T>() -> (RingSender<T>, RingReceiver<T>) {
 
 /// The PriceReport is the universal format for price feeds from all external exchanges.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PriceReport {
     /// The base Token
     pub base_token: Token,
@@ -155,8 +155,9 @@ impl PriceReporter {
             let worker_handle = tokio_handle.spawn(async move {
                 loop {
                     let price_report = price_report_receiver
-                        .recv()
-                        .or(Err(ExchangeConnectionError::ConnectionHangup))?;
+                        .next()
+                        .await
+                        .ok_or(ExchangeConnectionError::ConnectionHangup)?;
                     all_price_reports_sender.send(price_report).unwrap();
                 }
             });
@@ -199,8 +200,9 @@ impl PriceReporter {
                     let exchange_connection_error =
                         exchange_connection_handle.await.unwrap().unwrap_err();
                     println!(
-                        "Restarting the ExchangeConnection to {}, as it failed with {}",
-                        exchange, exchange_connection_error
+                        "Restarting the ExchangeConnection to {}, as it failed with {}. \
+                        There are now {} failures.",
+                        exchange, exchange_connection_error, num_failures + 1
                     );
                     num_failures += 1;
                 }
@@ -225,28 +227,30 @@ impl PriceReporter {
                 .insert(*exchange, vec![]);
         }
         let price_report_exchanges_senders_clone = price_report_exchanges_senders.clone();
-        thread::spawn(move || loop {
-            // Receive a new (Exchange, PriceReport) from the aggregate stream.
-            let mut price_report = all_price_reports_receiver.recv().unwrap();
-            let exchange = price_report.exchange.unwrap();
-            // If the exchange is UniswapV3 and the token pair is Named, adjust the reported price
-            // for the decimals.
-            if exchange == Exchange::UniswapV3 && is_named {
-                price_report.midpoint_price *= 10_f64.powf(
-                    f64::from(base_token_decimals.unwrap())
-                        - f64::from(quote_token_decimals.unwrap()),
-                );
-            }
-            // Send this PriceReport to every RingSender<PriceReport> in
-            // price_report_exchanges_senders.
-            for sender in price_report_exchanges_senders_clone
-                .write()
-                .unwrap()
-                .get_mut(&exchange)
-                .unwrap()
-                .iter_mut()
-            {
-                sender.send(price_report.clone()).unwrap();
+        tokio_handle.spawn(async move {
+            loop {
+                // Receive a new (Exchange, PriceReport) from the aggregate stream.
+                let mut price_report = all_price_reports_receiver.next().await.unwrap();
+                let exchange = price_report.exchange.unwrap();
+                // If the exchange is UniswapV3 and the token pair is Named, adjust the reported price
+                // for the decimals.
+                if exchange == Exchange::UniswapV3 && is_named {
+                    price_report.midpoint_price *= 10_f64.powf(
+                        f64::from(base_token_decimals.unwrap())
+                            - f64::from(quote_token_decimals.unwrap()),
+                    );
+                }
+                // Send this PriceReport to every RingSender<PriceReport> in
+                // price_report_exchanges_senders.
+                for sender in price_report_exchanges_senders_clone
+                    .write()
+                    .unwrap()
+                    .get_mut(&exchange)
+                    .unwrap()
+                    .iter_mut()
+                {
+                    sender.send(price_report.clone()).unwrap();
+                }
             }
         });
 
@@ -271,12 +275,14 @@ impl PriceReporter {
                 .unwrap()
                 .push(sender);
             let price_report_exchanges_latest_clone = price_report_exchanges_latest.clone();
-            thread::spawn(move || loop {
-                let price_report = receiver.recv().unwrap();
-                price_report_exchanges_latest_clone
-                    .write()
-                    .unwrap()
-                    .insert(*exchange, price_report);
+            tokio_handle.spawn(async move {
+                loop {
+                    let price_report = receiver.next().await.unwrap();
+                    price_report_exchanges_latest_clone
+                        .write()
+                        .unwrap()
+                        .insert(*exchange, price_report);
+                }
             });
         }
 
@@ -381,7 +387,7 @@ impl PriceReporter {
             .map(|price_report| price_report.local_timestamp)
             .fold(u128::MIN, |a, b| a.max(b));
         let time_diff = get_current_time() - most_recent_report;
-        if time_diff > MAX_REPORT_AGE {
+        if time_diff > MAX_REPORT_AGE_MS {
             return PriceReporterState::DataTooStale(time_diff);
         }
 
