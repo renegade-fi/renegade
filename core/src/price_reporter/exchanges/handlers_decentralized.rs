@@ -2,6 +2,7 @@ use core::time::Duration;
 use futures::StreamExt;
 use ring_channel::RingSender;
 use std::{cmp::Ordering, convert::TryInto, env, str::FromStr};
+use tokio::runtime::Handle;
 use web3::{
     self, ethabi,
     signing::keccak256,
@@ -39,6 +40,7 @@ impl UniswapV3Handler {
         base_token: Token,
         quote_token: Token,
         mut sender: RingSender<PriceReport>,
+        tokio_handle: Handle,
     ) -> Result<WorkerHandles, ExchangeConnectionError> {
         // Create the Web3 connection.
         let ethereum_wss_url = env::var("ETHEREUM_MAINNET_WSS").unwrap();
@@ -162,7 +164,7 @@ impl UniswapV3Handler {
         // Start streaming events from the swap_filter.
         let base_token_clone = base_token.clone();
         let quote_token_clone = quote_token.clone();
-        let worker_handle = tokio::spawn(async move {
+        let worker_handle = tokio_handle.spawn(async move {
             let swap_stream = swap_filter.stream(Duration::new(1, 0));
             futures::pin_mut!(swap_stream);
             loop {
@@ -173,7 +175,7 @@ impl UniswapV3Handler {
                     .block(block_id)
                     .await
                     .unwrap()
-                    .map_or(None, |block| Some(block.timestamp.as_u128()));
+                    .map(|block| block.timestamp.as_u128());
                 let price_report = Self::handle_event(
                     base_token_clone.clone(),
                     quote_token_clone.clone(),

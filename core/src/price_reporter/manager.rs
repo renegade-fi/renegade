@@ -1,8 +1,9 @@
 use crossbeam::channel::Sender;
+use futures::StreamExt;
 use ring_channel::RingReceiver;
 use std::{
     collections::{HashMap, HashSet},
-    thread::{self, JoinHandle},
+    thread::JoinHandle,
 };
 use tokio::runtime::{Handle, Runtime};
 use uuid::Uuid;
@@ -11,7 +12,7 @@ use crate::{system_bus::SystemBus, types::SystemBusMessage};
 
 use super::{
     errors::PriceReporterManagerError,
-    exchanges::{get_current_time, Exchange},
+    exchanges::Exchange,
     jobs::PriceReporterManagerJob,
     reporter::{PriceReport, PriceReporter, PriceReporterState},
     tokens::Token,
@@ -128,6 +129,12 @@ impl PriceReporterManagerExecutor {
         // If the PriceReporter does not already exist, create it
         let system_bus = self.system_bus.clone();
         let tokio_handle = self.tokio_handle.clone();
+        let price_report_topic = format!(
+            "price-report-{}-{}",
+            base_token.get_addr(),
+            quote_token.get_addr()
+        );
+        let price_report_topic_clone = price_report_topic.clone();
         self.spawned_price_reporters
             .entry((base_token.clone(), quote_token.clone()))
             .or_insert_with(|| {
@@ -140,21 +147,16 @@ impl PriceReporterManagerExecutor {
                 // Stream all median PriceReports to the system bus, only if the midpoint price
                 // changes
                 let mut median_receiver = price_reporter.create_new_median_receiver();
-                let topic = format!(
-                    "price-report-{}-{}",
-                    base_token.get_addr(),
-                    quote_token.get_addr()
-                );
                 tokio_handle.spawn(async move {
                     let mut last_median_price_report = PriceReport::default();
                     loop {
-                        let median_price_report = median_receiver.recv().unwrap();
+                        let median_price_report = median_receiver.next().await.unwrap();
                         if median_price_report.midpoint_price
                             != last_median_price_report.midpoint_price
                         {
                             system_bus.publish(
-                                topic.clone(),
-                                SystemBusMessage::PriceReport(median_price_report.clone()),
+                                price_report_topic_clone.clone(),
+                                SystemBusMessage::PriceReportMedian(median_price_report.clone()),
                             );
                             last_median_price_report = median_price_report;
                         }
@@ -162,6 +164,24 @@ impl PriceReporterManagerExecutor {
                 });
                 price_reporter
             });
+
+        // Send a one-time system bus message with the latest median, if it exists. Since illiquid
+        // assets tend to update their median PriceReport very infrequently, this is useful for new
+        // subscribers to the price-report-* topics to receive an initial update
+        let price_reporter_state = self
+            .spawned_price_reporters
+            .get(&(base_token.clone(), quote_token.clone()))
+            .unwrap()
+            .peek_median();
+        if let PriceReporterState::Nominal(price_report) = price_reporter_state {
+            let system_bus = self.system_bus.clone();
+            tokio_handle.spawn(async move {
+                system_bus.publish(
+                    price_report_topic.clone(),
+                    SystemBusMessage::PriceReportMedian(price_report),
+                );
+            });
+        }
 
         // If there is no specified listener ID, we do not register any new IDs
         if id.is_none() {

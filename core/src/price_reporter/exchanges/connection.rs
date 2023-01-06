@@ -1,13 +1,16 @@
+use futures::stream::StreamExt;
 use ring_channel::{ring_channel, RingReceiver, RingSender};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::{self, Display},
     num::NonZeroUsize,
-    thread,
-    time::{self, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::runtime::Handle;
-use tungstenite::{connect, Message};
+use tokio::{
+    runtime::Handle,
+    time::{sleep, Duration},
+};
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 use url::Url;
 
 use super::super::{
@@ -126,9 +129,13 @@ impl ExchangeConnection {
         // UniswapV3 logic is slightly different, as we use the web3 API wrapper for convenience,
         // rather than interacting directly over websockets.
         if exchange == Exchange::UniswapV3 {
-            let worker_handles =
-                UniswapV3Handler::start_price_stream(base_token, quote_token, price_report_sender)
-                    .await?;
+            let worker_handles = UniswapV3Handler::start_price_stream(
+                base_token,
+                quote_token,
+                price_report_sender,
+                tokio_handle,
+            )
+            .await?;
             return Ok((price_report_receiver, worker_handles));
         }
 
@@ -185,19 +192,18 @@ impl ExchangeConnection {
                 .pre_stream_price_report(),
             _ => unreachable!(),
         }
-        .await?;
-        if let Some(pre_stream_price_report) = pre_stream_price_report {
+        .await;
+        if let Some(pre_stream_price_report) = pre_stream_price_report? {
             let mut price_report_sender_clone = price_report_sender.clone();
-            let worker_handle = tokio_handle.spawn(async move {
+            tokio_handle.spawn(async move {
                 // TODO: Sleeping is a somewhat hacky way of ensuring that the
                 // pre_stream_price_report is received.
-                thread::sleep(time::Duration::from_millis(5000));
+                sleep(Duration::from_secs(5)).await;
                 price_report_sender_clone
                     .send(pre_stream_price_report)
                     .or(Err(ExchangeConnectionError::ConnectionHangup))?;
-                Ok(())
+                Ok::<(), ExchangeConnectionError>(())
             });
-            worker_handles.push(worker_handle);
         }
 
         // Retrieve the websocket URL and connect to it.
@@ -226,7 +232,7 @@ impl ExchangeConnection {
         };
         let url = Url::parse(&wss_url).unwrap();
         let (mut socket, _response) = {
-            let connection = connect(url);
+            let connection = connect_async(url).await;
             if let Ok(connection) = connection {
                 connection
             } else if exchange == Exchange::Binance {
@@ -248,30 +254,33 @@ impl ExchangeConnection {
                 .binance_handler
                 .as_ref()
                 .unwrap()
-                .websocket_subscribe(&mut socket)?,
+                .websocket_subscribe(&mut socket),
             Exchange::Coinbase => exchange_connection
                 .coinbase_handler
                 .as_ref()
                 .unwrap()
-                .websocket_subscribe(&mut socket)?,
+                .websocket_subscribe(&mut socket),
             Exchange::Kraken => exchange_connection
                 .kraken_handler
                 .as_ref()
                 .unwrap()
-                .websocket_subscribe(&mut socket)?,
+                .websocket_subscribe(&mut socket),
             Exchange::Okx => exchange_connection
                 .okx_handler
                 .as_ref()
                 .unwrap()
-                .websocket_subscribe(&mut socket)?,
+                .websocket_subscribe(&mut socket),
             _ => unreachable!(),
-        };
+        }
+        .await?;
 
         // Start listening for inbound messages.
         let worker_handle = tokio_handle.spawn(async move {
             loop {
                 let message = socket
-                    .read_message()
+                    .next()
+                    .await
+                    .unwrap()
                     .or(Err(ExchangeConnectionError::ConnectionHangup))?;
                 exchange_connection.handle_exchange_message(&mut price_report_sender, message)?;
             }
@@ -288,6 +297,11 @@ impl ExchangeConnection {
         message: Message,
     ) -> Result<(), ExchangeConnectionError> {
         let message_str = message.into_text().unwrap();
+        // Sometimes OKX sends an undocumented "Protocol violation" message, likely from rate
+        // limiting. We ignore these.
+        if message_str == "Protocol violation" {
+            return Ok(())
+        }
         let message_json = serde_json::from_str(&message_str).unwrap();
 
         let price_report = {

@@ -11,9 +11,7 @@ use super::{
 };
 
 /// The number of threads backing the price reporter manager
-// This should not be substantially decreased, as the threads may deadlock upon waiting for raw
-// ExchangeConnections
-const PRICE_REPORTER_MANAGER_NUM_THREADS: usize = 32;
+const PRICE_REPORTER_MANAGER_NUM_THREADS: usize = 2;
 
 /// The config passed from the coordinator to the PriceReporterManager
 #[derive(Clone, Debug)]

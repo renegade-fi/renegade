@@ -62,8 +62,8 @@ tokio = { version = "1", features = ["full"] }
 toml = { version = "0.5.9" }
 tracing = { version = "0.1", features = ["log"] }
 tokio-stream = { version = "0.1" }
-tokio-tungstenite = { version = "0.18" }
-tungstenite = { version = "0.18.0", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.18.0", features = ["native-tls"] }
+tungstenite = { version = "0.18.0" }
 url = "2.3.1"
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
 web3 = "0.18.0"

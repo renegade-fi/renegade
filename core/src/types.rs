@@ -30,6 +30,6 @@ pub enum SystemBusMessage {
         /// The order_id of the remote peer
         peer_order_id: OrderIdentifier,
     },
-    /// A message indicating that a new PriceReport has been published
-    PriceReport(PriceReport),
+    /// A message indicating that a new median PriceReport has been published
+    PriceReportMedian(PriceReport),
 }

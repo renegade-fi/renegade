@@ -1,9 +1,11 @@
 use async_trait::async_trait;
 use chrono::DateTime;
+use futures::SinkExt;
 use hmac_sha256::HMAC;
 use serde_json::{self, json, Value};
-use std::{collections::HashMap, convert::TryInto, env, net::TcpStream};
-use tungstenite::{stream::MaybeTlsStream, Message, WebSocket as WebSocketGeneric};
+use std::{collections::HashMap, convert::TryInto, env};
+use tokio::net::TcpStream;
+use tokio_tungstenite::{tungstenite::Message, MaybeTlsStream, WebSocketStream};
 
 use super::super::{
     errors::ExchangeConnectionError,
@@ -13,7 +15,7 @@ use super::super::{
 };
 
 /// WebSocket type for streams from all centralized exchanges.
-type WebSocket = WebSocketGeneric<MaybeTlsStream<TcpStream>>;
+type WebSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 /// The core trait that all centralized exchange handlers implement. This allows for creation of
 /// stateful elements (e.g., a local order book), websocket URLs, pre-websocket-stream one-off
@@ -31,7 +33,10 @@ pub trait CentralizedExchangeHandler {
         &mut self,
     ) -> Result<Option<PriceReport>, ExchangeConnectionError>;
     /// Send any initial subscription messages to the websocket after it has been created.
-    fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ExchangeConnectionError>;
+    async fn websocket_subscribe(
+        &self,
+        socket: &mut WebSocket,
+    ) -> Result<(), ExchangeConnectionError>;
     /// Handle an inbound message from the exchange by parsing it into a PriceReport and publishing
     /// the PriceReport into the ring buffer channel.
     fn handle_exchange_message(
@@ -106,7 +111,10 @@ impl CentralizedExchangeHandler for BinanceHandler {
         }))
     }
 
-    fn websocket_subscribe(&self, _socket: &mut WebSocket) -> Result<(), ExchangeConnectionError> {
+    async fn websocket_subscribe(
+        &self,
+        _socket: &mut WebSocket,
+    ) -> Result<(), ExchangeConnectionError> {
         // Binance begins streaming prices immediately; no initial subscribe message needed.
         Ok(())
     }
@@ -176,7 +184,10 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
         Ok(None)
     }
 
-    fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ExchangeConnectionError> {
+    async fn websocket_subscribe(
+        &self,
+        socket: &mut WebSocket,
+    ) -> Result<(), ExchangeConnectionError> {
         let base_ticker = self.base_token.get_exchange_ticker(Exchange::Coinbase);
         let quote_ticker = self.quote_token.get_exchange_ticker(Exchange::Coinbase);
         let product_ids = format!("{}-{}", base_ticker, quote_ticker);
@@ -197,7 +208,8 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
         })
         .to_string();
         socket
-            .write_message(Message::Text(subscribe_str))
+            .send(Message::Text(subscribe_str))
+            .await
             .or(Err(ExchangeConnectionError::ConnectionHangup))?;
         Ok(())
     }
@@ -308,7 +320,10 @@ impl CentralizedExchangeHandler for KrakenHandler {
         Ok(None)
     }
 
-    fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ExchangeConnectionError> {
+    async fn websocket_subscribe(
+        &self,
+        socket: &mut WebSocket,
+    ) -> Result<(), ExchangeConnectionError> {
         let base_ticker = self.base_token.get_exchange_ticker(Exchange::Kraken);
         let quote_ticker = self.quote_token.get_exchange_ticker(Exchange::Kraken);
         let pair = format!("{}/{}", base_ticker, quote_ticker);
@@ -321,7 +336,8 @@ impl CentralizedExchangeHandler for KrakenHandler {
         })
         .to_string();
         socket
-            .write_message(Message::Text(subscribe_str))
+            .send(Message::Text(subscribe_str))
+            .await
             .or(Err(ExchangeConnectionError::ConnectionHangup))?;
         Ok(())
     }
@@ -392,7 +408,10 @@ impl CentralizedExchangeHandler for OkxHandler {
         Ok(None)
     }
 
-    fn websocket_subscribe(&self, socket: &mut WebSocket) -> Result<(), ExchangeConnectionError> {
+    async fn websocket_subscribe(
+        &self,
+        socket: &mut WebSocket,
+    ) -> Result<(), ExchangeConnectionError> {
         let base_ticker = self.base_token.get_exchange_ticker(Exchange::Okx);
         let quote_ticker = self.quote_token.get_exchange_ticker(Exchange::Okx);
         let pair = format!("{}-{}", base_ticker, quote_ticker);
@@ -405,7 +424,8 @@ impl CentralizedExchangeHandler for OkxHandler {
         })
         .to_string();
         socket
-            .write_message(Message::Text(subscribe_str))
+            .send(Message::Text(subscribe_str))
+            .await
             .or(Err(ExchangeConnectionError::ConnectionHangup))?;
         Ok(())
     }

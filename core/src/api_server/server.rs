@@ -207,7 +207,7 @@ impl WebsocketHandler {
                         message_body,
                         client_subscriptions,
                         system_bus,
-                    );
+                    ).await;
                     let response_serialized = serde_json::to_string(&response)
                         .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
 
@@ -228,7 +228,7 @@ impl WebsocketHandler {
     }
 
     /// Handles an incoming subscribe/unsubscribe message
-    fn handle_subscription_message(
+    async fn handle_subscription_message(
         &self,
         message: SubscriptionMessage,
         client_subscriptions: &mut StreamMap<String, TopicReader<SystemBusMessage>>,
@@ -237,8 +237,11 @@ impl WebsocketHandler {
         // Update local subscriptions
         match message {
             SubscriptionMessage::Subscribe { topic } => {
+                // Register the topic subscription
+                let topic_reader = system_bus.subscribe(topic.clone());
+                client_subscriptions.insert(topic.clone(), topic_reader);
                 // If the topic is a price-report-*, then parse the tokens, send a
-                // StartPriceReporter job, and block until confirmed
+                // StartPriceReporter job, and await until confirmed
                 let topic_split: Vec<&str> = topic.split('-').collect();
                 if topic.starts_with("price-report-") && topic_split.len() == 4 {
                     let base_token = Token::from_addr(topic_split[2]);
@@ -254,9 +257,6 @@ impl WebsocketHandler {
                         .unwrap();
                     channel_receiver.recv().unwrap();
                 }
-                // Register the topic subscription
-                let topic_reader = system_bus.subscribe(topic.clone());
-                client_subscriptions.insert(topic, topic_reader);
             }
             SubscriptionMessage::Unsubscribe { topic } => {
                 client_subscriptions.remove(&topic);
