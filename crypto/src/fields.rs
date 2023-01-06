@@ -41,6 +41,11 @@ pub fn bigint_to_scalar(a: &BigInt) -> Scalar {
     }
 }
 
+/// Conver a BigUint to a scalar
+pub fn biguint_to_scalar(a: &BigUint) -> Scalar {
+    bigint_to_scalar(&a.clone().into())
+}
+
 /// Pad an array up to the desired length with zeros
 fn zero_pad_bytes(unpadded_buf: &mut Vec<u8>, n: usize) {
     unpadded_buf.append(&mut vec![0u8; n - unpadded_buf.len()])
