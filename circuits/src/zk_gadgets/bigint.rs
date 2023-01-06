@@ -60,6 +60,19 @@ where
     div_rem_bigint(mul_res, n, cs)
 }
 
+/// Multiplies an allocated variable and a scalar and takes the product
+/// modulo the given value
+///
+/// Returns the quotient and remainder from division
+fn mul_scalar_mod_n<L, CS>(a: L, b: Scalar, n: &BigUint, cs: &mut CS) -> (Variable, Variable)
+where
+    L: Into<LinearCombination>,
+    CS: RandomizableConstraintSystem,
+{
+    let mul_res = a.into() * b;
+    div_rem_bigint(mul_res, n, cs)
+}
+
 /// Represents a bigint in the constraint system
 ///
 /// The maximum size is 256 bits
@@ -152,6 +165,36 @@ impl U256Var {
         }
     }
 
+    /// Add together a U256 and a bigint
+    ///
+    /// Same as the implementation above, except that we do not need to allocate variables for the bigint
+    pub fn add_bigint<CS: RandomizableConstraintSystem>(
+        lhs: Self,
+        rhs: BigUint,
+        cs: &mut CS,
+    ) -> Self {
+        // Split the bigint into low, middle, and high bits
+        let (rhs_low, rhs_middle, rhs_high) = Self::bigint_to_split_scalars(&rhs);
+
+        // Add the low bits together and take the value modulo 2^128
+        let new_low = lhs.low + rhs_low;
+        let (carry, low_rem) = div_rem_bigint(new_low, &BIGINT_2_TO_126, cs);
+
+        // Add the middle bits together and take the value modulo 2^128
+        let new_middle = lhs.middle + rhs_middle + carry;
+        let (carry, middle_rem) = div_rem_bigint(new_middle, &BIGINT_2_TO_126, cs);
+
+        // Finally, add the high values and take the value modulo 2^4
+        let new_high = lhs.high + rhs_high + carry;
+        let (_, high_rem) = div_rem_bigint(new_high, &BIGINT_2_TO_4, cs);
+
+        Self {
+            low: low_rem,
+            middle: middle_rem,
+            high: high_rem,
+        }
+    }
+
     /// Multiply two U256s together
     ///
     /// Takes the result modulo 2^256
@@ -165,10 +208,9 @@ impl U256Var {
     ///             + 2^378 * (x_mid * y_high + x_high * y_mid)
     ///             + 2^504 * (x_high * y_high)
     /// The last two terms (those with 2^378 and 2^504) are both 0 modulo 2^256, so they don't contribute
-    pub fn multiply<CS: RandomizableConstraintSystem>(lhs: Self, rhs: Self, cs: &mut CS) -> Self {
+    pub fn mul<CS: RandomizableConstraintSystem>(lhs: Self, rhs: Self, cs: &mut CS) -> Self {
         // The low value of the multiplication result
-        let (_, _, new_low) = cs.multiply(lhs.low.into(), rhs.low.into());
-        let (carry, low_var) = div_rem_bigint(new_low, &BIGINT_2_TO_126, cs);
+        let (carry, low_var) = mul_mod_n(lhs.low, rhs.low, &BIGINT_2_TO_126, cs);
 
         // Add the middle bit terms
         let (mid_term1_carry, mid_term1_rem) = mul_mod_n(lhs.low, rhs.middle, &BIGINT_2_TO_126, cs);
@@ -182,6 +224,49 @@ impl U256Var {
         let (_, high_term1) = mul_mod_n(lhs.low, rhs.high, &BIGINT_2_TO_4, cs);
         let (_, high_term2) = mul_mod_n(lhs.middle, rhs.middle, &BIGINT_2_TO_4, cs);
         let (_, high_term3) = mul_mod_n(lhs.high, rhs.low, &BIGINT_2_TO_4, cs);
+
+        let (_, high_var) = div_rem_bigint(
+            high_term1 + high_term2 + high_term3 + carry,
+            &BIGINT_2_TO_4,
+            cs,
+        );
+
+        Self {
+            low: low_var,
+            middle: middle_var,
+            high: high_var,
+        }
+    }
+
+    /// Multiply a U256 with a bigint
+    ///
+    /// Similar to the above mul implementation, but we do not need to allocate multiplier
+    /// gates for each multiplication
+    pub fn mul_bigint<CS: RandomizableConstraintSystem>(
+        lhs: Self,
+        rhs: BigUint,
+        cs: &mut CS,
+    ) -> Self {
+        // Split the BigUInt into low, middle, and high bits
+        let (rhs_low, rhs_middle, rhs_high) = Self::bigint_to_split_scalars(&rhs);
+
+        // The low value of the multiplication result
+        let (carry, low_var) = mul_scalar_mod_n(lhs.low, rhs_low, &BIGINT_2_TO_126, cs);
+
+        // Add the middle bit terms
+        let (mid_term1_carry, mid_term1_rem) =
+            mul_scalar_mod_n(lhs.low, rhs_middle, &BIGINT_2_TO_126, cs);
+        let (mid_term2_carry, mid_term2_rem) =
+            mul_scalar_mod_n(lhs.middle, rhs_low, &BIGINT_2_TO_126, cs);
+        let (additive_carry, middle_var) =
+            div_rem_bigint(mid_term1_rem + mid_term2_rem + carry, &BIGINT_2_TO_126, cs);
+
+        let carry = additive_carry + mid_term1_carry + mid_term2_carry;
+
+        // Add the high bit terms
+        let (_, high_term1) = mul_scalar_mod_n(lhs.low, rhs_high, &BIGINT_2_TO_4, cs);
+        let (_, high_term2) = mul_scalar_mod_n(lhs.middle, rhs_middle, &BIGINT_2_TO_4, cs);
+        let (_, high_term3) = mul_scalar_mod_n(lhs.high, rhs_low, &BIGINT_2_TO_4, cs);
 
         let (_, high_var) = div_rem_bigint(
             high_term1 + high_term2 + high_term3 + carry,
@@ -453,7 +538,7 @@ mod bigint_tests {
             let (witness_var, witness_comm) = witness.commit_prover(&mut rng, &mut prover).unwrap();
 
             // Apply the constraints
-            let res = U256Var::multiply(witness_var.lhs, witness_var.rhs, &mut prover);
+            let res = U256Var::mul(witness_var.lhs, witness_var.rhs, &mut prover);
             U256Var::constraint_equal(res, expected_var, &mut prover);
 
             // Prove the statement
@@ -482,7 +567,7 @@ mod bigint_tests {
             let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
 
             // Apply the constraints
-            let res = U256Var::multiply(witness_var.lhs, witness_var.rhs, &mut verifier);
+            let res = U256Var::mul(witness_var.lhs, witness_var.rhs, &mut verifier);
             U256Var::constraint_equal(res, expected_var, &mut verifier);
 
             // Verify the proof
@@ -543,6 +628,30 @@ mod bigint_tests {
         }
     }
 
+    /// Tests adding an allocated value and a bigint
+    #[test]
+    fn test_add_biguint() {
+        let n_tests = 100;
+        let mut rng = OsRng {};
+
+        let mut prover_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+        for _ in 0..n_tests {
+            let random_bigint1 = random_biguint(&mut rng);
+            let random_bigint2 = random_biguint(&mut rng);
+
+            let exepcted_sum = (&random_bigint1 + &random_bigint2) % (BigUint::from(1u8) << 256);
+
+            let u256_var = U256Var::from_biguint(&random_bigint1, &mut prover);
+            let out_var = U256Var::add_bigint(u256_var, random_bigint2, &mut prover);
+            let out_eval = U256Var::to_bigint(out_var, &prover);
+
+            assert_eq!(out_eval, exepcted_sum);
+        }
+    }
+
     /// Tests multiplying two values together in the constraint system
     #[test]
     fn test_mul_uint256() {
@@ -554,18 +663,44 @@ mod bigint_tests {
             let random_bigint1 = random_biguint(&mut rng);
             let random_bigint2 = random_biguint(&mut rng);
 
-            let exepcted_sum = (&random_bigint1 * &random_bigint2) % (BigUint::from(1u8) << 256);
+            let expected_product =
+                (&random_bigint1 * &random_bigint2) % (BigUint::from(1u8) << 256);
 
             let witness = OperatorWitness {
                 lhs: random_bigint1,
                 rhs: random_bigint2,
             };
             let statement = OperatorStatement {
-                expected_out: exepcted_sum,
+                expected_out: expected_product,
             };
 
             let res = bulletproof_prove_and_verify::<MulCircuit>(witness, statement);
             assert!(res.is_ok());
+        }
+    }
+
+    /// Tests multiplying a U256Var with a BigUint
+    #[test]
+    fn test_mul_biguint() {
+        let n_tests = 100;
+        let mut rng = OsRng {};
+
+        let mut prover_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+        for _ in 0..n_tests {
+            let random_bigint1 = random_biguint(&mut rng);
+            let random_bigint2 = random_biguint(&mut rng);
+
+            let expected_product =
+                (&random_bigint1 * &random_bigint2) % (BigUint::from(1u8) << 256);
+
+            let u256_var = U256Var::from_biguint(&random_bigint1, &mut prover);
+            let out_var = U256Var::mul_bigint(u256_var, random_bigint2, &mut prover);
+            let out_eval = U256Var::to_bigint(out_var, &prover);
+
+            assert_eq!(expected_product, out_eval);
         }
     }
 }
