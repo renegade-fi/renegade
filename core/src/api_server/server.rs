@@ -26,7 +26,7 @@ use crate::{
     price_reporter::{jobs::PriceReporterManagerJob, tokens::Token},
     state::RelayerState,
     system_bus::{SystemBus, TopicReader},
-    types::SystemBusMessage,
+    types::{SystemBusMessage, SystemBusMessageWithTopic},
 };
 
 use super::{
@@ -157,8 +157,8 @@ impl WebsocketHandler {
         loop {
             tokio::select! {
                 // Next subscription event from the system bus
-                Some((_, event)) = subscriptions.next() => {
-                    self.push_subscribed_event(event, &mut write_stream).await?;
+                Some((topic, event)) = subscriptions.next() => {
+                    self.push_subscribed_event(topic, event, &mut write_stream).await?;
                 }
 
                 // Next message from the client side of the websocket
@@ -273,12 +273,14 @@ impl WebsocketHandler {
     /// Push an internal event that the client is subscribed to onto the websocket
     async fn push_subscribed_event(
         &self,
+        topic: String,
         event: SystemBusMessage,
         write_stream: &mut SplitSink<WebSocketStream<TcpStream>, Message>,
     ) -> Result<(), ApiServerError> {
         // Serialize the message and push it onto the stream
-        let event_serialized = serde_json::to_string(&event)
-            .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
+        let event_serialized =
+            serde_json::to_string(&SystemBusMessageWithTopic { topic, event })
+                .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
         let message = Message::Text(event_serialized);
 
         write_stream

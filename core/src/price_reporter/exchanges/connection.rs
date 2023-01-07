@@ -308,11 +308,12 @@ impl ExchangeConnection {
     ) -> Result<(), ExchangeConnectionError> {
         let message_str = message.into_text().unwrap();
         // Sometimes OKX sends an undocumented "Protocol violation" message, likely from rate
-        // limiting. We ignore these.
-        if message_str == "Protocol violation" {
+        // limiting. Also, sometimes we receive empty messages. We ignore these.
+        if message_str == "Protocol violation" || message_str.is_empty() {
             return Ok(());
         }
-        let message_json = serde_json::from_str(&message_str).unwrap();
+        let message_json = serde_json::from_str(&message_str)
+            .map_err(|err| ExchangeConnectionError::InvalidMessage(err.to_string()))?;
 
         let price_report = {
             if let Some(binance_handler) = &mut self.binance_handler {
