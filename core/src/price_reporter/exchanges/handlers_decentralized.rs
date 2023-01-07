@@ -46,7 +46,7 @@ impl UniswapV3Handler {
         let ethereum_wss_url = env::var("ETHEREUM_MAINNET_WSS").unwrap();
         let transport = web3::transports::WebSocket::new(&ethereum_wss_url)
             .await
-            .or(Err(ExchangeConnectionError::HandshakeFailure))?;
+            .map_err(|err| ExchangeConnectionError::HandshakeFailure(err.to_string()))?;
         let web3_connection = Web3::new(transport);
         // Derive the Uniswap pool address from this Token pair.
         let (pool_address, is_flipped) = Self::get_pool_address(
@@ -299,9 +299,9 @@ impl UniswapV3Handler {
                 .eth()
                 .call(base_balance_call_request, None)
                 .await
-                .or(Err(ExchangeConnectionError::ConnectionHangup))
-                .map(|base_balance| U256::from(&base_balance.0[..32]));
-            base_balances.push(base_balance?);
+                .map(|base_balance| U256::from(&base_balance.0[..32]))
+                .map_err(|err| ExchangeConnectionError::ConnectionHangup(err.to_string()))?;
+            base_balances.push(base_balance);
         }
 
         // Given the derived pool addresses and base balances, pick the pool address with the

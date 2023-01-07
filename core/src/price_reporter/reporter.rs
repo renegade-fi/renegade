@@ -154,10 +154,11 @@ impl PriceReporter {
                 .await?;
             let worker_handle = tokio_handle.spawn(async move {
                 loop {
-                    let price_report = price_report_receiver
-                        .next()
-                        .await
-                        .ok_or(ExchangeConnectionError::ConnectionHangup)?;
+                    let price_report = price_report_receiver.next().await.ok_or_else(|| {
+                        ExchangeConnectionError::ConnectionHangup(
+                            "ExchangeConnection sender was dropped".to_string(),
+                        )
+                    })?;
                     all_price_reports_sender.send(price_report).unwrap();
                 }
             });
