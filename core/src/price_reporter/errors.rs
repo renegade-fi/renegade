@@ -6,20 +6,20 @@ use std::fmt::{self, Display};
 /// PriceReporter, either for restarts or panics upon too many consecutive errors.
 pub enum ExchangeConnectionError {
     /// An initial websocket subscription to a remote server failed.
-    HandshakeFailure,
+    HandshakeFailure(String),
     /// A websocket remote connection hungup.
-    ConnectionHangup,
+    ConnectionHangup(String),
     /// Could not parse a remote server message.
-    InvalidMessage,
+    InvalidMessage(String),
 }
 
 impl Error for ExchangeConnectionError {}
 impl Display for ExchangeConnectionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let display_string = match self {
-            ExchangeConnectionError::HandshakeFailure => "HandshakeFailure",
-            ExchangeConnectionError::ConnectionHangup => "ConnectionHangup",
-            ExchangeConnectionError::InvalidMessage => "InvalidMessage",
+            ExchangeConnectionError::HandshakeFailure(err) => format!("HandshakeFailure({})", err),
+            ExchangeConnectionError::ConnectionHangup(err) => format!("ConnectionHangup({})", err),
+            ExchangeConnectionError::InvalidMessage(err) => format!("InvalidMessage({})", err),
         };
         write!(f, "{}", display_string)
     }

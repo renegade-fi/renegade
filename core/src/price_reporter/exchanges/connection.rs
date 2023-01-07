@@ -1,4 +1,4 @@
-use futures::stream::StreamExt;
+use futures::{stream::StreamExt, SinkExt};
 use ring_channel::{ring_channel, RingReceiver, RingSender};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -201,7 +201,7 @@ impl ExchangeConnection {
                 sleep(Duration::from_secs(5)).await;
                 price_report_sender_clone
                     .send(pre_stream_price_report)
-                    .or(Err(ExchangeConnectionError::ConnectionHangup))?;
+                    .map_err(|err| ExchangeConnectionError::ConnectionHangup(err.to_string()))?;
                 Ok::<(), ExchangeConnectionError>(())
             });
         }
@@ -235,16 +235,17 @@ impl ExchangeConnection {
             let connection = connect_async(url).await;
             if let Ok(connection) = connection {
                 connection
-            } else if exchange == Exchange::Binance {
-                println!(
-                    "You are likely attempting to connect from an IP address blacklisted by \
-                    Binance (e.g., anything US-based). Cannot connect to the remote URL: {}",
-                    wss_url
-                );
-                return Err(ExchangeConnectionError::HandshakeFailure);
             } else {
+                if exchange == Exchange::Binance {
+                    println!(
+                        "You are likely attempting to connect from an IP address \
+                        blacklisted by Binance (e.g., anything US-based)"
+                    );
+                }
                 println!("Cannot connect to the remote URL: {}", wss_url);
-                return Err(ExchangeConnectionError::HandshakeFailure);
+                return Err(ExchangeConnectionError::HandshakeFailure(
+                    connection.unwrap_err().to_string(),
+                ));
             }
         };
 
@@ -275,14 +276,23 @@ impl ExchangeConnection {
         .await?;
 
         // Start listening for inbound messages.
+        let (mut socket_sink, mut socket_stream) = socket.split();
         let worker_handle = tokio_handle.spawn(async move {
             loop {
-                let message = socket
-                    .next()
-                    .await
-                    .unwrap()
-                    .or(Err(ExchangeConnectionError::ConnectionHangup))?;
+                let message =
+                    socket_stream.next().await.unwrap().map_err(|err| {
+                        ExchangeConnectionError::ConnectionHangup(err.to_string())
+                    })?;
                 exchange_connection.handle_exchange_message(&mut price_report_sender, message)?;
+            }
+        });
+        worker_handles.push(worker_handle);
+
+        // Periodically send a ping to prevent websocket hangup
+        let worker_handle = tokio_handle.spawn(async move {
+            loop {
+                sleep(Duration::from_secs(30)).await;
+                socket_sink.send(Message::Ping(vec![])).await.unwrap();
             }
         });
         worker_handles.push(worker_handle);

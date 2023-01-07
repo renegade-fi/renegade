@@ -84,20 +84,24 @@ impl CentralizedExchangeHandler for BinanceHandler {
         );
         let message_resp = reqwest::get(request_url)
             .await
-            .or(Err(ExchangeConnectionError::ConnectionHangup))?;
+            .map_err(|err| ExchangeConnectionError::ConnectionHangup(err.to_string()))?;
         let message_json: Value = message_resp
             .json()
             .await
-            .or(Err(ExchangeConnectionError::InvalidMessage))?;
+            .map_err(|err| ExchangeConnectionError::ConnectionHangup(err.to_string()))?;
         let best_bid: f64 = match message_json["bidPrice"].as_str() {
             None => {
-                return Err(ExchangeConnectionError::InvalidMessage);
+                return Err(ExchangeConnectionError::InvalidMessage(
+                    message_json.to_string(),
+                ));
             }
             Some(best_bid_str) => best_bid_str.parse().unwrap(),
         };
         let best_offer: f64 = match message_json["askPrice"].as_str() {
             None => {
-                return Err(ExchangeConnectionError::InvalidMessage);
+                return Err(ExchangeConnectionError::InvalidMessage(
+                    message_json.to_string(),
+                ));
             }
             Some(best_offer_str) => best_offer_str.parse().unwrap(),
         };
@@ -128,13 +132,17 @@ impl CentralizedExchangeHandler for BinanceHandler {
         }
         let best_bid: f64 = match message_json["b"].as_str() {
             None => {
-                return Err(ExchangeConnectionError::InvalidMessage);
+                return Err(ExchangeConnectionError::InvalidMessage(
+                    message_json.to_string(),
+                ));
             }
             Some(best_bid_str) => best_bid_str.parse().unwrap(),
         };
         let best_offer: f64 = match message_json["a"].as_str() {
             None => {
-                return Err(ExchangeConnectionError::InvalidMessage);
+                return Err(ExchangeConnectionError::InvalidMessage(
+                    message_json.to_string(),
+                ));
             }
             Some(best_offer_str) => best_offer_str.parse().unwrap(),
         };
@@ -210,7 +218,7 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
         socket
             .send(Message::Text(subscribe_str))
             .await
-            .or(Err(ExchangeConnectionError::ConnectionHangup))?;
+            .map_err(|err| ExchangeConnectionError::ConnectionHangup(err.to_string()))?;
         Ok(())
     }
 
@@ -242,7 +250,9 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
                     side,
                 ),
                 _ => {
-                    return Err(ExchangeConnectionError::InvalidMessage);
+                    return Err(ExchangeConnectionError::InvalidMessage(
+                        coinbase_event.to_string(),
+                    ));
                 }
             };
             match &side[..] {
@@ -261,7 +271,7 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
                     }
                 }
                 _ => {
-                    return Err(ExchangeConnectionError::InvalidMessage);
+                    return Err(ExchangeConnectionError::InvalidMessage(side.to_string()));
                 }
             }
         }
@@ -278,9 +288,9 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
 
         let timestamp_str = message_json["timestamp"]
             .as_str()
-            .ok_or(ExchangeConnectionError::InvalidMessage)?;
+            .ok_or_else(|| ExchangeConnectionError::InvalidMessage(message_json.to_string()))?;
         let reported_timestamp = DateTime::parse_from_rfc3339(timestamp_str)
-            .or(Err(ExchangeConnectionError::InvalidMessage))?
+            .map_err(|err| ExchangeConnectionError::InvalidMessage(err.to_string()))?
             .timestamp_millis();
         Ok(Some(PriceReport {
             base_token: self.base_token.clone(),
@@ -338,7 +348,7 @@ impl CentralizedExchangeHandler for KrakenHandler {
         socket
             .send(Message::Text(subscribe_str))
             .await
-            .or(Err(ExchangeConnectionError::ConnectionHangup))?;
+            .map_err(|err| ExchangeConnectionError::ConnectionHangup(err.to_string()))?;
         Ok(())
     }
 
@@ -355,19 +365,25 @@ impl CentralizedExchangeHandler for KrakenHandler {
         let best_bid = match &message_json[1][0] {
             Value::String(best_bid) => best_bid.parse::<f64>().unwrap(),
             _ => {
-                return Err(ExchangeConnectionError::InvalidMessage);
+                return Err(ExchangeConnectionError::InvalidMessage(
+                    message_json[1][0].to_string(),
+                ));
             }
         };
         let best_offer = match &message_json[1][1] {
             Value::String(best_offer) => best_offer.parse::<f64>().unwrap(),
             _ => {
-                return Err(ExchangeConnectionError::InvalidMessage);
+                return Err(ExchangeConnectionError::InvalidMessage(
+                    message_json[1][1].to_string(),
+                ));
             }
         };
         let reported_timestamp_seconds = match &message_json[1][2] {
             Value::String(reported_timestamp) => reported_timestamp.parse::<f32>().unwrap(),
             _ => {
-                return Err(ExchangeConnectionError::InvalidMessage);
+                return Err(ExchangeConnectionError::InvalidMessage(
+                    message_json[1][2].to_string(),
+                ));
             }
         };
         Ok(Some(PriceReport {
@@ -426,7 +442,7 @@ impl CentralizedExchangeHandler for OkxHandler {
         socket
             .send(Message::Text(subscribe_str))
             .await
-            .or(Err(ExchangeConnectionError::ConnectionHangup))?;
+            .map_err(|err| ExchangeConnectionError::ConnectionHangup(err.to_string()))?;
         Ok(())
     }
 
@@ -441,19 +457,25 @@ impl CentralizedExchangeHandler for OkxHandler {
         let best_bid = match &message_json["data"][0]["bids"][0][0] {
             Value::String(best_bid) => best_bid.parse::<f64>().unwrap(),
             _ => {
-                return Err(ExchangeConnectionError::InvalidMessage);
+                return Err(ExchangeConnectionError::InvalidMessage(
+                    message_json.to_string(),
+                ));
             }
         };
         let best_offer = match &message_json["data"][0]["asks"][0][0] {
             Value::String(best_offer) => best_offer.parse::<f64>().unwrap(),
             _ => {
-                return Err(ExchangeConnectionError::InvalidMessage);
+                return Err(ExchangeConnectionError::InvalidMessage(
+                    message_json.to_string(),
+                ));
             }
         };
         let reported_timestamp_seconds = match &message_json["data"][0]["ts"] {
             Value::String(reported_timestamp) => reported_timestamp.parse::<f32>().unwrap(),
             _ => {
-                return Err(ExchangeConnectionError::InvalidMessage);
+                return Err(ExchangeConnectionError::InvalidMessage(
+                    message_json.to_string(),
+                ));
             }
         };
         Ok(Some(PriceReport {
