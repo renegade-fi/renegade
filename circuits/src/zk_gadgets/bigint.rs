@@ -8,6 +8,7 @@ use mpc_bulletproof::r1cs::{LinearCombination, RandomizableConstraintSystem, Var
 use num_bigint::BigUint;
 
 lazy_static! {
+    static ref BIGINT_ZERO: BigUint = BigUint::from(0u8);
     static ref BIGINT_2_TO_4: BigUint = BigUint::from(1u8) << 4;
     static ref BIGINT_2_TO_126: BigUint = BigUint::from(1u8) << 126;
 }
@@ -123,7 +124,6 @@ impl U256Var {
     /// Evaluates the value in the constraint system and returns the result
     ///
     /// Used only for testing the opposite conversion (bigint -> U256Var)
-    #[cfg(test)]
     pub fn to_bigint<C: RandomizableConstraintSystem>(u256_val: Self, cs: &C) -> BigUint {
         // Evalute the variable assignment in the constraint system
         let low_bigint = scalar_to_biguint(&cs.eval(&u256_val.low.into()));
@@ -135,7 +135,7 @@ impl U256Var {
     }
 
     /// Constrains two U256 values to equal one another
-    pub fn constraint_equal<CS: RandomizableConstraintSystem>(a: Self, b: Self, cs: &mut CS) {
+    pub fn constrain_equal<CS: RandomizableConstraintSystem>(a: Self, b: Self, cs: &mut CS) {
         // Constrain all bits to be equal
         cs.constrain(a.low - b.low);
         cs.constrain(a.middle - b.middle);
@@ -279,6 +279,31 @@ impl U256Var {
             middle: middle_var,
             high: high_var,
         }
+    }
+
+    /// Take the value stored in the U256 modulo the given value
+    pub fn div_rem<CS: RandomizableConstraintSystem>(
+        val: U256Var,
+        modulus: BigUint,
+        cs: &mut CS,
+    ) -> (U256Var, U256Var) {
+        // Evaluate the U256 to a bigint, compute the quotient and remainder, then
+        // implicitly constrain the values to be correct
+        let u256_bigint = Self::to_bigint(val, cs);
+
+        let div = &u256_bigint / &modulus;
+        let rem = &u256_bigint % &modulus;
+
+        let u256_div = U256Var::from_biguint(&div, cs);
+        let u256_rem = U256Var::from_biguint(&rem, cs);
+
+        let div_times_mod = U256Var::mul_bigint(u256_div, modulus, cs);
+        let reconstructed_val = U256Var::add(div_times_mod, u256_rem, cs);
+
+        // Constrain this to be equal to the input
+        U256Var::constrain_equal(reconstructed_val, val, cs);
+
+        (u256_div, u256_rem)
     }
 }
 
@@ -472,7 +497,7 @@ mod bigint_tests {
 
             // Apply the constraints
             let res = U256Var::add(witness_var.lhs, witness_var.rhs, &mut prover);
-            U256Var::constraint_equal(res, expected_var, &mut prover);
+            U256Var::constrain_equal(res, expected_var, &mut prover);
 
             // Prove the statement
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -501,7 +526,7 @@ mod bigint_tests {
 
             // Apply the constraints
             let res = U256Var::add(witness_var.lhs, witness_var.rhs, &mut verifier);
-            U256Var::constraint_equal(res, expected_var, &mut verifier);
+            U256Var::constrain_equal(res, expected_var, &mut verifier);
 
             // Verify the proof
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -539,7 +564,7 @@ mod bigint_tests {
 
             // Apply the constraints
             let res = U256Var::mul(witness_var.lhs, witness_var.rhs, &mut prover);
-            U256Var::constraint_equal(res, expected_var, &mut prover);
+            U256Var::constrain_equal(res, expected_var, &mut prover);
 
             // Prove the statement
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -568,7 +593,130 @@ mod bigint_tests {
 
             // Apply the constraints
             let res = U256Var::mul(witness_var.lhs, witness_var.rhs, &mut verifier);
-            U256Var::constraint_equal(res, expected_var, &mut verifier);
+            U256Var::constrain_equal(res, expected_var, &mut verifier);
+
+            // Verify the proof
+            let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+            verifier
+                .verify(&proof, &bp_gens)
+                .map_err(VerifierError::R1CS)
+        }
+    }
+
+    struct DivRemCircuit {}
+    impl SingleProverCircuit for DivRemCircuit {
+        /// Statement is (modulus, expected_div, expected_rem)
+        type Statement = (BigUint, BigUint, BigUint);
+        /// Witness is the input to the mod operation
+        type Witness = BigUint;
+        type WitnessCommitment = (
+            CompressedRistretto,
+            CompressedRistretto,
+            CompressedRistretto,
+        );
+
+        const BP_GENS_CAPACITY: usize = 512;
+
+        fn prove(
+            witness: Self::Witness,
+            statement: Self::Statement,
+            mut prover: Prover,
+        ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
+            // Commit to the statement variable
+            let mut rng = OsRng {};
+
+            let (expected_div_low, expected_div_mid, expected_div_high) =
+                bigint_to_split_scalars(&statement.1);
+            let (_, expected_div_low_var) = prover.commit_public(expected_div_low);
+            let (_, expected_div_mid_var) = prover.commit_public(expected_div_mid);
+            let (_, expected_div_high_var) = prover.commit_public(expected_div_high);
+
+            let expected_div_var = U256Var::new(
+                expected_div_low_var,
+                expected_div_mid_var,
+                expected_div_high_var,
+            );
+
+            let (expected_rem_low, expected_rem_mid, expected_rem_high) =
+                bigint_to_split_scalars(&statement.2);
+            let (_, expected_rem_low_var) = prover.commit_public(expected_rem_low);
+            let (_, expected_rem_mid_var) = prover.commit_public(expected_rem_mid);
+            let (_, expected_rem_high_var) = prover.commit_public(expected_rem_high);
+
+            let expected_rem_var = U256Var::new(
+                expected_rem_low_var,
+                expected_rem_mid_var,
+                expected_rem_high_var,
+            );
+
+            // Commit to the witness
+            let (witness_low, witness_mid, witness_high) = bigint_to_split_scalars(&witness);
+            let (wintess_low_comm, witness_low_var) =
+                prover.commit(witness_low, Scalar::random(&mut rng));
+            let (witness_mid_comm, witness_mid_var) =
+                prover.commit(witness_mid, Scalar::random(&mut rng));
+            let (witness_high_comm, witness_high_var) =
+                prover.commit(witness_high, Scalar::random(&mut rng));
+
+            let witness_var = U256Var::new(witness_low_var, witness_mid_var, witness_high_var);
+
+            // Apply the constraints
+            let (res_div, res_rem) = U256Var::div_rem(witness_var, statement.0, &mut prover);
+            U256Var::constrain_equal(res_div, expected_div_var, &mut prover);
+            U256Var::constrain_equal(res_rem, expected_rem_var, &mut prover);
+
+            // Prove the statement
+            let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+            let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
+
+            Ok((
+                (wintess_low_comm, witness_mid_comm, witness_high_comm),
+                proof,
+            ))
+        }
+
+        fn verify(
+            witness_commitment: Self::WitnessCommitment,
+            statement: Self::Statement,
+            proof: R1CSProof,
+            mut verifier: Verifier,
+        ) -> Result<(), VerifierError> {
+            // Commit to the statement
+            let (expected_div_low, expected_div_mid, expected_div_high) =
+                bigint_to_split_scalars(&statement.1);
+            let expected_div_low_var = verifier.commit_public(expected_div_low);
+            let expected_div_mid_var = verifier.commit_public(expected_div_mid);
+            let expected_div_high_var = verifier.commit_public(expected_div_high);
+
+            let expected_div_var = U256Var::new(
+                expected_div_low_var,
+                expected_div_mid_var,
+                expected_div_high_var,
+            );
+
+            let (expected_rem_low, expected_rem_mid, expected_rem_high) =
+                bigint_to_split_scalars(&statement.2);
+            let expected_rem_low_var = verifier.commit_public(expected_rem_low);
+            let expected_rem_mid_var = verifier.commit_public(expected_rem_mid);
+            let expected_rem_high_var = verifier.commit_public(expected_rem_high);
+
+            let expected_rem_var = U256Var::new(
+                expected_rem_low_var,
+                expected_rem_mid_var,
+                expected_rem_high_var,
+            );
+
+            // Commit to the witness
+            let witness_low_var = verifier.commit(witness_commitment.0);
+            let witness_mid_var = verifier.commit(witness_commitment.1);
+            let witness_high_var = verifier.commit(witness_commitment.2);
+
+            let witness_var = U256Var::new(witness_low_var, witness_mid_var, witness_high_var);
+
+            // Apply the constraints
+            let (res_div, res_rem) = U256Var::div_rem(witness_var, statement.0, &mut verifier);
+            U256Var::constrain_equal(res_div, expected_div_var, &mut verifier);
+            U256Var::constrain_equal(res_rem, expected_rem_var, &mut verifier);
 
             // Verify the proof
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -701,6 +849,27 @@ mod bigint_tests {
             let out_eval = U256Var::to_bigint(out_var, &prover);
 
             assert_eq!(expected_product, out_eval);
+        }
+    }
+
+    /// Tests taking a value modulo a random value  
+    #[test]
+    fn test_mod() {
+        let n_tests = 10;
+        let mut rng = OsRng {};
+
+        for _ in 0..n_tests {
+            let random_bigint1 = random_biguint(&mut rng);
+            let random_bigint2 = random_biguint(&mut rng);
+
+            let expected_div = &random_bigint1 / &random_bigint2;
+            let expected_rem = &random_bigint1 % &random_bigint2;
+
+            let witness = random_bigint1;
+            let statement = (random_bigint2, expected_div, expected_rem);
+
+            let res = bulletproof_prove_and_verify::<DivRemCircuit>(witness, statement);
+            assert!(res.is_ok());
         }
     }
 }
