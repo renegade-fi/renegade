@@ -5,5 +5,6 @@ pub mod bits;
 pub mod comparators;
 pub mod gates;
 pub mod merkle;
+pub mod nonnative;
 pub mod poseidon;
 pub mod select;
