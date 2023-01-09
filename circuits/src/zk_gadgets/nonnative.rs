@@ -146,21 +146,16 @@ impl NonNativeElementVar {
     }
 
     /// Constrain two non-native field elements to equal one another
-    pub fn constrain_equal<CS: RandomizableConstraintSystem>(lhs: Self, rhs: Self, cs: &mut CS) {
-        assert_eq!(
-            lhs.field_mod, rhs.field_mod,
-            "elements must be from the same field"
-        );
+    pub fn constrain_equal<CS: RandomizableConstraintSystem>(lhs: &Self, rhs: &Self, cs: &mut CS) {
+        assert_eq!(lhs.words.len(), rhs.words.len(), "inequal word widths");
 
         // Compare each word in the non-native element
-        let field_words = words_for_field(&lhs.field_mod);
-        for i in 0..field_words {
-            cs.constrain(lhs.words[i] - rhs.words[i]);
+        for (lhs_word, rhs_word) in lhs.words.iter().zip(rhs.words.iter()) {
+            cs.constrain(*lhs_word - *rhs_word);
         }
     }
 
     /// Reduce the given element modulo its field
-    #[allow(unused)]
     pub fn reduce<CS: RandomizableConstraintSystem>(&mut self, cs: &mut CS) {
         // Convert to bigint for reduction
         let self_bigint = self.as_bigint(cs);
@@ -173,9 +168,13 @@ impl NonNativeElementVar {
             NonNativeElementVar::from_bigint(mod_bigint, self.field_mod.clone(), cs);
 
         // Constrain the values to be a correct modulus
-        // TODO: As an optimization, we do not need to allocate this value in the constraint system as its
-        // a publically known circuit parameter
-        unimplemented!("")
+        let div_mod_mul = Self::mul_bigint_unreduced(&div_nonnative, &self.field_mod, cs);
+        let reconstructed = Self::add_unreduced(&div_mod_mul, &mod_nonnative, cs);
+
+        Self::constrain_equal(self, &reconstructed, cs);
+
+        // Finally, update self to the correct modulus
+        self.words = mod_nonnative.words;
     }
 
     /// Add together two non-native field elements
