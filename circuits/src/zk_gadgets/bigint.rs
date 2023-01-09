@@ -74,7 +74,7 @@ where
     div_rem_bigint(mul_res, n, cs)
 }
 
-/// Represents a bigint in the constraint system
+/// Represents a bigint in the conslet mut rng = OsRtraint system
 ///
 /// The maximum size is 256 bits
 ///
