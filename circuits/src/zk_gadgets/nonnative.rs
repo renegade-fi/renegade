@@ -534,7 +534,7 @@ impl NonNativeElementVar {
     }
 
     /// Computes the additive inverse of the given value in the field
-    fn additive_inverse<CS: RandomizableConstraintSystem>(val: &Self, cs: &mut CS) -> Self {
+    pub fn additive_inverse<CS: RandomizableConstraintSystem>(val: &Self, cs: &mut CS) -> Self {
         // Evaluate the value in the constraint system
         let mut val_bigint = val.as_bigint(cs);
         val_bigint %= &val.field_mod.modulus;
