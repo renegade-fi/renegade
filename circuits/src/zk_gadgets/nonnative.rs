@@ -722,4 +722,30 @@ mod nonnative_tests {
             assert!(res.is_ok());
         }
     }
+
+    /// Tests adding a non-native field element with a biguint
+    #[test]
+    fn test_add_biguint() {
+        let n_tests = 100;
+        let mut rng = OsRng {};
+
+        let mut prover_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+        for _ in 0..n_tests {
+            // Sample two random elements and a modulus, allocate one in the constraint
+            // system and add the other directly as a biguint
+            let random_elem1 = random_biguint(&mut rng);
+            let random_elem2 = random_biguint(&mut rng);
+            let random_mod = random_biguint(&mut rng);
+            let expected_bigint = (&random_elem1 + &random_elem2) % &random_mod;
+
+            let nonnative = NonNativeElementVar::from_bigint(random_elem1, random_mod, &mut prover);
+            let res = NonNativeElementVar::add_bigint(&nonnative, &random_elem2, &mut prover);
+
+            let res_bigint = res.as_bigint(&prover);
+            assert_eq!(res_bigint, expected_bigint);
+        }
+    }
 }
