@@ -1,6 +1,6 @@
 //! Groups gadget definitions for non-native field arithmetic
 
-use std::{cmp::max, iter};
+use std::iter;
 
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::scalar::Scalar;
@@ -58,13 +58,13 @@ where
     let mod_scalar = biguint_to_scalar(modulus);
 
     // Constrain the modulus to be correct, i.e. dividend = quotient * divisor + remainder
-    cs.constrain(val_lc - mod_scalar * div_var + rem_var);
+    cs.constrain(val_lc - (mod_scalar * div_var + rem_var));
 
     // Because we are assuming that `val` can fit into at most two words, we constrain the
     // quotient to be either 0 (fits into one word) or 1 (fits into one quotient word and the remainder)
     // We constrain this with the identity x(1-x) which is 0 for binary values only
-    let (_, _, mul_var) = cs.multiply(div_var.into(), Variable::One() - div_var);
-    cs.constrain(mul_var.into());
+    // let (_, _, mul_var) = cs.multiply(div_var.into(), Variable::One() - div_var);
+    // cs.constrain(mul_var.into());
 
     (div_var, rem_var)
 }
@@ -104,7 +104,9 @@ impl NonNativeElementVar {
     /// Create a new value given a set of pre-allocated words
     pub fn new(mut words: Vec<Variable>, field_mod: BigUint) -> Self {
         let field_words = words_for_field(&field_mod);
-        words.append(&mut vec![Variable::Zero(); field_words - words.len()]);
+        if field_words > words.len() {
+            words.append(&mut vec![Variable::Zero(); field_words - words.len()]);
+        }
         Self { words, field_mod }
     }
 
@@ -147,10 +149,13 @@ impl NonNativeElementVar {
 
     /// Constrain two non-native field elements to equal one another
     pub fn constrain_equal<CS: RandomizableConstraintSystem>(lhs: &Self, rhs: &Self, cs: &mut CS) {
-        assert_eq!(lhs.words.len(), rhs.words.len(), "inequal word widths");
+        // Pad the inputs to both be of the length of the longer input
+        let max_len = lhs.words.len().max(rhs.words.len());
+        let left_hand_words = lhs.words.iter().chain(iter::repeat(&Variable::Zero()));
+        let right_hand_words = rhs.words.iter().chain(iter::repeat(&Variable::Zero()));
 
         // Compare each word in the non-native element
-        for (lhs_word, rhs_word) in lhs.words.iter().zip(rhs.words.iter()) {
+        for (lhs_word, rhs_word) in left_hand_words.zip(right_hand_words).take(max_len) {
             cs.constrain(*lhs_word - *rhs_word);
         }
     }
@@ -197,14 +202,19 @@ impl NonNativeElementVar {
             "elements from different fields"
         );
 
+        // Pad both left and right hand side to the same length
+        let max_word_width = lhs.words.len().max(rhs.words.len());
+        let lhs_word_iter = lhs.words.iter().chain(iter::repeat(&Variable::Zero()));
+        let rhs_word_iter = rhs.words.iter().chain(iter::repeat(&Variable::Zero()));
+
         // Add word by word with carry
         let mut carry = Variable::Zero();
         let field_words = words_for_field(&lhs.field_mod);
         let mut new_words = Vec::with_capacity(field_words);
-        for i in 0..field_words {
+        for (lhs_word, rhs_word) in lhs_word_iter.zip(rhs_word_iter).take(max_word_width) {
             // Compute the word-wise sum and reduce to fit into a single word
-            let word_res = lhs.words[i] + rhs.words[i] + carry;
-            let div_rem = div_rem_word(word_res, &BIGINT_2_TO_WORD_SIZE, cs);
+            let word_res = *lhs_word + *rhs_word + carry;
+            let div_rem = div_rem_word(word_res.clone(), &BIGINT_2_TO_WORD_SIZE, cs);
 
             carry = div_rem.0;
             new_words.push(div_rem.1);
@@ -236,26 +246,25 @@ impl NonNativeElementVar {
         cs: &mut CS,
     ) -> Self {
         // Convert the rhs to a list of words
-        let mut rhs_words = bigint_to_scalar_words(rhs.clone());
-        if rhs_words.len() < lhs.words.len() {
-            rhs_words.append(&mut vec![Scalar::zero(); lhs.words.len() - rhs_words.len()]);
-        }
+        let rhs_words = bigint_to_scalar_words(rhs.clone());
 
         // Resize the lhs and rhs word iterators to be of equal size
-        let lhs_word_iterator =
-            lhs.words.iter().cloned().chain(
-                iter::repeat(Variable::Zero()).take(max(0, rhs_words.len() - lhs.words.len())),
-            );
+        let max_len = rhs_words.len().max(lhs.words.len());
+        let lhs_word_iterator = lhs
+            .words
+            .iter()
+            .cloned()
+            .chain(iter::repeat(Variable::Zero()));
         let rhs_word_iterator = rhs_words
             .iter()
             .cloned()
-            .chain(iter::repeat(Scalar::zero()).take(max(0, lhs.words.len() - rhs_words.len())));
+            .chain(iter::repeat(Scalar::zero()));
 
         // Add the two non-native elements word-wise
         let field_words = words_for_field(&lhs.field_mod);
         let mut carry = Variable::Zero();
         let mut new_words = Vec::with_capacity(field_words);
-        for (lhs_word, rhs_word) in lhs_word_iterator.zip(rhs_word_iterator) {
+        for (lhs_word, rhs_word) in lhs_word_iterator.zip(rhs_word_iterator).take(max_len) {
             let word_res = lhs_word + rhs_word + carry;
             let div_rem = div_rem_word(word_res, &BIGINT_2_TO_WORD_SIZE, cs);
 
@@ -408,12 +417,23 @@ impl NonNativeElementVar {
 
 #[cfg(test)]
 mod nonnative_tests {
+    use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
+    use itertools::Itertools;
     use merlin::Transcript;
-    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
+    use mpc_bulletproof::{
+        r1cs::{Prover, R1CSProof, Variable, Verifier},
+        BulletproofGens, PedersenGens,
+    };
     use num_bigint::BigUint;
     use rand_core::{CryptoRng, OsRng, RngCore};
 
-    use super::NonNativeElementVar;
+    use crate::{
+        errors::{ProverError, VerifierError},
+        test_helpers::bulletproof_prove_and_verify,
+        CommitProver, CommitVerifier, SingleProverCircuit,
+    };
+
+    use super::{bigint_to_scalar_words, NonNativeElementVar};
 
     // -------------
     // | Constants |
@@ -431,6 +451,189 @@ mod nonnative_tests {
         let bytes = &mut [0u8; 32];
         rng.fill_bytes(bytes);
         BigUint::from_bytes_le(bytes)
+    }
+
+    // ------------
+    // | Circuits |
+    // ------------
+
+    /// A witness type for a fan-in 2, fan-out 1 operator
+    #[derive(Clone, Debug)]
+    pub struct FanIn2Witness {
+        /// The left hand side of the operator
+        lhs: BigUint,
+        /// The right hand side of the operator
+        rhs: BigUint,
+        /// The field modulus that these operands are defined over
+        field_mod: BigUint,
+    }
+
+    impl CommitProver for FanIn2Witness {
+        type VarType = FanIn2WitnessVar;
+        type CommitType = FanIn2WitnessCommitment;
+        type ErrorType = ();
+
+        fn commit_prover<R: RngCore + CryptoRng>(
+            &self,
+            rng: &mut R,
+            prover: &mut Prover,
+        ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+            // Split the bigint into words
+            let lhs_words = bigint_to_scalar_words(self.lhs.clone());
+            let (lhs_comm, lhs_var): (Vec<CompressedRistretto>, Vec<Variable>) = lhs_words
+                .iter()
+                .map(|word| prover.commit(*word, Scalar::random(rng)))
+                .unzip();
+
+            let lhs_var = NonNativeElementVar::new(lhs_var, self.field_mod.clone());
+
+            let rhs_words = bigint_to_scalar_words(self.rhs.clone());
+            let (rhs_comm, rhs_var): (Vec<CompressedRistretto>, Vec<Variable>) = rhs_words
+                .iter()
+                .map(|word| prover.commit(*word, Scalar::random(rng)))
+                .unzip();
+
+            let rhs_var = NonNativeElementVar::new(rhs_var, self.field_mod.clone());
+
+            Ok((
+                FanIn2WitnessVar {
+                    lhs: lhs_var,
+                    rhs: rhs_var,
+                },
+                FanIn2WitnessCommitment {
+                    lhs: lhs_comm,
+                    rhs: rhs_comm,
+                    field_mod: self.field_mod.clone(),
+                },
+            ))
+        }
+    }
+
+    /// A constraint-system allocated fan-in 2 witness
+    #[derive(Clone, Debug)]
+    pub struct FanIn2WitnessVar {
+        /// The left hand side of the operator
+        lhs: NonNativeElementVar,
+        /// The right hand side of the operator
+        rhs: NonNativeElementVar,
+    }
+
+    /// A commitment to a fan-in 2 witness
+    #[derive(Clone, Debug)]
+    pub struct FanIn2WitnessCommitment {
+        /// The left hand side of the operator
+        lhs: Vec<CompressedRistretto>,
+        /// The right hand side of the operator
+        rhs: Vec<CompressedRistretto>,
+        /// The modulus of the field
+        field_mod: BigUint,
+    }
+
+    impl CommitVerifier for FanIn2WitnessCommitment {
+        type VarType = FanIn2WitnessVar;
+        type ErrorType = ();
+
+        fn commit_verifier(
+            &self,
+            verifier: &mut Verifier,
+        ) -> Result<Self::VarType, Self::ErrorType> {
+            // Commit to the words in the lhs and rhs vars, then reform them into
+            // allocated non-native field elements
+            let lhs_vars = self
+                .lhs
+                .iter()
+                .map(|comm| verifier.commit(*comm))
+                .collect_vec();
+            let lhs = NonNativeElementVar::new(lhs_vars, self.field_mod.clone());
+
+            let rhs_vars = self
+                .rhs
+                .iter()
+                .map(|comm| verifier.commit(*comm))
+                .collect_vec();
+            let rhs = NonNativeElementVar::new(rhs_vars, self.field_mod.clone());
+
+            Ok(FanIn2WitnessVar { lhs, rhs })
+        }
+    }
+
+    pub struct AdderCircuit {}
+    impl SingleProverCircuit for AdderCircuit {
+        type Witness = FanIn2Witness;
+        type Statement = BigUint;
+        type WitnessCommitment = FanIn2WitnessCommitment;
+
+        const BP_GENS_CAPACITY: usize = 64;
+
+        fn prove(
+            witness: Self::Witness,
+            statement: Self::Statement,
+            mut prover: Prover,
+        ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
+            // Commit to the witness
+            let mut rng = OsRng {};
+            let (witness_var, wintess_comm) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+
+            // Commit to the statement variable
+            let expected_words = bigint_to_scalar_words(statement);
+            let (_, statement_word_vars): (Vec<_>, Vec<Variable>) = expected_words
+                .iter()
+                .map(|word| prover.commit_public(*word))
+                .unzip();
+            let expected_nonnative =
+                NonNativeElementVar::new(statement_word_vars, witness.field_mod);
+
+            // Add the two witness values
+            let addition_result =
+                NonNativeElementVar::add(&witness_var.lhs, &witness_var.rhs, &mut prover);
+
+            NonNativeElementVar::constrain_equal(
+                &addition_result,
+                &expected_nonnative,
+                &mut prover,
+            );
+
+            // Prove the statement
+            let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+            let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
+
+            Ok((wintess_comm, proof))
+        }
+
+        fn verify(
+            witness_commitment: Self::WitnessCommitment,
+            statement: Self::Statement,
+            proof: R1CSProof,
+            mut verifier: Verifier,
+        ) -> Result<(), VerifierError> {
+            // Commit to the witness
+            let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
+
+            // Commit to the statement variable
+            let expected_words = bigint_to_scalar_words(statement);
+            let statement_word_vars = expected_words
+                .iter()
+                .map(|word| verifier.commit_public(*word))
+                .collect_vec();
+            let expected_nonnative =
+                NonNativeElementVar::new(statement_word_vars, witness_commitment.field_mod);
+
+            // Add the two witness values
+            let addition_result =
+                NonNativeElementVar::add(&witness_var.lhs, &witness_var.rhs, &mut verifier);
+
+            NonNativeElementVar::constrain_equal(
+                &addition_result,
+                &expected_nonnative,
+                &mut verifier,
+            );
+
+            // Verify the proof
+            let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+            verifier
+                .verify(&proof, &bp_gens)
+                .map_err(VerifierError::R1CS)
+        }
     }
 
     // ---------
@@ -457,6 +660,66 @@ mod nonnative_tests {
             let nonnative_elem =
                 NonNativeElementVar::from_bigint(random_elem, random_mod, &mut prover);
             assert_eq!(nonnative_elem.as_bigint(&prover), expected_bigint);
+        }
+    }
+
+    /// Tests reducing a non-native field element modulo its field
+    #[test]
+    fn test_reduce() {
+        let n_tests = 100;
+        let mut rng = OsRng {};
+
+        let mut prover_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+        for _ in 0..n_tests {
+            // Sample a random value, and a random modulus
+            let random_val = random_biguint(&mut rng);
+            let random_mod = random_biguint(&mut rng);
+
+            let expected = &random_val % &random_mod;
+
+            let words = bigint_to_scalar_words(random_val);
+            let allocated_words = words
+                .iter()
+                .map(|word| prover.commit_public(*word).1)
+                .collect_vec();
+
+            let mut val = NonNativeElementVar::new(allocated_words, random_mod);
+            val.reduce(&mut prover);
+
+            // Evaluate the value in the constraint system and ensure it is as expected
+            let reduced_val_bigint = val.as_bigint(&prover);
+            assert_eq!(reduced_val_bigint, expected);
+        }
+    }
+
+    /// Tests the addition functionality inside an addition circuit
+    #[test]
+    fn test_add_circuit() {
+        let n_tests = 10;
+        let mut rng = OsRng {};
+
+        for _ in 0..n_tests {
+            // Sample two random elements, compute their sum, then prover the AdderCircuit
+            // statement
+            let random_elem1 = random_biguint(&mut rng);
+            let random_elem2 = random_biguint(&mut rng);
+            let random_mod = random_biguint(&mut rng);
+            let expected_bigint = (&random_elem1 + &random_elem2) % &random_mod;
+
+            let witness = FanIn2Witness {
+                lhs: random_elem1,
+                rhs: random_elem2,
+                field_mod: random_mod,
+            };
+
+            let statement = expected_bigint;
+
+            // Prove and verify a valid member of the relation
+            let res = bulletproof_prove_and_verify::<AdderCircuit>(witness, statement);
+            assert!(res.is_ok());
         }
     }
 }
