@@ -4,6 +4,7 @@ use std::iter;
 
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::scalar::Scalar;
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use mpc_bulletproof::r1cs::{LinearCombination, RandomizableConstraintSystem, Variable};
 use num_bigint::BigUint;
@@ -21,7 +22,7 @@ lazy_static! {
 
 /// Returns the maximum number of words needed to represent an element from
 /// a field of the given modulus
-fn words_for_field(modulus: &BigUint) -> usize {
+fn repr_word_width(modulus: &BigUint) -> usize {
     let word_size_u64 = WORD_SIZE as u64;
     if modulus.bits() % word_size_u64 == 0 {
         (modulus.bits() / word_size_u64) as usize
@@ -45,7 +46,7 @@ where
     let val_bigint = scalar_to_biguint(&cs.eval(&val_lc));
 
     assert!(
-        val_bigint.bits() < (2 * WORD_SIZE) as u64,
+        val_bigint.bits() <= (2 * WORD_SIZE) as u64,
         "value too large for div_rem_word"
     );
 
@@ -59,13 +60,6 @@ where
 
     // Constrain the modulus to be correct, i.e. dividend = quotient * divisor + remainder
     cs.constrain(val_lc - (mod_scalar * div_var + rem_var));
-
-    // Because we are assuming that `val` can fit into at most two words, we constrain the
-    // quotient to be either 0 (fits into one word) or 1 (fits into one quotient word and the remainder)
-    // We constrain this with the identity x(1-x) which is 0 for binary values only
-    // let (_, _, mul_var) = cs.multiply(div_var.into(), Variable::One() - div_var);
-    // cs.constrain(mul_var.into());
-
     (div_var, rem_var)
 }
 
@@ -103,7 +97,7 @@ pub struct NonNativeElementVar {
 impl NonNativeElementVar {
     /// Create a new value given a set of pre-allocated words
     pub fn new(mut words: Vec<Variable>, field_mod: BigUint) -> Self {
-        let field_words = words_for_field(&field_mod);
+        let field_words = repr_word_width(&field_mod);
         if field_words > words.len() {
             words.append(&mut vec![Variable::Zero(); field_words - words.len()]);
         }
@@ -120,7 +114,7 @@ impl NonNativeElementVar {
         value %= &field_mod;
 
         // Split into words
-        let field_words = words_for_field(&field_mod);
+        let field_words = repr_word_width(&field_mod);
         let mut words = Vec::with_capacity(field_words);
         for _ in 0..field_words {
             // Allocate the next 126 bits in the constraint system
@@ -132,6 +126,39 @@ impl NonNativeElementVar {
         }
 
         Self { words, field_mod }
+    }
+
+    /// Construct a `NonNativeElementVar` from a bigint without reducing modulo the
+    /// field modulus
+    ///
+    /// Here, `word_width` is the number of words that should be used to represent the
+    /// resulting allocated non-native field element.
+    pub fn from_bigint_unreduced<CS: RandomizableConstraintSystem>(
+        value: BigUint,
+        word_width: usize,
+        field_mod: BigUint,
+        cs: &mut CS,
+    ) -> Self {
+        // Ensure that the allocated word width is large enough for the underlying value
+        assert!(
+            repr_word_width(&value) <= word_width,
+            "specified word width too narrow {:?} < {:?}",
+            word_width,
+            repr_word_width(&value)
+        );
+
+        let mut words = bigint_to_scalar_words(value);
+        words.append(&mut vec![Scalar::zero(); word_width - words.len()]);
+
+        let allocated_words = words
+            .iter()
+            .map(|word| cs.allocate(Some(*word)).unwrap())
+            .collect_vec();
+
+        Self {
+            words: allocated_words,
+            field_mod,
+        }
     }
 
     /// Evalute the non-native variable in the given constraint system, and return the
@@ -167,8 +194,20 @@ impl NonNativeElementVar {
         let div_bigint = &self_bigint / &self.field_mod;
         let mod_bigint = &self_bigint % &self.field_mod;
 
-        let div_nonnative =
-            NonNativeElementVar::from_bigint(div_bigint, self.field_mod.clone(), cs);
+        // Explicitly compute the representation width of the division result in the constraint system
+        // We do this because the value is taken unreduced; so that verifier cannot infer the width
+        // from the field modulus, and does not have access to the underlying value to determine its
+        // width otherwise
+        let field_modulus_word_width = repr_word_width(&self.field_mod);
+        let div_word_width = self.words.len() + 1 - field_modulus_word_width;
+
+        let div_nonnative = NonNativeElementVar::from_bigint_unreduced(
+            div_bigint,
+            div_word_width,
+            self.field_mod.clone(),
+            cs,
+        );
+
         let mod_nonnative =
             NonNativeElementVar::from_bigint(mod_bigint, self.field_mod.clone(), cs);
 
@@ -209,8 +248,7 @@ impl NonNativeElementVar {
 
         // Add word by word with carry
         let mut carry = Variable::Zero();
-        let field_words = words_for_field(&lhs.field_mod);
-        let mut new_words = Vec::with_capacity(field_words);
+        let mut new_words = Vec::with_capacity(max_word_width + 1);
         for (lhs_word, rhs_word) in lhs_word_iter.zip(rhs_word_iter).take(max_word_width) {
             // Compute the word-wise sum and reduce to fit into a single word
             let word_res = *lhs_word + *rhs_word + carry;
@@ -261,9 +299,8 @@ impl NonNativeElementVar {
             .chain(iter::repeat(Scalar::zero()));
 
         // Add the two non-native elements word-wise
-        let field_words = words_for_field(&lhs.field_mod);
         let mut carry = Variable::Zero();
-        let mut new_words = Vec::with_capacity(field_words);
+        let mut new_words = Vec::with_capacity(max_len + 1);
         for (lhs_word, rhs_word) in lhs_word_iterator.zip(rhs_word_iterator).take(max_len) {
             let word_res = lhs_word + rhs_word + carry;
             let div_rem = div_rem_word(word_res, &BIGINT_2_TO_WORD_SIZE, cs);
@@ -296,7 +333,7 @@ impl NonNativeElementVar {
             lhs.field_mod, rhs.field_mod,
             "elements from different fields"
         );
-        let field_words = words_for_field(&lhs.field_mod);
+        let n_result_words = lhs.words.len() + rhs.words.len();
 
         // Both lhs and rhs are represented as:
         //  x = x_1 + 2^WORD_SIZE * x_2 + ... + 2^(num_words * WORD_SIZE) * x_num_words
@@ -306,15 +343,16 @@ impl NonNativeElementVar {
         // to the result
         //
         // The maximum shift is 2^{2 * num_words} as (2^k - 1)(2^k - 1) = 2^2k - 2^{k+1} - 1 < 2^2k
-        let mut terms = vec![Vec::new(); 2 * field_words];
-        let mut carries = vec![Vec::new(); 2 * field_words];
+        let mut terms = vec![Vec::new(); n_result_words];
+        let mut carries = vec![Vec::new(); n_result_words + 1];
 
-        for lhs_index in 0..field_words {
-            for rhs_index in 0..field_words {
+        for (lhs_index, lhs_word) in lhs.words.iter().enumerate() {
+            for (rhs_index, rhs_word) in rhs.words.iter().enumerate() {
                 // Compute the term and reduce it modulo the field
                 let (_, _, term_direct_product) =
-                    cs.multiply(lhs.words[lhs_index].into(), rhs.words[rhs_index].into());
-                let (term_carry, term) = div_rem_word(term_direct_product, &lhs.field_mod, cs);
+                    cs.multiply((*lhs_word).into(), (*rhs_word).into());
+                let (term_carry, term) =
+                    div_rem_word(term_direct_product, &BIGINT_2_TO_WORD_SIZE, cs);
 
                 // Place the term and the carry in the shift bin corresponding to the value k such that
                 // this term is prefixed with 2^k in the expanded representation described above
@@ -326,8 +364,8 @@ impl NonNativeElementVar {
 
         // Now reduce each term into a single word
         let mut carry = Variable::Zero();
-        let mut res_words = Vec::with_capacity(field_words);
-        for word_index in 0..field_words {
+        let mut res_words = Vec::with_capacity(n_result_words);
+        for word_index in 0..n_result_words {
             // Sum all the terms and carries at the given word index
             let mut summed_word: LinearCombination = carry.into();
             for word_term in terms[word_index].iter().chain(carries[word_index].iter()) {
@@ -335,10 +373,11 @@ impl NonNativeElementVar {
             }
 
             // Reduce this sum and add any carry to the next term's carries
-            let div_rem_res = div_rem_word(summed_word, &lhs.field_mod, cs);
+            let div_rem_res = div_rem_word(summed_word, &BIGINT_2_TO_WORD_SIZE, cs);
             carry = div_rem_res.0;
             res_words.push(div_rem_res.1);
         }
+        res_words.push(carry);
 
         Self {
             words: res_words,
@@ -365,7 +404,7 @@ impl NonNativeElementVar {
     ) -> Self {
         // Split the BigUint into words
         let rhs_words = bigint_to_scalar_words(rhs.clone());
-        let n_result_words = rhs_words.len() * lhs.words.len();
+        let n_result_words = rhs_words.len() + lhs.words.len();
 
         // Both lhs and rhs are represented as:
         //  x = x_1 + 2^WORD_SIZE * x_2 + ... + 2^(num_words * WORD_SIZE) * x_num_words
@@ -382,7 +421,8 @@ impl NonNativeElementVar {
             for (rhs_index, rhs_word) in rhs_words.iter().enumerate() {
                 // Compute the term and reduce it modulo the field
                 let term_direct_product = *lhs_word * *rhs_word;
-                let (term_carry, term) = div_rem_word(term_direct_product, &lhs.field_mod, cs);
+                let (term_carry, term) =
+                    div_rem_word(term_direct_product, &BIGINT_2_TO_WORD_SIZE, cs);
 
                 // Place the term and the carry in the shift bin corresponding to the value k such that
                 // this term is prefixed with 2^k in the expanded representation described above
@@ -403,7 +443,7 @@ impl NonNativeElementVar {
             }
 
             // Reduce this sum and add any carry to the next term's carries
-            let div_rem_res = div_rem_word(summed_word, &lhs.field_mod, cs);
+            let div_rem_res = div_rem_word(summed_word, &BIGINT_2_TO_WORD_SIZE, cs);
             carry = div_rem_res.0;
             res_words.push(div_rem_res.1);
         }
@@ -636,6 +676,76 @@ mod nonnative_tests {
         }
     }
 
+    #[derive(Clone, Debug)]
+    pub struct MulCircuit {}
+    impl SingleProverCircuit for MulCircuit {
+        type Statement = BigUint;
+        type Witness = FanIn2Witness;
+        type WitnessCommitment = FanIn2WitnessCommitment;
+
+        const BP_GENS_CAPACITY: usize = 128;
+
+        fn prove(
+            witness: Self::Witness,
+            statement: Self::Statement,
+            mut prover: Prover,
+        ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
+            // Commit to the witness
+            let mut rng = OsRng {};
+            let (witness_var, wintess_comm) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+
+            // Commit to the statement variable
+            let expected_words = bigint_to_scalar_words(statement);
+            let (_, statement_word_vars): (Vec<_>, Vec<Variable>) = expected_words
+                .iter()
+                .map(|word| prover.commit_public(*word))
+                .unzip();
+            let expected_nonnative =
+                NonNativeElementVar::new(statement_word_vars, witness.field_mod);
+
+            // Add the two witness values
+            let mul_result =
+                NonNativeElementVar::mul(&witness_var.lhs, &witness_var.rhs, &mut prover);
+            NonNativeElementVar::constrain_equal(&mul_result, &expected_nonnative, &mut prover);
+
+            // Prove the statement
+            let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+            let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
+
+            Ok((wintess_comm, proof))
+        }
+
+        fn verify(
+            witness_commitment: Self::WitnessCommitment,
+            statement: Self::Statement,
+            proof: R1CSProof,
+            mut verifier: Verifier,
+        ) -> Result<(), VerifierError> {
+            // Commit to the witness
+            let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
+
+            // Commit to the statement variable
+            let expected_words = bigint_to_scalar_words(statement);
+            let statement_word_vars = expected_words
+                .iter()
+                .map(|word| verifier.commit_public(*word))
+                .collect_vec();
+            let expected_nonnative =
+                NonNativeElementVar::new(statement_word_vars, witness_commitment.field_mod);
+
+            // Add the two witness values
+            let mul_result =
+                NonNativeElementVar::mul(&witness_var.lhs, &witness_var.rhs, &mut verifier);
+            NonNativeElementVar::constrain_equal(&mul_result, &expected_nonnative, &mut verifier);
+
+            // Verify the proof
+            let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+            verifier
+                .verify(&proof, &bp_gens)
+                .map_err(VerifierError::R1CS)
+        }
+    }
+
     // ---------
     // | Tests |
     // ---------
@@ -743,6 +853,60 @@ mod nonnative_tests {
 
             let nonnative = NonNativeElementVar::from_bigint(random_elem1, random_mod, &mut prover);
             let res = NonNativeElementVar::add_bigint(&nonnative, &random_elem2, &mut prover);
+
+            let res_bigint = res.as_bigint(&prover);
+            assert_eq!(res_bigint, expected_bigint);
+        }
+    }
+
+    /// Tests multiplying two non-native field elements together
+    #[test]
+    fn test_mul_circuit() {
+        let n_tests = 10;
+        let mut rng = OsRng {};
+
+        for _ in 0..n_tests {
+            // Sample two random elements, compute their sum, then prover the AdderCircuit
+            // statement
+            let random_elem1 = random_biguint(&mut rng);
+            let random_elem2 = random_biguint(&mut rng);
+            let random_mod = random_biguint(&mut rng);
+            let expected_bigint = (&random_elem1 * &random_elem2) % &random_mod;
+
+            let witness = FanIn2Witness {
+                lhs: random_elem1,
+                rhs: random_elem2,
+                field_mod: random_mod,
+            };
+
+            let statement = expected_bigint;
+
+            // Prove and verify a valid member of the relation
+            let res = bulletproof_prove_and_verify::<MulCircuit>(witness, statement);
+            assert!(res.is_ok());
+        }
+    }
+
+    /// Tests multiplying a non-native field element with a bigint
+    #[test]
+    fn test_mul_bigint() {
+        let n_tests = 100;
+        let mut rng = OsRng {};
+
+        let mut prover_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+        for _ in 0..n_tests {
+            // Sample two random elements and a modulus, allocate one in the constraint
+            // system and add the other directly as a biguint
+            let random_elem1 = random_biguint(&mut rng);
+            let random_elem2 = random_biguint(&mut rng);
+            let random_mod = random_biguint(&mut rng);
+            let expected_bigint = (&random_elem1 * &random_elem2) % &random_mod;
+
+            let nonnative = NonNativeElementVar::from_bigint(random_elem1, random_mod, &mut prover);
+            let res = NonNativeElementVar::mul_bigint(&nonnative, &random_elem2, &mut prover);
 
             let res_bigint = res.as_bigint(&prover);
             assert_eq!(res_bigint, expected_bigint);
