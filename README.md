@@ -94,15 +94,20 @@ To view a list of configuration options available to the CLI:
 cargo run -- --help
 ```
 
+To run the unit tests for the workspace, run
+```
+cargo test --workspace -- --skip integration
+```
+
 Finally, in order to run integration tests for any of the crates in the
 workspace, first run
 ```
 ./setup.zsh
 ```
-to setup the `cargo-integrate` command. Then, run `cargo-integrate
+to setup the `cargo integrate` command. Then, run `cargo integrate
 <crate-name>` for the desired crate. For example, to run the integration tests
 for the `circuits` crate, which holds ZK and MPC circuit definitions, run:
 ```
-cargo-integrate circuits
+cargo integrate circuits
 ```
 
