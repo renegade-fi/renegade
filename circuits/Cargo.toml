@@ -22,6 +22,8 @@ serde = { version = "1.0.139", features = ["serde_derive"] }
 
 [dev-dependencies]
 ark-crypto-primitives = { git = "https://github.com/arkworks-rs/crypto-primitives", rev = "bd44745" }
+ark-ec = { git = "https://github.com/arkworks-rs/algebra", rev = "6e3e804" }
+ark-ed25519 = { git = "https://github.com/arkworks-rs/curves", rev = "9983165" }
 clap = { version = "4.0", features = ["derive"] }
 colored = "2"
 ctor = "0.1"

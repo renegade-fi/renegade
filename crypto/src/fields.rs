@@ -78,8 +78,13 @@ pub fn prime_field_to_scalar<F: PrimeField>(a: &F) -> Scalar {
 
 /// Convert an arkworks prime field element to a bigint
 pub fn prime_field_to_bigint<F: PrimeField>(element: &F) -> BigInt {
-    let felt_biguint = Into::<BigUint>::into(*element);
+    let felt_biguint = prime_field_to_biguint(element);
     felt_biguint.into()
+}
+
+/// Convert an arkworks prime field element to a BigUint
+pub fn prime_field_to_biguint<F: PrimeField>(element: &F) -> BigUint {
+    (*element).into()
 }
 
 #[cfg(test)]
