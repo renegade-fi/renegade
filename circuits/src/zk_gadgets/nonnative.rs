@@ -187,6 +187,27 @@ impl NonNativeElementVar {
         }
     }
 
+    /// Constrain a non-native field element to equal the given BigUint
+    pub fn constrain_equal_biguint<CS: RandomizableConstraintSystem>(
+        lhs: &Self,
+        rhs: &BigUint,
+        cs: &mut CS,
+    ) {
+        let biguint_words = bigint_to_scalar_words(rhs.clone());
+
+        // Equalize the word width of the two values
+        let max_len = biguint_words.len().max(lhs.words.len());
+        let lhs_words = lhs.words.iter().chain(iter::repeat(&Variable::Zero()));
+        let rhs_words = biguint_words
+            .into_iter()
+            .chain(iter::repeat(Scalar::zero()));
+
+        // Constrain all words to equal one another
+        for (lhs_word, rhs_word) in lhs_words.zip(rhs_words).take(max_len) {
+            cs.constrain(*lhs_word - rhs_word);
+        }
+    }
+
     /// Reduce the given element modulo its field
     pub fn reduce<CS: RandomizableConstraintSystem>(&mut self, cs: &mut CS) {
         // Convert to bigint for reduction
@@ -453,6 +474,41 @@ impl NonNativeElementVar {
             field_mod: lhs.field_mod.clone(),
         }
     }
+
+    /// Subtract one nonnative variable from another, i.e. lhs - rhs
+    pub fn subtract<CS: RandomizableConstraintSystem>(lhs: &Self, rhs: &Self, cs: &mut CS) -> Self {
+        // Compute the additive inverse of the right hand operand, then add the values
+        let add_inv = Self::additive_inverse(rhs, cs);
+        Self::add(lhs, &add_inv, cs)
+    }
+
+    /// Subtract a BigUint from a nonnative variable
+    pub fn subtract_bigint<CS: RandomizableConstraintSystem>(
+        lhs: &Self,
+        rhs: &BigUint,
+        cs: &mut CS,
+    ) -> Self {
+        // Compute the additive inverse of the BigUint
+        let additive_inv = &lhs.field_mod - (rhs % &lhs.field_mod);
+        Self::add_bigint(lhs, &additive_inv, cs)
+    }
+
+    /// Computes the additive inverse of the given value in the field
+    fn additive_inverse<CS: RandomizableConstraintSystem>(val: &Self, cs: &mut CS) -> Self {
+        // Evaluate the value in the constraint system
+        let mut val_bigint = val.as_bigint(cs);
+        val_bigint %= &val.field_mod;
+
+        // Compute the additive inverse
+        let additive_inv = &val.field_mod - val_bigint;
+        let inv_nonnative = Self::from_bigint(additive_inv, val.field_mod.clone(), cs);
+
+        // Constrain the value to be correct
+        let val_plus_inv = Self::add(val, &inv_nonnative, cs);
+        Self::constrain_equal_biguint(&val_plus_inv, &BigUint::from(0u8), cs);
+
+        inv_nonnative
+    }
 }
 
 #[cfg(test)]
@@ -464,7 +520,7 @@ mod nonnative_tests {
         r1cs::{Prover, R1CSProof, Variable, Verifier},
         BulletproofGens, PedersenGens,
     };
-    use num_bigint::BigUint;
+    use num_bigint::{BigInt, BigUint, Sign};
     use rand_core::{CryptoRng, OsRng, RngCore};
 
     use crate::{
@@ -486,11 +542,18 @@ mod nonnative_tests {
     // | Helpers |
     // -----------
 
-    /// Samples a random 512-bit bigint
+    /// Samples a random 512-bit big unsigned int
     fn random_biguint<R: RngCore + CryptoRng>(rng: &mut R) -> BigUint {
         let bytes = &mut [0u8; 32];
         rng.fill_bytes(bytes);
         BigUint::from_bytes_le(bytes)
+    }
+
+    /// Samples a random 512-bit positive signed bigint
+    fn random_pos_bigint<R: RngCore + CryptoRng>(rng: &mut R) -> BigInt {
+        let bytes = &mut [0u8; 32];
+        rng.fill_bytes(bytes);
+        BigInt::from_bytes_le(Sign::Plus, bytes)
     }
 
     // ------------
@@ -746,6 +809,75 @@ mod nonnative_tests {
         }
     }
 
+    pub struct SubCircuit {}
+    impl SingleProverCircuit for SubCircuit {
+        type Statement = BigUint;
+        type Witness = FanIn2Witness;
+        type WitnessCommitment = FanIn2WitnessCommitment;
+
+        const BP_GENS_CAPACITY: usize = 64;
+
+        fn prove(
+            witness: Self::Witness,
+            statement: Self::Statement,
+            mut prover: Prover,
+        ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
+            // Commit to the witness
+            let mut rng = OsRng {};
+            let (witness_var, wintess_comm) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+
+            // Commit to the statement variable
+            let expected_words = bigint_to_scalar_words(statement);
+            let (_, statement_word_vars): (Vec<_>, Vec<Variable>) = expected_words
+                .iter()
+                .map(|word| prover.commit_public(*word))
+                .unzip();
+            let expected_nonnative =
+                NonNativeElementVar::new(statement_word_vars, witness.field_mod);
+
+            // Add the two witness values
+            let sub_result =
+                NonNativeElementVar::subtract(&witness_var.lhs, &witness_var.rhs, &mut prover);
+            NonNativeElementVar::constrain_equal(&sub_result, &expected_nonnative, &mut prover);
+
+            // Prove the statement
+            let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+            let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
+
+            Ok((wintess_comm, proof))
+        }
+
+        fn verify(
+            witness_commitment: Self::WitnessCommitment,
+            statement: Self::Statement,
+            proof: R1CSProof,
+            mut verifier: Verifier,
+        ) -> Result<(), VerifierError> {
+            // Commit to the witness
+            let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
+
+            // Commit to the statement variable
+            let expected_words = bigint_to_scalar_words(statement);
+            let statement_word_vars = expected_words
+                .iter()
+                .map(|word| verifier.commit_public(*word))
+                .collect_vec();
+            let expected_nonnative =
+                NonNativeElementVar::new(statement_word_vars, witness_commitment.field_mod);
+
+            // Add the two witness values
+            let sub_result =
+                NonNativeElementVar::subtract(&witness_var.lhs, &witness_var.rhs, &mut verifier);
+            NonNativeElementVar::constrain_equal(&sub_result, &expected_nonnative, &mut verifier);
+
+            // Verify the proof
+            let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+            verifier
+                .verify(&proof, &bp_gens)
+                .map_err(VerifierError::R1CS)
+        }
+    }
+
     // ---------
     // | Tests |
     // ---------
@@ -907,6 +1039,70 @@ mod nonnative_tests {
 
             let nonnative = NonNativeElementVar::from_bigint(random_elem1, random_mod, &mut prover);
             let res = NonNativeElementVar::mul_bigint(&nonnative, &random_elem2, &mut prover);
+
+            let res_bigint = res.as_bigint(&prover);
+            assert_eq!(res_bigint, expected_bigint);
+        }
+    }
+
+    /// Tests subtracting one non-native field element from another
+    #[test]
+    fn test_sub_circuit() {
+        let n_tests = 10;
+        let mut rng = OsRng {};
+
+        for _ in 0..n_tests {
+            // Sample two random elements, compute their sum, then prover the AdderCircuit
+            // statement
+            let random_elem1 = random_pos_bigint(&mut rng);
+            let random_elem2 = random_pos_bigint(&mut rng);
+            let random_mod: BigInt = random_biguint(&mut rng).into();
+            let mut expected_bigint = if random_elem1.gt(&random_elem2) {
+                &random_elem1 - &random_elem2
+            } else {
+                &random_mod - (&random_elem2 % &random_mod) + (&random_elem1 % &random_mod)
+            };
+            expected_bigint %= &random_mod;
+
+            let witness = FanIn2Witness {
+                lhs: random_elem1.to_biguint().unwrap(),
+                rhs: random_elem2.to_biguint().unwrap(),
+                field_mod: random_mod.to_biguint().unwrap(),
+            };
+
+            let statement = expected_bigint.to_biguint().unwrap();
+
+            // Prove and verify a valid member of the relation
+            let res = bulletproof_prove_and_verify::<SubCircuit>(witness, statement);
+            assert!(res.is_ok());
+        }
+    }
+
+    /// Test subtracting a BigUint from a non-native field element
+    #[test]
+    fn test_sub_bigint() {
+        let n_tests = 100;
+        let mut rng = OsRng {};
+
+        let mut prover_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+        for _ in 0..n_tests {
+            // Sample two random elements and a modulus, allocate one in the constraint
+            // system and add the other directly as a biguint
+            let random_elem1 = random_biguint(&mut rng);
+            let random_elem2 = random_biguint(&mut rng);
+            let random_mod = random_biguint(&mut rng);
+            let mut expected_bigint = if random_elem1.gt(&random_elem2) {
+                &random_elem1 - &random_elem2
+            } else {
+                &random_mod - (&random_elem2 % &random_mod) + (&random_elem1 % &random_mod)
+            };
+            expected_bigint %= &random_mod;
+
+            let nonnative = NonNativeElementVar::from_bigint(random_elem1, random_mod, &mut prover);
+            let res = NonNativeElementVar::subtract_bigint(&nonnative, &random_elem2, &mut prover);
 
             let res_bigint = res.as_bigint(&prover);
             assert_eq!(res_bigint, expected_bigint);
