@@ -2,7 +2,7 @@
 
 use std::iter;
 
-use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
+use crypto::fields::{bigint_to_scalar_bits, biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -212,6 +212,51 @@ impl NonNativeElementVar {
         }
 
         res
+    }
+
+    /// Compute and constrain the bit decomposition of the input
+    ///
+    /// The generic constant `D` represents the bitlength of the input
+    pub fn to_bits<const D: usize, CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Vec<Variable> {
+        let self_bigint = Self::as_bigint(&self, cs);
+        let bits = bigint_to_scalar_bits::<D>(&self_bigint.into());
+
+        // Allocate all the variables in the constraint system
+        let mut allocated_bits = Vec::with_capacity(D);
+        for bit in bits.iter() {
+            allocated_bits.push(cs.allocate(Some(*bit)).unwrap());
+        }
+
+        // Reconstruct the words underlying the non-native var and constrain equality
+        // Bits are returned in little-endian order
+        let mut words = Vec::with_capacity(self.words.len());
+        let mut curr_word: LinearCombination = Variable::Zero().into();
+        for (index, bit) in bits.iter().enumerate().take(D) {
+            // The index of the bit within the current word
+            let bit_index = index % WORD_SIZE;
+
+            // Cut a new complete word if we have filled one to bit capacity
+            if index > 0 && bit_index == 0 {
+                words.push(curr_word);
+                curr_word = Variable::Zero().into();
+            }
+
+            let shift_scalar = biguint_to_scalar(&(BigUint::from(1u8) << bit_index));
+            curr_word += shift_scalar * bit;
+        }
+
+        // Add the last word
+        words.push(curr_word);
+
+        // Constrain the reconstructed output to equal the input
+        for word_index in 0..repr_word_width(&(BigUint::from(1u8) << D)) {
+            cs.constrain(words[word_index].to_owned() - self.words[word_index]);
+        }
+
+        allocated_bits
     }
 
     /// Constrain two non-native field elements to equal one another
@@ -579,11 +624,13 @@ mod nonnative_tests {
     use itertools::Itertools;
     use merlin::Transcript;
     use mpc_bulletproof::{
-        r1cs::{Prover, R1CSProof, Variable, Verifier},
+        r1cs::{ConstraintSystem, Prover, R1CSProof, Variable, Verifier},
         BulletproofGens, PedersenGens,
     };
+    use mpc_ristretto::mpc_scalar::scalar_to_u64;
     use num_bigint::{BigInt, BigUint, Sign};
     use num_primes::Generator;
+    use rand::{thread_rng, Rng};
     use rand_core::{CryptoRng, OsRng, RngCore};
 
     use crate::{
@@ -1039,6 +1086,41 @@ mod nonnative_tests {
                 &mut prover,
             );
             assert_eq!(nonnative_elem.as_bigint(&prover), expected_bigint);
+        }
+    }
+
+    /// Test converting to and from a bit representation
+    #[test]
+    fn test_to_bits() {
+        // Generate a series of random bits
+        let n_tests = 100;
+        let n_bits = 256;
+        let mut rng = thread_rng();
+
+        let mut prover_transcript = Transcript::new(&TRANSCRIPT_SEED.as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+        for _ in 0..n_tests {
+            // Generate a random bitstring
+            let rand_bits: Vec<u8> = (0..n_bits).map(|_| rng.gen_bool(0.5).into()).collect_vec();
+            // Reconstruct the expected value
+            let mut expected_bigint = BigUint::from(0u8);
+            for bit in rand_bits.iter().rev() {
+                expected_bigint = 2u8 * expected_bigint + bit;
+            }
+
+            let field_mod = FieldMod::from_modulus(BigUint::from(1u8) << 256);
+            let nonnative_expected =
+                NonNativeElementVar::from_bigint(expected_bigint, field_mod, &mut prover);
+
+            // Deconstruct the nonnative into bits
+            let nonnative_bits = nonnative_expected.to_bits::<256, _>(&mut prover);
+
+            for i in 0..n_bits {
+                let bit = scalar_to_u64(&prover.eval(&nonnative_bits[i].into()));
+                assert_eq!(bit, rand_bits[i] as u64, "bits differ at index {:?}", i);
+            }
         }
     }
 
