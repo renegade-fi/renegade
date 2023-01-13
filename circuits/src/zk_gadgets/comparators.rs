@@ -5,7 +5,10 @@ use std::marker::PhantomData;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
-    r1cs::{LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Verifier},
+    r1cs::{
+        ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
+        Variable, Verifier,
+    },
     r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem},
     BulletproofGens,
 };
@@ -18,6 +21,106 @@ use crate::{
     mpc_gadgets::bits::{scalar_to_bits_le, to_bits_le},
     SingleProverCircuit, POSITIVE_SCALAR_MAX_BITS,
 };
+
+/// A gadget that returns whether a value is equal to zero
+///
+/// Its output is Variable::One() if the input is equal to zero,
+/// or Variable::Zero() if not
+#[derive(Clone, Debug)]
+pub struct EqZeroGadget {}
+impl EqZeroGadget {
+    /// Computes whether the given input is equal to zero
+    ///
+    /// Relies on the fact that modulo a prime field, all elements (execept zero)
+    /// have a valid multiplicative inverse
+    pub fn eq_zero<L, CS>(cs: &mut CS, val: L) -> Variable
+    where
+        CS: RandomizableConstraintSystem,
+        L: Into<LinearCombination> + Clone,
+    {
+        // Compute the inverse of the value outside the constraint
+        let val_lc: LinearCombination = val.into();
+        let val_eval = cs.eval(&val_lc);
+
+        let (is_zero, inverse) = if val_eval == Scalar::zero() {
+            (Scalar::one(), Scalar::zero())
+        } else {
+            (Scalar::zero(), val_eval.invert())
+        };
+
+        // Constrain the inverse to be computed correctly and such that
+        //  is_zero == 1 - inv * val
+        // If the input is zero, inv * val should be zero, and is_zero should be one
+        // If the input is non-zero, inv * val should be one, and is_zero should be zero
+        let is_zero_var = cs.allocate(Some(is_zero)).unwrap();
+        let inv_var = cs.allocate(Some(inverse)).unwrap();
+        let (_, _, val_times_inv) = cs.multiply(val_lc.clone(), inv_var.into());
+        cs.constrain(is_zero_var - Scalar::one() + val_times_inv);
+
+        // Constrain the input times the output to equal zero, this handles the edge case in the
+        // above constraint in which the value is one, the prover assigns inv and is_zero such
+        // that inv is neither zero nor one
+        // I.e. the only way to satisfy this constraint when the value is non-zero is if is_zero == 0
+        let (_, _, in_times_out) = cs.multiply(val_lc, is_zero_var.into());
+        cs.constrain(in_times_out.into());
+
+        is_zero_var
+    }
+}
+
+impl SingleProverCircuit for EqZeroGadget {
+    type Statement = bool;
+    type Witness = Scalar;
+    type WitnessCommitment = CompressedRistretto;
+
+    const BP_GENS_CAPACITY: usize = 32;
+
+    fn prove(
+        witness: Self::Witness,
+        statement: Self::Statement,
+        mut prover: Prover,
+    ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
+        // Commit to the witness
+        let mut rng = OsRng {};
+        let (witness_comm, witness_var) = prover.commit(witness, Scalar::random(&mut rng));
+
+        // Commit to the statement
+        let (_, expected_var) = prover.commit_public(Scalar::from(statement as u8));
+
+        // Test equality to zero and constrain this to be expected
+        let eq_zero = EqZeroGadget::eq_zero(&mut prover, witness_var);
+        prover.constrain(eq_zero - expected_var);
+
+        // Prover the statement
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
+
+        Ok((witness_comm, proof))
+    }
+
+    fn verify(
+        witness_commitment: Self::WitnessCommitment,
+        statement: Self::Statement,
+        proof: R1CSProof,
+        mut verifier: Verifier,
+    ) -> Result<(), VerifierError> {
+        // Commit to the witness
+        let witness_var = verifier.commit(witness_commitment);
+
+        // Commit to the statement
+        let expected_var = verifier.commit_public(Scalar::from(statement as u8));
+
+        // Test equality to zero and constrain this to be expected
+        let eq_zero = EqZeroGadget::eq_zero(&mut verifier, witness_var);
+        verifier.constrain(eq_zero - expected_var);
+
+        // Verify the proof
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        verifier
+            .verify(&proof, &bp_gens)
+            .map_err(VerifierError::R1CS)
+    }
+}
 
 /// A gadget that enforces a value of a given bitlength is positive
 #[derive(Clone, Debug)]
@@ -276,9 +379,28 @@ mod comparators_test {
     use crate::{errors::VerifierError, test_helpers::bulletproof_prove_and_verify};
 
     use super::{
-        GreaterThanEqGadget, GreaterThanEqWitness, GreaterThanEqZeroGadget,
+        EqZeroGadget, GreaterThanEqGadget, GreaterThanEqWitness, GreaterThanEqZeroGadget,
         GreaterThanEqZeroWitness,
     };
+
+    /// Test the equal zero gadget
+    #[test]
+    fn test_eq_zero() {
+        // First tests with a non-zero value
+        let mut rng = OsRng {};
+        let mut witness = Scalar::random(&mut rng);
+        let mut statement = false; /* non-zero */
+
+        let res = bulletproof_prove_and_verify::<EqZeroGadget>(witness, statement);
+        assert!(res.is_ok());
+
+        // Now test with the zero value
+        witness = Scalar::zero();
+        statement = true; /* zero */
+
+        let res = bulletproof_prove_and_verify::<EqZeroGadget>(witness, statement);
+        assert!(res.is_ok());
+    }
 
     /// Test the greater than zero constraint
     #[test]
