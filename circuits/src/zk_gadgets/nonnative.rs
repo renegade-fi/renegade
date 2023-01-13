@@ -214,14 +214,14 @@ impl NonNativeElementVar {
         res
     }
 
-    /// Compute and constrain the bit decomposition of the input
+    /// Compute and constrain the little-endian bit decomposition of the input
     ///
     /// The generic constant `D` represents the bitlength of the input
     pub fn to_bits<const D: usize, CS: RandomizableConstraintSystem>(
         &self,
         cs: &mut CS,
     ) -> Vec<Variable> {
-        let self_bigint = Self::as_bigint(&self, cs);
+        let self_bigint = Self::as_bigint(self, cs);
         let bits = bigint_to_scalar_bits::<D>(&self_bigint.into());
 
         // Allocate all the variables in the constraint system
@@ -252,11 +252,60 @@ impl NonNativeElementVar {
         words.push(curr_word);
 
         // Constrain the reconstructed output to equal the input
+        #[allow(clippy::needless_range_loop)]
         for word_index in 0..repr_word_width(&(BigUint::from(1u8) << D)) {
             cs.constrain(words[word_index].to_owned() - self.words[word_index]);
         }
 
         allocated_bits
+    }
+
+    /// Return a variable that is set to 1 if the input is 0, otherwise 0
+    ///
+    /// Relies on the fact that over a prime field, all elements (except zero) have
+    /// a valid multiplicative inverse
+    ///
+    /// See the circomlib implementation which takes a similar approach:
+    /// https://github.com/iden3/circomlib/blob/master/circuits/comparators.circom#L24
+    pub fn is_zero<CS: RandomizableConstraintSystem>(&self, cs: &mut CS) -> Variable {
+        assert!(
+            self.field_mod.is_prime,
+            "is_zero can only be tested over a prime field"
+        );
+
+        // Compute the multiplicative inverse of the input
+        let self_bigint = self.as_bigint(cs);
+
+        let (is_zero, self_inv) = if self_bigint == BigUint::from(0u8) {
+            (Variable::One(), BigUint::from(0u8))
+        } else {
+            (
+                Variable::Zero(),
+                mod_inv_prime(&self_bigint, &self.field_mod.modulus),
+            )
+        };
+
+        // Allocate the inverse in the constraint system
+        let inv_nonnative = Self::from_bigint(self_inv, self.field_mod.clone(), cs);
+
+        // If the value was non-zero, multiplying by its inverse should give 1, if the value
+        // is zero, multiplying by the "inverse" should give zero
+        // We can flip these expected outputs via the line f(x) = 1 - x to flip the boolean result
+        let val_times_inv = Self::mul(&self, &inv_nonnative, cs);
+        let one_minus_val = Self::add_bigint(
+            &Self::additive_inverse(&val_times_inv, cs),
+            &BigUint::from(1u8),
+            cs,
+        );
+        Self::constrain_equal_biguint(&one_minus_val, &BigUint::from(0u8), cs);
+
+        // We then constrain x * is_zero(x) == 0, this ensures that if the value is non-zero, the
+        // prover cannot maliciously assign the inverse and the output such that the constraint
+        // above is satisfied for is_zero \notin {0, 1}
+        let mul_res = Self::mul_var(self, is_zero, cs);
+        Self::constrain_zero(&mul_res, cs);
+
+        is_zero
     }
 
     /// Constrain two non-native field elements to equal one another
@@ -270,6 +319,11 @@ impl NonNativeElementVar {
         for (lhs_word, rhs_word) in left_hand_words.zip(right_hand_words).take(max_len) {
             cs.constrain(*lhs_word - *rhs_word);
         }
+    }
+
+    /// Constrain a non-native field element to equal zero
+    pub fn constrain_zero<CS: RandomizableConstraintSystem>(val: &Self, cs: &mut CS) {
+        Self::constrain_equal_biguint(val, &BigUint::from(0u8), cs);
     }
 
     /// Constrain a non-native field element to equal the given BigUint
@@ -420,6 +474,19 @@ impl NonNativeElementVar {
             words: new_words,
             field_mod: lhs.field_mod.clone(),
         }
+    }
+
+    /// Multiply a nonnative variable with a Variable
+    pub fn mul_var<CS: RandomizableConstraintSystem>(
+        lhs: &Self,
+        rhs: Variable,
+        cs: &mut CS,
+    ) -> Self {
+        let rhs_nonnative = Self {
+            words: vec![rhs],
+            field_mod: lhs.field_mod.clone(),
+        };
+        Self::mul(lhs, &rhs_nonnative, cs)
     }
 
     /// Multiply together two non-native field elements
