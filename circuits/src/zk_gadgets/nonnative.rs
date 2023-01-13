@@ -217,6 +217,7 @@ impl NonNativeElementVar {
     /// Compute and constrain the little-endian bit decomposition of the input
     ///
     /// The generic constant `D` represents the bitlength of the input
+    /// TODO: We should also constrain each output to be binary
     pub fn to_bits<const D: usize, CS: RandomizableConstraintSystem>(
         &self,
         cs: &mut CS,
