@@ -1,6 +1,9 @@
 //! Groups gadget definitions for non-native field arithmetic
 
-use std::iter;
+use std::{
+    iter::{self, Chain, Cloned, Repeat},
+    slice::Iter,
+};
 
 use crypto::fields::{bigint_to_scalar_bits, biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::scalar::Scalar;
@@ -9,6 +12,8 @@ use lazy_static::lazy_static;
 use miller_rabin::is_prime;
 use mpc_bulletproof::r1cs::{LinearCombination, RandomizableConstraintSystem, Variable};
 use num_bigint::BigUint;
+
+use super::select::CondSelectVectorGadget;
 
 /// The number of bits in each word, we use 126 to ensure that
 /// multiplications in the base field (dalek `Scalar`s) will not
@@ -129,17 +134,20 @@ impl FieldMod {
 pub struct NonNativeElementVar {
     /// The words representing the underlying field
     /// stored in little endian order
-    pub(super) words: Vec<Variable>,
+    pub(super) words: Vec<LinearCombination>,
     /// The prime-power modulus of the field
     pub(super) field_mod: FieldMod,
 }
 
 impl NonNativeElementVar {
     /// Create a new value given a set of pre-allocated words
-    pub fn new(mut words: Vec<Variable>, field_mod: FieldMod) -> Self {
+    pub fn new(mut words: Vec<LinearCombination>, field_mod: FieldMod) -> Self {
         let field_words = repr_word_width(&field_mod.modulus);
         if field_words > words.len() {
-            words.append(&mut vec![Variable::Zero(); field_words - words.len()]);
+            words.append(&mut vec![
+                Variable::Zero().into();
+                field_words - words.len()
+            ]);
         }
         Self { words, field_mod }
     }
@@ -160,7 +168,7 @@ impl NonNativeElementVar {
             // Allocate the next 126 bits in the constraint system
             let next_word = biguint_to_scalar(&(&value & &*BIGINT_WORD_MASK));
             let word_var = cs.allocate(Some(next_word)).unwrap();
-            words.push(word_var);
+            words.push(word_var.into());
 
             value >>= WORD_SIZE;
         }
@@ -192,13 +200,24 @@ impl NonNativeElementVar {
 
         let allocated_words = words
             .iter()
-            .map(|word| cs.allocate(Some(*word)).unwrap())
+            .map(|word| cs.allocate(Some(*word)).unwrap().into())
             .collect_vec();
 
         Self {
             words: allocated_words,
             field_mod,
         }
+    }
+
+    /// Generate an iterator over words
+    ///
+    /// Chains the iterator with an infinitely long repetition of the zero
+    /// linear combination
+    fn word_iterator(&self) -> Chain<Cloned<Iter<LinearCombination>>, Repeat<LinearCombination>> {
+        self.words
+            .iter()
+            .cloned()
+            .chain(iter::repeat(Variable::Zero().into()))
     }
 
     /// Evalute the non-native variable in the given constraint system, and return the
@@ -255,7 +274,7 @@ impl NonNativeElementVar {
         // Constrain the reconstructed output to equal the input
         #[allow(clippy::needless_range_loop)]
         for word_index in 0..repr_word_width(&(BigUint::from(1u8) << D)) {
-            cs.constrain(words[word_index].to_owned() - self.words[word_index]);
+            cs.constrain(words[word_index].to_owned() - self.words[word_index].to_owned());
         }
 
         allocated_bits
@@ -309,16 +328,43 @@ impl NonNativeElementVar {
         is_zero
     }
 
+    /// Select between two non-native field elements
+    pub fn cond_select<L, CS>(
+        selector: L,
+        lhs: &Self,
+        rhs: &Self,
+        cs: &mut CS,
+    ) -> NonNativeElementVar
+    where
+        L: Into<LinearCombination>,
+        CS: RandomizableConstraintSystem,
+    {
+        // Pad the length of non-native vars such that they have the same length
+        let max_len = lhs.words.len().max(rhs.words.len());
+        let lhs_words = lhs.word_iterator();
+        let rhs_words = rhs.word_iterator();
+
+        let selector_lc: LinearCombination = selector.into();
+        let selected_words = CondSelectVectorGadget::select(
+            cs,
+            &lhs_words.take(max_len).collect_vec(),
+            &rhs_words.take(max_len).collect_vec(),
+            selector_lc.clone(),
+        );
+
+        Self::new(selected_words, lhs.field_mod.clone())
+    }
+
     /// Constrain two non-native field elements to equal one another
     pub fn constrain_equal<CS: RandomizableConstraintSystem>(lhs: &Self, rhs: &Self, cs: &mut CS) {
         // Pad the inputs to both be of the length of the longer input
         let max_len = lhs.words.len().max(rhs.words.len());
-        let left_hand_words = lhs.words.iter().chain(iter::repeat(&Variable::Zero()));
-        let right_hand_words = rhs.words.iter().chain(iter::repeat(&Variable::Zero()));
+        let lhs_words = lhs.word_iterator();
+        let rhs_words = rhs.word_iterator();
 
         // Compare each word in the non-native element
-        for (lhs_word, rhs_word) in left_hand_words.zip(right_hand_words).take(max_len) {
-            cs.constrain(*lhs_word - *rhs_word);
+        for (lhs_word, rhs_word) in lhs_words.zip(rhs_words).take(max_len) {
+            cs.constrain(lhs_word - rhs_word);
         }
     }
 
@@ -337,14 +383,14 @@ impl NonNativeElementVar {
 
         // Equalize the word width of the two values
         let max_len = biguint_words.len().max(lhs.words.len());
-        let lhs_words = lhs.words.iter().chain(iter::repeat(&Variable::Zero()));
+        let lhs_words = lhs.word_iterator();
         let rhs_words = biguint_words
             .into_iter()
             .chain(iter::repeat(Scalar::zero()));
 
         // Constrain all words to equal one another
         for (lhs_word, rhs_word) in lhs_words.zip(rhs_words).take(max_len) {
-            cs.constrain(*lhs_word - rhs_word);
+            cs.constrain(lhs_word - rhs_word);
         }
     }
 
@@ -404,21 +450,21 @@ impl NonNativeElementVar {
 
         // Pad both left and right hand side to the same length
         let max_word_width = lhs.words.len().max(rhs.words.len());
-        let lhs_word_iter = lhs.words.iter().chain(iter::repeat(&Variable::Zero()));
-        let rhs_word_iter = rhs.words.iter().chain(iter::repeat(&Variable::Zero()));
+        let lhs_words = lhs.word_iterator();
+        let rhs_words = rhs.word_iterator();
 
         // Add word by word with carry
         let mut carry = Variable::Zero();
         let mut new_words = Vec::with_capacity(max_word_width + 1);
-        for (lhs_word, rhs_word) in lhs_word_iter.zip(rhs_word_iter).take(max_word_width) {
+        for (lhs_word, rhs_word) in lhs_words.zip(rhs_words).take(max_word_width) {
             // Compute the word-wise sum and reduce to fit into a single word
-            let word_res = *lhs_word + *rhs_word + carry;
+            let word_res = lhs_word + rhs_word + carry;
             let div_rem = div_rem_word(word_res.clone(), &BIGINT_2_TO_WORD_SIZE, cs);
 
             carry = div_rem.0;
-            new_words.push(div_rem.1);
+            new_words.push(div_rem.1.into());
         }
-        new_words.push(carry);
+        new_words.push(carry.into());
 
         // Collect this into a new non-native element and reduce it
         NonNativeElementVar {
@@ -453,7 +499,7 @@ impl NonNativeElementVar {
             .words
             .iter()
             .cloned()
-            .chain(iter::repeat(Variable::Zero()));
+            .chain(iter::repeat(Variable::Zero().into()));
         let rhs_word_iterator = rhs_words
             .iter()
             .cloned()
@@ -466,10 +512,10 @@ impl NonNativeElementVar {
             let word_res = lhs_word + rhs_word + carry;
             let div_rem = div_rem_word(word_res, &BIGINT_2_TO_WORD_SIZE, cs);
 
-            new_words.push(div_rem.1);
+            new_words.push(div_rem.1.into());
             carry = div_rem.0;
         }
-        new_words.push(carry);
+        new_words.push(carry.into());
 
         Self {
             words: new_words,
@@ -484,7 +530,7 @@ impl NonNativeElementVar {
         cs: &mut CS,
     ) -> Self {
         let rhs_nonnative = Self {
-            words: vec![rhs],
+            words: vec![rhs.into()],
             field_mod: lhs.field_mod.clone(),
         };
         Self::mul(lhs, &rhs_nonnative, cs)
@@ -520,11 +566,11 @@ impl NonNativeElementVar {
         let mut terms = vec![Vec::new(); n_result_words];
         let mut carries = vec![Vec::new(); n_result_words + 1];
 
-        for (lhs_index, lhs_word) in lhs.words.iter().enumerate() {
-            for (rhs_index, rhs_word) in rhs.words.iter().enumerate() {
+        for (lhs_index, lhs_word) in lhs.word_iterator().enumerate().take(lhs.words.len()) {
+            for (rhs_index, rhs_word) in rhs.word_iterator().enumerate().take(rhs.words.len()) {
                 // Compute the term and reduce it modulo the field
                 let (_, _, term_direct_product) =
-                    cs.multiply((*lhs_word).into(), (*rhs_word).into());
+                    cs.multiply(lhs_word.to_owned(), rhs_word.to_owned());
                 let (term_carry, term) =
                     div_rem_word(term_direct_product, &BIGINT_2_TO_WORD_SIZE, cs);
 
@@ -549,9 +595,9 @@ impl NonNativeElementVar {
             // Reduce this sum and add any carry to the next term's carries
             let div_rem_res = div_rem_word(summed_word, &BIGINT_2_TO_WORD_SIZE, cs);
             carry = div_rem_res.0;
-            res_words.push(div_rem_res.1);
+            res_words.push(div_rem_res.1.into());
         }
-        res_words.push(carry);
+        res_words.push(carry.into());
 
         Self {
             words: res_words,
@@ -594,7 +640,7 @@ impl NonNativeElementVar {
         for (lhs_index, lhs_word) in lhs.words.iter().enumerate() {
             for (rhs_index, rhs_word) in rhs_words.iter().enumerate() {
                 // Compute the term and reduce it modulo the field
-                let term_direct_product = *lhs_word * *rhs_word;
+                let term_direct_product = lhs_word.to_owned() * rhs_word.to_owned();
                 let (term_carry, term) =
                     div_rem_word(term_direct_product, &BIGINT_2_TO_WORD_SIZE, cs);
 
@@ -619,7 +665,7 @@ impl NonNativeElementVar {
             // Reduce this sum and add any carry to the next term's carries
             let div_rem_res = div_rem_word(summed_word, &BIGINT_2_TO_WORD_SIZE, cs);
             carry = div_rem_res.0;
-            res_words.push(div_rem_res.1);
+            res_words.push(div_rem_res.1.into());
         }
 
         Self {
@@ -692,7 +738,7 @@ mod nonnative_tests {
     use itertools::Itertools;
     use merlin::Transcript;
     use mpc_bulletproof::{
-        r1cs::{ConstraintSystem, Prover, R1CSProof, Variable, Verifier},
+        r1cs::{ConstraintSystem, LinearCombination, Prover, R1CSProof, Variable, Verifier},
         BulletproofGens, PedersenGens,
     };
     use mpc_ristretto::mpc_scalar::scalar_to_u64;
@@ -772,7 +818,9 @@ mod nonnative_tests {
                 .map(|word| prover.commit(*word, Scalar::random(rng)))
                 .unzip();
 
-            let lhs_var = NonNativeElementVar::new(lhs_var, self.field_mod.clone());
+            let lhs_var_lcs: Vec<LinearCombination> =
+                lhs_var.into_iter().map(Into::into).collect_vec();
+            let lhs_var = NonNativeElementVar::new(lhs_var_lcs, self.field_mod.clone());
 
             let rhs_words = bigint_to_scalar_words(self.rhs.clone());
             let (rhs_comm, rhs_var): (Vec<CompressedRistretto>, Vec<Variable>) = rhs_words
@@ -780,7 +828,9 @@ mod nonnative_tests {
                 .map(|word| prover.commit(*word, Scalar::random(rng)))
                 .unzip();
 
-            let rhs_var = NonNativeElementVar::new(rhs_var, self.field_mod.clone());
+            let rhs_var_lcs: Vec<LinearCombination> =
+                rhs_var.into_iter().map(Into::into).collect_vec();
+            let rhs_var = NonNativeElementVar::new(rhs_var_lcs, self.field_mod.clone());
 
             Ok((
                 FanIn2WitnessVar {
@@ -831,14 +881,20 @@ mod nonnative_tests {
                 .iter()
                 .map(|comm| verifier.commit(*comm))
                 .collect_vec();
-            let lhs = NonNativeElementVar::new(lhs_vars, self.field_mod.clone());
+
+            let lhs_var_lcs: Vec<LinearCombination> =
+                lhs_vars.into_iter().map(Into::into).collect_vec();
+            let lhs = NonNativeElementVar::new(lhs_var_lcs, self.field_mod.clone());
 
             let rhs_vars = self
                 .rhs
                 .iter()
                 .map(|comm| verifier.commit(*comm))
                 .collect_vec();
-            let rhs = NonNativeElementVar::new(rhs_vars, self.field_mod.clone());
+
+            let rhs_var_lcs: Vec<LinearCombination> =
+                rhs_vars.into_iter().map(Into::into).collect_vec();
+            let rhs = NonNativeElementVar::new(rhs_var_lcs, self.field_mod.clone());
 
             Ok(FanIn2WitnessVar { lhs, rhs })
         }
@@ -867,8 +923,13 @@ mod nonnative_tests {
                 .iter()
                 .map(|word| prover.commit_public(*word))
                 .unzip();
+
+            let statement_word_lcs: Vec<LinearCombination> = statement_word_vars
+                .into_iter()
+                .map(Into::into)
+                .collect_vec();
             let expected_nonnative =
-                NonNativeElementVar::new(statement_word_vars, witness.field_mod);
+                NonNativeElementVar::new(statement_word_lcs, witness.field_mod);
 
             // Add the two witness values
             let addition_result =
@@ -902,8 +963,13 @@ mod nonnative_tests {
                 .iter()
                 .map(|word| verifier.commit_public(*word))
                 .collect_vec();
+
+            let statement_word_lcs: Vec<LinearCombination> = statement_word_vars
+                .into_iter()
+                .map(Into::into)
+                .collect_vec();
             let expected_nonnative =
-                NonNativeElementVar::new(statement_word_vars, witness_commitment.field_mod);
+                NonNativeElementVar::new(statement_word_lcs, witness_commitment.field_mod);
 
             // Add the two witness values
             let addition_result =
@@ -947,8 +1013,13 @@ mod nonnative_tests {
                 .iter()
                 .map(|word| prover.commit_public(*word))
                 .unzip();
+
+            let statement_word_lcs: Vec<LinearCombination> = statement_word_vars
+                .into_iter()
+                .map(Into::into)
+                .collect_vec();
             let expected_nonnative =
-                NonNativeElementVar::new(statement_word_vars, witness.field_mod);
+                NonNativeElementVar::new(statement_word_lcs, witness.field_mod);
 
             // Add the two witness values
             let mul_result =
@@ -977,8 +1048,13 @@ mod nonnative_tests {
                 .iter()
                 .map(|word| verifier.commit_public(*word))
                 .collect_vec();
+
+            let statement_word_lcs: Vec<LinearCombination> = statement_word_vars
+                .into_iter()
+                .map(Into::into)
+                .collect_vec();
             let expected_nonnative =
-                NonNativeElementVar::new(statement_word_vars, witness_commitment.field_mod);
+                NonNativeElementVar::new(statement_word_lcs, witness_commitment.field_mod);
 
             // Add the two witness values
             let mul_result =
@@ -1016,8 +1092,13 @@ mod nonnative_tests {
                 .iter()
                 .map(|word| prover.commit_public(*word))
                 .unzip();
+
+            let statement_word_lcs: Vec<LinearCombination> = statement_word_vars
+                .into_iter()
+                .map(Into::into)
+                .collect_vec();
             let expected_nonnative =
-                NonNativeElementVar::new(statement_word_vars, witness.field_mod);
+                NonNativeElementVar::new(statement_word_lcs, witness.field_mod);
 
             // Add the two witness values
             let sub_result =
@@ -1046,8 +1127,13 @@ mod nonnative_tests {
                 .iter()
                 .map(|word| verifier.commit_public(*word))
                 .collect_vec();
+
+            let statement_word_lcs: Vec<LinearCombination> = statement_word_vars
+                .into_iter()
+                .map(Into::into)
+                .collect_vec();
             let expected_nonnative =
-                NonNativeElementVar::new(statement_word_vars, witness_commitment.field_mod);
+                NonNativeElementVar::new(statement_word_lcs, witness_commitment.field_mod);
 
             // Add the two witness values
             let sub_result =
@@ -1192,6 +1278,49 @@ mod nonnative_tests {
         }
     }
 
+    #[test]
+    /// Tests the conditional select implementation
+    fn test_cond_select() {
+        let n_tests = 100;
+        let mut rng = OsRng {};
+
+        // Use the curve25519 field modulus
+        let modulus: BigUint = (BigUint::from(1u8) << 255) - 19u8;
+        let field_mod = FieldMod::from_modulus(modulus.clone());
+
+        let mut prover_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+        for _ in 0..n_tests {
+            // Sample two random non-native field elements and randomly select between
+            let random_val1 = random_biguint(&mut rng) % &modulus;
+            let random_val2 = random_biguint(&mut rng) % &modulus;
+
+            let nonnative1 = NonNativeElementVar::from_bigint(
+                random_val1.clone(),
+                field_mod.clone(),
+                &mut prover,
+            );
+            let nonnative2 = NonNativeElementVar::from_bigint(
+                random_val2.clone(),
+                field_mod.clone(),
+                &mut prover,
+            );
+
+            // Randomly sample a selector
+            let (selector, expected) = if rng.next_u32() % 2 == 0 {
+                (Variable::One(), random_val1.clone())
+            } else {
+                (Variable::Zero(), random_val2.clone())
+            };
+
+            let res =
+                NonNativeElementVar::cond_select(selector, &nonnative1, &nonnative2, &mut prover);
+            assert_eq!(expected, res.as_bigint(&mut prover));
+        }
+    }
+
     /// Tests reducing a non-native field element modulo its field
     #[test]
     fn test_reduce() {
@@ -1212,7 +1341,7 @@ mod nonnative_tests {
             let words = bigint_to_scalar_words(random_val);
             let allocated_words = words
                 .iter()
-                .map(|word| prover.commit_public(*word).1)
+                .map(|word| prover.commit_public(*word).1.into())
                 .collect_vec();
 
             let mut val =
