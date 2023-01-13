@@ -1,9 +1,12 @@
 //! Groups gadget definitions for arithmetic on (possibly twisted) Edwards curves
 
-use mpc_bulletproof::r1cs::RandomizableConstraintSystem;
+use mpc_bulletproof::r1cs::{LinearCombination, RandomizableConstraintSystem, Variable};
 use num_bigint::BigUint;
 
-use super::nonnative::{FieldMod, NonNativeElementVar};
+use super::{
+    comparators::EqZeroGadget,
+    nonnative::{FieldMod, NonNativeElementVar},
+};
 
 /// Represents a point on a (possibly twisted) Edwards curve
 ///
@@ -20,6 +23,8 @@ use super::nonnative::{FieldMod, NonNativeElementVar};
 /// by allowing inverses (which are computed outside the circuit and implicitly
 /// constrained via a single multiplication). This gives us the 5M + 2I which is
 /// an equivalent number of constraints to 7M
+///
+/// TODO: Re-evaluate this; we may be better off with the extended TE coordinate system
 #[derive(Clone, Debug)]
 pub struct EdwardsPoint {
     /// The x coordinate of the point
@@ -33,6 +38,16 @@ impl EdwardsPoint {
     /// constraint system
     pub fn new(x: NonNativeElementVar, y: NonNativeElementVar) -> Self {
         Self { x, y }
+    }
+
+    /// Get the field modulus that this point is defined in
+    pub fn field_mod(&self) -> FieldMod {
+        self.x.field_mod.clone()
+    }
+
+    /// Allocate the additive identity in the Edwards group into the constraint system
+    pub fn zero<CS: RandomizableConstraintSystem>(field_mod: FieldMod, cs: &mut CS) -> Self {
+        Self::new_from_bigints(BigUint::from(0u8), BigUint::from(1u8), field_mod, cs)
     }
 
     /// Create a new EdwardsPoint from affine coordinates represented by `BigUint`s
@@ -60,6 +75,23 @@ impl EdwardsPoint {
         let y_bigint = self.y.as_bigint(cs);
 
         (x_bigint, y_bigint)
+    }
+
+    /// Select between two Edwards points, i.e. implements if selector { pt1 } else { pt2 }
+    pub fn cond_select<L, CS>(
+        selector: L,
+        pt1: &EdwardsPoint,
+        pt2: &EdwardsPoint,
+        cs: &mut CS,
+    ) -> EdwardsPoint
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        let x = NonNativeElementVar::cond_select(selector.clone(), &pt1.x, &pt2.x, cs);
+        let y = NonNativeElementVar::cond_select(selector, &pt1.y, &pt2.y, cs);
+
+        Self { x, y }
     }
 }
 
@@ -121,6 +153,78 @@ impl TwistedEdwardsCurve {
 
         EdwardsPoint { x: x3, y: y3 }
     }
+
+    /// Multiply an Edwards point by a scalar
+    ///
+    /// This gadget takes a generic constant `SCALAR_BITS` indicating the number of bits
+    /// needed to represent the scalar. This gives a bound on the recursion.
+    pub fn scalar_mul<const SCALAR_BITS: usize, CS: RandomizableConstraintSystem>(
+        &self,
+        scalar: &NonNativeElementVar,
+        ec_point: &EdwardsPoint,
+        cs: &mut CS,
+    ) -> EdwardsPoint {
+        if SCALAR_BITS == 0 {
+            return EdwardsPoint::zero(scalar.field_mod.clone(), cs);
+        }
+
+        // Decompose the scalar into bits allocated in the constraint system, little endian
+        // This avoids the need to recompute an `is_odd` gadget at every iteration,
+        // effectively we batch this computation into a bit-decomposition
+        let scalar_bits = scalar.to_bits::<SCALAR_BITS, _>(cs);
+        self.scalar_mul_impl(ec_point, &scalar_bits, cs)
+    }
+
+    /// A recursive helper method to implement scalar multiplication over an already
+    /// bit-decomposed scalar.
+    fn scalar_mul_impl<CS: RandomizableConstraintSystem>(
+        &self,
+        ec_point: &EdwardsPoint,
+        scalar_bits: &[Variable],
+        cs: &mut CS,
+    ) -> EdwardsPoint {
+        if scalar_bits.is_empty() {
+            return EdwardsPoint::zero(ec_point.field_mod(), cs);
+        }
+        // Recursively compute the result on the rest of the bits of the scalar
+        let recursive_result = self.scalar_mul_impl(ec_point, &scalar_bits[1..], cs);
+
+        // Double the recursive result, and add the original point to it if the value is odd
+        let doubled_recursive_res = self.add_points(&recursive_result, &recursive_result, cs);
+
+        // The lowest order bit represents whether the current recursive scalar is odd
+        let is_odd = scalar_bits[0].to_owned();
+
+        let identity = EdwardsPoint::zero(ec_point.field_mod(), cs);
+        let additive_term = EdwardsPoint::cond_select(is_odd, ec_point, &identity, cs);
+
+        let res = self.add_points(&doubled_recursive_res, &additive_term, cs);
+
+        // If the scalar is zero, mask the output with the identity point
+        let zero_mask = Self::all_bits_zero(scalar_bits, cs);
+        EdwardsPoint::cond_select(zero_mask, &identity, &res, cs)
+    }
+
+    /// A helper method to constrain the output variable to equal a boolean that is one if
+    /// all the elements in the vector are zero, or zero otherwise
+    ///
+    /// Assumes (for safety against overflow) that the inputs are binary, this should be
+    /// constrained elsewhere, e.g. in `to_bits`
+    fn all_bits_zero<L, CS>(bits: &[L], cs: &mut CS) -> Variable
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        // Compute the sum of the bits
+        let mut bit_sum: LinearCombination = Variable::Zero().into();
+        for bit in bits.iter() {
+            let bit_lc: LinearCombination = bit.clone().into();
+            bit_sum += bit_lc;
+        }
+
+        // Evaluate whether the sum is zero
+        EqZeroGadget::eq_zero(cs, bit_sum)
+    }
 }
 
 #[cfg(test)]
@@ -138,7 +242,7 @@ mod edwards_tests {
     use num_bigint::BigUint;
     use rand_core::{CryptoRng, OsRng, RngCore};
 
-    use crate::zk_gadgets::nonnative::FieldMod;
+    use crate::zk_gadgets::nonnative::{FieldMod, NonNativeElementVar};
 
     use super::{EdwardsPoint, TwistedEdwardsCurve};
 
@@ -236,5 +340,38 @@ mod edwards_tests {
             let res = curve.add_points(&pt1_allocated, &pt2_allocated, &mut prover);
             assert_points_equal(expected, res, &prover);
         }
+    }
+
+    /// Test multiplying a point by a scalar in a constraint system
+    #[test]
+    fn test_scalar_mul() {
+        let mut rng = OsRng {};
+
+        // Create a constraint system to allocate the points within
+        let mut prover_transcript = Transcript::new(&TRANSCRIPT_SEED.as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+        // Construct the curve
+        let curve = create_ed25519_repr();
+        let field_mod = FieldMod::new(BigUint::from(1u8) << 255 - 19u8, true /* is_prime */);
+
+        // Generate a random point and a random scalar
+        let random_point = ed25519_random_point(&mut rng);
+
+        let mut random_scalar_bytes = vec![0u8; 4];
+        rng.fill_bytes(&mut random_scalar_bytes);
+        let random_bigint = BigUint::from_bytes_le(&random_scalar_bytes) % &field_mod.modulus;
+
+        let expected = (random_point * Ed25519Scalar::from(random_bigint.clone())).into_affine();
+
+        // Perform the multiplication in the constraint system
+        let basepoint = ed25519_to_nonnative_edwards(random_point, &mut prover);
+        let alloc_scalar =
+            NonNativeElementVar::from_bigint(random_bigint, field_mod.clone(), &mut prover);
+
+        let res =
+            curve.scalar_mul::<32 /* SCALAR_BITS */, _>(&alloc_scalar, &basepoint, &mut prover);
+        assert_points_equal(expected, res, &mut prover);
     }
 }
