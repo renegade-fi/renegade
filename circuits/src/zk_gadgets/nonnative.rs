@@ -224,9 +224,9 @@ impl NonNativeElementVar {
     /// result as a bigint
     pub fn as_bigint<CS: RandomizableConstraintSystem>(&self, cs: &CS) -> BigUint {
         let mut res = BigUint::from(0u8);
-        for word in self.words.iter().rev().cloned() {
+        for word in self.words.iter().rev() {
             // Evaluate the underlying scalar representation of the word
-            let word_bigint = scalar_to_biguint(&cs.eval(&word.into()));
+            let word_bigint = scalar_to_biguint(&cs.eval(word));
             res = (res << WORD_SIZE) + word_bigint
         }
 
@@ -273,8 +273,14 @@ impl NonNativeElementVar {
 
         // Constrain the reconstructed output to equal the input
         #[allow(clippy::needless_range_loop)]
-        for word_index in 0..repr_word_width(&(BigUint::from(1u8) << D)) {
-            cs.constrain(words[word_index].to_owned() - self.words[word_index].to_owned());
+        let zero_lc: LinearCombination = Variable::Zero().into();
+        let reconstructed_word_iter = words.into_iter().chain(iter::repeat(zero_lc));
+        let self_words_iter = self.word_iterator();
+        for (reconstructed_word, self_word) in reconstructed_word_iter
+            .zip(self_words_iter)
+            .take(repr_word_width(&(BigUint::from(1u8) << D)))
+        {
+            cs.constrain(reconstructed_word - self_word);
         }
 
         allocated_bits
@@ -311,7 +317,7 @@ impl NonNativeElementVar {
         // If the value was non-zero, multiplying by its inverse should give 1, if the value
         // is zero, multiplying by the "inverse" should give zero
         // We can flip these expected outputs via the line f(x) = 1 - x to flip the boolean result
-        let val_times_inv = Self::mul(&self, &inv_nonnative, cs);
+        let val_times_inv = Self::mul(self, &inv_nonnative, cs);
         let one_minus_val = Self::add_bigint(
             &Self::additive_inverse(&val_times_inv, cs),
             &BigUint::from(1u8),
@@ -349,7 +355,7 @@ impl NonNativeElementVar {
             cs,
             &lhs_words.take(max_len).collect_vec(),
             &rhs_words.take(max_len).collect_vec(),
-            selector_lc.clone(),
+            selector_lc,
         );
 
         Self::new(selected_words, lhs.field_mod.clone())
