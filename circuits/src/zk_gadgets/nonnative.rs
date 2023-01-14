@@ -6,12 +6,13 @@ use std::{
 };
 
 use crypto::fields::{bigint_to_scalar_bits, biguint_to_scalar, scalar_to_biguint};
-use curve25519_dalek::scalar::Scalar;
+use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use miller_rabin::is_prime;
-use mpc_bulletproof::r1cs::{LinearCombination, RandomizableConstraintSystem, Variable};
+use mpc_bulletproof::r1cs::{LinearCombination, Prover, RandomizableConstraintSystem, Variable};
 use num_bigint::BigUint;
+use rand_core::{CryptoRng, RngCore};
 
 use super::select::CondSelectVectorGadget;
 
@@ -207,6 +208,59 @@ impl NonNativeElementVar {
             words: allocated_words,
             field_mod,
         }
+    }
+
+    /// commit to the given bigint in the constraint system and return a reference to the commitments
+    /// as well as the result
+    pub fn commit_witness<R>(
+        mut val: BigUint,
+        field_mod: FieldMod,
+        rng: &mut R,
+        cs: &mut Prover,
+    ) -> (Self, Vec<CompressedRistretto>)
+    where
+        R: RngCore + CryptoRng,
+    {
+        // Split the bigint into words
+        let field_words = repr_word_width(&field_mod.modulus);
+        let mut words = Vec::with_capacity(field_words);
+        let mut commitments = Vec::with_capacity(field_words);
+        for _ in 0..field_words {
+            // Allocate the next 126 bits in the constraint system
+            let next_word = biguint_to_scalar(&(&val & &*BIGINT_WORD_MASK));
+            let (next_word_commit, next_word_var) = cs.commit(next_word, Scalar::random(rng));
+
+            words.push(next_word_var.into());
+            commitments.push(next_word_commit);
+
+            val >>= WORD_SIZE;
+        }
+
+        (Self { words, field_mod }, commitments)
+    }
+
+    /// Commit to the given public bigint in the constraint system and return a
+    /// reference to the commitment as well as the result
+    pub fn commit_public<CS: RandomizableConstraintSystem>(
+        mut val: BigUint,
+        field_mod: FieldMod,
+        cs: &mut CS,
+    ) -> Self {
+        // Split the bigint into words
+        let field_words = repr_word_width(&field_mod.modulus);
+        let mut words = Vec::with_capacity(field_words);
+        let mut commitments = Vec::with_capacity(field_words);
+        for _ in 0..field_words {
+            // Allocate the next 126 bits in the constraint system
+            let next_word = biguint_to_scalar(&(&val & &*BIGINT_WORD_MASK));
+            let next_word_var = cs.commit_public(next_word);
+
+            words.push(next_word_var.into());
+
+            val >>= WORD_SIZE;
+        }
+
+        Self { words, field_mod }
     }
 
     /// Generate an iterator over words
