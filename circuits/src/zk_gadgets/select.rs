@@ -75,7 +75,7 @@ impl SingleProverCircuit for CondSelectGadget {
         let (b_comm, b_var) = prover.commit(witness.b, Scalar::random(&mut rng));
         let (sel_comm, sel_var) = prover.commit(witness.selector, Scalar::random(&mut rng));
 
-        let (_, expected_var) = prover.commit_public(statement.expected);
+        let expected_var = prover.commit_public(statement.expected);
 
         // Apply the constraints
         let res = Self::select(&mut prover, a_var, b_var, sel_var);
@@ -227,11 +227,11 @@ impl SingleProverCircuit for CondSelectVectorGadget {
         let (sel_comm, sel_var) = prover.commit(witness.selector, Scalar::random(&mut rng));
 
         // Commit to the statement
-        let (_, expected_vars): (Vec<_>, Vec<_>) = statement
+        let expected_vars = statement
             .expected
             .into_iter()
             .map(|expected_val| prover.commit_public(expected_val))
-            .unzip();
+            .collect_vec();
 
         // Apply the constraints
         let res = Self::select(&mut prover, &a_vars, &b_vars, sel_var);

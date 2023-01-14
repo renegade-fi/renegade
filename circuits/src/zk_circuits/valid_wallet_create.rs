@@ -11,7 +11,7 @@
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
-    r1cs::{Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
+    r1cs::{ConstraintSystem, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
     r1cs_mpc::R1CSError,
     BulletproofGens,
 };
@@ -315,12 +315,12 @@ where
         let (witness_var, witness_comm) = witness.commit_prover(&mut rng, &mut prover).unwrap();
 
         // Commit to the statement
-        let (_, wallet_commitment_var) = prover.commit_public(statement.wallet_commitment);
-        let (_, wallet_ciphertext_vars): (Vec<CompressedRistretto>, Vec<Variable>) = statement
+        let wallet_commitment_var = prover.commit_public(statement.wallet_commitment);
+        let wallet_ciphertext_vars = statement
             .wallet_ciphertext
             .iter()
             .map(|felt| prover.commit_public(*felt))
-            .unzip();
+            .collect_vec();
 
         // Apply the constraints
         Self::apply_constraints(
