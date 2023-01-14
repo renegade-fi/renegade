@@ -925,10 +925,10 @@ mod nonnative_tests {
 
             // Commit to the statement variable
             let expected_words = bigint_to_scalar_words(statement);
-            let (_, statement_word_vars): (Vec<_>, Vec<Variable>) = expected_words
+            let statement_word_vars = expected_words
                 .iter()
                 .map(|word| prover.commit_public(*word))
-                .unzip();
+                .collect_vec();
 
             let statement_word_lcs: Vec<LinearCombination> = statement_word_vars
                 .into_iter()
@@ -1015,10 +1015,10 @@ mod nonnative_tests {
 
             // Commit to the statement variable
             let expected_words = bigint_to_scalar_words(statement);
-            let (_, statement_word_vars): (Vec<_>, Vec<Variable>) = expected_words
+            let statement_word_vars = expected_words
                 .iter()
                 .map(|word| prover.commit_public(*word))
-                .unzip();
+                .collect_vec();
 
             let statement_word_lcs: Vec<LinearCombination> = statement_word_vars
                 .into_iter()
@@ -1094,10 +1094,10 @@ mod nonnative_tests {
 
             // Commit to the statement variable
             let expected_words = bigint_to_scalar_words(statement);
-            let (_, statement_word_vars): (Vec<_>, Vec<Variable>) = expected_words
+            let statement_word_vars = expected_words
                 .iter()
                 .map(|word| prover.commit_public(*word))
-                .unzip();
+                .collect_vec();
 
             let statement_word_lcs: Vec<LinearCombination> = statement_word_vars
                 .into_iter()
@@ -1347,7 +1347,7 @@ mod nonnative_tests {
             let words = bigint_to_scalar_words(random_val);
             let allocated_words = words
                 .iter()
-                .map(|word| prover.commit_public(*word).1.into())
+                .map(|word| prover.commit_public(*word).into())
                 .collect_vec();
 
             let mut val =

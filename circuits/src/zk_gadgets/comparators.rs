@@ -85,7 +85,7 @@ impl SingleProverCircuit for EqZeroGadget {
         let (witness_comm, witness_var) = prover.commit(witness, Scalar::random(&mut rng));
 
         // Commit to the statement
-        let (_, expected_var) = prover.commit_public(Scalar::from(statement as u8));
+        let expected_var = prover.commit_public(Scalar::from(statement as u8));
 
         // Test equality to zero and constrain this to be expected
         let eq_zero = EqZeroGadget::eq_zero(&mut prover, witness_var);

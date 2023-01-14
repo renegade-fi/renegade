@@ -85,11 +85,11 @@ impl<const D: usize> SingleProverCircuit for ToBitsGadget<D> {
         let (witness_comm, witness_var) = prover.commit(witness, Scalar::random(&mut rng));
 
         // Commit to the statement
-        let (_, statement_vars): (Vec<_>, Vec<_>) = statement
+        let statement_vars = statement
             .bits
             .iter()
             .map(|bit| prover.commit_public(*bit))
-            .unzip();
+            .collect_vec();
 
         // Get the bits result and constrain the output
         let res_bits = Self::to_bits(&mut prover, witness_var).map_err(ProverError::R1CS)?;

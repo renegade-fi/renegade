@@ -4,7 +4,8 @@ use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{
-        LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
+        ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
+        Variable, Verifier,
     },
     r1cs_mpc::{
         MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MpcVariable, R1CSError,
@@ -210,7 +211,7 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
             .unzip();
 
         // Commit to the expected root
-        let (_, root_var) = prover.commit_public(statement.expected_root);
+        let root_var = prover.commit_public(statement.expected_root);
 
         // Apply the constraints
         PoseidonMerkleHashGadget::compute_and_constrain_root(

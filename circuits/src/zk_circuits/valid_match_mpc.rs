@@ -9,7 +9,10 @@ use std::{borrow::Borrow, marker::PhantomData};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
-    r1cs::{LinearCombination, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
+    r1cs::{
+        ConstraintSystem, LinearCombination, R1CSProof, RandomizableConstraintSystem, Variable,
+        Verifier,
+    },
     r1cs_mpc::{
         MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MpcVariable, R1CSError,
         SharedR1CSProof,

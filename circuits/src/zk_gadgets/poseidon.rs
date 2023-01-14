@@ -7,7 +7,8 @@ use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{
-        LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
+        ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
+        Variable, Verifier,
     },
     r1cs_mpc::{
         MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MpcVariable, R1CSError,
@@ -300,7 +301,7 @@ impl SingleProverCircuit for PoseidonHashGadget {
             .unzip();
 
         // Commit publically to the expected result
-        let (_, out_var) = prover.commit_public(statement.expected_out);
+        let out_var = prover.commit_public(statement.expected_out);
 
         // Apply the constraints to the proof system
         let mut hasher = PoseidonHashGadget::new(statement.params);
