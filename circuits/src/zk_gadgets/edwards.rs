@@ -1,7 +1,9 @@
 //! Groups gadget definitions for arithmetic on (possibly twisted) Edwards curves
 
-use mpc_bulletproof::r1cs::{LinearCombination, RandomizableConstraintSystem, Variable};
+use curve25519_dalek::ristretto::CompressedRistretto;
+use mpc_bulletproof::r1cs::{LinearCombination, Prover, RandomizableConstraintSystem, Variable};
 use num_bigint::BigUint;
+use rand_core::{CryptoRng, RngCore};
 
 use super::{
     comparators::EqZeroGadget,
@@ -38,6 +40,36 @@ impl EdwardsPoint {
     /// constraint system
     pub fn new(x: NonNativeElementVar, y: NonNativeElementVar) -> Self {
         Self { x, y }
+    }
+
+    /// Create a new EdwardsPoint from `BigUint` coordinates committed as witnesses in the
+    /// given constraint system
+    pub fn commit_witness<R: RngCore + CryptoRng>(
+        x: BigUint,
+        y: BigUint,
+        field_mod: FieldMod,
+        rng: &mut R,
+        cs: &mut Prover,
+    ) -> (Self, Vec<CompressedRistretto>, Vec<CompressedRistretto>) {
+        // Commit to the coordinates individually
+        let (x_var, x_comm) = NonNativeElementVar::commit_witness(x, field_mod, rng, cs);
+        let (y_var, y_comm) = NonNativeElementVar::commit_witness(y, field_mod, rng, cs);
+
+        (Self { x: x_var, y: y_var }, x_comm, y_comm)
+    }
+
+    /// Create a new EdwardsPoint from `BigUint` coordinates committed as statement variables
+    /// in the given constraint system
+    pub fn commit_public<CS: RandomizableConstraintSystem>(
+        x: BigUint,
+        y: BigUint,
+        field_mod: FieldMod,
+        cs: &mut CS,
+    ) -> Self {
+        let x_var = NonNativeElementVar::commit_public(x, field_mod, cs);
+        let y_var = NonNativeElementVar::commit_public(y, field_mod, cs);
+
+        Self { x: x_var, y: y_var }
     }
 
     /// Get the field modulus that this point is defined in
