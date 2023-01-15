@@ -58,6 +58,23 @@ pub struct ElGamalWitness {
     randomness: BigUint,
 }
 
+/// The statement parameterization of a correct ElGamal encryption circuit
+#[derive(Clone, Debug)]
+pub struct ElGamalStatement {
+    /// The first point in the expected ciphertext resulting from the encryption
+    expected_ciphertext_1: (BigUint, BigUint),
+    /// The second point in the expected ciphertext resulting from the encryption
+    expected_ciphertext_2: (BigUint, BigUint),
+    /// The public key used for encryption
+    public_key: (BigUint, BigUint),
+    /// The curve basepoint
+    basepoint: (BigUint, BigUint),
+    /// A parameterization of a twisted Edwards curve
+    curve: TwistedEdwardsCurve,
+    /// The modulus of the field that the operation is defined over
+    field_mod: FieldMod,
+}
+
 /// An ElGamal witness that has been allocated in a constraint system
 #[derive(Clone, Debug)]
 pub struct ElGamalWitnessVar {
@@ -158,29 +175,12 @@ impl CommitVerifier for ElGamalWitnessCommitment {
     }
 }
 
-/// The statement parameterization of a correct ElGamal encryption circuit
-#[derive(Clone, Debug)]
-pub struct ElGamalStatement {
-    /// The first point in the expected ciphertext resulting from the encryption
-    expected_ciphertext_1: (BigUint, BigUint),
-    /// The second point in the expected ciphertext resulting from the encryption
-    expected_ciphertext_2: (BigUint, BigUint),
-    /// The public key used for encryption
-    public_key: (BigUint, BigUint),
-    /// The curve basepoint
-    basepoint: (BigUint, BigUint),
-    /// A parameterization of a twisted Edwards curve
-    curve: TwistedEdwardsCurve,
-    /// The modulus of the field that the operation is defined over
-    field_mod: FieldMod,
-}
-
 impl<const SCALAR_BITS: usize> SingleProverCircuit for ElGamalGadget<SCALAR_BITS> {
     type Witness = ElGamalWitness;
     type Statement = ElGamalStatement;
     type WitnessCommitment = ElGamalWitnessCommitment;
 
-    const BP_GENS_CAPACITY: usize = 64;
+    const BP_GENS_CAPACITY: usize = 32768;
 
     fn prove(
         witness: Self::Witness,
@@ -296,5 +296,91 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ElGamalGadget<SCALAR_BITS
         verifier
             .verify(&proof, &bp_gens)
             .map_err(VerifierError::R1CS)
+    }
+}
+
+#[cfg(test)]
+mod elgamal_tests {
+    use ark_crypto_primitives::encryption::{
+        elgamal::{ElGamal, Parameters, Randomness},
+        AsymmetricEncryptionScheme,
+    };
+    use ark_ec::twisted_edwards::TECurveConfig;
+    use ark_ed25519::{EdwardsAffine, EdwardsParameters, EdwardsProjective, Fr as EdwardsScalar};
+    use num_bigint::BigUint;
+    use rand::rngs::OsRng;
+    use rand_core::OsRng as CoreOsRng;
+
+    use crate::{
+        test_helpers::bulletproof_prove_and_verify,
+        zk_gadgets::{
+            edwards::edwards_tests::{
+                create_ed25519_repr, ed25519_random_felt, ed25519_random_point,
+            },
+            nonnative::FieldMod,
+        },
+    };
+
+    use super::{ElGamalGadget, ElGamalStatement, ElGamalWitness};
+
+    /// A type alias for the Arkworks native ElGamal gadget over ed25519
+    type ArkworksElGamal = ElGamal<EdwardsProjective>;
+
+    /// Test the encryption circuit
+    #[test]
+    #[ignore = "too expensive to run in CI"]
+    fn test_encryption_circuit() {
+        // Setup a random plaintext and randomness
+        let mut rng1 = OsRng {};
+        let mut rng2 = CoreOsRng {};
+        let plaintext = ed25519_random_point(&mut rng2);
+
+        // Sample a small (bitlength) randomness to shrink test complexity
+        let randomness = ed25519_random_felt(&mut rng2) % BigUint::from(1u8 << 3);
+
+        // Use the curve25519 field modulus
+        let field_mod = FieldMod::from_modulus((BigUint::from(1u8) << 255) - 19u8);
+
+        let encryption_params = Parameters {
+            generator: EdwardsParameters::GENERATOR,
+        };
+        let (pub_key, _): (EdwardsAffine, _) =
+            ArkworksElGamal::keygen(&encryption_params, &mut rng1).unwrap();
+
+        // Encrypt the random plaintext via Arkworks
+        // Arkworks reverses the order of the ciphertext in our gadget, bind them in reverse order
+        let arkworks_randomness = EdwardsScalar::from(randomness.clone());
+        let (ciphertext2, ciphertext1): (EdwardsAffine, EdwardsAffine) = ArkworksElGamal::encrypt(
+            &encryption_params,
+            &pub_key,
+            &plaintext,
+            &Randomness(arkworks_randomness),
+        )
+        .unwrap();
+
+        // Now use the expected result to prove the ElGamal valid encryption statement above
+        let witness = ElGamalWitness {
+            cleartext_x: plaintext.x.into(),
+            cleartext_y: plaintext.y.into(),
+            field_mod: field_mod.clone(),
+            randomness,
+        };
+
+        let ed25519_basepoint: (BigUint, BigUint) = (
+            EdwardsParameters::GENERATOR.x.into(),
+            EdwardsParameters::GENERATOR.y.into(),
+        );
+        let statement = ElGamalStatement {
+            expected_ciphertext_1: (ciphertext1.x.into(), ciphertext1.y.into()),
+            expected_ciphertext_2: (ciphertext2.x.into(), ciphertext2.y.into()),
+            public_key: (pub_key.x.into(), pub_key.y.into()),
+            basepoint: ed25519_basepoint,
+            curve: create_ed25519_repr(),
+            field_mod,
+        };
+
+        let res =
+            bulletproof_prove_and_verify::<ElGamalGadget<3 /* SCALAR_BITS */>>(witness, statement);
+        assert!(res.is_ok());
     }
 }
