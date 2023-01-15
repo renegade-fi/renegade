@@ -300,7 +300,7 @@ impl SingleProverCircuit for PoseidonHashGadget {
             .map(|val| prover.commit(val, Scalar::random(&mut rng)))
             .unzip();
 
-        // Commit publically to the expected result
+        // Commit publicly to the expected result
         let out_var = prover.commit_public(statement.expected_out);
 
         // Apply the constraints to the proof system
@@ -610,7 +610,7 @@ pub struct MultiproverPoseidonWitness<N: MpcNetwork + Send, S: SharedValueSource
 impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProverCircuit<'a, N, S>
     for MultiproverPoseidonHashGadget<'a, N, S>
 {
-    /// Witenss is as the witness in the single prover case, except for the facts that hte underlying scalar
+    /// Witness is as the witness in the single prover case, except for the facts that hte underlying scalar
     /// field is the authenticated and shared Ristretto scalar field.
     ///
     /// The Statement, on the other hand, is entirely public; and therefore the same type as the single prover.

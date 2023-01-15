@@ -52,7 +52,7 @@ impl EdwardsPoint {
         cs: &mut Prover,
     ) -> (Self, Vec<CompressedRistretto>, Vec<CompressedRistretto>) {
         // Commit to the coordinates individually
-        let (x_var, x_comm) = NonNativeElementVar::commit_witness(x, field_mod, rng, cs);
+        let (x_var, x_comm) = NonNativeElementVar::commit_witness(x, field_mod.to_owned(), rng, cs);
         let (y_var, y_comm) = NonNativeElementVar::commit_witness(y, field_mod, rng, cs);
 
         (Self { x: x_var, y: y_var }, x_comm, y_comm)
@@ -66,7 +66,7 @@ impl EdwardsPoint {
         field_mod: FieldMod,
         cs: &mut CS,
     ) -> Self {
-        let x_var = NonNativeElementVar::commit_public(x, field_mod, cs);
+        let x_var = NonNativeElementVar::commit_public(x, field_mod.to_owned(), cs);
         let y_var = NonNativeElementVar::commit_public(y, field_mod, cs);
 
         Self { x: x_var, y: y_var }
@@ -124,6 +124,16 @@ impl EdwardsPoint {
         let y = NonNativeElementVar::cond_select(selector, &pt1.y, &pt2.y, cs);
 
         Self { x, y }
+    }
+
+    /// Constrain two points to be equal
+    pub fn constrain_equal<CS: RandomizableConstraintSystem>(
+        pt1: &EdwardsPoint,
+        pt2: &EdwardsPoint,
+        cs: &mut CS,
+    ) {
+        NonNativeElementVar::constrain_equal(&pt1.x, &pt2.x, cs);
+        NonNativeElementVar::constrain_equal(&pt1.x, &pt2.x, cs);
     }
 }
 

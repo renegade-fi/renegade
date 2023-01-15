@@ -3,6 +3,7 @@ pub mod arithmetic;
 pub mod bits;
 pub mod comparators;
 pub mod edwards;
+pub mod elgamal;
 pub mod gates;
 pub mod merkle;
 pub mod nonnative;

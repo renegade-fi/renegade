@@ -148,7 +148,7 @@ pub trait Allocate<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     ) -> Result<Self::SharedType, Self::ErrorType>;
 }
 
-/// Defines functionality to allocate a base type as a shared committment in a multi-prover
+/// Defines functionality to allocate a base type as a shared commitment in a multi-prover
 /// constraint system
 pub trait CommitSharedProver<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The type that results from committing to the base type
@@ -245,7 +245,7 @@ pub trait SingleProverCircuit {
     /// The statement type, given to both the prover and verifier, parameterizes the underlying
     /// NP statement being proven
     type Statement: Clone;
-    /// The data type of the output committment from the prover.
+    /// The data type of the output commitment from the prover.
     ///
     /// The prover commits to the witness and sends this commitment to the verifier, this type
     /// is the structure in which that commitment is sent
@@ -295,7 +295,7 @@ pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueS
     /// The statement type, given to both the prover and verifier, parameterizes the underlying
     /// NP statement being proven
     type Statement: Clone;
-    /// The data type of the output committment from the prover.
+    /// The data type of the output commitment from the prover.
     ///
     /// The prover commits to the witness and sends this commitment to the verifier, this type
     /// is the structure in which that commitment is sent
