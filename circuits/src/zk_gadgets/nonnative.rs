@@ -249,7 +249,6 @@ impl NonNativeElementVar {
         // Split the bigint into words
         let field_words = repr_word_width(&field_mod.modulus);
         let mut words = Vec::with_capacity(field_words);
-        let mut commitments = Vec::with_capacity(field_words);
         for _ in 0..field_words {
             // Allocate the next 126 bits in the constraint system
             let next_word = biguint_to_scalar(&(&val & &*BIGINT_WORD_MASK));
@@ -274,7 +273,7 @@ impl NonNativeElementVar {
             .chain(iter::repeat(Variable::Zero().into()))
     }
 
-    /// Evalute the non-native variable in the given constraint system, and return the
+    /// Evaluate the non-native variable in the given constraint system, and return the
     /// result as a bigint
     pub fn as_bigint<CS: RandomizableConstraintSystem>(&self, cs: &CS) -> BigUint {
         let mut res = BigUint::from(0u8);

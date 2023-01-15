@@ -483,7 +483,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<ValidMatchCommitme
     }
 }
 
-/// An opened committment to the VALID MATCH MPC witness
+/// An opened commitment to the VALID MATCH MPC witness
 #[derive(Clone, Debug)]
 pub struct ValidMatchCommitment {
     /// A commitment to the first party's order
@@ -598,7 +598,7 @@ pub struct ValidMatchMpcStatement {
     pub hash_randomness1: Scalar,
     /// The expected hash of the second order
     pub hash_order2: Scalar,
-    /// The expected hash of the sceond balance
+    /// The expected hash of the second balance
     pub hash_balance2: Scalar,
     /// The expected hash of the second party's fee
     pub hash_fee2: Scalar,

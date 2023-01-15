@@ -28,7 +28,7 @@ use crate::{
 /// The number of zero Scalars to use when representing an empty balance
 /// One for the mint, one for the amount
 const BALANCE_ZEROS: usize = 2;
-/// The number of zero Scalars to use when representng an empty order
+/// The number of zero Scalars to use when representing an empty order
 /// zero'd fields are the two mints, the side, the amount, and the price
 const ORDER_ZEROS: usize = 5;
 
@@ -49,7 +49,7 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
 where
     [(); MAX_BALANCES * BALANCE_ZEROS + MAX_ORDERS * ORDER_ZEROS]: Sized,
 {
-    /// Applies constraints to the constraint system specifying the statment of
+    /// Applies constraints to the constraint system specifying the statement of
     /// VALID WALLET CREATE
     fn apply_constraints<CS>(
         cs: &mut CS,
@@ -106,7 +106,7 @@ where
                 witness.view_public_key,
             ],
         )?;
-        hasher.absorb(cs, witness.wallet_randomenss)?;
+        hasher.absorb(cs, witness.wallet_randomness)?;
 
         // Enforce that the result is equal to the expected commitment
         hasher.constrained_squeeze(cs, expected_commit)?;
@@ -129,7 +129,7 @@ pub struct ValidWalletCreateWitness<const MAX_FEES: usize> {
     /// The fees to initialize the wallet with; may be nonzero
     pub fees: [Fee; MAX_FEES],
     /// The wallet randomness, used to hide commitments and nullifiers
-    pub wallet_randomenss: Scalar,
+    pub wallet_randomness: Scalar,
     /// The root secret key, used to derive all fine-grained permissioned keys
     pub root_secret_key: Scalar,
     /// The root public key
@@ -150,11 +150,11 @@ pub struct ValidWalletCreateWitness<const MAX_FEES: usize> {
 
 /// The committed witness for the VALID WALLET CREATE proof
 #[derive(Clone, Debug)]
-pub struct ValidWalletCreateCommittment<const MAX_FEES: usize> {
+pub struct ValidWalletCreateCommitment<const MAX_FEES: usize> {
     /// The fees to initialize the wallet with; may be nonzero
     pub fees: [CommittedFee; MAX_FEES],
     /// The wallet randomness, used to hide commitments and nullifiers
-    pub wallet_randomenss: CompressedRistretto,
+    pub wallet_randomness: CompressedRistretto,
     /// The root secret key, used to derive all fine-grained permissioned keys
     pub root_secret_key: CompressedRistretto,
     /// The root public key
@@ -179,7 +179,7 @@ pub struct ValidWalletCreateVar<const MAX_FEES: usize> {
     /// The fees to initialize the wallet with; may be nonzero
     pub fees: [FeeVar; MAX_FEES],
     /// The wallet randomness, used to hide commitments and nullifiers
-    pub wallet_randomenss: Variable,
+    pub wallet_randomness: Variable,
     /// The root secret key, used to derive all fine-grained permissioned keys
     pub root_secret_key: Variable,
     /// The root public key
@@ -199,7 +199,7 @@ pub struct ValidWalletCreateVar<const MAX_FEES: usize> {
 }
 
 impl<const MAX_FEES: usize> CommitProver for ValidWalletCreateWitness<MAX_FEES> {
-    type CommitType = ValidWalletCreateCommittment<MAX_FEES>;
+    type CommitType = ValidWalletCreateCommitment<MAX_FEES>;
     type VarType = ValidWalletCreateVar<MAX_FEES>;
     type ErrorType = ();
 
@@ -215,7 +215,7 @@ impl<const MAX_FEES: usize> CommitProver for ValidWalletCreateWitness<MAX_FEES> 
             .unzip();
 
         let (randomness_comm, randomness_var) =
-            prover.commit(self.wallet_randomenss, Scalar::random(rng));
+            prover.commit(self.wallet_randomness, Scalar::random(rng));
         let (sk_root_comm, sk_root_var) = prover.commit(self.root_secret_key, Scalar::random(rng));
         let (pk_root_comm, pk_root_var) = prover.commit(self.root_public_key, Scalar::random(rng));
         let (sk_match_comm, sk_match_var) =
@@ -232,7 +232,7 @@ impl<const MAX_FEES: usize> CommitProver for ValidWalletCreateWitness<MAX_FEES> 
         Ok((
             ValidWalletCreateVar {
                 fees: fee_vars.try_into().unwrap(),
-                wallet_randomenss: randomness_var,
+                wallet_randomness: randomness_var,
                 root_secret_key: sk_root_var,
                 root_public_key: pk_root_var,
                 match_secret_key: sk_match_var,
@@ -242,9 +242,9 @@ impl<const MAX_FEES: usize> CommitProver for ValidWalletCreateWitness<MAX_FEES> 
                 view_secret_key: sk_view_var,
                 view_public_key: pk_view_var,
             },
-            ValidWalletCreateCommittment {
+            ValidWalletCreateCommitment {
                 fees: fee_commitments.try_into().unwrap(),
-                wallet_randomenss: randomness_comm,
+                wallet_randomness: randomness_comm,
                 root_secret_key: sk_root_comm,
                 root_public_key: pk_root_comm,
                 match_secret_key: sk_match_comm,
@@ -258,7 +258,7 @@ impl<const MAX_FEES: usize> CommitProver for ValidWalletCreateWitness<MAX_FEES> 
     }
 }
 
-impl<const MAX_FEES: usize> CommitVerifier for ValidWalletCreateCommittment<MAX_FEES> {
+impl<const MAX_FEES: usize> CommitVerifier for ValidWalletCreateCommitment<MAX_FEES> {
     type VarType = ValidWalletCreateVar<MAX_FEES>;
     type ErrorType = ();
 
@@ -269,7 +269,7 @@ impl<const MAX_FEES: usize> CommitVerifier for ValidWalletCreateCommittment<MAX_
             .map(|fee| fee.commit_verifier(verifier).unwrap())
             .collect_vec();
 
-        let randomness_var = verifier.commit(self.wallet_randomenss);
+        let randomness_var = verifier.commit(self.wallet_randomness);
         let sk_root_var = verifier.commit(self.root_secret_key);
         let pk_root_var = verifier.commit(self.root_public_key);
         let sk_match_var = verifier.commit(self.match_secret_key);
@@ -281,7 +281,7 @@ impl<const MAX_FEES: usize> CommitVerifier for ValidWalletCreateCommittment<MAX_
 
         Ok(ValidWalletCreateVar {
             fees: fee_vars.try_into().unwrap(),
-            wallet_randomenss: randomness_var,
+            wallet_randomness: randomness_var,
             root_secret_key: sk_root_var,
             root_public_key: pk_root_var,
             match_secret_key: sk_match_var,
@@ -301,7 +301,7 @@ where
 {
     type Statement = ValidWalletCreateStatement;
     type Witness = ValidWalletCreateWitness<MAX_FEES>;
-    type WitnessCommitment = ValidWalletCreateCommittment<MAX_FEES>;
+    type WitnessCommitment = ValidWalletCreateCommitment<MAX_FEES>;
 
     const BP_GENS_CAPACITY: usize = 10000;
 
@@ -331,7 +331,7 @@ where
         )
         .map_err(ProverError::R1CS)?;
 
-        // Prove the statment
+        // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
 
@@ -435,7 +435,7 @@ mod test_valid_wallet_create {
         arkworks_hasher.absorb(&scalar_to_prime_field(&witness.view_public_key));
 
         // Absorb the wallet randomness into the hasher state
-        arkworks_hasher.absorb(&scalar_to_prime_field(&witness.wallet_randomenss));
+        arkworks_hasher.absorb(&scalar_to_prime_field(&witness.wallet_randomness));
 
         prime_field_to_scalar::<DalekRistrettoField>(
             &arkworks_hasher.squeeze_field_elements(1 /* num_elements */)[0],
@@ -451,7 +451,7 @@ mod test_valid_wallet_create {
 
         let witness = ValidWalletCreateWitness {
             fees: fees.try_into().unwrap(),
-            wallet_randomenss: Scalar::random(&mut rng),
+            wallet_randomness: Scalar::random(&mut rng),
             root_secret_key: Scalar::random(&mut rng),
             root_public_key: Scalar::random(&mut rng),
             match_secret_key: Scalar::random(&mut rng),

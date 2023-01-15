@@ -98,7 +98,7 @@ impl<const D: usize> SingleProverCircuit for ToBitsGadget<D> {
             prover.constrain(statement_bit - res_bit)
         }
 
-        // Prove the statemetnb
+        // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
 
