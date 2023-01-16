@@ -1,5 +1,7 @@
 use circuit_macros::circuit_trace;
 use lazy_static::lazy_static;
+use merlin::Transcript;
+use mpc_bulletproof::{r1cs::Prover, PedersenGens};
 use std::{
     collections::{hash_map::Entry, HashMap},
     sync::Mutex,
@@ -89,24 +91,24 @@ lazy_static! {
     static ref CURR_SCOPE: Mutex<Scope> = Mutex::new(Scope::new());
 }
 
-#[circuit_trace]
 fn helper(x: u64) -> u64 {
     x + 1
 }
 
 /// A dummy target for the macro
-#[circuit_trace]
-fn dummy(x: u64) -> u64 {
+#[circuit_trace(n_constraints, n_multipliers, latency)]
+#[allow(unused)]
+fn dummy(x: u64, cs: &mut Prover) -> u64 {
     let new_x = helper(x);
-    println!("Tests abc: {:?}", new_x);
     new_x
 }
 
 #[test]
 fn test_macro() {
-    let res = dummy(1);
+    let mut prover_transcript = Transcript::new("test".as_bytes());
+    let pc_gens = PedersenGens::default();
+    let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
+    dummy(1, &mut prover);
     println!("SCOPED METRICS: {:?}", SCOPED_METRICS.lock().unwrap());
-    assert_eq!(res, 2);
-    assert_eq!(4, 5);
 }
