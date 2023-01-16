@@ -6,7 +6,7 @@
 
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
-use quote::ToTokens;
+use quote::{quote, ToTokens};
 use syn::{
     parse_quote,
     punctuated::Punctuated,
@@ -81,11 +81,46 @@ fn build_active_trampoline(target_fn: &ItemFn) -> ItemFn {
     };
     out_fn.attrs.push(attr);
 
-    // Modify the body to pass-through to the trace target
+    // Build the prelude and epilogue of the tracer
+    let tracer_prelude = build_tracer_prelude(&target_fn.sig.ident);
+    let tracer_epilogue = build_tracer_epilogue();
     let call_expr = build_target_invocation(&out_fn.sig);
-    out_fn.block = parse_quote!({println!("active trampoline"); #call_expr});
+
+    out_fn.block = parse_quote! {
+        {
+            #tracer_prelude;
+            let ret = #call_expr;
+            #tracer_epilogue;
+            ret
+        }
+    };
 
     out_fn
+}
+
+/// Builds the prelude to the tracer, registers metrics and takes measurements that must happen before
+/// circuit execution (e.g. current timestamp)
+fn build_tracer_prelude(target_fn_name: &Ident) -> TokenStream2 {
+    // Scope into the target fn
+    let fn_name_string = target_fn_name.to_string();
+    quote! {
+        CURR_SCOPE.lock().unwrap().scope_in(#fn_name_string.to_string())
+    }
+}
+
+/// Builds the epilogue after the tracer, records metrics into global `MetricsCapture` for analysis
+/// and closes the current scope
+fn build_tracer_epilogue() -> TokenStream2 {
+    // Record a dummy metric for now and scope out of the fn body
+    quote! {
+        SCOPED_METRICS.lock().unwrap().record_metric(
+            CURR_SCOPE.lock().unwrap().clone(),
+            "n_constraints".to_string(),
+            42,
+        );
+
+        CURR_SCOPE.lock().unwrap().scope_out();
+    }
 }
 
 /// Build the trampoline implementation that does not trace and simply passes through to
@@ -117,9 +152,8 @@ fn build_target_invocation(trampoline_sig: &Signature) -> ExprCall {
     for input_arg in trampoline_sig.inputs.clone().into_iter() {
         match input_arg {
             FnArg::Typed(type_pattern) => {
-                match *type_pattern.pat {
-                    Pat::Ident(pattern) => args.push(pattern.ident),
-                    _ => {}
+                if let Pat::Ident(pattern) = *type_pattern.pat {
+                    args.push(pattern.ident)
                 };
             }
             FnArg::Receiver(receiver) => parsed_receiver = Some(receiver),
@@ -165,6 +199,6 @@ fn modify_target_fn(target_fn: &ItemFn) -> ItemFn {
 
 /// Get the name of the modified target fn given the unmodified signature
 fn get_modified_target_name(sig: &Signature) -> Ident {
-    let modified_name = format!("{}_{}", sig.ident.to_string(), TRACE_TARGET_SUFFIX);
+    let modified_name = format!("{}_{}", sig.ident, TRACE_TARGET_SUFFIX);
     Ident::new(&modified_name, Span::call_site())
 }

@@ -1,49 +1,95 @@
 use circuit_macros::circuit_trace;
 use lazy_static::lazy_static;
-use merlin::Transcript;
-use mpc_bulletproof::{
-    r1cs::{Prover, RandomizableConstraintSystem},
-    PedersenGens,
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    sync::Mutex,
 };
-use std::collections::HashMap;
 
 /// A type used for scop
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Scope {
     pub path: Vec<String>,
 }
 
+impl Scope {
+    /// Build a new scope
+    pub fn new() -> Self {
+        Self { path: vec![] }
+    }
+
+    /// Append a value to the scope
+    pub fn scope_in(&mut self, scope: String) {
+        self.path.push(scope)
+    }
+
+    /// Pop the latest scope from the path
+    pub fn scope_out(&mut self) -> String {
+        self.path.pop().unwrap()
+    }
+}
+
 /// Represents a list of metrics collected via a trace
 #[derive(Clone, Debug)]
-pub struct Metrics {
+pub struct ScopedMetrics {
     /// A list of metrics, represented as named tuples
-    metrics_list: Vec<(String, u64)>,
+    pub(crate) data: HashMap<String, u64>,
+}
+
+impl ScopedMetrics {
+    /// Create a new, empty list of metrics
+    pub fn new() -> Self {
+        Self {
+            data: HashMap::new(),
+        }
+    }
+
+    /// Add a metric to the list, aggregating if the metric already exists
+    ///
+    /// Returns the value if a previous value existed
+    pub fn add_metric(&mut self, name: String, value: u64) -> Option<u64> {
+        if let Some(curr_val) = self.data.get(&name) {
+            self.data.insert(name, curr_val + value)
+        } else {
+            self.data.insert(name, value);
+            None
+        }
+    }
+}
+
+/// A set of metrics captured by the execution of the tracer on a circuit
+#[derive(Clone, Debug)]
+pub struct MetricsCapture {
+    /// A mapping from scope to the metrics captured at that scope
+    pub(crate) metrics: HashMap<Scope, ScopedMetrics>,
+}
+
+impl MetricsCapture {
+    /// Create a new MetricsCapture instance
+    pub fn new() -> Self {
+        Self {
+            metrics: HashMap::new(),
+        }
+    }
+
+    /// Record a scoped metric, if the metric already exists for the scope, aggregate it
+    pub fn record_metric(&mut self, scope: Scope, metric_name: String, value: u64) {
+        if let Entry::Vacant(e) = self.metrics.entry(scope.clone()) {
+            e.insert(ScopedMetrics::new());
+        }
+
+        self.metrics
+            .get_mut(&scope)
+            .unwrap()
+            .add_metric(metric_name, value);
+    }
 }
 
 lazy_static! {
-    static ref SCOPED_METRICS: HashMap<Scope, Metrics> = HashMap::new();
+    static ref SCOPED_METRICS: Mutex<MetricsCapture> = Mutex::new(MetricsCapture::new());
+    static ref CURR_SCOPE: Mutex<Scope> = Mutex::new(Scope::new());
 }
 
-struct Temp {
-    x: u64,
-}
-
-impl Temp {
-    pub fn new(x: u64) -> Self {
-        Temp { x }
-    }
-
-    fn test2(&self) {
-        println!("testing")
-    }
-
-    // #[circuit_trace]
-    pub fn test(&self, y: u64) -> u64 {
-        Self::test2(&self);
-        self.x + y
-    }
-}
-
+#[circuit_trace]
 fn helper(x: u64) -> u64 {
     x + 1
 }
@@ -51,9 +97,6 @@ fn helper(x: u64) -> u64 {
 /// A dummy target for the macro
 #[circuit_trace]
 fn dummy(x: u64) -> u64 {
-    // let temp = Temp::new(1);
-    // let y = 5;
-    // temp.test(y);
     let new_x = helper(x);
     println!("Tests abc: {:?}", new_x);
     new_x
@@ -61,11 +104,9 @@ fn dummy(x: u64) -> u64 {
 
 #[test]
 fn test_macro() {
-    let mut transcript = Transcript::new("test".as_bytes());
-    let pc_gens = PedersenGens::default();
-    let prover = Prover::new(&pc_gens, &mut transcript);
-
     let res = dummy(1);
+
+    println!("SCOPED METRICS: {:?}", SCOPED_METRICS.lock().unwrap());
     assert_eq!(res, 2);
-    assert_eq!(1, 2);
+    assert_eq!(4, 5);
 }
