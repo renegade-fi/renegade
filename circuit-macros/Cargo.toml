@@ -11,8 +11,8 @@ bench = []
 
 [dependencies]
 mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
-proc-macro2 = "1.0"
-quote = "1.0"
+proc-macro2 = "1.0.50"
+quote = "1.0.23"
 syn = { version = "1.0", features = ["full"] }
 
 [dev-dependencies]
