@@ -31,7 +31,7 @@ pub struct EqZeroGadget {}
 impl EqZeroGadget {
     /// Computes whether the given input is equal to zero
     ///
-    /// Relies on the fact that modulo a prime field, all elements (execept zero)
+    /// Relies on the fact that modulo a prime field, all elements (except zero)
     /// have a valid multiplicative inverse
     pub fn eq_zero<L, CS>(cs: &mut CS, val: L) -> Variable
     where
