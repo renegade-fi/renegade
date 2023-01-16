@@ -1,6 +1,7 @@
 [workspace]
 members = [
 	"circuits",
+	"circuit-macros",
 	"core",
 	"crypto",
     "external-events",
