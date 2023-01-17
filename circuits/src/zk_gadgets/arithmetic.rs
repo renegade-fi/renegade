@@ -2,6 +2,7 @@
 
 use std::marker::PhantomData;
 
+use circuit_macros::circuit_trace;
 use curve25519_dalek::ristretto::CompressedRistretto;
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::r1cs::{
@@ -35,6 +36,7 @@ impl ExpGadget {
     ///
     /// Provides a functional interface for composing this gadget into a larger
     /// circuit.
+    #[circuit_trace(latency)]
     pub fn gadget<L, CS>(cs: &mut CS, x: L, alpha: u64) -> LinearCombination
     where
         L: Into<LinearCombination>,
@@ -58,6 +60,7 @@ impl ExpGadget {
     }
 
     /// Generate the constraints for the ExpGadget statement
+    #[circuit_trace(latency)]
     fn generate_constraints<CS: RandomizableConstraintSystem>(
         cs: &mut CS,
         x_var: Variable,
@@ -301,7 +304,7 @@ mod arithmetic_tests {
     /// Tests that a single prover exp does not verify for incorrect values
     #[test]
     fn test_single_prover_exp_failure() {
-        // Gerneate a random input
+        // Generate a random input
         let mut rng = OsRng {};
         let alpha = rng.next_u32();
         let random_value = Scalar::random(&mut rng);
