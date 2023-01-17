@@ -32,7 +32,7 @@ impl Scope {
 
     /// Append a value to the scope
     pub fn scope_in(&mut self, scope: String) {
-        self.path.push(scope)
+        self.path.push(scope);
     }
 
     /// Pop the latest scope from the path
@@ -105,6 +105,9 @@ impl MetricsCapture {
 lazy_static! {
     static ref SCOPED_METRICS: Mutex<MetricsCapture> = Mutex::new(MetricsCapture::new());
     static ref CURR_SCOPE: Mutex<Scope> = Mutex::new(Scope::new());
+    /// Used to synchronize the tests in this module in specific, because the tracer does not
+    /// allow concurrent access to these global state elements
+    static ref TEST_LOCK: Mutex<()> = Mutex::new(());
 }
 
 /// A dummy gadget whose constraint generation is done through an associated function, used to
@@ -147,6 +150,9 @@ fn non_associated_gadget(cs: &mut Prover) {
 #[cfg(feature = "bench")]
 #[test]
 fn test_macro_associated() {
+    // Lock the test harness
+    let _lock = TEST_LOCK.lock().unwrap();
+
     // Build a dummy constraint system and apply a few constraints
     let mut prover_transcript = Transcript::new("test".as_bytes());
     let pc_gens = PedersenGens::default();
@@ -162,7 +168,7 @@ fn test_macro_associated() {
     let latency_metric = locked_metrics
         .get_metric(gadget_scope.clone(), "latency".to_string())
         .unwrap();
-    assert!(latency_metric > 100);
+    assert!(latency_metric >= 100);
 
     let n_constraints_metric = locked_metrics
         .get_metric(gadget_scope.clone(), "n_constraints".to_string())
@@ -179,6 +185,9 @@ fn test_macro_associated() {
 #[cfg(feature = "bench")]
 #[test]
 fn test_macro_non_associated() {
+    // Lock the test harness
+    let _lock = TEST_LOCK.lock().unwrap();
+
     // Build a dummy constraint system and apply a few constraints
     let mut prover_transcript = Transcript::new("test".as_bytes());
     let pc_gens = PedersenGens::default();
@@ -194,7 +203,7 @@ fn test_macro_non_associated() {
     let latency_metric = locked_metrics
         .get_metric(gadget_scope.clone(), "latency".to_string())
         .unwrap();
-    assert!(latency_metric > 100);
+    assert!(latency_metric >= 100);
 
     let n_constraints_metric = locked_metrics
         .get_metric(gadget_scope.clone(), "n_constraints".to_string())

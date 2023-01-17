@@ -173,7 +173,9 @@ fn build_tracer_prelude(target_fn_name: &Ident, macro_args: MacroArgs) -> TokenS
 
     // Scope into the target function
     tokens.extend(quote! {
-        CURR_SCOPE.lock().unwrap().scope_in(#fn_name_string.to_string());
+        {
+            CURR_SCOPE.lock().unwrap().scope_in(#fn_name_string.to_string());
+        } // CURR_SCOPE lock released
     });
 
     // Setup enabled metrics, we intentionally obfuscate the names of the trace variables to ensure
@@ -213,7 +215,7 @@ fn build_tracer_epilogue(macro_args: MacroArgs) -> TokenStream2 {
     }
 
     tokens.extend(quote! {
-        let mut __locked_scope = CURR_SCOPE.lock().unwrap().clone();
+        let mut __locked_scope = CURR_SCOPE.lock().unwrap();
     });
 
     // Now, if any metrics are to be collected, lock the global metrics store
