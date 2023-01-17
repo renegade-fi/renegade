@@ -16,5 +16,8 @@ quote = "1.0.23"
 syn = { version = "1.0", features = ["full"] }
 
 [dev-dependencies]
+curve25519-dalek = "2"
 lazy_static = "1.4"
 merlin = "2.0"
+rand = "0.8"
+rand_core = "0.5"
