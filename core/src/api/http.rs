@@ -5,6 +5,17 @@ use uuid::Uuid;
 
 use crate::gossip::types::WrappedPeerId;
 
+/// A ping request
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PingRequest;
+
+/// A ping response
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PingResponse {
+    /// The timestamp when the response is sent
+    pub timestamp: u128,
+}
+
 /// A request to get the replicas of a given wallet
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetReplicasRequest {

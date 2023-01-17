@@ -1,6 +1,10 @@
 //! The core logic behind the APIServer's implementation
 
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    net::SocketAddr,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use crossbeam::channel::{self, Sender};
 use futures::stream::SplitSink;
@@ -20,7 +24,7 @@ use tungstenite::Message;
 
 use crate::{
     api::{
-        http::{GetReplicasRequest, GetReplicasResponse},
+        http::{GetReplicasRequest, GetReplicasResponse, PingRequest, PingResponse},
         websocket::{SubscriptionMessage, SubscriptionResponse},
     },
     price_reporter::{jobs::PriceReporterManagerJob, tokens::Token},
@@ -88,6 +92,8 @@ impl ApiServer {
 
     /// Sets up the routes that the API service exposes in the router
     pub(super) fn setup_routes(router: &mut Router, global_state: RelayerState) {
+        // The "/ping" route
+        router.add_route(Method::POST, "/ping".to_string(), PingHandler::new());
         // The "/replicas" route
         router.add_route(
             Method::POST,
@@ -289,6 +295,31 @@ impl WebsocketHandler {
             .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
 
         Ok(())
+    }
+}
+
+/// Handler for the ping route, returns a pong
+#[derive(Clone, Debug)]
+pub struct PingHandler;
+
+impl PingHandler {
+    /// Create a new handler for "/ping"
+    fn new() -> Self {
+        Self {}
+    }
+}
+
+impl TypedHandler for PingHandler {
+    type Request = PingRequest;
+    type Response = PingResponse;
+    type Error = ApiServerError;
+
+    fn handle_typed(&self, _req: Self::Request) -> Result<Self::Response, Self::Error> {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        Ok(PingResponse { timestamp })
     }
 }
 
