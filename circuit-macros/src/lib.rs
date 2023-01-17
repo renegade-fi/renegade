@@ -12,15 +12,17 @@ use syn::{
     parse_quote,
     punctuated::Punctuated,
     token::{Comma, Paren},
-    Attribute, Expr, ExprCall, FnArg, ItemFn, Pat, Result, Signature,
+    Attribute, Expr, ExprCall, FnArg, ItemFn, Pat, Result, Signature, Visibility,
 };
 
-/// The argument given to enable tracing constraint generation latency
+/// Argument given to enable tracing constraint generation latency
 const ARG_CONSTRAINT_LATENCY: &str = "latency";
-/// The argument given to enable tracing the number of constraints
+/// Argument given to enable tracing the number of constraints
 const ARG_N_CONSTRAINTS: &str = "n_constraints";
-/// The argument given to enable tracing the number of multipliers
+/// Argument given to enable tracing the number of multipliers
 const ARG_N_MULTIPLIERS: &str = "n_multipliers";
+/// Argument passed to signal that the target is not an associated function
+const ARG_NON_ASSOCIATED: &str = "non_associated";
 /// The feature flag that enables tracing via these macros
 #[allow(dead_code)]
 const TRACER_FEATURE_FLAG: &str = "bench";
@@ -53,23 +55,26 @@ const TRACE_TARGET_SUFFIX: &str = "impl";
 #[proc_macro_attribute]
 pub fn circuit_trace(args: TokenStream, item: TokenStream) -> TokenStream {
     let ast: ItemFn = syn::parse(item).unwrap();
-    let enabled_metrics = parse_macro_args(args).unwrap();
+    let macro_args = parse_macro_args(args).unwrap();
 
-    circuit_trace_impl(ast, enabled_metrics)
+    circuit_trace_impl(ast, macro_args)
 }
 
 /// Stores the macro arguments as to which metrics are enabled for a given tracing target
 #[derive(Clone, Copy, Debug, Default)]
-struct EnabledMetics {
+struct MacroArgs {
     /// The number of constraints metric
     pub n_constraints: bool,
     /// The number of multiplier metric
     pub n_multipliers: bool,
     /// The constraint generation latency metric
     pub latency: bool,
+    /// Flag indicating that the target is a not an associated function of some
+    /// gadget type
+    pub non_associated: bool,
 }
 
-impl EnabledMetics {
+impl MacroArgs {
     /// Returns true if all metrics are disabled for a given target
     pub fn all_disabled(&self) -> bool {
         !(self.n_constraints || self.n_multipliers || self.latency)
@@ -77,30 +82,31 @@ impl EnabledMetics {
 }
 
 /// Parse the arguments into a set of enabled features
-fn parse_macro_args(args: TokenStream) -> Result<EnabledMetics> {
-    let mut enabled = EnabledMetics::default();
+fn parse_macro_args(args: TokenStream) -> Result<MacroArgs> {
+    let mut macro_args = MacroArgs::default();
     let parsed_args =
         Punctuated::<Ident, Comma>::parse_terminated.parse2(TokenStream2::from(args))?;
 
     for arg in parsed_args.iter() {
         match arg.to_string().as_str() {
-            ARG_CONSTRAINT_LATENCY => enabled.latency = true,
-            ARG_N_CONSTRAINTS => enabled.n_constraints = true,
-            ARG_N_MULTIPLIERS => enabled.n_multipliers = true,
+            ARG_CONSTRAINT_LATENCY => macro_args.latency = true,
+            ARG_N_CONSTRAINTS => macro_args.n_constraints = true,
+            ARG_N_MULTIPLIERS => macro_args.n_multipliers = true,
+            ARG_NON_ASSOCIATED => macro_args.non_associated = true,
             _ => continue,
         }
     }
 
-    Ok(enabled)
+    Ok(macro_args)
 }
 
 /// Implementation of the circuit tracer, parses the token stream and defines the two
 /// trampoline function implementation
-fn circuit_trace_impl(target_fn: ItemFn, enabled_metrics: EnabledMetics) -> TokenStream {
+fn circuit_trace_impl(target_fn: ItemFn, macro_args: MacroArgs) -> TokenStream {
     let mut out_tokens = TokenStream2::default();
 
     // Build the trampoline implementations
-    let (inactive_impl, active_impl) = build_trampoline_impls(&target_fn, enabled_metrics);
+    let (inactive_impl, active_impl) = build_trampoline_impls(&target_fn, macro_args);
     out_tokens.extend(inactive_impl.to_token_stream());
     out_tokens.extend(active_impl.to_token_stream());
 
@@ -112,16 +118,16 @@ fn circuit_trace_impl(target_fn: ItemFn, enabled_metrics: EnabledMetics) -> Toke
 
 /// Build both trampoline implementations (active and inactive) and return their parsed
 /// syntax-tree types
-fn build_trampoline_impls(target_fn: &ItemFn, enabled_metrics: EnabledMetics) -> (ItemFn, ItemFn) {
+fn build_trampoline_impls(target_fn: &ItemFn, macro_args: MacroArgs) -> (ItemFn, ItemFn) {
     (
-        build_inactive_trampoline(target_fn),
-        build_active_trampoline(target_fn, enabled_metrics),
+        build_inactive_trampoline(target_fn, macro_args),
+        build_active_trampoline(target_fn, macro_args),
     )
 }
 
 /// Build the trampoline implementation that actively traces the target, gated behind the
 /// "bench" feature flag
-fn build_active_trampoline(target_fn: &ItemFn, enabled_metrics: EnabledMetics) -> ItemFn {
+fn build_active_trampoline(target_fn: &ItemFn, macro_args: MacroArgs) -> ItemFn {
     // In the active trampoline, we keep the signature and visibility of the target the same
     // The changes are to add an attribute #[cfg(feature = "bench")] and change the body to:
     //  1. Add a prelude that sets up trace metrics and scope
@@ -136,9 +142,9 @@ fn build_active_trampoline(target_fn: &ItemFn, enabled_metrics: EnabledMetics) -
     out_fn.attrs.push(attr);
 
     // Build the prelude and epilogue of the tracer
-    let tracer_prelude = build_tracer_prelude(&target_fn.sig.ident, enabled_metrics);
-    let tracer_epilogue = build_tracer_epilogue(enabled_metrics);
-    let call_expr = build_target_invocation(&out_fn.sig);
+    let tracer_prelude = build_tracer_prelude(&target_fn.sig.ident, macro_args);
+    let tracer_epilogue = build_tracer_epilogue(macro_args);
+    let call_expr = build_target_invocation(&out_fn.sig, macro_args);
 
     out_fn.block = parse_quote! {
         {
@@ -159,7 +165,7 @@ fn build_active_trampoline(target_fn: &ItemFn, enabled_metrics: EnabledMetics) -
 /// assumes the existence of a local binding `cs: ConstraintSystem` that can be used to query the
 /// constraint system metrics. In the future, we should remove this brittle assumption or allow rebinding
 /// the name as a macro argument
-fn build_tracer_prelude(target_fn_name: &Ident, enabled_metrics: EnabledMetics) -> TokenStream2 {
+fn build_tracer_prelude(target_fn_name: &Ident, macro_args: MacroArgs) -> TokenStream2 {
     // Scope into the target fn
     let fn_name_string = target_fn_name.to_string();
 
@@ -172,19 +178,19 @@ fn build_tracer_prelude(target_fn_name: &Ident, enabled_metrics: EnabledMetics) 
 
     // Setup enabled metrics, we intentionally obfuscate the names of the trace variables to ensure
     // they don't alias with any (well named) local bindings
-    if enabled_metrics.n_constraints {
+    if macro_args.n_constraints {
         tokens.extend(quote! {
             let __n_constraint_pre = cs.num_constraints() as u64;
         });
     }
 
-    if enabled_metrics.n_multipliers {
+    if macro_args.n_multipliers {
         tokens.extend(quote! {
             let __n_multipliers_pre = cs.num_multipliers() as u64;
         });
     }
 
-    if enabled_metrics.latency {
+    if macro_args.latency {
         tokens.extend(quote! {
             let __time_pre = std::time::Instant::now();
         })
@@ -195,12 +201,12 @@ fn build_tracer_prelude(target_fn_name: &Ident, enabled_metrics: EnabledMetics) 
 
 /// Builds the epilogue after the tracer, records metrics into global `MetricsCapture` for analysis
 /// and closes the current scope
-fn build_tracer_epilogue(enabled_metrics: EnabledMetics) -> TokenStream2 {
+fn build_tracer_epilogue(macro_args: MacroArgs) -> TokenStream2 {
     // Record dummy metrics and scope out of the method
     let mut tokens = TokenStream2::default();
 
     // Record timing first before performing any other operations, including locking the metrics
-    if enabled_metrics.latency {
+    if macro_args.latency {
         tokens.extend(quote! {
             let __latency = __time_pre.elapsed().as_millis();
         });
@@ -211,14 +217,14 @@ fn build_tracer_epilogue(enabled_metrics: EnabledMetics) -> TokenStream2 {
     });
 
     // Now, if any metrics are to be collected, lock the global metrics store
-    if !enabled_metrics.all_disabled() {
+    if !macro_args.all_disabled() {
         tokens.extend(quote! {
             let mut __locked_metrics = SCOPED_METRICS.lock().unwrap();
         });
     }
 
     // Record any enabled metrics
-    if enabled_metrics.n_constraints {
+    if macro_args.n_constraints {
         tokens.extend(quote! {
             let __new_constraints = cs.num_constraints() as u64;
             __locked_metrics.record_metric(
@@ -229,7 +235,7 @@ fn build_tracer_epilogue(enabled_metrics: EnabledMetics) -> TokenStream2 {
         })
     }
 
-    if enabled_metrics.n_multipliers {
+    if macro_args.n_multipliers {
         tokens.extend(quote! {
             let __new_multipliers = cs.num_multipliers() as u64;
             __locked_metrics.record_metric(
@@ -240,7 +246,7 @@ fn build_tracer_epilogue(enabled_metrics: EnabledMetics) -> TokenStream2 {
         })
     }
 
-    if enabled_metrics.latency {
+    if macro_args.latency {
         tokens.extend(quote! {
             __locked_metrics.record_metric(
                 __locked_scope.clone(),
@@ -260,7 +266,7 @@ fn build_tracer_epilogue(enabled_metrics: EnabledMetics) -> TokenStream2 {
 
 /// Build the trampoline implementation that does not trace and simply passes through to
 /// the target function. This implementation is active when the `bench` feature flag is disabled
-fn build_inactive_trampoline(target_fn: &ItemFn) -> ItemFn {
+fn build_inactive_trampoline(target_fn: &ItemFn, macro_args: MacroArgs) -> ItemFn {
     // In the inactive trampoline, we keep the signature and visibility of the target the same
     // The changes are to add an attribute #[cfg(not(feature = "bench"))] and change the body to call
     // the target
@@ -273,14 +279,14 @@ fn build_inactive_trampoline(target_fn: &ItemFn) -> ItemFn {
     out_fn.attrs.push(attr);
 
     // Modify the body to pass-through to the trace target
-    let call_expr = build_target_invocation(&out_fn.sig);
+    let call_expr = build_target_invocation(&out_fn.sig, macro_args);
     out_fn.block = parse_quote!({ #call_expr });
 
     out_fn
 }
 
 /// Build the argument list for the target function from the trampoline function's signature
-fn build_target_invocation(trampoline_sig: &Signature) -> ExprCall {
+fn build_target_invocation(trampoline_sig: &Signature, macro_args: MacroArgs) -> ExprCall {
     let mut args = Vec::new();
     let mut parsed_receiver = None;
 
@@ -297,12 +303,12 @@ fn build_target_invocation(trampoline_sig: &Signature) -> ExprCall {
 
     // Build the expression resolving to the function; using Self:: prelude if the
     let target_fn_name = get_modified_target_name(trampoline_sig);
-    let function = if parsed_receiver.is_some() {
-        // If a receiver was found (i.e. this is a call with &self) expand the macro to
-        // a MethodCallExpr
-        Expr::Path(parse_quote!(Self::#target_fn_name))
-    } else {
+    let function = if macro_args.non_associated {
+        // The default is that gadgets specify circuitry in associated functions, if the non-associated
+        // flag is explicitly set, call the function outside of the current object's scope
         Expr::Path(parse_quote!(#target_fn_name))
+    } else {
+        Expr::Path(parse_quote!(Self::#target_fn_name))
     };
 
     // Build the argument expression passed to the function call
@@ -325,9 +331,12 @@ fn build_target_invocation(trampoline_sig: &Signature) -> ExprCall {
 /// Build the modified target function
 ///
 /// The tracing target needs to be renamed so that calls to `fn_name` will route through the
+/// trampoline implementation. As well, we mask the visibility to private and allow the trampoline
+/// to inherit the visibility of the underlying implementation
 fn modify_target_fn(target_fn: &ItemFn) -> ItemFn {
     let mut modified_target = target_fn.clone();
     modified_target.sig.ident = get_modified_target_name(&target_fn.sig);
+    modified_target.vis = Visibility::Inherited; // private
 
     modified_target
 }
