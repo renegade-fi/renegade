@@ -24,7 +24,10 @@ use tungstenite::Message;
 
 use crate::{
     api::{
-        http::{GetReplicasRequest, GetReplicasResponse, PingRequest, PingResponse},
+        http::{
+            GetExchangeHealthStatesRequest, GetExchangeHealthStatesResponse, GetReplicasRequest,
+            GetReplicasResponse, PingRequest, PingResponse,
+        },
         websocket::{SubscriptionMessage, SubscriptionResponse},
     },
     price_reporter::{jobs::PriceReporterManagerJob, tokens::Token},
@@ -91,9 +94,19 @@ impl ApiServer {
     }
 
     /// Sets up the routes that the API service exposes in the router
-    pub(super) fn setup_routes(router: &mut Router, global_state: RelayerState) {
+    pub(super) fn setup_routes(
+        router: &mut Router,
+        config: ApiServerConfig,
+        global_state: RelayerState,
+    ) {
         // The "/ping" route
         router.add_route(Method::POST, "/ping".to_string(), PingHandler::new());
+        // The "/exchangeHealthStates" route
+        router.add_route(
+            Method::POST,
+            "/exchangeHealthStates".to_string(),
+            ExchangeHealthStatesHandler::new(config),
+        );
         // The "/replicas" route
         router.add_route(
             Method::POST,
@@ -244,12 +257,12 @@ impl WebsocketHandler {
                 // Register the topic subscription
                 let topic_reader = system_bus.subscribe(topic.clone());
                 client_subscriptions.insert(topic.clone(), topic_reader);
-                // If the topic is a price-report-*, then parse the tokens, send a
+                // If the topic is a *-price-report-*, then parse the tokens, send a
                 // StartPriceReporter job, and await until confirmed
                 let topic_split: Vec<&str> = topic.split('-').collect();
-                if topic.starts_with("price-report-") && topic_split.len() == 4 {
-                    let base_token = Token::from_addr(topic_split[2]);
-                    let quote_token = Token::from_addr(topic_split[3]);
+                if topic.contains("-price-report-") && topic_split.len() == 5 {
+                    let base_token = Token::from_addr(topic_split[3]);
+                    let quote_token = Token::from_addr(topic_split[4]);
                     let (channel_sender, channel_receiver) = channel::unbounded();
                     self.price_reporter_worker_sender
                         .send(PriceReporterManagerJob::StartPriceReporter {
@@ -320,6 +333,53 @@ impl TypedHandler for PingHandler {
             .unwrap()
             .as_millis();
         Ok(PingResponse { timestamp })
+    }
+}
+
+/// Handler for the exchangeHealthStates route, returns the health report for each individual
+/// exchange and the aggregate median
+#[derive(Clone, Debug)]
+pub struct ExchangeHealthStatesHandler {
+    /// The config for the API server
+    config: ApiServerConfig,
+}
+
+impl ExchangeHealthStatesHandler {
+    /// Create a new handler for "/replicas"
+    fn new(config: ApiServerConfig) -> Self {
+        Self { config }
+    }
+}
+
+impl TypedHandler for ExchangeHealthStatesHandler {
+    type Request = GetExchangeHealthStatesRequest;
+    type Response = GetExchangeHealthStatesResponse;
+    type Error = ApiServerError;
+
+    fn handle_typed(&self, req: Self::Request) -> Result<Self::Response, Self::Error> {
+        let (price_reporter_state_sender, price_reporter_state_receiver) = channel::unbounded();
+        self.config
+            .price_reporter_worker_sender
+            .send(PriceReporterManagerJob::PeekMedian {
+                base_token: req.base_token.clone(),
+                quote_token: req.quote_token.clone(),
+                channel: price_reporter_state_sender,
+            })
+            .unwrap();
+        let (exchange_connection_state_sender, exchange_connection_state_receiver) =
+            channel::unbounded();
+        self.config
+            .price_reporter_worker_sender
+            .send(PriceReporterManagerJob::PeekAllExchanges {
+                base_token: req.base_token,
+                quote_token: req.quote_token,
+                channel: exchange_connection_state_sender,
+            })
+            .unwrap();
+        Ok(GetExchangeHealthStatesResponse {
+            median: price_reporter_state_receiver.recv().unwrap(),
+            all_exchanges: exchange_connection_state_receiver.recv().unwrap(),
+        })
     }
 }
 

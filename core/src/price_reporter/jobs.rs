@@ -1,9 +1,9 @@
 use crossbeam::channel::Sender;
 use ring_channel::RingReceiver;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::{
-    exchanges::Exchange,
+    exchanges::{Exchange, ExchangeConnectionState},
     manager::PriceReporterListenerID,
     reporter::{PriceReport, PriceReporterState},
     tokens::Token,
@@ -50,6 +50,15 @@ pub enum PriceReporterManagerJob {
         quote_token: Token,
         /// The return channel for the price report
         channel: Sender<PriceReporterState>,
+    },
+    /// Peek at each ExchangeConnectionState
+    PeekAllExchanges {
+        /// The base Token
+        base_token: Token,
+        /// The quote Token
+        quote_token: Token,
+        /// The return channel for the ExchangeConnectionStates
+        channel: Sender<HashMap<Exchange, ExchangeConnectionState>>,
     },
     /// Create a forked median receiver
     CreateNewMedianReceiver {
