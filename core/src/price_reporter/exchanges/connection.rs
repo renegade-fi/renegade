@@ -54,11 +54,11 @@ pub enum Exchange {
 impl Display for Exchange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let fmt_str = match self {
-            Exchange::Binance => String::from("Binance"),
-            Exchange::Coinbase => String::from("Coinbase"),
-            Exchange::Kraken => String::from("Kraken"),
-            Exchange::Okx => String::from("Okx"),
-            Exchange::UniswapV3 => String::from("UniswapV3"),
+            Exchange::Binance => String::from("binance"),
+            Exchange::Coinbase => String::from("coinbase"),
+            Exchange::Kraken => String::from("kraken"),
+            Exchange::Okx => String::from("okx"),
+            Exchange::UniswapV3 => String::from("uniswapv3"),
         };
         write!(f, "{}", fmt_str)
     }
@@ -76,7 +76,7 @@ pub static ALL_EXCHANGES: &[Exchange] = &[
 /// The state of an ExchangeConnection. Note that the ExchangeConnection itself simply streams news
 /// PriceReports, and the task of determining if the PriceReports have yet to arrive is the job of
 /// the PriceReporter.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ExchangeConnectionState {
     /// The ExchangeConnection is reporting as normal.
     Nominal(PriceReport),

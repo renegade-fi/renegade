@@ -12,7 +12,7 @@ use crate::{system_bus::SystemBus, types::SystemBusMessage};
 
 use super::{
     errors::PriceReporterManagerError,
-    exchanges::Exchange,
+    exchanges::{Exchange, ExchangeConnectionState, ALL_EXCHANGES},
     jobs::PriceReporterManagerJob,
     reporter::{PriceReport, PriceReporter, PriceReporterState},
     tokens::Token,
@@ -84,6 +84,11 @@ impl PriceReporterManagerExecutor {
                 quote_token,
                 channel,
             } => self.peek_median(base_token, quote_token, channel),
+            PriceReporterManagerJob::PeekAllExchanges {
+                base_token,
+                quote_token,
+                channel,
+            } => self.peek_all_exchanges(base_token, quote_token, channel),
             PriceReporterManagerJob::CreateNewMedianReceiver {
                 base_token,
                 quote_token,
@@ -129,12 +134,12 @@ impl PriceReporterManagerExecutor {
         // If the PriceReporter does not already exist, create it
         let system_bus = self.system_bus.clone();
         let tokio_handle = self.tokio_handle.clone();
-        let price_report_topic = format!(
-            "price-report-{}-{}",
+        let median_price_report_topic = format!(
+            "median-price-report-{}-{}",
             base_token.get_addr(),
             quote_token.get_addr()
         );
-        let price_report_topic_clone = price_report_topic.clone();
+        let median_price_report_topic_clone = median_price_report_topic.clone();
         self.spawned_price_reporters
             .entry((base_token.clone(), quote_token.clone()))
             .or_insert_with(|| {
@@ -147,6 +152,7 @@ impl PriceReporterManagerExecutor {
                 // Stream all median PriceReports to the system bus, only if the midpoint price
                 // changes
                 let mut median_receiver = price_reporter.create_new_median_receiver();
+                let system_bus_clone = system_bus.clone();
                 tokio_handle.spawn(async move {
                     let mut last_median_price_report = PriceReport::default();
                     loop {
@@ -154,14 +160,40 @@ impl PriceReporterManagerExecutor {
                         if median_price_report.midpoint_price
                             != last_median_price_report.midpoint_price
                         {
-                            system_bus.publish(
-                                price_report_topic_clone.clone(),
+                            system_bus_clone.publish(
+                                median_price_report_topic_clone.clone(),
                                 SystemBusMessage::PriceReportMedian(median_price_report.clone()),
                             );
                             last_median_price_report = median_price_report;
                         }
                     }
                 });
+                // Stream all individual Exchange PriceReports to the system bus, only if the
+                // midpoint price changes
+                for exchange in ALL_EXCHANGES {
+                    let mut exchange_receiver =
+                        price_reporter.create_new_exchange_receiver(*exchange);
+                    let exchange_price_report_topic = format!(
+                        "{}-price-report-{}-{}",
+                        exchange,
+                        base_token.get_addr(),
+                        quote_token.get_addr()
+                    );
+                    let system_bus_clone = system_bus.clone();
+                    tokio_handle.spawn(async move {
+                        let mut last_price_report = PriceReport::default();
+                        loop {
+                            let price_report = exchange_receiver.next().await.unwrap();
+                            if price_report.midpoint_price != last_price_report.midpoint_price {
+                                system_bus_clone.publish(
+                                    exchange_price_report_topic.clone(),
+                                    SystemBusMessage::PriceReportExchange(price_report.clone()),
+                                );
+                                last_price_report = price_report;
+                            }
+                        }
+                    });
+                }
                 price_reporter
             });
 
@@ -177,7 +209,7 @@ impl PriceReporterManagerExecutor {
             let system_bus = self.system_bus.clone();
             tokio_handle.spawn(async move {
                 system_bus.publish(
-                    price_report_topic.clone(),
+                    median_price_report_topic.clone(),
                     SystemBusMessage::PriceReportMedian(price_report),
                 );
             });
@@ -246,6 +278,18 @@ impl PriceReporterManagerExecutor {
     ) -> Result<(), PriceReporterManagerError> {
         let price_reporter = self.get_price_reporter(base_token, quote_token)?;
         channel.send(price_reporter.peek_median()).unwrap();
+        Ok(())
+    }
+
+    /// Handler for PeekAllExchanges job.
+    fn peek_all_exchanges(
+        &self,
+        base_token: Token,
+        quote_token: Token,
+        channel: Sender<HashMap<Exchange, ExchangeConnectionState>>,
+    ) -> Result<(), PriceReporterManagerError> {
+        let price_reporter = self.get_price_reporter(base_token, quote_token)?;
+        channel.send(price_reporter.peek_all_exchanges()).unwrap();
         Ok(())
     }
 

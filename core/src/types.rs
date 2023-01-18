@@ -32,12 +32,16 @@ pub enum SystemBusMessage {
     },
     /// A message indicating that a new median PriceReport has been published
     PriceReportMedian(PriceReport),
+    /// A message indicating that a new individual exchange PriceReport has been published
+    PriceReportExchange(PriceReport),
 }
 
 /// A wrapper around a SystemBusMessage containing the topic, used for serializing websocket
 /// messages to clients
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SystemBusMessageWithTopic {
+    /// The topic of this message
     pub topic: String,
+    /// The event itself
     pub event: SystemBusMessage,
 }

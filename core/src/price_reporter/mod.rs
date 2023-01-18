@@ -2,7 +2,7 @@
 //! tear-down, websocket connections to all exchanges (both centralized and decentralized), and
 //! aggregation of individual PriceReports into medians.
 pub mod errors;
-mod exchanges;
+pub mod exchanges;
 pub mod jobs;
 pub mod manager;
 pub mod reporter;

@@ -72,7 +72,11 @@ impl Worker for ApiServer {
 
         // Build the routes for the HTTP server
         let mut router = Router::new();
-        Self::setup_routes(&mut router, self.config.global_state.clone());
+        Self::setup_routes(
+            &mut router,
+            self.config.clone(),
+            self.config.global_state.clone(),
+        );
 
         let shared_router = Arc::new(router);
 
