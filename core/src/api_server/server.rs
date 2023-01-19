@@ -100,7 +100,7 @@ impl ApiServer {
         global_state: RelayerState,
     ) {
         // The "/ping" route
-        router.add_route(Method::POST, "/ping".to_string(), PingHandler::new());
+        router.add_route(Method::GET, "/ping".to_string(), PingHandler::new());
         // The "/exchangeHealthStates" route
         router.add_route(
             Method::POST,
