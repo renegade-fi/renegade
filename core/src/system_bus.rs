@@ -144,7 +144,7 @@ impl<M> Drop for TopicReader<M> {
             let mut locked_mesh = self.topic_mesh.write().expect("topic_mesh lock poisoned");
 
             // Ensure that no new subscriptions have come in since we acquired the lock
-            // If so, abort the deallocation of the topic, otherewise zombie readers will
+            // If so, abort the deallocation of the topic, otherwise zombie readers will
             // exist for the deallocated topic
             let new_num_readers = self.num_readers.load(Ordering::Relaxed);
             if new_num_readers > 0 {

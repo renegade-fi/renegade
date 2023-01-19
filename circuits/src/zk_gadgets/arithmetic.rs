@@ -11,7 +11,7 @@ use mpc_bulletproof::r1cs::{
 };
 use mpc_bulletproof::r1cs_mpc::{
     MpcConstraintSystem, MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem,
-    SharedR1CSProof,
+    R1CSError, SharedR1CSProof,
 };
 use mpc_bulletproof::BulletproofGens;
 use mpc_ristretto::authenticated_ristretto::AuthenticatedCompressedRistretto;
@@ -22,6 +22,10 @@ use rand_core::OsRng;
 use crate::errors::{MpcError, ProverError, VerifierError};
 use crate::mpc::SharedFabric;
 use crate::{MultiProverCircuit, SingleProverCircuit};
+
+use super::bits::ToBitsGadget;
+use super::comparators::EqZeroGadget;
+use super::select::CondSelectGadget;
 
 /**
  * Single prover implementation
@@ -265,9 +269,151 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
     }
 }
 
+/// An exponentiation gadget on a private exponent; compute x^\alpha
+
+#[derive(Clone, Debug)]
+pub struct PrivateExpGadget<const ALPHA_BITS: usize> {}
+
+impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
+    /// Compute x^\alpha where both x and alpha are private values
+    pub fn exp_private<L, CS>(x: L, alpha: L, cs: &mut CS) -> Result<LinearCombination, R1CSError>
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        // Bit decompose the exponent, this removes the need to check `is_odd` at every
+        // iteration
+        let alpha_bits = ToBitsGadget::<ALPHA_BITS>::to_bits(cs, alpha.clone())?;
+
+        let x_lc: LinearCombination = x.into();
+        Self::exp_private_impl(x_lc, &alpha_bits, cs)
+    }
+
+    /// An implementation helper that assumes a bit decomposition of the exponent
+    fn exp_private_impl<L, CS>(
+        x: L,
+        alpha_bits: &[Variable],
+        cs: &mut CS,
+    ) -> Result<LinearCombination, R1CSError>
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        if alpha_bits.is_empty() {
+            return Ok(LinearCombination::from(Scalar::one()));
+        }
+
+        let x_lc: LinearCombination = x.into();
+
+        // Check whether all bits are zero
+        let alpha_zero = Self::all_bits_zero(alpha_bits, cs);
+        let is_odd = alpha_bits[0];
+
+        // Recursive call
+        let recursive_result = Self::exp_private_impl(x_lc.clone(), &alpha_bits[1..], cs)?;
+        let (_, _, recursive_doubled) =
+            cs.multiply(recursive_result.clone(), recursive_result.clone());
+
+        // If the value is odd multiply by an extra copy of `x`
+        let (_, _, recursive_plus_one) = cs.multiply(x_lc, recursive_doubled.into());
+
+        // Mux between the two results depending on whether the current exponent is odd or even
+        let odd_bit_selection =
+            CondSelectGadget::select(cs, recursive_plus_one, recursive_doubled, is_odd);
+
+        // Mask the value of the output if alpha is already zero
+        let zero_mask = CondSelectGadget::select(
+            cs,
+            Variable::One().into(),
+            odd_bit_selection,
+            alpha_zero.into(),
+        );
+
+        Ok(zero_mask)
+    }
+
+    /// Returns whether all the given bits are zero, it is assumed that these values
+    /// are constrained to be binary elsewhere in the circuit
+    fn all_bits_zero<L, CS>(bits: &[L], cs: &mut CS) -> Variable
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        // Add all the bits
+        let mut bit_sum: LinearCombination = Variable::Zero().into();
+        for bit in bits
+            .into_iter()
+            .map(|bit| Into::<LinearCombination>::into(bit.clone()))
+        {
+            bit_sum += bit;
+        }
+
+        EqZeroGadget::eq_zero(cs, bit_sum).into()
+    }
+}
+
+impl<const ALPHA_SIZE: usize> SingleProverCircuit for PrivateExpGadget<ALPHA_SIZE> {
+    /// Expected output
+    type Statement = Scalar;
+    /// (x, \alpha)
+    type Witness = (Scalar, Scalar);
+    type WitnessCommitment = (CompressedRistretto, CompressedRistretto);
+
+    const BP_GENS_CAPACITY: usize = 4096;
+
+    fn prove(
+        witness: Self::Witness,
+        statement: Self::Statement,
+        mut prover: Prover,
+    ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
+        // Commit to `x` and `\alpha`
+        let mut rng = OsRng {};
+        let (x_comm, x_var) = prover.commit(witness.0, Scalar::random(&mut rng));
+        let (alpha_comm, alpha_var) = prover.commit(witness.1, Scalar::random(&mut rng));
+
+        // Commit to the expected output
+        let expected_out = prover.commit_public(statement);
+
+        // Apply the constraints
+        let res = Self::exp_private(x_var, alpha_var, &mut prover).map_err(ProverError::R1CS)?;
+        prover.constrain(res - expected_out);
+
+        // Prove the statement
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
+
+        Ok(((x_comm, alpha_comm), proof))
+    }
+
+    fn verify(
+        witness_commitment: Self::WitnessCommitment,
+        statement: Self::Statement,
+        proof: R1CSProof,
+        mut verifier: Verifier,
+    ) -> Result<(), VerifierError> {
+        // Commit to `x` and `\alpha`
+        let x_var = verifier.commit(witness_commitment.0);
+        let alpha_var = verifier.commit(witness_commitment.1);
+
+        // Commit to the expected output
+        let expected_out = verifier.commit_public(statement);
+
+        // Apply the constraints
+        let res =
+            Self::exp_private(x_var, alpha_var, &mut verifier).map_err(VerifierError::R1CS)?;
+        verifier.constrain(res - expected_out);
+
+        // Verify the proof
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        verifier
+            .verify(&proof, &bp_gens)
+            .map_err(VerifierError::R1CS)
+    }
+}
+
 #[cfg(test)]
 mod arithmetic_tests {
-    use crypto::fields::{bigint_to_scalar, scalar_to_biguint};
+    use crypto::fields::{bigint_to_scalar, biguint_to_scalar, scalar_to_biguint};
     use curve25519_dalek::scalar::Scalar;
     use integration_helpers::mpc_network::field::get_ristretto_group_modulus;
     use num_bigint::BigUint;
@@ -275,7 +421,7 @@ mod arithmetic_tests {
 
     use crate::test_helpers::bulletproof_prove_and_verify;
 
-    use super::{ExpGadget, ExpGadgetStatement, ExpGadgetWitness};
+    use super::{ExpGadget, ExpGadgetStatement, ExpGadgetWitness, PrivateExpGadget};
 
     /// Tests the single prover exponentiation gadget
     #[test]
@@ -319,5 +465,29 @@ mod arithmetic_tests {
         );
 
         assert!(res.is_err());
+    }
+
+    /// Tests the single prover exponent gadget on a private exponent
+    #[test]
+    fn test_private_exp_gadget() {
+        let mut rng = OsRng {};
+        let alpha_bytes = 8;
+        let mut random_bytes = vec![0u8; alpha_bytes];
+        rng.fill_bytes(&mut random_bytes);
+
+        let alpha = biguint_to_scalar(&BigUint::from_bytes_le(&random_bytes));
+        let x = Scalar::random(&mut rng);
+
+        // Compute the expected exponentiation result
+        let x_bigint = scalar_to_biguint(&x);
+        let alpha_bigint = scalar_to_biguint(&alpha);
+
+        let expected = x_bigint.modpow(&alpha_bigint, &get_ristretto_group_modulus());
+
+        let res = bulletproof_prove_and_verify::<PrivateExpGadget<64>>(
+            (x, alpha),
+            biguint_to_scalar(&expected),
+        );
+        assert!(res.is_ok())
     }
 }

@@ -7,7 +7,7 @@ use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{
         ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
-        Verifier,
+        Variable, Verifier,
     },
     r1cs_mpc::{
         MpcConstraintSystem, MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem,
@@ -37,7 +37,7 @@ pub struct ToBitsGadget<const D: usize> {}
 
 impl<const D: usize> ToBitsGadget<D> {
     /// Converts a value to its bitwise representation in a single-prover constraint system
-    pub fn to_bits<L, CS>(cs: &mut CS, a: L) -> Result<Vec<LinearCombination>, R1CSError>
+    pub fn to_bits<L, CS>(cs: &mut CS, a: L) -> Result<Vec<Variable>, R1CSError>
     where
         CS: RandomizableConstraintSystem,
         L: Into<LinearCombination> + Clone,
@@ -49,7 +49,7 @@ impl<const D: usize> ToBitsGadget<D> {
         let mut res_bits = Vec::with_capacity(D);
         for (index, bit) in bits.iter().enumerate() {
             let bit_lc = cs.allocate(Some(*bit))?;
-            res_bits.push(bit_lc.into());
+            res_bits.push(bit_lc);
 
             let shift_bit = bigint_to_scalar(&(BigInt::from(1u64) << index));
             reconstructed += shift_bit * bit_lc;
