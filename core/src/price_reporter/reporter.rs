@@ -340,22 +340,6 @@ impl PriceReporter {
         }
     }
 
-    /// Helper function to translate PriceReports into ExchangeConnectionStates.
-    fn price_report_to_exchange_connection_state(
-        price_reports: HashMap<Exchange, PriceReport>,
-    ) -> HashMap<Exchange, ExchangeConnectionState> {
-        let mut exchange_connection_states = HashMap::<Exchange, ExchangeConnectionState>::new();
-        for (exchange, price_report) in price_reports {
-            let exchange_connection_state = if price_report == PriceReport::default() {
-                ExchangeConnectionState::NoDataReported
-            } else {
-                ExchangeConnectionState::Nominal(price_report)
-            };
-            exchange_connection_states.insert(exchange, exchange_connection_state);
-        }
-        exchange_connection_states
-    }
-
     /// Given a PriceReport for each Exchange, compute the current PriceReporterState. We check for
     /// various issues (delayed prices, no data yet received, etc.), and if no issues are found,
     /// compute the median PriceReport.
@@ -479,9 +463,21 @@ impl PriceReporter {
 
     /// Nonblocking report of the latest ExchangeConnectionState for all exchanges.
     pub fn peek_all_exchanges(&self) -> HashMap<Exchange, ExchangeConnectionState> {
-        Self::price_report_to_exchange_connection_state(
-            self.price_report_exchanges_latest.read().unwrap().clone(),
-        )
+        let price_reports = self.price_report_exchanges_latest.read().unwrap().clone();
+        let mut exchange_connection_states = HashMap::<Exchange, ExchangeConnectionState>::new();
+        for (exchange, price_report) in price_reports {
+            let exchange_connection_state = {
+                if !self.get_supported_exchanges().contains(&exchange) {
+                    ExchangeConnectionState::Unsupported
+                } else if price_report == PriceReport::default() {
+                    ExchangeConnectionState::NoDataReported
+                } else {
+                    ExchangeConnectionState::Nominal(price_report)
+                }
+            };
+            exchange_connection_states.insert(exchange, exchange_connection_state);
+        }
+        exchange_connection_states
     }
 
     /// Get all Exchanges that this Token pair supports.

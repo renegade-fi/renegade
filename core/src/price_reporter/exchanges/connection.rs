@@ -82,6 +82,8 @@ pub enum ExchangeConnectionState {
     Nominal(PriceReport),
     /// No data has yet to be reported from the ExchangeConnection.
     NoDataReported,
+    /// This Exchange is unsupported for the given Token pair
+    Unsupported,
 }
 impl Display for ExchangeConnectionState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -90,6 +92,7 @@ impl Display for ExchangeConnectionState {
                 format!("{:.4}", price_report.midpoint_price)
             }
             ExchangeConnectionState::NoDataReported => String::from("NoDataReported"),
+            ExchangeConnectionState::Unsupported => String::from("Unsupported"),
         };
         write!(f, "{}", fmt_str)
     }
