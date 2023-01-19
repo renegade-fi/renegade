@@ -34,7 +34,7 @@ macro_rules! integration_test_main {
         /// on the type it accepts
         struct TestWrapper(IntegrationTest<$test_args>);
 
-        // Collect the statically defined tests into an interable
+        // Collect the statically defined tests into an iterable
         inventory::collect!(TestWrapper);
 
         /// Defines a secondary CLI that allows the test harness to simply no-op if `--skip integration`
