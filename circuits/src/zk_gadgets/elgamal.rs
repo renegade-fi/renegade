@@ -1,12 +1,14 @@
 //! Implements the ZK gadgetry for ElGamal encryption
 
-use curve25519_dalek::ristretto::CompressedRistretto;
-use itertools::Itertools;
+use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use mpc_bulletproof::{
-    r1cs::{Prover, R1CSProof, RandomizableConstraintSystem, Verifier},
+    r1cs::{
+        ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
+        Variable, Verifier,
+    },
+    r1cs_mpc::R1CSError,
     BulletproofGens,
 };
-use num_bigint::BigUint;
 use rand_core::OsRng;
 
 use crate::{
@@ -14,79 +16,85 @@ use crate::{
     CommitProver, CommitVerifier, SingleProverCircuit,
 };
 
-use super::{
-    edwards::{EdwardsPoint, TwistedEdwardsCurve},
-    nonnative::{FieldMod, NonNativeElementVar},
-};
+use super::arithmetic::PrivateExpGadget;
 
-/// A gadget that constrains ElGamal encryption under a known public key
+/// Implements an ElGamal gadget that verifies encryption of some plaintext under a private key
+#[derive(Clone, Debug)]
 pub struct ElGamalGadget<const SCALAR_BITS: usize> {}
 
 impl<const SCALAR_BITS: usize> ElGamalGadget<SCALAR_BITS> {
-    /// Constrain the decryption of a given ciphertext to equal the expected result
-    pub fn encrypt<CS: RandomizableConstraintSystem>(
-        randomness: NonNativeElementVar,
-        cleartext: EdwardsPoint,
-        public_key: EdwardsPoint,
-        curve_basepoint: EdwardsPoint,
-        curve: &TwistedEdwardsCurve,
+    /// Encrypts the given value with the given key and randomness in the constraint system
+    pub fn encrypt<L, CS>(
+        generator: Scalar,
+        randomness: L,
+        plaintext: L,
+        pub_key: L,
         cs: &mut CS,
-    ) -> (EdwardsPoint, EdwardsPoint) {
-        // Multiply the randomness with the basepoint to allow the receiver to
-        // recover the encryption key
-        let randomness_times_basepoint =
-            curve.scalar_mul::<SCALAR_BITS, _>(&randomness, &curve_basepoint, cs);
-        // Multiply the randomness with the public key, and use it to blind the cleartext
-        let randomness_times_public_key =
-            curve.scalar_mul::<SCALAR_BITS, _>(&randomness, &public_key, cs);
-        let ciphertext = curve.add_points(&cleartext, &randomness_times_public_key, cs);
+    ) -> Result<(LinearCombination, LinearCombination), R1CSError>
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        // Take the generator raised to the randomness, so that the secret key holder may
+        // reconstruct the shared secret
+        let ciphertext1 = PrivateExpGadget::<SCALAR_BITS>::exp_private_fixed_base(
+            generator,
+            randomness.clone(),
+            cs,
+        )?;
 
-        (ciphertext, randomness_times_basepoint)
+        // Raise the public key to the randomness and use this to encrypt the value
+        let shared_secret = PrivateExpGadget::<SCALAR_BITS>::exp_private(pub_key, randomness, cs)?;
+
+        // Blind the plaintext using the shared secret
+        let (_, _, blinded_plaintext) = cs.multiply(shared_secret, plaintext.into());
+
+        Ok((ciphertext1, blinded_plaintext.into()))
     }
 }
 
-/// A witness to the statement of valid encryption
+/// A witness for the ElGamal encryption circuit; containing the randomness and the plaintext
 #[derive(Clone, Debug)]
 pub struct ElGamalWitness {
-    /// The x coordinate of the cleartext
-    cleartext_x: BigUint,
-    /// The y coordinate of the cleartext
-    cleartext_y: BigUint,
-    /// The modulus that the field is defined over
-    field_mod: FieldMod,
-    /// The randomness used to blind the cleartext
-    randomness: BigUint,
+    /// The randomness used to create the shared secret
+    pub randomness: Scalar,
+    /// The plaintext message encrypted under the key
+    pub plaintext: Scalar,
 }
 
-/// The statement parameterization of a correct ElGamal encryption circuit
+/// A statement for the ElGamal encryption circuit; holds the group parameterization and the
+/// expected ciphertext
 #[derive(Clone, Debug)]
 pub struct ElGamalStatement {
-    /// The first point in the expected ciphertext resulting from the encryption
-    expected_ciphertext_1: (BigUint, BigUint),
-    /// The second point in the expected ciphertext resulting from the encryption
-    expected_ciphertext_2: (BigUint, BigUint),
-    /// The public key used for encryption
-    public_key: (BigUint, BigUint),
-    /// The curve basepoint
-    basepoint: (BigUint, BigUint),
-    /// A parameterization of a twisted Edwards curve
-    curve: TwistedEdwardsCurve,
-    /// The modulus of the field that the operation is defined over
-    field_mod: FieldMod,
+    /// The public key that the value is encrypted under
+    pub pub_key: Scalar,
+    /// The generator of the group that the circuit is defined over
+    pub generator: Scalar,
+    /// The expected result of encrypting the secret under the pubkey
+    pub expected_ciphertext: (Scalar, Scalar),
 }
 
-/// An ElGamal witness that has been allocated in a constraint system
+/// An ElGamal witness that has been allocated within a constraint system
 #[derive(Clone, Debug)]
 pub struct ElGamalWitnessVar {
-    /// The cleartext point mapped onto an Edwards curve
-    cleartext_point: EdwardsPoint,
-    /// The randomness used to blind the cleartext
-    randomness: NonNativeElementVar,
+    /// The randomness used to create the shared secret
+    pub randomness: Variable,
+    /// The plaintext message encrypted under the key
+    pub plaintext: Variable,
+}
+
+/// A commitment to an ElGamal witness
+#[derive(Clone, Debug)]
+pub struct ElGamalWitnessCommitment {
+    /// The randomness used to create the shared secret
+    pub randomness: CompressedRistretto,
+    /// The plaintext message encrypted under the key
+    pub plaintext: CompressedRistretto,
 }
 
 impl CommitProver for ElGamalWitness {
-    type VarType = ElGamalWitnessVar;
     type CommitType = ElGamalWitnessCommitment;
+    type VarType = ElGamalWitnessVar;
     type ErrorType = ();
 
     fn commit_prover<R: rand_core::RngCore + rand_core::CryptoRng>(
@@ -94,48 +102,20 @@ impl CommitProver for ElGamalWitness {
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        // Commit to the witness
-        let (cleartext_point, x_comm, y_comm) = EdwardsPoint::commit_witness(
-            self.cleartext_x.to_owned(),
-            self.cleartext_y.to_owned(),
-            self.field_mod.to_owned(),
-            rng,
-            prover,
-        );
-
-        let (randomness_var, randomness_commitment) = NonNativeElementVar::commit_witness(
-            self.randomness.to_owned(),
-            self.field_mod.to_owned(),
-            rng,
-            prover,
-        );
+        let (randomness_comm, randomness_var) = prover.commit(self.randomness, Scalar::random(rng));
+        let (plaintext_comm, plaintext_var) = prover.commit(self.plaintext, Scalar::random(rng));
 
         Ok((
             ElGamalWitnessVar {
-                cleartext_point,
                 randomness: randomness_var,
+                plaintext: plaintext_var,
             },
             ElGamalWitnessCommitment {
-                cleartext_x_commit: x_comm,
-                cleartext_y_commit: y_comm,
-                randomness_commit: randomness_commitment,
-                field_mod: self.field_mod.to_owned(),
+                randomness: randomness_comm,
+                plaintext: plaintext_comm,
             },
         ))
     }
-}
-
-/// A commitment to an ElGamal witness
-#[derive(Clone, Debug)]
-pub struct ElGamalWitnessCommitment {
-    /// The commitment result of the x coordinate of the cleartext
-    cleartext_x_commit: Vec<CompressedRistretto>,
-    /// The commitment result of the y coordinate of the cleartext
-    cleartext_y_commit: Vec<CompressedRistretto>,
-    /// The commitment to the randomness used to blind the cleartext
-    randomness_commit: Vec<CompressedRistretto>,
-    /// The modulus that the field is defined over
-    field_mod: FieldMod,
 }
 
 impl CommitVerifier for ElGamalWitnessCommitment {
@@ -143,44 +123,22 @@ impl CommitVerifier for ElGamalWitnessCommitment {
     type ErrorType = ();
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        // Allocate the commitment to the point's words in the verifier's constraint system
-        let cleartext_x_vars = self
-            .cleartext_x_commit
-            .iter()
-            .map(|var| verifier.commit(*var).into())
-            .collect_vec();
-        let cleartext_y_vars = self
-            .cleartext_y_commit
-            .iter()
-            .map(|var| verifier.commit(*var).into())
-            .collect_vec();
-        let nonnative_x = NonNativeElementVar::new(cleartext_x_vars, self.field_mod.to_owned());
-        let nonnative_y = NonNativeElementVar::new(cleartext_y_vars, self.field_mod.to_owned());
-
-        let cleartext_point = EdwardsPoint::new(nonnative_x, nonnative_y);
-
-        // Commit to the randomness
-        let randomness_vars = self
-            .randomness_commit
-            .iter()
-            .map(|var| verifier.commit(*var).into())
-            .collect_vec();
-        let randomness_nonnative =
-            NonNativeElementVar::new(randomness_vars, self.field_mod.to_owned());
+        let randomness_var = verifier.commit(self.randomness);
+        let plaintext_var = verifier.commit(self.plaintext);
 
         Ok(ElGamalWitnessVar {
-            cleartext_point,
-            randomness: randomness_nonnative,
+            randomness: randomness_var,
+            plaintext: plaintext_var,
         })
     }
 }
 
 impl<const SCALAR_BITS: usize> SingleProverCircuit for ElGamalGadget<SCALAR_BITS> {
     type Witness = ElGamalWitness;
-    type Statement = ElGamalStatement;
     type WitnessCommitment = ElGamalWitnessCommitment;
+    type Statement = ElGamalStatement;
 
-    const BP_GENS_CAPACITY: usize = 32768;
+    const BP_GENS_CAPACITY: usize = 1024;
 
     fn prove(
         witness: Self::Witness,
@@ -191,47 +149,25 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ElGamalGadget<SCALAR_BITS
         let mut rng = OsRng {};
         let (witness_var, witness_comm) = witness.commit_prover(&mut rng, &mut prover).unwrap();
 
-        // Commit to the statement variables
-        let expected_ciphertext1 = EdwardsPoint::commit_public(
-            statement.expected_ciphertext_1.0,
-            statement.expected_ciphertext_1.1,
-            statement.field_mod.to_owned(),
-            &mut prover,
-        );
-
-        let expected_ciphertext2 = EdwardsPoint::commit_public(
-            statement.expected_ciphertext_2.0,
-            statement.expected_ciphertext_2.1,
-            statement.field_mod.to_owned(),
-            &mut prover,
-        );
-
-        let public_key = EdwardsPoint::commit_public(
-            statement.public_key.0,
-            statement.public_key.1,
-            statement.field_mod.to_owned(),
-            &mut prover,
-        );
-
-        let basepoint = EdwardsPoint::commit_public(
-            statement.basepoint.0,
-            statement.basepoint.1,
-            statement.field_mod.to_owned(),
-            &mut prover,
+        // Commit to the statement
+        let pub_key_var = prover.commit_public(statement.pub_key);
+        let expected_ciphertext_var = (
+            prover.commit_public(statement.expected_ciphertext.0),
+            prover.commit_public(statement.expected_ciphertext.1),
         );
 
         // Apply the constraints
-        let ciphertext = Self::encrypt(
+        let res = Self::encrypt(
+            statement.generator,
             witness_var.randomness,
-            witness_var.cleartext_point,
-            public_key,
-            basepoint,
-            &statement.curve,
+            witness_var.plaintext,
+            pub_key_var,
             &mut prover,
-        );
+        )
+        .map_err(ProverError::R1CS)?;
 
-        EdwardsPoint::constrain_equal(&ciphertext.0, &expected_ciphertext1, &mut prover);
-        EdwardsPoint::constrain_equal(&ciphertext.1, &expected_ciphertext2, &mut prover);
+        prover.constrain(res.0 - expected_ciphertext_var.0);
+        prover.constrain(res.1 - expected_ciphertext_var.1);
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -249,47 +185,25 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ElGamalGadget<SCALAR_BITS
         // Commit to the witness
         let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
 
-        // Commit to the statement variables
-        let expected_ciphertext1 = EdwardsPoint::commit_public(
-            statement.expected_ciphertext_1.0,
-            statement.expected_ciphertext_1.1,
-            statement.field_mod.to_owned(),
-            &mut verifier,
-        );
-
-        let expected_ciphertext2 = EdwardsPoint::commit_public(
-            statement.expected_ciphertext_2.0,
-            statement.expected_ciphertext_2.1,
-            statement.field_mod.to_owned(),
-            &mut verifier,
-        );
-
-        let public_key = EdwardsPoint::commit_public(
-            statement.public_key.0,
-            statement.public_key.1,
-            statement.field_mod.to_owned(),
-            &mut verifier,
-        );
-
-        let basepoint = EdwardsPoint::commit_public(
-            statement.basepoint.0,
-            statement.basepoint.1,
-            statement.field_mod.to_owned(),
-            &mut verifier,
+        // Commit to the statement
+        let pub_key_var = verifier.commit_public(statement.pub_key);
+        let expected_ciphertext_var = (
+            verifier.commit_public(statement.expected_ciphertext.0),
+            verifier.commit_public(statement.expected_ciphertext.1),
         );
 
         // Apply the constraints
-        let ciphertext = Self::encrypt(
+        let res = Self::encrypt(
+            statement.generator,
             witness_var.randomness,
-            witness_var.cleartext_point,
-            public_key,
-            basepoint,
-            &statement.curve,
+            witness_var.plaintext,
+            pub_key_var,
             &mut verifier,
-        );
+        )
+        .map_err(VerifierError::R1CS)?;
 
-        EdwardsPoint::constrain_equal(&ciphertext.0, &expected_ciphertext1, &mut verifier);
-        EdwardsPoint::constrain_equal(&ciphertext.1, &expected_ciphertext2, &mut verifier);
+        verifier.constrain(res.0 - expected_ciphertext_var.0);
+        verifier.constrain(res.1 - expected_ciphertext_var.1);
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -301,86 +215,90 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ElGamalGadget<SCALAR_BITS
 
 #[cfg(test)]
 mod elgamal_tests {
-    use ark_crypto_primitives::encryption::{
-        elgamal::{ElGamal, Parameters, Randomness},
-        AsymmetricEncryptionScheme,
-    };
-    use ark_ec::twisted_edwards::TECurveConfig;
-    use ark_ed25519::{EdwardsAffine, EdwardsParameters, EdwardsProjective, Fr as EdwardsScalar};
+    use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
+    use curve25519_dalek::scalar::Scalar;
+    use integration_helpers::mpc_network::field::get_ristretto_group_modulus;
     use num_bigint::BigUint;
-    use rand::rngs::OsRng;
-    use rand_core::OsRng as CoreOsRng;
+    use rand_core::{OsRng, RngCore};
 
-    use crate::{
-        test_helpers::bulletproof_prove_and_verify,
-        zk_gadgets::{
-            edwards::edwards_tests::{
-                create_ed25519_repr, ed25519_random_felt, ed25519_random_point,
-            },
-            nonnative::FieldMod,
-        },
-    };
+    use crate::test_helpers::bulletproof_prove_and_verify;
 
     use super::{ElGamalGadget, ElGamalStatement, ElGamalWitness};
 
-    /// A type alias for the Arkworks native ElGamal gadget over ed25519
-    type ArkworksElGamal = ElGamal<EdwardsProjective>;
-
-    /// Test the encryption circuit
+    /// Test the ElGamal encryption gadget on a valid ciphertext
     #[test]
-    #[ignore = "too expensive to run in CI"]
-    fn test_encryption_circuit() {
-        // Setup a random plaintext and randomness
-        let mut rng1 = OsRng {};
-        let mut rng2 = CoreOsRng {};
-        let plaintext = ed25519_random_point(&mut rng2);
+    fn test_valid_ciphertext() {
+        // Create a random cipher
+        let mut rng = OsRng {};
+        let randomness_bitlength = 16;
+        let mut randomness_bytes = vec![0u8; randomness_bitlength / 8];
+        rng.fill_bytes(&mut randomness_bytes);
 
-        // Sample a small (bitlength) randomness to shrink test complexity
-        let randomness = ed25519_random_felt(&mut rng2) % BigUint::from(1u8 << 3);
+        let randomness = biguint_to_scalar(&BigUint::from_bytes_le(&randomness_bytes));
+        let plaintext = Scalar::random(&mut rng);
 
-        // Use the curve25519 field modulus
-        let field_mod = FieldMod::from_modulus((BigUint::from(1u8) << 255) - 19u8);
+        let pubkey = Scalar::random(&mut rng);
+        let generator = Scalar::from(3u64);
 
-        let encryption_params = Parameters {
-            generator: EdwardsParameters::GENERATOR,
-        };
-        let (pub_key, _): (EdwardsAffine, _) =
-            ArkworksElGamal::keygen(&encryption_params, &mut rng1).unwrap();
+        // Generate the expected encryption
+        let field_mod = get_ristretto_group_modulus();
+        let generator_bigint = scalar_to_biguint(&generator);
+        let pubkey_bigint = scalar_to_biguint(&pubkey);
+        let randomness_bigint = scalar_to_biguint(&randomness);
+        let plaintext_bigint = scalar_to_biguint(&plaintext);
 
-        // Encrypt the random plaintext via Arkworks
-        // Arkworks reverses the order of the ciphertext in our gadget, bind them in reverse order
-        let arkworks_randomness = EdwardsScalar::from(randomness.clone());
-        let (ciphertext2, ciphertext1): (EdwardsAffine, EdwardsAffine) = ArkworksElGamal::encrypt(
-            &encryption_params,
-            &pub_key,
-            &plaintext,
-            &Randomness(arkworks_randomness),
-        )
-        .unwrap();
+        let ciphertext_1 = generator_bigint.modpow(&randomness_bigint, &field_mod);
+        let shared_secret = pubkey_bigint.modpow(&randomness_bigint, &field_mod);
+        let ciphertext_2 = (shared_secret * plaintext_bigint) % &field_mod;
 
-        // Now use the expected result to prove the ElGamal valid encryption statement above
+        // Prove the statement
         let witness = ElGamalWitness {
-            cleartext_x: plaintext.x.into(),
-            cleartext_y: plaintext.y.into(),
-            field_mod: field_mod.clone(),
             randomness,
+            plaintext,
         };
-
-        let ed25519_basepoint: (BigUint, BigUint) = (
-            EdwardsParameters::GENERATOR.x.into(),
-            EdwardsParameters::GENERATOR.y.into(),
-        );
         let statement = ElGamalStatement {
-            expected_ciphertext_1: (ciphertext1.x.into(), ciphertext1.y.into()),
-            expected_ciphertext_2: (ciphertext2.x.into(), ciphertext2.y.into()),
-            public_key: (pub_key.x.into(), pub_key.y.into()),
-            basepoint: ed25519_basepoint,
-            curve: create_ed25519_repr(),
-            field_mod,
+            pub_key: pubkey,
+            generator,
+            expected_ciphertext: (
+                biguint_to_scalar(&ciphertext_1),
+                biguint_to_scalar(&ciphertext_2),
+            ),
         };
 
-        let res =
-            bulletproof_prove_and_verify::<ElGamalGadget<3 /* SCALAR_BITS */>>(witness, statement);
+        let res = bulletproof_prove_and_verify::<ElGamalGadget<16>>(witness, statement);
         assert!(res.is_ok());
+    }
+
+    /// Tests the ElGamal gadget with an invalid ciphertext
+    #[test]
+    fn test_invalid_ciphertext() {
+        // Create a random cipher
+        let mut rng = OsRng {};
+        let randomness_bitlength = 16;
+        let mut randomness_bytes = vec![0u8; randomness_bitlength / 8];
+        rng.fill_bytes(&mut randomness_bytes);
+
+        let randomness = biguint_to_scalar(&BigUint::from_bytes_le(&randomness_bytes));
+        let plaintext = Scalar::random(&mut rng);
+
+        let pubkey = Scalar::random(&mut rng);
+        let generator = Scalar::from(3u64);
+
+        // Generate the expected encryption
+        let expected_ciphertext = (Scalar::random(&mut rng), Scalar::random(&mut rng));
+
+        // Prove the statement
+        let witness = ElGamalWitness {
+            randomness,
+            plaintext,
+        };
+        let statement = ElGamalStatement {
+            pub_key: pubkey,
+            generator,
+            expected_ciphertext,
+        };
+
+        let res = bulletproof_prove_and_verify::<ElGamalGadget<16>>(witness, statement);
+        assert!(res.is_err());
     }
 }

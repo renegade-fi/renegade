@@ -275,6 +275,22 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
 pub struct PrivateExpGadget<const ALPHA_BITS: usize> {}
 
 impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
+    /// Compute x^\alpha where `x` is public and alpha is private
+    pub fn exp_private_fixed_base<L, CS>(
+        x: Scalar,
+        alpha: L,
+        cs: &mut CS,
+    ) -> Result<LinearCombination, R1CSError>
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        // Bit decompose the exponent, this removes the need to check `is_odd` at every
+        // iteration
+        let alpha_bits = ToBitsGadget::<ALPHA_BITS>::to_bits(cs, alpha)?;
+        Self::exp_private_fixed_base_impl::<L, CS>(x, &alpha_bits, cs)
+    }
+
     /// Compute x^\alpha where both x and alpha are private values
     pub fn exp_private<L, CS>(x: L, alpha: L, cs: &mut CS) -> Result<LinearCombination, R1CSError>
     where
@@ -283,10 +299,55 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
     {
         // Bit decompose the exponent, this removes the need to check `is_odd` at every
         // iteration
-        let alpha_bits = ToBitsGadget::<ALPHA_BITS>::to_bits(cs, alpha.clone())?;
+        let alpha_bits = ToBitsGadget::<ALPHA_BITS>::to_bits(cs, alpha)?;
 
         let x_lc: LinearCombination = x.into();
         Self::exp_private_impl(x_lc, &alpha_bits, cs)
+    }
+
+    /// An implementation helper for fixed base exponentiation that assumes a bit decomposition of
+    /// the exponent is passed in
+    fn exp_private_fixed_base_impl<L, CS>(
+        x: Scalar,
+        alpha_bits: &[Variable],
+        cs: &mut CS,
+    ) -> Result<LinearCombination, R1CSError>
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        if alpha_bits.is_empty() {
+            return Ok(LinearCombination::from(Scalar::one()));
+        }
+
+        // Check whether all bits are zero
+        let alpha_zero = Self::all_bits_zero(alpha_bits, cs);
+        let is_odd = alpha_bits[0];
+
+        // Recursive call
+        let recursive_result = Self::exp_private_fixed_base_impl::<L, CS>(x, &alpha_bits[1..], cs)?;
+        let (_, _, recursive_doubled) = cs.multiply(recursive_result.clone(), recursive_result);
+
+        // If the value is odd multiply by an extra copy of `x`
+        let recursive_plus_one = x * recursive_doubled;
+
+        // Mux between the two results depending on whether the current exponent is odd or even
+        let odd_bit_selection = CondSelectGadget::select(
+            cs,
+            recursive_plus_one,
+            recursive_doubled.into(),
+            is_odd.into(),
+        );
+
+        // Mask the value of the output if alpha is already zero
+        let zero_mask = CondSelectGadget::select(
+            cs,
+            Variable::One().into(),
+            odd_bit_selection,
+            alpha_zero.into(),
+        );
+
+        Ok(zero_mask)
     }
 
     /// An implementation helper that assumes a bit decomposition of the exponent
@@ -311,8 +372,7 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
 
         // Recursive call
         let recursive_result = Self::exp_private_impl(x_lc.clone(), &alpha_bits[1..], cs)?;
-        let (_, _, recursive_doubled) =
-            cs.multiply(recursive_result.clone(), recursive_result.clone());
+        let (_, _, recursive_doubled) = cs.multiply(recursive_result.clone(), recursive_result);
 
         // If the value is odd multiply by an extra copy of `x`
         let (_, _, recursive_plus_one) = cs.multiply(x_lc, recursive_doubled.into());
@@ -342,13 +402,13 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
         // Add all the bits
         let mut bit_sum: LinearCombination = Variable::Zero().into();
         for bit in bits
-            .into_iter()
+            .iter()
             .map(|bit| Into::<LinearCombination>::into(bit.clone()))
         {
             bit_sum += bit;
         }
 
-        EqZeroGadget::eq_zero(cs, bit_sum).into()
+        EqZeroGadget::eq_zero(cs, bit_sum)
     }
 }
 
