@@ -79,7 +79,12 @@ impl<
             return build_400_response();
         }
 
-        let unwrapped: &[u8] = &req_body_bytes.unwrap(); // Necessary to explicitly hold temporary value
+        let mut unwrapped: &[u8] = &req_body_bytes.unwrap(); // Necessary to explicitly hold temporary value
+        if unwrapped.len() == 0 {
+            // If no HTTP body data was passed, replace the data with "null". Serde expects "null" as
+            // the serialized version of an empty struct
+            unwrapped = "null".as_bytes();
+        }
         let deserialized = serde_json::from_reader(unwrapped);
         if deserialized.is_err() {
             return build_400_response();
