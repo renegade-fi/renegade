@@ -197,24 +197,6 @@ impl PriceReporterManagerExecutor {
                 price_reporter
             });
 
-        // Send a one-time system bus message with the latest median, if it exists. Since illiquid
-        // assets tend to update their median PriceReport very infrequently, this is useful for new
-        // subscribers to the price-report-* topics to receive an initial update
-        let price_reporter_state = self
-            .spawned_price_reporters
-            .get(&(base_token.clone(), quote_token.clone()))
-            .unwrap()
-            .peek_median();
-        if let PriceReporterState::Nominal(price_report) = price_reporter_state {
-            let system_bus = self.system_bus.clone();
-            tokio_handle.spawn(async move {
-                system_bus.publish(
-                    median_price_report_topic.clone(),
-                    SystemBusMessage::PriceReportMedian(price_report),
-                );
-            });
-        }
-
         // If there is no specified listener ID, we do not register any new IDs
         if id.is_none() {
             channel.send(()).unwrap();
