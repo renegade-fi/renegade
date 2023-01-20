@@ -4,7 +4,7 @@ use crate::{
     mpc::SharedFabric,
     Allocate, CommitProver, CommitSharedProver, CommitVerifier,
 };
-use crypto::fields::bigint_to_scalar;
+use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
@@ -15,7 +15,7 @@ use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto,
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
-use num_bigint::BigInt;
+use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
@@ -24,9 +24,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Fee {
     /// The public settle key of the cluster collecting fees
-    pub settle_key: BigInt,
+    pub settle_key: BigUint,
     /// The mint (ERC-20 Address) of the token used to pay gas
-    pub gas_addr: BigInt,
+    pub gas_addr: BigUint,
     /// The amount of the mint token to use for gas
     pub gas_token_amount: u64,
     /// The percentage fee that the cluster may take upon match
@@ -47,8 +47,8 @@ impl TryFrom<&[u64]> for Fee {
         }
 
         Ok(Self {
-            settle_key: BigInt::from(values[0]),
-            gas_addr: BigInt::from(values[1]),
+            settle_key: BigUint::from(values[0]),
+            gas_addr: BigUint::from(values[1]),
             gas_token_amount: values[2],
             percentage_fee: values[3],
         })
@@ -103,9 +103,9 @@ impl CommitProver for Fee {
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
         let (settle_comm, settle_var) =
-            prover.commit(bigint_to_scalar(&self.settle_key), Scalar::random(rng));
+            prover.commit(biguint_to_scalar(&self.settle_key), Scalar::random(rng));
         let (addr_comm, addr_var) =
-            prover.commit(bigint_to_scalar(&self.gas_addr), Scalar::random(rng));
+            prover.commit(biguint_to_scalar(&self.gas_addr), Scalar::random(rng));
         let (amount_comm, amount_var) =
             prover.commit(Scalar::from(self.gas_token_amount), Scalar::random(rng));
         let (percent_comm, percent_var) =
@@ -217,8 +217,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Fee 
             .batch_allocate_private_scalars(
                 owning_party,
                 &[
-                    bigint_to_scalar(&self.settle_key),
-                    bigint_to_scalar(&self.gas_addr),
+                    biguint_to_scalar(&self.settle_key),
+                    biguint_to_scalar(&self.gas_addr),
                     Scalar::from(self.gas_token_amount),
                     Scalar::from(self.percentage_fee),
                 ],
@@ -290,8 +290,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
             .batch_commit(
                 owning_party,
                 &[
-                    bigint_to_scalar(&self.settle_key),
-                    bigint_to_scalar(&self.gas_addr),
+                    biguint_to_scalar(&self.settle_key),
+                    biguint_to_scalar(&self.gas_addr),
                     Scalar::from(self.gas_token_amount),
                     Scalar::from(self.percentage_fee),
                 ],
