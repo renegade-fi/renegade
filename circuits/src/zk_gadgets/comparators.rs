@@ -122,6 +122,48 @@ impl SingleProverCircuit for EqZeroGadget {
     }
 }
 
+/// Returns 1 if a == b otherwise 0
+#[derive(Clone, Debug)]
+pub struct EqGadget {}
+impl EqGadget {
+    /// Computes a == b
+    pub fn eq<L, CS>(a: L, b: L, cs: &mut CS) -> Variable
+    where
+        L: Into<LinearCombination>,
+        CS: RandomizableConstraintSystem,
+    {
+        EqZeroGadget::eq_zero(cs, a.into() - b.into())
+    }
+}
+
+/// Returns 1 if a_i = b_i for all i, otherwise 0
+#[derive(Clone, Debug)]
+pub struct EqVecGadget {}
+impl EqVecGadget {
+    /// Returns 1 if \vec{a} = \vec{b}, otherwise 0
+    pub fn eq_vec<L, CS>(a: &[L], b: &[L], cs: &mut CS) -> Variable
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        assert_eq!(a.len(), b.len(), "eq_vec expects equal length vectors");
+
+        // Compare each vector element
+        let mut not_equal_values = Vec::with_capacity(a.len());
+        for (a_val, b_val) in a.iter().zip(b.iter()) {
+            not_equal_values.push(NotEqualGadget::not_equal(a_val.clone(), b_val.clone(), cs));
+        }
+
+        // Sum up all the a_i != b_i and return whether this value equals zero
+        let mut not_equal_sum: LinearCombination = Variable::Zero().into();
+        for ne_val in not_equal_values.iter() {
+            not_equal_sum += ne_val.clone();
+        }
+
+        EqZeroGadget::eq_zero(cs, not_equal_sum)
+    }
+}
+
 /// Returns a boolean representing a != b where 1 is true and 0 is false
 #[derive(Debug)]
 pub struct NotEqualGadget {}
