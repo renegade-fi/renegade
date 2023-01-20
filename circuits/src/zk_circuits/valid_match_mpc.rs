@@ -6,7 +6,11 @@
 
 use std::{borrow::Borrow, marker::PhantomData};
 
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
+use curve25519_dalek::{
+    ristretto::{CompressedRistretto, RistrettoPoint},
+    scalar::Scalar,
+    traits::Identity,
+};
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{
@@ -511,6 +515,7 @@ impl From<&[CompressedRistretto]> for ValidMatchCommitment {
                 side: commitments[2],
                 price: commitments[3],
                 amount: commitments[4],
+                timestamp: RistrettoPoint::identity().compress(),
             },
             balance1: CommittedBalance {
                 mint: commitments[5],
@@ -528,6 +533,7 @@ impl From<&[CompressedRistretto]> for ValidMatchCommitment {
                 side: commitments[13],
                 price: commitments[14],
                 amount: commitments[15],
+                timestamp: RistrettoPoint::identity().compress(),
             },
             balance2: CommittedBalance {
                 mint: commitments[16],

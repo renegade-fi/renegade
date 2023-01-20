@@ -1,6 +1,6 @@
 //! Groups integration tests for the VALID MATCH MPC circuit
 
-use std::cmp;
+use std::{cmp, time::SystemTime};
 
 use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
 use circuits::{
@@ -64,7 +64,7 @@ fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
 
     // Match the values
     let min_amount = cmp::min(party0_values[2], party1_values[2]);
-    // Discritize the price in the same way the circuit does, i.e. with shr
+    // Discretize the price in the same way the circuit does, i.e. with shr
     let price = (party0_values[1] + party1_values[1]) >> 1;
 
     let shared_values = fabric
@@ -201,6 +201,13 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
         1, // percentage fee
     ];
 
+    let timestamp: u64 = SystemTime::now()
+        .elapsed()
+        .unwrap()
+        .as_millis()
+        .try_into()
+        .unwrap();
+
     let (witness, statement) = setup_witness_and_statement(
         Order {
             quote_mint: my_order[0],
@@ -212,6 +219,7 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
             },
             price: my_order[3],
             amount: my_order[4],
+            timestamp,
         },
         Balance {
             mint: my_balance[0],

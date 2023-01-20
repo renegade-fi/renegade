@@ -349,6 +349,7 @@ where
                 side: Variable::Zero(),
                 amount: Variable::Zero(),
                 price: Variable::Zero(),
+                timestamp: Variable::Zero(),
             },
             cs,
         )

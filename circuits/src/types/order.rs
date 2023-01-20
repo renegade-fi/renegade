@@ -31,6 +31,8 @@ pub struct Order {
     pub price: u64,
     /// The amount of base currency to buy or sell
     pub amount: u64,
+    /// A timestamp indicating when the order was placed, set by the user
+    pub timestamp: u64,
 }
 
 /// Convert a vector of u64s to an Order
@@ -38,9 +40,9 @@ impl TryFrom<&[u64]> for Order {
     type Error = TypeConversionError;
 
     fn try_from(value: &[u64]) -> Result<Self, Self::Error> {
-        if value.len() != 5 {
+        if value.len() != 6 {
             return Err(TypeConversionError(format!(
-                "expected array of length 5, got {:?}",
+                "expected array of length 6, got {:?}",
                 value.len()
             )));
         }
@@ -63,6 +65,7 @@ impl TryFrom<&[u64]> for Order {
             },
             price: value[3],
             amount: value[4],
+            timestamp: value[5],
         })
     }
 }
@@ -72,7 +75,14 @@ impl TryFrom<&[u64]> for Order {
 /// Useful for allocating, sharing, serialization, etc
 impl From<&Order> for Vec<u64> {
     fn from(o: &Order) -> Self {
-        vec![o.quote_mint, o.base_mint, o.side.into(), o.price, o.amount]
+        vec![
+            o.quote_mint,
+            o.base_mint,
+            o.side.into(),
+            o.price,
+            o.amount,
+            o.timestamp,
+        ]
     }
 }
 
@@ -114,6 +124,8 @@ pub struct OrderVar {
     pub price: Variable,
     /// The amount of base currency to buy or sell
     pub amount: Variable,
+    /// A timestamp indicating when the order was placed, set by the user
+    pub timestamp: Variable,
 }
 
 impl From<OrderVar> for Vec<Variable> {
@@ -124,6 +136,7 @@ impl From<OrderVar> for Vec<Variable> {
             order.side,
             order.price,
             order.amount,
+            order.timestamp,
         ]
     }
 }
@@ -147,6 +160,8 @@ impl CommitProver for Order {
         let (price_comm, price_var) = prover.commit(Scalar::from(self.price), Scalar::random(rng));
         let (amount_comm, amount_var) =
             prover.commit(Scalar::from(self.amount), Scalar::random(rng));
+        let (timestamp_comm, timestamp_var) =
+            prover.commit(Scalar::from(self.timestamp), Scalar::random(rng));
 
         Ok((
             OrderVar {
@@ -155,6 +170,7 @@ impl CommitProver for Order {
                 side: side_var,
                 price: price_var,
                 amount: amount_var,
+                timestamp: timestamp_var,
             },
             CommittedOrder {
                 quote_mint: quote_comm,
@@ -162,6 +178,7 @@ impl CommitProver for Order {
                 side: side_comm,
                 price: price_comm,
                 amount: amount_comm,
+                timestamp: timestamp_comm,
             },
         ))
     }
@@ -180,6 +197,8 @@ pub struct CommittedOrder {
     pub price: CompressedRistretto,
     /// The amount of base currency to buy or sell
     pub amount: CompressedRistretto,
+    /// A timestamp indicating when the order was placed, set by the user
+    pub timestamp: CompressedRistretto,
 }
 
 impl CommitVerifier for CommittedOrder {
@@ -192,6 +211,7 @@ impl CommitVerifier for CommittedOrder {
         let side_var = verifier.commit(self.side);
         let price_var = verifier.commit(self.price);
         let amount_var = verifier.commit(self.amount);
+        let timestamp_var = verifier.commit(self.timestamp);
 
         Ok(OrderVar {
             quote_mint: quote_var,
@@ -199,6 +219,7 @@ impl CommitVerifier for CommittedOrder {
             side: side_var,
             price: price_var,
             amount: amount_var,
+            timestamp: timestamp_var,
         })
     }
 }
@@ -407,6 +428,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
             side: side_var,
             price: price_var,
             amount: amount_var,
+            timestamp: Variable::Zero(), // unused in ZK-MPC path
         })
     }
 }
