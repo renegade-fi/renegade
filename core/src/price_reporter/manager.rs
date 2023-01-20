@@ -1,4 +1,4 @@
-use crossbeam::channel::Sender;
+use crossbeam::channel::{self, Sender};
 use futures::StreamExt;
 use ring_channel::RingReceiver;
 use std::{
@@ -107,7 +107,7 @@ impl PriceReporterManagerExecutor {
         }
     }
 
-    /// Internal helper function get a (base_token, quote_token) PriceReporter with error
+    /// Internal helper function to get a (base_token, quote_token) PriceReporter
     fn get_price_reporter(
         &self,
         base_token: Token,
@@ -121,6 +121,29 @@ impl PriceReporterManagerExecutor {
                     (base_token, quote_token)
                 ))
             })
+    }
+
+    /// Internal helper function to get a (base_token, quote_token) PriceReporter. If the
+    /// PriceReporter does not already exist, first creates it.
+    fn get_price_reporter_or_create(
+        &mut self,
+        base_token: Token,
+        quote_token: Token,
+    ) -> Result<&PriceReporter, PriceReporterManagerError> {
+        if self
+            .spawned_price_reporters
+            .get(&(base_token.clone(), quote_token.clone()))
+            .is_none()
+        {
+            let (channel_sender, _channel_receiver) = channel::unbounded();
+            self.start_price_reporter(
+                base_token.clone(),
+                quote_token.clone(),
+                None,
+                channel_sender,
+            )?;
+        }
+        self.get_price_reporter(base_token, quote_token)
     }
 
     /// Handler for StartPriceReporter job.
@@ -252,36 +275,36 @@ impl PriceReporterManagerExecutor {
 
     /// Handler for PeekMedian job.
     fn peek_median(
-        &self,
+        &mut self,
         base_token: Token,
         quote_token: Token,
         channel: Sender<PriceReporterState>,
     ) -> Result<(), PriceReporterManagerError> {
-        let price_reporter = self.get_price_reporter(base_token, quote_token)?;
+        let price_reporter = self.get_price_reporter_or_create(base_token, quote_token)?;
         channel.send(price_reporter.peek_median()).unwrap();
         Ok(())
     }
 
     /// Handler for PeekAllExchanges job.
     fn peek_all_exchanges(
-        &self,
+        &mut self,
         base_token: Token,
         quote_token: Token,
         channel: Sender<HashMap<Exchange, ExchangeConnectionState>>,
     ) -> Result<(), PriceReporterManagerError> {
-        let price_reporter = self.get_price_reporter(base_token, quote_token)?;
+        let price_reporter = self.get_price_reporter_or_create(base_token, quote_token)?;
         channel.send(price_reporter.peek_all_exchanges()).unwrap();
         Ok(())
     }
 
     /// Handler for CreateNewMedianReceiver job.
     fn create_new_median_receiver(
-        &self,
+        &mut self,
         base_token: Token,
         quote_token: Token,
         channel: Sender<RingReceiver<PriceReport>>,
     ) -> Result<(), PriceReporterManagerError> {
-        let price_reporter = self.get_price_reporter(base_token, quote_token)?;
+        let price_reporter = self.get_price_reporter_or_create(base_token, quote_token)?;
         channel
             .send(price_reporter.create_new_median_receiver())
             .unwrap();
@@ -290,12 +313,12 @@ impl PriceReporterManagerExecutor {
 
     /// Handler for GetSupportedExchanges job.
     fn get_supported_exchanges(
-        &self,
+        &mut self,
         base_token: Token,
         quote_token: Token,
         channel: Sender<HashSet<Exchange>>,
     ) -> Result<(), PriceReporterManagerError> {
-        let price_reporter = self.get_price_reporter(base_token, quote_token)?;
+        let price_reporter = self.get_price_reporter_or_create(base_token, quote_token)?;
         channel
             .send(price_reporter.get_supported_exchanges())
             .unwrap();
@@ -304,12 +327,12 @@ impl PriceReporterManagerExecutor {
 
     /// Handler for GetHealthyExchanges job.
     fn get_healthy_exchanges(
-        &self,
+        &mut self,
         base_token: Token,
         quote_token: Token,
         channel: Sender<HashSet<Exchange>>,
     ) -> Result<(), PriceReporterManagerError> {
-        let price_reporter = self.get_price_reporter(base_token, quote_token)?;
+        let price_reporter = self.get_price_reporter_or_create(base_token, quote_token)?;
         channel
             .send(price_reporter.get_healthy_exchanges())
             .unwrap();
