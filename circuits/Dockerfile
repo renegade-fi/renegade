@@ -6,6 +6,7 @@ WORKDIR /build
 COPY ./rust-toolchain ./circuits/rust-toolchain
 COPY ./crypto ./crypto
 COPY ./integration-helpers ./integration-helpers
+COPY ./circuit-macros ./circuit-macros
 
 # Place a set of dummy sources in the path, build the dummy executable
 # to cache built dependencies, then bulid the full executable

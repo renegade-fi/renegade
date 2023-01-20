@@ -84,7 +84,7 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
         };
     }
 
-    let test_cases: Vec<Vec<u64>> = vec![
+    let mut test_cases: Vec<Vec<u64>> = vec![
         // Quote mints different
         vec![
             sel!(0, 1),   /* quote_mint */
@@ -119,9 +119,12 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
         ],
     ];
 
-    for case in test_cases.iter() {
+    let timestamp = 0;
+    for case in test_cases.iter_mut() {
         // Marshal into an order
+        case.push(timestamp);
         let my_order: Order = (case as &[u64]).try_into().unwrap();
+
         // Allocate the orders in the network
         let order1 = my_order
             .allocate(0 /* owning_party */, test_args.mpc_fabric.clone())
@@ -136,7 +139,7 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
             .open_and_authenticate()
             .map_err(|err| format!("Error opening match result: {:?}", err))?;
 
-        // Assert that no match occured
+        // Assert that no match occurred
         check_no_match(&res)?;
     }
 
@@ -158,7 +161,7 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
         };
     }
 
-    let test_cases: Vec<Vec<u64>> = vec![
+    let mut test_cases: Vec<Vec<u64>> = vec![
         // Different prices and amounts
         vec![
             1,            /* quote_mint */
@@ -220,9 +223,12 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
         ],
     ];
 
-    for (case, expected_res) in test_cases.iter().zip(expected_results.iter()) {
+    let timestamp = 0; // dummy value
+    for (case, expected_res) in test_cases.iter_mut().zip(expected_results.iter()) {
         // Marshal into an order
+        case.push(timestamp);
         let my_order: Order = (case as &[u64]).try_into().unwrap();
+
         // Allocate the orders in the network
         let order1 = my_order
             .allocate(0 /* owning_party */, test_args.mpc_fabric.clone())
@@ -237,7 +243,7 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
             .open_and_authenticate()
             .map_err(|err| format!("Error opening match result: {:?}", err))?;
 
-        // Assert that no match occured
+        // Assert that no match occurred
         check_match_expected_result(&res, expected_res)?;
     }
 
