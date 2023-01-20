@@ -26,7 +26,7 @@ use super::{
 static MAX_REPORT_AGE_MS: u128 = 5000;
 /// If we do not have at least MIN_CONNECTIONS reports, we pause matches until we have enough
 /// reports. This only applies to Named tokens, as Unnamed tokens simply use UniswapV3.
-static MIN_CONNECTIONS: usize = 0; // TODO: Refactor
+static MIN_CONNECTIONS: usize = 1; // TODO: Refactor
 /// If a single PriceReport is more than MAX_DEVIATION (as a fraction) away from the midpoint, then
 /// we pause matches until the prices stabilize.
 static MAX_DEVIATION: f64 = 0.02; // TODO: Refactor
@@ -69,20 +69,24 @@ pub enum PriceReporterState {
     NotEnoughDataReported(usize),
     /// At least one of the ExchangeConnection has not reported a recent enough report. Includes
     /// the current time_diff in milliseconds.
-    DataTooStale(u128),
+    DataTooStale(PriceReport, u128),
     /// There has been too much deviation in the prices between the exchanges; holding off until
     /// prices stabilize. Includes the current deviation as a fraction.
-    TooMuchDeviation(f64),
+    TooMuchDeviation(PriceReport, f64),
 }
 impl Display for PriceReporterState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let fmt_str = match self {
             PriceReporterState::Nominal(price_report) => {
-                format!("{:.4}", price_report.midpoint_price)
+                format!("Nominal({:?})", price_report)
             }
             PriceReporterState::NotEnoughDataReported(_) => String::from("NotEnoughDataReported"),
-            PriceReporterState::DataTooStale(_) => String::from("DataTooStale"),
-            PriceReporterState::TooMuchDeviation(_) => String::from("TooMuchDeviation"),
+            PriceReporterState::DataTooStale(price_report, _) => {
+                format!("DataTooStale({:?})", price_report)
+            }
+            PriceReporterState::TooMuchDeviation(price_report, _) => {
+                format!("TooMuchDeviation({:?})", price_report)
+            }
         };
         write!(f, "{}", fmt_str)
     }
@@ -368,16 +372,6 @@ impl PriceReporter {
             return PriceReporterState::NotEnoughDataReported(non_zero_price_reports.len());
         }
 
-        // Check that the most recent PriceReport timestamp is not too old.
-        let most_recent_report = current_price_reports
-            .values()
-            .map(|price_report| price_report.local_timestamp)
-            .fold(u128::MIN, |a, b| a.max(b));
-        let time_diff = get_current_time() - most_recent_report;
-        if time_diff > MAX_REPORT_AGE_MS {
-            return PriceReporterState::DataTooStale(time_diff);
-        }
-
         // Compute the medians.
         let median_midpoint_price = median(
             non_zero_price_reports
@@ -400,17 +394,6 @@ impl PriceReporter {
         )
         .map(|timestamp| timestamp as u128);
 
-        // Ensure that there is not too much deviation between the non-zero PriceReports.
-        let max_deviation = non_zero_price_reports
-            .iter()
-            .map(|price_report| {
-                (price_report.midpoint_price - median_midpoint_price).abs() / median_midpoint_price
-            })
-            .fold(f64::MIN, |a, b| a.max(b));
-        if max_deviation > MAX_DEVIATION {
-            return PriceReporterState::TooMuchDeviation(max_deviation);
-        }
-
         let median_price_report = PriceReport {
             base_token,
             quote_token,
@@ -419,6 +402,27 @@ impl PriceReporter {
             local_timestamp: median_local_timestamp as u128,
             reported_timestamp: median_reported_timestamp,
         };
+
+        // Check that the most recent PriceReport timestamp is not too old.
+        let most_recent_report = current_price_reports
+            .values()
+            .map(|price_report| price_report.local_timestamp)
+            .fold(u128::MIN, |a, b| a.max(b));
+        let time_diff = get_current_time() - most_recent_report;
+        if time_diff > MAX_REPORT_AGE_MS {
+            return PriceReporterState::DataTooStale(median_price_report, time_diff);
+        }
+
+        // Ensure that there is not too much deviation between the non-zero PriceReports.
+        let max_deviation = non_zero_price_reports
+            .iter()
+            .map(|price_report| {
+                (price_report.midpoint_price - median_midpoint_price).abs() / median_midpoint_price
+            })
+            .fold(f64::MIN, |a, b| a.max(b));
+        if max_deviation > MAX_DEVIATION {
+            return PriceReporterState::TooMuchDeviation(median_price_report, max_deviation);
+        }
 
         PriceReporterState::Nominal(median_price_report)
     }
