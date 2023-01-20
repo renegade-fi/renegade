@@ -139,7 +139,6 @@ impl PriceReporterManagerExecutor {
             base_token.get_addr(),
             quote_token.get_addr()
         );
-        let median_price_report_topic_clone = median_price_report_topic.clone();
         self.spawned_price_reporters
             .entry((base_token.clone(), quote_token.clone()))
             .or_insert_with(|| {
@@ -161,7 +160,7 @@ impl PriceReporterManagerExecutor {
                             != last_median_price_report.midpoint_price
                         {
                             system_bus_clone.publish(
-                                median_price_report_topic_clone.clone(),
+                                median_price_report_topic.clone(),
                                 SystemBusMessage::PriceReportMedian(median_price_report.clone()),
                             );
                             last_median_price_report = median_price_report;
