@@ -43,7 +43,6 @@ pub struct ValidWalletCreate<
     const MAX_FEES: usize,
 > {}
 
-#[allow(unused)]
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
     ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where
@@ -51,10 +50,9 @@ where
 {
     /// Applies constraints to the constraint system specifying the statement of
     /// VALID WALLET CREATE
-    fn apply_constraints<CS>(
+    fn circuit<CS>(
         cs: &mut CS,
         expected_commit: Variable,
-        wallet_ciphertext: Vec<Variable>,
         witness: ValidWalletCreateVar<MAX_FEES>,
     ) -> Result<(), R1CSError>
     where
@@ -119,8 +117,6 @@ where
 pub struct ValidWalletCreateStatement {
     /// The expected commitment of the newly created wallet
     pub wallet_commitment: Scalar,
-    /// The ElGamal encryption of the wallet under the view key
-    pub wallet_ciphertext: Vec<Scalar>,
 }
 
 /// The witness for the VALID WALLET CREATE statement
@@ -316,20 +312,10 @@ where
 
         // Commit to the statement
         let wallet_commitment_var = prover.commit_public(statement.wallet_commitment);
-        let wallet_ciphertext_vars = statement
-            .wallet_ciphertext
-            .iter()
-            .map(|felt| prover.commit_public(*felt))
-            .collect_vec();
 
         // Apply the constraints
-        Self::apply_constraints(
-            &mut prover,
-            wallet_commitment_var,
-            wallet_ciphertext_vars,
-            witness_var,
-        )
-        .map_err(ProverError::R1CS)?;
+        Self::circuit(&mut prover, wallet_commitment_var, witness_var)
+            .map_err(ProverError::R1CS)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -349,20 +335,10 @@ where
 
         // Commit to the statement
         let wallet_commitment_var = verifier.commit_public(statement.wallet_commitment);
-        let wallet_ciphertext_vars = statement
-            .wallet_ciphertext
-            .iter()
-            .map(|felt| verifier.commit_public(*felt))
-            .collect_vec();
 
         // Apply the constraints
-        Self::apply_constraints(
-            &mut verifier,
-            wallet_commitment_var,
-            wallet_ciphertext_vars,
-            witness_var,
-        )
-        .map_err(VerifierError::R1CS)?;
+        Self::circuit(&mut verifier, wallet_commitment_var, witness_var)
+            .map_err(VerifierError::R1CS)?;
 
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         verifier
@@ -462,7 +438,6 @@ mod test_valid_wallet_create {
             view_public_key: Scalar::random(&mut rng),
         };
         let statement = ValidWalletCreateStatement {
-            wallet_ciphertext: Vec::new(),
             wallet_commitment: compute_commitment(&witness),
         };
 
