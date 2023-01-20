@@ -28,7 +28,8 @@ use crate::{
         wallet::{CommittedWallet, Wallet, WalletVar},
     },
     zk_gadgets::{
-        comparators::{EqVecGadget, EqZeroGadget, NotEqualGadget},
+        comparators::{EqGadget, EqVecGadget, EqZeroGadget, NotEqualGadget},
+        gates::{AndGate, OrGate},
         merkle::PoseidonMerkleHashGadget,
         poseidon::PoseidonHashGadget,
         select::CondSelectGadget,
@@ -114,7 +115,7 @@ where
             cs,
         );
 
-        Self::validate_wallet_orders(&witness.wallet2, &witness.wallet1, cs);
+        Self::validate_wallet_orders(&witness.wallet2, &witness.wallet1, timestamp, cs);
 
         Ok(())
     }
@@ -306,12 +307,11 @@ where
     fn validate_wallet_orders<CS: RandomizableConstraintSystem>(
         new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        new_timestamp: Variable,
         cs: &mut CS,
     ) {
         // Ensure that all order's assert pairs are unique
         Self::constrain_unique_order_pairs(new_wallet, cs);
-
-        // TODO: Timestamp constraints
     }
 
     /// Constrains all order pairs in the wallet to have unique mints
@@ -336,6 +336,33 @@ where
                 let (_, _, constraint_poly) = cs.multiply(mints_equal.into(), order_zero.into());
                 cs.constrain(constraint_poly.into());
             }
+        }
+    }
+
+    /// Constrain the timestamps to be properly updated
+    /// For each order, if the order is unchanged from the previous wallet, no constraint is
+    /// made. Otherwise, the timestamp should be updated to the current timestamp passed as
+    /// a public variable
+    fn constrain_updated_order_timestamps<CS: RandomizableConstraintSystem>(
+        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        new_timestamp: Variable,
+        cs: &mut CS,
+    ) {
+        for (i, order) in new_wallet.orders.iter().enumerate() {
+            let equals_old_order =
+                Self::orders_equal_except_timestamp(order, &old_wallet.orders[i], cs);
+
+            let timestamp_not_updated =
+                EqGadget::eq(order.timestamp, old_wallet.orders[i].timestamp, cs);
+            let timestamp_updated = EqGadget::eq(order.timestamp, new_timestamp, cs);
+
+            // Either the orders are equal and the timestamp is not updated, or the timestamp has
+            // been updated to the new timestamp
+            let equal_and_not_updated = AndGate::and(equals_old_order, timestamp_not_updated, cs);
+            let constraint = OrGate::or(timestamp_updated, equal_and_not_updated, cs);
+
+            cs.constrain(constraint);
         }
     }
 
