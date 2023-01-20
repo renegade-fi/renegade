@@ -15,7 +15,7 @@ use super::{
 };
 
 /// The number of keys in the key hierarchy stored in the wallet
-const NUM_KEYS: usize = 4;
+pub(crate) const NUM_KEYS: usize = 4;
 
 /// Represents the base type of a wallet holding orders, balances, fees, keys
 /// and cryptographic randomness
