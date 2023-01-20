@@ -54,7 +54,7 @@ impl Worker for ApiServer {
         Self: Sized,
     {
         // Build the http server
-        let addr: SocketAddr = format!("127.0.0.1:{}", config.http_port).parse().unwrap();
+        let addr: SocketAddr = format!("0.0.0.0:{}", config.http_port).parse().unwrap();
         let builder = Server::bind(&addr);
 
         Ok(Self {
@@ -108,7 +108,7 @@ impl Worker for ApiServer {
         });
 
         // Start up the websocket server
-        let addr: SocketAddr = format!("127.0.0.1:{:?}", self.config.websocket_port)
+        let addr: SocketAddr = format!("0.0.0.0:{:?}", self.config.websocket_port)
             .parse()
             .unwrap();
 

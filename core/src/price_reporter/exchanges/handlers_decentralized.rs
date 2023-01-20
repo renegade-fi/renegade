@@ -117,7 +117,7 @@ impl UniswapV3Handler {
         // historic Swap as the current price.
         // TODO: Is there a better way to find the most recent Swap?
         let swap_filter_builder = swap_filter_builder
-            .from_block(web3::types::BlockNumber::Number(current_block - 1000))
+            .from_block(web3::types::BlockNumber::Number(current_block - 10_000))
             .to_block(web3::types::BlockNumber::Latest);
         let swap_filter_recents = web3_connection
             .eth_filter()
