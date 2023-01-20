@@ -24,7 +24,7 @@ use integration_helpers::{
 };
 use itertools::Itertools;
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
-use num_bigint::BigInt;
+use num_bigint::BigUint;
 use rand_core::{OsRng, RngCore};
 
 use crate::{
@@ -226,8 +226,8 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
             amount: my_balance[1],
         },
         Fee {
-            settle_key: BigInt::from(my_fee[0]),
-            gas_addr: BigInt::from(my_fee[1]),
+            settle_key: BigUint::from(my_fee[0]),
+            gas_addr: BigUint::from(my_fee[1]),
             gas_token_amount: my_fee[2],
             percentage_fee: my_fee[3],
         },

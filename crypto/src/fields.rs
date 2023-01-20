@@ -41,9 +41,14 @@ pub fn bigint_to_scalar(a: &BigInt) -> Scalar {
     }
 }
 
-/// Conver a BigUint to a scalar
+/// Convert a BigUint to a scalar
 pub fn biguint_to_scalar(a: &BigUint) -> Scalar {
     bigint_to_scalar(&a.clone().into())
+}
+
+/// Convert a BigUint to an Arkworks representation of the Ristretto scalar field
+pub fn biguint_to_prime_field(a: &BigUint) -> DalekRistrettoField {
+    scalar_to_prime_field(&biguint_to_scalar(a))
 }
 
 /// Pad an array up to the desired length with zeros

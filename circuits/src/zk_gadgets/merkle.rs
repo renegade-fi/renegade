@@ -549,7 +549,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
 }
 
 #[cfg(test)]
-mod merkle_test {
+pub(crate) mod merkle_test {
     use ark_crypto_primitives::{
         crh::poseidon::{TwoToOneCRH, CRH},
         merkle_tree::{Config, IdentityDigestConverter},
@@ -595,7 +595,7 @@ mod merkle_test {
     /// determine incrementally which subtree a given index should be a part of.
     ///
     /// The tree indices from leaf to root are exactly the LSB decomposition of the scalar
-    fn get_opening_indices(leaf_index: usize, tree_height: usize) -> Vec<Scalar> {
+    pub(crate) fn get_opening_indices(leaf_index: usize, tree_height: usize) -> Vec<Scalar> {
         if tree_height == 0 {
             vec![]
         } else {

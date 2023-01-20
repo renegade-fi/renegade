@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Represents the base type of an open order, including the asset pair, the amount, price,
 /// and direction
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Order {
     /// The mint (ERC-20 contract address) of the quote token
     pub quote_mint: u64,
