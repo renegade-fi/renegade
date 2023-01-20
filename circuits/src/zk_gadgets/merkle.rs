@@ -49,7 +49,23 @@ impl PoseidonMerkleHashGadget {
         assert_eq!(opening.len(), opening_indices.len());
 
         // Hash the leaf_node into a field element
-        let mut current_hash = Self::leaf_hash(&leaf_node, cs)?;
+        let leaf_hash: LinearCombination = Self::leaf_hash(&leaf_node, cs)?;
+        Self::compute_root_prehashed(cs, leaf_hash, opening, opening_indices)
+    }
+
+    /// Compute the root given an already hashed leaf, i.e. do not hash a leaf buffer first
+    pub fn compute_root_prehashed<S, CS>(
+        cs: &mut CS,
+        leaf_node: S,
+        opening: Vec<Variable>,
+        opening_indices: Vec<Variable>,
+    ) -> Result<LinearCombination, R1CSError>
+    where
+        S: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        // Hash the leaf_node into a field element
+        let mut current_hash: LinearCombination = leaf_node.into();
         for (path_elem, lr_select) in opening.into_iter().zip(opening_indices.into_iter()) {
             // Select the left and right hand sides based on whether this node in the opening represents the
             // left or right hand child of its parent
@@ -63,6 +79,42 @@ impl PoseidonMerkleHashGadget {
         }
 
         Ok(current_hash)
+    }
+
+    /// Compute the root and constrain it to an expected value
+    pub fn compute_and_constrain_root<S, CS>(
+        cs: &mut CS,
+        leaf_node: Vec<S>,
+        opening: Vec<Variable>,
+        opening_indices: Vec<Variable>,
+        expected_root: S,
+    ) -> Result<(), R1CSError>
+    where
+        CS: RandomizableConstraintSystem,
+        S: Into<LinearCombination> + Clone,
+    {
+        let root = Self::compute_root(cs, leaf_node, opening, opening_indices)?;
+        cs.constrain(expected_root.into() - root);
+
+        Ok(())
+    }
+
+    /// Compute the root from a prehashed leaf and constrain it to an expected value
+    pub fn compute_and_constrain_root_prehashed<S, CS>(
+        cs: &mut CS,
+        leaf_node: S,
+        opening: Vec<Variable>,
+        opening_indices: Vec<Variable>,
+        expected_root: S,
+    ) -> Result<(), R1CSError>
+    where
+        CS: RandomizableConstraintSystem,
+        S: Into<LinearCombination> + Clone,
+    {
+        let root = Self::compute_root_prehashed(cs, leaf_node, opening, opening_indices)?;
+        cs.constrain(expected_root.into() - root);
+
+        Ok(())
     }
 
     /// Selects whether to place the current hash on the left or right hand
@@ -100,24 +152,6 @@ impl PoseidonMerkleHashGadget {
         //      rhs = a + b - lhs
         let right_child = current_hash_lc + sister_node_lc - left_child.clone();
         (left_child, right_child)
-    }
-
-    /// Compute the root and constrain it to an expected value
-    pub fn compute_and_constrain_root<S, CS>(
-        cs: &mut CS,
-        leaf_node: Vec<S>,
-        opening: Vec<Variable>,
-        opening_indices: Vec<Variable>,
-        expected_root: S,
-    ) -> Result<(), R1CSError>
-    where
-        CS: RandomizableConstraintSystem,
-        S: Into<LinearCombination> + Clone,
-    {
-        let root = Self::compute_root(cs, leaf_node, opening, opening_indices)?;
-        cs.constrain(expected_root.into() - root);
-
-        Ok(())
     }
 
     /// Hash the value at the leaf into a bulletproof constraint value

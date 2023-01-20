@@ -122,6 +122,22 @@ impl SingleProverCircuit for EqZeroGadget {
     }
 }
 
+/// Returns a boolean representing a != b where 1 is true and 0 is false
+#[derive(Debug)]
+pub struct NotEqualGadget {}
+
+impl NotEqualGadget {
+    /// Computes a != b
+    pub fn not_equal<L, CS>(a: L, b: L, cs: &mut CS) -> LinearCombination
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        let eq_zero = EqZeroGadget::eq_zero(cs, a.into() - b.into());
+        Variable::One() - eq_zero
+    }
+}
+
 /// A gadget that enforces a value of a given bitlength is positive
 #[derive(Clone, Debug)]
 pub struct GreaterThanEqZeroGadget<const D: usize> {}

@@ -231,7 +231,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
     type ErrorType = MpcError;
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        // Open the committments
+        // Open the commitments
         let opened_commit = AuthenticatedCompressedRistretto::batch_open_and_authenticate(&[
             self.mint.clone(),
             self.amount.clone(),
