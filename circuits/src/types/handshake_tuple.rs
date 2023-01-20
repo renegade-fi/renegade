@@ -1,7 +1,7 @@
 //! Groups trait and type definitions for the handshake tuple
 
 use crate::{errors::MpcError, CommitSharedProver};
-use crypto::fields::bigint_to_scalar;
+use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 use mpc_bulletproof::r1cs_mpc::MpcProver;
@@ -56,8 +56,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                     Scalar::from(order.amount),
                     Scalar::from(balance.mint),
                     Scalar::from(balance.amount),
-                    bigint_to_scalar(&fee.settle_key),
-                    bigint_to_scalar(&fee.gas_addr),
+                    biguint_to_scalar(&fee.settle_key),
+                    biguint_to_scalar(&fee.gas_addr),
                     Scalar::from(fee.gas_token_amount),
                     Scalar::from(fee.percentage_fee),
                 ],

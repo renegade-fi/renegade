@@ -352,13 +352,13 @@ mod test_valid_wallet_create {
     use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use crypto::{
         fields::{
-            bigint_to_scalar, prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField,
+            biguint_to_scalar, prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField,
         },
         hash::default_poseidon_params,
     };
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
-    use num_bigint::BigInt;
+    use num_bigint::BigUint;
     use rand_core::{CryptoRng, OsRng, RngCore};
 
     use crate::{test_helpers::bulletproof_prove_and_verify, types::fee::Fee};
@@ -379,8 +379,8 @@ mod test_valid_wallet_create {
     /// Generates a random fee for testing
     fn random_fee<R: RngCore + CryptoRng>(rng: &mut R) -> Fee {
         Fee {
-            settle_key: BigInt::from(rng.next_u64()),
-            gas_addr: BigInt::from(rng.next_u64()),
+            settle_key: BigUint::from(rng.next_u64()),
+            gas_addr: BigUint::from(rng.next_u64()),
             gas_token_amount: rng.next_u64(),
             percentage_fee: rng.next_u64(),
         }
@@ -398,8 +398,8 @@ mod test_valid_wallet_create {
 
         // Absorb the fees into the hasher state
         for fee in witness.fees.iter() {
-            arkworks_hasher.absorb(&scalar_to_prime_field(&bigint_to_scalar(&fee.settle_key)));
-            arkworks_hasher.absorb(&scalar_to_prime_field(&bigint_to_scalar(&fee.gas_addr)));
+            arkworks_hasher.absorb(&scalar_to_prime_field(&biguint_to_scalar(&fee.settle_key)));
+            arkworks_hasher.absorb(&scalar_to_prime_field(&biguint_to_scalar(&fee.gas_addr)));
             arkworks_hasher.absorb(&DalekRistrettoField::from(fee.gas_token_amount));
             arkworks_hasher.absorb(&DalekRistrettoField::from(fee.percentage_fee));
         }
