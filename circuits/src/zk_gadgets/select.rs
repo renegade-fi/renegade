@@ -26,7 +26,7 @@ pub struct CondSelectGadget {}
 
 impl CondSelectGadget {
     /// Computes the control flow statement if selector { a } else { b }
-    pub fn select<L, CS>(cs: &mut CS, a: L, b: L, selector: L) -> LinearCombination
+    pub fn select<L, CS>(a: L, b: L, selector: L, cs: &mut CS) -> LinearCombination
     where
         L: Into<LinearCombination> + Clone,
         CS: RandomizableConstraintSystem,
@@ -78,7 +78,7 @@ impl SingleProverCircuit for CondSelectGadget {
         let expected_var = prover.commit_public(statement.expected);
 
         // Apply the constraints
-        let res = Self::select(&mut prover, a_var, b_var, sel_var);
+        let res = Self::select(a_var, b_var, sel_var, &mut prover);
         prover.constrain(res - expected_var);
 
         // Prove the statement
@@ -102,7 +102,7 @@ impl SingleProverCircuit for CondSelectGadget {
         let expected_var = verifier.commit_public(statement.expected);
 
         // Apply the constraints
-        let res = Self::select(&mut verifier, a_var, b_var, sel_var);
+        let res = Self::select(a_var, b_var, sel_var, &mut verifier);
         verifier.constrain(res - expected_var);
 
         // Verify the proof
@@ -128,15 +128,15 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 {
     /// Computes the control flow statement if selector { a } else { b }
     pub fn select<L, CS>(
-        cs: &mut CS,
         a: L,
         b: L,
         selector: L,
         fabric: SharedFabric<N, S>,
+        cs: &mut CS,
     ) -> Result<MpcLinearCombination<N, S>, ProverError>
     where
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
         L: Into<MpcLinearCombination<N, S>> + Clone,
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
         // Computes selector * a + (1 - selector) * b
         let (_, _, mul1_out) = cs
@@ -159,7 +159,7 @@ pub struct CondSelectVectorGadget {}
 
 impl CondSelectVectorGadget {
     /// Implements the control flow statement if selector { a } else { b }
-    pub fn select<L, CS>(cs: &mut CS, a: &[L], b: &[L], selector: L) -> Vec<LinearCombination>
+    pub fn select<L, CS>(a: &[L], b: &[L], selector: L, cs: &mut CS) -> Vec<LinearCombination>
     where
         CS: RandomizableConstraintSystem,
         L: Into<LinearCombination> + Clone,
@@ -168,10 +168,10 @@ impl CondSelectVectorGadget {
         let mut selected = Vec::with_capacity(a.len());
         for (a_val, b_val) in a.iter().zip(b.iter()) {
             selected.push(CondSelectGadget::select(
-                cs,
                 a_val.clone(),
                 b_val.clone(),
                 selector.clone(),
+                cs,
             ));
         }
 
@@ -234,7 +234,7 @@ impl SingleProverCircuit for CondSelectVectorGadget {
             .collect_vec();
 
         // Apply the constraints
-        let res = Self::select(&mut prover, &a_vars, &b_vars, sel_var);
+        let res = Self::select(&a_vars, &b_vars, sel_var, &mut prover);
         for (res_var, expected_var) in res.into_iter().zip(expected_vars.into_iter()) {
             prover.constrain(res_var - expected_var);
         }
@@ -282,7 +282,7 @@ impl SingleProverCircuit for CondSelectVectorGadget {
             .collect_vec();
 
         // Apply the constraints
-        let res = Self::select(&mut verifier, &a_vars, &b_vars, sel_var);
+        let res = Self::select(&a_vars, &b_vars, sel_var, &mut verifier);
         for (res_val, expected_val) in res.into_iter().zip(expected_vars.into_iter()) {
             verifier.constrain(res_val - expected_val);
         }
@@ -327,11 +327,11 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         let mut selected = Vec::with_capacity(a.len());
         for (a_val, b_val) in a.iter().zip(b.iter()) {
             selected.push(MultiproverCondSelectGadget::select(
-                cs,
                 a_val.clone(),
                 b_val.clone(),
                 selector.clone(),
                 fabric.clone(),
+                cs,
             )?)
         }
 

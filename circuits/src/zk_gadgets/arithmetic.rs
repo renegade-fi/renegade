@@ -41,7 +41,7 @@ impl ExpGadget {
     /// Provides a functional interface for composing this gadget into a larger
     /// circuit.
     #[circuit_trace(latency)]
-    pub fn gadget<L, CS>(cs: &mut CS, x: L, alpha: u64) -> LinearCombination
+    pub fn exp<L, CS>(x: L, alpha: u64, cs: &mut CS) -> LinearCombination
     where
         L: Into<LinearCombination>,
         CS: RandomizableConstraintSystem,
@@ -51,12 +51,12 @@ impl ExpGadget {
         } else if alpha == 1 {
             x.into()
         } else if alpha % 2 == 0 {
-            let recursive_result = ExpGadget::gadget(cs, x, alpha / 2);
+            let recursive_result = ExpGadget::exp(x, alpha / 2, cs);
             let (_, _, out_var) = cs.multiply(recursive_result.clone(), recursive_result);
             out_var.into()
         } else {
             let x_lc = x.into();
-            let recursive_result = ExpGadget::gadget(cs, x_lc.clone(), (alpha - 1) / 2);
+            let recursive_result = ExpGadget::exp(x_lc.clone(), (alpha - 1) / 2, cs);
             let (_, _, out_var1) = cs.multiply(recursive_result.clone(), recursive_result);
             let (_, _, out_var2) = cs.multiply(out_var1.into(), x_lc);
             out_var2.into()
@@ -65,14 +65,14 @@ impl ExpGadget {
 
     /// Generate the constraints for the ExpGadget statement
     #[circuit_trace(latency)]
-    fn generate_constraints<CS: RandomizableConstraintSystem>(
-        cs: &mut CS,
+    fn generate_exp_constraints<CS: RandomizableConstraintSystem>(
         x_var: Variable,
         y_var: Variable,
         alpha: u64,
+        cs: &mut CS,
     ) {
         // Commit to the inputs and output
-        let res = Self::gadget(cs, x_var, alpha);
+        let res = Self::exp(x_var, alpha, cs);
         cs.constrain(res - y_var);
     }
 }
@@ -122,7 +122,7 @@ impl SingleProverCircuit for ExpGadget {
         let out_var = prover.commit_public(statement.expected_out);
 
         // Generate the constraints for the circuit
-        Self::generate_constraints(&mut prover, x_var, out_var, statement.alpha);
+        Self::generate_exp_constraints(x_var, out_var, statement.alpha, &mut prover);
 
         let bp_gens = BulletproofGens::new(
             Self::BP_GENS_CAPACITY, /* gens_capacity */
@@ -145,7 +145,7 @@ impl SingleProverCircuit for ExpGadget {
         let out_var = verifier.commit_public(statement.expected_out);
 
         // Generate the constraints for the circuit
-        Self::generate_constraints(&mut verifier, x_var, out_var, statement.alpha);
+        Self::generate_exp_constraints(x_var, out_var, statement.alpha, &mut verifier);
 
         let bp_gens = BulletproofGens::new(
             Self::BP_GENS_CAPACITY, /* gens_capacity */
@@ -169,11 +169,11 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     MultiproverExpGadget<'a, N, S>
 {
     /// Apply the gadget to the input
-    pub fn gadget<CS, L>(
-        cs: &mut CS,
+    pub fn exp<L, CS>(
         x: L,
         alpha: u64,
         fabric: SharedFabric<N, S>,
+        cs: &mut CS,
     ) -> Result<MpcLinearCombination<N, S>, ProverError>
     where
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
@@ -184,7 +184,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         } else if alpha == 1 {
             Ok(x.into())
         } else if alpha % 2 == 0 {
-            let recursive_result = MultiproverExpGadget::gadget(cs, x, alpha / 2, fabric)?;
+            let recursive_result = MultiproverExpGadget::exp(x, alpha / 2, fabric, cs)?;
             let (_, _, out_var) = cs
                 .multiply(&recursive_result, &recursive_result)
                 .map_err(ProverError::Collaborative)?;
@@ -192,7 +192,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         } else {
             let x_lc = x.into();
             let recursive_result =
-                MultiproverExpGadget::gadget(cs, x_lc.clone(), (alpha - 1) / 2, fabric)?;
+                MultiproverExpGadget::exp(x_lc.clone(), (alpha - 1) / 2, fabric, cs)?;
             let (_, _, out_var1) = cs
                 .multiply(&recursive_result, &recursive_result)
                 .map_err(ProverError::Collaborative)?;
@@ -249,7 +249,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
         let (_, output_var) = prover.commit_public(statement.expected_out);
 
         // Apply the constraints to the prover
-        let res = Self::gadget(&mut prover, witness_var, statement.alpha, fabric)?;
+        let res = Self::exp(witness_var, statement.alpha, fabric, &mut prover)?;
         prover.constrain(res - output_var);
 
         // Prove the statement
@@ -287,7 +287,7 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
     {
         // Bit decompose the exponent, this removes the need to check `is_odd` at every
         // iteration
-        let alpha_bits = ToBitsGadget::<ALPHA_BITS>::to_bits(cs, alpha)?;
+        let alpha_bits = ToBitsGadget::<ALPHA_BITS>::to_bits(alpha, cs)?;
         Self::exp_private_fixed_base_impl::<L, CS>(x, &alpha_bits, cs)
     }
 
@@ -299,7 +299,7 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
     {
         // Bit decompose the exponent, this removes the need to check `is_odd` at every
         // iteration
-        let alpha_bits = ToBitsGadget::<ALPHA_BITS>::to_bits(cs, alpha)?;
+        let alpha_bits = ToBitsGadget::<ALPHA_BITS>::to_bits(alpha, cs)?;
 
         let x_lc: LinearCombination = x.into();
         Self::exp_private_impl(x_lc, &alpha_bits, cs)
@@ -333,18 +333,18 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
 
         // Mux between the two results depending on whether the current exponent is odd or even
         let odd_bit_selection = CondSelectGadget::select(
-            cs,
             recursive_plus_one,
             recursive_doubled.into(),
             is_odd.into(),
+            cs,
         );
 
         // Mask the value of the output if alpha is already zero
         let zero_mask = CondSelectGadget::select(
-            cs,
             Variable::One().into(),
             odd_bit_selection,
             alpha_zero.into(),
+            cs,
         );
 
         Ok(zero_mask)
@@ -379,14 +379,14 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
 
         // Mux between the two results depending on whether the current exponent is odd or even
         let odd_bit_selection =
-            CondSelectGadget::select(cs, recursive_plus_one, recursive_doubled, is_odd);
+            CondSelectGadget::select(recursive_plus_one, recursive_doubled, is_odd, cs);
 
         // Mask the value of the output if alpha is already zero
         let zero_mask = CondSelectGadget::select(
-            cs,
             Variable::One().into(),
             odd_bit_selection,
             alpha_zero.into(),
+            cs,
         );
 
         Ok(zero_mask)
@@ -408,7 +408,7 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
             bit_sum += bit;
         }
 
-        EqZeroGadget::eq_zero(cs, bit_sum)
+        EqZeroGadget::eq_zero(bit_sum, cs)
     }
 }
 

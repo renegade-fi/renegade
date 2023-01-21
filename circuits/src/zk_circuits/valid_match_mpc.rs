@@ -89,7 +89,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // Build a hasher and constrain the hash of the input to equal the expected output
         let hash_params = PoseidonSpongeParameters::default();
         let mut hasher = MultiproverPoseidonHashGadget::new(hash_params, fabric);
-        hasher.hash(cs, input, expected_out)
+        hasher.hash(input, expected_out, cs)
     }
 
     /// The single prover version of the input consistency check
@@ -107,7 +107,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // Build a hasher and constrain the hash of the input to equal the expected output
         let hash_params = PoseidonSpongeParameters::default();
         let mut hasher = PoseidonHashGadget::new(hash_params);
-        hasher.hash(cs, input, expected_out.clone())
+        hasher.hash(input, expected_out.clone(), cs)
     }
 
     /// The order crossing check, verifies that the matches result is valid given the orders
@@ -153,10 +153,10 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
         // 2. Enforce that the buy side price is greater than or equal to the sell side price
         MultiproverGreaterThanEqGadget::<'_, 64 /* bitlength */, N, S>::constrain_greater_than_eq(
-            cs,
             buy_side_price,
             sell_side_price,
             fabric.clone(),
+            cs,
         )?;
 
         // Check that price is correctly computed to be the midpoint
@@ -182,11 +182,11 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         let max_minus_min1 = &order1.amount - &order2.amount;
         let max_minus_min2 = &order2.amount - &order1.amount;
         let max_minus_min_expected = MultiproverCondSelectGadget::select(
-            cs,
             max_minus_min1,
             max_minus_min2,
             matches.min_amount_order_index.into(),
             fabric.clone(),
+            cs,
         )?;
         cs.constrain(&max_minus_min_expected - &matches.max_minus_min_amount);
 
@@ -196,9 +196,9 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // or min(amounts) - max(amounts).
         // Constraining the value to be positive forces it to be equal to max(amounts) - min(amounts)
         MultiproverGreaterThanEqZeroGadget::<'_, 32 /* bitlength */, _, _>::constrain_greater_than_zero(
-            cs,
             matches.max_minus_min_amount.clone(),
             fabric.clone(),
+            cs,
         )?;
 
         // 3. Constrain the executed base amount to be the minimum of the two order amounts
@@ -258,17 +258,17 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
         // Constrain the amounts of the balances to subsume the obligations from the match
         MultiproverGreaterThanEqGadget::<'_, 64 /* bitlength */, N, S>::constrain_greater_than_eq(
-            cs,
             balance1.amount.into(),
             party0_buy_amount,
             fabric.clone(),
+            cs,
         )?;
 
         MultiproverGreaterThanEqGadget::<'_, 64 /* bitlength */, N, S>::constrain_greater_than_eq(
-            cs,
             balance2.amount.into(),
             party1_buy_amount,
             fabric,
+            cs,
         )?;
 
         Ok(())
@@ -303,19 +303,19 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // Check that the prices of the orders overlap
         // 1. Mux buy/sell side based on the direction of the match
         let prices = CondSelectVectorGadget::select(
-            cs,
             &[order2.price, order1.price],
             &[order1.price, order2.price],
             matches.direction,
+            cs,
         );
         let buy_side_price = prices[0].to_owned();
         let sell_side_price = prices[1].to_owned();
 
         // 2. Enforce that the buy side price is greater than or equal to the sell side price
         GreaterThanEqGadget::<64 /* bitlength */>::constrain_greater_than_eq(
-            cs,
             buy_side_price,
             sell_side_price,
+            cs,
         );
 
         // Constrain the execution price to the midpoint of the two order prices
@@ -337,10 +337,10 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         let max_minus_min1 = order1.amount - order2.amount;
         let max_minus_min2 = order2.amount - order1.amount;
         let max_minus_min_expected = CondSelectGadget::select(
-            cs,
             max_minus_min1,
             max_minus_min2,
             matches.min_amount_order_index.into(),
+            cs,
         );
         cs.constrain(max_minus_min_expected - matches.max_minus_min_amount);
 
@@ -350,8 +350,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // or min(amounts) - max(amounts).
         // Constraining the value to be positive forces it to be equal to max(amounts) - min(amounts)
         GreaterThanEqZeroGadget::<32 /* bitlength */>::constrain_greater_than_zero(
-            cs,
             matches.max_minus_min_amount,
+            cs,
         );
 
         // 3. Constrain the executed base amount to be the minimum of the two order amounts
@@ -388,10 +388,10 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         ];
 
         let selected_values = CondSelectVectorGadget::select(
-            cs,
             &party0_buy_side_selection,
             &party1_buy_side_selection,
             matches.direction,
+            cs,
         );
 
         // Destructure the conditional selection
@@ -406,15 +406,15 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
         // Constrain the amounts of the balances to subsume the obligations from the match
         GreaterThanEqGadget::<64 /* bitlength */>::constrain_greater_than_eq(
-            cs,
             balance1.amount.into(),
             party0_buy_amount,
+            cs,
         );
 
         GreaterThanEqGadget::<64 /* bitlength */>::constrain_greater_than_eq(
-            cs,
             balance2.amount.into(),
             party1_buy_amount,
+            cs,
         );
 
         Ok(())

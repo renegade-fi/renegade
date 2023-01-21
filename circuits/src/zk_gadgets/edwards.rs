@@ -265,7 +265,7 @@ impl TwistedEdwardsCurve {
         }
 
         // Evaluate whether the sum is zero
-        EqZeroGadget::eq_zero(cs, bit_sum)
+        EqZeroGadget::eq_zero(bit_sum, cs)
     }
 }
 

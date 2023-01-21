@@ -33,10 +33,10 @@ impl EqZeroGadget {
     ///
     /// Relies on the fact that modulo a prime field, all elements (except zero)
     /// have a valid multiplicative inverse
-    pub fn eq_zero<L, CS>(cs: &mut CS, val: L) -> Variable
+    pub fn eq_zero<L, CS>(val: L, cs: &mut CS) -> Variable
     where
-        CS: RandomizableConstraintSystem,
         L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
     {
         // Compute the inverse of the value outside the constraint
         let val_lc: LinearCombination = val.into();
@@ -88,7 +88,7 @@ impl SingleProverCircuit for EqZeroGadget {
         let expected_var = prover.commit_public(Scalar::from(statement as u8));
 
         // Test equality to zero and constrain this to be expected
-        let eq_zero = EqZeroGadget::eq_zero(&mut prover, witness_var);
+        let eq_zero = EqZeroGadget::eq_zero(witness_var, &mut prover);
         prover.constrain(eq_zero - expected_var);
 
         // Prover the statement
@@ -111,7 +111,7 @@ impl SingleProverCircuit for EqZeroGadget {
         let expected_var = verifier.commit_public(Scalar::from(statement as u8));
 
         // Test equality to zero and constrain this to be expected
-        let eq_zero = EqZeroGadget::eq_zero(&mut verifier, witness_var);
+        let eq_zero = EqZeroGadget::eq_zero(witness_var, &mut verifier);
         verifier.constrain(eq_zero - expected_var);
 
         // Verify the proof
@@ -132,7 +132,7 @@ impl EqGadget {
         L: Into<LinearCombination>,
         CS: RandomizableConstraintSystem,
     {
-        EqZeroGadget::eq_zero(cs, a.into() - b.into())
+        EqZeroGadget::eq_zero(a.into() - b.into(), cs)
     }
 }
 
@@ -160,7 +160,7 @@ impl EqVecGadget {
             not_equal_sum += ne_val.clone();
         }
 
-        EqZeroGadget::eq_zero(cs, not_equal_sum)
+        EqZeroGadget::eq_zero(not_equal_sum, cs)
     }
 }
 
@@ -175,7 +175,7 @@ impl NotEqualGadget {
         L: Into<LinearCombination> + Clone,
         CS: RandomizableConstraintSystem,
     {
-        let eq_zero = EqZeroGadget::eq_zero(cs, a.into() - b.into());
+        let eq_zero = EqZeroGadget::eq_zero(a.into() - b.into(), cs);
         Variable::One() - eq_zero
     }
 }
@@ -186,10 +186,10 @@ pub struct GreaterThanEqZeroGadget<const D: usize> {}
 
 impl<const D: usize> GreaterThanEqZeroGadget<D> {
     /// Constrain the value to be greater than zero
-    pub fn constrain_greater_than_zero<L, CS>(cs: &mut CS, val: L)
+    pub fn constrain_greater_than_zero<L, CS>(val: L, cs: &mut CS)
     where
-        CS: RandomizableConstraintSystem,
         L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
     {
         assert!(
             D <= POSITIVE_SCALAR_MAX_BITS,
@@ -240,7 +240,7 @@ impl<const D: usize> SingleProverCircuit for GreaterThanEqZeroGadget<D> {
         let (witness_commit, witness_var) = prover.commit(witness.val, Scalar::random(&mut rng));
 
         // Apply the constraints
-        Self::constrain_greater_than_zero(&mut prover, witness_var);
+        Self::constrain_greater_than_zero(witness_var, &mut prover);
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -259,7 +259,7 @@ impl<const D: usize> SingleProverCircuit for GreaterThanEqZeroGadget<D> {
         let witness_var = verifier.commit(witness_commitment);
 
         // Apply the constraints
-        Self::constrain_greater_than_zero(&mut verifier, witness_var);
+        Self::constrain_greater_than_zero(witness_var, &mut verifier);
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -286,13 +286,13 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
     /// Constrains the input value to be greater than or equal to zero implicitly
     /// by bit-decomposing the value and re-composing it thereafter
     pub fn constrain_greater_than_zero<L, CS>(
-        cs: &mut CS,
         val: L,
         fabric: SharedFabric<N, S>,
+        cs: &mut CS,
     ) -> Result<(), ProverError>
     where
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
         L: Into<MpcLinearCombination<N, S>> + Clone,
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
         // Evaluate the assignment of the value in the underlying constraint system
         let value_assignment = cs
@@ -325,12 +325,12 @@ pub struct GreaterThanEqGadget<const D: usize> {}
 
 impl<const D: usize> GreaterThanEqGadget<D> {
     /// Constrains the values to satisfy a >= b
-    pub fn constrain_greater_than_eq<L, CS>(cs: &mut CS, a: L, b: L)
+    pub fn constrain_greater_than_eq<L, CS>(a: L, b: L, cs: &mut CS)
     where
-        CS: RandomizableConstraintSystem,
         L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
     {
-        GreaterThanEqZeroGadget::<D>::constrain_greater_than_zero(cs, a.into() - b.into());
+        GreaterThanEqZeroGadget::<D>::constrain_greater_than_zero(a.into() - b.into(), cs);
     }
 }
 
@@ -362,7 +362,7 @@ impl<const D: usize> SingleProverCircuit for GreaterThanEqGadget<D> {
         let (b_comm, b_var) = prover.commit(witness.b, Scalar::random(&mut rng));
 
         // Apply the constraints
-        Self::constrain_greater_than_eq(&mut prover, a_var, b_var);
+        Self::constrain_greater_than_eq(a_var, b_var, &mut prover);
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -382,7 +382,7 @@ impl<const D: usize> SingleProverCircuit for GreaterThanEqGadget<D> {
         let b_var = verifier.commit(witness_commitment[1]);
 
         // Apply the constraints
-        Self::constrain_greater_than_eq(&mut verifier, a_var, b_var);
+        Self::constrain_greater_than_eq(a_var, b_var, &mut verifier);
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -410,19 +410,19 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
 {
     /// Constrain the relation a >= b
     pub fn constrain_greater_than_eq<L, CS>(
-        cs: &mut CS,
         a: L,
         b: L,
         fabric: SharedFabric<N, S>,
+        cs: &mut CS,
     ) -> Result<(), ProverError>
     where
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
         L: Into<MpcLinearCombination<N, S>> + Clone,
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
         MultiproverGreaterThanEqZeroGadget::<'a, D, N, S>::constrain_greater_than_zero(
-            cs,
             a.into() - b.into(),
             fabric,
+            cs,
         )
     }
 }

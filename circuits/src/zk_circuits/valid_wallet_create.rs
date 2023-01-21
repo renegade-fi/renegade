@@ -79,35 +79,35 @@ where
         // This wallet should have empty orders and balances, hash zeros into the state
         // to represent an empty orders list
         let zeros = [Scalar::zero(); MAX_BALANCES * BALANCE_ZEROS + MAX_ORDERS * ORDER_ZEROS];
-        hasher.batch_absorb(cs, &zeros)?;
+        hasher.batch_absorb(&zeros, cs)?;
 
         // Hash the fees into the state
         for fee in witness.fees.iter() {
             hasher.batch_absorb(
-                cs,
                 &[
                     fee.settle_key,
                     fee.gas_addr,
                     fee.gas_token_amount,
                     fee.percentage_fee,
                 ],
+                cs,
             )?;
         }
 
         // Hash the keys into the state
         hasher.batch_absorb(
-            cs,
             &[
                 witness.root_public_key,
                 witness.match_public_key,
                 witness.settle_public_key,
                 witness.view_public_key,
             ],
+            cs,
         )?;
-        hasher.absorb(cs, witness.wallet_randomness)?;
+        hasher.absorb(witness.wallet_randomness, cs)?;
 
         // Enforce that the result is equal to the expected commitment
-        hasher.constrained_squeeze(cs, expected_commit)?;
+        hasher.constrained_squeeze(expected_commit, cs)?;
         Ok(())
     }
 }

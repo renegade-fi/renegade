@@ -13,7 +13,6 @@ use crate::errors::ProverError;
 
 /// Represents an OR gate in a single-prover constraint system
 pub struct OrGate {}
-
 impl OrGate {
     /// Computes the logical OR of the two arguments
     ///
@@ -40,7 +39,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> Multiprov
     ///
     /// The arguments are assumed to be binary (0 or 1), but this assumption should be
     /// constrained elsewhere in the calling circuit
-    pub fn or<L, CS>(cs: &mut CS, a: L, b: L) -> Result<MpcLinearCombination<N, S>, ProverError>
+    pub fn or<L, CS>(a: L, b: L, cs: &mut CS) -> Result<MpcLinearCombination<N, S>, ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
@@ -68,5 +67,22 @@ impl AndGate {
         // For binary values, and is reduced to multiplication
         // Multiply the values and return their output wire
         cs.multiply(a.into(), b.into()).2
+    }
+}
+
+/// Constrains an input value to be binary; 0 or 1
+#[derive(Clone, Debug)]
+pub struct ConstrainBinaryGadget {}
+impl ConstrainBinaryGadget {
+    /// Constrain the input to be binary (0 or 1), this is done by constraining
+    /// the polynomial x * (1 - x) which is only satisfied when x \in {0, 1}
+    pub fn constrain_binary<L, CS>(x: L, cs: &mut CS)
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        let x_lc: LinearCombination = x.into();
+        let mul_out = cs.multiply(x_lc.clone(), Variable::One() - x_lc).2;
+        cs.constrain(mul_out.into());
     }
 }

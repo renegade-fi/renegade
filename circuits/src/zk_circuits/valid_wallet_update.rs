@@ -76,11 +76,11 @@ where
         // Commit to the old wallet, use this as a leaf in the Merkle opening
         let old_wallet_commit = Self::wallet_commit(&witness.wallet1, cs)?;
         PoseidonMerkleHashGadget::compute_and_constrain_root_prehashed(
-            cs,
             old_wallet_commit.clone(),
             witness.wallet1_opening,
             witness.wallet1_opening_indices,
             merkle_root.into(),
+            cs,
         )?;
 
         // Verify that the nullifiers are properly computed
@@ -132,13 +132,12 @@ where
 
         // Hash the balances into the state
         for balance in wallet.balances.iter() {
-            hasher.batch_absorb(cs, &[balance.mint, balance.amount])?;
+            hasher.batch_absorb(&[balance.mint, balance.amount], cs)?;
         }
 
         // Hash the orders into the state
         for order in wallet.orders.iter() {
             hasher.batch_absorb(
-                cs,
                 &[
                     order.quote_mint,
                     order.base_mint,
@@ -146,27 +145,28 @@ where
                     order.price,
                     order.amount,
                 ],
+                cs,
             )?;
         }
 
         // Hash the fees into the state
         for fee in wallet.fees.iter() {
             hasher.batch_absorb(
-                cs,
                 &[
                     fee.settle_key,
                     fee.gas_addr,
                     fee.gas_token_amount,
                     fee.percentage_fee,
                 ],
+                cs,
             )?;
         }
 
         // Hash the keys into the state
-        hasher.batch_absorb(cs, &wallet.keys)?;
+        hasher.batch_absorb(&wallet.keys, cs)?;
 
         // Hash the randomness into the state
-        hasher.absorb(cs, wallet.randomness)?;
+        hasher.absorb(wallet.randomness, cs)?;
 
         // Squeeze an element out of the state
         hasher.squeeze(cs)
@@ -182,7 +182,7 @@ where
         let hasher_params = PoseidonSpongeParameters::default();
         let mut hasher = PoseidonHashGadget::new(hasher_params);
 
-        hasher.batch_absorb(cs, &[wallet_commit, wallet.randomness.into()])?;
+        hasher.batch_absorb(&[wallet_commit, wallet.randomness.into()], cs)?;
         hasher.squeeze(cs)
     }
 
@@ -196,7 +196,7 @@ where
         let hasher_params = PoseidonSpongeParameters::default();
         let mut hasher = PoseidonHashGadget::new(hasher_params);
 
-        hasher.batch_absorb(cs, &[wallet_commit, wallet.randomness + Scalar::one()])?;
+        hasher.batch_absorb(&[wallet_commit, wallet.randomness + Scalar::one()], cs)?;
         hasher.squeeze(cs)
     }
 
@@ -264,10 +264,10 @@ where
         // The external transfer term; negate the amount if the direction is 1 (withdraw)
         // otherwise keep the amount as positive
         let external_transfer_term = CondSelectGadget::select(
-            cs,
             -external_transfer.1,
             external_transfer.1.into(),
             external_transfer.2.into(),
+            cs,
         );
 
         for new_balance in new_wallet.balances.iter() {
@@ -275,14 +275,14 @@ where
 
             // Match amounts in the old wallet, before transfers
             for old_balance in old_wallet.balances.iter() {
-                let mints_eq = EqZeroGadget::eq_zero(cs, new_balance.mint - old_balance.mint);
+                let mints_eq = EqZeroGadget::eq_zero(new_balance.mint - old_balance.mint, cs);
                 let (_, _, masked_amount) = cs.multiply(mints_eq.into(), old_balance.amount.into());
                 expected_amount += masked_amount;
             }
 
             // Add in the external transfer information
             let equals_external_transfer_mint =
-                EqZeroGadget::eq_zero(cs, new_balance.mint - external_transfer.0);
+                EqZeroGadget::eq_zero(new_balance.mint - external_transfer.0, cs);
             let (_, _, external_transfer_term) = cs.multiply(
                 equals_external_transfer_mint.into(),
                 external_transfer_term.clone(),
@@ -292,7 +292,7 @@ where
 
             // Add in the internal transfer information
             let equals_internal_transfer_mint =
-                EqZeroGadget::eq_zero(cs, new_balance.mint - internal_transfer.0);
+                EqZeroGadget::eq_zero(new_balance.mint - internal_transfer.0, cs);
             let (_, _, internal_transfer_term) = cs.multiply(
                 equals_internal_transfer_mint.into(),
                 internal_transfer.1.into(),
