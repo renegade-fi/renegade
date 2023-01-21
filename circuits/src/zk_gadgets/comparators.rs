@@ -183,10 +183,36 @@ impl NotEqualGadget {
 /// A gadget that enforces a value of a given bitlength is positive
 #[derive(Clone, Debug)]
 pub struct GreaterThanEqZeroGadget<const D: usize> {}
-
 impl<const D: usize> GreaterThanEqZeroGadget<D> {
+    /// Evaluate the condition x >= 0; returns 1 if true, otherwise 0
+    pub fn greater_than_zero<L, CS>(x: L, cs: &mut CS) -> Variable
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        // If we can reconstruct the value without the highest bit, the value is non-negative
+        let bit_reconstructed = Self::bit_decompose_reconstruct(x.clone(), cs);
+        EqZeroGadget::eq_zero(bit_reconstructed - x.into(), cs)
+    }
+
     /// Constrain the value to be greater than zero
-    pub fn constrain_greater_than_zero<L, CS>(val: L, cs: &mut CS)
+    pub fn constrain_greater_than_zero<L, CS>(x: L, cs: &mut CS)
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        // If we can reconstruct the value without the highest bit, the value is non-negative
+        let bit_reconstructed = Self::bit_decompose_reconstruct(x.clone(), cs);
+        cs.constrain(bit_reconstructed - x.into())
+    }
+
+    /// A helper function to decompose a scalar into bits and then reconstruct it;
+    /// returns the reconstructed result
+    ///
+    /// This is used by limiting the bit width of the decomposition -- if a value can
+    /// be reconstructed without its highest bit (i.e. highest bit is zero) then it is
+    /// non-negative
+    fn bit_decompose_reconstruct<L, CS>(x: L, cs: &mut CS) -> LinearCombination
     where
         L: Into<LinearCombination> + Clone,
         CS: RandomizableConstraintSystem,
@@ -198,7 +224,7 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
         );
 
         // Bit decompose the input
-        let bits = scalar_to_bits_le(&cs.eval(&val.clone().into()))[..D]
+        let bits = scalar_to_bits_le(&cs.eval(&x.into()))[..D]
             .iter()
             .map(|bit| cs.allocate(Some(*bit)).unwrap())
             .collect_vec();
@@ -212,7 +238,7 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
             res = res * Scalar::from(2u64) + bit
         }
 
-        cs.constrain(res - val.into())
+        res
     }
 }
 
@@ -286,7 +312,7 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
     /// Constrains the input value to be greater than or equal to zero implicitly
     /// by bit-decomposing the value and re-composing it thereafter
     pub fn constrain_greater_than_zero<L, CS>(
-        val: L,
+        x: L,
         fabric: SharedFabric<N, S>,
         cs: &mut CS,
     ) -> Result<(), ProverError>
@@ -294,10 +320,28 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
         L: Into<MpcLinearCombination<N, S>> + Clone,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
+        let reconstructed_res = Self::bit_decompose_reconstruct(x.clone(), fabric, cs)?;
+        cs.constrain(reconstructed_res - x.into());
+        Ok(())
+    }
+
+    /// A helper function to compute the bit decomposition of an allocated scalar and
+    /// then reconstruct from the bit decomposition.
+    ///
+    /// This is useful because we can bit decompose with all but the highest bit. If the
+    /// reconstructed result is equal to the input; the highest bit is not set and the
+    /// value is non-negative
+    fn bit_decompose_reconstruct<L, CS>(
+        x: L,
+        fabric: SharedFabric<N, S>,
+        cs: &mut CS,
+    ) -> Result<MpcLinearCombination<N, S>, ProverError>
+    where
+        L: Into<MpcLinearCombination<N, S>> + Clone,
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+    {
         // Evaluate the assignment of the value in the underlying constraint system
-        let value_assignment = cs
-            .eval(&val.clone().into())
-            .map_err(ProverError::Collaborative)?;
+        let value_assignment = cs.eval(&x.into()).map_err(ProverError::Collaborative)?;
         let bits = to_bits_le::<D, N, S>(&value_assignment, fabric)
             .map_err(ProverError::Mpc)?
             .into_iter()
@@ -313,8 +357,7 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
             res = res * Scalar::from(2u64) + bit;
         }
 
-        cs.constrain(res - val.into());
-        Ok(())
+        Ok(res)
     }
 }
 
@@ -324,6 +367,15 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
 pub struct GreaterThanEqGadget<const D: usize> {}
 
 impl<const D: usize> GreaterThanEqGadget<D> {
+    /// Evaluates the comparator a >= b; returns 1 if true, otherwise 0
+    pub fn greater_than_eq<L, CS>(a: L, b: L, cs: &mut CS)
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        GreaterThanEqZeroGadget::<D>::greater_than_zero(a.into() - b.into(), cs);
+    }
+
     /// Constrains the values to satisfy a >= b
     pub fn constrain_greater_than_eq<L, CS>(a: L, b: L, cs: &mut CS)
     where
