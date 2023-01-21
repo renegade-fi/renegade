@@ -36,29 +36,29 @@ pub struct PoseidonMerkleHashGadget {}
 impl PoseidonMerkleHashGadget {
     /// Compute the root of the tree given the leaf node and the path of
     /// sister nodes leading to the root
-    pub fn compute_root<S, CS>(
-        cs: &mut CS,
-        leaf_node: Vec<S>,
+    pub fn compute_root<L, CS>(
+        leaf_node: Vec<L>,
         opening: Vec<Variable>,
         opening_indices: Vec<Variable>,
+        cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError>
     where
-        S: Into<LinearCombination> + Clone,
+        L: Into<LinearCombination> + Clone,
         CS: RandomizableConstraintSystem,
     {
         assert_eq!(opening.len(), opening_indices.len());
 
         // Hash the leaf_node into a field element
         let leaf_hash: LinearCombination = Self::leaf_hash(&leaf_node, cs)?;
-        Self::compute_root_prehashed(cs, leaf_hash, opening, opening_indices)
+        Self::compute_root_prehashed(leaf_hash, opening, opening_indices, cs)
     }
 
     /// Compute the root given an already hashed leaf, i.e. do not hash a leaf buffer first
     pub fn compute_root_prehashed<S, CS>(
-        cs: &mut CS,
         leaf_node: S,
         opening: Vec<Variable>,
         opening_indices: Vec<Variable>,
+        cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError>
     where
         S: Into<LinearCombination> + Clone,
@@ -70,10 +70,10 @@ impl PoseidonMerkleHashGadget {
             // Select the left and right hand sides based on whether this node in the opening represents the
             // left or right hand child of its parent
             let (lhs, rhs) = Self::select_left_right(
-                cs,
                 current_hash.clone(),
                 path_elem.into(),
                 lr_select.into(),
+                cs,
             );
             current_hash = Self::hash_internal_nodes(&lhs, &rhs, cs)?;
         }
@@ -82,36 +82,36 @@ impl PoseidonMerkleHashGadget {
     }
 
     /// Compute the root and constrain it to an expected value
-    pub fn compute_and_constrain_root<S, CS>(
-        cs: &mut CS,
-        leaf_node: Vec<S>,
+    pub fn compute_and_constrain_root<L, CS>(
+        leaf_node: Vec<L>,
         opening: Vec<Variable>,
         opening_indices: Vec<Variable>,
-        expected_root: S,
+        expected_root: L,
+        cs: &mut CS,
     ) -> Result<(), R1CSError>
     where
         CS: RandomizableConstraintSystem,
-        S: Into<LinearCombination> + Clone,
+        L: Into<LinearCombination> + Clone,
     {
-        let root = Self::compute_root(cs, leaf_node, opening, opening_indices)?;
+        let root = Self::compute_root(leaf_node, opening, opening_indices, cs)?;
         cs.constrain(expected_root.into() - root);
 
         Ok(())
     }
 
     /// Compute the root from a prehashed leaf and constrain it to an expected value
-    pub fn compute_and_constrain_root_prehashed<S, CS>(
-        cs: &mut CS,
-        leaf_node: S,
+    pub fn compute_and_constrain_root_prehashed<L, CS>(
+        leaf_node: L,
         opening: Vec<Variable>,
         opening_indices: Vec<Variable>,
-        expected_root: S,
+        expected_root: L,
+        cs: &mut CS,
     ) -> Result<(), R1CSError>
     where
         CS: RandomizableConstraintSystem,
-        S: Into<LinearCombination> + Clone,
+        L: Into<LinearCombination> + Clone,
     {
-        let root = Self::compute_root_prehashed(cs, leaf_node, opening, opening_indices)?;
+        let root = Self::compute_root_prehashed(leaf_node, opening, opening_indices, cs)?;
         cs.constrain(expected_root.into() - root);
 
         Ok(())
@@ -122,14 +122,14 @@ impl PoseidonMerkleHashGadget {
     ///
     /// This is based on whether the current hash represents the left or right
     /// child of its parent to be computed
-    fn select_left_right<S, CS>(
+    fn select_left_right<L, CS>(
+        current_hash: L,
+        sister_node: L,
+        lr_select: L,
         cs: &mut CS,
-        current_hash: S,
-        sister_node: S,
-        lr_select: S,
     ) -> (LinearCombination, LinearCombination)
     where
-        S: Into<LinearCombination> + Clone,
+        L: Into<LinearCombination> + Clone,
         CS: RandomizableConstraintSystem,
     {
         let current_hash_lc = current_hash.into();
@@ -155,15 +155,15 @@ impl PoseidonMerkleHashGadget {
     }
 
     /// Hash the value at the leaf into a bulletproof constraint value
-    fn leaf_hash<S, CS>(values: &[S], cs: &mut CS) -> Result<LinearCombination, R1CSError>
+    fn leaf_hash<L, CS>(values: &[L], cs: &mut CS) -> Result<LinearCombination, R1CSError>
     where
-        S: Into<LinearCombination> + Clone,
+        L: Into<LinearCombination> + Clone,
         CS: RandomizableConstraintSystem,
     {
         // Build a sponge hasher
         let hasher_params = PoseidonSpongeParameters::default();
         let mut hasher = PoseidonHashGadget::new(hasher_params);
-        hasher.batch_absorb(cs, values)?;
+        hasher.batch_absorb(values, cs)?;
 
         hasher.squeeze(cs)
     }
@@ -177,7 +177,7 @@ impl PoseidonMerkleHashGadget {
     ) -> Result<LinearCombination, R1CSError> {
         let hasher_params = PoseidonSpongeParameters::default();
         let mut hasher = PoseidonHashGadget::new(hasher_params);
-        hasher.batch_absorb(cs, &[left.clone(), right.clone()])?;
+        hasher.batch_absorb(&[left.clone(), right.clone()], cs)?;
 
         hasher.squeeze(cs)
     }
@@ -249,11 +249,11 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
 
         // Apply the constraints
         PoseidonMerkleHashGadget::compute_and_constrain_root(
-            &mut prover,
             leaf_vars,
             opening_vars,
             indices_vars,
             root_var,
+            &mut prover,
         )
         .map_err(ProverError::R1CS)?;
 
@@ -301,11 +301,11 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
 
         // Apply constraints
         PoseidonMerkleHashGadget::compute_and_constrain_root(
-            &mut verifier,
             leaf_vars,
             opening_vars,
             indices_vars,
             root_var,
+            &mut verifier,
         )
         .map_err(VerifierError::R1CS)?;
 
@@ -329,11 +329,11 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     /// Compute the root of the tree given the leaf node and the path of
     /// sister nodes leading to the root
     pub fn compute_root<L, CS>(
-        cs: &mut CS,
         leaf_node: Vec<L>,
         opening: Vec<MpcVariable<N, S>>,
         opening_indices: Vec<MpcVariable<N, S>>,
         fabric: SharedFabric<N, S>,
+        cs: &mut CS,
     ) -> Result<MpcLinearCombination<N, S>, ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
@@ -342,18 +342,18 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         assert_eq!(opening.len(), opening_indices.len());
 
         // Hash the leaf_node into a field element
-        let mut current_hash = Self::leaf_hash(&leaf_node, cs, fabric.clone())?;
+        let mut current_hash = Self::leaf_hash(&leaf_node, fabric.clone(), cs)?;
         for (path_elem, lr_select) in opening.into_iter().zip(opening_indices.into_iter()) {
             // Select the left and right hand sides based on whether this node in the opening represents the
             // left or right hand child of its parent
             let (lhs, rhs) = Self::select_left_right(
-                cs,
                 current_hash.clone(),
                 path_elem.into(),
                 lr_select.into(),
                 fabric.clone(),
+                cs,
             )?;
-            current_hash = Self::hash_internal_nodes(&lhs, &rhs, cs, fabric.clone())?;
+            current_hash = Self::hash_internal_nodes(&lhs, &rhs, fabric.clone(), cs)?;
         }
 
         Ok(current_hash)
@@ -366,11 +366,11 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     /// child of its parent to be computed
     #[allow(clippy::type_complexity)]
     fn select_left_right<L, CS>(
-        cs: &mut CS,
         current_hash: L,
         sister_node: L,
         lr_select: L,
         fabric: SharedFabric<N, S>,
+        cs: &mut CS,
     ) -> Result<(MpcLinearCombination<N, S>, MpcLinearCombination<N, S>), ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
@@ -405,18 +405,18 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
     /// Compute the root and constrain it to an expected value
     pub fn compute_and_constrain_root<L, CS>(
-        cs: &mut CS,
         leaf_node: Vec<L>,
         opening: Vec<MpcVariable<N, S>>,
         opening_indices: Vec<MpcVariable<N, S>>,
         expected_root: L,
         fabric: SharedFabric<N, S>,
+        cs: &mut CS,
     ) -> Result<(), ProverError>
     where
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
         L: Into<MpcLinearCombination<N, S>> + Clone,
     {
-        let root = Self::compute_root(cs, leaf_node, opening, opening_indices, fabric)?;
+        let root = Self::compute_root(leaf_node, opening, opening_indices, fabric, cs)?;
         cs.constrain(expected_root.into() - root);
 
         Ok(())
@@ -425,8 +425,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     /// Hash the value at the leaf into a bulletproof constraint value
     fn leaf_hash<L, CS>(
         values: &[L],
-        cs: &mut CS,
         fabric: SharedFabric<N, S>,
+        cs: &mut CS,
     ) -> Result<MpcLinearCombination<N, S>, ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
@@ -435,7 +435,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // Build a sponge hasher
         let hasher_params = PoseidonSpongeParameters::default();
         let mut hasher = MultiproverPoseidonHashGadget::new(hasher_params, fabric);
-        hasher.batch_absorb(cs, values)?;
+        hasher.batch_absorb(values, cs)?;
 
         hasher.squeeze(cs)
     }
@@ -445,12 +445,12 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     fn hash_internal_nodes<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
         left: &MpcLinearCombination<N, S>,
         right: &MpcLinearCombination<N, S>,
-        cs: &mut CS,
         fabric: SharedFabric<N, S>,
+        cs: &mut CS,
     ) -> Result<MpcLinearCombination<N, S>, ProverError> {
         let hasher_params = PoseidonSpongeParameters::default();
         let mut hasher = MultiproverPoseidonHashGadget::new(hasher_params, fabric);
-        hasher.batch_absorb(cs, &[left.clone(), right.clone()])?;
+        hasher.batch_absorb(&[left.clone(), right.clone()], cs)?;
 
         hasher.squeeze(cs)
     }
@@ -522,12 +522,12 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
 
         // Apply the constraints
         Self::compute_and_constrain_root(
-            &mut prover,
             leaf_data_vars,
             opening_vars,
             indices_vars,
             root_var,
             fabric,
+            &mut prover,
         )?;
 
         // Prove the statement

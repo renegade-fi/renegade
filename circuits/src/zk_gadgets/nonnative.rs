@@ -405,10 +405,10 @@ impl NonNativeElementVar {
 
         let selector_lc: LinearCombination = selector.into();
         let selected_words = CondSelectVectorGadget::select(
-            cs,
             &lhs_words.take(max_len).collect_vec(),
             &rhs_words.take(max_len).collect_vec(),
             selector_lc,
+            cs,
         );
 
         Self::new(selected_words, lhs.field_mod.clone())

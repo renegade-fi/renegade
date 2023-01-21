@@ -37,7 +37,7 @@ pub struct ToBitsGadget<const D: usize> {}
 
 impl<const D: usize> ToBitsGadget<D> {
     /// Converts a value to its bitwise representation in a single-prover constraint system
-    pub fn to_bits<L, CS>(cs: &mut CS, a: L) -> Result<Vec<Variable>, R1CSError>
+    pub fn to_bits<L, CS>(a: L, cs: &mut CS) -> Result<Vec<Variable>, R1CSError>
     where
         CS: RandomizableConstraintSystem,
         L: Into<LinearCombination> + Clone,
@@ -92,7 +92,7 @@ impl<const D: usize> SingleProverCircuit for ToBitsGadget<D> {
             .collect_vec();
 
         // Get the bits result and constrain the output
-        let res_bits = Self::to_bits(&mut prover, witness_var).map_err(ProverError::R1CS)?;
+        let res_bits = Self::to_bits(witness_var, &mut prover).map_err(ProverError::R1CS)?;
 
         for (statement_bit, res_bit) in statement_vars.into_iter().zip(res_bits.into_iter()) {
             prover.constrain(statement_bit - res_bit)
@@ -121,7 +121,7 @@ impl<const D: usize> SingleProverCircuit for ToBitsGadget<D> {
 
         // Apply the constraints using the single-prover gadget
         let computed_bits =
-            ToBitsGadget::<D>::to_bits(&mut verifier, witness_var).map_err(VerifierError::R1CS)?;
+            ToBitsGadget::<D>::to_bits(witness_var, &mut verifier).map_err(VerifierError::R1CS)?;
         for (statement_bit, computed_bit) in bit_vars.into_iter().zip(computed_bits.into_iter()) {
             verifier.constrain(statement_bit - computed_bit);
         }
@@ -152,9 +152,9 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
 {
     /// Converts a value into its bitwise representation
     pub fn to_bits<L, CS>(
-        cs: &mut CS,
         a: L,
         fabric: SharedFabric<N, S>,
+        cs: &mut CS,
     ) -> Result<Vec<MpcLinearCombination<N, S>>, ProverError>
     where
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
@@ -210,7 +210,7 @@ impl<'a, const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
         let (_, bit_vars) = prover.batch_commit_public(&statement.bits);
 
         // Apply the constraints
-        let bits = Self::to_bits(&mut prover, witness_var, fabric)?;
+        let bits = Self::to_bits(witness_var, fabric, &mut prover)?;
         for (statement_bit, computed_bit) in bit_vars.into_iter().zip(bits.into_iter()) {
             prover.constrain(statement_bit - computed_bit);
         }

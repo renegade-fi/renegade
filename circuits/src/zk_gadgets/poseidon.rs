@@ -69,24 +69,24 @@ impl PoseidonHashGadget {
     /// Hashes the given input and constraints the result to equal the expected output
     pub fn hash<L, CS>(
         &mut self,
-        cs: &mut CS,
         hash_input: &[L],
         expected_output: L,
+        cs: &mut CS,
     ) -> Result<(), R1CSError>
     where
         L: Into<LinearCombination> + Clone,
         CS: RandomizableConstraintSystem,
     {
-        self.batch_absorb(cs, hash_input)?;
-        self.constrained_squeeze(cs, expected_output.into())
+        self.batch_absorb(hash_input, cs)?;
+        self.constrained_squeeze(expected_output.into(), cs)
     }
 
     /// Absorb an input into the hasher state
-    pub fn absorb<L: Into<LinearCombination>, CS: RandomizableConstraintSystem>(
-        &mut self,
-        cs: &mut CS,
-        a: L,
-    ) -> Result<(), R1CSError> {
+    pub fn absorb<L, CS>(&mut self, a: L, cs: &mut CS) -> Result<(), R1CSError>
+    where
+        L: Into<LinearCombination>,
+        CS: RandomizableConstraintSystem,
+    {
         assert!(
             !self.in_squeeze_state,
             "Cannot absorb from a sponge that has already been squeezed"
@@ -105,13 +105,13 @@ impl PoseidonHashGadget {
     }
 
     /// Absorb a batch of inputs into the hasher state
-    pub fn batch_absorb<L, CS>(&mut self, cs: &mut CS, a: &[L]) -> Result<(), R1CSError>
+    pub fn batch_absorb<L, CS>(&mut self, a: &[L], cs: &mut CS) -> Result<(), R1CSError>
     where
         L: Into<LinearCombination> + Clone,
         CS: RandomizableConstraintSystem,
     {
         a.iter()
-            .try_for_each(|val| self.absorb(cs, Into::<LinearCombination>::into(val.clone())))
+            .try_for_each(|val| self.absorb(Into::<LinearCombination>::into(val.clone()), cs))
     }
 
     /// Squeeze an element from the sponge and return its representation in the constraint
@@ -134,8 +134,8 @@ impl PoseidonHashGadget {
     /// constraint system
     pub fn batch_squeeze<CS: RandomizableConstraintSystem>(
         &mut self,
-        cs: &mut CS,
         num_elements: usize,
+        cs: &mut CS,
     ) -> Result<Vec<LinearCombination>, R1CSError> {
         let mut res = Vec::with_capacity(num_elements);
         for _ in 0..num_elements {
@@ -147,11 +147,11 @@ impl PoseidonHashGadget {
 
     /// Squeeze an output from the hasher, and constraint its value to equal the
     /// provided statement variable.
-    pub fn constrained_squeeze<L: Into<LinearCombination>, CS: RandomizableConstraintSystem>(
-        &mut self,
-        cs: &mut CS,
-        expected: L,
-    ) -> Result<(), R1CSError> {
+    pub fn constrained_squeeze<L, CS>(&mut self, expected: L, cs: &mut CS) -> Result<(), R1CSError>
+    where
+        L: Into<LinearCombination>,
+        CS: RandomizableConstraintSystem,
+    {
         let squeezed_elem = self.squeeze(cs)?;
         cs.constrain(squeezed_elem - expected);
         Ok(())
@@ -161,8 +161,8 @@ impl PoseidonHashGadget {
     /// to the provided statement variables
     pub fn batch_constrained_squeeze<L, CS>(
         &mut self,
-        cs: &mut CS,
         expected: &[L],
+        cs: &mut CS,
     ) -> Result<(), R1CSError>
     where
         L: Into<LinearCombination> + Clone,
@@ -170,7 +170,7 @@ impl PoseidonHashGadget {
     {
         expected
             .iter()
-            .try_for_each(|val| self.constrained_squeeze(cs, val.clone()))
+            .try_for_each(|val| self.constrained_squeeze(val.clone(), cs))
     }
 
     /// Permute the digest by applying the Poseidon round function
@@ -178,7 +178,7 @@ impl PoseidonHashGadget {
         // Compute full_rounds / 2 rounds in which the sbox is applied to all elements
         for round in 0..self.params.full_rounds / 2 {
             self.add_round_constants(round);
-            self.apply_sbox(cs, true /* full_round */)?;
+            self.apply_sbox(true /* full_round */, cs)?;
             self.apply_mds()?;
         }
 
@@ -187,7 +187,7 @@ impl PoseidonHashGadget {
         let partial_rounds_end = partial_rounds_start + self.params.parital_rounds;
         for round in partial_rounds_start..partial_rounds_end {
             self.add_round_constants(round);
-            self.apply_sbox(cs, false /* full_round */)?;
+            self.apply_sbox(false /* full_round */, cs)?;
             self.apply_mds()?;
         }
 
@@ -196,7 +196,7 @@ impl PoseidonHashGadget {
         let final_full_rounds_end = self.params.parital_rounds + self.params.full_rounds;
         for round in final_full_rounds_start..final_full_rounds_end {
             self.add_round_constants(round);
-            self.apply_sbox(cs, true /* full_round */)?;
+            self.apply_sbox(true /* full_round */, cs)?;
             self.apply_mds()?;
         }
 
@@ -225,18 +225,18 @@ impl PoseidonHashGadget {
     /// are added to the state.
     fn apply_sbox<CS: RandomizableConstraintSystem>(
         &mut self,
-        cs: &mut CS,
         full_round: bool,
+        cs: &mut CS,
     ) -> Result<(), R1CSError> {
         // If this is a full round, apply the sbox to each elem
         if full_round {
             self.state = self
                 .state
                 .iter()
-                .map(|val| ExpGadget::gadget(cs, val.clone(), self.params.alpha))
+                .map(|val| ExpGadget::exp(val.clone(), self.params.alpha, cs))
                 .collect_vec();
         } else {
-            self.state[0] = ExpGadget::gadget(cs, self.state[0].clone(), self.params.alpha)
+            self.state[0] = ExpGadget::exp(self.state[0].clone(), self.params.alpha, cs)
         }
 
         Ok(())
@@ -306,7 +306,7 @@ impl SingleProverCircuit for PoseidonHashGadget {
         // Apply the constraints to the proof system
         let mut hasher = PoseidonHashGadget::new(statement.params);
         hasher
-            .hash(&mut prover, &preimage_vars, out_var)
+            .hash(&preimage_vars, out_var, &mut prover)
             .map_err(ProverError::R1CS)?;
 
         // Prove the statement
@@ -334,7 +334,7 @@ impl SingleProverCircuit for PoseidonHashGadget {
         // Build a hasher and apply the constraints
         let mut hasher = PoseidonHashGadget::new(statement.params);
         hasher
-            .hash(&mut verifier, &witness_vars, output_var)
+            .hash(&witness_vars, output_var, &mut verifier)
             .map_err(VerifierError::R1CS)?;
 
         // Verify the proof
@@ -396,20 +396,20 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     /// expected output.
     pub fn hash<L, CS>(
         &mut self,
-        cs: &mut CS,
         hash_input: &[L],
         expected_output: &L,
+        cs: &mut CS,
     ) -> Result<(), ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
-        self.batch_absorb(cs, hash_input)?;
-        self.constrained_squeeze(cs, expected_output.clone())
+        self.batch_absorb(hash_input, cs)?;
+        self.constrained_squeeze(expected_output.clone(), cs)
     }
 
     /// Absorb an input into the hasher state
-    pub fn absorb<'b, L, CS>(&mut self, cs: &mut CS, a: L) -> Result<(), ProverError>
+    pub fn absorb<'b, L, CS>(&mut self, a: L, cs: &mut CS) -> Result<(), ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
@@ -432,12 +432,12 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     }
 
     /// Absorb a batch of inputs into the hasher state
-    pub fn batch_absorb<L, CS>(&mut self, cs: &mut CS, a: &[L]) -> Result<(), ProverError>
+    pub fn batch_absorb<L, CS>(&mut self, a: &[L], cs: &mut CS) -> Result<(), ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
-        a.iter().try_for_each(|val| self.absorb(cs, val.clone()))
+        a.iter().try_for_each(|val| self.absorb(val.clone(), cs))
     }
 
     /// Squeeze an output from the hasher and return to the caller
@@ -459,8 +459,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     /// provided statement variable.
     pub fn constrained_squeeze<L, CS>(
         &mut self,
-        cs: &mut CS,
         expected: L,
+        cs: &mut CS,
     ) -> Result<(), ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
@@ -474,8 +474,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     /// Squeeze a batch of elements from the hasher
     pub fn batch_squeeze<CS>(
         &mut self,
-        cs: &mut CS,
         num_elems: usize,
+        cs: &mut CS,
     ) -> Result<Vec<MpcLinearCombination<N, S>>, ProverError>
     where
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
@@ -489,8 +489,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     /// to the provided statement variables
     pub fn batch_constrained_squeeze<L, CS>(
         &mut self,
-        cs: &mut CS,
         expected: &[MpcVariable<N, S>],
+        cs: &mut CS,
     ) -> Result<(), ProverError>
     where
         L: Into<MpcLinearCombination<N, S>> + Clone,
@@ -498,7 +498,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     {
         expected
             .iter()
-            .try_for_each(|val| self.constrained_squeeze(cs, val.clone()))
+            .try_for_each(|val| self.constrained_squeeze(val.clone(), cs))
     }
 
     /// Permute the digest by applying the Poseidon round function
@@ -509,7 +509,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // Compute full_rounds / 2 rounds in which the sbox is applied to all elements
         for round in 0..self.params.full_rounds / 2 {
             self.add_round_constants(round);
-            self.apply_sbox(cs, true /* full_round */)?;
+            self.apply_sbox(true /* full_round */, cs)?;
             self.apply_mds();
         }
 
@@ -518,7 +518,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         let partial_rounds_end = partial_rounds_start + self.params.parital_rounds;
         for round in partial_rounds_start..partial_rounds_end {
             self.add_round_constants(round);
-            self.apply_sbox(cs, false /* full_round */)?;
+            self.apply_sbox(false /* full_round */, cs)?;
             self.apply_mds();
         }
 
@@ -527,7 +527,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         let final_full_rounds_end = self.params.parital_rounds + self.params.full_rounds;
         for round in final_full_rounds_start..final_full_rounds_end {
             self.add_round_constants(round);
-            self.apply_sbox(cs, true /* full_round */)?;
+            self.apply_sbox(true /* full_round */, cs)?;
             self.apply_mds();
         }
 
@@ -556,8 +556,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     /// are added to the state.
     fn apply_sbox<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
         &mut self,
-        cs: &mut CS,
         full_round: bool,
+        cs: &mut CS,
     ) -> Result<(), ProverError> {
         // If this is a full round, apply the sbox to each elem
         if full_round {
@@ -565,20 +565,20 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
                 .state
                 .iter()
                 .map(|val| {
-                    MultiproverExpGadget::gadget(
-                        cs,
+                    MultiproverExpGadget::exp(
                         val.clone(),
                         self.params.alpha,
                         self.fabric.clone(),
+                        cs,
                     )
                 })
                 .collect::<Result<Vec<_>, ProverError>>()?;
         } else {
-            self.state[0] = MultiproverExpGadget::gadget(
-                cs,
+            self.state[0] = MultiproverExpGadget::exp(
                 self.state[0].clone(),
                 self.params.alpha,
                 self.fabric.clone(),
+                cs,
             )?
         }
 
@@ -646,7 +646,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProv
 
         // Create a hasher and apply the constraints
         let mut hasher = MultiproverPoseidonHashGadget::new(statement.params, fabric);
-        hasher.hash(&mut prover, &witness_vars, &out_var)?;
+        hasher.hash(&witness_vars, &out_var, &mut prover)?;
 
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         let proof = prover.prove(&bp_gens).map_err(ProverError::Collaborative)?;
