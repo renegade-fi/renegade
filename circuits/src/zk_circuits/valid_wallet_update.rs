@@ -1306,4 +1306,68 @@ mod valid_wallet_update_tests {
 
         assert!(constraints_satisfied(witness, statement));
     }
+
+    /// Tests an internal transfer that incorrectly updates the balance
+    #[test]
+    fn test_internal_transfer_wrong_balance() {
+        let mut rng = OsRng {};
+
+        // Setup the initial wallet to have a single order, the updated wallet with a
+        // new order
+        let timestamp = TIMESTAMP + 1;
+        let mut initial_wallet = INITIAL_WALLET.clone();
+        let mut new_wallet = initial_wallet.clone();
+
+        // Make changes to the initial and new wallet
+        new_wallet.orders[1].timestamp = timestamp;
+        new_wallet.randomness = initial_wallet.randomness + Scalar::from(2u32);
+        initial_wallet.orders[1] = Order::default();
+
+        // Modify the balance in balances[1] to deduct an amount for the internal transfer
+        let internal_transfer_mint = new_wallet.balances[1].mint;
+        let internal_transfer_volume = new_wallet.balances[1].amount - 1; // all but 1 unit
+
+        // Invalid, prover tries to decrease their balance by a smaller amount than transferred
+        new_wallet.balances[1].amount -= internal_transfer_volume - 2;
+
+        // Create a mock Merkle opening for the old wallet
+        let random_index = rng.next_u32() % (2u32.pow(MERKLE_HEIGHT.try_into().unwrap()));
+        let (mock_root, mock_opening, mock_opening_indices) = create_wallet_opening(
+            &initial_wallet,
+            MERKLE_HEIGHT,
+            random_index as usize,
+            &mut rng,
+        );
+
+        let witness = ValidWalletUpdateWitness {
+            wallet1: initial_wallet.clone(),
+            wallet2: new_wallet.clone(),
+            wallet1_opening: mock_opening,
+            wallet1_opening_indices: mock_opening_indices,
+            internal_transfer: (
+                Scalar::from(internal_transfer_mint),
+                Scalar::from(internal_transfer_volume),
+            ),
+        };
+
+        let new_wallet_commit = compute_wallet_commitment(&new_wallet);
+        let old_wallet_commit = compute_wallet_commitment(&initial_wallet);
+
+        let old_wallet_spend_nullifier =
+            compute_wallet_spend_nullifier(&initial_wallet, old_wallet_commit);
+        let old_wallet_match_nullifier =
+            compute_wallet_match_nullifier(&initial_wallet, old_wallet_commit);
+
+        let statement = ValidWalletUpdateStatement {
+            timestamp: Scalar::from(timestamp),
+            pk_root: new_wallet.keys[0],
+            new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
+            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            merkle_root: mock_root,
+            external_transfer: (Scalar::zero(), Scalar::zero(), Scalar::zero()),
+        };
+
+        assert!(!constraints_satisfied(witness, statement));
+    }
 }
