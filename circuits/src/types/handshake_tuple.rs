@@ -40,7 +40,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
         let balance = &self.1;
         let fee = &self.2;
 
-        let num_committed_elements = 5 /* order */ + 2 /* balance */ + 4 /* fee */;
+        let num_committed_elements = 6 /* order */ + 2 /* balance */ + 4 /* fee */;
         let blinders = (0..num_committed_elements)
             .map(|_| Scalar::random(rng))
             .collect_vec();
@@ -54,6 +54,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                     Scalar::from(order.side as u64),
                     Scalar::from(order.price),
                     Scalar::from(order.amount),
+                    Scalar::from(order.timestamp),
                     Scalar::from(balance.mint),
                     Scalar::from(balance.amount),
                     biguint_to_scalar(&fee.settle_key),
@@ -72,16 +73,17 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 side: shared_vars[2].to_owned(),
                 price: shared_vars[3].to_owned(),
                 amount: shared_vars[4].to_owned(),
+                timestamp: shared_vars[5].to_owned(),
             },
             AuthenticatedBalanceVar {
-                mint: shared_vars[5].to_owned(),
-                amount: shared_vars[6].to_owned(),
+                mint: shared_vars[6].to_owned(),
+                amount: shared_vars[7].to_owned(),
             },
             AuthenticatedFeeVar {
-                settle_key: shared_vars[7].to_owned(),
-                gas_addr: shared_vars[8].to_owned(),
-                gas_token_amount: shared_vars[9].to_owned(),
-                percentage_fee: shared_vars[10].to_owned(),
+                settle_key: shared_vars[8].to_owned(),
+                gas_addr: shared_vars[9].to_owned(),
+                gas_token_amount: shared_vars[10].to_owned(),
+                percentage_fee: shared_vars[11].to_owned(),
             },
         );
 
@@ -92,16 +94,17 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 side: shared_comm[2].to_owned(),
                 price: shared_comm[3].to_owned(),
                 amount: shared_comm[4].to_owned(),
+                timestamp: shared_comm[5].to_owned(),
             },
             AuthenticatedCommittedBalance {
-                mint: shared_comm[5].to_owned(),
-                amount: shared_comm[6].to_owned(),
+                mint: shared_comm[6].to_owned(),
+                amount: shared_comm[7].to_owned(),
             },
             AuthenticatedCommittedFee {
-                settle_key: shared_comm[7].to_owned(),
-                gas_addr: shared_comm[8].to_owned(),
-                gas_token_amount: shared_comm[9].to_owned(),
-                percentage_fee: shared_comm[10].to_owned(),
+                settle_key: shared_comm[8].to_owned(),
+                gas_addr: shared_comm[9].to_owned(),
+                gas_token_amount: shared_comm[10].to_owned(),
+                percentage_fee: shared_comm[11].to_owned(),
             },
         );
 
