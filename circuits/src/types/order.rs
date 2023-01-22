@@ -237,6 +237,8 @@ pub struct AuthenticatedOrder<N: MpcNetwork + Send, S: SharedValueSource<Scalar>
     pub price: AuthenticatedScalar<N, S>,
     /// The amount of base currency to buy or sell
     pub amount: AuthenticatedScalar<N, S>,
+    /// A timestamp indicating when the order was placed, set by the user
+    pub timestamp: AuthenticatedScalar<N, S>,
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Order {
@@ -258,6 +260,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Orde
                     self.side.into(),
                     self.price,
                     self.amount,
+                    self.timestamp,
                 ],
             )
             .map_err(|err| MpcError::SharingError(err.to_string()))?;
@@ -268,6 +271,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Orde
             side: shared_values[2].to_owned(),
             price: shared_values[3].to_owned(),
             amount: shared_values[4].to_owned(),
+            timestamp: shared_values[5].to_owned(),
         })
     }
 }
@@ -286,6 +290,8 @@ pub struct AuthenticatedOrderVar<N: MpcNetwork + Send, S: SharedValueSource<Scal
     pub price: MpcVariable<N, S>,
     /// The amount of base currency to buy or sell
     pub amount: MpcVariable<N, S>,
+    /// A timestamp indicating when the order was placed, set by the user
+    pub timestamp: MpcVariable<N, S>,
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for AuthenticatedOrderVar<N, S> {
@@ -296,6 +302,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for Authenticated
             side: self.side.clone(),
             price: self.price.clone(),
             amount: self.amount.clone(),
+            timestamp: self.timestamp.clone(),
         }
     }
 }
@@ -310,6 +317,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedOrder
             order.side,
             order.price,
             order.amount,
+            order.timestamp,
         ]
     }
 }
@@ -325,7 +333,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
         rng: &mut R,
         prover: &mut MpcProver<N, S>,
     ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType> {
-        let blinders = (0..5).map(|_| Scalar::random(rng)).collect_vec();
+        let blinders = (0..6).map(|_| Scalar::random(rng)).collect_vec();
         let (shared_comm, shared_vars) = prover
             .batch_commit(
                 owning_party,
@@ -335,6 +343,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                     Scalar::from(self.side as u64),
                     Scalar::from(self.price),
                     Scalar::from(self.amount),
+                    Scalar::from(self.timestamp),
                 ],
                 &blinders,
             )
@@ -347,6 +356,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 side: shared_vars[2].to_owned(),
                 price: shared_vars[3].to_owned(),
                 amount: shared_vars[4].to_owned(),
+                timestamp: shared_vars[5].to_owned(),
             },
             AuthenticatedCommittedOrder {
                 quote_mint: shared_comm[0].to_owned(),
@@ -354,6 +364,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 side: shared_comm[2].to_owned(),
                 price: shared_comm[3].to_owned(),
                 amount: shared_comm[4].to_owned(),
+                timestamp: shared_comm[5].to_owned(),
             },
         ))
     }
@@ -372,6 +383,8 @@ pub struct AuthenticatedCommittedOrder<N: MpcNetwork + Send, S: SharedValueSourc
     pub price: AuthenticatedCompressedRistretto<N, S>,
     /// The amount of base currency to buy or sell
     pub amount: AuthenticatedCompressedRistretto<N, S>,
+    /// A timestamp indicating when the order was placed, set by the user
+    pub timestamp: AuthenticatedCompressedRistretto<N, S>,
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone
@@ -384,6 +397,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone
             side: self.side.clone(),
             price: self.price.clone(),
             amount: self.amount.clone(),
+            timestamp: self.timestamp.clone(),
         }
     }
 }
@@ -398,6 +412,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedCommi
             order.side,
             order.price,
             order.amount,
+            order.timestamp,
         ]
     }
 }
@@ -421,6 +436,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
         let side_var = verifier.commit(opened_commit[2].value());
         let price_var = verifier.commit(opened_commit[3].value());
         let amount_var = verifier.commit(opened_commit[4].value());
+        let timestamp_var = verifier.commit(opened_commit[5].value());
 
         Ok(OrderVar {
             quote_mint: quote_var,
@@ -428,7 +444,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
             side: side_var,
             price: price_var,
             amount: amount_var,
-            timestamp: Variable::Zero(), // unused in ZK-MPC path
+            timestamp: timestamp_var,
         })
     }
 }

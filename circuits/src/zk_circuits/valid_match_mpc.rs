@@ -6,11 +6,7 @@
 
 use std::{borrow::Borrow, marker::PhantomData};
 
-use curve25519_dalek::{
-    ristretto::{CompressedRistretto, RistrettoPoint},
-    scalar::Scalar,
-    traits::Identity,
-};
+use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{
@@ -515,45 +511,45 @@ impl From<&[CompressedRistretto]> for ValidMatchCommitment {
                 side: commitments[2],
                 price: commitments[3],
                 amount: commitments[4],
-                timestamp: RistrettoPoint::identity().compress(),
+                timestamp: commitments[5],
             },
             balance1: CommittedBalance {
-                mint: commitments[5],
-                amount: commitments[6],
+                mint: commitments[6],
+                amount: commitments[7],
             },
             fee1: CommittedFee {
-                settle_key: commitments[7],
-                gas_addr: commitments[8],
-                gas_token_amount: commitments[9],
-                percentage_fee: commitments[10],
+                settle_key: commitments[8],
+                gas_addr: commitments[9],
+                gas_token_amount: commitments[10],
+                percentage_fee: commitments[11],
             },
             order2: CommittedOrder {
-                quote_mint: commitments[11],
-                base_mint: commitments[12],
-                side: commitments[13],
-                price: commitments[14],
-                amount: commitments[15],
-                timestamp: RistrettoPoint::identity().compress(),
+                quote_mint: commitments[12],
+                base_mint: commitments[13],
+                side: commitments[14],
+                price: commitments[15],
+                amount: commitments[16],
+                timestamp: commitments[17],
             },
             balance2: CommittedBalance {
-                mint: commitments[16],
-                amount: commitments[17],
+                mint: commitments[18],
+                amount: commitments[19],
             },
             fee2: CommittedFee {
-                settle_key: commitments[18],
-                gas_addr: commitments[19],
-                gas_token_amount: commitments[20],
-                percentage_fee: commitments[21],
+                settle_key: commitments[20],
+                gas_addr: commitments[21],
+                gas_token_amount: commitments[22],
+                percentage_fee: commitments[23],
             },
             match_result: CommittedMatchResult {
-                quote_mint: commitments[22],
-                base_mint: commitments[23],
-                quote_amount: commitments[24],
-                base_amount: commitments[25],
-                direction: commitments[26],
-                execution_price: commitments[27],
-                max_minus_min_amount: commitments[28],
-                min_amount_order_index: commitments[29],
+                quote_mint: commitments[24],
+                base_mint: commitments[25],
+                quote_amount: commitments[26],
+                base_amount: commitments[27],
+                direction: commitments[28],
+                execution_price: commitments[29],
+                max_minus_min_amount: commitments[30],
+                min_amount_order_index: commitments[31],
             },
         }
     }
@@ -711,7 +707,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
             fabric,
         )?;
 
-        // Prover the statement
+        // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         let proof = prover.prove(&bp_gens).map_err(ProverError::Collaborative)?;
 

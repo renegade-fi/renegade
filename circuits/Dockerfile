@@ -3,7 +3,13 @@ FROM rust:1.63-slim-buster AS builder
 
 # Create a build dir and add local dependencies
 WORKDIR /build
+
+# Build the rust toolchain before adding any dependencies; this is the slowest
+# step and we would like to cache it before anything else
 COPY ./rust-toolchain ./circuits/rust-toolchain
+RUN cat circuits/rust-toolchain | xargs rustup toolchain install
+
+# Copy in dependencies from the same repo
 COPY ./crypto ./crypto
 COPY ./integration-helpers ./integration-helpers
 COPY ./circuit-macros ./circuit-macros

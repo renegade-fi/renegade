@@ -248,7 +248,6 @@ pub struct GreaterThanEqZeroWitness {
     /// The value attested to that must be greater than zero
     val: Scalar,
 }
-
 impl<const D: usize> SingleProverCircuit for GreaterThanEqZeroGadget<D> {
     type Statement = ();
     type Witness = GreaterThanEqZeroWitness;

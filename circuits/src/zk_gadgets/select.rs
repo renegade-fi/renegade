@@ -32,8 +32,8 @@ impl CondSelectGadget {
         CS: RandomizableConstraintSystem,
     {
         // Computes selector * a + (1 - selector) * b
-        let (_, selector_var, mul1_out) = cs.multiply(a.into(), selector.into());
-        let (_, _, mul2_out) = cs.multiply(b.into(), Variable::One() - selector_var);
+        let (_, _, mul1_out) = cs.multiply(a.into(), selector.clone().into());
+        let (_, _, mul2_out) = cs.multiply(b.into(), Variable::One() - selector);
 
         mul1_out + mul2_out
     }
