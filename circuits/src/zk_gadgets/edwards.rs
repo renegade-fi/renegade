@@ -363,7 +363,7 @@ pub(crate) mod edwards_tests {
         let mut rng = OsRng {};
 
         // Create a constraint system to allocate the points within
-        let mut prover_transcript = Transcript::new(&TRANSCRIPT_SEED.as_bytes());
+        let mut prover_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
         let pc_gens = PedersenGens::default();
         let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
@@ -392,13 +392,13 @@ pub(crate) mod edwards_tests {
         let mut rng = OsRng {};
 
         // Create a constraint system to allocate the points within
-        let mut prover_transcript = Transcript::new(&TRANSCRIPT_SEED.as_bytes());
+        let mut prover_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
         let pc_gens = PedersenGens::default();
         let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
         // Construct the curve
         let curve = create_ed25519_repr();
-        let field_mod = FieldMod::new(BigUint::from(1u8) << 255 - 19u8, true /* is_prime */);
+        let field_mod = FieldMod::new((BigUint::from(1u8) << 255) - 19u8, true /* is_prime */);
 
         // Generate a random point and a random scalar
         let random_point = ed25519_random_point(&mut rng);
@@ -411,11 +411,10 @@ pub(crate) mod edwards_tests {
 
         // Perform the multiplication in the constraint system
         let basepoint = ed25519_to_nonnative_edwards(random_point, &mut prover);
-        let alloc_scalar =
-            NonNativeElementVar::from_bigint(random_bigint, field_mod.clone(), &mut prover);
+        let alloc_scalar = NonNativeElementVar::from_bigint(random_bigint, field_mod, &mut prover);
 
         let res =
             curve.scalar_mul::<32 /* SCALAR_BITS */, _>(&alloc_scalar, &basepoint, &mut prover);
-        assert_points_equal(expected, res, &mut prover);
+        assert_points_equal(expected, res, &prover);
     }
 }

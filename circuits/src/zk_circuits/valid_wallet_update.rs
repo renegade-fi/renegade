@@ -28,7 +28,9 @@ use crate::{
         wallet::{CommittedWallet, Wallet, WalletVar},
     },
     zk_gadgets::{
-        comparators::{EqGadget, EqVecGadget, EqZeroGadget, NotEqualGadget},
+        comparators::{
+            EqGadget, EqVecGadget, EqZeroGadget, GreaterThanEqZeroGadget, NotEqualGadget,
+        },
         gates::{AndGate, OrGate},
         merkle::PoseidonMerkleHashGadget,
         poseidon::PoseidonHashGadget,
@@ -217,7 +219,7 @@ where
     ///     2. The internal and external transfers are applied properly and result
     ///        in non-negative balances
     ///     3. The user has the funds to cover the transfers
-    fn validate_transfers<CS: RandomizableConstraintSystem>(
+    pub(crate) fn validate_transfers<CS: RandomizableConstraintSystem>(
         new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         internal_transfer: (Variable, Variable),
@@ -277,6 +279,10 @@ where
 
             // Constrain the expected amount to equal the amount in the new wallet
             cs.constrain(new_balance.amount - expected_amount);
+            GreaterThanEqZeroGadget::<64 /* bitwidth */>::constrain_greater_than_zero(
+                new_balance.amount,
+                cs,
+            );
         }
 
         // Lastly, for the internal transfer (and the external transfer if it is a withdraw)
@@ -720,6 +726,8 @@ where
 
 #[cfg(test)]
 mod valid_wallet_update_tests {
+    use std::ops::Neg;
+
     use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use crypto::{
         fields::{
@@ -733,7 +741,7 @@ mod valid_wallet_update_tests {
     use lazy_static::lazy_static;
     use merlin::Transcript;
     use mpc_bulletproof::{
-        r1cs::{ConstraintSystem, Prover},
+        r1cs::{ConstraintSystem, Prover, Variable},
         PedersenGens,
     };
     use num_bigint::BigUint;
@@ -751,7 +759,10 @@ mod valid_wallet_update_tests {
         CommitProver,
     };
 
-    use super::{ValidWalletUpdate, ValidWalletUpdateStatement, ValidWalletUpdateWitness};
+    use super::{
+        ValidWalletUpdate, ValidWalletUpdateStatement, ValidWalletUpdateWitness,
+        ValidWalletUpdateWitnessVar,
+    };
 
     // -------------
     // | Constants |
@@ -934,39 +945,76 @@ mod valid_wallet_update_tests {
         let pc_gens = PedersenGens::default();
         let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
-        // Allocate the witness
-        let mut rng = OsRng {};
-        let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-
-        // Allocate the statement
-        let timestamp_var = prover.commit_public(statement.timestamp);
-        let pk_root_var = prover.commit_public(statement.pk_root);
-        let new_wallet_commit_var = prover.commit_public(statement.new_wallet_commitment);
-        let match_nullifier_var = prover.commit_public(statement.wallet_match_nullifier);
-        let spend_nullifier_var = prover.commit_public(statement.wallet_spend_nullifier);
-        let merkle_root_var = prover.commit_public(statement.merkle_root);
-        let external_transfer_mint = prover.commit_public(statement.external_transfer.0);
-        let external_transfer_volume = prover.commit_public(statement.external_transfer.1);
-        let external_transfer_direction = prover.commit_public(statement.external_transfer.2);
+        // Allocate the witness and statement in the constraint system
+        let (witness_var, statement_vars) =
+            commit_witness_statement(witness, statement, &mut prover);
 
         ValidWalletUpdate::circuit(
             witness_var,
-            timestamp_var,
-            pk_root_var,
-            merkle_root_var,
-            match_nullifier_var,
-            spend_nullifier_var,
-            new_wallet_commit_var,
+            statement_vars[0].to_owned(),
+            statement_vars[1].to_owned(),
+            statement_vars[2].to_owned(),
+            statement_vars[3].to_owned(),
+            statement_vars[4].to_owned(),
+            statement_vars[5].to_owned(),
             (
-                external_transfer_mint,
-                external_transfer_volume,
-                external_transfer_direction,
+                statement_vars[6].to_owned(),
+                statement_vars[7].to_owned(),
+                statement_vars[8].to_owned(),
             ),
             &mut prover,
         )
         .unwrap();
 
         prover.constraints_satisfied()
+    }
+
+    /// A helper to commit to a witness and a statement directly, only returns the allocated variables
+    /// not the commitments
+    fn commit_witness_statement<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >(
+        witness: ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        statement: ValidWalletUpdateStatement,
+        prover: &mut Prover,
+    ) -> (
+        ValidWalletUpdateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        Vec<Variable>,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
+        // Allocate the witness
+        let mut rng = OsRng {};
+        let (witness_var, _) = witness.commit_prover(&mut rng, prover).unwrap();
+
+        // Allocate the statement
+        let timestamp_var = prover.commit_public(statement.timestamp);
+        let pk_root_var = prover.commit_public(statement.pk_root);
+        let merkle_root_var = prover.commit_public(statement.merkle_root);
+        let match_nullifier_var = prover.commit_public(statement.wallet_match_nullifier);
+        let spend_nullifier_var = prover.commit_public(statement.wallet_spend_nullifier);
+        let new_wallet_commit_var = prover.commit_public(statement.new_wallet_commitment);
+        let external_transfer_mint = prover.commit_public(statement.external_transfer.0);
+        let external_transfer_volume = prover.commit_public(statement.external_transfer.1);
+        let external_transfer_direction = prover.commit_public(statement.external_transfer.2);
+
+        (
+            witness_var,
+            vec![
+                timestamp_var,
+                pk_root_var,
+                merkle_root_var,
+                match_nullifier_var,
+                spend_nullifier_var,
+                new_wallet_commit_var,
+                external_transfer_mint,
+                external_transfer_volume,
+                external_transfer_direction,
+            ],
+        )
     }
 
     // ---------
@@ -1826,5 +1874,95 @@ mod valid_wallet_update_tests {
         };
 
         assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Tests bounds checks on withdraw
+    #[test]
+    fn test_invalid_balance_negative_balance() {
+        let mut rng = OsRng {};
+
+        // Setup the initial wallet to have a single order, the updated wallet with a
+        // new order
+        let timestamp = TIMESTAMP + 1;
+        let mut initial_wallet = INITIAL_WALLET.clone();
+        let mut new_wallet = initial_wallet.clone();
+
+        // Make changes to the initial and new wallet
+        new_wallet.orders[1].timestamp = timestamp;
+        new_wallet.randomness = initial_wallet.randomness + Scalar::from(2u32);
+        initial_wallet.orders[1] = Order::default();
+
+        // Invalid, the user does not have the withdrawn balance present
+        // We do not modify the balance here, because we cannot underflow a u64; below we
+        // replace the balance in the witness with an underflowed scalar
+        let external_transfer_mint = new_wallet.balances[1].mint;
+        let external_transfer_volume = new_wallet.balances[1].amount + 1; // overdraw
+        let external_transfer_direction = 1u64; // withdraw
+
+        // Create a mock Merkle opening for the old wallet
+        let random_index = rng.next_u32() % (2u32.pow(MERKLE_HEIGHT.try_into().unwrap()));
+        let (mock_root, mock_opening, mock_opening_indices) = create_wallet_opening(
+            &initial_wallet,
+            MERKLE_HEIGHT,
+            random_index as usize,
+            &mut rng,
+        );
+
+        let witness = ValidWalletUpdateWitness {
+            wallet1: initial_wallet.clone(),
+            wallet2: new_wallet.clone(),
+            wallet1_opening: mock_opening,
+            wallet1_opening_indices: mock_opening_indices,
+            internal_transfer: (Scalar::zero(), Scalar::zero()),
+        };
+
+        let new_wallet_commit = compute_wallet_commitment(&new_wallet);
+        let old_wallet_commit = compute_wallet_commitment(&initial_wallet);
+
+        let old_wallet_spend_nullifier =
+            compute_wallet_spend_nullifier(&initial_wallet, old_wallet_commit);
+        let old_wallet_match_nullifier =
+            compute_wallet_match_nullifier(&initial_wallet, old_wallet_commit);
+
+        let statement = ValidWalletUpdateStatement {
+            timestamp: Scalar::from(timestamp),
+            pk_root: new_wallet.keys[0],
+            new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
+            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            merkle_root: mock_root,
+            external_transfer: (
+                Scalar::from(external_transfer_mint),
+                Scalar::from(external_transfer_volume),
+                Scalar::from(external_transfer_direction),
+            ),
+        };
+
+        // Commit to the statement and witness
+        let mut prover_transcript = Transcript::new("test".as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+        let (mut witness_var, statement_vars) =
+            commit_witness_statement(witness, statement, &mut prover);
+
+        // Modify the second balance to explicitly underflow
+        let negative_one = prover.commit_public(Scalar::one().neg());
+        witness_var.wallet2.balances[1].amount = negative_one;
+
+        // Validate the transfers directly; that way we don't have to go through the hassle of
+        // updating commitments and nullifiers
+        ValidWalletUpdate::validate_transfers(
+            &witness_var.wallet2,
+            &witness_var.wallet1,
+            witness_var.internal_transfer,
+            (
+                statement_vars[6].to_owned(),
+                statement_vars[7].to_owned(),
+                statement_vars[8].to_owned(),
+            ),
+            &mut prover,
+        );
+
+        assert!(!prover.constraints_satisfied());
     }
 }
