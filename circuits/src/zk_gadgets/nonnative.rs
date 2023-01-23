@@ -1310,7 +1310,7 @@ mod nonnative_tests {
         let n_bits = 256;
         let mut rng = thread_rng();
 
-        let mut prover_transcript = Transcript::new(&TRANSCRIPT_SEED.as_bytes());
+        let mut prover_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
         let pc_gens = PedersenGens::default();
         let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
@@ -1376,7 +1376,7 @@ mod nonnative_tests {
 
             let res =
                 NonNativeElementVar::cond_select(selector, &nonnative1, &nonnative2, &mut prover);
-            assert_eq!(expected, res.as_bigint(&mut prover));
+            assert_eq!(expected, res.as_bigint(&prover));
         }
     }
 

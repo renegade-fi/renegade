@@ -15,17 +15,12 @@ use std::{
 };
 
 /// A type used for scoping trace metrics
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Scope {
     pub path: Vec<String>,
 }
 
 impl Scope {
-    /// Build a new scope
-    pub fn new() -> Self {
-        Self { path: vec![] }
-    }
-
     pub fn from_path(path: Vec<String>) -> Self {
         Self { path }
     }
@@ -42,20 +37,13 @@ impl Scope {
 }
 
 /// Represents a list of metrics collected via a trace
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ScopedMetrics {
     /// A list of metrics, represented as named tuples
     pub(crate) data: HashMap<String, u64>,
 }
 
 impl ScopedMetrics {
-    /// Create a new, empty list of metrics
-    pub fn new() -> Self {
-        Self {
-            data: HashMap::new(),
-        }
-    }
-
     /// Add a metric to the list, aggregating if the metric already exists
     ///
     /// Returns the value if a previous value existed
@@ -70,24 +58,17 @@ impl ScopedMetrics {
 }
 
 /// A set of metrics captured by the execution of the tracer on a circuit
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct MetricsCapture {
     /// A mapping from scope to the metrics captured at that scope
     pub(crate) metrics: HashMap<Scope, ScopedMetrics>,
 }
 
 impl MetricsCapture {
-    /// Create a new MetricsCapture instance
-    pub fn new() -> Self {
-        Self {
-            metrics: HashMap::new(),
-        }
-    }
-
     /// Record a scoped metric, if the metric already exists for the scope, aggregate it
     pub fn record_metric(&mut self, scope: Scope, metric_name: String, value: u64) {
         if let Entry::Vacant(e) = self.metrics.entry(scope.clone()) {
-            e.insert(ScopedMetrics::new());
+            e.insert(ScopedMetrics::default());
         }
 
         self.metrics
@@ -103,8 +84,8 @@ impl MetricsCapture {
 }
 
 lazy_static! {
-    static ref SCOPED_METRICS: Mutex<MetricsCapture> = Mutex::new(MetricsCapture::new());
-    static ref CURR_SCOPE: Mutex<Scope> = Mutex::new(Scope::new());
+    static ref SCOPED_METRICS: Mutex<MetricsCapture> = Mutex::new(MetricsCapture::default());
+    static ref CURR_SCOPE: Mutex<Scope> = Mutex::new(Scope::default());
     /// Used to synchronize the tests in this module in specific, because the tracer does not
     /// allow concurrent access to these global state elements
     static ref TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -114,10 +95,6 @@ lazy_static! {
 /// test the trace macro on an associated function
 pub struct Gadget {}
 impl Gadget {
-    pub fn new() -> Self {
-        Self {}
-    }
-
     #[circuit_trace(n_constraints, n_multipliers, latency)]
     pub fn apply_constraints(cs: &mut Prover) {
         // Apply dummy constraints
