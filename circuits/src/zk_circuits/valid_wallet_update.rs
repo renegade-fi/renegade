@@ -109,7 +109,7 @@ where
         cs.constrain(external_transfer_binary.into());
 
         // Validate the balances of the new wallet
-        Self::validate_wallet_balances(
+        Self::validate_transfers(
             &witness.wallet2,
             &witness.wallet1,
             witness.internal_transfer,
@@ -211,56 +211,24 @@ where
         }
     }
 
-    /// Validate the balances of the new wallet
-    fn validate_wallet_balances<CS: RandomizableConstraintSystem>(
+    /// Validates the application of the transfers to the balance state
+    /// Verifies that:
+    ///     1. All balance mints are unique after update
+    ///     2. The internal and external transfers are applied properly and result
+    ///        in non-negative balances
+    ///     3. The user has the funds to cover the transfers
+    fn validate_transfers<CS: RandomizableConstraintSystem>(
         new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         internal_transfer: (Variable, Variable),
         external_transfer: (Variable, Variable, Variable),
         cs: &mut CS,
     ) {
-        // All balances of the new order should have unique mint or mint zero
+        // Enforce all balance mints to be unique or 0
         Self::constrain_unique_balance_mints(new_wallet, cs);
 
-        // Constrain the amounts in each balance to either be unchanged, or correspond to
-        // a deposit/withdraw
-        Self::validate_balance_amounts(
-            new_wallet,
-            old_wallet,
-            internal_transfer,
-            external_transfer,
-            cs,
-        );
-    }
+        // Apply the transfers to the old balances, ensure that the new balances are properly computed
 
-    /// Constrains all balance mints to be unique or zero
-    fn constrain_unique_balance_mints<CS: RandomizableConstraintSystem>(
-        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        cs: &mut CS,
-    ) {
-        for i in 0..wallet.balances.len() {
-            for j in (i + 1)..wallet.balances.len() {
-                // Check whether balance[i] != balance[j]
-                let ij_unique =
-                    NotEqualGadget::not_equal(wallet.balances[i].mint, wallet.balances[j].mint, cs);
-
-                // Evaluate the polynomial mint * (1 - ij_unique) which is 0 iff
-                // the mint is zero, or balance[i] != balance[j]
-                let (_, _, constraint_poly) =
-                    cs.multiply(wallet.balances[i].mint.into(), Variable::One() - ij_unique);
-                cs.constrain(constraint_poly.into());
-            }
-        }
-    }
-
-    /// Validate the amounts in the balances given internal and external transfer information
-    fn validate_balance_amounts<CS: RandomizableConstraintSystem>(
-        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        internal_transfer: (Variable, Variable),
-        external_transfer: (Variable, Variable, Variable),
-        cs: &mut CS,
-    ) {
         // The external transfer term; negate the amount if the direction is 1 (withdraw)
         // otherwise keep the amount as positive
         let external_transfer_term = CondSelectGadget::select(
@@ -269,6 +237,11 @@ where
             external_transfer.2.into(),
             cs,
         );
+
+        // Stores the sum of the mints_eq gadgets; the internal/external transfers should either be
+        // zero'd, or equal to a non-zero mint in the balances
+        let mut external_transfer_mint_present: LinearCombination = Variable::Zero().into();
+        let mut internal_transfer_mint_present: LinearCombination = Variable::Zero().into();
 
         for new_balance in new_wallet.balances.iter() {
             let mut expected_amount: LinearCombination = Variable::Zero().into();
@@ -288,6 +261,7 @@ where
                 external_transfer_term.clone(),
             );
 
+            external_transfer_mint_present += equals_external_transfer_mint;
             expected_amount += external_transfer_term;
 
             // Add in the internal transfer information
@@ -298,10 +272,50 @@ where
                 internal_transfer.1.into(),
             );
 
+            internal_transfer_mint_present += equals_internal_transfer_mint;
             expected_amount -= internal_transfer_term;
 
             // Constrain the expected amount to equal the amount in the new wallet
             cs.constrain(new_balance.amount - expected_amount);
+        }
+
+        // Lastly, for the internal transfer (and the external transfer if it is a withdraw)
+        // we must ensure that the user had a balance of this mint in the previous wallet.
+        // The constraints above constrain this balance to have sufficient value if it exists
+        let internal_transfer_equals_zero = EqZeroGadget::eq_zero(internal_transfer.0, cs);
+        let internal_zero_or_valid_balance = OrGate::or(
+            internal_transfer_equals_zero.into(),
+            internal_transfer_mint_present,
+            cs,
+        );
+        cs.constrain(Variable::One() - internal_zero_or_valid_balance);
+
+        let external_transfer_is_deposit = EqGadget::eq(external_transfer.2, Variable::Zero(), cs);
+        let external_deposit_or_valid_balance = OrGate::or(
+            external_transfer_is_deposit.into(),
+            external_transfer_mint_present,
+            cs,
+        );
+        cs.constrain(Variable::One() - external_deposit_or_valid_balance);
+    }
+
+    /// Constrains all balance mints to be unique or zero
+    fn constrain_unique_balance_mints<CS: RandomizableConstraintSystem>(
+        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut CS,
+    ) {
+        for i in 0..wallet.balances.len() {
+            for j in (i + 1)..wallet.balances.len() {
+                // Check whether balance[i] != balance[j]
+                let ij_unique =
+                    NotEqualGadget::not_equal(wallet.balances[i].mint, wallet.balances[j].mint, cs);
+
+                // Evaluate the polynomial mint * (1 - ij_unique) which is 0 iff
+                // the mint is zero, or balance[i] != balance[j]
+                let (_, _, constraint_poly) =
+                    cs.multiply(wallet.balances[i].mint.into(), Variable::One() - ij_unique);
+                cs.constrain(constraint_poly.into());
+            }
         }
     }
 
@@ -1685,6 +1699,130 @@ mod valid_wallet_update_tests {
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
             external_transfer: (Scalar::from(0u64), Scalar::from(0u64), Scalar::from(0u64)),
+        };
+
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Tests the case in which an internal transfer is registered for a balance that does not exist
+    #[test]
+    fn test_invalid_internal_transfer_no_balance() {
+        let mut rng = OsRng {};
+
+        // Setup the initial wallet to have a single order, the updated wallet with a
+        // new order
+        let timestamp = TIMESTAMP + 1;
+        let mut initial_wallet = INITIAL_WALLET.clone();
+        let mut new_wallet = initial_wallet.clone();
+
+        // Make changes to the initial and new wallet
+        new_wallet.orders[1].timestamp = timestamp;
+        new_wallet.randomness = initial_wallet.randomness + Scalar::from(2u32);
+        initial_wallet.orders[1] = Order::default();
+
+        // Invalid, the user does not have a balance for this mint
+        let internal_transfer_mint = 1729u64;
+        let internal_transfer_volume = new_wallet.balances[1].amount - 1; // all but 1 unit
+
+        // Create a mock Merkle opening for the old wallet
+        let random_index = rng.next_u32() % (2u32.pow(MERKLE_HEIGHT.try_into().unwrap()));
+        let (mock_root, mock_opening, mock_opening_indices) = create_wallet_opening(
+            &initial_wallet,
+            MERKLE_HEIGHT,
+            random_index as usize,
+            &mut rng,
+        );
+
+        let witness = ValidWalletUpdateWitness {
+            wallet1: initial_wallet.clone(),
+            wallet2: new_wallet.clone(),
+            wallet1_opening: mock_opening,
+            wallet1_opening_indices: mock_opening_indices,
+            internal_transfer: (
+                Scalar::from(internal_transfer_mint),
+                Scalar::from(internal_transfer_volume),
+            ),
+        };
+
+        let new_wallet_commit = compute_wallet_commitment(&new_wallet);
+        let old_wallet_commit = compute_wallet_commitment(&initial_wallet);
+
+        let old_wallet_spend_nullifier =
+            compute_wallet_spend_nullifier(&initial_wallet, old_wallet_commit);
+        let old_wallet_match_nullifier =
+            compute_wallet_match_nullifier(&initial_wallet, old_wallet_commit);
+
+        let statement = ValidWalletUpdateStatement {
+            timestamp: Scalar::from(timestamp),
+            pk_root: new_wallet.keys[0],
+            new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
+            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            merkle_root: mock_root,
+            external_transfer: (Scalar::zero(), Scalar::zero(), Scalar::zero()),
+        };
+
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Tests the case in which an internal transfer is registered for a balance that does not exist
+    #[test]
+    fn test_invalid_external_transfer_no_balance() {
+        let mut rng = OsRng {};
+
+        // Setup the initial wallet to have a single order, the updated wallet with a
+        // new order
+        let timestamp = TIMESTAMP + 1;
+        let mut initial_wallet = INITIAL_WALLET.clone();
+        let mut new_wallet = initial_wallet.clone();
+
+        // Make changes to the initial and new wallet
+        new_wallet.orders[1].timestamp = timestamp;
+        new_wallet.randomness = initial_wallet.randomness + Scalar::from(2u32);
+        initial_wallet.orders[1] = Order::default();
+
+        // Invalid, the user does not have an existing balance for the withdraw mint
+        let external_transfer_mint = 1729u64;
+        let external_transfer_volume = new_wallet.balances[1].amount - 1; // all but 1 unit
+        let external_transfer_direction = 1u64; // withdraw
+
+        // Create a mock Merkle opening for the old wallet
+        let random_index = rng.next_u32() % (2u32.pow(MERKLE_HEIGHT.try_into().unwrap()));
+        let (mock_root, mock_opening, mock_opening_indices) = create_wallet_opening(
+            &initial_wallet,
+            MERKLE_HEIGHT,
+            random_index as usize,
+            &mut rng,
+        );
+
+        let witness = ValidWalletUpdateWitness {
+            wallet1: initial_wallet.clone(),
+            wallet2: new_wallet.clone(),
+            wallet1_opening: mock_opening,
+            wallet1_opening_indices: mock_opening_indices,
+            internal_transfer: (Scalar::zero(), Scalar::zero()),
+        };
+
+        let new_wallet_commit = compute_wallet_commitment(&new_wallet);
+        let old_wallet_commit = compute_wallet_commitment(&initial_wallet);
+
+        let old_wallet_spend_nullifier =
+            compute_wallet_spend_nullifier(&initial_wallet, old_wallet_commit);
+        let old_wallet_match_nullifier =
+            compute_wallet_match_nullifier(&initial_wallet, old_wallet_commit);
+
+        let statement = ValidWalletUpdateStatement {
+            timestamp: Scalar::from(timestamp),
+            pk_root: new_wallet.keys[0],
+            new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
+            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            merkle_root: mock_root,
+            external_transfer: (
+                Scalar::from(external_transfer_mint),
+                Scalar::from(external_transfer_volume),
+                Scalar::from(external_transfer_direction),
+            ),
         };
 
         assert!(!constraints_satisfied(witness, statement));
