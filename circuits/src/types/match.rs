@@ -369,7 +369,7 @@ pub struct AuthenticatedMatchResultVar<N: MpcNetwork + Send, S: SharedValueSourc
     pub min_amount_order_index: MpcVariable<N, S>,
 }
 
-/// Represents a Pedersen committment to a match result in a shared constraint system
+/// Represents a Pedersen commitment to a match result in a shared constraint system
 #[derive(Clone, Debug)]
 pub struct AuthenticatedCommittedMatchResult<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The mint of the order token in the asset pair being matched
