@@ -400,3 +400,59 @@ where
             .map_err(VerifierError::R1CS)
     }
 }
+
+#[cfg(test)]
+mod valid_commitments_test {
+    use crypto::fields::prime_field_to_scalar;
+    use rand_core::{OsRng, RngCore};
+
+    use crate::{
+        test_helpers::bulletproof_prove_and_verify,
+        zk_circuits::test_helpers::{
+            compute_wallet_commitment, compute_wallet_match_nullifier, create_wallet_opening,
+            SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+        },
+    };
+
+    use super::{ValidCommitments, ValidCommitmentsStatement, ValidCommitmentsWitness};
+
+    const MERKLE_HEIGHT: usize = 3;
+
+    /// Tests a valid proof of VALID COMMITMENTS
+    #[test]
+    fn test_valid_commitments() {
+        let wallet: SizedWallet = INITIAL_WALLET.clone();
+        let order = wallet.orders[0].to_owned();
+        let balance = wallet.balances[1].to_owned();
+        let fee_balance = wallet.balances[0].to_owned();
+        let fee = wallet.fees[0].to_owned();
+
+        // Create a merkle proof for the wallet
+        let mut rng = OsRng {};
+        let index = rng.next_u32() % (1 << MERKLE_HEIGHT);
+        let (root, opening, opening_indices) =
+            create_wallet_opening(&wallet, MERKLE_HEIGHT, index as usize, &mut rng);
+
+        let witness = ValidCommitmentsWitness {
+            wallet: wallet.clone(),
+            order,
+            balance,
+            fee_balance,
+            fee,
+            wallet_opening: opening,
+            wallet_opening_indices: opening_indices,
+        };
+        let statement = ValidCommitmentsStatement {
+            nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
+                &wallet,
+                compute_wallet_commitment(&wallet),
+            )),
+            merkle_root: root,
+        };
+
+        let res = bulletproof_prove_and_verify::<
+            ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        >(witness, statement);
+        assert!(res.is_ok())
+    }
+}
