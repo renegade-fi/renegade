@@ -55,7 +55,7 @@ impl From<&Balance> for Vec<u64> {
 
 /// Represents the constraint system allocated type of a balance in tuple holding a
 /// reference to the ERC-20 token and its amount
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct BalanceVar {
     /// the mint (erc-20 token address) of the token in the balance
     pub mint: Variable,

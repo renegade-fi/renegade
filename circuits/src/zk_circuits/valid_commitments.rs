@@ -10,7 +10,10 @@
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
-    r1cs::{ConstraintSystem, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
+    r1cs::{
+        ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
+        Variable, Verifier,
+    },
     r1cs_mpc::R1CSError,
     BulletproofGens,
 };
@@ -23,6 +26,12 @@ use crate::{
         fee::{CommittedFee, Fee, FeeVar},
         order::{CommittedOrder, Order, OrderVar},
         wallet::{CommittedWallet, Wallet, WalletVar},
+    },
+    zk_gadgets::{
+        commitments::{NullifierGadget, WalletCommitGadget},
+        comparators::{EqVecGadget, EqZeroGadget, GreaterThanEqGadget},
+        merkle::PoseidonMerkleHashGadget,
+        select::CondSelectGadget,
     },
     CommitProver, CommitVerifier, SingleProverCircuit,
 };
@@ -47,7 +56,111 @@ where
         match_nullifier: Variable,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
+        // Compute the wallet commitment
+        let wallet_commitment = WalletCommitGadget::wallet_commit(&witness.wallet, cs)?;
+
+        // Verify the opening of the commitment to the Merkle root
+        PoseidonMerkleHashGadget::compute_and_constrain_root_prehashed(
+            wallet_commitment.clone(),
+            witness.wallet_opening,
+            witness.wallet_opening_indices,
+            merkle_root.into(),
+            cs,
+        )?;
+
+        // Compute the wallet match nullifier and constrain it to the expected value
+        let match_nullifier_res =
+            NullifierGadget::match_nullifier(witness.wallet.randomness, wallet_commitment, cs)?;
+        cs.constrain(match_nullifier - match_nullifier_res);
+
+        // Verify that the given balance, order, and fee are all valid members of the wallet
+        Self::verify_wallet_contains_balance(witness.balance, &witness.wallet, cs);
+        Self::verify_wallet_contains_balance(witness.fee_balance, &witness.wallet, cs);
+        Self::verify_wallet_contains_order(witness.order, &witness.wallet, cs);
+        Self::verify_wallet_contains_fee(witness.fee, &witness.wallet, cs);
+
+        // Verify that the balance is for the correct mint
+        let selected_mint = CondSelectGadget::select(
+            witness.order.quote_mint,
+            witness.order.base_mint,
+            witness.order.side,
+            cs,
+        );
+        cs.constrain(witness.balance.mint - selected_mint);
+
+        // Verify that the given fee balance is the same mint as the committed fee
+        cs.constrain(witness.fee.gas_addr - witness.fee_balance.mint);
+        // Constrain the given fee balance to be larger than the fixed fee
+        GreaterThanEqGadget::<64 /* bitlength */>::constrain_greater_than_eq(
+            witness.fee_balance.amount,
+            witness.fee.gas_token_amount,
+            cs,
+        );
+
         Ok(())
+    }
+
+    /// Verify that a given balance is in the list of the wallet's balances
+    fn verify_wallet_contains_balance<CS: RandomizableConstraintSystem>(
+        balance: BalanceVar,
+        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut CS,
+    ) {
+        // Accumulate the boolean results of comparing the given order against the
+        // orders in the wallet
+        let mut balances_equal_sum: LinearCombination = Variable::Zero().into();
+        for wallet_balance in wallet.balances.iter() {
+            let b1_vars: Vec<Variable> = balance.into();
+            let b2_vars: Vec<Variable> = (*wallet_balance).into();
+
+            balances_equal_sum += EqVecGadget::eq_vec(&b1_vars, &b2_vars, cs);
+        }
+
+        // Constrain the EqZero gadget to return 0; i.e. the given order matches a wallet order
+        let sum_eq_zero = EqZeroGadget::eq_zero(balances_equal_sum, cs);
+        cs.constrain(sum_eq_zero.into());
+    }
+
+    /// Verify that a given order is in the list of the wallet's orders
+    fn verify_wallet_contains_order<CS: RandomizableConstraintSystem>(
+        order: OrderVar,
+        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut CS,
+    ) {
+        // Accumulate the boolean results of comparing the given order against the
+        // orders in the wallet
+        let mut orders_equal_sum: LinearCombination = Variable::Zero().into();
+        for wallet_order in wallet.orders.iter() {
+            let o1_vars: Vec<Variable> = order.into();
+            let o2_vars: Vec<Variable> = (*wallet_order).into();
+
+            orders_equal_sum += EqVecGadget::eq_vec(&o1_vars, &o2_vars, cs);
+        }
+
+        // Constrain the EqZero gadget to return 0; i.e. the given order matches a wallet order
+        let sum_eq_zero = EqZeroGadget::eq_zero(orders_equal_sum, cs);
+        cs.constrain(sum_eq_zero.into());
+    }
+
+    /// Verify that a given fee is in the list of the wallet's fees
+    fn verify_wallet_contains_fee<CS: RandomizableConstraintSystem>(
+        fee: FeeVar,
+        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut CS,
+    ) {
+        // Accumulate the boolean results of comparing the given order against the
+        // orders in the wallet
+        let mut fees_equal_sum: LinearCombination = Variable::Zero().into();
+        for wallet_fee in wallet.fees.iter() {
+            let f1_vars: Vec<Variable> = fee.into();
+            let f2_vars: Vec<Variable> = (*wallet_fee).into();
+
+            fees_equal_sum += EqVecGadget::eq_vec(&f1_vars, &f2_vars, cs);
+        }
+
+        // Constrain the EqZero gadget to return 0; i.e. the given order matches a wallet order
+        let sum_eq_zero = EqZeroGadget::eq_zero(fees_equal_sum, cs);
+        cs.constrain(sum_eq_zero.into());
     }
 }
 
@@ -66,6 +179,8 @@ pub struct ValidCommitmentsWitness<
     pub order: Order,
     /// The selected balance to commit to
     pub balance: Balance,
+    /// The balance used to pay out constant fees in
+    pub fee_balance: Balance,
     /// The selected fee to commit to
     pub fee: Fee,
     /// The merkle proof that the wallet is valid within the state tree
@@ -89,6 +204,8 @@ pub struct ValidCommitmentsWitnessVar<
     pub order: OrderVar,
     /// The selected balance to commit to
     pub balance: BalanceVar,
+    /// The balance used to pay out constant fees in
+    pub fee_balance: BalanceVar,
     /// The selected fee to commit to
     pub fee: FeeVar,
     /// The merkle proof that the wallet is valid within the state tree
@@ -112,6 +229,8 @@ pub struct ValidCommitmentsWitnessCommitment<
     pub order: CommittedOrder,
     /// The selected balance to commit to
     pub balance: CommittedBalance,
+    /// The balance used to pay out constant fees in
+    pub fee_balance: CommittedBalance,
     /// The selected fee to commit to
     pub fee: CommittedFee,
     /// The merkle proof that the wallet is valid within the state tree
@@ -138,6 +257,8 @@ where
         let (wallet_var, wallet_commit) = self.wallet.commit_prover(rng, prover).unwrap();
         let (order_var, order_commit) = self.order.commit_prover(rng, prover).unwrap();
         let (balance_var, balance_commit) = self.balance.commit_prover(rng, prover).unwrap();
+        let (fee_balance_var, fee_balance_comm) =
+            self.fee_balance.commit_prover(rng, prover).unwrap();
         let (fee_var, fee_commit) = self.fee.commit_prover(rng, prover).unwrap();
 
         // Commit to the Merkle proof
@@ -158,6 +279,7 @@ where
                 order: order_var,
                 balance: balance_var,
                 fee: fee_var,
+                fee_balance: fee_balance_var,
                 wallet_opening: merkle_opening_vars,
                 wallet_opening_indices: merkle_index_vars,
             },
@@ -166,6 +288,7 @@ where
                 order: order_commit,
                 balance: balance_commit,
                 fee: fee_commit,
+                fee_balance: fee_balance_comm,
                 wallet_opening: merkle_opening_comms,
                 wallet_opening_indices: merkle_index_comms,
             },
@@ -185,6 +308,7 @@ where
         let wallet_var = self.wallet.commit_verifier(verifier).unwrap();
         let order_var = self.order.commit_verifier(verifier).unwrap();
         let balance_var = self.balance.commit_verifier(verifier).unwrap();
+        let fee_balance_var = self.fee_balance.commit_verifier(verifier).unwrap();
         let fee_var = self.fee.commit_verifier(verifier).unwrap();
 
         let merkle_opening_vars = self
@@ -202,6 +326,7 @@ where
             wallet: wallet_var,
             order: order_var,
             balance: balance_var,
+            fee_balance: fee_balance_var,
             fee: fee_var,
             wallet_opening: merkle_opening_vars,
             wallet_opening_indices: merkle_index_vars,
