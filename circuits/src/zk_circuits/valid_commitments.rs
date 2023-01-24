@@ -7,7 +7,6 @@
 //! See the whitepaper (https://renegade.fi/whitepaper.pdf) appendix A.3
 //! for a formal specification
 
-use crypto::fields::scalar_to_biguint;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
@@ -405,6 +404,7 @@ where
 #[cfg(test)]
 mod valid_commitments_test {
     use crypto::fields::prime_field_to_scalar;
+    use curve25519_dalek::scalar::Scalar;
     use merlin::Transcript;
     use mpc_bulletproof::{
         r1cs::{ConstraintSystem, Prover},
@@ -497,6 +497,38 @@ mod valid_commitments_test {
             ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         >(witness, statement);
         assert!(res.is_ok())
+    }
+
+    /// Tests the case in which the prover gives an invalid match nullifier
+    #[test]
+    fn test_invalid_match_nullifier() {
+        let wallet: SizedWallet = INITIAL_WALLET.clone();
+        let order = wallet.orders[0].to_owned();
+        let balance = wallet.balances[0].to_owned();
+        let fee_balance = wallet.balances[0].to_owned();
+        let fee = wallet.fees[0].to_owned();
+
+        // Create a merkle proof for the wallet
+        let mut rng = OsRng {};
+        let index = rng.next_u32() % (1 << MERKLE_HEIGHT);
+        let (root, opening, opening_indices) =
+            create_wallet_opening(&wallet, MERKLE_HEIGHT, index as usize, &mut rng);
+
+        let witness = ValidCommitmentsWitness {
+            wallet: wallet.clone(),
+            order,
+            balance,
+            fee_balance,
+            fee,
+            wallet_opening: opening,
+            wallet_opening_indices: opening_indices,
+        };
+        let statement = ValidCommitmentsStatement {
+            nullifier: Scalar::random(&mut rng),
+            merkle_root: root,
+        };
+
+        assert!(!constraints_satisfied(witness, statement));
     }
 
     /// Test the case in which the prover gives a balance that is not in the wallet
@@ -632,6 +664,116 @@ mod valid_commitments_test {
         // Invalid, prover modified the settle key
         let mut fee = wallet.fees[0].to_owned();
         fee.settle_key = BigUint::from(1729u64);
+
+        // Create a merkle proof for the wallet
+        let mut rng = OsRng {};
+        let index = rng.next_u32() % (1 << MERKLE_HEIGHT);
+        let (root, opening, opening_indices) =
+            create_wallet_opening(&wallet, MERKLE_HEIGHT, index as usize, &mut rng);
+
+        let witness = ValidCommitmentsWitness {
+            wallet: wallet.clone(),
+            order,
+            balance,
+            fee_balance,
+            fee,
+            wallet_opening: opening,
+            wallet_opening_indices: opening_indices,
+        };
+        let statement = ValidCommitmentsStatement {
+            nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
+                &wallet,
+                compute_wallet_commitment(&wallet),
+            )),
+            merkle_root: root,
+        };
+
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Test the case in which the prover submits a balance for a mint different
+    /// than her side of the order
+    #[test]
+    fn test_balance_wrong_mint() {
+        let wallet: SizedWallet = INITIAL_WALLET.clone();
+        let order = wallet.orders[0].to_owned();
+        let balance = wallet.balances[1].to_owned();
+        let fee_balance = wallet.balances[0].to_owned();
+        let fee = wallet.fees[0].to_owned();
+
+        // Create a merkle proof for the wallet
+        let mut rng = OsRng {};
+        let index = rng.next_u32() % (1 << MERKLE_HEIGHT);
+        let (root, opening, opening_indices) =
+            create_wallet_opening(&wallet, MERKLE_HEIGHT, index as usize, &mut rng);
+
+        let witness = ValidCommitmentsWitness {
+            wallet: wallet.clone(),
+            order,
+            balance,
+            fee_balance,
+            fee,
+            wallet_opening: opening,
+            wallet_opening_indices: opening_indices,
+        };
+        let statement = ValidCommitmentsStatement {
+            nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
+                &wallet,
+                compute_wallet_commitment(&wallet),
+            )),
+            merkle_root: root,
+        };
+
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Tests the case in which the given fee balance tuple has a different mint than
+    /// the fee itself
+    #[test]
+    fn test_invalid_fee_mint() {
+        let wallet: SizedWallet = INITIAL_WALLET.clone();
+        let order = wallet.orders[0].to_owned();
+        let balance = wallet.balances[0].to_owned();
+        let fee_balance = wallet.balances[1].to_owned();
+        let fee = wallet.fees[0].to_owned();
+
+        // Create a merkle proof for the wallet
+        let mut rng = OsRng {};
+        let index = rng.next_u32() % (1 << MERKLE_HEIGHT);
+        let (root, opening, opening_indices) =
+            create_wallet_opening(&wallet, MERKLE_HEIGHT, index as usize, &mut rng);
+
+        let witness = ValidCommitmentsWitness {
+            wallet: wallet.clone(),
+            order,
+            balance,
+            fee_balance,
+            fee,
+            wallet_opening: opening,
+            wallet_opening_indices: opening_indices,
+        };
+        let statement = ValidCommitmentsStatement {
+            nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
+                &wallet,
+                compute_wallet_commitment(&wallet),
+            )),
+            merkle_root: root,
+        };
+
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Tests the case in which the fee balance is not sufficient to pay the fee
+    #[test]
+    fn test_fee_insufficient_balance() {
+        let mut wallet: SizedWallet = INITIAL_WALLET.clone();
+        wallet.balances[0].amount = 1;
+        let order = wallet.orders[0].to_owned();
+        let balance = wallet.balances[0].to_owned();
+        // Invalid, the balance is too low to fill the fee
+        let fee_balance = wallet.balances[0].to_owned();
+
+        let fee = wallet.fees[0].to_owned();
 
         // Create a merkle proof for the wallet
         let mut rng = OsRng {};
