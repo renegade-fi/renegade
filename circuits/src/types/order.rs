@@ -112,7 +112,7 @@ impl From<OrderSide> for u64 {
 }
 
 /// An order with values allocated in a single-prover constraint system
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct OrderVar {
     /// The mint (ERC-20 contract address) of the quote token
     pub quote_mint: Variable,

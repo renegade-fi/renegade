@@ -773,13 +773,13 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         // Apply constraints to the verifier
         Self::input_consistency_single_prover(
             &mut verifier,
-            &Into::<Vec<Variable>>::into(party0_order.clone()),
+            &Into::<Vec<Variable>>::into(party0_order),
             &hash_o1_var,
         )
         .map_err(VerifierError::R1CS)?;
         Self::input_consistency_single_prover(
             &mut verifier,
-            &Into::<Vec<Variable>>::into(party0_balance.clone()),
+            &Into::<Vec<Variable>>::into(party0_balance),
             &hash_b1_var,
         )
         .map_err(VerifierError::R1CS)?;
@@ -791,13 +791,13 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         .map_err(VerifierError::R1CS)?;
         Self::input_consistency_single_prover(
             &mut verifier,
-            &Into::<Vec<Variable>>::into(party1_order.clone()),
+            &Into::<Vec<Variable>>::into(party1_order),
             &hash_o2_var,
         )
         .map_err(VerifierError::R1CS)?;
         Self::input_consistency_single_prover(
             &mut verifier,
-            &Into::<Vec<Variable>>::into(party1_balance.clone()),
+            &Into::<Vec<Variable>>::into(party1_balance),
             &hash_b2_var,
         )
         .map_err(VerifierError::R1CS)?;

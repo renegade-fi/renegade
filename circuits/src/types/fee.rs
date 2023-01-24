@@ -67,7 +67,7 @@ impl From<&Fee> for Vec<u64> {
 }
 
 /// A fee with values allocated in a single-prover constraint system
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct FeeVar {
     /// The public settle key of the cluster collecting fees
     pub settle_key: Variable,
