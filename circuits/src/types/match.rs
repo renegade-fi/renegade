@@ -1,6 +1,7 @@
 //! Groups the type definitions for matches
 
-use crate::{errors::MpcError, CommitSharedProver, CommitVerifier, Open};
+use crate::{errors::MpcError, CommitProver, CommitSharedProver, CommitVerifier, Open};
+use crypto::fields::bigint_to_scalar;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 
 use itertools::Itertools;
@@ -39,7 +40,7 @@ pub struct MatchResult {
 
     /// The following are supporting variables, derivable from the above, but useful for
     /// shrinking the size of the zero knowledge circuit. As well, they are computed during
-    /// the course of the MPC, so it encurs no extra cost to include them in the witness
+    /// the course of the MPC, so it incurs no extra cost to include them in the witness
 
     /// The execution price; the midpoint between two limit prices if they cross
     pub execution_price: u64,
@@ -131,6 +132,60 @@ pub struct CommittedMatchResult {
     pub min_amount_order_index: CompressedRistretto,
 }
 
+impl CommitProver for MatchResult {
+    type VarType = MatchResultVar;
+    type CommitType = CommittedMatchResult;
+    type ErrorType = ();
+
+    fn commit_prover<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut mpc_bulletproof::r1cs::Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (quote_mint_comm, quote_mint_var) =
+            prover.commit(bigint_to_scalar(&self.quote_mint), Scalar::random(rng));
+        let (base_mint_comm, base_mint_var) =
+            prover.commit(bigint_to_scalar(&self.base_mint), Scalar::random(rng));
+        let (quote_amount_comm, quote_amount_var) =
+            prover.commit(Scalar::from(self.quote_amount), Scalar::random(rng));
+        let (base_amount_comm, base_amount_var) =
+            prover.commit(Scalar::from(self.base_amount), Scalar::random(rng));
+        let (direction_comm, direction_var) =
+            prover.commit(Scalar::from(self.direction), Scalar::random(rng));
+        let (price_comm, price_var) =
+            prover.commit(Scalar::from(self.execution_price), Scalar::random(rng));
+        let (max_minus_min_comm, max_minus_min_var) =
+            prover.commit(Scalar::from(self.max_minus_min_amount), Scalar::random(rng));
+        let (min_index_comm, min_index_var) = prover.commit(
+            Scalar::from(self.min_amount_order_index),
+            Scalar::random(rng),
+        );
+
+        Ok((
+            MatchResultVar {
+                quote_mint: quote_mint_var,
+                base_mint: base_mint_var,
+                quote_amount: quote_amount_var,
+                base_amount: base_amount_var,
+                direction: direction_var,
+                execution_price: price_var,
+                max_minus_min_amount: max_minus_min_var,
+                min_amount_order_index: min_index_var,
+            },
+            CommittedMatchResult {
+                quote_mint: quote_mint_comm,
+                base_mint: base_mint_comm,
+                quote_amount: quote_amount_comm,
+                base_amount: base_amount_comm,
+                direction: direction_comm,
+                execution_price: price_comm,
+                max_minus_min_amount: max_minus_min_comm,
+                min_amount_order_index: min_index_comm,
+            },
+        ))
+    }
+}
+
 impl CommitVerifier for CommittedMatchResult {
     type VarType = MatchResultVar;
     type ErrorType = (); // Does not error
@@ -142,7 +197,7 @@ impl CommitVerifier for CommittedMatchResult {
         let base_amount_var = verifier.commit(self.base_amount);
         let direction_var = verifier.commit(self.direction);
         let price_var = verifier.commit(self.execution_price);
-        let min_minus_max_var = verifier.commit(self.max_minus_min_amount);
+        let max_minus_min_var = verifier.commit(self.max_minus_min_amount);
         let min_index_var = verifier.commit(self.min_amount_order_index);
 
         Ok(MatchResultVar {
@@ -152,7 +207,7 @@ impl CommitVerifier for CommittedMatchResult {
             base_amount: base_amount_var,
             direction: direction_var,
             execution_price: price_var,
-            max_minus_min_amount: min_minus_max_var,
+            max_minus_min_amount: max_minus_min_var,
             min_amount_order_index: min_index_var,
         })
     }
