@@ -22,18 +22,17 @@ use rand_core::OsRng;
 
 use crate::{
     errors::{ProverError, VerifierError},
-    mpc_gadgets::poseidon::PoseidonSpongeParameters,
     types::{
         order::OrderVar,
         wallet::{CommittedWallet, Wallet, WalletVar},
     },
     zk_gadgets::{
+        commitments::{NullifierGadget, WalletCommitGadget},
         comparators::{
             EqGadget, EqVecGadget, EqZeroGadget, GreaterThanEqZeroGadget, NotEqualGadget,
         },
         gates::{AndGate, OrGate},
         merkle::PoseidonMerkleHashGadget,
-        poseidon::PoseidonHashGadget,
         select::CondSelectGadget,
     },
     CommitProver, CommitVerifier, SingleProverCircuit,
@@ -128,50 +127,7 @@ where
         wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError> {
-        // Create a new hash gadget
-        let hash_params = PoseidonSpongeParameters::default();
-        let mut hasher = PoseidonHashGadget::new(hash_params);
-
-        // Hash the balances into the state
-        for balance in wallet.balances.iter() {
-            hasher.batch_absorb(&[balance.mint, balance.amount], cs)?;
-        }
-
-        // Hash the orders into the state
-        for order in wallet.orders.iter() {
-            hasher.batch_absorb(
-                &[
-                    order.quote_mint,
-                    order.base_mint,
-                    order.side,
-                    order.price,
-                    order.amount,
-                ],
-                cs,
-            )?;
-        }
-
-        // Hash the fees into the state
-        for fee in wallet.fees.iter() {
-            hasher.batch_absorb(
-                &[
-                    fee.settle_key,
-                    fee.gas_addr,
-                    fee.gas_token_amount,
-                    fee.percentage_fee,
-                ],
-                cs,
-            )?;
-        }
-
-        // Hash the keys into the state
-        hasher.batch_absorb(&wallet.keys, cs)?;
-
-        // Hash the randomness into the state
-        hasher.absorb(wallet.randomness, cs)?;
-
-        // Squeeze an element out of the state
-        hasher.squeeze(cs)
+        WalletCommitGadget::wallet_commit(wallet, cs)
     }
 
     /// Compute the wallet spend nullifier, defined as the poseidon hash:
@@ -181,11 +137,7 @@ where
         wallet_commit: LinearCombination,
         cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError> {
-        let hasher_params = PoseidonSpongeParameters::default();
-        let mut hasher = PoseidonHashGadget::new(hasher_params);
-
-        hasher.batch_absorb(&[wallet_commit, wallet.randomness.into()], cs)?;
-        hasher.squeeze(cs)
+        NullifierGadget::spend_nullifier(wallet.randomness, wallet_commit, cs)
     }
 
     /// Compute the wallet match nullifier, defined as the poseidon hash:
@@ -195,11 +147,7 @@ where
         wallet_commit: LinearCombination,
         cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError> {
-        let hasher_params = PoseidonSpongeParameters::default();
-        let mut hasher = PoseidonHashGadget::new(hasher_params);
-
-        hasher.batch_absorb(&[wallet_commit, wallet.randomness + Scalar::one()], cs)?;
-        hasher.squeeze(cs)
+        NullifierGadget::match_nullifier(wallet.randomness, wallet_commit, cs)
     }
 
     /// Constrain the keys of two wallets to be equal
