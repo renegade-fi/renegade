@@ -94,7 +94,7 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
         // Validate the encryption of the protocol's note under the protocol key
         let expected_ciphertext = ElGamalGadget::<SCALAR_BITS>::encrypt(
             *DEFAULT_ELGAMAL_GENERATOR,
-            witness.elgamal_randomness[6],
+            witness.elgamal_randomness[4],
             witness.protocol_note.mint1,
             statement.pk_settle_protocol,
             cs,
@@ -106,7 +106,7 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
 
         let expected_ciphertext = ElGamalGadget::<SCALAR_BITS>::encrypt(
             *DEFAULT_ELGAMAL_GENERATOR,
-            witness.elgamal_randomness[4],
+            witness.elgamal_randomness[5],
             witness.protocol_note.volume1,
             statement.pk_settle_protocol,
             cs,
@@ -510,7 +510,245 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ValidMatchEncryption<SCAL
 #[cfg(test)]
 mod valid_match_encryption_tests {
 
-    /// Tests the case in which
+    use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
+    use curve25519_dalek::scalar::Scalar;
+    use integration_helpers::mpc_network::field::get_ristretto_group_modulus;
+    use lazy_static::lazy_static;
+    use num_bigint::{BigInt, BigUint};
+    use rand_core::{OsRng, RngCore};
+
+    use crate::{
+        test_helpers::bulletproof_prove_and_verify,
+        types::{
+            note::{Note, NoteType},
+            order::OrderSide,
+            r#match::MatchResult,
+        },
+        zk_gadgets::elgamal::{ElGamalCiphertext, DEFAULT_ELGAMAL_GENERATOR},
+    };
+
+    use super::{ValidMatchEncryption, ValidMatchEncryptionStatement, ValidMatchEncryptionWitness};
+
+    const ELGAMAL_BITS: usize = 3;
+
+    // --------------
+    // | Dummy Data |
+    // --------------
+
+    lazy_static! {
+        static ref DUMMY_MATCH: MatchResult = MatchResult {
+            quote_mint: BigInt::from(1u8),
+            base_mint: BigInt::from(1u8),
+            quote_amount: 100,
+            base_amount: 10,
+            direction: 1,
+            execution_price: 10,
+            max_minus_min_amount: 10,
+            min_amount_order_index: 0
+        };
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    fn create_dummy_witness_and_statement(
+        match_: MatchResult,
+    ) -> (ValidMatchEncryptionWitness, ValidMatchEncryptionStatement) {
+        // A helper to select based on direction
+        macro_rules! sel {
+            ($a:path, $b:tt) => {
+                if match_.direction == 0 {
+                    $a
+                } else {
+                    $b
+                }
+            };
+        }
+
+        let buy = OrderSide::Buy;
+        let sell = OrderSide::Sell;
+
+        let mut rng = OsRng {};
+        let randomness = rng.next_u64();
+
+        let relayer_fee_fraction = 0.5;
+        let relayer_quote_fee = (relayer_fee_fraction * (match_.quote_amount as f32)) as u64;
+        let relayer_base_fee = (relayer_fee_fraction * (match_.base_amount as f32)) as u64;
+
+        let protocol_fee_fraction = 0.2;
+        let protocol_quote_fee = (protocol_fee_fraction * (match_.quote_amount as f32)) as u64;
+        let protocol_base_fee = (protocol_fee_fraction * (match_.base_amount as f32)) as u64;
+
+        let party0_note = Note {
+            mint1: match_.quote_mint.clone().try_into().unwrap(),
+            volume1: match_.quote_amount,
+            direction1: sel!(sell, buy),
+            mint2: match_.base_mint.clone().try_into().unwrap(),
+            volume2: match_.base_amount,
+            direction2: sel!(buy, sell),
+            fee_mint: 1729,
+            fee_volume: 5,
+            fee_direction: sell,
+            type_: NoteType::Match,
+            randomness,
+        };
+
+        let party1_note = Note {
+            mint1: match_.quote_mint.clone().try_into().unwrap(),
+            volume1: match_.quote_amount,
+            direction1: sel!(buy, sell),
+            mint2: match_.base_mint.clone().try_into().unwrap(),
+            volume2: match_.base_amount,
+            direction2: sel!(sell, buy),
+            fee_mint: 1729,
+            fee_volume: 5,
+            fee_direction: sell,
+            type_: NoteType::Match,
+            randomness: randomness + 1,
+        };
+
+        let relayer0_note = Note {
+            mint1: match_.quote_mint.clone().try_into().unwrap(),
+            volume1: relayer_quote_fee,
+            direction1: buy,
+            mint2: match_.base_mint.clone().try_into().unwrap(),
+            volume2: relayer_base_fee,
+            direction2: buy,
+            fee_mint: 1729,
+            fee_volume: 5,
+            fee_direction: buy,
+            type_: NoteType::InternalTransfer,
+            randomness: randomness + 2,
+        };
+
+        let relayer1_note = Note {
+            mint1: match_.quote_mint.clone().try_into().unwrap(),
+            volume1: relayer_quote_fee,
+            direction1: buy,
+            mint2: match_.base_mint.clone().try_into().unwrap(),
+            volume2: relayer_base_fee,
+            direction2: buy,
+            fee_mint: 1729,
+            fee_volume: 5,
+            fee_direction: buy,
+            type_: NoteType::InternalTransfer,
+            randomness: randomness + 3,
+        };
+
+        let protocol_note = Note {
+            mint1: match_.quote_mint.clone().try_into().unwrap(),
+            volume1: protocol_quote_fee,
+            direction1: buy,
+            mint2: match_.base_mint.clone().try_into().unwrap(),
+            volume2: protocol_base_fee,
+            direction2: buy,
+            fee_mint: 0,
+            fee_volume: 0,
+            fee_direction: buy,
+            type_: NoteType::InternalTransfer,
+            randomness: randomness + 4,
+        };
+
+        // Generate encryptions for the statement
+        let mut rng = OsRng {};
+        let pk_settle1 = scalar_to_biguint(&Scalar::random(&mut rng));
+        let pk_settle2 = scalar_to_biguint(&Scalar::random(&mut rng));
+        let pk_settle_protocol = scalar_to_biguint(&Scalar::random(&mut rng));
+
+        let (v1c1_cipher, randomness1) =
+            elgamal_encrypt(&BigUint::from(party0_note.volume1), &pk_settle1);
+        let (v2c1_cipher, randomness2) =
+            elgamal_encrypt(&BigUint::from(party0_note.volume2), &pk_settle1);
+        let (v1c2_cipher, randomness3) =
+            elgamal_encrypt(&BigUint::from(party1_note.volume1), &pk_settle2);
+        let (v2c2_cipher, randomness4) =
+            elgamal_encrypt(&BigUint::from(party1_note.volume2), &pk_settle2);
+
+        let (protocol_mint1_cipher, randomness5) =
+            elgamal_encrypt(&BigUint::from(protocol_note.mint1), &pk_settle_protocol);
+        let (protocol_volume1_cipher, randomness6) =
+            elgamal_encrypt(&BigUint::from(protocol_note.volume1), &pk_settle_protocol);
+        let (protocol_mint2_cipher, randomness7) =
+            elgamal_encrypt(&BigUint::from(protocol_note.mint2), &pk_settle_protocol);
+        let (protocol_volume2_cipher, randomness8) =
+            elgamal_encrypt(&BigUint::from(protocol_note.volume2), &pk_settle_protocol);
+        let (protocol_randomness_cipher, randomness9) = elgamal_encrypt(
+            &BigUint::from(protocol_note.randomness),
+            &pk_settle_protocol,
+        );
+
+        (
+            ValidMatchEncryptionWitness {
+                match_res: match_,
+                party0_note,
+                party1_note,
+                relayer0_note,
+                relayer1_note,
+                protocol_note,
+                elgamal_randomness: [
+                    randomness1,
+                    randomness2,
+                    randomness3,
+                    randomness4,
+                    randomness5,
+                    randomness6,
+                    randomness7,
+                    randomness8,
+                    randomness9,
+                ],
+            },
+            ValidMatchEncryptionStatement {
+                pk_settle1: biguint_to_scalar(&pk_settle1),
+                pk_settle2: biguint_to_scalar(&pk_settle2),
+                pk_settle_protocol: biguint_to_scalar(&pk_settle_protocol),
+                protocol_fee: Scalar::from(2u64), // dummy for now
+                volume1_ciphertext1: v1c1_cipher,
+                volume2_ciphertext1: v2c1_cipher,
+                volume1_ciphertext2: v1c2_cipher,
+                volume2_ciphertext2: v2c2_cipher,
+                mint1_protocol_ciphertext: protocol_mint1_cipher,
+                volume1_protocol_ciphertext: protocol_volume1_cipher,
+                mint2_protocol_ciphertext: protocol_mint2_cipher,
+                volume2_protocol_ciphertext: protocol_volume2_cipher,
+                randomness_protocol_ciphertext: protocol_randomness_cipher,
+            },
+        )
+    }
+
+    /// Generates an ElGamal encryption of the given plaintext message; returns the ciphertext
+    /// and the randomness used to create the shared secret
+    fn elgamal_encrypt(message: &BigUint, pubkey: &BigUint) -> (ElGamalCiphertext, Scalar) {
+        let mut rng = OsRng {};
+        let randomness = scalar_to_biguint(&Scalar::random(&mut rng)) % (1u8 << ELGAMAL_BITS);
+        let field_mod = get_ristretto_group_modulus();
+
+        let ciphertext_1 =
+            scalar_to_biguint(&DEFAULT_ELGAMAL_GENERATOR).modpow(&randomness, &field_mod);
+
+        let shared_secret = pubkey.modpow(&randomness, &field_mod);
+        let encrypted_message = (shared_secret * message) % field_mod;
+
+        (
+            ElGamalCiphertext {
+                partial_shared_secret: biguint_to_scalar(&ciphertext_1),
+                encrypted_message: biguint_to_scalar(&encrypted_message),
+            },
+            biguint_to_scalar(&randomness),
+        )
+    }
+
+    // ---------
+    // | Tests |
+    // ---------
+
+    /// Test a valid witness and statement for the VALID MATCH ENCRYPTION circuit
     #[test]
-    fn test_valid_encryption() {}
+    fn test_valid_encryption() {
+        let (witness, statement) = create_dummy_witness_and_statement(DUMMY_MATCH.clone());
+
+        let res =
+            bulletproof_prove_and_verify::<ValidMatchEncryption<ELGAMAL_BITS>>(witness, statement);
+        assert!(res.is_ok());
+    }
 }
