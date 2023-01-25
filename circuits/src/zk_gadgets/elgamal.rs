@@ -1,6 +1,7 @@
 //! Implements the ZK gadgetry for ElGamal encryption
 
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
+use lazy_static::lazy_static;
 use mpc_bulletproof::{
     r1cs::{
         ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
@@ -17,6 +18,16 @@ use crate::{
 };
 
 use super::arithmetic::PrivateExpGadget;
+
+lazy_static! {
+    /// We use the generator 2 here as per the same field configured in Arkworks:
+    /// https://github.com/arkworks-rs/curves/blob/master/curve25519/src/fields/fr.rs
+    ///
+    /// This generator is intended to be used with the Ristretto scalar field of prime
+    /// order defined here:
+    /// https://docs.rs/curve25519-dalek-ng/latest/curve25519_dalek_ng/scalar/index.html
+    pub(crate) static ref DEFAULT_ELGAMAL_GENERATOR: Scalar = Scalar::from(2u64);
+}
 
 /// Implements an ElGamal gadget that verifies encryption of some plaintext under a private key
 #[derive(Clone, Debug)]
@@ -44,12 +55,99 @@ impl<const SCALAR_BITS: usize> ElGamalGadget<SCALAR_BITS> {
         )?;
 
         // Raise the public key to the randomness and use this to encrypt the value
-        let shared_secret = PrivateExpGadget::<SCALAR_BITS>::exp_private(pub_key, randomness, cs)?;
+        let partial_shared_secret =
+            PrivateExpGadget::<SCALAR_BITS>::exp_private(pub_key, randomness, cs)?;
 
         // Blind the plaintext using the shared secret
-        let (_, _, blinded_plaintext) = cs.multiply(shared_secret, plaintext.into());
+        let (_, _, blinded_plaintext) = cs.multiply(partial_shared_secret, plaintext.into());
 
         Ok((ciphertext1, blinded_plaintext.into()))
+    }
+}
+
+/// A type representing an ElGamal ciphertext
+#[derive(Copy, Clone, Debug)]
+pub struct ElGamalCiphertext {
+    /// The shared secret; the generator raised to the randomness
+    pub partial_shared_secret: Scalar,
+    /// The encrypted value; the pubkey raised to the randomness, multiplied with the message
+    pub encrypted_message: Scalar,
+}
+
+impl ElGamalCiphertext {
+    /// Commit to the ciphertext as a public input
+    pub fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> ElGamalCiphertextVar {
+        let partial_shared_secret_var = cs.commit_public(self.partial_shared_secret);
+        let encrypted_message_var = cs.commit_public(self.encrypted_message);
+
+        ElGamalCiphertextVar {
+            partial_shared_secret: partial_shared_secret_var,
+            encrypted_message: encrypted_message_var,
+        }
+    }
+}
+
+/// An ElGamal ciphertext that has been allocated in a constraint system
+#[derive(Copy, Clone, Debug)]
+pub struct ElGamalCiphertextVar {
+    /// The shared secret; the generator raised to the randomness
+    pub partial_shared_secret: Variable,
+    /// The encrypted value; the pubkey raised to the randomness, multiplied with the message
+    pub encrypted_message: Variable,
+}
+
+/// An ElGamal ciphertext that has been committed to by a prover
+#[derive(Clone, Debug)]
+pub struct ElGamalCiphertextCommitment {
+    /// The shared secret; the generator raised to the randomness
+    pub partial_shared_secret: CompressedRistretto,
+    /// The encrypted value; the pubkey raised to the randomness, multiplied with the message
+    pub encrypted_message: CompressedRistretto,
+}
+
+impl CommitProver for ElGamalCiphertext {
+    type VarType = ElGamalCiphertextVar;
+    type CommitType = ElGamalCiphertextCommitment;
+    type ErrorType = ();
+
+    fn commit_prover<R: rand_core::RngCore + rand_core::CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (partial_shared_secret_comm, partial_shared_secret_var) =
+            prover.commit(self.partial_shared_secret, Scalar::random(rng));
+        let (encrypted_message_comm, encrypted_message_var) =
+            prover.commit(self.encrypted_message, Scalar::random(rng));
+
+        Ok((
+            ElGamalCiphertextVar {
+                partial_shared_secret: partial_shared_secret_var,
+                encrypted_message: encrypted_message_var,
+            },
+            ElGamalCiphertextCommitment {
+                partial_shared_secret: partial_shared_secret_comm,
+                encrypted_message: encrypted_message_comm,
+            },
+        ))
+    }
+}
+
+impl CommitVerifier for ElGamalCiphertextCommitment {
+    type VarType = ElGamalCiphertextVar;
+    type ErrorType = ();
+
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
+        let partial_shared_secret_var = verifier.commit(self.partial_shared_secret);
+        let encrypted_message_var = verifier.commit(self.encrypted_message);
+
+        Ok(ElGamalCiphertextVar {
+            partial_shared_secret: partial_shared_secret_var,
+            encrypted_message: encrypted_message_var,
+        })
     }
 }
 
@@ -248,8 +346,8 @@ mod elgamal_tests {
         let plaintext_bigint = scalar_to_biguint(&plaintext);
 
         let ciphertext_1 = generator_bigint.modpow(&randomness_bigint, &field_mod);
-        let shared_secret = pubkey_bigint.modpow(&randomness_bigint, &field_mod);
-        let ciphertext_2 = (shared_secret * plaintext_bigint) % &field_mod;
+        let partial_shared_secret = pubkey_bigint.modpow(&randomness_bigint, &field_mod);
+        let ciphertext_2 = (partial_shared_secret * plaintext_bigint) % &field_mod;
 
         // Prove the statement
         let witness = ElGamalWitness {
