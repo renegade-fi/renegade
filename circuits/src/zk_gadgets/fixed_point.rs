@@ -1,7 +1,7 @@
 //! Defines fixed point representations within the constraint system, along with
 //! arithmetic between fixed-point and native Scalars
 
-use std::ops::Add;
+use std::ops::{Add, Neg, Sub};
 
 use bigdecimal::ToPrimitive;
 use crypto::fields::{biguint_to_scalar, scalar_to_bigdecimal};
@@ -51,6 +51,14 @@ lazy_static! {
 pub struct FixedPoint {
     /// The underlying scalar representing the fixed point variable
     pub(crate) repr: Scalar,
+}
+
+impl FixedPoint {
+    /// Commit to the fixed point variable as a public input in a given constraint system
+    pub fn commit_public<CS: RandomizableConstraintSystem>(&self, cs: &mut CS) -> FixedPointVar {
+        let repr = cs.commit_public(self.repr);
+        FixedPointVar { repr: repr.into() }
+    }
 }
 
 impl From<f32> for FixedPoint {
@@ -247,6 +255,61 @@ impl Add<Variable> for FixedPointVar {
     }
 }
 
+/// Addition with an integer on the left hand side
+impl Add<FixedPointVar> for Variable {
+    type Output = FixedPointVar;
+
+    fn add(self, rhs: FixedPointVar) -> Self::Output {
+        // Commutative
+        rhs + self
+    }
+}
+
+/// Negation of a fixed point variable, simply negate the underlying representation
+impl Neg for FixedPointVar {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Self {
+            repr: self.repr * Scalar::one().neg(),
+        }
+    }
+}
+
+/// Subtraction of a fixed point variable with another
+impl Sub<FixedPointVar> for FixedPointVar {
+    type Output = FixedPointVar;
+
+    fn sub(self, rhs: FixedPointVar) -> Self::Output {
+        Self {
+            repr: self.repr - rhs.repr,
+        }
+    }
+}
+
+/// Subtraction of a fixed point variable from an integer
+impl Sub<FixedPointVar> for Variable {
+    type Output = FixedPointVar;
+
+    #[allow(clippy::suspicious_arithmetic_impl)]
+    fn sub(self, rhs: FixedPointVar) -> Self::Output {
+        self + rhs.neg()
+    }
+}
+
+/// Subtraction of an integer from a fixed point variable
+impl Sub<Variable> for FixedPointVar {
+    type Output = Self;
+
+    fn sub(self, rhs: Variable) -> Self::Output {
+        // Convert the integer to a fixed point variable
+        let shifted_rhs = *TWO_TO_M_SCALAR * rhs;
+        Self {
+            repr: self.repr - shifted_rhs,
+        }
+    }
+}
+
 /// A fixed point variable that has been allocated in an MPC fabric
 #[derive(Clone, Debug)]
 pub struct AuthenticatedFixedPoint<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
@@ -351,9 +414,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
 
 #[cfg(test)]
 mod fixed_point_tests {
-    use bigdecimal::{BigDecimal, Signed};
-    use crypto::fields::scalar_to_bigint;
+    use bigdecimal::{BigDecimal, FromPrimitive, Signed};
+    use crypto::fields::{scalar_to_bigdecimal, scalar_to_bigint};
     use curve25519_dalek::scalar::Scalar;
+    use integration_helpers::mpc_network::field::get_ristretto_group_modulus;
     use merlin::Transcript;
     use mpc_bulletproof::{
         r1cs::{ConstraintSystem, Prover},
@@ -510,6 +574,43 @@ mod fixed_point_tests {
             // Using floating points as a base comparison loses some precision, especially for large
             // numbers. Instead just check that the floating point error is sufficiently small
             assert!((res - expected_res).abs() / res < 0.001);
+        }
+    }
+
+    /// Tests subtracting one fixed point variable from another
+    #[test]
+    fn test_sub() {
+        let n_tests = 100;
+        let mut rng = thread_rng();
+
+        // Create a constraint system and allocate the floating points
+        let mut prover_transcript = Transcript::new("test".as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+        for _ in 0..n_tests {
+            // Generate a random fixed point value and a random integer
+            let fp1 = rng.gen_range(0.0..1000000.);
+            let fp2 = rng.gen_range(0.0..1000000.);
+
+            let expected_res = fp1 - fp2;
+
+            let fp1_var = FixedPointVar::commit_public(fp1, &mut prover);
+            let fp2_var = FixedPointVar::commit_public(fp2, &mut prover);
+
+            let res_var = fp1_var - fp2_var;
+            let res_repr = scalar_to_bigdecimal(&prover.eval(&res_var.repr));
+
+            let mut expected_repr = &BigDecimal::from_f32(expected_res).unwrap()
+                * (BigInt::from(1u8) << DEFAULT_PRECISION);
+            if expected_repr < BigDecimal::from_i8(0).unwrap() {
+                expected_repr = (get_ristretto_group_modulus().to_bigint().unwrap()
+                    - expected_repr.to_bigint().unwrap())
+                .into();
+            }
+
+            // Check the representation directly, this is less prone to error
+            assert!((&res_repr - expected_repr) / &res_repr < BigDecimal::from_f32(0.01).unwrap())
         }
     }
 }
