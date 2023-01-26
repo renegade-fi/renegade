@@ -15,6 +15,7 @@ use circuits::{
     zk_circuits::valid_match_mpc::{
         ValidMatchMpcCircuit, ValidMatchMpcStatement, ValidMatchMpcWitness,
     },
+    zk_gadgets::fixed_point::FixedPoint,
 };
 use crypto::fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField};
 use curve25519_dalek::scalar::Scalar;
@@ -121,7 +122,7 @@ fn setup_witness_and_statement<N: MpcNetwork + Send, S: SharedValueSource<Scalar
         fee.settle_key.clone().try_into().unwrap(),
         fee.gas_addr.clone().try_into().unwrap(),
         fee.gas_token_amount,
-        fee.percentage_fee,
+        fee.percentage_fee.clone().into(),
     ]);
     let my_randomness_hash = hash_values_arkworks(&[wallet_randomness]);
 
@@ -198,7 +199,6 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
         0, // settle key
         1, // gas token addr
         3, // gas amount
-        1, // percentage fee
     ];
 
     let timestamp: u64 = SystemTime::now()
@@ -229,7 +229,7 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
             settle_key: BigUint::from(my_fee[0]),
             gas_addr: BigUint::from(my_fee[1]),
             gas_token_amount: my_fee[2],
-            percentage_fee: my_fee[3],
+            percentage_fee: FixedPoint::from(0.01),
         },
         test_args.mpc_fabric.clone(),
     )?;

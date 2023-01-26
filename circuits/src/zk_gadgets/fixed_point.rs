@@ -7,17 +7,26 @@ use bigdecimal::ToPrimitive;
 use crypto::fields::{biguint_to_scalar, scalar_to_bigdecimal};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use lazy_static::lazy_static;
-use mpc_bulletproof::r1cs::{
-    LinearCombination, Prover, RandomizableConstraintSystem, Variable, Verifier,
+use mpc_bulletproof::{
+    r1cs::{LinearCombination, Prover, RandomizableConstraintSystem, Variable, Verifier},
+    r1cs_mpc::{MpcProver, MpcVariable},
+};
+use mpc_ristretto::{
+    authenticated_ristretto::AuthenticatedCompressedRistretto,
+    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource,
+    mpc_scalar::scalar_to_u64, network::MpcNetwork,
 };
 use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
+use serde::{Deserialize, Serialize};
 
-use crate::CommitVerifier;
+use crate::{
+    errors::MpcError, mpc::SharedFabric, Allocate, CommitProver, CommitSharedProver, CommitVerifier,
+};
 
 /// The default fixed point decimal precision in bits
 /// i.e. the number of bits allocated to a fixed point's decimal
-const DEFAULT_PRECISION: usize = 32;
+pub(crate) const DEFAULT_PRECISION: usize = 32;
 
 lazy_static! {
     /// The shift used to generate a scalar representation from a fixed point
@@ -34,25 +43,84 @@ lazy_static! {
     };
 }
 
-/// Represents a fixed point number in the constraint system
+/// Represents a fixed point number not yet allocated in the constraint system
 ///
+/// This is useful for centralizing conversion logic to provide an abstract to_scalar,
+/// from_scalar interface to modules that commit to this value
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FixedPoint {
+    /// The underlying scalar representing the fixed point variable
+    pub(crate) repr: Scalar,
+}
+
+impl From<f32> for FixedPoint {
+    fn from(val: f32) -> Self {
+        let shifted_val = val * (2u64.pow(DEFAULT_PRECISION as u32) as f32);
+        assert_eq!(
+            shifted_val,
+            shifted_val.floor(),
+            "Given value exceeds precision of constraint system"
+        );
+
+        Self {
+            repr: Scalar::from(shifted_val as u64),
+        }
+    }
+}
+impl From<Scalar> for FixedPoint {
+    fn from(scalar: Scalar) -> Self {
+        Self { repr: scalar }
+    }
+}
+
+impl From<FixedPoint> for Scalar {
+    fn from(fp: FixedPoint) -> Self {
+        fp.repr
+    }
+}
+
+impl From<FixedPoint> for u64 {
+    fn from(fp: FixedPoint) -> Self {
+        scalar_to_u64(&fp.repr)
+    }
+}
+
 /// For a fixed precision rational $z$, the scalar held by the
 /// struct is the scalar representation $z * 2^M$ where M is the
 /// fixed-point precision in use
 #[derive(Clone, Debug)]
 pub struct FixedPointVar {
     /// The underlying scalar representing the fixed point variable
-    repr: LinearCombination,
+    pub(crate) repr: LinearCombination,
 }
 
 /// A commitment to a fixed-precision variable
 #[derive(Copy, Clone, Debug)]
-pub struct CommittedFixedPointVar {
+pub struct CommittedFixedPoint {
     /// The underlying scalar representing the fixed point variable
-    repr: CompressedRistretto,
+    pub(crate) repr: CompressedRistretto,
 }
 
-impl CommitVerifier for CommittedFixedPointVar {
+impl CommitProver for FixedPoint {
+    type VarType = FixedPointVar;
+    type CommitType = CommittedFixedPoint;
+    type ErrorType = ();
+
+    fn commit_prover<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (comm, var) = prover.commit(self.repr, Scalar::random(rng));
+
+        Ok((
+            FixedPointVar { repr: var.into() },
+            CommittedFixedPoint { repr: comm },
+        ))
+    }
+}
+
+impl CommitVerifier for CommittedFixedPoint {
     type VarType = FixedPointVar;
     type ErrorType = ();
 
@@ -71,7 +139,7 @@ impl FixedPointVar {
         val: f32,
         rng: &mut R,
         prover: &mut Prover,
-    ) -> (Self, CommittedFixedPointVar) {
+    ) -> (Self, CommittedFixedPoint) {
         let shifted_val = val * (2u64.pow(DEFAULT_PRECISION as u32) as f32);
         assert_eq!(
             shifted_val,
@@ -86,7 +154,7 @@ impl FixedPointVar {
             Self {
                 repr: fp_var.into(),
             },
-            CommittedFixedPointVar { repr: fp_comm },
+            CommittedFixedPoint { repr: fp_comm },
         )
     }
 
@@ -176,6 +244,108 @@ impl Add<Variable> for FixedPointVar {
         Self {
             repr: self.repr + rhs_shifted,
         }
+    }
+}
+
+/// A fixed point variable that has been allocated in an MPC fabric
+#[derive(Clone, Debug)]
+pub struct AuthenticatedFixedPoint<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The underlying scalar representing the fixed point variable
+    pub(crate) repr: AuthenticatedScalar<N, S>,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for FixedPoint {
+    type SharedType = AuthenticatedFixedPoint<N, S>;
+    type ErrorType = MpcError;
+
+    fn allocate(
+        &self,
+        owning_party: u64,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self::SharedType, Self::ErrorType> {
+        let shared_value = fabric
+            .borrow_fabric()
+            .allocate_private_scalar(owning_party, self.repr)
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+        Ok(AuthenticatedFixedPoint { repr: shared_value })
+    }
+}
+
+/// Represents a fixed point variable that has been allocated in an MPC network and
+/// committed to in a multi-prover constraint system
+#[derive(Debug)]
+pub struct AuthenticatedFixedPointVar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The underlying scalar representing the fixed point variable
+    pub(crate) repr: MpcVariable<N, S>,
+}
+
+/// Explicit clone implementation to remove the bounds on generics N, S to be `Clone`
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone
+    for AuthenticatedFixedPointVar<N, S>
+{
+    fn clone(&self) -> Self {
+        Self {
+            repr: self.repr.clone(),
+        }
+    }
+}
+
+/// Represents a commitment to a fixed point variable that has been allocated in a multi-prover
+/// constraint system
+#[derive(Debug)]
+pub struct AuthenticatedCommittedFixedPoint<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The underlying scalar representing the fixed point variable
+    pub(crate) repr: AuthenticatedCompressedRistretto<N, S>,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone
+    for AuthenticatedCommittedFixedPoint<N, S>
+{
+    fn clone(&self) -> Self {
+        Self {
+            repr: self.repr.clone(),
+        }
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S> for FixedPoint {
+    type SharedVarType = AuthenticatedFixedPointVar<N, S>;
+    type CommitType = AuthenticatedCommittedFixedPoint<N, S>;
+    type ErrorType = MpcError;
+
+    fn commit<R: RngCore + CryptoRng>(
+        &self,
+        owning_party: u64,
+        rng: &mut R,
+        prover: &mut MpcProver<N, S>,
+    ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType> {
+        let blinder = Scalar::random(rng);
+        let (shared_comm, shared_var) = prover
+            .commit(owning_party, self.repr, blinder)
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+
+        Ok((
+            AuthenticatedFixedPointVar { repr: shared_var },
+            AuthenticatedCommittedFixedPoint { repr: shared_comm },
+        ))
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
+    for AuthenticatedCommittedFixedPoint<N, S>
+{
+    type VarType = FixedPointVar;
+    type ErrorType = MpcError;
+
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
+        let opened_value = self
+            .repr
+            .open_and_authenticate()
+            .map_err(|err| MpcError::OpeningError(err.to_string()))?
+            .value();
+        let repr = verifier.commit(opened_value);
+
+        Ok(FixedPointVar { repr: repr.into() })
     }
 }
 

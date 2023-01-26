@@ -19,7 +19,7 @@ pub(crate) const NUM_KEYS: usize = 4;
 
 /// Represents the base type of a wallet holding orders, balances, fees, keys
 /// and cryptographic randomness
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Wallet<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,

@@ -85,10 +85,10 @@ where
         for fee in witness.fees.iter() {
             hasher.batch_absorb(
                 &[
-                    fee.settle_key,
-                    fee.gas_addr,
-                    fee.gas_token_amount,
-                    fee.percentage_fee,
+                    fee.settle_key.into(),
+                    fee.gas_addr.into(),
+                    fee.gas_token_amount.into(),
+                    fee.percentage_fee.repr.clone(),
                 ],
                 cs,
             )?;
@@ -361,7 +361,10 @@ mod test_valid_wallet_create {
     use num_bigint::BigUint;
     use rand_core::{CryptoRng, OsRng, RngCore};
 
-    use crate::{test_helpers::bulletproof_prove_and_verify, types::fee::Fee};
+    use crate::{
+        test_helpers::bulletproof_prove_and_verify, types::fee::Fee,
+        zk_gadgets::fixed_point::FixedPoint,
+    };
 
     use super::{
         ValidWalletCreate, ValidWalletCreateStatement, ValidWalletCreateWitness, BALANCE_ZEROS,
@@ -382,7 +385,7 @@ mod test_valid_wallet_create {
             settle_key: BigUint::from(rng.next_u64()),
             gas_addr: BigUint::from(rng.next_u64()),
             gas_token_amount: rng.next_u64(),
-            percentage_fee: rng.next_u64(),
+            percentage_fee: FixedPoint::from(0.01),
         }
     }
 
@@ -401,7 +404,9 @@ mod test_valid_wallet_create {
             arkworks_hasher.absorb(&scalar_to_prime_field(&biguint_to_scalar(&fee.settle_key)));
             arkworks_hasher.absorb(&scalar_to_prime_field(&biguint_to_scalar(&fee.gas_addr)));
             arkworks_hasher.absorb(&DalekRistrettoField::from(fee.gas_token_amount));
-            arkworks_hasher.absorb(&DalekRistrettoField::from(fee.percentage_fee));
+            arkworks_hasher.absorb(&DalekRistrettoField::from(Into::<u64>::into(
+                fee.percentage_fee.clone(),
+            )));
         }
 
         // Absorb the public keys into the hasher state

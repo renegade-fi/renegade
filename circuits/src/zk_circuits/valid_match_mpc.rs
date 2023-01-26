@@ -25,13 +25,16 @@ use mpc_ristretto::{
 };
 use rand_core::OsRng;
 
-use crate::zk_gadgets::comparators::{
-    GreaterThanEqGadget, GreaterThanEqZeroGadget, MultiproverGreaterThanEqGadget,
-    MultiproverGreaterThanEqZeroGadget,
-};
 use crate::zk_gadgets::select::{
     CondSelectGadget, CondSelectVectorGadget, MultiproverCondSelectGadget,
     MultiproverCondSelectVectorGadget,
+};
+use crate::zk_gadgets::{
+    comparators::{
+        GreaterThanEqGadget, GreaterThanEqZeroGadget, MultiproverGreaterThanEqGadget,
+        MultiproverGreaterThanEqZeroGadget,
+    },
+    fixed_point::CommittedFixedPoint,
 };
 use crate::{
     errors::{MpcError, ProverError, VerifierError},
@@ -521,7 +524,9 @@ impl From<&[CompressedRistretto]> for ValidMatchCommitment {
                 settle_key: commitments[8],
                 gas_addr: commitments[9],
                 gas_token_amount: commitments[10],
-                percentage_fee: commitments[11],
+                percentage_fee: CommittedFixedPoint {
+                    repr: commitments[11],
+                },
             },
             order2: CommittedOrder {
                 quote_mint: commitments[12],
@@ -539,7 +544,9 @@ impl From<&[CompressedRistretto]> for ValidMatchCommitment {
                 settle_key: commitments[20],
                 gas_addr: commitments[21],
                 gas_token_amount: commitments[22],
-                percentage_fee: commitments[23],
+                percentage_fee: CommittedFixedPoint {
+                    repr: commitments[23],
+                },
             },
             match_result: CommittedMatchResult {
                 quote_mint: commitments[24],
@@ -785,8 +792,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         .map_err(VerifierError::R1CS)?;
         Self::input_consistency_single_prover(
             &mut verifier,
-            &Into::<Vec<Variable>>::into(party0_fee),
-            &hash_f1_var,
+            &Into::<Vec<LinearCombination>>::into(party0_fee),
+            &hash_f1_var.into(),
         )
         .map_err(VerifierError::R1CS)?;
         Self::input_consistency_single_prover(
@@ -803,8 +810,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         .map_err(VerifierError::R1CS)?;
         Self::input_consistency_single_prover(
             &mut verifier,
-            &Into::<Vec<Variable>>::into(party1_fee),
-            &hash_f2_var,
+            &Into::<Vec<LinearCombination>>::into(party1_fee),
+            &hash_f2_var.into(),
         )
         .map_err(VerifierError::R1CS)?;
 

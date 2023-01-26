@@ -77,7 +77,7 @@ where
         Self::verify_wallet_contains_balance(witness.balance, &witness.wallet, cs);
         Self::verify_wallet_contains_balance(witness.fee_balance, &witness.wallet, cs);
         Self::verify_wallet_contains_order(witness.order, &witness.wallet, cs);
-        Self::verify_wallet_contains_fee(witness.fee, &witness.wallet, cs);
+        Self::verify_wallet_contains_fee(witness.fee.clone(), &witness.wallet, cs);
 
         // Verify that the balance is for the correct mint
         let selected_mint = CondSelectGadget::select(
@@ -152,8 +152,8 @@ where
         // orders in the wallet
         let mut fees_equal_sum: LinearCombination = Variable::Zero().into();
         for wallet_fee in wallet.fees.iter() {
-            let f1_vars: Vec<Variable> = fee.into();
-            let f2_vars: Vec<Variable> = (*wallet_fee).into();
+            let f1_vars: Vec<LinearCombination> = fee.clone().into();
+            let f2_vars: Vec<LinearCombination> = wallet_fee.clone().into();
 
             fees_equal_sum += EqVecGadget::eq_vec(&f1_vars, &f2_vars, cs);
         }
