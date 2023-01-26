@@ -54,10 +54,10 @@ where
         for fee in wallet.fees.iter() {
             hasher.batch_absorb(
                 &[
-                    fee.settle_key,
-                    fee.gas_addr,
-                    fee.gas_token_amount,
-                    fee.percentage_fee,
+                    fee.settle_key.into(),
+                    fee.gas_addr.into(),
+                    fee.gas_token_amount.into(),
+                    fee.percentage_fee.repr.clone(),
                 ],
                 cs,
             )?;

@@ -1,6 +1,10 @@
 //! Groups trait and type definitions for the handshake tuple
 
-use crate::{errors::MpcError, CommitSharedProver};
+use crate::{
+    errors::MpcError,
+    zk_gadgets::fixed_point::{AuthenticatedCommittedFixedPoint, AuthenticatedFixedPointVar},
+    CommitSharedProver,
+};
 use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
@@ -60,7 +64,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                     biguint_to_scalar(&fee.settle_key),
                     biguint_to_scalar(&fee.gas_addr),
                     Scalar::from(fee.gas_token_amount),
-                    Scalar::from(fee.percentage_fee),
+                    Scalar::from(fee.percentage_fee.clone()),
                 ],
                 &blinders,
             )
@@ -83,7 +87,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 settle_key: shared_vars[8].to_owned(),
                 gas_addr: shared_vars[9].to_owned(),
                 gas_token_amount: shared_vars[10].to_owned(),
-                percentage_fee: shared_vars[11].to_owned(),
+                percentage_fee: AuthenticatedFixedPointVar {
+                    repr: shared_vars[11].to_owned(),
+                },
             },
         );
 
@@ -104,7 +110,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 settle_key: shared_comm[8].to_owned(),
                 gas_addr: shared_comm[9].to_owned(),
                 gas_token_amount: shared_comm[10].to_owned(),
-                percentage_fee: shared_comm[11].to_owned(),
+                percentage_fee: AuthenticatedCommittedFixedPoint {
+                    repr: shared_comm[11].to_owned(),
+                },
             },
         );
 

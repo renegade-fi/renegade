@@ -2,18 +2,23 @@
 use crate::{
     errors::{MpcError, TypeConversionError},
     mpc::SharedFabric,
+    zk_gadgets::fixed_point::{
+        AuthenticatedCommittedFixedPoint, AuthenticatedFixedPoint, AuthenticatedFixedPointVar,
+        CommittedFixedPoint, FixedPoint, FixedPointVar,
+    },
     Allocate, CommitProver, CommitSharedProver, CommitVerifier,
 };
 use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
-    r1cs::{Prover, Variable, Verifier},
+    r1cs::{LinearCombination, Prover, Variable, Verifier},
     r1cs_mpc::{MpcProver, MpcVariable},
 };
 use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto,
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource,
+    mpc_scalar::scalar_to_u64, network::MpcNetwork,
 };
 use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
@@ -32,7 +37,7 @@ pub struct Fee {
     /// The percentage fee that the cluster may take upon match
     /// For now this is encoded as a u64, which represents a
     /// fixed point rational under the hood
-    pub percentage_fee: u64,
+    pub percentage_fee: FixedPoint,
 }
 
 impl TryFrom<&[u64]> for Fee {
@@ -50,7 +55,9 @@ impl TryFrom<&[u64]> for Fee {
             settle_key: BigUint::from(values[0]),
             gas_addr: BigUint::from(values[1]),
             gas_token_amount: values[2],
-            percentage_fee: values[3],
+            // Re-represent the underlying fixed-point representation as a u64, simply be re-interpreting
+            // the bytes
+            percentage_fee: Scalar::from(values[3]).into(),
         })
     }
 }
@@ -61,13 +68,15 @@ impl From<&Fee> for Vec<u64> {
             fee.settle_key.clone().try_into().unwrap(),
             fee.gas_addr.clone().try_into().unwrap(),
             fee.gas_token_amount,
-            fee.percentage_fee,
+            // Re-represent the underlying fixed-point representation as a u64, simply be re-interpreting
+            // the bytes
+            scalar_to_u64(&fee.percentage_fee.repr),
         ]
     }
 }
 
 /// A fee with values allocated in a single-prover constraint system
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct FeeVar {
     /// The public settle key of the cluster collecting fees
     pub settle_key: Variable,
@@ -78,16 +87,16 @@ pub struct FeeVar {
     /// The percentage fee that the cluster may take upon match
     /// For now this is encoded as a u64, which represents a
     /// fixed point rational under the hood
-    pub percentage_fee: Variable,
+    pub percentage_fee: FixedPointVar,
 }
 
-impl From<FeeVar> for Vec<Variable> {
+impl From<FeeVar> for Vec<LinearCombination> {
     fn from(fee: FeeVar) -> Self {
         vec![
-            fee.settle_key,
-            fee.gas_addr,
-            fee.gas_token_amount,
-            fee.percentage_fee,
+            fee.settle_key.into(),
+            fee.gas_addr.into(),
+            fee.gas_token_amount.into(),
+            fee.percentage_fee.repr,
         ]
     }
 }
@@ -108,8 +117,7 @@ impl CommitProver for Fee {
             prover.commit(biguint_to_scalar(&self.gas_addr), Scalar::random(rng));
         let (amount_comm, amount_var) =
             prover.commit(Scalar::from(self.gas_token_amount), Scalar::random(rng));
-        let (percent_comm, percent_var) =
-            prover.commit(Scalar::from(self.percentage_fee), Scalar::random(rng));
+        let (percent_var, percent_comm) = self.percentage_fee.commit_prover(rng, prover).unwrap();
 
         Ok((
             FeeVar {
@@ -140,7 +148,7 @@ pub struct CommittedFee {
     /// The percentage fee that the cluster may take upon match
     /// For now this is encoded as a u64, which represents a
     /// fixed point rational under the hood
-    pub percentage_fee: CompressedRistretto,
+    pub percentage_fee: CommittedFixedPoint,
 }
 
 impl CommitVerifier for CommittedFee {
@@ -151,7 +159,7 @@ impl CommitVerifier for CommittedFee {
         let settle_var = verifier.commit(self.settle_key);
         let addr_var = verifier.commit(self.gas_addr);
         let amount_var = verifier.commit(self.gas_token_amount);
-        let percentage_var = verifier.commit(self.percentage_fee);
+        let percentage_var = self.percentage_fee.commit_verifier(verifier).unwrap();
 
         Ok(FeeVar {
             settle_key: settle_var,
@@ -172,9 +180,7 @@ pub struct AuthenticatedFee<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> 
     /// The amount of the mint token to use for gas
     pub gas_token_amount: AuthenticatedScalar<N, S>,
     /// The percentage fee that the cluster may take upon match
-    /// For now this is encoded as a u64, which represents a
-    /// fixed point rational under the hood
-    pub percentage_fee: AuthenticatedScalar<N, S>,
+    pub percentage_fee: AuthenticatedFixedPoint<N, S>,
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedFee<N, S>>
@@ -185,7 +191,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedFee<N
             fee.settle_key,
             fee.gas_addr,
             fee.gas_token_amount,
-            fee.percentage_fee,
+            fee.percentage_fee.repr,
         ]
     }
 }
@@ -198,7 +204,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<&[AuthenticatedSca
             settle_key: values[0].to_owned(),
             gas_addr: values[1].to_owned(),
             gas_token_amount: values[2].to_owned(),
-            percentage_fee: values[3].to_owned(),
+            percentage_fee: AuthenticatedFixedPoint {
+                repr: values[3].to_owned(),
+            },
         }
     }
 }
@@ -220,7 +228,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Fee 
                     biguint_to_scalar(&self.settle_key),
                     biguint_to_scalar(&self.gas_addr),
                     Scalar::from(self.gas_token_amount),
-                    Scalar::from(self.percentage_fee),
+                    Scalar::from(self.percentage_fee.clone()),
                 ],
             )
             .map_err(|err| MpcError::SharingError(err.to_string()))?;
@@ -229,7 +237,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Fee 
             settle_key: shared_values[0].to_owned(),
             gas_addr: shared_values[1].to_owned(),
             gas_token_amount: shared_values[2].to_owned(),
-            percentage_fee: shared_values[3].to_owned(),
+            percentage_fee: AuthenticatedFixedPoint {
+                repr: shared_values[3].to_owned(),
+            },
         })
     }
 }
@@ -247,7 +257,7 @@ pub struct AuthenticatedFeeVar<N: MpcNetwork + Send, S: SharedValueSource<Scalar
     /// The percentage fee that the cluster may take upon match
     /// For now this is encoded as a u64, which represents a
     /// fixed point rational under the hood
-    pub percentage_fee: MpcVariable<N, S>,
+    pub percentage_fee: AuthenticatedFixedPointVar<N, S>,
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for AuthenticatedFeeVar<N, S> {
@@ -269,7 +279,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedFeeVa
             fee.settle_key,
             fee.gas_addr,
             fee.gas_token_amount,
-            fee.percentage_fee,
+            fee.percentage_fee.repr,
         ]
     }
 }
@@ -293,7 +303,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                     biguint_to_scalar(&self.settle_key),
                     biguint_to_scalar(&self.gas_addr),
                     Scalar::from(self.gas_token_amount),
-                    Scalar::from(self.percentage_fee),
+                    Scalar::from(self.percentage_fee.clone()),
                 ],
                 &blinders,
             )
@@ -304,14 +314,18 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 settle_key: shared_vars[0].to_owned(),
                 gas_addr: shared_vars[1].to_owned(),
                 gas_token_amount: shared_vars[2].to_owned(),
-                percentage_fee: shared_vars[3].to_owned(),
+                percentage_fee: AuthenticatedFixedPointVar {
+                    repr: shared_vars[3].to_owned(),
+                },
             },
             // TODO: implement clone for AuthenticatedCompressedRistretto
             AuthenticatedCommittedFee {
                 settle_key: shared_comm[0].to_owned(),
                 gas_addr: shared_comm[1].to_owned(),
                 gas_token_amount: shared_comm[2].to_owned(),
-                percentage_fee: shared_comm[3].to_owned(),
+                percentage_fee: AuthenticatedCommittedFixedPoint {
+                    repr: shared_comm[3].to_owned(),
+                },
             },
         ))
     }
@@ -329,7 +343,7 @@ pub struct AuthenticatedCommittedFee<N: MpcNetwork + Send, S: SharedValueSource<
     /// The percentage fee that the cluster may take upon match
     /// For now this is encoded as a u64, which represents a
     /// fixed point rational under the hood
-    pub percentage_fee: AuthenticatedCompressedRistretto<N, S>,
+    pub percentage_fee: AuthenticatedCommittedFixedPoint<N, S>,
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedCommittedFee<N, S>>
@@ -340,7 +354,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedCommi
             commit.settle_key,
             commit.gas_addr,
             commit.gas_token_amount,
-            commit.percentage_fee,
+            commit.percentage_fee.repr,
         ]
     }
 }
@@ -356,7 +370,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
             self.settle_key.clone(),
             self.gas_addr.clone(),
             self.gas_token_amount.clone(),
-            self.percentage_fee.clone(),
+            self.percentage_fee.repr.clone(),
         ])
         .map_err(|err| MpcError::SharingError(err.to_string()))?;
 
@@ -369,7 +383,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
             settle_key: settle_var,
             gas_addr: addr_var,
             gas_token_amount: amount_var,
-            percentage_fee: percentage_var,
+            percentage_fee: FixedPointVar {
+                repr: percentage_var.into(),
+            },
         })
     }
 }

@@ -43,10 +43,22 @@ const NUM_ENCRYPTIONS: usize = 2 /* party0_note */ + 2 /* party1_note */ + 5 /* 
 pub struct ValidMatchEncryption<const SCALAR_BITS: usize> {}
 impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
     /// Implements the circuitry for the VALID MATCH ENCRYPTION circuit
-    #[allow(unused)]
     pub fn circuit<CS: RandomizableConstraintSystem>(
         witness: ValidMatchEncryptionWitnessVar,
         statement: ValidMatchEncryptionStatementVar,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        // Check that all ciphertexts are encrypted properly under the relevant
+        // public keys
+        Self::check_encryptions(&witness, &statement, cs)?;
+
+        Ok(())
+    }
+
+    /// Checks the ciphertexts that must be validated by the circuit
+    pub fn check_encryptions<CS: RandomizableConstraintSystem>(
+        witness: &ValidMatchEncryptionWitnessVar,
+        statement: &ValidMatchEncryptionStatementVar,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
         // Validate the encryption of party0's note volumes

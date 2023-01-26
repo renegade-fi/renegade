@@ -29,7 +29,7 @@ mod test_helpers {
             order::{Order, OrderSide},
             wallet::{Wallet, NUM_KEYS},
         },
-        zk_gadgets::merkle::merkle_test::get_opening_indices,
+        zk_gadgets::{fixed_point::FixedPoint, merkle::merkle_test::get_opening_indices},
     };
 
     // --------------
@@ -65,7 +65,7 @@ mod test_helpers {
         pub(crate) static ref INITIAL_FEES: [Fee; MAX_FEES] = [Fee {
             settle_key: BigUint::from(11u8),
             gas_addr: BigUint::from(1u8),
-            percentage_fee: 1,
+            percentage_fee: FixedPoint::from(0.01),
             gas_token_amount: 3,
         }];
         pub(crate) static ref INITIAL_WALLET: SizedWallet = Wallet {
@@ -122,7 +122,10 @@ mod test_helpers {
                 biguint_to_prime_field(&fee.gas_addr),
             ]);
 
-            hasher.absorb(&vec![fee.gas_token_amount, fee.percentage_fee]);
+            hasher.absorb(&vec![
+                fee.gas_token_amount,
+                fee.percentage_fee.clone().into(),
+            ]);
         }
 
         // Hash the keys into the state
