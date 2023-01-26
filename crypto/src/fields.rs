@@ -3,6 +3,7 @@
 use std::ops::Neg;
 
 use ark_ff::{Fp256, MontBackend, MontConfig, PrimeField};
+use bigdecimal::BigDecimal;
 use curve25519_dalek::scalar::Scalar;
 use num_bigint::{BigInt, BigUint, Sign};
 
@@ -24,6 +25,12 @@ pub fn scalar_to_bigint(a: &Scalar) -> BigInt {
 /// Convert a scalar to a BigUint
 pub fn scalar_to_biguint(a: &Scalar) -> BigUint {
     BigUint::from_bytes_le(&a.to_bytes())
+}
+
+/// Convert a scalar to a BigDecimal
+pub fn scalar_to_bigdecimal(a: &Scalar) -> BigDecimal {
+    let bigint = scalar_to_bigint(a);
+    BigDecimal::from(bigint)
 }
 
 /// Convert a bigint to a scalar
