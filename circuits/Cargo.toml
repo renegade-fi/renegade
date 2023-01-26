@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 ark-ff = { git = "https://github.com/arkworks-rs/algebra", rev = "6e3e804" }
 ark-sponge = { git = "https://github.com/arkworks-rs/sponge", rev = "2d5f91b" }
+bigdecimal = "0.3"
 bitvec = "1.0"
 circuit-macros = { path = "../circuit-macros" }
 crypto = { path = "../crypto" }

@@ -5,6 +5,7 @@ pub mod commitments;
 pub mod comparators;
 pub mod edwards;
 pub mod elgamal;
+pub mod fixed_point;
 pub mod gates;
 pub mod merkle;
 pub mod nonnative;
