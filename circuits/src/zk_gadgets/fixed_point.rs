@@ -183,13 +183,14 @@ impl Add<Variable> for FixedPointVar {
 mod fixed_point_tests {
     use bigdecimal::{BigDecimal, Signed};
     use crypto::fields::scalar_to_bigint;
+    use curve25519_dalek::scalar::Scalar;
     use merlin::Transcript;
     use mpc_bulletproof::{
         r1cs::{ConstraintSystem, Prover},
         PedersenGens,
     };
     use num_bigint::{BigInt, ToBigInt};
-    use rand::{thread_rng, Rng};
+    use rand::{thread_rng, Rng, RngCore};
 
     use crate::zk_gadgets::fixed_point::DEFAULT_PRECISION;
 
@@ -280,6 +281,65 @@ mod fixed_point_tests {
             // Computing the actual expected value has some room for floating point mis-precision;
             // as a result we constraint the values to be close
             assert!((res_var_repr - expected_repr_bigint).abs() < BigInt::from(10u8));
+        }
+    }
+
+    /// Tests multiplying an integer with a fixed point number
+    #[test]
+    fn test_integer_mul() {
+        let n_tests = 100;
+        let mut rng = thread_rng();
+
+        // Create a constraint system and allocate the floating points
+        let mut prover_transcript = Transcript::new("test".as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+        for _ in 0..n_tests {
+            // Generate a random fixed point value and a random integer
+            let fp1 = rng.gen_range(0.0..1000000.);
+            let int = rng.next_u32();
+
+            let expected_res = fp1 * (int as f32);
+
+            let fp_var = FixedPointVar::commit_public(fp1, &mut prover);
+            let int_var = prover.commit_public(Scalar::from(int));
+
+            let res_var = fp_var.mul_integer(int_var, &mut prover);
+            let res = res_var.eval(&prover);
+
+            // Using floating points as a base comparison loses some precision, especially for large
+            // numbers. Instead just check that the floating point error is sufficiently small
+            assert!((res - expected_res).abs() / res < 0.001);
+        }
+    }
+
+    #[test]
+    fn test_integer_add() {
+        let n_tests = 100;
+        let mut rng = thread_rng();
+
+        // Create a constraint system and allocate the floating points
+        let mut prover_transcript = Transcript::new("test".as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+        for _ in 0..n_tests {
+            // Generate a random fixed point value and a random integer
+            let fp1 = rng.gen_range(0.0..1000000.);
+            let int = rng.next_u32();
+
+            let expected_res = fp1 + (int as f32);
+
+            let fp_var = FixedPointVar::commit_public(fp1, &mut prover);
+            let int_var = prover.commit_public(Scalar::from(int));
+
+            let res_var = fp_var + int_var;
+            let res = res_var.eval(&prover);
+
+            // Using floating points as a base comparison loses some precision, especially for large
+            // numbers. Instead just check that the floating point error is sufficiently small
+            assert!((res - expected_res).abs() / res < 0.001);
         }
     }
 }
