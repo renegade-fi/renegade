@@ -24,6 +24,8 @@ use crate::{
     errors::MpcError, mpc::SharedFabric, Allocate, CommitProver, CommitSharedProver, CommitVerifier,
 };
 
+use super::comparators::EqGadget;
+
 /// The default fixed point decimal precision in bits
 /// i.e. the number of bits allocated to a fixed point's decimal
 pub(crate) const DEFAULT_PRECISION: usize = 32;
@@ -194,6 +196,55 @@ impl FixedPointVar {
 
         // Shift down the precision
         shifted_eval.to_f32().unwrap()
+    }
+
+    /// Constrain two fixed point variables to equal one another
+    pub fn constraint_equal<CS: RandomizableConstraintSystem>(
+        &self,
+        rhs: FixedPointVar,
+        cs: &mut CS,
+    ) {
+        cs.constrain(self.repr.clone() - rhs.repr);
+    }
+
+    /// Return a boolean indicating whether two fixed point variables are equal
+    ///
+    /// 1 represents true, 0 is false
+    pub fn equal<CS: RandomizableConstraintSystem>(
+        &self,
+        rhs: FixedPointVar,
+        cs: &mut CS,
+    ) -> Variable {
+        EqGadget::eq(self.repr.clone(), rhs.repr, cs)
+    }
+
+    /// Constrain a fixed point variable to equal an integer
+    pub fn constraint_equal_integer<CS: RandomizableConstraintSystem>(
+        &self,
+        rhs: Variable,
+        cs: &mut CS,
+    ) {
+        let fixed_point_repr = Self::shift_integer(rhs);
+        self.constraint_equal(fixed_point_repr, cs);
+    }
+
+    /// Return a boolean indicating whether a fixed point and integer are equal
+    ///
+    /// 1 represents true, 0 is false
+    pub fn equal_integer<CS: RandomizableConstraintSystem>(
+        &self,
+        rhs: Variable,
+        cs: &mut CS,
+    ) -> Variable {
+        let fixed_point_repr = Self::shift_integer(rhs);
+        self.equal(fixed_point_repr, cs)
+    }
+
+    /// Shift an integer into its fixed point representation
+    fn shift_integer(val: Variable) -> FixedPointVar {
+        FixedPointVar {
+            repr: *TWO_TO_M_SCALAR * val,
+        }
     }
 
     /// Multiplication cannot be implemented directly via the std::ops trait, because it needs
