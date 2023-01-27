@@ -47,6 +47,18 @@ pub(crate) const TRANSCRIPT_SEED: &str = "merlin seed";
  * Helpers
  */
 
+/// A debug macro used to print the value of a constraint system variable;
+/// used for debugging
+#[allow(unused)]
+macro_rules! print_debug {
+    ($x:expr, $cs:ident) => {
+        let x_eval = $cs.eval(&$x.into());
+        println!("{}_eval: {:?}", stringify!($x), scalar_to_biguint(&x_eval));
+    };
+}
+#[allow(unused)]
+pub(crate) use print_debug;
+
 /// Represents 2^m as a scalar
 pub fn scalar_2_to_m(m: usize) -> Scalar {
     if m >= SCALAR_MAX_BITS {
