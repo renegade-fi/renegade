@@ -53,15 +53,15 @@ pub(super) const HANDSHAKE_INVISIBILITY_WINDOW_MS: u64 = 120_000; // 2 minutes
 pub(super) const HANDSHAKE_CACHE_SIZE: usize = 500;
 /// How frequently a new handshake is initiated from the local peer
 pub(super) const HANDSHAKE_INTERVAL_MS: u64 = 2_000; // 2 seconds
-/// Number of nanoseconds in a millisecond, for convenienc
+/// Number of nanoseconds in a millisecond, for convenience
 const NANOS_PER_MILLI: u64 = 1_000_000;
 
 /// Manages requests to handshake from a peer and sends outbound requests to initiate
 /// a handshake
 pub struct HandshakeManager {
-    /// The hanshake timer; periodically enqueues outbound handshake requests
+    /// The handshake timer; periodically enqueues outbound handshake requests
     pub(super) timer: HandshakeTimer,
-    /// The job realay; provides a shim between the network interface and the manager
+    /// The job relay; provides a shim between the network interface and the manager
     pub(super) relay: HandshakeJobRelay,
 }
 
@@ -508,7 +508,10 @@ impl HandshakeManager {
 
         // The maximum quantity of the mint that the local party will be spending
         let order_amount = match order.side {
-            OrderSide::Buy => order.amount * order.price,
+            OrderSide::Buy => {
+                let res_amount = (order.amount as f64) * order.price.to_f64();
+                res_amount as u64
+            }
             OrderSide::Sell => order.amount,
         };
 
@@ -542,7 +545,7 @@ impl HandshakeManager {
         // Cache the order pair as completed
         handshake_cache
             .write()
-            .expect("handshake_cache lock poiseoned")
+            .expect("handshake_cache lock poisoned")
             .mark_completed(state.local_order_id, state.peer_order_id);
 
         // Write to global state for debugging

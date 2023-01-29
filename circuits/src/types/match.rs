@@ -1,6 +1,13 @@
 //! Groups the type definitions for matches
 
-use crate::{errors::MpcError, CommitProver, CommitSharedProver, CommitVerifier, Open};
+use crate::{
+    errors::MpcError,
+    zk_gadgets::fixed_point::{
+        AuthenticatedCommittedFixedPoint, AuthenticatedFixedPoint, AuthenticatedFixedPointVar,
+        CommittedFixedPoint, FixedPoint, FixedPointVar,
+    },
+    CommitProver, CommitSharedProver, CommitVerifier, Open,
+};
 use crypto::fields::bigint_to_scalar;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 
@@ -43,7 +50,7 @@ pub struct MatchResult {
     /// the course of the MPC, so it incurs no extra cost to include them in the witness
 
     /// The execution price; the midpoint between two limit prices if they cross
-    pub execution_price: u64,
+    pub execution_price: FixedPoint,
     /// The minimum amount of the two orders minus the maximum amount of the two orders.
     /// We include it here to tame some of the non-linearity of the zk circuit, i.e. we
     /// can shortcut some of the computation and implicitly constrain the match result
@@ -73,7 +80,7 @@ impl TryFrom<&[u64]> for MatchResult {
             quote_amount: values[2],
             base_amount: values[3],
             direction: values[4],
-            execution_price: values[5],
+            execution_price: FixedPoint::from(Scalar::from(values[5])),
             max_minus_min_amount: values[6] as u32,
             min_amount_order_index: values[7] as u8,
         })
@@ -95,7 +102,7 @@ pub struct MatchResultVar {
     /// sells the quote; 1 implies that party 2 buys the base and sells the quote
     pub direction: Variable, // Binary
     /// The execution price; the midpoint between two limit prices if they cross
-    pub execution_price: Variable,
+    pub execution_price: FixedPointVar,
     /// The minimum amount of the two orders minus the maximum amount of the two orders.
     /// We include it here to tame some of the non-linearity of the zk circuit, i.e. we
     /// can shortcut some of the computation and implicitly constrain the match result
@@ -121,7 +128,7 @@ pub struct CommittedMatchResult {
     /// sells the quote; 1 implies that party 2 buys the base and sells the quote
     pub direction: CompressedRistretto, // Binary
     /// The execution price; the midpoint between two limit prices if they cross
-    pub execution_price: CompressedRistretto,
+    pub execution_price: CommittedFixedPoint,
     /// The minimum amount of the two orders minus the maximum amount of the two orders.
     /// We include it here to tame some of the non-linearity of the zk circuit, i.e. we
     /// can shortcut some of the computation and implicitly constrain the match result
@@ -152,8 +159,7 @@ impl CommitProver for MatchResult {
             prover.commit(Scalar::from(self.base_amount), Scalar::random(rng));
         let (direction_comm, direction_var) =
             prover.commit(Scalar::from(self.direction), Scalar::random(rng));
-        let (price_comm, price_var) =
-            prover.commit(Scalar::from(self.execution_price), Scalar::random(rng));
+        let (price_var, price_comm) = self.execution_price.commit_prover(rng, prover).unwrap();
         let (max_minus_min_comm, max_minus_min_var) =
             prover.commit(Scalar::from(self.max_minus_min_amount), Scalar::random(rng));
         let (min_index_comm, min_index_var) = prover.commit(
@@ -196,7 +202,7 @@ impl CommitVerifier for CommittedMatchResult {
         let quote_amount_var = verifier.commit(self.quote_amount);
         let base_amount_var = verifier.commit(self.base_amount);
         let direction_var = verifier.commit(self.direction);
-        let price_var = verifier.commit(self.execution_price);
+        let price_var = self.execution_price.commit_verifier(verifier).unwrap();
         let max_minus_min_var = verifier.commit(self.max_minus_min_amount);
         let min_index_var = verifier.commit(self.min_amount_order_index);
 
@@ -229,7 +235,7 @@ pub struct AuthenticatedMatchResult<N: MpcNetwork + Send, S: SharedValueSource<S
     /// sells the quote; 1 implies that party 2 buys the base and sells the quote
     pub direction: AuthenticatedScalar<N, S>, // Binary
     /// The execution price; the midpoint between two limit prices if they cross
-    pub execution_price: AuthenticatedScalar<N, S>,
+    pub execution_price: AuthenticatedFixedPoint<N, S>,
     /// The minimum amount of the two orders minus the maximum amount of the two orders.
     /// We include it here to tame some of the non-linearity of the zk circuit, i.e. we
     /// can shortcut some of the computation and implicitly constrain the match result
@@ -268,7 +274,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedMatch
         res.push(match_res.quote_amount);
         res.push(match_res.base_amount);
         res.push(match_res.direction);
-        res.push(match_res.execution_price);
+        res.push(match_res.execution_price.repr);
         res.push(match_res.max_minus_min_amount);
         res.push(match_res.min_amount_order_index);
 
@@ -298,7 +304,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> TryFrom<&[Authenticated
             base_mint: values[2].clone(),
             base_amount: values[3].clone(),
             direction: values[4].clone(),
-            execution_price: values[5].clone(),
+            execution_price: AuthenticatedFixedPoint {
+                repr: values[5].clone(),
+            },
             max_minus_min_amount: values[6].clone(),
             min_amount_order_index: values[7].clone(),
         })
@@ -364,7 +372,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                     self.quote_amount.clone(),
                     self.base_amount.clone(),
                     self.direction.clone(),
-                    self.execution_price.clone(),
+                    self.execution_price.repr.clone(),
                     self.max_minus_min_amount.clone(),
                     self.min_amount_order_index.clone(),
                 ],
@@ -379,7 +387,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 quote_amount: vars[2].to_owned(),
                 base_amount: vars[3].to_owned(),
                 direction: vars[4].to_owned(),
-                execution_price: vars[5].to_owned(),
+                execution_price: AuthenticatedFixedPointVar {
+                    repr: vars[5].to_owned().into(),
+                },
                 max_minus_min_amount: vars[6].to_owned(),
                 min_amount_order_index: vars[7].to_owned(),
             },
@@ -389,7 +399,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 quote_amount: commitments[2].to_owned(),
                 base_amount: commitments[3].to_owned(),
                 direction: commitments[4].to_owned(),
-                execution_price: commitments[5].to_owned(),
+                execution_price: AuthenticatedCommittedFixedPoint {
+                    repr: commitments[5].to_owned(),
+                },
                 max_minus_min_amount: commitments[6].to_owned(),
                 min_amount_order_index: commitments[7].to_owned(),
             },
@@ -413,7 +425,7 @@ pub struct AuthenticatedMatchResultVar<N: MpcNetwork + Send, S: SharedValueSourc
     /// sells the quote; 1 implies that party 2 buys the base and sells the quote
     pub direction: MpcVariable<N, S>, // Binary
     /// The execution price; the midpoint between two limit prices if they cross
-    pub execution_price: MpcVariable<N, S>,
+    pub execution_price: AuthenticatedFixedPointVar<N, S>,
     /// The minimum amount of the two orders minus the maximum amount of the two orders.
     /// We include it here to tame some of the non-linearity of the zk circuit, i.e. we
     /// can shortcut some of the computation and implicitly constrain the match result
@@ -439,7 +451,7 @@ pub struct AuthenticatedCommittedMatchResult<N: MpcNetwork + Send, S: SharedValu
     /// sells the quote; 1 implies that party 2 buys the base and sells the quote
     pub direction: AuthenticatedCompressedRistretto<N, S>, // Binary
     /// The execution price; the midpoint between two limit prices if they cross
-    pub execution_price: AuthenticatedCompressedRistretto<N, S>,
+    pub execution_price: AuthenticatedCommittedFixedPoint<N, S>,
     /// The minimum amount of the two orders minus the maximum amount of the two orders.
     /// We include it here to tame some of the non-linearity of the zk circuit, i.e. we
     /// can shortcut some of the computation and implicitly constrain the match result
@@ -460,7 +472,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
             match_res.quote_amount,
             match_res.base_amount,
             match_res.direction,
-            match_res.execution_price,
+            match_res.execution_price.repr,
             match_res.max_minus_min_amount,
             match_res.min_amount_order_index,
         ]

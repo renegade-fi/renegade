@@ -49,7 +49,7 @@ mod test_helpers {
                 quote_mint: 1,
                 base_mint: 2,
                 side: OrderSide::Buy,
-                price: 5,
+                price: FixedPoint::from(5.),
                 amount: 1,
                 timestamp: TIMESTAMP,
             },
@@ -57,7 +57,7 @@ mod test_helpers {
                 quote_mint: 1,
                 base_mint: 3,
                 side: OrderSide::Sell,
-                price: 2,
+                price: FixedPoint::from(2.),
                 amount: 10,
                 timestamp: TIMESTAMP,
             }
@@ -110,7 +110,7 @@ mod test_helpers {
                 order.quote_mint,
                 order.base_mint,
                 order.side as u64,
-                order.price,
+                order.price.to_owned().into(),
                 order.amount,
             ]);
         }

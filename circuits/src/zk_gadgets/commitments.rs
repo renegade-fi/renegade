@@ -40,11 +40,11 @@ where
         for order in wallet.orders.iter() {
             hasher.batch_absorb(
                 &[
-                    order.quote_mint,
-                    order.base_mint,
-                    order.side,
-                    order.price,
-                    order.amount,
+                    order.quote_mint.into(),
+                    order.base_mint.into(),
+                    order.side.into(),
+                    order.price.repr.clone(),
+                    order.amount.into(),
                 ],
                 cs,
             )?;

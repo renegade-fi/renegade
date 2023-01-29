@@ -25,16 +25,19 @@ use mpc_ristretto::{
 };
 use rand_core::OsRng;
 
-use crate::zk_gadgets::select::{
-    CondSelectGadget, CondSelectVectorGadget, MultiproverCondSelectGadget,
-    MultiproverCondSelectVectorGadget,
-};
 use crate::zk_gadgets::{
     comparators::{
         GreaterThanEqGadget, GreaterThanEqZeroGadget, MultiproverGreaterThanEqGadget,
         MultiproverGreaterThanEqZeroGadget,
     },
-    fixed_point::CommittedFixedPoint,
+    fixed_point::{CommittedFixedPoint, FixedPointVar},
+};
+use crate::zk_gadgets::{
+    fixed_point::AuthenticatedFixedPointVar,
+    select::{
+        CondSelectGadget, CondSelectVectorGadget, MultiproverCondSelectGadget,
+        MultiproverCondSelectVectorGadget,
+    },
 };
 use crate::{
     errors::{MpcError, ProverError, VerifierError},
@@ -142,25 +145,36 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // 1. Mux buy/sell side based on the direction of the match
         let prices = MultiproverCondSelectVectorGadget::select(
             cs,
-            &[order2.price.clone(), order1.price.clone()],
-            &[order1.price.clone(), order2.price.clone()],
-            matches.direction.clone(),
+            &[order2.price.repr.clone(), order1.price.repr.clone()],
+            &[order1.price.repr.clone(), order2.price.repr.clone()],
+            matches.direction.clone().into(),
             fabric.clone(),
         )?;
-        let buy_side_price = prices[0].to_owned();
-        let sell_side_price = prices[1].to_owned();
+        let buy_side_price = AuthenticatedFixedPointVar {
+            repr: prices[0].to_owned(),
+        };
+        let sell_side_price = AuthenticatedFixedPointVar {
+            repr: prices[1].to_owned(),
+        };
 
         // 2. Enforce that the buy side price is greater than or equal to the sell side price
         MultiproverGreaterThanEqGadget::<'_, 64 /* bitlength */, N, S>::constrain_greater_than_eq(
-            buy_side_price,
-            sell_side_price,
+            buy_side_price.repr,
+            sell_side_price.repr,
             fabric.clone(),
             cs,
         )?;
 
         // Check that price is correctly computed to be the midpoint
         // i.e. price1 + price2 = 2 * execution_price
-        cs.constrain(&order1.price + &order2.price - Scalar::from(2u64) * &matches.execution_price);
+        let double_execution_price: AuthenticatedFixedPointVar<_, _> = matches
+            .execution_price
+            .mul_integer(
+                MpcLinearCombination::from_scalar(Scalar::from(2u64), fabric.0.clone()),
+                cs,
+            )
+            .map_err(ProverError::Collaborative)?;
+        double_execution_price.constrain_equal(&(&order1.price + &order2.price), cs);
 
         // Constrain the min_amount_order_index to be binary
         // i.e. 0 === min_amount_order_index * (1 - min_amount_order_index)
@@ -210,13 +224,11 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         cs.constrain(lhs - rhs);
 
         // The quote amount should then equal the price multiplied by the base amount
-        let (_, _, expected_quote_amount) = cs
-            .multiply(
-                &matches.base_amount.clone().into(),
-                &matches.execution_price.into(),
-            )
+        let expected_quote_amount = matches
+            .execution_price
+            .mul_integer(&matches.base_amount, cs)
             .map_err(ProverError::Collaborative)?;
-        cs.constrain(expected_quote_amount - &matches.quote_amount);
+        expected_quote_amount.constraint_equal_integer(&matches.quote_amount, cs);
 
         // Ensure the balances cover the orders
         // 1. Mux between the (mint, amount) pairs that the parties are expected to cover by the
@@ -302,23 +314,30 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // Check that the prices of the orders overlap
         // 1. Mux buy/sell side based on the direction of the match
         let prices = CondSelectVectorGadget::select(
-            &[order2.price, order1.price],
-            &[order1.price, order2.price],
-            matches.direction,
+            &[order2.price.repr.clone(), order1.price.repr.clone()],
+            &[order1.price.repr.clone(), order2.price.repr.clone()],
+            matches.direction.into(),
             cs,
         );
-        let buy_side_price = prices[0].to_owned();
-        let sell_side_price = prices[1].to_owned();
+        let buy_side_price = FixedPointVar {
+            repr: prices[0].to_owned(),
+        };
+        let sell_side_price = FixedPointVar {
+            repr: prices[1].to_owned(),
+        };
 
         // 2. Enforce that the buy side price is greater than or equal to the sell side price
         GreaterThanEqGadget::<64 /* bitlength */>::constrain_greater_than_eq(
-            buy_side_price,
-            sell_side_price,
+            buy_side_price.repr,
+            sell_side_price.repr,
             cs,
         );
 
         // Constrain the execution price to the midpoint of the two order prices
-        cs.constrain(order1.price + order2.price - Scalar::from(2u64) * matches.execution_price);
+        let double_execution_price = matches
+            .execution_price
+            .mul_integer(Scalar::from(2u64) * Variable::One(), cs);
+        double_execution_price.constraint_equal(order1.price + order2.price, cs);
 
         // Constrain the min_amount_order_index to be binary
         // i.e. 0 === min_amount_order_index * (1 - min_amount_order_index)
@@ -363,9 +382,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         cs.constrain(lhs - rhs);
 
         // The quote amount should then equal the price multiplied by the base amount
-        let (_, _, expected_quote_amount) =
-            cs.multiply(matches.base_amount.into(), matches.execution_price.into());
-        cs.constrain(expected_quote_amount - matches.quote_amount);
+        let expected_quote_amount = matches.execution_price.mul_integer(matches.base_amount, cs);
+        expected_quote_amount.constraint_equal_integer(matches.quote_amount, cs);
 
         // Ensure that the balances cover the obligations from the match
         // 1. Mux between the (mint, amount) pairs that the parties are expected to cover by the
@@ -512,7 +530,9 @@ impl From<&[CompressedRistretto]> for ValidMatchCommitment {
                 quote_mint: commitments[0],
                 base_mint: commitments[1],
                 side: commitments[2],
-                price: commitments[3],
+                price: CommittedFixedPoint {
+                    repr: commitments[3],
+                },
                 amount: commitments[4],
                 timestamp: commitments[5],
             },
@@ -532,7 +552,9 @@ impl From<&[CompressedRistretto]> for ValidMatchCommitment {
                 quote_mint: commitments[12],
                 base_mint: commitments[13],
                 side: commitments[14],
-                price: commitments[15],
+                price: CommittedFixedPoint {
+                    repr: commitments[15],
+                },
                 amount: commitments[16],
                 timestamp: commitments[17],
             },
@@ -554,7 +576,9 @@ impl From<&[CompressedRistretto]> for ValidMatchCommitment {
                 quote_amount: commitments[26],
                 base_amount: commitments[27],
                 direction: commitments[28],
-                execution_price: commitments[29],
+                execution_price: CommittedFixedPoint {
+                    repr: commitments[29],
+                },
                 max_minus_min_amount: commitments[30],
                 min_amount_order_index: commitments[31],
             },
@@ -669,8 +693,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         // Check input consistency on all orders, balances, and fees
         Self::input_consistency_check(
             &mut prover,
-            &Into::<Vec<MpcVariable<_, _>>>::into(party0_order.clone()),
-            &hash_o1_var,
+            &Into::<Vec<MpcLinearCombination<_, _>>>::into(party0_order.clone()),
+            &hash_o1_var.into(),
             fabric.clone(),
         )?;
         Self::input_consistency_check(
@@ -681,14 +705,14 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         )?;
         Self::input_consistency_check(
             &mut prover,
-            &Into::<Vec<MpcVariable<_, _>>>::into(party0_fee),
-            &hash_f1_var,
+            &Into::<Vec<MpcLinearCombination<_, _>>>::into(party0_fee),
+            &hash_f1_var.into(),
             fabric.clone(),
         )?;
         Self::input_consistency_check(
             &mut prover,
-            &Into::<Vec<MpcVariable<_, _>>>::into(party1_order.clone()),
-            &hash_o2_var,
+            &Into::<Vec<MpcLinearCombination<_, _>>>::into(party1_order.clone()),
+            &hash_o2_var.into(),
             fabric.clone(),
         )?;
         Self::input_consistency_check(
@@ -699,8 +723,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         )?;
         Self::input_consistency_check(
             &mut prover,
-            &Into::<Vec<MpcVariable<_, _>>>::into(party1_fee),
-            &hash_f2_var,
+            &Into::<Vec<MpcLinearCombination<_, _>>>::into(party1_fee),
+            &hash_f2_var.into(),
             fabric.clone(),
         )?;
 
@@ -780,8 +804,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         // Apply constraints to the verifier
         Self::input_consistency_single_prover(
             &mut verifier,
-            &Into::<Vec<Variable>>::into(party0_order),
-            &hash_o1_var,
+            &Into::<Vec<LinearCombination>>::into(party0_order.clone()),
+            &hash_o1_var.into(),
         )
         .map_err(VerifierError::R1CS)?;
         Self::input_consistency_single_prover(
@@ -798,8 +822,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         .map_err(VerifierError::R1CS)?;
         Self::input_consistency_single_prover(
             &mut verifier,
-            &Into::<Vec<Variable>>::into(party1_order),
-            &hash_o2_var,
+            &Into::<Vec<LinearCombination>>::into(party1_order.clone()),
+            &hash_o2_var.into(),
         )
         .map_err(VerifierError::R1CS)?;
         Self::input_consistency_single_prover(

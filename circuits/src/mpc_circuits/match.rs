@@ -11,12 +11,12 @@ use crate::{
     mpc_gadgets::{
         arithmetic::product,
         comparators::{cond_select_vec, eq, less_than_equal, min, ne},
-        modulo::shift_right,
     },
     types::{
         order::AuthenticatedOrder,
         r#match::{AuthenticatedMatchResult, MATCH_SIZE_SCALARS},
     },
+    zk_gadgets::fixed_point::AuthenticatedFixedPoint,
 };
 
 /// Executes a match computation that returns matches from a given order intersection
@@ -34,7 +34,7 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     // Check that the sell side price is below the buy side
     let price_overlap = price_overlap(order1, order2, fabric.clone())?;
 
-    // Check that the orders are on oppostie sides of the book
+    // Check that the orders are on opposite sides of the book
     let opposite_sides = ne::<64, _, _>(&order1.side, &order2.side, fabric.clone())?;
 
     // Aggregate all the checks into a single boolean, each check should be equal to 1 for a valid match
@@ -52,9 +52,13 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         &order1.amount + &order2.amount - Scalar::from(2u64) * &min_base_amount;
 
     // Compute execution price = (price1 + price2) / 2
-    let execution_price = shift_right::<1, _, _>(&(&order1.price + &order2.price), fabric.clone())?;
+    let one_half = AuthenticatedFixedPoint::from_public_f32(0.5, fabric.clone());
+    let execution_price = &(&order1.price + &order2.price) * &one_half;
+
     // The amount of quote token exchanged
-    let quote_exchanged = &min_base_amount * &execution_price;
+    // Round down to the nearest integer value
+    let quote_exchanged_fp = min_base_amount.clone() * &execution_price;
+    let quote_exchanged = quote_exchanged_fp.as_integer(fabric.clone())?;
 
     // Zero out the orders if any of the initial checks failed
     let masked_output = cond_select_vec(
@@ -65,7 +69,7 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
             quote_exchanged,
             min_base_amount, // Base amount exchanged
             order1.side.clone(),
-            execution_price,
+            execution_price.repr,
             max_minus_min_amount,
             min_index,
         ],
@@ -81,7 +85,9 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         quote_amount: masked_output[2].to_owned(),
         base_amount: masked_output[3].to_owned(),
         direction: masked_output[4].to_owned(),
-        execution_price: masked_output[5].to_owned(),
+        execution_price: AuthenticatedFixedPoint {
+            repr: masked_output[5].to_owned(),
+        },
         max_minus_min_amount: masked_output[6].to_owned(),
         min_amount_order_index: masked_output[7].to_owned(),
     })
@@ -100,7 +106,7 @@ fn price_overlap<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     //      (order1.side == sell) == (order1.price <= order2.price)
     let order1_sell = &order1.side;
     let price1_lt_price2 =
-        less_than_equal::<64, _, _>(&order1.price, &order2.price, fabric.clone())?;
+        less_than_equal::<64, _, _>(&order1.price.repr, &order2.price.repr, fabric.clone())?;
 
     eq::<1, _, _>(order1_sell, &price1_lt_price2, fabric)
 }

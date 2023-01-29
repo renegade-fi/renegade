@@ -859,7 +859,7 @@ mod valid_match_encryption_tests {
             quote_amount: 200,
             base_amount: 100,
             direction: 1,
-            execution_price: 2,
+            execution_price: FixedPoint::from(2.),
             max_minus_min_amount: 10,
             min_amount_order_index: 0
         };
