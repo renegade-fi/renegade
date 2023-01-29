@@ -6,7 +6,6 @@ use circuits::{
     zk_gadgets::fixed_point::FixedPoint,
     Allocate, Open,
 };
-use curve25519_dalek::scalar::Scalar;
 use integration_helpers::types::IntegrationTest;
 use num_bigint::BigInt;
 
@@ -30,29 +29,6 @@ fn check_no_match(res: &MatchResult) -> Result<(), String> {
             execution_price: FixedPoint::from(0.),
             max_minus_min_amount: 0,
             min_amount_order_index: 0,
-        },
-    )?;
-
-    Ok(())
-}
-
-/// Checks that a match is correctly representing the expected result
-///
-/// For brevity, the expected result is specified as the vector:
-//      [party1_buy_mint, party1_buy_amount, party2_buy_mint, party2_buy_amount]
-fn check_match_expected_result(res: &MatchResult, expected: &[u64]) -> Result<(), String> {
-    // Party 1 buy side
-    check_single_match(
-        res,
-        &MatchResult {
-            quote_mint: BigInt::from(expected[0]),
-            base_mint: BigInt::from(expected[1]),
-            quote_amount: expected[2],
-            base_amount: expected[3],
-            direction: expected[4],
-            execution_price: FixedPoint::from(Scalar::from(expected[5])),
-            max_minus_min_amount: expected[6] as u32,
-            min_amount_order_index: expected[7] as u8,
         },
     )?;
 
@@ -193,43 +169,45 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
     // Stores the expected result for each test case as a vector
     //      [party1_buy_mint, party1_buy_amount, party2_buy_mint, party2_buy_amount]
     let expected_results = vec![
-        vec![
-            1,   /* quote mint */
-            2,   /* base mint */
-            140, /* quote mint exchanged */
-            20,  /* base mint exchanged */
-            0,   /* base buying party */
-            7,   /* execution price */
-            10,  /* min_minus_max_amount */
-            0,   /* min_amount_index */
-        ],
-        vec![
-            1,   /* quote mint */
-            2,   /* base mint */
-            100, /* quote mint exchanged */
-            10,  /* base mint exchanged */
-            1,   /* base buying party */
-            10,  /* execution price */
-            10,  /* min_minus_max_amount */
-            0,   /* min_amount_index */
-        ],
-        vec![
-            1,   /* quote mint */
-            2,   /* base mint */
-            200, /* quote mint exchanged */
-            20,  /* base mint exchanged */
-            1,   /* base buying party */
-            10,  /* execution price */
-            0,   /* min_minus_max_amount */
-            1,   /* min_amount_index */
-        ],
+        MatchResult {
+            quote_mint: BigInt::from(1),
+            base_mint: BigInt::from(2),
+            quote_amount: 150,
+            base_amount: 20,
+            direction: 0,
+            execution_price: FixedPoint::from(7.5),
+            max_minus_min_amount: 10,
+            min_amount_order_index: 0,
+        },
+        MatchResult {
+            quote_mint: BigInt::from(1),
+            base_mint: BigInt::from(2),
+            quote_amount: 100,
+            base_amount: 10,
+            direction: 1,
+            execution_price: FixedPoint::from(10.),
+            max_minus_min_amount: 10,
+            min_amount_order_index: 0,
+        },
+        MatchResult {
+            quote_mint: BigInt::from(1),
+            base_mint: BigInt::from(2),
+            quote_amount: 200,
+            base_amount: 20,
+            direction: 1,
+            execution_price: FixedPoint::from(10.),
+            max_minus_min_amount: 0,
+            min_amount_order_index: 1,
+        },
     ];
 
     let timestamp = 0; // dummy value
     for (case, expected_res) in test_cases.iter_mut().zip(expected_results.iter()) {
         // Marshal into an order
+        // Explicitly re-represent the price as a fixed point var
         case.push(timestamp);
-        let my_order: Order = (case as &[u64]).try_into().unwrap();
+        let mut my_order: Order = (case as &[u64]).try_into().unwrap();
+        my_order.price = FixedPoint::from_integer(case[3].to_owned());
 
         // Allocate the orders in the network
         let order1 = my_order
@@ -246,7 +224,7 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
             .map_err(|err| format!("Error opening match result: {:?}", err))?;
 
         // Assert that no match occurred
-        check_match_expected_result(&res, expected_res)?;
+        assert_eq!(res, expected_res.clone());
     }
 
     Ok(())

@@ -60,6 +60,12 @@ pub struct FixedPoint {
 }
 
 impl FixedPoint {
+    /// Create a new fixed point representation of the given u64
+    pub fn from_integer(val: u64) -> Self {
+        let val_shifted = Scalar::from(val) * *TWO_TO_M_SCALAR;
+        Self { repr: val_shifted }
+    }
+
     /// Commit to the fixed point variable as a public input in a given constraint system
     pub fn commit_public<CS: RandomizableConstraintSystem>(&self, cs: &mut CS) -> FixedPointVar {
         let repr = cs.commit_public(self.repr);
@@ -386,6 +392,17 @@ pub struct AuthenticatedFixedPoint<N: MpcNetwork + Send, S: SharedValueSource<Sc
     pub(crate) repr: AuthenticatedScalar<N, S>,
 }
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedFixedPoint<N, S> {
+    /// Create an authenticated fixed-point variable from a given scalar integer
+    pub fn from_integer(val: Scalar, fabric: SharedFabric<N, S>) -> Self {
+        // Shift the scalar before allocating
+        let val_shifted = val * *TWO_TO_M_SCALAR;
+        Self {
+            repr: fabric.borrow_fabric().allocate_public_scalar(val_shifted),
+        }
+    }
+}
+
 /// Removes the requirement of the generics `N` and `S` to be `Clone`
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for AuthenticatedFixedPoint<N, S> {
     fn clone(&self) -> Self {
@@ -585,7 +602,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     }
 
     /// Constrain a fixed point variable to equal a native field element
-    pub fn constraint_equal_integer<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
+    pub fn constrain_equal_integer<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
         &self,
         rhs: &MpcVariable<N, S>,
         cs: &mut CS,

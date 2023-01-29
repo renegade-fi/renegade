@@ -47,17 +47,42 @@ pub(crate) const TRANSCRIPT_SEED: &str = "merlin seed";
  * Helpers
  */
 
-/// A debug macro used to print the value of a constraint system variable;
-/// used for debugging
+/// A debug macro used for printing wires in a single-prover circuit during execution
 #[allow(unused)]
-macro_rules! print_debug {
-    ($x:expr, $cs:ident) => {
+macro_rules! print_wire {
+    ($x:expr, $cs:ident) => {{
+        use crypto::fields::scalar_to_biguint;
         let x_eval = $cs.eval(&$x.into());
-        println!("{}_eval: {:?}", stringify!($x), scalar_to_biguint(&x_eval));
-    };
+        println!("eval({}): {:?}", stringify!($x), scalar_to_biguint(&x_eval));
+    }};
 }
+
+/// A debug macro used for printing wires in a raw MPC circuit during execution
 #[allow(unused)]
-pub(crate) use print_debug;
+macro_rules! print_mpc_wire {
+    ($x:expr) => {{
+        use crypto::fields::scalar_to_biguint;
+        let x_eval = $x.open().unwrap().to_scalar();
+        println!("eval({}): {:?}", stringify!($x), scalar_to_biguint(&x_eval));
+    }};
+}
+
+/// A debug macro used for printing wires in an MPC-ZK circuit during execution
+#[allow(unused)]
+macro_rules! print_multiprover_wire {
+    ($x:expr, $cs:ident) => {{
+        use crypto::fields::scalar_to_biguint;
+        let x_eval = $cs.eval(&$x.into()).unwrap().open().unwrap().to_scalar();
+        println!("eval({}): {:?}", stringify!($x), scalar_to_biguint(&x_eval));
+    }};
+}
+
+#[allow(unused)]
+pub(crate) use print_mpc_wire;
+#[allow(unused)]
+pub(crate) use print_multiprover_wire;
+#[allow(unused)]
+pub(crate) use print_wire;
 
 /// Represents 2^m as a scalar
 pub fn scalar_2_to_m(m: usize) -> Scalar {

@@ -15,7 +15,7 @@ use circuits::{
     zk_circuits::valid_match_mpc::{
         ValidMatchMpcCircuit, ValidMatchMpcStatement, ValidMatchMpcWitness,
     },
-    zk_gadgets::fixed_point::FixedPoint,
+    zk_gadgets::fixed_point::{AuthenticatedFixedPoint, FixedPoint},
 };
 use crypto::fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField};
 use curve25519_dalek::scalar::Scalar;
@@ -69,8 +69,11 @@ fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
 
     // Match the values
     let min_amount = cmp::min(party0_values[2], party1_values[2]);
-    // Discretize the price in the same way the circuit does, i.e. with shr
-    let price = (party0_values[1] + party1_values[1]) >> 1;
+
+    // The price is represented as a fixed-point variable; convert it to its true value
+    // by shifting right by the fixed-point precision (32). Add an additional shift right
+    // by 1 to emulate division by 2 for the midpoint
+    let price = (party0_values[1] + party1_values[1]) >> 33;
 
     let shared_values = fabric
         .borrow_fabric()
@@ -95,7 +98,8 @@ fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         quote_amount: shared_values[2].to_owned(),
         base_amount: shared_values[3].to_owned(),
         direction: shared_values[4].to_owned(),
-        execution_price: shared_values[5].to_owned().into(),
+        // Shift the price into its raw fixed point representation
+        execution_price: AuthenticatedFixedPoint::from_integer(Scalar::from(price), fabric),
         max_minus_min_amount: shared_values[6].to_owned(),
         min_amount_order_index: shared_values[7].to_owned(),
     })
@@ -221,7 +225,7 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
             } else {
                 OrderSide::Sell
             },
-            price: FixedPoint::from(Scalar::from(my_order[3])),
+            price: FixedPoint::from_integer(my_order[3]),
             amount: my_order[4],
             timestamp,
         },
