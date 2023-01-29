@@ -3,8 +3,10 @@
 use circuits::{
     mpc_circuits::r#match::compute_match,
     types::{order::Order, r#match::MatchResult},
+    zk_gadgets::fixed_point::FixedPoint,
     Allocate, Open,
 };
+use curve25519_dalek::scalar::Scalar;
 use integration_helpers::types::IntegrationTest;
 use num_bigint::BigInt;
 
@@ -25,7 +27,7 @@ fn check_no_match(res: &MatchResult) -> Result<(), String> {
             quote_amount: 0,
             base_amount: 0,
             direction: 0,
-            execution_price: 0,
+            execution_price: FixedPoint::from(0.),
             max_minus_min_amount: 0,
             min_amount_order_index: 0,
         },
@@ -48,7 +50,7 @@ fn check_match_expected_result(res: &MatchResult, expected: &[u64]) -> Result<()
             quote_amount: expected[2],
             base_amount: expected[3],
             direction: expected[4],
-            execution_price: expected[5],
+            execution_price: FixedPoint::from(Scalar::from(expected[5])),
             max_minus_min_amount: expected[6] as u32,
             min_amount_order_index: expected[7] as u8,
         },

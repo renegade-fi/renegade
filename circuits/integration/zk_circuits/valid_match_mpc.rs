@@ -57,7 +57,11 @@ fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     my_order: &Order,
     fabric: SharedFabric<N, S>,
 ) -> Result<AuthenticatedMatchResult<N, S>, String> {
-    let my_values = [my_order.side as u64, my_order.price, my_order.amount];
+    let my_values = [
+        my_order.side as u64,
+        my_order.price.clone().into(),
+        my_order.amount,
+    ];
     let party0_values =
         batch_share_plaintext_u64(&my_values, 0 /* owning_party */, fabric.0.clone());
     let party1_values =
@@ -91,7 +95,7 @@ fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         quote_amount: shared_values[2].to_owned(),
         base_amount: shared_values[3].to_owned(),
         direction: shared_values[4].to_owned(),
-        execution_price: shared_values[5].to_owned(),
+        execution_price: shared_values[5].to_owned().into(),
         max_minus_min_amount: shared_values[6].to_owned(),
         min_amount_order_index: shared_values[7].to_owned(),
     })
@@ -114,7 +118,7 @@ fn setup_witness_and_statement<N: MpcNetwork + Send, S: SharedValueSource<Scalar
         order.quote_mint,
         order.base_mint,
         order.side as u64,
-        order.price,
+        order.price.clone().into(),
         order.amount,
     ]);
     let my_balance_hash = hash_values_arkworks(&[balance.mint, balance.amount]);
@@ -217,7 +221,7 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
             } else {
                 OrderSide::Sell
             },
-            price: my_order[3],
+            price: FixedPoint::from(Scalar::from(my_order[3])),
             amount: my_order[4],
             timestamp,
         },

@@ -3,14 +3,15 @@
 
 use std::ops::{Add, Mul, Neg, Sub};
 
-use bigdecimal::ToPrimitive;
-use crypto::fields::{biguint_to_scalar, scalar_to_bigdecimal};
+use bigdecimal::{BigDecimal, ToPrimitive};
+use crypto::fields::{biguint_to_scalar, scalar_to_bigdecimal, scalar_to_bigint};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use lazy_static::lazy_static;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, Prover, RandomizableConstraintSystem, Variable, Verifier},
     r1cs_mpc::{
-        MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MultiproverError,
+        MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MpcVariable,
+        MultiproverError,
     },
 };
 use mpc_ristretto::{
@@ -23,7 +24,8 @@ use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    errors::MpcError, mpc::SharedFabric, Allocate, CommitProver, CommitSharedProver, CommitVerifier,
+    errors::MpcError, mpc::SharedFabric, mpc_gadgets::modulo::shift_right, Allocate, CommitProver,
+    CommitSharedProver, CommitVerifier,
 };
 
 use super::comparators::EqGadget;
@@ -63,6 +65,12 @@ impl FixedPoint {
         let repr = cs.commit_public(self.repr);
         FixedPointVar { repr: repr.into() }
     }
+
+    /// Return the represented value as an f64
+    pub fn to_f64(&self) -> f64 {
+        let dec = BigDecimal::from(scalar_to_bigint(&self.repr));
+        dec.to_f64().unwrap()
+    }
 }
 
 impl From<f32> for FixedPoint {
@@ -88,6 +96,14 @@ impl From<Scalar> for FixedPoint {
 impl From<FixedPoint> for Scalar {
     fn from(fp: FixedPoint) -> Self {
         fp.repr
+    }
+}
+
+impl From<u64> for FixedPoint {
+    fn from(val: u64) -> Self {
+        Self {
+            repr: Scalar::from(val),
+        }
     }
 }
 
@@ -364,10 +380,53 @@ impl Sub<Variable> for FixedPointVar {
 }
 
 /// A fixed point variable that has been allocated in an MPC fabric
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct AuthenticatedFixedPoint<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The underlying scalar representing the fixed point variable
     pub(crate) repr: AuthenticatedScalar<N, S>,
+}
+
+/// Removes the requirement of the generics `N` and `S` to be `Clone`
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for AuthenticatedFixedPoint<N, S> {
+    fn clone(&self) -> Self {
+        Self {
+            repr: self.repr.clone(),
+        }
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedScalar<N, S>>
+    for AuthenticatedFixedPoint<N, S>
+{
+    fn from(val: AuthenticatedScalar<N, S>) -> Self {
+        Self { repr: val }
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedFixedPoint<N, S> {
+    /// Create an authenticated fixed point variable from a public floating point
+    pub fn from_public_f32(val: f32, fabric: SharedFabric<N, S>) -> Self {
+        // Shift the floating point into its scalar representation
+        let shifted_val = val * (2u64.pow(DEFAULT_PRECISION as u32) as f32);
+        assert_eq!(
+            shifted_val,
+            shifted_val.floor(),
+            "Given value exceeds precision of constraint system"
+        );
+
+        let scalar_repr = Scalar::from(shifted_val as u64);
+        Self {
+            repr: fabric.borrow_fabric().allocate_public_scalar(scalar_repr),
+        }
+    }
+
+    /// Cast the fixed point to an integer by shifting right by the fixed-point fractional precision
+    pub fn as_integer(
+        &self,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<AuthenticatedScalar<N, S>, MpcError> {
+        shift_right::<DEFAULT_PRECISION, N, S>(&self.repr, fabric)
+    }
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for FixedPoint {
@@ -394,7 +453,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&AuthenticatedFixed
 
     fn mul(self, rhs: &AuthenticatedFixedPoint<N, S>) -> Self::Output {
         // Multiply representations directly then reduce
-        let res_repr = self.repr * rhs.repr;
+        let res_repr = self.repr.clone() * rhs.repr.clone();
         AuthenticatedFixedPoint {
             repr: *TWO_TO_NEG_M * res_repr,
         }
@@ -408,7 +467,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&AuthenticatedScala
 
     fn mul(self, rhs: &AuthenticatedScalar<N, S>) -> Self::Output {
         AuthenticatedFixedPoint {
-            repr: self.repr * rhs,
+            repr: self.repr.clone() * rhs,
         }
     }
 }
@@ -420,7 +479,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&AuthenticatedFixed
 
     fn mul(self, rhs: &AuthenticatedFixedPoint<N, S>) -> Self::Output {
         AuthenticatedFixedPoint {
-            repr: self * rhs.repr,
+            repr: self * rhs.repr.clone(),
         }
     }
 }
@@ -432,7 +491,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&AuthenticatedFixed
 
     fn add(self, rhs: &AuthenticatedFixedPoint<N, S>) -> Self::Output {
         AuthenticatedFixedPoint {
-            repr: self.repr + rhs.repr,
+            repr: self.repr.clone() + rhs.repr.clone(),
         }
     }
 }
@@ -447,7 +506,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&AuthenticatedScala
         // Shift the integer
         let rhs_shifted = *TWO_TO_M_SCALAR * rhs;
         AuthenticatedFixedPoint {
-            repr: self.repr + rhs_shifted,
+            repr: self.repr.clone() + rhs_shifted,
         }
     }
 }
@@ -467,7 +526,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for &AuthenticatedF
 
     fn neg(self) -> Self::Output {
         AuthenticatedFixedPoint {
-            repr: self.repr.neg(),
+            repr: self.repr.clone().neg(),
         }
     }
 }
@@ -477,6 +536,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&AuthenticatedFixed
 {
     type Output = AuthenticatedFixedPoint<N, S>;
 
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: &AuthenticatedFixedPoint<N, S>) -> Self::Output {
         self + &rhs.neg()
     }
@@ -487,6 +547,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&AuthenticatedScala
 {
     type Output = AuthenticatedFixedPoint<N, S>;
 
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: &AuthenticatedScalar<N, S>) -> Self::Output {
         self + &rhs.neg()
     }
@@ -497,6 +558,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&AuthenticatedFixed
 {
     type Output = AuthenticatedFixedPoint<N, S>;
 
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: &AuthenticatedFixedPoint<N, S>) -> Self::Output {
         self + &rhs.neg()
     }
@@ -508,6 +570,30 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&AuthenticatedFixed
 pub struct AuthenticatedFixedPointVar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The underlying scalar representing the fixed point variable
     pub(crate) repr: MpcLinearCombination<N, S>,
+}
+
+impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
+    AuthenticatedFixedPointVar<N, S>
+{
+    /// Constrain two authenticated fixed point variables to equal one another
+    pub fn constrain_equal<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
+        &self,
+        rhs: &Self,
+        cs: &mut CS,
+    ) {
+        cs.constrain(self.repr.clone() - rhs.repr.clone());
+    }
+
+    /// Constrain a fixed point variable to equal a native field element
+    pub fn constraint_equal_integer<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
+        &self,
+        rhs: &MpcVariable<N, S>,
+        cs: &mut CS,
+    ) {
+        // Shift the integer
+        let shifted_rhs = *TWO_TO_M_SCALAR * rhs;
+        cs.constrain(self.repr.clone() - shifted_rhs);
+    }
 }
 
 /// Explicit clone implementation to remove the bounds on generics N, S to be `Clone`
@@ -560,7 +646,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
     fn add(self, rhs: &'a AuthenticatedFixedPointVar<N, S>) -> Self::Output {
         AuthenticatedFixedPointVar {
-            repr: self.repr + rhs.repr,
+            repr: self.repr.clone() + rhs.repr.clone(),
         }
     }
 }
@@ -579,7 +665,7 @@ impl<
         // Shift the integer into a fixed point representation
         let rhs_shifted = *TWO_TO_M_SCALAR * rhs.into();
         AuthenticatedFixedPointVar {
-            repr: self.repr + rhs_shifted,
+            repr: self.repr.clone() + rhs_shifted,
         }
     }
 }
@@ -602,7 +688,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> Neg
 
     fn neg(self) -> Self::Output {
         AuthenticatedFixedPointVar {
-            repr: self.repr * Scalar::one().neg(),
+            repr: self.repr.clone() * Scalar::one().neg(),
         }
     }
 }
@@ -612,6 +698,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 {
     type Output = AuthenticatedFixedPointVar<N, S>;
 
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: &'a AuthenticatedFixedPointVar<N, S>) -> Self::Output {
         self + &rhs.neg()
     }
@@ -626,6 +713,7 @@ impl<
 {
     type Output = AuthenticatedFixedPointVar<N, S>;
 
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: L) -> Self::Output {
         self + rhs.into().neg()
     }
@@ -636,6 +724,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 {
     type Output = AuthenticatedFixedPointVar<N, S>;
 
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: &'a AuthenticatedFixedPointVar<N, S>) -> Self::Output {
         self + &rhs.neg()
     }

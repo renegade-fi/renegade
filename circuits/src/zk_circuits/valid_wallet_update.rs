@@ -31,6 +31,7 @@ use crate::{
         comparators::{
             EqGadget, EqVecGadget, EqZeroGadget, GreaterThanEqZeroGadget, NotEqualGadget,
         },
+        fixed_point::FixedPointVar,
         gates::{AndGate, OrGate},
         merkle::PoseidonMerkleHashGadget,
         select::CondSelectGadget,
@@ -356,7 +357,9 @@ where
                 base_mint: Variable::Zero(),
                 side: Variable::Zero(),
                 amount: Variable::Zero(),
-                price: Variable::Zero(),
+                price: FixedPointVar {
+                    repr: Variable::Zero().into(),
+                },
                 timestamp: Variable::Zero(),
             },
             cs,
@@ -371,18 +374,18 @@ where
     ) -> Variable {
         EqVecGadget::eq_vec(
             &[
-                order1.quote_mint,
-                order1.base_mint,
-                order1.side,
-                order1.amount,
-                order1.price,
+                order1.quote_mint.into(),
+                order1.base_mint.into(),
+                order1.side.into(),
+                order1.amount.into(),
+                order1.price.repr.clone(),
             ],
             &[
-                order2.quote_mint,
-                order2.base_mint,
-                order2.side,
-                order2.amount,
-                order2.price,
+                order2.quote_mint.into(),
+                order2.base_mint.into(),
+                order2.side.into(),
+                order2.amount.into(),
+                order2.price.repr.clone(),
             ],
             cs,
         )

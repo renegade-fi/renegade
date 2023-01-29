@@ -2,17 +2,22 @@
 use crate::{
     errors::{MpcError, TypeConversionError},
     mpc::SharedFabric,
+    zk_gadgets::fixed_point::{
+        AuthenticatedCommittedFixedPoint, AuthenticatedFixedPoint, AuthenticatedFixedPointVar,
+        CommittedFixedPoint, FixedPoint, FixedPointVar,
+    },
     Allocate, CommitProver, CommitSharedProver, CommitVerifier,
 };
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
-    r1cs::{Prover, Variable, Verifier},
-    r1cs_mpc::{MpcProver, MpcVariable},
+    r1cs::{LinearCombination, Prover, Variable, Verifier},
+    r1cs_mpc::{MpcLinearCombination, MpcProver, MpcVariable},
 };
 use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto,
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource,
+    mpc_scalar::scalar_to_u64, network::MpcNetwork,
 };
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -27,8 +32,8 @@ pub struct Order {
     pub base_mint: u64,
     /// The side this order is for (0 = buy, 1 = sell)
     pub side: OrderSide,
-    /// The limit price to be executed at, in units of quote
-    pub price: u64,
+    /// The limit price to be executed at, in units of quote per base
+    pub price: FixedPoint,
     /// The amount of base currency to buy or sell
     pub amount: u64,
     /// A timestamp indicating when the order was placed, set by the user
@@ -63,7 +68,7 @@ impl TryFrom<&[u64]> for Order {
             } else {
                 OrderSide::Sell
             },
-            price: value[3],
+            price: Scalar::from(value[3]).into(),
             amount: value[4],
             timestamp: value[5],
         })
@@ -79,7 +84,9 @@ impl From<&Order> for Vec<u64> {
             o.quote_mint,
             o.base_mint,
             o.side.into(),
-            o.price,
+            // Re-interpret the bytes as a u64 and serialize that way, the conversion
+            // in the above trait implementation reverses this process directly
+            scalar_to_u64(&o.price.repr),
             o.amount,
             o.timestamp,
         ]
@@ -112,7 +119,7 @@ impl From<OrderSide> for u64 {
 }
 
 /// An order with values allocated in a single-prover constraint system
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct OrderVar {
     /// The mint (ERC-20 contract address) of the quote token
     pub quote_mint: Variable,
@@ -121,22 +128,22 @@ pub struct OrderVar {
     /// The side this order is for (0 = buy, 1 = sell)
     pub side: Variable,
     /// The limit price to be executed at, in units of quote
-    pub price: Variable,
+    pub price: FixedPointVar,
     /// The amount of base currency to buy or sell
     pub amount: Variable,
     /// A timestamp indicating when the order was placed, set by the user
     pub timestamp: Variable,
 }
 
-impl From<OrderVar> for Vec<Variable> {
+impl From<OrderVar> for Vec<LinearCombination> {
     fn from(order: OrderVar) -> Self {
         vec![
-            order.quote_mint,
-            order.base_mint,
-            order.side,
-            order.price,
-            order.amount,
-            order.timestamp,
+            order.quote_mint.into(),
+            order.base_mint.into(),
+            order.side.into(),
+            order.price.repr,
+            order.amount.into(),
+            order.timestamp.into(),
         ]
     }
 }
@@ -157,7 +164,7 @@ impl CommitProver for Order {
             prover.commit(Scalar::from(self.base_mint), Scalar::random(rng));
         let (side_comm, side_var) =
             prover.commit(Scalar::from(self.side as u64), Scalar::random(rng));
-        let (price_comm, price_var) = prover.commit(Scalar::from(self.price), Scalar::random(rng));
+        let (price_var, price_comm) = self.price.commit_prover(rng, prover).unwrap();
         let (amount_comm, amount_var) =
             prover.commit(Scalar::from(self.amount), Scalar::random(rng));
         let (timestamp_comm, timestamp_var) =
@@ -194,7 +201,7 @@ pub struct CommittedOrder {
     /// The side this order is for (0 = buy, 1 = sell)
     pub side: CompressedRistretto,
     /// The limit price to be executed at, in units of quote
-    pub price: CompressedRistretto,
+    pub price: CommittedFixedPoint,
     /// The amount of base currency to buy or sell
     pub amount: CompressedRistretto,
     /// A timestamp indicating when the order was placed, set by the user
@@ -209,7 +216,7 @@ impl CommitVerifier for CommittedOrder {
         let quote_var = verifier.commit(self.quote_mint);
         let base_var = verifier.commit(self.base_mint);
         let side_var = verifier.commit(self.side);
-        let price_var = verifier.commit(self.price);
+        let price_var = self.price.commit_verifier(verifier).unwrap();
         let amount_var = verifier.commit(self.amount);
         let timestamp_var = verifier.commit(self.timestamp);
 
@@ -234,7 +241,7 @@ pub struct AuthenticatedOrder<N: MpcNetwork + Send, S: SharedValueSource<Scalar>
     /// The side this order is for (0 = buy, 1 = sell)
     pub side: AuthenticatedScalar<N, S>,
     /// The limit price to be executed at, in units of quote
-    pub price: AuthenticatedScalar<N, S>,
+    pub price: AuthenticatedFixedPoint<N, S>,
     /// The amount of base currency to buy or sell
     pub amount: AuthenticatedScalar<N, S>,
     /// A timestamp indicating when the order was placed, set by the user
@@ -258,7 +265,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Orde
                     self.quote_mint,
                     self.base_mint,
                     self.side.into(),
-                    self.price,
+                    scalar_to_u64(&self.price.repr),
                     self.amount,
                     self.timestamp,
                 ],
@@ -269,7 +276,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Orde
             quote_mint: shared_values[0].to_owned(),
             base_mint: shared_values[1].to_owned(),
             side: shared_values[2].to_owned(),
-            price: shared_values[3].to_owned(),
+            price: AuthenticatedFixedPoint {
+                repr: shared_values[3].to_owned(),
+            },
             amount: shared_values[4].to_owned(),
             timestamp: shared_values[5].to_owned(),
         })
@@ -287,7 +296,7 @@ pub struct AuthenticatedOrderVar<N: MpcNetwork + Send, S: SharedValueSource<Scal
     /// The side this order is for (0 = buy, 1 = sell)
     pub side: MpcVariable<N, S>,
     /// The limit price to be executed at, in units of quote
-    pub price: MpcVariable<N, S>,
+    pub price: AuthenticatedFixedPointVar<N, S>,
     /// The amount of base currency to buy or sell
     pub amount: MpcVariable<N, S>,
     /// A timestamp indicating when the order was placed, set by the user
@@ -308,16 +317,16 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for Authenticated
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedOrderVar<N, S>>
-    for Vec<MpcVariable<N, S>>
+    for Vec<MpcLinearCombination<N, S>>
 {
     fn from(order: AuthenticatedOrderVar<N, S>) -> Self {
         vec![
-            order.quote_mint,
-            order.base_mint,
-            order.side,
-            order.price,
-            order.amount,
-            order.timestamp,
+            order.quote_mint.into(),
+            order.base_mint.into(),
+            order.side.into(),
+            order.price.repr.to_owned(),
+            order.amount.into(),
+            order.timestamp.into(),
         ]
     }
 }
@@ -341,7 +350,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                     Scalar::from(self.quote_mint),
                     Scalar::from(self.base_mint),
                     Scalar::from(self.side as u64),
-                    Scalar::from(self.price),
+                    Scalar::from(self.price.to_owned()),
                     Scalar::from(self.amount),
                     Scalar::from(self.timestamp),
                 ],
@@ -354,7 +363,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 quote_mint: shared_vars[0].to_owned(),
                 base_mint: shared_vars[1].to_owned(),
                 side: shared_vars[2].to_owned(),
-                price: shared_vars[3].to_owned(),
+                price: AuthenticatedFixedPointVar {
+                    repr: shared_vars[3].to_owned().into(),
+                },
                 amount: shared_vars[4].to_owned(),
                 timestamp: shared_vars[5].to_owned(),
             },
@@ -362,7 +373,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 quote_mint: shared_comm[0].to_owned(),
                 base_mint: shared_comm[1].to_owned(),
                 side: shared_comm[2].to_owned(),
-                price: shared_comm[3].to_owned(),
+                price: AuthenticatedCommittedFixedPoint {
+                    repr: shared_comm[3].to_owned(),
+                },
                 amount: shared_comm[4].to_owned(),
                 timestamp: shared_comm[5].to_owned(),
             },
@@ -380,7 +393,7 @@ pub struct AuthenticatedCommittedOrder<N: MpcNetwork + Send, S: SharedValueSourc
     /// The side this order is for (0 = buy, 1 = sell)
     pub side: AuthenticatedCompressedRistretto<N, S>,
     /// The limit price to be executed at, in units of quote
-    pub price: AuthenticatedCompressedRistretto<N, S>,
+    pub price: AuthenticatedCommittedFixedPoint<N, S>,
     /// The amount of base currency to buy or sell
     pub amount: AuthenticatedCompressedRistretto<N, S>,
     /// A timestamp indicating when the order was placed, set by the user
@@ -410,7 +423,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedCommi
             order.quote_mint,
             order.base_mint,
             order.side,
-            order.price,
+            order.price.repr,
             order.amount,
             order.timestamp,
         ]
@@ -442,7 +455,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
             quote_mint: quote_var,
             base_mint: base_var,
             side: side_var,
-            price: price_var,
+            price: FixedPointVar {
+                repr: price_var.into(),
+            },
             amount: amount_var,
             timestamp: timestamp_var,
         })

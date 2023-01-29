@@ -56,7 +56,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                     Scalar::from(order.quote_mint),
                     Scalar::from(order.base_mint),
                     Scalar::from(order.side as u64),
-                    Scalar::from(order.price),
+                    Scalar::from(order.price.to_owned()),
                     Scalar::from(order.amount),
                     Scalar::from(order.timestamp),
                     Scalar::from(balance.mint),
@@ -75,7 +75,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 quote_mint: shared_vars[0].to_owned(),
                 base_mint: shared_vars[1].to_owned(),
                 side: shared_vars[2].to_owned(),
-                price: shared_vars[3].to_owned(),
+                price: AuthenticatedFixedPointVar {
+                    repr: shared_vars[3].to_owned().into(),
+                },
                 amount: shared_vars[4].to_owned(),
                 timestamp: shared_vars[5].to_owned(),
             },
@@ -88,7 +90,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 gas_addr: shared_vars[9].to_owned(),
                 gas_token_amount: shared_vars[10].to_owned(),
                 percentage_fee: AuthenticatedFixedPointVar {
-                    repr: shared_vars[11].to_owned(),
+                    repr: shared_vars[11].to_owned().into(),
                 },
             },
         );
@@ -98,7 +100,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 quote_mint: shared_comm[0].to_owned(),
                 base_mint: shared_comm[1].to_owned(),
                 side: shared_comm[2].to_owned(),
-                price: shared_comm[3].to_owned(),
+                price: AuthenticatedCommittedFixedPoint {
+                    repr: shared_comm[3].to_owned(),
+                },
                 amount: shared_comm[4].to_owned(),
                 timestamp: shared_comm[5].to_owned(),
             },

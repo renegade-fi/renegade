@@ -13,7 +13,7 @@ use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, Prover, Variable, Verifier},
-    r1cs_mpc::{MpcProver, MpcVariable},
+    r1cs_mpc::{MpcLinearCombination, MpcProver, MpcVariable},
 };
 use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto,
@@ -272,13 +272,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for Authenticated
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedFeeVar<N, S>>
-    for Vec<MpcVariable<N, S>>
+    for Vec<MpcLinearCombination<N, S>>
 {
     fn from(fee: AuthenticatedFeeVar<N, S>) -> Self {
         vec![
-            fee.settle_key,
-            fee.gas_addr,
-            fee.gas_token_amount,
+            fee.settle_key.into(),
+            fee.gas_addr.into(),
+            fee.gas_token_amount.into(),
             fee.percentage_fee.repr,
         ]
     }
@@ -315,7 +315,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 gas_addr: shared_vars[1].to_owned(),
                 gas_token_amount: shared_vars[2].to_owned(),
                 percentage_fee: AuthenticatedFixedPointVar {
-                    repr: shared_vars[3].to_owned(),
+                    repr: shared_vars[3].to_owned().into(),
                 },
             },
             // TODO: implement clone for AuthenticatedCompressedRistretto

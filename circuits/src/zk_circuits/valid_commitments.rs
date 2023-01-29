@@ -76,7 +76,7 @@ where
         // Verify that the given balance, order, and fee are all valid members of the wallet
         Self::verify_wallet_contains_balance(witness.balance, &witness.wallet, cs);
         Self::verify_wallet_contains_balance(witness.fee_balance, &witness.wallet, cs);
-        Self::verify_wallet_contains_order(witness.order, &witness.wallet, cs);
+        Self::verify_wallet_contains_order(witness.order.clone(), &witness.wallet, cs);
         Self::verify_wallet_contains_fee(witness.fee.clone(), &witness.wallet, cs);
 
         // Verify that the balance is for the correct mint
@@ -131,8 +131,8 @@ where
         // orders in the wallet
         let mut orders_equal_sum: LinearCombination = Variable::Zero().into();
         for wallet_order in wallet.orders.iter() {
-            let o1_vars: Vec<Variable> = order.into();
-            let o2_vars: Vec<Variable> = (*wallet_order).into();
+            let o1_vars: Vec<LinearCombination> = order.to_owned().into();
+            let o2_vars: Vec<LinearCombination> = wallet_order.clone().into();
 
             orders_equal_sum += EqVecGadget::eq_vec(&o1_vars, &o2_vars, cs);
         }
@@ -423,6 +423,7 @@ mod valid_commitments_test {
             compute_wallet_commitment, compute_wallet_match_nullifier, create_wallet_opening,
             SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
         },
+        zk_gadgets::fixed_point::FixedPoint,
         CommitProver,
     };
 
@@ -619,7 +620,7 @@ mod valid_commitments_test {
             quote_mint: 1,
             base_mint: 3,
             side: OrderSide::Buy,
-            price: 10,
+            price: FixedPoint::from(10.),
             amount: 15,
             timestamp: 0,
         };
