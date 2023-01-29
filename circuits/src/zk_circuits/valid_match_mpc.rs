@@ -228,7 +228,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
             .execution_price
             .mul_integer(&matches.base_amount, cs)
             .map_err(ProverError::Collaborative)?;
-        expected_quote_amount.constraint_equal_integer(&matches.quote_amount, cs);
+        expected_quote_amount.constrain_equal_integer(&matches.quote_amount, cs);
 
         // Ensure the balances cover the orders
         // 1. Mux between the (mint, amount) pairs that the parties are expected to cover by the
