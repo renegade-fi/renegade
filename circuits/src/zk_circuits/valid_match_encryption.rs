@@ -836,6 +836,8 @@ mod valid_match_encryption_tests {
     use curve25519_dalek::scalar::Scalar;
     use integration_helpers::mpc_network::field::get_ristretto_group_modulus;
     use lazy_static::lazy_static;
+    use merlin::Transcript;
+    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
     use mpc_ristretto::mpc_scalar::scalar_to_u64;
     use num_bigint::{BigInt, BigUint};
     use rand_core::{OsRng, RngCore};
@@ -852,6 +854,7 @@ mod valid_match_encryption_tests {
             elgamal::{ElGamalCiphertext, DEFAULT_ELGAMAL_GENERATOR},
             fixed_point::FixedPoint,
         },
+        CommitProver,
     };
 
     use super::{ValidMatchEncryption, ValidMatchEncryptionStatement, ValidMatchEncryptionWitness};
@@ -1110,5 +1113,25 @@ mod valid_match_encryption_tests {
         let res =
             bulletproof_prove_and_verify::<ValidMatchEncryption<ELGAMAL_BITS>>(witness, statement);
         assert!(res.is_ok());
+    }
+
+    /// Tests a valid witness and statement, this time with the parties on the opposite order side
+    #[test]
+    fn test_swapped_direction() {
+        let mut rng = OsRng {};
+        let mut match_ = DUMMY_MATCH.clone();
+        match_.direction = 1 - match_.direction;
+        let (witness, statement) = create_dummy_witness_and_statement(match_);
+
+        let mut prover_transcript = Transcript::new("test".as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+        let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+
+        ValidMatchEncryption::<ELGAMAL_BITS>::circuit(witness_var, statement_var, &mut prover)
+            .unwrap();
+        assert!(prover.constraints_satisfied());
     }
 }
