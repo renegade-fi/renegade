@@ -1,4 +1,4 @@
-//! Groups logic around arithemtic comparator circuits
+//! Groups logic around arithmetic comparator circuits
 
 use std::iter;
 
@@ -172,7 +172,7 @@ pub fn kary_or<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     constant_round_or_impl(&unblinded_shared_bits, fabric)
 }
 
-// TODO: Optimize this into parallel blocks for larger lenth inputs
+// TODO: Optimize this into parallel blocks for larger length inputs
 /// Computes the "OR" of all input bits using a public polynomial.
 ///
 /// Specifically, the method evaluates the polynomial:

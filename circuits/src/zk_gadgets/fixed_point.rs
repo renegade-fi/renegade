@@ -4,7 +4,7 @@
 use std::ops::{Add, Mul, Neg, Sub};
 
 use bigdecimal::{BigDecimal, ToPrimitive};
-use crypto::fields::{biguint_to_scalar, scalar_to_bigdecimal, scalar_to_bigint};
+use crypto::fields::{bigint_to_scalar, biguint_to_scalar, scalar_to_bigdecimal, scalar_to_bigint};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use lazy_static::lazy_static;
 use mpc_bulletproof::{
@@ -28,7 +28,7 @@ use crate::{
     CommitSharedProver, CommitVerifier,
 };
 
-use super::comparators::EqGadget;
+use super::{arithmetic::DivRemGadget, comparators::EqGadget};
 
 /// The default fixed point decimal precision in bits
 /// i.e. the number of bits allocated to a fixed point's decimal
@@ -48,6 +48,10 @@ lazy_static! {
         two_to_m_scalar.invert()
     };
 }
+
+// ------------------------------
+// | Native Type Implementation |
+// ------------------------------
 
 /// Represents a fixed point number not yet allocated in the constraint system
 ///
@@ -76,6 +80,15 @@ impl FixedPoint {
     pub fn to_f64(&self) -> f64 {
         let dec = BigDecimal::from(scalar_to_bigint(&self.repr));
         dec.to_f64().unwrap()
+    }
+
+    /// Rounds down the given value to an integer and returns the integer representation
+    pub fn floor(&self) -> Scalar {
+        // Clear the bottom `DEFAULT_PRECISION` bits
+        let mut self_bigint = scalar_to_bigint(&self.repr);
+        self_bigint >>= DEFAULT_PRECISION;
+
+        bigint_to_scalar(&self_bigint)
     }
 }
 
@@ -118,6 +131,10 @@ impl From<FixedPoint> for u64 {
         scalar_to_u64(&fp.repr)
     }
 }
+
+// ---------------------------------------------
+// | Constraint System Variable Implementation |
+// ---------------------------------------------
 
 /// For a fixed precision rational $z$, the scalar held by the
 /// struct is the scalar representation $z * 2^M$ where M is the
@@ -220,6 +237,21 @@ impl FixedPointVar {
 
         // Shift down the precision
         shifted_eval.to_f32().unwrap()
+    }
+
+    /// Computes the closest integral value less than the given fixed point variable and
+    /// constraints this value to be correctly computed.
+    ///
+    /// Returns the integer representation directly
+    pub fn floor<CS: RandomizableConstraintSystem>(&self, cs: &mut CS) -> Variable {
+        // Floor div by the scaling factor
+        let (div, _) = DivRemGadget::<DEFAULT_PRECISION>::div_rem(
+            self.repr.clone(),
+            *TWO_TO_M_SCALAR * Variable::One(),
+            cs,
+        );
+
+        div
     }
 
     /// Constrain two fixed point variables to equal one another
@@ -384,6 +416,10 @@ impl Sub<Variable> for FixedPointVar {
         }
     }
 }
+
+// -------------------------------
+// | Shared Value Implementation |
+// -------------------------------
 
 /// A fixed point variable that has been allocated in an MPC fabric
 #[derive(Debug)]
@@ -580,6 +616,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&AuthenticatedFixed
         self + &rhs.neg()
     }
 }
+
+// ------------------------------------------------
+// | Multiprover Constraint System Implementation |
+// ------------------------------------------------
 
 /// Represents a fixed point variable that has been allocated in an MPC network and
 /// committed to in a multi-prover constraint system
@@ -807,6 +847,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
         Ok(FixedPointVar { repr: repr.into() })
     }
 }
+
+// ---------
+// | Tests |
+// ---------
 
 #[cfg(test)]
 mod fixed_point_tests {
