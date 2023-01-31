@@ -294,8 +294,15 @@ impl ExchangeConnection {
         // Periodically send a ping to prevent websocket hangup
         let worker_handle = tokio_handle.spawn(async move {
             loop {
-                sleep(Duration::from_secs(30)).await;
-                socket_sink.send(Message::Ping(vec![])).await.unwrap();
+                sleep(Duration::from_secs(15)).await;
+                if exchange == Exchange::Okx {
+                    socket_sink
+                        .send(Message::Text("ping".to_string()))
+                        .await
+                        .unwrap();
+                } else {
+                    socket_sink.send(Message::Ping(vec![])).await.unwrap();
+                }
             }
         });
         worker_handles.push(worker_handle);
@@ -310,13 +317,21 @@ impl ExchangeConnection {
         message: Message,
     ) -> Result<(), ExchangeConnectionError> {
         let message_str = message.into_text().unwrap();
-        // Sometimes OKX sends an undocumented "Protocol violation" message, likely from rate
-        // limiting. Also, sometimes we receive empty messages. We ignore these.
+        // Okx sends some undocumented messages: Empty strings and "Protocol violation" messages.
         if message_str == "Protocol violation" || message_str.is_empty() {
             return Ok(());
         }
-        let message_json = serde_json::from_str(&message_str)
-            .map_err(|err| ExchangeConnectionError::InvalidMessage(err.to_string()))?;
+        // Okx sends "pong" messages from our "ping" messages.
+        if message_str == "pong" {
+            return Ok(());
+        }
+        // Okx and Kraken send "CloudFlare WebSocket proxy restarting" messages.
+        if message_str == "CloudFlare WebSocket proxy restarting" {
+            return Ok(());
+        }
+        let message_json = serde_json::from_str(&message_str).map_err(|err| {
+            ExchangeConnectionError::InvalidMessage(format!("{} for message: {}", err, message_str))
+        })?;
 
         let price_report = {
             if let Some(binance_handler) = &mut self.binance_handler {

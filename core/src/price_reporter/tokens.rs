@@ -312,7 +312,7 @@ static ERC20_DATA: &[(
         "0x4c19596f5aaff459fa38b0f7ed92f11ae6543784",
         8,
         "TRU",
-        ExchangeTicker::Same,
+        ExchangeTicker::Unsupported,
         ExchangeTicker::Same,
         ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
