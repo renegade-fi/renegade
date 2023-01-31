@@ -57,7 +57,7 @@ lazy_static! {
 ///
 /// This is useful for centralizing conversion logic to provide an abstract to_scalar,
 /// from_scalar interface to modules that commit to this value
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FixedPoint {
     /// The underlying scalar representing the fixed point variable
     pub(crate) repr: Scalar,
@@ -106,6 +106,7 @@ impl From<f32> for FixedPoint {
         }
     }
 }
+
 impl From<Scalar> for FixedPoint {
     fn from(scalar: Scalar) -> Self {
         Self { repr: scalar }
@@ -129,6 +130,74 @@ impl From<u64> for FixedPoint {
 impl From<FixedPoint> for u64 {
     fn from(fp: FixedPoint) -> Self {
         scalar_to_u64(&fp.repr)
+    }
+}
+
+impl Add<FixedPoint> for FixedPoint {
+    type Output = FixedPoint;
+    fn add(self, rhs: FixedPoint) -> Self::Output {
+        Self {
+            repr: self.repr + rhs.repr,
+        }
+    }
+}
+
+impl Add<Scalar> for FixedPoint {
+    type Output = FixedPoint;
+    fn add(self, rhs: Scalar) -> Self::Output {
+        Self {
+            repr: self.repr + *TWO_TO_M_SCALAR * rhs,
+        }
+    }
+}
+
+impl Add<FixedPoint> for Scalar {
+    type Output = FixedPoint;
+    fn add(self, rhs: FixedPoint) -> Self::Output {
+        rhs + self
+    }
+}
+
+impl Mul<Scalar> for FixedPoint {
+    type Output = FixedPoint;
+    fn mul(self, rhs: Scalar) -> Self::Output {
+        Self {
+            repr: self.repr * rhs,
+        }
+    }
+}
+
+impl Neg for FixedPoint {
+    type Output = FixedPoint;
+    fn neg(self) -> Self::Output {
+        Self {
+            repr: self.repr.neg(),
+        }
+    }
+}
+
+impl Sub<FixedPoint> for FixedPoint {
+    type Output = FixedPoint;
+    #[allow(clippy::suspicious_arithmetic_impl)]
+    fn sub(self, rhs: FixedPoint) -> Self::Output {
+        self + rhs.neg()
+    }
+}
+
+impl Sub<Scalar> for FixedPoint {
+    type Output = FixedPoint;
+    #[allow(clippy::suspicious_arithmetic_impl)]
+    fn sub(self, rhs: Scalar) -> Self::Output {
+        self + rhs.neg()
+    }
+}
+
+impl Sub<FixedPoint> for Scalar {
+    type Output = FixedPoint;
+
+    #[allow(clippy::suspicious_arithmetic_impl)]
+    fn sub(self, rhs: FixedPoint) -> Self::Output {
+        self + rhs.neg()
     }
 }
 
