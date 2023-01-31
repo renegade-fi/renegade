@@ -364,15 +364,14 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
 ///
 /// `D` is the bitlength of the values being compared
 pub struct GreaterThanEqGadget<const D: usize> {}
-
 impl<const D: usize> GreaterThanEqGadget<D> {
     /// Evaluates the comparator a >= b; returns 1 if true, otherwise 0
-    pub fn greater_than_eq<L, CS>(a: L, b: L, cs: &mut CS)
+    pub fn greater_than_eq<L, CS>(a: L, b: L, cs: &mut CS) -> Variable
     where
         L: Into<LinearCombination> + Clone,
         CS: RandomizableConstraintSystem,
     {
-        GreaterThanEqZeroGadget::<D>::greater_than_zero(a.into() - b.into(), cs);
+        GreaterThanEqZeroGadget::<D>::greater_than_zero(a.into() - b.into(), cs)
     }
 
     /// Constrains the values to satisfy a >= b
@@ -440,6 +439,33 @@ impl<const D: usize> SingleProverCircuit for GreaterThanEqGadget<D> {
         verifier
             .verify(&proof, &bp_gens)
             .map_err(VerifierError::R1CS)
+    }
+}
+
+/// Gadget for a < b
+///
+/// D is the bitlength of the inputs
+#[derive(Clone, Debug)]
+pub struct LessThanGadget<const D: usize> {}
+impl<const D: usize> LessThanGadget<D> {
+    /// Compute the boolean a < b; returns 1 if true, otherwise 0
+    pub fn less_than<L, CS>(a: L, b: L, cs: &mut CS) -> LinearCombination
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        let a_geq_b = GreaterThanEqGadget::<D>::greater_than_eq(a, b, cs);
+        Variable::One() - a_geq_b
+    }
+
+    /// Constrain a to be less than b
+    pub fn constrain_less_than<L, CS>(a: L, b: L, cs: &mut CS)
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        let lt_result = Self::less_than(a, b, cs);
+        cs.constrain(Variable::One() - lt_result);
     }
 }
 
