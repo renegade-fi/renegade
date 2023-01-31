@@ -228,7 +228,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Fee 
                     biguint_to_scalar(&self.settle_key),
                     biguint_to_scalar(&self.gas_addr),
                     Scalar::from(self.gas_token_amount),
-                    Scalar::from(self.percentage_fee.clone()),
+                    Scalar::from(self.percentage_fee),
                 ],
             )
             .map_err(|err| MpcError::SharingError(err.to_string()))?;
@@ -303,7 +303,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                     biguint_to_scalar(&self.settle_key),
                     biguint_to_scalar(&self.gas_addr),
                     Scalar::from(self.gas_token_amount),
-                    Scalar::from(self.percentage_fee.clone()),
+                    Scalar::from(self.percentage_fee),
                 ],
                 &blinders,
             )

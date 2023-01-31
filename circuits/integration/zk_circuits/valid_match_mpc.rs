@@ -57,11 +57,7 @@ fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     my_order: &Order,
     fabric: SharedFabric<N, S>,
 ) -> Result<AuthenticatedMatchResult<N, S>, String> {
-    let my_values = [
-        my_order.side as u64,
-        my_order.price.clone().into(),
-        my_order.amount,
-    ];
+    let my_values = [my_order.side as u64, my_order.price.into(), my_order.amount];
     let party0_values =
         batch_share_plaintext_u64(&my_values, 0 /* owning_party */, fabric.0.clone());
     let party1_values =
@@ -122,7 +118,7 @@ fn setup_witness_and_statement<N: MpcNetwork + Send, S: SharedValueSource<Scalar
         order.quote_mint,
         order.base_mint,
         order.side as u64,
-        order.price.clone().into(),
+        order.price.into(),
         order.amount,
     ]);
     let my_balance_hash = hash_values_arkworks(&[balance.mint, balance.amount]);
@@ -130,7 +126,7 @@ fn setup_witness_and_statement<N: MpcNetwork + Send, S: SharedValueSource<Scalar
         fee.settle_key.clone().try_into().unwrap(),
         fee.gas_addr.clone().try_into().unwrap(),
         fee.gas_token_amount,
-        fee.percentage_fee.clone().into(),
+        fee.percentage_fee.into(),
     ]);
     let my_randomness_hash = hash_values_arkworks(&[wallet_randomness]);
 
