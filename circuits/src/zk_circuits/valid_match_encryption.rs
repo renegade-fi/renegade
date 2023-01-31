@@ -915,8 +915,8 @@ mod valid_match_encryption_tests {
         let mut rng = OsRng {};
         let randomness = rng.next_u64();
 
-        let relayer_fee_fraction = DUMMY_FEE1.percentage_fee.clone();
-        let protocol_fee_fraction = DUMMY_FEE2.percentage_fee.clone();
+        let relayer_fee_fraction = DUMMY_FEE1.percentage_fee;
+        let protocol_fee_fraction = DUMMY_FEE2.percentage_fee;
 
         // The remainder after fees are applied
         let party_fee_fraction =
@@ -928,7 +928,7 @@ mod valid_match_encryption_tests {
             scalar_to_u64(&(party_fee_fraction * match_.base_amount.into()).floor());
 
         let relayer_quote_amount =
-            scalar_to_u64(&(relayer_fee_fraction.clone() * match_.quote_amount.into()).floor());
+            scalar_to_u64(&(relayer_fee_fraction * match_.quote_amount.into()).floor());
         let relayer_base_amount =
             scalar_to_u64(&(relayer_fee_fraction * match_.base_amount.into()).floor());
 
@@ -1152,7 +1152,7 @@ mod valid_match_encryption_tests {
         // A token tree muncher macro that creates an invalid witness for each given field;
         // by modifying that field to be the dummy value above
         //
-        // Resolve to a vector of invalid statements
+        // Resolved to a vector of invalid statements
         macro_rules! replace_ciphertext {
             // Singleton case, base case, return a single element vec
             ($field_element:ident) => {
@@ -1197,6 +1197,286 @@ mod valid_match_encryption_tests {
 
             let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
             let (statement_var, _) = stmt.commit_prover(&mut rng, &mut prover).unwrap();
+
+            ValidMatchEncryption::<ELGAMAL_BITS>::circuit(witness_var, statement_var, &mut prover)
+                .unwrap();
+            assert!(!prover.constraints_satisfied());
+        }
+    }
+
+    /// Tests the case in which a prover attempts to modify the volumes of mints when encrypting
+    ///
+    /// This test is specifically for the case in which party0 buys the base and sells the quote
+    #[test]
+    fn test_invalid_party_notes_dir0() {
+        let mut rng = OsRng {};
+        let mut match_ = DUMMY_MATCH.clone();
+        match_.direction = 0;
+        let (witness, statement) = create_dummy_witness_and_statement(match_.clone());
+
+        // Create a list of test cases, for each case in which we modify a note value; we also update
+        // the encryption to isolate the note construction constraints
+        let mut bad_witnesses = Vec::new();
+        let mut bad_statements = Vec::new();
+
+        // Party 0 attempts to not pay the fee on their base token
+        let mut bad_witness1 = witness.clone();
+        let mut bad_statement1 = statement.clone();
+        bad_witness1.party0_note.volume1 = match_.base_amount;
+        (
+            bad_statement1.volume1_ciphertext1,
+            bad_witness1.elgamal_randomness[0],
+        ) = elgamal_encrypt(
+            &bad_witness1.party0_note.volume1.into(),
+            &scalar_to_biguint(&statement.pk_settle1),
+        );
+        bad_witnesses.push(bad_witness1);
+        bad_statements.push(bad_statement1);
+
+        // Party 0 attempts to sell less of the quote token
+        let mut bad_witness2 = witness.clone();
+        let mut bad_statement2 = statement.clone();
+        bad_witness2.party0_note.volume2 = match_.quote_amount - 10;
+        (
+            bad_statement2.volume2_ciphertext1,
+            bad_witness2.elgamal_randomness[1],
+        ) = elgamal_encrypt(
+            &bad_witness2.party0_note.volume2.into(),
+            &scalar_to_biguint(&statement.pk_settle1),
+        );
+        bad_witnesses.push(bad_witness2);
+        bad_statements.push(bad_statement2);
+
+        // Party 1 attempts to sell less of the base token
+        let mut bad_witness3 = witness.clone();
+        let mut bad_statement3 = statement.clone();
+        bad_witness3.party1_note.volume1 = match_.base_amount - 10;
+        (
+            bad_statement3.volume1_ciphertext2,
+            bad_witness3.elgamal_randomness[2],
+        ) = elgamal_encrypt(
+            &bad_witness3.party0_note.volume1.into(),
+            &scalar_to_biguint(&statement.pk_settle2),
+        );
+        bad_witnesses.push(bad_witness3);
+        bad_statements.push(bad_statement3);
+
+        // Party 1 attempts to not pay fees on the received quote token
+        let mut bad_witness4 = witness.clone();
+        let mut bad_statement4 = statement.clone();
+        bad_witness4.party1_note.volume2 = match_.quote_amount;
+        (
+            bad_statement4.volume2_ciphertext2,
+            bad_witness4.elgamal_randomness[3],
+        ) = elgamal_encrypt(
+            &bad_witness4.party1_note.volume2.into(),
+            &scalar_to_biguint(&statement.pk_settle2),
+        );
+        bad_witnesses.push(bad_witness4);
+        bad_statements.push(bad_statement4);
+
+        // Relayer 0 attempts to steal more fees than were allocated
+        let mut bad_witness5 = witness.clone();
+        let bad_statement5 = statement.clone();
+        bad_witness5.relayer0_note.volume1 = witness.relayer0_note.volume1 * 2;
+        bad_witnesses.push(bad_witness5);
+        bad_statements.push(bad_statement5);
+
+        // Relayer 0 attempts to steal fees of the quote token; which it should not receive
+        let mut bad_witness6 = witness.clone();
+        let bad_statement6 = statement.clone();
+        bad_witness6.relayer0_note.volume2 = 1u64; // Invalid, should be zero
+        bad_witnesses.push(bad_witness6);
+        bad_statements.push(bad_statement6);
+
+        // Relayer 1 attempts to steal fees of the base token; which it should not receive
+        let mut bad_witness7 = witness.clone();
+        let bad_statement7 = statement.clone();
+        bad_witness7.relayer1_note.volume1 = 1u64; // Invalid, should be zero
+        bad_witnesses.push(bad_witness7);
+        bad_statements.push(bad_statement7);
+
+        // Relayer 1 attempts to steal more fees of the quote token than were allocated
+        let mut bad_witness8 = witness;
+        let bad_statement8 = statement;
+        bad_witness8.relayer1_note.volume2 *= 2;
+        bad_witnesses.push(bad_witness8);
+        bad_statements.push(bad_statement8);
+
+        for (witness, statement) in bad_witnesses.iter().zip(bad_statements) {
+            let mut prover_transcript = Transcript::new("test".as_bytes());
+            let pc_gens = PedersenGens::default();
+            let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+            let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+            let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+
+            ValidMatchEncryption::<ELGAMAL_BITS>::circuit(witness_var, statement_var, &mut prover)
+                .unwrap();
+            assert!(!prover.constraints_satisfied());
+        }
+    }
+
+    /// Tests the case in which a prover attempts to modify the volumes of mints when encrypting
+    ///
+    /// This test is specifically for the case in which party0 buys the quote and sells the base;
+    /// the opposite of the above test
+    #[test]
+    fn test_invalid_party_notes_dir1() {
+        let mut rng = OsRng {};
+        let mut match_ = DUMMY_MATCH.clone();
+        match_.direction = 1;
+        let (witness, statement) = create_dummy_witness_and_statement(match_.clone());
+
+        // Create a list of test cases, for each case in which we modify a note value; we also update
+        // the encryption to isolate the note construction constraints
+        let mut bad_witnesses = Vec::new();
+        let mut bad_statements = Vec::new();
+
+        // Party 0 attempts to sell less of the base token
+        let mut bad_witness1 = witness.clone();
+        let mut bad_statement1 = statement.clone();
+        bad_witness1.party0_note.volume1 = match_.base_amount - 10;
+        (
+            bad_statement1.volume1_ciphertext1,
+            bad_witness1.elgamal_randomness[0],
+        ) = elgamal_encrypt(
+            &bad_witness1.party0_note.volume1.into(),
+            &scalar_to_biguint(&statement.pk_settle1),
+        );
+        bad_witnesses.push(bad_witness1);
+        bad_statements.push(bad_statement1);
+
+        // Party 0 attempts to not pay fees on the received quote token
+        let mut bad_witness2 = witness.clone();
+        let mut bad_statement2 = statement.clone();
+        bad_witness2.party0_note.volume2 = match_.quote_amount;
+        (
+            bad_statement2.volume2_ciphertext1,
+            bad_witness2.elgamal_randomness[1],
+        ) = elgamal_encrypt(
+            &bad_witness2.party0_note.volume2.into(),
+            &scalar_to_biguint(&statement.pk_settle1),
+        );
+        bad_witnesses.push(bad_witness2);
+        bad_statements.push(bad_statement2);
+
+        // Party 1 attempts to not pay fees on the received base token
+        let mut bad_witness3 = witness.clone();
+        let mut bad_statement3 = statement.clone();
+        bad_witness3.party1_note.volume1 = match_.base_amount;
+        (
+            bad_statement3.volume1_ciphertext2,
+            bad_witness3.elgamal_randomness[2],
+        ) = elgamal_encrypt(
+            &bad_witness3.party0_note.volume1.into(),
+            &scalar_to_biguint(&statement.pk_settle2),
+        );
+        bad_witnesses.push(bad_witness3);
+        bad_statements.push(bad_statement3);
+
+        // Party 1 attempts to sell less of the quote token than was matched
+        let mut bad_witness4 = witness.clone();
+        let mut bad_statement4 = statement.clone();
+        bad_witness4.party1_note.volume2 = match_.quote_amount - 10;
+        (
+            bad_statement4.volume2_ciphertext2,
+            bad_witness4.elgamal_randomness[3],
+        ) = elgamal_encrypt(
+            &bad_witness4.party1_note.volume2.into(),
+            &scalar_to_biguint(&statement.pk_settle2),
+        );
+        bad_witnesses.push(bad_witness4);
+        bad_statements.push(bad_statement4);
+
+        // Relayer 0 attempts to steal fees of the base token; which it should not receive
+        let mut bad_witness5 = witness.clone();
+        let bad_statement5 = statement.clone();
+        bad_witness5.relayer0_note.volume1 = 1u64; // Invalid, should be zero
+        bad_witnesses.push(bad_witness5);
+        bad_statements.push(bad_statement5);
+
+        // Relayer 0 attempts to take more fees of the quote token than were allocated
+        let mut bad_witness6 = witness.clone();
+        let bad_statement6 = statement.clone();
+        bad_witness6.relayer0_note.volume2 *= 2;
+        bad_witnesses.push(bad_witness6);
+        bad_statements.push(bad_statement6);
+
+        // Relayer 1 attempts to take more fees of the base token than were allocated
+        let mut bad_witness7 = witness.clone();
+        let bad_statement7 = statement.clone();
+        bad_witness7.relayer1_note.volume1 *= 2;
+        bad_witnesses.push(bad_witness7);
+        bad_statements.push(bad_statement7);
+
+        // Relayer 1 attempts to steal fees of the quote token; which it should not receive
+        let mut bad_witness8 = witness;
+        let bad_statement8 = statement;
+        bad_witness8.relayer1_note.volume2 = 1u64; // Invalid, should be zero
+        bad_witnesses.push(bad_witness8);
+        bad_statements.push(bad_statement8);
+
+        for (witness, statement) in bad_witnesses.iter().zip(bad_statements) {
+            let mut prover_transcript = Transcript::new("test".as_bytes());
+            let pc_gens = PedersenGens::default();
+            let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+            let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+            let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+
+            ValidMatchEncryption::<ELGAMAL_BITS>::circuit(witness_var, statement_var, &mut prover)
+                .unwrap();
+            assert!(!prover.constraints_satisfied());
+        }
+    }
+
+    /// Tests the case in which the protocol notes are not properly formed
+    #[test]
+    fn test_invalid_protocol_notes() {
+        let mut rng = OsRng {};
+        let match_ = DUMMY_MATCH.clone();
+        let (witness, statement) = create_dummy_witness_and_statement(match_);
+
+        // Create a list of test cases, for each case in which we modify a note value; we also update
+        // the encryption to isolate the note construction constraints
+        let mut bad_witnesses = Vec::new();
+        let mut bad_statements = Vec::new();
+
+        // The prover attempts to give the protocol no fee
+        let mut bad_witness1 = witness.clone();
+        let mut bad_statement1 = statement.clone();
+        bad_witness1.protocol_note.volume1 = 0u64;
+        (
+            bad_statement1.volume1_protocol_ciphertext,
+            bad_witness1.elgamal_randomness[5],
+        ) = elgamal_encrypt(
+            &bad_witness1.protocol_note.volume1.into(),
+            &scalar_to_biguint(&bad_statement1.pk_settle_protocol),
+        );
+        bad_witnesses.push(bad_witness1);
+        bad_statements.push(bad_statement1);
+
+        let mut bad_witness2 = witness;
+        let mut bad_statement2 = statement;
+        bad_witness2.protocol_note.volume2 = 0u64;
+        (
+            bad_statement2.volume1_protocol_ciphertext,
+            bad_witness2.elgamal_randomness[5],
+        ) = elgamal_encrypt(
+            &bad_witness2.protocol_note.volume2.into(),
+            &scalar_to_biguint(&bad_statement2.pk_settle_protocol),
+        );
+        bad_witnesses.push(bad_witness2);
+        bad_statements.push(bad_statement2);
+
+        for (witness, statement) in bad_witnesses.iter().zip(bad_statements) {
+            let mut prover_transcript = Transcript::new("test".as_bytes());
+            let pc_gens = PedersenGens::default();
+            let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+            let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+            let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
 
             ValidMatchEncryption::<ELGAMAL_BITS>::circuit(witness_var, statement_var, &mut prover)
                 .unwrap();

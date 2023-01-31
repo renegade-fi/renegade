@@ -129,7 +129,7 @@ impl EqGadget {
     /// Computes a == b
     pub fn eq<L, CS>(a: L, b: L, cs: &mut CS) -> Variable
     where
-        L: Into<LinearCombination>,
+        L: Into<LinearCombination> + Clone,
         CS: RandomizableConstraintSystem,
     {
         EqZeroGadget::eq_zero(a.into() - b.into(), cs)
