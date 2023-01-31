@@ -64,7 +64,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                     biguint_to_scalar(&fee.settle_key),
                     biguint_to_scalar(&fee.gas_addr),
                     Scalar::from(fee.gas_token_amount),
-                    Scalar::from(fee.percentage_fee.clone()),
+                    Scalar::from(fee.percentage_fee),
                 ],
                 &blinders,
             )

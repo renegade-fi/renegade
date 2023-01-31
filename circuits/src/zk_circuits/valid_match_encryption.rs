@@ -214,13 +214,15 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
         // Validate that the protocol note volumes are properly formed
         let protocol_expected_v1 = statement
             .protocol_fee
-            .mul_integer(witness.match_res.base_amount, cs);
+            .mul_integer(witness.match_res.base_amount, cs)
+            .floor(cs);
         let protocol_expected_v2 = statement
             .protocol_fee
-            .mul_integer(witness.match_res.quote_amount, cs);
+            .mul_integer(witness.match_res.quote_amount, cs)
+            .floor(cs);
 
-        protocol_expected_v1.constraint_equal_integer(witness.protocol_note.volume1, cs);
-        protocol_expected_v2.constraint_equal_integer(witness.protocol_note.volume2, cs);
+        cs.constrain(protocol_expected_v1 - witness.protocol_note.volume1);
+        cs.constrain(protocol_expected_v2 - witness.protocol_note.volume2);
 
         // Validate the non-conditional components of the notes; i.e. mints, directions, randomness
         // The base mint in each note
@@ -303,10 +305,11 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
         let party0_base_fraction = Variable::One()
             - witness.party0_fee.percentage_fee.clone()
             - statement.protocol_fee.clone();
-        let party0_base_expected =
-            party0_base_fraction.mul_integer(witness.match_res.base_amount, cs);
+        let party0_base_expected = party0_base_fraction
+            .mul_integer(witness.match_res.base_amount, cs)
+            .floor(cs);
         let p0_mint1_constraint =
-            party0_base_expected.equal_integer(witness.party0_note.volume1, cs);
+            EqGadget::eq(witness.party0_note.volume1, party0_base_expected, cs);
 
         // Check that party1's note sends the quote amount exchanged
         let p0_mint2_constraint = EqGadget::eq(
@@ -326,18 +329,20 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
         let party1_quote_fraction = Variable::One()
             - witness.party1_fee.percentage_fee.clone()
             - statement.protocol_fee.clone();
-        let party1_quote_expected =
-            party1_quote_fraction.mul_integer(witness.match_res.quote_amount, cs);
+        let party1_quote_expected = party1_quote_fraction
+            .mul_integer(witness.match_res.quote_amount, cs)
+            .floor(cs);
         let p1_mint2_constraint =
-            party1_quote_expected.equal_integer(witness.party1_note.volume2, cs);
+            EqGadget::eq(witness.party1_note.volume2, party1_quote_expected, cs);
 
         // Check that relayer0's note receives the correct base amount fee
         let relayer0_mint1_expected = witness
             .party0_fee
             .percentage_fee
-            .mul_integer(witness.match_res.base_amount, cs);
+            .mul_integer(witness.match_res.base_amount, cs)
+            .floor(cs);
         let relayer0_mint1_constraint =
-            relayer0_mint1_expected.equal_integer(witness.relayer0_note.volume1, cs);
+            EqGadget::eq(witness.relayer0_note.volume1, relayer0_mint1_expected, cs);
 
         // Check that relayer0's note receives none of the quote asset
         let relayer0_mint2_constraint =
@@ -351,9 +356,10 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
         let relayer1_mint2_expected = witness
             .party1_fee
             .percentage_fee
-            .mul_integer(witness.match_res.quote_amount, cs);
+            .mul_integer(witness.match_res.quote_amount, cs)
+            .floor(cs);
         let relayer1_mint2_constraint =
-            relayer1_mint2_expected.equal_integer(witness.relayer1_note.volume2, cs);
+            EqGadget::eq(witness.relayer1_note.volume2, relayer1_mint2_expected, cs);
 
         // Take the AND of all the constraints, this is done by adding them up (they are boolean) and checking
         // that their sum equals the number of constraints
@@ -394,19 +400,21 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
         let party0_quote_fraction = Variable::One()
             - witness.party0_fee.percentage_fee.clone()
             - statement.protocol_fee.clone();
-        let party0_quote_expected =
-            party0_quote_fraction.mul_integer(witness.match_res.quote_amount, cs);
+        let party0_quote_expected = party0_quote_fraction
+            .mul_integer(witness.match_res.quote_amount, cs)
+            .floor(cs);
         let p0_mint2_constraint =
-            party0_quote_expected.equal_integer(witness.party0_note.volume2, cs);
+            EqGadget::eq(witness.party0_note.volume2, party0_quote_expected, cs);
 
         // Check that party1's note receives the base amount exchanged
         let party1_base_fraction = Variable::One()
             - witness.party1_fee.percentage_fee.clone()
             - statement.protocol_fee.clone();
-        let party1_base_expected =
-            party1_base_fraction.mul_integer(witness.match_res.base_amount, cs);
+        let party1_base_expected = party1_base_fraction
+            .mul_integer(witness.match_res.base_amount, cs)
+            .floor(cs);
         let p1_mint1_constraint =
-            party1_base_expected.equal_integer(witness.party1_note.volume1, cs);
+            EqGadget::eq(witness.party1_note.volume1, party1_base_expected, cs);
 
         // Check that party1's note sends the quote amount exchanged
         let p1_mint2_constraint = EqGadget::eq(
@@ -423,17 +431,19 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
         let relayer0_mint2_expected = witness
             .party0_fee
             .percentage_fee
-            .mul_integer(witness.match_res.quote_amount, cs);
+            .mul_integer(witness.match_res.quote_amount, cs)
+            .floor(cs);
         let relayer0_mint2_constraint =
-            relayer0_mint2_expected.equal_integer(witness.relayer0_note.volume2, cs);
+            EqGadget::eq(witness.relayer0_note.volume2, relayer0_mint2_expected, cs);
 
         // Check that relayer1's note receives the correct base amount fee
         let relayer1_mint1_expected = witness
             .party1_fee
             .percentage_fee
-            .mul_integer(witness.match_res.base_amount, cs);
+            .mul_integer(witness.match_res.base_amount, cs)
+            .floor(cs);
         let relayer1_mint1_constraint =
-            relayer1_mint1_expected.equal_integer(witness.relayer1_note.volume1, cs);
+            EqGadget::eq(witness.relayer1_note.volume1, relayer1_mint1_expected, cs);
 
         // Check that relayer1's note receives none of the quote asset
         let relayer1_mint2_constraint =
@@ -826,6 +836,7 @@ mod valid_match_encryption_tests {
     use curve25519_dalek::scalar::Scalar;
     use integration_helpers::mpc_network::field::get_ristretto_group_modulus;
     use lazy_static::lazy_static;
+    use mpc_ristretto::mpc_scalar::scalar_to_u64;
     use num_bigint::{BigInt, BigUint};
     use rand_core::{OsRng, RngCore};
 
@@ -851,13 +862,13 @@ mod valid_match_encryption_tests {
     // | Dummy Data |
     // --------------
 
-    const PROTOCOL_FEE: f32 = 1. / 256.;
+    const PROTOCOL_FEE: f32 = 0.01;
     lazy_static! {
         static ref DUMMY_MATCH: MatchResult = MatchResult {
             quote_mint: BigInt::from(1u8),
             base_mint: BigInt::from(1u8),
-            quote_amount: 200,
-            base_amount: 100,
+            quote_amount: 300,
+            base_amount: 200,
             direction: 1,
             execution_price: FixedPoint::from(2.),
             max_minus_min_amount: 10,
@@ -867,13 +878,13 @@ mod valid_match_encryption_tests {
             settle_key: BigUint::from(42u64),
             gas_addr: BigUint::from(10u64),
             gas_token_amount: 2,
-            percentage_fee: FixedPoint::from(1. / 128.)
+            percentage_fee: FixedPoint::from(0.01)
         };
         static ref DUMMY_FEE2: Fee = Fee {
             settle_key: BigUint::from(1729u64),
             gas_addr: BigUint::from(10u64),
             gas_token_amount: 2,
-            percentage_fee: FixedPoint::from(1. / 128.)
+            percentage_fee: FixedPoint::from(0.01)
         };
     }
 
@@ -886,7 +897,7 @@ mod valid_match_encryption_tests {
     ) -> (ValidMatchEncryptionWitness, ValidMatchEncryptionStatement) {
         // A helper to select based on direction
         macro_rules! sel {
-            ($a:path, $b:tt) => {
+            ($a:expr, $b:expr) => {
                 if match_.direction == 0 {
                     $a
                 } else {
@@ -901,23 +912,41 @@ mod valid_match_encryption_tests {
         let mut rng = OsRng {};
         let randomness = rng.next_u64();
 
-        let relayer_fee_fraction = 1. / 128.;
-        let relayer_quote_fee = (relayer_fee_fraction * (match_.quote_amount as f32)) as u64;
-        let relayer_base_fee = (relayer_fee_fraction * (match_.base_amount as f32)) as u64;
+        let relayer_fee_fraction = DUMMY_FEE1.percentage_fee.clone();
+        let protocol_fee_fraction = DUMMY_FEE2.percentage_fee.clone();
 
-        let protocol_fee_fraction = 1. / 256.;
-        let protocol_quote_fee = (protocol_fee_fraction * (match_.quote_amount as f32)) as u64;
-        let protocol_base_fee = (protocol_fee_fraction * (match_.base_amount as f32)) as u64;
+        // The remainder after fees are applied
+        let party_fee_fraction =
+            FixedPoint::from_integer(1u64) - relayer_fee_fraction - protocol_fee_fraction;
+
+        let party_quote_amount =
+            scalar_to_u64(&(party_fee_fraction * match_.quote_amount.into()).floor());
+        let party_base_amount =
+            scalar_to_u64(&(party_fee_fraction * match_.base_amount.into()).floor());
+
+        let relayer_quote_amount =
+            scalar_to_u64(&(relayer_fee_fraction.clone() * match_.quote_amount.into()).floor());
+        let relayer_base_amount =
+            scalar_to_u64(&(relayer_fee_fraction * match_.base_amount.into()).floor());
+
+        let protocol_quote_amount =
+            scalar_to_u64(&(protocol_fee_fraction * match_.quote_amount.into()).floor());
+        let protocol_base_amount =
+            scalar_to_u64(&(protocol_fee_fraction * match_.base_amount.into()).floor());
+
+        // Clones of the fees
+        let fee_tuple1 = DUMMY_FEE1.clone();
+        let fee_tuple2 = DUMMY_FEE2.clone();
 
         let party0_note = Note {
             mint1: match_.base_mint.clone().try_into().unwrap(),
-            volume1: match_.base_amount,
+            volume1: sel!(party_base_amount, match_.base_amount),
             direction1: sel!(buy, sell),
             mint2: match_.quote_mint.clone().try_into().unwrap(),
-            volume2: match_.quote_amount - relayer_quote_fee - protocol_quote_fee,
+            volume2: sel!(match_.quote_amount, party_quote_amount),
             direction2: sel!(sell, buy),
-            fee_mint: 1729,
-            fee_volume: 5,
+            fee_mint: fee_tuple1.gas_addr.clone().try_into().unwrap(),
+            fee_volume: fee_tuple1.gas_token_amount,
             fee_direction: sell,
             type_: NoteType::Match,
             randomness,
@@ -925,13 +954,13 @@ mod valid_match_encryption_tests {
 
         let party1_note = Note {
             mint1: match_.base_mint.clone().try_into().unwrap(),
-            volume1: match_.base_amount - relayer_base_fee - protocol_base_fee,
+            volume1: sel!(match_.base_amount, party_base_amount),
             direction1: sel!(sell, buy),
             mint2: match_.quote_mint.clone().try_into().unwrap(),
-            volume2: match_.quote_amount,
+            volume2: sel!(party_quote_amount, match_.quote_amount),
             direction2: sel!(buy, sell),
-            fee_mint: 1729,
-            fee_volume: 5,
+            fee_mint: fee_tuple2.gas_addr.clone().try_into().unwrap(),
+            fee_volume: fee_tuple2.gas_token_amount,
             fee_direction: sell,
             type_: NoteType::Match,
             randomness: randomness + 1,
@@ -939,13 +968,13 @@ mod valid_match_encryption_tests {
 
         let relayer0_note = Note {
             mint1: match_.base_mint.clone().try_into().unwrap(),
-            volume1: 0,
+            volume1: sel!(relayer_base_amount, 0),
             direction1: buy,
             mint2: match_.quote_mint.clone().try_into().unwrap(),
-            volume2: relayer_quote_fee,
+            volume2: sel!(0, relayer_quote_amount),
             direction2: buy,
-            fee_mint: 1729,
-            fee_volume: 5,
+            fee_mint: fee_tuple1.gas_addr.try_into().unwrap(),
+            fee_volume: fee_tuple2.gas_token_amount,
             fee_direction: buy,
             type_: NoteType::InternalTransfer,
             randomness: randomness + 2,
@@ -953,13 +982,13 @@ mod valid_match_encryption_tests {
 
         let relayer1_note = Note {
             mint1: match_.base_mint.clone().try_into().unwrap(),
-            volume1: relayer_base_fee,
+            volume1: sel!(0, relayer_base_amount),
             direction1: buy,
             mint2: match_.quote_mint.clone().try_into().unwrap(),
-            volume2: 0,
+            volume2: sel!(relayer_quote_amount, 0),
             direction2: buy,
-            fee_mint: 1729,
-            fee_volume: 5,
+            fee_mint: fee_tuple2.gas_addr.try_into().unwrap(),
+            fee_volume: fee_tuple2.gas_token_amount,
             fee_direction: buy,
             type_: NoteType::InternalTransfer,
             randomness: randomness + 3,
@@ -967,10 +996,10 @@ mod valid_match_encryption_tests {
 
         let protocol_note = Note {
             mint1: match_.base_mint.clone().try_into().unwrap(),
-            volume1: protocol_base_fee,
+            volume1: protocol_base_amount,
             direction1: buy,
             mint2: match_.quote_mint.clone().try_into().unwrap(),
-            volume2: protocol_quote_fee,
+            volume2: protocol_quote_amount,
             direction2: buy,
             fee_mint: 0,
             fee_volume: 0,
@@ -1075,7 +1104,6 @@ mod valid_match_encryption_tests {
 
     /// Test a valid witness and statement for the VALID MATCH ENCRYPTION circuit
     #[test]
-    #[ignore = "currently invalid"]
     fn test_valid_encryption() {
         let (witness, statement) = create_dummy_witness_and_statement(DUMMY_MATCH.clone());
 

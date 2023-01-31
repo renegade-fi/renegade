@@ -405,7 +405,7 @@ mod test_valid_wallet_create {
             arkworks_hasher.absorb(&scalar_to_prime_field(&biguint_to_scalar(&fee.gas_addr)));
             arkworks_hasher.absorb(&DalekRistrettoField::from(fee.gas_token_amount));
             arkworks_hasher.absorb(&DalekRistrettoField::from(Into::<u64>::into(
-                fee.percentage_fee.clone(),
+                fee.percentage_fee,
             )));
         }
 

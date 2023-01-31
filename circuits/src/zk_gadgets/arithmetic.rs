@@ -2,6 +2,7 @@
 
 use std::marker::PhantomData;
 
+use ark_ff::Zero;
 use circuit_macros::circuit_trace;
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::ristretto::CompressedRistretto;
@@ -18,6 +19,7 @@ use mpc_bulletproof::BulletproofGens;
 use mpc_ristretto::authenticated_ristretto::AuthenticatedCompressedRistretto;
 use mpc_ristretto::authenticated_scalar::AuthenticatedScalar;
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
+use num_bigint::BigUint;
 use num_integer::Integer;
 use rand_core::OsRng;
 
@@ -54,7 +56,14 @@ impl<const D: usize> DivRemGadget<D> {
         let b_bigint = scalar_to_biguint(&cs.eval(&b_lc));
 
         // Compute the divrem outside of the circuit
-        let (q, r) = a_bigint.div_rem(&b_bigint);
+        // Verifier evals all wires to zero -- it only knows commitments
+        // Handle this case explicitly
+        let (q, r) = if b_bigint == BigUint::zero() {
+            (BigUint::zero(), b_bigint)
+        } else {
+            a_bigint.div_rem(&b_bigint)
+        };
+
         let q_var = cs.allocate(Some(biguint_to_scalar(&q))).unwrap();
         let r_var = cs.allocate(Some(biguint_to_scalar(&r))).unwrap();
 

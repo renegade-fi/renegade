@@ -122,10 +122,7 @@ mod test_helpers {
                 biguint_to_prime_field(&fee.gas_addr),
             ]);
 
-            hasher.absorb(&vec![
-                fee.gas_token_amount,
-                fee.percentage_fee.clone().into(),
-            ]);
+            hasher.absorb(&vec![fee.gas_token_amount, fee.percentage_fee.into()]);
         }
 
         // Hash the keys into the state
