@@ -1134,4 +1134,73 @@ mod valid_match_encryption_tests {
             .unwrap();
         assert!(prover.constraints_satisfied());
     }
+
+    /// Tests the case in which invalid ciphertext is given for each element
+    #[test]
+    fn test_invalid_ciphertexts() {
+        let mut rng = OsRng {};
+        let mut match_ = DUMMY_MATCH.clone();
+        match_.direction = 1 - match_.direction;
+        let (witness, statement) = create_dummy_witness_and_statement(match_);
+
+        // The dummy ciphertext used (invalidly) in place of a correct ciphertext
+        let dummy_ciphertext = ElGamalCiphertext {
+            partial_shared_secret: Scalar::random(&mut rng),
+            encrypted_message: Scalar::random(&mut rng),
+        };
+
+        // A token tree muncher macro that creates an invalid witness for each given field;
+        // by modifying that field to be the dummy value above
+        //
+        // Resolve to a vector of invalid statements
+        macro_rules! replace_ciphertext {
+            // Singleton case, base case, return a single element vec
+            ($field_element:ident) => {
+                vec![{
+                    let mut invalid_statement = statement.clone();
+                    invalid_statement.$field_element = dummy_ciphertext;
+                    invalid_statement
+                }]
+            };
+
+            // Recursive case
+            ($field_element:ident, $($rest:ident),+) => {{
+                let mut ret_vec = vec![{
+                    let mut invalid_statement = statement.clone();
+                    invalid_statement.$field_element = dummy_ciphertext;
+                    invalid_statement
+                }];
+                let mut recursive_res = replace_ciphertext!($($rest),+);
+                ret_vec.append(&mut recursive_res);
+
+                ret_vec
+            }}
+        }
+
+        for stmt in replace_ciphertext!(
+            volume1_ciphertext1,
+            volume2_ciphertext1,
+            volume1_ciphertext2,
+            volume2_ciphertext2,
+            mint1_protocol_ciphertext,
+            volume1_protocol_ciphertext,
+            mint2_protocol_ciphertext,
+            volume2_protocol_ciphertext,
+            randomness_protocol_ciphertext
+        )
+        .iter()
+        {
+            // Reset the prover for each test to reset invalid constraints
+            let mut prover_transcript = Transcript::new("test".as_bytes());
+            let pc_gens = PedersenGens::default();
+            let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+            let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+            let (statement_var, _) = stmt.commit_prover(&mut rng, &mut prover).unwrap();
+
+            ValidMatchEncryption::<ELGAMAL_BITS>::circuit(witness_var, statement_var, &mut prover)
+                .unwrap();
+            assert!(!prover.constraints_satisfied());
+        }
+    }
 }
