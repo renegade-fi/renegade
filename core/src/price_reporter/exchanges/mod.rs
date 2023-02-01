@@ -1,3 +1,5 @@
+//! The exchanges module defines individual ExchangeConnection logic, including all parsing logic
+//! for price messages from both centralized and decentralized exchanges.
 /// Defines the raw ExchangeConnection logic.
 mod connection;
 /// Defines message handlers for centralized exchanges.

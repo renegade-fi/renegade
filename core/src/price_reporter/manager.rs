@@ -1,3 +1,5 @@
+//! Defines the PriceReporterManagerExecutor, the handler that is reponsible for executing
+//! individual PriceReporterManagerJobs.
 use crossbeam::channel::{self, Sender};
 use futures::StreamExt;
 use ring_channel::RingReceiver;

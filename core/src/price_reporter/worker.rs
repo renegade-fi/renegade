@@ -1,3 +1,5 @@
+//! Defines the Worker logic for the PriceReporterManger, which simply dispatches jobs to the
+//! PriceReporterManagerExecutor.
 use crossbeam::channel::Receiver;
 use std::thread::{self, JoinHandle};
 use tokio::runtime::Builder as TokioBuilder;
