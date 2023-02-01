@@ -433,7 +433,7 @@ impl PriceReporter {
     /// If the PriceReport is Named, then the prices are denominated in USD and largely derived
     /// from centralized exchanges. If the PriceReport is Unnamed, then the prices are derived from
     /// UniswapV3 and do not do fixed-point decimals adjustment.
-    pub fn is_named(&self) -> bool {
+    pub fn _is_named(&self) -> bool {
         self.base_token.is_named() && self.quote_token.is_named()
     }
 

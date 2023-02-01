@@ -42,7 +42,7 @@ pub enum PriceReporterManagerError {
     PriceReporterNotCreated(String),
     /// In one of the PriceReporters, one of the ExchangeConnections failed too many times in a
     /// row.
-    TooManyFailures(ExchangeConnectionError),
+    _TooManyFailures(ExchangeConnectionError),
 }
 
 impl Error for PriceReporterManagerError {}
@@ -64,7 +64,7 @@ impl Display for PriceReporterManagerError {
             PriceReporterManagerError::PriceReporterNotCreated(err) => {
                 format!("PriceReporterNotCreated({})", err)
             }
-            PriceReporterManagerError::TooManyFailures(exchange_connection_error) => {
+            PriceReporterManagerError::_TooManyFailures(exchange_connection_error) => {
                 format!("TooManyFailures({})", exchange_connection_error)
             }
         };
