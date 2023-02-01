@@ -23,7 +23,11 @@ use crate::{
         note::{CommittedNote, Note, NoteType, NoteVar},
         wallet::{CommittedWallet, Wallet, WalletVar},
     },
-    zk_gadgets::elgamal::{ElGamalCiphertext, ElGamalCiphertextVar},
+    zk_gadgets::{
+        commitments::{NoteCommitmentGadget, NullifierGadget, WalletCommitGadget},
+        elgamal::{ElGamalCiphertext, ElGamalCiphertextVar},
+        merkle::PoseidonMerkleHashGadget,
+    },
     CommitProver, CommitVerifier, SingleProverCircuit,
 };
 
@@ -46,6 +50,82 @@ where
         statement: ValidSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
+        // Validate all state entries and state primitives that are constructed from the witness
+        Self::validate_state_primitives(&witness, &statement, cs)?;
+
+        // Validate that all the keys have remained the same
+        cs.constrain(witness.pre_wallet.keys[0] - witness.post_wallet.keys[0]);
+        cs.constrain(witness.pre_wallet.keys[1] - witness.post_wallet.keys[1]);
+        cs.constrain(witness.pre_wallet.keys[2] - witness.post_wallet.keys[2]);
+        cs.constrain(witness.pre_wallet.keys[3] - witness.post_wallet.keys[3]);
+
+        // Validate that the randomness has been properly updated in the new wallet
+        cs.constrain(
+            witness.pre_wallet.randomness + Scalar::from(2u64) * Variable::One()
+                - witness.post_wallet.randomness,
+        );
+
+        // TODO: Balance verification and authentication
+        Ok(())
+    }
+
+    /// Validates the state primitives for the contract are correctly constructed
+    /// This means nullifiers, merkle openings, commitments, etc
+    fn validate_state_primitives<CS: RandomizableConstraintSystem>(
+        witness: &ValidSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        statement: &ValidSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        // Compute the commitment to the pre-wallet
+        let pre_wallet_commit_res = WalletCommitGadget::wallet_commit(&witness.pre_wallet, cs)?;
+
+        // Validate that this wallet commitment is a leaf in the state tree
+        PoseidonMerkleHashGadget::compute_and_constrain_root_prehashed(
+            pre_wallet_commit_res.clone(),
+            witness.pre_wallet_opening.clone(),
+            witness.pre_wallet_opening_indices.clone(),
+            statement.merkle_root.into(),
+            cs,
+        )?;
+
+        // Compute the commitment to the note
+        let note_commitment_res = NoteCommitmentGadget::note_commit(&witness.note, cs)?;
+
+        // Validate that this note commitment is a leaf in the state tree
+        PoseidonMerkleHashGadget::compute_and_constrain_root_prehashed(
+            note_commitment_res.clone(),
+            witness.note_opening.clone(),
+            witness.note_opening_indices.clone(),
+            statement.merkle_root.into(),
+            cs,
+        )?;
+
+        // Compute the commitment to the new wallet and verify that it is the same given in the statement
+        let post_wallet_commit_res = WalletCommitGadget::wallet_commit(&witness.post_wallet, cs)?;
+        cs.constrain(statement.post_wallet_commit - post_wallet_commit_res);
+
+        // Validate that all three nullifiers (wallet spend, wallet match, note redeem) are correctly computed from witness
+        let pre_wallet_spend_nullifier = NullifierGadget::spend_nullifier(
+            witness.pre_wallet.randomness,
+            pre_wallet_commit_res.clone(),
+            cs,
+        )?;
+        cs.constrain(statement.wallet_spend_nullifier - pre_wallet_spend_nullifier);
+
+        let pre_wallet_match_nullifier = NullifierGadget::match_nullifier(
+            witness.pre_wallet.randomness,
+            pre_wallet_commit_res,
+            cs,
+        )?;
+        cs.constrain(statement.wallet_match_nullifier - pre_wallet_match_nullifier);
+
+        let note_redeem_nullifier_res = NullifierGadget::note_redeem_nullifier(
+            witness.pre_wallet.keys[2],
+            note_commitment_res,
+            cs,
+        )?;
+        cs.constrain(statement.note_redeem_nullifier - note_redeem_nullifier_res);
+
         Ok(())
     }
 }
