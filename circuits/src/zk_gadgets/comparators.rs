@@ -162,6 +162,23 @@ impl EqVecGadget {
 
         EqZeroGadget::eq_zero(not_equal_sum, cs)
     }
+
+    /// Constraints the two vectors to be equal
+    ///
+    /// TODO: This may be optimized with a randomized constraint
+    pub fn constrain_eq_vec<L, CS>(a: &[L], b: &[L], cs: &mut CS)
+    where
+        L: Into<LinearCombination> + Clone,
+        CS: RandomizableConstraintSystem,
+    {
+        assert_eq!(a.len(), b.len(), "eq_vec expects equal length vectors");
+
+        for (a_val, b_val) in a.iter().cloned().zip(b.iter().cloned()) {
+            let a_lc: LinearCombination = a_val.into();
+            let b_lc: LinearCombination = b_val.into();
+            cs.constrain(a_lc - b_lc);
+        }
+    }
 }
 
 /// Returns a boolean representing a != b where 1 is true and 0 is false
