@@ -1,3 +1,5 @@
+//! Defines the PriceReporter, which is responsible for computing median PriceReports by managing
+//! individual ExchangeConnections in a fault-tolerant manner.
 use futures::stream::{select_all, StreamExt};
 use ring_channel::{ring_channel, RingReceiver, RingSender};
 use serde::{Deserialize, Serialize};

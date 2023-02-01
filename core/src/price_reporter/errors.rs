@@ -1,3 +1,4 @@
+//! Defines all Error types, both for individual ExchangeConnections and the PriceReporter itself.
 use std::error::Error;
 use std::fmt::{self, Display};
 
