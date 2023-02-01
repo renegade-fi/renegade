@@ -289,14 +289,11 @@ mod test_helpers {
 
     /// Given a note and its commitment, compute the note redeem nullifier
     pub(crate) fn compute_note_redeem_nullifier(
-        note: &Note,
-        commitment: DalekRistrettoField,
+        note_commitment: DalekRistrettoField,
+        pk_settle_receiver: DalekRistrettoField,
     ) -> DalekRistrettoField {
         let mut hasher = PoseidonSponge::new(&default_poseidon_params());
-        hasher.absorb(&vec![
-            commitment,
-            DalekRistrettoField::from(note.randomness),
-        ]);
+        hasher.absorb(&vec![note_commitment, pk_settle_receiver]);
         hasher.squeeze_field_elements(1 /* num_elements */)[0]
     }
 }

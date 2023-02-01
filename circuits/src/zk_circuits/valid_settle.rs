@@ -213,6 +213,7 @@ where
                 let mints_equal = EqGadget::eq(old_balance.mint, new_balance.mint, cs);
                 let (_, _, equal_mints_term) =
                     cs.multiply(mints_equal.into(), old_balance.amount.into());
+
                 expected_bal += equal_mints_term;
             }
 
@@ -654,7 +655,7 @@ where
     type WitnessCommitment = ValidSettleWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type Statement = ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
-    const BP_GENS_CAPACITY: usize = 1024;
+    const BP_GENS_CAPACITY: usize = 32768;
 
     fn prove(
         witness: Self::Witness,
@@ -693,5 +694,191 @@ where
         verifier
             .verify(&proof, &bp_gens)
             .map_err(VerifierError::R1CS)
+    }
+}
+
+#[cfg(test)]
+mod valid_settle_tests {
+    use crypto::fields::{prime_field_to_scalar, scalar_to_prime_field};
+    use curve25519_dalek::scalar::Scalar;
+    use itertools::Itertools;
+    use lazy_static::lazy_static;
+    use rand_core::OsRng;
+
+    use crate::{
+        test_helpers::bulletproof_prove_and_verify,
+        types::{
+            note::{Note, NoteType},
+            order::OrderSide,
+        },
+        zk_circuits::test_helpers::{
+            compute_note_commitment, compute_note_redeem_nullifier, compute_wallet_commitment,
+            compute_wallet_match_nullifier, compute_wallet_spend_nullifier, create_multi_opening,
+            SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+        },
+        zk_gadgets::elgamal::ElGamalCiphertext,
+    };
+
+    use super::{ValidSettle, ValidSettleStatement, ValidSettleWitness};
+
+    const MERKLE_HEIGHT: usize = 3;
+    const TOTAL_ENCRYPTIONS: usize = 2 * MAX_BALANCES + 8 * MAX_ORDERS + 4 * MAX_FEES + 5;
+
+    // --------------
+    // | Dummy Data |
+    // --------------
+    lazy_static! {
+        /// A dummy note resulting from a match of quote mint 1, base mint 2
+        /// in which the local party sold the quote to buy the base
+        ///
+        /// Fees for the match were paid in token 2
+        static ref DUMMY_MATCH_NOTE: Note = Note {
+            mint1: 2,
+            volume1: 1,
+            direction1: OrderSide::Buy,
+            mint2: 1,
+            volume2: 4,
+            direction2: OrderSide::Sell,
+            fee_mint: 2,
+            fee_volume: 3,
+            fee_direction: OrderSide::Sell,
+            type_: NoteType::Match,
+            randomness: 1729,
+        };
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Applies a note to the given wallet and returns the wallet that results
+    fn apply_note_to_wallet(note: &Note, wallet: &SizedWallet) -> SizedWallet {
+        let mut result_wallet = wallet.clone();
+        result_wallet.randomness += Scalar::from(2u8);
+
+        // Update the balances according to the note
+        for balance in result_wallet.balances.iter_mut() {
+            if balance.mint == 0 {
+                continue;
+            }
+            if balance.mint == note.mint1 {
+                balance.amount =
+                    update_balance_by_order_side(balance.amount, note.volume1, note.direction1);
+            }
+            if balance.mint == note.mint2 {
+                balance.amount =
+                    update_balance_by_order_side(balance.amount, note.volume2, note.direction2);
+            }
+            if balance.mint == note.fee_mint {
+                balance.amount = update_balance_by_order_side(
+                    balance.amount,
+                    note.fee_volume,
+                    note.fee_direction,
+                );
+            }
+        }
+
+        // Update the orders according to the note
+        if note.type_ == NoteType::Match {
+            for order in result_wallet.orders.iter_mut() {
+                if order.base_mint == note.mint1 && order.quote_mint == note.mint2 {
+                    order.amount -= note.volume1;
+                }
+            }
+        }
+
+        result_wallet
+    }
+
+    /// Helper to mux between buy and sell side note updates
+    ///
+    /// Returns the new balance after the update
+    fn update_balance_by_order_side(
+        initial_balance: u64,
+        note_volume: u64,
+        transfer_side: OrderSide,
+    ) -> u64 {
+        match transfer_side {
+            OrderSide::Buy => initial_balance + note_volume,
+            OrderSide::Sell => initial_balance - note_volume,
+        }
+    }
+
+    /// Compute a witness and statement from a given wallet, note, and updated wallet
+    fn compute_witness_and_statement(
+        pre_wallet: SizedWallet,
+        post_wallet: SizedWallet,
+        note: Note,
+    ) -> (
+        ValidSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    ) {
+        let mut rng = OsRng {};
+
+        let pre_wallet_commit = compute_wallet_commitment(&pre_wallet);
+        let post_wallet_commit = compute_wallet_commitment(&post_wallet);
+        let note_commit = compute_note_commitment(&note);
+
+        let wallet_spend_nullifier = compute_wallet_spend_nullifier(&pre_wallet, pre_wallet_commit);
+        let wallet_match_nullifier = compute_wallet_match_nullifier(&pre_wallet, pre_wallet_commit);
+        let note_redeem_nullifier =
+            compute_note_redeem_nullifier(note_commit, scalar_to_prime_field(&pre_wallet.keys[2]));
+
+        let (merkle_root, openings, openings_indices) = create_multi_opening(
+            &[
+                prime_field_to_scalar(&pre_wallet_commit),
+                prime_field_to_scalar(&note_commit),
+            ],
+            MERKLE_HEIGHT,
+            &mut rng,
+        );
+
+        let elgamal_ciphertexts = (0..TOTAL_ENCRYPTIONS)
+            .map(|_| ElGamalCiphertext {
+                partial_shared_secret: Scalar::random(&mut rng),
+                encrypted_message: Scalar::random(&mut rng),
+            })
+            .collect_vec();
+
+        (
+            ValidSettleWitness {
+                pre_wallet,
+                pre_wallet_opening: openings[0].to_owned(),
+                pre_wallet_opening_indices: openings_indices[0].to_owned(),
+                post_wallet,
+                note: note.clone(),
+                note_commitment: prime_field_to_scalar(&note_commit),
+                note_opening: openings[1].to_owned(),
+                note_opening_indices: openings_indices[1].to_owned(),
+            },
+            ValidSettleStatement {
+                post_wallet_commit: prime_field_to_scalar(&post_wallet_commit),
+                post_wallet_ciphertext: elgamal_ciphertexts.try_into().unwrap(),
+                wallet_match_nullifier: prime_field_to_scalar(&wallet_match_nullifier),
+                wallet_spend_nullifier: prime_field_to_scalar(&wallet_spend_nullifier),
+                note_redeem_nullifier: prime_field_to_scalar(&note_redeem_nullifier),
+                merkle_root,
+                type_: note.type_,
+            },
+        )
+    }
+
+    // ---------
+    // | Tests |
+    // ---------
+
+    /// Tests the case in which a valid witness is given
+    #[test]
+    fn test_valid_settle() {
+        let initial_wallet = INITIAL_WALLET.clone();
+        let note = DUMMY_MATCH_NOTE.clone();
+        let post_wallet = apply_note_to_wallet(&note, &initial_wallet);
+
+        let (witness, statement) = compute_witness_and_statement(initial_wallet, post_wallet, note);
+
+        let res = bulletproof_prove_and_verify::<ValidSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>(
+            witness, statement,
+        );
+        assert!(res.is_ok())
     }
 }
