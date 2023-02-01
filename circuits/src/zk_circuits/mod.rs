@@ -27,6 +27,7 @@ mod test_helpers {
         types::{
             balance::Balance,
             fee::Fee,
+            note::Note,
             order::{Order, OrderSide},
             wallet::{Wallet, NUM_KEYS},
         },
@@ -135,6 +136,25 @@ mod test_helpers {
         hasher.squeeze_field_elements(1 /* num_elements */)[0]
     }
 
+    /// Compute the commitment to a note
+    pub(crate) fn compute_note_commitment(note: &Note) -> DalekRistrettoField {
+        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
+        hasher.absorb(&vec![
+            note.mint1,
+            note.volume1,
+            note.direction1 as u64,
+            note.mint2,
+            note.volume2,
+            note.direction2 as u64,
+            note.fee_mint,
+            note.fee_volume,
+            note.fee_direction as u64,
+            note.type_ as u64,
+            note.randomness,
+        ]);
+        hasher.squeeze_field_elements(1 /* num_elements */)[0]
+    }
+
     /// Given a wallet, create a dummy opening to a dummy root
     ///
     /// Returns a scalar and two vectors representing:
@@ -174,6 +194,76 @@ mod test_helpers {
         )
     }
 
+    /// Create a multi-item opening in a Merkle tree, do so by constructing the Merkle tree
+    /// from the given items, padded with zeros
+    ///
+    /// The return type is structured as a tuple with the following elements in order:
+    ///     - root: The root of the Merkle tree
+    ///     - openings: A vector of opening vectors; the sister nodes hashed with the Merkle path
+    ///     - opening_indices: A vector of opening index vectors; the left/right booleans for the path
+    pub(crate) fn create_multi_opening<R: RngCore + CryptoRng>(
+        items: &[Scalar],
+        height: usize,
+        rng: &mut R,
+    ) -> (Scalar, Vec<Vec<Scalar>>, Vec<Vec<Scalar>>) {
+        let tree_capacity = 2usize.pow(height as u32);
+        assert!(
+            items.len() < tree_capacity,
+            "tree capacity exceeded by seed items"
+        );
+
+        // Pad the inputs up to the tree capacity
+        let mut merkle_leaves = items.to_vec();
+        merkle_leaves.append(&mut vec![Scalar::random(rng); tree_capacity - items.len()]);
+
+        // The return variables
+        let mut openings = vec![Vec::new(); items.len()];
+        let mut opening_indices = vec![Vec::new(); items.len()];
+
+        // Compute the openings and root of the tree
+        let mut curr_internal_nodes = merkle_leaves.clone();
+        let mut curr_indices = (0..items.len()).collect_vec();
+
+        // Loop over the levels of the tree, construct the openings as we go
+        while curr_internal_nodes.len() > 1 {
+            // The curr_indices represents the indices of each opening's path in the current height
+            // compute a sister node for each at the given height and add it to the opening for that
+            // path.
+            for (i, ind) in curr_indices.iter().enumerate() {
+                // Compute the opening index (i.e. whether this is a left or right child)
+                let path_index = ind % 2;
+                // Compute the sister node for the given index at the given height
+                let sister_node =
+                    curr_internal_nodes[if path_index == 0 { ind + 1 } else { ind - 1 }];
+
+                openings[i].push(sister_node);
+                opening_indices[i].push(Scalar::from(path_index as u8));
+            }
+
+            // Hash together each left and right pair to get the internal node values at the next height
+            let mut next_internal_nodes = Vec::with_capacity(curr_internal_nodes.len() / 2);
+            for left_right in curr_internal_nodes
+                .chunks(2 /* size */)
+                .map(|chunk| chunk.iter().map(scalar_to_prime_field).collect_vec())
+            {
+                let mut sponge = PoseidonSponge::new(&default_poseidon_params());
+                sponge.absorb(&left_right);
+
+                let squeezed: DalekRistrettoField =
+                    sponge.squeeze_field_elements(1 /* num_elements */)[0];
+                next_internal_nodes.push(prime_field_to_scalar(&squeezed));
+            }
+
+            // Update the curr_indices vector to be the index of the parent node in the Merkle tree height
+            // above the current height. This is simply \floor(index / 2)
+            curr_indices = curr_indices.iter().map(|index| index >> 2).collect_vec();
+            curr_internal_nodes = next_internal_nodes;
+        }
+
+        let merkle_root = curr_internal_nodes[0];
+        (merkle_root, openings, opening_indices)
+    }
+
     /// Given a wallet and its commitment, compute the wallet spend nullifier
     pub(crate) fn compute_wallet_spend_nullifier(
         wallet: &SizedWallet,
@@ -193,6 +283,19 @@ mod test_helpers {
         hasher.absorb(&vec![
             commitment,
             scalar_to_prime_field(&(wallet.randomness + Scalar::one())),
+        ]);
+        hasher.squeeze_field_elements(1 /* num_elements */)[0]
+    }
+
+    /// Given a note and its commitment, compute the note redeem nullifier
+    pub(crate) fn compute_note_redeem_nullifier(
+        note: &Note,
+        commitment: DalekRistrettoField,
+    ) -> DalekRistrettoField {
+        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
+        hasher.absorb(&vec![
+            commitment,
+            DalekRistrettoField::from(note.randomness),
         ]);
         hasher.squeeze_field_elements(1 /* num_elements */)[0]
     }
