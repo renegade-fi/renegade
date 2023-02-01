@@ -8,10 +8,15 @@
 //! See the whitepaper (https://renegade.fi/whitepaper.pdf) appendix A.8
 //! for a formal specification
 
+use std::ops::Neg;
+
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
-    r1cs::{ConstraintSystem, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
+    r1cs::{
+        ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
+        Variable, Verifier,
+    },
     r1cs_mpc::R1CSError,
     BulletproofGens,
 };
@@ -25,8 +30,11 @@ use crate::{
     },
     zk_gadgets::{
         commitments::{NoteCommitmentGadget, NullifierGadget, WalletCommitGadget},
+        comparators::{EqGadget, EqZeroGadget, NotEqualGadget},
         elgamal::{ElGamalCiphertext, ElGamalCiphertextVar},
+        gates::OrGate,
         merkle::PoseidonMerkleHashGadget,
+        select::CondSelectGadget,
     },
     CommitProver, CommitVerifier, SingleProverCircuit,
 };
@@ -66,6 +74,7 @@ where
         );
 
         // TODO: Balance verification and authentication
+        Self::validate_new_balances(&witness, cs);
         Ok(())
     }
 
@@ -127,6 +136,100 @@ where
         cs.constrain(statement.note_redeem_nullifier - note_redeem_nullifier_res);
 
         Ok(())
+    }
+
+    /// Validates the balances of the new wallet given the old wallet and the note
+    fn validate_new_balances<CS: RandomizableConstraintSystem>(
+        witness: &ValidSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut CS,
+    ) {
+        // Validate that the mint of each balance is zero or unique
+        Self::validate_balance_mints_equal(witness, cs);
+        // Validate that the updates to the balances are correctly computed from the note
+        Self::validate_balance_updates(witness, cs);
+    }
+
+    /// Validates that a given list of mints is unique except for zero; which may be
+    /// repeated arbitrarily many times
+    fn validate_balance_mints_equal<CS: RandomizableConstraintSystem>(
+        witness: &ValidSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut CS,
+    ) {
+        let n_balances = witness.post_wallet.balances.len();
+        for i in 0..n_balances {
+            let balance_mint_i = witness.post_wallet.balances[i].mint;
+            let balance_mint_i_eq_zero = EqZeroGadget::eq_zero(balance_mint_i, cs);
+
+            for j in (i + 1)..n_balances {
+                // Assert that either mint_i != mint_j or mint_i == 0
+                let balance_mint_j = witness.post_wallet.balances[j].mint;
+                let ne = NotEqualGadget::not_equal(balance_mint_i, balance_mint_j, cs);
+                let ne_or_mint_zero = OrGate::or(ne, balance_mint_i_eq_zero.into(), cs);
+
+                cs.constrain(Variable::One() - ne_or_mint_zero);
+            }
+        }
+    }
+
+    /// Validates that the note is properly applied to the balances of the old wallet to
+    /// give the new wallet balances
+    fn validate_balance_updates<CS: RandomizableConstraintSystem>(
+        witness: &ValidSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut CS,
+    ) {
+        // Select positive or negative depending on the direction of each value in the note
+        let scalar_neg_one = Scalar::one().neg();
+        let note_term1 = CondSelectGadget::select(
+            scalar_neg_one * witness.note.volume1,
+            witness.note.volume1.into(),
+            witness.note.direction1.into(),
+            cs,
+        );
+
+        let note_term2 = CondSelectGadget::select(
+            scalar_neg_one * witness.note.volume2,
+            witness.note.volume2.into(),
+            witness.note.direction2.into(),
+            cs,
+        );
+
+        let note_term3 = CondSelectGadget::select(
+            scalar_neg_one * witness.note.fee_volume,
+            witness.note.fee_volume.into(),
+            witness.note.fee_direction.into(),
+            cs,
+        );
+
+        // Loop over the balances in the new wallet and insure they're properly computed
+        for new_balance in witness.post_wallet.balances.iter() {
+            let mut expected_bal: LinearCombination = Variable::Zero().into();
+            // Add any balances that existed before the note update
+            for old_balance in witness.pre_wallet.balances.iter() {
+                let mints_equal = EqGadget::eq(old_balance.mint, new_balance.mint, cs);
+                let (_, _, equal_mints_term) =
+                    cs.multiply(mints_equal.into(), old_balance.amount.into());
+                expected_bal += equal_mints_term;
+            }
+
+            // Add in the terms from the note
+            let mints_equal_note_term1 = EqGadget::eq(new_balance.mint, witness.note.mint1, cs);
+            let (_, _, note_term1_masked) =
+                cs.multiply(mints_equal_note_term1.into(), note_term1.clone());
+            expected_bal += note_term1_masked;
+
+            let mints_equal_note_term2 = EqGadget::eq(new_balance.mint, witness.note.mint2, cs);
+            let (_, _, note_term2_masked) =
+                cs.multiply(mints_equal_note_term2.into(), note_term2.clone());
+            expected_bal += note_term2_masked;
+
+            let mints_equal_note_term3 = EqGadget::eq(new_balance.mint, witness.note.fee_mint, cs);
+            let (_, _, note_term3_masked) =
+                cs.multiply(mints_equal_note_term3.into(), note_term3.clone());
+            expected_bal += note_term3_masked;
+
+            // Constrain the expected balance and the updated balance to be equal
+            cs.constrain(new_balance.amount - expected_bal);
+        }
     }
 }
 
