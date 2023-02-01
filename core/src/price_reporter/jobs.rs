@@ -1,4 +1,5 @@
 //! Defines all possible jobs for the PriceReporterManager.
+#![allow(dead_code)]
 use crossbeam::channel::Sender;
 use ring_channel::RingReceiver;
 use std::collections::{HashMap, HashSet};
