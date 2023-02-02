@@ -703,6 +703,8 @@ mod valid_settle_tests {
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
     use lazy_static::lazy_static;
+    use merlin::Transcript;
+    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
     use rand_core::OsRng;
 
     use crate::{
@@ -717,6 +719,7 @@ mod valid_settle_tests {
             SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
         },
         zk_gadgets::elgamal::ElGamalCiphertext,
+        CommitProver,
     };
 
     use super::{ValidSettle, ValidSettleStatement, ValidSettleWitness};
@@ -875,10 +878,236 @@ mod valid_settle_tests {
         let post_wallet = apply_note_to_wallet(&note, &initial_wallet);
 
         let (witness, statement) = compute_witness_and_statement(initial_wallet, post_wallet, note);
-
         let res = bulletproof_prove_and_verify::<ValidSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>(
             witness, statement,
         );
         assert!(res.is_ok())
+    }
+
+    /// Tests the case that a note is settled from an internal transfer
+    #[test]
+    fn test_valid_internal_transfer_settle() {
+        let mut rng = OsRng {};
+
+        let initial_wallet = INITIAL_WALLET.clone();
+        let mut note = DUMMY_MATCH_NOTE.clone();
+
+        // Modify the note to be a transfer note
+        note.mint2 = 0;
+        note.volume2 = 0;
+        note.direction2 = OrderSide::Buy;
+        note.fee_mint = 0;
+        note.fee_volume = 0;
+        note.fee_direction = OrderSide::Buy;
+
+        // Compute the wallet after transfer
+        let mut post_wallet = apply_note_to_wallet(&note, &initial_wallet);
+
+        // Modify the post wallet to have no order updates
+        post_wallet.orders = initial_wallet.orders.clone();
+
+        let (witness, statement) = compute_witness_and_statement(initial_wallet, post_wallet, note);
+
+        // Build a prover
+        let mut transcript = Transcript::new("test".as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+
+        // Apply the constraints and verify that they are not satisfied
+        ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
+        assert!(prover.constraints_satisfied());
+    }
+
+    /// Tests the case in which a balance is spuriously added
+    #[test]
+    fn test_invalid_unexpected_mint() {
+        let mut rng = OsRng {};
+
+        let initial_wallet = INITIAL_WALLET.clone();
+        let note = DUMMY_MATCH_NOTE.clone();
+        let mut post_wallet = apply_note_to_wallet(&note, &initial_wallet);
+        post_wallet.balances[0].mint = 42;
+
+        let (witness, statement) = compute_witness_and_statement(initial_wallet, post_wallet, note);
+
+        // Build a prover
+        let mut transcript = Transcript::new("test".as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+
+        // Apply the constraints and verify that they are not satisfied
+        ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
+        assert!(!prover.constraints_satisfied());
+    }
+
+    /// Tests the case in which a balance is not properly updated
+    #[test]
+    fn test_invalid_balance_update_buy_too_much() {
+        let mut rng = OsRng {};
+
+        let initial_wallet = INITIAL_WALLET.clone();
+        let note = DUMMY_MATCH_NOTE.clone();
+        let mut post_wallet = apply_note_to_wallet(&note, &initial_wallet);
+
+        // Prover attempts to increase their balance of the base mint by more than the note allocated
+        post_wallet.balances[1].amount += 2;
+
+        let (witness, statement) = compute_witness_and_statement(initial_wallet, post_wallet, note);
+
+        // Build a prover
+        let mut transcript = Transcript::new("test".as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+
+        // Apply the constraints and verify that they are not satisfied
+        ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
+        assert!(!prover.constraints_satisfied());
+    }
+
+    /// Tests the case in which the prover tries to sell less of the quote token than
+    /// the note allocates
+    #[test]
+    fn test_invalid_balance_update_sell_too_little() {
+        let mut rng = OsRng {};
+
+        let initial_wallet = INITIAL_WALLET.clone();
+        let note = DUMMY_MATCH_NOTE.clone();
+        let mut post_wallet = apply_note_to_wallet(&note, &initial_wallet);
+
+        // Prover attempts to increase their balance of the base mint by more than the note allocated
+        post_wallet.balances[0].amount += 1;
+
+        let (witness, statement) = compute_witness_and_statement(initial_wallet, post_wallet, note);
+
+        // Build a prover
+        let mut transcript = Transcript::new("test".as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+
+        // Apply the constraints and verify that they are not satisfied
+        ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
+        assert!(!prover.constraints_satisfied());
+    }
+
+    /// Tests the case in which the prover attempts to not pay the full fee
+    #[test]
+    fn test_invalid_balance_update_no_fees() {
+        let mut rng = OsRng {};
+
+        let initial_wallet = INITIAL_WALLET.clone();
+        let mut note = DUMMY_MATCH_NOTE.clone();
+        let post_wallet = apply_note_to_wallet(&note, &initial_wallet);
+
+        // Prover attempts to increase their balance of the base mint by more than the note allocated
+        note.fee_volume += 1;
+
+        let (witness, statement) = compute_witness_and_statement(initial_wallet, post_wallet, note);
+
+        // Build a prover
+        let mut transcript = Transcript::new("test".as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+
+        // Apply the constraints and verify that they are not satisfied
+        ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
+        assert!(!prover.constraints_satisfied());
+    }
+
+    /// Tests the case in which the prover does not properly update the order that was
+    /// matched into the note
+    #[test]
+    fn test_invalid_order_update_no_update() {
+        let mut rng = OsRng {};
+
+        let initial_wallet = INITIAL_WALLET.clone();
+        let note = DUMMY_MATCH_NOTE.clone();
+        let mut post_wallet = apply_note_to_wallet(&note, &initial_wallet);
+
+        // Invalid, the prover attempts to not update the order that matched
+        post_wallet.orders = initial_wallet.orders.clone();
+
+        let (witness, statement) = compute_witness_and_statement(initial_wallet, post_wallet, note);
+
+        // Build a prover
+        let mut transcript = Transcript::new("test".as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+
+        // Apply the constraints and verify that they are not satisfied
+        ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
+        assert!(!prover.constraints_satisfied());
+    }
+
+    /// Tests various cases in which the orders list is otherwise modified, other than
+    /// the order volume, this should not be the case in a VALID SETTLE proof
+    #[test]
+    fn test_invalid_order_malleability() {
+        let mut rng = OsRng {};
+
+        let initial_wallet = INITIAL_WALLET.clone();
+        let note = DUMMY_MATCH_NOTE.clone();
+        let post_wallet = apply_note_to_wallet(&note, &initial_wallet);
+
+        let mut bad_post_wallets = Vec::new();
+
+        // Try changing the base mint
+        let mut bad_post_wallet1 = post_wallet.clone();
+        bad_post_wallet1.orders[1].base_mint += 1;
+        bad_post_wallets.push(bad_post_wallet1);
+
+        // Try changing the quote mint
+        let mut bad_post_wallet2 = post_wallet.clone();
+        bad_post_wallet2.orders[1].quote_mint += 1;
+        bad_post_wallets.push(bad_post_wallet2);
+
+        // Try changing the direction
+        let mut bad_post_wallet3 = post_wallet.clone();
+        bad_post_wallet3.orders[1].side = OrderSide::Buy;
+        bad_post_wallets.push(bad_post_wallet3);
+
+        // Try changing the price
+        let mut bad_post_wallet4 = post_wallet.clone();
+        bad_post_wallet4.orders[1].price = bad_post_wallet4.orders[1].price + Scalar::one();
+        bad_post_wallets.push(bad_post_wallet4);
+
+        // Try changing the timestamp
+        let mut bad_post_wallet5 = post_wallet;
+        bad_post_wallet5.orders[1].timestamp += 1;
+        bad_post_wallets.push(bad_post_wallet5);
+
+        for post_wallet in bad_post_wallets.into_iter() {
+            let (witness, statement) =
+                compute_witness_and_statement(initial_wallet.clone(), post_wallet, note.clone());
+
+            // Build a prover
+            let mut transcript = Transcript::new("test".as_bytes());
+            let pc_gens = PedersenGens::default();
+            let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+            let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+            let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+
+            // Apply the constraints and verify that they are not satisfied
+            ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
+            assert!(!prover.constraints_satisfied());
+        }
     }
 }
