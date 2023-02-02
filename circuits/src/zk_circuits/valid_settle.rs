@@ -149,14 +149,14 @@ where
         cs: &mut CS,
     ) {
         // Validate that the mint of each balance is zero or unique
-        Self::validate_balance_mints_equal(witness, cs);
+        Self::validate_balance_mints_unique(witness, cs);
         // Validate that the updates to the balances are correctly computed from the note
         Self::validate_balance_updates(witness, cs);
     }
 
     /// Validates that a given list of mints is unique except for zero; which may be
     /// repeated arbitrarily many times
-    fn validate_balance_mints_equal<CS: RandomizableConstraintSystem>(
+    fn validate_balance_mints_unique<CS: RandomizableConstraintSystem>(
         witness: &ValidSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) {
