@@ -29,7 +29,7 @@ use crate::{
     },
     zk_gadgets::{
         commitments::{NullifierGadget, WalletCommitGadget},
-        comparators::{EqVecGadget, EqZeroGadget, GreaterThanEqGadget},
+        comparators::{EqVecGadget, GreaterThanEqGadget},
         merkle::PoseidonMerkleHashGadget,
         select::CondSelectGadget,
     },
@@ -79,14 +79,15 @@ where
         Self::verify_wallet_contains_order(witness.order.clone(), &witness.wallet, cs);
         Self::verify_wallet_contains_fee(witness.fee.clone(), &witness.wallet, cs);
 
-        // Verify that the balance is for the correct mint
-        let selected_mint = CondSelectGadget::select(
+        // Verify that the balance is for the correct mint; i.e. the mint that the local party
+        // will sell if a match is found on this order
+        let mint_sold = CondSelectGadget::select(
             witness.order.base_mint,
             witness.order.quote_mint,
             witness.order.side,
             cs,
         );
-        cs.constrain(witness.balance.mint - selected_mint);
+        cs.constrain(witness.balance.mint - mint_sold);
 
         // Verify that the given fee balance is the same mint as the committed fee
         cs.constrain(witness.fee.gas_addr - witness.fee_balance.mint);
@@ -116,9 +117,8 @@ where
             balances_equal_sum += EqVecGadget::eq_vec(&b1_vars, &b2_vars, cs);
         }
 
-        // Constrain the EqZero gadget to return 0; i.e. the given order matches a wallet order
-        let sum_eq_zero = EqZeroGadget::eq_zero(balances_equal_sum, cs);
-        cs.constrain(sum_eq_zero.into());
+        // Constrain there to have been exactly one balance equal to the given balance
+        cs.constrain(balances_equal_sum - Variable::One());
     }
 
     /// Verify that a given order is in the list of the wallet's orders
@@ -137,9 +137,8 @@ where
             orders_equal_sum += EqVecGadget::eq_vec(&o1_vars, &o2_vars, cs);
         }
 
-        // Constrain the EqZero gadget to return 0; i.e. the given order matches a wallet order
-        let sum_eq_zero = EqZeroGadget::eq_zero(orders_equal_sum, cs);
-        cs.constrain(sum_eq_zero.into());
+        // Constrain there to have been exactly one order equal to the given order
+        cs.constrain(orders_equal_sum - Variable::One());
     }
 
     /// Verify that a given fee is in the list of the wallet's fees
@@ -158,9 +157,8 @@ where
             fees_equal_sum += EqVecGadget::eq_vec(&f1_vars, &f2_vars, cs);
         }
 
-        // Constrain the EqZero gadget to return 0; i.e. the given order matches a wallet order
-        let sum_eq_zero = EqZeroGadget::eq_zero(fees_equal_sum, cs);
-        cs.constrain(sum_eq_zero.into());
+        // Constrain there to have been exactly one fee equal to the given fee
+        cs.constrain(fees_equal_sum - Variable::One());
     }
 }
 
