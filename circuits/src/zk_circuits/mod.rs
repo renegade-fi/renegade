@@ -39,6 +39,15 @@ mod test_helpers {
     // --------------
 
     lazy_static! {
+        // The key data for the wallet, note that only the identification keys are currently
+        // computed correctly
+        pub(crate) static ref PRIVATE_KEYS: Vec<Scalar> = vec![Scalar::one(); NUM_KEYS];
+        pub(crate) static ref PUBLIC_KEYS: Vec<Scalar> = vec![
+            Scalar::one(),
+            compute_poseidon_hash(&[PRIVATE_KEYS[1]]),
+            compute_poseidon_hash(&[PRIVATE_KEYS[2]]),
+            Scalar::one(),
+        ];
         pub(crate) static ref INITIAL_BALANCES: [Balance; MAX_BALANCES] = [
             Balance { mint: 1, amount: 5 },
             Balance {
@@ -74,7 +83,7 @@ mod test_helpers {
             balances: INITIAL_BALANCES.clone(),
             orders: INITIAL_ORDERS.clone(),
             fees: INITIAL_FEES.clone(),
-            keys: vec![Scalar::from(1u64); NUM_KEYS].try_into().unwrap(),
+            keys: PUBLIC_KEYS.clone().try_into().unwrap(),
             randomness: Scalar::from(42u64)
         };
     }
@@ -97,6 +106,16 @@ mod test_helpers {
     // -----------
     // | Helpers |
     // -----------
+
+    /// Compute the hash of the randomness of a given wallet
+    pub(crate) fn compute_poseidon_hash(values: &[Scalar]) -> Scalar {
+        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
+        hasher.absorb(&values.iter().map(scalar_to_prime_field).collect_vec());
+
+        let out: DalekRistrettoField = hasher.squeeze_field_elements(1 /* num_elements */)[0];
+        prime_field_to_scalar(&out)
+    }
+
     /// Compute the commitment to a wallet
     pub(crate) fn compute_wallet_commitment(wallet: &SizedWallet) -> DalekRistrettoField {
         let mut hasher = PoseidonSponge::new(&default_poseidon_params());

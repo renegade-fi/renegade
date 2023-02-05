@@ -102,8 +102,13 @@ where
 
         // Verify that the committed randomness hash is the hash of the wallet randomness
         let hasher_params = PoseidonSpongeParameters::default();
-        let mut hasher = PoseidonHashGadget::new(hasher_params);
+        let mut hasher = PoseidonHashGadget::new(hasher_params.clone());
         hasher.hash(&[witness.wallet.randomness], witness.randomness_hash, cs)?;
+
+        // Authorize the proof by computing the value pk_match and validate that it corresponds to the public
+        // key known in the wallet
+        let mut hasher = PoseidonHashGadget::new(hasher_params);
+        hasher.hash(&[witness.sk_match], witness.wallet.keys[1], cs)?;
 
         Ok(())
     }
@@ -195,6 +200,9 @@ pub struct ValidCommitmentsWitness<
     /// The Poseidon hash of the wallet's randomness, used as the blinder
     /// on any notes generated for a match
     pub randomness_hash: Scalar,
+    /// The private match key, used as an authorization check that the prover
+    /// may match for the given wallet
+    pub sk_match: Scalar,
 }
 
 /// The witness type for VALID COMMITMENTS, allocated in a constraint system
@@ -223,6 +231,9 @@ pub struct ValidCommitmentsWitnessVar<
     /// The Poseidon hash of the wallet's randomness, used as the blinder
     /// on any notes generated for a match
     pub randomness_hash: Variable,
+    /// The private match key, used as an authorization check that the prover
+    /// may match for the given wallet
+    pub sk_match: Variable,
 }
 
 /// The witness type for VALID COMMITMENTS, committed to by a prover
@@ -251,6 +262,9 @@ pub struct ValidCommitmentsWitnessCommitment<
     /// The Poseidon hash of the wallet's randomness, used as the blinder
     /// on any notes generated for a match
     pub randomness_hash: CompressedRistretto,
+    /// The private match key, used as an authorization check that the prover
+    /// may match for the given wallet
+    pub sk_match: CompressedRistretto,
 }
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitProver
@@ -276,6 +290,7 @@ where
         let (fee_var, fee_commit) = self.fee.commit_prover(rng, prover).unwrap();
         let (randomness_hash_comm, randomness_hash_var) =
             prover.commit(self.randomness_hash, Scalar::random(rng));
+        let (sk_match_comm, sk_match_var) = prover.commit(self.sk_match, Scalar::random(rng));
 
         // Commit to the Merkle proof
         let (merkle_opening_comms, merkle_opening_vars): (Vec<CompressedRistretto>, Vec<Variable>) =
@@ -299,6 +314,7 @@ where
                 wallet_opening: merkle_opening_vars,
                 wallet_opening_indices: merkle_index_vars,
                 randomness_hash: randomness_hash_var,
+                sk_match: sk_match_var,
             },
             ValidCommitmentsWitnessCommitment {
                 wallet: wallet_commit,
@@ -309,6 +325,7 @@ where
                 wallet_opening: merkle_opening_comms,
                 wallet_opening_indices: merkle_index_comms,
                 randomness_hash: randomness_hash_comm,
+                sk_match: sk_match_comm,
             },
         ))
     }
@@ -329,6 +346,7 @@ where
         let fee_balance_var = self.fee_balance.commit_verifier(verifier).unwrap();
         let fee_var = self.fee.commit_verifier(verifier).unwrap();
         let randomness_var = verifier.commit(self.randomness_hash);
+        let sk_match_var = verifier.commit(self.sk_match);
 
         let merkle_opening_vars = self
             .wallet_opening
@@ -350,6 +368,7 @@ where
             wallet_opening: merkle_opening_vars,
             wallet_opening_indices: merkle_index_vars,
             randomness_hash: randomness_var,
+            sk_match: sk_match_var,
         })
     }
 }
@@ -423,11 +442,7 @@ where
 
 #[cfg(test)]
 mod valid_commitments_test {
-    use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
-    use crypto::{
-        fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField},
-        hash::default_poseidon_params,
-    };
+    use crypto::fields::prime_field_to_scalar;
     use curve25519_dalek::scalar::Scalar;
     use merlin::Transcript;
     use mpc_bulletproof::{
@@ -444,8 +459,9 @@ mod valid_commitments_test {
             order::{Order, OrderSide},
         },
         zk_circuits::test_helpers::{
-            compute_wallet_commitment, compute_wallet_match_nullifier, create_wallet_opening,
-            SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+            compute_poseidon_hash, compute_wallet_commitment, compute_wallet_match_nullifier,
+            create_wallet_opening, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+            PRIVATE_KEYS,
         },
         zk_gadgets::fixed_point::FixedPoint,
         CommitProver,
@@ -482,15 +498,6 @@ mod valid_commitments_test {
         prover.constraints_satisfied()
     }
 
-    /// Compute the hash of the randomness of a given wallet
-    fn compute_randomness_hash(wallet: &SizedWallet) -> Scalar {
-        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
-        hasher.absorb(&scalar_to_prime_field(&wallet.randomness));
-
-        let out: DalekRistrettoField = hasher.squeeze_field_elements(1 /* num_elements */)[0];
-        prime_field_to_scalar(&out)
-    }
-
     // ---------
     // | Tests |
     // ---------
@@ -518,7 +525,8 @@ mod valid_commitments_test {
             fee,
             wallet_opening: opening,
             wallet_opening_indices: opening_indices,
-            randomness_hash: compute_randomness_hash(&wallet),
+            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {
             nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
@@ -557,7 +565,8 @@ mod valid_commitments_test {
             fee,
             wallet_opening: opening,
             wallet_opening_indices: opening_indices,
-            randomness_hash: compute_randomness_hash(&wallet),
+            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {
             nullifier: Scalar::random(&mut rng),
@@ -595,7 +604,8 @@ mod valid_commitments_test {
             fee,
             wallet_opening: opening,
             wallet_opening_indices: opening_indices,
-            randomness_hash: compute_randomness_hash(&wallet),
+            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {
             nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
@@ -636,7 +646,8 @@ mod valid_commitments_test {
             fee,
             wallet_opening: opening,
             wallet_opening_indices: opening_indices,
-            randomness_hash: compute_randomness_hash(&wallet),
+            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {
             nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
@@ -679,7 +690,8 @@ mod valid_commitments_test {
             fee,
             wallet_opening: opening,
             wallet_opening_indices: opening_indices,
-            randomness_hash: compute_randomness_hash(&wallet),
+            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {
             nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
@@ -718,7 +730,8 @@ mod valid_commitments_test {
             fee,
             wallet_opening: opening,
             wallet_opening_indices: opening_indices,
-            randomness_hash: compute_randomness_hash(&wallet),
+            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {
             nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
@@ -755,7 +768,8 @@ mod valid_commitments_test {
             fee,
             wallet_opening: opening,
             wallet_opening_indices: opening_indices,
-            randomness_hash: compute_randomness_hash(&wallet),
+            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {
             nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
@@ -792,7 +806,8 @@ mod valid_commitments_test {
             fee,
             wallet_opening: opening,
             wallet_opening_indices: opening_indices,
-            randomness_hash: compute_randomness_hash(&wallet),
+            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {
             nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
@@ -831,7 +846,8 @@ mod valid_commitments_test {
             fee,
             wallet_opening: opening,
             wallet_opening_indices: opening_indices,
-            randomness_hash: compute_randomness_hash(&wallet),
+            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {
             nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
