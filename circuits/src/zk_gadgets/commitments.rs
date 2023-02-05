@@ -67,7 +67,15 @@ where
         }
 
         // Hash the keys into the state
-        hasher.batch_absorb(&wallet.keys, cs)?;
+        hasher.batch_absorb(
+            &[
+                wallet.keys.pk_root,
+                wallet.keys.pk_match,
+                wallet.keys.pk_settle,
+                wallet.keys.pk_view,
+            ],
+            cs,
+        )?;
 
         // Hash the randomness into the state
         hasher.absorb(wallet.randomness, cs)?;

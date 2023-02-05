@@ -63,10 +63,10 @@ where
         Self::validate_state_primitives(&witness, &statement, cs)?;
 
         // Validate that all the keys have remained the same
-        cs.constrain(witness.pre_wallet.keys[0] - witness.post_wallet.keys[0]);
-        cs.constrain(witness.pre_wallet.keys[1] - witness.post_wallet.keys[1]);
-        cs.constrain(witness.pre_wallet.keys[2] - witness.post_wallet.keys[2]);
-        cs.constrain(witness.pre_wallet.keys[3] - witness.post_wallet.keys[3]);
+        cs.constrain(witness.pre_wallet.keys.pk_root - witness.post_wallet.keys.pk_root);
+        cs.constrain(witness.pre_wallet.keys.pk_match - witness.post_wallet.keys.pk_match);
+        cs.constrain(witness.pre_wallet.keys.pk_settle - witness.post_wallet.keys.pk_settle);
+        cs.constrain(witness.pre_wallet.keys.pk_view - witness.post_wallet.keys.pk_view);
 
         // Validate that the randomness has been properly updated in the new wallet
         cs.constrain(
@@ -134,7 +134,7 @@ where
         cs.constrain(statement.wallet_match_nullifier - pre_wallet_match_nullifier);
 
         let note_redeem_nullifier_res = NullifierGadget::note_redeem_nullifier(
-            witness.pre_wallet.keys[2],
+            witness.pre_wallet.keys.pk_settle,
             note_commitment_res,
             cs,
         )?;
@@ -824,8 +824,10 @@ mod valid_settle_tests {
 
         let wallet_spend_nullifier = compute_wallet_spend_nullifier(&pre_wallet, pre_wallet_commit);
         let wallet_match_nullifier = compute_wallet_match_nullifier(&pre_wallet, pre_wallet_commit);
-        let note_redeem_nullifier =
-            compute_note_redeem_nullifier(note_commit, scalar_to_prime_field(&pre_wallet.keys[2]));
+        let note_redeem_nullifier = compute_note_redeem_nullifier(
+            note_commit,
+            scalar_to_prime_field(&pre_wallet.keys.pk_settle),
+        );
 
         let (merkle_root, openings, openings_indices) = create_multi_opening(
             &[

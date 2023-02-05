@@ -108,7 +108,7 @@ where
         // Authorize the proof by computing the value pk_match and validate that it corresponds to the public
         // key known in the wallet
         let mut hasher = PoseidonHashGadget::new(hasher_params);
-        hasher.hash(&[witness.sk_match], witness.wallet.keys[1], cs)?;
+        hasher.hash(&[witness.sk_match], witness.wallet.keys.pk_match, cs)?;
 
         Ok(())
     }

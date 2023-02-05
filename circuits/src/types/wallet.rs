@@ -11,11 +11,9 @@ use crate::{CommitProver, CommitVerifier};
 use super::{
     balance::{Balance, BalanceVar, CommittedBalance},
     fee::{CommittedFee, Fee, FeeVar},
+    keychain::{CommittedKeyChain, KeyChain, KeyChainVar},
     order::{CommittedOrder, Order, OrderVar},
 };
-
-/// The number of keys in the key hierarchy stored in the wallet
-pub(crate) const NUM_KEYS: usize = 4;
 
 /// Represents the base type of a wallet holding orders, balances, fees, keys
 /// and cryptographic randomness
@@ -31,7 +29,7 @@ where
     /// The list of payable fees in the wallet
     pub fees: [Fee; MAX_FEES],
     /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle, pk_view)
-    pub keys: [Scalar; NUM_KEYS],
+    pub keys: KeyChain,
     /// The wallet randomness used to blind commitments, nullifiers, etc
     pub randomness: Scalar,
 }
@@ -49,7 +47,7 @@ where
     /// The list of payable fees in the wallet
     pub fees: [FeeVar; MAX_FEES],
     /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle, pk_view)
-    pub keys: [Variable; NUM_KEYS],
+    pub keys: KeyChainVar,
     /// The wallet randomness used to blind commitments, nullifiers, etc
     pub randomness: Variable,
 }
@@ -86,12 +84,7 @@ where
             .map(|fee| fee.commit_prover(rng, prover).unwrap())
             .unzip();
 
-        let (key_comms, key_vars): (Vec<CompressedRistretto>, Vec<Variable>) = self
-            .keys
-            .iter()
-            .map(|key| prover.commit(*key, Scalar::random(rng)))
-            .unzip();
-
+        let (key_vars, key_comms) = self.keys.commit_prover(rng, prover).unwrap();
         let (randomness_comm, randomness_var) = prover.commit(self.randomness, Scalar::random(rng));
 
         Ok((
@@ -99,14 +92,14 @@ where
                 balances: balance_vars.try_into().unwrap(),
                 orders: order_vars.try_into().unwrap(),
                 fees: fee_vars.try_into().unwrap(),
-                keys: key_vars.try_into().unwrap(),
+                keys: key_vars,
                 randomness: randomness_var,
             },
             CommittedWallet {
                 balances: committed_balances.try_into().unwrap(),
                 orders: committed_orders.try_into().unwrap(),
                 fees: committed_fees.try_into().unwrap(),
-                keys: key_comms.try_into().unwrap(),
+                keys: key_comms,
                 randomness: randomness_comm,
             },
         ))
@@ -129,7 +122,7 @@ pub struct CommittedWallet<
     /// The list of payable fees in the wallet
     pub fees: [CommittedFee; MAX_FEES],
     /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle, pk_view)
-    pub keys: [CompressedRistretto; NUM_KEYS],
+    pub keys: CommittedKeyChain,
     /// The wallet randomness used to blind commitments, nullifiers, etc
     pub randomness: CompressedRistretto,
 }
@@ -159,18 +152,14 @@ where
             .map(|fee| fee.commit_verifier(verifier).unwrap())
             .collect_vec();
 
-        let key_vars = self
-            .keys
-            .iter()
-            .map(|key| verifier.commit(*key))
-            .collect_vec();
+        let key_vars = self.keys.commit_verifier(verifier).unwrap();
         let randomness_var = verifier.commit(self.randomness);
 
         Ok(WalletVar {
             balances: balance_vars.try_into().unwrap(),
             orders: order_vars.try_into().unwrap(),
             fees: fee_vars.try_into().unwrap(),
-            keys: key_vars.try_into().unwrap(),
+            keys: key_vars,
             randomness: randomness_var,
         })
     }

@@ -27,9 +27,10 @@ mod test_helpers {
         types::{
             balance::Balance,
             fee::Fee,
+            keychain::{KeyChain, NUM_KEYS},
             note::Note,
             order::{Order, OrderSide},
-            wallet::{Wallet, NUM_KEYS},
+            wallet::Wallet,
         },
         zk_gadgets::{fixed_point::FixedPoint, merkle::merkle_test::get_opening_indices},
     };
@@ -42,12 +43,12 @@ mod test_helpers {
         // The key data for the wallet, note that only the identification keys are currently
         // computed correctly
         pub(crate) static ref PRIVATE_KEYS: Vec<Scalar> = vec![Scalar::one(); NUM_KEYS];
-        pub(crate) static ref PUBLIC_KEYS: Vec<Scalar> = vec![
-            Scalar::one(),
-            compute_poseidon_hash(&[PRIVATE_KEYS[1]]),
-            compute_poseidon_hash(&[PRIVATE_KEYS[2]]),
-            Scalar::one(),
-        ];
+        pub(crate) static ref PUBLIC_KEYS: KeyChain = KeyChain {
+            pk_root: Scalar::one(),
+            pk_match: compute_poseidon_hash(&[PRIVATE_KEYS[1]]),
+            pk_settle: compute_poseidon_hash(&[PRIVATE_KEYS[2]]),
+            pk_view: Scalar::one(),
+        };
         pub(crate) static ref INITIAL_BALANCES: [Balance; MAX_BALANCES] = [
             Balance { mint: 1, amount: 5 },
             Balance {
@@ -83,7 +84,7 @@ mod test_helpers {
             balances: INITIAL_BALANCES.clone(),
             orders: INITIAL_ORDERS.clone(),
             fees: INITIAL_FEES.clone(),
-            keys: PUBLIC_KEYS.clone().try_into().unwrap(),
+            keys: *PUBLIC_KEYS,
             randomness: Scalar::from(42u64)
         };
     }
@@ -147,7 +148,12 @@ mod test_helpers {
         }
 
         // Hash the keys into the state
-        hasher.absorb(&wallet.keys.iter().map(scalar_to_prime_field).collect_vec());
+        hasher.absorb(
+            &Into::<Vec<Scalar>>::into(wallet.keys)
+                .iter()
+                .map(scalar_to_prime_field)
+                .collect_vec(),
+        );
 
         // Hash the randomness into the state
         hasher.absorb(&scalar_to_prime_field(&wallet.randomness));

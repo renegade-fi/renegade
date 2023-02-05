@@ -95,7 +95,7 @@ where
         cs.constrain(match_nullifier - match_nullifier_res);
 
         // Verify that the given pk_root key is the same as the wallet
-        cs.constrain(pk_root - witness.wallet1.keys[0]);
+        cs.constrain(pk_root - witness.wallet1.keys.pk_root);
 
         // Verify that the keys are unchanged between the two wallets
         Self::constrain_keys_equal(&witness.wallet1, &witness.wallet2, cs);
@@ -157,9 +157,10 @@ where
         wallet2: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) {
-        for (key1, key2) in wallet1.keys.iter().zip(wallet2.keys.iter()) {
-            cs.constrain(*key1 - *key2);
-        }
+        cs.constrain(wallet1.keys.pk_root - wallet2.keys.pk_root);
+        cs.constrain(wallet1.keys.pk_match - wallet2.keys.pk_match);
+        cs.constrain(wallet1.keys.pk_settle - wallet2.keys.pk_settle);
+        cs.constrain(wallet1.keys.pk_view - wallet2.keys.pk_view);
     }
 
     /// Validates the application of the transfers to the balance state
@@ -853,7 +854,7 @@ mod valid_wallet_update_tests {
 
         let statement = ValidWalletUpdateStatement {
             timestamp: Scalar::from(timestamp),
-            pk_root: new_wallet.keys[0],
+            pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
             wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
@@ -911,7 +912,7 @@ mod valid_wallet_update_tests {
 
         let statement = ValidWalletUpdateStatement {
             timestamp: Scalar::from(timestamp),
-            pk_root: new_wallet.keys[0],
+            pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
             wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
@@ -966,7 +967,7 @@ mod valid_wallet_update_tests {
 
         let statement = ValidWalletUpdateStatement {
             timestamp: Scalar::from(timestamp),
-            pk_root: new_wallet.keys[0],
+            pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
             wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
@@ -1026,7 +1027,7 @@ mod valid_wallet_update_tests {
 
         let statement = ValidWalletUpdateStatement {
             timestamp: Scalar::from(timestamp),
-            pk_root: new_wallet.keys[0],
+            pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
             wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
@@ -1083,7 +1084,7 @@ mod valid_wallet_update_tests {
 
         let statement = ValidWalletUpdateStatement {
             timestamp: Scalar::from(timestamp),
-            pk_root: new_wallet.keys[0],
+            pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
             wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
@@ -1145,7 +1146,7 @@ mod valid_wallet_update_tests {
 
         let statement = ValidWalletUpdateStatement {
             timestamp: Scalar::from(timestamp),
-            pk_root: new_wallet.keys[0],
+            pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
             wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
@@ -1209,7 +1210,7 @@ mod valid_wallet_update_tests {
 
         let statement = ValidWalletUpdateStatement {
             timestamp: Scalar::from(timestamp),
-            pk_root: new_wallet.keys[0],
+            pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
             wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
@@ -1270,7 +1271,7 @@ mod valid_wallet_update_tests {
 
         let statement = ValidWalletUpdateStatement {
             timestamp: Scalar::from(timestamp),
-            pk_root: new_wallet.keys[0],
+            pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
             wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
@@ -1335,7 +1336,7 @@ mod valid_wallet_update_tests {
 
         let statement = ValidWalletUpdateStatement {
             timestamp: Scalar::from(timestamp),
-            pk_root: new_wallet.keys[0],
+            pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
             wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
@@ -1401,7 +1402,7 @@ mod valid_wallet_update_tests {
 
         let statement = ValidWalletUpdateStatement {
             timestamp: Scalar::from(timestamp),
-            pk_root: new_wallet.keys[0],
+            pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
             wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
@@ -1467,7 +1468,7 @@ mod valid_wallet_update_tests {
 
         let statement = ValidWalletUpdateStatement {
             timestamp: Scalar::from(timestamp),
-            pk_root: new_wallet.keys[0],
+            pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
             wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
@@ -1528,7 +1529,7 @@ mod valid_wallet_update_tests {
 
         let statement = ValidWalletUpdateStatement {
             timestamp: Scalar::from(timestamp),
-            pk_root: new_wallet.keys[0],
+            pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
             wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
@@ -1589,7 +1590,7 @@ mod valid_wallet_update_tests {
 
         let statement = ValidWalletUpdateStatement {
             timestamp: Scalar::from(timestamp),
-            pk_root: new_wallet.keys[0],
+            pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
             wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
@@ -1648,7 +1649,7 @@ mod valid_wallet_update_tests {
 
         let statement = ValidWalletUpdateStatement {
             timestamp: Scalar::from(timestamp),
-            pk_root: new_wallet.keys[0],
+            pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
             wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
@@ -1713,7 +1714,7 @@ mod valid_wallet_update_tests {
 
         let statement = ValidWalletUpdateStatement {
             timestamp: Scalar::from(timestamp),
-            pk_root: new_wallet.keys[0],
+            pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
             wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
