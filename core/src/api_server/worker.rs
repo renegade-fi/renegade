@@ -159,6 +159,7 @@ impl Worker for ApiServer {
     }
 
     fn cleanup(&mut self) -> Result<(), Self::Error> {
-        unimplemented!("")
+        drop(self.server_runtime.take());
+        Ok(())
     }
 }
