@@ -290,7 +290,20 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
         cs.constrain(witness.relayer1_note.type_.into());
         cs.constrain(witness.protocol_note.type_.into());
 
-        // TODO: constrain note randomness
+        // The randomness of each note
+        cs.constrain(witness.party0_note.randomness - witness.party0_randomness_hash); // r_1
+        cs.constrain(witness.party1_note.randomness - witness.party1_randomness_hash); // r_2
+        cs.constrain(
+            witness.relayer0_note.randomness - witness.party0_randomness_hash - Variable::One(),
+        ); // r_1 + 1
+        cs.constrain(
+            witness.relayer1_note.randomness - witness.party1_randomness_hash - Variable::One(),
+        ); // r_2 + 1
+        cs.constrain(
+            witness.protocol_note.randomness
+                - witness.party0_randomness_hash
+                - witness.party1_randomness_hash,
+        ); // r_1 + r_2
     }
 
     /// Creates the constraints that will be enforced if party 0 is buying the base asset
@@ -511,6 +524,14 @@ pub struct ValidMatchEncryptionWitness {
     pub party0_fee: Fee,
     /// The second party's fee committed to in the match process
     pub party1_fee: Fee,
+    /// The hashed randomness of the first party, used as note randomness
+    /// Linked into this proof from VALID COMMITMENTS via the shared Pedersen
+    /// commitment scheme
+    pub party0_randomness_hash: Scalar,
+    /// The hashed randomness of the first party, used as note randomness
+    /// Linked into this proof from VALID COMMITMENTS via the shared Pedersen
+    /// commitment scheme
+    pub party1_randomness_hash: Scalar,
     /// The note of exchange for the first party
     pub party0_note: Note,
     /// The note of exchange for the second party
@@ -534,6 +555,14 @@ pub struct ValidMatchEncryptionWitnessVar {
     pub party0_fee: FeeVar,
     /// The second party's fee committed to in the match process
     pub party1_fee: FeeVar,
+    /// The hashed randomness of the first party, used as note randomness
+    /// Linked into this proof from VALID COMMITMENTS via the shared Pedersen
+    /// commitment scheme
+    pub party0_randomness_hash: Variable,
+    /// The hashed randomness of the first party, used as note randomness
+    /// Linked into this proof from VALID COMMITMENTS via the shared Pedersen
+    /// commitment scheme
+    pub party1_randomness_hash: Variable,
     /// The note of exchange for the first party
     pub party0_note: NoteVar,
     /// The note of exchange for the second party
@@ -557,6 +586,14 @@ pub struct ValidMatchEncryptionWitnessCommitment {
     pub party0_fee: CommittedFee,
     /// The second party's fee committed to in the match process
     pub party1_fee: CommittedFee,
+    /// The hashed randomness of the first party, used as note randomness
+    /// Linked into this proof from VALID COMMITMENTS via the shared Pedersen
+    /// commitment scheme
+    pub party0_randomness_hash: CompressedRistretto,
+    /// The hashed randomness of the first party, used as note randomness
+    /// Linked into this proof from VALID COMMITMENTS via the shared Pedersen
+    /// commitment scheme
+    pub party1_randomness_hash: CompressedRistretto,
     /// The note of exchange for the first party
     pub party0_note: CommittedNote,
     /// The note of exchange for the second party
@@ -584,6 +621,10 @@ impl CommitProver for ValidMatchEncryptionWitness {
         let (match_res_var, match_res_comm) = self.match_res.commit_prover(rng, prover).unwrap();
         let (fee1_var, fee1_comm) = self.party0_fee.commit_prover(rng, prover).unwrap();
         let (fee2_var, fee2_comm) = self.party1_fee.commit_prover(rng, prover).unwrap();
+        let (party0_randomness_hash_comm, party0_randomness_hash_var) =
+            prover.commit(self.party0_randomness_hash, Scalar::random(rng));
+        let (party1_randomness_hash_comm, party1_randomness_hash_var) =
+            prover.commit(self.party1_randomness_hash, Scalar::random(rng));
         let (party0_note_var, party0_note_comm) =
             self.party0_note.commit_prover(rng, prover).unwrap();
         let (party1_note_var, party1_note_comm) =
@@ -605,6 +646,8 @@ impl CommitProver for ValidMatchEncryptionWitness {
                 match_res: match_res_var,
                 party0_fee: fee1_var,
                 party1_fee: fee2_var,
+                party0_randomness_hash: party0_randomness_hash_var,
+                party1_randomness_hash: party1_randomness_hash_var,
                 party0_note: party0_note_var,
                 party1_note: party1_note_var,
                 relayer0_note: relayer0_note_var,
@@ -616,6 +659,8 @@ impl CommitProver for ValidMatchEncryptionWitness {
                 match_res: match_res_comm,
                 party0_fee: fee1_comm,
                 party1_fee: fee2_comm,
+                party0_randomness_hash: party0_randomness_hash_comm,
+                party1_randomness_hash: party1_randomness_hash_comm,
                 party0_note: party0_note_comm,
                 party1_note: party1_note_comm,
                 relayer0_note: relayer0_note_comm,
@@ -635,6 +680,8 @@ impl CommitVerifier for ValidMatchEncryptionWitnessCommitment {
         let match_res_var = self.match_res.commit_verifier(verifier).unwrap();
         let fee1_var = self.party0_fee.commit_verifier(verifier).unwrap();
         let fee2_var = self.party1_fee.commit_verifier(verifier).unwrap();
+        let party0_randomness_hash_var = verifier.commit(self.party0_randomness_hash);
+        let party1_randomness_hash_var = verifier.commit(self.party1_randomness_hash);
         let party0_note_var = self.party0_note.commit_verifier(verifier).unwrap();
         let party1_note_var = self.party1_note.commit_verifier(verifier).unwrap();
         let relayer0_note_var = self.relayer0_note.commit_verifier(verifier).unwrap();
@@ -650,6 +697,8 @@ impl CommitVerifier for ValidMatchEncryptionWitnessCommitment {
             match_res: match_res_var,
             party0_fee: fee1_var,
             party1_fee: fee2_var,
+            party0_randomness_hash: party0_randomness_hash_var,
+            party1_randomness_hash: party1_randomness_hash_var,
             party0_note: party0_note_var,
             party1_note: party1_note_var,
             relayer0_note: relayer0_note_var,
@@ -991,7 +1040,8 @@ mod valid_match_encryption_tests {
         let sell = OrderSide::Sell;
 
         let mut rng = OsRng {};
-        let randomness = rng.next_u64();
+        let party0_randomness_hash = rng.next_u32() as u64;
+        let party1_randomness_hash = rng.next_u32() as u64;
 
         let relayer_fee_fraction = DUMMY_FEE1.percentage_fee;
         let protocol_fee_fraction = DUMMY_FEE2.percentage_fee;
@@ -1030,7 +1080,7 @@ mod valid_match_encryption_tests {
             fee_volume: fee_tuple1.gas_token_amount,
             fee_direction: sell,
             type_: NoteType::Match,
-            randomness,
+            randomness: party0_randomness_hash,
         };
 
         let party1_note = Note {
@@ -1044,7 +1094,7 @@ mod valid_match_encryption_tests {
             fee_volume: fee_tuple2.gas_token_amount,
             fee_direction: sell,
             type_: NoteType::Match,
-            randomness: randomness + 1,
+            randomness: party1_randomness_hash,
         };
 
         let relayer0_note = Note {
@@ -1058,7 +1108,7 @@ mod valid_match_encryption_tests {
             fee_volume: fee_tuple2.gas_token_amount,
             fee_direction: buy,
             type_: NoteType::InternalTransfer,
-            randomness: randomness + 2,
+            randomness: party0_randomness_hash + 1u64,
         };
 
         let relayer1_note = Note {
@@ -1072,7 +1122,7 @@ mod valid_match_encryption_tests {
             fee_volume: fee_tuple2.gas_token_amount,
             fee_direction: buy,
             type_: NoteType::InternalTransfer,
-            randomness: randomness + 3,
+            randomness: party1_randomness_hash + 1u64,
         };
 
         let protocol_note = Note {
@@ -1086,7 +1136,7 @@ mod valid_match_encryption_tests {
             fee_volume: 0,
             fee_direction: buy,
             type_: NoteType::InternalTransfer,
-            randomness: randomness + 4,
+            randomness: party0_randomness_hash + party1_randomness_hash,
         };
 
         // Generate encryptions for the statement
@@ -1122,6 +1172,8 @@ mod valid_match_encryption_tests {
                 match_res: match_,
                 party0_fee: DUMMY_FEE1.clone(),
                 party1_fee: DUMMY_FEE2.clone(),
+                party0_randomness_hash: Scalar::from(party0_randomness_hash),
+                party1_randomness_hash: Scalar::from(party1_randomness_hash),
                 party0_note: party0_note.clone(),
                 party1_note: party1_note.clone(),
                 relayer0_note: relayer0_note.clone(),
