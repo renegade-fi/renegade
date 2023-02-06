@@ -2,13 +2,10 @@
 
 use std::{cmp, time::SystemTime};
 
-use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
 use circuits::{
     mpc::SharedFabric,
-    mpc_gadgets::poseidon::PoseidonSpongeParameters,
     types::{
         balance::Balance,
-        fee::Fee,
         order::{Order, OrderSide},
         r#match::AuthenticatedMatchResult,
     },
@@ -17,40 +14,11 @@ use circuits::{
     },
     zk_gadgets::fixed_point::{AuthenticatedFixedPoint, FixedPoint},
 };
-use crypto::fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField};
 use curve25519_dalek::scalar::Scalar;
-use integration_helpers::{
-    mpc_network::{batch_share_plaintext_scalar, batch_share_plaintext_u64},
-    types::IntegrationTest,
-};
-use itertools::Itertools;
+use integration_helpers::{mpc_network::batch_share_plaintext_u64, types::IntegrationTest};
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
-use num_bigint::BigUint;
-use rand_core::{OsRng, RngCore};
 
-use crate::{
-    mpc_gadgets::poseidon::convert_params, zk_gadgets::multiprover_prove_and_verify,
-    IntegrationTestArgs, TestWrapper,
-};
-
-/// Hashes the payload of `Scalar`s via the Arkworks Poseidon sponge implementation
-/// Returns the result, re-cast into the Dalek Ristretto scalar field
-fn hash_values_arkworks(values: &[u64]) -> Scalar {
-    let arkworks_input = values
-        .iter()
-        .map(|val| scalar_to_prime_field(&Scalar::from(*val)))
-        .collect_vec();
-    let arkworks_params = convert_params(&PoseidonSpongeParameters::default());
-
-    let mut arkworks_hasher = PoseidonSponge::new(&arkworks_params);
-    for val in arkworks_input.iter() {
-        arkworks_hasher.absorb(val)
-    }
-
-    prime_field_to_scalar(
-        &arkworks_hasher.squeeze_field_elements::<DalekRistrettoField>(1 /* num_elements */)[0],
-    )
-}
+use crate::{zk_gadgets::multiprover_prove_and_verify, IntegrationTestArgs, TestWrapper};
 
 /// Creates an authenticated match from an order in each relayer
 fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
@@ -102,75 +70,21 @@ fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
 }
 
 /// Both parties call this value to setup their witness and statement from a given
-/// balance, order, fee tuple
+/// balance, order tuple
 fn setup_witness_and_statement<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     order: Order,
     balance: Balance,
-    fee: Fee,
     fabric: SharedFabric<N, S>,
 ) -> Result<(ValidMatchMpcWitness<N, S>, ValidMatchMpcStatement), String> {
-    // Generate wallet randomness
-    let mut rng = OsRng {};
-    let wallet_randomness = rng.next_u64();
-
     // Generate hashes used for input consistency
-    let my_order_hash = hash_values_arkworks(&[
-        order.quote_mint,
-        order.base_mint,
-        order.side as u64,
-        order.price.into(),
-        order.amount,
-    ]);
-    let my_balance_hash = hash_values_arkworks(&[balance.mint, balance.amount]);
-    let my_fee_hash = hash_values_arkworks(&[
-        fee.settle_key.clone().try_into().unwrap(),
-        fee.gas_addr.clone().try_into().unwrap(),
-        fee.gas_token_amount,
-        fee.percentage_fee.into(),
-    ]);
-    let my_randomness_hash = hash_values_arkworks(&[wallet_randomness]);
-
-    // Share random hashes to build a shared statement between the two parties
-    let p0_values = batch_share_plaintext_scalar(
-        &[
-            my_order_hash,
-            my_balance_hash,
-            my_fee_hash,
-            my_randomness_hash,
-        ],
-        0, /* owning_party */
-        fabric.0.clone(),
-    );
-    let p1_values = batch_share_plaintext_scalar(
-        &[
-            my_order_hash,
-            my_balance_hash,
-            my_fee_hash,
-            my_randomness_hash,
-        ],
-        1, /* owning_party */
-        fabric.0.clone(),
-    );
-
     let match_res = match_orders(&order, fabric)?;
-
     Ok((
         ValidMatchMpcWitness {
             my_order: order,
             my_balance: balance,
-            my_fee: fee,
             match_res,
         },
-        ValidMatchMpcStatement {
-            hash_order1: p0_values[0],
-            hash_balance1: p0_values[1],
-            hash_fee1: p0_values[2],
-            hash_randomness1: p0_values[3],
-            hash_order2: p1_values[0],
-            hash_balance2: p1_values[1],
-            hash_fee2: p1_values[2],
-            hash_randomness2: p1_values[3],
-        },
+        ValidMatchMpcStatement {},
     ))
 }
 
@@ -199,11 +113,6 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
         sel!(1, 2), // mint
         200,        // amount
     ];
-    let my_fee = vec![
-        0, // settle key
-        1, // gas token addr
-        3, // gas amount
-    ];
 
     let timestamp: u64 = SystemTime::now()
         .elapsed()
@@ -228,12 +137,6 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
         Balance {
             mint: my_balance[0],
             amount: my_balance[1],
-        },
-        Fee {
-            settle_key: BigUint::from(my_fee[0]),
-            gas_addr: BigUint::from(my_fee[1]),
-            gas_token_amount: my_fee[2],
-            percentage_fee: FixedPoint::from(0.01),
         },
         test_args.mpc_fabric.clone(),
     )?;
