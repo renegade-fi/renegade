@@ -26,6 +26,7 @@ use crate::{
         r#match::{CommittedMatchResult, MatchResult, MatchResultVar},
     },
     zk_gadgets::{
+        commitments::NoteCommitmentGadget,
         comparators::EqGadget,
         elgamal::{
             ElGamalCiphertext, ElGamalCiphertextVar, ElGamalGadget, DEFAULT_ELGAMAL_GENERATOR,
@@ -61,6 +62,10 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
         // Check that the plaintext notes are properly derived from the match result
         // and the fees that were already committed to
         Self::validate_notes(&witness, &statement, cs);
+
+        // Validate the note commitments
+        Self::validate_note_commitments(&witness, &statement, cs)?;
+
         Ok(())
     }
 
@@ -463,6 +468,38 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
 
         EqGadget::eq(sum, n_constraints * Variable::One(), cs)
     }
+
+    /// Validate the commitments to the notes are properly constructed
+    fn validate_note_commitments<CS: RandomizableConstraintSystem>(
+        witness: &ValidMatchEncryptionWitnessVar,
+        statement: &ValidMatchEncryptionStatementVar,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        // Party0's note
+        let party0_note_commit_res = NoteCommitmentGadget::note_commit(&witness.party0_note, cs)?;
+        cs.constrain(statement.party0_note_commit - party0_note_commit_res);
+
+        // Party1's note
+        let party1_note_commit_res = NoteCommitmentGadget::note_commit(&witness.party1_note, cs)?;
+        cs.constrain(statement.party1_note_commit - party1_note_commit_res);
+
+        // Relayer0's note
+        let relayer0_note_commit_res =
+            NoteCommitmentGadget::note_commit(&witness.relayer0_note, cs)?;
+        cs.constrain(statement.relayer0_note_commit - relayer0_note_commit_res);
+
+        // Relayer1's note
+        let relayer1_note_commit_res =
+            NoteCommitmentGadget::note_commit(&witness.relayer1_note, cs)?;
+        cs.constrain(statement.relayer1_note_commit - relayer1_note_commit_res);
+
+        // Protocol's note
+        let protocol_note_commit_res =
+            NoteCommitmentGadget::note_commit(&witness.protocol_note, cs)?;
+        cs.constrain(statement.protocol_note_commit - protocol_note_commit_res);
+
+        Ok(())
+    }
 }
 
 /// The witness type for the VALID MATCH ENCRYPTION circuit
@@ -634,6 +671,16 @@ impl CommitVerifier for ValidMatchEncryptionWitnessCommitment {
 /// secret of the encryption, and the other being the encrypted value itself
 #[derive(Clone, Debug)]
 pub struct ValidMatchEncryptionStatement {
+    /// The commitment to the first party's note
+    pub party0_note_commit: Scalar,
+    /// The commitment to the second party's note
+    pub party1_note_commit: Scalar,
+    /// The commitment to the first relayer's note
+    pub relayer0_note_commit: Scalar,
+    /// The commitment to the second relayer's note
+    pub relayer1_note_commit: Scalar,
+    /// The commitment to the protocol's note
+    pub protocol_note_commit: Scalar,
     /// The public settle key of the first party's wallet
     pub pk_settle1: Scalar,
     /// The public settle key of the second party's wallet
@@ -665,6 +712,16 @@ pub struct ValidMatchEncryptionStatement {
 /// The statement type for the VALID MATCH ENCRYPTION circuit
 #[derive(Clone, Debug)]
 pub struct ValidMatchEncryptionStatementVar {
+    /// The commitment to the first party's note
+    pub party0_note_commit: Variable,
+    /// The commitment to the second party's note
+    pub party1_note_commit: Variable,
+    /// The commitment to the first relayer's note
+    pub relayer0_note_commit: Variable,
+    /// The commitment to the second relayer's note
+    pub relayer1_note_commit: Variable,
+    /// The commitment to the protocol's note
+    pub protocol_note_commit: Variable,
     /// The public settle key of the first party's wallet
     pub pk_settle1: Variable,
     /// The public settle key of the second party's wallet
@@ -703,6 +760,11 @@ impl CommitProver for ValidMatchEncryptionStatement {
         _: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let party0_note_commit_var = prover.commit_public(self.party0_note_commit);
+        let party1_note_commit_var = prover.commit_public(self.party1_note_commit);
+        let relayer0_note_commit_var = prover.commit_public(self.relayer0_note_commit);
+        let relayer1_note_commit_var = prover.commit_public(self.relayer1_note_commit);
+        let protocol_note_commit_var = prover.commit_public(self.protocol_note_commit);
         let pk_settle1_var = prover.commit_public(self.pk_settle1);
         let pk_settle2_var = prover.commit_public(self.pk_settle2);
         let pk_settle_protocol_var = prover.commit_public(self.pk_settle_protocol);
@@ -722,6 +784,11 @@ impl CommitProver for ValidMatchEncryptionStatement {
 
         Ok((
             ValidMatchEncryptionStatementVar {
+                party0_note_commit: party0_note_commit_var,
+                party1_note_commit: party1_note_commit_var,
+                relayer0_note_commit: relayer0_note_commit_var,
+                relayer1_note_commit: relayer1_note_commit_var,
+                protocol_note_commit: protocol_note_commit_var,
                 pk_settle1: pk_settle1_var,
                 pk_settle2: pk_settle2_var,
                 pk_settle_protocol: pk_settle_protocol_var,
@@ -746,6 +813,11 @@ impl CommitVerifier for ValidMatchEncryptionStatement {
     type ErrorType = ();
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
+        let party0_note_commit_var = verifier.commit_public(self.party0_note_commit);
+        let party1_note_commit_var = verifier.commit_public(self.party1_note_commit);
+        let relayer0_note_commit_var = verifier.commit_public(self.relayer0_note_commit);
+        let relayer1_note_commit_var = verifier.commit_public(self.relayer1_note_commit);
+        let protocol_note_commit_var = verifier.commit_public(self.protocol_note_commit);
         let pk_settle1_var = verifier.commit_public(self.pk_settle1);
         let pk_settle2_var = verifier.commit_public(self.pk_settle2);
         let pk_settle_protocol_var = verifier.commit_public(self.pk_settle_protocol);
@@ -764,6 +836,11 @@ impl CommitVerifier for ValidMatchEncryptionStatement {
             self.randomness_protocol_ciphertext.commit_public(verifier);
 
         Ok(ValidMatchEncryptionStatementVar {
+            party0_note_commit: party0_note_commit_var,
+            party1_note_commit: party1_note_commit_var,
+            relayer0_note_commit: relayer0_note_commit_var,
+            relayer1_note_commit: relayer1_note_commit_var,
+            protocol_note_commit: protocol_note_commit_var,
             pk_settle1: pk_settle1_var,
             pk_settle2: pk_settle2_var,
             pk_settle_protocol: pk_settle_protocol_var,
@@ -832,7 +909,7 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ValidMatchEncryption<SCAL
 #[cfg(test)]
 mod valid_match_encryption_tests {
 
-    use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
+    use crypto::fields::{biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint};
     use curve25519_dalek::scalar::Scalar;
     use integration_helpers::mpc_network::field::get_ristretto_group_modulus;
     use lazy_static::lazy_static;
@@ -850,6 +927,7 @@ mod valid_match_encryption_tests {
             order::OrderSide,
             r#match::MatchResult,
         },
+        zk_circuits::test_helpers::compute_note_commitment,
         zk_gadgets::{
             elgamal::{ElGamalCiphertext, DEFAULT_ELGAMAL_GENERATOR},
             fixed_point::FixedPoint,
@@ -1044,11 +1122,11 @@ mod valid_match_encryption_tests {
                 match_res: match_,
                 party0_fee: DUMMY_FEE1.clone(),
                 party1_fee: DUMMY_FEE2.clone(),
-                party0_note,
-                party1_note,
-                relayer0_note,
-                relayer1_note,
-                protocol_note,
+                party0_note: party0_note.clone(),
+                party1_note: party1_note.clone(),
+                relayer0_note: relayer0_note.clone(),
+                relayer1_note: relayer1_note.clone(),
+                protocol_note: protocol_note.clone(),
                 elgamal_randomness: [
                     randomness1,
                     randomness2,
@@ -1062,6 +1140,17 @@ mod valid_match_encryption_tests {
                 ],
             },
             ValidMatchEncryptionStatement {
+                party0_note_commit: prime_field_to_scalar(&compute_note_commitment(&party0_note)),
+                party1_note_commit: prime_field_to_scalar(&compute_note_commitment(&party1_note)),
+                relayer0_note_commit: prime_field_to_scalar(&compute_note_commitment(
+                    &relayer0_note,
+                )),
+                relayer1_note_commit: prime_field_to_scalar(&compute_note_commitment(
+                    &relayer1_note,
+                )),
+                protocol_note_commit: prime_field_to_scalar(&compute_note_commitment(
+                    &protocol_note,
+                )),
                 pk_settle1: biguint_to_scalar(&pk_settle1),
                 pk_settle2: biguint_to_scalar(&pk_settle2),
                 pk_settle_protocol: biguint_to_scalar(&pk_settle_protocol),
