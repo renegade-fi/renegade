@@ -8,7 +8,7 @@ use std::fmt::{self, Display};
 pub enum ExchangeConnectionError {
     /// An initial websocket subscription to a remote server failed.
     HandshakeFailure(String),
-    /// A websocket remote connection hungup.
+    /// A websocket remote connection hangup.
     ConnectionHangup(String),
     /// Could not parse a remote server message.
     InvalidMessage(String),

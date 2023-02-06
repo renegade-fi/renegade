@@ -20,7 +20,7 @@ pub enum SubscriptionMessage {
 }
 
 /// A message that is sent in response to a SubscriptionMessage, notifies the client
-/// of the now active subscriptions after a subscribe/unsubscripe message is applied
+/// of the now active subscriptions after a subscribe/unsubscribe message is applied
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SubscriptionResponse {
     /// The subscriptions that remain after applying the requested update

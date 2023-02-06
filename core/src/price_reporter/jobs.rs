@@ -21,7 +21,7 @@ pub enum PriceReporterManagerJob {
     ///
     /// If the PriceReporter already exists and id is Some, register this ID as a listener. This
     /// prevents tear-down of the PriceReporter, even if subscribers on the system bus stop
-    /// listening. Cleanup is done via DropListenereID, and callees are responsible for
+    /// listening. Cleanup is done via DropListenerID, and callees are responsible for
     /// dropping all listener IDs.
     StartPriceReporter {
         /// The base Token

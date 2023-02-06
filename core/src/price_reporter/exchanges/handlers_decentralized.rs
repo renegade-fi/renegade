@@ -1,7 +1,7 @@
 use core::time::Duration;
 use futures::StreamExt;
 use ring_channel::RingSender;
-use std::{cmp::Ordering, convert::TryInto, env, str::FromStr};
+use std::{cmp::Ordering, convert::TryInto, str::FromStr};
 use tokio::runtime::Handle;
 use web3::{
     self, ethabi,
@@ -9,6 +9,8 @@ use web3::{
     types::{BlockId, BlockNumber, H160, H256, U256},
     Web3,
 };
+
+use crate::price_reporter::worker::PriceReporterManagerConfig;
 
 use super::super::{
     errors::ExchangeConnectionError,
@@ -41,9 +43,10 @@ impl UniswapV3Handler {
         quote_token: Token,
         mut sender: RingSender<PriceReport>,
         tokio_handle: Handle,
+        config: PriceReporterManagerConfig,
     ) -> Result<WorkerHandles, ExchangeConnectionError> {
         // Create the Web3 connection.
-        let ethereum_wss_url = env::var("ETHEREUM_MAINNET_WSS").unwrap();
+        let ethereum_wss_url = config.eth_websocket_addr.unwrap();
         let transport = web3::transports::WebSocket::new(&ethereum_wss_url)
             .await
             .map_err(|err| ExchangeConnectionError::HandshakeFailure(err.to_string()))?;

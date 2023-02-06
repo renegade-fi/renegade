@@ -3,9 +3,11 @@ use chrono::DateTime;
 use futures::SinkExt;
 use hmac_sha256::HMAC;
 use serde_json::{self, json, Value};
-use std::{collections::HashMap, convert::TryInto, env};
+use std::{collections::HashMap, convert::TryInto};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{tungstenite::Message, MaybeTlsStream, WebSocketStream};
+
+use crate::price_reporter::worker::PriceReporterManagerConfig;
 
 use super::super::{
     errors::ExchangeConnectionError,
@@ -23,7 +25,7 @@ type WebSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 #[async_trait]
 pub trait CentralizedExchangeHandler {
     /// Create a new Handler.
-    fn new(base_token: Token, quote_token: Token) -> Self;
+    fn new(base_token: Token, quote_token: Token, config: PriceReporterManagerConfig) -> Self;
     /// Get the websocket URL to connect to.
     fn websocket_url(&self) -> String;
     /// Certain exchanges report the most recent price immediately after subscribing to the
@@ -55,7 +57,7 @@ pub struct BinanceHandler {
 }
 #[async_trait]
 impl CentralizedExchangeHandler for BinanceHandler {
-    fn new(base_token: Token, quote_token: Token) -> Self {
+    fn new(base_token: Token, quote_token: Token, _: PriceReporterManagerConfig) -> Self {
         Self {
             base_token,
             quote_token,
@@ -170,15 +172,28 @@ pub struct CoinbaseHandler {
     order_book_bids: HashMap<String, f32>,
     /// A HashMap representing the local mirroring of Coinbase's order book offers.
     order_book_offers: HashMap<String, f32>,
+    /// The Coinbase API key
+    api_key: String,
+    /// The Coinbase API secret
+    api_secret: String,
 }
 #[async_trait]
 impl CentralizedExchangeHandler for CoinbaseHandler {
-    fn new(base_token: Token, quote_token: Token) -> Self {
+    fn new(base_token: Token, quote_token: Token, config: PriceReporterManagerConfig) -> Self {
+        let api_key = config
+            .coinbase_api_key
+            .expect("Coinbase API key expected in config, found None");
+        let api_secret = config
+            .coinbase_api_secret
+            .expect("Coinbase API secret expected in config, found None");
+
         Self {
             base_token,
             quote_token,
             order_book_bids: HashMap::new(),
             order_book_offers: HashMap::new(),
+            api_key,
+            api_secret,
         }
     }
 
@@ -203,14 +218,14 @@ impl CentralizedExchangeHandler for CoinbaseHandler {
         let timestamp = (get_current_time() / 1000).to_string();
         let signature_bytes = HMAC::mac(
             format!("{}{}{}", timestamp, channel, product_ids),
-            env::var("COINBASE_API_SECRET").unwrap(),
+            self.api_secret.clone(),
         );
         let signature = hex::encode(signature_bytes);
         let subscribe_str = json!({
             "type": "subscribe",
             "product_ids": [ product_ids ],
             "channel": channel,
-            "api_key": env::var("COINBASE_API_KEY").unwrap(),
+            "api_key": self.api_key.clone(),
             "timestamp": timestamp,
             "signature": signature,
         })
@@ -313,7 +328,7 @@ pub struct KrakenHandler {
 }
 #[async_trait]
 impl CentralizedExchangeHandler for KrakenHandler {
-    fn new(base_token: Token, quote_token: Token) -> Self {
+    fn new(base_token: Token, quote_token: Token, _: PriceReporterManagerConfig) -> Self {
         Self {
             base_token,
             quote_token,
@@ -407,7 +422,7 @@ pub struct OkxHandler {
 }
 #[async_trait]
 impl CentralizedExchangeHandler for OkxHandler {
-    fn new(base_token: Token, quote_token: Token) -> Self {
+    fn new(base_token: Token, quote_token: Token, _: PriceReporterManagerConfig) -> Self {
         Self {
             base_token,
             quote_token,

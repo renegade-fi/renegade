@@ -15,15 +15,14 @@ use tokio::runtime::Handle;
 
 use super::{
     errors::ExchangeConnectionError,
-    exchanges::{
-        get_current_time, Exchange, ExchangeConnection, ExchangeConnectionState, ALL_EXCHANGES,
-    },
+    exchanges::{get_current_time, Exchange, ExchangeConnection, ExchangeConnectionState},
     tokens::Token,
+    worker::PriceReporterManagerConfig,
 };
 
 /// If none of the ExchangeConnections have reported an update within MAX_REPORT_AGE (in
 /// milliseconds), we pause matches until we receive a more recent price. Note that this threshold
-/// cannot be too aggresive, as certain long-tail asset pairs legitimately do not update that
+/// cannot be too aggressive, as certain long-tail asset pairs legitimately do not update that
 /// often.
 static MAX_REPORT_AGE_MS: u128 = 5000;
 /// If we do not have at least MIN_CONNECTIONS reports, we pause matches until we have enough
@@ -33,7 +32,7 @@ static MIN_CONNECTIONS: usize = 1; // TODO: Refactor
 /// we pause matches until the prices stabilize.
 static MAX_DEVIATION: f64 = 0.02; // TODO: Refactor
 /// If an ExchangeConnection returns an Error, we try to restart it. After
-/// MAX_CONNNECTION_FAILURES, we panic the relayer entirely.
+/// MAX_CONNECTION_FAILURES, we panic the relayer entirely.
 static MAX_CONNECTION_FAILURES: usize = 5;
 
 /// Helper function to construct a RingChannel of size 1.
@@ -104,7 +103,7 @@ pub struct PriceReporter {
     /// The quote Token (e.g., USDC).
     quote_token: Token,
     /// The set of supported Exchanges for this base/quote token pair.
-    supported_exchanges: HashSet<Exchange>,
+    pub(crate) supported_exchanges: HashSet<Exchange>,
     /// Thread-safe HashMap between each Exchange and a vector of senders for PriceReports. As the
     /// PriceReporter processes messages from the various ExchangeConnections, this HashMap
     /// determines where PriceReport outputs will be sent to.
@@ -117,9 +116,15 @@ pub struct PriceReporter {
     /// The latest PriceReport for each Exchange. Used in order to .peek() at each data stream.
     price_report_exchanges_latest: Arc<RwLock<HashMap<Exchange, PriceReport>>>,
 }
+
 impl PriceReporter {
     /// Creates a new PriceReporter.
-    pub fn new(base_token: Token, quote_token: Token, tokio_handle: Handle) -> Self {
+    pub fn new(
+        base_token: Token,
+        quote_token: Token,
+        tokio_handle: Handle,
+        config: PriceReporterManagerConfig,
+    ) -> Self {
         // Pre-compute some data about the Token pair.
         let is_named = base_token.is_named() && quote_token.is_named();
         let (base_token_decimals, quote_token_decimals) =
@@ -136,6 +141,7 @@ impl PriceReporter {
         let supported_exchanges = base_token_supported_exchanges
             .intersection(&quote_token_supported_exchanges)
             .copied()
+            .filter(|exchange| config.exchange_configured(*exchange))
             .collect::<HashSet<Exchange>>();
 
         // Connect to all the exchanges, and pipe the price report stream from each connection into
@@ -149,6 +155,7 @@ impl PriceReporter {
             exchange: Exchange,
             mut all_price_reports_sender: RingSender<PriceReport>,
             tokio_handle: Handle,
+            config: PriceReporterManagerConfig,
         ) -> Result<(), ExchangeConnectionError> {
             let (mut price_report_receiver, mut worker_handles) =
                 ExchangeConnection::create_receiver(
@@ -156,6 +163,7 @@ impl PriceReporter {
                     quote_token,
                     exchange,
                     tokio_handle.clone(),
+                    config,
                 )
                 .await?;
             let worker_handle = tokio_handle.spawn(async move {
@@ -179,12 +187,21 @@ impl PriceReporter {
         // TODO: When integrating as a worker, these exchange_connection_worker_handles will need
         // to be joined to propagate panics.
         let mut exchange_connection_worker_handles = vec![];
+        let mut active_exchanges = Vec::new();
         for exchange in supported_exchanges_clone.into_iter() {
+            // Check that the necessary configuration info is present
+            if !config.exchange_configured(exchange) {
+                println!("Exchange {} not configured, skipping...", exchange);
+                continue;
+            }
+
             let base_token = base_token.clone();
             let quote_token = quote_token.clone();
             let all_price_reports_sender = all_price_reports_sender.clone();
             let tokio_handle1 = tokio_handle.clone();
             let tokio_handle2 = tokio_handle.clone();
+            let config_clone = config.clone();
+
             let exchange_connection_worker_handle = tokio_handle1.spawn(async move {
                 let mut num_failures = 0;
                 loop {
@@ -197,12 +214,14 @@ impl PriceReporter {
                     let base_token = base_token.clone();
                     let quote_token = quote_token.clone();
                     let all_price_reports_sender = all_price_reports_sender.clone();
+                    let config_clone = config_clone.clone();
                     let exchange_connection_handle = tokio_handle2.spawn(connect_to_exchange(
                         base_token,
                         quote_token,
                         exchange,
                         all_price_reports_sender,
                         tokio_handle2.clone(),
+                        config_clone,
                     ));
                     let exchange_connection_error =
                         exchange_connection_handle.await.unwrap().unwrap_err();
@@ -216,7 +235,9 @@ impl PriceReporter {
                     num_failures += 1;
                 }
             });
+
             exchange_connection_worker_handles.push(exchange_connection_worker_handle);
+            active_exchanges.push(exchange);
         }
         drop(all_price_reports_sender);
 
@@ -229,7 +250,7 @@ impl PriceReporter {
             Exchange,
             Vec<RingSender<PriceReport>>,
         >::new()));
-        for exchange in ALL_EXCHANGES.iter() {
+        for exchange in active_exchanges.iter() {
             price_report_exchanges_senders
                 .write()
                 .unwrap()
@@ -267,12 +288,12 @@ impl PriceReporter {
         // consume all PriceReports and write them directly to price_report_exchanges_latest.
         let price_report_exchanges_latest =
             Arc::new(RwLock::new(HashMap::<Exchange, PriceReport>::new()));
-        for exchange in ALL_EXCHANGES.iter() {
+        for exchange in active_exchanges.iter().cloned() {
             // Initialize the latest PriceReport to be PriceReport::default.
             price_report_exchanges_latest
                 .write()
                 .unwrap()
-                .insert(*exchange, PriceReport::default());
+                .insert(exchange, PriceReport::default());
             // Create a new ring buffer. Insert the sender into the price_report_exchanges_senders,
             // and start a thread that reads from the reader and writes to
             // price_report_exchanges_latest.
@@ -280,7 +301,7 @@ impl PriceReporter {
             price_report_exchanges_senders
                 .write()
                 .unwrap()
-                .get_mut(exchange)
+                .get_mut(&exchange)
                 .unwrap()
                 .push(sender);
             let price_report_exchanges_latest_clone = price_report_exchanges_latest.clone();
@@ -290,7 +311,7 @@ impl PriceReporter {
                     price_report_exchanges_latest_clone
                         .write()
                         .unwrap()
-                        .insert(*exchange, price_report);
+                        .insert(exchange, price_report);
                 }
             });
         }
@@ -302,7 +323,7 @@ impl PriceReporter {
         let price_report_median_senders: Arc<RwLock<Vec<RingSender<PriceReport>>>> =
             Arc::new(RwLock::new(vec![]));
         let mut price_report_median_receivers: Vec<RingReceiver<PriceReport>> = vec![];
-        for exchange in ALL_EXCHANGES.iter() {
+        for exchange in active_exchanges.iter() {
             let (sender, receiver) = new_ring_channel::<PriceReport>();
             price_report_exchanges_senders
                 .write()
@@ -316,9 +337,11 @@ impl PriceReporter {
         let price_report_median_senders_clone = price_report_median_senders.clone();
         let base_token_clone = base_token.clone();
         let quote_token_clone = quote_token.clone();
+        let active_exchanges_clone = active_exchanges.clone();
+
         tokio_handle.spawn(async move {
             let mut current_price_reports = HashMap::<Exchange, PriceReport>::new();
-            for exchange in ALL_EXCHANGES.iter() {
+            for exchange in active_exchanges_clone.iter() {
                 current_price_reports.insert(*exchange, PriceReport::default());
             }
             loop {
@@ -458,7 +481,7 @@ impl PriceReporter {
         receiver
     }
 
-    /// Nonblocking report of the latest PriceReporterState for the median.
+    /// Non-blocking report of the latest PriceReporterState for the median.
     pub fn peek_median(&self) -> PriceReporterState {
         Self::compute_price_reporter_state(
             self.base_token.clone(),
@@ -467,7 +490,7 @@ impl PriceReporter {
         )
     }
 
-    /// Nonblocking report of the latest ExchangeConnectionState for all exchanges.
+    /// Non-blocking report of the latest ExchangeConnectionState for all exchanges.
     pub fn peek_all_exchanges(&self) -> HashMap<Exchange, ExchangeConnectionState> {
         let price_reports = self.price_report_exchanges_latest.read().unwrap().clone();
         let mut exchange_connection_states = HashMap::<Exchange, ExchangeConnectionState>::new();

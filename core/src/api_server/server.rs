@@ -131,7 +131,7 @@ pub struct WebsocketHandler {
     tcp_stream: Option<TcpStream>,
     /// The worker job queue for the PriceReporterManager
     price_reporter_worker_sender: Sender<PriceReporterManagerJob>,
-    /// The system bus to recieve events on
+    /// The system bus to receive events on
     system_bus: SystemBus<SystemBusMessage>,
 }
 
@@ -199,7 +199,7 @@ impl WebsocketHandler {
                         }
 
                         // None is returned when the connection is closed or a critical error
-                        // occured. In either case the server side may hang up
+                        // occurred. In either case the server side may hang up
                         None => break
                     }
                 }

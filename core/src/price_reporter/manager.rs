@@ -1,4 +1,4 @@
-//! Defines the PriceReporterManagerExecutor, the handler that is reponsible for executing
+//! Defines the PriceReporterManagerExecutor, the handler that is responsible for executing
 //! individual PriceReporterManagerJobs.
 use crossbeam::channel::{self, Sender};
 use futures::StreamExt;
@@ -14,7 +14,7 @@ use crate::{system_bus::SystemBus, types::SystemBusMessage};
 
 use super::{
     errors::PriceReporterManagerError,
-    exchanges::{Exchange, ExchangeConnectionState, ALL_EXCHANGES},
+    exchanges::{Exchange, ExchangeConnectionState},
     jobs::PriceReporterManagerJob,
     reporter::{PriceReport, PriceReporter, PriceReporterState},
     tokens::Token,
@@ -46,12 +46,15 @@ pub struct PriceReporterManagerExecutor {
     pub(super) spawned_price_reporters: HashMap<(Token, Token), PriceReporter>,
     /// The map between base/quote token pairs and the set of registered listeners
     pub(super) registered_listeners: HashMap<(Token, Token), HashSet<PriceReporterListenerID>>,
+    /// The manager config
+    config: PriceReporterManagerConfig,
 }
 impl PriceReporterManagerExecutor {
     /// Creates the executor for the PriceReporterManager worker.
     pub(super) fn new(
         system_bus: SystemBus<SystemBusMessage>,
         tokio_handle: Handle,
+        config: PriceReporterManagerConfig,
     ) -> Result<Self, PriceReporterManagerError> {
         let spawned_price_reporters = HashMap::new();
         let registered_listeners = HashMap::new();
@@ -60,6 +63,7 @@ impl PriceReporterManagerExecutor {
             tokio_handle,
             spawned_price_reporters,
             registered_listeners,
+            config,
         })
     }
 
@@ -164,6 +168,7 @@ impl PriceReporterManagerExecutor {
             base_token.get_addr(),
             quote_token.get_addr()
         );
+        let config_clone = self.config.clone();
         self.spawned_price_reporters
             .entry((base_token.clone(), quote_token.clone()))
             .or_insert_with(|| {
@@ -172,6 +177,7 @@ impl PriceReporterManagerExecutor {
                     base_token.clone(),
                     quote_token.clone(),
                     tokio_handle.clone(),
+                    config_clone,
                 );
                 // Stream all median PriceReports to the system bus, only if the midpoint price
                 // changes
@@ -194,7 +200,7 @@ impl PriceReporterManagerExecutor {
                 });
                 // Stream all individual Exchange PriceReports to the system bus, only if the
                 // midpoint price changes
-                for exchange in ALL_EXCHANGES {
+                for exchange in price_reporter.supported_exchanges.iter() {
                     let mut exchange_receiver =
                         price_reporter.create_new_exchange_receiver(*exchange);
                     let exchange_price_report_topic = format!(

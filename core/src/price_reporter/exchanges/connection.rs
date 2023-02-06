@@ -13,6 +13,8 @@ use tokio::{
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use url::Url;
 
+use crate::price_reporter::worker::PriceReporterManagerConfig;
+
 use super::super::{
     errors::ExchangeConnectionError,
     exchanges::handlers_centralized::{
@@ -121,6 +123,7 @@ impl ExchangeConnection {
         quote_token: Token,
         exchange: Exchange,
         tokio_handle: Handle,
+        config: PriceReporterManagerConfig,
     ) -> Result<(RingReceiver<PriceReport>, WorkerHandles), ExchangeConnectionError> {
         // Create the vector of JoinHandles for all spawned threads.
         let mut worker_handles: WorkerHandles = vec![];
@@ -137,6 +140,7 @@ impl ExchangeConnection {
                 quote_token,
                 price_report_sender,
                 tokio_handle,
+                config,
             )
             .await?;
             return Ok((price_report_receiver, worker_handles));
@@ -145,28 +149,28 @@ impl ExchangeConnection {
         // Get initial ExchangeHandler state and include in a new ExchangeConnection.
         let mut exchange_connection = match exchange {
             Exchange::Binance => ExchangeConnection {
-                binance_handler: Some(BinanceHandler::new(base_token, quote_token)),
+                binance_handler: Some(BinanceHandler::new(base_token, quote_token, config)),
                 coinbase_handler: None,
                 kraken_handler: None,
                 okx_handler: None,
             },
             Exchange::Coinbase => ExchangeConnection {
                 binance_handler: None,
-                coinbase_handler: Some(CoinbaseHandler::new(base_token, quote_token)),
+                coinbase_handler: Some(CoinbaseHandler::new(base_token, quote_token, config)),
                 kraken_handler: None,
                 okx_handler: None,
             },
             Exchange::Kraken => ExchangeConnection {
                 binance_handler: None,
                 coinbase_handler: None,
-                kraken_handler: Some(KrakenHandler::new(base_token, quote_token)),
+                kraken_handler: Some(KrakenHandler::new(base_token, quote_token, config)),
                 okx_handler: None,
             },
             Exchange::Okx => ExchangeConnection {
                 binance_handler: None,
                 coinbase_handler: None,
                 kraken_handler: None,
-                okx_handler: Some(OkxHandler::new(base_token, quote_token)),
+                okx_handler: Some(OkxHandler::new(base_token, quote_token, config)),
             },
             _ => unreachable!(),
         };

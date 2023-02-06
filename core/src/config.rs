@@ -40,6 +40,15 @@ struct Cli {
     #[clap(long = "cluster-public-key", value_parser)]
     /// The cluster public key to use
     pub cluster_public_key: Option<String>,
+    #[clap(long = "coinbase-key", value_parser)]
+    /// The Coinbase API key to use for price streaming
+    pub coinbase_api_key: Option<String>,
+    #[clap(long = "coinbase-secret", value_parser)]
+    /// The Coinbase API secret to use for price streaming
+    pub coinbase_api_secret: Option<String>,
+    #[clap(long = "eth-websocket", value_parser)]
+    /// The Ethereum RPC node websocket address to dial for on-chain data
+    pub eth_websocket_addr: Option<String>,
     #[clap(short, long, value_parser)]
     /// Whether or not to run the relayer in debug mode
     pub debug: bool,
@@ -80,6 +89,12 @@ pub struct RelayerConfig {
     pub cluster_keypair: Keypair,
     /// The cluster ID, a parsed version of the cluster's pubkey
     pub cluster_id: ClusterId,
+    /// The Coinbase API key to use for price streaming
+    pub coinbase_api_key: Option<String>,
+    /// The Coinbase API secret to use for price streaming
+    pub coinbase_api_secret: Option<String>,
+    /// The Ethereum RPC node websocket address to dial for on-chain data
+    pub eth_websocket_addr: Option<String>,
     /// Whether or not the relayer is in debug mode
     pub debug: bool,
 }
@@ -159,6 +174,9 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
         wallets: parse_wallet_file(cli_args.wallet_file)?,
         cluster_keypair: keypair,
         cluster_id,
+        coinbase_api_key: cli_args.coinbase_api_key,
+        coinbase_api_secret: cli_args.coinbase_api_secret,
+        eth_websocket_addr: cli_args.eth_websocket_addr,
         debug: cli_args.debug,
     };
 
@@ -201,7 +219,7 @@ fn config_file_args(cli_args: &[String]) -> Result<Vec<String>, CoordinatorError
         let values: Vec<String> = match value {
             // Just the flag, i.e. --flag
             Value::Boolean(_) => vec![cli_arg],
-            // Parse all values into multiple repititions, i.e. --key val1 --key val2 ...
+            // Parse all values into multiple repetitions, i.e. --key val1 --key val2 ...
             Value::Array(arr) => {
                 let mut res: Vec<String> = Vec::new();
                 for val in arr.iter() {
@@ -260,6 +278,10 @@ fn toml_value_to_string(val: &Value) -> Result<String, CoordinatorError> {
 
 /// Runtime validation of the keypair passed into the relayer via config
 /// Sign a simple request and verify the signature
+///
+/// The public interface does not allow us to more directly check the keypair
+/// as public_key == private_key * ed25519_generator, so we opt for this instead.
+/// Happens once at startup so we are not concerned with performance
 fn validate_keypair(keypair: &Keypair) -> Result<(), SignatureError> {
     // Hash the message
     let mut hash_digest: Sha512 = Sha512::new();
