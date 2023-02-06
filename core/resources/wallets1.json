@@ -6,8 +6,9 @@
                 "quote_mint": 1,
                 "base_mint": 2,
                 "side": "Buy",
-                "price": 10,
-                "amount": 20
+                "price": 10.0,
+                "amount": 20,
+                "timestamp": 1
             }
         },
         "balances": {
@@ -18,18 +19,12 @@
         },
         "fees": [
             {
-                "settle_key": [
-                    0,
-                    []
-                ],
+                "settle_key": [],
                 "gas_addr": [
-                    1,
-                    [
-                        1
-                    ]
+                    1
                 ],
                 "gas_token_amount": 3,
-                "percentage_fee": 1
+                "percentage_fee": 0.01
             }
         ],
         "metadata": {

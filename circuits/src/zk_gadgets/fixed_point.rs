@@ -21,7 +21,7 @@ use mpc_ristretto::{
 };
 use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     errors::MpcError, mpc::SharedFabric, mpc_gadgets::modulo::shift_right, Allocate, CommitProver,
@@ -57,7 +57,7 @@ lazy_static! {
 ///
 /// This is useful for centralizing conversion logic to provide an abstract to_scalar,
 /// from_scalar interface to modules that commit to this value
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct FixedPoint {
     /// The underlying scalar representing the fixed point variable
     pub(crate) repr: Scalar,
@@ -78,7 +78,8 @@ impl FixedPoint {
 
     /// Return the represented value as an f64
     pub fn to_f64(&self) -> f64 {
-        let dec = BigDecimal::from(scalar_to_bigint(&self.repr));
+        let mut dec = BigDecimal::from(scalar_to_bigint(&self.repr));
+        dec = &dec / (2u64 << DEFAULT_PRECISION);
         dec.to_f64().unwrap()
     }
 
@@ -198,6 +199,29 @@ impl Sub<FixedPoint> for Scalar {
     #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: FixedPoint) -> Self::Output {
         self + rhs.neg()
+    }
+}
+
+impl Serialize for FixedPoint {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Serialize the value as a floating point
+        let mut bigdec = scalar_to_bigdecimal(&self.repr);
+        bigdec = &bigdec / (2u64 << DEFAULT_PRECISION);
+
+        serializer.serialize_f32(bigdec.to_f32().unwrap())
+    }
+}
+
+impl<'de> Deserialize<'de> for FixedPoint {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let val_f32 = f32::deserialize(deserializer)?;
+        Ok(FixedPoint::from(val_f32))
     }
 }
 
