@@ -11,14 +11,9 @@ use crate::state::Shared;
 
 use super::{
     error::HandshakeManagerError,
-    r#match::KING,
     types::{HashOutput, OrderIdentifier},
 };
-use circuits::{
-    types::{balance::Balance, fee::Fee, order::Order},
-    zk_circuits::valid_match_mpc::ValidMatchMpcStatement,
-};
-use crypto::fields::prime_field_to_scalar;
+use circuits::types::{balance::Balance, fee::Fee, order::Order};
 use uuid::Uuid;
 
 /// Holds state information for all in-flight handshake correspondences
@@ -225,7 +220,7 @@ pub enum State {
     ///     2. No pair of unmatched orders is found
     OrderNegotiation,
     /// This state is entered when an order pair has been successfully negotiated, and the
-    /// match computation has begun. This state is either exited by a sucessful match or
+    /// match computation has begun. This state is either exited by a successful match or
     /// an error
     MatchInProgress,
     /// This state signals that the handshake has completed successfully one way or another;
@@ -298,57 +293,5 @@ impl HandshakeState {
     /// Transition the state to Error
     pub fn error(&mut self, err: HandshakeManagerError) {
         self.state = State::Error(err);
-    }
-
-    /// Build a VALID MATCH MPC statement from the state of a given handshake
-    pub fn build_valid_match_statement(&self, party_id: u64) -> ValidMatchMpcStatement {
-        // Reorder the hashes depending on the party_id; the king's order (party_id 0) should
-        // come first in the statement
-        let mut hashes = Vec::new();
-        if party_id == KING {
-            hashes.append(&mut vec![
-                self.order_hash,
-                self.balance_hash,
-                self.fee_hash,
-                self.randomness_hash,
-            ]);
-            hashes.append(&mut vec![
-                self.peer_order_hash,
-                self.peer_balance_hash,
-                self.peer_fee_hash,
-                self.peer_randomness_hash,
-            ]);
-        } else {
-            // Swap order
-            hashes.append(&mut vec![
-                self.peer_order_hash,
-                self.peer_balance_hash,
-                self.peer_fee_hash,
-                self.peer_randomness_hash,
-            ]);
-            hashes.append(&mut vec![
-                self.order_hash,
-                self.balance_hash,
-                self.fee_hash,
-                self.randomness_hash,
-            ]);
-        }
-
-        // The hashes are done natively via Arkworks and must be converted to the Dalek scalar representation
-        let hashes_scalar = hashes
-            .iter()
-            .map(|hash| prime_field_to_scalar(&hash.0))
-            .collect::<Vec<_>>();
-
-        ValidMatchMpcStatement {
-            hash_order1: hashes_scalar[0].to_owned(),
-            hash_balance1: hashes_scalar[1].to_owned(),
-            hash_fee1: hashes_scalar[2].to_owned(),
-            hash_randomness1: hashes_scalar[3].to_owned(),
-            hash_order2: hashes_scalar[4].to_owned(),
-            hash_balance2: hashes_scalar[5].to_owned(),
-            hash_fee2: hashes_scalar[6].to_owned(),
-            hash_randomness2: hashes_scalar[7].to_owned(),
-        }
     }
 }

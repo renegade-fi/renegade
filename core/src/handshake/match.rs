@@ -7,7 +7,7 @@ use circuits::{
     mpc::SharedFabric,
     mpc_circuits::r#match::compute_match,
     multiprover_prove,
-    types::{balance::Balance, fee::Fee, order::Order, r#match::AuthenticatedMatchResult},
+    types::{balance::Balance, order::Order, r#match::AuthenticatedMatchResult},
     verify_collaborative_proof,
     zk_circuits::valid_match_mpc::{
         ValidMatchMpcCircuit, ValidMatchMpcStatement, ValidMatchMpcWitness,
@@ -25,9 +25,6 @@ use mpc_ristretto::{
 use tokio::runtime::Builder as TokioBuilder;
 
 use super::{error::HandshakeManagerError, manager::HandshakeManager, state::HandshakeState};
-
-/// The party_id of the leader (aka dialer/king) in the MPC computation
-pub(crate) const KING: u64 = 0;
 
 /// Match-centric implementations for the handshake manager
 impl HandshakeManager {
@@ -92,11 +89,11 @@ impl HandshakeManager {
 
         println!("Got MPC res: {:?}", match_res_open);
 
-        let statement = handshake_state.build_valid_match_statement(party_id);
+        // The statement parameterization of the VALID MATCH MPC circuit is empty
+        let statement = ValidMatchMpcStatement {};
         Self::prove_valid_match(
             handshake_state.order,
             handshake_state.balance,
-            handshake_state.fee,
             statement,
             match_res,
             shared_fabric,
@@ -127,7 +124,6 @@ impl HandshakeManager {
     fn prove_valid_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         order: Order,
         balance: Balance,
-        fee: Fee,
         statement: ValidMatchMpcStatement,
         match_res: AuthenticatedMatchResult<N, S>,
         fabric: SharedFabric<N, S>,
@@ -138,7 +134,6 @@ impl HandshakeManager {
         let witness = ValidMatchMpcWitness {
             my_order: order,
             my_balance: balance,
-            my_fee: fee,
             match_res,
         };
 
