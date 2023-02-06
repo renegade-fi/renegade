@@ -27,46 +27,68 @@ const CONFIG_FILE_ARG: &str = "--config-file";
 /// Defines the relayer system command line interface
 #[derive(Debug, Parser, Serialize, Deserialize)]
 #[clap(author, version, about, long_about = None)]
+#[rustfmt::skip]
 struct Cli {
-    #[clap(short, long, value_parser)]
-    /// The bootstrap servers that the peer should dial initially
-    pub bootstrap_servers: Option<Vec<String>>,
-    #[clap(long, value_parser)]
+    // ---------------
+    // | Config File |
+    // ---------------
     /// An auxiliary config file to read from
+    #[clap(long, value_parser)]
     pub config_file: Option<String>,
-    #[clap(long = "cluster-private-key", value_parser)]
-    /// The cluster private key to use
-    pub cluster_private_key: Option<String>,
-    #[clap(long = "cluster-public-key", value_parser)]
-    /// The cluster public key to use
-    pub cluster_public_key: Option<String>,
-    #[clap(long = "coinbase-key", value_parser)]
-    /// The Coinbase API key to use for price streaming
-    pub coinbase_api_key: Option<String>,
-    #[clap(long = "coinbase-secret", value_parser)]
-    /// The Coinbase API secret to use for price streaming
-    pub coinbase_api_secret: Option<String>,
-    #[clap(long = "eth-websocket", value_parser)]
-    /// The Ethereum RPC node websocket address to dial for on-chain data
-    pub eth_websocket_addr: Option<String>,
+
+    // -------------------------
+    // | Cluster Configuration |
+    // -------------------------
+    /// The bootstrap servers that the peer should dial initially
     #[clap(short, long, value_parser)]
-    /// Whether or not to run the relayer in debug mode
-    pub debug: bool,
-    #[clap(short = 'p', long, value_parser, default_value = "8000")]
+    pub bootstrap_servers: Option<Vec<String>>,
+    /// The cluster private key to use
+    #[clap(long = "cluster-private-key", value_parser)]
+    pub cluster_private_key: Option<String>,
+    /// The cluster public key to use
+    #[clap(long = "cluster-public-key", value_parser)]
+    pub cluster_public_key: Option<String>,
+
+    // ----------------------------
+    // | Local Node Configuration |
+    // ----------------------------
     /// The port to listen on for libp2p
+    #[clap(short = 'p', long, value_parser, default_value = "8000")]
     pub p2p_port: u16,
-    #[clap(long, value_parser, default_value = "3000")]
     /// The port to listen on for the externally facing HTTP API
+    #[clap(long, value_parser, default_value = "3000")]
     pub http_port: u16,
     /// The port to listen on for the externally facing websocket API
     #[clap(long, value_parser, default_value = "4000")]
     pub websocket_port: u16,
-    #[clap(short, long, value_parser)]
-    /// The software version of the relayer
-    pub version: Option<String>,
+    /// Flag to disable the API server
     #[clap(long, value_parser)]
+    pub disable_api_server: bool,
+    /// Flag to disable the price reporter
+    #[clap(long, value_parser)]
+    pub disable_price_reporter: bool,
+    /// Whether or not to run the relayer in debug mode
+    #[clap(short, long, value_parser)]
+    pub debug: bool,
+    /// The software version of the relayer
+    #[clap(short, long, value_parser)]
+    pub version: Option<String>,
+
+    // -----------
+    // | Secrets |
+    // -----------
+    /// The Coinbase API key to use for price streaming
+    #[clap(long = "coinbase-key", value_parser)]
+    pub coinbase_api_key: Option<String>,
+    /// The Coinbase API secret to use for price streaming
+    #[clap(long = "coinbase-secret", value_parser)]
+    pub coinbase_api_secret: Option<String>,
+    /// The Ethereum RPC node websocket address to dial for on-chain data
+    #[clap(long = "eth-websocket", value_parser)]
+    pub eth_websocket_addr: Option<String>,
     /// A file holding a json representation of the wallets the local node
     /// should manage
+    #[clap(short, long, value_parser)]
     pub wallet_file: Option<String>,
 }
 
@@ -83,6 +105,12 @@ pub struct RelayerConfig {
     pub http_port: u16,
     /// The port to listen on for the externally facing websocket API
     pub websocket_port: u16,
+    /// Whether to disable the API server on the local node if, for example,
+    /// the local node is an MPC-only node
+    pub disable_api_server: bool,
+    /// Whether to disable the price reporter if e.g. we are streaming from a dedicated
+    /// external API gateway node in the cluster
+    pub disable_price_reporter: bool,
     /// The wallet IDs to manage locally
     pub wallets: Vec<Wallet>,
     /// The cluster keypair
@@ -171,6 +199,8 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
         p2p_port: cli_args.p2p_port,
         http_port: cli_args.http_port,
         websocket_port: cli_args.websocket_port,
+        disable_api_server: cli_args.disable_api_server,
+        disable_price_reporter: cli_args.disable_price_reporter,
         wallets: parse_wallet_file(cli_args.wallet_file)?,
         cluster_keypair: keypair,
         cluster_id,

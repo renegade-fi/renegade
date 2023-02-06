@@ -188,6 +188,18 @@ async fn main() -> Result<(), CoordinatorError> {
         api_cancel_sender.clone(),
     ];
 
+    // For simplicity, we simply cancel all disabled workers, it is simpler to do this than work with
+    // a dynamic list of futures
+    //
+    // We can refactor this decision if it becomes a performance issue
+    if args.disable_api_server {
+        api_server.cleanup().unwrap();
+    }
+
+    if args.disable_price_reporter {
+        price_reporter_cancel_sender.send(()).unwrap();
+    }
+
     // Await module termination, and send a cancel signal for any modules that
     // have been detected to fault
     let recovery_loop = || async move {
