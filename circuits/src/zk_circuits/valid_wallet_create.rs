@@ -20,7 +20,10 @@ use rand_core::OsRng;
 use crate::{
     errors::{ProverError, VerifierError},
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    types::fee::{CommittedFee, Fee, FeeVar},
+    types::{
+        fee::{CommittedFee, Fee, FeeVar},
+        keychain::{CommittedKeyChain, KeyChain, KeyChainVar},
+    },
     zk_gadgets::poseidon::PoseidonHashGadget,
     CommitProver, CommitVerifier, SingleProverCircuit, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
 };
@@ -97,10 +100,10 @@ where
         // Hash the keys into the state
         hasher.batch_absorb(
             &[
-                witness.root_public_key,
-                witness.match_public_key,
-                witness.settle_public_key,
-                witness.view_public_key,
+                witness.keys.pk_root,
+                witness.keys.pk_match,
+                witness.keys.pk_settle,
+                witness.keys.pk_view,
             ],
             cs,
         )?;
@@ -124,24 +127,10 @@ pub struct ValidWalletCreateStatement {
 pub struct ValidWalletCreateWitness<const MAX_FEES: usize> {
     /// The fees to initialize the wallet with; may be nonzero
     pub fees: [Fee; MAX_FEES],
+    /// The keys used to authenticate operations on the wallet
+    pub keys: KeyChain,
     /// The wallet randomness, used to hide commitments and nullifiers
     pub wallet_randomness: Scalar,
-    /// The root secret key, used to derive all fine-grained permissioned keys
-    pub root_secret_key: Scalar,
-    /// The root public key
-    pub root_public_key: Scalar,
-    /// The match secret key, knowing this key gives an actor permission to match orders
-    pub match_secret_key: Scalar,
-    /// The match public key
-    pub match_public_key: Scalar,
-    /// The settle secret key, knowing this key gives an actor permission to settle matches
-    pub settle_secret_key: Scalar,
-    /// The settle public key
-    pub settle_public_key: Scalar,
-    /// The view secret key, knowing this key gives an actor permission to view the wallet
-    pub view_secret_key: Scalar,
-    /// The view public key
-    pub view_public_key: Scalar,
 }
 
 /// The committed witness for the VALID WALLET CREATE proof
@@ -149,24 +138,10 @@ pub struct ValidWalletCreateWitness<const MAX_FEES: usize> {
 pub struct ValidWalletCreateCommitment<const MAX_FEES: usize> {
     /// The fees to initialize the wallet with; may be nonzero
     pub fees: [CommittedFee; MAX_FEES],
+    /// The keys used to authenticate operations on the wallet
+    pub keys: CommittedKeyChain,
     /// The wallet randomness, used to hide commitments and nullifiers
     pub wallet_randomness: CompressedRistretto,
-    /// The root secret key, used to derive all fine-grained permissioned keys
-    pub root_secret_key: CompressedRistretto,
-    /// The root public key
-    pub root_public_key: CompressedRistretto,
-    /// The match secret key, knowing this key gives an actor permission to match orders
-    pub match_secret_key: CompressedRistretto,
-    /// The match public key
-    pub match_public_key: CompressedRistretto,
-    /// The settle secret key, knowing this key gives an actor permission to settle matches
-    pub settle_secret_key: CompressedRistretto,
-    /// The settle public key
-    pub settle_public_key: CompressedRistretto,
-    /// The view secret key, knowing this key gives an actor permission to view the wallet
-    pub view_secret_key: CompressedRistretto,
-    /// The view public key
-    pub view_public_key: CompressedRistretto,
 }
 
 /// The proof-system allocated witness for VALID WALLET CREATE
@@ -174,24 +149,10 @@ pub struct ValidWalletCreateCommitment<const MAX_FEES: usize> {
 pub struct ValidWalletCreateVar<const MAX_FEES: usize> {
     /// The fees to initialize the wallet with; may be nonzero
     pub fees: [FeeVar; MAX_FEES],
+    /// The keys used to authenticate operations on the wallet
+    pub keys: KeyChainVar,
     /// The wallet randomness, used to hide commitments and nullifiers
     pub wallet_randomness: Variable,
-    /// The root secret key, used to derive all fine-grained permissioned keys
-    pub root_secret_key: Variable,
-    /// The root public key
-    pub root_public_key: Variable,
-    /// The match secret key, knowing this key gives an actor permission to match orders
-    pub match_secret_key: Variable,
-    /// The match public key
-    pub match_public_key: Variable,
-    /// The settle secret key, knowing this key gives an actor permission to settle matches
-    pub settle_secret_key: Variable,
-    /// The settle public key
-    pub settle_public_key: Variable,
-    /// The view secret key, knowing this key gives an actor permission to view the wallet
-    pub view_secret_key: Variable,
-    /// The view public key
-    pub view_public_key: Variable,
 }
 
 impl<const MAX_FEES: usize> CommitProver for ValidWalletCreateWitness<MAX_FEES> {
@@ -209,46 +170,21 @@ impl<const MAX_FEES: usize> CommitProver for ValidWalletCreateWitness<MAX_FEES> 
             .iter()
             .map(|fee| fee.commit_prover(rng, prover).unwrap())
             .unzip();
+        let (keychain_var, keychain_comm) = self.keys.commit_prover(rng, prover).unwrap();
 
         let (randomness_comm, randomness_var) =
             prover.commit(self.wallet_randomness, Scalar::random(rng));
-        let (sk_root_comm, sk_root_var) = prover.commit(self.root_secret_key, Scalar::random(rng));
-        let (pk_root_comm, pk_root_var) = prover.commit(self.root_public_key, Scalar::random(rng));
-        let (sk_match_comm, sk_match_var) =
-            prover.commit(self.match_secret_key, Scalar::random(rng));
-        let (pk_match_comm, pk_match_var) =
-            prover.commit(self.match_public_key, Scalar::random(rng));
-        let (sk_settle_comm, sk_settle_var) =
-            prover.commit(self.settle_secret_key, Scalar::random(rng));
-        let (pk_settle_comm, pk_settle_var) =
-            prover.commit(self.settle_public_key, Scalar::random(rng));
-        let (sk_view_comm, sk_view_var) = prover.commit(self.view_secret_key, Scalar::random(rng));
-        let (pk_view_comm, pk_view_var) = prover.commit(self.view_public_key, Scalar::random(rng));
 
         Ok((
             ValidWalletCreateVar {
                 fees: fee_vars.try_into().unwrap(),
+                keys: keychain_var,
                 wallet_randomness: randomness_var,
-                root_secret_key: sk_root_var,
-                root_public_key: pk_root_var,
-                match_secret_key: sk_match_var,
-                match_public_key: pk_match_var,
-                settle_secret_key: sk_settle_var,
-                settle_public_key: pk_settle_var,
-                view_secret_key: sk_view_var,
-                view_public_key: pk_view_var,
             },
             ValidWalletCreateCommitment {
                 fees: fee_commitments.try_into().unwrap(),
+                keys: keychain_comm,
                 wallet_randomness: randomness_comm,
-                root_secret_key: sk_root_comm,
-                root_public_key: pk_root_comm,
-                match_secret_key: sk_match_comm,
-                match_public_key: pk_match_comm,
-                settle_secret_key: sk_settle_comm,
-                settle_public_key: pk_settle_comm,
-                view_secret_key: sk_view_comm,
-                view_public_key: pk_view_comm,
             },
         ))
     }
@@ -265,27 +201,13 @@ impl<const MAX_FEES: usize> CommitVerifier for ValidWalletCreateCommitment<MAX_F
             .map(|fee| fee.commit_verifier(verifier).unwrap())
             .collect_vec();
 
+        let keychain_var = self.keys.commit_verifier(verifier).unwrap();
         let randomness_var = verifier.commit(self.wallet_randomness);
-        let sk_root_var = verifier.commit(self.root_secret_key);
-        let pk_root_var = verifier.commit(self.root_public_key);
-        let sk_match_var = verifier.commit(self.match_secret_key);
-        let pk_match_var = verifier.commit(self.match_public_key);
-        let sk_settle_var = verifier.commit(self.settle_secret_key);
-        let pk_settle_var = verifier.commit(self.settle_public_key);
-        let sk_view_var = verifier.commit(self.view_secret_key);
-        let pk_view_var = verifier.commit(self.view_public_key);
 
         Ok(ValidWalletCreateVar {
             fees: fee_vars.try_into().unwrap(),
+            keys: keychain_var,
             wallet_randomness: randomness_var,
-            root_secret_key: sk_root_var,
-            root_public_key: pk_root_var,
-            match_secret_key: sk_match_var,
-            match_public_key: pk_match_var,
-            settle_secret_key: sk_settle_var,
-            settle_public_key: pk_settle_var,
-            view_secret_key: sk_view_var,
-            view_public_key: pk_view_var,
         })
     }
 }
@@ -363,7 +285,7 @@ mod test_valid_wallet_create {
 
     use crate::{
         test_helpers::bulletproof_prove_and_verify, types::fee::Fee,
-        zk_gadgets::fixed_point::FixedPoint,
+        zk_circuits::test_helpers::PUBLIC_KEYS, zk_gadgets::fixed_point::FixedPoint,
     };
 
     use super::{
@@ -410,10 +332,10 @@ mod test_valid_wallet_create {
         }
 
         // Absorb the public keys into the hasher state
-        arkworks_hasher.absorb(&scalar_to_prime_field(&witness.root_public_key));
-        arkworks_hasher.absorb(&scalar_to_prime_field(&witness.match_public_key));
-        arkworks_hasher.absorb(&scalar_to_prime_field(&witness.settle_public_key));
-        arkworks_hasher.absorb(&scalar_to_prime_field(&witness.view_public_key));
+        arkworks_hasher.absorb(&scalar_to_prime_field(&witness.keys.pk_root));
+        arkworks_hasher.absorb(&scalar_to_prime_field(&witness.keys.pk_match));
+        arkworks_hasher.absorb(&scalar_to_prime_field(&witness.keys.pk_settle));
+        arkworks_hasher.absorb(&scalar_to_prime_field(&witness.keys.pk_view));
 
         // Absorb the wallet randomness into the hasher state
         arkworks_hasher.absorb(&scalar_to_prime_field(&witness.wallet_randomness));
@@ -432,15 +354,8 @@ mod test_valid_wallet_create {
 
         let witness = ValidWalletCreateWitness {
             fees: fees.try_into().unwrap(),
+            keys: *PUBLIC_KEYS,
             wallet_randomness: Scalar::random(&mut rng),
-            root_secret_key: Scalar::random(&mut rng),
-            root_public_key: Scalar::random(&mut rng),
-            match_secret_key: Scalar::random(&mut rng),
-            match_public_key: Scalar::random(&mut rng),
-            settle_secret_key: Scalar::random(&mut rng),
-            settle_public_key: Scalar::random(&mut rng),
-            view_secret_key: Scalar::random(&mut rng),
-            view_public_key: Scalar::random(&mut rng),
         };
         let statement = ValidWalletCreateStatement {
             wallet_commitment: compute_commitment(&witness),
