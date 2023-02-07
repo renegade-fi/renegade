@@ -5,10 +5,12 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 /// The error type for errors that occur during ApiServer execution
 #[derive(Clone, Debug)]
 pub enum ApiServerError {
-    /// Error setting up the API server
-    Setup(String),
+    /// Failure enqueuing a job to another worker
+    EnqueueJob(String),
     /// HTTP server has failed
     HttpServerFailure(String),
+    /// Error setting up the API server
+    Setup(String),
     /// A failure while handling a websocket connection
     WebsocketHandlerFailure(String),
     /// Websocket server has failed

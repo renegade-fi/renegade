@@ -17,8 +17,8 @@ use hyper::{
 use tokio::runtime::Builder as TokioBuilder;
 
 use crate::{
-    price_reporter::jobs::PriceReporterManagerJob, state::RelayerState, system_bus::SystemBus,
-    types::SystemBusMessage, worker::Worker,
+    price_reporter::jobs::PriceReporterManagerJob, proof_generation::jobs::ProofManagerJob,
+    state::RelayerState, system_bus::SystemBus, types::SystemBusMessage, worker::Worker,
 };
 
 use super::{error::ApiServerError, routes::Router, server::ApiServer};
@@ -33,14 +33,16 @@ pub struct ApiServerConfig {
     pub http_port: u16,
     /// The port that the websocket server should listen on
     pub websocket_port: u16,
+    /// The worker job queue for the PriceReporterManager
+    pub price_reporter_work_queue: Sender<PriceReporterManagerJob>,
+    /// The worker job queue for the ProofGenerationManager
+    pub proof_generation_work_queue: Sender<ProofManagerJob>,
     /// The relayer-global state
     pub global_state: RelayerState,
     /// The system pubsub bus that all workers have access to
     /// The ApiServer uses this bus to forward internal events onto open
     /// websocket connections
     pub system_bus: SystemBus<SystemBusMessage>,
-    /// The worker job queue for the PriceReporterManager
-    pub price_reporter_worker_sender: Sender<PriceReporterManagerJob>,
     /// The channel to receive cancellation signals on from the coordinator
     pub cancel_channel: Receiver<()>,
 }
@@ -113,12 +115,12 @@ impl Worker for ApiServer {
             .unwrap();
 
         let system_bus_clone = self.config.system_bus.clone();
-        let price_reporter_worker_sender_clone = self.config.price_reporter_worker_sender.clone();
+        let price_reporter_work_queue_clone = self.config.price_reporter_work_queue.clone();
         let websocket_thread_handle = tokio_runtime.spawn_blocking(move || {
             block_on(async {
                 if let Err(err) = Self::websocket_execution_loop(
                     addr,
-                    price_reporter_worker_sender_clone,
+                    price_reporter_work_queue_clone,
                     system_bus_clone,
                 )
                 .await
