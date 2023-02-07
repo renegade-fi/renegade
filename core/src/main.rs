@@ -34,6 +34,7 @@ use crate::{
     handshake::manager::HandshakeManager,
     network_manager::manager::NetworkManager,
     price_reporter::manager::PriceReporterManager,
+    proof_generation::{proof_manager::ProofManager, worker::ProofManagerConfig},
     state::RelayerState,
     system_bus::SystemBus,
     types::SystemBusMessage,
@@ -81,6 +82,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (heartbeat_worker_sender, heartbeat_worker_receiver) = channel::unbounded();
     let (handshake_worker_sender, handshake_worker_receiver) = channel::unbounded();
     let (price_reporter_worker_sender, price_reporter_worker_receiver) = channel::unbounded();
+    let (_proof_generation_worker_sender, proof_generation_worker_receiver) = channel::unbounded();
 
     // Start the network manager
     let (network_cancel_sender, network_cancel_receiver) = channel::bounded(1 /* capacity */);
@@ -180,6 +182,21 @@ async fn main() -> Result<(), CoordinatorError> {
     let (api_failure_sender, mut api_failure_receiver) = mpsc::channel(1 /* buffer_size */);
     watch_worker::<ApiServer>(&mut api_server, api_failure_sender);
 
+    // Start the proof generation module
+    let (proof_manager_cancel_sender, proof_manager_cancel_receiver) =
+        channel::bounded(1 /* capacity */);
+    let mut proof_manager = ProofManager::new(ProofManagerConfig {
+        job_queue: proof_generation_worker_receiver,
+        cancel_channel: proof_manager_cancel_receiver,
+    })
+    .expect("failed to build proof generation module");
+    proof_manager
+        .start()
+        .expect("failed to start proof generation module");
+    let (proof_manager_failure_sender, mut proof_manager_failure_receiver) =
+        mpsc::channel(1 /* buffer_size */);
+    watch_worker::<ProofManager>(&mut proof_manager, proof_manager_failure_sender);
+
     // Hold onto copies of the cancel channels for use at teardown
     let cancel_channels = vec![
         network_cancel_sender.clone(),
@@ -187,6 +204,7 @@ async fn main() -> Result<(), CoordinatorError> {
         handshake_cancel_sender.clone(),
         price_reporter_cancel_sender.clone(),
         api_cancel_sender.clone(),
+        proof_manager_cancel_sender.clone(),
     ];
 
     // For simplicity, we simply cancel all disabled workers, it is simpler to do this than work with
@@ -230,6 +248,11 @@ async fn main() -> Result<(), CoordinatorError> {
                     api_cancel_sender.send(())
                         .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
                     api_server = recover_worker(api_server)?;
+                }
+                _ = proof_manager_failure_receiver.recv() => {
+                    proof_manager_cancel_sender.send(())
+                        .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
+                    proof_manager = recover_worker(proof_manager)?;
                 }
             };
         }
