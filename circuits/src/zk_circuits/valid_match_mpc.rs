@@ -576,7 +576,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
     type Witness = ValidMatchMpcWitness<N, S>;
     type WitnessCommitment = ValidMatchCommitmentShared<N, S>;
 
-    const BP_GENS_CAPACITY: usize = 16384;
+    const BP_GENS_CAPACITY: usize = 256;
 
     fn prove(
         witness: Self::Witness,
