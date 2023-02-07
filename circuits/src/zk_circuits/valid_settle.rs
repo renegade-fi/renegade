@@ -24,6 +24,7 @@ use rand_core::OsRng;
 
 use crate::{
     errors::{ProverError, VerifierError},
+    mpc_gadgets::poseidon::PoseidonSpongeParameters,
     types::{
         note::{CommittedNote, Note, NoteType, NoteVar},
         order::OrderVar,
@@ -35,6 +36,7 @@ use crate::{
         elgamal::{ElGamalCiphertext, ElGamalCiphertextVar},
         gates::OrGate,
         merkle::PoseidonMerkleHashGadget,
+        poseidon::PoseidonHashGadget,
         select::CondSelectGadget,
     },
     CommitProver, CommitVerifier, SingleProverCircuit,
@@ -67,6 +69,11 @@ where
         cs.constrain(witness.pre_wallet.keys.pk_match - witness.post_wallet.keys.pk_match);
         cs.constrain(witness.pre_wallet.keys.pk_settle - witness.post_wallet.keys.pk_settle);
         cs.constrain(witness.pre_wallet.keys.pk_view - witness.post_wallet.keys.pk_view);
+
+        // Validate that the prover knows the settle secret key for the wallet
+        let hasher_params = PoseidonSpongeParameters::default();
+        let mut hasher = PoseidonHashGadget::new(hasher_params);
+        hasher.hash(&[witness.sk_settle], witness.pre_wallet.keys.pk_settle, cs)?;
 
         // Validate that the randomness has been properly updated in the new wallet
         cs.constrain(
@@ -333,6 +340,8 @@ pub struct ValidSettleWitness<
     pub note_opening: Vec<Scalar>,
     /// The indices of the merkle inclusion proof
     pub note_opening_indices: Vec<Scalar>,
+    /// The secret settle key of the wallet
+    pub sk_settle: Scalar,
 }
 
 /// The witness type for VALID SETTLE, allocated in a constraint system
@@ -360,6 +369,8 @@ pub struct ValidSettleWitnessVar<
     pub note_opening: Vec<Variable>,
     /// The indices of the merkle inclusion proof
     pub note_opening_indices: Vec<Variable>,
+    /// The secret settle key of the wallet
+    pub sk_settle: Variable,
 }
 
 /// A commitment to the witness type for VALID SETTLE
@@ -387,6 +398,8 @@ pub struct ValidSettleWitnessCommitment<
     pub note_opening: Vec<CompressedRistretto>,
     /// The indices of the merkle inclusion proof
     pub note_opening_indices: Vec<CompressedRistretto>,
+    /// The secret settle key of the wallet
+    pub sk_settle: CompressedRistretto,
 }
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitProver
@@ -439,6 +452,7 @@ where
                 .iter()
                 .map(|index| prover.commit(*index, Scalar::random(rng)))
                 .unzip();
+        let (sk_settle_comm, sk_settle_var) = prover.commit(self.sk_settle, Scalar::random(rng));
 
         Ok((
             ValidSettleWitnessVar {
@@ -450,6 +464,7 @@ where
                 note_commitment: note_commitment_var,
                 note_opening: note_opening_vars,
                 note_opening_indices: note_indices_vars,
+                sk_settle: sk_settle_var,
             },
             ValidSettleWitnessCommitment {
                 pre_wallet: pre_wallet_comm,
@@ -460,6 +475,7 @@ where
                 note_commitment: note_commitment_comm,
                 note_opening: note_opening_comms,
                 note_opening_indices: note_indices_comms,
+                sk_settle: sk_settle_comm,
             },
         ))
     }
@@ -499,6 +515,7 @@ where
             .iter()
             .map(|index| verifier.commit(*index))
             .collect_vec();
+        let sk_settle_var = verifier.commit(self.sk_settle);
 
         Ok(ValidSettleWitnessVar {
             pre_wallet: pre_wallet_var,
@@ -509,6 +526,7 @@ where
             note_commitment: note_commitment_var,
             note_opening: note_opening_vars,
             note_opening_indices: note_indices_vars,
+            sk_settle: sk_settle_var,
         })
     }
 }
@@ -720,7 +738,7 @@ mod valid_settle_tests {
         zk_circuits::test_helpers::{
             compute_note_commitment, compute_note_redeem_nullifier, compute_wallet_commitment,
             compute_wallet_match_nullifier, compute_wallet_spend_nullifier, create_multi_opening,
-            SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+            SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS, PRIVATE_KEYS,
         },
         zk_gadgets::elgamal::ElGamalCiphertext,
         CommitProver,
@@ -859,6 +877,7 @@ mod valid_settle_tests {
                 note_commitment: prime_field_to_scalar(&note_commit),
                 note_opening: openings[1].to_owned(),
                 note_opening_indices: openings_indices[1].to_owned(),
+                sk_settle: PRIVATE_KEYS[2],
             },
             ValidSettleStatement {
                 post_wallet_commit: prime_field_to_scalar(&post_wallet_commit),
