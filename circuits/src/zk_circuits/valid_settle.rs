@@ -103,7 +103,11 @@ where
         )?;
 
         // Compute the commitment to the note
-        let note_commitment_res = NoteCommitmentGadget::note_commit(&witness.note, cs)?;
+        let note_commitment_res = NoteCommitmentGadget::note_commit(
+            &witness.note,
+            witness.pre_wallet.keys.pk_settle,
+            cs,
+        )?;
 
         // Validate that this note commitment is a leaf in the state tree
         PoseidonMerkleHashGadget::compute_and_constrain_root_prehashed(
@@ -820,7 +824,7 @@ mod valid_settle_tests {
 
         let pre_wallet_commit = compute_wallet_commitment(&pre_wallet);
         let post_wallet_commit = compute_wallet_commitment(&post_wallet);
-        let note_commit = compute_note_commitment(&note);
+        let note_commit = compute_note_commitment(&note, pre_wallet.keys.pk_settle);
 
         let wallet_spend_nullifier = compute_wallet_spend_nullifier(&pre_wallet, pre_wallet_commit);
         let wallet_match_nullifier = compute_wallet_match_nullifier(&pre_wallet, pre_wallet_commit);
