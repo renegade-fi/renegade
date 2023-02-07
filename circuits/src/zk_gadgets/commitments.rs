@@ -92,6 +92,7 @@ impl NoteCommitmentGadget {
     /// Computes a commitment to a given note
     pub fn note_commit<CS: RandomizableConstraintSystem>(
         note: &NoteVar,
+        recipient_pub_key: Variable,
         cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError> {
         // Create a new hash gadget
@@ -111,6 +112,7 @@ impl NoteCommitmentGadget {
                 note.fee_direction,
                 note.type_,
                 note.randomness,
+                recipient_pub_key,
             ],
             cs,
         )?;

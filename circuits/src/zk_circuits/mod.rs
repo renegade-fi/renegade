@@ -162,7 +162,10 @@ mod test_helpers {
     }
 
     /// Compute the commitment to a note
-    pub(crate) fn compute_note_commitment(note: &Note) -> DalekRistrettoField {
+    pub(crate) fn compute_note_commitment(
+        note: &Note,
+        pk_settle_receiver: Scalar,
+    ) -> DalekRistrettoField {
         let mut hasher = PoseidonSponge::new(&default_poseidon_params());
         hasher.absorb(&vec![
             note.mint1,
@@ -177,6 +180,7 @@ mod test_helpers {
             note.type_ as u64,
             note.randomness,
         ]);
+        hasher.absorb(&scalar_to_prime_field(&pk_settle_receiver));
         hasher.squeeze_field_elements(1 /* num_elements */)[0]
     }
 

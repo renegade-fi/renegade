@@ -80,7 +80,7 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
             *DEFAULT_ELGAMAL_GENERATOR,
             witness.elgamal_randomness[0],
             witness.party0_note.volume1,
-            statement.pk_settle1,
+            statement.pk_settle_party0,
             cs,
         )?;
         cs.constrain(expected_ciphertext.0 - statement.volume1_ciphertext1.partial_shared_secret);
@@ -90,7 +90,7 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
             *DEFAULT_ELGAMAL_GENERATOR,
             witness.elgamal_randomness[1],
             witness.party0_note.volume2,
-            statement.pk_settle1,
+            statement.pk_settle_party0,
             cs,
         )?;
         cs.constrain(expected_ciphertext.0 - statement.volume2_ciphertext1.partial_shared_secret);
@@ -101,7 +101,7 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
             *DEFAULT_ELGAMAL_GENERATOR,
             witness.elgamal_randomness[2],
             witness.party1_note.volume1,
-            statement.pk_settle2,
+            statement.pk_settle_party1,
             cs,
         )?;
         cs.constrain(expected_ciphertext.0 - statement.volume1_ciphertext2.partial_shared_secret);
@@ -111,7 +111,7 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
             *DEFAULT_ELGAMAL_GENERATOR,
             witness.elgamal_randomness[3],
             witness.party1_note.volume2,
-            statement.pk_settle2,
+            statement.pk_settle_party1,
             cs,
         )?;
         cs.constrain(expected_ciphertext.0 - statement.volume2_ciphertext2.partial_shared_secret);
@@ -489,26 +489,43 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
         // Party0's note
-        let party0_note_commit_res = NoteCommitmentGadget::note_commit(&witness.party0_note, cs)?;
+        let party0_note_commit_res = NoteCommitmentGadget::note_commit(
+            &witness.party0_note,
+            statement.pk_settle_party0,
+            cs,
+        )?;
         cs.constrain(statement.party0_note_commit - party0_note_commit_res);
 
         // Party1's note
-        let party1_note_commit_res = NoteCommitmentGadget::note_commit(&witness.party1_note, cs)?;
+        let party1_note_commit_res = NoteCommitmentGadget::note_commit(
+            &witness.party1_note,
+            statement.pk_settle_party1,
+            cs,
+        )?;
         cs.constrain(statement.party1_note_commit - party1_note_commit_res);
 
         // Relayer0's note
-        let relayer0_note_commit_res =
-            NoteCommitmentGadget::note_commit(&witness.relayer0_note, cs)?;
+        let relayer0_note_commit_res = NoteCommitmentGadget::note_commit(
+            &witness.relayer0_note,
+            statement.pk_settle_relayer0,
+            cs,
+        )?;
         cs.constrain(statement.relayer0_note_commit - relayer0_note_commit_res);
 
         // Relayer1's note
-        let relayer1_note_commit_res =
-            NoteCommitmentGadget::note_commit(&witness.relayer1_note, cs)?;
+        let relayer1_note_commit_res = NoteCommitmentGadget::note_commit(
+            &witness.relayer1_note,
+            statement.pk_settle_relayer1,
+            cs,
+        )?;
         cs.constrain(statement.relayer1_note_commit - relayer1_note_commit_res);
 
         // Protocol's note
-        let protocol_note_commit_res =
-            NoteCommitmentGadget::note_commit(&witness.protocol_note, cs)?;
+        let protocol_note_commit_res = NoteCommitmentGadget::note_commit(
+            &witness.protocol_note,
+            statement.pk_settle_protocol,
+            cs,
+        )?;
         cs.constrain(statement.protocol_note_commit - protocol_note_commit_res);
 
         Ok(())
@@ -731,9 +748,13 @@ pub struct ValidMatchEncryptionStatement {
     /// The commitment to the protocol's note
     pub protocol_note_commit: Scalar,
     /// The public settle key of the first party's wallet
-    pub pk_settle1: Scalar,
+    pub pk_settle_party0: Scalar,
     /// The public settle key of the second party's wallet
-    pub pk_settle2: Scalar,
+    pub pk_settle_party1: Scalar,
+    /// The public settle key of the first relayer
+    pub pk_settle_relayer0: Scalar,
+    /// The public settle key of the second relayer
+    pub pk_settle_relayer1: Scalar,
     /// The public settle key of the protocol
     pub pk_settle_protocol: Scalar,
     /// The global protocol fee
@@ -772,9 +793,13 @@ pub struct ValidMatchEncryptionStatementVar {
     /// The commitment to the protocol's note
     pub protocol_note_commit: Variable,
     /// The public settle key of the first party's wallet
-    pub pk_settle1: Variable,
+    pub pk_settle_party0: Variable,
     /// The public settle key of the second party's wallet
-    pub pk_settle2: Variable,
+    pub pk_settle_party1: Variable,
+    /// The public settle key of the first relayer
+    pub pk_settle_relayer0: Variable,
+    /// The public settle key of the second relayer
+    pub pk_settle_relayer1: Variable,
     /// The public settle key of the protocol
     pub pk_settle_protocol: Variable,
     /// The global protocol fee
@@ -814,8 +839,10 @@ impl CommitProver for ValidMatchEncryptionStatement {
         let relayer0_note_commit_var = prover.commit_public(self.relayer0_note_commit);
         let relayer1_note_commit_var = prover.commit_public(self.relayer1_note_commit);
         let protocol_note_commit_var = prover.commit_public(self.protocol_note_commit);
-        let pk_settle1_var = prover.commit_public(self.pk_settle1);
-        let pk_settle2_var = prover.commit_public(self.pk_settle2);
+        let pk_settle_party0_var = prover.commit_public(self.pk_settle_party0);
+        let pk_settle_party1_var = prover.commit_public(self.pk_settle_party1);
+        let pk_settle_relayer0_var = prover.commit_public(self.pk_settle_relayer0);
+        let pk_settle_relayer1_var = prover.commit_public(self.pk_settle_relayer1);
         let pk_settle_protocol_var = prover.commit_public(self.pk_settle_protocol);
         let protocol_fee_var = self.protocol_fee.commit_public(prover);
         let volume1_ciphertext1_var = self.volume1_ciphertext1.commit_public(prover);
@@ -838,8 +865,10 @@ impl CommitProver for ValidMatchEncryptionStatement {
                 relayer0_note_commit: relayer0_note_commit_var,
                 relayer1_note_commit: relayer1_note_commit_var,
                 protocol_note_commit: protocol_note_commit_var,
-                pk_settle1: pk_settle1_var,
-                pk_settle2: pk_settle2_var,
+                pk_settle_party0: pk_settle_party0_var,
+                pk_settle_party1: pk_settle_party1_var,
+                pk_settle_relayer0: pk_settle_relayer0_var,
+                pk_settle_relayer1: pk_settle_relayer1_var,
                 pk_settle_protocol: pk_settle_protocol_var,
                 protocol_fee: protocol_fee_var,
                 volume1_ciphertext1: volume1_ciphertext1_var,
@@ -867,8 +896,10 @@ impl CommitVerifier for ValidMatchEncryptionStatement {
         let relayer0_note_commit_var = verifier.commit_public(self.relayer0_note_commit);
         let relayer1_note_commit_var = verifier.commit_public(self.relayer1_note_commit);
         let protocol_note_commit_var = verifier.commit_public(self.protocol_note_commit);
-        let pk_settle1_var = verifier.commit_public(self.pk_settle1);
-        let pk_settle2_var = verifier.commit_public(self.pk_settle2);
+        let pk_settle_party0_var = verifier.commit_public(self.pk_settle_party0);
+        let pk_settle_party1_var = verifier.commit_public(self.pk_settle_party1);
+        let pk_settle_relayer0_var = verifier.commit_public(self.pk_settle_relayer0);
+        let pk_settle_relayer1_var = verifier.commit_public(self.pk_settle_relayer1);
         let pk_settle_protocol_var = verifier.commit_public(self.pk_settle_protocol);
         let protocol_fee_var = self.protocol_fee.commit_public(verifier);
         let volume1_ciphertext1_var = self.volume1_ciphertext1.commit_public(verifier);
@@ -890,8 +921,10 @@ impl CommitVerifier for ValidMatchEncryptionStatement {
             relayer0_note_commit: relayer0_note_commit_var,
             relayer1_note_commit: relayer1_note_commit_var,
             protocol_note_commit: protocol_note_commit_var,
-            pk_settle1: pk_settle1_var,
-            pk_settle2: pk_settle2_var,
+            pk_settle_party0: pk_settle_party0_var,
+            pk_settle_party1: pk_settle_party1_var,
+            pk_settle_relayer0: pk_settle_relayer0_var,
+            pk_settle_relayer1: pk_settle_relayer1_var,
             pk_settle_protocol: pk_settle_protocol_var,
             protocol_fee: protocol_fee_var,
             volume1_ciphertext1: volume1_ciphertext1_var,
@@ -1141,18 +1174,20 @@ mod valid_match_encryption_tests {
 
         // Generate encryptions for the statement
         let mut rng = OsRng {};
-        let pk_settle1 = scalar_to_biguint(&Scalar::random(&mut rng));
-        let pk_settle2 = scalar_to_biguint(&Scalar::random(&mut rng));
+        let pk_settle_party0 = scalar_to_biguint(&Scalar::random(&mut rng));
+        let pk_settle_party1 = scalar_to_biguint(&Scalar::random(&mut rng));
+        let pk_settle_relayer0 = scalar_to_biguint(&Scalar::random(&mut rng));
+        let pk_settle_relayer1 = scalar_to_biguint(&Scalar::random(&mut rng));
         let pk_settle_protocol = scalar_to_biguint(&Scalar::random(&mut rng));
 
         let (v1c1_cipher, randomness1) =
-            elgamal_encrypt(&BigUint::from(party0_note.volume1), &pk_settle1);
+            elgamal_encrypt(&BigUint::from(party0_note.volume1), &pk_settle_party0);
         let (v2c1_cipher, randomness2) =
-            elgamal_encrypt(&BigUint::from(party0_note.volume2), &pk_settle1);
+            elgamal_encrypt(&BigUint::from(party0_note.volume2), &pk_settle_party0);
         let (v1c2_cipher, randomness3) =
-            elgamal_encrypt(&BigUint::from(party1_note.volume1), &pk_settle2);
+            elgamal_encrypt(&BigUint::from(party1_note.volume1), &pk_settle_party1);
         let (v2c2_cipher, randomness4) =
-            elgamal_encrypt(&BigUint::from(party1_note.volume2), &pk_settle2);
+            elgamal_encrypt(&BigUint::from(party1_note.volume2), &pk_settle_party1);
 
         let (protocol_mint1_cipher, randomness5) =
             elgamal_encrypt(&BigUint::from(protocol_note.mint1), &pk_settle_protocol);
@@ -1192,19 +1227,30 @@ mod valid_match_encryption_tests {
                 ],
             },
             ValidMatchEncryptionStatement {
-                party0_note_commit: prime_field_to_scalar(&compute_note_commitment(&party0_note)),
-                party1_note_commit: prime_field_to_scalar(&compute_note_commitment(&party1_note)),
+                party0_note_commit: prime_field_to_scalar(&compute_note_commitment(
+                    &party0_note,
+                    biguint_to_scalar(&pk_settle_party0),
+                )),
+                party1_note_commit: prime_field_to_scalar(&compute_note_commitment(
+                    &party1_note,
+                    biguint_to_scalar(&pk_settle_party1),
+                )),
                 relayer0_note_commit: prime_field_to_scalar(&compute_note_commitment(
                     &relayer0_note,
+                    biguint_to_scalar(&pk_settle_relayer0),
                 )),
                 relayer1_note_commit: prime_field_to_scalar(&compute_note_commitment(
                     &relayer1_note,
+                    biguint_to_scalar(&pk_settle_relayer1),
                 )),
                 protocol_note_commit: prime_field_to_scalar(&compute_note_commitment(
                     &protocol_note,
+                    biguint_to_scalar(&pk_settle_protocol),
                 )),
-                pk_settle1: biguint_to_scalar(&pk_settle1),
-                pk_settle2: biguint_to_scalar(&pk_settle2),
+                pk_settle_party0: biguint_to_scalar(&pk_settle_party0),
+                pk_settle_party1: biguint_to_scalar(&pk_settle_party1),
+                pk_settle_relayer0: biguint_to_scalar(&pk_settle_relayer0),
+                pk_settle_relayer1: biguint_to_scalar(&pk_settle_relayer1),
                 pk_settle_protocol: biguint_to_scalar(&pk_settle_protocol),
                 protocol_fee: FixedPoint::from(PROTOCOL_FEE),
                 volume1_ciphertext1: v1c1_cipher,
@@ -1369,7 +1415,7 @@ mod valid_match_encryption_tests {
             bad_witness1.elgamal_randomness[0],
         ) = elgamal_encrypt(
             &bad_witness1.party0_note.volume1.into(),
-            &scalar_to_biguint(&statement.pk_settle1),
+            &scalar_to_biguint(&statement.pk_settle_party0),
         );
         bad_witnesses.push(bad_witness1);
         bad_statements.push(bad_statement1);
@@ -1383,7 +1429,7 @@ mod valid_match_encryption_tests {
             bad_witness2.elgamal_randomness[1],
         ) = elgamal_encrypt(
             &bad_witness2.party0_note.volume2.into(),
-            &scalar_to_biguint(&statement.pk_settle1),
+            &scalar_to_biguint(&statement.pk_settle_party0),
         );
         bad_witnesses.push(bad_witness2);
         bad_statements.push(bad_statement2);
@@ -1397,7 +1443,7 @@ mod valid_match_encryption_tests {
             bad_witness3.elgamal_randomness[2],
         ) = elgamal_encrypt(
             &bad_witness3.party0_note.volume1.into(),
-            &scalar_to_biguint(&statement.pk_settle2),
+            &scalar_to_biguint(&statement.pk_settle_party1),
         );
         bad_witnesses.push(bad_witness3);
         bad_statements.push(bad_statement3);
@@ -1411,7 +1457,7 @@ mod valid_match_encryption_tests {
             bad_witness4.elgamal_randomness[3],
         ) = elgamal_encrypt(
             &bad_witness4.party1_note.volume2.into(),
-            &scalar_to_biguint(&statement.pk_settle2),
+            &scalar_to_biguint(&statement.pk_settle_party1),
         );
         bad_witnesses.push(bad_witness4);
         bad_statements.push(bad_statement4);
@@ -1483,7 +1529,7 @@ mod valid_match_encryption_tests {
             bad_witness1.elgamal_randomness[0],
         ) = elgamal_encrypt(
             &bad_witness1.party0_note.volume1.into(),
-            &scalar_to_biguint(&statement.pk_settle1),
+            &scalar_to_biguint(&statement.pk_settle_party0),
         );
         bad_witnesses.push(bad_witness1);
         bad_statements.push(bad_statement1);
@@ -1497,7 +1543,7 @@ mod valid_match_encryption_tests {
             bad_witness2.elgamal_randomness[1],
         ) = elgamal_encrypt(
             &bad_witness2.party0_note.volume2.into(),
-            &scalar_to_biguint(&statement.pk_settle1),
+            &scalar_to_biguint(&statement.pk_settle_party0),
         );
         bad_witnesses.push(bad_witness2);
         bad_statements.push(bad_statement2);
@@ -1511,7 +1557,7 @@ mod valid_match_encryption_tests {
             bad_witness3.elgamal_randomness[2],
         ) = elgamal_encrypt(
             &bad_witness3.party0_note.volume1.into(),
-            &scalar_to_biguint(&statement.pk_settle2),
+            &scalar_to_biguint(&statement.pk_settle_party1),
         );
         bad_witnesses.push(bad_witness3);
         bad_statements.push(bad_statement3);
@@ -1525,7 +1571,7 @@ mod valid_match_encryption_tests {
             bad_witness4.elgamal_randomness[3],
         ) = elgamal_encrypt(
             &bad_witness4.party1_note.volume2.into(),
-            &scalar_to_biguint(&statement.pk_settle2),
+            &scalar_to_biguint(&statement.pk_settle_party1),
         );
         bad_witnesses.push(bad_witness4);
         bad_statements.push(bad_statement4);
