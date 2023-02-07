@@ -45,7 +45,7 @@ pub enum HandshakeExecutionJob {
     PeerMatchInProgress {
         /// The first of the orders in the pair
         order1: OrderIdentifier,
-        /// The second of the orderes in the pair
+        /// The second of the orders in the pair
         order2: OrderIdentifier,
     },
     /// Update the handshake cache with an entry from an order pair that a cluster
@@ -53,7 +53,7 @@ pub enum HandshakeExecutionJob {
     CacheEntry {
         /// The first of the orders matched
         order1: OrderIdentifier,
-        /// The second of the orderes matched
+        /// The second of the orders matched
         order2: OrderIdentifier,
     },
 }
