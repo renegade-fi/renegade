@@ -1,10 +1,6 @@
 //! The core logic behind the APIServer's implementation
 
-use std::{
-    net::SocketAddr,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{net::SocketAddr, sync::Arc};
 
 use crossbeam::channel::{self, Sender};
 use futures::stream::SplitSink;
@@ -23,13 +19,7 @@ use tokio_tungstenite::{accept_async, WebSocketStream};
 use tungstenite::Message;
 
 use crate::{
-    api::{
-        http::{
-            GetExchangeHealthStatesRequest, GetExchangeHealthStatesResponse, GetReplicasRequest,
-            GetReplicasResponse, PingRequest, PingResponse,
-        },
-        websocket::{SubscriptionMessage, SubscriptionResponse},
-    },
+    api::websocket::{SubscriptionMessage, SubscriptionResponse},
     price_reporter::{jobs::PriceReporterManagerJob, tokens::Token},
     state::RelayerState,
     system_bus::{SystemBus, TopicReader},
@@ -38,12 +28,28 @@ use crate::{
 
 use super::{
     error::ApiServerError,
-    routes::{Router, TypedHandler},
+    http_handlers::{
+        ExchangeHealthStatesHandler, PingHandler, ReplicasHandler, WalletCreateHandler,
+    },
+    routes::Router,
     worker::ApiServerConfig,
 };
 
 /// The dummy stream used to seed the websocket subscriptions `StreamMap`
 const DUMMY_SUBSCRIPTION_TOPIC: &str = "dummy-topic";
+
+// ----------
+// | Routes |
+// ----------
+
+/// Health check
+const PING_ROUTE: &str = "/ping";
+/// Exchange health check route
+const EXCHANGE_HEALTH_ROUTE: &str = "/exchange/health_check";
+/// Returns the replicating nodes of a given wallet
+const REPLICAS_ROUTE: &str = "/replicas";
+/// Creates a new wallet with the given fees and keys and submits it to the contract
+const WALLET_CREATE_ROUTE: &str = "/wallet/create";
 
 /// Accepts inbound HTTP requests and websocket subscriptions and
 /// serves requests from those connections
@@ -99,20 +105,29 @@ impl ApiServer {
         config: ApiServerConfig,
         global_state: RelayerState,
     ) {
-        // The "/ping" route
-        router.add_route(Method::GET, "/ping".to_string(), PingHandler::new());
         // The "/exchangeHealthStates" route
         router.add_route(
             Method::POST,
-            "/exchangeHealthStates".to_string(),
-            ExchangeHealthStatesHandler::new(config),
+            EXCHANGE_HEALTH_ROUTE.to_string(),
+            ExchangeHealthStatesHandler::new(config.clone()),
         );
+
+        // The "/ping" route
+        router.add_route(Method::GET, PING_ROUTE.to_string(), PingHandler::new());
+
         // The "/replicas" route
         router.add_route(
             Method::POST,
-            "/replicas".to_string(),
+            REPLICAS_ROUTE.to_string(),
             ReplicasHandler::new(global_state),
-        )
+        );
+
+        // The "/wallet/create" route
+        router.add_route(
+            Method::POST,
+            WALLET_CREATE_ROUTE.to_string(),
+            WalletCreateHandler::new(config.proof_generation_work_queue),
+        );
     }
 
     /// Handles an incoming HTTP request
@@ -308,109 +323,5 @@ impl WebsocketHandler {
             .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
 
         Ok(())
-    }
-}
-
-/// Handler for the ping route, returns a pong
-#[derive(Clone, Debug)]
-pub struct PingHandler;
-
-impl PingHandler {
-    /// Create a new handler for "/ping"
-    fn new() -> Self {
-        Self {}
-    }
-}
-
-impl TypedHandler for PingHandler {
-    type Request = PingRequest;
-    type Response = PingResponse;
-    type Error = ApiServerError;
-
-    fn handle_typed(&self, _req: Self::Request) -> Result<Self::Response, Self::Error> {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
-        Ok(PingResponse { timestamp })
-    }
-}
-
-/// Handler for the exchangeHealthStates route, returns the health report for each individual
-/// exchange and the aggregate median
-#[derive(Clone, Debug)]
-pub struct ExchangeHealthStatesHandler {
-    /// The config for the API server
-    config: ApiServerConfig,
-}
-
-impl ExchangeHealthStatesHandler {
-    /// Create a new handler for "/replicas"
-    fn new(config: ApiServerConfig) -> Self {
-        Self { config }
-    }
-}
-
-impl TypedHandler for ExchangeHealthStatesHandler {
-    type Request = GetExchangeHealthStatesRequest;
-    type Response = GetExchangeHealthStatesResponse;
-    type Error = ApiServerError;
-
-    fn handle_typed(&self, req: Self::Request) -> Result<Self::Response, Self::Error> {
-        let (price_reporter_state_sender, price_reporter_state_receiver) = channel::unbounded();
-        self.config
-            .price_reporter_worker_sender
-            .send(PriceReporterManagerJob::PeekMedian {
-                base_token: req.base_token.clone(),
-                quote_token: req.quote_token.clone(),
-                channel: price_reporter_state_sender,
-            })
-            .unwrap();
-        let (exchange_connection_state_sender, exchange_connection_state_receiver) =
-            channel::unbounded();
-        self.config
-            .price_reporter_worker_sender
-            .send(PriceReporterManagerJob::PeekAllExchanges {
-                base_token: req.base_token,
-                quote_token: req.quote_token,
-                channel: exchange_connection_state_sender,
-            })
-            .unwrap();
-        Ok(GetExchangeHealthStatesResponse {
-            median: price_reporter_state_receiver.recv().unwrap(),
-            all_exchanges: exchange_connection_state_receiver.recv().unwrap(),
-        })
-    }
-}
-
-/// Handler for the replicas route, returns the number of replicas a given wallet has
-#[derive(Clone, Debug)]
-pub struct ReplicasHandler {
-    /// The global state of the relayer, used to query information for requests
-    global_state: RelayerState,
-}
-
-impl ReplicasHandler {
-    /// Create a new handler for "/replicas"
-    fn new(global_state: RelayerState) -> Self {
-        Self { global_state }
-    }
-}
-
-impl TypedHandler for ReplicasHandler {
-    type Request = GetReplicasRequest;
-    type Response = GetReplicasResponse;
-    type Error = ApiServerError;
-
-    fn handle_typed(&self, req: Self::Request) -> Result<Self::Response, Self::Error> {
-        let replicas = if let Some(wallet_info) =
-            self.global_state.read_managed_wallets().get(&req.wallet_id)
-        {
-            wallet_info.metadata.replicas.clone().into_iter().collect()
-        } else {
-            vec![]
-        };
-
-        Ok(GetReplicasResponse { replicas })
     }
 }

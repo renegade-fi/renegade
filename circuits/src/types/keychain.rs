@@ -2,6 +2,7 @@
 
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use mpc_bulletproof::r1cs::{Prover, Variable, Verifier};
+use serde::{Deserialize, Serialize};
 
 use crate::{errors::TypeConversionError, CommitProver, CommitVerifier};
 
@@ -23,7 +24,7 @@ pub(crate) const NUM_KEYS: usize = 4;
 /// identification scheme (not necessarily a signature scheme). Concretely, this currently
 /// is setup as `pk_identity` = Hash(`sk_identity`), and the prover proves knowledge of
 /// pre-image in a related circuit
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeyChain {
     /// The public root key
     pub pk_root: Scalar,

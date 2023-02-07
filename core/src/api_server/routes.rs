@@ -11,10 +11,10 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
  */
 
 /// Builds an empty HTTP 400 (Bad Request) response
-fn build_400_response() -> Response<Body> {
+fn build_400_response(err: String) -> Response<Body> {
     Response::builder()
         .status(StatusCode::BAD_REQUEST)
-        .body(Body::empty())
+        .body(Body::from(err))
         .unwrap()
 }
 
@@ -75,8 +75,8 @@ impl<
     async fn handle(&self, req: Request<Body>) -> Response<Body> {
         // Deserialize the request into the request type, return HTTP 400 if deserialization fails
         let req_body_bytes = hyper::body::to_bytes(req.into_body()).await;
-        if req_body_bytes.is_err() {
-            return build_400_response();
+        if let Err(e) = req_body_bytes {
+            return build_400_response(e.to_string());
         }
 
         let mut unwrapped: &[u8] = &req_body_bytes.unwrap(); // Necessary to explicitly hold temporary value
@@ -86,8 +86,8 @@ impl<
             unwrapped = "null".as_bytes();
         }
         let deserialized = serde_json::from_reader(unwrapped);
-        if deserialized.is_err() {
-            return build_400_response();
+        if let Err(e) = deserialized {
+            return build_400_response(e.to_string());
         }
 
         let req_body: Req = deserialized.unwrap();
