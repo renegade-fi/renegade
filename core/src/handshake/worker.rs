@@ -34,7 +34,7 @@ pub struct HandshakeManagerConfig {
     pub global_state: RelayerState,
     /// The channel on which to send outbound network requests
     pub network_channel: UnboundedSender<GossipOutbound>,
-    /// The job queue on which to receive handshake requrests
+    /// The job queue on which to receive handshake requests
     pub job_receiver: Receiver<HandshakeExecutionJob>,
     /// The system bus to which all workers have access
     pub system_bus: SystemBus<SystemBusMessage>,

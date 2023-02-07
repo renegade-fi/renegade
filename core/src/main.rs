@@ -11,6 +11,7 @@ mod gossip;
 mod handshake;
 mod network_manager;
 mod price_reporter;
+mod proof_generation;
 mod state;
 mod system_bus;
 mod types;
