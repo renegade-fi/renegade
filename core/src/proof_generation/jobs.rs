@@ -1,5 +1,8 @@
 //! Defines job types that may be enqueued by other workers in the local node
 //! for the proof generation module to process
+//!
+//! See the whitepaper https://renegade.fi/whitepaper.pdf for a formal specification
+//! of the types defined here
 
 use circuits::{
     types::{fee::Fee, keychain::KeyChain},
@@ -48,7 +51,6 @@ pub enum ProofBundle {
 /// Unsafe cast implementations, will panic if type is incorrect
 impl From<ProofBundle> for ValidWalletCreateBundle {
     fn from(bundle: ProofBundle) -> Self {
-        #[allow(irrefutable_let_patterns)]
         if let ProofBundle::ValidWalletCreate(b) = bundle {
             b
         } else {
@@ -56,6 +58,16 @@ impl From<ProofBundle> for ValidWalletCreateBundle {
                 "Proof bundle is not of type ValidWalletCreate: {:?}",
                 bundle
             )
+        }
+    }
+}
+
+impl From<ProofBundle> for ValidCommitmentsBundle {
+    fn from(bundle: ProofBundle) -> Self {
+        if let ProofBundle::ValidCommitments(b) = bundle {
+            b
+        } else {
+            panic!("Proof bundle is not of type ValidCommitments: {:?}", bundle)
         }
     }
 }
@@ -72,7 +84,7 @@ pub struct ProofManagerJob {
 /// The job type and parameterization
 #[derive(Clone, Debug)]
 pub enum ProofJob {
-    /// A request has come in to create a new wallet
+    /// A request has to create a new wallet
     /// The proof generation module should generate a proof of
     /// `VALID WALLET CREATE`
     ValidWalletCreate {
@@ -83,4 +95,7 @@ pub enum ProofJob {
         /// The wallet randomness to seed commitments and nullifiers with
         randomness: Scalar,
     },
+    /// A request to create a proof of `VALID COMMITMENTS` for an order, balance, fee
+    /// tuple. This will be matched against in the handshake process
+    ValidCommitments {},
 }
