@@ -96,6 +96,18 @@ pub fn scalar_2_to_m(m: usize) -> Scalar {
     }
 }
 
+/// Abstracts over the flow of proving a single-prover circuit
+pub fn singleprover_prove<C: SingleProverCircuit>(
+    witness: C::Witness,
+    statement: C::Statement,
+) -> Result<(C::WitnessCommitment, R1CSProof), ProverError> {
+    let mut transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
+    let pc_gens = PedersenGens::default();
+    let prover = Prover::new(&pc_gens, &mut transcript);
+
+    C::prove(witness, statement, prover)
+}
+
 /// Abstracts over the flow of collaboratively proving a generic circuit
 pub fn multiprover_prove<'a, N, S, C>(
     witness: C::Witness,
@@ -420,6 +432,144 @@ pub(crate) mod test_helpers {
         C::verify(witness_commitment, statement, proof, verifier)
     }
 }
+
+/// Groups helpers that operate on native types; which correspond to circuitry
+/// defined in this library
+///
+/// For example; when computing witnesses, wallet commitments, note commitments,
+/// nullifiers, etc are all useful helpers
+pub mod native_helpers {
+    use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+    use crypto::{
+        fields::{biguint_to_prime_field, scalar_to_prime_field, DalekRistrettoField},
+        hash::default_poseidon_params,
+    };
+    use curve25519_dalek::scalar::Scalar;
+    use itertools::Itertools;
+
+    use crate::types::{note::Note, wallet::Wallet};
+
+    /// Compute the commitment to a wallet
+    pub fn compute_wallet_commitment<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >(
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    ) -> DalekRistrettoField
+    where
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
+        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
+
+        // Hash the balances into the state
+        for balance in wallet.balances.iter() {
+            hasher.absorb(&vec![balance.mint, balance.amount]);
+        }
+
+        // Hash the orders into the state
+        for order in wallet.orders.iter() {
+            hasher.absorb(&vec![
+                order.quote_mint,
+                order.base_mint,
+                order.side as u64,
+                order.price.to_owned().into(),
+                order.amount,
+            ]);
+        }
+
+        // Hash the fees into the state
+        for fee in wallet.fees.iter() {
+            hasher.absorb(&vec![
+                biguint_to_prime_field(&fee.settle_key),
+                biguint_to_prime_field(&fee.gas_addr),
+            ]);
+
+            hasher.absorb(&vec![fee.gas_token_amount, fee.percentage_fee.into()]);
+        }
+
+        // Hash the keys into the state
+        hasher.absorb(
+            &Into::<Vec<Scalar>>::into(wallet.keys)
+                .iter()
+                .map(scalar_to_prime_field)
+                .collect_vec(),
+        );
+
+        // Hash the randomness into the state
+        hasher.absorb(&scalar_to_prime_field(&wallet.randomness));
+
+        hasher.squeeze_field_elements(1 /* num_elements */)[0]
+    }
+
+    /// Compute the commitment to a note
+    pub fn compute_note_commitment(note: &Note, pk_settle_receiver: Scalar) -> DalekRistrettoField {
+        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
+        hasher.absorb(&vec![
+            note.mint1,
+            note.volume1,
+            note.direction1 as u64,
+            note.mint2,
+            note.volume2,
+            note.direction2 as u64,
+            note.fee_mint,
+            note.fee_volume,
+            note.fee_direction as u64,
+            note.type_ as u64,
+            note.randomness,
+        ]);
+        hasher.absorb(&scalar_to_prime_field(&pk_settle_receiver));
+        hasher.squeeze_field_elements(1 /* num_elements */)[0]
+    }
+
+    /// Given a wallet and its commitment, compute the wallet spend nullifier
+    pub fn compute_wallet_spend_nullifier<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >(
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        commitment: DalekRistrettoField,
+    ) -> DalekRistrettoField
+    where
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
+        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
+        hasher.absorb(&vec![commitment, scalar_to_prime_field(&wallet.randomness)]);
+        hasher.squeeze_field_elements(1 /* num_elements */)[0]
+    }
+
+    /// Given a wallet and its commitment, compute the wallet match nullifier
+    pub fn compute_wallet_match_nullifier<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >(
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        commitment: DalekRistrettoField,
+    ) -> DalekRistrettoField
+    where
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
+        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
+        hasher.absorb(&vec![
+            commitment,
+            scalar_to_prime_field(&(wallet.randomness + Scalar::one())),
+        ]);
+        hasher.squeeze_field_elements(1 /* num_elements */)[0]
+    }
+
+    /// Given a note and its commitment, compute the note redeem nullifier
+    pub fn compute_note_redeem_nullifier(
+        note_commitment: DalekRistrettoField,
+        pk_settle_receiver: DalekRistrettoField,
+    ) -> DalekRistrettoField {
+        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
+        hasher.absorb(&vec![note_commitment, pk_settle_receiver]);
+        hasher.squeeze_field_elements(1 /* num_elements */)[0]
+    }
+}
+
 #[cfg(test)]
 mod circuits_test {
     use crypto::fields::bigint_to_scalar;
