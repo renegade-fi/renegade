@@ -50,23 +50,24 @@ pub trait Handler: Send + Sync {
 /// We implement this as a subtrait so that the router can store trait objects
 /// (associated types are disallowed on trait objects) as Handler that concretely
 /// re-use the default serialization/deserialization logic below
+#[async_trait]
 pub trait TypedHandler: Send + Sync {
     /// The request type that the handler consumes
     type Request: DeserializeOwned + for<'de> Deserialize<'de>;
     /// The response type that the handler returns
-    type Response: Serialize;
+    type Response: Serialize + Send;
     /// The error type that the handler returns
     type Error: Display;
 
     /// The handler logic, translate request into response
-    fn handle_typed(&self, req: Self::Request) -> Result<Self::Response, Self::Error>;
+    async fn handle_typed(&self, req: Self::Request) -> Result<Self::Response, Self::Error>;
 }
 
 /// Auto-implementation of the Handler trait for a TypedHandler which covers the process
 /// of deserializing the request, reporting errors, and serializing the response into a body
 #[async_trait]
 impl<
-        Req: DeserializeOwned + for<'de> Deserialize<'de>,
+        Req: DeserializeOwned + for<'de> Deserialize<'de> + Send,
         Resp: Serialize,
         E: Display,
         T: TypedHandler<Request = Req, Response = Resp, Error = E>,
@@ -93,7 +94,7 @@ impl<
         let req_body: Req = deserialized.unwrap();
 
         // Forward to the typed handler
-        if let Ok(resp) = self.handle_typed(req_body) {
+        if let Ok(resp) = self.handle_typed(req_body).await {
             // Serialize the response into a body. We explicitly allow for all cross-origin
             // requests, as users connecting to a locally-run node have a different origin port.
 
