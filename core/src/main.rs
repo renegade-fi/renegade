@@ -1,7 +1,9 @@
 //! The entrypoint to the relayer, starts the coordinator thread which manages all other worker threads
+#![feature(let_chains)]
+#![feature(generic_const_exprs)]
+#![allow(incomplete_features)]
 #![deny(unsafe_code)]
 #![deny(clippy::missing_docs_in_private_items)]
-#![feature(let_chains)]
 
 mod api;
 mod api_server;
@@ -19,6 +21,7 @@ mod worker;
 
 use std::{thread, time::Duration};
 
+use circuits::types::wallet::Wallet;
 use crossbeam::channel::{self, Receiver};
 use error::CoordinatorError;
 use gossip::worker::GossipServerConfig;
@@ -47,6 +50,14 @@ extern crate lazy_static;
 /// A type alias for an empty channel used to signal cancellation to workers
 pub(crate) type CancelChannel = Receiver<()>;
 
+/// The system-wide value of MAX_BALANCES; the number of allowable balances a wallet holds
+pub(crate) const MAX_BALANCES: usize = 5;
+/// The system-wide value of MAX_ORDERS; the number of allowable orders a wallet holds
+pub(crate) const MAX_ORDERS: usize = 5;
+/// The system-wide value of MAX_FEES; the number of allowable fees a wallet holds
+pub(crate) const MAX_FEES: usize = 2;
+/// A type wrapper around the wallet type that adds the default generics above
+pub(crate) type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 /// The amount of time to wait between sending teardown signals and terminating execution
 const TERMINATION_TIMEOUT_MS: u64 = 10_000; // 10 seconds
 
@@ -82,7 +93,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (heartbeat_worker_sender, heartbeat_worker_receiver) = channel::unbounded();
     let (handshake_worker_sender, handshake_worker_receiver) = channel::unbounded();
     let (price_reporter_worker_sender, price_reporter_worker_receiver) = channel::unbounded();
-    let (_proof_generation_worker_sender, proof_generation_worker_receiver) = channel::unbounded();
+    let (proof_generation_worker_sender, proof_generation_worker_receiver) = channel::unbounded();
 
     // Start the network manager
     let (network_cancel_sender, network_cancel_receiver) = channel::bounded(1 /* capacity */);
@@ -174,7 +185,8 @@ async fn main() -> Result<(), CoordinatorError> {
         websocket_port: args.websocket_port,
         global_state: global_state.clone(),
         system_bus,
-        price_reporter_worker_sender,
+        price_reporter_work_queue: price_reporter_worker_sender,
+        proof_generation_work_queue: proof_generation_worker_sender,
         cancel_channel: api_cancel_receiver,
     })
     .expect("failed to build api server");

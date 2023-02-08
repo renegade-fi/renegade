@@ -1,7 +1,14 @@
 //! Groups handlers for the HTTP API
 
+use async_trait::async_trait;
+use circuits::types::fee::Fee;
 use crossbeam::channel::{self, Sender};
-use std::time::{SystemTime, UNIX_EPOCH};
+use crypto::fields::biguint_to_scalar;
+use itertools::Itertools;
+use std::{
+    iter,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::sync::oneshot::channel as oneshot_channel;
 
 use crate::{
@@ -12,6 +19,7 @@ use crate::{
     price_reporter::jobs::PriceReporterManagerJob,
     proof_generation::jobs::{ProofJob, ProofManagerJob},
     state::RelayerState,
+    MAX_FEES,
 };
 
 use super::{error::ApiServerError, routes::TypedHandler, worker::ApiServerConfig};
@@ -30,12 +38,13 @@ impl PingHandler {
     }
 }
 
+#[async_trait]
 impl TypedHandler for PingHandler {
     type Request = PingRequest;
     type Response = PingResponse;
     type Error = ApiServerError;
 
-    fn handle_typed(&self, _req: Self::Request) -> Result<Self::Response, Self::Error> {
+    async fn handle_typed(&self, _req: Self::Request) -> Result<Self::Response, Self::Error> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -64,19 +73,39 @@ impl WalletCreateHandler {
     }
 }
 
+#[async_trait]
 impl TypedHandler for WalletCreateHandler {
     type Request = CreateWalletRequest;
     type Response = (); // TODO: Define a response type
     type Error = ApiServerError;
 
-    fn handle_typed(&self, req: Self::Request) -> Result<Self::Response, Self::Error> {
-        let (response_sender, _) = oneshot_channel();
+    async fn handle_typed(&self, req: Self::Request) -> Result<Self::Response, Self::Error> {
+        // Pad the fees to be of length MAX_FEES
+        let fees_padded = req
+            .fees
+            .into_iter()
+            .chain(iter::repeat(Fee::default()))
+            .take(MAX_FEES)
+            .collect_vec();
+
+        // Forward a request to the proof generation module to build a proof of
+        // `VALID WALLET CREATE`
+        let (response_sender, response_receiver) = oneshot_channel();
         self.proof_job_queue
             .send(ProofManagerJob {
-                type_: ProofJob::ValidWalletCreate(),
+                type_: ProofJob::ValidWalletCreate {
+                    fees: fees_padded,
+                    keys: req.keys.into(),
+                    randomness: biguint_to_scalar(&req.randomness),
+                },
                 response_channel: response_sender,
             })
-            .map_err(|err| ApiServerError::EnqueueJob(err.to_string()))
+            .map_err(|err| ApiServerError::EnqueueJob(err.to_string()))?;
+
+        // Await a response
+        let resp = response_receiver.await.unwrap();
+        println!("got proof back: {:?}", resp);
+        Ok(())
     }
 }
 
@@ -99,12 +128,13 @@ impl ExchangeHealthStatesHandler {
     }
 }
 
+#[async_trait]
 impl TypedHandler for ExchangeHealthStatesHandler {
     type Request = GetExchangeHealthStatesRequest;
     type Response = GetExchangeHealthStatesResponse;
     type Error = ApiServerError;
 
-    fn handle_typed(&self, req: Self::Request) -> Result<Self::Response, Self::Error> {
+    async fn handle_typed(&self, req: Self::Request) -> Result<Self::Response, Self::Error> {
         let (price_reporter_state_sender, price_reporter_state_receiver) = channel::unbounded();
         self.config
             .price_reporter_work_queue
@@ -149,12 +179,13 @@ impl ReplicasHandler {
     }
 }
 
+#[async_trait]
 impl TypedHandler for ReplicasHandler {
     type Request = GetReplicasRequest;
     type Response = GetReplicasResponse;
     type Error = ApiServerError;
 
-    fn handle_typed(&self, req: Self::Request) -> Result<Self::Response, Self::Error> {
+    async fn handle_typed(&self, req: Self::Request) -> Result<Self::Response, Self::Error> {
         let replicas = if let Some(wallet_info) =
             self.global_state.read_managed_wallets().get(&req.wallet_id)
         {

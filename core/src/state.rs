@@ -314,7 +314,7 @@ impl RelayerState {
     ) -> RwLockWriteGuard<HashMap<WrappedPeerId, NonZeroU32>> {
         self.handshake_priorities
             .write()
-            .expect("handshake_prioritites lock poisoned")
+            .expect("handshake_priorities lock poisoned")
     }
 
     /// Acquire a read lock on `cluster_metadata`
