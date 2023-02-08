@@ -22,13 +22,15 @@ use crate::{proof_generation::jobs::ProofJob, SizedWallet, MAX_FEES};
 
 use super::{
     error::ProofManagerError,
-    jobs::{ProofBundle, ProofManagerJob, ValidWalletCreateBundle},
+    jobs::{ProofBundle, ProofManagerJob, ValidCommitmentsBundle, ValidWalletCreateBundle},
 };
 
 // -------------
 // | Constants |
 // -------------
 
+/// Error message when sending a proof response fails
+const ERR_SENDING_RESPONSE: &str = "error sending proof response, channel closed";
 /// The number of threads to allocate towards the proof generation worker pool
 pub(crate) const PROOF_GENERATION_N_THREADS: usize = 2;
 
@@ -83,9 +85,14 @@ impl ProofManager {
                 let proof_bundle = Self::prove_valid_wallet_create(fees, keys, randomness)?;
                 job.response_channel
                     .send(ProofBundle::ValidWalletCreate(proof_bundle))
-                    .map_err(|_| {
-                        ProofManagerError::Response("failed to send proof response".to_string())
-                    })?
+                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))?
+            }
+            ProofJob::ValidCommitments {} => {
+                // Prove `VALID COMMITMENTS`
+                let proof_bundle = Self::prove_valid_commitments()?;
+                job.response_channel
+                    .send(ProofBundle::ValidCommitments(proof_bundle))
+                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))?
             }
         };
 
@@ -126,5 +133,11 @@ impl ProofManager {
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
         Ok(ValidWalletCreateBundle(commitment, statement, proof))
+    }
+
+    /// Create a proof of `VALID COMMITMENTS`
+    fn prove_valid_commitments() -> Result<ValidCommitmentsBundle, ProofManagerError> {
+        println!("got to prove_valid_commitments");
+        Err(ProofManagerError::Prover("unimplemented".to_string()))
     }
 }
