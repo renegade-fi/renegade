@@ -7,6 +7,10 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 pub enum ProofManagerError {
     /// The job queue has been closed, recv fails
     JobQueueClosed(String),
+    /// Error proving a statement
+    Prover(String),
+    /// Error sending response along a job's response channel
+    Response(String),
     /// Error setting up the proof generation manager
     Setup(String),
 }
