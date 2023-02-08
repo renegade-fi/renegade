@@ -690,12 +690,13 @@ mod valid_wallet_update_tests {
     use rand_core::{OsRng, RngCore};
 
     use crate::{
+        native_helpers::{
+            compute_wallet_commitment, compute_wallet_match_nullifier,
+            compute_wallet_spend_nullifier,
+        },
         test_helpers::bulletproof_prove_and_verify,
         types::order::Order,
-        zk_circuits::test_helpers::{
-            compute_wallet_commitment, compute_wallet_match_nullifier,
-            compute_wallet_spend_nullifier, create_wallet_opening, INITIAL_WALLET,
-        },
+        zk_circuits::test_helpers::{create_wallet_opening, INITIAL_WALLET},
         CommitProver,
     };
 

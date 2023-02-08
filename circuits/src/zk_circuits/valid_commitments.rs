@@ -453,15 +453,15 @@ mod valid_commitments_test {
     use rand_core::{OsRng, RngCore};
 
     use crate::{
+        native_helpers::{compute_wallet_commitment, compute_wallet_match_nullifier},
         test_helpers::bulletproof_prove_and_verify,
         types::{
             balance::Balance,
             order::{Order, OrderSide},
         },
         zk_circuits::test_helpers::{
-            compute_poseidon_hash, compute_wallet_commitment, compute_wallet_match_nullifier,
-            create_wallet_opening, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
-            PRIVATE_KEYS,
+            compute_poseidon_hash, create_wallet_opening, SizedWallet, INITIAL_WALLET,
+            MAX_BALANCES, MAX_FEES, MAX_ORDERS, PRIVATE_KEYS,
         },
         zk_gadgets::fixed_point::FixedPoint,
         CommitProver,

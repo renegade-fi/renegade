@@ -20,7 +20,7 @@ use crate::{
 
 /// Represents the base type of a balance in tuple holding a reference to the
 /// ERC-20 token and its amount
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Balance {
     /// The mint (ERC-20 token address) of the token in the balance
     pub mint: u64,

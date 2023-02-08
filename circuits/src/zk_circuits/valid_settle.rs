@@ -730,15 +730,18 @@ mod valid_settle_tests {
     use rand_core::OsRng;
 
     use crate::{
+        native_helpers::{
+            compute_note_commitment, compute_note_redeem_nullifier, compute_wallet_commitment,
+            compute_wallet_match_nullifier, compute_wallet_spend_nullifier,
+        },
         test_helpers::bulletproof_prove_and_verify,
         types::{
             note::{Note, NoteType},
             order::OrderSide,
         },
         zk_circuits::test_helpers::{
-            compute_note_commitment, compute_note_redeem_nullifier, compute_wallet_commitment,
-            compute_wallet_match_nullifier, compute_wallet_spend_nullifier, create_multi_opening,
-            SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS, PRIVATE_KEYS,
+            create_multi_opening, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+            PRIVATE_KEYS,
         },
         zk_gadgets::elgamal::ElGamalCiphertext,
         CommitProver,

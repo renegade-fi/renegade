@@ -1002,6 +1002,7 @@ mod valid_match_encryption_tests {
     use rand_core::{OsRng, RngCore};
 
     use crate::{
+        native_helpers::compute_note_commitment,
         test_helpers::bulletproof_prove_and_verify,
         types::{
             fee::Fee,
@@ -1009,7 +1010,6 @@ mod valid_match_encryption_tests {
             order::OrderSide,
             r#match::MatchResult,
         },
-        zk_circuits::test_helpers::compute_note_commitment,
         zk_gadgets::{
             elgamal::{ElGamalCiphertext, DEFAULT_ELGAMAL_GENERATOR},
             fixed_point::FixedPoint,
