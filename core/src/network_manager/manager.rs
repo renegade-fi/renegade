@@ -99,14 +99,14 @@ impl NetworkManager {
     /// Setup global state after peer_id and address have been assigned
     pub(super) fn update_global_state_after_startup(&self) {
         // Add self to peer info index
-        self.config.global_state.write_known_peers().insert(
-            self.local_peer_id,
-            PeerInfo::new(
+        self.config
+            .global_state
+            .write_peer_index()
+            .add_peer(PeerInfo::new(
                 self.local_peer_id,
                 self.cluster_id.clone(),
                 self.local_addr.clone(),
-            ),
-        );
+            ));
 
         // Add self to cluster metadata
         self.config

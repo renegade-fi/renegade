@@ -99,7 +99,13 @@ impl Worker for NetworkManager {
         )?;
 
         // Add any bootstrap addresses to the peer info table
-        for (peer_id, peer_info) in self.config.global_state.read_known_peers().iter() {
+        for (peer_id, peer_info) in self
+            .config
+            .global_state
+            .read_peer_index()
+            .get_info_map()
+            .iter()
+        {
             println!(
                 "Adding {:?}: {} to routing table...",
                 peer_id,

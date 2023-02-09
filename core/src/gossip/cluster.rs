@@ -85,13 +85,10 @@ impl GossipProtocolExecutor {
 
         // Add the peer to the known peers index
         {
-            let mut locked_peers = global_state.write_known_peers();
-
-            // Insert the new peer into the peer metadata
-            locked_peers
-                .entry(peer_id)
-                .or_insert_with(|| PeerInfo::new(peer_id, cluster_id, peer_addr));
-        }
+            global_state
+                .write_peer_index()
+                .add_peer(PeerInfo::new(peer_id, cluster_id, peer_addr));
+        } // peer_index lock released
 
         // Request that the peer replicate all locally replicated wallets
         let wallets = global_state.read_wallet_index().get_all_wallets();

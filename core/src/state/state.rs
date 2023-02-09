@@ -11,7 +11,6 @@ use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     num::NonZeroU32,
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
-    time::{SystemTime, UNIX_EPOCH},
 };
 use termion::color;
 
@@ -21,7 +20,10 @@ use crate::{
     handshake::{manager::DEFAULT_HANDSHAKE_PRIORITY, types::OrderIdentifier},
 };
 
-use super::wallet::{Wallet, WalletIndex};
+use super::{
+    peers::PeerIndex,
+    wallet::{Wallet, WalletIndex},
+};
 
 /**
  * Constants and Types
@@ -53,11 +55,11 @@ pub struct RelayerState {
     pub local_addr: Shared<Multiaddr>,
     /// The list of wallets managed by the sending relayer
     pub wallet_index: Shared<WalletIndex>,
+    /// The set of peers known to the sending relayer
+    pub peer_index: Shared<PeerIndex>,
     /// A list of matched orders
     /// TODO: Remove this
     pub matched_order_pairs: Shared<Vec<(OrderIdentifier, OrderIdentifier)>>,
-    /// The set of peers known to the sending relayer
-    pub known_peers: Shared<HashMap<WrappedPeerId, PeerInfo>>,
     /// Priorities for scheduling handshakes with each peer
     pub handshake_priorities: Shared<HashMap<WrappedPeerId, NonZeroU32>>,
     /// Information about the local peer's cluster
@@ -110,6 +112,9 @@ impl RelayerState {
             wallet_index.add_wallet(wallet);
         }
 
+        // Setup the peer index
+        let peer_index = PeerIndex::new(local_peer_id);
+
         Self {
             debug,
             // Replaced by a correct value when network manager initializes
@@ -119,7 +124,7 @@ impl RelayerState {
             local_addr: new_shared(Multiaddr::empty()),
             wallet_index: new_shared(wallet_index),
             matched_order_pairs: new_shared(vec![]),
-            known_peers: new_shared(HashMap::new()),
+            peer_index: new_shared(peer_index),
             handshake_priorities: new_shared(HashMap::new()),
             cluster_metadata: new_shared(ClusterMetadata::new(cluster_id)),
         }
@@ -147,26 +152,23 @@ impl RelayerState {
         peer_info: &HashMap<WrappedPeerId, PeerInfo>,
     ) {
         let local_cluster_id = { self.read_cluster_id().clone() };
-        let mut locked_peer_info = self.write_known_peers();
+        let mut locked_peer_index = self.write_peer_index();
         let mut locked_handshake_priorities = self.write_handshake_priorities();
 
         for peer in peer_ids.iter() {
-            if let Entry::Vacant(e) = locked_peer_info.entry(*peer) {
-                if let Some(info) = peer_info.get(peer) {
-                    // Record a dummy heartbeat to setup the initial state
-                    info.successful_heartbeat();
-                    e.insert(info.clone());
-                } else {
-                    // If peer info was not sent with the new peer message; skip adding
-                    // any information about the peer
-                    continue;
-                }
+            // Skip this peer if peer info wasn't sent
+            if let Some(info) = peer_info.get(peer) {
+                // Record a dummy heartbeat to setup the initial state
+                info.successful_heartbeat();
+                locked_peer_index.add_peer(info.clone())
+            } else {
+                continue;
             }
 
             // Skip cluster peers (we don't need to handshake with them) and peers that already have assigned
             // priorities
             if let Entry::Vacant(e) = locked_handshake_priorities.entry(*peer)
-                && locked_peer_info.get(peer).unwrap().get_cluster_id() != local_cluster_id {
+                && locked_peer_index.read_peer(peer).unwrap().get_cluster_id() != local_cluster_id {
                 e.insert(NonZeroU32::new(DEFAULT_HANDSHAKE_PRIORITY).unwrap());
             }
         }
@@ -176,11 +178,11 @@ impl RelayerState {
     pub fn remove_peers(&self, peers: &[WrappedPeerId]) {
         // Update the peer info and cluster metadata
         {
-            let mut locked_peer_info = self.write_known_peers();
+            let mut locked_peer_info = self.write_peer_index();
             let mut locked_cluster_metadata = self.write_cluster_metadata();
 
             for peer in peers.iter() {
-                if let Some(info) = locked_peer_info.remove(peer) {
+                if let Some(info) = locked_peer_info.remove_peer(peer) {
                     if info.get_cluster_id() == locked_cluster_metadata.id {
                         locked_cluster_metadata.known_members.remove(peer);
                     }
@@ -268,13 +270,13 @@ impl RelayerState {
     }
 
     /// Acquire a read lock on `known_peers`
-    pub fn read_known_peers(&self) -> RwLockReadGuard<HashMap<WrappedPeerId, PeerInfo>> {
-        self.known_peers.read().expect("known_peers lock poisoned")
+    pub fn read_peer_index(&self) -> RwLockReadGuard<PeerIndex> {
+        self.peer_index.read().expect("known_peers lock poisoned")
     }
 
     /// Acquire a write lock on `known_peers`
-    pub fn write_known_peers(&self) -> RwLockWriteGuard<HashMap<WrappedPeerId, PeerInfo>> {
-        self.known_peers.write().expect("known_peers lock poisoned")
+    pub fn write_peer_index(&self) -> RwLockWriteGuard<PeerIndex> {
+        self.peer_index.write().expect("known_peers lock poisoned")
     }
 
     /// Acquire a read lock on `handshake_priorities`
@@ -319,14 +321,18 @@ impl From<&RelayerState> for HeartbeatMessage {
             .get_metadata_map();
 
         // Convert peer info keys to strings for serialization/deserialization
-        let mut known_peers = HashMap::new();
-        for (peer_id, peer_info) in state.read_known_peers().iter() {
-            known_peers.insert(peer_id.to_string(), peer_info.clone());
-        }
+        let peer_info = state
+            .peer_index
+            .read()
+            .expect("peer_index lock poisoned")
+            .get_info_map()
+            .into_iter()
+            .map(|(key, value)| (key.to_string(), value))
+            .collect();
 
         HeartbeatMessage {
             managed_wallets: wallet_info,
-            known_peers,
+            known_peers: peer_info,
             cluster_metadata: state.read_cluster_metadata().clone(),
         }
     }
@@ -344,8 +350,8 @@ impl Display for RelayerState {
             "\t{}Listening on:{} {}/p2p/{}\n",
             color::Fg(color::LightGreen),
             color::Fg(color::Reset),
-            self.read_known_peers()
-                .get(&self.local_peer_id())
+            self.read_peer_index()
+                .read_peer(&self.local_peer_id())
                 .unwrap()
                 .get_addr(),
             self.local_peer_id().0
@@ -390,30 +396,7 @@ impl Display for RelayerState {
             color::Fg(color::LightGreen),
             color::Fg(color::LightGreen)
         ))?;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("negative timestamp")
-            .as_secs();
-        for (peer_id, peer_info) in self.read_known_peers().iter() {
-            let last_heartbeat_elapsed = if peer_id.ne(&self.local_peer_id()) {
-                (now - peer_info.get_last_heartbeat()) * 1000
-            } else {
-                0
-            };
-
-            f.write_fmt(format_args!(
-                "\t\t- {}{}{}: \n\t\t\t{}last_heartbeat{}: {:?}ms \n\t\t\t{}cluster_id{}: {:?} }}\n\n",
-                color::Fg(color::LightYellow),
-                peer_id.0,
-                color::Fg(color::Reset),
-                color::Fg(color::Blue),
-                color::Fg(color::Reset),
-                last_heartbeat_elapsed,
-                color::Fg(color::Blue),
-                color::Fg(color::Reset),
-                peer_info.get_cluster_id(),
-            ))?;
-        }
+        self.peer_index.read().unwrap().fmt(f)?;
         f.write_str("\n\n")?;
 
         // Write cluster metadata to the format

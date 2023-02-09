@@ -48,10 +48,10 @@ pub struct WalletMetadata {
 /// their data
 #[derive(Clone, Debug)]
 pub struct WalletIndex {
-    /// A mapping from wallet ID to wallet information
-    wallet_map: HashMap<Uuid, Shared<Wallet>>,
     /// The peer_id of the local node
     peer_id: WrappedPeerId,
+    /// A mapping from wallet ID to wallet information
+    wallet_map: HashMap<Uuid, Shared<Wallet>>,
 }
 
 impl WalletIndex {
