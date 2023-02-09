@@ -60,7 +60,7 @@ impl GossipServer {
     ) -> Result<(), GossipError> {
         // Advertise presence of new, local node by sending a heartbeat to all known peers
         {
-            for (peer_id, _) in global_state.read_known_peers().iter() {
+            for peer_id in global_state.read_peer_index().get_all_peer_ids().iter() {
                 heartbeat_work_queue
                     .send(GossipServerJob::ExecuteHeartbeat(*peer_id))
                     .map_err(|err| GossipError::SendMessage(err.to_string()))?;
@@ -76,8 +76,8 @@ impl GossipServer {
         let message_body = ClusterJoinMessage {
             peer_id: self.config.local_peer_id,
             peer_info: global_state
-                .read_known_peers()
-                .get(&self.config.local_peer_id)
+                .read_peer_index()
+                .read_peer(&self.config.local_peer_id)
                 .unwrap()
                 .clone(),
             addr: self.config.local_addr.clone(),

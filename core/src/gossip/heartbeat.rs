@@ -67,9 +67,7 @@ fn get_current_time_seconds() -> u64 {
 impl GossipProtocolExecutor {
     /// Records a successful heartbeat
     pub(super) fn record_heartbeat(peer_id: WrappedPeerId, global_state: RelayerState) {
-        if let Some(peer_info) = global_state.read_known_peers().get(&peer_id) {
-            peer_info.successful_heartbeat();
-        }
+        global_state.read_peer_index().record_heartbeat(&peer_id);
     }
 
     /// Sync the replication state when a heartbeat is received
@@ -120,9 +118,9 @@ impl GossipProtocolExecutor {
         // a write lock and update the local index
         let mut peers_to_add = Vec::new();
         {
-            let locked_peer_info = global_state.read_known_peers();
+            let locked_peer_info = global_state.read_peer_index();
             for peer_id in incoming_peer_info.keys() {
-                if !locked_peer_info.contains_key(peer_id) {
+                if !locked_peer_info.contains_peer(peer_id) {
                     peers_to_add.push(*peer_id);
                 }
             }
@@ -154,7 +152,7 @@ impl GossipProtocolExecutor {
         global_state: &RelayerState,
     ) {
         let locked_wallets = global_state.read_wallet_index();
-        let locked_peers = global_state.read_known_peers();
+        let locked_peers = global_state.read_peer_index();
         for (wallet_id, mut wallet_info) in peer_wallets.into_iter() {
             // Filter out any replicas that we don't have peer info for
             // This may happen for a multitude of reasons; one reason is that the local node
@@ -164,7 +162,7 @@ impl GossipProtocolExecutor {
             // the expired peer to expire on all other cluster peers
             wallet_info
                 .replicas
-                .retain(|replica| locked_peers.contains_key(replica));
+                .retain(|replica| locked_peers.contains_peer(replica));
 
             // Merge with the local copy of the wallet
             locked_wallets.merge_metadata(&wallet_id, &wallet_info)
@@ -351,8 +349,8 @@ impl GossipProtocolExecutor {
         let now = get_current_time_seconds();
         {
             let my_cluster_id = global_state.read_cluster_id();
-            let locked_peer_index = global_state.read_known_peers();
-            let peer_info = locked_peer_index.get(&peer_id).unwrap();
+            let locked_peer_index = global_state.read_peer_index();
+            let peer_info = locked_peer_index.read_peer(&peer_id).unwrap();
 
             // Expire cluster peers sooner than non-cluster peers
             let same_cluster = peer_info.get_cluster_id().eq(&my_cluster_id);
@@ -472,15 +470,15 @@ impl HeartbeatTimer {
         loop {
             let (peer_count, next_peer_id) = {
                 // Enqueue a heartbeat job for each known peer
-                let peer_info_locked = global_state.read_known_peers();
-                let next_peer = peer_info_locked.iter().nth(peer_index);
+                let peer_info_locked = global_state.read_peer_index();
+                let next_peer = peer_info_locked.nth(peer_index);
 
                 // Skip if we have overflowed the list or if the next peer is in the local peer's cluster;
                 // a separate timer will enqueue intra-cluster heartbeats at a faster rate
                 let mut next_peer_id = None;
-                if let Some((peer_id, peer_info)) = next_peer {
+                if let Some(peer_info) = next_peer {
                     if peer_info.get_cluster_id() != local_cluster {
-                        next_peer_id = Some(*peer_id)
+                        next_peer_id = Some(peer_info.get_peer_id())
                     }
                 }
 
