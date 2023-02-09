@@ -1,9 +1,6 @@
 //! Groups handlers for gossiping about cluster management events
 
-use std::collections::hash_map::Entry;
-
 use tokio::sync::mpsc::UnboundedSender;
-use uuid::Uuid;
 
 use crate::{
     api::{
@@ -12,7 +9,10 @@ use crate::{
         },
         gossip::{GossipOutbound, GossipRequest, PubsubMessage},
     },
-    state::{RelayerState, Wallet},
+    state::{
+        wallet::{Wallet, WalletIdentifier},
+        RelayerState,
+    },
 };
 
 use super::{
@@ -94,8 +94,7 @@ impl GossipProtocolExecutor {
         }
 
         // Request that the peer replicate all locally replicated wallets
-        let locked_wallets = global_state.read_managed_wallets();
-        let wallets: Vec<Wallet> = locked_wallets.values().cloned().collect();
+        let wallets = global_state.read_wallet_index().get_all_wallets();
         Self::send_replicate_request(message.peer_id, wallets, network_channel)
     }
 
@@ -124,8 +123,7 @@ impl GossipProtocolExecutor {
         } // locked_cluster_metadata released
 
         // Request that the peer replicate all locally replicated wallets
-        let locked_wallets = global_state.read_managed_wallets();
-        let wallets: Vec<Wallet> = locked_wallets.values().cloned().collect();
+        let wallets = global_state.read_wallet_index().get_all_wallets();
         Self::send_replicate_request(peer_id, wallets, network_channel)
     }
 
@@ -151,18 +149,9 @@ impl GossipProtocolExecutor {
     ) -> Result<(), GossipError> {
         // Add wallets to global state
         {
-            let mut wallets_locked = global_state.write_managed_wallets();
+            let mut wallets_locked = global_state.write_wallet_index();
             for wallet in req.wallets.iter() {
-                if let Entry::Vacant(e) = wallets_locked.entry(wallet.wallet_id) {
-                    e.insert(wallet.clone());
-                }
-
-                wallets_locked
-                    .get_mut(&wallet.wallet_id)
-                    .unwrap()
-                    .metadata
-                    .replicas
-                    .insert(*global_state.read_peer_id());
+                wallets_locked.add_wallet(wallet.clone());
             }
         } // wallets_locked released
 
@@ -175,7 +164,7 @@ impl GossipProtocolExecutor {
             global_state.read_cluster_id().clone(),
             ClusterManagementMessage::Replicated(ReplicatedMessage {
                 wallets: req.wallets,
-                peer_id: *global_state.read_peer_id(),
+                peer_id: global_state.local_peer_id(),
             }),
         );
 
@@ -189,19 +178,11 @@ impl GossipProtocolExecutor {
     /// Handles an incoming job to update a wallet's replicas with a newly added peer
     fn handle_add_replica_job(
         peer_id: WrappedPeerId,
-        wallet_id: Uuid,
+        wallet_id: WalletIdentifier,
         global_state: &RelayerState,
     ) {
-        let mut locked_wallets = global_state.write_managed_wallets();
-        if !locked_wallets.contains_key(&wallet_id) {
-            return;
-        }
-
-        locked_wallets
-            .get_mut(&wallet_id)
-            .unwrap()
-            .metadata
-            .replicas
-            .insert(peer_id);
+        global_state
+            .read_wallet_index()
+            .add_replica(&wallet_id, peer_id);
     }
 }

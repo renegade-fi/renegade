@@ -67,7 +67,7 @@ impl GossipServer {
             }
         } // known_peers lock released
 
-        // Copy items so they may be moved into the spawned threadd
+        // Copy items so they may be moved into the spawned thread
         let network_sender_copy = self.config.network_sender.clone();
         let cluster_management_topic = self.config.cluster_id.get_management_topic();
 
@@ -236,7 +236,7 @@ impl GossipProtocolExecutor {
 
                     // Merge newly discovered peers into local state
                     Self::merge_state_from_message(
-                        &message,
+                        message,
                         network_channel.clone(),
                         peer_expiry_cache.clone(),
                         global_state.clone(),
@@ -246,7 +246,7 @@ impl GossipProtocolExecutor {
                 GossipServerJob::HandleHeartbeatResp { peer_id, message } => {
                     Self::record_heartbeat(peer_id, global_state.clone());
                     Self::merge_state_from_message(
-                        &message,
+                        message,
                         network_channel.clone(),
                         peer_expiry_cache.clone(),
                         global_state.clone(),

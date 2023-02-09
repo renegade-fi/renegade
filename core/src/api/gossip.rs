@@ -13,7 +13,7 @@ use super::{
         ClusterAuthRequest, ClusterAuthResponse, ClusterManagementMessage, ReplicateRequestBody,
     },
     handshake::HandshakeMessage,
-    hearbeat::{BootstrapRequest, HeartbeatMessage},
+    heartbeat::{BootstrapRequest, HeartbeatMessage},
 };
 
 /// Represents an outbound gossip message, either a request to a peer
@@ -59,7 +59,7 @@ pub enum GossipOutbound {
         peer_id: WrappedPeerId,
         /// The port that the peer has exposed to dial on
         peer_port: Port,
-        /// The local port that should be used to accept the strem
+        /// The local port that should be used to accept the stream
         local_port: Port,
         /// The role of the local node in the connection setup
         local_role: ConnectionRole,
@@ -93,7 +93,7 @@ impl ConnectionRole {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GossipRequest {
     /// A request from a peer to bootstrap the network state from the recipient
-    Boostrap(BootstrapRequest),
+    Bootstrap(BootstrapRequest),
     /// A request from a peer to prove that the local peer is part of the given cluster
     ClusterAuth(ClusterAuthRequest),
     /// A request from a peer initiating a heartbeat
@@ -112,7 +112,7 @@ pub enum GossipRequest {
 /// Represents the possible response types for a request-response message
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GossipResponse {
-    /// A repsonse from a peer proving that they are authroized to join a given cluster
+    /// A response from a peer proving that they are authorized to join a given cluster
     ClusterAuth(ClusterAuthResponse),
     /// A response from a peer to a sender's heartbeat request
     Heartbeat(HeartbeatMessage),

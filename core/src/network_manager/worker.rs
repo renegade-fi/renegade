@@ -5,15 +5,12 @@ use std::thread::{Builder, JoinHandle};
 use crossbeam::channel::{Receiver, Sender};
 use ed25519_dalek::Keypair;
 use futures::executor::block_on;
-use libp2p::{identity, Multiaddr, Swarm};
+use libp2p::{Multiaddr, Swarm};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 
 use crate::{
     api::gossip::GossipOutbound,
-    gossip::{
-        jobs::GossipServerJob,
-        types::{ClusterId, WrappedPeerId},
-    },
+    gossip::{jobs::GossipServerJob, types::ClusterId},
     handshake::jobs::HandshakeExecutionJob,
     network_manager::composed_protocol::ComposedNetworkBehavior,
     state::RelayerState,
@@ -24,7 +21,7 @@ use super::{
     composed_protocol::ProtocolVersion, error::NetworkManagerError, manager::NetworkManager,
 };
 
-/// The worker configuration for the newtork manager
+/// The worker configuration for the network manager
 #[derive(Debug)]
 pub struct NetworkManagerConfig {
     /// The port to listen for inbound traffic on
@@ -40,7 +37,7 @@ pub struct NetworkManagerConfig {
     /// ownership of the work queue once it is started. The coordinator
     /// will be left with `None` after this happens
     pub(crate) send_channel: Option<UnboundedReceiver<GossipOutbound>>,
-    /// The work queue to forward inbound hearbeat requests to
+    /// The work queue to forward inbound heartbeat requests to
     pub(crate) heartbeat_work_queue: Sender<GossipServerJob>,
     /// The work queue to forward inbound handshake requests to
     pub(crate) handshake_work_queue: Sender<HandshakeExecutionJob>,
@@ -56,23 +53,14 @@ impl Worker for NetworkManager {
     type Error = NetworkManagerError;
 
     fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
-        // Generate an keypair on curve 25519 for the local peer
-        let local_keypair = identity::Keypair::generate_ed25519();
-        let local_peer_id = WrappedPeerId(local_keypair.public().to_peer_id());
-        println!("peer ID: {:?}", local_peer_id);
-
-        // Update global state with newly assigned peerID
-        {
-            let mut locked_peer_id = config.global_state.write_peer_id();
-            *locked_peer_id = local_peer_id;
-        } // locked_state released here
-
+        let local_peer_id = config.global_state.local_peer_id;
+        let local_keypair = config.global_state.local_keypair.clone();
         Ok(Self {
             cluster_id: config.cluster_id.clone(),
             config,
             local_peer_id,
-            local_addr: Multiaddr::empty(),
             local_keypair,
+            local_addr: Multiaddr::empty(),
             thread_handle: None,
             cancellation_relay_handle: None,
         })

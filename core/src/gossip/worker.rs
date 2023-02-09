@@ -9,7 +9,7 @@ use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use crate::{
     api::{
         gossip::{GossipOutbound, GossipRequest},
-        hearbeat::BootstrapRequest,
+        heartbeat::BootstrapRequest,
     },
     state::RelayerState,
     worker::Worker,
@@ -32,7 +32,7 @@ pub struct GossipServerConfig {
     pub(crate) local_addr: Multiaddr,
     /// The cluster ID of the local peer
     pub(crate) cluster_id: ClusterId,
-    /// The servers to bootrap into the network with
+    /// The servers to bootstrap into the network with
     pub(crate) bootstrap_servers: Vec<PeerInfo>,
     /// A reference to the relayer-global state
     pub(crate) global_state: RelayerState,
@@ -52,13 +52,6 @@ impl Worker for GossipServer {
     type Error = GossipError;
 
     fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
-        // Register self as replicator of owned wallets using peer info from network manager
-        {
-            for (_, wallet) in config.global_state.write_managed_wallets().iter_mut() {
-                wallet.metadata.replicas.insert(config.local_peer_id);
-            }
-        } // locked_global_state released
-
         Ok(Self {
             config,
             protocol_executor: None,
@@ -95,12 +88,12 @@ impl Worker for GossipServer {
         //  2. Send bootstrap requests to all bootstrapping peers
         // Wait until all peers have been indexed before sending requests to give async network
         // manager time to index the peers in the case that these messages are processed concurrently
-        for boostrap_peer in self.config.bootstrap_servers.iter() {
+        for bootstrap_peer in self.config.bootstrap_servers.iter() {
             self.config
                 .network_sender
                 .send(GossipOutbound::NewAddr {
-                    peer_id: boostrap_peer.get_peer_id(),
-                    address: boostrap_peer.get_addr(),
+                    peer_id: bootstrap_peer.get_peer_id(),
+                    address: bootstrap_peer.get_addr(),
                 })
                 .map_err(|err| GossipError::SendMessage(err.to_string()))?;
         }
@@ -113,7 +106,7 @@ impl Worker for GossipServer {
                 .network_sender
                 .send(GossipOutbound::Request {
                     peer_id: bootstrap_peer.get_peer_id(),
-                    message: GossipRequest::Boostrap(req.clone()),
+                    message: GossipRequest::Bootstrap(req.clone()),
                 })
                 .map_err(|err| GossipError::SendMessage(err.to_string()))?;
         }

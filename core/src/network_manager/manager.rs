@@ -82,7 +82,7 @@ pub struct NetworkManager {
     pub(crate) local_peer_id: WrappedPeerId,
     /// The multiaddr of the local peer
     pub(crate) local_addr: Multiaddr,
-    /// The cluster ID of the local perr
+    /// The cluster ID of the local peer
     pub(crate) cluster_id: ClusterId,
     /// The public key of the local peer
     pub(super) local_keypair: Keypair,
@@ -161,7 +161,7 @@ impl NetworkManager {
                 event = swarm.select_next_some() => {
                     match event {
                         SwarmEvent::Behaviour(event) => {
-                            if let Err(err) = Self::handle_inbound_messsage(
+                            if let Err(err) = Self::handle_inbound_message(
                                 event,
                                 &cluster_key,
                                 gossip_work_queue.clone(),
@@ -304,7 +304,7 @@ impl NetworkManager {
     }
 
     /// Handles a network event from the relayer's protocol
-    fn handle_inbound_messsage(
+    fn handle_inbound_message(
         message: ComposedProtocolEvent,
         cluster_key: &SigKeypair,
         gossip_work_queue: Sender<GossipServerJob>,
@@ -370,7 +370,7 @@ impl NetworkManager {
                 request, channel, ..
             } => match request {
                 // Forward the bootstrap request directly to the gossip server
-                GossipRequest::Boostrap(req) => gossip_work_queue
+                GossipRequest::Bootstrap(req) => gossip_work_queue
                     .send(GossipServerJob::Bootstrap(req, channel))
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
 
@@ -387,7 +387,7 @@ impl NetworkManager {
 
                     // Otherwise, sign a response of (peer_id, cluster_id)
                     let body = ClusterAuthResponseBody {
-                        peer_id: *global_state.read_peer_id(),
+                        peer_id: global_state.local_peer_id(),
                         peer_info: global_state.get_local_peer_info(),
                         cluster_id: local_cluster_id,
                     };
@@ -536,7 +536,7 @@ impl NetworkManager {
                         wallets,
                         peer_id,
                     }) => {
-                        // Forward one job per replicated wallet; makes gossip server implementation clenaer
+                        // Forward one job per replicated wallet; makes gossip server implementation cleaner
                         for wallet in wallets.into_iter() {
                             gossip_work_queue
                                 .send(GossipServerJob::Cluster(

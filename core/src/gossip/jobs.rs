@@ -2,12 +2,14 @@
 //! These jobs are enqueued for execution by other workers within the relayer
 
 use libp2p::request_response::ResponseChannel;
-use uuid::Uuid;
 
-use crate::api::{
-    cluster_management::{ClusterJoinMessage, ReplicateRequestBody},
-    gossip::GossipResponse,
-    hearbeat::{BootstrapRequest, HeartbeatMessage},
+use crate::{
+    api::{
+        cluster_management::{ClusterJoinMessage, ReplicateRequestBody},
+        gossip::GossipResponse,
+        heartbeat::{BootstrapRequest, HeartbeatMessage},
+    },
+    state::wallet::WalletIdentifier,
 };
 
 use super::types::{ClusterId, PeerInfo, WrappedPeerId};
@@ -15,7 +17,7 @@ use super::types::{ClusterId, PeerInfo, WrappedPeerId};
 /// Defines a heartbeat job that can be enqueued by other workers in a relayer
 #[derive(Debug)]
 pub enum GossipServerJob {
-    /// Handle a job to boostrap a newly added peer
+    /// Handle a job to bootstrap a newly added peer
     Bootstrap(BootstrapRequest, ResponseChannel<GossipResponse>),
     /// Handle an incoming cluster management job
     Cluster(ClusterManagementJob),
@@ -46,7 +48,7 @@ pub enum ClusterManagementJob {
     /// for that wallet
     AddWalletReplica {
         /// The ID fo the wallet that is newly replicated
-        wallet_id: Uuid,
+        wallet_id: WalletIdentifier,
         /// The ID of the peer that has just replicated the wallet
         peer_id: WrappedPeerId,
     },

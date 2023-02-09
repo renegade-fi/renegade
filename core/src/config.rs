@@ -14,7 +14,7 @@ use toml::{value::Map, Value};
 use crate::{
     error::CoordinatorError,
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
-    state::Wallet,
+    state::wallet::Wallet,
 };
 
 /// The default version of the node
