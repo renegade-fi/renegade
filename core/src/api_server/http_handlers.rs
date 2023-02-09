@@ -186,8 +186,10 @@ impl TypedHandler for ReplicasHandler {
     type Error = ApiServerError;
 
     async fn handle_typed(&self, req: Self::Request) -> Result<Self::Response, Self::Error> {
-        let replicas = if let Some(wallet_info) =
-            self.global_state.read_managed_wallets().get(&req.wallet_id)
+        let replicas = if let Some(wallet_info) = self
+            .global_state
+            .read_wallet_index()
+            .read_wallet(&req.wallet_id)
         {
             wallet_info.metadata.replicas.clone().into_iter().collect()
         } else {

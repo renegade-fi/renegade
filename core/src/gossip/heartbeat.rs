@@ -9,15 +9,17 @@ use std::{
 
 use crossbeam::channel::Sender;
 use tokio::sync::mpsc::UnboundedSender;
-use uuid::Uuid;
 
 use crate::{
     api::{
         cluster_management::ClusterAuthRequest,
         gossip::{GossipOutbound, GossipRequest},
-        hearbeat::HeartbeatMessage,
+        heartbeat::HeartbeatMessage,
     },
-    state::{ClusterMetadata, RelayerState, WalletMetadata},
+    state::{
+        wallet::{WalletIdentifier, WalletMetadata},
+        ClusterMetadata, RelayerState,
+    },
 };
 
 use super::{
@@ -77,7 +79,7 @@ impl GossipProtocolExecutor {
     ///      2. Add any new peers from that list to the local state
     /// TODO: There is probably a cleaner way to do this
     pub(super) fn merge_state_from_message(
-        message: &HeartbeatMessage,
+        message: HeartbeatMessage,
         network_channel: UnboundedSender<GossipOutbound>,
         peer_expiry_cache: SharedLRUCache,
         global_state: RelayerState,
@@ -100,7 +102,7 @@ impl GossipProtocolExecutor {
         )?;
 
         // Merge wallet information and peer info
-        Self::merge_wallets(&message.managed_wallets, &global_state);
+        Self::merge_wallets(message.managed_wallets, &global_state);
 
         // Merge cluster information into the local cluster
         Self::merge_cluster_metadata(&message.cluster_metadata, network_channel, &global_state)
@@ -147,78 +149,25 @@ impl GossipProtocolExecutor {
     /// stored wallet information
     ///
     /// In specific, the local peer must update its replicas list for any wallet it manages
-    fn merge_wallets(peer_wallets: &HashMap<Uuid, WalletMetadata>, global_state: &RelayerState) {
-        // Loop over locally replicated wallets, check for new peers in each wallet
-        // We break this down into two phases, in the first phase, the local peer determines which
-        // wallets it must merge in order to receive updated replicas.
-        // In the second phase, the node escalates its read locks to write locks so that it can make
-        // the appropriate merges.
-        //
-        // We do this because in the steady state we update the replicas list infrequently, but the
-        // heartbeat operation happens quite frequently. Therefore, most requests do not *need* to
-        // acquire a write lock.
-        let mut wallets_to_merge = Vec::new();
-        {
-            let locked_wallets = global_state.read_managed_wallets();
-            for (wallet_id, wallet_info) in locked_wallets.iter() {
-                match peer_wallets.get(wallet_id) {
-                    // Peer does not replicate this wallet
-                    None => {
-                        continue;
-                    }
-
-                    Some(incoming_metadata) => {
-                        // If the replicas of this wallet stored locally are not a superset of
-                        // those in this message, mark the wallet for merge in step 2
-                        if !wallet_info
-                            .metadata
-                            .replicas
-                            .is_superset(&incoming_metadata.replicas)
-                        {
-                            wallets_to_merge.push(*wallet_id);
-                        }
-                    }
-                }
-            }
-        } // locked_wallets released
-
-        // Avoid acquiring unecessary write locks if possible
-        if wallets_to_merge.is_empty() {
-            return;
-        }
-
-        // Update all wallets that were determined to be missing known peer replicas
-        let mut locked_wallets = global_state.write_managed_wallets();
+    fn merge_wallets(
+        peer_wallets: HashMap<WalletIdentifier, WalletMetadata>,
+        global_state: &RelayerState,
+    ) {
+        let locked_wallets = global_state.read_wallet_index();
         let locked_peers = global_state.read_known_peers();
-        let locked_cluster_metadata = global_state.read_cluster_metadata();
+        for (wallet_id, mut wallet_info) in peer_wallets.into_iter() {
+            // Filter out any replicas that we don't have peer info for
+            // This may happen for a multitude of reasons; one reason is that the local node
+            // has expired a peer, but the remote node has not
+            //
+            // In this case, we leave the expired peer in the invisibility window, waiting for
+            // the expired peer to expire on all other cluster peers
+            wallet_info
+                .replicas
+                .retain(|replica| locked_peers.contains_key(replica));
 
-        for wallet in wallets_to_merge {
-            let local_replicas = &mut locked_wallets
-                .get_mut(&wallet)
-                .expect("missing wallet ID")
-                .metadata
-                .replicas;
-            let message_replicas = &peer_wallets
-                .get(&wallet)
-                .expect("missing wallet ID")
-                .replicas;
-
-            for replica in message_replicas {
-                // Skip replicas for which we don't have peer information. This can happen either because
-                // the message failed to include peer info for a replica; or because the given replica is
-                // in an expiry invisibility window for the local node. In either case, if we don't have
-                // peer info, knowing about the replica is useless because we cannot dial it.
-                //
-                // We also skip replicas not from the same cluster, as each cluster assumes it is the sole
-                // replicator of the wallets it owns
-                if !locked_peers.contains_key(replica)
-                    || !locked_cluster_metadata.known_members.contains(replica)
-                {
-                    continue;
-                }
-
-                local_replicas.insert(*replica);
-            }
+            // Merge with the local copy of the wallet
+            locked_wallets.merge_metadata(&wallet_id, &wallet_info)
         }
     }
 
@@ -446,7 +395,7 @@ pub(super) struct HeartbeatTimer {
 
 impl HeartbeatTimer {
     /// Spawns two timers, one for sending intra-cluster heartbeat messages, another for inter-cluster
-    /// The interval paramters specify how often the timers should cycle through all peers in their
+    /// The interval parameters specify how often the timers should cycle through all peers in their
     /// target list
     pub fn new(
         job_queue: Sender<GossipServerJob>,

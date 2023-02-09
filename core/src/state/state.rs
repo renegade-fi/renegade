@@ -1,8 +1,10 @@
 //! This file groups type definitions and helpers around global state that
 //! is passed around throughout the code
 
-use circuits::types::{balance::Balance, fee::Fee, order::Order};
-use libp2p::Multiaddr;
+use libp2p::{
+    identity::{self, Keypair},
+    Multiaddr,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
@@ -12,12 +14,14 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use termion::color;
-use uuid::Uuid;
 
 use crate::{
+    api::heartbeat::HeartbeatMessage,
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
     handshake::{manager::DEFAULT_HANDSHAKE_PRIORITY, types::OrderIdentifier},
 };
+
+use super::wallet::{Wallet, WalletIndex};
 
 /**
  * Constants and Types
@@ -26,7 +30,7 @@ use crate::{
 /// A type alias for a shared element, wrapped in a readers-writer mutex
 pub type Shared<T> = Arc<RwLock<T>>;
 /// Wrap an abstract value in a shared lock
-fn new_shared<T>(wrapped: T) -> Shared<T> {
+pub(crate) fn new_shared<T>(wrapped: T) -> Shared<T> {
     Arc::new(RwLock::new(wrapped))
 }
 
@@ -40,13 +44,15 @@ pub struct RelayerState {
     /// Whether or not the relayer is in debug mode
     pub debug: bool,
     /// The libp2p peerID assigned to the localhost
-    pub local_peer_id: Shared<WrappedPeerId>,
+    pub local_peer_id: WrappedPeerId,
+    /// The local libp2p keypair generated at startup
+    pub local_keypair: Keypair,
     /// The cluster id of the local relayer
     pub local_cluster_id: Shared<ClusterId>,
     /// The listening address of the local relayer
     pub local_addr: Shared<Multiaddr>,
     /// The list of wallets managed by the sending relayer
-    pub managed_wallets: Shared<HashMap<Uuid, Wallet>>,
+    pub wallet_index: Shared<WalletIndex>,
     /// A list of matched orders
     /// TODO: Remove this
     pub matched_order_pairs: Shared<Vec<(OrderIdentifier, OrderIdentifier)>>,
@@ -56,28 +62,6 @@ pub struct RelayerState {
     pub handshake_priorities: Shared<HashMap<WrappedPeerId, NonZeroU32>>,
     /// Information about the local peer's cluster
     pub cluster_metadata: Shared<ClusterMetadata>,
-}
-
-/// Represents a wallet managed by the local relayer
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Wallet {
-    /// Wallet id will eventually be replaced, for now it is UUID
-    pub wallet_id: Uuid,
-    /// A list of orders in this wallet
-    pub orders: HashMap<OrderIdentifier, Order>,
-    /// A mapping of mint (u64) to Balance information
-    pub balances: HashMap<u64, Balance>,
-    /// A list of the fees in this wallet
-    pub fees: Vec<Fee>,
-    /// Wallet metadata; replicas, trusted peers, etc
-    pub metadata: WalletMetadata,
-}
-
-/// Metadata relevant to the wallet's network state
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WalletMetadata {
-    /// The peers which are believed by the local node to be replicating a given wallet
-    pub replicas: HashSet<WrappedPeerId>,
 }
 
 /// Metadata about the local peer's cluster
@@ -116,19 +100,24 @@ impl RelayerState {
         wallets: Vec<Wallet>,
         cluster_id: ClusterId,
     ) -> Self {
+        // Generate an keypair on curve 25519 for the local peer
+        let local_keypair = identity::Keypair::generate_ed25519();
+        let local_peer_id = WrappedPeerId(local_keypair.public().to_peer_id());
+
         // Setup initial wallets
-        let managed_wallets = wallets
-            .into_iter()
-            .map(|wallet| (wallet.wallet_id, wallet))
-            .collect();
+        let mut wallet_index = WalletIndex::new(local_peer_id);
+        for wallet in wallets.into_iter() {
+            wallet_index.add_wallet(wallet);
+        }
 
         Self {
             debug,
             // Replaced by a correct value when network manager initializes
-            local_peer_id: new_shared(WrappedPeerId::random()),
+            local_peer_id,
+            local_keypair,
             local_cluster_id: new_shared(cluster_id.clone()),
             local_addr: new_shared(Multiaddr::empty()),
-            managed_wallets: new_shared(managed_wallets),
+            wallet_index: new_shared(wallet_index),
             matched_order_pairs: new_shared(vec![]),
             known_peers: new_shared(HashMap::new()),
             handshake_priorities: new_shared(HashMap::new()),
@@ -139,7 +128,7 @@ impl RelayerState {
     /// Get the local peer's info
     pub fn get_local_peer_info(&self) -> PeerInfo {
         PeerInfo::new(
-            *self.read_peer_id(),
+            self.local_peer_id(),
             self.read_cluster_id().clone(),
             self.read_local_addr().clone(),
         )
@@ -200,11 +189,7 @@ impl RelayerState {
         } // locked_peer_info, locked_cluster_metadata released
 
         // Update the replicas set for any wallets replicated by the expired peer
-        for (_, wallet) in self.write_managed_wallets().iter_mut() {
-            for peer in peers.iter() {
-                wallet.metadata.replicas.remove(peer);
-            }
-        }
+        self.read_wallet_index().remove_peer_replicas(peers);
 
         // Remove the handshake priority entry for the peer
         {
@@ -229,17 +214,8 @@ impl RelayerState {
     }
 
     /// Acquire a read lock on `local_peer_id`
-    pub fn read_peer_id(&self) -> RwLockReadGuard<WrappedPeerId> {
+    pub fn local_peer_id(&self) -> WrappedPeerId {
         self.local_peer_id
-            .read()
-            .expect("local_peer_id lock poisoned")
-    }
-
-    /// Acquire a write lock on `local_peer_id`
-    pub fn write_peer_id(&self) -> RwLockWriteGuard<WrappedPeerId> {
-        self.local_peer_id
-            .write()
-            .expect("local_peer_id lock poisoned")
     }
 
     /// Acquire a read lock on `cluster_id`
@@ -260,15 +236,15 @@ impl RelayerState {
     }
 
     /// Acquire a read lock on `managed_wallets`
-    pub fn read_managed_wallets(&self) -> RwLockReadGuard<HashMap<Uuid, Wallet>> {
-        self.managed_wallets
+    pub fn read_wallet_index(&self) -> RwLockReadGuard<WalletIndex> {
+        self.wallet_index
             .read()
             .expect("managed_wallets lock poisoned")
     }
 
     /// Acquire a write lock on `managed_wallets`
-    pub fn write_managed_wallets(&self) -> RwLockWriteGuard<HashMap<Uuid, Wallet>> {
-        self.managed_wallets
+    pub fn write_wallet_index(&self) -> RwLockWriteGuard<WalletIndex> {
+        self.wallet_index
             .write()
             .expect("managed_wallets lock poisoned")
     }
@@ -332,6 +308,30 @@ impl RelayerState {
     }
 }
 
+/// The derivation from global state to heartbeat message
+impl From<&RelayerState> for HeartbeatMessage {
+    fn from(state: &RelayerState) -> Self {
+        // Get a mapping from wallet ID to information
+        let wallet_info = state
+            .wallet_index
+            .read()
+            .expect("wallet_index lock poisoned")
+            .get_metadata_map();
+
+        // Convert peer info keys to strings for serialization/deserialization
+        let mut known_peers = HashMap::new();
+        for (peer_id, peer_info) in state.read_known_peers().iter() {
+            known_peers.insert(peer_id.to_string(), peer_info.clone());
+        }
+
+        HeartbeatMessage {
+            managed_wallets: wallet_info,
+            known_peers,
+            cluster_metadata: state.read_cluster_metadata().clone(),
+        }
+    }
+}
+
 /// Display implementation for easy-to-read command line print-out
 impl Display for RelayerState {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
@@ -345,16 +345,16 @@ impl Display for RelayerState {
             color::Fg(color::LightGreen),
             color::Fg(color::Reset),
             self.read_known_peers()
-                .get(&self.read_peer_id())
+                .get(&self.local_peer_id())
                 .unwrap()
                 .get_addr(),
-            self.read_peer_id().0
+            self.local_peer_id().0
         ))?;
         f.write_fmt(format_args!(
             "\t{}PeerId:{} {}\n",
             color::Fg(color::LightGreen),
             color::Fg(color::Reset),
-            self.read_peer_id().0
+            self.local_peer_id().0
         ))?;
         f.write_fmt(format_args!(
             "\t{}ClusterId:{} {:?}\n",
@@ -364,26 +364,7 @@ impl Display for RelayerState {
         ))?;
 
         // Write wallet info to the format
-        f.write_fmt(format_args!(
-            "\n\t{}Managed Wallets:{}\n",
-            color::Fg(color::LightGreen),
-            color::Fg(color::Reset)
-        ))?;
-        for (wallet_id, wallet) in self.read_managed_wallets().iter() {
-            f.write_fmt(format_args!(
-                "\t\t- {}{:?}:{} {{\n\t\t\t{}replicas{}: [\n",
-                color::Fg(color::LightYellow),
-                wallet_id,
-                color::Fg(color::Reset),
-                color::Fg(color::Blue),
-                color::Fg(color::Reset),
-            ))?;
-            for replica in wallet.metadata.replicas.iter() {
-                f.write_fmt(format_args!("\t\t\t\t{}\n", replica.0))?;
-            }
-
-            f.write_str("\t\t\t]\n\t\t}")?;
-        }
+        self.read_wallet_index().fmt(f)?;
         f.write_str("\n\n\n")?;
 
         // Write historically matched orders to the format
@@ -414,7 +395,7 @@ impl Display for RelayerState {
             .expect("negative timestamp")
             .as_secs();
         for (peer_id, peer_info) in self.read_known_peers().iter() {
-            let last_heartbeat_elapsed = if peer_id.ne(&self.read_peer_id()) {
+            let last_heartbeat_elapsed = if peer_id.ne(&self.local_peer_id()) {
                 (now - peer_info.get_last_heartbeat()) * 1000
             } else {
                 0

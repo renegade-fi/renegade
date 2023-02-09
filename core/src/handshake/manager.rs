@@ -10,10 +10,7 @@ use crossbeam::channel::Receiver;
 use crypto::hash::poseidon_hash_default_params;
 
 use portpicker::pick_unused_port;
-use rand::{
-    distributions::WeightedIndex, prelude::Distribution, rngs::OsRng, seq::IteratorRandom,
-    thread_rng, RngCore,
-};
+use rand::{distributions::WeightedIndex, prelude::Distribution, rngs::OsRng, thread_rng, RngCore};
 use rayon::ThreadPool;
 use std::{
     sync::Arc,
@@ -98,7 +95,7 @@ impl HandshakeManager {
                     message: GossipRequest::Handshake {
                         request_id,
                         message: HandshakeMessage::InitiateMatch {
-                            peer_id: *global_state.read_peer_id(),
+                            peer_id: global_state.local_peer_id(),
                             sender_order: order_id,
                             order_hash,
                             balance_hash,
@@ -322,7 +319,7 @@ impl HandshakeManager {
 
                     // Respond with the selected order pair
                     Ok(Some(HandshakeMessage::ProposeMatchCandidate {
-                        peer_id: *global_state.read_peer_id(),
+                        peer_id: global_state.local_peer_id(),
                         peer_order,
                         sender_order: Some(order_id),
                         order_hash: Some(order_hash),
@@ -334,7 +331,7 @@ impl HandshakeManager {
                     // Send an explicit empty message back so that the remote peer may cache their order as being
                     // already cached with all of the local peer's orders
                     Ok(Some(HandshakeMessage::ProposeMatchCandidate {
-                        peer_id: *global_state.read_peer_id(),
+                        peer_id: global_state.local_peer_id(),
                         peer_order,
                         sender_order: None,
                         order_hash: None,
@@ -406,7 +403,7 @@ impl HandshakeManager {
                         .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
                     Ok(Some(HandshakeMessage::ExecuteMatch {
-                        peer_id: *global_state.read_peer_id(),
+                        peer_id: global_state.local_peer_id(),
                         port: local_port,
                         previously_matched,
                         order1: my_order,
@@ -461,7 +458,7 @@ impl HandshakeManager {
         let mut proposed_order = None;
 
         let selected_wallet = {
-            let locked_wallets = global_state.read_managed_wallets();
+            let locked_wallets = global_state.read_wallet_index();
             let locked_handshake_cache = handshake_cache
                 .read()
                 .expect("handshake_cache lock poisoned");
@@ -469,10 +466,10 @@ impl HandshakeManager {
             // TODO: This choice gives single orders in a wallet a higher chance of being chosen than
             // one with many peer-orders in the wallet, fix this.
             // Choose a random wallet
-            let random_wallet_id = *locked_wallets.keys().choose(&mut rng)?;
+            let selected_wallet = locked_wallets.get_random_wallet(&mut rng);
 
             // Choose an order in that wallet
-            for (order_id, order) in locked_wallets.get(&random_wallet_id).unwrap().orders.iter() {
+            for (order_id, order) in selected_wallet.orders.iter() {
                 if peer_order.is_none()
                     || !locked_handshake_cache.contains(*order_id, peer_order.unwrap())
                 {
@@ -481,7 +478,7 @@ impl HandshakeManager {
                 }
             }
 
-            random_wallet_id
+            selected_wallet.wallet_id
         }; // locked_wallets, locked_handshake_cache released
 
         // Find a balance and fee for this chosen order
@@ -497,8 +494,8 @@ impl HandshakeManager {
         wallet_id: Uuid,
         global_state: &RelayerState,
     ) -> Option<(Balance, Fee)> {
-        let locked_wallets = global_state.read_managed_wallets();
-        let selected_wallet = locked_wallets.get(&wallet_id)?;
+        let locked_wallets = global_state.read_wallet_index();
+        let selected_wallet = locked_wallets.read_wallet(&wallet_id)?;
 
         // The mint the local party will be spending
         let order_mint = match order.side {

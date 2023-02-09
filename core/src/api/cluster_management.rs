@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
     handshake::types::OrderIdentifier,
-    state::Wallet,
+    state::wallet::Wallet,
 };
 
 /// The topic prefix for the cluster management pubsub topic
@@ -44,7 +44,7 @@ impl From<&ClusterManagementMessage> for Vec<u8> {
     }
 }
 
-/// Repesents a pubsub message broadcast when a node joins a cluster
+/// Represents a pubsub message broadcast when a node joins a cluster
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ClusterJoinMessage {
     /// The peer ID of the node joining the cluster
@@ -108,7 +108,7 @@ pub struct ClusterAuthResponseBody {
     pub peer_info: PeerInfo,
 }
 
-// Explicit byte serializtaion for hashing and signing
+// Explicit byte serialization for hashing and signing
 impl From<&ClusterAuthResponseBody> for Vec<u8> {
     fn from(body: &ClusterAuthResponseBody) -> Self {
         serde_json::to_vec(&body).unwrap()
