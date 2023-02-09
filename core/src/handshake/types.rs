@@ -8,15 +8,10 @@ use serde::{
     Deserialize, Serialize,
 };
 use std::fmt::{Formatter, Result as FmtResult};
-use uuid::Uuid;
-
-/// An identifier of an order used for caching
-/// TODO: Update this with a commitment to an order, UUID for testing
-pub type OrderIdentifier = Uuid;
 
 /// A wrapper around a hasher's output that both:
 ///     1. Abstracts the underlying field details
-///     2. Allos us to implement serialization/deserialization traits
+///     2. Allows us to implement serialization/deserialization traits
 #[derive(Copy, Clone, Debug)]
 pub struct HashOutput(pub DalekRistrettoField);
 

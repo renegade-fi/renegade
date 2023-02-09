@@ -13,9 +13,9 @@ use serde::{Deserialize, Serialize};
 use termion::color;
 use uuid::Uuid;
 
-use crate::{gossip::types::WrappedPeerId, handshake::types::OrderIdentifier};
+use crate::gossip::types::WrappedPeerId;
 
-use super::{new_shared, Shared};
+use super::{new_shared, orderbook::OrderIdentifier, Shared};
 
 /// An error message to panic with when a wallet lock is poisoned
 const ERR_WALLET_POISONED: &str = "wallet lock poisoned";

@@ -7,12 +7,9 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::state::Shared;
+use crate::state::{orderbook::OrderIdentifier, Shared};
 
-use super::{
-    error::HandshakeManagerError,
-    types::{HashOutput, OrderIdentifier},
-};
+use super::{error::HandshakeManagerError, types::HashOutput};
 use circuits::types::{balance::Balance, fee::Fee, order::Order};
 use uuid::Uuid;
 

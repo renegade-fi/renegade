@@ -1,5 +1,5 @@
 //! This file defines the logic for combining various libp2p network behaviors into a single
-//! protocol. We combine a handfull of different libp2p protocols to support different
+//! protocol. We combine a handful of different libp2p protocols to support different
 //! use cases:
 //!      1. RequestResponse: Used for p2p direct communication (e.g. heartbeat)
 //!      2. KAD: Used for peer discovery and application level routing information (e.g. wallet ownership)
@@ -42,7 +42,7 @@ const MAX_MESSAGE_SIZE: usize = 1_000_000_000;
 #[behaviour(out_event = "ComposedProtocolEvent")]
 pub struct ComposedNetworkBehavior {
     /// The request/response behavior; provides a point-to-point communication
-    /// primitive for relayers to dial eachother directly on
+    /// primitive for relayers to dial each other directly on
     pub request_response: RequestResponse<RelayerGossipCodec>,
     /// The Kademlia DHT behavior; used for storing distributed state, including
     /// peer address information
@@ -82,7 +82,7 @@ impl ComposedNetworkBehavior {
         )
         .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
-        // The identify protocol; used to allow the local node to gain publically facing info
+        // The identify protocol; used to allow the local node to gain publicly facing info
         // about itself; i.e. dialable IP
         let identify = IdentifyProtocol::new(IdentifyConfig::new(
             protocol_version.to_string(),

@@ -17,10 +17,11 @@ use termion::color;
 use crate::{
     api::heartbeat::HeartbeatMessage,
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
-    handshake::{manager::DEFAULT_HANDSHAKE_PRIORITY, types::OrderIdentifier},
+    handshake::manager::DEFAULT_HANDSHAKE_PRIORITY,
 };
 
 use super::{
+    orderbook::{NetworkOrderBook, OrderIdentifier},
     peers::PeerIndex,
     wallet::{Wallet, WalletIndex},
 };
@@ -57,6 +58,8 @@ pub struct RelayerState {
     pub wallet_index: Shared<WalletIndex>,
     /// The set of peers known to the sending relayer
     pub peer_index: Shared<PeerIndex>,
+    /// The order book and indexing structure for orders in the network
+    pub order_book: Shared<NetworkOrderBook>,
     /// A list of matched orders
     /// TODO: Remove this
     pub matched_order_pairs: Shared<Vec<(OrderIdentifier, OrderIdentifier)>>,
@@ -115,6 +118,9 @@ impl RelayerState {
         // Setup the peer index
         let peer_index = PeerIndex::new(local_peer_id);
 
+        // Setup the order book
+        let order_book = NetworkOrderBook::new();
+
         Self {
             debug,
             // Replaced by a correct value when network manager initializes
@@ -125,10 +131,15 @@ impl RelayerState {
             wallet_index: new_shared(wallet_index),
             matched_order_pairs: new_shared(vec![]),
             peer_index: new_shared(peer_index),
+            order_book: new_shared(order_book),
             handshake_priorities: new_shared(HashMap::new()),
             cluster_metadata: new_shared(ClusterMetadata::new(cluster_id)),
         }
     }
+
+    // -----------
+    // | Getters |
+    // -----------
 
     /// Get the local peer's info
     pub fn get_local_peer_info(&self) -> PeerInfo {
@@ -138,6 +149,35 @@ impl RelayerState {
             self.read_local_addr().clone(),
         )
     }
+
+    /// Print the local relayer state to the screen for debugging
+    pub fn print_screen(&self) {
+        if !self.debug {
+            return;
+        }
+
+        // Terminal control emissions to clear the terminal screen and
+        // move the cursor to position (1, 1), then print self
+        print!("{}[2J", 27 as char);
+        print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
+        println!("{}", self);
+    }
+
+    /// Acquire a read lock on `local_peer_id`
+    pub fn local_peer_id(&self) -> WrappedPeerId {
+        self.local_peer_id
+    }
+
+    /// Acquire a read lock on `cluster_id`
+    pub fn read_cluster_id(&self) -> RwLockReadGuard<ClusterId> {
+        self.local_cluster_id
+            .read()
+            .expect("cluster_id lock poisoned")
+    }
+
+    // -----------
+    // | Setters |
+    // -----------
 
     /// Add a single peer to the global state
     pub fn add_single_peer(&self, peer_id: WrappedPeerId, peer_info: PeerInfo) {
@@ -202,30 +242,9 @@ impl RelayerState {
         } // locked_handshake_priorities released
     }
 
-    /// Print the local relayer state to the screen for debugging
-    pub fn print_screen(&self) {
-        if !self.debug {
-            return;
-        }
-
-        // Terminal control emissions to clear the terminal screen and
-        // move the cursor to position (1, 1), then print self
-        print!("{}[2J", 27 as char);
-        print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
-        println!("{}", self);
-    }
-
-    /// Acquire a read lock on `local_peer_id`
-    pub fn local_peer_id(&self) -> WrappedPeerId {
-        self.local_peer_id
-    }
-
-    /// Acquire a read lock on `cluster_id`
-    pub fn read_cluster_id(&self) -> RwLockReadGuard<ClusterId> {
-        self.local_cluster_id
-            .read()
-            .expect("cluster_id lock poisoned")
-    }
+    // -----------
+    // | Locking |
+    // -----------
 
     /// Acquire a read lock on `local_addr`
     pub fn read_local_addr(&self) -> RwLockReadGuard<Multiaddr> {
@@ -251,6 +270,30 @@ impl RelayerState {
             .expect("managed_wallets lock poisoned")
     }
 
+    /// Acquire a read lock on `known_peers`
+    pub fn read_peer_index(&self) -> RwLockReadGuard<PeerIndex> {
+        self.peer_index.read().expect("known_peers lock poisoned")
+    }
+
+    /// Acquire a write lock on `known_peers`
+    pub fn write_peer_index(&self) -> RwLockWriteGuard<PeerIndex> {
+        self.peer_index.write().expect("known_peers lock poisoned")
+    }
+
+    /// Acquire a read lock on `order_book`
+    /// TODO: Remove this lint allowance
+    #[allow(unused)]
+    pub fn read_order_book(&self) -> RwLockReadGuard<NetworkOrderBook> {
+        self.order_book.read().expect("order_book lock poisoned")
+    }
+
+    /// Acquire a write lock on `order_book`
+    /// TODO: Remove this lint allowance
+    #[allow(unused)]
+    pub fn write_order_book(&self) -> RwLockWriteGuard<NetworkOrderBook> {
+        self.order_book.write().expect("order_book lock poisoned")
+    }
+
     /// Acquire a read lock on `matched_order_pairs`
     pub fn read_matched_order_pairs(
         &self,
@@ -267,16 +310,6 @@ impl RelayerState {
         self.matched_order_pairs
             .write()
             .expect("matched_order_pairs lock poisoned")
-    }
-
-    /// Acquire a read lock on `known_peers`
-    pub fn read_peer_index(&self) -> RwLockReadGuard<PeerIndex> {
-        self.peer_index.read().expect("known_peers lock poisoned")
-    }
-
-    /// Acquire a write lock on `known_peers`
-    pub fn write_peer_index(&self) -> RwLockWriteGuard<PeerIndex> {
-        self.peer_index.write().expect("known_peers lock poisoned")
     }
 
     /// Acquire a read lock on `handshake_priorities`
