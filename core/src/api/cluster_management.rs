@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
-    handshake::types::OrderIdentifier,
-    state::wallet::Wallet,
+    state::{orderbook::OrderIdentifier, wallet::Wallet},
 };
 
 /// The topic prefix for the cluster management pubsub topic

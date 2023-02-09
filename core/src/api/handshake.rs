@@ -3,8 +3,7 @@ use portpicker::Port;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    gossip::types::WrappedPeerId,
-    handshake::types::{HashOutput, OrderIdentifier},
+    gossip::types::WrappedPeerId, handshake::types::HashOutput, state::orderbook::OrderIdentifier,
 };
 
 /// Enumerates the different operations possible via handshake
@@ -30,7 +29,7 @@ pub enum HandshakeMessage {
     /// Propose an order to match with an order sent in InitiateMatch
     ///
     /// If all orders in the local peer's book have already been matched
-    /// against the requestsed order, send back `None`
+    /// against the requested order, send back `None`
     ProposeMatchCandidate {
         /// The ID of the peer proposing a match candidate
         peer_id: WrappedPeerId,

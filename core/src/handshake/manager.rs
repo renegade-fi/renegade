@@ -27,18 +27,15 @@ use crate::{
         handshake::HandshakeMessage,
     },
     gossip::types::WrappedPeerId,
-    state::RelayerState,
+    state::{orderbook::OrderIdentifier, RelayerState},
     system_bus::SystemBus,
     types::{SystemBusMessage, HANDSHAKE_STATUS_TOPIC},
     CancelChannel,
 };
 
 use super::{
-    error::HandshakeManagerError,
-    handshake_cache::SharedHandshakeCache,
-    jobs::HandshakeExecutionJob,
-    state::HandshakeStateIndex,
-    types::{HashOutput, OrderIdentifier},
+    error::HandshakeManagerError, handshake_cache::SharedHandshakeCache,
+    jobs::HandshakeExecutionJob, state::HandshakeStateIndex, types::HashOutput,
 };
 
 /// The default priority of a newly added node in the handshake priority list

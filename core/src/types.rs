@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{handshake::types::OrderIdentifier, price_reporter::reporter::PriceReport};
+use crate::{price_reporter::reporter::PriceReport, state::orderbook::OrderIdentifier};
 
 /**
  * Topic names

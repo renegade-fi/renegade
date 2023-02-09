@@ -3,13 +3,16 @@
 
 use circuits::{
     types::{fee::Fee, keychain::KeyChain},
-    zk_circuits::valid_wallet_create::{ValidWalletCreateCommitment, ValidWalletCreateStatement},
+    zk_circuits::{
+        valid_commitments::{ValidCommitmentsStatement, ValidCommitmentsWitnessCommitment},
+        valid_wallet_create::{ValidWalletCreateCommitment, ValidWalletCreateStatement},
+    },
 };
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::r1cs::R1CSProof;
 use tokio::sync::oneshot::Sender;
 
-use crate::MAX_FEES;
+use crate::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 
 // ----------------------
 // | Proof Return Types |
@@ -23,11 +26,23 @@ pub struct ValidWalletCreateBundle(
     pub R1CSProof,
 );
 
+/// The response type for a request to generate a proof of `VALID COMMITMENTS`
+#[derive(Clone, Debug)]
+pub struct ValidCommitmentsBundle(
+    pub ValidCommitmentsWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub ValidCommitmentsStatement,
+    pub R1CSProof,
+);
+
 /// The bundle returned by the proof generation module
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum ProofBundle {
     /// A witness commitment, statement, and proof of `VALID WALLET CREATE`
     ValidWalletCreate(ValidWalletCreateBundle),
+    /// A witness commitment, statement, and proof of `VALID COMMITMENTS`
+    #[allow(unused)]
+    ValidCommitments(ValidCommitmentsBundle),
 }
 
 /// Unsafe cast implementations, will panic if type is incorrect
