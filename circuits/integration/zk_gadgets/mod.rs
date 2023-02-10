@@ -2,7 +2,6 @@
 mod arithmetic;
 pub mod bits;
 mod comparators;
-mod merkle;
 mod poseidon;
 
 use circuits::{mpc::SharedFabric, MultiProverCircuit, Open};
