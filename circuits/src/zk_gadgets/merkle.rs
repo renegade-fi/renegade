@@ -22,6 +22,9 @@ use crate::{
 
 use super::poseidon::PoseidonHashGadget;
 
+/// A type alias for readability
+pub type MerkleRoot = Scalar;
+
 /// The single-prover hash gadget, computes the Merkle root of a leaf given a path
 /// of sister nodes
 pub struct PoseidonMerkleHashGadget {}
@@ -345,7 +348,7 @@ impl CommitVerifier for MerkleWitnessCommitment {
 #[derive(Clone, Debug)]
 pub struct MerkleStatement {
     /// The expected value of the root after hashing from the leaf
-    pub expected_root: Scalar,
+    pub expected_root: MerkleRoot,
     /// The tree height, used to partition the commitments when given
     /// to the verifier as a vector
     pub tree_height: usize,

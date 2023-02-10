@@ -56,6 +56,8 @@ pub(crate) const MAX_BALANCES: usize = 5;
 pub(crate) const MAX_ORDERS: usize = 5;
 /// The system-wide value of MAX_FEES; the number of allowable fees a wallet holds
 pub(crate) const MAX_FEES: usize = 2;
+/// The height of the Merkle state tree used by the contract
+pub(crate) const MERKLE_HEIGHT: usize = 30;
 /// A type wrapper around the wallet type that adds the default generics above
 pub(crate) type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 /// The amount of time to wait between sending teardown signals and terminating execution
@@ -82,10 +84,6 @@ async fn main() -> Result<(), CoordinatorError> {
         args.version, args.p2p_port, args.cluster_id
     );
 
-    // Construct the global state
-    let global_state =
-        RelayerState::initialize_global_state(args.debug, args.wallets, args.cluster_id.clone());
-
     // Build communication primitives
     // First, the global shared mpmc bus that all workers have access to
     let system_bus = SystemBus::<SystemBusMessage>::new();
@@ -94,6 +92,11 @@ async fn main() -> Result<(), CoordinatorError> {
     let (handshake_worker_sender, handshake_worker_receiver) = channel::unbounded();
     let (price_reporter_worker_sender, price_reporter_worker_receiver) = channel::unbounded();
     let (proof_generation_worker_sender, proof_generation_worker_receiver) = channel::unbounded();
+
+    // Construct the global state and warm up the config orders by generating proofs of `VALID COMMITMENTS`
+    let global_state =
+        RelayerState::initialize_global_state(args.debug, args.wallets, args.cluster_id.clone());
+    global_state.initialize_order_proofs(proof_generation_worker_sender.clone());
 
     // Start the network manager
     let (network_cancel_sender, network_cancel_receiver) = channel::bounded(1 /* capacity */);

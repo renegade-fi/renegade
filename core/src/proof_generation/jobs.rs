@@ -10,7 +10,7 @@ use circuits::{
         valid_commitments::{ValidCommitmentsStatement, ValidCommitmentsWitnessCommitment},
         valid_wallet_create::{ValidWalletCreateCommitment, ValidWalletCreateStatement},
     },
-    zk_gadgets::merkle::MerkleOpening,
+    zk_gadgets::merkle::{MerkleOpening, MerkleRoot},
 };
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::r1cs::R1CSProof;
@@ -116,6 +116,6 @@ pub enum ProofJob {
         /// The secret match key, used to authorize the proof
         sk_match: Scalar,
         /// The merkle root to prove wallet inclusion into
-        merkle_root: Scalar,
+        merkle_root: MerkleRoot,
     },
 }

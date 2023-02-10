@@ -36,6 +36,7 @@ integration-helpers = { path = "../integration-helpers" }
 inventory = "0.3"
 num-primes = "0.3"
 rand = "0.8"
+serde_json = "1.0"
 tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
 
 [[test]]
