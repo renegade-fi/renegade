@@ -15,6 +15,9 @@ use super::{
     order::{CommittedOrder, Order, OrderVar},
 };
 
+/// A type alias for readability
+pub type WalletCommitment = Scalar;
+
 /// Represents the base type of a wallet holding orders, balances, fees, keys
 /// and cryptographic randomness
 #[derive(Clone, Debug, PartialEq, Eq)]

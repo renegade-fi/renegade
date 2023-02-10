@@ -27,6 +27,21 @@
                 "percentage_fee": 0.01
             }
         ],
+        "public_keys": [
+            [],
+            [],
+            [],
+            []
+        ],
+        "secret_keys": [
+            [],
+            [],
+            [],
+            []
+        ],
+        "randomness": [
+            42
+        ],
         "metadata": {
             "replicas": []
         }

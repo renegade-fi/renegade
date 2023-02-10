@@ -1,13 +1,21 @@
 //! Defines the constraint system types for the set of keys a wallet holds
 
+use std::fmt::{Formatter, Result as FmtResult};
+
+use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use mpc_bulletproof::r1cs::{Prover, Variable, Verifier};
-use serde::{Deserialize, Serialize};
+use num_bigint::BigUint;
+use serde::{
+    de::{Error as SerdeErr, SeqAccess, Visitor},
+    ser::SerializeSeq,
+    Deserialize, Serialize,
+};
 
 use crate::{errors::TypeConversionError, CommitProver, CommitVerifier};
 
 /// The number of keys held in a wallet's keychain
-pub(crate) const NUM_KEYS: usize = 4;
+pub const NUM_KEYS: usize = 4;
 
 /// Represents the base type, defining four keys with various access levels
 ///
@@ -24,7 +32,7 @@ pub(crate) const NUM_KEYS: usize = 4;
 /// identification scheme (not necessarily a signature scheme). Concretely, this currently
 /// is setup as `pk_identity` = Hash(`sk_identity`), and the prover proves knowledge of
 /// pre-image in a related circuit
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct KeyChain {
     /// The public root key
     pub pk_root: Scalar,
@@ -34,6 +42,68 @@ pub struct KeyChain {
     pub pk_settle: Scalar,
     /// The public view key
     pub pk_view: Scalar,
+}
+
+/// Custom serialize/deserialize logic to serialize/deserialize as BigUint
+///
+/// The BigUint serialized structure is cleaner and more interpretable
+impl Serialize for KeyChain {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(NUM_KEYS))?;
+        seq.serialize_element(&scalar_to_biguint(&self.pk_root))?;
+        seq.serialize_element(&scalar_to_biguint(&self.pk_match))?;
+        seq.serialize_element(&scalar_to_biguint(&self.pk_settle))?;
+        seq.serialize_element(&scalar_to_biguint(&self.pk_view))?;
+
+        seq.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for KeyChain {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(KeyChainVisitor)
+    }
+}
+
+/// A serde visitor implementation for the KeyChain type
+struct KeyChainVisitor;
+impl<'de> Visitor<'de> for KeyChainVisitor {
+    type Value = KeyChain;
+
+    fn expecting(&self, formatter: &mut Formatter) -> FmtResult {
+        write!(formatter, "a sequence of {} BigUint values", NUM_KEYS)
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let pk_root: BigUint = seq
+            .next_element()?
+            .ok_or_else(|| SerdeErr::custom("pk_root not found in serialized value"))?;
+        let pk_match: BigUint = seq
+            .next_element()?
+            .ok_or_else(|| SerdeErr::custom("pk_match not found in serialized value"))?;
+        let pk_settle: BigUint = seq
+            .next_element()?
+            .ok_or_else(|| SerdeErr::custom("pk_settle not found in serialized value"))?;
+        let pk_view: BigUint = seq
+            .next_element()?
+            .ok_or_else(|| SerdeErr::custom("pk_view not found in serialized value"))?;
+
+        Ok(Self::Value {
+            pk_root: biguint_to_scalar(&pk_root),
+            pk_match: biguint_to_scalar(&pk_match),
+            pk_settle: biguint_to_scalar(&pk_settle),
+            pk_view: biguint_to_scalar(&pk_view),
+        })
+    }
 }
 
 impl TryFrom<Vec<Scalar>> for KeyChain {
@@ -142,5 +212,30 @@ impl CommitVerifier for CommittedKeyChain {
             pk_settle: settle_var,
             pk_view: view_var,
         })
+    }
+}
+
+/// Tests for the KeyChain type
+#[cfg(test)]
+mod tests {
+    use curve25519_dalek::scalar::Scalar;
+    use rand_core::OsRng;
+
+    use crate::types::keychain::KeyChain;
+
+    #[test]
+    fn test_serde() {
+        let mut rng = OsRng {};
+        let keychain = KeyChain {
+            pk_root: Scalar::random(&mut rng),
+            pk_match: Scalar::random(&mut rng),
+            pk_settle: Scalar::random(&mut rng),
+            pk_view: Scalar::random(&mut rng),
+        };
+
+        let serialized = serde_json::to_string(&keychain).unwrap();
+        let deserialized: KeyChain = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(keychain, deserialized);
     }
 }

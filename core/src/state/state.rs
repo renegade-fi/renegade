@@ -1,6 +1,12 @@
 //! This file groups type definitions and helpers around global state that
 //! is passed around throughout the code
 
+use circuits::{
+    native_helpers::compute_poseidon_hash,
+    zk_gadgets::merkle::{MerkleOpening, MerkleRoot},
+};
+use crossbeam::channel::Sender;
+use curve25519_dalek::scalar::Scalar;
 use libp2p::{
     identity::{self, Keypair},
     Multiaddr,
@@ -11,13 +17,18 @@ use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     num::NonZeroU32,
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    thread::Builder,
 };
 use termion::color;
+use tokio::sync::oneshot;
 
 use crate::{
     api::heartbeat::HeartbeatMessage,
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
     handshake::manager::DEFAULT_HANDSHAKE_PRIORITY,
+    proof_generation::jobs::{ProofJob, ProofManagerJob},
+    state::orderbook::NetworkOrder,
+    MERKLE_HEIGHT,
 };
 
 use super::{
@@ -26,9 +37,14 @@ use super::{
     wallet::{Wallet, WalletIndex},
 };
 
-/**
- * Constants and Types
- */
+// -----------------------
+// | Constants and Types |
+// -----------------------
+
+/// An error emitted when order initialization fails
+const ERR_ORDER_INIT_FAILED: &str = "order commitment initialization thread panic";
+/// The name of the thread initialized to generate proofs of `VALID COMMITMENTS` at startup
+const ORDER_INIT_THREAD: &str = "order-commitment-init";
 
 /// A type alias for a shared element, wrapped in a readers-writer mutex
 pub type Shared<T> = Arc<RwLock<T>>;
@@ -135,6 +151,115 @@ impl RelayerState {
             handshake_priorities: new_shared(HashMap::new()),
             cluster_metadata: new_shared(ClusterMetadata::new(cluster_id)),
         }
+    }
+
+    /// Initialize proofs of `VALID COMMITMENTS` for any locally managed orders
+    ///
+    /// At startup; if a relayer is initialized with wallets in its config, we generate
+    /// proofs of `VALID COMMITMENTS` as a pre-requisite to entering them into match
+    /// MPCs
+    ///
+    /// This method does not block, instead it spawns a thread to manage the process of
+    /// updating the order state. For this reason, the method is defined as a static
+    /// method instead of an instance method, so that a lock need not be held on the
+    /// state the entire time
+    pub fn initialize_order_proofs(&self, proof_manager_queue: Sender<ProofManagerJob>) {
+        // Spawn the helpers in a thread
+        let self_clone = self.clone();
+        Builder::new()
+            .name(ORDER_INIT_THREAD.to_string())
+            .spawn(move || self_clone.initialize_order_proof_helper(proof_manager_queue))
+            .expect(ERR_ORDER_INIT_FAILED);
+    }
+
+    /// A helper passed as a callback to the threading logic in the caller
+    fn initialize_order_proof_helper(&self, proof_manager_queue: Sender<ProofManagerJob>) {
+        // Store a handle to the response channels for each proof; await them one by one
+        let mut proof_response_channels = Vec::new();
+
+        {
+            // Iterate over all orders in all managed wallets and generate proofs
+            let locked_wallet_index = self.read_wallet_index();
+            for wallet in locked_wallet_index.get_all_wallets().iter() {
+                for (order_id, order) in wallet.orders.iter() {
+                    if let Some((balance, fee, fee_balance)) =
+                        locked_wallet_index.get_order_balance_and_fee(&wallet.wallet_id, order_id)
+                    {
+                        // Generate a merkle proof of inclusion for this wallet in the contract state
+                        let (merkle_root, wallet_opening) = Self::generate_merkle_proof(wallet);
+
+                        // Create a job and a response channel to get proofs back on
+                        let job = ProofJob::ValidCommitments {
+                            wallet: wallet.clone().into(),
+                            wallet_opening,
+                            order: order.clone(),
+                            balance,
+                            fee,
+                            fee_balance,
+                            sk_match: wallet.secret_keys.sk_match,
+                            merkle_root,
+                        };
+                        let (response_sender, response_receiver) = oneshot::channel();
+
+                        // Send a request to build a proof
+                        proof_manager_queue
+                            .send(ProofManagerJob {
+                                type_: job,
+                                response_channel: response_sender,
+                            })
+                            .unwrap();
+
+                        // Store a handle to the response channel
+                        proof_response_channels.push((*order_id, response_receiver));
+                    } else {
+                        continue;
+                    }
+                }
+            }
+        } // locked_wallet_index released
+
+        // Await a proof response for each order then attach it to the order index entry
+        for (order_id, receiver) in proof_response_channels.into_iter() {
+            // Add the order to the orderbook index
+            self.write_order_book()
+                .add_order(NetworkOrder::new(order_id, true /* local */));
+
+            // Await a proof
+            let proof_bundle = receiver.blocking_recv().unwrap();
+
+            // Update the local orderbook state
+            self.write_order_book()
+                .write_order(&order_id)
+                .unwrap()
+                .attach_commitment_proof(proof_bundle.into());
+        }
+    }
+
+    /// Generate a dummy Merkle proof for an order
+    ///
+    /// Returns a tuple of (dummy root, merkle opening)
+    ///
+    /// TODO: Replace this with a method that retrieves or has access to the on-chain Merkle state
+    /// and creates a legitimate Merkle proof
+    fn generate_merkle_proof(wallet: &Wallet) -> (MerkleRoot, MerkleOpening) {
+        // For now, just assume the wallet is the zero'th entry in the tree, and
+        // the rest of the tree is zeros
+        let opening_elems = vec![Scalar::zero(); MERKLE_HEIGHT];
+        let opening_indices = vec![Scalar::zero(); MERKLE_HEIGHT];
+
+        // Compute the dummy root
+        let mut curr_root = wallet.get_commitment();
+        for sibling in opening_elems.iter() {
+            curr_root = compute_poseidon_hash(&[curr_root, *sibling]);
+        }
+
+        (
+            curr_root,
+            MerkleOpening {
+                elems: opening_elems,
+                indices: opening_indices,
+            },
+        )
     }
 
     // -----------
@@ -405,6 +530,10 @@ impl Display for RelayerState {
         // Write wallet info to the format
         self.read_wallet_index().fmt(f)?;
         f.write_str("\n\n\n")?;
+
+        // Write order information for locally managed orders
+        self.read_order_book().fmt(f)?;
+        f.write_str("\n\n")?;
 
         // Write historically matched orders to the format
         f.write_fmt(format_args!(

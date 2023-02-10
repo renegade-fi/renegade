@@ -486,6 +486,8 @@ impl HandshakeManager {
     }
 
     /// Find a balance and fee for the given order
+    ///
+    /// TODO: Remove this in favor of the method implemented in the state primitive
     fn get_balance_and_fee(
         order: &Order,
         wallet_id: Uuid,
