@@ -9,7 +9,6 @@
 //! for a formal specification
 
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
-use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{
         ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
@@ -33,7 +32,9 @@ use crate::{
         },
         fixed_point::FixedPointVar,
         gates::{AndGate, OrGate},
-        merkle::PoseidonMerkleHashGadget,
+        merkle::{
+            MerkleOpening, MerkleOpeningCommitment, MerkleOpeningVar, PoseidonMerkleHashGadget,
+        },
         select::CondSelectGadget,
     },
     CommitProver, CommitVerifier, SingleProverCircuit,
@@ -80,7 +81,6 @@ where
         PoseidonMerkleHashGadget::compute_and_constrain_root_prehashed(
             old_wallet_commit.clone(),
             witness.wallet1_opening,
-            witness.wallet1_opening_indices,
             merkle_root.into(),
             cs,
         )?;
@@ -408,10 +408,7 @@ pub struct ValidWalletUpdateWitness<
     pub wallet2: Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The opening from the old wallet's commitment to the global
     /// Merkle root
-    pub wallet1_opening: Vec<Scalar>,
-    /// The indices of the opening, i.e. 0 indicating that the next index in
-    /// the opening is a left node, 1 indicating that it's a right hand node
-    pub wallet1_opening_indices: Vec<Scalar>,
+    pub wallet1_opening: MerkleOpening,
     /// The internal transfer tuple, a pair of (mint, volume); used to transfer
     /// funds out of a wallet to a settle-able note
     pub internal_transfer: (Scalar, Scalar),
@@ -433,10 +430,7 @@ pub struct ValidWalletUpdateWitnessVar<
     pub wallet2: WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The opening from the old wallet's commitment to the global
     /// Merkle root
-    pub wallet1_opening: Vec<Variable>,
-    /// The indices of the opening, i.e. 0 indicating that the next index in
-    /// the opening is a left node, 1 indicating that it's a right hand node
-    pub wallet1_opening_indices: Vec<Variable>,
+    pub wallet1_opening: MerkleOpeningVar,
     /// The internal transfer tuple, a pair of (mint, volume); used to transfer
     /// funds out of a wallet to a settle-able note
     pub internal_transfer: (Variable, Variable),
@@ -457,10 +451,7 @@ pub struct ValidWalletUpdateWitnessCommitment<
     pub wallet2: CommittedWallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The opening from the old wallet's commitment to the global
     /// Merkle root
-    pub wallet1_opening: Vec<CompressedRistretto>,
-    /// The indices of the opening, i.e. 0 indicating that the next index in
-    /// the opening is a left node, 1 indicating that it's a right hand node
-    pub wallet1_opening_indices: Vec<CompressedRistretto>,
+    pub wallet1_opening: MerkleOpeningCommitment,
     /// The internal transfer tuple, a pair of (mint, volume); used to transfer
     /// funds out of a wallet to a settle-able note
     pub internal_transfer: (CompressedRistretto, CompressedRistretto),
@@ -482,18 +473,8 @@ where
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
         let (wallet1_var, wallet1_comm) = self.wallet1.commit_prover(rng, prover).unwrap();
         let (wallet2_var, wallet2_comm) = self.wallet2.commit_prover(rng, prover).unwrap();
-
-        let (opening_comms, opening_vars): (Vec<CompressedRistretto>, Vec<Variable>) = self
-            .wallet1_opening
-            .iter()
-            .map(|opening_elem| prover.commit(*opening_elem, Scalar::random(rng)))
-            .unzip();
-        let (opening_index_comms, opening_index_vars): (Vec<CompressedRistretto>, Vec<Variable>) =
-            self.wallet1_opening_indices
-                .iter()
-                .map(|opening_index| prover.commit(*opening_index, Scalar::random(rng)))
-                .unzip();
-
+        let (wallet1_opening_var, wallet1_opening_comm) =
+            self.wallet1_opening.commit_prover(rng, prover).unwrap();
         let (internal_transfer_mint_comm, internal_transfer_mint_var) =
             prover.commit(self.internal_transfer.0, Scalar::random(rng));
         let (internal_transfer_volume_comm, internal_transfer_volume_var) =
@@ -503,15 +484,13 @@ where
             ValidWalletUpdateWitnessVar {
                 wallet1: wallet1_var,
                 wallet2: wallet2_var,
-                wallet1_opening: opening_vars,
-                wallet1_opening_indices: opening_index_vars,
+                wallet1_opening: wallet1_opening_var,
                 internal_transfer: (internal_transfer_mint_var, internal_transfer_volume_var),
             },
             ValidWalletUpdateWitnessCommitment {
                 wallet1: wallet1_comm,
                 wallet2: wallet2_comm,
-                wallet1_opening: opening_comms,
-                wallet1_opening_indices: opening_index_comms,
+                wallet1_opening: wallet1_opening_comm,
                 internal_transfer: (internal_transfer_mint_comm, internal_transfer_volume_comm),
             },
         ))
@@ -529,26 +508,14 @@ where
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
         let wallet1_var = self.wallet1.commit_verifier(verifier).unwrap();
         let wallet2_var = self.wallet2.commit_verifier(verifier).unwrap();
-
-        let opening_vars = self
-            .wallet1_opening
-            .iter()
-            .map(|opening_elem| verifier.commit(*opening_elem))
-            .collect_vec();
-        let opening_index_vars = self
-            .wallet1_opening_indices
-            .iter()
-            .map(|opening_index| verifier.commit(*opening_index))
-            .collect_vec();
-
+        let wallet1_opening_var = self.wallet1_opening.commit_verifier(verifier).unwrap();
         let internal_transfer_mint = verifier.commit(self.internal_transfer.0);
         let internal_transfer_volume = verifier.commit(self.internal_transfer.1);
 
         Ok(ValidWalletUpdateWitnessVar {
             wallet1: wallet1_var,
             wallet2: wallet2_var,
-            wallet1_opening: opening_vars,
-            wallet1_opening_indices: opening_index_vars,
+            wallet1_opening: wallet1_opening_var,
             internal_transfer: (internal_transfer_mint, internal_transfer_volume),
         })
     }
@@ -697,6 +664,7 @@ mod valid_wallet_update_tests {
         test_helpers::bulletproof_prove_and_verify,
         types::order::Order,
         zk_circuits::test_helpers::{create_wallet_opening, INITIAL_WALLET},
+        zk_gadgets::merkle::MerkleOpening,
         CommitProver,
     };
 
@@ -840,8 +808,10 @@ mod valid_wallet_update_tests {
         let witness = ValidWalletUpdateWitness {
             wallet1: initial_wallet.clone(),
             wallet2: new_wallet.clone(),
-            wallet1_opening: mock_opening,
-            wallet1_opening_indices: mock_opening_indices,
+            wallet1_opening: MerkleOpening {
+                elems: mock_opening,
+                indices: mock_opening_indices,
+            },
             internal_transfer: (Scalar::zero(), Scalar::zero()),
         };
 
@@ -898,8 +868,10 @@ mod valid_wallet_update_tests {
         let witness = ValidWalletUpdateWitness {
             wallet1: initial_wallet.clone(),
             wallet2: new_wallet.clone(),
-            wallet1_opening: mock_opening,
-            wallet1_opening_indices: mock_opening_indices,
+            wallet1_opening: MerkleOpening {
+                elems: mock_opening,
+                indices: mock_opening_indices,
+            },
             internal_transfer: (Scalar::zero(), Scalar::zero()),
         };
 
@@ -953,8 +925,10 @@ mod valid_wallet_update_tests {
         let witness = ValidWalletUpdateWitness {
             wallet1: initial_wallet.clone(),
             wallet2: new_wallet.clone(),
-            wallet1_opening: mock_opening,
-            wallet1_opening_indices: mock_opening_indices,
+            wallet1_opening: MerkleOpening {
+                elems: mock_opening,
+                indices: mock_opening_indices,
+            },
             internal_transfer: (Scalar::zero(), Scalar::zero()),
         };
 
@@ -1013,8 +987,10 @@ mod valid_wallet_update_tests {
         let witness = ValidWalletUpdateWitness {
             wallet1: initial_wallet.clone(),
             wallet2: new_wallet.clone(),
-            wallet1_opening: mock_opening,
-            wallet1_opening_indices: mock_opening_indices,
+            wallet1_opening: MerkleOpening {
+                elems: mock_opening,
+                indices: mock_opening_indices,
+            },
             internal_transfer: (Scalar::zero(), Scalar::zero()),
         };
 
@@ -1070,8 +1046,10 @@ mod valid_wallet_update_tests {
         let witness = ValidWalletUpdateWitness {
             wallet1: initial_wallet.clone(),
             wallet2: new_wallet.clone(),
-            wallet1_opening: mock_opening,
-            wallet1_opening_indices: mock_opening_indices,
+            wallet1_opening: MerkleOpening {
+                elems: mock_opening,
+                indices: mock_opening_indices,
+            },
             internal_transfer: (Scalar::zero(), Scalar::zero()),
         };
 
@@ -1129,8 +1107,10 @@ mod valid_wallet_update_tests {
         let witness = ValidWalletUpdateWitness {
             wallet1: initial_wallet.clone(),
             wallet2: new_wallet.clone(),
-            wallet1_opening: mock_opening,
-            wallet1_opening_indices: mock_opening_indices,
+            wallet1_opening: MerkleOpening {
+                elems: mock_opening,
+                indices: mock_opening_indices,
+            },
             internal_transfer: (
                 Scalar::from(internal_transfer_mint),
                 Scalar::from(internal_transfer_volume),
@@ -1193,8 +1173,10 @@ mod valid_wallet_update_tests {
         let witness = ValidWalletUpdateWitness {
             wallet1: initial_wallet.clone(),
             wallet2: new_wallet.clone(),
-            wallet1_opening: mock_opening,
-            wallet1_opening_indices: mock_opening_indices,
+            wallet1_opening: MerkleOpening {
+                elems: mock_opening,
+                indices: mock_opening_indices,
+            },
             internal_transfer: (
                 Scalar::from(internal_transfer_mint),
                 Scalar::from(internal_transfer_volume),
@@ -1257,8 +1239,10 @@ mod valid_wallet_update_tests {
         let witness = ValidWalletUpdateWitness {
             wallet1: initial_wallet.clone(),
             wallet2: new_wallet.clone(),
-            wallet1_opening: mock_opening,
-            wallet1_opening_indices: mock_opening_indices,
+            wallet1_opening: MerkleOpening {
+                elems: mock_opening,
+                indices: mock_opening_indices,
+            },
             internal_transfer: (Scalar::zero(), Scalar::zero()),
         };
 
@@ -1322,8 +1306,10 @@ mod valid_wallet_update_tests {
         let witness = ValidWalletUpdateWitness {
             wallet1: initial_wallet.clone(),
             wallet2: new_wallet.clone(),
-            wallet1_opening: mock_opening,
-            wallet1_opening_indices: mock_opening_indices,
+            wallet1_opening: MerkleOpening {
+                elems: mock_opening,
+                indices: mock_opening_indices,
+            },
             internal_transfer: (Scalar::zero(), Scalar::zero()),
         };
 
@@ -1388,8 +1374,10 @@ mod valid_wallet_update_tests {
         let witness = ValidWalletUpdateWitness {
             wallet1: initial_wallet.clone(),
             wallet2: new_wallet.clone(),
-            wallet1_opening: mock_opening,
-            wallet1_opening_indices: mock_opening_indices,
+            wallet1_opening: MerkleOpening {
+                elems: mock_opening,
+                indices: mock_opening_indices,
+            },
             internal_transfer: (Scalar::zero(), Scalar::zero()),
         };
 
@@ -1454,8 +1442,10 @@ mod valid_wallet_update_tests {
         let witness = ValidWalletUpdateWitness {
             wallet1: initial_wallet.clone(),
             wallet2: new_wallet.clone(),
-            wallet1_opening: mock_opening,
-            wallet1_opening_indices: mock_opening_indices,
+            wallet1_opening: MerkleOpening {
+                elems: mock_opening,
+                indices: mock_opening_indices,
+            },
             internal_transfer: (Scalar::zero(), Scalar::zero()),
         };
 
@@ -1515,8 +1505,10 @@ mod valid_wallet_update_tests {
         let witness = ValidWalletUpdateWitness {
             wallet1: initial_wallet.clone(),
             wallet2: new_wallet.clone(),
-            wallet1_opening: mock_opening,
-            wallet1_opening_indices: mock_opening_indices,
+            wallet1_opening: MerkleOpening {
+                elems: mock_opening,
+                indices: mock_opening_indices,
+            },
             internal_transfer: (Scalar::zero(), Scalar::zero()),
         };
 
@@ -1573,8 +1565,10 @@ mod valid_wallet_update_tests {
         let witness = ValidWalletUpdateWitness {
             wallet1: initial_wallet.clone(),
             wallet2: new_wallet.clone(),
-            wallet1_opening: mock_opening,
-            wallet1_opening_indices: mock_opening_indices,
+            wallet1_opening: MerkleOpening {
+                elems: mock_opening,
+                indices: mock_opening_indices,
+            },
             internal_transfer: (
                 Scalar::from(internal_transfer_mint),
                 Scalar::from(internal_transfer_volume),
@@ -1635,8 +1629,10 @@ mod valid_wallet_update_tests {
         let witness = ValidWalletUpdateWitness {
             wallet1: initial_wallet.clone(),
             wallet2: new_wallet.clone(),
-            wallet1_opening: mock_opening,
-            wallet1_opening_indices: mock_opening_indices,
+            wallet1_opening: MerkleOpening {
+                elems: mock_opening,
+                indices: mock_opening_indices,
+            },
             internal_transfer: (Scalar::zero(), Scalar::zero()),
         };
 
@@ -1700,8 +1696,10 @@ mod valid_wallet_update_tests {
         let witness = ValidWalletUpdateWitness {
             wallet1: initial_wallet.clone(),
             wallet2: new_wallet.clone(),
-            wallet1_opening: mock_opening,
-            wallet1_opening_indices: mock_opening_indices,
+            wallet1_opening: MerkleOpening {
+                elems: mock_opening,
+                indices: mock_opening_indices,
+            },
             internal_transfer: (Scalar::zero(), Scalar::zero()),
         };
 

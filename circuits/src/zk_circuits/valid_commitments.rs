@@ -8,7 +8,6 @@
 //! for a formal specification
 
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
-use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{
         ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
@@ -31,7 +30,9 @@ use crate::{
     zk_gadgets::{
         commitments::{NullifierGadget, WalletCommitGadget},
         comparators::{EqVecGadget, GreaterThanEqGadget},
-        merkle::PoseidonMerkleHashGadget,
+        merkle::{
+            MerkleOpening, MerkleOpeningCommitment, MerkleOpeningVar, PoseidonMerkleHashGadget,
+        },
         poseidon::PoseidonHashGadget,
         select::CondSelectGadget,
     },
@@ -65,7 +66,6 @@ where
         PoseidonMerkleHashGadget::compute_and_constrain_root_prehashed(
             wallet_commitment.clone(),
             witness.wallet_opening,
-            witness.wallet_opening_indices,
             merkle_root.into(),
             cs,
         )?;
@@ -194,9 +194,7 @@ pub struct ValidCommitmentsWitness<
     /// The selected fee to commit to
     pub fee: Fee,
     /// The merkle proof that the wallet is valid within the state tree
-    pub wallet_opening: Vec<Scalar>,
-    /// The indices of the merkle proof that the wallet is valid
-    pub wallet_opening_indices: Vec<Scalar>,
+    pub wallet_opening: MerkleOpening,
     /// The Poseidon hash of the wallet's randomness, used as the blinder
     /// on any notes generated for a match
     pub randomness_hash: Scalar,
@@ -225,9 +223,7 @@ pub struct ValidCommitmentsWitnessVar<
     /// The selected fee to commit to
     pub fee: FeeVar,
     /// The merkle proof that the wallet is valid within the state tree
-    pub wallet_opening: Vec<Variable>,
-    /// The indices of the merkle proof that the wallet is valid
-    pub wallet_opening_indices: Vec<Variable>,
+    pub wallet_opening: MerkleOpeningVar,
     /// The Poseidon hash of the wallet's randomness, used as the blinder
     /// on any notes generated for a match
     pub randomness_hash: Variable,
@@ -256,9 +252,7 @@ pub struct ValidCommitmentsWitnessCommitment<
     /// The selected fee to commit to
     pub fee: CommittedFee,
     /// The merkle proof that the wallet is valid within the state tree
-    pub wallet_opening: Vec<CompressedRistretto>,
-    /// The indices of the merkle proof that the wallet is valid
-    pub wallet_opening_indices: Vec<CompressedRistretto>,
+    pub wallet_opening: MerkleOpeningCommitment,
     /// The Poseidon hash of the wallet's randomness, used as the blinder
     /// on any notes generated for a match
     pub randomness_hash: CompressedRistretto,
@@ -288,21 +282,10 @@ where
         let (fee_balance_var, fee_balance_comm) =
             self.fee_balance.commit_prover(rng, prover).unwrap();
         let (fee_var, fee_commit) = self.fee.commit_prover(rng, prover).unwrap();
+        let (opening_var, opening_commit) = self.wallet_opening.commit_prover(rng, prover).unwrap();
         let (randomness_hash_comm, randomness_hash_var) =
             prover.commit(self.randomness_hash, Scalar::random(rng));
         let (sk_match_comm, sk_match_var) = prover.commit(self.sk_match, Scalar::random(rng));
-
-        // Commit to the Merkle proof
-        let (merkle_opening_comms, merkle_opening_vars): (Vec<CompressedRistretto>, Vec<Variable>) =
-            self.wallet_opening
-                .iter()
-                .map(|opening_elem| prover.commit(*opening_elem, Scalar::random(rng)))
-                .unzip();
-        let (merkle_index_comms, merkle_index_vars): (Vec<CompressedRistretto>, Vec<Variable>) =
-            self.wallet_opening_indices
-                .iter()
-                .map(|opening_index| prover.commit(*opening_index, Scalar::random(rng)))
-                .unzip();
 
         Ok((
             ValidCommitmentsWitnessVar {
@@ -311,8 +294,7 @@ where
                 balance: balance_var,
                 fee: fee_var,
                 fee_balance: fee_balance_var,
-                wallet_opening: merkle_opening_vars,
-                wallet_opening_indices: merkle_index_vars,
+                wallet_opening: opening_var,
                 randomness_hash: randomness_hash_var,
                 sk_match: sk_match_var,
             },
@@ -322,8 +304,7 @@ where
                 balance: balance_commit,
                 fee: fee_commit,
                 fee_balance: fee_balance_comm,
-                wallet_opening: merkle_opening_comms,
-                wallet_opening_indices: merkle_index_comms,
+                wallet_opening: opening_commit,
                 randomness_hash: randomness_hash_comm,
                 sk_match: sk_match_comm,
             },
@@ -345,19 +326,9 @@ where
         let balance_var = self.balance.commit_verifier(verifier).unwrap();
         let fee_balance_var = self.fee_balance.commit_verifier(verifier).unwrap();
         let fee_var = self.fee.commit_verifier(verifier).unwrap();
+        let opening_var = self.wallet_opening.commit_verifier(verifier).unwrap();
         let randomness_var = verifier.commit(self.randomness_hash);
         let sk_match_var = verifier.commit(self.sk_match);
-
-        let merkle_opening_vars = self
-            .wallet_opening
-            .iter()
-            .map(|opening_val| verifier.commit(*opening_val))
-            .collect_vec();
-        let merkle_index_vars = self
-            .wallet_opening_indices
-            .iter()
-            .map(|opening_indices| verifier.commit(*opening_indices))
-            .collect_vec();
 
         Ok(ValidCommitmentsWitnessVar {
             wallet: wallet_var,
@@ -365,8 +336,7 @@ where
             balance: balance_var,
             fee_balance: fee_balance_var,
             fee: fee_var,
-            wallet_opening: merkle_opening_vars,
-            wallet_opening_indices: merkle_index_vars,
+            wallet_opening: opening_var,
             randomness_hash: randomness_var,
             sk_match: sk_match_var,
         })
@@ -463,7 +433,7 @@ mod valid_commitments_test {
             compute_poseidon_hash, create_wallet_opening, SizedWallet, INITIAL_WALLET,
             MAX_BALANCES, MAX_FEES, MAX_ORDERS, PRIVATE_KEYS,
         },
-        zk_gadgets::fixed_point::FixedPoint,
+        zk_gadgets::{fixed_point::FixedPoint, merkle::MerkleOpening},
         CommitProver,
     };
 
@@ -523,8 +493,10 @@ mod valid_commitments_test {
             balance,
             fee_balance,
             fee,
-            wallet_opening: opening,
-            wallet_opening_indices: opening_indices,
+            wallet_opening: MerkleOpening {
+                elems: opening,
+                indices: opening_indices,
+            },
             randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
             sk_match: PRIVATE_KEYS[1],
         };
@@ -563,8 +535,10 @@ mod valid_commitments_test {
             balance,
             fee_balance,
             fee,
-            wallet_opening: opening,
-            wallet_opening_indices: opening_indices,
+            wallet_opening: MerkleOpening {
+                elems: opening,
+                indices: opening_indices,
+            },
             randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
             sk_match: PRIVATE_KEYS[1],
         };
@@ -602,8 +576,10 @@ mod valid_commitments_test {
             balance,
             fee_balance,
             fee,
-            wallet_opening: opening,
-            wallet_opening_indices: opening_indices,
+            wallet_opening: MerkleOpening {
+                elems: opening,
+                indices: opening_indices,
+            },
             randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
             sk_match: PRIVATE_KEYS[1],
         };
@@ -644,8 +620,10 @@ mod valid_commitments_test {
             balance,
             fee_balance,
             fee,
-            wallet_opening: opening,
-            wallet_opening_indices: opening_indices,
+            wallet_opening: MerkleOpening {
+                elems: opening,
+                indices: opening_indices,
+            },
             randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
             sk_match: PRIVATE_KEYS[1],
         };
@@ -688,8 +666,10 @@ mod valid_commitments_test {
             balance,
             fee_balance,
             fee,
-            wallet_opening: opening,
-            wallet_opening_indices: opening_indices,
+            wallet_opening: MerkleOpening {
+                elems: opening,
+                indices: opening_indices,
+            },
             randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
             sk_match: PRIVATE_KEYS[1],
         };
@@ -728,8 +708,10 @@ mod valid_commitments_test {
             balance,
             fee_balance,
             fee,
-            wallet_opening: opening,
-            wallet_opening_indices: opening_indices,
+            wallet_opening: MerkleOpening {
+                elems: opening,
+                indices: opening_indices,
+            },
             randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
             sk_match: PRIVATE_KEYS[1],
         };
@@ -766,8 +748,10 @@ mod valid_commitments_test {
             balance,
             fee_balance,
             fee,
-            wallet_opening: opening,
-            wallet_opening_indices: opening_indices,
+            wallet_opening: MerkleOpening {
+                elems: opening,
+                indices: opening_indices,
+            },
             randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
             sk_match: PRIVATE_KEYS[1],
         };
@@ -804,8 +788,10 @@ mod valid_commitments_test {
             balance,
             fee_balance,
             fee,
-            wallet_opening: opening,
-            wallet_opening_indices: opening_indices,
+            wallet_opening: MerkleOpening {
+                elems: opening,
+                indices: opening_indices,
+            },
             randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
             sk_match: PRIVATE_KEYS[1],
         };
@@ -844,8 +830,10 @@ mod valid_commitments_test {
             balance,
             fee_balance,
             fee,
-            wallet_opening: opening,
-            wallet_opening_indices: opening_indices,
+            wallet_opening: MerkleOpening {
+                elems: opening,
+                indices: opening_indices,
+            },
             randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
             sk_match: PRIVATE_KEYS[1],
         };

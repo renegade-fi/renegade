@@ -35,7 +35,9 @@ use crate::{
         comparators::{EqGadget, EqVecGadget, EqZeroGadget, NotEqualGadget},
         elgamal::{ElGamalCiphertext, ElGamalCiphertextVar},
         gates::OrGate,
-        merkle::PoseidonMerkleHashGadget,
+        merkle::{
+            MerkleOpening, MerkleOpeningCommitment, MerkleOpeningVar, PoseidonMerkleHashGadget,
+        },
         poseidon::PoseidonHashGadget,
         select::CondSelectGadget,
     },
@@ -104,7 +106,6 @@ where
         PoseidonMerkleHashGadget::compute_and_constrain_root_prehashed(
             pre_wallet_commit_res.clone(),
             witness.pre_wallet_opening.clone(),
-            witness.pre_wallet_opening_indices.clone(),
             statement.merkle_root.into(),
             cs,
         )?;
@@ -120,7 +121,6 @@ where
         PoseidonMerkleHashGadget::compute_and_constrain_root_prehashed(
             note_commitment_res.clone(),
             witness.note_opening.clone(),
-            witness.note_opening_indices.clone(),
             statement.merkle_root.into(),
             cs,
         )?;
@@ -327,9 +327,7 @@ pub struct ValidSettleWitness<
     /// The wallet before the note is applied to it
     pub pre_wallet: Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The opening of the original wallet to the state root
-    pub pre_wallet_opening: Vec<Scalar>,
-    /// The opening indices of the original wallet to the state root
-    pub pre_wallet_opening_indices: Vec<Scalar>,
+    pub pre_wallet_opening: MerkleOpening,
     /// The wallet after the note is applied to it
     pub post_wallet: Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The note applied to the pre-wallet
@@ -337,9 +335,7 @@ pub struct ValidSettleWitness<
     /// The note commitment, should be entered into the state tree as a leaf
     pub note_commitment: Scalar,
     /// The opening from the note commitment to the state root
-    pub note_opening: Vec<Scalar>,
-    /// The indices of the merkle inclusion proof
-    pub note_opening_indices: Vec<Scalar>,
+    pub note_opening: MerkleOpening,
     /// The secret settle key of the wallet
     pub sk_settle: Scalar,
 }
@@ -356,9 +352,7 @@ pub struct ValidSettleWitnessVar<
     /// The wallet before the note is applied to it
     pub pre_wallet: WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The opening of the original wallet to the state root
-    pub pre_wallet_opening: Vec<Variable>,
-    /// The opening indices of the original wallet to the state root
-    pub pre_wallet_opening_indices: Vec<Variable>,
+    pub pre_wallet_opening: MerkleOpeningVar,
     /// The wallet after the note is applied to it
     pub post_wallet: WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The note applied to the pre-wallet
@@ -366,9 +360,7 @@ pub struct ValidSettleWitnessVar<
     /// The note commitment, should be entered into the state tree as a leaf
     pub note_commitment: Variable,
     /// The opening from the note commitment to the state root
-    pub note_opening: Vec<Variable>,
-    /// The indices of the merkle inclusion proof
-    pub note_opening_indices: Vec<Variable>,
+    pub note_opening: MerkleOpeningVar,
     /// The secret settle key of the wallet
     pub sk_settle: Variable,
 }
@@ -385,9 +377,7 @@ pub struct ValidSettleWitnessCommitment<
     /// The wallet before the note is applied to it
     pub pre_wallet: CommittedWallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The opening of the original wallet to the state root
-    pub pre_wallet_opening: Vec<CompressedRistretto>,
-    /// The opening indices of the original wallet to the state root
-    pub pre_wallet_opening_indices: Vec<CompressedRistretto>,
+    pub pre_wallet_opening: MerkleOpeningCommitment,
     /// The wallet after the note is applied to it
     pub post_wallet: CommittedWallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The note applied to the pre-wallet
@@ -395,9 +385,7 @@ pub struct ValidSettleWitnessCommitment<
     /// The note commitment, should be entered into the state tree as a leaf
     pub note_commitment: CompressedRistretto,
     /// The opening from the note commitment to the state root
-    pub note_opening: Vec<CompressedRistretto>,
-    /// The indices of the merkle inclusion proof
-    pub note_opening_indices: Vec<CompressedRistretto>,
+    pub note_opening: MerkleOpeningCommitment,
     /// The secret settle key of the wallet
     pub sk_settle: CompressedRistretto,
 }
@@ -418,23 +406,8 @@ where
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
         // Commit to the wallets
         let (pre_wallet_var, pre_wallet_comm) = self.pre_wallet.commit_prover(rng, prover).unwrap();
-        let (pre_wallet_opening_comms, pre_wallet_opening_vars): (
-            Vec<CompressedRistretto>,
-            Vec<Variable>,
-        ) = self
-            .pre_wallet_opening
-            .iter()
-            .map(|opening| prover.commit(*opening, Scalar::random(rng)))
-            .unzip();
-        let (pre_wallet_index_comms, pre_wallet_index_vars): (
-            Vec<CompressedRistretto>,
-            Vec<Variable>,
-        ) = self
-            .pre_wallet_opening_indices
-            .iter()
-            .map(|index| prover.commit(*index, Scalar::random(rng)))
-            .unzip();
-
+        let (pre_wallet_opening_var, pre_wallet_opening_comm) =
+            self.pre_wallet_opening.commit_prover(rng, prover).unwrap();
         let (post_wallet_var, post_wallet_comm) =
             self.post_wallet.commit_prover(rng, prover).unwrap();
 
@@ -442,39 +415,27 @@ where
         let (note_var, note_comm) = self.note.commit_prover(rng, prover).unwrap();
         let (note_commitment_comm, note_commitment_var) =
             prover.commit(self.note_commitment, Scalar::random(rng));
-        let (note_opening_comms, note_opening_vars): (Vec<CompressedRistretto>, Vec<Variable>) =
-            self.note_opening
-                .iter()
-                .map(|opening_elem| prover.commit(*opening_elem, Scalar::random(rng)))
-                .unzip();
-        let (note_indices_comms, note_indices_vars): (Vec<CompressedRistretto>, Vec<Variable>) =
-            self.note_opening_indices
-                .iter()
-                .map(|index| prover.commit(*index, Scalar::random(rng)))
-                .unzip();
+        let (note_opening_var, note_opening_comm) =
+            self.note_opening.commit_prover(rng, prover).unwrap();
         let (sk_settle_comm, sk_settle_var) = prover.commit(self.sk_settle, Scalar::random(rng));
 
         Ok((
             ValidSettleWitnessVar {
                 pre_wallet: pre_wallet_var,
-                pre_wallet_opening: pre_wallet_opening_vars,
-                pre_wallet_opening_indices: pre_wallet_index_vars,
+                pre_wallet_opening: pre_wallet_opening_var,
                 post_wallet: post_wallet_var,
                 note: note_var,
                 note_commitment: note_commitment_var,
-                note_opening: note_opening_vars,
-                note_opening_indices: note_indices_vars,
+                note_opening: note_opening_var,
                 sk_settle: sk_settle_var,
             },
             ValidSettleWitnessCommitment {
                 pre_wallet: pre_wallet_comm,
-                pre_wallet_opening: pre_wallet_opening_comms,
-                pre_wallet_opening_indices: pre_wallet_index_comms,
+                pre_wallet_opening: pre_wallet_opening_comm,
                 post_wallet: post_wallet_comm,
                 note: note_comm,
                 note_commitment: note_commitment_comm,
-                note_opening: note_opening_comms,
-                note_opening_indices: note_indices_comms,
+                note_opening: note_opening_comm,
                 sk_settle: sk_settle_comm,
             },
         ))
@@ -491,41 +452,20 @@ where
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
         let pre_wallet_var = self.pre_wallet.commit_verifier(verifier).unwrap();
-        let pre_wallet_opening_vars = self
-            .pre_wallet_opening
-            .iter()
-            .map(|opening| verifier.commit(*opening))
-            .collect_vec();
-        let pre_wallet_index_vars = self
-            .pre_wallet_opening_indices
-            .iter()
-            .map(|index| verifier.commit(*index))
-            .collect_vec();
-
+        let pre_wallet_opening_var = self.pre_wallet_opening.commit_verifier(verifier).unwrap();
         let post_wallet_var = self.post_wallet.commit_verifier(verifier).unwrap();
         let note_var = self.note.commit_verifier(verifier).unwrap();
         let note_commitment_var = verifier.commit(self.note_commitment);
-        let note_opening_vars = self
-            .note_opening
-            .iter()
-            .map(|opening| verifier.commit(*opening))
-            .collect_vec();
-        let note_indices_vars = self
-            .note_opening_indices
-            .iter()
-            .map(|index| verifier.commit(*index))
-            .collect_vec();
+        let note_opening_var = self.note_opening.commit_verifier(verifier).unwrap();
         let sk_settle_var = verifier.commit(self.sk_settle);
 
         Ok(ValidSettleWitnessVar {
             pre_wallet: pre_wallet_var,
-            pre_wallet_opening: pre_wallet_opening_vars,
-            pre_wallet_opening_indices: pre_wallet_index_vars,
+            pre_wallet_opening: pre_wallet_opening_var,
             post_wallet: post_wallet_var,
             note: note_var,
             note_commitment: note_commitment_var,
-            note_opening: note_opening_vars,
-            note_opening_indices: note_indices_vars,
+            note_opening: note_opening_var,
             sk_settle: sk_settle_var,
         })
     }
@@ -743,7 +683,7 @@ mod valid_settle_tests {
             create_multi_opening, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
             PRIVATE_KEYS,
         },
-        zk_gadgets::elgamal::ElGamalCiphertext,
+        zk_gadgets::{elgamal::ElGamalCiphertext, merkle::MerkleOpening},
         CommitProver,
     };
 
@@ -873,13 +813,17 @@ mod valid_settle_tests {
         (
             ValidSettleWitness {
                 pre_wallet,
-                pre_wallet_opening: openings[0].to_owned(),
-                pre_wallet_opening_indices: openings_indices[0].to_owned(),
+                pre_wallet_opening: MerkleOpening {
+                    elems: openings[0].to_owned(),
+                    indices: openings_indices[0].to_owned(),
+                },
                 post_wallet,
                 note: note.clone(),
                 note_commitment: prime_field_to_scalar(&note_commit),
-                note_opening: openings[1].to_owned(),
-                note_opening_indices: openings_indices[1].to_owned(),
+                note_opening: MerkleOpening {
+                    elems: openings[1].to_owned(),
+                    indices: openings_indices[1].to_owned(),
+                },
                 sk_settle: PRIVATE_KEYS[2],
             },
             ValidSettleStatement {
