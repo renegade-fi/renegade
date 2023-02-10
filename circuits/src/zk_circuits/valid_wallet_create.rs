@@ -116,7 +116,7 @@ where
 }
 
 /// The parameterization for the VALID WALLET CREATE statement
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct ValidWalletCreateStatement {
     /// The expected commitment of the newly created wallet
     pub wallet_commitment: Scalar,

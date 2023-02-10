@@ -441,13 +441,25 @@ pub(crate) mod test_helpers {
 pub mod native_helpers {
     use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use crypto::{
-        fields::{biguint_to_prime_field, scalar_to_prime_field, DalekRistrettoField},
+        fields::{
+            biguint_to_prime_field, prime_field_to_scalar, scalar_to_prime_field,
+            DalekRistrettoField,
+        },
         hash::default_poseidon_params,
     };
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
 
     use crate::types::{note::Note, wallet::Wallet};
+
+    /// Compute the hash of the randomness of a given wallet
+    pub fn compute_poseidon_hash(values: &[Scalar]) -> Scalar {
+        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
+        hasher.absorb(&values.iter().map(scalar_to_prime_field).collect_vec());
+
+        let out: DalekRistrettoField = hasher.squeeze_field_elements(1 /* num_elements */)[0];
+        prime_field_to_scalar(&out)
+    }
 
     /// Compute the commitment to a wallet
     pub fn compute_wallet_commitment<
