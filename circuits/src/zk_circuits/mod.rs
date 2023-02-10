@@ -21,7 +21,7 @@ mod test_helpers {
     use rand_core::{CryptoRng, RngCore};
 
     use crate::{
-        native_helpers::compute_wallet_commitment,
+        native_helpers::{compute_poseidon_hash, compute_wallet_commitment},
         types::{
             balance::Balance,
             fee::Fee,
@@ -104,15 +104,6 @@ mod test_helpers {
     // -----------
     // | Helpers |
     // -----------
-
-    /// Compute the hash of the randomness of a given wallet
-    pub(crate) fn compute_poseidon_hash(values: &[Scalar]) -> Scalar {
-        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
-        hasher.absorb(&values.iter().map(scalar_to_prime_field).collect_vec());
-
-        let out: DalekRistrettoField = hasher.squeeze_field_elements(1 /* num_elements */)[0];
-        prime_field_to_scalar(&out)
-    }
 
     /// Given a wallet, create a dummy opening to a dummy root
     ///

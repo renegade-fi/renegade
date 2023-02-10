@@ -5,17 +5,18 @@
 //! of the types defined here
 
 use circuits::{
-    types::{fee::Fee, keychain::KeyChain},
+    types::{balance::Balance, fee::Fee, keychain::KeyChain, order::Order},
     zk_circuits::{
         valid_commitments::{ValidCommitmentsStatement, ValidCommitmentsWitnessCommitment},
         valid_wallet_create::{ValidWalletCreateCommitment, ValidWalletCreateStatement},
     },
+    zk_gadgets::merkle::MerkleOpening,
 };
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::r1cs::R1CSProof;
 use tokio::sync::oneshot::Sender;
 
-use crate::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use crate::{SizedWallet, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 
 // ----------------------
 // | Proof Return Types |
@@ -83,6 +84,7 @@ pub struct ProofManagerJob {
 
 /// The job type and parameterization
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum ProofJob {
     /// A request has to create a new wallet
     /// The proof generation module should generate a proof of
@@ -97,5 +99,23 @@ pub enum ProofJob {
     },
     /// A request to create a proof of `VALID COMMITMENTS` for an order, balance, fee
     /// tuple. This will be matched against in the handshake process
-    ValidCommitments {},
+    #[allow(unused)]
+    ValidCommitments {
+        /// The wallet from which the committed order balance and fee come from
+        wallet: SizedWallet,
+        /// The opening of the wallet commitment to the Merkle root of the contract
+        wallet_opening: MerkleOpening,
+        /// The order being committed to
+        order: Order,
+        /// The balance covering the order
+        balance: Balance,
+        /// The fee authorized to be paid on match
+        fee: Fee,
+        /// The balance used to cover the fee
+        fee_balance: Balance,
+        /// The secret match key, used to authorize the proof
+        sk_match: Scalar,
+        /// The merkle root to prove wallet inclusion into
+        merkle_root: Scalar,
+    },
 }

@@ -5,12 +5,18 @@
 use std::{convert::TryInto, sync::Arc, thread::JoinHandle};
 
 use circuits::{
-    native_helpers::compute_wallet_commitment,
+    native_helpers::{
+        compute_poseidon_hash, compute_wallet_commitment, compute_wallet_match_nullifier,
+    },
     singleprover_prove,
     types::{balance::Balance, fee::Fee, keychain::KeyChain, order::Order},
-    zk_circuits::valid_wallet_create::{
-        ValidWalletCreate, ValidWalletCreateStatement, ValidWalletCreateWitness,
+    zk_circuits::{
+        valid_commitments::{ValidCommitments, ValidCommitmentsStatement, ValidCommitmentsWitness},
+        valid_wallet_create::{
+            ValidWalletCreate, ValidWalletCreateStatement, ValidWalletCreateWitness,
+        },
     },
+    zk_gadgets::merkle::MerkleOpening,
     MAX_BALANCES, MAX_ORDERS,
 };
 use crossbeam::channel::Receiver;
@@ -28,7 +34,6 @@ use super::{
 // -------------
 // | Constants |
 // -------------
-
 /// Error message when sending a proof response fails
 const ERR_SENDING_RESPONSE: &str = "error sending proof response, channel closed";
 /// The number of threads to allocate towards the proof generation worker pool
@@ -87,9 +92,27 @@ impl ProofManager {
                     .send(ProofBundle::ValidWalletCreate(proof_bundle))
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))?
             }
-            ProofJob::ValidCommitments {} => {
+            ProofJob::ValidCommitments {
+                wallet,
+                wallet_opening,
+                order,
+                balance,
+                fee,
+                fee_balance,
+                sk_match,
+                merkle_root,
+            } => {
                 // Prove `VALID COMMITMENTS`
-                let proof_bundle = Self::prove_valid_commitments()?;
+                let proof_bundle = Self::prove_valid_commitments(
+                    wallet,
+                    wallet_opening,
+                    order,
+                    balance,
+                    fee,
+                    fee_balance,
+                    sk_match,
+                    merkle_root,
+                )?;
                 job.response_channel
                     .send(ProofBundle::ValidCommitments(proof_bundle))
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))?
@@ -129,15 +152,51 @@ impl ProofManager {
 
         let (commitment, proof) = singleprover_prove::<
             ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        >(witness, statement.clone())
+        >(witness, statement)
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
         Ok(ValidWalletCreateBundle(commitment, statement, proof))
     }
 
     /// Create a proof of `VALID COMMITMENTS`
-    fn prove_valid_commitments() -> Result<ValidCommitmentsBundle, ProofManagerError> {
-        println!("got to prove_valid_commitments");
-        Err(ProofManagerError::Prover("unimplemented".to_string()))
+    #[allow(clippy::too_many_arguments)]
+    fn prove_valid_commitments(
+        wallet: SizedWallet,
+        wallet_opening: MerkleOpening,
+        order: Order,
+        balance: Balance,
+        fee: Fee,
+        fee_balance: Balance,
+        sk_match: Scalar,
+        merkle_root: Scalar,
+    ) -> Result<ValidCommitmentsBundle, ProofManagerError> {
+        // Compute the hash of the randomness
+        let randomness_hash = compute_poseidon_hash(&[wallet.randomness]);
+        let wallet_nullifier =
+            compute_wallet_match_nullifier(&wallet, compute_wallet_commitment(&wallet));
+
+        // Build a witness and statement
+        let witness = ValidCommitmentsWitness {
+            wallet,
+            order,
+            balance,
+            fee,
+            fee_balance,
+            wallet_opening,
+            randomness_hash,
+            sk_match,
+        };
+        let statement = ValidCommitmentsStatement {
+            nullifier: prime_field_to_scalar(&wallet_nullifier),
+            merkle_root,
+        };
+
+        // Prove the statement `VALID COMMITMENTS`
+        let (witness_comm, proof) = singleprover_prove::<
+            ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        >(witness, statement)
+        .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+
+        Ok(ValidCommitmentsBundle(witness_comm, statement, proof))
     }
 }

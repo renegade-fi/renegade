@@ -14,7 +14,6 @@ use mpc_bulletproof::{
 use rand_core::OsRng;
 use std::ops::Neg;
 
-use crate::MultiProverCircuit;
 use crate::{
     errors::{ProverError, VerifierError},
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
