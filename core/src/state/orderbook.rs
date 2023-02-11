@@ -166,6 +166,16 @@ impl NetworkOrderBook {
     // | Getters |
     // -----------
 
+    /// Returns whether or not the local node holds a proof of `VALID COMMITMENTS`
+    /// for the given order
+    pub fn has_validity_proof(&self, order_id: &OrderIdentifier) -> bool {
+        if let Some(order_info) = self.read_order(order_id) {
+            return order_info.valid_commit_proof.is_some();
+        }
+
+        false
+    }
+
     // -----------
     // | Setters |
     // -----------

@@ -33,11 +33,7 @@ use uuid::Uuid;
 
 use crate::{gossip::types::WrappedPeerId, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 
-use super::{
-    new_shared,
-    orderbook::{NetworkOrderBook, OrderIdentifier},
-    Shared,
-};
+use super::{new_shared, orderbook::OrderIdentifier, Shared};
 
 /// A type that attaches default size parameters to a circuit allocated wallet
 type SizedCircuitWallet = CircuitWallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;

@@ -558,7 +558,7 @@ impl HandshakeManager {
             .send(GossipOutbound::Pubsub {
                 topic: locked_cluster_id.get_management_topic(),
                 message: PubsubMessage::new_cluster_management_unsigned(
-                    locked_cluster_id.clone(),
+                    locked_cluster_id,
                     ClusterManagementMessage::CacheSync(state.local_order_id, state.peer_order_id),
                 ),
             })

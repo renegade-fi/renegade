@@ -126,6 +126,10 @@ pub enum GossipResponse {
 }
 
 /// Represents a pubsub message flooded through the network
+///
+/// Practically, enum variants listed at this scope should be published on
+/// a unique topic per variant; i.e. this is the granularity at which we
+/// specify a topic.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PubsubMessage {
     /// A message broadcast to indicate an even relevant to cluster management
