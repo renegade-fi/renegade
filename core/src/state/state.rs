@@ -7,6 +7,7 @@ use circuits::{
 };
 use crossbeam::channel::Sender;
 use curve25519_dalek::scalar::Scalar;
+use itertools::Itertools;
 use libp2p::{
     identity::{self, Keypair},
     Multiaddr,
@@ -67,18 +68,22 @@ pub struct RelayerState {
     /// The local libp2p keypair generated at startup
     pub local_keypair: Keypair,
     /// The cluster id of the local relayer
-    pub local_cluster_id: Shared<ClusterId>,
+    pub local_cluster_id: ClusterId,
     /// The listening address of the local relayer
+    ///
+    /// Despite being static after initialization, this value is
+    /// set by the network manager, so we maintain a cross-worker
+    /// reference
     pub local_addr: Shared<Multiaddr>,
     /// The list of wallets managed by the sending relayer
-    pub wallet_index: Shared<WalletIndex>,
+    wallet_index: Shared<WalletIndex>,
     /// The set of peers known to the sending relayer
-    pub peer_index: Shared<PeerIndex>,
+    peer_index: Shared<PeerIndex>,
     /// The order book and indexing structure for orders in the network
-    pub order_book: Shared<NetworkOrderBook>,
+    order_book: Shared<NetworkOrderBook>,
     /// A list of matched orders
     /// TODO: Remove this
-    pub matched_order_pairs: Shared<Vec<(OrderIdentifier, OrderIdentifier)>>,
+    matched_order_pairs: Shared<Vec<(OrderIdentifier, OrderIdentifier)>>,
     /// Priorities for scheduling handshakes with each peer
     pub handshake_priorities: Shared<HashMap<WrappedPeerId, NonZeroU32>>,
     /// Information about the local peer's cluster
@@ -139,10 +144,9 @@ impl RelayerState {
 
         Self {
             debug,
-            // Replaced by a correct value when network manager initializes
             local_peer_id,
             local_keypair,
-            local_cluster_id: new_shared(cluster_id.clone()),
+            local_cluster_id: cluster_id.clone(),
             local_addr: new_shared(Multiaddr::empty()),
             wallet_index: new_shared(wallet_index),
             matched_order_pairs: new_shared(vec![]),
@@ -270,7 +274,7 @@ impl RelayerState {
     pub fn get_local_peer_info(&self) -> PeerInfo {
         PeerInfo::new(
             self.local_peer_id(),
-            self.read_cluster_id().clone(),
+            self.local_cluster_id.clone(),
             self.read_local_addr().clone(),
         )
     }
@@ -293,13 +297,6 @@ impl RelayerState {
         self.local_peer_id
     }
 
-    /// Acquire a read lock on `cluster_id`
-    pub fn read_cluster_id(&self) -> RwLockReadGuard<ClusterId> {
-        self.local_cluster_id
-            .read()
-            .expect("cluster_id lock poisoned")
-    }
-
     // -----------
     // | Setters |
     // -----------
@@ -316,7 +313,6 @@ impl RelayerState {
         peer_ids: &[WrappedPeerId],
         peer_info: &HashMap<WrappedPeerId, PeerInfo>,
     ) {
-        let local_cluster_id = { self.read_cluster_id().clone() };
         let mut locked_peer_index = self.write_peer_index();
         let mut locked_handshake_priorities = self.write_handshake_priorities();
 
@@ -333,7 +329,7 @@ impl RelayerState {
             // Skip cluster peers (we don't need to handshake with them) and peers that already have assigned
             // priorities
             if let Entry::Vacant(e) = locked_handshake_priorities.entry(*peer)
-                && locked_peer_index.read_peer(peer).unwrap().get_cluster_id() != local_cluster_id {
+                && locked_peer_index.read_peer(peer).unwrap().get_cluster_id() != self.local_cluster_id {
                 e.insert(NonZeroU32::new(DEFAULT_HANDSHAKE_PRIORITY).unwrap());
             }
         }
@@ -348,7 +344,7 @@ impl RelayerState {
 
             for peer in peers.iter() {
                 if let Some(info) = locked_peer_info.remove_peer(peer) {
-                    if info.get_cluster_id() == locked_cluster_metadata.id {
+                    if info.get_cluster_id() == self.local_cluster_id {
                         locked_cluster_metadata.known_members.remove(peer);
                     }
                 }
@@ -365,6 +361,45 @@ impl RelayerState {
                 locked_handshake_priorities.remove(peer);
             }
         } // locked_handshake_priorities released
+    }
+
+    /// Add a peer to the list of peers in the local cluster
+    ///
+    /// It is assumed that the caller of this method has authenticated
+    /// cluster membership in some way; e.g. checking a signature on a
+    /// `ClusterJoin` message
+    pub fn add_cluster_peer(&self, peer_id: WrappedPeerId) {
+        let mut locked_metadata = self.write_cluster_metadata();
+        locked_metadata.add_member(peer_id)
+    }
+
+    /// Add wallets to the state as managed wallets
+    ///
+    /// This may happen at startup when a relayer advertises its presence to
+    /// cluster peers; or when a new wallet is created on a remote cluster peer
+    pub fn add_wallets(&self, wallets: Vec<Wallet>) {
+        let mut new_orders = Vec::new();
+
+        // Add all wallets to the index of locally managed wallets
+        {
+            let mut locked_wallet_index = self.write_wallet_index();
+            for wallet in wallets.into_iter() {
+                new_orders.append(&mut wallet.orders.keys().cloned().collect_vec());
+                locked_wallet_index.add_wallet(wallet);
+            }
+        } // locked_wallet_index released
+
+        // Add all new orders to the order book
+        let mut locked_order_book = self.write_order_book();
+        for order_id in new_orders.into_iter() {
+            locked_order_book.add_order(NetworkOrder::new(order_id, true /* local */));
+        }
+    }
+
+    /// Mark an order pair as matched, this is both for bookkeeping and for
+    /// order state updates that are available to the frontend
+    pub fn mark_order_pair_matched(&self, o1: OrderIdentifier, o2: OrderIdentifier) {
+        self.write_matched_order_pairs().push((o1, o2))
     }
 
     // -----------
@@ -389,7 +424,7 @@ impl RelayerState {
     }
 
     /// Acquire a write lock on `managed_wallets`
-    pub fn write_wallet_index(&self) -> RwLockWriteGuard<WalletIndex> {
+    fn write_wallet_index(&self) -> RwLockWriteGuard<WalletIndex> {
         self.wallet_index
             .write()
             .expect("managed_wallets lock poisoned")
@@ -401,7 +436,7 @@ impl RelayerState {
     }
 
     /// Acquire a write lock on `known_peers`
-    pub fn write_peer_index(&self) -> RwLockWriteGuard<PeerIndex> {
+    fn write_peer_index(&self) -> RwLockWriteGuard<PeerIndex> {
         self.peer_index.write().expect("known_peers lock poisoned")
     }
 
@@ -415,7 +450,7 @@ impl RelayerState {
     /// Acquire a write lock on `order_book`
     /// TODO: Remove this lint allowance
     #[allow(unused)]
-    pub fn write_order_book(&self) -> RwLockWriteGuard<NetworkOrderBook> {
+    fn write_order_book(&self) -> RwLockWriteGuard<NetworkOrderBook> {
         self.order_book.write().expect("order_book lock poisoned")
     }
 
@@ -429,7 +464,7 @@ impl RelayerState {
     }
 
     /// Acquire a write lock on `matched_order_pairs`
-    pub fn write_matched_order_pairs(
+    fn write_matched_order_pairs(
         &self,
     ) -> RwLockWriteGuard<Vec<(OrderIdentifier, OrderIdentifier)>> {
         self.matched_order_pairs
@@ -445,9 +480,7 @@ impl RelayerState {
     }
 
     /// Acquire a write lock on `handshake_priorities`
-    pub fn write_handshake_priorities(
-        &self,
-    ) -> RwLockWriteGuard<HashMap<WrappedPeerId, NonZeroU32>> {
+    fn write_handshake_priorities(&self) -> RwLockWriteGuard<HashMap<WrappedPeerId, NonZeroU32>> {
         self.handshake_priorities
             .write()
             .expect("handshake_priorities lock poisoned")
@@ -461,7 +494,7 @@ impl RelayerState {
     }
 
     /// Acquire a write lock on `cluster_metadata`
-    pub fn write_cluster_metadata(&self) -> RwLockWriteGuard<ClusterMetadata> {
+    fn write_cluster_metadata(&self) -> RwLockWriteGuard<ClusterMetadata> {
         self.cluster_metadata
             .write()
             .expect("cluster_metadata lock poisoned")
@@ -524,7 +557,7 @@ impl Display for RelayerState {
             "\t{}ClusterId:{} {:?}\n",
             color::Fg(color::LightGreen),
             color::Fg(color::Reset),
-            self.read_cluster_id()
+            self.local_cluster_id
         ))?;
 
         // Write wallet info to the format

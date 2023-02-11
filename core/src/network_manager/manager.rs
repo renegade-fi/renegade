@@ -99,20 +99,19 @@ impl NetworkManager {
     /// Setup global state after peer_id and address have been assigned
     pub(super) fn update_global_state_after_startup(&self) {
         // Add self to peer info index
-        self.config
-            .global_state
-            .write_peer_index()
-            .add_peer(PeerInfo::new(
+        self.config.global_state.add_single_peer(
+            self.local_peer_id,
+            PeerInfo::new(
                 self.local_peer_id,
                 self.cluster_id.clone(),
                 self.local_addr.clone(),
-            ));
+            ),
+        );
 
         // Add self to cluster metadata
         self.config
             .global_state
-            .write_cluster_metadata()
-            .add_member(self.local_peer_id);
+            .add_cluster_peer(self.local_peer_id);
     }
 
     /// Setup pubsub subscriptions for the network manager
@@ -378,7 +377,7 @@ impl NetworkManager {
                 // access to the private key
                 GossipRequest::ClusterAuth(auth_message) => {
                     // If the auth message is not for the local peer's cluster, ignore it
-                    let local_cluster_id = { global_state.read_cluster_id().clone() };
+                    let local_cluster_id = { global_state.local_cluster_id.clone() };
                     if auth_message.cluster_id != local_cluster_id {
                         return Err(NetworkManagerError::Authentication(
                             ERR_WRONG_CLUSTER.to_string(),
