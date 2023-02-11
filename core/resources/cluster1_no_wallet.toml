@@ -1,6 +1,7 @@
-port = 9000
+p2p-port = 8001
+http-port = 3001
+websocket-port = 4001
 version = 0
-debug = true
 
 # A base64 encoded dummy keypair
 cluster-public-key = "ksPP4AJGbB1bUj5acbZ8Ngzy7mCSM3xvE9FDwb5zH0c="

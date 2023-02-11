@@ -152,7 +152,7 @@ pub struct KeyChainVar {
 }
 
 /// Represents a commitment to a keychain that has been allocated in a single-prover constraint system
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct CommittedKeyChain {
     /// The public root key
     pub pk_root: CompressedRistretto,

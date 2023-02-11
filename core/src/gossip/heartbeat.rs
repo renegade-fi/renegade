@@ -13,7 +13,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::{
     api::{
         cluster_management::ClusterAuthRequest,
-        gossip::{GossipOutbound, GossipRequest},
+        gossip::{GossipOutbound, GossipRequest, ManagerControlDirective},
         heartbeat::HeartbeatMessage,
     },
     state::{
@@ -305,10 +305,12 @@ impl GossipProtocolExecutor {
     ) -> Result<(), GossipError> {
         for peer in peer_ids.iter() {
             network_channel
-                .send(GossipOutbound::NewAddr {
-                    peer_id: *peer,
-                    address: peer_info.get(peer).unwrap().get_addr(),
-                })
+                .send(GossipOutbound::ManagementMessage(
+                    ManagerControlDirective::NewAddr {
+                        peer_id: *peer,
+                        address: peer_info.get(peer).unwrap().get_addr(),
+                    },
+                ))
                 .map_err(|err| GossipError::SendMessage(err.to_string()))?;
         }
 

@@ -192,7 +192,7 @@ impl CommitProver for Order {
 }
 
 /// An order that has been committed to by a prover
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommittedOrder {
     /// The mint (ERC-20 contract address) of the quote token
     pub quote_mint: CompressedRistretto,

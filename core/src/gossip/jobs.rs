@@ -5,7 +5,7 @@ use libp2p::request_response::ResponseChannel;
 
 use crate::{
     api::{
-        cluster_management::{ClusterJoinMessage, ReplicateRequestBody},
+        cluster_management::{ClusterJoinMessage, ReplicateRequestBody, ValidityProofRequest},
         gossip::GossipResponse,
         heartbeat::{BootstrapRequest, HeartbeatMessage},
     },
@@ -59,4 +59,6 @@ pub enum ClusterManagementJob {
     ClusterJoinRequest(ClusterId, ClusterJoinMessage),
     /// Replicate a set of wallets forwarded from a peer
     ReplicateRequest(ReplicateRequestBody),
+    /// Forward any known proofs of order validity to the sending cluster peer
+    ShareValidityProofs(ValidityProofRequest),
 }

@@ -23,7 +23,10 @@ use uuid::Uuid;
 use crate::{
     api::{
         cluster_management::ClusterManagementMessage,
-        gossip::{ConnectionRole, GossipOutbound, GossipRequest, GossipResponse, PubsubMessage},
+        gossip::{
+            ConnectionRole, GossipOutbound, GossipRequest, GossipResponse, ManagerControlDirective,
+            PubsubMessage,
+        },
         handshake::HandshakeMessage,
     },
     gossip::types::WrappedPeerId,
@@ -378,13 +381,15 @@ impl HandshakeManager {
                     // of listener in the connection setup
                     let local_port = pick_unused_port().expect("all ports taken");
                     network_channel
-                        .send(GossipOutbound::BrokerMpcNet {
-                            request_id,
-                            peer_id,
-                            peer_port: 0,
-                            local_port,
-                            local_role: ConnectionRole::Listener,
-                        })
+                        .send(GossipOutbound::ManagementMessage(
+                            ManagerControlDirective::BrokerMpcNet {
+                                request_id,
+                                peer_id,
+                                peer_port: 0,
+                                local_port,
+                                local_role: ConnectionRole::Listener,
+                            },
+                        ))
                         .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
                     // Send a pubsub message indicating intent to match on the given order pair
@@ -427,13 +432,15 @@ impl HandshakeManager {
                 // Choose a local port to execute the handshake on
                 let local_port = pick_unused_port().expect("all ports used");
                 network_channel
-                    .send(GossipOutbound::BrokerMpcNet {
-                        request_id,
-                        peer_id,
-                        peer_port: port,
-                        local_port,
-                        local_role: ConnectionRole::Dialer,
-                    })
+                    .send(GossipOutbound::ManagementMessage(
+                        ManagerControlDirective::BrokerMpcNet {
+                            request_id,
+                            peer_id,
+                            peer_port: port,
+                            local_port,
+                            local_role: ConnectionRole::Dialer,
+                        },
+                    ))
                     .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
                 // Send back the message as an ack

@@ -17,6 +17,7 @@ use mpc_bulletproof::{
     BulletproofGens,
 };
 use rand_core::OsRng;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::{ProverError, VerifierError},
@@ -233,7 +234,7 @@ pub struct ValidCommitmentsWitnessVar<
 }
 
 /// The witness type for VALID COMMITMENTS, committed to by a prover
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidCommitmentsWitnessCommitment<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
@@ -344,7 +345,7 @@ where
 }
 
 /// The statement type for VALID COMMITMENTS
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct ValidCommitmentsStatement {
     /// The wallet match nullifier of the wallet committed to
     pub nullifier: Scalar,
