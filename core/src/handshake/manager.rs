@@ -303,7 +303,7 @@ impl HandshakeManager {
                     );
 
                     // Send a pubsub message indicating intent to match on the given order pair
-                    let cluster_id = { global_state.read_cluster_id().clone() };
+                    let cluster_id = { global_state.local_cluster_id.clone() };
                     network_channel
                         .send(GossipOutbound::Pubsub {
                             topic: cluster_id.get_management_topic(),
@@ -388,7 +388,7 @@ impl HandshakeManager {
                         .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
                     // Send a pubsub message indicating intent to match on the given order pair
-                    let cluster_id = { global_state.read_cluster_id().clone() };
+                    let cluster_id = { global_state.local_cluster_id.clone() };
                     network_channel
                         .send(GossipOutbound::Pubsub {
                             topic: cluster_id.get_management_topic(),
@@ -545,9 +545,7 @@ impl HandshakeManager {
             .mark_completed(state.local_order_id, state.peer_order_id);
 
         // Write to global state for debugging
-        global_state
-            .write_matched_order_pairs()
-            .push((state.local_order_id, state.peer_order_id));
+        global_state.mark_order_pair_matched(state.local_order_id, state.peer_order_id);
 
         // Update the state of the handshake in the completed state
         handshake_state_index.completed(&request_id);
@@ -555,7 +553,7 @@ impl HandshakeManager {
         // Send a message to cluster peers indicating that the local peer has completed a match
         // Cluster peers should cache the matched order pair as completed and not initiate matches
         // on this pair going forward
-        let locked_cluster_id = global_state.read_cluster_id();
+        let locked_cluster_id = global_state.local_cluster_id;
         network_channel
             .send(GossipOutbound::Pubsub {
                 topic: locked_cluster_id.get_management_topic(),

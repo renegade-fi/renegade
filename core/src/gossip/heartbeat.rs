@@ -134,7 +134,7 @@ impl GossipProtocolExecutor {
         Self::add_new_peers(
             &peers_to_add,
             incoming_peer_info,
-            global_state.read_cluster_id().clone(),
+            global_state.local_cluster_id.clone(),
             global_state,
             peer_expiry_cache,
             network_channel,
@@ -178,7 +178,7 @@ impl GossipProtocolExecutor {
     ) -> Result<(), GossipError> {
         // Skip merge if the cluster message is not from a peer in the local node's cluster
         {
-            if incoming_cluster_info.id != *global_state.read_cluster_id() {
+            if incoming_cluster_info.id != global_state.local_cluster_id {
                 return Ok(());
             }
         } // cluster_id lock released
@@ -197,7 +197,7 @@ impl GossipProtocolExecutor {
 
         // Request cluster authentication for each new cluster peer
         let auth_request = GossipRequest::ClusterAuth(ClusterAuthRequest {
-            cluster_id: global_state.read_cluster_id().clone(),
+            cluster_id: global_state.local_cluster_id.clone(),
         });
 
         for peer in peers_to_add.into_iter() {
@@ -264,7 +264,7 @@ impl GossipProtocolExecutor {
         // We separate out cluster peers from non-cluster peers. Non-cluster peers may be added to the
         // state immediately. Cluster peers must prove their authentication in the cluster by signing
         // a cluster auth message
-        let my_cluster_id = { global_state.read_cluster_id().clone() };
+        let my_cluster_id = { global_state.local_cluster_id.clone() };
         let mut non_cluster_peers = Vec::new();
         let mut cluster_peers = Vec::new();
 
@@ -348,7 +348,7 @@ impl GossipProtocolExecutor {
     ) {
         let now = get_current_time_seconds();
         {
-            let my_cluster_id = global_state.read_cluster_id();
+            let my_cluster_id = global_state.local_cluster_id.clone();
             let locked_peer_index = global_state.read_peer_index();
             let peer_info = locked_peer_index.read_peer(&peer_id).unwrap();
 
@@ -465,7 +465,7 @@ impl HeartbeatTimer {
         global_state: RelayerState,
     ) -> GossipError {
         let mut peer_index = 0;
-        let local_cluster = global_state.read_cluster_id().clone();
+        let local_cluster = global_state.local_cluster_id.clone();
 
         loop {
             let (peer_count, next_peer_id) = {

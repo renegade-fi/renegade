@@ -65,7 +65,7 @@ impl GossipProtocolExecutor {
         network_channel: UnboundedSender<GossipOutbound>,
     ) -> Result<(), GossipError> {
         // Ignore messages sent for a different cluster
-        if cluster_id != *global_state.read_cluster_id() {
+        if cluster_id != global_state.local_cluster_id {
             return Ok(());
         }
 
@@ -84,11 +84,7 @@ impl GossipProtocolExecutor {
         )?;
 
         // Add the peer to the known peers index
-        {
-            global_state
-                .write_peer_index()
-                .add_peer(PeerInfo::new(peer_id, cluster_id, peer_addr));
-        } // peer_index lock released
+        global_state.add_single_peer(peer_id, PeerInfo::new(peer_id, cluster_id, peer_addr));
 
         // Request that the peer replicate all locally replicated wallets
         let wallets = global_state.read_wallet_index().get_all_wallets();
@@ -104,7 +100,7 @@ impl GossipProtocolExecutor {
         network_channel: UnboundedSender<GossipOutbound>,
     ) -> Result<(), GossipError> {
         // Ignore messages sent for a different cluster
-        if cluster_id != *global_state.read_cluster_id() {
+        if cluster_id != global_state.local_cluster_id {
             return Ok(());
         }
 
@@ -114,10 +110,7 @@ impl GossipProtocolExecutor {
         // The cluster join request is authenticated at the network layer
         // by the `NetworkManager`, so no authentication needs to be done.
         // Simply update the local cluster metadata to reflect the new node's membership
-        {
-            let mut locked_cluster_metadata = global_state.write_cluster_metadata();
-            locked_cluster_metadata.add_member(peer_id);
-        } // locked_cluster_metadata released
+        global_state.add_cluster_peer(peer_id);
 
         // Request that the peer replicate all locally replicated wallets
         let wallets = global_state.read_wallet_index().get_all_wallets();
@@ -145,20 +138,17 @@ impl GossipProtocolExecutor {
         network_channel: UnboundedSender<GossipOutbound>,
     ) -> Result<(), GossipError> {
         // Add wallets to global state
-        {
-            let mut wallets_locked = global_state.write_wallet_index();
-            for wallet in req.wallets.iter() {
-                wallets_locked.add_wallet(wallet.clone());
-            }
-        } // wallets_locked released
+        global_state.add_wallets(req.wallets.clone());
 
-        // Broadcast a message to the network indicating that the wallet is now replicated
+        // Update cluster management bookkeeping
         let topic = global_state
             .read_cluster_metadata()
             .id
             .get_management_topic();
-        let message = PubsubMessage::new_cluster_management_unsigned(
-            global_state.read_cluster_id().clone(),
+
+        // Broadcast a message to the network indicating that the wallet is now replicated
+        let replicated_message = PubsubMessage::new_cluster_management_unsigned(
+            global_state.local_cluster_id.clone(),
             ClusterManagementMessage::Replicated(ReplicatedMessage {
                 wallets: req.wallets,
                 peer_id: global_state.local_peer_id(),
@@ -166,8 +156,13 @@ impl GossipProtocolExecutor {
         );
 
         network_channel
-            .send(GossipOutbound::Pubsub { topic, message })
+            .send(GossipOutbound::Pubsub {
+                topic,
+                message: replicated_message,
+            })
             .map_err(|err| GossipError::SendMessage(err.to_string()))?;
+
+        // TODO: Broadcast requests for proofs from peers
 
         Ok(())
     }
