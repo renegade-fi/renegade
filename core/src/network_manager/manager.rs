@@ -536,13 +536,10 @@ impl NetworkManager {
                         peer_id,
                     }) => {
                         // Forward one job per replicated wallet; makes gossip server implementation cleaner
-                        for wallet in wallets.into_iter() {
+                        for wallet_id in wallets.into_iter() {
                             gossip_work_queue
                                 .send(GossipServerJob::Cluster(
-                                    ClusterManagementJob::AddWalletReplica {
-                                        wallet_id: wallet.wallet_id,
-                                        peer_id,
-                                    },
+                                    ClusterManagementJob::AddWalletReplica { wallet_id, peer_id },
                                 ))
                                 .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
                         }
@@ -560,6 +557,10 @@ impl NetworkManager {
                         handshake_work_queue
                             .send(HandshakeExecutionJob::PeerMatchInProgress { order1, order2 })
                             .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?
+                    }
+
+                    _ => {
+                        unimplemented!("TODO: Implement handler for proof request")
                     }
                 }
             }

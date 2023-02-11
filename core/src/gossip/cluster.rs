@@ -6,6 +6,7 @@ use crate::{
     api::{
         cluster_management::{
             ClusterJoinMessage, ClusterManagementMessage, ReplicateRequestBody, ReplicatedMessage,
+            ValidityProofRequest,
         },
         gossip::{GossipOutbound, GossipRequest, PubsubMessage},
     },
@@ -150,19 +151,43 @@ impl GossipProtocolExecutor {
         let replicated_message = PubsubMessage::new_cluster_management_unsigned(
             global_state.local_cluster_id.clone(),
             ClusterManagementMessage::Replicated(ReplicatedMessage {
-                wallets: req.wallets,
+                wallets: req.wallets.iter().map(|wallet| wallet.wallet_id).collect(),
                 peer_id: global_state.local_peer_id(),
             }),
         );
-
         network_channel
             .send(GossipOutbound::Pubsub {
-                topic,
+                topic: topic.clone(),
                 message: replicated_message,
             })
             .map_err(|err| GossipError::SendMessage(err.to_string()))?;
 
-        // TODO: Broadcast requests for proofs from peers
+        // Broadcast a message requesting proofs for all new orders
+        let mut orders_needing_proofs = Vec::new();
+        {
+            let locked_order_state = global_state.read_order_book();
+            for wallet in req.wallets.iter() {
+                for order_id in wallet.orders.keys() {
+                    if !locked_order_state.has_validity_proof(order_id) {
+                        orders_needing_proofs.push(*order_id);
+                    }
+                }
+            }
+        } // locked_order_state released
+
+        let proof_request = PubsubMessage::new_cluster_management_unsigned(
+            global_state.local_cluster_id.clone(),
+            ClusterManagementMessage::RequestOrderValidityProof(ValidityProofRequest {
+                order_ids: orders_needing_proofs,
+                sender: global_state.local_peer_id,
+            }),
+        );
+        network_channel
+            .send(GossipOutbound::Pubsub {
+                topic,
+                message: proof_request,
+            })
+            .map_err(|err| GossipError::SendMessage(err.to_string()))?;
 
         Ok(())
     }

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
-    state::{orderbook::OrderIdentifier, wallet::Wallet},
+    state::{orderbook::OrderIdentifier, wallet::{Wallet, WalletIdentifier}},
 };
 
 /// The topic prefix for the cluster management pubsub topic
@@ -35,6 +35,12 @@ pub enum ClusterManagementMessage {
     /// The peers should cache this order pair as completed, and not initiate handshakes
     /// with other peers on this order
     CacheSync(OrderIdentifier, OrderIdentifier),
+    /// A request from a peer for a proof of `VALID COMMITMENTS` for a given order
+    ///
+    /// This request is sent when a peer replicates a wallet, but does not receive a proof
+    /// along with the wallet. Instead of immediately generating such a proof locally,
+    /// the peer may request it from its cluster
+    RequestOrderValidityProof(ValidityProofRequest),
 }
 
 impl From<&ClusterManagementMessage> for Vec<u8> {
@@ -64,7 +70,7 @@ impl From<&ClusterJoinMessage> for Vec<u8> {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ReplicatedMessage {
     /// The wallets that the peer has newly replicated
-    pub wallets: Vec<Wallet>,
+    pub wallets: Vec<WalletIdentifier>,
     /// The peer that is now replicating the wallet
     pub peer_id: WrappedPeerId,
 }
@@ -112,4 +118,13 @@ impl From<&ClusterAuthResponseBody> for Vec<u8> {
     fn from(body: &ClusterAuthResponseBody) -> Self {
         serde_json::to_vec(&body).unwrap()
     }
+}
+
+/// The body of a proof request message published to a cluster
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ValidityProofRequest {
+    /// The orders for which a proof is requested
+    pub order_ids: Vec<OrderIdentifier>,
+    /// The address that a response should be sent back to
+    pub sender: WrappedPeerId,
 }
