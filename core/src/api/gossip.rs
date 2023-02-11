@@ -6,7 +6,11 @@ use portpicker::Port;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::gossip::types::{ClusterId, WrappedPeerId};
+use crate::{
+    gossip::types::{ClusterId, WrappedPeerId},
+    proof_generation::jobs::ValidCommitmentsBundle,
+    state::orderbook::OrderIdentifier,
+};
 
 use super::{
     cluster_management::{
@@ -19,6 +23,7 @@ use super::{
 /// Represents an outbound gossip message, either a request to a peer
 /// or a response to a peer's request
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum GossipOutbound {
     /// A generic request sent to the network manager for outbound delivery
     Request {
@@ -41,29 +46,9 @@ pub enum GossipOutbound {
         /// The message contents
         message: PubsubMessage,
     },
-    /// A command signalling to the network manager that a new node has been
-    /// discovered at the application level. The network manager should register
-    /// this node with the KDHT and propagate this change
-    NewAddr {
-        /// The PeerID to which the new address belongs
-        peer_id: WrappedPeerId,
-        /// The new address
-        address: Multiaddr,
-    },
-    /// A command signalling to the network manager to open up a QUIC connection and build
-    /// an MPC network instance to handshake over
-    BrokerMpcNet {
-        /// The ID of the ongoing handshake
-        request_id: Uuid,
-        /// The ID of the peer to dial
-        peer_id: WrappedPeerId,
-        /// The port that the peer has exposed to dial on
-        peer_port: Port,
-        /// The local port that should be used to accept the stream
-        local_port: Port,
-        /// The role of the local node in the connection setup
-        local_role: ConnectionRole,
-    },
+    /// A message to the network manager itself indicating some control directive
+    /// from another module
+    ManagementMessage(ManagerControlDirective),
 }
 
 /// The role in an MPC network setup; either Dialer or Listener depending on which node
@@ -91,6 +76,7 @@ impl ConnectionRole {
 /// Represents a request delivered point-to-point through the libp2p
 /// request-response protocol
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum GossipRequest {
     /// A request from a peer to bootstrap the network state from the recipient
     Bootstrap(BootstrapRequest),
@@ -107,6 +93,14 @@ pub enum GossipRequest {
     },
     /// A request that a peer replicate a set of wallets
     Replicate(ReplicateRequestBody),
+    /// A pushed message forwarded from the sender when a proof of `VALID COMMITMENTS` is
+    /// requested, updated, or constructed for the first time
+    ValidityProof {
+        /// The order this proof is for
+        order_id: OrderIdentifier,
+        /// The proof of `VALID COMMITMENTS` for this order
+        proof: ValidCommitmentsBundle,
+    },
 }
 
 /// Represents the possible response types for a request-response message
@@ -191,4 +185,40 @@ impl From<Vec<u8>> for PubsubMessage {
     fn from(buf: Vec<u8>) -> Self {
         serde_json::from_slice(&buf).unwrap()
     }
+}
+
+/// A message type send from a worker to the network manager itself to explicitly
+/// control or signal information
+#[derive(Clone, Debug)]
+pub enum ManagerControlDirective {
+    /// A command signalling to the network manager to open up a QUIC connection and build
+    /// an MPC network instance to handshake over
+    BrokerMpcNet {
+        /// The ID of the ongoing handshake
+        request_id: Uuid,
+        /// The ID of the peer to dial
+        peer_id: WrappedPeerId,
+        /// The port that the peer has exposed to dial on
+        peer_port: Port,
+        /// The local port that should be used to accept the stream
+        local_port: Port,
+        /// The role of the local node in the connection setup
+        local_role: ConnectionRole,
+    },
+    /// A command signalling to the network manager that a new node has been
+    /// discovered at the application level. The network manager should register
+    /// this node with the KDHT and propagate this change
+    NewAddr {
+        /// The PeerID to which the new address belongs
+        peer_id: WrappedPeerId,
+        /// The new address
+        address: Multiaddr,
+    },
+    /// A command informing the network manager that the gossip protocol has warmed up
+    /// in the network
+    ///
+    /// The network manager delays Pubsub messages (buffering them) until warmup has elapsed
+    /// to allow the libp2p swarm time to build connections that the gossipsub protocol may
+    /// graft to
+    GossipWarmupComplete,
 }

@@ -4,6 +4,8 @@
 //! See the whitepaper https://renegade.fi/whitepaper.pdf for a formal specification
 //! of the types defined here
 
+use std::fmt::{Formatter, Result as FmtResult};
+
 use circuits::{
     types::{balance::Balance, fee::Fee, keychain::KeyChain, order::Order},
     zk_circuits::{
@@ -14,6 +16,7 @@ use circuits::{
 };
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::r1cs::R1CSProof;
+use serde::{de::Visitor, Deserialize, Serialize};
 use tokio::sync::oneshot::Sender;
 
 use crate::{SizedWallet, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
@@ -31,12 +34,35 @@ pub struct ValidWalletCreateBundle(
 );
 
 /// The response type for a request to generate a proof of `VALID COMMITMENTS`
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ValidCommitmentsBundle(
     pub ValidCommitmentsWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     pub ValidCommitmentsStatement,
     pub R1CSProof,
 );
+
+/// Custom deserialization implementation while const generic support is in development
+impl<'de> Deserialize<'de> for ValidCommitmentsBundle {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_tuple_struct(
+            "ValidCommitmentsBundle",
+            3, /* len */
+            ValidCommitmentsBundleVisitor,
+        )
+    }
+}
+
+/// A custom visitor implementation for bundle deserialization
+struct ValidCommitmentsBundleVisitor;
+impl<'de> Visitor<'de> for ValidCommitmentsBundleVisitor {
+    type Value = ValidCommitmentsBundle;
+    fn expecting(&self, formatter: &mut Formatter) -> FmtResult {
+        write!(formatter, "a tuple struct of type ValidCommitmentsBundle")
+    }
+}
 
 /// The bundle returned by the proof generation module
 #[derive(Clone, Debug)]

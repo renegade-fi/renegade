@@ -239,7 +239,7 @@ pub struct FixedPointVar {
 }
 
 /// A commitment to a fixed-precision variable
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct CommittedFixedPoint {
     /// The underlying scalar representing the fixed point variable
     pub(crate) repr: CompressedRistretto,

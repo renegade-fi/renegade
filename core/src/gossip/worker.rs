@@ -8,7 +8,7 @@ use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use crate::{
     api::{
-        gossip::{GossipOutbound, GossipRequest},
+        gossip::{GossipOutbound, GossipRequest, ManagerControlDirective},
         heartbeat::BootstrapRequest,
     },
     state::RelayerState,
@@ -91,10 +91,12 @@ impl Worker for GossipServer {
         for bootstrap_peer in self.config.bootstrap_servers.iter() {
             self.config
                 .network_sender
-                .send(GossipOutbound::NewAddr {
-                    peer_id: bootstrap_peer.get_peer_id(),
-                    address: bootstrap_peer.get_addr(),
-                })
+                .send(GossipOutbound::ManagementMessage(
+                    ManagerControlDirective::NewAddr {
+                        peer_id: bootstrap_peer.get_peer_id(),
+                        address: bootstrap_peer.get_addr(),
+                    },
+                ))
                 .map_err(|err| GossipError::SendMessage(err.to_string()))?;
         }
 

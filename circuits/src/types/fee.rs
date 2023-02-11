@@ -137,7 +137,7 @@ impl CommitProver for Fee {
 }
 
 /// A fee that has been committed to in a single-prover constraint system
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommittedFee {
     /// The public settle key of the cluster collecting fees
     pub settle_key: CompressedRistretto,

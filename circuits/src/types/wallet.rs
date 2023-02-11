@@ -5,6 +5,7 @@ use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::r1cs::{Prover, Variable, Verifier};
 use rand_core::{CryptoRng, RngCore};
+use serde::{Deserialize, Serialize};
 
 use crate::{CommitProver, CommitVerifier};
 
@@ -110,7 +111,7 @@ where
 }
 
 /// Represents a commitment to a wallet in the constraint system
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommittedWallet<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
@@ -119,10 +120,13 @@ pub struct CommittedWallet<
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
     /// The list of balances in the wallet
+    #[serde(with = "serde_arrays")]
     pub balances: [CommittedBalance; MAX_BALANCES],
     /// The list of open orders in the wallet
+    #[serde(with = "serde_arrays")]
     pub orders: [CommittedOrder; MAX_ORDERS],
     /// The list of payable fees in the wallet
+    #[serde(with = "serde_arrays")]
     pub fees: [CommittedFee; MAX_FEES],
     /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle, pk_view)
     pub keys: CommittedKeyChain,

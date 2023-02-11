@@ -27,7 +27,7 @@ use crate::{
         },
         gossip::{
             ConnectionRole, GossipOutbound, GossipOutbound::Pubsub, GossipRequest, GossipResponse,
-            PubsubMessage,
+            ManagerControlDirective, PubsubMessage,
         },
     },
     gossip::{
@@ -212,6 +212,7 @@ impl NetworkManager {
                     )
                 }),
             Pubsub { topic, mut message } => {
+                println!("Sending outbound pubsub on {}: {:?}\n", topic, message);
                 // If the message is a cluster management message; the network manager should attach a signature
                 #[allow(irrefutable_let_patterns)]
                 if let PubsubMessage::ClusterManagement {
@@ -241,8 +242,25 @@ impl NetworkManager {
                     .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
                 Ok(())
             }
+            GossipOutbound::ManagementMessage(command) => {
+                Self::handle_control_directive(command, handshake_work_queue, swarm)
+            }
+        }
+    }
+
+    /// Handles a message from another worker module that explicitly directs the network manager
+    /// to take some action
+    ///
+    /// The end destination of these messages is not a network peer, but the local network manager
+    /// itself
+    fn handle_control_directive(
+        command: ManagerControlDirective,
+        handshake_work_queue: Sender<HandshakeExecutionJob>,
+        swarm: &mut Swarm<ComposedNetworkBehavior>,
+    ) -> Result<(), NetworkManagerError> {
+        match command {
             // Register a new peer in the distributed routing tables
-            GossipOutbound::NewAddr { peer_id, address } => {
+            ManagerControlDirective::NewAddr { peer_id, address } => {
                 swarm
                     .behaviour_mut()
                     .kademlia_dht
@@ -252,8 +270,7 @@ impl NetworkManager {
             }
 
             // Build an MPC net for the given peers to communicate over
-            #[allow(unused_variables)]
-            GossipOutbound::BrokerMpcNet {
+            ManagerControlDirective::BrokerMpcNet {
                 request_id,
                 peer_id,
                 peer_port,
@@ -298,6 +315,16 @@ impl NetworkManager {
                     })
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
                 Ok(())
+            }
+
+            // Inform the network manager that the gossip server has warmed up the local node in
+            // the cluster by advertising the local node's presence
+            //
+            // The network manager delays sending pubsub events until the gossip protocol has warmed
+            // up, because at startup, there are no known peers to publish to. The network manager gives
+            // the gossip server some time to discover new addresses before publishing to the network.
+            ManagerControlDirective::GossipWarmupComplete => {
+                unimplemented!("")
             }
         }
     }
@@ -429,6 +456,11 @@ impl NetworkManager {
                         ClusterManagementJob::ReplicateRequest(replicate_message),
                     ))
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
+
+                GossipRequest::ValidityProof { order_id, proof } => {
+                    println!("got bundle for order {:?}: {:?}", order_id, proof);
+                    Ok(())
+                }
             },
 
             // Handle inbound response
@@ -506,6 +538,7 @@ impl NetworkManager {
                 signature,
                 message,
             } => {
+                println!("Got inbound pubsub: {:?}\n", message);
                 // All cluster management messages are signed with the cluster private key for authentication
                 // Parse the public key and signature from the payload
                 let pubkey = cluster_id
@@ -559,8 +592,15 @@ impl NetworkManager {
                             .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?
                     }
 
-                    _ => {
-                        unimplemented!("TODO: Implement handler for proof request")
+                    // Forward a request for validity proofs to the gossip server to check for locally
+                    // available proofs
+                    ClusterManagementMessage::RequestOrderValidityProof(req) => {
+                        println!("Got request for order validity proof");
+                        gossip_work_queue
+                            .send(GossipServerJob::Cluster(
+                                ClusterManagementJob::ShareValidityProofs(req),
+                            ))
+                            .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
                     }
                 }
             }

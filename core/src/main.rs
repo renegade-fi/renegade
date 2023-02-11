@@ -1,6 +1,7 @@
 //! The entrypoint to the relayer, starts the coordinator thread which manages all other worker threads
 #![feature(let_chains)]
 #![feature(generic_const_exprs)]
+#![feature(const_likely)]
 #![allow(incomplete_features)]
 #![deny(unsafe_code)]
 #![deny(clippy::missing_docs_in_private_items)]

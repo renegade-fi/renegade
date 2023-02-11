@@ -97,7 +97,7 @@ impl CommitProver for Balance {
 }
 
 /// Represents the committed type of the balance tuple
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommittedBalance {
     /// the mint (erc-20 token address) of the token in the balance
     pub mint: CompressedRistretto,

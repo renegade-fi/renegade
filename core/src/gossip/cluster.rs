@@ -53,6 +53,10 @@ impl GossipProtocolExecutor {
             ClusterManagementJob::AddWalletReplica { wallet_id, peer_id } => {
                 Self::handle_add_replica_job(peer_id, wallet_id, global_state)
             }
+
+            ClusterManagementJob::ShareValidityProofs(req) => {
+                Self::handle_share_validity_proofs_job(req, global_state, network_channel)?;
+            }
         }
 
         Ok(())
@@ -124,6 +128,10 @@ impl GossipProtocolExecutor {
         wallets: Vec<Wallet>,
         network_channel: UnboundedSender<GossipOutbound>,
     ) -> Result<(), GossipError> {
+        if wallets.is_empty() {
+            return Ok(());
+        }
+
         network_channel
             .send(GossipOutbound::Request {
                 peer_id: peer,
@@ -138,6 +146,10 @@ impl GossipProtocolExecutor {
         global_state: &RelayerState,
         network_channel: UnboundedSender<GossipOutbound>,
     ) -> Result<(), GossipError> {
+        if req.wallets.is_empty() {
+            return Ok(());
+        }
+
         // Add wallets to global state
         global_state.add_wallets(req.wallets.clone());
 
@@ -174,6 +186,7 @@ impl GossipProtocolExecutor {
                 }
             }
         } // locked_order_state released
+        println!("Replicated orders, {:?} need proofs", orders_needing_proofs);
 
         let proof_request = PubsubMessage::new_cluster_management_unsigned(
             global_state.local_cluster_id.clone(),
@@ -201,5 +214,40 @@ impl GossipProtocolExecutor {
         global_state
             .read_wallet_index()
             .add_replica(&wallet_id, peer_id);
+    }
+
+    /// Handles an incoming job to check for validity proofs and send them to a cluster peer
+    fn handle_share_validity_proofs_job(
+        req: ValidityProofRequest,
+        global_state: &RelayerState,
+        network_channel: UnboundedSender<GossipOutbound>,
+    ) -> Result<(), GossipError> {
+        println!("Got share validity proofs job");
+        // Check the local order book for any requested proofs that the local peer has stored
+        let mut outbound_messages = Vec::new();
+        {
+            let locked_order_book = global_state.read_order_book();
+            for order_id in req.order_ids.iter() {
+                if let Some(proof) = locked_order_book.get_validity_proof(order_id) {
+                    outbound_messages.push(GossipRequest::ValidityProof {
+                        order_id: *order_id,
+                        proof,
+                    });
+                }
+            }
+        } // locked_order_book released
+
+        println!("Sharing {} order proofs", outbound_messages.len());
+        // Forward outbound proof messages to the network manager
+        for message in outbound_messages.into_iter() {
+            network_channel
+                .send(GossipOutbound::Request {
+                    peer_id: req.sender,
+                    message,
+                })
+                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
+        }
+
+        Ok(())
     }
 }

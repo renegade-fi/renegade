@@ -93,6 +93,7 @@ impl NetworkOrder {
     /// Transitions the state of an order from `Received` to `Verified` by
     /// attaching a proof of `VALID COMMITMENTS` to the order
     pub fn attach_commitment_proof(&mut self, proof: ValidCommitmentsBundle) {
+        println!("new proof");
         assert_eq!(
             self.state,
             NetworkOrderState::Received,
@@ -174,6 +175,12 @@ impl NetworkOrderBook {
         }
 
         false
+    }
+
+    /// Fetch a copy of the validity proof for the given order, or `None` if a proof
+    /// is not locally stored
+    pub fn get_validity_proof(&self, order_id: &OrderIdentifier) -> Option<ValidCommitmentsBundle> {
+        self.read_order(order_id)?.valid_commit_proof.clone()
     }
 
     // -----------
