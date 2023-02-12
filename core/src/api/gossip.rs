@@ -106,6 +106,9 @@ pub enum GossipRequest {
 /// Represents the possible response types for a request-response message
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GossipResponse {
+    /// A simple Ack response, libp2p sometimes closes connections if no response is
+    /// sent, so we can send an empty ack in place for requests that need no response
+    Ack,
     /// A response from a peer proving that they are authorized to join a given cluster
     ClusterAuth(ClusterAuthResponse),
     /// A response from a peer to a sender's heartbeat request

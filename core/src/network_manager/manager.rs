@@ -3,6 +3,7 @@
 use crossbeam::channel::Sender;
 use ed25519_dalek::{Keypair as SigKeypair, Signature, Signer, Verifier};
 use futures::StreamExt;
+use itertools::Itertools;
 use libp2p::{
     gossipsub::{GossipsubEvent, GossipsubMessage, Sha256Topic},
     identity::Keypair,
@@ -17,7 +18,6 @@ use portpicker::Port;
 
 use std::{net::SocketAddr, thread::JoinHandle};
 use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
-use tracing::debug;
 
 use crate::{
     api::{
@@ -55,9 +55,11 @@ const ERR_SENDING_RESPONSE: &str = "error sending response, channel closed";
 /// than its own
 const ERR_WRONG_CLUSTER: &str = "cluster ID requested does not match local cluster ID";
 
-/**
- * Helpers
- */
+// -----------
+// | Helpers |
+// -----------
+
+/// Convert a libp2p multiaddr into a standard library socketaddr representation
 fn multiaddr_to_socketaddr(mut addr: Multiaddr, port: Port) -> Option<SocketAddr> {
     while let Some(protoc) = addr.pop() {
         match protoc {
@@ -70,9 +72,9 @@ fn multiaddr_to_socketaddr(mut addr: Multiaddr, port: Port) -> Option<SocketAddr
     None
 }
 
-/**
- * Manager
- */
+// -----------
+// | Manager |
+// -----------
 
 /// Groups logic around monitoring and requesting the network
 pub struct NetworkManager {
@@ -128,81 +130,165 @@ impl NetworkManager {
 
         Ok(())
     }
+}
+
+// ------------
+// | Executor |
+// ------------
+
+/// Represents a pubsub message that is buffered during the gossip warmup period
+#[derive(Clone, Debug)]
+struct BufferedPubsubMessage {
+    /// The topic this message should be pushed onto
+    pub topic: String,
+    /// The underlying message that should be forwarded to the network
+    pub message: PubsubMessage,
+}
+
+/// The executor abstraction runs in a thread separately from the network manager
+///
+/// This allows the thread to take ownership of the executor object and perform
+/// object-oriented operations while allowing the network manager ownership to be
+/// held by the coordinator thread
+pub(super) struct NetworkManagerExecutor {
+    /// The peer ID of the local node
+    local_peer_id: WrappedPeerId,
+    /// The local cluster's keypair, used to sign and authenticate requests
+    cluster_key: SigKeypair,
+    /// Whether or not the warmup period has already elapsed
+    warmup_finished: bool,
+    /// The messages buffered during the warmup period
+    warmup_buffer: Vec<BufferedPubsubMessage>,
+    /// The underlying swarm that manages low level network behavior
+    swarm: Swarm<ComposedNetworkBehavior>,
+    /// The channel to receive outbound requests on from other workers
+    send_channel: UnboundedReceiver<GossipOutbound>,
+    /// The sender for the gossip server's work queue
+    gossip_work_queue: Sender<GossipServerJob>,
+    /// The sender for the handshake manager's work queue
+    handshake_work_queue: Sender<HandshakeExecutionJob>,
+    /// A copy of the relayer-global state
+    global_state: RelayerState,
+    /// The cancel channel that the coordinator thread may use to cancel this worker
+    cancel: Receiver<()>,
+}
+
+impl NetworkManagerExecutor {
+    /// Create a new executor
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn new(
+        local_peer_id: WrappedPeerId,
+        cluster_key: SigKeypair,
+        swarm: Swarm<ComposedNetworkBehavior>,
+        send_channel: UnboundedReceiver<GossipOutbound>,
+        gossip_work_queue: Sender<GossipServerJob>,
+        handshake_work_queue: Sender<HandshakeExecutionJob>,
+        global_state: RelayerState,
+        cancel: Receiver<()>,
+    ) -> Self {
+        Self {
+            local_peer_id,
+            cluster_key,
+            warmup_finished: false,
+            warmup_buffer: Vec::new(),
+            swarm,
+            send_channel,
+            gossip_work_queue,
+            handshake_work_queue,
+            global_state,
+            cancel,
+        }
+    }
 
     /// The main loop in which the worker thread processes requests
     /// The worker handles two types of events:
     ///      1. Events from the network; which it dispatches to appropriate handler threads
     ///      2. Events from workers to be sent over the network
     /// It handles these in the tokio select! macro below
-    #[allow(clippy::too_many_arguments)]
-    pub(super) async fn executor_loop(
-        local_peer_id: WrappedPeerId,
-        cluster_key: SigKeypair,
-        mut swarm: Swarm<ComposedNetworkBehavior>,
-        mut send_channel: UnboundedReceiver<GossipOutbound>,
-        gossip_work_queue: Sender<GossipServerJob>,
-        handshake_work_queue: Sender<HandshakeExecutionJob>,
-        global_state: RelayerState,
-        mut cancel: Receiver<()>,
-    ) -> NetworkManagerError {
+    pub(super) async fn executor_loop(mut self) -> NetworkManagerError {
         println!("Starting executor loop for network manager...");
         loop {
             tokio::select! {
                 // Handle network requests from worker components of the relayer
-                Some(message) = send_channel.recv() => {
+                Some(message) = self.send_channel.recv() => {
                     // Forward the message
-                    if let Err(err) = Self::handle_outbound_message(message, &cluster_key, handshake_work_queue.clone(), &mut swarm).await {
-                        debug!("Error sending outbound message: {}", err.to_string());
+                    if let Err(err) = self.handle_outbound_message(message).await {
+                        println!("Error sending outbound message: {}", err);
                     }
                 },
 
                 // Handle network events and dispatch
-                event = swarm.select_next_some() => {
+                event = self.swarm.select_next_some() => {
                     match event {
                         SwarmEvent::Behaviour(event) => {
-                            if let Err(err) = Self::handle_inbound_message(
+                            if let Err(err) = self.handle_inbound_message(
                                 event,
-                                &cluster_key,
-                                gossip_work_queue.clone(),
-                                handshake_work_queue.clone(),
-                                &global_state,
-                                &mut swarm,
                             ) {
-                                debug!("error in network manager: {:?}", err);
+                                println!("error in network manager: {:?}", err);
                             }
                         },
                         SwarmEvent::NewListenAddr { address, .. } => {
-                            println!("Listening on {}/p2p/{}\n", address, local_peer_id);
+                            println!("Listening on {}/p2p/{}\n", address, self.local_peer_id);
                         },
-                        _ => {  }
+                        // This catchall may be enabled for fine-grained libp2p introspection
+                        x => { println!("Got x: {:?}", x) }
                     }
                 }
 
                 // Handle a cancel signal from the coordinator
-                _ = cancel.recv() => {
+                _ = self.cancel.recv() => {
                     return NetworkManagerError::Cancelled("received cancel signal".to_string())
                 }
             }
         }
     }
 
+    /// Handles a network event from the relayer's protocol
+    fn handle_inbound_message(
+        &mut self,
+        message: ComposedProtocolEvent,
+    ) -> Result<(), NetworkManagerError> {
+        match message {
+            ComposedProtocolEvent::RequestResponse(request_response) => {
+                if let RequestResponseEvent::Message { peer, message } = request_response {
+                    self.handle_inbound_request_response_message(peer, message)?;
+                }
+
+                Ok(())
+            }
+            // Pubsub events currently do nothing
+            ComposedProtocolEvent::PubSub(msg) => {
+                if let GossipsubEvent::Message { message, .. } = msg {
+                    self.handle_inbound_pubsub_message(message)?;
+                }
+
+                Ok(())
+            }
+            // KAD events do nothing for now, routing tables are automatically updated by libp2p
+            ComposedProtocolEvent::Kademlia(_) => Ok(()),
+
+            // Identify events do nothing for now, the behavior automatically updates the `external_addresses`
+            // field in the swarm
+            ComposedProtocolEvent::Identify(_) => Ok(()),
+        }
+    }
+
     /// Handles an outbound message from worker threads to other relayers
     async fn handle_outbound_message(
+        &mut self,
         msg: GossipOutbound,
-        cluster_key: &SigKeypair,
-        handshake_work_queue: Sender<HandshakeExecutionJob>,
-        swarm: &mut Swarm<ComposedNetworkBehavior>,
     ) -> Result<(), NetworkManagerError> {
         match msg {
             GossipOutbound::Request { peer_id, message } => {
-                swarm
+                self.swarm
                     .behaviour_mut()
                     .request_response
                     .send_request(&peer_id, message);
 
                 Ok(())
             }
-            GossipOutbound::Response { channel, message } => swarm
+            GossipOutbound::Response { channel, message } => self
+                .swarm
                 .behaviour_mut()
                 .request_response
                 .send_response(channel, message)
@@ -211,42 +297,60 @@ impl NetworkManager {
                         "error sending response, channel closed".to_string(),
                     )
                 }),
-            Pubsub { topic, mut message } => {
-                println!("Sending outbound pubsub on {}: {:?}\n", topic, message);
-                // If the message is a cluster management message; the network manager should attach a signature
-                #[allow(irrefutable_let_patterns)]
-                if let PubsubMessage::ClusterManagement {
-                    cluster_id,
-                    message: body,
-                    ..
-                } = message
-                {
-                    // Sign the message with the cluster key
-                    let signature = cluster_key
-                        .sign(&Into::<Vec<u8>>::into(&body))
-                        .to_bytes()
-                        .to_vec();
-
-                    message = PubsubMessage::ClusterManagement {
-                        cluster_id,
-                        signature,
-                        message: body,
-                    }
-                }
-
-                let topic = Sha256Topic::new(topic);
-                swarm
-                    .behaviour_mut()
-                    .pubsub
-                    .publish(topic, message)
-                    .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
-                Ok(())
-            }
-            GossipOutbound::ManagementMessage(command) => {
-                Self::handle_control_directive(command, handshake_work_queue, swarm)
-            }
+            Pubsub { topic, message } => self.forward_outbound_pubsub(topic, message),
+            GossipOutbound::ManagementMessage(command) => self.handle_control_directive(command),
         }
     }
+
+    /// Forward an outbound pubsub message to the network
+    fn forward_outbound_pubsub(
+        &mut self,
+        topic: String,
+        mut message: PubsubMessage,
+    ) -> Result<(), NetworkManagerError> {
+        // If the gossip server has not warmed up the local node into the network, buffer
+        // the pubsub message for forwarding after the warmup
+        if !self.warmup_finished {
+            self.warmup_buffer
+                .push(BufferedPubsubMessage { topic, message });
+            return Ok(());
+        }
+
+        // If the message is a cluster management message; the network manager should attach a signature
+        #[allow(irrefutable_let_patterns)]
+        if let PubsubMessage::ClusterManagement {
+            cluster_id,
+            message: body,
+            ..
+        } = message
+        {
+            // Sign the message with the cluster key
+            let signature = self
+                .cluster_key
+                .sign(&Into::<Vec<u8>>::into(&body))
+                .to_bytes()
+                .to_vec();
+
+            message = PubsubMessage::ClusterManagement {
+                cluster_id,
+                signature,
+                message: body,
+            }
+        }
+
+        let topic = Sha256Topic::new(topic);
+        self.swarm
+            .behaviour_mut()
+            .pubsub
+            .publish(topic, message)
+            .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
+        println!("message sent\n");
+        Ok(())
+    }
+
+    // ------------------------------
+    // | Control Directive Handlers |
+    // ------------------------------
 
     /// Handles a message from another worker module that explicitly directs the network manager
     /// to take some action
@@ -254,14 +358,13 @@ impl NetworkManager {
     /// The end destination of these messages is not a network peer, but the local network manager
     /// itself
     fn handle_control_directive(
+        &mut self,
         command: ManagerControlDirective,
-        handshake_work_queue: Sender<HandshakeExecutionJob>,
-        swarm: &mut Swarm<ComposedNetworkBehavior>,
     ) -> Result<(), NetworkManagerError> {
         match command {
             // Register a new peer in the distributed routing tables
             ManagerControlDirective::NewAddr { peer_id, address } => {
-                swarm
+                self.swarm
                     .behaviour_mut()
                     .kademlia_dht
                     .add_address(&peer_id, address);
@@ -284,7 +387,7 @@ impl NetworkManager {
                 let mpc_net = match local_role {
                     ConnectionRole::Dialer => {
                         // Retrieve known dialable addresses for the peer from the network behavior
-                        let all_peer_addrs = swarm.behaviour_mut().addresses_of_peer(&peer_id);
+                        let all_peer_addrs = self.swarm.behaviour_mut().addresses_of_peer(&peer_id);
                         let peer_multiaddr = all_peer_addrs.get(0).ok_or_else(|| {
                             NetworkManagerError::Network(ERR_NO_KNOWN_ADDR.to_string())
                         })?;
@@ -307,7 +410,7 @@ impl NetworkManager {
 
                 // After the dependencies are injected into the network; forward it to the handshake manager to
                 // dial the peer and begin the MPC
-                handshake_work_queue
+                self.handshake_work_queue
                     .send(HandshakeExecutionJob::MpcNetSetup {
                         request_id,
                         party_id,
@@ -324,70 +427,26 @@ impl NetworkManager {
             // up, because at startup, there are no known peers to publish to. The network manager gives
             // the gossip server some time to discover new addresses before publishing to the network.
             ManagerControlDirective::GossipWarmupComplete => {
-                unimplemented!("")
-            }
-        }
-    }
-
-    /// Handles a network event from the relayer's protocol
-    fn handle_inbound_message(
-        message: ComposedProtocolEvent,
-        cluster_key: &SigKeypair,
-        gossip_work_queue: Sender<GossipServerJob>,
-        handshake_work_queue: Sender<HandshakeExecutionJob>,
-        global_state: &RelayerState,
-        swarm: &mut Swarm<ComposedNetworkBehavior>,
-    ) -> Result<(), NetworkManagerError> {
-        match message {
-            ComposedProtocolEvent::RequestResponse(request_response) => {
-                if let RequestResponseEvent::Message { peer, message } = request_response {
-                    Self::handle_inbound_request_response_message(
-                        peer,
-                        message,
-                        cluster_key,
-                        gossip_work_queue,
-                        handshake_work_queue,
-                        global_state,
-                        swarm,
-                    )?;
+                self.warmup_finished = true;
+                // Forward all buffered messages to the network
+                for buffered_message in self.warmup_buffer.drain(..).collect_vec() {
+                    self.forward_outbound_pubsub(buffered_message.topic, buffered_message.message)?;
                 }
 
                 Ok(())
             }
-            // Pubsub events currently do nothing
-            ComposedProtocolEvent::PubSub(msg) => {
-                if let GossipsubEvent::Message { message, .. } = msg {
-                    Self::handle_inbound_pubsub_message(
-                        message,
-                        gossip_work_queue,
-                        handshake_work_queue,
-                    )?;
-                }
-
-                Ok(())
-            }
-            // KAD events do nothing for now, routing tables are automatically updated by libp2p
-            ComposedProtocolEvent::Kademlia(_) => Ok(()),
-
-            // Identify events do nothing for now, the behavior automatically updates the `external_addresses`
-            // field in the swarm
-            ComposedProtocolEvent::Identify(_) => Ok(()),
         }
     }
 
-    /**
-     * Request/Response event handlers
-     */
+    // -----------------------------
+    // | Request/Response Handlers |
+    // -----------------------------
 
     /// Handle an incoming message from the network's request/response protocol
     fn handle_inbound_request_response_message(
+        &mut self,
         peer_id: PeerId,
         message: RequestResponseMessage<GossipRequest, GossipResponse>,
-        cluster_key: &SigKeypair,
-        gossip_work_queue: Sender<GossipServerJob>,
-        handshake_work_queue: Sender<HandshakeExecutionJob>,
-        global_state: &RelayerState,
-        swarm: &mut Swarm<ComposedNetworkBehavior>,
     ) -> Result<(), NetworkManagerError> {
         // Multiplex over request/response message types
         match message {
@@ -396,7 +455,8 @@ impl NetworkManager {
                 request, channel, ..
             } => match request {
                 // Forward the bootstrap request directly to the gossip server
-                GossipRequest::Bootstrap(req) => gossip_work_queue
+                GossipRequest::Bootstrap(req) => self
+                    .gossip_work_queue
                     .send(GossipServerJob::Bootstrap(req, channel))
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
 
@@ -404,7 +464,7 @@ impl NetworkManager {
                 // access to the private key
                 GossipRequest::ClusterAuth(auth_message) => {
                     // If the auth message is not for the local peer's cluster, ignore it
-                    let local_cluster_id = { global_state.local_cluster_id.clone() };
+                    let local_cluster_id = self.global_state.local_cluster_id.clone();
                     if auth_message.cluster_id != local_cluster_id {
                         return Err(NetworkManagerError::Authentication(
                             ERR_WRONG_CLUSTER.to_string(),
@@ -413,25 +473,27 @@ impl NetworkManager {
 
                     // Otherwise, sign a response of (peer_id, cluster_id)
                     let body = ClusterAuthResponseBody {
-                        peer_id: global_state.local_peer_id(),
-                        peer_info: global_state.get_local_peer_info(),
+                        peer_id: self.global_state.local_peer_id(),
+                        peer_info: self.global_state.get_local_peer_info(),
                         cluster_id: local_cluster_id,
                     };
 
-                    let signature = cluster_key
+                    let signature = self
+                        .cluster_key
                         .sign(&Into::<Vec<u8>>::into(&body))
                         .to_bytes()
                         .to_vec();
                     let resp = GossipResponse::ClusterAuth(ClusterAuthResponse { body, signature });
 
-                    swarm
+                    self.swarm
                         .behaviour_mut()
                         .request_response
                         .send_response(channel, resp)
                         .map_err(|_| NetworkManagerError::Network(ERR_SENDING_RESPONSE.to_string()))
                 }
 
-                GossipRequest::Heartbeat(heartbeat_message) => gossip_work_queue
+                GossipRequest::Heartbeat(heartbeat_message) => self
+                    .gossip_work_queue
                     .send(GossipServerJob::HandleHeartbeatReq {
                         peer_id: WrappedPeerId(peer_id),
                         message: heartbeat_message,
@@ -442,7 +504,8 @@ impl NetworkManager {
                 GossipRequest::Handshake {
                     request_id,
                     message,
-                } => handshake_work_queue
+                } => self
+                    .handshake_work_queue
                     .send(HandshakeExecutionJob::ProcessHandshakeMessage {
                         request_id,
                         peer_id: WrappedPeerId(peer_id),
@@ -451,11 +514,20 @@ impl NetworkManager {
                     })
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
 
-                GossipRequest::Replicate(replicate_message) => gossip_work_queue
-                    .send(GossipServerJob::Cluster(
-                        ClusterManagementJob::ReplicateRequest(replicate_message),
-                    ))
-                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
+                GossipRequest::Replicate(replicate_message) => {
+                    self.gossip_work_queue
+                        .send(GossipServerJob::Cluster(
+                            ClusterManagementJob::ReplicateRequest(replicate_message),
+                        ))
+                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
+
+                    // Send a simple ack back to avoid closing the channel
+                    self.swarm
+                        .behaviour_mut()
+                        .request_response
+                        .send_response(channel, GossipResponse::Ack)
+                        .map_err(|_| NetworkManagerError::Network("error sending Ack".to_string()))
+                }
 
                 GossipRequest::ValidityProof { order_id, proof } => {
                     println!("got bundle for order {:?}: {:?}", order_id, proof);
@@ -465,6 +537,7 @@ impl NetworkManager {
 
             // Handle inbound response
             RequestResponseMessage::Response { response, .. } => match response {
+                GossipResponse::Ack => Ok(()),
                 GossipResponse::ClusterAuth(auth_response) => {
                     // Verify the signature
                     let pubkey = auth_response
@@ -484,7 +557,7 @@ impl NetworkManager {
                         .map_err(|err| NetworkManagerError::Authentication(err.to_string()))?;
 
                     // Forward a job to the gossip server to update its cluster information
-                    gossip_work_queue
+                    self.gossip_work_queue
                         .send(GossipServerJob::Cluster(
                             ClusterManagementJob::ClusterAuthSuccess(
                                 auth_response.body.cluster_id,
@@ -497,7 +570,8 @@ impl NetworkManager {
                     Ok(())
                 }
 
-                GossipResponse::Heartbeat(heartbeat_message) => gossip_work_queue
+                GossipResponse::Heartbeat(heartbeat_message) => self
+                    .gossip_work_queue
                     .send(GossipServerJob::HandleHeartbeatResp {
                         peer_id: WrappedPeerId(peer_id),
                         message: heartbeat_message,
@@ -507,7 +581,8 @@ impl NetworkManager {
                 GossipResponse::Handshake {
                     request_id,
                     message,
-                } => handshake_work_queue
+                } => self
+                    .handshake_work_queue
                     .send(HandshakeExecutionJob::ProcessHandshakeMessage {
                         request_id,
                         peer_id: WrappedPeerId(peer_id),
@@ -520,15 +595,14 @@ impl NetworkManager {
         }
     }
 
-    /**
-     * Pubsub handlers
-     */
+    // -------------------
+    // | Pubsub Handlers |
+    // -------------------
 
     /// Handle an incoming network request for a pubsub message
     fn handle_inbound_pubsub_message(
+        &mut self,
         message: GossipsubMessage,
-        gossip_work_queue: Sender<GossipServerJob>,
-        handshake_work_queue: Sender<HandshakeExecutionJob>,
     ) -> Result<(), NetworkManagerError> {
         // Deserialize into API types
         let event: PubsubMessage = message.data.into();
@@ -538,7 +612,6 @@ impl NetworkManager {
                 signature,
                 message,
             } => {
-                println!("Got inbound pubsub: {:?}\n", message);
                 // All cluster management messages are signed with the cluster private key for authentication
                 // Parse the public key and signature from the payload
                 let pubkey = cluster_id
@@ -556,7 +629,7 @@ impl NetworkManager {
                     // Forward the management message to the gossip server for processing
                     ClusterManagementMessage::Join(join_request) => {
                         // Forward directly
-                        gossip_work_queue
+                        self.gossip_work_queue
                             .send(GossipServerJob::Cluster(
                                 ClusterManagementJob::ClusterJoinRequest(cluster_id, join_request),
                             ))
@@ -570,7 +643,7 @@ impl NetworkManager {
                     }) => {
                         // Forward one job per replicated wallet; makes gossip server implementation cleaner
                         for wallet_id in wallets.into_iter() {
-                            gossip_work_queue
+                            self.gossip_work_queue
                                 .send(GossipServerJob::Cluster(
                                     ClusterManagementJob::AddWalletReplica { wallet_id, peer_id },
                                 ))
@@ -580,23 +653,22 @@ impl NetworkManager {
 
                     // Forward the cache sync message to the handshake manager to update the local
                     // cache copy
-                    ClusterManagementMessage::CacheSync(order1, order2) => handshake_work_queue
+                    ClusterManagementMessage::CacheSync(order1, order2) => self
+                        .handshake_work_queue
                         .send(HandshakeExecutionJob::CacheEntry { order1, order2 })
                         .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?,
 
                     // Forward the match in progress message to the handshake manager so that it can avoid
                     // scheduling a duplicate handshake for the given order pair
-                    ClusterManagementMessage::MatchInProgress(order1, order2) => {
-                        handshake_work_queue
-                            .send(HandshakeExecutionJob::PeerMatchInProgress { order1, order2 })
-                            .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?
-                    }
+                    ClusterManagementMessage::MatchInProgress(order1, order2) => self
+                        .handshake_work_queue
+                        .send(HandshakeExecutionJob::PeerMatchInProgress { order1, order2 })
+                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?,
 
                     // Forward a request for validity proofs to the gossip server to check for locally
                     // available proofs
                     ClusterManagementMessage::RequestOrderValidityProof(req) => {
-                        println!("Got request for order validity proof");
-                        gossip_work_queue
+                        self.gossip_work_queue
                             .send(GossipServerJob::Cluster(
                                 ClusterManagementJob::ShareValidityProofs(req),
                             ))

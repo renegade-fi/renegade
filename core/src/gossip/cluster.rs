@@ -222,7 +222,6 @@ impl GossipProtocolExecutor {
         global_state: &RelayerState,
         network_channel: UnboundedSender<GossipOutbound>,
     ) -> Result<(), GossipError> {
-        println!("Got share validity proofs job");
         // Check the local order book for any requested proofs that the local peer has stored
         let mut outbound_messages = Vec::new();
         {
@@ -237,7 +236,6 @@ impl GossipProtocolExecutor {
             }
         } // locked_order_book released
 
-        println!("Sharing {} order proofs", outbound_messages.len());
         // Forward outbound proof messages to the network manager
         for message in outbound_messages.into_iter() {
             network_channel

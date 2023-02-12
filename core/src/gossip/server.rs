@@ -17,7 +17,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::{
     api::{
         cluster_management::{ClusterJoinMessage, ClusterManagementMessage},
-        gossip::{GossipOutbound, GossipResponse, PubsubMessage},
+        gossip::{GossipOutbound, GossipResponse, ManagerControlDirective, PubsubMessage},
     },
     state::RelayerState,
     CancelChannel,
@@ -67,12 +67,8 @@ impl GossipServer {
             }
         } // known_peers lock released
 
-        // Copy items so they may be moved into the spawned thread
-        let network_sender_copy = self.config.network_sender.clone();
-        let cluster_management_topic = self.config.cluster_id.get_management_topic();
-
-        // Construct the message outside of the thread to avoid messy ownership copies
-        // The cluster ID is automatically appended at the network layer
+        // Send a pubsub message indicating that the local peer has joined the cluster; this message
+        // will be buffered by the network manager until the warmup period is complete
         let message_body = ClusterJoinMessage {
             peer_id: self.config.local_peer_id,
             peer_info: global_state
@@ -82,28 +78,29 @@ impl GossipServer {
                 .clone(),
             addr: self.config.local_addr.clone(),
         };
-        let message = PubsubMessage::new_cluster_management_unsigned(
-            self.config.cluster_id.clone(),
-            ClusterManagementMessage::Join(message_body),
-        );
+        self.config
+            .network_sender
+            .send(GossipOutbound::Pubsub {
+                topic: self.config.cluster_id.get_management_topic(),
+                message: PubsubMessage::new_cluster_management_unsigned(
+                    self.config.cluster_id.clone(),
+                    ClusterManagementMessage::Join(message_body),
+                ),
+            })
+            .map_err(|err| GossipError::SendMessage(err.to_string()))?;
 
-        // Spawn a thread that will wait some time until the peer has warmed up into the network
-        // and then emit a pubsub even indicating it has joined its cluster
+        // Copy items so they may be moved into the spawned thread
+        let network_sender_copy = self.config.network_sender.clone();
+        // Spawn a thread to wait on a timeout and then signal to the network manager that it
+        // may flush the pubsub buffer
         thread::spawn(move || {
             // Wait for the network to warmup
             thread::sleep(Duration::from_millis(PUBSUB_WARMUP_TIME_MS));
-
-            // Send a heartbeat request
-
-            // Forward the message to the network manager for delivery
-            let join_message = GossipOutbound::Pubsub {
-                topic: cluster_management_topic,
-                message,
-            };
             network_sender_copy
-                .send(join_message)
-                .map_err(|err| GossipError::ServerSetup(err.to_string()))
-                .unwrap();
+                .send(GossipOutbound::ManagementMessage(
+                    ManagerControlDirective::GossipWarmupComplete,
+                ))
+                .unwrap()
         });
 
         Ok(())
