@@ -155,7 +155,11 @@ impl ProofManager {
         >(witness, statement)
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(ValidWalletCreateBundle(commitment, statement, proof))
+        Ok(ValidWalletCreateBundle {
+            commitment,
+            statement,
+            proof,
+        })
     }
 
     /// Create a proof of `VALID COMMITMENTS`
@@ -197,6 +201,10 @@ impl ProofManager {
         >(witness, statement)
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(ValidCommitmentsBundle(witness_comm, statement, proof))
+        Ok(ValidCommitmentsBundle {
+            commitment: witness_comm,
+            statement,
+            proof,
+        })
     }
 }
