@@ -231,7 +231,7 @@ impl NetworkManagerExecutor {
                             println!("Listening on {}/p2p/{}\n", address, self.local_peer_id);
                         },
                         // This catchall may be enabled for fine-grained libp2p introspection
-                        x => { println!("Got x: {:?}", x) }
+                        _ => {  }
                     }
                 }
 
@@ -344,7 +344,6 @@ impl NetworkManagerExecutor {
             .pubsub
             .publish(topic, message)
             .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
-        println!("message sent\n");
         Ok(())
     }
 
@@ -530,8 +529,12 @@ impl NetworkManagerExecutor {
                 }
 
                 GossipRequest::ValidityProof { order_id, proof } => {
-                    println!("got bundle for order {:?}: {:?}", order_id, proof);
-                    Ok(())
+                    // TODO: Authenticate this
+                    self.gossip_work_queue
+                        .send(GossipServerJob::Cluster(
+                            ClusterManagementJob::UpdateValidityProof(order_id, proof),
+                        ))
+                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))
                 }
             },
 

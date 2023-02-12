@@ -10,7 +10,9 @@ use crate::{
         },
         gossip::{GossipOutbound, GossipRequest, PubsubMessage},
     },
+    proof_generation::jobs::ValidCommitmentsBundle,
     state::{
+        orderbook::OrderIdentifier,
         wallet::{Wallet, WalletIdentifier},
         RelayerState,
     },
@@ -56,6 +58,10 @@ impl GossipProtocolExecutor {
 
             ClusterManagementJob::ShareValidityProofs(req) => {
                 Self::handle_share_validity_proofs_job(req, global_state, network_channel)?;
+            }
+
+            ClusterManagementJob::UpdateValidityProof(order_id, proof) => {
+                Self::handle_updated_validity_proof(order_id, proof, global_state);
             }
         }
 
@@ -247,5 +253,16 @@ impl GossipProtocolExecutor {
         }
 
         Ok(())
+    }
+
+    /// Handle a message from a cluster peer that sends a proof of `VALID COMMITMENTS` for an order
+    fn handle_updated_validity_proof(
+        order_id: OrderIdentifier,
+        proof: ValidCommitmentsBundle,
+        global_state: &RelayerState,
+    ) {
+        global_state
+            .read_order_book()
+            .update_order_validity_proof(&order_id, proof);
     }
 }

@@ -9,13 +9,15 @@ use crate::{
         gossip::GossipResponse,
         heartbeat::{BootstrapRequest, HeartbeatMessage},
     },
-    state::wallet::WalletIdentifier,
+    proof_generation::jobs::ValidCommitmentsBundle,
+    state::{orderbook::OrderIdentifier, wallet::WalletIdentifier},
 };
 
 use super::types::{ClusterId, PeerInfo, WrappedPeerId};
 
 /// Defines a heartbeat job that can be enqueued by other workers in a relayer
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum GossipServerJob {
     /// Handle a job to bootstrap a newly added peer
     Bootstrap(BootstrapRequest, ResponseChannel<GossipResponse>),
@@ -43,6 +45,7 @@ pub enum GossipServerJob {
 
 /// Defines a job schedule for a cluster management task
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum ClusterManagementJob {
     /// Add a replica for a given wallet to the state and begin gossip operations
     /// for that wallet
@@ -61,4 +64,6 @@ pub enum ClusterManagementJob {
     ReplicateRequest(ReplicateRequestBody),
     /// Forward any known proofs of order validity to the sending cluster peer
     ShareValidityProofs(ValidityProofRequest),
+    /// A proof has been shared by a cluster peer
+    UpdateValidityProof(OrderIdentifier, ValidCommitmentsBundle),
 }

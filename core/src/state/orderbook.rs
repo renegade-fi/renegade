@@ -93,13 +93,6 @@ impl NetworkOrder {
     /// Transitions the state of an order from `Received` to `Verified` by
     /// attaching a proof of `VALID COMMITMENTS` to the order
     pub fn attach_commitment_proof(&mut self, proof: ValidCommitmentsBundle) {
-        println!("new proof");
-        assert_eq!(
-            self.state,
-            NetworkOrderState::Received,
-            "order must be in received state to attach proof"
-        );
-
         self.state = NetworkOrderState::Verified;
         self.valid_commit_proof = Some(proof);
     }
@@ -187,15 +180,18 @@ impl NetworkOrderBook {
     // | Setters |
     // -----------
 
-    /// Add an order to the book
-    pub fn add_order(&mut self, order: NetworkOrder) {
+    /// Add an order to the book, necessarily this order is in the received state because
+    /// we must fetch a validity proof to move it to verified
+    pub fn add_order(&mut self, mut order: NetworkOrder) {
         // Do nothing if the order is already indexed, state updates should come from
         // separate methods
         if self.order_map.contains_key(&order.id) {
             return;
         }
+        println!("Adding order");
 
         // If the order is local, add it to the local order list
+        order.state = NetworkOrderState::Received;
         if order.local {
             self.local_orders
                 .write()
@@ -205,6 +201,17 @@ impl NetworkOrderBook {
 
         // Add an entry in the order index
         self.order_map.insert(order.id, new_shared(order));
+    }
+
+    /// Update the validity proof for an order
+    pub fn update_order_validity_proof(
+        &self,
+        order_id: &OrderIdentifier,
+        proof: ValidCommitmentsBundle,
+    ) {
+        if let Some(mut locked_order) = self.write_order(order_id) {
+            locked_order.attach_commitment_proof(proof);
+        }
     }
 }
 
