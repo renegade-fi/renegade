@@ -18,7 +18,9 @@ use crate::{
 };
 
 use super::{
-    composed_protocol::ProtocolVersion, error::NetworkManagerError, manager::NetworkManager,
+    composed_protocol::ProtocolVersion,
+    error::NetworkManagerError,
+    manager::{NetworkManager, NetworkManagerExecutor},
 };
 
 /// The worker configuration for the network manager
@@ -154,28 +156,22 @@ impl Worker for NetworkManager {
         self.cancellation_relay_handle = Some(cancel_forward_handle);
 
         // Start up the worker thread
-        let peer_id_copy = self.local_peer_id;
-        let state_copy = self.config.global_state.clone();
-        let heartbeat_work_queue = self.config.heartbeat_work_queue.clone();
-        let handshake_work_queue = self.config.handshake_work_queue.clone();
-        // Take ownership of the work queue and the cluster keypair
-        let cluster_keypair = self.config.cluster_keypair.take().unwrap();
-        let send_channel = self.config.send_channel.take().unwrap();
+        let executor = NetworkManagerExecutor::new(
+            self.local_peer_id,
+            self.config.cluster_keypair.take().unwrap(),
+            swarm,
+            self.config.send_channel.take().unwrap(),
+            self.config.heartbeat_work_queue.clone(),
+            self.config.handshake_work_queue.clone(),
+            self.config.global_state.clone(),
+            async_cancel_receiver,
+        );
 
         let thread_handle = Builder::new()
             .name("network-manager-main-loop".to_string())
             .spawn(move || {
                 // Block on this to execute the future in a separate thread
-                block_on(Self::executor_loop(
-                    peer_id_copy,
-                    cluster_keypair,
-                    swarm,
-                    send_channel,
-                    heartbeat_work_queue,
-                    handshake_work_queue,
-                    state_copy,
-                    async_cancel_receiver,
-                ))
+                block_on(executor.executor_loop())
             })
             .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
