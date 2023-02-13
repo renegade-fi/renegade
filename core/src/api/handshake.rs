@@ -2,9 +2,7 @@
 use portpicker::Port;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    gossip::types::WrappedPeerId, handshake::types::HashOutput, state::orderbook::OrderIdentifier,
-};
+use crate::{gossip::types::WrappedPeerId, handshake::types::HashOutput, state::OrderIdentifier};
 
 /// Enumerates the different operations possible via handshake
 #[derive(Debug, Clone, Serialize, Deserialize)]

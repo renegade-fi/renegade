@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
     state::{
-        orderbook::OrderIdentifier,
         wallet::{Wallet, WalletIdentifier},
+        OrderIdentifier,
     },
 };
 

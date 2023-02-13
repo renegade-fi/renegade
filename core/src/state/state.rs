@@ -29,6 +29,8 @@ use crate::{
     handshake::manager::DEFAULT_HANDSHAKE_PRIORITY,
     proof_generation::jobs::{ProofJob, ProofManagerJob},
     state::orderbook::NetworkOrder,
+    system_bus::SystemBus,
+    types::SystemBusMessage,
     MERKLE_HEIGHT,
 };
 
@@ -125,6 +127,7 @@ impl RelayerState {
         debug: bool,
         wallets: Vec<Wallet>,
         cluster_id: ClusterId,
+        system_bus: SystemBus<SystemBusMessage>,
     ) -> Self {
         // Generate an keypair on curve 25519 for the local peer
         let local_keypair = identity::Keypair::generate_ed25519();
@@ -140,7 +143,7 @@ impl RelayerState {
         let peer_index = PeerIndex::new(local_peer_id);
 
         // Setup the order book
-        let order_book = NetworkOrderBook::new();
+        let order_book = NetworkOrderBook::new(system_bus);
 
         Self {
             debug,
@@ -232,7 +235,7 @@ impl RelayerState {
             let proof_bundle = receiver.blocking_recv().unwrap();
 
             // Update the local orderbook state
-            self.write_order_book()
+            self.read_order_book()
                 .write_order(&order_id)
                 .unwrap()
                 .attach_commitment_proof(proof_bundle.into());
