@@ -166,13 +166,13 @@ impl GossipProtocolExecutor {
             .get_management_topic();
 
         // Broadcast a message to the network indicating that the wallet is now replicated
-        let replicated_message = PubsubMessage::new_cluster_management_unsigned(
-            global_state.local_cluster_id.clone(),
-            ClusterManagementMessage::Replicated(ReplicatedMessage {
+        let replicated_message = PubsubMessage::ClusterManagement {
+            cluster_id: global_state.local_cluster_id.clone(),
+            message: ClusterManagementMessage::Replicated(ReplicatedMessage {
                 wallets: req.wallets.iter().map(|wallet| wallet.wallet_id).collect(),
                 peer_id: global_state.local_peer_id(),
             }),
-        );
+        };
         network_channel
             .send(GossipOutbound::Pubsub {
                 topic: topic.clone(),
@@ -192,15 +192,14 @@ impl GossipProtocolExecutor {
                 }
             }
         } // locked_order_state released
-        println!("Replicated orders, {:?} need proofs", orders_needing_proofs);
 
-        let proof_request = PubsubMessage::new_cluster_management_unsigned(
-            global_state.local_cluster_id.clone(),
-            ClusterManagementMessage::RequestOrderValidityProof(ValidityProofRequest {
+        let proof_request = PubsubMessage::ClusterManagement {
+            cluster_id: global_state.local_cluster_id.clone(),
+            message: ClusterManagementMessage::RequestOrderValidityProof(ValidityProofRequest {
                 order_ids: orders_needing_proofs,
                 sender: global_state.local_peer_id,
             }),
-        );
+        };
         network_channel
             .send(GossipOutbound::Pubsub {
                 topic,

@@ -1,6 +1,6 @@
 //! Groups API definitions for standard gossip network requests/responses
 
-use ed25519_dalek::{Digest, Keypair, Sha512, SignatureError};
+use ed25519_dalek::{Digest, Keypair as SigKeypair, PublicKey, Sha512, Signature, SignatureError};
 use libp2p::{request_response::ResponseChannel, Multiaddr};
 use portpicker::Port;
 use serde::{Deserialize, Serialize};
@@ -35,7 +35,7 @@ pub enum GossipOutbound {
     /// A generic response sent to the network manager for outbound delivery
     Response {
         /// The libp2p channel on which to send the response
-        channel: ResponseChannel<GossipResponse>,
+        channel: ResponseChannel<AuthenticatedGossipResponse>,
         /// The response body
         message: GossipResponse,
     },
@@ -51,24 +51,55 @@ pub enum GossipOutbound {
     ManagementMessage(ManagerControlDirective),
 }
 
-/// The role in an MPC network setup; either Dialer or Listener depending on which node
-/// initiates the connection
-#[derive(Clone, Debug)]
-pub enum ConnectionRole {
-    /// Dials the peer, initiating the connection
-    /// The dialer also plays the role of the king in the subsequent MPC computation
-    Dialer,
-    /// Listens for an inbound connection from the dialer
-    Listener,
+/// A wrapper around the GossipRequest type that allows us to attach cluster signatures
+/// to each request
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AuthenticatedGossipRequest {
+    /// A signature of the request body with the sender's cluster private key
+    pub sig: Vec<u8>,
+    /// The body of the request
+    pub body: GossipRequest,
 }
 
-impl ConnectionRole {
-    /// Get the party_id for an MPC dialed up through this connection
-    pub fn get_party_id(&self) -> u64 {
-        match self {
-            // Party 0 dials party 1
-            ConnectionRole::Dialer => 0,
-            ConnectionRole::Listener => 1,
+impl AuthenticatedGossipRequest {
+    /// Constructs a new authenticated gossip request given the request body.
+    /// Attaches a signature of the body using the given cluster private key
+    /// if one is necessary
+    pub fn new_with_body(
+        body: GossipRequest,
+        cluster_key: &SigKeypair,
+    ) -> Result<Self, SignatureError> {
+        // Create a signature fo the body
+        let sig = if body.requires_cluster_auth() {
+            let mut hash_digest: Sha512 = Sha512::new();
+            hash_digest.update(&serde_json::to_vec(&body).unwrap());
+            cluster_key
+                .sign_prehashed(hash_digest, None)?
+                .to_bytes()
+                .to_vec()
+        } else {
+            Vec::new()
+        };
+
+        Ok(Self { sig, body })
+    }
+
+    /// Verify the signature on an authenticated request
+    pub fn verify_cluster_auth(&self, cluster_pubkey: &PublicKey) -> bool {
+        if !self.body.requires_cluster_auth() {
+            return true;
+        }
+
+        // Unmarshal the signature into its runtime type
+        let sig_unmarshalled = Signature::from_bytes(&self.sig);
+        if let Ok(sig) = sig_unmarshalled {
+            let mut hash_digest = Sha512::new();
+            hash_digest.update(&serde_json::to_vec(&self.body).unwrap());
+            cluster_pubkey
+                .verify_prehashed(hash_digest, None, &sig)
+                .is_ok()
+        } else {
+            false
         }
     }
 }
@@ -103,6 +134,84 @@ pub enum GossipRequest {
     },
 }
 
+impl GossipRequest {
+    /// Explicitly states which requests need cluster authentication
+    ///
+    /// The code here is intentionally verbose to force any new request/response types
+    /// to be defined with authentication in mind
+    pub fn requires_cluster_auth(&self) -> bool {
+        match self {
+            GossipRequest::Bootstrap(..) => false,
+            GossipRequest::ClusterAuth(..) => true,
+            GossipRequest::Heartbeat(..) => false,
+            GossipRequest::Handshake { .. } => false,
+            GossipRequest::Replicate(..) => false,
+            GossipRequest::ValidityProof { .. } => true,
+        }
+    }
+}
+
+/// A wrapper around the `GossipResponse` type that allows us to attach signatures
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AuthenticatedGossipResponse {
+    /// A signature of the request body with the sender's cluster private key
+    pub sig: Vec<u8>,
+    /// The body of the request
+    pub body: GossipResponse,
+}
+
+impl AuthenticatedGossipResponse {
+    /// A helper function to create a simple ack without needing to explicitly construct
+    /// the nested enumerative types
+    pub fn new_ack() -> Self {
+        Self {
+            sig: Vec::new(),
+            body: GossipResponse::Ack,
+        }
+    }
+
+    /// Constructs a new authenticated gossip request given the request body.
+    /// Attaches a signature of the body using the given cluster private key
+    /// if one is necessary
+    pub fn new_with_body(
+        body: GossipResponse,
+        cluster_key: &SigKeypair,
+    ) -> Result<Self, SignatureError> {
+        // Create a signature fo the body
+        let sig = if body.requires_cluster_auth() {
+            let mut hash_digest: Sha512 = Sha512::new();
+            hash_digest.update(&serde_json::to_vec(&body).unwrap());
+            cluster_key
+                .sign_prehashed(hash_digest, None)?
+                .to_bytes()
+                .to_vec()
+        } else {
+            Vec::new()
+        };
+
+        Ok(Self { sig, body })
+    }
+
+    /// Verify the signature on an authenticated request
+    pub fn verify_cluster_auth(&self, cluster_pubkey: &PublicKey) -> bool {
+        if !self.body.requires_cluster_auth() {
+            return true;
+        }
+
+        // Unmarshal the signature into its runtime type
+        let sig_unmarshalled = Signature::from_bytes(&self.sig);
+        if let Ok(sig) = sig_unmarshalled {
+            let mut hash_digest = Sha512::new();
+            hash_digest.update(&serde_json::to_vec(&self.body).unwrap());
+            cluster_pubkey
+                .verify_prehashed(hash_digest, None, &sig)
+                .is_ok()
+        } else {
+            false
+        }
+    }
+}
+
 /// Represents the possible response types for a request-response message
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GossipResponse {
@@ -122,6 +231,88 @@ pub enum GossipResponse {
     },
 }
 
+impl GossipResponse {
+    /// Explicitly states which requests need cluster authentication
+    ///
+    /// The code here is intentionally verbose to force any new request/response types
+    /// to be defined with authentication in mind
+    pub fn requires_cluster_auth(&self) -> bool {
+        match self {
+            GossipResponse::Ack => false,
+            GossipResponse::ClusterAuth(..) => true,
+            GossipResponse::Heartbeat(..) => false,
+            GossipResponse::Handshake { .. } => false,
+        }
+    }
+}
+
+/// A wrapper around pubsub messages that allows us to attach signatures to the message
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AuthenticatedPubsubMessage {
+    /// The signature attached to the message
+    pub sig: Vec<u8>,
+    /// The body of the message
+    pub body: PubsubMessage,
+}
+
+impl AuthenticatedPubsubMessage {
+    /// Construct a new authenticated pubsub message from the pubsub body
+    /// Sign the message if its type requires a signature
+    pub fn new_with_body(
+        body: PubsubMessage,
+        cluster_key: &SigKeypair,
+    ) -> Result<Self, SignatureError> {
+        // Create a signature fo the body
+        let sig = if body.requires_cluster_auth() {
+            let mut hash_digest: Sha512 = Sha512::new();
+            hash_digest.update(&serde_json::to_vec(&body).unwrap());
+            cluster_key
+                .sign_prehashed(hash_digest, None)?
+                .to_bytes()
+                .to_vec()
+        } else {
+            Vec::new()
+        };
+
+        Ok(Self { sig, body })
+    }
+
+    /// Verify the signature on an authenticated request
+    pub fn verify_cluster_auth(&self, cluster_pubkey: &PublicKey) -> bool {
+        if !self.body.requires_cluster_auth() {
+            return true;
+        }
+
+        // Unmarshal the signature into its runtime type
+        let sig_unmarshalled = Signature::from_bytes(&self.sig);
+        if let Ok(sig) = sig_unmarshalled {
+            let mut hash_digest = Sha512::new();
+            hash_digest.update(&serde_json::to_vec(&self.body).unwrap());
+            cluster_pubkey
+                .verify_prehashed(hash_digest, None, &sig)
+                .is_ok()
+        } else {
+            false
+        }
+    }
+}
+
+/// Explicit byte serialization and deserialization
+///
+/// libp2p gossipsub interface expects a type that can be cast
+/// to and from bytes
+impl From<AuthenticatedPubsubMessage> for Vec<u8> {
+    fn from(msg: AuthenticatedPubsubMessage) -> Self {
+        serde_json::to_vec(&msg).unwrap()
+    }
+}
+
+impl From<Vec<u8>> for AuthenticatedPubsubMessage {
+    fn from(bytes: Vec<u8>) -> Self {
+        serde_json::from_slice(&bytes).unwrap()
+    }
+}
+
 /// Represents a pubsub message flooded through the network
 ///
 /// Practically, enum variants listed at this scope should be published on
@@ -133,60 +324,20 @@ pub enum PubsubMessage {
     ClusterManagement {
         /// The ID of the cluster this message is intended for
         cluster_id: ClusterId,
-        /// The signature of the message body using the cluster's private key
-        signature: Vec<u8>,
         /// The message body
         message: ClusterManagementMessage,
     },
 }
 
 impl PubsubMessage {
-    /// Create a new cluster management message signed with the cluster private key
-    pub fn new_cluster_management(
-        cluster_key: &Keypair,
-        message: ClusterManagementMessage,
-    ) -> Result<PubsubMessage, SignatureError> {
-        let mut hash_digest: Sha512 = Sha512::new();
-        hash_digest.update(&Into::<Vec<u8>>::into(&message));
-        let signature = cluster_key
-            .sign_prehashed(hash_digest, None)?
-            .to_bytes()
-            .to_vec();
-
-        Ok(PubsubMessage::ClusterManagement {
-            cluster_id: ClusterId::new(&cluster_key.public),
-            signature,
-            message,
-        })
-    }
-
-    /// Create a new cluster management message with an empty signature; the assumption being
-    /// that a lower level module will fill in the signature
-    pub fn new_cluster_management_unsigned(
-        cluster_id: ClusterId,
-        message: ClusterManagementMessage,
-    ) -> PubsubMessage {
-        PubsubMessage::ClusterManagement {
-            cluster_id,
-            signature: vec![],
-            message,
+    /// Explicitly states which messages need cluster authentication
+    ///
+    /// The code here is intentionally verbose to force any new request/response types
+    /// to be defined with authentication in mind
+    pub fn requires_cluster_auth(&self) -> bool {
+        match self {
+            PubsubMessage::ClusterManagement { .. } => true,
         }
-    }
-}
-
-/// Explicit byte serialization and deserialization
-///
-/// libp2p gossipsub interface expects a type that can be cast
-/// to and from bytes
-impl From<PubsubMessage> for Vec<u8> {
-    fn from(message: PubsubMessage) -> Self {
-        serde_json::to_vec(&message).unwrap()
-    }
-}
-
-impl From<Vec<u8>> for PubsubMessage {
-    fn from(buf: Vec<u8>) -> Self {
-        serde_json::from_slice(&buf).unwrap()
     }
 }
 
@@ -224,4 +375,26 @@ pub enum ManagerControlDirective {
     /// to allow the libp2p swarm time to build connections that the gossipsub protocol may
     /// graft to
     GossipWarmupComplete,
+}
+
+/// The role in an MPC network setup; either Dialer or Listener depending on which node
+/// initiates the connection
+#[derive(Clone, Debug)]
+pub enum ConnectionRole {
+    /// Dials the peer, initiating the connection
+    /// The dialer also plays the role of the king in the subsequent MPC computation
+    Dialer,
+    /// Listens for an inbound connection from the dialer
+    Listener,
+}
+
+impl ConnectionRole {
+    /// Get the party_id for an MPC dialed up through this connection
+    pub fn get_party_id(&self) -> u64 {
+        match self {
+            // Party 0 dials party 1
+            ConnectionRole::Dialer => 0,
+            ConnectionRole::Listener => 1,
+        }
+    }
 }

@@ -82,10 +82,10 @@ impl GossipServer {
             .network_sender
             .send(GossipOutbound::Pubsub {
                 topic: self.config.cluster_id.get_management_topic(),
-                message: PubsubMessage::new_cluster_management_unsigned(
-                    self.config.cluster_id.clone(),
-                    ClusterManagementMessage::Join(message_body),
-                ),
+                message: PubsubMessage::ClusterManagement {
+                    cluster_id: self.config.cluster_id.clone(),
+                    message: ClusterManagementMessage::Join(message_body),
+                },
             })
             .map_err(|err| GossipError::SendMessage(err.to_string()))?;
 

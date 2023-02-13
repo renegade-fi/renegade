@@ -188,7 +188,6 @@ impl NetworkOrderBook {
         if self.order_map.contains_key(&order.id) {
             return;
         }
-        println!("Adding order");
 
         // If the order is local, add it to the local order list
         order.state = NetworkOrderState::Received;

@@ -1,7 +1,7 @@
 //! The network manager handles lower level interaction with the p2p network
 
 use crossbeam::channel::Sender;
-use ed25519_dalek::{Keypair as SigKeypair, Signature, Signer, Verifier};
+use ed25519_dalek::Keypair as SigKeypair;
 use futures::StreamExt;
 use itertools::Itertools;
 use libp2p::{
@@ -21,11 +21,9 @@ use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
 
 use crate::{
     api::{
-        cluster_management::{
-            ClusterAuthResponse, ClusterAuthResponseBody, ClusterManagementMessage,
-            ReplicatedMessage,
-        },
+        cluster_management::{ClusterAuthResponse, ClusterManagementMessage, ReplicatedMessage},
         gossip::{
+            AuthenticatedGossipRequest, AuthenticatedGossipResponse, AuthenticatedPubsubMessage,
             ConnectionRole, GossipOutbound, GossipOutbound::Pubsub, GossipRequest, GossipResponse,
             ManagerControlDirective, PubsubMessage,
         },
@@ -51,6 +49,8 @@ const ERR_NO_KNOWN_ADDR: &str = "no known address for peer";
 const ERR_PARSING_ADDR: &str = "could not parse Multiaddr to SocketAddr";
 /// An error sending a response through the swarm
 const ERR_SENDING_RESPONSE: &str = "error sending response, channel closed";
+/// Emitted when signature verification for an authenticated request fails
+const ERR_SIG_VERIFY: &str = "signature verification failed";
 /// Error emitted when a peer requests the local peer to prove auth for a different cluster
 /// than its own
 const ERR_WRONG_CLUSTER: &str = "cluster ID requested does not match local cluster ID";
@@ -280,23 +280,34 @@ impl NetworkManagerExecutor {
     ) -> Result<(), NetworkManagerError> {
         match msg {
             GossipOutbound::Request { peer_id, message } => {
+                // Attach a signature if necessary
+                let req_body =
+                    AuthenticatedGossipRequest::new_with_body(message, &self.cluster_key)
+                        .map_err(|err| NetworkManagerError::Authentication(err.to_string()))?;
+
                 self.swarm
                     .behaviour_mut()
                     .request_response
-                    .send_request(&peer_id, message);
+                    .send_request(&peer_id, req_body);
 
                 Ok(())
             }
-            GossipOutbound::Response { channel, message } => self
-                .swarm
-                .behaviour_mut()
-                .request_response
-                .send_response(channel, message)
-                .map_err(|_| {
-                    NetworkManagerError::Network(
-                        "error sending response, channel closed".to_string(),
-                    )
-                }),
+            GossipOutbound::Response { channel, message } => {
+                // Attach a signature if necessary
+                let req_body =
+                    AuthenticatedGossipResponse::new_with_body(message, &self.cluster_key)
+                        .map_err(|err| NetworkManagerError::Authentication(err.to_string()))?;
+
+                self.swarm
+                    .behaviour_mut()
+                    .request_response
+                    .send_response(channel, req_body)
+                    .map_err(|_| {
+                        NetworkManagerError::Network(
+                            "error sending response, channel closed".to_string(),
+                        )
+                    })
+            }
             Pubsub { topic, message } => self.forward_outbound_pubsub(topic, message),
             GossipOutbound::ManagementMessage(command) => self.handle_control_directive(command),
         }
@@ -306,7 +317,7 @@ impl NetworkManagerExecutor {
     fn forward_outbound_pubsub(
         &mut self,
         topic: String,
-        mut message: PubsubMessage,
+        message: PubsubMessage,
     ) -> Result<(), NetworkManagerError> {
         // If the gossip server has not warmed up the local node into the network, buffer
         // the pubsub message for forwarding after the warmup
@@ -316,33 +327,16 @@ impl NetworkManagerExecutor {
             return Ok(());
         }
 
-        // If the message is a cluster management message; the network manager should attach a signature
-        #[allow(irrefutable_let_patterns)]
-        if let PubsubMessage::ClusterManagement {
-            cluster_id,
-            message: body,
-            ..
-        } = message
-        {
-            // Sign the message with the cluster key
-            let signature = self
-                .cluster_key
-                .sign(&Into::<Vec<u8>>::into(&body))
-                .to_bytes()
-                .to_vec();
+        // If we require a signature on the message attach one
+        let req_body = AuthenticatedPubsubMessage::new_with_body(message, &self.cluster_key)
+            .map_err(|err| NetworkManagerError::Authentication(err.to_string()))?;
 
-            message = PubsubMessage::ClusterManagement {
-                cluster_id,
-                signature,
-                message: body,
-            }
-        }
-
+        // Forward to the network
         let topic = Sha256Topic::new(topic);
         self.swarm
             .behaviour_mut()
             .pubsub
-            .publish(topic, message)
+            .publish(topic, req_body)
             .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
         Ok(())
     }
@@ -445,160 +439,162 @@ impl NetworkManagerExecutor {
     fn handle_inbound_request_response_message(
         &mut self,
         peer_id: PeerId,
-        message: RequestResponseMessage<GossipRequest, GossipResponse>,
+        message: RequestResponseMessage<AuthenticatedGossipRequest, AuthenticatedGossipResponse>,
     ) -> Result<(), NetworkManagerError> {
         // Multiplex over request/response message types
         match message {
             // Handle inbound request from another peer
             RequestResponseMessage::Request {
                 request, channel, ..
-            } => match request {
-                // Forward the bootstrap request directly to the gossip server
-                GossipRequest::Bootstrap(req) => self
-                    .gossip_work_queue
-                    .send(GossipServerJob::Bootstrap(req, channel))
-                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
+            } => {
+                // Authenticate the request
+                if !request.verify_cluster_auth(&self.cluster_key.public) {
+                    return Err(NetworkManagerError::Authentication(
+                        ERR_SIG_VERIFY.to_string(),
+                    ));
+                }
 
-                // Fulfill cluster auth requests directly in the network manager; it has direct
-                // access to the private key
-                GossipRequest::ClusterAuth(auth_message) => {
-                    // If the auth message is not for the local peer's cluster, ignore it
-                    let local_cluster_id = self.global_state.local_cluster_id.clone();
-                    if auth_message.cluster_id != local_cluster_id {
-                        return Err(NetworkManagerError::Authentication(
-                            ERR_WRONG_CLUSTER.to_string(),
-                        ));
+                match request.body {
+                    // Forward the bootstrap request directly to the gossip server
+                    GossipRequest::Bootstrap(req) => self
+                        .gossip_work_queue
+                        .send(GossipServerJob::Bootstrap(req, channel))
+                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
+
+                    // Fulfill cluster auth requests directly in the network manager; it has direct
+                    // access to the private key
+                    GossipRequest::ClusterAuth(auth_message) => {
+                        // If the auth message is not for the local peer's cluster, ignore it
+                        let local_cluster_id = self.global_state.local_cluster_id.clone();
+                        if auth_message.cluster_id != local_cluster_id {
+                            return Err(NetworkManagerError::Authentication(
+                                ERR_WRONG_CLUSTER.to_string(),
+                            ));
+                        }
+
+                        // Otherwise, sign a response of (peer_id, cluster_id)
+                        let body = GossipResponse::ClusterAuth(ClusterAuthResponse {
+                            peer_id: self.global_state.local_peer_id(),
+                            peer_info: self.global_state.get_local_peer_info(),
+                            cluster_id: local_cluster_id,
+                        });
+                        let resp_body =
+                            AuthenticatedGossipResponse::new_with_body(body, &self.cluster_key)
+                                .map_err(|err| {
+                                    NetworkManagerError::Authentication(err.to_string())
+                                })?;
+
+                        self.swarm
+                            .behaviour_mut()
+                            .request_response
+                            .send_response(channel, resp_body)
+                            .map_err(|_| {
+                                NetworkManagerError::Network(ERR_SENDING_RESPONSE.to_string())
+                            })
                     }
 
-                    // Otherwise, sign a response of (peer_id, cluster_id)
-                    let body = ClusterAuthResponseBody {
-                        peer_id: self.global_state.local_peer_id(),
-                        peer_info: self.global_state.get_local_peer_info(),
-                        cluster_id: local_cluster_id,
-                    };
+                    GossipRequest::Heartbeat(heartbeat_message) => self
+                        .gossip_work_queue
+                        .send(GossipServerJob::HandleHeartbeatReq {
+                            peer_id: WrappedPeerId(peer_id),
+                            message: heartbeat_message,
+                            channel,
+                        })
+                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
 
-                    let signature = self
-                        .cluster_key
-                        .sign(&Into::<Vec<u8>>::into(&body))
-                        .to_bytes()
-                        .to_vec();
-                    let resp = GossipResponse::ClusterAuth(ClusterAuthResponse { body, signature });
-
-                    self.swarm
-                        .behaviour_mut()
-                        .request_response
-                        .send_response(channel, resp)
-                        .map_err(|_| NetworkManagerError::Network(ERR_SENDING_RESPONSE.to_string()))
-                }
-
-                GossipRequest::Heartbeat(heartbeat_message) => self
-                    .gossip_work_queue
-                    .send(GossipServerJob::HandleHeartbeatReq {
-                        peer_id: WrappedPeerId(peer_id),
-                        message: heartbeat_message,
-                        channel,
-                    })
-                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
-
-                GossipRequest::Handshake {
-                    request_id,
-                    message,
-                } => self
-                    .handshake_work_queue
-                    .send(HandshakeExecutionJob::ProcessHandshakeMessage {
+                    GossipRequest::Handshake {
                         request_id,
-                        peer_id: WrappedPeerId(peer_id),
                         message,
-                        response_channel: Some(channel),
-                    })
-                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
+                    } => self
+                        .handshake_work_queue
+                        .send(HandshakeExecutionJob::ProcessHandshakeMessage {
+                            request_id,
+                            peer_id: WrappedPeerId(peer_id),
+                            message,
+                            response_channel: Some(channel),
+                        })
+                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
 
-                GossipRequest::Replicate(replicate_message) => {
-                    self.gossip_work_queue
-                        .send(GossipServerJob::Cluster(
-                            ClusterManagementJob::ReplicateRequest(replicate_message),
-                        ))
-                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
+                    GossipRequest::Replicate(replicate_message) => {
+                        self.gossip_work_queue
+                            .send(GossipServerJob::Cluster(
+                                ClusterManagementJob::ReplicateRequest(replicate_message),
+                            ))
+                            .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
 
-                    // Send a simple ack back to avoid closing the channel
-                    self.swarm
-                        .behaviour_mut()
-                        .request_response
-                        .send_response(channel, GossipResponse::Ack)
-                        .map_err(|_| NetworkManagerError::Network("error sending Ack".to_string()))
+                        // Send a simple ack back to avoid closing the channel
+                        self.swarm
+                            .behaviour_mut()
+                            .request_response
+                            .send_response(channel, AuthenticatedGossipResponse::new_ack())
+                            .map_err(|_| {
+                                NetworkManagerError::Network("error sending Ack".to_string())
+                            })
+                    }
+
+                    GossipRequest::ValidityProof { order_id, proof } => {
+                        // TODO: Authenticate this
+                        self.gossip_work_queue
+                            .send(GossipServerJob::Cluster(
+                                ClusterManagementJob::UpdateValidityProof(order_id, proof),
+                            ))
+                            .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))
+                    }
                 }
-
-                GossipRequest::ValidityProof { order_id, proof } => {
-                    // TODO: Authenticate this
-                    self.gossip_work_queue
-                        .send(GossipServerJob::Cluster(
-                            ClusterManagementJob::UpdateValidityProof(order_id, proof),
-                        ))
-                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))
-                }
-            },
+            }
 
             // Handle inbound response
-            RequestResponseMessage::Response { response, .. } => match response {
-                GossipResponse::Ack => Ok(()),
-                GossipResponse::ClusterAuth(auth_response) => {
-                    // Verify the signature
-                    let pubkey = auth_response
-                        .body
-                        .cluster_id
-                        .get_public_key()
-                        .map_err(|err| {
-                            NetworkManagerError::SerializeDeserialize(err.to_string())
-                        })?;
-                    let signature =
-                        Signature::from_bytes(&auth_response.signature).map_err(|err| {
-                            NetworkManagerError::SerializeDeserialize(err.to_string())
-                        })?;
-
-                    pubkey
-                        .verify(&Into::<Vec<u8>>::into(&auth_response.body), &signature)
-                        .map_err(|err| NetworkManagerError::Authentication(err.to_string()))?;
-
-                    // Forward a job to the gossip server to update its cluster information
-                    self.gossip_work_queue
-                        .send(GossipServerJob::Cluster(
-                            ClusterManagementJob::ClusterAuthSuccess(
-                                auth_response.body.cluster_id,
-                                auth_response.body.peer_id,
-                                auth_response.body.peer_info,
-                            ),
-                        ))
-                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
-
-                    Ok(())
+            RequestResponseMessage::Response { response, .. } => {
+                if !response.verify_cluster_auth(&self.cluster_key.public) {
+                    return Err(NetworkManagerError::Authentication(
+                        ERR_SIG_VERIFY.to_string(),
+                    ));
                 }
 
-                GossipResponse::Heartbeat(heartbeat_message) => self
-                    .gossip_work_queue
-                    .send(GossipServerJob::HandleHeartbeatResp {
-                        peer_id: WrappedPeerId(peer_id),
-                        message: heartbeat_message,
-                    })
-                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
+                match response.body {
+                    GossipResponse::Ack => Ok(()),
+                    GossipResponse::ClusterAuth(auth_response) => {
+                        // Forward a job to the gossip server to update its cluster information
+                        self.gossip_work_queue
+                            .send(GossipServerJob::Cluster(
+                                ClusterManagementJob::ClusterAuthSuccess(
+                                    auth_response.cluster_id,
+                                    auth_response.peer_id,
+                                    auth_response.peer_info,
+                                ),
+                            ))
+                            .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
 
-                GossipResponse::Handshake {
-                    request_id,
-                    message,
-                } => self
-                    .handshake_work_queue
-                    .send(HandshakeExecutionJob::ProcessHandshakeMessage {
+                        Ok(())
+                    }
+
+                    GossipResponse::Heartbeat(heartbeat_message) => self
+                        .gossip_work_queue
+                        .send(GossipServerJob::HandleHeartbeatResp {
+                            peer_id: WrappedPeerId(peer_id),
+                            message: heartbeat_message,
+                        })
+                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
+
+                    GossipResponse::Handshake {
                         request_id,
-                        peer_id: WrappedPeerId(peer_id),
                         message,
-                        // The handshake should response via a new request sent on the network manager channel
-                        response_channel: None,
-                    })
-                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
-            },
+                    } => self
+                        .handshake_work_queue
+                        .send(HandshakeExecutionJob::ProcessHandshakeMessage {
+                            request_id,
+                            peer_id: WrappedPeerId(peer_id),
+                            message,
+                            // The handshake should response via a new request sent on the network manager channel
+                            response_channel: None,
+                        })
+                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
+                }
+            }
         }
     }
 
-    // -------------------
+    // ------------------
     // | Pubsub Handlers |
     // -------------------
 
@@ -607,27 +603,19 @@ impl NetworkManagerExecutor {
         &mut self,
         message: GossipsubMessage,
     ) -> Result<(), NetworkManagerError> {
-        // Deserialize into API types
-        let event: PubsubMessage = message.data.into();
-        match event {
+        // Deserialize into API types and verify auth
+        let event: AuthenticatedPubsubMessage = message.data.into();
+        if !event.verify_cluster_auth(&self.cluster_key.public) {
+            return Err(NetworkManagerError::Authentication(
+                ERR_SIG_VERIFY.to_string(),
+            ));
+        }
+
+        match event.body {
             PubsubMessage::ClusterManagement {
                 cluster_id,
-                signature,
                 message,
             } => {
-                // All cluster management messages are signed with the cluster private key for authentication
-                // Parse the public key and signature from the payload
-                let pubkey = cluster_id
-                    .get_public_key()
-                    .map_err(|err| NetworkManagerError::SerializeDeserialize(err.to_string()))?;
-                let parsed_signature = Signature::from_bytes(&signature)
-                    .map_err(|err| NetworkManagerError::SerializeDeserialize(err.to_string()))?;
-
-                // Verify the signature
-                pubkey
-                    .verify(&Into::<Vec<u8>>::into(&message), &parsed_signature)
-                    .map_err(|err| NetworkManagerError::Authentication(err.to_string()))?;
-
                 match message {
                     // Forward the management message to the gossip server for processing
                     ClusterManagementMessage::Join(join_request) => {
