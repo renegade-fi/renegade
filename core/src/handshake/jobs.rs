@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::{
     api::{gossip::AuthenticatedGossipResponse, handshake::HandshakeMessage},
     gossip::types::WrappedPeerId,
-    state::orderbook::OrderIdentifier,
+    state::OrderIdentifier,
 };
 
 /// Represents a job for the handshake manager's thread pool to execute

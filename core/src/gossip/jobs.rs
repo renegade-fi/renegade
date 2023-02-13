@@ -10,7 +10,7 @@ use crate::{
         heartbeat::{BootstrapRequest, HeartbeatMessage},
     },
     proof_generation::jobs::ValidCommitmentsBundle,
-    state::{orderbook::OrderIdentifier, wallet::WalletIdentifier},
+    state::{wallet::WalletIdentifier, OrderIdentifier},
 };
 
 use super::types::{ClusterId, PeerInfo, WrappedPeerId};

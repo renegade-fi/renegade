@@ -12,9 +12,8 @@ use crate::{
     },
     proof_generation::jobs::ValidCommitmentsBundle,
     state::{
-        orderbook::OrderIdentifier,
         wallet::{Wallet, WalletIdentifier},
-        RelayerState,
+        OrderIdentifier, RelayerState,
     },
 };
 

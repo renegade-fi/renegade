@@ -30,7 +30,7 @@ use crate::{
         handshake::HandshakeMessage,
     },
     gossip::types::WrappedPeerId,
-    state::{orderbook::OrderIdentifier, RelayerState},
+    state::{OrderIdentifier, RelayerState},
     system_bus::SystemBus,
     types::{SystemBusMessage, HANDSHAKE_STATUS_TOPIC},
     CancelChannel,

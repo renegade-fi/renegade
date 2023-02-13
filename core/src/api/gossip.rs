@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::{
     gossip::types::{ClusterId, WrappedPeerId},
     proof_generation::jobs::ValidCommitmentsBundle,
-    state::orderbook::OrderIdentifier,
+    state::OrderIdentifier,
 };
 
 use super::{

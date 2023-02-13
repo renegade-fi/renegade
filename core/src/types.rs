@@ -2,7 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{price_reporter::reporter::PriceReport, state::orderbook::OrderIdentifier};
+use crate::{
+    price_reporter::reporter::PriceReport,
+    state::{NetworkOrderState, OrderIdentifier},
+};
 
 /**
  * Topic names
@@ -11,10 +14,12 @@ use crate::{price_reporter::reporter::PriceReport, state::orderbook::OrderIdenti
 /// The topic published to when the handshake manager begins a new
 /// match computation with a peer
 pub const HANDSHAKE_STATUS_TOPIC: &str = "handshakes";
+/// The topic published to when a state change occurs on an order
+pub const ORDER_STATE_CHANGE_TOPIC: &str = "order-state";
 
 /// A message type for generic system bus messages, broadcast to all modules
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
+#[serde(tag = "type")]
 pub enum SystemBusMessage {
     /// A message indicating that a handshake with a peer has started
     HandshakeInProgress {
@@ -29,6 +34,16 @@ pub enum SystemBusMessage {
         local_order_id: OrderIdentifier,
         /// The order_id of the remote peer
         peer_order_id: OrderIdentifier,
+    },
+    /// A message indicating that an order has changed state in the local order
+    /// book
+    OrderStateChange {
+        /// The order identifier
+        order_id: OrderIdentifier,
+        /// The old state of the order
+        prev_state: NetworkOrderState,
+        /// The new state of the order
+        new_state: NetworkOrderState,
     },
     /// A message indicating that a new median PriceReport has been published
     PriceReportMedian(PriceReport),
