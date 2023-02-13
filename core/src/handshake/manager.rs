@@ -310,10 +310,12 @@ impl HandshakeManager {
                     network_channel
                         .send(GossipOutbound::Pubsub {
                             topic: cluster_id.get_management_topic(),
-                            message: PubsubMessage::new_cluster_management_unsigned(
+                            message: PubsubMessage::ClusterManagement {
                                 cluster_id,
-                                ClusterManagementMessage::MatchInProgress(order_id, peer_order),
-                            ),
+                                message: ClusterManagementMessage::MatchInProgress(
+                                    order_id, peer_order,
+                                ),
+                            },
                         })
                         .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
@@ -397,10 +399,12 @@ impl HandshakeManager {
                     network_channel
                         .send(GossipOutbound::Pubsub {
                             topic: cluster_id.get_management_topic(),
-                            message: PubsubMessage::new_cluster_management_unsigned(
+                            message: PubsubMessage::ClusterManagement {
                                 cluster_id,
-                                ClusterManagementMessage::MatchInProgress(my_order, peer_order),
-                            ),
+                                message: ClusterManagementMessage::MatchInProgress(
+                                    my_order, peer_order,
+                                ),
+                            },
                         })
                         .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
@@ -564,10 +568,13 @@ impl HandshakeManager {
         network_channel
             .send(GossipOutbound::Pubsub {
                 topic: locked_cluster_id.get_management_topic(),
-                message: PubsubMessage::new_cluster_management_unsigned(
-                    locked_cluster_id,
-                    ClusterManagementMessage::CacheSync(state.local_order_id, state.peer_order_id),
-                ),
+                message: PubsubMessage::ClusterManagement {
+                    cluster_id: locked_cluster_id,
+                    message: ClusterManagementMessage::CacheSync(
+                        state.local_order_id,
+                        state.peer_order_id,
+                    ),
+                },
             })
             .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 

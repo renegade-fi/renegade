@@ -99,28 +99,12 @@ pub struct ClusterAuthRequest {
 /// cluster private key
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ClusterAuthResponse {
-    /// The body of the response, the signature of which is attached
-    pub body: ClusterAuthResponseBody,
-    /// The signature of the two former attributes under the cluster private key
-    pub signature: Vec<u8>,
-}
-
-/// The body of a cluster auth response; signed with the cluster private key
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ClusterAuthResponseBody {
     /// The cluster ID
     pub cluster_id: ClusterId,
     /// The ID of the peer proving authorization
     pub peer_id: WrappedPeerId,
     /// The peer info of the peer authenticating into the cluster
     pub peer_info: PeerInfo,
-}
-
-// Explicit byte serialization for hashing and signing
-impl From<&ClusterAuthResponseBody> for Vec<u8> {
-    fn from(body: &ClusterAuthResponseBody) -> Self {
-        serde_json::to_vec(&body).unwrap()
-    }
 }
 
 /// The body of a proof request message published to a cluster

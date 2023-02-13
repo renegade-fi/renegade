@@ -25,7 +25,7 @@ use std::{
     iter,
 };
 
-use crate::api::gossip::{GossipRequest, GossipResponse};
+use crate::api::gossip::{AuthenticatedGossipRequest, AuthenticatedGossipResponse};
 
 use super::error::NetworkManagerError;
 
@@ -104,7 +104,7 @@ impl ComposedNetworkBehavior {
 #[allow(clippy::large_enum_variant)]
 pub enum ComposedProtocolEvent {
     /// An event from the request/response behavior, point-to-point
-    RequestResponse(RequestResponseEvent<GossipRequest, GossipResponse>),
+    RequestResponse(RequestResponseEvent<AuthenticatedGossipRequest, AuthenticatedGossipResponse>),
     /// An event from the KDHT behavior; e.g. new address
     Kademlia(KademliaEvent),
     /// An event from the pubsub behavior; broadcast
@@ -120,8 +120,12 @@ impl From<KademliaEvent> for ComposedProtocolEvent {
     }
 }
 
-impl From<RequestResponseEvent<GossipRequest, GossipResponse>> for ComposedProtocolEvent {
-    fn from(e: RequestResponseEvent<GossipRequest, GossipResponse>) -> Self {
+impl From<RequestResponseEvent<AuthenticatedGossipRequest, AuthenticatedGossipResponse>>
+    for ComposedProtocolEvent
+{
+    fn from(
+        e: RequestResponseEvent<AuthenticatedGossipRequest, AuthenticatedGossipResponse>,
+    ) -> Self {
         ComposedProtocolEvent::RequestResponse(e)
     }
 }
@@ -193,8 +197,8 @@ impl RelayerGossipCodec {
 #[async_trait]
 impl RequestResponseCodec for RelayerGossipCodec {
     type Protocol = RelayerGossipProtocol;
-    type Request = GossipRequest;
-    type Response = GossipResponse;
+    type Request = AuthenticatedGossipRequest;
+    type Response = AuthenticatedGossipResponse;
 
     /// Deserializes a read request
     async fn read_request<T>(
@@ -210,7 +214,7 @@ impl RequestResponseCodec for RelayerGossipCodec {
             return Err(IoError::new(ErrorKind::InvalidData, "empty request"));
         }
 
-        let deserialized: GossipRequest = serde_json::from_slice(&req_data).unwrap();
+        let deserialized: AuthenticatedGossipRequest = serde_json::from_slice(&req_data).unwrap();
         Ok(deserialized)
     }
 
@@ -228,7 +232,7 @@ impl RequestResponseCodec for RelayerGossipCodec {
             return Err(IoError::new(ErrorKind::InvalidData, "empty response"));
         }
 
-        let deserialized: GossipResponse = serde_json::from_slice(&resp_data).unwrap();
+        let deserialized: AuthenticatedGossipResponse = serde_json::from_slice(&resp_data).unwrap();
         Ok(deserialized)
     }
 

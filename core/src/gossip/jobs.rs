@@ -6,7 +6,7 @@ use libp2p::request_response::ResponseChannel;
 use crate::{
     api::{
         cluster_management::{ClusterJoinMessage, ReplicateRequestBody, ValidityProofRequest},
-        gossip::GossipResponse,
+        gossip::AuthenticatedGossipResponse,
         heartbeat::{BootstrapRequest, HeartbeatMessage},
     },
     proof_generation::jobs::ValidCommitmentsBundle,
@@ -20,7 +20,10 @@ use super::types::{ClusterId, PeerInfo, WrappedPeerId};
 #[allow(clippy::large_enum_variant)]
 pub enum GossipServerJob {
     /// Handle a job to bootstrap a newly added peer
-    Bootstrap(BootstrapRequest, ResponseChannel<GossipResponse>),
+    Bootstrap(
+        BootstrapRequest,
+        ResponseChannel<AuthenticatedGossipResponse>,
+    ),
     /// Handle an incoming cluster management job
     Cluster(ClusterManagementJob),
     /// Job type for the heartbeat executor to send an outbound heartbeat request
@@ -32,7 +35,7 @@ pub enum GossipServerJob {
         /// The message contents
         message: HeartbeatMessage,
         /// A channel on which to send the response
-        channel: ResponseChannel<GossipResponse>,
+        channel: ResponseChannel<AuthenticatedGossipResponse>,
     },
     /// Handle an incoming heartbeat response from a peer
     HandleHeartbeatResp {

@@ -5,7 +5,7 @@ use mpc_ristretto::network::QuicTwoPartyNet;
 use uuid::Uuid;
 
 use crate::{
-    api::{gossip::GossipResponse, handshake::HandshakeMessage},
+    api::{gossip::AuthenticatedGossipResponse, handshake::HandshakeMessage},
     gossip::types::WrappedPeerId,
     state::orderbook::OrderIdentifier,
 };
@@ -27,7 +27,7 @@ pub enum HandshakeExecutionJob {
         ///
         /// If the channel is `None`, the response should be forwarded
         /// as a new gossip request to the network manager directly
-        response_channel: Option<ResponseChannel<GossipResponse>>,
+        response_channel: Option<ResponseChannel<AuthenticatedGossipResponse>>,
     },
     /// Indicates that the network manager has setup an MPC net and the receiving thread
     /// may begin executing a match over this network
