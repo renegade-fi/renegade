@@ -6,7 +6,7 @@ use circuits::verify_singleprover_proof;
 use crate::{
     api::orderbook_management::OrderBookManagementMessage,
     proof_generation::jobs::ValidCommitmentsBundle,
-    state::{NetworkOrder, OrderIdentifier, RelayerState},
+    state::{NetworkOrder, OrderIdentifier},
     types::SizedValidCommitments,
 };
 
@@ -15,23 +15,24 @@ use super::{errors::GossipError, server::GossipProtocolExecutor};
 impl GossipProtocolExecutor {
     /// Dispatches messages from the cluster regarding order book management
     pub(super) fn handle_order_book_management_message(
+        &self,
         message: OrderBookManagementMessage,
-        global_state: &RelayerState,
     ) -> Result<(), GossipError> {
         match message {
             OrderBookManagementMessage::OrderReceived { order_id } => {
-                Self::handle_new_order(order_id, global_state);
+                self.handle_new_order(order_id);
                 Ok(())
             }
             OrderBookManagementMessage::OrderProofUpdated { order_id, proof } => {
-                Self::handle_new_validity_proof(order_id, proof, global_state)
+                self.handle_new_validity_proof(order_id, proof)
             }
         }
     }
 
     /// Handles a newly discovered order added to the book
-    fn handle_new_order(order_id: OrderIdentifier, global_state: &RelayerState) {
-        global_state.add_order(NetworkOrder::new(order_id, false /* local */))
+    fn handle_new_order(&self, order_id: OrderIdentifier) {
+        self.global_state
+            .add_order(NetworkOrder::new(order_id, false /* local */))
     }
 
     /// Handles a new validity proof attached to an order
@@ -39,9 +40,9 @@ impl GossipProtocolExecutor {
     /// TODO: We also need to sanity check the statement variables with the contract state,
     /// e.g. merkle root, nullifiers, etc.
     fn handle_new_validity_proof(
+        &self,
         order_id: OrderIdentifier,
         proof_bundle: ValidCommitmentsBundle,
-        global_state: &RelayerState,
     ) -> Result<(), GossipError> {
         // Verify the proof
         let bundle_clone = proof_bundle.clone();
@@ -53,15 +54,18 @@ impl GossipProtocolExecutor {
         .map_err(|err| GossipError::ValidCommitmentVerification(err.to_string()))?;
 
         // Add the order to the book in the `Validated` state
-        if !global_state.read_order_book().contains_order(&order_id) {
-            global_state.add_order(NetworkOrder::new(order_id, false /* local */));
+        if !self
+            .global_state
+            .read_order_book()
+            .contains_order(&order_id)
+        {
+            self.global_state
+                .add_order(NetworkOrder::new(order_id, false /* local */));
         }
 
-        global_state
+        self.global_state
             .read_order_book()
             .update_order_validity_proof(&order_id, bundle_clone);
-
-        println!("Finished new validity proof");
 
         Ok(())
     }

@@ -15,6 +15,7 @@ use libp2p::{
 use libp2p_swarm::NetworkBehaviour;
 use mpc_ristretto::network::QuicTwoPartyNet;
 use portpicker::Port;
+use tracing::log;
 
 use std::{net::SocketAddr, thread::JoinHandle};
 use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
@@ -213,14 +214,14 @@ impl NetworkManagerExecutor {
     ///      2. Events from workers to be sent over the network
     /// It handles these in the tokio select! macro below
     pub(super) async fn executor_loop(mut self) -> NetworkManagerError {
-        println!("Starting executor loop for network manager...");
+        log::info!("Starting executor loop for network manager...");
         loop {
             tokio::select! {
                 // Handle network requests from worker components of the relayer
                 Some(message) = self.send_channel.recv() => {
                     // Forward the message
                     if let Err(err) = self.handle_outbound_message(message).await {
-                        println!("Error sending outbound message: {}", err);
+                        log::info!("Error sending outbound message: {}", err);
                     }
                 },
 
@@ -231,11 +232,11 @@ impl NetworkManagerExecutor {
                             if let Err(err) = self.handle_inbound_message(
                                 event,
                             ) {
-                                println!("error in network manager: {:?}", err);
+                                log::info!("error in network manager: {:?}", err);
                             }
                         },
                         SwarmEvent::NewListenAddr { address, .. } => {
-                            println!("Listening on {}/p2p/{}\n", address, self.local_peer_id);
+                            log::info!("Listening on {}/p2p/{}\n", address, self.local_peer_id);
                         },
                         // This catchall may be enabled for fine-grained libp2p introspection
                         _ => {  }
@@ -675,7 +676,6 @@ impl NetworkManagerExecutor {
                 }
             }
             PubsubMessage::OrderBookManagement(msg) => {
-                println!("Received order book management message...");
                 self.gossip_work_queue
                     .send(GossipServerJob::OrderBookManagement(msg))
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;

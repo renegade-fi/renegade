@@ -23,6 +23,7 @@ use mpc_ristretto::{
     network::{MpcNetwork, QuicTwoPartyNet},
 };
 use tokio::runtime::Builder as TokioBuilder;
+use tracing::log;
 
 use super::{error::HandshakeManagerError, manager::HandshakeManager, state::HandshakeState};
 
@@ -53,7 +54,7 @@ impl HandshakeManager {
         });
 
         block_on(join_handle).unwrap()?;
-        println!("Finished match!");
+        log::info!("Finished match!");
 
         Ok(())
     }
@@ -64,7 +65,7 @@ impl HandshakeManager {
         handshake_state: HandshakeState,
         mut mpc_net: QuicTwoPartyNet,
     ) -> Result<(), HandshakeManagerError> {
-        println!("Matching order...\n");
+        log::info!("Matching order...");
         // Connect the network
         block_on(mpc_net.connect())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
@@ -82,12 +83,6 @@ impl HandshakeManager {
 
         // Run the mpc to get a match result
         let match_res = Self::execute_match_mpc(&handshake_state.order, shared_fabric.clone())?;
-        let match_res_open = match_res
-            .clone()
-            .open_and_authenticate()
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-
-        println!("Got MPC res: {:?}", match_res_open);
 
         // The statement parameterization of the VALID MATCH MPC circuit is empty
         let statement = ValidMatchMpcStatement {};
@@ -128,8 +123,6 @@ impl HandshakeManager {
         match_res: AuthenticatedMatchResult<N, S>,
         fabric: SharedFabric<N, S>,
     ) -> Result<(), HandshakeManagerError> {
-        println!("proving...");
-
         // Build a witness to the VALID MATCH MPC statement
         let witness = ValidMatchMpcWitness {
             my_order: order,
