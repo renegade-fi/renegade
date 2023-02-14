@@ -5,6 +5,7 @@ mod cluster;
 pub mod errors;
 mod heartbeat;
 pub mod jobs;
+mod orderbook;
 pub mod server;
 pub mod types;
 pub mod worker;

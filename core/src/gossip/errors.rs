@@ -15,6 +15,8 @@ pub enum GossipError {
     SendMessage(String),
     /// Timer failed to send a heartbeat
     TimerFailed(String),
+    /// An error verifying a peer's proof of `VALID COMMITMENTS`
+    ValidCommitmentVerification(String),
 }
 
 impl fmt::Display for GossipError {

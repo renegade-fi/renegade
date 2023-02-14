@@ -18,6 +18,7 @@ use super::{
     },
     handshake::HandshakeMessage,
     heartbeat::{BootstrapRequest, HeartbeatMessage},
+    orderbook_management::OrderBookManagementMessage,
 };
 
 /// Represents an outbound gossip message, either a request to a peer
@@ -319,6 +320,7 @@ impl From<Vec<u8>> for AuthenticatedPubsubMessage {
 /// a unique topic per variant; i.e. this is the granularity at which we
 /// specify a topic.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum PubsubMessage {
     /// A message broadcast to indicate an even relevant to cluster management
     ClusterManagement {
@@ -327,6 +329,8 @@ pub enum PubsubMessage {
         /// The message body
         message: ClusterManagementMessage,
     },
+    /// A message broadcast to the network to indicate that OrderBook state has changed
+    OrderBookManagement(OrderBookManagementMessage),
 }
 
 impl PubsubMessage {
@@ -337,6 +341,7 @@ impl PubsubMessage {
     pub fn requires_cluster_auth(&self) -> bool {
         match self {
             PubsubMessage::ClusterManagement { .. } => true,
+            PubsubMessage::OrderBookManagement(..) => false,
         }
     }
 }
