@@ -12,7 +12,9 @@ use std::{
 
 use crossbeam::channel::{Receiver, Sender};
 use lru::LruCache;
+use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::mpsc::UnboundedSender;
+use tracing::log;
 
 use crate::{
     api::{
@@ -20,7 +22,6 @@ use crate::{
         gossip::{GossipOutbound, GossipResponse, ManagerControlDirective, PubsubMessage},
     },
     state::RelayerState,
-    CancelChannel,
 };
 
 use super::{
@@ -33,6 +34,8 @@ use super::{
     worker::GossipServerConfig,
 };
 
+/// The number of threads backing the gossip executor's thread pool
+const GOSSIP_EXECUTOR_N_THREADS: usize = 5;
 /// The amount of time to wait for the node to find peers before sending
 /// pubsub messages associated with setup
 const PUBSUB_WARMUP_TIME_MS: u64 = 5_000; // 5 seconds
@@ -46,7 +49,7 @@ pub struct GossipServer {
     /// The config for the Gossip Server
     pub(super) config: GossipServerConfig,
     /// The protocol executor, handles request/response for the gossip protocol
-    pub(super) protocol_executor: Option<GossipProtocolExecutor>,
+    pub(super) protocol_executor_handle: Option<JoinHandle<GossipError>>,
 }
 
 impl GossipServer {
@@ -107,17 +110,29 @@ impl GossipServer {
     }
 }
 
-/**
- * Gossip protocol main event and dispatch loop
- */
+// ---------------------
+// | Protocol Executor |
+// ---------------------
 
 /// Executes the heartbeat protocols
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct GossipProtocolExecutor {
-    /// The handle of the worker thread executing heartbeat jobs
-    thread_handle: Option<JoinHandle<GossipError>>,
-    /// The timer that enqueues heartbeat jobs periodically for the worker
-    heartbeat_timer: HeartbeatTimer,
+    /// The peer ID of the local node
+    pub(super) local_peer_id: WrappedPeerId,
+    /// The peer expiry cache holds peers in an invisibility window so that when a peer is
+    /// expired, it cannot be incorrectly re-discovered for some time, until its expiry
+    /// has had time to propagate
+    pub(super) peer_expiry_cache: SharedLRUCache,
+    /// The channel on which to receive jobs
+    pub(super) job_receiver: Receiver<GossipServerJob>,
+    /// The channel to send outbound network requests on
+    pub(super) network_channel: UnboundedSender<GossipOutbound>,
+    /// The thread pool backing the protocol executor
+    pub(super) thread_pool: Arc<ThreadPool>,
+    /// The global state of the relayer
+    pub(super) global_state: RelayerState,
+    /// The channel that the coordinator thread uses to cancel gossip execution
+    pub(super) cancel_channel: Option<Receiver<()>>,
 }
 
 impl GossipProtocolExecutor {
@@ -125,7 +140,6 @@ impl GossipProtocolExecutor {
     pub fn new(
         local_peer_id: WrappedPeerId,
         network_channel: UnboundedSender<GossipOutbound>,
-        job_sender: Sender<GossipServerJob>,
         job_receiver: Receiver<GossipServerJob>,
         global_state: RelayerState,
         cancel_channel: Receiver<()>,
@@ -135,134 +149,104 @@ impl GossipProtocolExecutor {
         let peer_expiry_cache: SharedLRUCache = Arc::new(RwLock::new(LruCache::new(
             NonZeroUsize::new(EXPIRY_CACHE_SIZE).unwrap(),
         )));
-        let state_clone = global_state.clone();
 
-        let thread_handle = {
-            thread::Builder::new()
-                .name("heartbeat-executor".to_string())
-                .spawn(move || {
-                    Self::executor_loop(
-                        local_peer_id,
-                        job_receiver,
-                        network_channel,
-                        peer_expiry_cache,
-                        state_clone,
-                        cancel_channel,
-                    )
-                })
-                .map_err(|err| GossipError::ServerSetup(err.to_string()))
-        }?;
-
-        let heartbeat_timer = HeartbeatTimer::new(
-            job_sender,
-            CLUSTER_HEARTBEAT_INTERVAL_MS,
-            HEARTBEAT_INTERVAL_MS,
-            global_state,
-        );
+        // Build a threadpool to execute tasks within
+        let thread_pool = ThreadPoolBuilder::new()
+            .num_threads(GOSSIP_EXECUTOR_N_THREADS)
+            .build()
+            .map_err(|err| GossipError::ServerSetup(err.to_string()))?;
 
         Ok(Self {
-            thread_handle: Some(thread_handle),
-            heartbeat_timer,
+            local_peer_id,
+            peer_expiry_cache,
+            job_receiver,
+            network_channel,
+            thread_pool: Arc::new(thread_pool),
+            global_state,
+            cancel_channel: Some(cancel_channel),
         })
     }
 
-    /// Joins execution of the calling thread to the worker thread
-    pub fn join(&mut self) -> Vec<JoinHandle<GossipError>> {
-        let mut handles = vec![self.thread_handle.take().unwrap()];
-        handles.append(&mut self.heartbeat_timer.join_handle());
-        handles
-    }
-
     /// Runs the executor loop
-    fn executor_loop(
-        local_peer_id: WrappedPeerId,
-        job_receiver: Receiver<GossipServerJob>,
-        network_channel: UnboundedSender<GossipOutbound>,
-        peer_expiry_cache: SharedLRUCache,
-        global_state: RelayerState,
-        cancel: CancelChannel,
-    ) -> GossipError {
-        println!("Starting executor loop for heartbeat protocol executor...");
+    pub fn execution_loop(mut self, job_sender: Sender<GossipServerJob>) -> GossipError {
+        log::info!("Starting executor loop for heartbeat protocol executor...");
+
+        // Start a timer to enqueue outbound heartbeats
+        HeartbeatTimer::new(
+            job_sender,
+            CLUSTER_HEARTBEAT_INTERVAL_MS,
+            HEARTBEAT_INTERVAL_MS,
+            self.global_state.clone(),
+        );
+
         // We check for cancels both before receiving a job (so that we don't sleep after cancellation)
         // and after a receiving a job (so that we avoid unnecessary work)
+        let cancel_channel = self.cancel_channel.take().unwrap();
         loop {
             // Check for cancel before sleeping
-            if !cancel.is_empty() {
+            if !cancel_channel.is_empty() {
                 return GossipError::Cancelled("received cancel signal".to_string());
             }
 
             // Dequeue the next job
-            let job = job_receiver.recv().expect("recv should not panic");
+            let job = self.job_receiver.recv().expect("recv should not panic");
 
             // Check for cancel after receiving job
-            if !cancel.is_empty() {
+            if !cancel_channel.is_empty() {
                 return GossipError::Cancelled("received cancel signal".to_string());
             }
 
-            let res = match job {
-                GossipServerJob::Bootstrap(_, response_channel) => {
-                    // Send a heartbeat response for simplicity
-                    let heartbeat_resp =
-                        GossipResponse::Heartbeat(Self::build_heartbeat_message(&global_state));
-                    network_channel
-                        .send(GossipOutbound::Response {
-                            channel: response_channel,
-                            message: heartbeat_resp,
-                        })
-                        .map_err(|err| GossipError::SendMessage(err.to_string()))
-                }
-                GossipServerJob::ExecuteHeartbeat(peer_id) => Self::send_heartbeat(
-                    peer_id,
-                    local_peer_id,
-                    network_channel.clone(),
-                    peer_expiry_cache.clone(),
-                    &global_state,
-                ),
-                GossipServerJob::HandleHeartbeatReq {
-                    message, channel, ..
-                } => {
-                    // Respond on the channel given in the request
-                    let heartbeat_resp =
-                        GossipResponse::Heartbeat(Self::build_heartbeat_message(&global_state));
-                    let res = network_channel
-                        .send(GossipOutbound::Response {
-                            channel,
-                            message: heartbeat_resp,
-                        })
-                        .map_err(|err| GossipError::SendMessage(err.to_string()));
+            // Forward the job to the threadpool
+            let self_clone = self.clone();
+            self.thread_pool.spawn(move || self_clone.handle_job(job));
+        }
+    }
 
-                    // Merge newly discovered peers into local state
-                    Self::merge_state_from_message(
-                        message,
-                        network_channel.clone(),
-                        peer_expiry_cache.clone(),
-                        global_state.clone(),
-                    )
-                    .and(res)
-                }
-                GossipServerJob::HandleHeartbeatResp { peer_id, message } => {
-                    Self::record_heartbeat(peer_id, global_state.clone());
-                    Self::merge_state_from_message(
-                        message,
-                        network_channel.clone(),
-                        peer_expiry_cache.clone(),
-                        global_state.clone(),
-                    )
-                }
-                GossipServerJob::Cluster(job) => {
-                    Self::handle_cluster_management_job(job, network_channel.clone(), &global_state)
-                }
-                GossipServerJob::OrderBookManagement(management_message) => {
-                    Self::handle_order_book_management_message(management_message, &global_state)
-                }
-            };
-
-            if let Err(err) = res {
-                println!(
-                    "Error in gossip server execution loop: {:?}",
-                    err.to_string()
-                );
+    /// The main dispatch method for handling jobs
+    fn handle_job(&self, job: GossipServerJob) {
+        let res: Result<(), GossipError> = match job {
+            GossipServerJob::Bootstrap(_, response_channel) => {
+                // Send a heartbeat response for simplicity
+                let heartbeat_resp = GossipResponse::Heartbeat(self.build_heartbeat_message());
+                self.network_channel
+                    .send(GossipOutbound::Response {
+                        channel: response_channel,
+                        message: heartbeat_resp,
+                    })
+                    .map_err(|err| GossipError::SendMessage(err.to_string()))
             }
+            GossipServerJob::ExecuteHeartbeat(peer_id) => self.send_heartbeat(peer_id),
+            GossipServerJob::HandleHeartbeatReq {
+                message, channel, ..
+            } => {
+                // Respond on the channel given in the request
+                let heartbeat_resp = GossipResponse::Heartbeat(self.build_heartbeat_message());
+                let res = self
+                    .network_channel
+                    .send(GossipOutbound::Response {
+                        channel,
+                        message: heartbeat_resp,
+                    })
+                    .map_err(|err| GossipError::SendMessage(err.to_string()));
+
+                // Merge newly discovered peers into local state
+                self.merge_state_from_message(message).and(res)
+            }
+            GossipServerJob::HandleHeartbeatResp { peer_id, message } => {
+                self.record_heartbeat(peer_id);
+                self.merge_state_from_message(message)
+            }
+            GossipServerJob::Cluster(job) => self.handle_cluster_management_job(job),
+            GossipServerJob::OrderBookManagement(management_message) => {
+                self.handle_order_book_management_message(management_message)
+            }
+        };
+
+        if let Err(err) = res {
+            log::info!(
+                "Error in gossip server execution loop: {:?}",
+                err.to_string()
+            );
         }
     }
 }

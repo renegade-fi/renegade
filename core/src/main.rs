@@ -20,16 +20,19 @@ mod system_bus;
 mod types;
 mod worker;
 
-use std::{thread, time::Duration};
+use std::{io::Write, thread, time::Duration};
 
+use chrono::Local;
 use circuits::types::wallet::Wallet;
 use crossbeam::channel::{self, Receiver};
+use env_logger::Builder;
 use error::CoordinatorError;
 use gossip::worker::GossipServerConfig;
 use handshake::worker::HandshakeManagerConfig;
 use network_manager::worker::NetworkManagerConfig;
 use price_reporter::worker::PriceReporterManagerConfig;
 use tokio::{select, sync::mpsc};
+use tracing::log::{LevelFilter, self};
 
 use crate::{
     api::gossip::GossipOutbound,
@@ -78,11 +81,27 @@ const TERMINATION_TIMEOUT_MS: u64 = 10_000; // 10 seconds
 ///     4. Allocate a thread to monitor the worker for faults
 #[tokio::main]
 async fn main() -> Result<(), CoordinatorError> {
+    // Configure logging
+    Builder::new()
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "{} [{}] - {}",
+                Local::now().format("%Y-%m-%dT%H:%M:%S"),
+                record.level(),
+                record.args()
+            )
+        })
+        .filter(None, LevelFilter::Info)
+        .init();
+
     // Parse command line arguments
     let args = config::parse_command_line_args().expect("error parsing command line args");
-    println!(
+    log::info!(
         "Relayer running with\n\t version: {}\n\t port: {}\n\t cluster: {:?}",
-        args.version, args.p2p_port, args.cluster_id
+        args.version,
+        args.p2p_port,
+        args.cluster_id
     );
 
     // Build communication primitives
@@ -284,7 +303,7 @@ async fn main() -> Result<(), CoordinatorError> {
     // Wait for an error, log the error, and teardown the relayer
     let loop_res: Result<(), CoordinatorError> = recovery_loop().await;
     let err = loop_res.err().unwrap();
-    println!("Error in coordinator thread: {:?}", err);
+    log::info!("Error in coordinator thread: {:?}", err);
 
     // Send cancel signals to all workers
     for cancel_channel in cancel_channels.iter() {
@@ -293,9 +312,9 @@ async fn main() -> Result<(), CoordinatorError> {
     }
 
     // Give workers time to teardown execution then terminate
-    println!("Tearing down workers...");
+    log::info!("Tearing down workers...");
     thread::sleep(Duration::from_millis(TERMINATION_TIMEOUT_MS));
-    println!("Terminating...");
+    log::info!("Terminating...");
 
     Err(err)
 }

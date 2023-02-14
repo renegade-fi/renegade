@@ -1,6 +1,6 @@
 //! Implements the `Worker` trait for the GossipServer
 
-use std::thread::JoinHandle;
+use std::thread::{Builder, JoinHandle};
 
 use crossbeam::channel::{Receiver, Sender};
 use libp2p::Multiaddr;
@@ -54,7 +54,7 @@ impl Worker for GossipServer {
     fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
         Ok(Self {
             config,
-            protocol_executor: None,
+            protocol_executor_handle: None,
         })
     }
 
@@ -67,7 +67,7 @@ impl Worker for GossipServer {
     }
 
     fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
-        self.protocol_executor.take().unwrap().join()
+        vec![self.protocol_executor_handle.take().unwrap()]
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
@@ -76,12 +76,18 @@ impl Worker for GossipServer {
         let protocol_executor = GossipProtocolExecutor::new(
             self.config.local_peer_id,
             self.config.network_sender.clone(),
-            self.config.heartbeat_worker_sender.clone(),
             self.config.heartbeat_worker_receiver.clone(),
             self.config.global_state.clone(),
             self.config.cancel_channel.clone(),
         )?;
-        self.protocol_executor = Some(protocol_executor);
+
+        let sender = self.config.heartbeat_worker_sender.clone();
+        self.protocol_executor_handle = Some(
+            Builder::new()
+                .name("gossip-executor-main".to_string())
+                .spawn(move || protocol_executor.execution_loop(sender))
+                .map_err(|err| GossipError::ServerSetup(err.to_string()))?,
+        );
 
         // Bootstrap into the network in two steps:
         //  1. Forward all bootstrap addresses to the network manager so it may dial them

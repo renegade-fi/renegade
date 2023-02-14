@@ -268,7 +268,6 @@ impl RelayerState {
             };
             network_sender.send(message).unwrap()
         }
-        println!("Finished init");
     }
 
     /// Generate a dummy Merkle proof for an order
