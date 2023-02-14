@@ -208,6 +208,11 @@ impl NetworkOrderBook {
     // | Getters |
     // -----------
 
+    /// Whether or not the given order is already indexed
+    pub fn contains_order(&self, order_id: &OrderIdentifier) -> bool {
+        self.order_map.contains_key(order_id)
+    }
+
     /// Returns whether or not the local node holds a proof of `VALID COMMITMENTS`
     /// for the given order
     pub fn has_validity_proof(&self, order_id: &OrderIdentifier) -> bool {
@@ -231,14 +236,7 @@ impl NetworkOrderBook {
     /// Add an order to the book, necessarily this order is in the received state because
     /// we must fetch a validity proof to move it to verified
     pub fn add_order(&mut self, mut order: NetworkOrder) {
-        // Do nothing if the order is already indexed, state updates should come from
-        // separate methods
-        if self.order_map.contains_key(&order.id) {
-            return;
-        }
-
         // If the order is local, add it to the local order list
-        order.state = NetworkOrderState::Received;
         if order.local {
             self.local_orders
                 .write()
@@ -356,26 +354,32 @@ impl NetworkOrderBook {
     }
 }
 
+/// Display color for light green text
+const LG: color::Fg<color::LightGreen> = color::Fg(color::LightGreen);
+/// Display color for light yellow text
+const LY: color::Fg<color::LightYellow> = color::Fg(color::LightYellow);
+/// Display color for cyan text
+const CY: color::Fg<color::Cyan> = color::Fg(color::Cyan);
+/// Terminal control to reset text color
+const RES: color::Fg<color::Reset> = color::Fg(color::Reset);
+
 impl Display for NetworkOrderBook {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.write_fmt(format_args!(
-            "\n\t{}Locally Managed Order State:{}\n",
-            color::Fg(color::LightGreen),
-            color::Fg(color::Reset)
-        ))?;
+        f.write_fmt(format_args!("\n\t{LG}Order Book:{RES}\n",))?;
 
         // Loop over the locally managed orders and print info
-        for order_id in self.local_orders.read().unwrap().iter() {
+        for order_id in self.order_map.keys() {
             let order_info = self.read_order(order_id).unwrap();
             // Write the order_id
             f.write_fmt(format_args!(
-                "\t\t- {}{}{}: {}{}{}",
-                color::Fg(color::LightYellow),
+                "\t\t- {LY}{}{RES} ({}): {CY}{}{RES}\n",
                 order_id,
-                color::Fg(color::Reset),
-                color::Fg(color::Cyan),
+                if order_info.local {
+                    "local"
+                } else {
+                    "non-local"
+                },
                 order_info.state,
-                color::Fg(color::Reset)
             ));
         }
 

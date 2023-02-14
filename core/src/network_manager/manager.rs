@@ -27,6 +27,7 @@ use crate::{
             ConnectionRole, GossipOutbound, GossipOutbound::Pubsub, GossipRequest, GossipResponse,
             ManagerControlDirective, PubsubMessage,
         },
+        orderbook_management::ORDER_BOOK_TOPIC,
     },
     gossip::{
         jobs::{ClusterManagementJob, GossipServerJob},
@@ -121,12 +122,18 @@ impl NetworkManager {
         &self,
         swarm: &mut Swarm<ComposedNetworkBehavior>,
     ) -> Result<(), NetworkManagerError> {
-        // Cluster management topic for the local peer's cluster
-        swarm
-            .behaviour_mut()
-            .pubsub
-            .subscribe(&Sha256Topic::new(self.cluster_id.get_management_topic()))
-            .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
+        for topic in [
+            self.cluster_id.get_management_topic(), // Cluster management for local cluster
+            ORDER_BOOK_TOPIC.to_string(),           // Network order book management
+        ]
+        .iter()
+        {
+            swarm
+                .behaviour_mut()
+                .pubsub
+                .subscribe(&Sha256Topic::new(topic))
+                .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
+        }
 
         Ok(())
     }
@@ -666,6 +673,12 @@ impl NetworkManagerExecutor {
                             .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
                     }
                 }
+            }
+            PubsubMessage::OrderBookManagement(msg) => {
+                println!("Received order book management message...");
+                self.gossip_work_queue
+                    .send(GossipServerJob::OrderBookManagement(msg))
+                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
             }
         }
 

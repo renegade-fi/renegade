@@ -252,6 +252,9 @@ impl GossipProtocolExecutor {
                 GossipServerJob::Cluster(job) => {
                     Self::handle_cluster_management_job(job, network_channel.clone(), &global_state)
                 }
+                GossipServerJob::OrderBookManagement(management_message) => {
+                    Self::handle_order_book_management_message(management_message, &global_state)
+                }
             };
 
             if let Err(err) = res {

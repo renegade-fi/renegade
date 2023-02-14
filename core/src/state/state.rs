@@ -21,13 +21,17 @@ use std::{
     thread::Builder,
 };
 use termion::color;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use crate::{
-    api::heartbeat::HeartbeatMessage,
+    api::{
+        gossip::{GossipOutbound, PubsubMessage},
+        heartbeat::HeartbeatMessage,
+        orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
+    },
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
     handshake::manager::DEFAULT_HANDSHAKE_PRIORITY,
-    proof_generation::jobs::{ProofJob, ProofManagerJob},
+    proof_generation::jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle},
     state::orderbook::NetworkOrder,
     system_bus::SystemBus,
     types::SystemBusMessage,
@@ -170,17 +174,27 @@ impl RelayerState {
     /// updating the order state. For this reason, the method is defined as a static
     /// method instead of an instance method, so that a lock need not be held on the
     /// state the entire time
-    pub fn initialize_order_proofs(&self, proof_manager_queue: Sender<ProofManagerJob>) {
+    pub fn initialize_order_proofs(
+        &self,
+        proof_manager_queue: Sender<ProofManagerJob>,
+        network_sender: UnboundedSender<GossipOutbound>,
+    ) {
         // Spawn the helpers in a thread
         let self_clone = self.clone();
         Builder::new()
             .name(ORDER_INIT_THREAD.to_string())
-            .spawn(move || self_clone.initialize_order_proof_helper(proof_manager_queue))
+            .spawn(move || {
+                self_clone.initialize_order_proof_helper(proof_manager_queue, network_sender)
+            })
             .expect(ERR_ORDER_INIT_FAILED);
     }
 
     /// A helper passed as a callback to the threading logic in the caller
-    fn initialize_order_proof_helper(&self, proof_manager_queue: Sender<ProofManagerJob>) {
+    fn initialize_order_proof_helper(
+        &self,
+        proof_manager_queue: Sender<ProofManagerJob>,
+        network_sender: UnboundedSender<GossipOutbound>,
+    ) {
         // Store a handle to the response channels for each proof; await them one by one
         let mut proof_response_channels = Vec::new();
 
@@ -189,6 +203,11 @@ impl RelayerState {
             let locked_wallet_index = self.read_wallet_index();
             for wallet in locked_wallet_index.get_all_wallets().iter() {
                 for (order_id, order) in wallet.orders.iter() {
+                    {
+                        self.write_order_book()
+                            .add_order(NetworkOrder::new(*order_id, true /* local */));
+                    } // order_book lock released
+
                     if let Some((balance, fee, fee_balance)) =
                         locked_wallet_index.get_order_balance_and_fee(&wallet.wallet_id, order_id)
                     {
@@ -219,6 +238,7 @@ impl RelayerState {
                         // Store a handle to the response channel
                         proof_response_channels.push((*order_id, response_receiver));
                     } else {
+                        println!("Skipping wallet validity proof; no balance and fee found");
                         continue;
                     }
                 }
@@ -227,19 +247,28 @@ impl RelayerState {
 
         // Await a proof response for each order then attach it to the order index entry
         for (order_id, receiver) in proof_response_channels.into_iter() {
-            // Add the order to the orderbook index
-            self.write_order_book()
-                .add_order(NetworkOrder::new(order_id, true /* local */));
-
             // Await a proof
-            let proof_bundle = receiver.blocking_recv().unwrap();
+            let proof_bundle: ValidCommitmentsBundle = receiver.blocking_recv().unwrap().into();
 
             // Update the local orderbook state
             self.read_order_book()
                 .write_order(&order_id)
                 .unwrap()
-                .attach_commitment_proof(proof_bundle.into());
+                .attach_commitment_proof(proof_bundle.clone());
+
+            // Gossip about the updated proof to the network
+            let message = GossipOutbound::Pubsub {
+                topic: ORDER_BOOK_TOPIC.to_string(),
+                message: PubsubMessage::OrderBookManagement(
+                    OrderBookManagementMessage::OrderProofUpdated {
+                        order_id,
+                        proof: proof_bundle,
+                    },
+                ),
+            };
+            network_sender.send(message).unwrap()
         }
+        println!("Finished init");
     }
 
     /// Generate a dummy Merkle proof for an order
@@ -374,6 +403,11 @@ impl RelayerState {
     pub fn add_cluster_peer(&self, peer_id: WrappedPeerId) {
         let mut locked_metadata = self.write_cluster_metadata();
         locked_metadata.add_member(peer_id)
+    }
+
+    /// Add an order to the book
+    pub fn add_order(&self, order: NetworkOrder) {
+        self.write_order_book().add_order(order)
     }
 
     /// Add wallets to the state as managed wallets
@@ -532,18 +566,21 @@ impl From<&RelayerState> for HeartbeatMessage {
     }
 }
 
+/// Display color for light green text
+const LG: color::Fg<color::LightGreen> = color::Fg(color::LightGreen);
+/// Display color for light yellow text
+const LY: color::Fg<color::LightYellow> = color::Fg(color::LightYellow);
+/// Display color for cyan text
+const CY: color::Fg<color::Cyan> = color::Fg(color::Cyan);
+/// Terminal control to reset text color
+const RES: color::Fg<color::Reset> = color::Fg(color::Reset);
+
 /// Display implementation for easy-to-read command line print-out
 impl Display for RelayerState {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.write_fmt(format_args!("{CY}Local Relayer State:{RES}\n",))?;
         f.write_fmt(format_args!(
-            "{}Local Relayer State:{}\n",
-            color::Fg(color::Cyan),
-            color::Fg(color::Reset),
-        ))?;
-        f.write_fmt(format_args!(
-            "\t{}Listening on:{} {}/p2p/{}\n",
-            color::Fg(color::LightGreen),
-            color::Fg(color::Reset),
+            "\t{LG}Listening on:{RES} {}/p2p/{}\n",
             self.read_peer_index()
                 .read_peer(&self.local_peer_id())
                 .unwrap()
@@ -551,15 +588,11 @@ impl Display for RelayerState {
             self.local_peer_id().0
         ))?;
         f.write_fmt(format_args!(
-            "\t{}PeerId:{} {}\n",
-            color::Fg(color::LightGreen),
-            color::Fg(color::Reset),
+            "\t{LG}PeerId:{RES} {}\n",
             self.local_peer_id().0
         ))?;
         f.write_fmt(format_args!(
-            "\t{}ClusterId:{} {:?}\n",
-            color::Fg(color::LightGreen),
-            color::Fg(color::Reset),
+            "\t{LG}ClusterId:{RES} {:?}\n",
             self.local_cluster_id
         ))?;
 
@@ -572,45 +605,23 @@ impl Display for RelayerState {
         f.write_str("\n\n")?;
 
         // Write historically matched orders to the format
-        f.write_fmt(format_args!(
-            "\n\t{}Matched Order Pairs:{}\n",
-            color::Fg(color::LightGreen),
-            color::Fg(color::Reset),
-        ))?;
+        f.write_fmt(format_args!("\n\t{LG}Matched Order Pairs:{RES}\n",))?;
         for (o1, o2) in self.read_matched_order_pairs().iter() {
-            f.write_fmt(format_args!(
-                "\t\t - {}({:?}, {:?}){}\n",
-                color::Fg(color::LightYellow),
-                o1,
-                o2,
-                color::Fg(color::Reset),
-            ))?;
+            f.write_fmt(format_args!("\t\t - {LY}({:?}, {:?}){RES}\n", o1, o2,))?;
         }
 
         f.write_str("\n\n\n")?;
         // Write the known peers to the format
-        f.write_fmt(format_args!(
-            "\t{}Known Peers{}:\n",
-            color::Fg(color::LightGreen),
-            color::Fg(color::LightGreen)
-        ))?;
+        f.write_fmt(format_args!("\t{LG}Known Peers{LG}:\n",))?;
         self.peer_index.read().unwrap().fmt(f)?;
         f.write_str("\n\n")?;
 
         // Write cluster metadata to the format
         f.write_fmt(format_args!(
-            "\t{}Cluster Metadata{} (ID = {}{:?}{})\n",
-            color::Fg(color::LightGreen),
-            color::Fg(color::Reset),
-            color::Fg(color::LightYellow),
+            "\t{LG}Cluster Metadata{RES} (ID = {LY}{:?}{RES})\n",
             self.read_cluster_metadata().id,
-            color::Fg(color::Reset)
         ))?;
-        f.write_fmt(format_args!(
-            "\t\t{}Members{}: [\n",
-            color::Fg(color::LightYellow),
-            color::Fg(color::Reset)
-        ))?;
+        f.write_fmt(format_args!("\t\t{LY}Members{RES}: [\n",))?;
         for member in self.read_cluster_metadata().known_members.iter() {
             f.write_fmt(format_args!("\t\t\t{}\n", member.0))?;
         }

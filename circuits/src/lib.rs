@@ -127,7 +127,21 @@ where
     C::prove(witness, statement.clone(), prover, fabric)
 }
 
-/// Abstracts over the flow of verifying a circuit
+/// Abstracts over the flow of verifying a proof for a single-prover proved circuit
+pub fn verify_singleprover_proof<C: SingleProverCircuit>(
+    statement: C::Statement,
+    witness_commitment: C::WitnessCommitment,
+    proof: R1CSProof,
+) -> Result<(), VerifierError> {
+    // Verify the statement with a fresh transcript
+    let mut verifier_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
+    let pc_gens = PedersenGens::default();
+    let verifier = Verifier::new(&pc_gens, &mut verifier_transcript);
+
+    C::verify(witness_commitment, statement, proof, verifier)
+}
+
+/// Abstracts over the flow of verifying a proof for a collaboratively proved circuit
 pub fn verify_collaborative_proof<'a, N, S, C>(
     statement: C::Statement,
     witness_commitment: <C::WitnessCommitment as Open>::OpenOutput,

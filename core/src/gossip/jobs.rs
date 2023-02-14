@@ -8,6 +8,7 @@ use crate::{
         cluster_management::{ClusterJoinMessage, ReplicateRequestBody, ValidityProofRequest},
         gossip::AuthenticatedGossipResponse,
         heartbeat::{BootstrapRequest, HeartbeatMessage},
+        orderbook_management::OrderBookManagementMessage,
     },
     proof_generation::jobs::ValidCommitmentsBundle,
     state::{wallet::WalletIdentifier, OrderIdentifier},
@@ -44,6 +45,8 @@ pub enum GossipServerJob {
         /// The message contents
         message: HeartbeatMessage,
     },
+    /// Handle an orderbook management message from a gossip peer
+    OrderBookManagement(OrderBookManagementMessage),
 }
 
 /// Defines a job schedule for a cluster management task

@@ -1,21 +1,36 @@
 //! Groups type definitions relevant to all modules and at the top level
 
+use circuits::zk_circuits::{
+    valid_commitments::ValidCommitments,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     price_reporter::reporter::PriceReport,
     state::{NetworkOrderState, OrderIdentifier},
+    MAX_BALANCES, MAX_FEES, MAX_ORDERS,
 };
 
-/**
- * Topic names
- */
+// ----------------------------------
+// | Circuit Default Generics Types |
+// ----------------------------------
+
+/// `VALID COMMITMENTS` with default state element sizing
+pub type SizedValidCommitments = ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+
+// ----------------------
+// | Pubsub Topic Names |
+// ----------------------
 
 /// The topic published to when the handshake manager begins a new
 /// match computation with a peer
 pub const HANDSHAKE_STATUS_TOPIC: &str = "handshakes";
 /// The topic published to when a state change occurs on an order
 pub const ORDER_STATE_CHANGE_TOPIC: &str = "order-state";
+
+// ----------------------------
+// | System Bus Message Types |
+// ----------------------------
 
 /// A message type for generic system bus messages, broadcast to all modules
 #[derive(Clone, Debug, Serialize, Deserialize)]

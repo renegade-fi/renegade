@@ -95,9 +95,16 @@ async fn main() -> Result<(), CoordinatorError> {
     let (proof_generation_worker_sender, proof_generation_worker_receiver) = channel::unbounded();
 
     // Construct the global state and warm up the config orders by generating proofs of `VALID COMMITMENTS`
-    let global_state =
-        RelayerState::initialize_global_state(args.debug, args.wallets, args.cluster_id.clone(), system_bus.clone());
-    global_state.initialize_order_proofs(proof_generation_worker_sender.clone());
+    let global_state = RelayerState::initialize_global_state(
+        args.debug,
+        args.wallets,
+        args.cluster_id.clone(),
+        system_bus.clone(),
+    );
+    global_state.initialize_order_proofs(
+        proof_generation_worker_sender.clone(),
+        network_sender.clone(),
+    );
 
     // Start the network manager
     let (network_cancel_sender, network_cancel_receiver) = channel::bounded(1 /* capacity */);
