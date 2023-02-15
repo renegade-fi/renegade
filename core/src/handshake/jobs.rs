@@ -14,6 +14,11 @@ use crate::{
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum HandshakeExecutionJob {
+    /// A request to initiate a handshake with a scheduled peer
+    PerformHandshake {
+        /// The peer to handshake with
+        peer: WrappedPeerId,
+    },
     /// Process a handshake request
     ProcessHandshakeMessage {
         /// The request identifier that will be used to track and index handshake

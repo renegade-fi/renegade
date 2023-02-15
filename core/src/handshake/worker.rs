@@ -1,21 +1,13 @@
 //! Implements the `Worker` trait for the handshake manager
 
-use std::{
-    sync::{Arc, RwLock},
-    thread::JoinHandle,
-};
+use std::thread::{Builder, JoinHandle};
 
-use crossbeam::channel::Receiver;
-use rayon::ThreadPoolBuilder;
+use crossbeam::channel::{Receiver, Sender};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     api::gossip::GossipOutbound,
-    handshake::{
-        handshake_cache::HandshakeCache,
-        manager::{HandshakeJobRelay, HandshakeTimer, HANDSHAKE_CACHE_SIZE},
-        state::HandshakeStateIndex,
-    },
+    handshake::manager::{HandshakeExecutor, HandshakeScheduler},
     state::RelayerState,
     system_bus::SystemBus,
     types::SystemBusMessage,
@@ -24,9 +16,6 @@ use crate::{
 
 use super::{error::HandshakeManagerError, jobs::HandshakeExecutionJob, manager::HandshakeManager};
 
-/// The number of threads executing handshakes
-const NUM_HANDSHAKE_THREADS: usize = 8;
-
 /// The config type for the handshake manager
 #[derive(Debug)]
 pub struct HandshakeManagerConfig {
@@ -34,6 +23,9 @@ pub struct HandshakeManagerConfig {
     pub global_state: RelayerState,
     /// The channel on which to send outbound network requests
     pub network_channel: UnboundedSender<GossipOutbound>,
+    /// A sender on the handshake manager's job queue, used by the timer
+    /// thread to enqueue outbound handshakes
+    pub job_sender: Sender<HandshakeExecutionJob>,
     /// The job queue on which to receive handshake requests
     pub job_receiver: Receiver<HandshakeExecutionJob>,
     /// The system bus to which all workers have access
@@ -50,42 +42,27 @@ impl Worker for HandshakeManager {
     fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
         // Build a thread pool to handle handshake operations
         println!("Starting execution loop for handshake protocol executor...");
-
-        let thread_pool = Arc::new(
-            ThreadPoolBuilder::new()
-                .num_threads(NUM_HANDSHAKE_THREADS)
-                .build()
-                .unwrap(),
-        );
-
-        // The match results cache, used to avoid matching orders that have already
-        // been determined not to intersect
-        let handshake_cache = Arc::new(RwLock::new(HandshakeCache::new(HANDSHAKE_CACHE_SIZE)));
-
-        // The handshake state cache; tracks in-flight handshakes state, fields, etc
-        let handshake_state_index = HandshakeStateIndex::new();
-
         // Start a timer thread, periodically asks workers to begin handshakes with peers
-        let timer = HandshakeTimer::new(
-            thread_pool.clone(),
-            handshake_state_index.clone(),
-            handshake_cache.clone(),
+        let scheduler = HandshakeScheduler::new(
+            config.job_sender.clone(),
             config.global_state.clone(),
+            config.cancel_channel.clone(),
+        );
+        let executor = HandshakeExecutor::new(
+            config.job_receiver.clone(),
             config.network_channel.clone(),
+            config.global_state.clone(),
+            config.system_bus.clone(),
             config.cancel_channel.clone(),
         )?;
-        let relay = HandshakeJobRelay::new(
-            thread_pool,
-            handshake_cache,
-            handshake_state_index,
-            config.job_receiver,
-            config.network_channel,
-            config.global_state,
-            config.system_bus,
-            config.cancel_channel,
-        )?;
 
-        Ok(HandshakeManager { timer, relay })
+        Ok(HandshakeManager {
+            config,
+            executor: Some(executor),
+            executor_handle: None,
+            scheduler: Some(scheduler),
+            scheduler_handle: None,
+        })
     }
 
     fn is_recoverable(&self) -> bool {
@@ -97,11 +74,29 @@ impl Worker for HandshakeManager {
     }
 
     fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
-        vec![self.relay.join_handle(), self.timer.join_handle()]
+        vec![
+            self.executor_handle.take().unwrap(),
+            self.scheduler_handle.take().unwrap(),
+        ]
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
-        // Does nothing, the `new` method handles setup for the handshake manager
+        // Spawn both the executor and the scheduler in a thread
+        let executor = self.executor.take().unwrap();
+        let executor_handle = Builder::new()
+            .name("handshake-executor-main".to_string())
+            .spawn(move || executor.execution_loop())
+            .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
+
+        let scheduler = self.scheduler.take().unwrap();
+        let scheduler_handle = Builder::new()
+            .name("handshake-scheduler-main".to_string())
+            .spawn(move || scheduler.execution_loop())
+            .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
+
+        self.executor_handle = Some(executor_handle);
+        self.scheduler_handle = Some(scheduler_handle);
+
         Ok(())
     }
 

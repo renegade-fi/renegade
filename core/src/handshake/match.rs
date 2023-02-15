@@ -25,10 +25,10 @@ use mpc_ristretto::{
 use tokio::runtime::Builder as TokioBuilder;
 use tracing::log;
 
-use super::{error::HandshakeManagerError, manager::HandshakeManager, state::HandshakeState};
+use super::{error::HandshakeManagerError, manager::HandshakeExecutor, state::HandshakeState};
 
 /// Match-centric implementations for the handshake manager
-impl HandshakeManager {
+impl HandshakeExecutor {
     /// Execute the MPC and collaborative proof for a match computation
     ///
     /// Spawns the match computation in a separate thread wrapped by a custom

@@ -133,7 +133,7 @@ async fn main() -> Result<(), CoordinatorError> {
         cluster_keypair: Some(args.cluster_keypair),
         send_channel: Some(network_receiver),
         heartbeat_work_queue: heartbeat_worker_sender.clone(),
-        handshake_work_queue: handshake_worker_sender,
+        handshake_work_queue: handshake_worker_sender.clone(),
         global_state: global_state.clone(),
         cancel_channel: network_cancel_receiver,
     };
@@ -175,6 +175,7 @@ async fn main() -> Result<(), CoordinatorError> {
         global_state: global_state.clone(),
         network_channel: network_sender,
         job_receiver: handshake_worker_receiver,
+        job_sender: handshake_worker_sender.clone(),
         system_bus: system_bus.clone(),
         cancel_channel: handshake_cancel_receiver,
     })

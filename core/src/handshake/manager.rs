@@ -6,18 +6,19 @@ use circuits::types::{
     fee::Fee,
     order::{Order, OrderSide},
 };
-use crossbeam::channel::Receiver;
+use crossbeam::channel::{Receiver, Sender};
 use crypto::hash::poseidon_hash_default_params;
 
 use portpicker::pick_unused_port;
 use rand::{distributions::WeightedIndex, prelude::Distribution, rngs::OsRng, thread_rng, RngCore};
-use rayon::ThreadPool;
+use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::{
-    sync::Arc,
+    sync::{Arc, RwLock},
     thread::{self, JoinHandle},
     time::Duration,
 };
 use tokio::sync::mpsc::UnboundedSender;
+use tracing::log;
 use uuid::Uuid;
 
 use crate::{
@@ -37,8 +38,12 @@ use crate::{
 };
 
 use super::{
-    error::HandshakeManagerError, handshake_cache::SharedHandshakeCache,
-    jobs::HandshakeExecutionJob, state::HandshakeStateIndex, types::HashOutput,
+    error::HandshakeManagerError,
+    handshake_cache::{HandshakeCache, SharedHandshakeCache},
+    jobs::HandshakeExecutionJob,
+    state::HandshakeStateIndex,
+    types::HashOutput,
+    worker::HandshakeManagerConfig,
 };
 
 /// The default priority of a newly added node in the handshake priority list
@@ -52,86 +57,115 @@ pub(super) const HANDSHAKE_CACHE_SIZE: usize = 500;
 pub(super) const HANDSHAKE_INTERVAL_MS: u64 = 2_000; // 2 seconds
 /// Number of nanoseconds in a millisecond, for convenience
 const NANOS_PER_MILLI: u64 = 1_000_000;
+/// The number of threads executing handshakes
+const HANDSHAKE_EXECUTOR_N_THREADS: usize = 8;
 
 /// Manages requests to handshake from a peer and sends outbound requests to initiate
 /// a handshake
 pub struct HandshakeManager {
-    /// The handshake timer; periodically enqueues outbound handshake requests
-    pub(super) timer: HandshakeTimer,
-    /// The job relay; provides a shim between the network interface and the manager
-    pub(super) relay: HandshakeJobRelay,
+    /// The config on the handshake manager
+    pub config: HandshakeManagerConfig,
+    /// The executor, ownership is taken by the controlling thread when started
+    pub executor: Option<HandshakeExecutor>,
+    /// The join handle for the executor thread
+    pub executor_handle: Option<JoinHandle<HandshakeManagerError>>,
+    /// The scheduler, ownership is taken by the controlling thread when started
+    pub scheduler: Option<HandshakeScheduler>,
+    /// The join handle for the scheduler thread
+    pub scheduler_handle: Option<JoinHandle<HandshakeManagerError>>,
 }
 
-impl HandshakeManager {
-    /// Perform a handshake, dummy job for now
-    pub fn perform_handshake(
-        peer_id: WrappedPeerId,
-        handshake_state_index: HandshakeStateIndex,
-        handshake_cache: SharedHandshakeCache<OrderIdentifier>,
-        global_state: RelayerState,
+/// Manages the threaded execution of the handshake protocol
+#[derive(Clone)]
+pub struct HandshakeExecutor {
+    /// The cache used to mark order pairs as already matched
+    handshake_cache: SharedHandshakeCache<OrderIdentifier>,
+    /// Stores the state of existing handshake executions
+    handshake_state_index: HandshakeStateIndex,
+    /// The thread pool backing the execution
+    thread_pool: Arc<ThreadPool>,
+    /// The channel on which other workers enqueue jobs for the protocol executor
+    job_channel: Receiver<HandshakeExecutionJob>,
+    /// The channel on which the handshake executor may forward requests to the network
+    network_channel: UnboundedSender<GossipOutbound>,
+    /// The global relayer state
+    global_state: RelayerState,
+    /// The system bus used to publish internal broadcast messages
+    system_bus: SystemBus<SystemBusMessage>,
+    /// The channel on which the coordinator thread may cancel handshake execution
+    cancel: Option<CancelChannel>,
+}
+
+impl HandshakeExecutor {
+    /// Create a new protocol executor
+    pub fn new(
+        job_channel: Receiver<HandshakeExecutionJob>,
         network_channel: UnboundedSender<GossipOutbound>,
-    ) -> Result<(), HandshakeManagerError> {
-        if let Some((order_id, order, balance, fee)) = Self::choose_order_balance_fee(
-            None, /* peer_order */
+        global_state: RelayerState,
+        system_bus: SystemBus<SystemBusMessage>,
+        cancel: CancelChannel,
+    ) -> Result<Self, HandshakeManagerError> {
+        // Build the thread pool, cache, and state index
+        let thread_pool = ThreadPoolBuilder::new()
+            .num_threads(HANDSHAKE_EXECUTOR_N_THREADS)
+            .build()
+            .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
+
+        let handshake_cache = Arc::new(RwLock::new(HandshakeCache::new(HANDSHAKE_CACHE_SIZE)));
+        let handshake_state_index = HandshakeStateIndex::new();
+
+        Ok(Self {
+            thread_pool: Arc::new(thread_pool),
             handshake_cache,
-            &global_state,
-        ) {
-            // Hash the balance, order, fee, and wallet randomness
-            // TODO: Replace the randomness here with true wallet-specific randomness
-            let mut rng = thread_rng();
-            let randomness = rng.next_u64();
-
-            let order_hash = HashOutput(poseidon_hash_default_params(&order));
-            let balance_hash = HashOutput(poseidon_hash_default_params(&balance));
-            let fee_hash = HashOutput(poseidon_hash_default_params(&fee));
-            let randomness_hash = HashOutput(poseidon_hash_default_params(vec![randomness]));
-
-            // Send a handshake message to the given peer_id
-            // Panic if channel closed, no way to recover
-            let request_id = Uuid::new_v4();
-            network_channel
-                .send(GossipOutbound::Request {
-                    peer_id,
-                    message: GossipRequest::Handshake {
-                        request_id,
-                        message: HandshakeMessage::InitiateMatch {
-                            peer_id: global_state.local_peer_id(),
-                            sender_order: order_id,
-                            order_hash,
-                            balance_hash,
-                            fee_hash,
-                            randomness_hash,
-                        },
-                    },
-                })
-                .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
-
-            handshake_state_index.new_handshake(
-                request_id,
-                order_id,
-                order,
-                balance,
-                fee,
-                order_hash,
-                balance_hash,
-                fee_hash,
-                randomness_hash,
-            );
-        }
-
-        Ok(())
+            handshake_state_index,
+            job_channel,
+            network_channel,
+            global_state,
+            system_bus,
+            cancel: Some(cancel),
+        })
     }
 
+    /// The main loop: dequeues jobs and forwards them to the thread pool
+    pub fn execution_loop(mut self) -> HandshakeManagerError {
+        let cancel = self.cancel.take().unwrap();
+
+        loop {
+            // Check if the coordinator has cancelled the handshake manager
+            if !cancel.is_empty() {
+                return HandshakeManagerError::Cancelled("received cancel signal".to_string());
+            }
+
+            // Wait for the next message and forward to the thread pool
+            let job = self.job_channel.recv().unwrap();
+
+            // After blocking, check again for a cancel signal
+            if !cancel.is_empty() {
+                return HandshakeManagerError::Cancelled("received cancel signal".to_string());
+            }
+
+            // Otherwise, install the job into the thread pool
+            let self_clone = self.clone();
+            self.thread_pool.spawn(move || {
+                if let Err(e) = self_clone.handle_handshake_job(job) {
+                    log::info!("error executing handshake: {e}")
+                }
+            });
+        }
+    }
+}
+
+/// Main event handler implementations; each of these methods are run inside the threadpool
+impl HandshakeExecutor {
     /// Handle a handshake message from the peer
     pub fn handle_handshake_job(
+        &self,
         job: HandshakeExecutionJob,
-        handshake_state_index: HandshakeStateIndex,
-        global_state: RelayerState,
-        handshake_cache: SharedHandshakeCache<OrderIdentifier>,
-        network_channel: UnboundedSender<GossipOutbound>,
-        system_bus: SystemBus<SystemBusMessage>,
     ) -> Result<(), HandshakeManagerError> {
         match job {
+            // The timer thread has scheduled an outbound handshake
+            HandshakeExecutionJob::PerformHandshake { peer } => self.perform_handshake(peer),
+
             // Indicates that a peer has sent a message during the course of a handshake
             HandshakeExecutionJob::ProcessHandshakeMessage {
                 request_id,
@@ -140,14 +174,7 @@ impl HandshakeManager {
                 response_channel,
             } => {
                 // Get a response for the message and forward it to the network
-                let resp = Self::handle_handshake_message(
-                    request_id,
-                    message,
-                    handshake_state_index,
-                    global_state,
-                    handshake_cache,
-                    network_channel.clone(),
-                )?;
+                let resp = self.handle_handshake_message(request_id, message)?;
                 if let Some(response_message) = resp {
                     let outbound_request = if let Some(channel) = response_channel {
                         GossipOutbound::Response {
@@ -167,7 +194,7 @@ impl HandshakeManager {
                         }
                     };
 
-                    network_channel
+                    self.network_channel
                         .send(outbound_request)
                         .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
                 }
@@ -178,7 +205,7 @@ impl HandshakeManager {
             // A peer has completed a match on the given order pair; cache this match pair as completed
             // and do not schedule the pair going forward
             HandshakeExecutionJob::CacheEntry { order1, order2 } => {
-                handshake_cache
+                self.handshake_cache
                     .write()
                     .expect("handshake_cache lock poisoned")
                     .mark_completed(order1, order2);
@@ -189,7 +216,7 @@ impl HandshakeManager {
             // A peer has initiated a match on the given order pair; place this order pair in an invisibility
             // window, i.e. do not initiate matches on this pair
             HandshakeExecutionJob::PeerMatchInProgress { order1, order2 } => {
-                handshake_cache
+                self.handshake_cache
                     .write()
                     .expect("handshake_cache lock poisoned")
                     .mark_invisible(
@@ -209,21 +236,21 @@ impl HandshakeManager {
                 net,
             } => {
                 // Place the handshake in the execution state
-                handshake_state_index.in_progress(&request_id);
+                self.handshake_state_index.in_progress(&request_id);
 
                 // Fetch the local handshake state to get an order for the MPC
-                let order_state =
-                    handshake_state_index
-                        .get_state(&request_id)
-                        .ok_or_else(|| {
-                            HandshakeManagerError::InvalidRequest(format!(
-                                "request_id: {:?}",
-                                request_id
-                            ))
-                        })?;
+                let order_state = self
+                    .handshake_state_index
+                    .get_state(&request_id)
+                    .ok_or_else(|| {
+                        HandshakeManagerError::InvalidRequest(format!(
+                            "request_id: {:?}",
+                            request_id
+                        ))
+                    })?;
 
                 // Publish an internal event signalling that a match is beginning
-                system_bus.publish(
+                self.system_bus.publish(
                     HANDSHAKE_STATUS_TOPIC.to_string(),
                     SystemBusMessage::HandshakeInProgress {
                         local_order_id: order_state.local_order_id,
@@ -235,16 +262,60 @@ impl HandshakeManager {
                 Self::execute_match(party_id, order_state, net)?;
 
                 // Record the match in the cache
-                Self::record_completed_match(
-                    request_id,
-                    handshake_state_index,
-                    handshake_cache,
-                    global_state,
-                    network_channel,
-                    system_bus,
-                )
+                self.record_completed_match(request_id)
             }
         }
+    }
+
+    /// Perform a handshake with a peer
+    pub fn perform_handshake(&self, peer_id: WrappedPeerId) -> Result<(), HandshakeManagerError> {
+        if let Some((order_id, order, balance, fee)) =
+            self.choose_order_balance_fee(None /* peer_order */)
+        {
+            // Hash the balance, order, fee, and wallet randomness
+            // TODO: Replace the randomness here with true wallet-specific randomness
+            let mut rng = thread_rng();
+            let randomness = rng.next_u64();
+
+            let order_hash = HashOutput(poseidon_hash_default_params(&order));
+            let balance_hash = HashOutput(poseidon_hash_default_params(&balance));
+            let fee_hash = HashOutput(poseidon_hash_default_params(&fee));
+            let randomness_hash = HashOutput(poseidon_hash_default_params(vec![randomness]));
+
+            // Send a handshake message to the given peer_id
+            // Panic if channel closed, no way to recover
+            let request_id = Uuid::new_v4();
+            self.network_channel
+                .send(GossipOutbound::Request {
+                    peer_id,
+                    message: GossipRequest::Handshake {
+                        request_id,
+                        message: HandshakeMessage::InitiateMatch {
+                            peer_id: self.global_state.local_peer_id(),
+                            sender_order: order_id,
+                            order_hash,
+                            balance_hash,
+                            fee_hash,
+                            randomness_hash,
+                        },
+                    },
+                })
+                .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
+
+            self.handshake_state_index.new_handshake(
+                request_id,
+                order_id,
+                order,
+                balance,
+                fee,
+                order_hash,
+                balance_hash,
+                fee_hash,
+                randomness_hash,
+            );
+        }
+
+        Ok(())
     }
 
     /// Respond to a handshake request from a peer
@@ -252,12 +323,9 @@ impl HandshakeManager {
     /// Returns an optional response; none if no response is to be sent
     /// The caller should handle forwarding the response onto the network
     pub fn handle_handshake_message(
+        &self,
         request_id: Uuid,
         message: HandshakeMessage,
-        handshake_state_index: HandshakeStateIndex,
-        global_state: RelayerState,
-        handshake_cache: SharedHandshakeCache<OrderIdentifier>,
-        network_channel: UnboundedSender<GossipOutbound>,
     ) -> Result<Option<HandshakeMessage>, HandshakeManagerError> {
         match message {
             // ACK does not need to be handled
@@ -274,7 +342,7 @@ impl HandshakeManager {
                 ..
             } => {
                 if let Some((order_id, order, balance, fee)) =
-                    Self::choose_order_balance_fee(Some(peer_order), handshake_cache, &global_state)
+                    self.choose_order_balance_fee(Some(peer_order))
                 {
                     // Hash the balance, order, fee, and wallet randomness
                     // TODO: Replace the randomness here with true wallet-specific randomness
@@ -288,7 +356,7 @@ impl HandshakeManager {
                         HashOutput(poseidon_hash_default_params(vec![randomness]));
 
                     // Add the new handshake to the state machine index
-                    handshake_state_index.new_handshake_with_peer_info(
+                    self.handshake_state_index.new_handshake_with_peer_info(
                         request_id,
                         peer_order,
                         order_id,
@@ -306,8 +374,8 @@ impl HandshakeManager {
                     );
 
                     // Send a pubsub message indicating intent to match on the given order pair
-                    let cluster_id = { global_state.local_cluster_id.clone() };
-                    network_channel
+                    let cluster_id = { self.global_state.local_cluster_id.clone() };
+                    self.network_channel
                         .send(GossipOutbound::Pubsub {
                             topic: cluster_id.get_management_topic(),
                             message: PubsubMessage::ClusterManagement {
@@ -321,7 +389,7 @@ impl HandshakeManager {
 
                     // Respond with the selected order pair
                     Ok(Some(HandshakeMessage::ProposeMatchCandidate {
-                        peer_id: global_state.local_peer_id(),
+                        peer_id: self.global_state.local_peer_id(),
                         peer_order,
                         sender_order: Some(order_id),
                         order_hash: Some(order_hash),
@@ -333,7 +401,7 @@ impl HandshakeManager {
                     // Send an explicit empty message back so that the remote peer may cache their order as being
                     // already cached with all of the local peer's orders
                     Ok(Some(HandshakeMessage::ProposeMatchCandidate {
-                        peer_id: global_state.local_peer_id(),
+                        peer_id: self.global_state.local_peer_id(),
                         peer_order,
                         sender_order: None,
                         order_hash: None,
@@ -358,7 +426,7 @@ impl HandshakeManager {
                 // If sender_order is None, the peer has no order to match with ours
                 if let Some(peer_order) = sender_order {
                     // Now that the peer has negotiated an order to match, update the state machine
-                    handshake_state_index.update_peer_info(
+                    self.handshake_state_index.update_peer_info(
                         &request_id,
                         peer_order,
                         peer_order_hash.unwrap(),
@@ -368,21 +436,22 @@ impl HandshakeManager {
                     )?;
 
                     let previously_matched = {
-                        let locked_handshake_cache = handshake_cache
+                        let locked_handshake_cache = self
+                            .handshake_cache
                             .read()
                             .expect("handshake_cache lock poisoned");
                         locked_handshake_cache.contains(my_order, peer_order)
                     }; // locked_handshake_cache released
 
                     if previously_matched {
-                        handshake_state_index.completed(&request_id);
+                        self.handshake_state_index.completed(&request_id);
                     }
 
                     // Choose a random open port to receive the connection on
                     // the peer port can be a dummy value as the local node will take the role
                     // of listener in the connection setup
                     let local_port = pick_unused_port().expect("all ports taken");
-                    network_channel
+                    self.network_channel
                         .send(GossipOutbound::ManagementMessage(
                             ManagerControlDirective::BrokerMpcNet {
                                 request_id,
@@ -395,8 +464,8 @@ impl HandshakeManager {
                         .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
                     // Send a pubsub message indicating intent to match on the given order pair
-                    let cluster_id = { global_state.local_cluster_id.clone() };
-                    network_channel
+                    let cluster_id = { self.global_state.local_cluster_id.clone() };
+                    self.network_channel
                         .send(GossipOutbound::Pubsub {
                             topic: cluster_id.get_management_topic(),
                             message: PubsubMessage::ClusterManagement {
@@ -409,7 +478,7 @@ impl HandshakeManager {
                         .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
                     Ok(Some(HandshakeMessage::ExecuteMatch {
-                        peer_id: global_state.local_peer_id(),
+                        peer_id: self.global_state.local_peer_id(),
                         port: local_port,
                         previously_matched,
                         order1: my_order,
@@ -428,14 +497,14 @@ impl HandshakeManager {
                 ..
             } => {
                 // Cache the result of a handshake
-                handshake_cache
+                self.handshake_cache
                     .write()
                     .expect("handshake_cache lock poisoned")
                     .mark_completed(order1, order2);
 
                 // Choose a local port to execute the handshake on
                 let local_port = pick_unused_port().expect("all ports used");
-                network_channel
+                self.network_channel
                     .send(GossipOutbound::ManagementMessage(
                         ManagerControlDirective::BrokerMpcNet {
                             request_id,
@@ -458,16 +527,16 @@ impl HandshakeManager {
     /// The `peer_order` field is optional; for a peer initiating a handshake; the peer will not know
     /// the peer's proposed order, so it should just choose an order randomly
     fn choose_order_balance_fee(
+        &self,
         peer_order: Option<OrderIdentifier>,
-        handshake_cache: SharedHandshakeCache<OrderIdentifier>,
-        global_state: &RelayerState,
     ) -> Option<(OrderIdentifier, Order, Balance, Fee)> {
         let mut rng = thread_rng();
         let mut proposed_order = None;
 
         let selected_wallet = {
-            let locked_wallets = global_state.read_wallet_index();
-            let locked_handshake_cache = handshake_cache
+            let locked_wallets = self.global_state.read_wallet_index();
+            let locked_handshake_cache = self
+                .handshake_cache
                 .read()
                 .expect("handshake_cache lock poisoned");
 
@@ -491,7 +560,7 @@ impl HandshakeManager {
 
         // Find a balance and fee for this chosen order
         let (order_id, order) = proposed_order?;
-        let (balance, fee) = Self::get_balance_and_fee(&order, selected_wallet, global_state)?;
+        let (balance, fee) = self.get_balance_and_fee(&order, selected_wallet)?;
 
         Some((order_id, order, balance, fee))
     }
@@ -499,12 +568,8 @@ impl HandshakeManager {
     /// Find a balance and fee for the given order
     ///
     /// TODO: Remove this in favor of the method implemented in the state primitive
-    fn get_balance_and_fee(
-        order: &Order,
-        wallet_id: Uuid,
-        global_state: &RelayerState,
-    ) -> Option<(Balance, Fee)> {
-        let locked_wallets = global_state.read_wallet_index();
+    fn get_balance_and_fee(&self, order: &Order, wallet_id: Uuid) -> Option<(Balance, Fee)> {
+        let locked_wallets = self.global_state.read_wallet_index();
         let selected_wallet = locked_wallets.read_wallet(&wallet_id)?;
 
         // The mint the local party will be spending
@@ -534,38 +599,33 @@ impl HandshakeManager {
     }
 
     /// Record a match as completed in the various state objects
-    fn record_completed_match(
-        request_id: Uuid,
-        handshake_state_index: HandshakeStateIndex,
-        handshake_cache: SharedHandshakeCache<OrderIdentifier>,
-        global_state: RelayerState,
-        network_channel: UnboundedSender<GossipOutbound>,
-        system_bus: SystemBus<SystemBusMessage>,
-    ) -> Result<(), HandshakeManagerError> {
+    fn record_completed_match(&self, request_id: Uuid) -> Result<(), HandshakeManagerError> {
         // Get the order IDs from the state machine
-        let state = handshake_state_index
+        let state = self
+            .handshake_state_index
             .get_state(&request_id)
             .ok_or_else(|| {
                 HandshakeManagerError::InvalidRequest(format!("request_id {:?}", request_id))
             })?;
 
         // Cache the order pair as completed
-        handshake_cache
+        self.handshake_cache
             .write()
             .expect("handshake_cache lock poisoned")
             .mark_completed(state.local_order_id, state.peer_order_id);
 
         // Write to global state for debugging
-        global_state.mark_order_pair_matched(state.local_order_id, state.peer_order_id);
+        self.global_state
+            .mark_order_pair_matched(state.local_order_id, state.peer_order_id);
 
         // Update the state of the handshake in the completed state
-        handshake_state_index.completed(&request_id);
+        self.handshake_state_index.completed(&request_id);
 
         // Send a message to cluster peers indicating that the local peer has completed a match
         // Cluster peers should cache the matched order pair as completed and not initiate matches
         // on this pair going forward
-        let locked_cluster_id = global_state.local_cluster_id;
-        network_channel
+        let locked_cluster_id = self.global_state.local_cluster_id.clone();
+        self.network_channel
             .send(GossipOutbound::Pubsub {
                 topic: locked_cluster_id.get_management_topic(),
                 message: PubsubMessage::ClusterManagement {
@@ -579,7 +639,7 @@ impl HandshakeManager {
             .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
         // Publish an internal event indicating that the handshake has completed
-        system_bus.publish(
+        self.system_bus.publish(
             HANDSHAKE_STATUS_TOPIC.to_string(),
             SystemBusMessage::HandshakeCompleted {
                 local_order_id: state.local_order_id,
@@ -593,69 +653,43 @@ impl HandshakeManager {
 
 /// Implements a timer that periodically enqueues jobs to the threadpool that
 /// tell the manager to send outbound handshake requests
-pub(super) struct HandshakeTimer {
-    /// The join handle of the thread executing timer interrupts
-    thread_handle: Option<thread::JoinHandle<HandshakeManagerError>>,
+#[derive(Clone)]
+pub struct HandshakeScheduler {
+    /// The sender to enqueue jobs on
+    job_sender: Sender<HandshakeExecutionJob>,
+    /// A copy of the relayer-global state
+    global_state: RelayerState,
+    /// The cancel channel to receive cancel signals on
+    cancel: Receiver<()>,
 }
 
-impl HandshakeTimer {
+impl HandshakeScheduler {
     /// Construct a new timer
     pub fn new(
-        thread_pool: Arc<ThreadPool>,
-        handshake_state_index: HandshakeStateIndex,
-        handshake_cache: SharedHandshakeCache<OrderIdentifier>,
+        job_sender: Sender<HandshakeExecutionJob>,
         global_state: RelayerState,
-        network_channel: UnboundedSender<GossipOutbound>,
         cancel: CancelChannel,
-    ) -> Result<Self, HandshakeManagerError> {
+    ) -> Self {
+        Self {
+            job_sender,
+            global_state,
+            cancel,
+        }
+    }
+
+    /// The execution loop of the timer, periodically enqueues handshake jobs
+    pub fn execution_loop(self) -> HandshakeManagerError {
+        let mut rng = OsRng {};
         let interval_seconds = HANDSHAKE_INTERVAL_MS / 1000;
         let interval_nanos = (HANDSHAKE_INTERVAL_MS % 1000 * NANOS_PER_MILLI) as u32;
 
         let refresh_interval = Duration::new(interval_seconds, interval_nanos);
 
-        // Spawn the execution loop
-        let thread_handle = thread::Builder::new()
-            .name("handshake-manager-timer".to_string())
-            .spawn(move || {
-                Self::execution_loop(
-                    refresh_interval,
-                    handshake_state_index,
-                    handshake_cache,
-                    thread_pool,
-                    global_state,
-                    network_channel,
-                    cancel,
-                )
-            })
-            .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
-
-        Ok(HandshakeTimer {
-            thread_handle: Some(thread_handle),
-        })
-    }
-
-    /// Consume the join handle for the executor thread, this leaves no join handle in
-    /// its place, meaning this can only be called once
-    pub fn join_handle(&mut self) -> JoinHandle<HandshakeManagerError> {
-        self.thread_handle.take().unwrap()
-    }
-
-    /// The execution loop of the timer, periodically enqueues handshake jobs
-    fn execution_loop(
-        refresh_interval: Duration,
-        handshake_state_index: HandshakeStateIndex,
-        handshake_cache: SharedHandshakeCache<OrderIdentifier>,
-        thread_pool: Arc<ThreadPool>,
-        global_state: RelayerState,
-        network_channel: UnboundedSender<GossipOutbound>,
-        cancel: CancelChannel,
-    ) -> HandshakeManagerError {
-        let mut rng = OsRng {};
         // Enqueue handshakes periodically
         loop {
             // Sample a peer to handshake with
             let random_peer = {
-                let locked_priorities = global_state.read_handshake_priorities();
+                let locked_priorities = self.global_state.read_handshake_priorities();
                 let mut peers = Vec::with_capacity(locked_priorities.len());
                 let mut priorities: Vec<u32> = Vec::with_capacity(locked_priorities.len());
 
@@ -674,121 +708,26 @@ impl HandshakeTimer {
 
             // Enqueue a job to handshake with the randomly selected peer
             if let Some(selected_peer) = random_peer {
-                let sender_copy = network_channel.clone();
-                let handshake_cache_copy = handshake_cache.clone();
-                let handshake_state_copy = handshake_state_index.clone();
-                let state_copy = global_state.clone();
-                thread_pool.install(move || {
-                    if let Err(err) = HandshakeManager::perform_handshake(
-                        selected_peer,
-                        handshake_state_copy,
-                        handshake_cache_copy,
-                        state_copy,
-                        sender_copy,
-                    ) {
-                        println!("Error in handshake thread pool: {:?}", err.to_string());
-                    }
-                });
+                if let Err(e) = self
+                    .job_sender
+                    .send(HandshakeExecutionJob::PerformHandshake {
+                        peer: selected_peer,
+                    })
+                    .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))
+                {
+                    return e;
+                }
             }
 
             // Check for a cancel signal before sleeping and after
-            if !cancel.is_empty() {
+            if !self.cancel.is_empty() {
                 return HandshakeManagerError::Cancelled("received cancel signal".to_string());
             }
 
             thread::sleep(refresh_interval);
-            if !cancel.is_empty() {
+            if !self.cancel.is_empty() {
                 return HandshakeManagerError::Cancelled("received cancel signal".to_string());
             }
-        }
-    }
-}
-
-/// Implements a listener that relays from a crossbeam channel to the handshake threadpool
-/// Used as a layer of indirection to provide a consistent interface at the network level
-pub(super) struct HandshakeJobRelay {
-    /// The join handle of the thread executing the handshake relay
-    thread_handle: Option<JoinHandle<HandshakeManagerError>>,
-}
-
-impl HandshakeJobRelay {
-    /// Create a new job relay
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        thread_pool: Arc<ThreadPool>,
-        handshake_cache: SharedHandshakeCache<OrderIdentifier>,
-        handshake_state_index: HandshakeStateIndex,
-        job_channel: Receiver<HandshakeExecutionJob>,
-        network_channel: UnboundedSender<GossipOutbound>,
-        global_state: RelayerState,
-        system_bus: SystemBus<SystemBusMessage>,
-        cancel: CancelChannel,
-    ) -> Result<Self, HandshakeManagerError> {
-        let thread_handle = thread::Builder::new()
-            .name("handshake-job-relay".to_string())
-            .spawn(move || {
-                Self::execution_loop(
-                    thread_pool,
-                    handshake_cache,
-                    handshake_state_index,
-                    job_channel,
-                    network_channel,
-                    global_state,
-                    system_bus,
-                    cancel,
-                )
-            })
-            .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
-
-        Ok(HandshakeJobRelay {
-            thread_handle: Some(thread_handle),
-        })
-    }
-
-    /// Consumes the join handle that the executor operates on, leaving `None` in its
-    /// place. This means that this method may only be called once
-    pub fn join_handle(&mut self) -> JoinHandle<HandshakeManagerError> {
-        self.thread_handle.take().unwrap()
-    }
-
-    /// The main execution loop, listens on the channel and forwards jobs to the handshake manager
-    #[allow(clippy::too_many_arguments)]
-    fn execution_loop(
-        thread_pool: Arc<ThreadPool>,
-        handshake_cache: SharedHandshakeCache<OrderIdentifier>,
-        handshake_state_index: HandshakeStateIndex,
-        job_channel: Receiver<HandshakeExecutionJob>,
-        network_channel: UnboundedSender<GossipOutbound>,
-        global_state: RelayerState,
-        system_bus: SystemBus<SystemBusMessage>,
-        cancel: CancelChannel,
-    ) -> HandshakeManagerError {
-        loop {
-            // Check if the coordinator has cancelled the handshake manager
-            if !cancel.is_empty() {
-                return HandshakeManagerError::Cancelled("received cancel signal".to_string());
-            }
-
-            // Wait for the next message and forward to the thread pool
-            let job = job_channel.recv().unwrap();
-            let handshake_state_clone = handshake_state_index.clone();
-            let state_clone = global_state.clone();
-            let cache_clone = handshake_cache.clone();
-            let channel_clone = network_channel.clone();
-            let bus_clone = system_bus.clone();
-
-            thread_pool.install(move || {
-                if let Err(err) = HandshakeManager::handle_handshake_job(
-                    job,
-                    handshake_state_clone,
-                    state_clone,
-                    cache_clone,
-                    channel_clone,
-                    bus_clone,
-                ) {
-                    println!("Error handling handshake job: {}", err);
-                }
-            })
         }
     }
 }
