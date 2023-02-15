@@ -1,6 +1,5 @@
 //! Groups handlers for gossiping about cluster management events
 
-
 use crate::{
     api::{
         cluster_management::{

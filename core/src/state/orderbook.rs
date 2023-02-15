@@ -13,6 +13,7 @@
 // TODO: Remove this lint allowance
 #![allow(unused)]
 
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{hash_map::Entry, HashMap},
@@ -23,6 +24,7 @@ use termion::color;
 use uuid::Uuid;
 
 use crate::{
+    gossip::types::WrappedPeerId,
     proof_generation::jobs::ValidCommitmentsBundle,
     system_bus::SystemBus,
     types::{SystemBusMessage, ORDER_STATE_CHANGE_TOPIC},
@@ -71,25 +73,31 @@ pub enum NetworkOrderState {
 
 /// Represents an order discovered either via gossip, or from within the local
 /// node's managed wallets
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkOrder {
     /// The identifier of the order
     pub id: OrderIdentifier,
-    /// Whether or not the order is a locally managed order
+    /// Whether or not the order is managed locally, this does not imply that the owner
+    /// field is the same as the local peer's ID. For simplicity the owner field is the
+    /// relayer that originated the order. If the owner is a cluster peer, then the local
+    /// node may have local = True, with `owner` as a different node
     pub local: bool,
+    /// A known manager of the order, where the order was originally propagated from
+    pub owner: WrappedPeerId,
     /// The state of the order via the local peer
     pub state: NetworkOrderState,
     /// The proof of `VALID COMMITMENTS` that has been verified by the local node
     /// TODO: Update this proof with a fleshed out bundle
-    valid_commit_proof: Option<ValidCommitmentsBundle>,
+    pub valid_commit_proof: Option<ValidCommitmentsBundle>,
 }
 
 impl NetworkOrder {
     /// Create a new order in the `Received` state
-    pub fn new(order_id: OrderIdentifier, local: bool) -> Self {
+    pub fn new(order_id: OrderIdentifier, owner: WrappedPeerId, local: bool) -> Self {
         Self {
             id: order_id,
             local,
+            owner,
             state: NetworkOrderState::Received,
             valid_commit_proof: None,
         }
@@ -211,6 +219,23 @@ impl NetworkOrderBook {
     /// Whether or not the given order is already indexed
     pub fn contains_order(&self, order_id: &OrderIdentifier) -> bool {
         self.order_map.contains_key(order_id)
+    }
+
+    /// Fetch the info for an order if it is stored
+    pub fn get_order_info(&self, order_id: &OrderIdentifier) -> Option<NetworkOrder> {
+        self.order_map
+            .get(order_id)
+            .map(|order| order.read().expect(ERR_ORDER_POISONED).clone())
+    }
+
+    /// Return a list of all known order IDs in the book with owners to contact for info
+    pub fn get_order_owner_pairs(&self) -> Vec<(OrderIdentifier, WrappedPeerId)> {
+        let mut pairs = Vec::new();
+        for (order_id, info) in self.order_map.iter() {
+            pairs.push((*order_id, info.read().expect(ERR_ORDER_POISONED).owner))
+        }
+
+        pairs
     }
 
     /// Returns whether or not the local node holds a proof of `VALID COMMITMENTS`

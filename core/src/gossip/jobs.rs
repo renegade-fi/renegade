@@ -8,10 +8,9 @@ use crate::{
         cluster_management::{ClusterJoinMessage, ReplicateRequestBody, ValidityProofRequest},
         gossip::AuthenticatedGossipResponse,
         heartbeat::{BootstrapRequest, HeartbeatMessage},
-        orderbook_management::OrderBookManagementMessage,
     },
     proof_generation::jobs::ValidCommitmentsBundle,
-    state::{wallet::WalletIdentifier, OrderIdentifier},
+    state::{wallet::WalletIdentifier, NetworkOrder, OrderIdentifier},
 };
 
 use super::types::{ClusterId, PeerInfo, WrappedPeerId};
@@ -46,10 +45,10 @@ pub enum GossipServerJob {
         message: HeartbeatMessage,
     },
     /// Handle an orderbook management message from a gossip peer
-    OrderBookManagement(OrderBookManagementMessage),
+    OrderBookManagement(OrderBookManagementJob),
 }
 
-/// Defines a job schedule for a cluster management task
+/// Defines a job type for a cluster management tasks
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum ClusterManagementJob {
@@ -72,4 +71,43 @@ pub enum ClusterManagementJob {
     ShareValidityProofs(ValidityProofRequest),
     /// A proof has been shared by a cluster peer
     UpdateValidityProof(OrderIdentifier, ValidCommitmentsBundle),
+}
+
+/// Defines a job type for local order book management
+#[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
+#[allow(clippy::enum_variant_names)]
+pub enum OrderBookManagementJob {
+    /// A request for order information has come in
+    OrderInfo {
+        /// The order ID that info is requested for
+        order_id: OrderIdentifier,
+        /// The channel to response to the request on
+        response_channel: ResponseChannel<AuthenticatedGossipResponse>,
+    },
+    /// A response from a request for order information has come in
+    OrderInfoResponse {
+        /// The order ID that info was requested for
+        order_id: OrderIdentifier,
+        /// The info attached to the order
+        info: Option<NetworkOrder>,
+    },
+    /// A new order has been added to the book, peers should place it in the
+    /// received state in their local book
+    OrderReceived {
+        /// The identifier of the new order
+        order_id: OrderIdentifier,
+        /// The peer that originated the message
+        owner: WrappedPeerId,
+    },
+    /// A new validity proof has been generated for an order, it should be placed in
+    /// the `Verified` state after local peers verify the proof
+    OrderProofUpdated {
+        /// The identifier of the now updated order
+        order_id: OrderIdentifier,
+        /// The owner of the order
+        owner: WrappedPeerId,
+        /// The new proof of `VALID COMMITMENTS`
+        proof: ValidCommitmentsBundle,
+    },
 }

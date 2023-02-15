@@ -18,7 +18,7 @@ use super::{
     },
     handshake::HandshakeMessage,
     heartbeat::{BootstrapRequest, HeartbeatMessage},
-    orderbook_management::OrderBookManagementMessage,
+    orderbook_management::{OrderBookManagementMessage, OrderInfoRequest, OrderInfoResponse},
 };
 
 /// Represents an outbound gossip message, either a request to a peer
@@ -123,6 +123,8 @@ pub enum GossipRequest {
         /// The message contents
         message: HandshakeMessage,
     },
+    /// A request for order information from a peer
+    OrderInfo(OrderInfoRequest),
     /// A request that a peer replicate a set of wallets
     Replicate(ReplicateRequestBody),
     /// A pushed message forwarded from the sender when a proof of `VALID COMMITMENTS` is
@@ -146,6 +148,7 @@ impl GossipRequest {
             GossipRequest::ClusterAuth(..) => true,
             GossipRequest::Heartbeat(..) => false,
             GossipRequest::Handshake { .. } => false,
+            GossipRequest::OrderInfo(..) => false,
             GossipRequest::Replicate(..) => false,
             GossipRequest::ValidityProof { .. } => true,
         }
@@ -215,6 +218,7 @@ impl AuthenticatedGossipResponse {
 
 /// Represents the possible response types for a request-response message
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum GossipResponse {
     /// A simple Ack response, libp2p sometimes closes connections if no response is
     /// sent, so we can send an empty ack in place for requests that need no response
@@ -230,6 +234,8 @@ pub enum GossipResponse {
         /// The message contents
         message: HandshakeMessage,
     },
+    /// A response to a request for order information
+    OrderInfo(OrderInfoResponse),
 }
 
 impl GossipResponse {
@@ -243,6 +249,7 @@ impl GossipResponse {
             GossipResponse::ClusterAuth(..) => true,
             GossipResponse::Heartbeat(..) => false,
             GossipResponse::Handshake { .. } => false,
+            GossipResponse::OrderInfo(..) => false,
         }
     }
 }
