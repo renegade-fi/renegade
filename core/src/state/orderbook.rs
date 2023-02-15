@@ -16,7 +16,7 @@
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, HashMap, HashSet},
     fmt::{Display, Formatter, Result as FmtResult},
     sync::{RwLockReadGuard, RwLockWriteGuard},
 };
@@ -36,6 +36,8 @@ use super::{new_shared, Shared};
 const ERR_LOCAL_ORDERS_POISONED: &str = "local order lock poisoned";
 /// Error message emitted when an order lock is poisoned
 const ERR_ORDER_POISONED: &str = "order lock poisoned";
+/// Error message emitted when the verified orders set lock is poisoned
+const ERR_VERIFIED_ORDERS_POISONED: &str = "verified orders lock poisoned";
 
 /// An identifier of an order used for caching
 /// TODO: Update this with a commitment to an order, UUID for testing
@@ -171,6 +173,8 @@ pub struct NetworkOrderBook {
     order_map: HashMap<OrderIdentifier, Shared<NetworkOrder>>,
     /// A list of order IDs maintained locally
     local_orders: Shared<Vec<OrderIdentifier>>,
+    /// The set of orders in the `Verified` state; i.e. ready to match
+    verified_orders: Shared<HashSet<OrderIdentifier>>,
     /// A handle referencing the system bus to publish state transition events onto
     system_bus: SystemBus<SystemBusMessage>,
 }
@@ -181,6 +185,7 @@ impl NetworkOrderBook {
         Self {
             order_map: HashMap::new(),
             local_orders: new_shared(Vec::new()),
+            verified_orders: new_shared(HashSet::new()),
             system_bus,
         }
     }
@@ -269,6 +274,11 @@ impl NetworkOrderBook {
                 .push(order.id)
         }
 
+        // If the order is verified already, add it to the list of verified orders
+        if matches!(order.state, NetworkOrderState::Verified) {
+            self.add_verified_order(order.id)
+        }
+
         // Add an entry in the order index
         self.order_map.insert(order.id, new_shared(order));
     }
@@ -282,6 +292,38 @@ impl NetworkOrderBook {
         if let Some(mut locked_order) = self.write_order(order_id) {
             locked_order.attach_commitment_proof(proof);
         }
+
+        self.add_verified_order(*order_id);
+    }
+
+    /// Add an order to the verified orders list
+    fn add_verified_order(&self, order_id: Uuid) {
+        if !self
+            .verified_orders
+            .read()
+            .expect(ERR_VERIFIED_ORDERS_POISONED)
+            .contains(&order_id)
+        {
+            self.verified_orders
+                .write()
+                .expect(ERR_VERIFIED_ORDERS_POISONED)
+                .insert(order_id);
+        }
+    }
+
+    /// Remove an order from the verified orders list
+    fn remove_verified_order(&self, order_id: &Uuid) {
+        if self
+            .verified_orders
+            .read()
+            .expect(ERR_VERIFIED_ORDERS_POISONED)
+            .contains(order_id)
+        {
+            self.verified_orders
+                .write()
+                .expect(ERR_VERIFIED_ORDERS_POISONED)
+                .remove(order_id);
+        }
     }
 
     // --------------------------
@@ -294,6 +336,8 @@ impl NetworkOrderBook {
         if let Some(mut order) = self.write_order(order_id) {
             let prev_state = order.state;
             order.transition_received();
+
+            self.remove_verified_order(order_id);
 
             self.system_bus.publish(
                 ORDER_STATE_CHANGE_TOPIC.to_string(),
@@ -316,6 +360,8 @@ impl NetworkOrderBook {
             let prev_state = order.state;
             order.transition_verified(proof);
 
+            self.add_verified_order(*order_id);
+
             self.system_bus.publish(
                 ORDER_STATE_CHANGE_TOPIC.to_string(),
                 SystemBusMessage::OrderStateChange {
@@ -332,6 +378,8 @@ impl NetworkOrderBook {
         if let Some(mut order) = self.write_order(order_id) {
             let prev_state = order.state;
             order.transition_matched(by_local_node);
+
+            self.remove_verified_order(order_id);
 
             self.system_bus.publish(
                 ORDER_STATE_CHANGE_TOPIC.to_string(),
@@ -350,6 +398,8 @@ impl NetworkOrderBook {
             let prev_state = order.state;
             order.transition_cancelled();
 
+            self.remove_verified_order(order_id);
+
             self.system_bus.publish(
                 ORDER_STATE_CHANGE_TOPIC.to_string(),
                 SystemBusMessage::OrderStateChange {
@@ -366,6 +416,8 @@ impl NetworkOrderBook {
         if let Some(mut order) = self.write_order(order_id) {
             let prev_state = order.state;
             order.transition_pruned();
+
+            self.remove_verified_order(order_id);
 
             self.system_bus.publish(
                 ORDER_STATE_CHANGE_TOPIC.to_string(),
