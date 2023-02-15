@@ -1,8 +1,6 @@
 //! Groups type definitions relevant to all modules and at the top level
 
-use circuits::zk_circuits::{
-    valid_commitments::ValidCommitments,
-};
+use circuits::zk_circuits::valid_commitments::ValidCommitments;
 use serde::{Deserialize, Serialize};
 
 use crate::{

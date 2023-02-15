@@ -32,7 +32,7 @@ use handshake::worker::HandshakeManagerConfig;
 use network_manager::worker::NetworkManagerConfig;
 use price_reporter::worker::PriceReporterManagerConfig;
 use tokio::{select, sync::mpsc};
-use tracing::log::{LevelFilter, self};
+use tracing::log::{self, LevelFilter};
 
 use crate::{
     api::gossip::GossipOutbound,

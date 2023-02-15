@@ -28,10 +28,10 @@ use crate::{
             ConnectionRole, GossipOutbound, GossipOutbound::Pubsub, GossipRequest, GossipResponse,
             ManagerControlDirective, PubsubMessage,
         },
-        orderbook_management::ORDER_BOOK_TOPIC,
+        orderbook_management::{OrderBookManagementMessage, OrderInfoResponse, ORDER_BOOK_TOPIC},
     },
     gossip::{
-        jobs::{ClusterManagementJob, GossipServerJob},
+        jobs::{ClusterManagementJob, GossipServerJob, OrderBookManagementJob},
         types::{ClusterId, PeerInfo, WrappedPeerId},
     },
     handshake::jobs::HandshakeExecutionJob,
@@ -523,6 +523,16 @@ impl NetworkManagerExecutor {
                         })
                         .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
 
+                    GossipRequest::OrderInfo(req) => self
+                        .gossip_work_queue
+                        .send(GossipServerJob::OrderBookManagement(
+                            OrderBookManagementJob::OrderInfo {
+                                order_id: req.order_id,
+                                response_channel: channel,
+                            },
+                        ))
+                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
+
                     GossipRequest::Replicate(replicate_message) => {
                         self.gossip_work_queue
                             .send(GossipServerJob::Cluster(
@@ -596,6 +606,13 @@ impl NetworkManagerExecutor {
                             // The handshake should response via a new request sent on the network manager channel
                             response_channel: None,
                         })
+                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
+
+                    GossipResponse::OrderInfo(OrderInfoResponse { order_id, info }) => self
+                        .gossip_work_queue
+                        .send(GossipServerJob::OrderBookManagement(
+                            OrderBookManagementJob::OrderInfoResponse { order_id, info },
+                        ))
                         .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
                 }
             }
@@ -675,11 +692,29 @@ impl NetworkManagerExecutor {
                     }
                 }
             }
-            PubsubMessage::OrderBookManagement(msg) => {
-                self.gossip_work_queue
-                    .send(GossipServerJob::OrderBookManagement(msg))
-                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
-            }
+            PubsubMessage::OrderBookManagement(msg) => match msg {
+                OrderBookManagementMessage::OrderReceived { order_id, owner } => self
+                    .gossip_work_queue
+                    .send(GossipServerJob::OrderBookManagement(
+                        OrderBookManagementJob::OrderReceived { order_id, owner },
+                    ))
+                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?,
+
+                OrderBookManagementMessage::OrderProofUpdated {
+                    order_id,
+                    owner,
+                    proof,
+                } => self
+                    .gossip_work_queue
+                    .send(GossipServerJob::OrderBookManagement(
+                        OrderBookManagementJob::OrderProofUpdated {
+                            order_id,
+                            owner,
+                            proof,
+                        },
+                    ))
+                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?,
+            },
         }
 
         Ok(())

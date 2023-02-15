@@ -15,10 +15,11 @@ use crate::{
         cluster_management::ClusterAuthRequest,
         gossip::{GossipOutbound, GossipRequest, ManagerControlDirective},
         heartbeat::HeartbeatMessage,
+        orderbook_management::OrderInfoRequest,
     },
     state::{
         wallet::{WalletIdentifier, WalletMetadata},
-        ClusterMetadata, RelayerState,
+        ClusterMetadata, OrderIdentifier, RelayerState,
     },
 };
 
@@ -91,10 +92,11 @@ impl GossipProtocolExecutor {
             incoming_peer_info.insert(peer_id, peer_info);
         }
 
-        // Merge the peer info, wallet information, and cluster information
+        // Merge in state primitives from the heartbeat message
         self.merge_peer_index(&incoming_peer_info)?;
         self.merge_wallets(message.managed_wallets);
-        self.merge_cluster_metadata(&message.cluster_metadata)
+        self.merge_cluster_metadata(&message.cluster_metadata)?;
+        self.merge_order_book(message.orders)
     }
 
     /// Merges the list of known peers from an incoming heartbeat with the local
@@ -182,6 +184,36 @@ impl GossipProtocolExecutor {
                 .send(GossipOutbound::Request {
                     peer_id: peer,
                     message: auth_request.clone(),
+                })
+                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    /// Merges order book information from the incoming heartbeat request, requests order information
+    /// from peers if an order is not present
+    fn merge_order_book(
+        &self,
+        incoming_orders: Vec<(OrderIdentifier, WrappedPeerId)>,
+    ) -> Result<(), GossipError> {
+        // Build a list of orders not stored locally and request order information for each one
+        let mut new_orders = Vec::new();
+        {
+            let locked_order_book = self.global_state.read_order_book();
+            for (order_id, owner) in incoming_orders.into_iter() {
+                if !locked_order_book.contains_order(&order_id) {
+                    new_orders.push((order_id, owner));
+                }
+            }
+        } // locked_order_book released
+
+        // Request order information for all new orders
+        for (order_id, owner) in new_orders.into_iter() {
+            self.network_channel
+                .send(GossipOutbound::Request {
+                    peer_id: owner,
+                    message: GossipRequest::OrderInfo(OrderInfoRequest { order_id }),
                 })
                 .map_err(|err| GossipError::SendMessage(err.to_string()))?;
         }

@@ -204,8 +204,11 @@ impl RelayerState {
             for wallet in locked_wallet_index.get_all_wallets().iter() {
                 for (order_id, order) in wallet.orders.iter() {
                     {
-                        self.write_order_book()
-                            .add_order(NetworkOrder::new(*order_id, true /* local */));
+                        self.write_order_book().add_order(NetworkOrder::new(
+                            *order_id,
+                            self.local_peer_id,
+                            true, /* local */
+                        ));
                     } // order_book lock released
 
                     if let Some((balance, fee, fee_balance)) =
@@ -262,6 +265,7 @@ impl RelayerState {
                 message: PubsubMessage::OrderBookManagement(
                     OrderBookManagementMessage::OrderProofUpdated {
                         order_id,
+                        owner: self.local_peer_id,
                         proof: proof_bundle,
                     },
                 ),
@@ -428,7 +432,11 @@ impl RelayerState {
         // Add all new orders to the order book
         let mut locked_order_book = self.write_order_book();
         for order_id in new_orders.into_iter() {
-            locked_order_book.add_order(NetworkOrder::new(order_id, true /* local */));
+            locked_order_book.add_order(NetworkOrder::new(
+                order_id,
+                self.local_peer_id,
+                true, /* local */
+            ));
         }
     }
 
@@ -541,25 +549,23 @@ impl RelayerState {
 impl From<&RelayerState> for HeartbeatMessage {
     fn from(state: &RelayerState) -> Self {
         // Get a mapping from wallet ID to information
-        let wallet_info = state
-            .wallet_index
-            .read()
-            .expect("wallet_index lock poisoned")
-            .get_metadata_map();
+        let wallet_info = state.read_wallet_index().get_metadata_map();
 
         // Convert peer info keys to strings for serialization/deserialization
         let peer_info = state
-            .peer_index
-            .read()
-            .expect("peer_index lock poisoned")
+            .read_peer_index()
             .get_info_map()
             .into_iter()
             .map(|(key, value)| (key.to_string(), value))
             .collect();
 
+        // Get a list of all orders in the book
+        let order_info = state.read_order_book().get_order_owner_pairs();
+
         HeartbeatMessage {
             managed_wallets: wallet_info,
             known_peers: peer_info,
+            orders: order_info,
             cluster_metadata: state.read_cluster_metadata().clone(),
         }
     }

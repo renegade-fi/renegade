@@ -238,7 +238,7 @@ impl GossipProtocolExecutor {
             }
             GossipServerJob::Cluster(job) => self.handle_cluster_management_job(job),
             GossipServerJob::OrderBookManagement(management_message) => {
-                self.handle_order_book_management_message(management_message)
+                self.handle_order_book_management_job(management_message)
             }
         };
 
