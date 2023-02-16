@@ -222,6 +222,16 @@ impl HandshakeExecutor {
                         ))
                     })?;
 
+                // Mark the handshake cache entry as invisible to avoid re-scheduling
+                self.handshake_cache
+                    .write()
+                    .expect("handshake_cache lock poisoned")
+                    .mark_invisible(
+                        order_state.local_order_id,
+                        order_state.peer_order_id,
+                        Duration::from_millis(HANDSHAKE_INVISIBILITY_WINDOW_MS),
+                    );
+
                 // Publish an internal event signalling that a match is beginning
                 self.system_bus.publish(
                     HANDSHAKE_STATUS_TOPIC.to_string(),
@@ -486,10 +496,6 @@ impl HandshakeExecutor {
                 locked_handshake_cache.contains(my_order, peer_order)
             }; // locked_handshake_cache released
 
-            if previously_matched {
-                self.handshake_state_index.completed(&request_id);
-            }
-
             // Choose a random open port to receive the connection on
             // the peer port can be a dummy value as the local node will take the role
             // of listener in the connection setup
@@ -615,6 +621,10 @@ impl HandshakeExecutor {
 
         let selected_wallet = {
             let locked_wallets = self.global_state.read_wallet_index();
+            if locked_wallets.is_empty() {
+                return None;
+            }
+
             let locked_handshake_cache = self
                 .handshake_cache
                 .read()

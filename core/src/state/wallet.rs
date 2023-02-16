@@ -242,6 +242,11 @@ impl WalletIndex {
     // | Getters |
     // -----------
 
+    /// Returns true if there are no wallets in the locally managed wallet index
+    pub fn is_empty(&self) -> bool {
+        self.wallet_map.is_empty()
+    }
+
     /// Return a random wallet, used for sampling wallets to match with
     pub fn get_random_wallet<R: RngCore>(&self, rng: &mut R) -> Wallet {
         let key_index = rng.gen_range(0..self.wallet_map.len());
