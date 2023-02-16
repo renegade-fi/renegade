@@ -1,6 +1,6 @@
 //! Groups the types used to represent the gossip network primitives
 
-use ed25519_dalek::{PublicKey, SignatureError};
+use ed25519_dalek::{Digest, Keypair, PublicKey, Sha512, Signature, SignatureError};
 use libp2p::{Multiaddr, PeerId};
 use libp2p_core::ParseError as PeerIdParseError;
 use serde::{
@@ -29,6 +29,9 @@ pub struct PeerInfo {
     last_heartbeat: AtomicU64,
     /// The ID of the cluster the peer belongs to
     cluster_id: ClusterId,
+    /// The signature of the peer's ID with their cluster private key, used to
+    /// prove that the peer is a valid cluster member
+    cluster_auth_signature: Vec<u8>,
 }
 
 impl Eq for PeerInfo {}
@@ -44,13 +47,51 @@ impl PartialEq for PeerInfo {
 
 impl PeerInfo {
     /// Construct a new PeerInfo object
-    pub fn new(peer_id: WrappedPeerId, cluster_id: ClusterId, addr: Multiaddr) -> Self {
+    pub fn new(
+        peer_id: WrappedPeerId,
+        cluster_id: ClusterId,
+        addr: Multiaddr,
+        cluster_auth_signature: Vec<u8>,
+    ) -> Self {
         Self {
             addr,
             peer_id,
             cluster_id,
+            cluster_auth_signature,
             last_heartbeat: AtomicU64::new(current_time_seconds()),
         }
+    }
+
+    /// Construct a new PeerInfo object using the cluster private key
+    pub fn new_with_cluster_secret_key(
+        peer_id: WrappedPeerId,
+        cluster_id: ClusterId,
+        addr: Multiaddr,
+        cluster_keypair: &Keypair,
+    ) -> Self {
+        // Generate an auth signature for the cluster
+        let mut hash_digest = Sha512::new();
+        hash_digest.update(&serde_json::to_vec(&peer_id).unwrap());
+        let sig = cluster_keypair
+            .sign_prehashed(hash_digest, None /* context */)
+            .unwrap();
+
+        Self::new(peer_id, cluster_id, addr, sig.to_bytes().to_vec())
+    }
+
+    /// Verify that the signature on the peer's info is correct
+    pub fn verify_cluster_auth_sig(&self) -> Result<(), SignatureError> {
+        let sig = Signature::from_bytes(&self.cluster_auth_signature)
+            .map_err(|_| SignatureError::new())?;
+        let pubkey = self
+            .cluster_id
+            .get_public_key()
+            .map_err(|_| SignatureError::new())?;
+
+        // Hash the peer ID and verify the signature
+        let mut hash_digest = Sha512::new();
+        hash_digest.update(&serde_json::to_vec(&self.peer_id).unwrap());
+        pubkey.verify_prehashed(hash_digest, None, &sig)
     }
 
     /// Getters and Setters
@@ -85,9 +126,10 @@ impl Clone for PeerInfo {
     fn clone(&self) -> Self {
         Self {
             peer_id: self.peer_id,
-            addr: self.addr.clone(),
-            last_heartbeat: AtomicU64::new(self.last_heartbeat.load(Ordering::Relaxed)),
             cluster_id: self.cluster_id.clone(),
+            addr: self.addr.clone(),
+            cluster_auth_signature: self.cluster_auth_signature.clone(),
+            last_heartbeat: AtomicU64::new(self.last_heartbeat.load(Ordering::Relaxed)),
         }
     }
 }
@@ -231,6 +273,7 @@ mod types_test {
         let peer_info = PeerInfo {
             peer_id,
             cluster_id,
+            cluster_auth_signature: Vec::new(),
             last_heartbeat: AtomicU64::new(0),
             addr: Multiaddr::empty(),
         };

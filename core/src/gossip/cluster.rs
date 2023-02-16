@@ -73,13 +73,11 @@ impl GossipProtocolExecutor {
         // Move out of message to avoid clones
         let peer_id = message.peer_id;
         let peer_info = message.peer_info;
-        let peer_addr = message.addr;
 
-        self.add_peer_to_cluster(peer_id, peer_info, cluster_id.clone())?;
+        self.add_peer_to_cluster(peer_id, peer_info.clone(), cluster_id)?;
 
         // Add the peer to the known peers index
-        self.global_state
-            .add_single_peer(peer_id, PeerInfo::new(peer_id, cluster_id, peer_addr));
+        self.global_state.add_single_peer(peer_id, peer_info);
 
         // Request that the peer replicate all locally replicated wallets
         let wallets = self.global_state.read_wallet_index().get_all_wallets();

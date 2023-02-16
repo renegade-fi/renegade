@@ -307,11 +307,9 @@ impl RelayerState {
 
     /// Get the local peer's info
     pub fn get_local_peer_info(&self) -> PeerInfo {
-        PeerInfo::new(
-            self.local_peer_id(),
-            self.local_cluster_id.clone(),
-            self.read_local_addr().clone(),
-        )
+        self.read_peer_index()
+            .get_peer_info(&self.local_peer_id)
+            .unwrap()
     }
 
     /// Print the local relayer state to the screen for debugging
@@ -352,8 +350,8 @@ impl RelayerState {
         let mut locked_handshake_priorities = self.write_handshake_priorities();
 
         for peer in peer_ids.iter() {
-            // Skip this peer if peer info wasn't sent
-            if let Some(info) = peer_info.get(peer) {
+            // Skip this peer if peer info wasn't sent, or if their cluster auth signature doesn't verify
+            if let Some(info) = peer_info.get(peer) && info.verify_cluster_auth_sig().is_ok() {
                 // Record a dummy heartbeat to setup the initial state
                 info.successful_heartbeat();
                 locked_peer_index.add_peer(info.clone())
@@ -449,11 +447,6 @@ impl RelayerState {
     // -----------
     // | Locking |
     // -----------
-
-    /// Acquire a read lock on `local_addr`
-    pub fn read_local_addr(&self) -> RwLockReadGuard<Multiaddr> {
-        self.local_addr.read().expect("local_addr lock poisoned")
-    }
 
     /// Acquire a write lock on `local_addr`
     pub fn write_local_addr(&self) -> RwLockWriteGuard<Multiaddr> {

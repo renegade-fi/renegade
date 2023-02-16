@@ -13,7 +13,7 @@ use toml::{value::Map, Value};
 
 use crate::{
     error::CoordinatorError,
-    gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
+    gossip::types::{ClusterId, WrappedPeerId},
     state::wallet::Wallet,
 };
 
@@ -98,7 +98,7 @@ pub struct RelayerConfig {
     /// Software version of the relayer
     pub version: String,
     /// Bootstrap servers that the peer should connect to
-    pub bootstrap_servers: Vec<PeerInfo>,
+    pub bootstrap_servers: Vec<(WrappedPeerId, Multiaddr)>,
     /// The port to listen on for libp2p
     pub p2p_port: u16,
     /// The port to listen on for the externally facing HTTP API
@@ -176,7 +176,7 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
     let cluster_id = ClusterId::new(&keypair.public);
 
     // Parse the bootstrap servers into multiaddrs
-    let mut parsed_bootstrap_addrs: Vec<PeerInfo> = Vec::new();
+    let mut parsed_bootstrap_addrs: Vec<(WrappedPeerId, Multiaddr)> = Vec::new();
     for addr in cli_args.bootstrap_servers.unwrap_or_default().iter() {
         let parsed_addr: Multiaddr = addr
             .parse()
@@ -184,11 +184,7 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
         let peer_id = PeerId::try_from_multiaddr(&parsed_addr)
             .expect("Invalid address passed as --bootstrap-server");
         println!("parsed peer {}: {}", peer_id, parsed_addr);
-        parsed_bootstrap_addrs.push(PeerInfo::new(
-            WrappedPeerId(peer_id),
-            cluster_id.clone(),
-            parsed_addr,
-        ));
+        parsed_bootstrap_addrs.push((WrappedPeerId(peer_id), parsed_addr));
     }
 
     let config = RelayerConfig {
