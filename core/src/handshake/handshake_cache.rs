@@ -31,7 +31,7 @@ pub struct HandshakeCache<O> {
     size: usize,
     /// The maximum number of elements in the cache
     max_size: usize,
-    /// The underlying LRU cache controlling evication from the HandshakeCache
+    /// The underlying LRU cache controlling eviction from the HandshakeCache
     ///
     /// Entries are cached with the lower (abstract ordering) identifier stored first
     lru_cache: LruCache<(O, O), HandshakeCacheState>,
