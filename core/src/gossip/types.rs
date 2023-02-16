@@ -24,7 +24,7 @@ pub struct PeerInfo {
     peer_id: WrappedPeerId,
     /// The multiaddr of the peer
     addr: Multiaddr,
-    /// Last time a successful hearbeat was received from this peer
+    /// Last time a successful heartbeat was received from this peer
     #[serde(skip)]
     last_heartbeat: AtomicU64,
     /// The ID of the cluster the peer belongs to
@@ -173,7 +173,7 @@ impl<'de> Visitor<'de> for PeerIDVisitor {
     }
 }
 /// A type alias for the cluster identifier
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClusterId(String);
 
 impl ClusterId {
@@ -184,7 +184,7 @@ impl ClusterId {
         Self(encoded_key)
     }
 
-    /// Get the cluster management pubsub topic name for the cluster idenified
+    /// Get the cluster management pubsub topic name for the cluster identified
     pub fn get_management_topic(&self) -> String {
         format!("{}-{}", CLUSTER_MANAGEMENT_TOPIC_PREFIX, self.0)
     }

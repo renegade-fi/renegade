@@ -693,23 +693,23 @@ impl NetworkManagerExecutor {
                 }
             }
             PubsubMessage::OrderBookManagement(msg) => match msg {
-                OrderBookManagementMessage::OrderReceived { order_id, owner } => self
+                OrderBookManagementMessage::OrderReceived { order_id, cluster } => self
                     .gossip_work_queue
                     .send(GossipServerJob::OrderBookManagement(
-                        OrderBookManagementJob::OrderReceived { order_id, owner },
+                        OrderBookManagementJob::OrderReceived { order_id, cluster },
                     ))
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?,
 
                 OrderBookManagementMessage::OrderProofUpdated {
                     order_id,
-                    owner,
+                    cluster,
                     proof,
                 } => self
                     .gossip_work_queue
                     .send(GossipServerJob::OrderBookManagement(
                         OrderBookManagementJob::OrderProofUpdated {
                             order_id,
-                            owner,
+                            cluster,
                             proof,
                         },
                     ))

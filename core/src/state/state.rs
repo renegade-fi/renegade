@@ -206,7 +206,7 @@ impl RelayerState {
                     {
                         self.write_order_book().add_order(NetworkOrder::new(
                             *order_id,
-                            self.local_peer_id,
+                            self.local_cluster_id.clone(),
                             true, /* local */
                         ));
                     } // order_book lock released
@@ -265,7 +265,7 @@ impl RelayerState {
                 message: PubsubMessage::OrderBookManagement(
                     OrderBookManagementMessage::OrderProofUpdated {
                         order_id,
-                        owner: self.local_peer_id,
+                        cluster: self.local_cluster_id.clone(),
                         proof: proof_bundle,
                     },
                 ),
@@ -434,7 +434,7 @@ impl RelayerState {
         for order_id in new_orders.into_iter() {
             locked_order_book.add_order(NetworkOrder::new(
                 order_id,
-                self.local_peer_id,
+                self.local_cluster_id.clone(),
                 true, /* local */
             ));
         }

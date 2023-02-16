@@ -97,16 +97,16 @@ pub enum OrderBookManagementJob {
     OrderReceived {
         /// The identifier of the new order
         order_id: OrderIdentifier,
-        /// The peer that originated the message
-        owner: WrappedPeerId,
+        /// The cluster that manages this order
+        cluster: ClusterId,
     },
     /// A new validity proof has been generated for an order, it should be placed in
     /// the `Verified` state after local peers verify the proof
     OrderProofUpdated {
         /// The identifier of the now updated order
         order_id: OrderIdentifier,
-        /// The owner of the order
-        owner: WrappedPeerId,
+        /// The cluster that manages this order
+        cluster: ClusterId,
         /// The new proof of `VALID COMMITMENTS`
         proof: ValidCommitmentsBundle,
     },

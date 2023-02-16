@@ -17,7 +17,7 @@ use crate::{
 
 use super::{
     errors::GossipError, jobs::OrderBookManagementJob, server::GossipProtocolExecutor,
-    types::WrappedPeerId,
+    types::ClusterId,
 };
 
 impl GossipProtocolExecutor {
@@ -41,16 +41,16 @@ impl GossipProtocolExecutor {
                 Ok(())
             }
 
-            OrderBookManagementJob::OrderReceived { order_id, owner } => {
-                self.handle_new_order(order_id, owner);
+            OrderBookManagementJob::OrderReceived { order_id, cluster } => {
+                self.handle_new_order(order_id, cluster);
                 Ok(())
             }
 
             OrderBookManagementJob::OrderProofUpdated {
                 order_id,
-                owner,
+                cluster,
                 proof,
-            } => self.handle_new_validity_proof(order_id, owner, proof),
+            } => self.handle_new_validity_proof(order_id, cluster, proof),
         }
     }
 
@@ -97,9 +97,9 @@ impl GossipProtocolExecutor {
     }
 
     /// Handles a newly discovered order added to the book
-    fn handle_new_order(&self, order_id: OrderIdentifier, owner: WrappedPeerId) {
+    fn handle_new_order(&self, order_id: OrderIdentifier, cluster: ClusterId) {
         self.global_state
-            .add_order(NetworkOrder::new(order_id, owner, false /* local */))
+            .add_order(NetworkOrder::new(order_id, cluster, false /* local */))
     }
 
     /// Handles a new validity proof attached to an order
@@ -109,7 +109,7 @@ impl GossipProtocolExecutor {
     fn handle_new_validity_proof(
         &self,
         order_id: OrderIdentifier,
-        owner: WrappedPeerId,
+        cluster: ClusterId,
         proof_bundle: ValidCommitmentsBundle,
     ) -> Result<(), GossipError> {
         // Verify the proof
@@ -128,7 +128,7 @@ impl GossipProtocolExecutor {
             .contains_order(&order_id)
         {
             self.global_state
-                .add_order(NetworkOrder::new(order_id, owner, false /* local */));
+                .add_order(NetworkOrder::new(order_id, cluster, false /* local */));
         }
 
         self.global_state

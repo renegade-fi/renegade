@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    gossip::types::{PeerInfo, WrappedPeerId},
+    gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
     state::{
         wallet::{WalletIdentifier, WalletMetadata},
         ClusterMetadata, OrderIdentifier,
@@ -22,7 +22,7 @@ pub struct HeartbeatMessage {
     /// PeerID is converted to string for serialization
     pub known_peers: HashMap<String, PeerInfo>,
     /// The local peer's orderbook
-    pub orders: Vec<(OrderIdentifier, WrappedPeerId)>,
+    pub orders: Vec<(OrderIdentifier, ClusterId)>,
     /// The metadata that the local peer has about its own cluster
     pub cluster_metadata: ClusterMetadata,
 }

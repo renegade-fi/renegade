@@ -24,7 +24,7 @@ use termion::color;
 use uuid::Uuid;
 
 use crate::{
-    gossip::types::WrappedPeerId,
+    gossip::types::{ClusterId, WrappedPeerId},
     proof_generation::jobs::ValidCommitmentsBundle,
     system_bus::SystemBus,
     types::{SystemBusMessage, ORDER_STATE_CHANGE_TOPIC},
@@ -84,8 +84,8 @@ pub struct NetworkOrder {
     /// relayer that originated the order. If the owner is a cluster peer, then the local
     /// node may have local = True, with `owner` as a different node
     pub local: bool,
-    /// A known manager of the order, where the order was originally propagated from
-    pub owner: WrappedPeerId,
+    /// The cluster known to manage the given order
+    pub cluster: ClusterId,
     /// The state of the order via the local peer
     pub state: NetworkOrderState,
     /// The proof of `VALID COMMITMENTS` that has been verified by the local node
@@ -95,11 +95,11 @@ pub struct NetworkOrder {
 
 impl NetworkOrder {
     /// Create a new order in the `Received` state
-    pub fn new(order_id: OrderIdentifier, owner: WrappedPeerId, local: bool) -> Self {
+    pub fn new(order_id: OrderIdentifier, cluster: ClusterId, local: bool) -> Self {
         Self {
             id: order_id,
             local,
-            owner,
+            cluster,
             state: NetworkOrderState::Received,
             valid_commit_proof: None,
         }
@@ -233,11 +233,14 @@ impl NetworkOrderBook {
             .map(|order| order.read().expect(ERR_ORDER_POISONED).clone())
     }
 
-    /// Return a list of all known order IDs in the book with owners to contact for info
-    pub fn get_order_owner_pairs(&self) -> Vec<(OrderIdentifier, WrappedPeerId)> {
+    /// Return a list of all known order IDs in the book with clusters to contact for info
+    pub fn get_order_owner_pairs(&self) -> Vec<(OrderIdentifier, ClusterId)> {
         let mut pairs = Vec::new();
         for (order_id, info) in self.order_map.iter() {
-            pairs.push((*order_id, info.read().expect(ERR_ORDER_POISONED).owner))
+            pairs.push((
+                *order_id,
+                info.read().expect(ERR_ORDER_POISONED).cluster.clone(),
+            ))
         }
 
         pairs
