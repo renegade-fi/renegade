@@ -2,6 +2,7 @@
 //! global state elements
 mod orderbook;
 pub mod peers;
+mod priority;
 #[allow(clippy::module_inception)]
 mod state;
 pub mod wallet;

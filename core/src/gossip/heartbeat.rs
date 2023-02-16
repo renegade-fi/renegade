@@ -27,7 +27,7 @@ use super::{
     errors::GossipError,
     jobs::GossipServerJob,
     server::GossipProtocolExecutor,
-    types::{PeerInfo, WrappedPeerId},
+    types::{ClusterId, PeerInfo, WrappedPeerId},
 };
 
 /**
@@ -195,27 +195,34 @@ impl GossipProtocolExecutor {
     /// from peers if an order is not present
     fn merge_order_book(
         &self,
-        incoming_orders: Vec<(OrderIdentifier, WrappedPeerId)>,
+        incoming_orders: Vec<(OrderIdentifier, ClusterId)>,
     ) -> Result<(), GossipError> {
         // Build a list of orders not stored locally and request order information for each one
         let mut new_orders = Vec::new();
         {
             let locked_order_book = self.global_state.read_order_book();
-            for (order_id, owner) in incoming_orders.into_iter() {
+            for (order_id, cluster) in incoming_orders.into_iter() {
                 if !locked_order_book.contains_order(&order_id) {
-                    new_orders.push((order_id, owner));
+                    new_orders.push((order_id, cluster));
                 }
             }
         } // locked_order_book released
 
         // Request order information for all new orders
-        for (order_id, owner) in new_orders.into_iter() {
-            self.network_channel
-                .send(GossipOutbound::Request {
-                    peer_id: owner,
-                    message: GossipRequest::OrderInfo(OrderInfoRequest { order_id }),
-                })
-                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
+        for (order_id, cluster) in new_orders.into_iter() {
+            // Pick a cluster peer to dial for the order info
+            if let Some(peer_id) = self
+                .global_state
+                .read_peer_index()
+                .get_cluster_peer(&cluster)
+            {
+                self.network_channel
+                    .send(GossipOutbound::Request {
+                        peer_id,
+                        message: GossipRequest::OrderInfo(OrderInfoRequest { order_id }),
+                    })
+                    .map_err(|err| GossipError::SendMessage(err.to_string()))?;
+            }
         }
 
         Ok(())
