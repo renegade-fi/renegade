@@ -88,6 +88,11 @@ impl PeerIndex {
         self.peer_map.len()
     }
 
+    /// Returns the info for a given peer if it is indexed
+    pub fn get_peer_info(&self, peer_id: &WrappedPeerId) -> Option<PeerInfo> {
+        self.read_peer(peer_id).map(|info| info.clone())
+    }
+
     /// Returns whether the given peer is already indexed by the peer index
     pub fn contains_peer(&self, peer_id: &WrappedPeerId) -> bool {
         self.peer_map.contains_key(peer_id)

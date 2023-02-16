@@ -20,7 +20,7 @@ use super::{
     errors::GossipError,
     jobs::GossipServerJob,
     server::{GossipProtocolExecutor, GossipServer},
-    types::{ClusterId, PeerInfo, WrappedPeerId},
+    types::{ClusterId, WrappedPeerId},
 };
 
 /// The configuration passed from the coordinator to the GossipServer
@@ -33,7 +33,7 @@ pub struct GossipServerConfig {
     /// The cluster ID of the local peer
     pub(crate) cluster_id: ClusterId,
     /// The servers to bootstrap into the network with
-    pub(crate) bootstrap_servers: Vec<PeerInfo>,
+    pub(crate) bootstrap_servers: Vec<(WrappedPeerId, Multiaddr)>,
     /// A reference to the relayer-global state
     pub(crate) global_state: RelayerState,
     /// A job queue to send outbound heartbeat requests on
@@ -94,13 +94,13 @@ impl Worker for GossipServer {
         //  2. Send bootstrap requests to all bootstrapping peers
         // Wait until all peers have been indexed before sending requests to give async network
         // manager time to index the peers in the case that these messages are processed concurrently
-        for bootstrap_peer in self.config.bootstrap_servers.iter() {
+        for (peer_id, peer_addr) in self.config.bootstrap_servers.iter() {
             self.config
                 .network_sender
                 .send(GossipOutbound::ManagementMessage(
                     ManagerControlDirective::NewAddr {
-                        peer_id: bootstrap_peer.get_peer_id(),
-                        address: bootstrap_peer.get_addr(),
+                        peer_id: *peer_id,
+                        address: peer_addr.clone(),
                     },
                 ))
                 .map_err(|err| GossipError::SendMessage(err.to_string()))?;
@@ -109,11 +109,11 @@ impl Worker for GossipServer {
         let req = BootstrapRequest {
             peer_id: self.config.local_peer_id,
         };
-        for bootstrap_peer in self.config.bootstrap_servers.iter() {
+        for (peer_id, _) in self.config.bootstrap_servers.iter() {
             self.config
                 .network_sender
                 .send(GossipOutbound::Request {
-                    peer_id: bootstrap_peer.get_peer_id(),
+                    peer_id: *peer_id,
                     message: GossipRequest::Bootstrap(req.clone()),
                 })
                 .map_err(|err| GossipError::SendMessage(err.to_string()))?;

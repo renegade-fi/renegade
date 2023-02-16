@@ -105,10 +105,11 @@ impl NetworkManager {
         // Add self to peer info index
         self.config.global_state.add_single_peer(
             self.local_peer_id,
-            PeerInfo::new(
+            PeerInfo::new_with_cluster_secret_key(
                 self.local_peer_id,
                 self.cluster_id.clone(),
                 self.local_addr.clone(),
+                self.config.cluster_keypair.as_ref().unwrap(),
             ),
         );
 
