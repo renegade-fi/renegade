@@ -3,6 +3,7 @@
 
 use circuits::{
     native_helpers::compute_poseidon_hash,
+    types::{balance::Balance, fee::Fee, order::Order},
     zk_gadgets::merkle::{MerkleOpening, MerkleRoot},
 };
 use crossbeam::channel::Sender;
@@ -211,7 +212,7 @@ impl RelayerState {
                         ));
                     } // order_book lock released
 
-                    if let Some((balance, fee, fee_balance)) =
+                    if let Some((_, balance, fee, fee_balance)) =
                         locked_wallet_index.get_order_balance_and_fee(&wallet.wallet_id, order_id)
                     {
                         // Generate a merkle proof of inclusion for this wallet in the contract state
@@ -318,7 +319,7 @@ impl RelayerState {
     }
 
     /// Sample an order for handshake
-    pub fn get_handshake_order(&self) -> Option<OrderIdentifier> {
+    pub fn choose_handshake_order(&self) -> Option<OrderIdentifier> {
         // Read the set of orders that are verified and thereby ready for batch
         let verified_orders = { self.read_order_book().get_verified_orders() };
         if verified_orders.is_empty() {
@@ -339,6 +340,29 @@ impl RelayerState {
         let mut rng = thread_rng();
         let distribution = WeightedIndex::new(&priorities).unwrap();
         Some(*verified_orders.get(distribution.sample(&mut rng)).unwrap())
+    }
+
+    /// Get the order, balance, and fee information for a given order_id
+    pub fn get_order_balance_fee(
+        &self,
+        order_id: &OrderIdentifier,
+    ) -> Option<(Order, Balance, Fee)> {
+        let order_wallet = { self.read_wallet_index().get_wallet_for_order(order_id) }?;
+        let (order, balance, fee, _) = self
+            .read_wallet_index()
+            .get_order_balance_and_fee(&order_wallet, order_id)?;
+
+        Some((order, balance, fee))
+    }
+
+    /// Get a peer in the cluster that manages the given order, used to dial during
+    /// handshake scheduling
+    pub fn get_peer_managing_order(&self, order_id: &OrderIdentifier) -> Option<WrappedPeerId> {
+        // Get the cluster that manages this order
+        let managing_cluster = { self.read_order_book().get_order_info(order_id)?.cluster };
+
+        // Get a peer in this cluster
+        self.read_peer_index().get_cluster_peer(&managing_cluster)
     }
 
     /// Print the local relayer state to the screen for debugging
@@ -371,8 +395,6 @@ impl RelayerState {
         peer_info: &HashMap<WrappedPeerId, PeerInfo>,
     ) {
         let mut locked_peer_index = self.write_peer_index();
-        let mut locked_handshake_priorities = self.write_handshake_priorities();
-
         for peer in peer_ids.iter() {
             // Skip this peer if peer info wasn't sent, or if their cluster auth signature doesn't verify
             if let Some(info) = peer_info.get(peer) && info.verify_cluster_auth_sig().is_ok() {
@@ -419,7 +441,7 @@ impl RelayerState {
     pub fn add_order(&self, order: NetworkOrder) {
         // Add the order to the book and to the priority store
         self.write_handshake_priorities()
-            .new_order(order.id, order.cluster);
+            .new_order(order.id, order.cluster.clone());
         self.write_order_book().add_order(order);
     }
 
@@ -454,7 +476,7 @@ impl RelayerState {
     /// order state updates that are available to the frontend
     pub fn mark_order_pair_matched(&self, o1: OrderIdentifier, o2: OrderIdentifier) {
         // Remove the scheduling priorities for the orders
-        let locked_handshake_priorities = self.write_handshake_priorities();
+        let mut locked_handshake_priorities = self.write_handshake_priorities();
         locked_handshake_priorities.remove_order(&o1);
         locked_handshake_priorities.remove_order(&o2);
 

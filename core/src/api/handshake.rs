@@ -2,28 +2,13 @@
 use portpicker::Port;
 use serde::{Deserialize, Serialize};
 
-use crate::{gossip::types::WrappedPeerId, handshake::types::HashOutput, state::OrderIdentifier};
+use crate::{gossip::types::WrappedPeerId, state::OrderIdentifier};
 
 /// Enumerates the different operations possible via handshake
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum HandshakeMessage {
     /// A generic ACK to attest to liveness during handshake execution
     Ack,
-    /// An MPC operation to be performed during handshake
-    InitiateMatch {
-        /// The ID of the peer initiating the match
-        peer_id: WrappedPeerId,
-        /// An order local to the sender, that the sender wants to computed matches for
-        sender_order: OrderIdentifier,
-        /// A hash commitment to the sender's order
-        order_hash: HashOutput,
-        /// A hash commitment to the sender's balance
-        balance_hash: HashOutput,
-        /// A hash commitment to the sender's fee
-        fee_hash: HashOutput,
-        /// A hash commitment to the sender's randomness
-        randomness_hash: HashOutput,
-    },
     /// Propose an order to match with an order sent in InitiateMatch
     ///
     /// If all orders in the local peer's book have already been matched
@@ -37,15 +22,22 @@ pub enum HandshakeMessage {
         ///
         /// Set to `None` by the sender if all locally held orders are cached
         /// as already matched with the `peer_order`
-        sender_order: Option<OrderIdentifier>,
-        /// A hash commitment to the sender's order
-        order_hash: Option<HashOutput>,
-        /// A hash commitment to the sender's balance
-        balance_hash: Option<HashOutput>,
-        /// A hash commitment to the sender's fee
-        fee_hash: Option<HashOutput>,
-        /// A hash commitment to the sender's randomness
-        randomness_hash: Option<HashOutput>,
+        sender_order: OrderIdentifier,
+    },
+    /// Reject a proposed match candidate, this can happen for a number of reasons;
+    /// e.g. the local peer has already cached the proposed order pair as matched,
+    /// or the local peer has not yet validated the proof of `VALID COMMITMENTS` for
+    /// the peer's order
+    RejectMatchCandidate {
+        /// The ID of the peer rejecting the proposal
+        peer_id: WrappedPeerId,
+        /// The recipient's order, i.e. the order that the proposer used from their own
+        /// managed book
+        peer_order: OrderIdentifier,
+        /// The order of the sender, i.e. the peer that rejects the match proposal
+        sender_order: OrderIdentifier,
+        /// The reason that the rejecting peer is rejecting the proposal
+        reason: MatchRejectionReason,
     },
     /// Go forward with a handshake after a proposed order pair is setup
     ExecuteMatch {
@@ -67,4 +59,13 @@ pub enum HandshakeMessage {
         /// The second order to attempt to match
         order2: OrderIdentifier,
     },
+}
+
+/// The reason for rejecting a match candidate proposal
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum MatchRejectionReason {
+    /// The order pair is already cached by the rejecting peer
+    Cached,
+    /// The rejecting peer has not yet verified the proposer's proof of `VALID COMMITMENTS`
+    NoValidityProof,
 }
