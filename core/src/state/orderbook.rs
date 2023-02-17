@@ -266,12 +266,27 @@ impl NetworkOrderBook {
     }
 
     /// Fetch all the locally managed, verified orders
+    ///
+    /// Used to choose a match candidate for a scheduled remote order handshake
     pub fn get_local_verified_orders(&self) -> Vec<OrderIdentifier> {
         let locked_verified_orders = self.read_verified_orders();
         let locked_local_orders = self.read_local_orders();
 
         locked_verified_orders
             .intersection(&locked_local_orders)
+            .cloned()
+            .collect_vec()
+    }
+
+    /// Fetch all the non-locally managed, verified orders
+    ///
+    /// Used for choosing orders to schedule handshakes on
+    pub fn get_nonlocal_verified_orders(&self) -> Vec<OrderIdentifier> {
+        let locked_verified_orders = self.read_verified_orders();
+        let locked_local_orders = self.read_local_orders();
+
+        locked_verified_orders
+            .difference(&locked_local_orders)
             .cloned()
             .collect_vec()
     }
