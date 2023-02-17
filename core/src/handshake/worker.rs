@@ -4,6 +4,7 @@ use std::thread::{Builder, JoinHandle};
 
 use crossbeam::channel::{Receiver, Sender};
 use tokio::sync::mpsc::UnboundedSender;
+use tracing::log;
 
 use crate::{
     api::gossip::GossipOutbound,
@@ -40,8 +41,6 @@ impl Worker for HandshakeManager {
     type Error = HandshakeManagerError;
 
     fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
-        // Build a thread pool to handle handshake operations
-        println!("Starting execution loop for handshake protocol executor...");
         // Start a timer thread, periodically asks workers to begin handshakes with peers
         let scheduler = HandshakeScheduler::new(
             config.job_sender.clone(),
@@ -81,6 +80,8 @@ impl Worker for HandshakeManager {
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
+        log::info!("Starting executor loop for handshake protocol executor...");
+
         // Spawn both the executor and the scheduler in a thread
         let executor = self.executor.take().unwrap();
         let executor_handle = Builder::new()

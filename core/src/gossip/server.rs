@@ -6,7 +6,7 @@
 use std::{
     num::NonZeroUsize,
     sync::{Arc, RwLock},
-    thread::{self, JoinHandle},
+    thread::{self, Builder, JoinHandle},
     time::Duration,
 };
 
@@ -96,15 +96,18 @@ impl GossipServer {
         let network_sender_copy = self.config.network_sender.clone();
         // Spawn a thread to wait on a timeout and then signal to the network manager that it
         // may flush the pubsub buffer
-        thread::spawn(move || {
-            // Wait for the network to warmup
-            thread::sleep(Duration::from_millis(PUBSUB_WARMUP_TIME_MS));
-            network_sender_copy
-                .send(GossipOutbound::ManagementMessage(
-                    ManagerControlDirective::GossipWarmupComplete,
-                ))
-                .unwrap()
-        });
+        Builder::new()
+            .name("gossip-warmup-timer".to_string())
+            .spawn(move || {
+                // Wait for the network to warmup
+                thread::sleep(Duration::from_millis(PUBSUB_WARMUP_TIME_MS));
+                network_sender_copy
+                    .send(GossipOutbound::ManagementMessage(
+                        ManagerControlDirective::GossipWarmupComplete,
+                    ))
+                    .unwrap();
+            })
+            .map_err(|err| GossipError::ServerSetup(err.to_string()))?;
 
         Ok(())
     }

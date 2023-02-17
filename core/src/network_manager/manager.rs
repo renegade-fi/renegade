@@ -22,7 +22,7 @@ use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
 
 use crate::{
     api::{
-        cluster_management::{ClusterAuthResponse, ClusterManagementMessage, ReplicatedMessage},
+        cluster_management::{ClusterManagementMessage, ReplicatedMessage},
         gossip::{
             AuthenticatedGossipRequest, AuthenticatedGossipResponse, AuthenticatedPubsubMessage,
             ConnectionRole, GossipOutbound, GossipOutbound::Pubsub, GossipRequest, GossipResponse,
@@ -49,13 +49,8 @@ use super::{
 const ERR_NO_KNOWN_ADDR: &str = "no known address for peer";
 /// Error parsing an address from Multiaddr to Socketaddr
 const ERR_PARSING_ADDR: &str = "could not parse Multiaddr to SocketAddr";
-/// An error sending a response through the swarm
-const ERR_SENDING_RESPONSE: &str = "error sending response, channel closed";
 /// Emitted when signature verification for an authenticated request fails
 const ERR_SIG_VERIFY: &str = "signature verification failed";
-/// Error emitted when a peer requests the local peer to prove auth for a different cluster
-/// than its own
-const ERR_WRONG_CLUSTER: &str = "cluster ID requested does not match local cluster ID";
 
 // -----------
 // | Helpers |
@@ -172,6 +167,7 @@ pub(super) struct NetworkManagerExecutor {
     /// The sender for the handshake manager's work queue
     handshake_work_queue: Sender<HandshakeExecutionJob>,
     /// A copy of the relayer-global state
+    #[allow(unused)]
     global_state: RelayerState,
     /// The cancel channel that the coordinator thread may use to cancel this worker
     cancel: Receiver<()>,
@@ -465,38 +461,6 @@ impl NetworkManagerExecutor {
                         .send(GossipServerJob::Bootstrap(req, channel))
                         .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
 
-                    // Fulfill cluster auth requests directly in the network manager; it has direct
-                    // access to the private key
-                    GossipRequest::ClusterAuth(auth_message) => {
-                        // If the auth message is not for the local peer's cluster, ignore it
-                        let local_cluster_id = self.global_state.local_cluster_id.clone();
-                        if auth_message.cluster_id != local_cluster_id {
-                            return Err(NetworkManagerError::Authentication(
-                                ERR_WRONG_CLUSTER.to_string(),
-                            ));
-                        }
-
-                        // Otherwise, sign a response of (peer_id, cluster_id)
-                        let body = GossipResponse::ClusterAuth(ClusterAuthResponse {
-                            peer_id: self.global_state.local_peer_id(),
-                            peer_info: self.global_state.get_local_peer_info(),
-                            cluster_id: local_cluster_id,
-                        });
-                        let resp_body =
-                            AuthenticatedGossipResponse::new_with_body(body, &self.cluster_key)
-                                .map_err(|err| {
-                                    NetworkManagerError::Authentication(err.to_string())
-                                })?;
-
-                        self.swarm
-                            .behaviour_mut()
-                            .request_response
-                            .send_response(channel, resp_body)
-                            .map_err(|_| {
-                                NetworkManagerError::Network(ERR_SENDING_RESPONSE.to_string())
-                            })
-                    }
-
                     GossipRequest::Heartbeat(heartbeat_message) => self
                         .gossip_work_queue
                         .send(GossipServerJob::HandleHeartbeatReq {
@@ -530,7 +494,6 @@ impl NetworkManagerExecutor {
                         .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
 
                     GossipRequest::Replicate(replicate_message) => {
-                        log::info!("replicate request");
                         self.gossip_work_queue
                             .send(GossipServerJob::Cluster(
                                 ClusterManagementJob::ReplicateRequest(replicate_message),
@@ -568,20 +531,6 @@ impl NetworkManagerExecutor {
 
                 match response.body {
                     GossipResponse::Ack => Ok(()),
-                    GossipResponse::ClusterAuth(auth_response) => {
-                        // Forward a job to the gossip server to update its cluster information
-                        self.gossip_work_queue
-                            .send(GossipServerJob::Cluster(
-                                ClusterManagementJob::ClusterAuthSuccess(
-                                    auth_response.cluster_id,
-                                    auth_response.peer_id,
-                                    auth_response.peer_info,
-                                ),
-                            ))
-                            .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
-
-                        Ok(())
-                    }
 
                     GossipResponse::Heartbeat(heartbeat_message) => self
                         .gossip_work_queue

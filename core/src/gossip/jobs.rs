@@ -13,7 +13,7 @@ use crate::{
     state::{wallet::WalletIdentifier, NetworkOrder, OrderIdentifier},
 };
 
-use super::types::{ClusterId, PeerInfo, WrappedPeerId};
+use super::types::{ClusterId, WrappedPeerId};
 
 /// Defines a heartbeat job that can be enqueued by other workers in a relayer
 #[derive(Debug)]
@@ -60,9 +60,6 @@ pub enum ClusterManagementJob {
         /// The ID of the peer that has just replicated the wallet
         peer_id: WrappedPeerId,
     },
-    /// A job indicating that a peer has successfully authenticated into the cluster
-    /// from a previous outbound cluster auth request
-    ClusterAuthSuccess(ClusterId, WrappedPeerId, PeerInfo),
     /// A request from a peer to join the local peer's cluster
     ClusterJoinRequest(ClusterId, ClusterJoinMessage),
     /// Replicate a set of wallets forwarded from a peer

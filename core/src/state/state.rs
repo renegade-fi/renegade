@@ -271,13 +271,6 @@ impl RelayerState {
     // | Getters |
     // -----------
 
-    /// Get the local peer's info
-    pub fn get_local_peer_info(&self) -> PeerInfo {
-        self.read_peer_index()
-            .get_peer_info(&self.local_peer_id)
-            .unwrap()
-    }
-
     /// Acquire a read lock on `local_peer_id`
     pub fn local_peer_id(&self) -> WrappedPeerId {
         self.local_peer_id

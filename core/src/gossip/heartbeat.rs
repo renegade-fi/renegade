@@ -12,7 +12,6 @@ use tracing::log;
 
 use crate::{
     api::{
-        cluster_management::ClusterAuthRequest,
         gossip::{GossipOutbound, GossipRequest, ManagerControlDirective},
         heartbeat::HeartbeatMessage,
         orderbook_management::OrderInfoRequest,
@@ -231,40 +230,8 @@ impl GossipProtocolExecutor {
 
         // Add all filtered peers to the network manager's address table
         self.add_new_addrs(&filtered_peers, new_peer_info)?;
-
-        // We separate out cluster peers from non-cluster peers. Non-cluster peers may be added to the
-        // state immediately. Cluster peers must prove their authentication in the cluster by signing
-        // a cluster auth message
-        let my_cluster_id = { self.global_state.local_cluster_id.clone() };
-        let mut non_cluster_peers = Vec::new();
-        let mut cluster_peers = Vec::new();
-
-        for peer in filtered_peers.iter() {
-            // Skip if the heartbeat contains no peer info
-            if let Some(info) = new_peer_info.get(peer) {
-                if info.get_cluster_id() == my_cluster_id {
-                    cluster_peers.push(*peer);
-                } else {
-                    non_cluster_peers.push(*peer);
-                }
-            }
-        }
-
-        // Add the non-cluster peers to the global state
-        self.global_state
-            .add_peers(&non_cluster_peers, new_peer_info);
-
-        // Send cluster auth requests to all peers claiming to be in the local peer's cluster
-        for cluster_peer in cluster_peers.iter() {
-            self.network_channel
-                .send(GossipOutbound::Request {
-                    peer_id: *cluster_peer,
-                    message: GossipRequest::ClusterAuth(ClusterAuthRequest {
-                        cluster_id: self.global_state.local_cluster_id.clone(),
-                    }),
-                })
-                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
-        }
+        // Add all filtered peers to the global peer index
+        self.global_state.add_peers(&filtered_peers, new_peer_info);
 
         Ok(true)
     }
