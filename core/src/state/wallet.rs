@@ -374,12 +374,10 @@ impl WalletIndex {
     /// This method is called when a cluster peer is determined to have failed; we should
     /// update the replication state and take any steps necessary to get the wallet replicated
     /// on a safe number of peers
-    pub fn remove_peer_replicas(&self, peers: &[WrappedPeerId]) {
+    pub fn remove_peer_replicas(&self, peer: &WrappedPeerId) {
         for (_, wallet) in self.wallet_map.iter() {
             let mut locked_wallet = wallet.write().expect("wallet lock poisoned");
-            for peer in peers.iter() {
-                locked_wallet.metadata.replicas.remove(peer);
-            }
+            locked_wallet.metadata.replicas.remove(peer);
         }
     }
 }

@@ -14,9 +14,8 @@ use libp2p::{
     Multiaddr,
 };
 use rand::{distributions::WeightedIndex, prelude::Distribution, thread_rng};
-use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt::{Display, Formatter, Result as FmtResult},
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
     thread::Builder,
@@ -93,37 +92,6 @@ pub struct RelayerState {
     matched_order_pairs: Shared<Vec<(OrderIdentifier, OrderIdentifier)>>,
     /// Priorities for scheduling handshakes with each peer
     pub handshake_priorities: Shared<HandshakePriorityStore>,
-    /// Information about the local peer's cluster
-    pub cluster_metadata: Shared<ClusterMetadata>,
-}
-
-/// Metadata about the local peer's cluster
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ClusterMetadata {
-    /// The cluster ID
-    pub id: ClusterId,
-    /// The known peers that are members of this cluster
-    pub known_members: HashSet<WrappedPeerId>,
-}
-
-impl ClusterMetadata {
-    /// Create a new, empty cluster metadata instance
-    pub fn new(cluster_id: ClusterId) -> Self {
-        Self {
-            id: cluster_id,
-            known_members: HashSet::new(),
-        }
-    }
-
-    /// Returns whether the given peer is a known member of the cluster
-    pub fn has_member(&self, peer_id: &WrappedPeerId) -> bool {
-        self.known_members.contains(peer_id)
-    }
-
-    /// Add a member to the cluster
-    pub fn add_member(&mut self, peer_id: WrappedPeerId) {
-        self.known_members.insert(peer_id);
-    }
 }
 
 impl RelayerState {
@@ -154,14 +122,13 @@ impl RelayerState {
             debug,
             local_peer_id,
             local_keypair,
-            local_cluster_id: cluster_id.clone(),
+            local_cluster_id: cluster_id,
             local_addr: new_shared(Multiaddr::empty()),
             wallet_index: new_shared(wallet_index),
             matched_order_pairs: new_shared(vec![]),
             peer_index: new_shared(peer_index),
             order_book: new_shared(order_book),
             handshake_priorities: new_shared(HandshakePriorityStore::new()),
-            cluster_metadata: new_shared(ClusterMetadata::new(cluster_id)),
         }
     }
 
@@ -360,7 +327,8 @@ impl RelayerState {
         let managing_cluster = { self.read_order_book().get_order_info(order_id)?.cluster };
 
         // Get a peer in this cluster
-        self.read_peer_index().get_cluster_peer(&managing_cluster)
+        self.read_peer_index()
+            .sample_cluster_peer(&managing_cluster)
     }
 
     /// Print the local relayer state to the screen for debugging
@@ -406,33 +374,11 @@ impl RelayerState {
     }
 
     /// Expire a set of peers that have been determined to have failed
-    pub fn remove_peers(&self, peers: &[WrappedPeerId]) {
-        // Update the peer info and cluster metadata
-        {
-            let mut locked_peer_info = self.write_peer_index();
-            let mut locked_cluster_metadata = self.write_cluster_metadata();
-
-            for peer in peers.iter() {
-                if let Some(info) = locked_peer_info.remove_peer(peer) {
-                    if info.get_cluster_id() == self.local_cluster_id {
-                        locked_cluster_metadata.known_members.remove(peer);
-                    }
-                }
-            }
-        } // locked_peer_info, locked_cluster_metadata released
-
+    pub fn remove_peer(&self, peer: &WrappedPeerId) {
+        // Update the peer index
+        self.write_peer_index().remove_peer(peer);
         // Update the replicas set for any wallets replicated by the expired peer
-        self.read_wallet_index().remove_peer_replicas(peers);
-    }
-
-    /// Add a peer to the list of peers in the local cluster
-    ///
-    /// It is assumed that the caller of this method has authenticated
-    /// cluster membership in some way; e.g. checking a signature on a
-    /// `ClusterJoin` message
-    pub fn add_cluster_peer(&self, peer_id: WrappedPeerId) {
-        let mut locked_metadata = self.write_cluster_metadata();
-        locked_metadata.add_member(peer_id)
+        self.read_wallet_index().remove_peer_replicas(peer);
     }
 
     /// Add an order to the book
@@ -560,20 +506,6 @@ impl RelayerState {
             .write()
             .expect("handshake_priorities lock poisoned")
     }
-
-    /// Acquire a read lock on `cluster_metadata`
-    pub fn read_cluster_metadata(&self) -> RwLockReadGuard<ClusterMetadata> {
-        self.cluster_metadata
-            .read()
-            .expect("cluster_metadata lock poisoned")
-    }
-
-    /// Acquire a write lock on `cluster_metadata`
-    fn write_cluster_metadata(&self) -> RwLockWriteGuard<ClusterMetadata> {
-        self.cluster_metadata
-            .write()
-            .expect("cluster_metadata lock poisoned")
-    }
 }
 
 /// The derivation from global state to heartbeat message
@@ -597,7 +529,6 @@ impl From<&RelayerState> for HeartbeatMessage {
             managed_wallets: wallet_info,
             known_peers: peer_info,
             orders: order_info,
-            cluster_metadata: state.read_cluster_metadata().clone(),
         }
     }
 }
@@ -652,13 +583,16 @@ impl Display for RelayerState {
         self.peer_index.read().unwrap().fmt(f)?;
         f.write_str("\n\n")?;
 
-        // Write cluster metadata to the format
+        // Write the set of known cluster peers to the formatter
         f.write_fmt(format_args!(
             "\t{LG}Cluster Metadata{RES} (ID = {LY}{:?}{RES})\n",
-            self.read_cluster_metadata().id,
+            self.local_cluster_id,
         ))?;
         f.write_fmt(format_args!("\t\t{LY}Members{RES}: [\n",))?;
-        for member in self.read_cluster_metadata().known_members.iter() {
+        for member in self
+            .read_peer_index()
+            .get_all_cluster_peers(&self.local_cluster_id)
+        {
             f.write_fmt(format_args!("\t\t\t{}\n", member.0))?;
         }
         f.write_str("\t\t]")?;

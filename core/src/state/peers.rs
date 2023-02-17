@@ -98,8 +98,15 @@ impl PeerIndex {
         self.peer_map.contains_key(peer_id)
     }
 
+    /// Returns a list of all cluster peers
+    pub fn get_all_cluster_peers(&self, cluster_id: &ClusterId) -> Vec<WrappedPeerId> {
+        self.read_cluster_peers(cluster_id)
+            .map(|peers| peers.iter().cloned().collect_vec())
+            .unwrap_or_default()
+    }
+
     /// Returns a random cluster peer for the given cluster
-    pub fn get_cluster_peer(&self, cluster_id: &ClusterId) -> Option<WrappedPeerId> {
+    pub fn sample_cluster_peer(&self, cluster_id: &ClusterId) -> Option<WrappedPeerId> {
         let mut rng = thread_rng();
         let cluster_peers = self.read_cluster_peers(cluster_id)?;
 

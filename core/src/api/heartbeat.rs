@@ -8,7 +8,7 @@ use crate::{
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
     state::{
         wallet::{WalletIdentifier, WalletMetadata},
-        ClusterMetadata, OrderIdentifier,
+        OrderIdentifier,
     },
 };
 
@@ -23,8 +23,6 @@ pub struct HeartbeatMessage {
     pub known_peers: HashMap<String, PeerInfo>,
     /// The local peer's orderbook
     pub orders: Vec<(OrderIdentifier, ClusterId)>,
-    /// The metadata that the local peer has about its own cluster
-    pub cluster_metadata: ClusterMetadata,
 }
 
 /// Defines a request to bootstrap the cluster state from the recipient
