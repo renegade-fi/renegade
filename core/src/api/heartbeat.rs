@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
+    gossip::types::{ClusterId, PeerInfo},
     state::{
         wallet::{WalletIdentifier, WalletMetadata},
         OrderIdentifier,
@@ -29,5 +29,5 @@ pub struct HeartbeatMessage {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BootstrapRequest {
     /// The requester's peer ID
-    pub peer_id: WrappedPeerId,
+    pub peer_info: PeerInfo,
 }
