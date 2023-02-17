@@ -13,9 +13,7 @@ use crate::{
 };
 
 use super::{
-    cluster_management::{
-        ClusterAuthRequest, ClusterAuthResponse, ClusterManagementMessage, ReplicateRequestBody,
-    },
+    cluster_management::{ClusterManagementMessage, ReplicateRequestBody},
     handshake::HandshakeMessage,
     heartbeat::{BootstrapRequest, HeartbeatMessage},
     orderbook_management::{OrderBookManagementMessage, OrderInfoRequest, OrderInfoResponse},
@@ -112,8 +110,6 @@ impl AuthenticatedGossipRequest {
 pub enum GossipRequest {
     /// A request from a peer to bootstrap the network state from the recipient
     Bootstrap(BootstrapRequest),
-    /// A request from a peer to prove that the local peer is part of the given cluster
-    ClusterAuth(ClusterAuthRequest),
     /// A request from a peer initiating a heartbeat
     Heartbeat(HeartbeatMessage),
     /// A request from a peer initiating a handshake
@@ -145,7 +141,6 @@ impl GossipRequest {
     pub fn requires_cluster_auth(&self) -> bool {
         match self {
             GossipRequest::Bootstrap(..) => false,
-            GossipRequest::ClusterAuth(..) => true,
             GossipRequest::Heartbeat(..) => false,
             GossipRequest::Handshake { .. } => false,
             GossipRequest::OrderInfo(..) => false,
@@ -223,8 +218,6 @@ pub enum GossipResponse {
     /// A simple Ack response, libp2p sometimes closes connections if no response is
     /// sent, so we can send an empty ack in place for requests that need no response
     Ack,
-    /// A response from a peer proving that they are authorized to join a given cluster
-    ClusterAuth(ClusterAuthResponse),
     /// A response from a peer to a sender's heartbeat request
     Heartbeat(HeartbeatMessage),
     /// A response from a peer to a sender's handshake request
@@ -246,7 +239,6 @@ impl GossipResponse {
     pub fn requires_cluster_auth(&self) -> bool {
         match self {
             GossipResponse::Ack => false,
-            GossipResponse::ClusterAuth(..) => true,
             GossipResponse::Heartbeat(..) => false,
             GossipResponse::Handshake { .. } => false,
             GossipResponse::OrderInfo(..) => false,
