@@ -256,9 +256,7 @@ impl RelayerState {
 
             // Update the local orderbook state
             self.read_order_book()
-                .write_order(&order_id)
-                .unwrap()
-                .attach_commitment_proof(proof_bundle.clone());
+                .update_order_validity_proof(&order_id, proof_bundle.clone());
 
             // Gossip about the updated proof to the network
             let message = GossipOutbound::Pubsub {

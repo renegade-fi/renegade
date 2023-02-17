@@ -1,16 +1,11 @@
 //! The handshake module handles the execution of handshakes from negotiating
 //! a pair of orders to match, all the way through settling any resulting match
 
-use circuits::types::{
-    balance::Balance,
-    fee::Fee,
-    order::{Order, OrderSide},
-};
+use circuits::types::{balance::Balance, fee::Fee, order::Order};
 use crossbeam::channel::{Receiver, Sender};
 
 use libp2p::request_response::ResponseChannel;
 use portpicker::pick_unused_port;
-use rand::thread_rng;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::{
     sync::{Arc, RwLock},
@@ -292,9 +287,6 @@ impl HandshakeExecutor {
     }
 
     /// Respond to a handshake request from a peer
-    ///
-    /// Returns an optional response; none if no response is to be sent
-    /// The caller should handle forwarding the response onto the network
     pub fn handle_handshake_message(
         &self,
         request_id: Uuid,
@@ -582,74 +574,31 @@ impl HandshakeExecutor {
         &self,
         peer_order: OrderIdentifier,
     ) -> Option<(OrderIdentifier, Order, Balance, Fee)> {
-        let mut rng = thread_rng();
         let mut proposed_order = None;
-
-        let selected_wallet = {
-            let locked_wallets = self.global_state.read_wallet_index();
-            if locked_wallets.is_empty() {
-                return None;
-            }
-
+        {
             let locked_handshake_cache = self
                 .handshake_cache
                 .read()
                 .expect("handshake_cache lock poisoned");
 
-            // TODO: This choice gives single orders in a wallet a higher chance of being chosen than
-            // one with many peer-orders in the wallet, fix this.
-            // Choose a random wallet
-            let selected_wallet = locked_wallets.get_random_wallet(&mut rng);
+            let local_verified_orders = self
+                .global_state
+                .read_order_book()
+                .get_local_verified_orders();
 
-            // Choose an order in that wallet
-            for (order_id, order) in selected_wallet.orders.iter() {
+            // Choose an order that isn't cached
+            for order_id in local_verified_orders.iter() {
                 if !locked_handshake_cache.contains(*order_id, peer_order) {
-                    proposed_order = Some((*order_id, order.clone()));
+                    proposed_order = Some(*order_id);
                     break;
                 }
             }
+        }; // locked_handshake_cache released
 
-            selected_wallet.wallet_id
-        }; // locked_wallets, locked_handshake_cache released
-
-        // Find a balance and fee for this chosen order
-        let (order_id, order) = proposed_order?;
-        let (balance, fee) = self.get_balance_and_fee(&order, selected_wallet)?;
-
+        // Get the order balance and fee for the selected order
+        let order_id = proposed_order?;
+        let (order, balance, fee) = self.global_state.get_order_balance_fee(&order_id)?;
         Some((order_id, order, balance, fee))
-    }
-
-    /// Find a balance and fee for the given order
-    ///
-    /// TODO: Remove this in favor of the method implemented in the state primitive
-    fn get_balance_and_fee(&self, order: &Order, wallet_id: Uuid) -> Option<(Balance, Fee)> {
-        let locked_wallets = self.global_state.read_wallet_index();
-        let selected_wallet = locked_wallets.read_wallet(&wallet_id)?;
-
-        // The mint the local party will be spending
-        let order_mint = match order.side {
-            OrderSide::Buy => order.quote_mint,
-            OrderSide::Sell => order.base_mint,
-        };
-
-        // The maximum quantity of the mint that the local party will be spending
-        let order_amount = match order.side {
-            OrderSide::Buy => {
-                let res_amount = (order.amount as f64) * order.price.to_f64();
-                res_amount as u64
-            }
-            OrderSide::Sell => order.amount,
-        };
-
-        let balance = selected_wallet.balances.get(&order_mint)?;
-        if balance.amount < order_amount {
-            return None;
-        }
-
-        // Choose the first fee for simplicity
-        let fee = selected_wallet.fees.get(0 /* index */)?;
-
-        Some((balance.clone(), fee.clone()))
     }
 
     /// Record a match as completed in the various state objects

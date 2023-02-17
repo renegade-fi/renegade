@@ -107,7 +107,7 @@ impl NetworkOrder {
 
     /// Transitions the state of an order from `Received` to `Verified` by
     /// attaching a proof of `VALID COMMITMENTS` to the order
-    pub fn attach_commitment_proof(&mut self, proof: ValidCommitmentsBundle) {
+    pub(self) fn attach_commitment_proof(&mut self, proof: ValidCommitmentsBundle) {
         self.state = NetworkOrderState::Verified;
         self.valid_commit_proof = Some(proof);
     }
@@ -172,7 +172,7 @@ pub struct NetworkOrderBook {
     /// The mapping from order identifier to order information
     order_map: HashMap<OrderIdentifier, Shared<NetworkOrder>>,
     /// A list of order IDs maintained locally
-    local_orders: Shared<Vec<OrderIdentifier>>,
+    local_orders: Shared<HashSet<OrderIdentifier>>,
     /// The set of orders in the `Verified` state; i.e. ready to match
     verified_orders: Shared<HashSet<OrderIdentifier>>,
     /// A handle referencing the system bus to publish state transition events onto
@@ -184,7 +184,7 @@ impl NetworkOrderBook {
     pub fn new(system_bus: SystemBus<SystemBusMessage>) -> Self {
         Self {
             order_map: HashMap::new(),
-            local_orders: new_shared(Vec::new()),
+            local_orders: new_shared(HashSet::new()),
             verified_orders: new_shared(HashSet::new()),
             system_bus,
         }
@@ -211,6 +211,11 @@ impl NetworkOrderBook {
             .expect(ERR_VERIFIED_ORDERS_POISONED)
     }
 
+    /// Acquire a read lock on the locally managed orders
+    pub fn read_local_orders(&self) -> RwLockReadGuard<HashSet<OrderIdentifier>> {
+        self.local_orders.read().expect(ERR_LOCAL_ORDERS_POISONED)
+    }
+
     /// Acquire a write lock on an order
     pub fn write_order(
         &self,
@@ -229,6 +234,11 @@ impl NetworkOrderBook {
         self.verified_orders
             .write()
             .expect(ERR_VERIFIED_ORDERS_POISONED)
+    }
+
+    /// Acquire a write lock on the locally managed orders
+    pub fn write_local_orders(&self) -> RwLockWriteGuard<HashSet<OrderIdentifier>> {
+        self.local_orders.write().expect(ERR_LOCAL_ORDERS_POISONED)
     }
 
     // -----------
@@ -252,6 +262,17 @@ impl NetworkOrderBook {
         self.read_verified_orders()
             .clone()
             .into_iter()
+            .collect_vec()
+    }
+
+    /// Fetch all the locally managed, verified orders
+    pub fn get_local_verified_orders(&self) -> Vec<OrderIdentifier> {
+        let locked_verified_orders = self.read_verified_orders();
+        let locked_local_orders = self.read_local_orders();
+
+        locked_verified_orders
+            .intersection(&locked_local_orders)
+            .cloned()
             .collect_vec()
     }
 
@@ -293,10 +314,7 @@ impl NetworkOrderBook {
     pub fn add_order(&mut self, mut order: NetworkOrder) {
         // If the order is local, add it to the local order list
         if order.local {
-            self.local_orders
-                .write()
-                .expect(ERR_LOCAL_ORDERS_POISONED)
-                .push(order.id)
+            self.write_local_orders().insert(order.id);
         }
 
         // If the order is verified already, add it to the list of verified orders
