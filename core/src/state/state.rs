@@ -12,11 +12,11 @@ use libp2p::{
     identity::{self, Keypair},
     Multiaddr,
 };
+use rand::{distributions::WeightedIndex, prelude::Distribution, thread_rng};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     fmt::{Display, Formatter, Result as FmtResult},
-    num::NonZeroU32,
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
     thread::Builder,
 };
@@ -30,7 +30,6 @@ use crate::{
         orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
     },
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
-    handshake::manager::DEFAULT_HANDSHAKE_PRIORITY,
     proof_generation::jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle},
     state::orderbook::NetworkOrder,
     system_bus::SystemBus,
@@ -41,6 +40,7 @@ use crate::{
 use super::{
     orderbook::{NetworkOrderBook, OrderIdentifier},
     peers::PeerIndex,
+    priority::HandshakePriorityStore,
     wallet::{Wallet, WalletIndex},
 };
 
@@ -91,7 +91,7 @@ pub struct RelayerState {
     /// TODO: Remove this
     matched_order_pairs: Shared<Vec<(OrderIdentifier, OrderIdentifier)>>,
     /// Priorities for scheduling handshakes with each peer
-    pub handshake_priorities: Shared<HashMap<WrappedPeerId, NonZeroU32>>,
+    pub handshake_priorities: Shared<HandshakePriorityStore>,
     /// Information about the local peer's cluster
     pub cluster_metadata: Shared<ClusterMetadata>,
 }
@@ -159,7 +159,7 @@ impl RelayerState {
             matched_order_pairs: new_shared(vec![]),
             peer_index: new_shared(peer_index),
             order_book: new_shared(order_book),
-            handshake_priorities: new_shared(HashMap::new()),
+            handshake_priorities: new_shared(HandshakePriorityStore::new()),
             cluster_metadata: new_shared(ClusterMetadata::new(cluster_id)),
         }
     }
@@ -312,6 +312,35 @@ impl RelayerState {
             .unwrap()
     }
 
+    /// Acquire a read lock on `local_peer_id`
+    pub fn local_peer_id(&self) -> WrappedPeerId {
+        self.local_peer_id
+    }
+
+    /// Sample an order for handshake
+    pub fn get_handshake_order(&self) -> Option<OrderIdentifier> {
+        // Read the set of orders that are verified and thereby ready for batch
+        let verified_orders = { self.read_order_book().get_verified_orders() };
+        if verified_orders.is_empty() {
+            return None;
+        }
+
+        // Fetch the priorities for the verified orders
+        let mut priorities = Vec::with_capacity(verified_orders.len());
+        {
+            let locked_priority_store = self.read_handshake_priorities();
+            for order_id in verified_orders.iter() {
+                let priority = locked_priority_store.get_order_priority(order_id);
+                priorities.push(priority.get_effective_priority());
+            }
+        } // locked_priority_store released
+
+        // Sample a random priority-weighted order from the result
+        let mut rng = thread_rng();
+        let distribution = WeightedIndex::new(&priorities).unwrap();
+        Some(*verified_orders.get(distribution.sample(&mut rng)).unwrap())
+    }
+
     /// Print the local relayer state to the screen for debugging
     pub fn print_screen(&self) {
         if !self.debug {
@@ -323,11 +352,6 @@ impl RelayerState {
         print!("{}[2J", 27 as char);
         print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
         println!("{}", self);
-    }
-
-    /// Acquire a read lock on `local_peer_id`
-    pub fn local_peer_id(&self) -> WrappedPeerId {
-        self.local_peer_id
     }
 
     // -----------
@@ -358,13 +382,6 @@ impl RelayerState {
             } else {
                 continue;
             }
-
-            // Skip cluster peers (we don't need to handshake with them) and peers that already have assigned
-            // priorities
-            if let Entry::Vacant(e) = locked_handshake_priorities.entry(*peer)
-                && locked_peer_index.read_peer(peer).unwrap().get_cluster_id() != self.local_cluster_id {
-                e.insert(NonZeroU32::new(DEFAULT_HANDSHAKE_PRIORITY).unwrap());
-            }
         }
     }
 
@@ -386,14 +403,6 @@ impl RelayerState {
 
         // Update the replicas set for any wallets replicated by the expired peer
         self.read_wallet_index().remove_peer_replicas(peers);
-
-        // Remove the handshake priority entry for the peer
-        {
-            let mut locked_handshake_priorities = self.write_handshake_priorities();
-            for peer in peers.iter() {
-                locked_handshake_priorities.remove(peer);
-            }
-        } // locked_handshake_priorities released
     }
 
     /// Add a peer to the list of peers in the local cluster
@@ -408,7 +417,10 @@ impl RelayerState {
 
     /// Add an order to the book
     pub fn add_order(&self, order: NetworkOrder) {
-        self.write_order_book().add_order(order)
+        // Add the order to the book and to the priority store
+        self.write_handshake_priorities()
+            .new_order(order.id, order.cluster);
+        self.write_order_book().add_order(order);
     }
 
     /// Add wallets to the state as managed wallets
@@ -441,7 +453,13 @@ impl RelayerState {
     /// Mark an order pair as matched, this is both for bookkeeping and for
     /// order state updates that are available to the frontend
     pub fn mark_order_pair_matched(&self, o1: OrderIdentifier, o2: OrderIdentifier) {
-        self.write_matched_order_pairs().push((o1, o2))
+        // Remove the scheduling priorities for the orders
+        let locked_handshake_priorities = self.write_handshake_priorities();
+        locked_handshake_priorities.remove_order(&o1);
+        locked_handshake_priorities.remove_order(&o2);
+
+        // Mark the order pair as matched
+        self.write_matched_order_pairs().push((o1, o2));
     }
 
     // -----------
@@ -510,14 +528,14 @@ impl RelayerState {
     }
 
     /// Acquire a read lock on `handshake_priorities`
-    pub fn read_handshake_priorities(&self) -> RwLockReadGuard<HashMap<WrappedPeerId, NonZeroU32>> {
+    pub fn read_handshake_priorities(&self) -> RwLockReadGuard<HandshakePriorityStore> {
         self.handshake_priorities
             .read()
             .expect("handshake_priorities lock poisoned")
     }
 
     /// Acquire a write lock on `handshake_priorities`
-    fn write_handshake_priorities(&self) -> RwLockWriteGuard<HashMap<WrappedPeerId, NonZeroU32>> {
+    fn write_handshake_priorities(&self) -> RwLockWriteGuard<HandshakePriorityStore> {
         self.handshake_priorities
             .write()
             .expect("handshake_priorities lock poisoned")

@@ -16,8 +16,8 @@ use crate::{
 pub enum HandshakeExecutionJob {
     /// A request to initiate a handshake with a scheduled peer
     PerformHandshake {
-        /// The peer to handshake with
-        peer: WrappedPeerId,
+        /// The order to attempt a handshake on
+        order: OrderIdentifier,
     },
     /// Process a handshake request
     ProcessHandshakeMessage {
