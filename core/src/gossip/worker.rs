@@ -107,7 +107,7 @@ impl Worker for GossipServer {
         }
 
         let req = BootstrapRequest {
-            peer_id: self.config.local_peer_id,
+            peer_info: self.config.global_state.local_peer_info(),
         };
         for (peer_id, _) in self.config.bootstrap_servers.iter() {
             self.config

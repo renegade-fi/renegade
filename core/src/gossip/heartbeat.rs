@@ -195,7 +195,7 @@ impl GossipProtocolExecutor {
     /// Returns a boolean indicating whether the peer is now indexed in the peer info
     /// state. This value may be false if the peer has been recently expired and its
     /// invisibility window has not elapsed
-    fn add_new_peers(
+    pub(super) fn add_new_peers(
         &self,
         new_peer_ids: &[WrappedPeerId],
         new_peer_info: &HashMap<WrappedPeerId, PeerInfo>,

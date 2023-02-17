@@ -4,6 +4,7 @@
 //! loop of the workers
 
 use std::{
+    collections::HashMap,
     num::NonZeroUsize,
     sync::{Arc, RwLock},
     thread::{self, Builder, JoinHandle},
@@ -208,7 +209,12 @@ impl GossipProtocolExecutor {
     /// The main dispatch method for handling jobs
     fn handle_job(&self, job: GossipServerJob) {
         let res: Result<(), GossipError> = match job {
-            GossipServerJob::Bootstrap(_, response_channel) => {
+            GossipServerJob::Bootstrap(req, response_channel) => {
+                // Add the bootstrapping peer to the index
+                let peer_id = req.peer_info.get_peer_id();
+                let peer_info_map = HashMap::from([(req.peer_info.get_peer_id(), req.peer_info)]);
+                let res = self.add_new_peers(&[peer_id], &peer_info_map).map(|_| ());
+
                 // Send a heartbeat response for simplicity
                 let heartbeat_resp = GossipResponse::Heartbeat(self.build_heartbeat_message());
                 self.network_channel
@@ -217,6 +223,7 @@ impl GossipProtocolExecutor {
                         message: heartbeat_resp,
                     })
                     .map_err(|err| GossipError::SendMessage(err.to_string()))
+                    .and(res)
             }
             GossipServerJob::ExecuteHeartbeat(peer_id) => self.send_heartbeat(peer_id),
             GossipServerJob::HandleHeartbeatReq {
