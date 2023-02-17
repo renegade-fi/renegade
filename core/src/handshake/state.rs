@@ -9,7 +9,7 @@ use std::{
 
 use crate::state::{OrderIdentifier, Shared};
 
-use super::{error::HandshakeManagerError, types::HashOutput};
+use super::error::HandshakeManagerError;
 use circuits::types::{balance::Balance, fee::Fee, order::Order};
 use uuid::Uuid;
 
@@ -31,44 +31,9 @@ impl HandshakeStateIndex {
         }
     }
 
-    /// Adds a new handshake to the state
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_handshake(
-        &self,
-        request_id: Uuid,
-        local_order_id: OrderIdentifier,
-        order: Order,
-        balance: Balance,
-        fee: Fee,
-        order_hash: HashOutput,
-        balance_hash: HashOutput,
-        fee_hash: HashOutput,
-        randomness_hash: HashOutput,
-    ) {
-        // Use dummy values until peer negotiates an order, balance, fee tuple
-        self.new_handshake_with_peer_info(
-            request_id,
-            // Dummy value for peer_order_id
-            Uuid::default(),
-            local_order_id,
-            order,
-            balance,
-            fee,
-            order_hash,
-            balance_hash,
-            fee_hash,
-            randomness_hash,
-            // Use dummy values for peer hashes
-            HashOutput::from(0),
-            HashOutput::from(0),
-            HashOutput::from(0),
-            HashOutput::from(0),
-        )
-    }
-
     /// Adds a new handshake to the state where the peer's order is already known (e.g. the peer initiated the handshake)
     #[allow(clippy::too_many_arguments)]
-    pub fn new_handshake_with_peer_info(
+    pub fn new_handshake(
         &self,
         request_id: Uuid,
         peer_order_id: OrderIdentifier,
@@ -76,14 +41,6 @@ impl HandshakeStateIndex {
         order: Order,
         balance: Balance,
         fee: Fee,
-        order_hash: HashOutput,
-        balance_hash: HashOutput,
-        fee_hash: HashOutput,
-        randomness_hash: HashOutput,
-        peer_order_hash: HashOutput,
-        peer_balance_hash: HashOutput,
-        peer_fee_hash: HashOutput,
-        peer_randomness_hash: HashOutput,
     ) {
         let mut locked_state = self.state_map.write().expect("state_map lock poisoned");
         locked_state.insert(
@@ -95,44 +52,8 @@ impl HandshakeStateIndex {
                 order,
                 balance,
                 fee,
-                order_hash,
-                balance_hash,
-                fee_hash,
-                randomness_hash,
-                peer_order_hash,
-                peer_balance_hash,
-                peer_fee_hash,
-                peer_randomness_hash,
             ),
         );
-    }
-
-    /// Update a request to fill in a peer's order_id that has been decided on
-    ///
-    /// This is decoupled from the constructor because the peer that initiates
-    /// a handshake will not know the peer's handshake information ahead of time
-    /// when the state is created
-    pub fn update_peer_info(
-        &self,
-        request_id: &Uuid,
-        order_id: OrderIdentifier,
-        order_hash: HashOutput,
-        balance_hash: HashOutput,
-        fee_hash: HashOutput,
-        randomness_hash: HashOutput,
-    ) -> Result<(), HandshakeManagerError> {
-        let mut locked_state = self.state_map.write().expect("state_map lock poisoned");
-        let state_entry = locked_state.get_mut(request_id).ok_or_else(|| {
-            HandshakeManagerError::InvalidRequest(format!("request_id {:?}", request_id))
-        })?;
-
-        state_entry.peer_order_id = order_id;
-        state_entry.peer_order_hash = order_hash;
-        state_entry.peer_balance_hash = balance_hash;
-        state_entry.peer_fee_hash = fee_hash;
-        state_entry.peer_randomness_hash = randomness_hash;
-
-        Ok(())
     }
 
     /// Removes a handshake after processing is complete; either by match completion or error
@@ -188,22 +109,6 @@ pub struct HandshakeState {
     pub balance: Balance,
     /// The local peer's fee, paid out to the contract and the executing node
     pub fee: Fee,
-    /// The local peer's order hash
-    pub order_hash: HashOutput,
-    /// The local peer's balance hash
-    pub balance_hash: HashOutput,
-    /// The local peer's fee hash
-    pub fee_hash: HashOutput,
-    /// The local peer's randomness hash
-    pub randomness_hash: HashOutput,
-    /// The local peer's order hash
-    pub peer_order_hash: HashOutput,
-    /// The remote peer's balance hash
-    pub peer_balance_hash: HashOutput,
-    /// The remote peer's fee hash
-    pub peer_fee_hash: HashOutput,
-    /// The remote peer's randomness hash
-    pub peer_randomness_hash: HashOutput,
     /// The current state information of the
     pub state: State,
 }
@@ -237,14 +142,6 @@ impl HandshakeState {
         order: Order,
         balance: Balance,
         fee: Fee,
-        order_hash: HashOutput,
-        balance_hash: HashOutput,
-        fee_hash: HashOutput,
-        randomness_hash: HashOutput,
-        peer_order_hash: HashOutput,
-        peer_balance_hash: HashOutput,
-        peer_fee_hash: HashOutput,
-        peer_randomness_hash: HashOutput,
     ) -> Self {
         Self {
             request_id,
@@ -253,14 +150,6 @@ impl HandshakeState {
             order,
             balance,
             fee,
-            order_hash,
-            balance_hash,
-            fee_hash,
-            randomness_hash,
-            peer_order_hash,
-            peer_balance_hash,
-            peer_fee_hash,
-            peer_randomness_hash,
             state: State::OrderNegotiation,
         }
     }

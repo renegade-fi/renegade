@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    gossip::types::{ClusterId},
+    gossip::types::ClusterId,
     proof_generation::jobs::ValidCommitmentsBundle,
     state::{NetworkOrder, OrderIdentifier},
 };

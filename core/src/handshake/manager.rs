@@ -7,11 +7,10 @@ use circuits::types::{
     order::{Order, OrderSide},
 };
 use crossbeam::channel::{Receiver, Sender};
-use crypto::hash::poseidon_hash_default_params;
 
 use libp2p::request_response::ResponseChannel;
 use portpicker::pick_unused_port;
-use rand::{rngs::OsRng, thread_rng, RngCore};
+use rand::thread_rng;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::{
     sync::{Arc, RwLock},
@@ -29,10 +28,10 @@ use crate::{
             AuthenticatedGossipResponse, ConnectionRole, GossipOutbound, GossipRequest,
             GossipResponse, ManagerControlDirective, PubsubMessage,
         },
-        handshake::HandshakeMessage,
+        handshake::{HandshakeMessage, MatchRejectionReason},
     },
     gossip::types::WrappedPeerId,
-    state::{OrderIdentifier, RelayerState},
+    state::{NetworkOrderState, OrderIdentifier, RelayerState},
     system_bus::SystemBus,
     types::{SystemBusMessage, HANDSHAKE_STATUS_TOPIC},
     CancelChannel,
@@ -43,12 +42,9 @@ use super::{
     handshake_cache::{HandshakeCache, SharedHandshakeCache},
     jobs::HandshakeExecutionJob,
     state::HandshakeStateIndex,
-    types::HashOutput,
     worker::HandshakeManagerConfig,
 };
 
-/// The default priority of a newly added node in the handshake priority list
-pub const DEFAULT_HANDSHAKE_PRIORITY: u32 = 10;
 /// The amount of time to mark an order pair as invisible for; giving the peer
 /// time to complete a match on this pair
 pub(super) const HANDSHAKE_INVISIBILITY_WINDOW_MS: u64 = 120_000; // 2 minutes
@@ -253,36 +249,30 @@ impl HandshakeExecutor {
     /// Perform a handshake with a peer
     pub fn perform_handshake(
         &self,
-        order_id: OrderIdentifier,
+        peer_order_id: OrderIdentifier,
     ) -> Result<(), HandshakeManagerError> {
-        if let Some((order_id, order, balance, fee)) =
-            self.choose_order_balance_fee(None /* peer_order */)
+        if let Some((local_order_id, order, balance, fee)) =
+            self.choose_order_balance_fee(peer_order_id)
         {
-            // Hash the balance, order, fee, and wallet randomness
-            // TODO: Replace the randomness here with true wallet-specific randomness
-            let mut rng = thread_rng();
-            let randomness = rng.next_u64();
-
-            let order_hash = HashOutput(poseidon_hash_default_params(&order));
-            let balance_hash = HashOutput(poseidon_hash_default_params(&balance));
-            let fee_hash = HashOutput(poseidon_hash_default_params(&fee));
-            let randomness_hash = HashOutput(poseidon_hash_default_params(vec![randomness]));
+            // Choose a peer to match this order with
+            let managing_peer = self.global_state.get_peer_managing_order(&peer_order_id);
+            if managing_peer.is_none() {
+                // TODO: Lower the order priority for this order
+                return Ok(());
+            }
 
             // Send a handshake message to the given peer_id
             // Panic if channel closed, no way to recover
             let request_id = Uuid::new_v4();
             self.network_channel
                 .send(GossipOutbound::Request {
-                    peer_id,
+                    peer_id: managing_peer.unwrap(),
                     message: GossipRequest::Handshake {
                         request_id,
-                        message: HandshakeMessage::InitiateMatch {
+                        message: HandshakeMessage::ProposeMatchCandidate {
                             peer_id: self.global_state.local_peer_id(),
-                            sender_order: order_id,
-                            order_hash,
-                            balance_hash,
-                            fee_hash,
-                            randomness_hash,
+                            sender_order: local_order_id,
+                            peer_order: peer_order_id,
                         },
                     },
                 })
@@ -290,14 +280,11 @@ impl HandshakeExecutor {
 
             self.handshake_state_index.new_handshake(
                 request_id,
-                order_id,
+                peer_order_id,
+                local_order_id,
                 order,
                 balance,
                 fee,
-                order_hash,
-                balance_hash,
-                fee_hash,
-                randomness_hash,
             );
         }
 
@@ -318,48 +305,35 @@ impl HandshakeExecutor {
             // ACK does not need to be handled
             HandshakeMessage::Ack => Ok(()),
 
-            // A peer has requested a match, find an order that has not already been matched with theirs
-            // and propose it back to the peer
-            HandshakeMessage::InitiateMatch {
-                peer_id,
-                sender_order: peer_order,
-                order_hash: peer_order_hash,
-                balance_hash: peer_balance_hash,
-                fee_hash: peer_fee_hash,
-                randomness_hash: peer_randomness_hash,
-            } => self.handle_initiate_match(
-                request_id,
-                peer_id,
-                peer_order,
-                peer_order_hash,
-                peer_balance_hash,
-                peer_fee_hash,
-                peer_randomness_hash,
-                response_channel,
-            ),
-
-            // A peer has responded to the local node's InitiateMatch message with a proposed match pair.
-            // Check that their proposal has not already been matched and then signal to begin the match
+            // A peer initiates a handshake by proposing a pair of orders to match, the local node should
+            // decide whether to proceed with the match
             HandshakeMessage::ProposeMatchCandidate {
                 peer_id,
                 peer_order: my_order,
                 sender_order,
-                order_hash: peer_order_hash,
-                balance_hash: peer_balance_hash,
-                fee_hash: peer_fee_hash,
-                randomness_hash: peer_randomness_hash,
             } => self.handle_propose_match_candidate(
                 request_id,
                 peer_id,
                 my_order,
                 sender_order,
-                peer_order_hash,
-                peer_balance_hash,
-                peer_fee_hash,
-                peer_randomness_hash,
-                response_channel,
+                response_channel.unwrap(),
             ),
 
+            // A peer has rejected a proposed match candidate, this can happen for a number of reasons, enumerated
+            // by the `reason` field in the message
+            HandshakeMessage::RejectMatchCandidate {
+                peer_order,
+                sender_order,
+                reason,
+                ..
+            } => {
+                self.handle_proposal_rejection(peer_order, sender_order, reason);
+                Ok(())
+            }
+
+            // The response to ProposeMatchCandidate, indicating whether the peers should initiate an MPC; if the
+            // responding peer has the proposed order pair cached it will indicate so and the two peers will abandon
+            // the handshake
             HandshakeMessage::ExecuteMatch {
                 peer_id,
                 port,
@@ -377,90 +351,6 @@ impl HandshakeExecutor {
         }
     }
 
-    /// Handles a request from a peer to initiate a match
-    #[allow(clippy::too_many_arguments)]
-    fn handle_initiate_match(
-        &self,
-        request_id: Uuid,
-        peer_id: WrappedPeerId,
-        peer_order: OrderIdentifier,
-        peer_order_hash: HashOutput,
-        peer_balance_hash: HashOutput,
-        peer_fee_hash: HashOutput,
-        peer_randomness_hash: HashOutput,
-        response_channel: Option<ResponseChannel<AuthenticatedGossipResponse>>,
-    ) -> Result<(), HandshakeManagerError> {
-        let response = if let Some((order_id, order, balance, fee)) =
-            self.choose_order_balance_fee(Some(peer_order))
-        {
-            // Hash the balance, order, fee, and wallet randomness
-            // TODO: Replace the randomness here with true wallet-specific randomness
-            let mut rng = thread_rng();
-            let randomness = rng.next_u64();
-
-            let order_hash = HashOutput(poseidon_hash_default_params(&order));
-            let balance_hash = HashOutput(poseidon_hash_default_params(&balance));
-            let fee_hash = HashOutput(poseidon_hash_default_params(&fee));
-            let randomness_hash = HashOutput(poseidon_hash_default_params(vec![randomness]));
-
-            // Add the new handshake to the state machine index
-            self.handshake_state_index.new_handshake_with_peer_info(
-                request_id,
-                peer_order,
-                order_id,
-                order,
-                balance,
-                fee,
-                order_hash,
-                balance_hash,
-                fee_hash,
-                randomness_hash,
-                peer_order_hash,
-                peer_balance_hash,
-                peer_fee_hash,
-                peer_randomness_hash,
-            );
-
-            // Send a pubsub message indicating intent to match on the given order pair
-            let cluster_id = { self.global_state.local_cluster_id.clone() };
-            self.network_channel
-                .send(GossipOutbound::Pubsub {
-                    topic: cluster_id.get_management_topic(),
-                    message: PubsubMessage::ClusterManagement {
-                        cluster_id,
-                        message: ClusterManagementMessage::MatchInProgress(order_id, peer_order),
-                    },
-                })
-                .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
-
-            // Respond with the selected order pair
-            HandshakeMessage::ProposeMatchCandidate {
-                peer_id: self.global_state.local_peer_id(),
-                peer_order,
-                sender_order: Some(order_id),
-                order_hash: Some(order_hash),
-                balance_hash: Some(balance_hash),
-                fee_hash: Some(fee_hash),
-                randomness_hash: Some(randomness_hash),
-            }
-        } else {
-            // Send an explicit empty message back so that the remote peer may cache their order as being
-            // already cached with all of the local peer's orders
-            HandshakeMessage::ProposeMatchCandidate {
-                peer_id: self.global_state.local_peer_id(),
-                peer_order,
-                sender_order: None,
-                order_hash: None,
-                balance_hash: None,
-                fee_hash: None,
-                randomness_hash: None,
-            }
-        };
-
-        // TODO: Send response to peer
-        self.send_request_response(request_id, peer_id, response, response_channel)
-    }
-
     /// Handles a message sent from a peer in response to an InitiateMatch message from the local peer
     /// The remote peer's response should contain a proposed candidate to match against
     ///
@@ -472,33 +362,60 @@ impl HandshakeExecutor {
         request_id: Uuid,
         peer_id: WrappedPeerId,
         my_order: OrderIdentifier,
-        sender_order: Option<OrderIdentifier>,
-        peer_order_hash: Option<HashOutput>,
-        peer_balance_hash: Option<HashOutput>,
-        peer_fee_hash: Option<HashOutput>,
-        peer_randomness_hash: Option<HashOutput>,
-        response_channel: Option<ResponseChannel<AuthenticatedGossipResponse>>,
+        sender_order: OrderIdentifier,
+        response_channel: ResponseChannel<AuthenticatedGossipResponse>,
     ) -> Result<(), HandshakeManagerError> {
-        // If sender_order is None, the peer has no order to match with ours
-        if let Some(peer_order) = sender_order {
-            // Now that the peer has negotiated an order to match, update the state machine
-            self.handshake_state_index.update_peer_info(
-                &request_id,
-                peer_order,
-                peer_order_hash.unwrap(),
-                peer_balance_hash.unwrap(),
-                peer_fee_hash.unwrap(),
-                peer_randomness_hash.unwrap(),
-            )?;
+        // Only accept the proposed order pair if the peer's order has already been verified by
+        // the local node
+        let peer_order_info = self
+            .global_state
+            .read_order_book()
+            .get_order_info(&sender_order);
+        if peer_order_info.is_none()
+            || peer_order_info.unwrap().state != NetworkOrderState::Verified
+        {
+            return self.reject_match_proposal(
+                request_id,
+                sender_order,
+                my_order,
+                MatchRejectionReason::NoValidityProof,
+                response_channel,
+            );
+        }
 
+        // Find the order, along with a balance and fee to accompany the match
+        if let Some((order, balance, fee)) = self.global_state.get_order_balance_fee(&my_order) {
+            // Add an entry to the handshake state index
+            self.handshake_state_index.new_handshake(
+                request_id,
+                sender_order,
+                my_order,
+                order,
+                balance,
+                fee,
+            );
+
+            // Check if the order pair has previously been matched, if so notify the peer and
+            // terminate the handshake
             let previously_matched = {
                 let locked_handshake_cache = self
                     .handshake_cache
                     .read()
                     .expect("handshake_cache lock poisoned");
-                locked_handshake_cache.contains(my_order, peer_order)
+                locked_handshake_cache.contains(my_order, sender_order)
             }; // locked_handshake_cache released
 
+            if previously_matched {
+                return self.reject_match_proposal(
+                    request_id,
+                    sender_order,
+                    my_order,
+                    MatchRejectionReason::Cached,
+                    response_channel,
+                );
+            }
+
+            // If the order pair has not been previously matched; broker an MPC connection
             // Choose a random open port to receive the connection on
             // the peer port can be a dummy value as the local node will take the role
             // of listener in the connection setup
@@ -516,13 +433,15 @@ impl HandshakeExecutor {
                 .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
             // Send a pubsub message indicating intent to match on the given order pair
+            // Cluster peers will then avoid scheduling this match until the match either completes, or
+            // the cache entry's invisibility window times out
             let cluster_id = { self.global_state.local_cluster_id.clone() };
             self.network_channel
                 .send(GossipOutbound::Pubsub {
                     topic: cluster_id.get_management_topic(),
                     message: PubsubMessage::ClusterManagement {
                         cluster_id,
-                        message: ClusterManagementMessage::MatchInProgress(my_order, peer_order),
+                        message: ClusterManagementMessage::MatchInProgress(my_order, sender_order),
                     },
                 })
                 .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
@@ -532,13 +451,57 @@ impl HandshakeExecutor {
                 port: local_port,
                 previously_matched,
                 order1: my_order,
-                order2: peer_order,
+                order2: sender_order,
             };
-
-            self.send_request_response(request_id, peer_id, resp, response_channel)?;
+            self.send_request_response(request_id, peer_id, resp, Some(response_channel))?;
+        } else {
+            log::debug!("match proposed on unknown order")
         }
 
         Ok(())
+    }
+
+    /// Reject a proposed match candidate for the specified reason
+    fn reject_match_proposal(
+        &self,
+        request_id: Uuid,
+        peer_order: OrderIdentifier,
+        local_order: OrderIdentifier,
+        reason: MatchRejectionReason,
+        response_channel: ResponseChannel<AuthenticatedGossipResponse>,
+    ) -> Result<(), HandshakeManagerError> {
+        let message = HandshakeMessage::RejectMatchCandidate {
+            peer_id: self.global_state.local_peer_id,
+            peer_order,
+            sender_order: local_order,
+            reason,
+        };
+
+        self.network_channel
+            .send(GossipOutbound::Response {
+                channel: response_channel,
+                message: GossipResponse::Handshake {
+                    request_id,
+                    message,
+                },
+            })
+            .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))
+    }
+
+    /// Handles a rejected match proposal, possibly updating the cache for a missing entry
+    fn handle_proposal_rejection(
+        &self,
+        my_order: OrderIdentifier,
+        sender_order: OrderIdentifier,
+        reason: MatchRejectionReason,
+    ) {
+        if let MatchRejectionReason::Cached = reason {
+            // Update the local cache
+            self.handshake_cache
+                .write()
+                .expect("handshake_cache lock poisoned")
+                .mark_completed(my_order, sender_order)
+        }
     }
 
     /// Handles the flow of executing a match after both parties have agreed on an order
@@ -617,7 +580,7 @@ impl HandshakeExecutor {
     /// the peer's proposed order, so it should just choose an order randomly
     fn choose_order_balance_fee(
         &self,
-        peer_order: Option<OrderIdentifier>,
+        peer_order: OrderIdentifier,
     ) -> Option<(OrderIdentifier, Order, Balance, Fee)> {
         let mut rng = thread_rng();
         let mut proposed_order = None;
@@ -640,9 +603,7 @@ impl HandshakeExecutor {
 
             // Choose an order in that wallet
             for (order_id, order) in selected_wallet.orders.iter() {
-                if peer_order.is_none()
-                    || !locked_handshake_cache.contains(*order_id, peer_order.unwrap())
-                {
+                if !locked_handshake_cache.contains(*order_id, peer_order) {
                     proposed_order = Some((*order_id, order.clone()));
                     break;
                 }
@@ -772,7 +733,6 @@ impl HandshakeScheduler {
 
     /// The execution loop of the timer, periodically enqueues handshake jobs
     pub fn execution_loop(self) -> HandshakeManagerError {
-        let mut rng = OsRng {};
         let interval_seconds = HANDSHAKE_INTERVAL_MS / 1000;
         let interval_nanos = (HANDSHAKE_INTERVAL_MS % 1000 * NANOS_PER_MILLI) as u32;
 
@@ -781,7 +741,7 @@ impl HandshakeScheduler {
         // Enqueue handshakes periodically
         loop {
             // Enqueue a job to handshake with the randomly selected peer
-            if let Some(order) = self.global_state.get_handshake_order() {
+            if let Some(order) = self.global_state.choose_handshake_order() {
                 if let Err(e) = self
                     .job_sender
                     .send(HandshakeExecutionJob::PerformHandshake { order })

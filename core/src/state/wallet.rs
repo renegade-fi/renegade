@@ -216,6 +216,8 @@ pub struct WalletIndex {
     peer_id: WrappedPeerId,
     /// A mapping from wallet ID to wallet information
     wallet_map: HashMap<Uuid, Shared<Wallet>>,
+    /// A reverse index mapping from order to wallet
+    order_to_wallet: HashMap<OrderIdentifier, WalletIdentifier>,
 }
 
 impl WalletIndex {
@@ -224,6 +226,7 @@ impl WalletIndex {
         Self {
             peer_id,
             wallet_map: HashMap::new(),
+            order_to_wallet: HashMap::new(),
         }
     }
 
@@ -245,6 +248,11 @@ impl WalletIndex {
     /// Returns true if there are no wallets in the locally managed wallet index
     pub fn is_empty(&self) -> bool {
         self.wallet_map.is_empty()
+    }
+
+    /// Get the wallet that an order is allocated in
+    pub fn get_wallet_for_order(&self, order_id: &OrderIdentifier) -> Option<WalletIdentifier> {
+        self.order_to_wallet.get(order_id).cloned()
     }
 
     /// Return a random wallet, used for sampling wallets to match with
@@ -284,13 +292,13 @@ impl WalletIndex {
 
     /// Get a balance and a fee for a given order in a given wallet
     ///
-    /// Returns a 3-tuple of (balance, fee, fee_balance) where fee_balance is the
+    /// Returns a 4-tuple of (order, balance, fee, fee_balance) where fee_balance is the
     /// balance used to cover the payable fee
     pub fn get_order_balance_and_fee(
         &self,
         wallet_id: &Uuid,
         order_id: &OrderIdentifier,
-    ) -> Option<(Balance, Fee, Balance)> {
+    ) -> Option<(Order, Balance, Fee, Balance)> {
         let locked_wallet = self.read_wallet(wallet_id)?;
         let order = locked_wallet.orders.get(order_id)?;
 
@@ -324,7 +332,12 @@ impl WalletIndex {
             return None;
         }
 
-        Some((balance.clone(), fee.clone(), fee_balance.clone()))
+        Some((
+            order.clone(),
+            balance.clone(),
+            fee.clone(),
+            fee_balance.clone(),
+        ))
     }
 
     // -----------
@@ -333,6 +346,12 @@ impl WalletIndex {
 
     /// Add a concurrency safe wallet to the index
     pub fn add_wallet(&mut self, mut wallet: Wallet) {
+        // Add orders in the wallet to the inverse mapping
+        for order_id in wallet.orders.keys() {
+            self.order_to_wallet.insert(*order_id, wallet.wallet_id);
+        }
+
+        // Index the wallet
         wallet.metadata.replicas.insert(self.peer_id);
         self.wallet_map.insert(wallet.wallet_id, new_shared(wallet));
     }
