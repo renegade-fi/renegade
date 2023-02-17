@@ -286,7 +286,7 @@ impl RelayerState {
     /// Sample an order for handshake
     pub fn choose_handshake_order(&self) -> Option<OrderIdentifier> {
         // Read the set of orders that are verified and thereby ready for batch
-        let verified_orders = { self.read_order_book().get_verified_orders() };
+        let verified_orders = { self.read_order_book().get_nonlocal_verified_orders() };
         if verified_orders.is_empty() {
             return None;
         }
