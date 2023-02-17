@@ -204,6 +204,13 @@ impl NetworkOrderBook {
         )
     }
 
+    /// Acquire a read lock on the verified orders
+    pub fn read_verified_orders(&self) -> RwLockReadGuard<HashSet<OrderIdentifier>> {
+        self.verified_orders
+            .read()
+            .expect(ERR_VERIFIED_ORDERS_POISONED)
+    }
+
     /// Acquire a write lock on an order
     pub fn write_order(
         &self,
@@ -215,6 +222,13 @@ impl NetworkOrderBook {
                 .write()
                 .expect(ERR_ORDER_POISONED),
         )
+    }
+
+    /// Acquire a write lock on the verified orders
+    pub fn write_verified_orders(&self) -> RwLockWriteGuard<HashSet<OrderIdentifier>> {
+        self.verified_orders
+            .write()
+            .expect(ERR_VERIFIED_ORDERS_POISONED)
     }
 
     // -----------
@@ -231,6 +245,14 @@ impl NetworkOrderBook {
         self.order_map
             .get(order_id)
             .map(|order| order.read().expect(ERR_ORDER_POISONED).clone())
+    }
+
+    /// Fetch all the verified orders in the order book
+    pub fn get_verified_orders(&self) -> Vec<OrderIdentifier> {
+        self.read_verified_orders()
+            .clone()
+            .into_iter()
+            .collect_vec()
     }
 
     /// Return a list of all known order IDs in the book with clusters to contact for info
@@ -301,16 +323,8 @@ impl NetworkOrderBook {
 
     /// Add an order to the verified orders list
     fn add_verified_order(&self, order_id: Uuid) {
-        if !self
-            .verified_orders
-            .read()
-            .expect(ERR_VERIFIED_ORDERS_POISONED)
-            .contains(&order_id)
-        {
-            self.verified_orders
-                .write()
-                .expect(ERR_VERIFIED_ORDERS_POISONED)
-                .insert(order_id);
+        if !self.read_verified_orders().contains(&order_id) {
+            self.write_verified_orders().insert(order_id);
         }
     }
 

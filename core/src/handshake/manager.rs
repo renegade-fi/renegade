@@ -11,7 +11,7 @@ use crypto::hash::poseidon_hash_default_params;
 
 use libp2p::request_response::ResponseChannel;
 use portpicker::pick_unused_port;
-use rand::{distributions::WeightedIndex, prelude::Distribution, rngs::OsRng, thread_rng, RngCore};
+use rand::{rngs::OsRng, thread_rng, RngCore};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::{
     sync::{Arc, RwLock},
@@ -165,7 +165,7 @@ impl HandshakeExecutor {
     ) -> Result<(), HandshakeManagerError> {
         match job {
             // The timer thread has scheduled an outbound handshake
-            HandshakeExecutionJob::PerformHandshake { peer } => self.perform_handshake(peer),
+            HandshakeExecutionJob::PerformHandshake { order } => self.perform_handshake(order),
 
             // Indicates that a peer has sent a message during the course of a handshake
             HandshakeExecutionJob::ProcessHandshakeMessage {
@@ -251,7 +251,10 @@ impl HandshakeExecutor {
     }
 
     /// Perform a handshake with a peer
-    pub fn perform_handshake(&self, peer_id: WrappedPeerId) -> Result<(), HandshakeManagerError> {
+    pub fn perform_handshake(
+        &self,
+        order_id: OrderIdentifier,
+    ) -> Result<(), HandshakeManagerError> {
         if let Some((order_id, order, balance, fee)) =
             self.choose_order_balance_fee(None /* peer_order */)
         {
@@ -777,32 +780,11 @@ impl HandshakeScheduler {
 
         // Enqueue handshakes periodically
         loop {
-            // Sample a peer to handshake with
-            let random_peer = {
-                let locked_priorities = self.global_state.read_handshake_priorities();
-                let mut peers = Vec::with_capacity(locked_priorities.len());
-                let mut priorities: Vec<u32> = Vec::with_capacity(locked_priorities.len());
-
-                for (peer, priority) in locked_priorities.iter() {
-                    peers.push(*peer);
-                    priorities.push((*priority).into());
-                }
-
-                if !peers.is_empty() {
-                    let distribution = WeightedIndex::new(&priorities).unwrap();
-                    Some(*peers.get(distribution.sample(&mut rng)).unwrap())
-                } else {
-                    None
-                }
-            }; // locked_priorities released
-
             // Enqueue a job to handshake with the randomly selected peer
-            if let Some(selected_peer) = random_peer {
+            if let Some(order) = self.global_state.get_handshake_order() {
                 if let Err(e) = self
                     .job_sender
-                    .send(HandshakeExecutionJob::PerformHandshake {
-                        peer: selected_peer,
-                    })
+                    .send(HandshakeExecutionJob::PerformHandshake { order })
                     .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))
                 {
                     return e;
