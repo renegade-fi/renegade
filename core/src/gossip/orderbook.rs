@@ -3,7 +3,6 @@
 
 use circuits::verify_singleprover_proof;
 use libp2p::request_response::ResponseChannel;
-use tracing::log;
 
 use crate::{
     api::{
@@ -32,8 +31,7 @@ impl GossipProtocolExecutor {
                 response_channel,
             } => self.handle_order_info_request(order_id, response_channel),
 
-            OrderBookManagementJob::OrderInfoResponse { info, order_id } => {
-                log::info!("got order info response for order {order_id}");
+            OrderBookManagementJob::OrderInfoResponse { info, .. } => {
                 if let Some(order_info) = info {
                     self.handle_order_info_response(order_info)?;
                 }
@@ -60,7 +58,6 @@ impl GossipProtocolExecutor {
         order_id: OrderIdentifier,
         response_channel: ResponseChannel<AuthenticatedGossipResponse>,
     ) -> Result<(), GossipError> {
-        log::info!("got order info request");
         let order_info = self
             .global_state
             .read_order_book()

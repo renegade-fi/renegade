@@ -22,7 +22,6 @@ use crypto::fields::{biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint
 use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 use num_bigint::BigUint;
-use rand::{Rng, RngCore};
 use serde::{
     de::{Error as SerdeErr, SeqAccess, Visitor},
     ser::SerializeSeq,
@@ -245,26 +244,9 @@ impl WalletIndex {
     // | Getters |
     // -----------
 
-    /// Returns true if there are no wallets in the locally managed wallet index
-    pub fn is_empty(&self) -> bool {
-        self.wallet_map.is_empty()
-    }
-
     /// Get the wallet that an order is allocated in
     pub fn get_wallet_for_order(&self, order_id: &OrderIdentifier) -> Option<WalletIdentifier> {
         self.order_to_wallet.get(order_id).cloned()
-    }
-
-    /// Return a random wallet, used for sampling wallets to match with
-    pub fn get_random_wallet<R: RngCore>(&self, rng: &mut R) -> Wallet {
-        let key_index = rng.gen_range(0..self.wallet_map.len());
-        self.wallet_map
-            .values()
-            .nth(key_index)
-            .unwrap()
-            .read()
-            .expect(ERR_WALLET_POISONED)
-            .clone()
     }
 
     /// Returns a list of all wallets
