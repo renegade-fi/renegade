@@ -99,11 +99,6 @@ impl GossipProtocolExecutor {
         // Add the peer to the known peers index
         self.global_state.add_single_peer(peer_id, peer_info);
 
-        // The cluster join request is authenticated at the network layer
-        // by the `NetworkManager`, so no authentication needs to be done.
-        // Simply update the local cluster metadata to reflect the new node's membership
-        self.global_state.add_cluster_peer(peer_id);
-
         // Request that the peer replicate all locally replicated wallets
         let wallets = self.global_state.read_wallet_index().get_all_wallets();
         self.send_replicate_request(peer_id, wallets)
@@ -137,11 +132,7 @@ impl GossipProtocolExecutor {
         self.global_state.add_wallets(req.wallets.clone());
 
         // Update cluster management bookkeeping
-        let topic = self
-            .global_state
-            .read_cluster_metadata()
-            .id
-            .get_management_topic();
+        let topic = self.global_state.local_cluster_id.get_management_topic();
 
         // Broadcast a message to the network indicating that the wallet is now replicated
         let replicated_message = PubsubMessage::ClusterManagement {

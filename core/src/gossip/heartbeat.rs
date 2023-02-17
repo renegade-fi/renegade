@@ -19,7 +19,7 @@ use crate::{
     },
     state::{
         wallet::{WalletIdentifier, WalletMetadata},
-        ClusterMetadata, OrderIdentifier, RelayerState,
+        OrderIdentifier, RelayerState,
     },
 };
 
@@ -95,7 +95,6 @@ impl GossipProtocolExecutor {
         // Merge in state primitives from the heartbeat message
         self.merge_peer_index(&incoming_peer_info)?;
         self.merge_wallets(message.managed_wallets);
-        self.merge_cluster_metadata(&message.cluster_metadata)?;
         self.merge_order_book(message.orders)
     }
 
@@ -149,48 +148,6 @@ impl GossipProtocolExecutor {
         }
     }
 
-    /// Merges cluster information from an incoming heartbeat request with the locally
-    /// stored wallet information
-    fn merge_cluster_metadata(
-        &self,
-        incoming_cluster_info: &ClusterMetadata,
-    ) -> Result<(), GossipError> {
-        // Skip merge if the cluster message is not from a peer in the local node's cluster
-        {
-            if incoming_cluster_info.id != self.global_state.local_cluster_id {
-                return Ok(());
-            }
-        } // cluster_id lock released
-
-        // As in the `merge_wallets` implementation, we avoid acquiring a write lock on any state elements
-        // if possible to avoid contention in the common (no updates) case
-        let mut peers_to_add = Vec::new();
-        {
-            let locked_cluster_metadata = self.global_state.read_cluster_metadata();
-            for peer in incoming_cluster_info.known_members.iter() {
-                if !locked_cluster_metadata.has_member(peer) {
-                    peers_to_add.push(*peer)
-                }
-            }
-        } // locked_cluster_metadata released here
-
-        // Request cluster authentication for each new cluster peer
-        let auth_request = GossipRequest::ClusterAuth(ClusterAuthRequest {
-            cluster_id: self.global_state.local_cluster_id.clone(),
-        });
-
-        for peer in peers_to_add.into_iter() {
-            self.network_channel
-                .send(GossipOutbound::Request {
-                    peer_id: peer,
-                    message: auth_request.clone(),
-                })
-                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
-        }
-
-        Ok(())
-    }
-
     /// Merges order book information from the incoming heartbeat request, requests order information
     /// from peers if an order is not present
     fn merge_order_book(
@@ -214,7 +171,7 @@ impl GossipProtocolExecutor {
             if let Some(peer_id) = self
                 .global_state
                 .read_peer_index()
-                .get_cluster_peer(&cluster)
+                .sample_cluster_peer(&cluster)
             {
                 self.network_channel
                     .send(GossipOutbound::Request {
@@ -375,7 +332,7 @@ impl GossipProtocolExecutor {
         log::info!("Expiring peer");
 
         // Remove expired peers from global state
-        self.global_state.remove_peers(&[peer_id]);
+        self.global_state.remove_peer(&peer_id);
 
         // Add peers to expiry cache for the duration of their invisibility window. This ensures that
         // we do not add the expired peer back to the global state until some time has elapsed. Without
@@ -513,15 +470,13 @@ impl HeartbeatTimer {
         loop {
             let (peer_count, next_peer_id) = {
                 // Enqueue a heartbeat job for each known peer
-                let cluster_metadata_locked = global_state.read_cluster_metadata();
-                let next_peer = cluster_metadata_locked
-                    .known_members
-                    .iter()
-                    .nth(peer_index)
-                    .cloned();
+                let known_cluster_peers = global_state
+                    .read_peer_index()
+                    .get_all_cluster_peers(&global_state.local_cluster_id);
+                let next_peer = known_cluster_peers.get(peer_index).cloned();
 
                 // Unwrap the option to deref the
-                (cluster_metadata_locked.known_members.len(), next_peer)
+                (known_cluster_peers.len(), next_peer)
             }; // cluster_metadata_locked released
 
             // Enqueue a job to send the heartbeat

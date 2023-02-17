@@ -112,11 +112,6 @@ impl NetworkManager {
                 self.config.cluster_keypair.as_ref().unwrap(),
             ),
         );
-
-        // Add self to cluster metadata
-        self.config
-            .global_state
-            .add_cluster_peer(self.local_peer_id);
     }
 
     /// Setup pubsub subscriptions for the network manager
@@ -535,6 +530,7 @@ impl NetworkManagerExecutor {
                         .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
 
                     GossipRequest::Replicate(replicate_message) => {
+                        log::info!("replicate request");
                         self.gossip_work_queue
                             .send(GossipServerJob::Cluster(
                                 ClusterManagementJob::ReplicateRequest(replicate_message),
