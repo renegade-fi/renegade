@@ -8,7 +8,7 @@ use crate::{
     },
     CommitProver, CommitSharedProver, CommitVerifier, Open,
 };
-use crypto::fields::bigint_to_scalar;
+use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 
 use itertools::Itertools;
@@ -21,7 +21,7 @@ use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource,
     mpc_scalar::scalar_to_u64, network::MpcNetwork,
 };
-use num_bigint::BigInt;
+use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
@@ -35,9 +35,9 @@ pub(crate) const MATCH_SIZE_SCALARS: usize = 8;
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct MatchResult {
     /// The mint of the order token in the asset pair being matched
-    pub quote_mint: BigInt,
+    pub quote_mint: BigUint,
     /// The mint of the base token in the asset pair being matched
-    pub base_mint: BigInt,
+    pub base_mint: BigUint,
     /// The amount of the quote token exchanged by this match
     pub quote_amount: u64,
     /// The amount of the base token exchanged by this match
@@ -76,8 +76,8 @@ impl TryFrom<&[u64]> for MatchResult {
         }
 
         Ok(MatchResult {
-            quote_mint: BigInt::from(values[0]),
-            base_mint: BigInt::from(values[1]),
+            quote_mint: BigUint::from(values[0]),
+            base_mint: BigUint::from(values[1]),
             quote_amount: values[2],
             base_amount: values[3],
             direction: values[4],
@@ -151,9 +151,9 @@ impl CommitProver for MatchResult {
         prover: &mut mpc_bulletproof::r1cs::Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
         let (quote_mint_comm, quote_mint_var) =
-            prover.commit(bigint_to_scalar(&self.quote_mint), Scalar::random(rng));
+            prover.commit(biguint_to_scalar(&self.quote_mint), Scalar::random(rng));
         let (base_mint_comm, base_mint_var) =
-            prover.commit(bigint_to_scalar(&self.base_mint), Scalar::random(rng));
+            prover.commit(biguint_to_scalar(&self.base_mint), Scalar::random(rng));
         let (quote_amount_comm, quote_amount_var) =
             prover.commit(Scalar::from(self.quote_amount), Scalar::random(rng));
         let (base_amount_comm, base_amount_var) =

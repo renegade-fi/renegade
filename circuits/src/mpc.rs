@@ -30,7 +30,7 @@ pub struct SharedFabric<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
 );
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> SharedFabric<N, S> {
-    /// Wrap an existing fabric in a shared mutibility struct
+    /// Wrap an existing fabric in a shared mutability struct
     pub fn new(fabric: AuthenticatedMpcFabric<N, S>) -> Self {
         Self(Rc::new(RefCell::new(fabric)))
     }

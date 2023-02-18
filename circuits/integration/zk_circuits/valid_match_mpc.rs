@@ -14,6 +14,7 @@ use circuits::{
     },
     zk_gadgets::fixed_point::{AuthenticatedFixedPoint, FixedPoint},
 };
+use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::scalar::Scalar;
 use integration_helpers::{mpc_network::batch_share_plaintext_u64, types::IntegrationTest};
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
@@ -38,22 +39,25 @@ fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     // by shifting right by the fixed-point precision (32). Add an additional shift right
     // by 1 to emulate division by 2 for the midpoint
     let price = (party0_values[1] + party1_values[1]) >> 33;
+    let private_scalars = vec![
+        biguint_to_scalar(&my_order.quote_mint),
+        biguint_to_scalar(&my_order.base_mint),
+        (price * min_amount).into(),
+        min_amount.into(),
+        my_order.side.into(),
+        price.into(),
+        (cmp::max(party0_values[2], party1_values[2]) - min_amount).into(),
+        (if party0_values[2] == min_amount {
+            0u8
+        } else {
+            1u8
+        })
+        .into(),
+    ];
 
     let shared_values = fabric
         .borrow_fabric()
-        .batch_allocate_private_u64s(
-            0, /* owning_party */
-            &[
-                my_order.quote_mint,
-                my_order.base_mint,
-                price * min_amount, // quote exchanged
-                min_amount,         // base exchanged
-                my_order.side as u64,
-                price,
-                cmp::max(party0_values[2], party1_values[2]) - min_amount,
-                if party0_values[2] == min_amount { 0 } else { 1 },
-            ],
-        )
+        .batch_allocate_private_scalars(0 /* owning_party */, &private_scalars)
         .map_err(|err| format!("Error sharing authenticated match result: {:?}", err))?;
 
     Ok(AuthenticatedMatchResult {
@@ -109,10 +113,8 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
         sel!(10, 6),  // price
         sel!(20, 30), // amount
     ];
-    let my_balance = vec![
-        sel!(1, 2), // mint
-        200,        // amount
-    ];
+    let my_balance_mint = sel!(1u8.into(), 2u8.into());
+    let my_balance_amount = 200;
 
     let timestamp: u64 = SystemTime::now()
         .elapsed()
@@ -123,8 +125,8 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
 
     let (witness, statement) = setup_witness_and_statement(
         Order {
-            quote_mint: my_order[0],
-            base_mint: my_order[1],
+            quote_mint: my_order[0].into(),
+            base_mint: my_order[1].into(),
             side: if my_order[2] == 0 {
                 OrderSide::Buy
             } else {
@@ -135,8 +137,8 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
             timestamp,
         },
         Balance {
-            mint: my_balance[0],
-            amount: my_balance[1],
+            mint: my_balance_mint,
+            amount: my_balance_amount,
         },
         test_args.mpc_fabric.clone(),
     )?;

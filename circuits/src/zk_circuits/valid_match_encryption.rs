@@ -999,7 +999,7 @@ mod valid_match_encryption_tests {
     use merlin::Transcript;
     use mpc_bulletproof::{r1cs::Prover, PedersenGens};
     use mpc_ristretto::mpc_scalar::scalar_to_u64;
-    use num_bigint::{BigInt, BigUint};
+    use num_bigint::BigUint;
     use rand_core::{OsRng, RngCore};
 
     use crate::{
@@ -1029,8 +1029,8 @@ mod valid_match_encryption_tests {
     const PROTOCOL_FEE: f32 = 0.01;
     lazy_static! {
         static ref DUMMY_MATCH: MatchResult = MatchResult {
-            quote_mint: BigInt::from(1u8),
-            base_mint: BigInt::from(1u8),
+            quote_mint: BigUint::from(1u8),
+            base_mint: BigUint::from(1u8),
             quote_amount: 300,
             base_amount: 200,
             direction: 1,
@@ -1104,13 +1104,13 @@ mod valid_match_encryption_tests {
         let fee_tuple2 = DUMMY_FEE2.clone();
 
         let party0_note = Note {
-            mint1: match_.base_mint.clone().try_into().unwrap(),
+            mint1: match_.base_mint.clone(),
             volume1: sel!(party_base_amount, match_.base_amount),
             direction1: sel!(buy, sell),
-            mint2: match_.quote_mint.clone().try_into().unwrap(),
+            mint2: match_.quote_mint.clone(),
             volume2: sel!(match_.quote_amount, party_quote_amount),
             direction2: sel!(sell, buy),
-            fee_mint: fee_tuple1.gas_addr.clone().try_into().unwrap(),
+            fee_mint: fee_tuple1.gas_addr.clone(),
             fee_volume: fee_tuple1.gas_token_amount,
             fee_direction: sell,
             type_: NoteType::Match,
@@ -1118,13 +1118,13 @@ mod valid_match_encryption_tests {
         };
 
         let party1_note = Note {
-            mint1: match_.base_mint.clone().try_into().unwrap(),
+            mint1: match_.base_mint.clone(),
             volume1: sel!(match_.base_amount, party_base_amount),
             direction1: sel!(sell, buy),
-            mint2: match_.quote_mint.clone().try_into().unwrap(),
+            mint2: match_.quote_mint.clone(),
             volume2: sel!(party_quote_amount, match_.quote_amount),
             direction2: sel!(buy, sell),
-            fee_mint: fee_tuple2.gas_addr.clone().try_into().unwrap(),
+            fee_mint: fee_tuple2.gas_addr.clone(),
             fee_volume: fee_tuple2.gas_token_amount,
             fee_direction: sell,
             type_: NoteType::Match,
@@ -1132,13 +1132,13 @@ mod valid_match_encryption_tests {
         };
 
         let relayer0_note = Note {
-            mint1: match_.base_mint.clone().try_into().unwrap(),
+            mint1: match_.base_mint.clone(),
             volume1: sel!(relayer_base_amount, 0),
             direction1: buy,
-            mint2: match_.quote_mint.clone().try_into().unwrap(),
+            mint2: match_.quote_mint.clone(),
             volume2: sel!(0, relayer_quote_amount),
             direction2: buy,
-            fee_mint: fee_tuple1.gas_addr.try_into().unwrap(),
+            fee_mint: fee_tuple1.gas_addr,
             fee_volume: fee_tuple2.gas_token_amount,
             fee_direction: buy,
             type_: NoteType::InternalTransfer,
@@ -1146,13 +1146,13 @@ mod valid_match_encryption_tests {
         };
 
         let relayer1_note = Note {
-            mint1: match_.base_mint.clone().try_into().unwrap(),
+            mint1: match_.base_mint.clone(),
             volume1: sel!(0, relayer_base_amount),
             direction1: buy,
-            mint2: match_.quote_mint.clone().try_into().unwrap(),
+            mint2: match_.quote_mint.clone(),
             volume2: sel!(relayer_quote_amount, 0),
             direction2: buy,
-            fee_mint: fee_tuple2.gas_addr.try_into().unwrap(),
+            fee_mint: fee_tuple2.gas_addr,
             fee_volume: fee_tuple2.gas_token_amount,
             fee_direction: buy,
             type_: NoteType::InternalTransfer,
@@ -1160,13 +1160,13 @@ mod valid_match_encryption_tests {
         };
 
         let protocol_note = Note {
-            mint1: match_.base_mint.clone().try_into().unwrap(),
+            mint1: match_.base_mint.clone(),
             volume1: protocol_base_amount,
             direction1: buy,
-            mint2: match_.quote_mint.clone().try_into().unwrap(),
+            mint2: match_.quote_mint.clone(),
             volume2: protocol_quote_amount,
             direction2: buy,
-            fee_mint: 0,
+            fee_mint: 0u8.into(),
             fee_volume: 0,
             fee_direction: buy,
             type_: NoteType::InternalTransfer,
@@ -1191,11 +1191,11 @@ mod valid_match_encryption_tests {
             elgamal_encrypt(&BigUint::from(party1_note.volume2), &pk_settle_party1);
 
         let (protocol_mint1_cipher, randomness5) =
-            elgamal_encrypt(&BigUint::from(protocol_note.mint1), &pk_settle_protocol);
+            elgamal_encrypt(&protocol_note.mint1, &pk_settle_protocol);
         let (protocol_volume1_cipher, randomness6) =
             elgamal_encrypt(&BigUint::from(protocol_note.volume1), &pk_settle_protocol);
         let (protocol_mint2_cipher, randomness7) =
-            elgamal_encrypt(&BigUint::from(protocol_note.mint2), &pk_settle_protocol);
+            elgamal_encrypt(&protocol_note.mint2, &pk_settle_protocol);
         let (protocol_volume2_cipher, randomness8) =
             elgamal_encrypt(&BigUint::from(protocol_note.volume2), &pk_settle_protocol);
         let (protocol_randomness_cipher, randomness9) = elgamal_encrypt(

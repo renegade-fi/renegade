@@ -47,24 +47,24 @@ mod test_helpers {
             pk_view: Scalar::one(),
         };
         pub(crate) static ref INITIAL_BALANCES: [Balance; MAX_BALANCES] = [
-            Balance { mint: 1, amount: 5 },
+            Balance { mint: 1u8.into(), amount: 5 },
             Balance {
-                mint: 2,
+                mint: 2u8.into(),
                 amount: 10
             }
         ];
         pub(crate) static ref INITIAL_ORDERS: [Order; MAX_ORDERS] = [
             Order {
-                quote_mint: 1,
-                base_mint: 2,
+                quote_mint: 1u8.into(),
+                base_mint: 2u8.into(),
                 side: OrderSide::Buy,
                 price: FixedPoint::from(5.),
                 amount: 1,
                 timestamp: TIMESTAMP,
             },
             Order {
-                quote_mint: 1,
-                base_mint: 3,
+                quote_mint: 1u8.into(),
+                base_mint: 3u8.into(),
                 side: OrderSide::Sell,
                 price: FixedPoint::from(2.),
                 amount: 10,

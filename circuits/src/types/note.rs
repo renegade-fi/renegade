@@ -1,8 +1,10 @@
 //! Groups type definitions for protocol notes: a state primitive which is created upon a transfer
 //! or a successful match. Notes are redeemed into the balances of a wallet and nullified.
 
+use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use mpc_bulletproof::r1cs::{Prover, Variable, Verifier};
+use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
 use crate::{CommitProver, CommitVerifier};
@@ -22,19 +24,19 @@ pub enum NoteType {
 #[derive(Clone, Debug)]
 pub struct Note {
     /// The first mint exchanged via the note
-    pub mint1: u64,
+    pub mint1: BigUint,
     /// The volume of the first mint exchanged  
     pub volume1: u64,
     /// The direction of the first mint
     pub direction1: OrderSide,
     /// The second mint exchanged via the note
-    pub mint2: u64,
+    pub mint2: BigUint,
     /// The volume of the second mint exchanged
     pub volume2: u64,
     /// The direction of the second mint
     pub direction2: OrderSide,
     /// The mint of the relayer fee paid on contract interaction
-    pub fee_mint: u64,
+    pub fee_mint: BigUint,
     /// The volume of the relayer fee paid on contract interaction
     pub fee_volume: u64,
     /// The direction of the relayer fee, will be Buy for the relayer's note
@@ -130,18 +132,20 @@ impl CommitProver for Note {
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (mint1_comm, mint1_var) = prover.commit(Scalar::from(self.mint1), Scalar::random(rng));
+        let (mint1_comm, mint1_var) =
+            prover.commit(biguint_to_scalar(&self.mint1), Scalar::random(rng));
         let (volume1_comm, volume1_var) =
             prover.commit(Scalar::from(self.volume1), Scalar::random(rng));
         let (direction1_comm, direction1_var) =
             prover.commit(Scalar::from(self.direction1 as u8), Scalar::random(rng));
-        let (mint2_comm, mint2_var) = prover.commit(Scalar::from(self.mint2), Scalar::random(rng));
+        let (mint2_comm, mint2_var) =
+            prover.commit(biguint_to_scalar(&self.mint2), Scalar::random(rng));
         let (volume2_comm, volume2_var) =
             prover.commit(Scalar::from(self.volume2), Scalar::random(rng));
         let (direction2_comm, direction2_var) =
             prover.commit(Scalar::from(self.direction2 as u8), Scalar::random(rng));
         let (fee_mint_comm, fee_mint_var) =
-            prover.commit(Scalar::from(self.fee_mint), Scalar::random(rng));
+            prover.commit(biguint_to_scalar(&self.fee_mint), Scalar::random(rng));
         let (fee_volume_comm, fee_volume_var) =
             prover.commit(Scalar::from(self.fee_volume), Scalar::random(rng));
         let (fee_direction_comm, fee_direction_var) =

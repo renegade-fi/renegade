@@ -5,6 +5,7 @@ use crate::{
     zk_gadgets::fixed_point::{AuthenticatedCommittedFixedPoint, AuthenticatedFixedPointVar},
     CommitSharedProver,
 };
+use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 use mpc_bulletproof::r1cs_mpc::MpcProver;
@@ -45,13 +46,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
             .batch_commit(
                 owning_party,
                 &[
-                    Scalar::from(order.quote_mint),
-                    Scalar::from(order.base_mint),
+                    biguint_to_scalar(&order.quote_mint),
+                    biguint_to_scalar(&order.base_mint),
                     Scalar::from(order.side as u64),
                     Scalar::from(order.price.to_owned()),
                     Scalar::from(order.amount),
                     Scalar::from(order.timestamp),
-                    Scalar::from(balance.mint),
+                    biguint_to_scalar(&balance.mint),
                     Scalar::from(balance.amount),
                 ],
                 &blinders,

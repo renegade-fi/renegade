@@ -667,6 +667,7 @@ mod valid_settle_tests {
     use lazy_static::lazy_static;
     use merlin::Transcript;
     use mpc_bulletproof::{r1cs::Prover, PedersenGens};
+    use num_bigint::BigUint;
     use rand_core::OsRng;
 
     use crate::{
@@ -701,13 +702,13 @@ mod valid_settle_tests {
         ///
         /// Fees for the match were paid in token 2
         static ref DUMMY_MATCH_NOTE: Note = Note {
-            mint1: 2,
+            mint1: 2u8.into(),
             volume1: 1,
             direction1: OrderSide::Buy,
-            mint2: 1,
+            mint2: 1u8.into(),
             volume2: 4,
             direction2: OrderSide::Sell,
-            fee_mint: 2,
+            fee_mint: 2u8.into(),
             fee_volume: 3,
             fee_direction: OrderSide::Sell,
             type_: NoteType::Match,
@@ -726,7 +727,7 @@ mod valid_settle_tests {
 
         // Update the balances according to the note
         for balance in result_wallet.balances.iter_mut() {
-            if balance.mint == 0 {
+            if balance.mint == 0u8.into() {
                 continue;
             }
             if balance.mint == note.mint1 {
@@ -865,10 +866,10 @@ mod valid_settle_tests {
         let mut note = DUMMY_MATCH_NOTE.clone();
 
         // Modify the note to be a transfer note
-        note.mint2 = 0;
+        note.mint2 = 0u8.into();
         note.volume2 = 0;
         note.direction2 = OrderSide::Buy;
-        note.fee_mint = 0;
+        note.fee_mint = 0u8.into();
         note.fee_volume = 0;
         note.fee_direction = OrderSide::Buy;
 
@@ -901,7 +902,7 @@ mod valid_settle_tests {
         let initial_wallet = INITIAL_WALLET.clone();
         let note = DUMMY_MATCH_NOTE.clone();
         let mut post_wallet = apply_note_to_wallet(&note, &initial_wallet);
-        post_wallet.balances[0].mint = 42;
+        post_wallet.balances[0].mint = 42u8.into();
 
         let (witness, statement) = compute_witness_and_statement(initial_wallet, post_wallet, note);
 
@@ -1042,12 +1043,12 @@ mod valid_settle_tests {
 
         // Try changing the base mint
         let mut bad_post_wallet1 = post_wallet.clone();
-        bad_post_wallet1.orders[1].base_mint += 1;
+        bad_post_wallet1.orders[1].base_mint += BigUint::from(1u8);
         bad_post_wallets.push(bad_post_wallet1);
 
         // Try changing the quote mint
         let mut bad_post_wallet2 = post_wallet.clone();
-        bad_post_wallet2.orders[1].quote_mint += 1;
+        bad_post_wallet2.orders[1].quote_mint += BigUint::from(1u8);
         bad_post_wallets.push(bad_post_wallet2);
 
         // Try changing the direction
