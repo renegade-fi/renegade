@@ -233,7 +233,10 @@ impl HandshakeExecutor {
                 );
 
                 // Run the MPC match process
-                Self::execute_match(party_id, order_state, net)?;
+                let res = Self::execute_match(party_id, order_state, net)?;
+
+                // Submit the match to the contract
+                self.submit_match(res)?;
 
                 // Record the match in the cache
                 self.record_completed_match(request_id)

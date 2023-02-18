@@ -23,7 +23,7 @@ mod worker;
 use std::{io::Write, thread, time::Duration};
 
 use chrono::Local;
-use circuits::types::wallet::Wallet;
+use circuits::{types::wallet::Wallet, zk_gadgets::fixed_point::FixedPoint};
 use crossbeam::channel::{self, Receiver};
 use env_logger::Builder;
 use error::CoordinatorError;
@@ -54,6 +54,15 @@ extern crate lazy_static;
 /// A type alias for an empty channel used to signal cancellation to workers
 pub(crate) type CancelChannel = Receiver<()>;
 
+// --------------------
+// | Global Constants |
+// --------------------
+
+lazy_static! {
+    /// The fee the protocol takes on a match; one basis point
+    static ref PROTOCOL_FEE: FixedPoint = FixedPoint::from(0.0001);
+}
+
 /// The system-wide value of MAX_BALANCES; the number of allowable balances a wallet holds
 pub(crate) const MAX_BALANCES: usize = 5;
 /// The system-wide value of MAX_ORDERS; the number of allowable orders a wallet holds
@@ -66,6 +75,10 @@ pub(crate) const MERKLE_HEIGHT: usize = 30;
 pub(crate) type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 /// The amount of time to wait between sending teardown signals and terminating execution
 const TERMINATION_TIMEOUT_MS: u64 = 10_000; // 10 seconds
+
+// --------------
+// | Entrypoint |
+// --------------
 
 /// The entrypoint to the relayer's execution
 ///

@@ -163,5 +163,6 @@ pub enum ProofJob {
         merkle_root: MerkleRoot,
     },
     /// A request to create a proof of `VALID MATCH ENCRYPTION` for a match result
+    #[allow(unused)]
     ValidMatchEncrypt {},
 }
