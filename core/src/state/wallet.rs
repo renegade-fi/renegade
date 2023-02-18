@@ -5,6 +5,7 @@ use std::{
     convert::TryInto,
     fmt::{Display, Formatter, Result as FmtResult},
     iter,
+    str::FromStr,
     sync::RwLockReadGuard,
 };
 
@@ -25,7 +26,7 @@ use num_bigint::BigUint;
 use serde::{
     de::{Error as SerdeErr, SeqAccess, Visitor},
     ser::SerializeSeq,
-    Deserialize, Serialize,
+    Deserialize, Deserializer, Serialize, Serializer,
 };
 use termion::color;
 use uuid::Uuid;
@@ -135,8 +136,11 @@ pub struct Wallet {
     pub wallet_id: WalletIdentifier,
     /// A list of orders in this wallet
     pub orders: HashMap<OrderIdentifier, Order>,
-    /// A mapping of mint (u64) to Balance information
-    /// TODO: Key by BigUint to adequately represent mints
+    /// A mapping of mint to Balance information
+    #[serde(
+        serialize_with = "serialize_balances",
+        deserialize_with = "deserialize_balances"
+    )]
     pub balances: HashMap<BigUint, Balance>,
     /// A list of the fees in this wallet
     pub fees: Vec<Fee>,
@@ -148,6 +152,36 @@ pub struct Wallet {
     pub randomness: BigUint,
     /// Wallet metadata; replicas, trusted peers, etc
     pub metadata: WalletMetadata,
+}
+
+/// Custom serialization logic for the balance map that re-keys the map via String
+fn serialize_balances<S>(balances: &HashMap<BigUint, Balance>, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    // Convert to a hashmap keyed by strings
+    let string_keyed_map: HashMap<String, Balance> = balances
+        .clone()
+        .into_iter()
+        .map(|(mint, balance)| (mint.to_string(), balance))
+        .collect();
+    string_keyed_map.serialize(s)
+}
+
+/// Custom deserialization logic for the balance map that re-keys from String to BigUint
+fn deserialize_balances<'de, D>(d: D) -> Result<HashMap<BigUint, Balance>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let string_keyed_map: HashMap<String, Balance> = HashMap::deserialize(d)?;
+    let mut bigint_keyed_map = HashMap::new();
+
+    for (k, balance) in string_keyed_map.into_iter() {
+        let bigint_key = BigUint::from_str(&k).map_err(|err| SerdeErr::custom(err.to_string()))?;
+        bigint_keyed_map.insert(bigint_key, balance);
+    }
+
+    Ok(bigint_keyed_map)
 }
 
 impl From<Wallet> for SizedCircuitWallet {

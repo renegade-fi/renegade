@@ -3,8 +3,12 @@
         "wallet_id": "8aa4691e-dd9e-4c31-b1fa-5ae1ba53d128",
         "orders": {
             "13b6f558-d480-4289-ab12-05b020d1afab": {
-                "quote_mint": 1,
-                "base_mint": 2,
+                "quote_mint": [
+                    1
+                ],
+                "base_mint": [
+                    2
+                ],
                 "side": "Buy",
                 "price": 10.0,
                 "amount": 20,
@@ -13,7 +17,9 @@
         },
         "balances": {
             "1": {
-                "mint": 1,
+                "mint": [
+                    1
+                ],
                 "amount": 200
             }
         },

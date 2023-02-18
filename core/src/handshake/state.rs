@@ -11,6 +11,7 @@ use crate::state::{OrderIdentifier, Shared};
 
 use super::error::HandshakeManagerError;
 use circuits::types::{balance::Balance, fee::Fee, order::Order};
+use num_bigint::BigUint;
 use uuid::Uuid;
 
 /// Holds state information for all in-flight handshake correspondences
@@ -41,6 +42,7 @@ impl HandshakeStateIndex {
         order: Order,
         balance: Balance,
         fee: Fee,
+        wallet_randomness: BigUint,
     ) {
         let mut locked_state = self.state_map.write().expect("state_map lock poisoned");
         locked_state.insert(
@@ -52,6 +54,7 @@ impl HandshakeStateIndex {
                 order,
                 balance,
                 fee,
+                wallet_randomness,
             ),
         );
     }
@@ -109,6 +112,8 @@ pub struct HandshakeState {
     pub balance: Balance,
     /// The local peer's fee, paid out to the contract and the executing node
     pub fee: Fee,
+    /// The blinding randomness used in the wallet
+    pub wallet_randomness: BigUint,
     /// The current state information of the
     pub state: State,
 }
@@ -142,6 +147,7 @@ impl HandshakeState {
         order: Order,
         balance: Balance,
         fee: Fee,
+        wallet_randomness: BigUint,
     ) -> Self {
         Self {
             request_id,
@@ -150,6 +156,7 @@ impl HandshakeState {
             order,
             balance,
             fee,
+            wallet_randomness,
             state: State::OrderNegotiation,
         }
     }

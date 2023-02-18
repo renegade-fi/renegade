@@ -712,7 +712,7 @@ mod valid_settle_tests {
             fee_volume: 3,
             fee_direction: OrderSide::Sell,
             type_: NoteType::Match,
-            randomness: 1729,
+            randomness: 1729u64.into(),
         };
     }
 

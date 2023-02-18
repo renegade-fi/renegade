@@ -3,8 +3,12 @@
         "wallet_id": "905bff4b-4958-46a9-b42c-d9abb921ca9f",
         "orders": {
             "86196a2d-ca1e-4138-98d6-c12b2c304964": {
-                "quote_mint": 1,
-                "base_mint": 2,
+                "quote_mint": [
+                    1
+                ],
+                "base_mint": [
+                    2
+                ],
                 "side": "Sell",
                 "price": 6.0,
                 "amount": 10,
@@ -13,7 +17,9 @@
         },
         "balances": {
             "2": {
-                "mint": 2,
+                "mint": [
+                    2
+                ],
                 "amount": 200
             }
         },

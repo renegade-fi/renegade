@@ -45,7 +45,7 @@ pub struct Note {
     /// or by match
     pub type_: NoteType,
     /// The randomness included with the note, used to authenticate notes
-    pub randomness: u64,
+    pub randomness: BigUint,
 }
 
 /// Represents a note that has been allocated in a constraint system
@@ -153,7 +153,7 @@ impl CommitProver for Note {
         let (type_comm, type_var) =
             prover.commit(Scalar::from(self.type_ as u8), Scalar::random(rng));
         let (randomness_comm, randomness_var) =
-            prover.commit(Scalar::from(self.randomness), Scalar::random(rng));
+            prover.commit(biguint_to_scalar(&self.randomness), Scalar::random(rng));
 
         Ok((
             NoteVar {
