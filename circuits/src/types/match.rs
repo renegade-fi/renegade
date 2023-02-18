@@ -23,6 +23,7 @@ use mpc_ristretto::{
 };
 use num_bigint::BigInt;
 use rand_core::{CryptoRng, RngCore};
+use serde::{Deserialize, Serialize};
 
 /// The number of scalars in a match tuple for serialization/deserialization
 pub(crate) const MATCH_SIZE_SCALARS: usize = 8;
@@ -114,7 +115,7 @@ pub struct MatchResultVar {
 }
 
 /// A commitment to the match result in a single-prover constraint system
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommittedMatchResult {
     /// The mint of the order token in the asset pair being matched
     pub quote_mint: CompressedRistretto,

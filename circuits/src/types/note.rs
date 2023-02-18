@@ -3,6 +3,7 @@
 
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use mpc_bulletproof::r1cs::{Prover, Variable, Verifier};
+use serde::{Deserialize, Serialize};
 
 use crate::{CommitProver, CommitVerifier};
 
@@ -92,7 +93,7 @@ impl From<NoteVar> for Vec<Variable> {
 }
 
 /// Represents a note that has been allocated in a constraint system
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct CommittedNote {
     /// The first mint exchanged via the note
     pub mint1: CompressedRistretto,

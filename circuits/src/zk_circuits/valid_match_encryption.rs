@@ -17,6 +17,7 @@ use mpc_bulletproof::{
     BulletproofGens,
 };
 use rand_core::OsRng;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::{ProverError, VerifierError},
@@ -595,7 +596,7 @@ pub struct ValidMatchEncryptionWitnessVar {
 }
 
 /// A commitment to the witness type for the VALID MATCH ENCRYPTION circuit
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidMatchEncryptionWitnessCommitment {
     /// The result of the match process; a completed match
     pub match_res: CommittedMatchResult,
@@ -735,7 +736,7 @@ impl CommitVerifier for ValidMatchEncryptionWitnessCommitment {
 ///
 /// Each of the ciphertexts is a 2-tuple of scalars; one being the ElGamal shared
 /// secret of the encryption, and the other being the encrypted value itself
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidMatchEncryptionStatement {
     /// The commitment to the first party's note
     pub party0_note_commit: Scalar,

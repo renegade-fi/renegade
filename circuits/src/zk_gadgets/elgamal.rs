@@ -11,6 +11,7 @@ use mpc_bulletproof::{
     BulletproofGens,
 };
 use rand_core::OsRng;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::{ProverError, VerifierError},
@@ -66,7 +67,7 @@ impl<const SCALAR_BITS: usize> ElGamalGadget<SCALAR_BITS> {
 }
 
 /// A type representing an ElGamal ciphertext
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct ElGamalCiphertext {
     /// The shared secret; the generator raised to the randomness
     pub partial_shared_secret: Scalar,

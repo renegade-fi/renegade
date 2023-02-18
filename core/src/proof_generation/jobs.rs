@@ -8,6 +8,9 @@ use circuits::{
     types::{balance::Balance, fee::Fee, keychain::KeyChain, order::Order},
     zk_circuits::{
         valid_commitments::{ValidCommitmentsStatement, ValidCommitmentsWitnessCommitment},
+        valid_match_encryption::{
+            ValidMatchEncryptionStatement, ValidMatchEncryptionWitnessCommitment,
+        },
         valid_wallet_create::{ValidWalletCreateCommitment, ValidWalletCreateStatement},
     },
     zk_gadgets::merkle::{MerkleOpening, MerkleRoot},
@@ -54,15 +57,28 @@ pub struct GenericValidCommitmentsBundle<
 /// A type alias that specifies the default generics for `GenericValidCommitmentsBundle`
 pub type ValidCommitmentsBundle = GenericValidCommitmentsBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
+/// The response type for a request to generate a proof of `VALID MATCH ENCRYPTION`
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ValidMatchEncryptBundle {
+    /// A commitment to the witness type of `VALID MATCH ENCRYPTION`
+    pub commitment: ValidMatchEncryptionWitnessCommitment,
+    /// The statement (public variables) used to prove `VALID MATCH ENCRYPTION`
+    pub statement: ValidMatchEncryptionStatement,
+    /// The proof itself
+    pub proof: R1CSProof,
+}
+
 /// The bundle returned by the proof generation module
 #[derive(Clone, Debug)]
-#[allow(clippy::large_enum_variant)]
+#[allow(clippy::large_enum_variant, clippy::enum_variant_names)]
 pub enum ProofBundle {
     /// A witness commitment, statement, and proof of `VALID WALLET CREATE`
     ValidWalletCreate(ValidWalletCreateBundle),
     /// A witness commitment, statement, and proof of `VALID COMMITMENTS`
     #[allow(unused)]
     ValidCommitments(ValidCommitmentsBundle),
+    /// A witness commitment, statement, and proof of `VALID MATCH ENCRYPTION`
+    ValidMatchEncryption(ValidMatchEncryptBundle),
 }
 
 /// Unsafe cast implementations, will panic if type is incorrect
@@ -89,6 +105,19 @@ impl From<ProofBundle> for ValidCommitmentsBundle {
     }
 }
 
+impl From<ProofBundle> for ValidMatchEncryptBundle {
+    fn from(bundle: ProofBundle) -> Self {
+        if let ProofBundle::ValidMatchEncryption(b) = bundle {
+            b
+        } else {
+            panic!(
+                "Proof bundle is not of type ValidWalletCreate: {:?}",
+                bundle
+            )
+        }
+    }
+}
+
 /// Represents a job enqueued in the proof manager's work queue
 #[derive(Debug)]
 pub struct ProofManagerJob {
@@ -100,7 +129,7 @@ pub struct ProofManagerJob {
 
 /// The job type and parameterization
 #[derive(Clone, Debug)]
-#[allow(clippy::large_enum_variant)]
+#[allow(clippy::large_enum_variant, clippy::enum_variant_names)]
 pub enum ProofJob {
     /// A request has to create a new wallet
     /// The proof generation module should generate a proof of
@@ -115,7 +144,6 @@ pub enum ProofJob {
     },
     /// A request to create a proof of `VALID COMMITMENTS` for an order, balance, fee
     /// tuple. This will be matched against in the handshake process
-    #[allow(unused)]
     ValidCommitments {
         /// The wallet from which the committed order balance and fee come from
         wallet: SizedWallet,
@@ -134,4 +162,6 @@ pub enum ProofJob {
         /// The merkle root to prove wallet inclusion into
         merkle_root: MerkleRoot,
     },
+    /// A request to create a proof of `VALID MATCH ENCRYPTION` for a match result
+    ValidMatchEncrypt {},
 }
