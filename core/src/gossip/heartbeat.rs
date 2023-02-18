@@ -280,22 +280,32 @@ impl GossipProtocolExecutor {
     /// Expires peers that have timed out due to consecutive failed heartbeats
     fn maybe_expire_peer(&self, peer_id: WrappedPeerId) {
         let now = get_current_time_seconds();
-        {
-            let my_cluster_id = self.global_state.local_cluster_id.clone();
+        let peer_info = {
+            // Fetch peer info for the peer
             let locked_peer_index = self.global_state.read_peer_index();
-            let peer_info = locked_peer_index.read_peer(&peer_id).unwrap();
-
-            // Expire cluster peers sooner than non-cluster peers
-            let same_cluster = peer_info.get_cluster_id().eq(&my_cluster_id);
-            let last_heartbeat = now - peer_info.get_last_heartbeat();
-
-            #[allow(clippy::if_same_then_else)]
-            if same_cluster && last_heartbeat < CLUSTER_HEARTBEAT_FAILURE_MS / 1000 {
-                return;
-            } else if !same_cluster && last_heartbeat < HEARTBEAT_FAILURE_MS / 1000 {
+            let peer_info = locked_peer_index
+                .read_peer(&peer_id)
+                .map(|info| info.clone());
+            if peer_info.is_none() {
                 return;
             }
+
+            peer_info.unwrap()
+        };
+
+        // Expire cluster peers sooner than non-cluster peers
+        let same_cluster = peer_info
+            .get_cluster_id()
+            .eq(&self.global_state.local_cluster_id);
+        let last_heartbeat = now - peer_info.get_last_heartbeat();
+
+        #[allow(clippy::if_same_then_else)]
+        if same_cluster && last_heartbeat < CLUSTER_HEARTBEAT_FAILURE_MS / 1000 {
+            return;
+        } else if !same_cluster && last_heartbeat < HEARTBEAT_FAILURE_MS / 1000 {
+            return;
         }
+
         log::info!("Expiring peer");
 
         // Remove expired peers from global state
