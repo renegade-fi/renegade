@@ -7,6 +7,7 @@ use circuits::{
     mpc::SharedFabric,
     mpc_circuits::r#match::compute_match,
     multiprover_prove,
+    native_helpers::compute_poseidon_hash,
     types::{
         balance::Balance,
         fee::Fee,
@@ -19,6 +20,7 @@ use circuits::{
     },
     Allocate, Open, SharePublic,
 };
+use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::scalar::Scalar;
 use futures::executor::block_on;
 use integration_helpers::mpc_network::mocks::PartyIDBeaverSource;
@@ -28,6 +30,7 @@ use mpc_ristretto::{
     fabric::AuthenticatedMpcFabric,
     network::{MpcNetwork, QuicTwoPartyNet},
 };
+use num_bigint::BigUint;
 use tokio::runtime::Builder as TokioBuilder;
 use tracing::log;
 
@@ -45,6 +48,10 @@ pub struct HandshakeResult {
     pub party0_fee: Fee,
     /// The second party's fee, opened to create fee notes
     pub party1_fee: Fee,
+    /// The Poseidon hash of the first party's wallet randomness
+    pub party0_randomness_hash: BigUint,
+    /// The Poseidon hash of the second party's wallet randomness
+    pub party1_randomness_hash: BigUint,
 }
 
 /// Match-centric implementations for the handshake manager
@@ -121,7 +128,19 @@ impl HandshakeExecutor {
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
         let party1_fee = handshake_state
             .fee
-            .share_public(1 /* owning_party */, shared_fabric)
+            .share_public(1 /* owning_party */, shared_fabric.clone())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+
+        // Open the wallet randomness hash for each party, used to blind the notes
+        let randomness_hash =
+            compute_poseidon_hash(&[biguint_to_scalar(&handshake_state.wallet_randomness)]);
+        let party0_randomness_hash = shared_fabric
+            .borrow_fabric()
+            .share_plaintext_scalar(0 /* owning_party */, randomness_hash)
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let party1_randomness_hash = shared_fabric
+            .borrow_fabric()
+            .share_plaintext_scalar(1 /* owning_party */, randomness_hash)
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
         // Open the match result
@@ -134,6 +153,8 @@ impl HandshakeExecutor {
             proof,
             party0_fee,
             party1_fee,
+            party0_randomness_hash: scalar_to_biguint(&party0_randomness_hash),
+            party1_randomness_hash: scalar_to_biguint(&party1_randomness_hash),
         })
     }
 

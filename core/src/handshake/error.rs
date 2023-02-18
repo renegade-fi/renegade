@@ -5,6 +5,8 @@ use std::fmt::Display;
 /// The core error type for the handshake manager
 #[derive(Clone, Debug)]
 pub enum HandshakeManagerError {
+    /// A handshake was abandoned for the reason given in the parameter
+    Abandoned(String),
     /// An error while collaboratively proving a statement
     Multiprover(String),
     /// An invalid request ID was passed in a message; i.e. the request ID is not known

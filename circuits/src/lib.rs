@@ -557,8 +557,8 @@ pub mod native_helpers {
             note.fee_volume,
             note.fee_direction as u64,
             note.type_ as u64,
-            note.randomness,
         ]);
+        hasher.absorb(&biguint_to_prime_field(&note.randomness));
         hasher.absorb(&scalar_to_prime_field(&pk_settle_receiver));
         hasher.squeeze_field_elements(1 /* num_elements */)[0]
     }

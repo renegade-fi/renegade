@@ -276,6 +276,14 @@ impl HandshakeExecutor {
                 })
                 .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
+            let wallet_randomness = self
+                .global_state
+                .get_randomness_for_order(&local_order_id)
+                .ok_or_else(|| {
+                    HandshakeManagerError::Abandoned(
+                        "couldn't find managing wallet for order".to_string(),
+                    )
+                })?;
             self.handshake_state_index.new_handshake(
                 request_id,
                 peer_order_id,
@@ -283,6 +291,7 @@ impl HandshakeExecutor {
                 order,
                 balance,
                 fee,
+                wallet_randomness,
             );
         }
 
@@ -378,6 +387,13 @@ impl HandshakeExecutor {
             );
         }
 
+        let wallet_randomness = self
+            .global_state
+            .get_randomness_for_order(&my_order)
+            .ok_or_else(|| {
+                HandshakeManagerError::Abandoned("couldn't find wallet managing order".to_string())
+            })?;
+
         // Find the order, along with a balance and fee to accompany the match
         if let Some((order, balance, fee)) = self.global_state.get_order_balance_fee(&my_order) {
             // Add an entry to the handshake state index
@@ -388,6 +404,7 @@ impl HandshakeExecutor {
                 order,
                 balance,
                 fee,
+                wallet_randomness,
             );
 
             // Check if the order pair has previously been matched, if so notify the peer and

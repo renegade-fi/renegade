@@ -1074,8 +1074,8 @@ mod valid_match_encryption_tests {
         let sell = OrderSide::Sell;
 
         let mut rng = OsRng {};
-        let party0_randomness_hash = rng.next_u32() as u64;
-        let party1_randomness_hash = rng.next_u32() as u64;
+        let party0_randomness_hash: BigUint = rng.next_u32().into();
+        let party1_randomness_hash: BigUint = rng.next_u32().into();
 
         let relayer_fee_fraction = DUMMY_FEE1.percentage_fee;
         let protocol_fee_fraction = DUMMY_FEE2.percentage_fee;
@@ -1114,7 +1114,7 @@ mod valid_match_encryption_tests {
             fee_volume: fee_tuple1.gas_token_amount,
             fee_direction: sell,
             type_: NoteType::Match,
-            randomness: party0_randomness_hash,
+            randomness: party0_randomness_hash.clone(),
         };
 
         let party1_note = Note {
@@ -1128,7 +1128,7 @@ mod valid_match_encryption_tests {
             fee_volume: fee_tuple2.gas_token_amount,
             fee_direction: sell,
             type_: NoteType::Match,
-            randomness: party1_randomness_hash,
+            randomness: party1_randomness_hash.clone(),
         };
 
         let relayer0_note = Note {
@@ -1142,7 +1142,7 @@ mod valid_match_encryption_tests {
             fee_volume: fee_tuple2.gas_token_amount,
             fee_direction: buy,
             type_: NoteType::InternalTransfer,
-            randomness: party0_randomness_hash + 1u64,
+            randomness: party0_randomness_hash.clone() + 1u64,
         };
 
         let relayer1_note = Note {
@@ -1156,7 +1156,7 @@ mod valid_match_encryption_tests {
             fee_volume: fee_tuple2.gas_token_amount,
             fee_direction: buy,
             type_: NoteType::InternalTransfer,
-            randomness: party1_randomness_hash + 1u64,
+            randomness: party1_randomness_hash.clone() + 1u64,
         };
 
         let protocol_note = Note {
@@ -1170,7 +1170,7 @@ mod valid_match_encryption_tests {
             fee_volume: 0,
             fee_direction: buy,
             type_: NoteType::InternalTransfer,
-            randomness: party0_randomness_hash + party1_randomness_hash,
+            randomness: party0_randomness_hash.clone() + party1_randomness_hash.clone(),
         };
 
         // Generate encryptions for the statement
@@ -1198,18 +1198,16 @@ mod valid_match_encryption_tests {
             elgamal_encrypt(&protocol_note.mint2, &pk_settle_protocol);
         let (protocol_volume2_cipher, randomness8) =
             elgamal_encrypt(&BigUint::from(protocol_note.volume2), &pk_settle_protocol);
-        let (protocol_randomness_cipher, randomness9) = elgamal_encrypt(
-            &BigUint::from(protocol_note.randomness),
-            &pk_settle_protocol,
-        );
+        let (protocol_randomness_cipher, randomness9) =
+            elgamal_encrypt(&protocol_note.randomness, &pk_settle_protocol);
 
         (
             ValidMatchEncryptionWitness {
                 match_res: match_,
                 party0_fee: DUMMY_FEE1.clone(),
                 party1_fee: DUMMY_FEE2.clone(),
-                party0_randomness_hash: Scalar::from(party0_randomness_hash),
-                party1_randomness_hash: Scalar::from(party1_randomness_hash),
+                party0_randomness_hash: biguint_to_scalar(&party0_randomness_hash),
+                party1_randomness_hash: biguint_to_scalar(&party1_randomness_hash),
                 party0_note: party0_note.clone(),
                 party1_note: party1_note.clone(),
                 relayer0_note: relayer0_note.clone(),

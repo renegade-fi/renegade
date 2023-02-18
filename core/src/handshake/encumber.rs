@@ -10,8 +10,10 @@ use circuits::types::{
     order::OrderSide,
     r#match::MatchResult,
 };
+
 use curve25519_dalek::scalar::Scalar;
 use mpc_ristretto::mpc_scalar::scalar_to_u64;
+use num_bigint::BigUint;
 
 use crate::PROTOCOL_FEE;
 
@@ -31,6 +33,8 @@ impl HandshakeExecutor {
                 &handshake_result.match_,
                 &handshake_result.party0_fee,
                 &handshake_result.party1_fee,
+                handshake_result.party0_randomness_hash,
+                handshake_result.party1_randomness_hash,
             );
 
         Ok(())
@@ -47,6 +51,8 @@ impl HandshakeExecutor {
         match_res: &MatchResult,
         party0_fee: &Fee,
         party1_fee: &Fee,
+        party0_randomness_hash: BigUint,
+        party1_randomness_hash: BigUint,
     ) -> (Note, Note, Note, Note, Note) {
         // The match direction corresponds to the direction that party 0 goes in the match
         // i.e. the match direction is 0 (buy) if party 0 is buying the base and selling the quote
@@ -100,7 +106,7 @@ impl HandshakeExecutor {
             fee_volume: party0_fee.gas_token_amount,
             fee_direction: OrderSide::Sell,
             type_: NoteType::Match,
-            randomness: 0,
+            randomness: party0_randomness_hash.clone(),
         };
 
         let party1_note = Note {
@@ -114,7 +120,7 @@ impl HandshakeExecutor {
             fee_volume: party1_fee.gas_token_amount,
             fee_direction: OrderSide::Sell,
             type_: NoteType::Match,
-            randomness: 0,
+            randomness: party1_randomness_hash.clone(),
         };
 
         // Create the relayer notes
@@ -153,7 +159,7 @@ impl HandshakeExecutor {
             fee_volume: party0_fee.gas_token_amount,
             fee_direction: OrderSide::Buy,
             type_: NoteType::InternalTransfer,
-            randomness: 0,
+            randomness: &party0_randomness_hash + 1u8,
         };
 
         let relayer1_note = Note {
@@ -167,7 +173,7 @@ impl HandshakeExecutor {
             fee_volume: party1_fee.gas_token_amount,
             fee_direction: OrderSide::Buy,
             type_: NoteType::InternalTransfer,
-            randomness: 0,
+            randomness: &party1_randomness_hash + 1u8,
         };
 
         // Build the protocol note
@@ -185,7 +191,7 @@ impl HandshakeExecutor {
             fee_volume: 0,
             fee_direction: OrderSide::Buy,
             type_: NoteType::InternalTransfer,
-            randomness: 0,
+            randomness: party0_randomness_hash + party1_randomness_hash,
         };
 
         (
