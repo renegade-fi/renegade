@@ -1,4 +1,5 @@
 //! The handshake module handles performing MPC handshakes with peers
+mod encumber;
 pub mod error;
 mod handshake_cache;
 pub mod jobs;

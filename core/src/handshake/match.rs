@@ -7,16 +7,22 @@ use circuits::{
     mpc::SharedFabric,
     mpc_circuits::r#match::compute_match,
     multiprover_prove,
-    types::{balance::Balance, order::Order, r#match::AuthenticatedMatchResult},
+    types::{
+        balance::Balance,
+        fee::Fee,
+        order::Order,
+        r#match::{AuthenticatedMatchResult, MatchResult},
+    },
     verify_collaborative_proof,
     zk_circuits::valid_match_mpc::{
         ValidMatchMpcCircuit, ValidMatchMpcStatement, ValidMatchMpcWitness,
     },
-    Allocate, Open,
+    Allocate, Open, SharePublic,
 };
 use curve25519_dalek::scalar::Scalar;
 use futures::executor::block_on;
 use integration_helpers::mpc_network::mocks::PartyIDBeaverSource;
+use mpc_bulletproof::r1cs::R1CSProof;
 use mpc_ristretto::{
     beaver::SharedValueSource,
     fabric::AuthenticatedMpcFabric,
@@ -26,6 +32,20 @@ use tokio::runtime::Builder as TokioBuilder;
 use tracing::log;
 
 use super::{error::HandshakeManagerError, manager::HandshakeExecutor, state::HandshakeState};
+
+/// The type returned by the match process, including the result, the validity proof, and
+/// all witness/statement variables that must be revealed to complete the match
+#[derive(Clone, Debug)]
+pub struct HandshakeResult {
+    /// The plaintext, opened result of the match
+    pub match_: MatchResult,
+    /// The collaboratively proved proof of `VALID MATCH MPC`
+    pub proof: R1CSProof,
+    /// The first party's fee, opened to create fee notes
+    pub party0_fee: Fee,
+    /// The second party's fee, opened to create fee notes
+    pub party1_fee: Fee,
+}
 
 /// Match-centric implementations for the handshake manager
 impl HandshakeExecutor {
@@ -38,7 +58,7 @@ impl HandshakeExecutor {
         party_id: u64,
         handshake_state: HandshakeState,
         mpc_net: QuicTwoPartyNet,
-    ) -> Result<(), HandshakeManagerError> {
+    ) -> Result<HandshakeResult, HandshakeManagerError> {
         // Build a tokio runtime in the current thread for the MPC to run inside of
         let tid = thread::current().id();
         let tokio_runtime = TokioBuilder::new_multi_thread()
@@ -53,10 +73,10 @@ impl HandshakeExecutor {
             Self::execute_match_impl(party_id, handshake_state.to_owned(), mpc_net)
         });
 
-        block_on(join_handle).unwrap()?;
+        let res = block_on(join_handle).unwrap()?;
         log::info!("Finished match!");
 
-        Ok(())
+        Ok(res)
     }
 
     /// Implementation of the execute_match method that is wrapped in a Tokio runtime
@@ -64,7 +84,7 @@ impl HandshakeExecutor {
         party_id: u64,
         handshake_state: HandshakeState,
         mut mpc_net: QuicTwoPartyNet,
-    ) -> Result<(), HandshakeManagerError> {
+    ) -> Result<HandshakeResult, HandshakeManagerError> {
         log::info!("Matching order...");
         // Connect the network
         block_on(mpc_net.connect())
@@ -86,13 +106,35 @@ impl HandshakeExecutor {
 
         // The statement parameterization of the VALID MATCH MPC circuit is empty
         let statement = ValidMatchMpcStatement {};
-        Self::prove_valid_match(
+        let proof = Self::prove_valid_match(
             handshake_state.order,
             handshake_state.balance,
             statement,
-            match_res,
-            shared_fabric,
-        )
+            match_res.clone(),
+            shared_fabric.clone(),
+        )?;
+
+        // Open the fees for each party so that they may be used to create fee notes
+        let party0_fee = handshake_state
+            .fee
+            .share_public(0 /* owning_party */, shared_fabric.clone())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let party1_fee = handshake_state
+            .fee
+            .share_public(1 /* owning_party */, shared_fabric)
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+
+        // Open the match result
+        let match_open = match_res
+            .open_and_authenticate()
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+
+        Ok(HandshakeResult {
+            match_: match_open,
+            proof,
+            party0_fee,
+            party1_fee,
+        })
     }
 
     /// Execute the match MPC over the provisioned QUIC stream
@@ -122,7 +164,7 @@ impl HandshakeExecutor {
         statement: ValidMatchMpcStatement,
         match_res: AuthenticatedMatchResult<N, S>,
         fabric: SharedFabric<N, S>,
-    ) -> Result<(), HandshakeManagerError> {
+    ) -> Result<R1CSProof, HandshakeManagerError> {
         // Build a witness to the VALID MATCH MPC statement
         let witness = ValidMatchMpcWitness {
             my_order: order,
@@ -150,8 +192,10 @@ impl HandshakeExecutor {
         verify_collaborative_proof::<'_, N, S, ValidMatchMpcCircuit<'_, N, S>>(
             statement,
             opened_commit,
-            opened_proof,
+            opened_proof.clone(),
         )
-        .map_err(|err| HandshakeManagerError::VerificationError(err.to_string()))
+        .map_err(|err| HandshakeManagerError::VerificationError(err.to_string()))?;
+
+        Ok(opened_proof)
     }
 }
