@@ -28,7 +28,10 @@ use crate::{proof_generation::jobs::ProofJob, SizedWallet, MAX_FEES};
 
 use super::{
     error::ProofManagerError,
-    jobs::{ProofBundle, ProofManagerJob, ValidCommitmentsBundle, ValidWalletCreateBundle},
+    jobs::{
+        ProofBundle, ProofManagerJob, ValidCommitmentsBundle, ValidMatchEncryptBundle,
+        ValidWalletCreateBundle,
+    },
 };
 
 // -------------
@@ -92,6 +95,7 @@ impl ProofManager {
                     .send(ProofBundle::ValidWalletCreate(proof_bundle))
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))?
             }
+
             ProofJob::ValidCommitments {
                 wallet,
                 wallet_opening,
@@ -116,6 +120,14 @@ impl ProofManager {
                 job.response_channel
                     .send(ProofBundle::ValidCommitments(proof_bundle))
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))?
+            }
+
+            ProofJob::ValidMatchEncrypt {} => {
+                // Prove `VALID MATCH ENCRYPTION`
+                let proof_bundle = Self::prove_valid_match_encrypt()?;
+                job.response_channel
+                    .send(ProofBundle::ValidMatchEncryption(proof_bundle))
+                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))?;
             }
         };
 
@@ -206,5 +218,10 @@ impl ProofManager {
             statement,
             proof,
         })
+    }
+
+    /// Create a proof of `VALID MATCH ENCRYPTION`
+    fn prove_valid_match_encrypt() -> Result<ValidMatchEncryptBundle, ProofManagerError> {
+        unimplemented!("")
     }
 }
