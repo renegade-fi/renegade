@@ -1,5 +1,6 @@
 //! Groups base and derived types for the `Balance` object
 
+use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use mpc_bulletproof::{
     r1cs::{Prover, Variable, Verifier},
@@ -9,13 +10,12 @@ use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto,
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
+use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    errors::{MpcError, TypeConversionError},
-    mpc::SharedFabric,
-    Allocate, CommitProver, CommitSharedProver, CommitVerifier,
+    errors::MpcError, mpc::SharedFabric, Allocate, CommitProver, CommitSharedProver, CommitVerifier,
 };
 
 /// Represents the base type of a balance in tuple holding a reference to the
@@ -23,34 +23,9 @@ use crate::{
 #[derive(Clone, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Balance {
     /// The mint (ERC-20 token address) of the token in the balance
-    pub mint: u64,
+    pub mint: BigUint,
     /// The amount of the given token stored in this balance
     pub amount: u64,
-}
-
-/// Convert a vector of u64s to a Balance
-impl TryFrom<&[u64]> for Balance {
-    type Error = TypeConversionError;
-
-    fn try_from(values: &[u64]) -> Result<Self, Self::Error> {
-        if values.len() != 2 {
-            return Err(TypeConversionError(format!(
-                "expected array of length 2, got {:?}",
-                values.len()
-            )));
-        }
-
-        Ok(Self {
-            mint: values[0],
-            amount: values[1],
-        })
-    }
-}
-
-impl From<&Balance> for Vec<u64> {
-    fn from(balance: &Balance) -> Self {
-        vec![balance.mint, balance.amount]
-    }
 }
 
 /// Represents the constraint system allocated type of a balance in tuple holding a
@@ -79,7 +54,8 @@ impl CommitProver for Balance {
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (mint_comm, mint_var) = prover.commit(Scalar::from(self.mint), Scalar::random(rng));
+        let (mint_comm, mint_var) =
+            prover.commit(biguint_to_scalar(&self.mint), Scalar::random(rng));
         let (amount_comm, amount_var) =
             prover.commit(Scalar::from(self.amount), Scalar::random(rng));
 
@@ -135,9 +111,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Bala
         owning_party: u64,
         fabric: SharedFabric<N, S>,
     ) -> Result<Self::SharedType, Self::ErrorType> {
+        let mint_scalar = biguint_to_scalar(&self.mint);
+        let amount_scalar = Scalar::from(self.amount);
+
         let shared_values = fabric
             .borrow_fabric()
-            .batch_allocate_private_u64s(owning_party, &[self.amount, self.mint])
+            .batch_allocate_private_scalars(owning_party, &[mint_scalar, amount_scalar])
             .map_err(|err| MpcError::SharingError(err.to_string()))?;
 
         Ok(Self::SharedType {
@@ -189,7 +168,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
         let (shared_comm, shared_vars) = prover
             .batch_commit(
                 owning_party,
-                &[Scalar::from(self.mint), Scalar::from(self.amount)],
+                &[biguint_to_scalar(&self.mint), Scalar::from(self.amount)],
                 blinders,
             )
             .map_err(|err| MpcError::SharingError(err.to_string()))?;

@@ -7,7 +7,7 @@ use circuits::{
     Allocate, Open,
 };
 use integration_helpers::types::IntegrationTest;
-use num_bigint::BigInt;
+use num_bigint::BigUint;
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
@@ -21,8 +21,8 @@ fn check_no_match(res: &MatchResult) -> Result<(), String> {
     check_single_match(
         res,
         &MatchResult {
-            quote_mint: BigInt::from(0u64),
-            base_mint: BigInt::from(0u64),
+            quote_mint: BigUint::from(0u64),
+            base_mint: BigUint::from(0u64),
             quote_amount: 0,
             base_amount: 0,
             direction: 0,
@@ -170,8 +170,8 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
     //      [party1_buy_mint, party1_buy_amount, party2_buy_mint, party2_buy_amount]
     let expected_results = vec![
         MatchResult {
-            quote_mint: BigInt::from(1),
-            base_mint: BigInt::from(2),
+            quote_mint: BigUint::from(1u8),
+            base_mint: BigUint::from(2u8),
             quote_amount: 150,
             base_amount: 20,
             direction: 0,
@@ -180,8 +180,8 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
             min_amount_order_index: 0,
         },
         MatchResult {
-            quote_mint: BigInt::from(1),
-            base_mint: BigInt::from(2),
+            quote_mint: BigUint::from(1u8),
+            base_mint: BigUint::from(2u8),
             quote_amount: 100,
             base_amount: 10,
             direction: 1,
@@ -190,8 +190,8 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
             min_amount_order_index: 0,
         },
         MatchResult {
-            quote_mint: BigInt::from(1),
-            base_mint: BigInt::from(2),
+            quote_mint: BigUint::from(1u8),
+            base_mint: BigUint::from(2u8),
             quote_amount: 200,
             base_amount: 20,
             direction: 1,

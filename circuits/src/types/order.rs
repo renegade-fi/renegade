@@ -8,6 +8,7 @@ use crate::{
     },
     Allocate, CommitProver, CommitSharedProver, CommitVerifier,
 };
+use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
@@ -16,9 +17,9 @@ use mpc_bulletproof::{
 };
 use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto,
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource,
-    mpc_scalar::scalar_to_u64, network::MpcNetwork,
+    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
+use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
@@ -27,9 +28,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Order {
     /// The mint (ERC-20 contract address) of the quote token
-    pub quote_mint: u64,
+    pub quote_mint: BigUint,
     /// The mint (ERC-20 contract address) of the base token
-    pub base_mint: u64,
+    pub base_mint: BigUint,
     /// The side this order is for (0 = buy, 1 = sell)
     pub side: OrderSide,
     /// The limit price to be executed at, in units of quote per base
@@ -61,8 +62,8 @@ impl TryFrom<&[u64]> for Order {
         }
 
         Ok(Self {
-            quote_mint: value[0],
-            base_mint: value[1],
+            quote_mint: value[0].into(),
+            base_mint: value[1].into(),
             side: if value[2] == 0 {
                 OrderSide::Buy
             } else {
@@ -75,24 +76,6 @@ impl TryFrom<&[u64]> for Order {
     }
 }
 
-/// Convert an order to a vector of u64s
-///
-/// Useful for allocating, sharing, serialization, etc
-impl From<&Order> for Vec<u64> {
-    fn from(o: &Order) -> Self {
-        vec![
-            o.quote_mint,
-            o.base_mint,
-            o.side.into(),
-            // Re-interpret the bytes as a u64 and serialize that way, the conversion
-            // in the above trait implementation reverses this process directly
-            scalar_to_u64(&o.price.repr),
-            o.amount,
-            o.timestamp,
-        ]
-    }
-}
-
 /// The side of the market a given order is on
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OrderSide {
@@ -100,6 +83,16 @@ pub enum OrderSide {
     Buy = 0,
     /// Sell side
     Sell,
+}
+
+impl OrderSide {
+    /// Return the opposite direction to self
+    pub fn opposite(&self) -> OrderSide {
+        match self {
+            OrderSide::Buy => OrderSide::Sell,
+            OrderSide::Sell => OrderSide::Buy,
+        }
+    }
 }
 
 // Default for an empty order is buy
@@ -115,6 +108,22 @@ impl From<OrderSide> for u64 {
             OrderSide::Buy => 0,
             OrderSide::Sell => 1,
         }
+    }
+}
+
+impl From<u64> for OrderSide {
+    fn from(val: u64) -> Self {
+        match val {
+            0 => OrderSide::Buy,
+            1 => OrderSide::Sell,
+            _ => panic!("invalid order side"),
+        }
+    }
+}
+
+impl From<OrderSide> for Scalar {
+    fn from(side: OrderSide) -> Self {
+        Scalar::from(side as u8)
     }
 }
 
@@ -159,9 +168,9 @@ impl CommitProver for Order {
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
         let (quote_comm, quote_var) =
-            prover.commit(Scalar::from(self.quote_mint), Scalar::random(rng));
+            prover.commit(biguint_to_scalar(&self.quote_mint), Scalar::random(rng));
         let (base_comm, base_var) =
-            prover.commit(Scalar::from(self.base_mint), Scalar::random(rng));
+            prover.commit(biguint_to_scalar(&self.base_mint), Scalar::random(rng));
         let (side_comm, side_var) =
             prover.commit(Scalar::from(self.side as u64), Scalar::random(rng));
         let (price_var, price_comm) = self.price.commit_prover(rng, prover).unwrap();
@@ -257,19 +266,18 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Orde
         owning_party: u64,
         fabric: SharedFabric<N, S>,
     ) -> Result<Self::SharedType, Self::ErrorType> {
+        // Convert all elements of the order to a scalar, then share
+        let field_scalars = vec![
+            biguint_to_scalar(&self.quote_mint),
+            biguint_to_scalar(&self.base_mint),
+            self.side.into(),
+            self.price.repr,
+            self.amount.into(),
+            self.timestamp.into(),
+        ];
         let shared_values = fabric
             .borrow_fabric()
-            .batch_allocate_private_u64s(
-                owning_party,
-                &[
-                    self.quote_mint,
-                    self.base_mint,
-                    self.side.into(),
-                    scalar_to_u64(&self.price.repr),
-                    self.amount,
-                    self.timestamp,
-                ],
-            )
+            .batch_allocate_private_scalars(owning_party, &field_scalars)
             .map_err(|err| MpcError::SharingError(err.to_string()))?;
 
         Ok(Self::SharedType {
@@ -347,8 +355,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
             .batch_commit(
                 owning_party,
                 &[
-                    Scalar::from(self.quote_mint),
-                    Scalar::from(self.base_mint),
+                    biguint_to_scalar(&self.quote_mint),
+                    biguint_to_scalar(&self.base_mint),
                     Scalar::from(self.side as u64),
                     Scalar::from(self.price.to_owned()),
                     Scalar::from(self.amount),

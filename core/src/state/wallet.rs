@@ -137,7 +137,7 @@ pub struct Wallet {
     pub orders: HashMap<OrderIdentifier, Order>,
     /// A mapping of mint (u64) to Balance information
     /// TODO: Key by BigUint to adequately represent mints
-    pub balances: HashMap<u64, Balance>,
+    pub balances: HashMap<BigUint, Balance>,
     /// A list of the fees in this wallet
     pub fees: Vec<Fee>,
     /// A list of the public keys in the wallet
@@ -286,8 +286,8 @@ impl WalletIndex {
 
         // The mint the local party will be spending if the order is matched
         let order_mint = match order.side {
-            OrderSide::Buy => order.quote_mint,
-            OrderSide::Sell => order.base_mint,
+            OrderSide::Buy => order.quote_mint.clone(),
+            OrderSide::Sell => order.base_mint.clone(),
         };
 
         // The maximum quantity of the mint that the local party will be spending
@@ -307,9 +307,7 @@ impl WalletIndex {
         }
 
         let fee = locked_wallet.fees.get(0 /* index */)?;
-        let fee_balance = locked_wallet
-            .balances
-            .get(&fee.gas_addr.clone().try_into().unwrap())?;
+        let fee_balance = locked_wallet.balances.get(&fee.gas_addr.clone())?;
         if fee_balance.amount < fee.gas_token_amount {
             return None;
         }

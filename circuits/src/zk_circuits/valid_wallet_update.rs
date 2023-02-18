@@ -647,7 +647,7 @@ where
 mod valid_wallet_update_tests {
     use std::ops::Neg;
 
-    use crypto::fields::prime_field_to_scalar;
+    use crypto::fields::{biguint_to_scalar, prime_field_to_scalar};
     use curve25519_dalek::scalar::Scalar;
     use merlin::Transcript;
     use mpc_bulletproof::{
@@ -970,8 +970,8 @@ mod valid_wallet_update_tests {
 
         // Invalid, cannot have two orders of the same pair
         new_wallet.orders[0].timestamp = timestamp;
-        new_wallet.orders[0].quote_mint = new_wallet.orders[1].quote_mint;
-        new_wallet.orders[0].base_mint = new_wallet.orders[1].base_mint;
+        new_wallet.orders[0].quote_mint = new_wallet.orders[1].quote_mint.clone();
+        new_wallet.orders[0].base_mint = new_wallet.orders[1].base_mint.clone();
 
         initial_wallet.orders[1] = Order::default();
 
@@ -1032,7 +1032,7 @@ mod valid_wallet_update_tests {
         initial_wallet.orders[1] = Order::default();
 
         // Invalid, multiple balances of the same mint
-        new_wallet.balances[0].mint = new_wallet.balances[1].mint;
+        new_wallet.balances[0].mint = new_wallet.balances[1].mint.clone();
 
         // Create a mock Merkle opening for the old wallet
         let random_index = rng.next_u32() % (2u32.pow(MERKLE_HEIGHT.try_into().unwrap()));
@@ -1091,7 +1091,7 @@ mod valid_wallet_update_tests {
         initial_wallet.orders[1] = Order::default();
 
         // Modify the balance in balances[1] to deduct an amount for the internal transfer
-        let internal_transfer_mint = new_wallet.balances[1].mint;
+        let internal_transfer_mint = new_wallet.balances[1].mint.clone();
         let internal_transfer_volume = new_wallet.balances[1].amount - 1; // all but 1 unit
         new_wallet.balances[1].amount -= internal_transfer_volume;
 
@@ -1112,7 +1112,7 @@ mod valid_wallet_update_tests {
                 indices: mock_opening_indices,
             },
             internal_transfer: (
-                Scalar::from(internal_transfer_mint),
+                biguint_to_scalar(&internal_transfer_mint),
                 Scalar::from(internal_transfer_volume),
             ),
         };
@@ -1155,7 +1155,7 @@ mod valid_wallet_update_tests {
         initial_wallet.orders[1] = Order::default();
 
         // Modify the balance in balances[1] to deduct an amount for the internal transfer
-        let internal_transfer_mint = new_wallet.balances[1].mint;
+        let internal_transfer_mint = new_wallet.balances[1].mint.clone();
         let internal_transfer_volume = new_wallet.balances[1].amount - 1; // all but 1 unit
 
         // Invalid, prover tries to decrease their balance by a smaller amount than transferred
@@ -1178,7 +1178,7 @@ mod valid_wallet_update_tests {
                 indices: mock_opening_indices,
             },
             internal_transfer: (
-                Scalar::from(internal_transfer_mint),
+                biguint_to_scalar(&internal_transfer_mint),
                 Scalar::from(internal_transfer_volume),
             ),
         };
@@ -1221,7 +1221,7 @@ mod valid_wallet_update_tests {
         initial_wallet.orders[1] = Order::default();
 
         // Modify the balance in balances[1] to deduct an amount for the internal transfer
-        let external_transfer_mint = new_wallet.balances[1].mint;
+        let external_transfer_mint = new_wallet.balances[1].mint.clone();
         let external_transfer_volume = new_wallet.balances[1].amount - 1; // all but 1 unit
         let external_transfer_direction = 1u64; // withdraw
 
@@ -1262,7 +1262,7 @@ mod valid_wallet_update_tests {
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
             external_transfer: (
-                Scalar::from(external_transfer_mint),
+                biguint_to_scalar(&external_transfer_mint),
                 Scalar::from(external_transfer_volume),
                 Scalar::from(external_transfer_direction),
             ),
@@ -1288,7 +1288,7 @@ mod valid_wallet_update_tests {
         initial_wallet.orders[1] = Order::default();
 
         // Modify the balance in balances[1] to deduct an amount for the internal transfer
-        let external_transfer_mint = new_wallet.balances[1].mint;
+        let external_transfer_mint = new_wallet.balances[1].mint.clone();
         let external_transfer_volume = new_wallet.balances[1].amount - 1; // all but 1 unit
         let external_transfer_direction = 0u64; // withdraw
 
@@ -1329,7 +1329,7 @@ mod valid_wallet_update_tests {
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
             external_transfer: (
-                Scalar::from(external_transfer_mint),
+                biguint_to_scalar(&external_transfer_mint),
                 Scalar::from(external_transfer_volume),
                 Scalar::from(external_transfer_direction),
             ),
@@ -1355,7 +1355,7 @@ mod valid_wallet_update_tests {
         initial_wallet.orders[1] = Order::default();
 
         // Modify the balance in balances[1] to deduct an amount for the internal transfer
-        let external_transfer_mint = new_wallet.balances[1].mint;
+        let external_transfer_mint = new_wallet.balances[1].mint.clone();
         let external_transfer_volume = new_wallet.balances[1].amount - 1; // all but 1 unit
         let external_transfer_direction = 1u64; // withdraw
 
@@ -1397,7 +1397,7 @@ mod valid_wallet_update_tests {
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
             external_transfer: (
-                Scalar::from(external_transfer_mint),
+                biguint_to_scalar(&external_transfer_mint),
                 Scalar::from(external_transfer_volume),
                 Scalar::from(external_transfer_direction),
             ),
@@ -1423,7 +1423,7 @@ mod valid_wallet_update_tests {
         initial_wallet.orders[1] = Order::default();
 
         // Modify the balance in balances[1] to deduct an amount for the internal transfer
-        let external_transfer_mint = new_wallet.balances[1].mint;
+        let external_transfer_mint = new_wallet.balances[1].mint.clone();
         let external_transfer_volume = new_wallet.balances[1].amount - 1; // all but 1 unit
         let external_transfer_direction = 0u64; // withdraw
 
@@ -1465,7 +1465,7 @@ mod valid_wallet_update_tests {
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
             external_transfer: (
-                Scalar::from(external_transfer_mint),
+                biguint_to_scalar(&external_transfer_mint),
                 Scalar::from(external_transfer_volume),
                 Scalar::from(external_transfer_direction),
             ),
@@ -1680,7 +1680,7 @@ mod valid_wallet_update_tests {
         // Invalid, the user does not have the withdrawn balance present
         // We do not modify the balance here, because we cannot underflow a u64; below we
         // replace the balance in the witness with an underflowed scalar
-        let external_transfer_mint = new_wallet.balances[1].mint;
+        let external_transfer_mint = new_wallet.balances[1].mint.clone();
         let external_transfer_volume = new_wallet.balances[1].amount + 1; // overdraw
         let external_transfer_direction = 1u64; // withdraw
 
@@ -1719,7 +1719,7 @@ mod valid_wallet_update_tests {
             wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
             external_transfer: (
-                Scalar::from(external_transfer_mint),
+                biguint_to_scalar(&external_transfer_mint),
                 Scalar::from(external_transfer_volume),
                 Scalar::from(external_transfer_direction),
             ),

@@ -211,6 +211,19 @@ pub trait Allocate<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     ) -> Result<Self::SharedType, Self::ErrorType>;
 }
 
+/// Defines functionality to allocate a value as a public, shared value in an MPC network
+pub trait SharePublic<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>: Sized {
+    /// The type of error thrown when sharing fails
+    type ErrorType;
+
+    /// Share the value with the counterparty
+    fn share_public(
+        &self,
+        owning_party: u64,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self, Self::ErrorType>;
+}
+
 /// Defines functionality to allocate a base type as a shared commitment in a multi-prover
 /// constraint system
 pub trait CommitSharedProver<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
@@ -490,14 +503,17 @@ pub mod native_helpers {
 
         // Hash the balances into the state
         for balance in wallet.balances.iter() {
-            hasher.absorb(&vec![balance.mint, balance.amount]);
+            hasher.absorb(&biguint_to_prime_field(&balance.mint));
+            hasher.absorb(&balance.amount);
         }
 
         // Hash the orders into the state
         for order in wallet.orders.iter() {
             hasher.absorb(&vec![
-                order.quote_mint,
-                order.base_mint,
+                biguint_to_prime_field(&order.quote_mint),
+                biguint_to_prime_field(&order.base_mint),
+            ]);
+            hasher.absorb(&vec![
                 order.side as u64,
                 order.price.to_owned().into(),
                 order.amount,
@@ -530,15 +546,14 @@ pub mod native_helpers {
 
     /// Compute the commitment to a note
     pub fn compute_note_commitment(note: &Note, pk_settle_receiver: Scalar) -> DalekRistrettoField {
+        // Absorb the elements of the note in order into the sponge
         let mut hasher = PoseidonSponge::new(&default_poseidon_params());
+        hasher.absorb(&biguint_to_prime_field(&note.mint1));
+        hasher.absorb(&vec![note.volume1, note.direction1 as u64]);
+        hasher.absorb(&biguint_to_prime_field(&note.mint2));
+        hasher.absorb(&vec![note.volume2, note.direction2 as u64]);
+        hasher.absorb(&biguint_to_prime_field(&note.fee_mint));
         hasher.absorb(&vec![
-            note.mint1,
-            note.volume1,
-            note.direction1 as u64,
-            note.mint2,
-            note.volume2,
-            note.direction2 as u64,
-            note.fee_mint,
             note.fee_volume,
             note.fee_direction as u64,
             note.type_ as u64,

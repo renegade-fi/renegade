@@ -561,7 +561,7 @@ mod valid_commitments_test {
 
         // Invalid, fake balance with a larger balance than the wallet has access to
         let balance = Balance {
-            mint: 2u64,
+            mint: 2u8.into(),
             amount: 20u64,
         };
         let fee_balance = wallet.balances[0].to_owned();
@@ -606,7 +606,7 @@ mod valid_commitments_test {
         let balance = wallet.balances[0].to_owned();
         // Invalid, fake balance with a larger balance than the wallet has access to
         let fee_balance = Balance {
-            mint: 1,
+            mint: 1u8.into(),
             amount: 10,
         };
         let fee = wallet.fees[0].to_owned();
@@ -646,8 +646,8 @@ mod valid_commitments_test {
     fn test_invalid_order() {
         let wallet: SizedWallet = INITIAL_WALLET.clone();
         let order = Order {
-            quote_mint: 1,
-            base_mint: 3,
+            quote_mint: 1u8.into(),
+            base_mint: 3u8.into(),
             side: OrderSide::Buy,
             price: FixedPoint::from(10.),
             amount: 15,

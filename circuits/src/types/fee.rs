@@ -6,9 +6,9 @@ use crate::{
         AuthenticatedCommittedFixedPoint, AuthenticatedFixedPoint, AuthenticatedFixedPointVar,
         CommittedFixedPoint, FixedPoint, FixedPointVar,
     },
-    Allocate, CommitProver, CommitSharedProver, CommitVerifier,
+    Allocate, CommitProver, CommitSharedProver, CommitVerifier, SharePublic,
 };
-use crypto::fields::biguint_to_scalar;
+use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
@@ -238,6 +238,38 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Fee 
             gas_addr: shared_values[1].to_owned(),
             gas_token_amount: shared_values[2].to_owned(),
             percentage_fee: AuthenticatedFixedPoint {
+                repr: shared_values[3].to_owned(),
+            },
+        })
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> SharePublic<N, S> for Fee {
+    type ErrorType = MpcError;
+
+    fn share_public(
+        &self,
+        owning_party: u64,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self, Self::ErrorType> {
+        let shared_values = fabric
+            .borrow_fabric()
+            .batch_shared_plaintext_scalars(
+                owning_party,
+                &[
+                    biguint_to_scalar(&self.settle_key),
+                    biguint_to_scalar(&self.gas_addr),
+                    Scalar::from(self.gas_token_amount),
+                    Scalar::from(self.percentage_fee),
+                ],
+            )
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+
+        Ok(Fee {
+            settle_key: scalar_to_biguint(&shared_values[0].to_owned()),
+            gas_addr: scalar_to_biguint(&shared_values[1].to_owned()),
+            gas_token_amount: scalar_to_u64(&shared_values[2]),
+            percentage_fee: FixedPoint {
                 repr: shared_values[3].to_owned(),
             },
         })
