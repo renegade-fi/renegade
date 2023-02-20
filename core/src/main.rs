@@ -30,6 +30,7 @@ use error::CoordinatorError;
 use gossip::worker::GossipServerConfig;
 use handshake::worker::HandshakeManagerConfig;
 use network_manager::worker::NetworkManagerConfig;
+use num_bigint::BigUint;
 use price_reporter::worker::PriceReporterManagerConfig;
 use tokio::{select, sync::mpsc};
 use tracing::log::{self, LevelFilter};
@@ -58,9 +59,13 @@ pub(crate) type CancelChannel = Receiver<()>;
 // | Global Constants |
 // --------------------
 
+// TODO: Move these constants to a more discoverable location
 lazy_static! {
     /// The fee the protocol takes on a match; one basis point
     static ref PROTOCOL_FEE: FixedPoint = FixedPoint::from(0.0001);
+    /// The public settle key of the protocol wallet
+    /// Dummy value for now
+    static ref PROTOCOL_SETTLE_KEY: BigUint = BigUint::from(0u8);
 }
 
 /// The system-wide value of MAX_BALANCES; the number of allowable balances a wallet holds

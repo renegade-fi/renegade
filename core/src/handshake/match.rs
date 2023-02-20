@@ -20,7 +20,7 @@ use circuits::{
     },
     Allocate, Open, SharePublic,
 };
-use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
+use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::scalar::Scalar;
 use futures::executor::block_on;
 use integration_helpers::mpc_network::mocks::PartyIDBeaverSource;
@@ -30,7 +30,6 @@ use mpc_ristretto::{
     fabric::AuthenticatedMpcFabric,
     network::{MpcNetwork, QuicTwoPartyNet},
 };
-use num_bigint::BigUint;
 use tokio::runtime::Builder as TokioBuilder;
 use tracing::log;
 
@@ -49,9 +48,17 @@ pub struct HandshakeResult {
     /// The second party's fee, opened to create fee notes
     pub party1_fee: Fee,
     /// The Poseidon hash of the first party's wallet randomness
-    pub party0_randomness_hash: BigUint,
+    pub party0_randomness_hash: Scalar,
     /// The Poseidon hash of the second party's wallet randomness
-    pub party1_randomness_hash: BigUint,
+    pub party1_randomness_hash: Scalar,
+    /// The public settle key of the first party
+    pub pk_settle0: Scalar,
+    /// The public settle key of the second party
+    pub pk_settle1: Scalar,
+    /// The public settle key of the cluster managing the first party's order
+    pub pk_settle_cluster0: Scalar,
+    /// The public settle key fo the cluster managing the second party's order
+    pub pk_settle_cluster1: Scalar,
 }
 
 /// Match-centric implementations for the handshake manager
@@ -62,6 +69,7 @@ impl HandshakeExecutor {
     /// Tokio runtime. The QUIC implementation in quinn is async and expects
     /// to be run inside of a Tokio runtime
     pub(super) fn execute_match(
+        &self,
         party_id: u64,
         handshake_state: HandshakeState,
         mpc_net: QuicTwoPartyNet,
@@ -76,8 +84,9 @@ impl HandshakeExecutor {
             .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
 
         // Wrap the current thread's execution in a Tokio blocking thread
+        let self_clone = self.clone();
         let join_handle = tokio_runtime.spawn_blocking(move || {
-            Self::execute_match_impl(party_id, handshake_state.to_owned(), mpc_net)
+            self_clone.execute_match_impl(party_id, handshake_state.to_owned(), mpc_net)
         });
 
         let res = block_on(join_handle).unwrap()?;
@@ -88,6 +97,7 @@ impl HandshakeExecutor {
 
     /// Implementation of the execute_match method that is wrapped in a Tokio runtime
     fn execute_match_impl(
+        &self,
         party_id: u64,
         handshake_state: HandshakeState,
         mut mpc_net: QuicTwoPartyNet,
@@ -114,48 +124,14 @@ impl HandshakeExecutor {
         // The statement parameterization of the VALID MATCH MPC circuit is empty
         let statement = ValidMatchMpcStatement {};
         let proof = Self::prove_valid_match(
-            handshake_state.order,
-            handshake_state.balance,
+            handshake_state.order.clone(),
+            handshake_state.balance.clone(),
             statement,
             match_res.clone(),
             shared_fabric.clone(),
         )?;
 
-        // Open the fees for each party so that they may be used to create fee notes
-        let party0_fee = handshake_state
-            .fee
-            .share_public(0 /* owning_party */, shared_fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let party1_fee = handshake_state
-            .fee
-            .share_public(1 /* owning_party */, shared_fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-
-        // Open the wallet randomness hash for each party, used to blind the notes
-        let randomness_hash =
-            compute_poseidon_hash(&[biguint_to_scalar(&handshake_state.wallet_randomness)]);
-        let party0_randomness_hash = shared_fabric
-            .borrow_fabric()
-            .share_plaintext_scalar(0 /* owning_party */, randomness_hash)
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let party1_randomness_hash = shared_fabric
-            .borrow_fabric()
-            .share_plaintext_scalar(1 /* owning_party */, randomness_hash)
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-
-        // Open the match result
-        let match_open = match_res
-            .open_and_authenticate()
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-
-        Ok(HandshakeResult {
-            match_: match_open,
-            proof,
-            party0_fee,
-            party1_fee,
-            party0_randomness_hash: scalar_to_biguint(&party0_randomness_hash),
-            party1_randomness_hash: scalar_to_biguint(&party1_randomness_hash),
-        })
+        self.build_handshake_result(match_res, proof, handshake_state, shared_fabric)
     }
 
     /// Execute the match MPC over the provisioned QUIC stream
@@ -218,5 +194,86 @@ impl HandshakeExecutor {
         .map_err(|err| HandshakeManagerError::VerificationError(err.to_string()))?;
 
         Ok(opened_proof)
+    }
+
+    /// Build the handshake result from a match and proof
+    fn build_handshake_result<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+        &self,
+        shared_match_res: AuthenticatedMatchResult<N, S>,
+        proof: R1CSProof,
+        handshake_state: HandshakeState,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<HandshakeResult, HandshakeManagerError> {
+        // Exchange fees, randomness, and keys before opening the match result
+        let party0_fee = handshake_state
+            .fee
+            .share_public(0 /* owning_party */, fabric.clone())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let party1_fee = handshake_state
+            .fee
+            .share_public(1 /* owning_party */, fabric.clone())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+
+        // Lookup the wallet that the matched order belongs to in the global state
+        let wallet = {
+            let locked_wallet_index = self.global_state.read_wallet_index();
+            let wallet_id = locked_wallet_index
+                .get_wallet_for_order(&handshake_state.local_order_id)
+                .ok_or_else(|| {
+                    HandshakeManagerError::StateNotFound(
+                        "couldn't find wallet for order".to_string(),
+                    )
+                })?;
+            locked_wallet_index
+                .read_wallet(&wallet_id)
+                .map(|wallet| wallet.clone())
+                .ok_or_else(|| {
+                    HandshakeManagerError::StateNotFound("no wallet found for ID".to_string())
+                })?
+        }; // locked_wallet_index released
+
+        // Share the wallet randomness and keys with the counterparty
+        let my_randomness = biguint_to_scalar(&wallet.randomness);
+        let party0_randomness = fabric
+            .borrow_fabric()
+            .share_plaintext_scalar(0 /* owning_party */, my_randomness)
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let party1_randomness = fabric
+            .borrow_fabric()
+            .share_plaintext_scalar(1 /* owning_party */, my_randomness)
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+
+        let party0_randomness_hash = compute_poseidon_hash(&[party0_randomness]);
+        let party1_randomness_hash = compute_poseidon_hash(&[party1_randomness]);
+
+        // Share the wallet public settle keys with the counterparty
+        let my_key = wallet.public_keys.pk_settle;
+        let party0_key = fabric
+            .borrow_fabric()
+            .share_plaintext_scalar(0 /* owning_party */, my_key)
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let party1_key = fabric
+            .borrow_fabric()
+            .share_plaintext_scalar(1 /* owning_party */, my_key)
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+
+        // Open the match result and build the handshake result
+        let match_res_open = shared_match_res
+            .open_and_authenticate()
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+
+        Ok(HandshakeResult {
+            match_: match_res_open,
+            proof,
+            party0_fee,
+            party1_fee,
+            party0_randomness_hash,
+            party1_randomness_hash,
+            pk_settle0: party0_key,
+            pk_settle1: party1_key,
+            // Dummy values for now
+            pk_settle_cluster0: Scalar::zero(),
+            pk_settle_cluster1: Scalar::zero(),
+        })
     }
 }

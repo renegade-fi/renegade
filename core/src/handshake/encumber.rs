@@ -4,18 +4,30 @@
 //!     2. Proving `VALID MATCH ENCRYPTION`
 //!     3. Submitting the proofs and data to the contract
 
-use circuits::types::{
-    fee::Fee,
-    note::{Note, NoteType},
-    order::OrderSide,
-    r#match::MatchResult,
+use std::convert::TryInto;
+
+use circuits::{
+    native_helpers::compute_note_commitment,
+    types::{
+        fee::Fee,
+        note::{Note, NoteType},
+        order::OrderSide,
+        r#match::MatchResult,
+    },
+    zk_circuits::valid_match_encryption::{
+        ValidMatchEncryptionStatement, ValidMatchEncryptionWitness,
+    },
+    zk_gadgets::elgamal::{ElGamalCiphertext, DEFAULT_ELGAMAL_GENERATOR},
 };
 
+use crypto::fields::{biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint};
 use curve25519_dalek::scalar::Scalar;
+use integration_helpers::mpc_network::field::get_ristretto_group_modulus;
 use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use num_bigint::BigUint;
+use rand_core::OsRng;
 
-use crate::PROTOCOL_FEE;
+use crate::{PROTOCOL_FEE, PROTOCOL_SETTLE_KEY};
 
 use super::{error::HandshakeManagerError, manager::HandshakeExecutor, r#match::HandshakeResult};
 
@@ -37,7 +49,112 @@ impl HandshakeExecutor {
                 handshake_result.party1_randomness_hash,
             );
 
+        // Create encryptions of all note fields that are not known ahead of time
+        let mut randomness_values = Vec::new();
+
+        // Encrypt the volumes of the first party's note under their key
+        let pk_settle0_bigint = scalar_to_biguint(&handshake_result.pk_settle0);
+        let (volume1_ciphertext1, randomness) =
+            Self::encrypt_scalar(party0_note.volume1.into(), &pk_settle0_bigint);
+        randomness_values.push(randomness);
+
+        let (volume2_ciphertext1, randomness) =
+            Self::encrypt_scalar(party0_note.volume2.into(), &pk_settle0_bigint);
+        randomness_values.push(randomness);
+
+        // Encrypt the volumes of the second party's note under their key
+        let pk_settle1_bigint = scalar_to_biguint(&handshake_result.pk_settle1);
+        let (volume1_ciphertext2, randomness) =
+            Self::encrypt_scalar(party1_note.volume1.into(), &pk_settle1_bigint);
+        randomness_values.push(randomness);
+
+        let (volume2_ciphertext2, randomness) =
+            Self::encrypt_scalar(party1_note.volume2.into(), &pk_settle1_bigint);
+        randomness_values.push(randomness);
+
+        // Encrypt the mints, volumes and randomness of the protocol note under the protocol key
+        let (mint1_protocol_ciphertext, randomness) = Self::encrypt_scalar(
+            biguint_to_scalar(&protocol_note.mint1),
+            &PROTOCOL_SETTLE_KEY,
+        );
+        randomness_values.push(randomness);
+
+        let (mint2_protocol_ciphertext, randomness) = Self::encrypt_scalar(
+            biguint_to_scalar(&protocol_note.mint2),
+            &PROTOCOL_SETTLE_KEY,
+        );
+        randomness_values.push(randomness);
+
+        let (volume1_protocol_ciphertext, randomness) =
+            Self::encrypt_scalar(protocol_note.volume1.into(), &PROTOCOL_SETTLE_KEY);
+        randomness_values.push(randomness);
+
+        let (volume2_protocol_ciphertext, randomness) =
+            Self::encrypt_scalar(protocol_note.volume2.into(), &PROTOCOL_SETTLE_KEY);
+        randomness_values.push(randomness);
+
+        let (randomness_protocol_ciphertext, encryption_randomness) = Self::encrypt_scalar(
+            biguint_to_scalar(&protocol_note.randomness),
+            &PROTOCOL_SETTLE_KEY,
+        );
+        randomness_values.push(encryption_randomness);
+
+        // Construct a statement and witness for `VALID MATCH ENCRYPTION`
+        #[allow(unused_variables)]
+        let witness = ValidMatchEncryptionWitness {
+            match_res: handshake_result.match_,
+            party0_fee: handshake_result.party0_fee,
+            party1_fee: handshake_result.party1_fee,
+            party0_randomness_hash: handshake_result.party0_randomness_hash,
+            party1_randomness_hash: handshake_result.party1_randomness_hash,
+            party0_note: party0_note.clone(),
+            party1_note: party1_note.clone(),
+            relayer0_note: relayer0_note.clone(),
+            relayer1_note: relayer1_note.clone(),
+            protocol_note: protocol_note.clone(),
+            elgamal_randomness: randomness_values.try_into().unwrap(),
+        };
+
+        #[allow(unused_variables)]
+        let statement = ValidMatchEncryptionStatement {
+            party0_note_commit: Self::note_commit(&party0_note, handshake_result.pk_settle0),
+            party1_note_commit: Self::note_commit(&party1_note, handshake_result.pk_settle1),
+            relayer0_note_commit: Self::note_commit(
+                &relayer0_note,
+                handshake_result.pk_settle_cluster0,
+            ),
+            relayer1_note_commit: Self::note_commit(
+                &relayer1_note,
+                handshake_result.pk_settle_cluster1,
+            ),
+            protocol_note_commit: Self::note_commit(
+                &protocol_note,
+                biguint_to_scalar(&PROTOCOL_SETTLE_KEY),
+            ),
+            pk_settle_party0: handshake_result.pk_settle0,
+            pk_settle_party1: handshake_result.pk_settle1,
+            pk_settle_relayer0: handshake_result.pk_settle_cluster0,
+            pk_settle_relayer1: handshake_result.pk_settle_cluster1,
+            pk_settle_protocol: biguint_to_scalar(&PROTOCOL_SETTLE_KEY),
+            protocol_fee: *PROTOCOL_FEE,
+            volume1_ciphertext1,
+            volume2_ciphertext1,
+            volume1_ciphertext2,
+            volume2_ciphertext2,
+            mint1_protocol_ciphertext,
+            volume1_protocol_ciphertext,
+            mint2_protocol_ciphertext,
+            volume2_protocol_ciphertext,
+            randomness_protocol_ciphertext,
+        };
+
         Ok(())
+    }
+
+    /// A wrapper around the `circuits` crate's note commitment helper that handles type conversion
+    fn note_commit(note: &Note, receiver_key: Scalar) -> Scalar {
+        let commitment = compute_note_commitment(note, receiver_key);
+        prime_field_to_scalar(&commitment)
     }
 
     /// Create notes from a match result
@@ -51,8 +168,8 @@ impl HandshakeExecutor {
         match_res: &MatchResult,
         party0_fee: &Fee,
         party1_fee: &Fee,
-        party0_randomness_hash: BigUint,
-        party1_randomness_hash: BigUint,
+        party0_randomness_hash: Scalar,
+        party1_randomness_hash: Scalar,
     ) -> (Note, Note, Note, Note, Note) {
         // The match direction corresponds to the direction that party 0 goes in the match
         // i.e. the match direction is 0 (buy) if party 0 is buying the base and selling the quote
@@ -106,7 +223,7 @@ impl HandshakeExecutor {
             fee_volume: party0_fee.gas_token_amount,
             fee_direction: OrderSide::Sell,
             type_: NoteType::Match,
-            randomness: party0_randomness_hash.clone(),
+            randomness: scalar_to_biguint(&party0_randomness_hash),
         };
 
         let party1_note = Note {
@@ -120,7 +237,7 @@ impl HandshakeExecutor {
             fee_volume: party1_fee.gas_token_amount,
             fee_direction: OrderSide::Sell,
             type_: NoteType::Match,
-            randomness: party1_randomness_hash.clone(),
+            randomness: scalar_to_biguint(&party1_randomness_hash),
         };
 
         // Create the relayer notes
@@ -159,7 +276,7 @@ impl HandshakeExecutor {
             fee_volume: party0_fee.gas_token_amount,
             fee_direction: OrderSide::Buy,
             type_: NoteType::InternalTransfer,
-            randomness: &party0_randomness_hash + 1u8,
+            randomness: scalar_to_biguint(&(party0_randomness_hash + Scalar::one())),
         };
 
         let relayer1_note = Note {
@@ -173,7 +290,7 @@ impl HandshakeExecutor {
             fee_volume: party1_fee.gas_token_amount,
             fee_direction: OrderSide::Buy,
             type_: NoteType::InternalTransfer,
-            randomness: &party1_randomness_hash + 1u8,
+            randomness: scalar_to_biguint(&(party1_randomness_hash + Scalar::one())),
         };
 
         // Build the protocol note
@@ -191,7 +308,7 @@ impl HandshakeExecutor {
             fee_volume: 0,
             fee_direction: OrderSide::Buy,
             type_: NoteType::InternalTransfer,
-            randomness: party0_randomness_hash + party1_randomness_hash,
+            randomness: scalar_to_biguint(&(party0_randomness_hash + party1_randomness_hash)),
         };
 
         (
@@ -200,6 +317,30 @@ impl HandshakeExecutor {
             relayer0_note,
             relayer1_note,
             protocol_note,
+        )
+    }
+
+    /// Create an ElGamal encryption of the given value
+    ///
+    /// Return both the encryption (used as a public variable) and the randomness
+    /// used to generate the encryption (used as a witness variable)
+    fn encrypt_scalar(val: Scalar, pubkey: &BigUint) -> (ElGamalCiphertext, Scalar) {
+        let mut rng = OsRng {};
+        let randomness = scalar_to_biguint(&Scalar::random(&mut rng));
+
+        let field_mod = get_ristretto_group_modulus();
+        let ciphertext1 =
+            scalar_to_biguint(&DEFAULT_ELGAMAL_GENERATOR).modpow(&randomness, &field_mod);
+        let shared_secret = pubkey.modpow(&randomness, &field_mod);
+
+        let encrypted_message = (shared_secret * scalar_to_biguint(&val)) % &field_mod;
+
+        (
+            ElGamalCiphertext {
+                partial_shared_secret: biguint_to_scalar(&ciphertext1),
+                encrypted_message: biguint_to_scalar(&encrypted_message),
+            },
+            biguint_to_scalar(&randomness),
         )
     }
 }

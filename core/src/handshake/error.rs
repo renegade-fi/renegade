@@ -5,8 +5,6 @@ use std::fmt::Display;
 /// The core error type for the handshake manager
 #[derive(Clone, Debug)]
 pub enum HandshakeManagerError {
-    /// A handshake was abandoned for the reason given in the parameter
-    Abandoned(String),
     /// An error while collaboratively proving a statement
     Multiprover(String),
     /// An invalid request ID was passed in a message; i.e. the request ID is not known
@@ -20,6 +18,11 @@ pub enum HandshakeManagerError {
     SendMessage(String),
     /// Error while setting up the handshake manager
     SetupError(String),
+    /// A state element was referenced, but cannot be found locally
+    ///
+    /// This may happen if, for example, an order is cancelled during the course
+    /// of a match
+    StateNotFound(String),
     /// Error resulting from a cancellation signal
     Cancelled(String),
 }
