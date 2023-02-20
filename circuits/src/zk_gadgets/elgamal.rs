@@ -27,7 +27,7 @@ lazy_static! {
     /// This generator is intended to be used with the Ristretto scalar field of prime
     /// order defined here:
     /// https://docs.rs/curve25519-dalek-ng/latest/curve25519_dalek_ng/scalar/index.html
-    pub(crate) static ref DEFAULT_ELGAMAL_GENERATOR: Scalar = Scalar::from(2u64);
+    pub static ref DEFAULT_ELGAMAL_GENERATOR: Scalar = Scalar::from(2u64);
 }
 
 /// Implements an ElGamal gadget that verifies encryption of some plaintext under a private key

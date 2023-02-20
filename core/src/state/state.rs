@@ -13,7 +13,6 @@ use libp2p::{
     identity::{self, Keypair},
     Multiaddr,
 };
-use num_bigint::BigUint;
 use rand::{distributions::WeightedIndex, prelude::Distribution, thread_rng};
 use std::{
     collections::HashMap,
@@ -319,16 +318,6 @@ impl RelayerState {
             .get_order_balance_and_fee(&order_wallet, order_id)?;
 
         Some((order, balance, fee))
-    }
-
-    /// Fetch the wallet randomness to attach to an order during the handshake
-    pub fn get_randomness_for_order(&self, order_id: &OrderIdentifier) -> Option<BigUint> {
-        // Use the randomness of the wallet that the order belongs to
-        let locked_wallet_index = self.read_wallet_index();
-        let wallet_id = locked_wallet_index.get_wallet_for_order(order_id)?;
-        locked_wallet_index
-            .read_wallet(&wallet_id)
-            .map(|wallet| wallet.randomness.clone())
     }
 
     /// Get a peer in the cluster that manages the given order, used to dial during

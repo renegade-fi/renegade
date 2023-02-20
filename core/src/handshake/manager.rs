@@ -71,21 +71,21 @@ pub struct HandshakeManager {
 #[derive(Clone)]
 pub struct HandshakeExecutor {
     /// The cache used to mark order pairs as already matched
-    handshake_cache: SharedHandshakeCache<OrderIdentifier>,
+    pub(super) handshake_cache: SharedHandshakeCache<OrderIdentifier>,
     /// Stores the state of existing handshake executions
-    handshake_state_index: HandshakeStateIndex,
+    pub(super) handshake_state_index: HandshakeStateIndex,
     /// The thread pool backing the execution
-    thread_pool: Arc<ThreadPool>,
+    pub(super) thread_pool: Arc<ThreadPool>,
     /// The channel on which other workers enqueue jobs for the protocol executor
-    job_channel: Receiver<HandshakeExecutionJob>,
+    pub(super) job_channel: Receiver<HandshakeExecutionJob>,
     /// The channel on which the handshake executor may forward requests to the network
-    network_channel: UnboundedSender<GossipOutbound>,
+    pub(super) network_channel: UnboundedSender<GossipOutbound>,
     /// The global relayer state
-    global_state: RelayerState,
+    pub(super) global_state: RelayerState,
     /// The system bus used to publish internal broadcast messages
-    system_bus: SystemBus<SystemBusMessage>,
+    pub(super) system_bus: SystemBus<SystemBusMessage>,
     /// The channel on which the coordinator thread may cancel handshake execution
-    cancel: Option<CancelChannel>,
+    pub(super) cancel: Option<CancelChannel>,
 }
 
 impl HandshakeExecutor {
@@ -233,7 +233,7 @@ impl HandshakeExecutor {
                 );
 
                 // Run the MPC match process
-                let res = Self::execute_match(party_id, order_state, net)?;
+                let res = self.execute_match(party_id, order_state, net)?;
 
                 // Submit the match to the contract
                 self.submit_match(res)?;
@@ -276,14 +276,6 @@ impl HandshakeExecutor {
                 })
                 .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
-            let wallet_randomness = self
-                .global_state
-                .get_randomness_for_order(&local_order_id)
-                .ok_or_else(|| {
-                    HandshakeManagerError::Abandoned(
-                        "couldn't find managing wallet for order".to_string(),
-                    )
-                })?;
             self.handshake_state_index.new_handshake(
                 request_id,
                 peer_order_id,
@@ -291,7 +283,6 @@ impl HandshakeExecutor {
                 order,
                 balance,
                 fee,
-                wallet_randomness,
             );
         }
 
@@ -387,13 +378,6 @@ impl HandshakeExecutor {
             );
         }
 
-        let wallet_randomness = self
-            .global_state
-            .get_randomness_for_order(&my_order)
-            .ok_or_else(|| {
-                HandshakeManagerError::Abandoned("couldn't find wallet managing order".to_string())
-            })?;
-
         // Find the order, along with a balance and fee to accompany the match
         if let Some((order, balance, fee)) = self.global_state.get_order_balance_fee(&my_order) {
             // Add an entry to the handshake state index
@@ -404,7 +388,6 @@ impl HandshakeExecutor {
                 order,
                 balance,
                 fee,
-                wallet_randomness,
             );
 
             // Check if the order pair has previously been matched, if so notify the peer and
