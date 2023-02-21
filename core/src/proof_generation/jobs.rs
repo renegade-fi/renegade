@@ -9,7 +9,8 @@ use circuits::{
     zk_circuits::{
         valid_commitments::{ValidCommitmentsStatement, ValidCommitmentsWitnessCommitment},
         valid_match_encryption::{
-            ValidMatchEncryptionStatement, ValidMatchEncryptionWitnessCommitment,
+            ValidMatchEncryptionStatement, ValidMatchEncryptionWitness,
+            ValidMatchEncryptionWitnessCommitment,
         },
         valid_wallet_create::{ValidWalletCreateCommitment, ValidWalletCreateStatement},
     },
@@ -163,6 +164,15 @@ pub enum ProofJob {
         merkle_root: MerkleRoot,
     },
     /// A request to create a proof of `VALID MATCH ENCRYPTION` for a match result
+    ///
+    /// The statement and witness types are complicated enough for `VALID MATCH ENCRYPTION`
+    /// that we don't bother constructing them in the proof manager; this responsibility is
+    /// passed to the caller; so the job definition directly stores the witness and statement
     #[allow(unused)]
-    ValidMatchEncrypt {},
+    ValidMatchEncrypt {
+        /// The witness to use in the proof of `VALID MATCH ENCRYPTION`
+        witness: ValidMatchEncryptionWitness,
+        /// The statement (public variables) to use in the proof of `VALID MATCH ENCRYPTION`
+        statement: ValidMatchEncryptionStatement,
+    },
 }

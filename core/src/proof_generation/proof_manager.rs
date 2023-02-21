@@ -12,6 +12,9 @@ use circuits::{
     types::{balance::Balance, fee::Fee, keychain::KeyChain, order::Order},
     zk_circuits::{
         valid_commitments::{ValidCommitments, ValidCommitmentsStatement, ValidCommitmentsWitness},
+        valid_match_encryption::{
+            ValidMatchEncryption, ValidMatchEncryptionStatement, ValidMatchEncryptionWitness,
+        },
         valid_wallet_create::{
             ValidWalletCreate, ValidWalletCreateStatement, ValidWalletCreateWitness,
         },
@@ -23,6 +26,7 @@ use crossbeam::channel::Receiver;
 use crypto::fields::prime_field_to_scalar;
 use curve25519_dalek::scalar::Scalar;
 use rayon::ThreadPool;
+use tracing::log;
 
 use crate::{proof_generation::jobs::ProofJob, SizedWallet, MAX_FEES};
 
@@ -122,9 +126,9 @@ impl ProofManager {
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))?
             }
 
-            ProofJob::ValidMatchEncrypt {} => {
+            ProofJob::ValidMatchEncrypt { statement, witness } => {
                 // Prove `VALID MATCH ENCRYPTION`
-                let proof_bundle = Self::prove_valid_match_encrypt()?;
+                let proof_bundle = Self::prove_valid_match_encrypt(statement, witness)?;
                 job.response_channel
                     .send(ProofBundle::ValidMatchEncryption(proof_bundle))
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))?;
@@ -221,7 +225,22 @@ impl ProofManager {
     }
 
     /// Create a proof of `VALID MATCH ENCRYPTION`
-    fn prove_valid_match_encrypt() -> Result<ValidMatchEncryptBundle, ProofManagerError> {
-        unimplemented!("")
+    fn prove_valid_match_encrypt(
+        statement: ValidMatchEncryptionStatement,
+        witness: ValidMatchEncryptionWitness,
+    ) -> Result<ValidMatchEncryptBundle, ProofManagerError> {
+        log::info!("generating proof of VALID MATCH ENCRYPTION");
+        let (witness_comm, proof) =
+            singleprover_prove::<ValidMatchEncryption<252 /* SCALAR_BITS */>>(
+                witness,
+                statement.clone(),
+            )
+            .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+
+        Ok(ValidMatchEncryptBundle {
+            commitment: witness_comm,
+            statement,
+            proof,
+        })
     }
 }
