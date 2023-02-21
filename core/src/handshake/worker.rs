@@ -9,6 +9,7 @@ use tracing::log;
 use crate::{
     api::gossip::GossipOutbound,
     handshake::manager::{HandshakeExecutor, HandshakeScheduler},
+    proof_generation::jobs::ProofManagerJob,
     state::RelayerState,
     system_bus::SystemBus,
     types::SystemBusMessage,
@@ -29,6 +30,8 @@ pub struct HandshakeManagerConfig {
     pub job_sender: Sender<HandshakeExecutionJob>,
     /// The job queue on which to receive handshake requests
     pub job_receiver: Receiver<HandshakeExecutionJob>,
+    /// A sender to forward jobs to the proof manager on
+    pub proof_manager_sender: Sender<ProofManagerJob>,
     /// The system bus to which all workers have access
     pub system_bus: SystemBus<SystemBusMessage>,
     /// The channel on which the coordinator may mandate that the
@@ -50,6 +53,7 @@ impl Worker for HandshakeManager {
         let executor = HandshakeExecutor::new(
             config.job_receiver.clone(),
             config.network_channel.clone(),
+            config.proof_manager_sender.clone(),
             config.global_state.clone(),
             config.system_bus.clone(),
             config.cancel_channel.clone(),

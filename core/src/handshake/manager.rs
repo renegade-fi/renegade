@@ -26,6 +26,7 @@ use crate::{
         handshake::{HandshakeMessage, MatchRejectionReason},
     },
     gossip::types::WrappedPeerId,
+    proof_generation::jobs::ProofManagerJob,
     state::{NetworkOrderState, OrderIdentifier, RelayerState},
     system_bus::SystemBus,
     types::{SystemBusMessage, HANDSHAKE_STATUS_TOPIC},
@@ -80,6 +81,8 @@ pub struct HandshakeExecutor {
     pub(super) job_channel: Receiver<HandshakeExecutionJob>,
     /// The channel on which the handshake executor may forward requests to the network
     pub(super) network_channel: UnboundedSender<GossipOutbound>,
+    /// The channel on which to send proof manager jobs
+    pub(super) proof_manager_work_queue: Sender<ProofManagerJob>,
     /// The global relayer state
     pub(super) global_state: RelayerState,
     /// The system bus used to publish internal broadcast messages
@@ -93,6 +96,7 @@ impl HandshakeExecutor {
     pub fn new(
         job_channel: Receiver<HandshakeExecutionJob>,
         network_channel: UnboundedSender<GossipOutbound>,
+        proof_manager_work_queue: Sender<ProofManagerJob>,
         global_state: RelayerState,
         system_bus: SystemBus<SystemBusMessage>,
         cancel: CancelChannel,
@@ -112,6 +116,7 @@ impl HandshakeExecutor {
             handshake_state_index,
             job_channel,
             network_channel,
+            proof_manager_work_queue,
             global_state,
             system_bus,
             cancel: Some(cancel),

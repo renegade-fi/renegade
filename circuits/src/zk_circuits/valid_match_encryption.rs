@@ -946,7 +946,7 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ValidMatchEncryption<SCAL
     type WitnessCommitment = ValidMatchEncryptionWitnessCommitment;
     type Statement = ValidMatchEncryptionStatement;
 
-    const BP_GENS_CAPACITY: usize = 32768;
+    const BP_GENS_CAPACITY: usize = 65536;
 
     fn prove(
         witness: Self::Witness,

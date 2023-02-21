@@ -70,6 +70,14 @@ impl FixedPoint {
         Self { repr: val_shifted }
     }
 
+    /// Create a new fixed point representation, rounding down to the nearest representable float
+    pub fn from_f32_round_down(val: f32) -> Self {
+        let shifted_val = val * (2u64.pow(DEFAULT_PRECISION as u32) as f32);
+        Self {
+            repr: Scalar::from(shifted_val.floor() as u64),
+        }
+    }
+
     /// Commit to the fixed point variable as a public input in a given constraint system
     pub fn commit_public<CS: RandomizableConstraintSystem>(&self, cs: &mut CS) -> FixedPointVar {
         let repr = cs.commit_public(self.repr);
@@ -79,7 +87,7 @@ impl FixedPoint {
     /// Return the represented value as an f64
     pub fn to_f64(&self) -> f64 {
         let mut dec = BigDecimal::from(scalar_to_bigint(&self.repr));
-        dec = &dec / (2u64 << DEFAULT_PRECISION);
+        dec = &dec / (1u64 << DEFAULT_PRECISION);
         dec.to_f64().unwrap()
     }
 

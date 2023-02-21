@@ -62,7 +62,7 @@ pub(crate) type CancelChannel = Receiver<()>;
 // TODO: Move these constants to a more discoverable location
 lazy_static! {
     /// The fee the protocol takes on a match; one basis point
-    static ref PROTOCOL_FEE: FixedPoint = FixedPoint::from(0.0001);
+    static ref PROTOCOL_FEE: FixedPoint = FixedPoint::from_f32_round_down(0.0002);
     /// The public settle key of the protocol wallet
     /// Dummy value for now
     static ref PROTOCOL_SETTLE_KEY: BigUint = BigUint::from(0u8);
@@ -194,6 +194,7 @@ async fn main() -> Result<(), CoordinatorError> {
         network_channel: network_sender,
         job_receiver: handshake_worker_receiver,
         job_sender: handshake_worker_sender.clone(),
+        proof_manager_sender: proof_generation_worker_sender.clone(),
         system_bus: system_bus.clone(),
         cancel_channel: handshake_cancel_receiver,
     })

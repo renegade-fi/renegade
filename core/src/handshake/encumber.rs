@@ -26,8 +26,13 @@ use integration_helpers::mpc_network::field::get_ristretto_group_modulus;
 use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use num_bigint::BigUint;
 use rand_core::OsRng;
+use tokio::sync::oneshot;
+use tracing::log;
 
-use crate::{PROTOCOL_FEE, PROTOCOL_SETTLE_KEY};
+use crate::{
+    proof_generation::jobs::{ProofJob, ProofManagerJob},
+    PROTOCOL_FEE, PROTOCOL_SETTLE_KEY,
+};
 
 use super::{error::HandshakeManagerError, manager::HandshakeExecutor, r#match::HandshakeResult};
 
@@ -148,6 +153,36 @@ impl HandshakeExecutor {
             randomness_protocol_ciphertext,
         };
 
+        self.prove_valid_encryption(witness, statement)?;
+
+        Ok(())
+    }
+
+    /// Generate a proof of `VALID MATCH ENCRYPTION` by forwarding a request to the proof manager
+    /// and then awaiting the response
+    ///
+    /// This code path is executed relatively infrequently (only when a valid match is found), so it
+    /// is likely okay to directly block a thread in the pool. If this becomes an issue we can go async
+    fn prove_valid_encryption(
+        &self,
+        witness: ValidMatchEncryptionWitness,
+        statement: ValidMatchEncryptionStatement,
+    ) -> Result<(), HandshakeManagerError> {
+        // Forward the job to the proof manager
+        let (response_channel_sender, response_channel_receiver) = oneshot::channel();
+        self.proof_manager_work_queue
+            .send(ProofManagerJob {
+                type_: ProofJob::ValidMatchEncrypt { witness, statement },
+                response_channel: response_channel_sender,
+            })
+            .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
+
+        // Await the proof manager's response
+        let _proof = response_channel_receiver
+            .blocking_recv()
+            .map_err(|err| HandshakeManagerError::ReceiveProof(err.to_string()))?;
+
+        log::info!("finished proving VALID MATCH ENCRYPTION, encumbering");
         Ok(())
     }
 
