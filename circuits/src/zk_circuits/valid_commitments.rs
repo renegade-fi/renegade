@@ -23,9 +23,9 @@ use crate::{
     errors::{ProverError, VerifierError},
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
     types::{
-        balance::{Balance, BalanceVar, CommittedBalance},
-        fee::{CommittedFee, Fee, FeeVar},
-        order::{CommittedOrder, Order, OrderVar},
+        balance::{BalanceVar, CommittedBalance, LinkableBalanceCommitment},
+        fee::{CommittedFee, FeeVar, LinkableFeeCommitment},
+        order::{CommittedOrder, LinkableOrderCommitment, OrderVar},
         wallet::{CommittedWallet, Wallet, WalletVar},
     },
     zk_gadgets::{
@@ -187,13 +187,13 @@ pub struct ValidCommitmentsWitness<
     /// The wallet that the committed values come from
     pub wallet: Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The selected order to commit to
-    pub order: Order,
+    pub order: LinkableOrderCommitment,
     /// The selected balance to commit to
-    pub balance: Balance,
+    pub balance: LinkableBalanceCommitment,
     /// The balance used to pay out constant fees in
-    pub fee_balance: Balance,
+    pub fee_balance: LinkableBalanceCommitment,
     /// The selected fee to commit to
-    pub fee: Fee,
+    pub fee: LinkableFeeCommitment,
     /// The merkle proof that the wallet is valid within the state tree
     pub wallet_opening: MerkleOpening,
     /// The Poseidon hash of the wallet's randomness, used as the blinder
@@ -492,10 +492,10 @@ mod valid_commitments_test {
 
         let witness = ValidCommitmentsWitness {
             wallet: wallet.clone(),
-            order,
-            balance,
-            fee_balance,
-            fee,
+            order: order.into(),
+            balance: balance.into(),
+            fee_balance: fee_balance.into(),
+            fee: fee.into(),
             wallet_opening: MerkleOpening {
                 elems: opening,
                 indices: opening_indices,
@@ -534,10 +534,10 @@ mod valid_commitments_test {
 
         let witness = ValidCommitmentsWitness {
             wallet: wallet.clone(),
-            order,
-            balance,
-            fee_balance,
-            fee,
+            order: order.into(),
+            balance: balance.into(),
+            fee_balance: fee_balance.into(),
+            fee: fee.into(),
             wallet_opening: MerkleOpening {
                 elems: opening,
                 indices: opening_indices,
@@ -575,10 +575,10 @@ mod valid_commitments_test {
 
         let witness = ValidCommitmentsWitness {
             wallet: wallet.clone(),
-            order,
-            balance,
-            fee_balance,
-            fee,
+            order: order.into(),
+            balance: balance.into(),
+            fee_balance: fee_balance.into(),
+            fee: fee.into(),
             wallet_opening: MerkleOpening {
                 elems: opening,
                 indices: opening_indices,
@@ -619,10 +619,10 @@ mod valid_commitments_test {
 
         let witness = ValidCommitmentsWitness {
             wallet: wallet.clone(),
-            order,
-            balance,
-            fee_balance,
-            fee,
+            order: order.into(),
+            balance: balance.into(),
+            fee_balance: fee_balance.into(),
+            fee: fee.into(),
             wallet_opening: MerkleOpening {
                 elems: opening,
                 indices: opening_indices,
@@ -665,10 +665,10 @@ mod valid_commitments_test {
 
         let witness = ValidCommitmentsWitness {
             wallet: wallet.clone(),
-            order,
-            balance,
-            fee_balance,
-            fee,
+            order: order.into(),
+            balance: balance.into(),
+            fee_balance: fee_balance.into(),
+            fee: fee.into(),
             wallet_opening: MerkleOpening {
                 elems: opening,
                 indices: opening_indices,
@@ -707,10 +707,10 @@ mod valid_commitments_test {
 
         let witness = ValidCommitmentsWitness {
             wallet: wallet.clone(),
-            order,
-            balance,
-            fee_balance,
-            fee,
+            order: order.into(),
+            balance: balance.into(),
+            fee_balance: fee_balance.into(),
+            fee: fee.into(),
             wallet_opening: MerkleOpening {
                 elems: opening,
                 indices: opening_indices,
@@ -747,10 +747,10 @@ mod valid_commitments_test {
 
         let witness = ValidCommitmentsWitness {
             wallet: wallet.clone(),
-            order,
-            balance,
-            fee_balance,
-            fee,
+            order: order.into(),
+            balance: balance.into(),
+            fee_balance: fee_balance.into(),
+            fee: fee.into(),
             wallet_opening: MerkleOpening {
                 elems: opening,
                 indices: opening_indices,
@@ -787,10 +787,10 @@ mod valid_commitments_test {
 
         let witness = ValidCommitmentsWitness {
             wallet: wallet.clone(),
-            order,
-            balance,
-            fee_balance,
-            fee,
+            order: order.into(),
+            balance: balance.into(),
+            fee_balance: fee_balance.into(),
+            fee: fee.into(),
             wallet_opening: MerkleOpening {
                 elems: opening,
                 indices: opening_indices,
@@ -829,10 +829,10 @@ mod valid_commitments_test {
 
         let witness = ValidCommitmentsWitness {
             wallet: wallet.clone(),
-            order,
-            balance,
-            fee_balance,
-            fee,
+            order: order.into(),
+            balance: balance.into(),
+            fee_balance: fee_balance.into(),
+            fee: fee.into(),
             wallet_opening: MerkleOpening {
                 elems: opening,
                 indices: opening_indices,

@@ -4,9 +4,9 @@ use crate::{
     mpc::SharedFabric,
     zk_gadgets::fixed_point::{
         AuthenticatedCommittedFixedPoint, AuthenticatedFixedPoint, AuthenticatedFixedPointVar,
-        CommittedFixedPoint, FixedPoint, FixedPointVar,
+        CommittedFixedPoint, FixedPoint, FixedPointVar, LinkableFixedPointCommitment,
     },
-    Allocate, CommitProver, CommitSharedProver, CommitVerifier,
+    Allocate, CommitProver, CommitSharedProver, CommitVerifier, LinkableCommitment,
 };
 use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
@@ -237,6 +237,75 @@ impl CommitVerifier for CommittedOrder {
             amount: amount_var,
             timestamp: timestamp_var,
         })
+    }
+}
+
+/// A linkable commitment to an Order that may be used across proofs
+#[derive(Clone, Debug)]
+pub struct LinkableOrderCommitment {
+    /// The mint (ERC-20 contract address) of the quote token
+    pub quote_mint: LinkableCommitment,
+    /// The mint (ERC-20 contract address) of the base token
+    pub base_mint: LinkableCommitment,
+    /// The side this order is for (0 = buy, 1 = sell)
+    pub side: LinkableCommitment,
+    /// The limit price to be executed at, in units of quote
+    pub price: LinkableFixedPointCommitment,
+    /// The amount of base currency to buy or sell
+    pub amount: LinkableCommitment,
+    /// A timestamp indicating when the order was placed, set by the user
+    pub timestamp: LinkableCommitment,
+}
+
+/// Implement From<Order> by choosing commitment randomness
+impl From<Order> for LinkableOrderCommitment {
+    fn from(order: Order) -> Self {
+        Self {
+            quote_mint: LinkableCommitment::new(biguint_to_scalar(&order.quote_mint)),
+            base_mint: LinkableCommitment::new(biguint_to_scalar(&order.base_mint)),
+            side: LinkableCommitment::new(order.side.into()),
+            price: order.price.into(),
+            amount: LinkableCommitment::new(order.amount.into()),
+            timestamp: LinkableCommitment::new(order.timestamp.into()),
+        }
+    }
+}
+
+impl CommitProver for LinkableOrderCommitment {
+    type VarType = OrderVar;
+    type CommitType = CommittedOrder;
+    type ErrorType = ();
+
+    fn commit_prover<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (quote_var, quote_comm) = self.quote_mint.commit_prover(rng, prover).unwrap();
+        let (base_var, base_comm) = self.base_mint.commit_prover(rng, prover).unwrap();
+        let (side_var, side_comm) = self.side.commit_prover(rng, prover).unwrap();
+        let (price_var, price_comm) = self.price.commit_prover(rng, prover).unwrap();
+        let (amount_var, amount_comm) = self.amount.commit_prover(rng, prover).unwrap();
+        let (timestamp_var, timestamp_comm) = self.timestamp.commit_prover(rng, prover).unwrap();
+
+        Ok((
+            OrderVar {
+                quote_mint: quote_var,
+                base_mint: base_var,
+                side: side_var,
+                price: price_var,
+                amount: amount_var,
+                timestamp: timestamp_var,
+            },
+            CommittedOrder {
+                quote_mint: quote_comm,
+                base_mint: base_comm,
+                side: side_comm,
+                price: price_comm,
+                amount: amount_comm,
+                timestamp: timestamp_comm,
+            },
+        ))
     }
 }
 

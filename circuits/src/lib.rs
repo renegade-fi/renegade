@@ -11,7 +11,7 @@ use itertools::Itertools;
 use merlin::Transcript;
 use mpc::SharedFabric;
 use mpc_bulletproof::{
-    r1cs::{Prover, R1CSProof, Verifier},
+    r1cs::{Prover, R1CSProof, Variable, Verifier},
     r1cs_mpc::{MpcProver, SharedR1CSProof},
     PedersenGens,
 };
@@ -20,7 +20,7 @@ use mpc_ristretto::{
     network::MpcNetwork,
 };
 
-use rand_core::{CryptoRng, RngCore};
+use rand_core::{CryptoRng, OsRng, RngCore};
 
 pub mod errors;
 pub mod mpc;
@@ -43,9 +43,9 @@ pub(crate) const SCALAR_MAX_BITS: usize = 253;
 /// The seed for a fiat-shamir transcript
 pub(crate) const TRANSCRIPT_SEED: &str = "merlin seed";
 
-/**
- * Helpers
- */
+// ----------
+// | Macros |
+// ----------
 
 /// A debug macro used for printing wires in a single-prover circuit during execution
 #[allow(unused)]
@@ -83,6 +83,11 @@ pub(crate) use print_mpc_wire;
 pub(crate) use print_multiprover_wire;
 #[allow(unused)]
 pub(crate) use print_wire;
+use serde::{Deserialize, Serialize};
+
+// ------------------
+// | Helper Methods |
+// ------------------
 
 /// Represents 2^m as a scalar
 pub fn scalar_2_to_m(m: usize) -> Scalar {
@@ -160,9 +165,80 @@ where
     C::verify(witness_commitment, statement, proof, verifier)
 }
 
-/**
- * Trait definitions
- */
+// ---------
+// | Types |
+// ---------
+
+/// A linkable commitment is a commitment used in multiple proofs. We split the constraints
+/// of the matching engine into roughly 3 pieces:
+///     1. Input validity checks, done offline by managing relayers (`VALID COMMITMENTS`)
+///     2. The matching engine execution, proved collaboratively over an MPC fabric (`VALID MATCH MPC`)
+///     3. Output validity checks: i.e. note construction and encryption (`VALID MATCH ENCRYPTION`)
+/// These components are split to remove as many constraints from the bottleneck (the collaborative proof)
+/// as possible.
+///
+/// However, we need to ensure that -- for example -- the order used in the proof of `VALID COMMITMENTS`
+/// is the same order as the order used in `VALID MATCH MPC`. This can be done by constructing the Pedersen
+/// commitments to the orders using the same randomness across proofs. That way, the verified may use the
+/// shared Pedersen commitment as an implicit constraint that witness values are equal across proofs.
+///
+/// The `LinkableCommitment` type allows this from the prover side by storing the randomness used in the
+/// original commitment along with the value itself.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LinkableCommitment {
+    /// The underlying value committed to
+    val: Scalar,
+    /// The randomness used to blind the commitment
+    randomness: Scalar,
+}
+
+impl LinkableCommitment {
+    /// Create a new linkable commitment from a given value
+    pub fn new(val: Scalar) -> Self {
+        // Choose a random blinder
+        let mut rng = OsRng {};
+        let randomness = Scalar::random(&mut rng);
+        Self { val, randomness }
+    }
+
+    /// Get the Pedersen commitment to this value
+    pub fn compute_commitment(&self) -> CompressedRistretto {
+        let pedersen_generators = PedersenGens::default();
+        pedersen_generators
+            .commit(self.val, self.randomness)
+            .compress()
+    }
+}
+
+impl CommitProver for LinkableCommitment {
+    type VarType = Variable;
+    type CommitType = CompressedRistretto;
+    type ErrorType = ();
+
+    fn commit_prover<R: RngCore + CryptoRng>(
+        &self,
+        _rng: &mut R, // rng is unused, use the randomness in `self`
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (comm, var) = prover.commit(self.val, self.randomness);
+        Ok((var, comm))
+    }
+}
+
+impl CommitVerifier for LinkableCommitment {
+    type VarType = Variable;
+    type ErrorType = ();
+
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
+        // Generate the underlying pedersen commitment
+        let commitment = self.compute_commitment();
+        Ok(verifier.commit(commitment))
+    }
+}
+
+// ----------
+// | Traits |
+// ----------
 
 /// Defines functionality to allocate a value within a single-prover constraint system
 pub trait CommitProver {

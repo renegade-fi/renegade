@@ -25,7 +25,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     errors::MpcError, mpc::SharedFabric, mpc_gadgets::modulo::shift_right, Allocate, CommitProver,
-    CommitSharedProver, CommitVerifier,
+    CommitSharedProver, CommitVerifier, LinkableCommitment,
 };
 
 use super::{arithmetic::DivRemGadget, comparators::EqGadget};
@@ -230,6 +230,39 @@ impl<'de> Deserialize<'de> for FixedPoint {
     {
         let val_f32 = f32::deserialize(deserializer)?;
         Ok(FixedPoint::from(val_f32))
+    }
+}
+
+impl From<FixedPoint> for LinkableFixedPointCommitment {
+    fn from(fp: FixedPoint) -> Self {
+        Self {
+            repr: LinkableCommitment::new(fp.repr),
+        }
+    }
+}
+
+/// A fixed point commitment that may be linked across proofs
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LinkableFixedPointCommitment {
+    /// The underlying scalar representation
+    pub(crate) repr: LinkableCommitment,
+}
+
+impl CommitProver for LinkableFixedPointCommitment {
+    type VarType = FixedPointVar;
+    type CommitType = CommittedFixedPoint;
+    type ErrorType = ();
+
+    fn commit_prover<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (var, comm) = self.repr.commit_prover(rng, prover).unwrap();
+        Ok((
+            FixedPointVar { repr: var.into() },
+            CommittedFixedPoint { repr: comm },
+        ))
     }
 }
 
