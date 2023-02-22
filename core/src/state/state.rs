@@ -4,9 +4,11 @@
 use circuits::{
     native_helpers::compute_poseidon_hash,
     types::{balance::Balance, fee::Fee, order::Order},
+    zk_circuits::valid_commitments::ValidCommitmentsWitness,
     zk_gadgets::merkle::{MerkleOpening, MerkleRoot},
 };
 use crossbeam::channel::Sender;
+use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 use libp2p::{
@@ -184,6 +186,27 @@ impl RelayerState {
                     {
                         // Generate a merkle proof of inclusion for this wallet in the contract state
                         let (merkle_root, wallet_opening) = Self::generate_merkle_proof(wallet);
+
+                        // Attach a copy of the witness to the locally managed state
+                        // This witness is reference by match computations which compute linkable commitments
+                        // to the order and balance; i.e. they commit with the same randomness
+                        {
+                            self.read_order_book().attach_validity_proof_witness(
+                                order_id,
+                                ValidCommitmentsWitness {
+                                    wallet: wallet.clone().into(),
+                                    order: order.clone().into(),
+                                    balance: balance.clone().into(),
+                                    fee: fee.clone().into(),
+                                    fee_balance: fee_balance.clone().into(),
+                                    wallet_opening: wallet_opening.clone(),
+                                    randomness_hash: compute_poseidon_hash(&[biguint_to_scalar(
+                                        &wallet.randomness,
+                                    )]),
+                                    sk_match: wallet.secret_keys.sk_match,
+                                },
+                            );
+                        } // order_book lock released
 
                         // Create a job and a response channel to get proofs back on
                         let job = ProofJob::ValidCommitments {

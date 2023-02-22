@@ -13,6 +13,7 @@
 // TODO: Remove this lint allowance
 #![allow(unused)]
 
+use circuits::zk_circuits::valid_commitments::ValidCommitmentsWitness;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -27,7 +28,7 @@ use crate::{
     gossip::types::{ClusterId, WrappedPeerId},
     proof_generation::jobs::ValidCommitmentsBundle,
     system_bus::SystemBus,
-    types::{SystemBusMessage, ORDER_STATE_CHANGE_TOPIC},
+    types::{SizedValidCommitmentsWitness, SystemBusMessage, ORDER_STATE_CHANGE_TOPIC},
 };
 
 use super::{new_shared, Shared};
@@ -91,6 +92,12 @@ pub struct NetworkOrder {
     /// The proof of `VALID COMMITMENTS` that has been verified by the local node
     /// TODO: Update this proof with a fleshed out bundle
     pub valid_commit_proof: Option<ValidCommitmentsBundle>,
+    /// The witness to the proof of `VALID COMMITMENTS`, this is only stored for orders that
+    /// the local node directly manages
+    ///
+    /// Skip serialization to avoid sending witness, the serialized type will have `None` in place
+    #[serde(skip)]
+    pub valid_commit_witness: Option<SizedValidCommitmentsWitness>,
 }
 
 impl NetworkOrder {
@@ -102,6 +109,7 @@ impl NetworkOrder {
             cluster,
             state: NetworkOrderState::Received,
             valid_commit_proof: None,
+            valid_commit_witness: None,
         }
     }
 
@@ -352,6 +360,17 @@ impl NetworkOrderBook {
         }
 
         self.add_verified_order(*order_id);
+    }
+
+    /// Attach a validity proof witness to the local order state
+    pub fn attach_validity_proof_witness(
+        &self,
+        order_id: &OrderIdentifier,
+        witness: SizedValidCommitmentsWitness,
+    ) {
+        if let Some(mut locked_order) = self.write_order(order_id) {
+            locked_order.valid_commit_witness = Some(witness);
+        }
     }
 
     /// Add an order to the verified orders list
