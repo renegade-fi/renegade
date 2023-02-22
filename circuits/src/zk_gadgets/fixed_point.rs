@@ -24,8 +24,9 @@ use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
-    errors::MpcError, mpc::SharedFabric, mpc_gadgets::modulo::shift_right, Allocate, CommitProver,
-    CommitSharedProver, CommitVerifier, LinkableCommitment,
+    errors::MpcError, mpc::SharedFabric, mpc_gadgets::modulo::shift_right, Allocate,
+    AuthenticatedLinkableCommitment, CommitProver, CommitSharedProver, CommitVerifier,
+    LinkableCommitment,
 };
 
 use super::{arithmetic::DivRemGadget, comparators::EqGadget};
@@ -979,6 +980,25 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
         let repr = verifier.commit(opened_value);
 
         Ok(FixedPointVar { repr: repr.into() })
+    }
+}
+
+/// Represents a fixed point value that has been allocated in an MPC fabric and may be shared across
+/// proofs
+#[derive(Clone, Debug)]
+pub struct AuthenticatedLinkableFixedPointCommitment<
+    N: MpcNetwork + Send,
+    S: SharedValueSource<Scalar>,
+> {
+    /// The underlying scalar representing the fixed point variable
+    pub(crate) repr: AuthenticatedLinkableCommitment<N, S>,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedFixedPoint<N, S>> for AuthenticatedLinkableFixedPointCommitment<N, S> {
+    fn from(fp: AuthenticatedFixedPoint<N, S>) -> Self {
+        Self {
+            repr: AuthenticatedLinkableCommitment::new(fp.repr),
+        }
     }
 }
 

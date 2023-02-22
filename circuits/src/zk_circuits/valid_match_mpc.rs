@@ -22,39 +22,42 @@ use mpc_ristretto::{
 };
 use rand_core::OsRng;
 
-use crate::zk_gadgets::{
-    comparators::{
-        GreaterThanEqGadget, GreaterThanEqZeroGadget, MultiproverGreaterThanEqGadget,
-        MultiproverGreaterThanEqZeroGadget,
-    },
-    fixed_point::{CommittedFixedPoint, FixedPointVar},
-};
-use crate::zk_gadgets::{
-    fixed_point::AuthenticatedFixedPointVar,
-    select::{
-        CondSelectGadget, CondSelectVectorGadget, MultiproverCondSelectGadget,
-        MultiproverCondSelectVectorGadget,
-    },
-};
 use crate::{
     errors::{MpcError, ProverError, VerifierError},
     mpc::SharedFabric,
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
     types::{
         balance::{
-            AuthenticatedBalanceVar, AuthenticatedCommittedBalance, Balance, BalanceVar,
-            CommittedBalance,
+            AuthenticatedBalanceVar, AuthenticatedCommittedBalance, BalanceVar, CommittedBalance,
         },
-        order::{
-            AuthenticatedCommittedOrder, AuthenticatedOrderVar, CommittedOrder, Order, OrderVar,
-        },
+        order::{AuthenticatedCommittedOrder, AuthenticatedOrderVar, CommittedOrder, OrderVar},
         r#match::{
-            AuthenticatedCommittedMatchResult, AuthenticatedMatchResult,
-            AuthenticatedMatchResultVar, CommittedMatchResult, MatchResultVar,
+            AuthenticatedCommittedMatchResult, AuthenticatedMatchResultVar, CommittedMatchResult,
+            MatchResultVar,
         },
     },
     zk_gadgets::poseidon::MultiproverPoseidonHashGadget,
     CommitSharedProver, CommitVerifier, MultiProverCircuit, Open,
+};
+use crate::{
+    types::r#match::AuthenticatedLinkableMatchResultCommitment,
+    zk_gadgets::{
+        fixed_point::AuthenticatedFixedPointVar,
+        select::{
+            CondSelectGadget, CondSelectVectorGadget, MultiproverCondSelectGadget,
+            MultiproverCondSelectVectorGadget,
+        },
+    },
+};
+use crate::{
+    types::{balance::LinkableBalanceCommitment, order::LinkableOrderCommitment},
+    zk_gadgets::{
+        comparators::{
+            GreaterThanEqGadget, GreaterThanEqZeroGadget, MultiproverGreaterThanEqGadget,
+            MultiproverGreaterThanEqZeroGadget,
+        },
+        fixed_point::{CommittedFixedPoint, FixedPointVar},
+    },
 };
 
 /// The circuitry for the valid match
@@ -424,15 +427,15 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 #[derive(Clone, Debug)]
 pub struct ValidMatchMpcWitness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The local party's order that was matched by MPC
-    pub my_order: Order,
+    pub my_order: LinkableOrderCommitment,
     /// A balance known by the local party that covers the position
     /// expressed in their order
-    pub my_balance: Balance,
+    pub my_balance: LinkableBalanceCommitment,
     /// The result of running a match MPC on the given orders
     ///
     /// We do not open this value before proving so that we can avoid leaking information
     /// before the collaborative proof has finished
-    pub match_res: AuthenticatedMatchResult<N, S>,
+    pub match_res: AuthenticatedLinkableMatchResultCommitment<N, S>,
 }
 
 /// Represents a commitment to the VALID MATCH MPC witness

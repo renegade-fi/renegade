@@ -22,9 +22,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     errors::{ProverError, VerifierError},
     types::{
-        fee::{CommittedFee, Fee, FeeVar},
+        fee::{CommittedFee, FeeVar, LinkableFeeCommitment},
         note::{CommittedNote, Note, NoteVar},
-        r#match::{CommittedMatchResult, MatchResult, MatchResultVar},
+        r#match::{CommittedMatchResult, LinkableMatchResultCommitment, MatchResultVar},
     },
     zk_gadgets::{
         commitments::NoteCommitmentGadget,
@@ -35,7 +35,7 @@ use crate::{
         fixed_point::{FixedPoint, FixedPointVar},
         select::CondSelectGadget,
     },
-    CommitProver, CommitVerifier, SingleProverCircuit,
+    CommitProver, CommitVerifier, LinkableCommitment, SingleProverCircuit,
 };
 
 /// The number of encryptions that are actively verified by the circuit
@@ -537,19 +537,19 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
 #[derive(Clone, Debug)]
 pub struct ValidMatchEncryptionWitness {
     /// The result of the match process; a completed match
-    pub match_res: MatchResult,
+    pub match_res: LinkableMatchResultCommitment,
     /// The first party's fee committed to in the match process
-    pub party0_fee: Fee,
+    pub party0_fee: LinkableFeeCommitment,
     /// The second party's fee committed to in the match process
-    pub party1_fee: Fee,
+    pub party1_fee: LinkableFeeCommitment,
     /// The hashed randomness of the first party, used as note randomness
     /// Linked into this proof from VALID COMMITMENTS via the shared Pedersen
     /// commitment scheme
-    pub party0_randomness_hash: Scalar,
+    pub party0_randomness_hash: LinkableCommitment,
     /// The hashed randomness of the first party, used as note randomness
     /// Linked into this proof from VALID COMMITMENTS via the shared Pedersen
     /// commitment scheme
-    pub party1_randomness_hash: Scalar,
+    pub party1_randomness_hash: LinkableCommitment,
     /// The note of exchange for the first party
     pub party0_note: Note,
     /// The note of exchange for the second party
@@ -639,10 +639,10 @@ impl CommitProver for ValidMatchEncryptionWitness {
         let (match_res_var, match_res_comm) = self.match_res.commit_prover(rng, prover).unwrap();
         let (fee1_var, fee1_comm) = self.party0_fee.commit_prover(rng, prover).unwrap();
         let (fee2_var, fee2_comm) = self.party1_fee.commit_prover(rng, prover).unwrap();
-        let (party0_randomness_hash_comm, party0_randomness_hash_var) =
-            prover.commit(self.party0_randomness_hash, Scalar::random(rng));
-        let (party1_randomness_hash_comm, party1_randomness_hash_var) =
-            prover.commit(self.party1_randomness_hash, Scalar::random(rng));
+        let (party0_randomness_hash_var, party0_randomness_hash_comm) =
+            self.party0_randomness_hash.commit_prover(rng, prover)?;
+        let (party1_randomness_hash_var, party1_randomness_hash_comm) =
+            self.party1_randomness_hash.commit_prover(rng, prover)?;
         let (party0_note_var, party0_note_comm) =
             self.party0_note.commit_prover(rng, prover).unwrap();
         let (party1_note_var, party1_note_comm) =
@@ -1203,11 +1203,11 @@ mod valid_match_encryption_tests {
 
         (
             ValidMatchEncryptionWitness {
-                match_res: match_,
-                party0_fee: DUMMY_FEE1.clone(),
-                party1_fee: DUMMY_FEE2.clone(),
-                party0_randomness_hash: biguint_to_scalar(&party0_randomness_hash),
-                party1_randomness_hash: biguint_to_scalar(&party1_randomness_hash),
+                match_res: match_.into(),
+                party0_fee: DUMMY_FEE1.clone().into(),
+                party1_fee: DUMMY_FEE2.clone().into(),
+                party0_randomness_hash: biguint_to_scalar(&party0_randomness_hash).into(),
+                party1_randomness_hash: biguint_to_scalar(&party1_randomness_hash).into(),
                 party0_note: party0_note.clone(),
                 party1_note: party1_note.clone(),
                 relayer0_note: relayer0_note.clone(),

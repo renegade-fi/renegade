@@ -12,12 +12,12 @@ use merlin::Transcript;
 use mpc::SharedFabric;
 use mpc_bulletproof::{
     r1cs::{Prover, R1CSProof, Variable, Verifier},
-    r1cs_mpc::{MpcProver, SharedR1CSProof},
+    r1cs_mpc::{MpcProver, MpcVariable, SharedR1CSProof},
     PedersenGens,
 };
 use mpc_ristretto::{
-    authenticated_ristretto::AuthenticatedCompressedRistretto, beaver::SharedValueSource,
-    network::MpcNetwork,
+    authenticated_ristretto::AuthenticatedCompressedRistretto,
+    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
 
 use rand_core::{CryptoRng, OsRng, RngCore};
@@ -210,6 +210,12 @@ impl LinkableCommitment {
     }
 }
 
+impl From<Scalar> for LinkableCommitment {
+    fn from(val: Scalar) -> Self {
+        LinkableCommitment::new(val)
+    }
+}
+
 impl CommitProver for LinkableCommitment {
     type VarType = Variable;
     type CommitType = CompressedRistretto;
@@ -225,14 +231,43 @@ impl CommitProver for LinkableCommitment {
     }
 }
 
-impl CommitVerifier for LinkableCommitment {
-    type VarType = Variable;
-    type ErrorType = ();
+/// A linkable commitment that has been allocated inside of an MPC fabric
+#[derive(Clone, Debug)]
+pub struct AuthenticatedLinkableCommitment<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The underlying shared scalar
+    val: AuthenticatedScalar<N, S>,
+    /// The randomness used to blind the commitment
+    randomness: Scalar,
+}
 
-    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        // Generate the underlying pedersen commitment
-        let commitment = self.compute_commitment();
-        Ok(verifier.commit(commitment))
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedLinkableCommitment<N, S> {
+    /// Create a linkable commitment from a shared scalar by sampling a shared
+    /// blinder
+    pub fn new(val: AuthenticatedScalar<N, S>) -> Self {
+        let mut rng = OsRng {};
+        let randomness = Scalar::random(&mut rng);
+        Self { val, randomness }
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S>
+    for AuthenticatedLinkableCommitment<N, S>
+{
+    type SharedVarType = MpcVariable<N, S>;
+    type CommitType = AuthenticatedCompressedRistretto<N, S>;
+    type ErrorType = MpcError;
+
+    fn commit<R: RngCore + CryptoRng>(
+        &self,
+        _owning_party: u64,
+        _rng: &mut R,
+        prover: &mut MpcProver<N, S>,
+    ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType> {
+        let (comm, var) = prover
+            .commit_preshared(&self.val, self.randomness)
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+
+        Ok((var, comm))
     }
 }
 

@@ -5,21 +5,19 @@ use crate::{
     zk_gadgets::fixed_point::{AuthenticatedCommittedFixedPoint, AuthenticatedFixedPointVar},
     CommitSharedProver,
 };
-use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::scalar::Scalar;
-use itertools::Itertools;
 use mpc_bulletproof::r1cs_mpc::MpcProver;
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 use rand_core::{CryptoRng, RngCore};
 
 use super::{
-    balance::{AuthenticatedBalanceVar, AuthenticatedCommittedBalance, Balance},
-    order::{AuthenticatedCommittedOrder, AuthenticatedOrderVar, Order},
+    balance::{AuthenticatedBalanceVar, AuthenticatedCommittedBalance, LinkableBalanceCommitment},
+    order::{AuthenticatedCommittedOrder, AuthenticatedOrderVar, LinkableOrderCommitment},
 };
 
 /// Allocate an (order, balance) handshake tuple in the network for a multiprover setting
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S>
-    for (Order, Balance)
+    for (LinkableOrderCommitment, LinkableBalanceCommitment)
 {
     type SharedVarType = (AuthenticatedOrderVar<N, S>, AuthenticatedBalanceVar<N, S>);
     type CommitType = (
@@ -31,31 +29,35 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
     fn commit<R: RngCore + CryptoRng>(
         &self,
         owning_party: u64,
-        rng: &mut R,
+        _rng: &mut R,
         prover: &mut MpcProver<N, S>,
     ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType> {
         let order = &self.0;
         let balance = &self.1;
 
-        let num_committed_elements = 6 /* order */ + 2 /* balance */;
-        let blinders = (0..num_committed_elements)
-            .map(|_| Scalar::random(rng))
-            .collect_vec();
-
         let (shared_comm, shared_vars) = prover
             .batch_commit(
                 owning_party,
                 &[
-                    biguint_to_scalar(&order.quote_mint),
-                    biguint_to_scalar(&order.base_mint),
-                    Scalar::from(order.side as u64),
-                    Scalar::from(order.price.to_owned()),
-                    Scalar::from(order.amount),
-                    Scalar::from(order.timestamp),
-                    biguint_to_scalar(&balance.mint),
-                    Scalar::from(balance.amount),
+                    order.quote_mint.val,
+                    order.base_mint.val,
+                    order.side.val,
+                    order.price.repr.val,
+                    order.amount.val,
+                    order.timestamp.val,
+                    balance.mint.val,
+                    balance.amount.val,
                 ],
-                &blinders,
+                &[
+                    order.quote_mint.randomness,
+                    order.base_mint.randomness,
+                    order.side.randomness,
+                    order.price.repr.randomness,
+                    order.amount.randomness,
+                    order.timestamp.randomness,
+                    balance.mint.randomness,
+                    balance.amount.randomness,
+                ],
             )
             .map_err(|err| MpcError::SharingError(err.to_string()))?;
 
