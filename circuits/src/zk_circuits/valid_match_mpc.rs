@@ -564,7 +564,6 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open for ValidMatchComm
 /// The parameterization for the VALID MATCH MPC statement
 ///
 /// TODO: Add in midpoint oracle prices
-/// TODO: Commitments to the randomness
 #[derive(Debug, Clone)]
 pub struct ValidMatchMpcStatement {}
 

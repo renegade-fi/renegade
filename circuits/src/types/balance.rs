@@ -15,7 +15,8 @@ use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    errors::MpcError, mpc::SharedFabric, Allocate, CommitProver, CommitSharedProver, CommitVerifier,
+    errors::MpcError, mpc::SharedFabric, Allocate, CommitProver, CommitSharedProver,
+    CommitVerifier, LinkableCommitment,
 };
 
 /// Represents the base type of a balance in tuple holding a reference to the
@@ -90,6 +91,50 @@ impl CommitVerifier for CommittedBalance {
             mint: verifier.commit(self.mint),
             amount: verifier.commit(self.amount),
         })
+    }
+}
+
+/// Represents a balance that may be linked across proofs
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LinkableBalanceCommitment {
+    /// The mint (erc-20 token address) of the token in this balance
+    pub mint: LinkableCommitment,
+    /// The amount of the token held by this balance
+    pub amount: LinkableCommitment,
+}
+
+impl From<Balance> for LinkableBalanceCommitment {
+    fn from(balance: Balance) -> Self {
+        Self {
+            mint: LinkableCommitment::new(biguint_to_scalar(&balance.mint)),
+            amount: LinkableCommitment::new(balance.amount.into()),
+        }
+    }
+}
+
+impl CommitProver for LinkableBalanceCommitment {
+    type VarType = BalanceVar;
+    type CommitType = CommittedBalance;
+    type ErrorType = ();
+
+    fn commit_prover<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (mint_var, mint_comm) = self.mint.commit_prover(rng, prover).unwrap();
+        let (amount_var, amount_comm) = self.amount.commit_prover(rng, prover).unwrap();
+
+        Ok((
+            BalanceVar {
+                mint: mint_var,
+                amount: amount_var,
+            },
+            CommittedBalance {
+                mint: mint_comm,
+                amount: amount_comm,
+            },
+        ))
     }
 }
 

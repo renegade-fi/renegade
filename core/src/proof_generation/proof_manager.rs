@@ -198,10 +198,10 @@ impl ProofManager {
         // Build a witness and statement
         let witness = ValidCommitmentsWitness {
             wallet,
-            order,
-            balance,
-            fee,
-            fee_balance,
+            order: order.into(),
+            balance: balance.into(),
+            fee: fee.into(),
+            fee_balance: fee_balance.into(),
             wallet_opening,
             randomness_hash,
             sk_match,

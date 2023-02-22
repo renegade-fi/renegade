@@ -4,9 +4,9 @@ use crate::{
     mpc::SharedFabric,
     zk_gadgets::fixed_point::{
         AuthenticatedCommittedFixedPoint, AuthenticatedFixedPoint, AuthenticatedFixedPointVar,
-        CommittedFixedPoint, FixedPoint, FixedPointVar,
+        CommittedFixedPoint, FixedPoint, FixedPointVar, LinkableFixedPointCommitment,
     },
-    Allocate, CommitProver, CommitSharedProver, CommitVerifier, SharePublic,
+    Allocate, CommitProver, CommitSharedProver, CommitVerifier, LinkableCommitment, SharePublic,
 };
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
@@ -167,6 +167,64 @@ impl CommitVerifier for CommittedFee {
             gas_token_amount: amount_var,
             percentage_fee: percentage_var,
         })
+    }
+}
+
+/// A fee that can be linked across proofs
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LinkableFeeCommitment {
+    /// The public settle key of the cluster collecting fees
+    pub settle_key: LinkableCommitment,
+    /// The mint (ERC-20 Address) of the token used to pay gas
+    pub gas_addr: LinkableCommitment,
+    /// The amount of the mint token to use for gas
+    pub gas_token_amount: LinkableCommitment,
+    /// The percentage fee that the cluster may take upon match
+    pub percentage_fee: LinkableFixedPointCommitment,
+}
+
+impl From<Fee> for LinkableFeeCommitment {
+    fn from(fee: Fee) -> Self {
+        Self {
+            settle_key: LinkableCommitment::new(biguint_to_scalar(&fee.settle_key)),
+            gas_addr: LinkableCommitment::new(biguint_to_scalar(&fee.gas_addr)),
+            gas_token_amount: LinkableCommitment::new(fee.gas_token_amount.into()),
+            percentage_fee: fee.percentage_fee.into(),
+        }
+    }
+}
+
+impl CommitProver for LinkableFeeCommitment {
+    type VarType = FeeVar;
+    type CommitType = CommittedFee;
+    type ErrorType = ();
+
+    fn commit_prover<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (key_var, key_comm) = self.settle_key.commit_prover(rng, prover).unwrap();
+        let (gas_addr_var, gas_addr_comm) = self.gas_addr.commit_prover(rng, prover).unwrap();
+        let (gas_amount_var, gas_amount_comm) =
+            self.gas_token_amount.commit_prover(rng, prover).unwrap();
+        let (percent_fee_var, percent_fee_comm) =
+            self.percentage_fee.commit_prover(rng, prover).unwrap();
+
+        Ok((
+            FeeVar {
+                settle_key: key_var,
+                gas_addr: gas_addr_var,
+                gas_token_amount: gas_amount_var,
+                percentage_fee: percent_fee_var,
+            },
+            CommittedFee {
+                settle_key: key_comm,
+                gas_addr: gas_addr_comm,
+                gas_token_amount: gas_amount_comm,
+                percentage_fee: percent_fee_comm,
+            },
+        ))
     }
 }
 
