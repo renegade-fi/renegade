@@ -107,11 +107,11 @@ impl HandshakeExecutor {
         // Construct a statement and witness for `VALID MATCH ENCRYPTION`
         #[allow(unused_variables)]
         let witness = ValidMatchEncryptionWitness {
-            match_res: handshake_result.match_,
-            party0_fee: handshake_result.party0_fee,
-            party1_fee: handshake_result.party1_fee,
-            party0_randomness_hash: handshake_result.party0_randomness_hash,
-            party1_randomness_hash: handshake_result.party1_randomness_hash,
+            match_res: handshake_result.match_.into(),
+            party0_fee: handshake_result.party0_fee.into(),
+            party1_fee: handshake_result.party1_fee.into(),
+            party0_randomness_hash: handshake_result.party0_randomness_hash.into(),
+            party1_randomness_hash: handshake_result.party1_randomness_hash.into(),
             party0_note: party0_note.clone(),
             party1_note: party1_note.clone(),
             relayer0_note: relayer0_note.clone(),

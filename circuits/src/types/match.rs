@@ -4,16 +4,18 @@ use crate::{
     errors::MpcError,
     zk_gadgets::fixed_point::{
         AuthenticatedCommittedFixedPoint, AuthenticatedFixedPoint, AuthenticatedFixedPointVar,
-        CommittedFixedPoint, FixedPoint, FixedPointVar,
+        AuthenticatedLinkableFixedPointCommitment, CommittedFixedPoint, FixedPoint, FixedPointVar,
+        LinkableFixedPointCommitment,
     },
-    CommitProver, CommitSharedProver, CommitVerifier, Open,
+    AuthenticatedLinkableCommitment, CommitProver, CommitSharedProver, CommitVerifier,
+    LinkableCommitment, Open,
 };
 use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 
 use itertools::Itertools;
 use mpc_bulletproof::{
-    r1cs::{Variable, Verifier},
+    r1cs::{Prover, Variable, Verifier},
     r1cs_mpc::{MpcProver, MpcVariable},
 };
 use mpc_ristretto::{
@@ -217,6 +219,101 @@ impl CommitVerifier for CommittedMatchResult {
             max_minus_min_amount: max_minus_min_var,
             min_amount_order_index: min_index_var,
         })
+    }
+}
+
+/// A match result that may be linked across proofs
+#[derive(Clone, Debug)]
+pub struct LinkableMatchResultCommitment {
+    /// The mint of the order token in the asset pair being matched
+    pub quote_mint: LinkableCommitment,
+    /// The mint of the base token in the asset pair being matched
+    pub base_mint: LinkableCommitment,
+    /// The amount of the quote token exchanged by this match
+    pub quote_amount: LinkableCommitment,
+    /// The amount of the base token exchanged by this match
+    pub base_amount: LinkableCommitment,
+    /// The direction of the match, 0 implies that party 1 buys the base and
+    /// sells the quote; 1 implies that party 2 buys the base and sells the quote
+    pub direction: LinkableCommitment, // Binary
+    /// The execution price; the midpoint between two limit prices if they cross
+    pub execution_price: LinkableFixedPointCommitment,
+    /// The minimum amount of the two orders minus the maximum amount of the two orders.
+    /// We include it here to tame some of the non-linearity of the zk circuit, i.e. we
+    /// can shortcut some of the computation and implicitly constrain the match result
+    /// with this extra value
+    pub max_minus_min_amount: LinkableCommitment,
+    /// The index of the order (0 or 1) that has the minimum amount, i.e. the order that is
+    /// completely filled by this match
+    pub min_amount_order_index: LinkableCommitment,
+}
+
+impl From<MatchResult> for LinkableMatchResultCommitment {
+    fn from(match_res: MatchResult) -> Self {
+        Self {
+            quote_mint: LinkableCommitment::new(biguint_to_scalar(&match_res.quote_mint)),
+            base_mint: LinkableCommitment::new(biguint_to_scalar(&match_res.base_mint)),
+            quote_amount: LinkableCommitment::new(match_res.quote_amount.into()),
+            base_amount: LinkableCommitment::new(match_res.base_amount.into()),
+            direction: LinkableCommitment::new(match_res.direction.into()),
+            execution_price: match_res.execution_price.into(),
+            max_minus_min_amount: LinkableCommitment::new(match_res.max_minus_min_amount.into()),
+            min_amount_order_index: LinkableCommitment::new(
+                match_res.min_amount_order_index.into(),
+            ),
+        }
+    }
+}
+
+impl CommitProver for LinkableMatchResultCommitment {
+    type VarType = MatchResultVar;
+    type CommitType = CommittedMatchResult;
+    type ErrorType = ();
+
+    fn commit_prover<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (quote_mint_var, quote_mint_comm) = self.quote_mint.commit_prover(rng, prover).unwrap();
+        let (base_mint_var, base_mint_comm) = self.base_mint.commit_prover(rng, prover).unwrap();
+        let (quote_amount_var, quote_amount_comm) =
+            self.quote_amount.commit_prover(rng, prover).unwrap();
+        let (base_amount_var, base_amount_comm) =
+            self.base_amount.commit_prover(rng, prover).unwrap();
+        let (direction_var, direction_comm) = self.direction.commit_prover(rng, prover).unwrap();
+        let (price_var, price_comm) = self.execution_price.commit_prover(rng, prover).unwrap();
+        let (max_minus_min_var, max_minus_min_comm) = self
+            .max_minus_min_amount
+            .commit_prover(rng, prover)
+            .unwrap();
+        let (min_amount_index_var, min_amount_index_comm) = self
+            .min_amount_order_index
+            .commit_prover(rng, prover)
+            .unwrap();
+
+        Ok((
+            MatchResultVar {
+                quote_mint: quote_mint_var,
+                base_mint: base_mint_var,
+                quote_amount: quote_amount_var,
+                base_amount: base_amount_var,
+                direction: direction_var,
+                execution_price: price_var,
+                max_minus_min_amount: max_minus_min_var,
+                min_amount_order_index: min_amount_index_var,
+            },
+            CommittedMatchResult {
+                quote_mint: quote_mint_comm,
+                base_mint: base_mint_comm,
+                quote_amount: quote_amount_comm,
+                base_amount: base_amount_comm,
+                direction: direction_comm,
+                execution_price: price_comm,
+                max_minus_min_amount: max_minus_min_comm,
+                min_amount_order_index: min_amount_index_comm,
+            },
+        ))
     }
 }
 
@@ -477,5 +574,123 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
             match_res.max_minus_min_amount,
             match_res.min_amount_order_index,
         ]
+    }
+}
+
+/// Represents a match result that has been allocated in an MPC fabric and may be shared
+/// between proofs
+#[derive(Clone, Debug)]
+pub struct AuthenticatedLinkableMatchResultCommitment<
+    N: MpcNetwork + Send,
+    S: SharedValueSource<Scalar>,
+> {
+    /// The mint of the order token in the asset pair being matched
+    pub quote_mint: AuthenticatedLinkableCommitment<N, S>,
+    /// The mint of the base token in the asset pair being matched
+    pub base_mint: AuthenticatedLinkableCommitment<N, S>,
+    /// The amount of the quote token exchanged by this match
+    pub quote_amount: AuthenticatedLinkableCommitment<N, S>,
+    /// The amount of the base token exchanged by this match
+    pub base_amount: AuthenticatedLinkableCommitment<N, S>,
+    /// The direction of the match, 0 implies that party 1 buys the base and
+    /// sells the quote; 1 implies that party 2 buys the base and sells the quote
+    pub direction: AuthenticatedLinkableCommitment<N, S>, // Binary
+    /// The execution price; the midpoint between two limit prices if they cross
+    pub execution_price: AuthenticatedLinkableFixedPointCommitment<N, S>,
+    /// The minimum amount of the two orders minus the maximum amount of the two orders.
+    /// We include it here to tame some of the non-linearity of the zk circuit, i.e. we
+    /// can shortcut some of the computation and implicitly constrain the match result
+    /// with this extra value
+    pub max_minus_min_amount: AuthenticatedLinkableCommitment<N, S>,
+    /// The index of the order (0 or 1) that has the minimum amount, i.e. the order that is
+    /// completely filled by this match
+    pub min_amount_order_index: AuthenticatedLinkableCommitment<N, S>,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedMatchResult<N, S>>
+    for AuthenticatedLinkableMatchResultCommitment<N, S>
+{
+    fn from(match_res: AuthenticatedMatchResult<N, S>) -> Self {
+        Self {
+            quote_mint: AuthenticatedLinkableCommitment::new(match_res.quote_mint),
+            base_mint: AuthenticatedLinkableCommitment::new(match_res.base_mint),
+            quote_amount: AuthenticatedLinkableCommitment::new(match_res.quote_amount),
+            base_amount: AuthenticatedLinkableCommitment::new(match_res.base_amount),
+            direction: AuthenticatedLinkableCommitment::new(match_res.direction),
+            execution_price: match_res.execution_price.into(),
+            max_minus_min_amount: AuthenticatedLinkableCommitment::new(
+                match_res.max_minus_min_amount,
+            ),
+            min_amount_order_index: AuthenticatedLinkableCommitment::new(
+                match_res.min_amount_order_index,
+            ),
+        }
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S>
+    for AuthenticatedLinkableMatchResultCommitment<N, S>
+{
+    type SharedVarType = AuthenticatedMatchResultVar<N, S>;
+    type CommitType = AuthenticatedCommittedMatchResult<N, S>;
+    type ErrorType = MpcError;
+
+    fn commit<R: RngCore + CryptoRng>(
+        &self,
+        _owning_party: u64,
+        _rng: &mut R,
+        prover: &mut MpcProver<N, S>,
+    ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType> {
+        let (commitments, vars) = prover
+            .batch_commit_preshared(
+                &[
+                    self.quote_mint.val.to_owned(),
+                    self.base_mint.val.to_owned(),
+                    self.quote_amount.val.to_owned(),
+                    self.base_amount.val.to_owned(),
+                    self.direction.val.to_owned(),
+                    self.execution_price.repr.val.to_owned(),
+                    self.max_minus_min_amount.val.to_owned(),
+                    self.min_amount_order_index.val.to_owned(),
+                ],
+                &[
+                    self.quote_mint.randomness,
+                    self.base_mint.randomness,
+                    self.quote_amount.randomness,
+                    self.base_amount.randomness,
+                    self.direction.randomness,
+                    self.execution_price.repr.randomness,
+                    self.max_minus_min_amount.randomness,
+                    self.min_amount_order_index.randomness,
+                ],
+            )
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+
+        Ok((
+            AuthenticatedMatchResultVar {
+                quote_mint: vars[0].to_owned(),
+                base_mint: vars[1].to_owned(),
+                quote_amount: vars[2].to_owned(),
+                base_amount: vars[3].to_owned(),
+                direction: vars[4].to_owned(),
+                execution_price: AuthenticatedFixedPointVar {
+                    repr: vars[5].to_owned().into(),
+                },
+                max_minus_min_amount: vars[6].to_owned(),
+                min_amount_order_index: vars[7].to_owned(),
+            },
+            AuthenticatedCommittedMatchResult {
+                quote_mint: commitments[0].to_owned(),
+                base_mint: commitments[1].to_owned(),
+                quote_amount: commitments[2].to_owned(),
+                base_amount: commitments[3].to_owned(),
+                direction: commitments[4].to_owned(),
+                execution_price: AuthenticatedCommittedFixedPoint {
+                    repr: commitments[5].to_owned(),
+                },
+                max_minus_min_amount: commitments[6].to_owned(),
+                min_amount_order_index: commitments[7].to_owned(),
+            },
+        ))
     }
 }

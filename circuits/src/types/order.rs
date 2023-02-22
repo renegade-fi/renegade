@@ -241,7 +241,7 @@ impl CommitVerifier for CommittedOrder {
 }
 
 /// A linkable commitment to an Order that may be used across proofs
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LinkableOrderCommitment {
     /// The mint (ERC-20 contract address) of the quote token
     pub quote_mint: LinkableCommitment,
@@ -432,6 +432,66 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                     Scalar::from(self.timestamp),
                 ],
                 &blinders,
+            )
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+
+        Ok((
+            AuthenticatedOrderVar {
+                quote_mint: shared_vars[0].to_owned(),
+                base_mint: shared_vars[1].to_owned(),
+                side: shared_vars[2].to_owned(),
+                price: AuthenticatedFixedPointVar {
+                    repr: shared_vars[3].to_owned().into(),
+                },
+                amount: shared_vars[4].to_owned(),
+                timestamp: shared_vars[5].to_owned(),
+            },
+            AuthenticatedCommittedOrder {
+                quote_mint: shared_comm[0].to_owned(),
+                base_mint: shared_comm[1].to_owned(),
+                side: shared_comm[2].to_owned(),
+                price: AuthenticatedCommittedFixedPoint {
+                    repr: shared_comm[3].to_owned(),
+                },
+                amount: shared_comm[4].to_owned(),
+                timestamp: shared_comm[5].to_owned(),
+            },
+        ))
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S>
+    for LinkableOrderCommitment
+{
+    type SharedVarType = AuthenticatedOrderVar<N, S>;
+    type CommitType = AuthenticatedCommittedOrder<N, S>;
+    type ErrorType = MpcError;
+
+    fn commit<R: RngCore + CryptoRng>(
+        &self,
+        owning_party: u64,
+        _rng: &mut R,
+        prover: &mut MpcProver<N, S>,
+    ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType> {
+        let (shared_comm, shared_vars) = prover
+            .batch_commit(
+                owning_party,
+                &[
+                    self.quote_mint.val,
+                    self.base_mint.val,
+                    self.side.val,
+                    self.price.repr.val,
+                    self.amount.val,
+                    self.timestamp.val,
+                ],
+                &[
+                    self.quote_mint.randomness,
+                    self.base_mint.randomness,
+                    self.side.randomness,
+                    self.price.repr.randomness,
+                    self.amount.randomness,
+                    self.timestamp.randomness,
+                ],
             )
             .map_err(|err| MpcError::SharingError(err.to_string()))?;
 

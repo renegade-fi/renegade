@@ -163,10 +163,11 @@ impl HandshakeExecutor {
         fabric: SharedFabric<N, S>,
     ) -> Result<R1CSProof, HandshakeManagerError> {
         // Build a witness to the VALID MATCH MPC statement
+        // TODO: Use proof-linked witness vars
         let witness = ValidMatchMpcWitness {
-            my_order: order,
-            my_balance: balance,
-            match_res,
+            my_order: order.into(),
+            my_balance: balance.into(),
+            match_res: match_res.into(),
         };
 
         // Prove the statement

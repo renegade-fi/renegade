@@ -84,9 +84,9 @@ fn setup_witness_and_statement<N: MpcNetwork + Send, S: SharedValueSource<Scalar
     let match_res = match_orders(&order, fabric)?;
     Ok((
         ValidMatchMpcWitness {
-            my_order: order,
-            my_balance: balance,
-            match_res,
+            my_order: order.into(),
+            my_balance: balance.into(),
+            match_res: match_res.into(),
         },
         ValidMatchMpcStatement {},
     ))
