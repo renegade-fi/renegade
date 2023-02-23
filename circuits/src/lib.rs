@@ -149,7 +149,7 @@ pub fn verify_singleprover_proof<C: SingleProverCircuit>(
 /// Abstracts over the flow of verifying a proof for a collaboratively proved circuit
 pub fn verify_collaborative_proof<'a, N, S, C>(
     statement: C::Statement,
-    witness_commitment: <C::WitnessCommitment as Open>::OpenOutput,
+    witness_commitment: <C::WitnessCommitment as Open<N, S>>::OpenOutput,
     proof: R1CSProof,
 ) -> Result<(), VerifierError>
 where
@@ -184,10 +184,10 @@ where
 ///
 /// The `LinkableCommitment` type allows this from the prover side by storing the randomness used in the
 /// original commitment along with the value itself.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LinkableCommitment {
     /// The underlying value committed to
-    val: Scalar,
+    pub val: Scalar,
     /// The randomness used to blind the commitment
     randomness: Scalar,
 }
@@ -216,6 +216,12 @@ impl From<Scalar> for LinkableCommitment {
     }
 }
 
+impl From<LinkableCommitment> for Scalar {
+    fn from(comm: LinkableCommitment) -> Self {
+        comm.val
+    }
+}
+
 impl CommitProver for LinkableCommitment {
     type VarType = Variable;
     type CommitType = CompressedRistretto;
@@ -232,13 +238,26 @@ impl CommitProver for LinkableCommitment {
 }
 
 /// A linkable commitment that has been allocated inside of an MPC fabric
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct AuthenticatedLinkableCommitment<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The underlying shared scalar
     val: AuthenticatedScalar<N, S>,
     /// The randomness used to blind the commitment
     randomness: Scalar,
 }
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone
+    for AuthenticatedLinkableCommitment<N, S>
+{
+    fn clone(&self) -> Self {
+        Self {
+            val: self.val.clone(),
+            randomness: self.randomness,
+        }
+    }
+}
+
+/// Flattening operation for serialization to share over an MPC fabric
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedLinkableCommitment<N, S> {
     /// Create a linkable commitment from a shared scalar by sampling a shared
@@ -358,32 +377,35 @@ pub trait CommitSharedProver<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
 ///
 /// The type this is implemented for is assumed to be a secret sharing of some MPC
 /// network allocated value.
-pub trait Open {
+pub trait Open<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The output type that results from opening this value
     type OpenOutput;
     /// The error type that results if opening fails
     type Error;
     /// Opens the shared type without authenticating
-    fn open(self) -> Result<Self::OpenOutput, Self::Error>;
+    fn open(self, fabric: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error>;
     /// Opens the shared type and authenticates the result
-    fn open_and_authenticate(self) -> Result<Self::OpenOutput, Self::Error>;
+    fn open_and_authenticate(
+        self,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self::OpenOutput, Self::Error>;
 }
 
 #[allow(clippy::needless_borrow)]
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open<N, S>
     for AuthenticatedCompressedRistretto<N, S>
 {
     type OpenOutput = CompressedRistretto;
     type Error = MpcError;
 
-    fn open(self) -> Result<Self::OpenOutput, Self::Error> {
+    fn open(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
         Ok((&self)
             .open()
             .map_err(|err| MpcError::OpeningError(err.to_string()))?
             .value())
     }
 
-    fn open_and_authenticate(self) -> Result<Self::OpenOutput, Self::Error> {
+    fn open_and_authenticate(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
         Ok((&self)
             .open_and_authenticate()
             .map_err(|err| MpcError::OpeningError(err.to_string()))?
@@ -391,13 +413,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open<N, S>
     for Vec<AuthenticatedCompressedRistretto<N, S>>
 {
     type OpenOutput = Vec<CompressedRistretto>;
     type Error = MpcError;
 
-    fn open(self) -> Result<Self::OpenOutput, Self::Error> {
+    fn open(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
         Ok(AuthenticatedCompressedRistretto::batch_open(&self)
             .map_err(|err| MpcError::OpeningError(err.to_string()))?
             .iter()
@@ -405,7 +427,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open
             .collect_vec())
     }
 
-    fn open_and_authenticate(self) -> Result<Self::OpenOutput, Self::Error> {
+    fn open_and_authenticate(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
         Ok(
             AuthenticatedCompressedRistretto::batch_open_and_authenticate(&self)
                 .map_err(|err| MpcError::OpeningError(err.to_string()))?
@@ -486,7 +508,7 @@ pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueS
     ///
     /// The prover commits to the witness and sends this commitment to the verifier, this type
     /// is the structure in which that commitment is sent
-    type WitnessCommitment: Open;
+    type WitnessCommitment: Open<N, S>;
 
     /// The size of the bulletproof generators that must be allocated
     /// to fully compute a proof or verification of the statement
@@ -516,7 +538,7 @@ pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueS
     /// parties reconstruct the underlying secret from their shares. Then the opened
     /// proof and commitments can be passed to the verifier.
     fn verify(
-        witness_commitments: <Self::WitnessCommitment as Open>::OpenOutput,
+        witness_commitments: <Self::WitnessCommitment as Open<N, S>>::OpenOutput,
         statement: Self::Statement,
         proof: R1CSProof,
         verifier: Verifier,

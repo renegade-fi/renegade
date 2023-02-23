@@ -328,6 +328,14 @@ impl NetworkOrderBook {
         self.read_order(order_id)?.valid_commit_proof.clone()
     }
 
+    /// Fetch a copy of the witness to the validity proof if one exists
+    pub fn get_validity_proof_witness(
+        &self,
+        order_id: &OrderIdentifier,
+    ) -> Option<SizedValidCommitmentsWitness> {
+        self.read_order(order_id)?.valid_commit_witness.clone()
+    }
+
     // -----------
     // | Setters |
     // -----------

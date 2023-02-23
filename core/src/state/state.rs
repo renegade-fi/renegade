@@ -3,7 +3,6 @@
 
 use circuits::{
     native_helpers::compute_poseidon_hash,
-    types::{balance::Balance, fee::Fee, order::Order},
     zk_circuits::valid_commitments::ValidCommitmentsWitness,
     zk_gadgets::merkle::{MerkleOpening, MerkleRoot},
 };
@@ -328,19 +327,6 @@ impl RelayerState {
         let mut rng = thread_rng();
         let distribution = WeightedIndex::new(&priorities).unwrap();
         Some(*verified_orders.get(distribution.sample(&mut rng)).unwrap())
-    }
-
-    /// Get the order, balance, and fee information for a given order_id
-    pub fn get_order_balance_fee(
-        &self,
-        order_id: &OrderIdentifier,
-    ) -> Option<(Order, Balance, Fee)> {
-        let order_wallet = { self.read_wallet_index().get_wallet_for_order(order_id) }?;
-        let (order, balance, fee, _) = self
-            .read_wallet_index()
-            .get_order_balance_and_fee(&order_wallet, order_id)?;
-
-        Some((order, balance, fee))
     }
 
     /// Get a peer in the cluster that manages the given order, used to dial during

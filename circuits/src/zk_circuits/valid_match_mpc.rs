@@ -424,7 +424,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 /// Note that the witness structure does not include both orders or balances.
 /// This is because the witness is distributed (neither party knows both sides)
 /// and is realized during the commit phase of the collaborative proof.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ValidMatchMpcWitness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The local party's order that was matched by MPC
     pub my_order: LinkableOrderCommitment,
@@ -436,6 +436,16 @@ pub struct ValidMatchMpcWitness<N: MpcNetwork + Send, S: SharedValueSource<Scala
     /// We do not open this value before proving so that we can avoid leaking information
     /// before the collaborative proof has finished
     pub match_res: AuthenticatedLinkableMatchResultCommitment<N, S>,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for ValidMatchMpcWitness<N, S> {
+    fn clone(&self) -> Self {
+        Self {
+            my_order: self.my_order.clone(),
+            my_balance: self.my_balance.clone(),
+            match_res: self.match_res.clone(),
+        }
+    }
 }
 
 /// Represents a commitment to the VALID MATCH MPC witness
@@ -535,11 +545,13 @@ impl From<&[CompressedRistretto]> for ValidMatchCommitment {
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open for ValidMatchCommitmentShared<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open<N, S>
+    for ValidMatchCommitmentShared<N, S>
+{
     type OpenOutput = ValidMatchCommitment;
     type Error = MpcError;
 
-    fn open(self) -> Result<Self::OpenOutput, Self::Error> {
+    fn open(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
         let all_commitments: Vec<AuthenticatedCompressedRistretto<N, S>> = self.into();
         let opened_values: Vec<CompressedRistretto> =
             AuthenticatedCompressedRistretto::batch_open(&all_commitments)
@@ -551,7 +563,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open for ValidMatchComm
         Ok(Into::<ValidMatchCommitment>::into(opened_values.borrow()))
     }
 
-    fn open_and_authenticate(self) -> Result<Self::OpenOutput, Self::Error> {
+    fn open_and_authenticate(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
         let all_commitments: Vec<AuthenticatedCompressedRistretto<_, _>> = self.into();
         let opened_values: Vec<CompressedRistretto> =
             AuthenticatedCompressedRistretto::batch_open_and_authenticate(&all_commitments)

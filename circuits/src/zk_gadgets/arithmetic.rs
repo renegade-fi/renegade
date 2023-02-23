@@ -490,8 +490,9 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
     > {
         // Commit to the input
         let mut rng = OsRng {};
+        let blinder = Scalar::random(&mut rng);
         let (witness_commit, witness_var) = prover
-            .commit_preshared(&witness.x, Scalar::random(&mut rng))
+            .commit_preshared(&witness.x, blinder)
             .map_err(|err| ProverError::Mpc(MpcError::SharingError(err.to_string())))?;
 
         // Commit to the public expected hash output

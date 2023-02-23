@@ -1,7 +1,6 @@
 //! The handshake module handles the execution of handshakes from negotiating
 //! a pair of orders to match, all the way through settling any resulting match
 
-use circuits::types::{balance::Balance, fee::Fee, order::Order};
 use crossbeam::channel::{Receiver, Sender};
 
 use libp2p::request_response::ResponseChannel;
@@ -254,9 +253,7 @@ impl HandshakeExecutor {
         &self,
         peer_order_id: OrderIdentifier,
     ) -> Result<(), HandshakeManagerError> {
-        if let Some((local_order_id, order, balance, fee)) =
-            self.choose_order_balance_fee(peer_order_id)
-        {
+        if let Some(local_order_id) = self.choose_match_proposal(peer_order_id) {
             // Choose a peer to match this order with
             let managing_peer = self.global_state.get_peer_managing_order(&peer_order_id);
             if managing_peer.is_none() {
@@ -281,14 +278,8 @@ impl HandshakeExecutor {
                 })
                 .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
-            self.handshake_state_index.new_handshake(
-                request_id,
-                peer_order_id,
-                local_order_id,
-                order,
-                balance,
-                fee,
-            );
+            self.handshake_state_index
+                .new_handshake(request_id, peer_order_id, local_order_id);
         }
 
         Ok(())
@@ -383,80 +374,69 @@ impl HandshakeExecutor {
             );
         }
 
-        // Find the order, along with a balance and fee to accompany the match
-        if let Some((order, balance, fee)) = self.global_state.get_order_balance_fee(&my_order) {
-            // Add an entry to the handshake state index
-            self.handshake_state_index.new_handshake(
+        // Add an entry to the handshake state index
+        self.handshake_state_index
+            .new_handshake(request_id, sender_order, my_order);
+
+        // Check if the order pair has previously been matched, if so notify the peer and
+        // terminate the handshake
+        let previously_matched = {
+            let locked_handshake_cache = self
+                .handshake_cache
+                .read()
+                .expect("handshake_cache lock poisoned");
+            locked_handshake_cache.contains(my_order, sender_order)
+        }; // locked_handshake_cache released
+
+        if previously_matched {
+            return self.reject_match_proposal(
                 request_id,
                 sender_order,
                 my_order,
-                order,
-                balance,
-                fee,
+                MatchRejectionReason::Cached,
+                response_channel,
             );
-
-            // Check if the order pair has previously been matched, if so notify the peer and
-            // terminate the handshake
-            let previously_matched = {
-                let locked_handshake_cache = self
-                    .handshake_cache
-                    .read()
-                    .expect("handshake_cache lock poisoned");
-                locked_handshake_cache.contains(my_order, sender_order)
-            }; // locked_handshake_cache released
-
-            if previously_matched {
-                return self.reject_match_proposal(
-                    request_id,
-                    sender_order,
-                    my_order,
-                    MatchRejectionReason::Cached,
-                    response_channel,
-                );
-            }
-
-            // If the order pair has not been previously matched; broker an MPC connection
-            // Choose a random open port to receive the connection on
-            // the peer port can be a dummy value as the local node will take the role
-            // of listener in the connection setup
-            let local_port = pick_unused_port().expect("all ports taken");
-            self.network_channel
-                .send(GossipOutbound::ManagementMessage(
-                    ManagerControlDirective::BrokerMpcNet {
-                        request_id,
-                        peer_id,
-                        peer_port: 0,
-                        local_port,
-                        local_role: ConnectionRole::Listener,
-                    },
-                ))
-                .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
-
-            // Send a pubsub message indicating intent to match on the given order pair
-            // Cluster peers will then avoid scheduling this match until the match either completes, or
-            // the cache entry's invisibility window times out
-            let cluster_id = { self.global_state.local_cluster_id.clone() };
-            self.network_channel
-                .send(GossipOutbound::Pubsub {
-                    topic: cluster_id.get_management_topic(),
-                    message: PubsubMessage::ClusterManagement {
-                        cluster_id,
-                        message: ClusterManagementMessage::MatchInProgress(my_order, sender_order),
-                    },
-                })
-                .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
-
-            let resp = HandshakeMessage::ExecuteMatch {
-                peer_id: self.global_state.local_peer_id(),
-                port: local_port,
-                previously_matched,
-                order1: my_order,
-                order2: sender_order,
-            };
-            self.send_request_response(request_id, peer_id, resp, Some(response_channel))?;
-        } else {
-            log::debug!("match proposed on unknown order")
         }
+
+        // If the order pair has not been previously matched; broker an MPC connection
+        // Choose a random open port to receive the connection on
+        // the peer port can be a dummy value as the local node will take the role
+        // of listener in the connection setup
+        let local_port = pick_unused_port().expect("all ports taken");
+        self.network_channel
+            .send(GossipOutbound::ManagementMessage(
+                ManagerControlDirective::BrokerMpcNet {
+                    request_id,
+                    peer_id,
+                    peer_port: 0,
+                    local_port,
+                    local_role: ConnectionRole::Listener,
+                },
+            ))
+            .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
+
+        // Send a pubsub message indicating intent to match on the given order pair
+        // Cluster peers will then avoid scheduling this match until the match either completes, or
+        // the cache entry's invisibility window times out
+        let cluster_id = { self.global_state.local_cluster_id.clone() };
+        self.network_channel
+            .send(GossipOutbound::Pubsub {
+                topic: cluster_id.get_management_topic(),
+                message: PubsubMessage::ClusterManagement {
+                    cluster_id,
+                    message: ClusterManagementMessage::MatchInProgress(my_order, sender_order),
+                },
+            })
+            .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
+
+        let resp = HandshakeMessage::ExecuteMatch {
+            peer_id: self.global_state.local_peer_id(),
+            port: local_port,
+            previously_matched,
+            order1: my_order,
+            order2: sender_order,
+        };
+        self.send_request_response(request_id, peer_id, resp, Some(response_channel))?;
 
         Ok(())
     }
@@ -574,39 +554,26 @@ impl HandshakeExecutor {
             .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))
     }
 
-    /// Chooses an order, balance, and fee to match against
-    ///
-    /// The `peer_order` field is optional; for a peer initiating a handshake; the peer will not know
-    /// the peer's proposed order, so it should just choose an order randomly
-    fn choose_order_balance_fee(
-        &self,
-        peer_order: OrderIdentifier,
-    ) -> Option<(OrderIdentifier, Order, Balance, Fee)> {
-        let mut proposed_order = None;
-        {
-            let locked_handshake_cache = self
-                .handshake_cache
-                .read()
-                .expect("handshake_cache lock poisoned");
+    /// Chooses an order to match against a remote order
+    fn choose_match_proposal(&self, peer_order: OrderIdentifier) -> Option<OrderIdentifier> {
+        let locked_handshake_cache = self
+            .handshake_cache
+            .read()
+            .expect("handshake_cache lock poisoned");
 
-            let local_verified_orders = self
-                .global_state
-                .read_order_book()
-                .get_local_verified_orders();
+        let local_verified_orders = self
+            .global_state
+            .read_order_book()
+            .get_local_verified_orders();
 
-            // Choose an order that isn't cached
-            for order_id in local_verified_orders.iter() {
-                if !locked_handshake_cache.contains(*order_id, peer_order) {
-                    proposed_order = Some(*order_id);
-                    break;
-                }
+        // Choose an order that isn't cached
+        for order_id in local_verified_orders.iter() {
+            if !locked_handshake_cache.contains(*order_id, peer_order) {
+                return Some(*order_id);
             }
-        }; // locked_handshake_cache released
+        }
 
-        // Get the order balance and fee for the selected order
-        let order_id = proposed_order?;
-        let (order, balance, fee) = self.global_state.get_order_balance_fee(&order_id)?;
-        Some((order_id, order, balance, fee))
+        None
     }
 
     /// Record a match as completed in the various state objects

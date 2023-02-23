@@ -114,7 +114,7 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
         // Compute matches
         let res = compute_match(&order1, &order2, test_args.mpc_fabric.clone())
             .map_err(|err| format!("Error computing order match: {:?}", err))?
-            .open_and_authenticate()
+            .open_and_authenticate(test_args.mpc_fabric.clone())
             .map_err(|err| format!("Error opening match result: {:?}", err))?;
 
         // Assert that no match occurred
@@ -220,7 +220,7 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
         // Compute matches
         let res = compute_match(&order1, &order2, test_args.mpc_fabric.clone())
             .map_err(|err| format!("Error computing order match: {:?}", err))?
-            .open_and_authenticate()
+            .open_and_authenticate(test_args.mpc_fabric.clone())
             .map_err(|err| format!("Error opening match result: {:?}", err))?;
 
         // Assert that no match occurred

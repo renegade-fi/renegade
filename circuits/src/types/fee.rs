@@ -228,6 +228,54 @@ impl CommitProver for LinkableFeeCommitment {
     }
 }
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> SharePublic<N, S>
+    for LinkableFeeCommitment
+{
+    type ErrorType = MpcError;
+
+    fn share_public(
+        &self,
+        owning_party: u64,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self, Self::ErrorType> {
+        let values = &[
+            self.settle_key.val,
+            self.settle_key.randomness,
+            self.gas_addr.val,
+            self.gas_addr.randomness,
+            self.gas_token_amount.val,
+            self.gas_token_amount.randomness,
+            self.percentage_fee.repr.val,
+            self.percentage_fee.repr.randomness,
+        ];
+        let shared_values = fabric
+            .borrow_fabric()
+            .batch_shared_plaintext_scalars(owning_party, values)
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+
+        Ok(Self {
+            settle_key: LinkableCommitment {
+                val: shared_values[0].to_owned(),
+                randomness: shared_values[1].to_owned(),
+            },
+            gas_addr: LinkableCommitment {
+                val: shared_values[2].to_owned(),
+                randomness: shared_values[3].to_owned(),
+            },
+            gas_token_amount: LinkableCommitment {
+                val: shared_values[4].to_owned(),
+                randomness: shared_values[5].to_owned(),
+            },
+            percentage_fee: LinkableFixedPointCommitment {
+                repr: LinkableCommitment {
+                    val: shared_values[6].to_owned(),
+                    randomness: shared_values[7].to_owned(),
+                },
+            },
+        })
+    }
+}
+
 /// A fee with values that have been allocated in an MPC network
 #[derive(Clone, Debug)]
 pub struct AuthenticatedFee<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {

@@ -9,10 +9,13 @@ use circuits::{
     multiprover_prove,
     native_helpers::compute_poseidon_hash,
     types::{
-        balance::Balance,
-        fee::Fee,
-        order::Order,
-        r#match::{AuthenticatedMatchResult, MatchResult},
+        balance::LinkableBalanceCommitment,
+        fee::LinkableFeeCommitment,
+        order::{LinkableOrderCommitment, Order},
+        r#match::{
+            AuthenticatedLinkableMatchResultCommitment, AuthenticatedMatchResult,
+            LinkableMatchResultCommitment,
+        },
     },
     verify_collaborative_proof,
     zk_circuits::valid_match_mpc::{
@@ -33,6 +36,8 @@ use mpc_ristretto::{
 use tokio::runtime::Builder as TokioBuilder;
 use tracing::log;
 
+use crate::types::SizedValidCommitmentsWitness;
+
 use super::{error::HandshakeManagerError, manager::HandshakeExecutor, state::HandshakeState};
 
 /// The type returned by the match process, including the result, the validity proof, and
@@ -40,13 +45,13 @@ use super::{error::HandshakeManagerError, manager::HandshakeExecutor, state::Han
 #[derive(Clone, Debug)]
 pub struct HandshakeResult {
     /// The plaintext, opened result of the match
-    pub match_: MatchResult,
+    pub match_: LinkableMatchResultCommitment,
     /// The collaboratively proved proof of `VALID MATCH MPC`
     pub proof: R1CSProof,
     /// The first party's fee, opened to create fee notes
-    pub party0_fee: Fee,
+    pub party0_fee: LinkableFeeCommitment,
     /// The second party's fee, opened to create fee notes
-    pub party1_fee: Fee,
+    pub party1_fee: LinkableFeeCommitment,
     /// The Poseidon hash of the first party's wallet randomness
     pub party0_randomness_hash: Scalar,
     /// The Poseidon hash of the second party's wallet randomness
@@ -118,20 +123,41 @@ impl HandshakeExecutor {
 
         let shared_fabric = SharedFabric::new(fabric);
 
-        // Run the mpc to get a match result
-        let match_res = Self::execute_match_mpc(&handshake_state.order, shared_fabric.clone())?;
+        // Lookup the witness used to prove valid commitments for this order, balance, fee pair
+        // Use the linkable commitments from this witness to commit to values in `VALID MATCH MPC`
+        let commitments_witness = self
+            .global_state
+            .read_order_book()
+            .get_validity_proof_witness(&handshake_state.local_order_id)
+            .ok_or_else(|| {
+                HandshakeManagerError::StateNotFound(
+                    "missing validity proof witness, cannot link proofs".to_string(),
+                )
+            })?;
 
-        // The statement parameterization of the VALID MATCH MPC circuit is empty
-        let statement = ValidMatchMpcStatement {};
-        let proof = Self::prove_valid_match(
-            handshake_state.order.clone(),
-            handshake_state.balance.clone(),
-            statement,
-            match_res.clone(),
+        // Run the mpc to get a match result
+        let match_res = Self::execute_match_mpc(
+            &commitments_witness.order.clone().into(),
             shared_fabric.clone(),
         )?;
 
-        self.build_handshake_result(match_res, proof, handshake_state, shared_fabric)
+        // The statement parameterization of the VALID MATCH MPC circuit is empty
+        let statement = ValidMatchMpcStatement {};
+        let (witness, proof) = Self::prove_valid_match(
+            commitments_witness.order.clone(),
+            commitments_witness.balance.clone(),
+            statement,
+            match_res,
+            shared_fabric.clone(),
+        )?;
+
+        self.build_handshake_result(
+            witness.match_res,
+            proof,
+            commitments_witness,
+            handshake_state,
+            shared_fabric,
+        )
     }
 
     /// Execute the match MPC over the provisioned QUIC stream
@@ -156,32 +182,32 @@ impl HandshakeExecutor {
     #[allow(unused)]
     #[allow(unused_variables)]
     fn prove_valid_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-        order: Order,
-        balance: Balance,
+        my_order: LinkableOrderCommitment,
+        my_balance: LinkableBalanceCommitment,
         statement: ValidMatchMpcStatement,
         match_res: AuthenticatedMatchResult<N, S>,
         fabric: SharedFabric<N, S>,
-    ) -> Result<R1CSProof, HandshakeManagerError> {
+    ) -> Result<(ValidMatchMpcWitness<N, S>, R1CSProof), HandshakeManagerError> {
         // Build a witness to the VALID MATCH MPC statement
         // TODO: Use proof-linked witness vars
         let witness = ValidMatchMpcWitness {
-            my_order: order.into(),
-            my_balance: balance.into(),
+            my_order,
+            my_balance,
             match_res: match_res.into(),
         };
 
         // Prove the statement
-        let (witness_commitment, proof) = multiprover_prove::<
-            '_,
-            N,
-            S,
-            ValidMatchMpcCircuit<'_, N, S>,
-        >(witness, statement.clone(), fabric)
-        .map_err(|err| HandshakeManagerError::Multiprover(err.to_string()))?;
+        let (witness_commitment, proof) =
+            multiprover_prove::<'_, N, S, ValidMatchMpcCircuit<'_, N, S>>(
+                witness.clone(),
+                statement.clone(),
+                fabric.clone(),
+            )
+            .map_err(|err| HandshakeManagerError::Multiprover(err.to_string()))?;
 
         // Open the proof and verify it
         let opened_commit = witness_commitment
-            .open_and_authenticate()
+            .open_and_authenticate(fabric)
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
         let opened_proof = proof
             .open()
@@ -194,23 +220,24 @@ impl HandshakeExecutor {
         )
         .map_err(|err| HandshakeManagerError::VerificationError(err.to_string()))?;
 
-        Ok(opened_proof)
+        Ok((witness, opened_proof))
     }
 
     /// Build the handshake result from a match and proof
     fn build_handshake_result<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         &self,
-        shared_match_res: AuthenticatedMatchResult<N, S>,
+        shared_match_res: AuthenticatedLinkableMatchResultCommitment<N, S>,
         proof: R1CSProof,
+        validity_proof_witness: SizedValidCommitmentsWitness,
         handshake_state: HandshakeState,
         fabric: SharedFabric<N, S>,
     ) -> Result<HandshakeResult, HandshakeManagerError> {
         // Exchange fees, randomness, and keys before opening the match result
-        let party0_fee = handshake_state
+        let party0_fee = validity_proof_witness
             .fee
             .share_public(0 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let party1_fee = handshake_state
+        let party1_fee = validity_proof_witness
             .fee
             .share_public(1 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
@@ -260,7 +287,7 @@ impl HandshakeExecutor {
 
         // Open the match result and build the handshake result
         let match_res_open = shared_match_res
-            .open_and_authenticate()
+            .open_and_authenticate(fabric)
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
         Ok(HandshakeResult {
