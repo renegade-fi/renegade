@@ -21,6 +21,7 @@ use circuits::{
         elgamal::{ElGamalCiphertext, DEFAULT_ELGAMAL_GENERATOR},
         fixed_point::FixedPoint,
     },
+    LinkableCommitment,
 };
 
 use crypto::fields::{biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint};
@@ -113,8 +114,8 @@ impl HandshakeExecutor {
             match_res: handshake_result.match_,
             party0_fee: handshake_result.party0_fee,
             party1_fee: handshake_result.party1_fee,
-            party0_randomness_hash: handshake_result.party0_randomness_hash.into(),
-            party1_randomness_hash: handshake_result.party1_randomness_hash.into(),
+            party0_randomness_hash: handshake_result.party0_randomness_hash,
+            party1_randomness_hash: handshake_result.party1_randomness_hash,
             party0_note: party0_note.clone(),
             party1_note: party1_note.clone(),
             relayer0_note: relayer0_note.clone(),
@@ -206,14 +207,16 @@ impl HandshakeExecutor {
         match_res: &LinkableMatchResultCommitment,
         party0_fee: &LinkableFeeCommitment,
         party1_fee: &LinkableFeeCommitment,
-        party0_randomness_hash: Scalar,
-        party1_randomness_hash: Scalar,
+        party0_randomness_hash: LinkableCommitment,
+        party1_randomness_hash: LinkableCommitment,
     ) -> (Note, Note, Note, Note, Note) {
         // The match direction corresponds to the direction that party 0 goes in the match
         // i.e. the match direction is 0 (buy) if party 0 is buying the base and selling the quote
         let match_direction: OrderSide = match_res.direction.val.into();
         let base_amount_scalar = Scalar::from(match_res.base_amount);
         let quote_amount_scalar = Scalar::from(match_res.quote_amount);
+        let randomness_hash0_scalar = Scalar::from(party0_randomness_hash);
+        let randomness_hash1_scalar = Scalar::from(party1_randomness_hash);
 
         // Apply fees to the match
         let percent_fee0: FixedPoint = party0_fee.percentage_fee.into();
@@ -262,7 +265,7 @@ impl HandshakeExecutor {
             fee_volume: scalar_to_u64(&party0_fee.gas_token_amount.into()),
             fee_direction: OrderSide::Sell,
             type_: NoteType::Match,
-            randomness: scalar_to_biguint(&party0_randomness_hash),
+            randomness: scalar_to_biguint(&randomness_hash0_scalar),
         };
 
         let party1_note = Note {
@@ -276,7 +279,7 @@ impl HandshakeExecutor {
             fee_volume: scalar_to_u64(&party1_fee.gas_token_amount.into()),
             fee_direction: OrderSide::Sell,
             type_: NoteType::Match,
-            randomness: scalar_to_biguint(&party1_randomness_hash),
+            randomness: scalar_to_biguint(&randomness_hash1_scalar),
         };
 
         // Create the relayer notes
@@ -311,7 +314,7 @@ impl HandshakeExecutor {
             fee_volume: scalar_to_u64(&party0_fee.gas_token_amount.into()),
             fee_direction: OrderSide::Buy,
             type_: NoteType::InternalTransfer,
-            randomness: scalar_to_biguint(&(party0_randomness_hash + Scalar::one())),
+            randomness: scalar_to_biguint(&(randomness_hash0_scalar + Scalar::one())),
         };
 
         let relayer1_note = Note {
@@ -325,7 +328,7 @@ impl HandshakeExecutor {
             fee_volume: scalar_to_u64(&party1_fee.gas_token_amount.into()),
             fee_direction: OrderSide::Buy,
             type_: NoteType::InternalTransfer,
-            randomness: scalar_to_biguint(&(party1_randomness_hash + Scalar::one())),
+            randomness: scalar_to_biguint(&(randomness_hash1_scalar + Scalar::one())),
         };
 
         // Build the protocol note
@@ -343,7 +346,7 @@ impl HandshakeExecutor {
             fee_volume: 0,
             fee_direction: OrderSide::Buy,
             type_: NoteType::InternalTransfer,
-            randomness: scalar_to_biguint(&(party0_randomness_hash + party1_randomness_hash)),
+            randomness: scalar_to_biguint(&(randomness_hash0_scalar + randomness_hash1_scalar)),
         };
 
         (

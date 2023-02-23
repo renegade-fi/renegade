@@ -37,7 +37,7 @@ use crate::{
         poseidon::PoseidonHashGadget,
         select::CondSelectGadget,
     },
-    CommitProver, CommitVerifier, SingleProverCircuit,
+    CommitProver, CommitVerifier, LinkableCommitment, SingleProverCircuit,
 };
 
 /// The circuitry for the VALID COMMITMENTS statement
@@ -198,7 +198,7 @@ pub struct ValidCommitmentsWitness<
     pub wallet_opening: MerkleOpening,
     /// The Poseidon hash of the wallet's randomness, used as the blinder
     /// on any notes generated for a match
-    pub randomness_hash: Scalar,
+    pub randomness_hash: LinkableCommitment,
     /// The private match key, used as an authorization check that the prover
     /// may match for the given wallet
     pub sk_match: Scalar,
@@ -284,8 +284,8 @@ where
             self.fee_balance.commit_prover(rng, prover).unwrap();
         let (fee_var, fee_commit) = self.fee.commit_prover(rng, prover).unwrap();
         let (opening_var, opening_commit) = self.wallet_opening.commit_prover(rng, prover).unwrap();
-        let (randomness_hash_comm, randomness_hash_var) =
-            prover.commit(self.randomness_hash, Scalar::random(rng));
+        let (randomness_hash_var, randomness_hash_comm) =
+            self.randomness_hash.commit_prover(rng, prover).unwrap();
         let (sk_match_comm, sk_match_var) = prover.commit(self.sk_match, Scalar::random(rng));
 
         Ok((
@@ -437,7 +437,7 @@ mod valid_commitments_test {
             PRIVATE_KEYS,
         },
         zk_gadgets::{fixed_point::FixedPoint, merkle::MerkleOpening},
-        CommitProver,
+        CommitProver, LinkableCommitment,
     };
 
     use super::{ValidCommitments, ValidCommitmentsStatement, ValidCommitmentsWitness};
@@ -500,7 +500,7 @@ mod valid_commitments_test {
                 elems: opening,
                 indices: opening_indices,
             },
-            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
             sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {
@@ -542,7 +542,7 @@ mod valid_commitments_test {
                 elems: opening,
                 indices: opening_indices,
             },
-            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
             sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {
@@ -583,7 +583,7 @@ mod valid_commitments_test {
                 elems: opening,
                 indices: opening_indices,
             },
-            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
             sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {
@@ -627,7 +627,7 @@ mod valid_commitments_test {
                 elems: opening,
                 indices: opening_indices,
             },
-            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
             sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {
@@ -673,7 +673,7 @@ mod valid_commitments_test {
                 elems: opening,
                 indices: opening_indices,
             },
-            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
             sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {
@@ -715,7 +715,7 @@ mod valid_commitments_test {
                 elems: opening,
                 indices: opening_indices,
             },
-            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
             sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {
@@ -755,7 +755,7 @@ mod valid_commitments_test {
                 elems: opening,
                 indices: opening_indices,
             },
-            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
             sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {
@@ -795,7 +795,7 @@ mod valid_commitments_test {
                 elems: opening,
                 indices: opening_indices,
             },
-            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
             sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {
@@ -837,7 +837,7 @@ mod valid_commitments_test {
                 elems: opening,
                 indices: opening_indices,
             },
-            randomness_hash: compute_poseidon_hash(&[wallet.randomness]),
+            randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
             sk_match: PRIVATE_KEYS[1],
         };
         let statement = ValidCommitmentsStatement {

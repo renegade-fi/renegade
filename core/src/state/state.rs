@@ -5,6 +5,7 @@ use circuits::{
     native_helpers::compute_poseidon_hash,
     zk_circuits::valid_commitments::ValidCommitmentsWitness,
     zk_gadgets::merkle::{MerkleOpening, MerkleRoot},
+    LinkableCommitment,
 };
 use crossbeam::channel::Sender;
 use crypto::fields::biguint_to_scalar;
@@ -190,6 +191,8 @@ impl RelayerState {
                         // This witness is reference by match computations which compute linkable commitments
                         // to the order and balance; i.e. they commit with the same randomness
                         {
+                            let randomness_hash =
+                                compute_poseidon_hash(&[biguint_to_scalar(&wallet.randomness)]);
                             self.read_order_book().attach_validity_proof_witness(
                                 order_id,
                                 ValidCommitmentsWitness {
@@ -199,9 +202,7 @@ impl RelayerState {
                                     fee: fee.clone().into(),
                                     fee_balance: fee_balance.clone().into(),
                                     wallet_opening: wallet_opening.clone(),
-                                    randomness_hash: compute_poseidon_hash(&[biguint_to_scalar(
-                                        &wallet.randomness,
-                                    )]),
+                                    randomness_hash: LinkableCommitment::new(randomness_hash),
                                     sk_match: wallet.secret_keys.sk_match,
                                 },
                             );
