@@ -10,6 +10,7 @@ use crate::{
     gossip::types::{ClusterId, WrappedPeerId},
     proof_generation::jobs::ValidCommitmentsBundle,
     state::OrderIdentifier,
+    types::SizedValidCommitmentsWitness,
 };
 
 use super::{
@@ -131,6 +132,17 @@ pub enum GossipRequest {
         /// The proof of `VALID COMMITMENTS` for this order
         proof: ValidCommitmentsBundle,
     },
+    /// A request type that pushes the witness used in `VALID COMMITMENTS` for an order to the
+    /// receiver
+    ///
+    /// This may be triggered when the receiver broadcasts a pubsub message indicating that it
+    /// needs a copy of the witness
+    ValidityWitness {
+        /// The order this witness is for
+        order_id: OrderIdentifier,
+        /// The witness used to prove `VALID COMMITMENTS`
+        witness: SizedValidCommitmentsWitness,
+    },
 }
 
 impl GossipRequest {
@@ -146,6 +158,7 @@ impl GossipRequest {
             GossipRequest::OrderInfo(..) => false,
             GossipRequest::Replicate(..) => false,
             GossipRequest::ValidityProof { .. } => true,
+            GossipRequest::ValidityWitness { .. } => true,
         }
     }
 }

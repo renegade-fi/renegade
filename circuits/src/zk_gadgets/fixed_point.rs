@@ -218,7 +218,7 @@ impl Serialize for FixedPoint {
     {
         // Serialize the value as a floating point
         let mut bigdec = scalar_to_bigdecimal(&self.repr);
-        bigdec = &bigdec / (2u64 << DEFAULT_PRECISION);
+        bigdec = &bigdec / (1u64 << DEFAULT_PRECISION);
 
         serializer.serialize_f32(bigdec.to_f32().unwrap())
     }
@@ -249,7 +249,7 @@ impl From<LinkableFixedPointCommitment> for FixedPoint {
 }
 
 /// A fixed point commitment that may be linked across proofs
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinkableFixedPointCommitment {
     /// The underlying scalar representation
     pub(crate) repr: LinkableCommitment,

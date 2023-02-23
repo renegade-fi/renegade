@@ -171,7 +171,7 @@ impl CommitVerifier for CommittedFee {
 }
 
 /// A fee that can be linked across proofs
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinkableFeeCommitment {
     /// The public settle key of the cluster collecting fees
     pub settle_key: LinkableCommitment,

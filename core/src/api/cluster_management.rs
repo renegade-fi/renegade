@@ -44,6 +44,9 @@ pub enum ClusterManagementMessage {
     /// along with the wallet. Instead of immediately generating such a proof locally,
     /// the peer may request it from its cluster
     RequestOrderValidityProof(ValidityProofRequest),
+    /// A request from a peer to its cluster for a copy of the witness to `VALID COMMITMENTS`
+    /// for a given order
+    RequestOrderValidityWitness(ValidityWitnessRequest),
 }
 
 impl From<&ClusterManagementMessage> for Vec<u8> {
@@ -111,7 +114,19 @@ pub struct ClusterAuthResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidityProofRequest {
     /// The orders for which a proof is requested
+    ///
+    /// We allow for a batch of request so that a bootstrapping peer may
+    /// save on published messages
     pub order_ids: Vec<OrderIdentifier>,
+    /// The address that a response should be sent back to
+    pub sender: WrappedPeerId,
+}
+
+/// The boyd of a witness request published to a cluster
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ValidityWitnessRequest {
+    /// The order for which a witness is requested
+    pub order_id: OrderIdentifier,
     /// The address that a response should be sent back to
     pub sender: WrappedPeerId,
 }

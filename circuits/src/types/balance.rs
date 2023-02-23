@@ -95,7 +95,7 @@ impl CommitVerifier for CommittedBalance {
 }
 
 /// Represents a balance that may be linked across proofs
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinkableBalanceCommitment {
     /// The mint (erc-20 token address) of the token in this balance
     pub mint: LinkableCommitment,

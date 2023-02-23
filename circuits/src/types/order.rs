@@ -257,7 +257,7 @@ impl CommitVerifier for CommittedOrder {
 }
 
 /// A linkable commitment to an Order that may be used across proofs
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinkableOrderCommitment {
     /// The mint (ERC-20 contract address) of the quote token
     pub quote_mint: LinkableCommitment,

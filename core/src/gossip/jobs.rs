@@ -11,6 +11,7 @@ use crate::{
     },
     proof_generation::jobs::ValidCommitmentsBundle,
     state::{wallet::WalletIdentifier, NetworkOrder, OrderIdentifier},
+    types::SizedValidCommitmentsWitness,
 };
 
 use super::types::{ClusterId, WrappedPeerId};
@@ -106,5 +107,19 @@ pub enum OrderBookManagementJob {
         cluster: ClusterId,
         /// The new proof of `VALID COMMITMENTS`
         proof: ValidCommitmentsBundle,
+    },
+    /// A request for an order's witness to `VALID COMMITMENTS` has come in
+    OrderWitness {
+        /// The order ID that info is requested for
+        order_id: OrderIdentifier,
+        /// The peer to return the response to
+        requesting_peer: WrappedPeerId,
+    },
+    /// A response for an order's witness to `VALID COMMITMENTS` has come in
+    OrderWitnessResponse {
+        /// The order ID that info is requested for
+        order_id: OrderIdentifier,
+        /// The witness used to prove `VALID COMMITMENTS` for the order
+        witness: SizedValidCommitmentsWitness,
     },
 }

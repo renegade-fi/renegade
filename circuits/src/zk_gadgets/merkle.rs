@@ -175,7 +175,7 @@ impl PoseidonMerkleHashGadget {
 }
 
 /// A fully specified merkle opening from hashed leaf to root
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MerkleOpening {
     /// The opening from the leaf node to the root, i.e. the set of sister nodes
     /// that hash together with the input from the leaf to the root
