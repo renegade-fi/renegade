@@ -11,9 +11,11 @@ use crate::{CommitProver, CommitVerifier};
 
 use super::{
     balance::{Balance, BalanceVar, CommittedBalance},
+    deserialize_array,
     fee::{CommittedFee, Fee, FeeVar},
     keychain::{CommittedKeyChain, KeyChain, KeyChainVar},
     order::{CommittedOrder, Order, OrderVar},
+    serialize_array,
 };
 
 /// A type alias for readability
@@ -21,16 +23,28 @@ pub type WalletCommitment = Scalar;
 
 /// Represents the base type of a wallet holding orders, balances, fees, keys
 /// and cryptographic randomness
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Wallet<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
     /// The list of balances in the wallet
+    #[serde(
+        serialize_with = "serialize_array",
+        deserialize_with = "deserialize_array"
+    )]
     pub balances: [Balance; MAX_BALANCES],
     /// The list of open orders in the wallet
+    #[serde(
+        serialize_with = "serialize_array",
+        deserialize_with = "deserialize_array"
+    )]
     pub orders: [Order; MAX_ORDERS],
     /// The list of payable fees in the wallet
+    #[serde(
+        serialize_with = "serialize_array",
+        deserialize_with = "deserialize_array"
+    )]
     pub fees: [Fee; MAX_FEES],
     /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle, pk_view)
     pub keys: KeyChain,

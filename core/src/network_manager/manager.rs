@@ -212,7 +212,7 @@ impl NetworkManagerExecutor {
                 // Handle network requests from worker components of the relayer
                 Some(message) = self.send_channel.recv() => {
                     // Forward the message
-                    if let Err(err) = self.handle_outbound_message(message).await {
+                    if let Err(err) = self.handle_outbound_message(message) {
                         log::info!("Error sending outbound message: {}", err);
                     }
                 },
@@ -274,10 +274,7 @@ impl NetworkManagerExecutor {
     }
 
     /// Handles an outbound message from worker threads to other relayers
-    async fn handle_outbound_message(
-        &mut self,
-        msg: GossipOutbound,
-    ) -> Result<(), NetworkManagerError> {
+    fn handle_outbound_message(&mut self, msg: GossipOutbound) -> Result<(), NetworkManagerError> {
         match msg {
             GossipOutbound::Request { peer_id, message } => {
                 // Attach a signature if necessary
@@ -518,6 +515,20 @@ impl NetworkManagerExecutor {
                             ))
                             .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))
                     }
+
+                    GossipRequest::ValidityWitness { order_id, witness } => {
+                        self.gossip_work_queue
+                            .send(GossipServerJob::OrderBookManagement(
+                                OrderBookManagementJob::OrderWitnessResponse { order_id, witness },
+                            ))
+                            .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
+
+                        // Send back an ack
+                        self.handle_outbound_message(GossipOutbound::Response {
+                            channel,
+                            message: GossipResponse::Ack,
+                        })
+                    }
                 }
             }
 
@@ -588,6 +599,10 @@ impl NetworkManagerExecutor {
                 message,
             } => {
                 match message {
+                    // --------------------
+                    // | Cluster Metadata |
+                    // --------------------
+
                     // Forward the management message to the gossip server for processing
                     ClusterManagementMessage::Join(join_request) => {
                         // Forward directly
@@ -613,6 +628,10 @@ impl NetworkManagerExecutor {
                         }
                     }
 
+                    // ---------
+                    // | Match |
+                    // ---------
+
                     // Forward the cache sync message to the handshake manager to update the local
                     // cache copy
                     ClusterManagementMessage::CacheSync(order1, order2) => self
@@ -627,6 +646,10 @@ impl NetworkManagerExecutor {
                         .send(HandshakeExecutionJob::PeerMatchInProgress { order1, order2 })
                         .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?,
 
+                    // -------------
+                    // | Orderbook |
+                    // -------------
+
                     // Forward a request for validity proofs to the gossip server to check for locally
                     // available proofs
                     ClusterManagementMessage::RequestOrderValidityProof(req) => {
@@ -636,6 +659,17 @@ impl NetworkManagerExecutor {
                             ))
                             .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
                     }
+
+                    //Forward a request to the gossip server to share validity proof witness
+                    ClusterManagementMessage::RequestOrderValidityWitness(req) => self
+                        .gossip_work_queue
+                        .send(GossipServerJob::OrderBookManagement(
+                            OrderBookManagementJob::OrderWitness {
+                                order_id: req.order_id,
+                                requesting_peer: req.sender,
+                            },
+                        ))
+                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?,
                 }
             }
             PubsubMessage::OrderBookManagement(msg) => match msg {
