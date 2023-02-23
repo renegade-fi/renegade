@@ -194,6 +194,7 @@ impl ProofManager {
         let randomness_hash = LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness]));
         let wallet_nullifier =
             compute_wallet_match_nullifier(&wallet, compute_wallet_commitment(&wallet));
+        let pk_settle = wallet.keys.pk_settle;
 
         // Build a witness and statement
         let witness = ValidCommitmentsWitness {
@@ -209,6 +210,7 @@ impl ProofManager {
         let statement = ValidCommitmentsStatement {
             nullifier: prime_field_to_scalar(&wallet_nullifier),
             merkle_root,
+            pk_settle,
         };
 
         // Prove the statement `VALID COMMITMENTS`

@@ -56,8 +56,7 @@ where
     /// Apply the constraints for the VALID COMMITMENTS circuitry
     pub fn circuit<CS: RandomizableConstraintSystem>(
         witness: ValidCommitmentsWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        merkle_root: Variable,
-        match_nullifier: Variable,
+        statement: ValidCommitmentsStatementVar,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
         // Compute the wallet commitment
@@ -67,14 +66,18 @@ where
         PoseidonMerkleHashGadget::compute_and_constrain_root_prehashed(
             wallet_commitment.clone(),
             witness.wallet_opening,
-            merkle_root.into(),
+            statement.merkle_root.into(),
             cs,
         )?;
+
+        // Verify that the pk_settle value doxxed in the statement is the same as the value
+        // in the wallet
+        cs.constrain(statement.pk_settle - witness.wallet.keys.pk_settle);
 
         // Compute the wallet match nullifier and constrain it to the expected value
         let match_nullifier_res =
             NullifierGadget::match_nullifier(witness.wallet.randomness, wallet_commitment, cs)?;
-        cs.constrain(match_nullifier - match_nullifier_res);
+        cs.constrain(match_nullifier_res - statement.nullifier);
 
         // Verify that the given balance, order, and fee are all valid members of the wallet
         Self::verify_wallet_contains_balance(witness.balance, &witness.wallet, cs);
@@ -351,6 +354,61 @@ pub struct ValidCommitmentsStatement {
     pub nullifier: Scalar,
     /// The global merkle root being proved against
     pub merkle_root: Scalar,
+    /// The public settle key of the wallet
+    pub pk_settle: Scalar,
+}
+
+/// A statement that has been allocated in a constraint system
+#[derive(Copy, Clone, Debug)]
+pub struct ValidCommitmentsStatementVar {
+    /// The wallet match nullifier of the wallet committed to
+    pub nullifier: Variable,
+    /// The global merkle root being proved against
+    pub merkle_root: Variable,
+    /// The public settle key of the wallet
+    pub pk_settle: Variable,
+}
+
+impl CommitProver for ValidCommitmentsStatement {
+    type VarType = ValidCommitmentsStatementVar;
+    type CommitType = ();
+    type ErrorType = ();
+
+    fn commit_prover<R: rand_core::RngCore + rand_core::CryptoRng>(
+        &self,
+        _rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let nullifier_var = prover.commit_public(self.nullifier);
+        let merkle_root_var = prover.commit_public(self.merkle_root);
+        let pk_settle_var = prover.commit_public(self.pk_settle);
+
+        Ok((
+            ValidCommitmentsStatementVar {
+                nullifier: nullifier_var,
+                merkle_root: merkle_root_var,
+                pk_settle: pk_settle_var,
+            },
+            (),
+        ))
+    }
+}
+
+impl CommitVerifier for ValidCommitmentsStatement {
+    type VarType = ValidCommitmentsStatementVar;
+    type ErrorType = ();
+
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
+        let nullifier_var = verifier.commit_public(self.nullifier);
+        let merkle_root_var = verifier.commit_public(self.merkle_root);
+        let pk_settle_var = verifier.commit_public(self.pk_settle);
+
+        Ok(ValidCommitmentsStatementVar {
+            nullifier: nullifier_var,
+            merkle_root: merkle_root_var,
+            pk_settle: pk_settle_var,
+        })
+    }
 }
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> SingleProverCircuit
@@ -372,12 +430,10 @@ where
         // Commit to the witness
         let mut rng = OsRng {};
         let (witness_var, witness_commit) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-
-        let nullifier_var = prover.commit_public(statement.nullifier);
-        let merkle_root_var = prover.commit_public(statement.merkle_root);
+        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
 
         // Apply the constraints
-        ValidCommitments::circuit(witness_var, merkle_root_var, nullifier_var, &mut prover)
+        ValidCommitments::circuit(witness_var, statement_var, &mut prover)
             .map_err(ProverError::R1CS)?;
 
         // Prove the statement
@@ -395,12 +451,10 @@ where
     ) -> Result<(), VerifierError> {
         // Commit to the witness
         let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
-
-        let nullifier_var = verifier.commit_public(statement.nullifier);
-        let merkle_root_var = verifier.commit_public(statement.merkle_root);
+        let statement_var = statement.commit_verifier(&mut verifier).unwrap();
 
         // Apply the constraints
-        ValidCommitments::circuit(witness_var, merkle_root_var, nullifier_var, &mut verifier)
+        ValidCommitments::circuit(witness_var, statement_var, &mut verifier)
             .map_err(VerifierError::R1CS)?;
 
         // Verify the proof
@@ -416,10 +470,7 @@ mod valid_commitments_test {
     use crypto::fields::prime_field_to_scalar;
     use curve25519_dalek::scalar::Scalar;
     use merlin::Transcript;
-    use mpc_bulletproof::{
-        r1cs::{ConstraintSystem, Prover},
-        PedersenGens,
-    };
+    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
     use num_bigint::BigUint;
     use rand_core::{OsRng, RngCore};
 
@@ -461,13 +512,9 @@ mod valid_commitments_test {
         // Commit to the witness
         let mut rng = OsRng {};
         let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
 
-        let nullifier_var = prover.commit_public(statement.nullifier);
-        let merkle_root_var = prover.commit_public(statement.merkle_root);
-
-        ValidCommitments::circuit(witness_var, merkle_root_var, nullifier_var, &mut prover)
-            .unwrap();
-
+        ValidCommitments::circuit(witness_var, statement_var, &mut prover).unwrap();
         prover.constraints_satisfied()
     }
 
@@ -509,6 +556,7 @@ mod valid_commitments_test {
                 compute_wallet_commitment(&wallet),
             )),
             merkle_root: root,
+            pk_settle: wallet.keys.pk_settle,
         };
 
         let res = bulletproof_prove_and_verify::<
@@ -548,6 +596,7 @@ mod valid_commitments_test {
         let statement = ValidCommitmentsStatement {
             nullifier: Scalar::random(&mut rng),
             merkle_root: root,
+            pk_settle: wallet.keys.pk_settle,
         };
 
         assert!(!constraints_satisfied(witness, statement));
@@ -592,6 +641,7 @@ mod valid_commitments_test {
                 compute_wallet_commitment(&wallet),
             )),
             merkle_root: root,
+            pk_settle: wallet.keys.pk_settle,
         };
 
         assert!(!constraints_satisfied(witness, statement));
@@ -636,6 +686,7 @@ mod valid_commitments_test {
                 compute_wallet_commitment(&wallet),
             )),
             merkle_root: root,
+            pk_settle: wallet.keys.pk_settle,
         };
 
         assert!(!constraints_satisfied(witness, statement));
@@ -682,6 +733,7 @@ mod valid_commitments_test {
                 compute_wallet_commitment(&wallet),
             )),
             merkle_root: root,
+            pk_settle: wallet.keys.pk_settle,
         };
 
         assert!(!constraints_satisfied(witness, statement));
@@ -724,6 +776,7 @@ mod valid_commitments_test {
                 compute_wallet_commitment(&wallet),
             )),
             merkle_root: root,
+            pk_settle: wallet.keys.pk_settle,
         };
 
         assert!(!constraints_satisfied(witness, statement));
@@ -764,6 +817,7 @@ mod valid_commitments_test {
                 compute_wallet_commitment(&wallet),
             )),
             merkle_root: root,
+            pk_settle: wallet.keys.pk_settle,
         };
 
         assert!(!constraints_satisfied(witness, statement));
@@ -804,6 +858,7 @@ mod valid_commitments_test {
                 compute_wallet_commitment(&wallet),
             )),
             merkle_root: root,
+            pk_settle: wallet.keys.pk_settle,
         };
 
         assert!(!constraints_satisfied(witness, statement));
@@ -846,6 +901,7 @@ mod valid_commitments_test {
                 compute_wallet_commitment(&wallet),
             )),
             merkle_root: root,
+            pk_settle: wallet.keys.pk_settle,
         };
 
         assert!(!constraints_satisfied(witness, statement));
