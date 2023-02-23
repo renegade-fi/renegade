@@ -20,7 +20,7 @@ use circuits::{
         },
     },
     zk_gadgets::merkle::MerkleOpening,
-    MAX_BALANCES, MAX_ORDERS,
+    LinkableCommitment, MAX_BALANCES, MAX_ORDERS,
 };
 use crossbeam::channel::Receiver;
 use crypto::fields::prime_field_to_scalar;
@@ -191,7 +191,7 @@ impl ProofManager {
         merkle_root: Scalar,
     ) -> Result<ValidCommitmentsBundle, ProofManagerError> {
         // Compute the hash of the randomness
-        let randomness_hash = compute_poseidon_hash(&[wallet.randomness]);
+        let randomness_hash = LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness]));
         let wallet_nullifier =
             compute_wallet_match_nullifier(&wallet, compute_wallet_commitment(&wallet));
 

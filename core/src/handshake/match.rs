@@ -7,7 +7,6 @@ use circuits::{
     mpc::SharedFabric,
     mpc_circuits::r#match::compute_match,
     multiprover_prove,
-    native_helpers::compute_poseidon_hash,
     types::{
         balance::LinkableBalanceCommitment,
         fee::LinkableFeeCommitment,
@@ -21,9 +20,8 @@ use circuits::{
     zk_circuits::valid_match_mpc::{
         ValidMatchMpcCircuit, ValidMatchMpcStatement, ValidMatchMpcWitness,
     },
-    Allocate, Open, SharePublic,
+    Allocate, LinkableCommitment, Open, SharePublic,
 };
-use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::scalar::Scalar;
 use futures::executor::block_on;
 use integration_helpers::mpc_network::mocks::PartyIDBeaverSource;
@@ -53,9 +51,9 @@ pub struct HandshakeResult {
     /// The second party's fee, opened to create fee notes
     pub party1_fee: LinkableFeeCommitment,
     /// The Poseidon hash of the first party's wallet randomness
-    pub party0_randomness_hash: Scalar,
+    pub party0_randomness_hash: LinkableCommitment,
     /// The Poseidon hash of the second party's wallet randomness
-    pub party1_randomness_hash: Scalar,
+    pub party1_randomness_hash: LinkableCommitment,
     /// The public settle key of the first party
     pub pk_settle0: Scalar,
     /// The public settle key of the second party
@@ -261,18 +259,14 @@ impl HandshakeExecutor {
         }; // locked_wallet_index released
 
         // Share the wallet randomness and keys with the counterparty
-        let my_randomness = biguint_to_scalar(&wallet.randomness);
-        let party0_randomness = fabric
-            .borrow_fabric()
-            .share_plaintext_scalar(0 /* owning_party */, my_randomness)
+        let party0_randomness_hash = validity_proof_witness
+            .randomness_hash
+            .share_public(0 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let party1_randomness = fabric
-            .borrow_fabric()
-            .share_plaintext_scalar(1 /* owning_party */, my_randomness)
+        let party1_randomness_hash = validity_proof_witness
+            .randomness_hash
+            .share_public(1 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-
-        let party0_randomness_hash = compute_poseidon_hash(&[party0_randomness]);
-        let party1_randomness_hash = compute_poseidon_hash(&[party1_randomness]);
 
         // Share the wallet public settle keys with the counterparty
         let my_key = wallet.public_keys.pk_settle;

@@ -237,6 +237,26 @@ impl CommitProver for LinkableCommitment {
     }
 }
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> SharePublic<N, S> for LinkableCommitment {
+    type ErrorType = MpcError;
+
+    fn share_public(
+        &self,
+        owning_party: u64,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self, Self::ErrorType> {
+        let shared_values = fabric
+            .borrow_fabric()
+            .batch_shared_plaintext_scalars(owning_party, &[self.val, self.randomness])
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+
+        Ok(Self {
+            val: shared_values[0],
+            randomness: shared_values[1],
+        })
+    }
+}
+
 /// A linkable commitment that has been allocated inside of an MPC fabric
 #[derive(Debug)]
 pub struct AuthenticatedLinkableCommitment<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
