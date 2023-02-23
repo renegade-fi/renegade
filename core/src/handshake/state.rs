@@ -10,7 +10,6 @@ use std::{
 use crate::state::{OrderIdentifier, Shared};
 
 use super::error::HandshakeManagerError;
-use circuits::types::{balance::Balance, fee::Fee, order::Order};
 use uuid::Uuid;
 
 /// Holds state information for all in-flight handshake correspondences
@@ -38,21 +37,11 @@ impl HandshakeStateIndex {
         request_id: Uuid,
         peer_order_id: OrderIdentifier,
         local_order_id: OrderIdentifier,
-        order: Order,
-        balance: Balance,
-        fee: Fee,
     ) {
         let mut locked_state = self.state_map.write().expect("state_map lock poisoned");
         locked_state.insert(
             request_id,
-            HandshakeState::new(
-                request_id,
-                peer_order_id,
-                local_order_id,
-                order,
-                balance,
-                fee,
-            ),
+            HandshakeState::new(request_id, peer_order_id, local_order_id),
         );
     }
 
@@ -103,12 +92,6 @@ pub struct HandshakeState {
     pub peer_order_id: OrderIdentifier,
     /// The identifier of the order that the local peer has proposed for match
     pub local_order_id: OrderIdentifier,
-    /// The local peer's order being matched on
-    pub order: Order,
-    /// The local peer's balance, covering their side of the order
-    pub balance: Balance,
-    /// The local peer's fee, paid out to the contract and the executing node
-    pub fee: Fee,
     /// The current state information of the
     pub state: State,
 }
@@ -139,17 +122,11 @@ impl HandshakeState {
         request_id: Uuid,
         peer_order_id: OrderIdentifier,
         local_order_id: OrderIdentifier,
-        order: Order,
-        balance: Balance,
-        fee: Fee,
     ) -> Self {
         Self {
             request_id,
             peer_order_id,
             local_order_id,
-            order,
-            balance,
-            fee,
             state: State::OrderNegotiation,
         }
     }

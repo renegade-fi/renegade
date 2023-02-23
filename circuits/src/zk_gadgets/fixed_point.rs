@@ -242,8 +242,14 @@ impl From<FixedPoint> for LinkableFixedPointCommitment {
     }
 }
 
+impl From<LinkableFixedPointCommitment> for FixedPoint {
+    fn from(fp: LinkableFixedPointCommitment) -> Self {
+        Self { repr: fp.repr.val }
+    }
+}
+
 /// A fixed point commitment that may be linked across proofs
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct LinkableFixedPointCommitment {
     /// The underlying scalar representation
     pub(crate) repr: LinkableCommitment,
@@ -985,7 +991,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
 
 /// Represents a fixed point value that has been allocated in an MPC fabric and may be shared across
 /// proofs
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct AuthenticatedLinkableFixedPointCommitment<
     N: MpcNetwork + Send,
     S: SharedValueSource<Scalar>,
@@ -994,7 +1000,19 @@ pub struct AuthenticatedLinkableFixedPointCommitment<
     pub(crate) repr: AuthenticatedLinkableCommitment<N, S>,
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedFixedPoint<N, S>> for AuthenticatedLinkableFixedPointCommitment<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone
+    for AuthenticatedLinkableFixedPointCommitment<N, S>
+{
+    fn clone(&self) -> Self {
+        Self {
+            repr: self.repr.clone(),
+        }
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedFixedPoint<N, S>>
+    for AuthenticatedLinkableFixedPointCommitment<N, S>
+{
     fn from(fp: AuthenticatedFixedPoint<N, S>) -> Self {
         Self {
             repr: AuthenticatedLinkableCommitment::new(fp.repr),

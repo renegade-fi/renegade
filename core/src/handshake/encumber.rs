@@ -9,15 +9,18 @@ use std::convert::TryInto;
 use circuits::{
     native_helpers::compute_note_commitment,
     types::{
-        fee::Fee,
+        fee::LinkableFeeCommitment,
         note::{Note, NoteType},
         order::OrderSide,
-        r#match::MatchResult,
+        r#match::LinkableMatchResultCommitment,
     },
     zk_circuits::valid_match_encryption::{
         ValidMatchEncryptionStatement, ValidMatchEncryptionWitness,
     },
-    zk_gadgets::elgamal::{ElGamalCiphertext, DEFAULT_ELGAMAL_GENERATOR},
+    zk_gadgets::{
+        elgamal::{ElGamalCiphertext, DEFAULT_ELGAMAL_GENERATOR},
+        fixed_point::FixedPoint,
+    },
 };
 
 use crypto::fields::{biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint};
@@ -107,9 +110,9 @@ impl HandshakeExecutor {
         // Construct a statement and witness for `VALID MATCH ENCRYPTION`
         #[allow(unused_variables)]
         let witness = ValidMatchEncryptionWitness {
-            match_res: handshake_result.match_.into(),
-            party0_fee: handshake_result.party0_fee.into(),
-            party1_fee: handshake_result.party1_fee.into(),
+            match_res: handshake_result.match_,
+            party0_fee: handshake_result.party0_fee,
+            party1_fee: handshake_result.party1_fee,
             party0_randomness_hash: handshake_result.party0_randomness_hash.into(),
             party1_randomness_hash: handshake_result.party1_randomness_hash.into(),
             party0_note: party0_note.clone(),
@@ -200,21 +203,23 @@ impl HandshakeExecutor {
     ///     - The protocol receives a note for its fee (1)
     fn create_notes(
         &self,
-        match_res: &MatchResult,
-        party0_fee: &Fee,
-        party1_fee: &Fee,
+        match_res: &LinkableMatchResultCommitment,
+        party0_fee: &LinkableFeeCommitment,
+        party1_fee: &LinkableFeeCommitment,
         party0_randomness_hash: Scalar,
         party1_randomness_hash: Scalar,
     ) -> (Note, Note, Note, Note, Note) {
         // The match direction corresponds to the direction that party 0 goes in the match
         // i.e. the match direction is 0 (buy) if party 0 is buying the base and selling the quote
-        let match_direction: OrderSide = match_res.direction.into();
+        let match_direction: OrderSide = match_res.direction.val.into();
         let base_amount_scalar = Scalar::from(match_res.base_amount);
         let quote_amount_scalar = Scalar::from(match_res.quote_amount);
 
         // Apply fees to the match
-        let party0_net_percentage = Scalar::one() - party0_fee.percentage_fee - *PROTOCOL_FEE;
-        let party1_net_percentage = Scalar::one() - party1_fee.percentage_fee - *PROTOCOL_FEE;
+        let percent_fee0: FixedPoint = party0_fee.percentage_fee.into();
+        let percent_fee1: FixedPoint = party1_fee.percentage_fee.into();
+        let party0_net_percentage = Scalar::one() - percent_fee0 - *PROTOCOL_FEE;
+        let party1_net_percentage = Scalar::one() - percent_fee1 - *PROTOCOL_FEE;
 
         let (party0_base_amount, party0_quote_amount, party1_base_amount, party1_quote_amount) =
             match match_direction {
@@ -226,8 +231,8 @@ impl HandshakeExecutor {
 
                     (
                         party0_base,
-                        match_res.quote_amount,
-                        match_res.base_amount,
+                        scalar_to_u64(&match_res.quote_amount.into()),
+                        scalar_to_u64(&match_res.base_amount.into()),
                         party1_quote,
                     )
                 }
@@ -238,38 +243,37 @@ impl HandshakeExecutor {
                         scalar_to_u64(&(party1_net_percentage * base_amount_scalar).floor());
 
                     (
-                        match_res.base_amount,
+                        scalar_to_u64(&match_res.base_amount.into()),
                         party0_quote,
                         party1_base,
-                        match_res.quote_amount,
+                        scalar_to_u64(&match_res.quote_amount.into()),
                     )
                 }
             };
 
-        // TODO: Fix randomness
         let party0_note = Note {
-            mint1: match_res.base_mint.clone(),
+            mint1: scalar_to_biguint(&match_res.base_mint.into()),
             volume1: party0_base_amount,
             direction1: match_direction,
-            mint2: match_res.quote_mint.clone(),
+            mint2: scalar_to_biguint(&match_res.quote_mint.into()),
             volume2: party0_quote_amount,
             direction2: match_direction.opposite(),
-            fee_mint: party0_fee.gas_addr.clone(),
-            fee_volume: party0_fee.gas_token_amount,
+            fee_mint: scalar_to_biguint(&party0_fee.gas_addr.into()),
+            fee_volume: scalar_to_u64(&party0_fee.gas_token_amount.into()),
             fee_direction: OrderSide::Sell,
             type_: NoteType::Match,
             randomness: scalar_to_biguint(&party0_randomness_hash),
         };
 
         let party1_note = Note {
-            mint1: match_res.base_mint.clone(),
+            mint1: scalar_to_biguint(&match_res.base_mint.into()),
             volume1: party1_base_amount,
             direction1: match_direction.opposite(),
-            mint2: match_res.quote_mint.clone(),
+            mint2: scalar_to_biguint(&match_res.quote_mint.into()),
             volume2: party1_quote_amount,
             direction2: match_direction,
-            fee_mint: party1_fee.gas_addr.clone(),
-            fee_volume: party1_fee.gas_token_amount,
+            fee_mint: scalar_to_biguint(&party1_fee.gas_addr.into()),
+            fee_volume: scalar_to_u64(&party1_fee.gas_token_amount.into()),
             fee_direction: OrderSide::Sell,
             type_: NoteType::Match,
             randomness: scalar_to_biguint(&party1_randomness_hash),
@@ -283,46 +287,42 @@ impl HandshakeExecutor {
             relayer1_quote_amount,
         ) = match match_direction {
             OrderSide::Buy => {
-                let relayer0_base =
-                    scalar_to_u64(&(party0_fee.percentage_fee * base_amount_scalar).floor());
-                let relayer1_quote =
-                    scalar_to_u64(&(party1_fee.percentage_fee * quote_amount_scalar).floor());
+                let relayer0_base = scalar_to_u64(&(percent_fee0 * base_amount_scalar).floor());
+                let relayer1_quote = scalar_to_u64(&(percent_fee1 * quote_amount_scalar).floor());
 
                 (relayer0_base, 0, 0, relayer1_quote)
             }
             OrderSide::Sell => {
-                let relayer0_quote =
-                    scalar_to_u64(&(party0_fee.percentage_fee * quote_amount_scalar).floor());
-                let relayer1_base =
-                    scalar_to_u64(&(party1_fee.percentage_fee * base_amount_scalar).floor());
+                let relayer0_quote = scalar_to_u64(&(percent_fee0 * quote_amount_scalar).floor());
+                let relayer1_base = scalar_to_u64(&(percent_fee1 * base_amount_scalar).floor());
 
                 (0, relayer0_quote, relayer1_base, 0)
             }
         };
 
         let relayer0_note = Note {
-            mint1: match_res.base_mint.clone(),
+            mint1: scalar_to_biguint(&match_res.base_mint.into()),
             volume1: relayer0_base_amount,
             direction1: OrderSide::Buy,
-            mint2: match_res.quote_mint.clone(),
+            mint2: scalar_to_biguint(&match_res.quote_mint.into()),
             volume2: relayer0_quote_amount,
             direction2: OrderSide::Buy,
-            fee_mint: party0_fee.gas_addr.clone(),
-            fee_volume: party0_fee.gas_token_amount,
+            fee_mint: scalar_to_biguint(&party0_fee.gas_addr.into()),
+            fee_volume: scalar_to_u64(&party0_fee.gas_token_amount.into()),
             fee_direction: OrderSide::Buy,
             type_: NoteType::InternalTransfer,
             randomness: scalar_to_biguint(&(party0_randomness_hash + Scalar::one())),
         };
 
         let relayer1_note = Note {
-            mint1: match_res.base_mint.clone(),
+            mint1: scalar_to_biguint(&match_res.base_mint.into()),
             volume1: relayer1_base_amount,
             direction1: OrderSide::Buy,
-            mint2: match_res.quote_mint.clone(),
+            mint2: scalar_to_biguint(&match_res.quote_mint.into()),
             volume2: relayer1_quote_amount,
             direction2: OrderSide::Buy,
-            fee_mint: party1_fee.gas_addr.clone(),
-            fee_volume: party1_fee.gas_token_amount,
+            fee_mint: scalar_to_biguint(&party1_fee.gas_addr.into()),
+            fee_volume: scalar_to_u64(&party1_fee.gas_token_amount.into()),
             fee_direction: OrderSide::Buy,
             type_: NoteType::InternalTransfer,
             randomness: scalar_to_biguint(&(party1_randomness_hash + Scalar::one())),
@@ -333,10 +333,10 @@ impl HandshakeExecutor {
         let protocol_quote_amount = scalar_to_u64(&(*PROTOCOL_FEE * quote_amount_scalar).floor());
 
         let protocol_note = Note {
-            mint1: match_res.base_mint.clone(),
+            mint1: scalar_to_biguint(&match_res.base_mint.into()),
             volume1: protocol_base_amount,
             direction1: OrderSide::Buy,
-            mint2: match_res.quote_mint.clone(),
+            mint2: scalar_to_biguint(&match_res.quote_mint.into()),
             volume2: protocol_quote_amount,
             direction2: OrderSide::Buy,
             fee_mint: 0u8.into(),

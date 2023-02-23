@@ -37,15 +37,18 @@ where
     let prover = MpcProver::new_with_fabric(fabric.0.clone(), &mut transcript, &pc_gens);
 
     // Prove the statement
-    let (witness_commitment, proof) = C::prove(witness, statement.clone(), prover, fabric).unwrap();
+    let (witness_commitment, proof) =
+        C::prove(witness, statement.clone(), prover, fabric.clone()).unwrap();
 
     // Open the proof and commitments
     let opened_proof = proof.open()?;
-    let opened_commit = witness_commitment.open_and_authenticate().map_err(|_| {
-        MultiproverError::Mpc(MpcError::ArithmeticError(
-            "error opening commitments".to_string(),
-        ))
-    })?;
+    let opened_commit = witness_commitment
+        .open_and_authenticate(fabric)
+        .map_err(|_| {
+            MultiproverError::Mpc(MpcError::ArithmeticError(
+                "error opening commitments".to_string(),
+            ))
+        })?;
 
     // Verify the statement with a fresh transcript
     let mut verifier_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());

@@ -8,7 +8,7 @@ use crate::{
     },
     Allocate, CommitProver, CommitSharedProver, CommitVerifier, LinkableCommitment,
 };
-use crypto::fields::biguint_to_scalar;
+use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
@@ -17,7 +17,8 @@ use mpc_bulletproof::{
 };
 use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto,
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource,
+    mpc_scalar::scalar_to_u64, network::MpcNetwork,
 };
 use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
@@ -124,6 +125,21 @@ impl From<u64> for OrderSide {
 impl From<OrderSide> for Scalar {
     fn from(side: OrderSide) -> Self {
         Scalar::from(side as u8)
+    }
+}
+
+impl From<Scalar> for OrderSide {
+    fn from(side: Scalar) -> Self {
+        if side == Scalar::zero() {
+            OrderSide::Buy
+        } else if side == Scalar::one() {
+            OrderSide::Sell
+        } else {
+            panic!(
+                "unexpected order side encoded as scalar: {}",
+                scalar_to_u64(&side)
+            )
+        }
     }
 }
 
@@ -267,6 +283,19 @@ impl From<Order> for LinkableOrderCommitment {
             price: order.price.into(),
             amount: LinkableCommitment::new(order.amount.into()),
             timestamp: LinkableCommitment::new(order.timestamp.into()),
+        }
+    }
+}
+
+impl From<LinkableOrderCommitment> for Order {
+    fn from(order: LinkableOrderCommitment) -> Self {
+        Self {
+            quote_mint: scalar_to_biguint(&order.quote_mint.val),
+            base_mint: scalar_to_biguint(&order.base_mint.val),
+            side: order.side.val.into(),
+            price: order.price.into(),
+            amount: scalar_to_u64(&order.amount.val),
+            timestamp: scalar_to_u64(&order.timestamp.val),
         }
     }
 }

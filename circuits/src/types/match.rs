@@ -2,6 +2,7 @@
 
 use crate::{
     errors::MpcError,
+    mpc::SharedFabric,
     zk_gadgets::fixed_point::{
         AuthenticatedCommittedFixedPoint, AuthenticatedFixedPoint, AuthenticatedFixedPointVar,
         AuthenticatedLinkableFixedPointCommitment, CommittedFixedPoint, FixedPoint, FixedPointVar,
@@ -412,11 +413,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> TryFrom<&[Authenticated
 }
 
 /// Implementation of opening for the single match result
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open for AuthenticatedMatchResult<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open<N, S>
+    for AuthenticatedMatchResult<N, S>
+{
     type OpenOutput = MatchResult;
     type Error = MpcError;
 
-    fn open(self) -> Result<Self::OpenOutput, Self::Error> {
+    fn open(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
         // Flatten the values into a shape that can be batch opened
         let flattened_self: Vec<AuthenticatedScalar<_, _>> = self.into();
         // Open the values and cast them to u64
@@ -430,7 +433,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open for AuthenticatedM
         TryFrom::<&[u64]>::try_from(&opened_values)
     }
 
-    fn open_and_authenticate(self) -> Result<Self::OpenOutput, Self::Error> {
+    fn open_and_authenticate(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
         // Flatten the values into a shape that can be batch opened
         let flattened_self: Vec<AuthenticatedScalar<_, _>> = self.into();
         // Open the values and cast them to u64
@@ -579,7 +582,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
 
 /// Represents a match result that has been allocated in an MPC fabric and may be shared
 /// between proofs
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct AuthenticatedLinkableMatchResultCommitment<
     N: MpcNetwork + Send,
     S: SharedValueSource<Scalar>,
@@ -605,6 +608,23 @@ pub struct AuthenticatedLinkableMatchResultCommitment<
     /// The index of the order (0 or 1) that has the minimum amount, i.e. the order that is
     /// completely filled by this match
     pub min_amount_order_index: AuthenticatedLinkableCommitment<N, S>,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone
+    for AuthenticatedLinkableMatchResultCommitment<N, S>
+{
+    fn clone(&self) -> Self {
+        Self {
+            quote_mint: self.quote_mint.clone(),
+            base_mint: self.base_mint.clone(),
+            quote_amount: self.quote_amount.clone(),
+            base_amount: self.base_amount.clone(),
+            direction: self.direction.clone(),
+            execution_price: self.execution_price.clone(),
+            max_minus_min_amount: self.max_minus_min_amount.clone(),
+            min_amount_order_index: self.min_amount_order_index.clone(),
+        }
+    }
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedMatchResult<N, S>>
@@ -692,5 +712,163 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                 min_amount_order_index: commitments[7].to_owned(),
             },
         ))
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open<N, S>
+    for AuthenticatedLinkableMatchResultCommitment<N, S>
+{
+    type OpenOutput = LinkableMatchResultCommitment;
+    type Error = MpcError;
+
+    fn open(self, fabric: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
+        // Open the blinders
+        // This is a slightly inefficient (albeit simple) way to do this, we can refactor later for performance
+        let blinders_allocated = fabric.borrow_fabric().batch_allocate_preshared_scalar(&[
+            self.quote_mint.randomness,
+            self.base_mint.randomness,
+            self.quote_amount.randomness,
+            self.base_amount.randomness,
+            self.direction.randomness,
+            self.execution_price.repr.randomness,
+            self.max_minus_min_amount.randomness,
+            self.min_amount_order_index.randomness,
+        ]);
+
+        let blinders_open = AuthenticatedScalar::batch_open(&blinders_allocated)
+            .map_err(|err| MpcError::SharingError(err.to_string()))?
+            .iter()
+            .map(|val| val.to_scalar())
+            .collect_vec();
+
+        // Open the underlying values
+        let values_open = AuthenticatedScalar::batch_open(&[
+            self.quote_mint.val,
+            self.base_mint.val,
+            self.quote_amount.val,
+            self.base_amount.val,
+            self.direction.val,
+            self.execution_price.repr.val,
+            self.max_minus_min_amount.val,
+            self.min_amount_order_index.val,
+        ])
+        .map_err(|err| MpcError::SharingError(err.to_string()))?
+        .iter()
+        .map(|val| val.to_scalar())
+        .collect_vec();
+
+        Ok(LinkableMatchResultCommitment {
+            quote_mint: LinkableCommitment {
+                val: values_open[0],
+                randomness: blinders_open[0],
+            },
+            base_mint: LinkableCommitment {
+                val: values_open[1],
+                randomness: blinders_open[1],
+            },
+            quote_amount: LinkableCommitment {
+                val: values_open[2],
+                randomness: blinders_open[2],
+            },
+            base_amount: LinkableCommitment {
+                val: values_open[3],
+                randomness: blinders_open[3],
+            },
+            direction: LinkableCommitment {
+                val: values_open[4],
+                randomness: blinders_open[4],
+            },
+            execution_price: LinkableFixedPointCommitment {
+                repr: LinkableCommitment {
+                    val: values_open[5],
+                    randomness: blinders_open[5],
+                },
+            },
+            max_minus_min_amount: LinkableCommitment {
+                val: values_open[6],
+                randomness: values_open[6],
+            },
+            min_amount_order_index: LinkableCommitment {
+                val: values_open[7],
+                randomness: values_open[7],
+            },
+        })
+    }
+
+    fn open_and_authenticate(
+        self,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self::OpenOutput, Self::Error> {
+        // Open the blinders
+        // This is a slightly inefficient (albeit simple) way to do this, we can refactor later for performance
+        let blinders_allocated = fabric.borrow_fabric().batch_allocate_preshared_scalar(&[
+            self.quote_mint.randomness,
+            self.base_mint.randomness,
+            self.quote_amount.randomness,
+            self.base_amount.randomness,
+            self.direction.randomness,
+            self.execution_price.repr.randomness,
+            self.max_minus_min_amount.randomness,
+            self.min_amount_order_index.randomness,
+        ]);
+
+        let blinders_open = AuthenticatedScalar::batch_open_and_authenticate(&blinders_allocated)
+            .map_err(|err| MpcError::SharingError(err.to_string()))?
+            .iter()
+            .map(|val| val.to_scalar())
+            .collect_vec();
+
+        // Open the underlying values
+        let values_open = AuthenticatedScalar::batch_open_and_authenticate(&[
+            self.quote_mint.val,
+            self.base_mint.val,
+            self.quote_amount.val,
+            self.base_amount.val,
+            self.direction.val,
+            self.execution_price.repr.val,
+            self.max_minus_min_amount.val,
+            self.min_amount_order_index.val,
+        ])
+        .map_err(|err| MpcError::SharingError(err.to_string()))?
+        .iter()
+        .map(|val| val.to_scalar())
+        .collect_vec();
+
+        Ok(LinkableMatchResultCommitment {
+            quote_mint: LinkableCommitment {
+                val: values_open[0],
+                randomness: blinders_open[0],
+            },
+            base_mint: LinkableCommitment {
+                val: values_open[1],
+                randomness: blinders_open[1],
+            },
+            quote_amount: LinkableCommitment {
+                val: values_open[2],
+                randomness: blinders_open[2],
+            },
+            base_amount: LinkableCommitment {
+                val: values_open[3],
+                randomness: blinders_open[3],
+            },
+            direction: LinkableCommitment {
+                val: values_open[4],
+                randomness: blinders_open[4],
+            },
+            execution_price: LinkableFixedPointCommitment {
+                repr: LinkableCommitment {
+                    val: values_open[5],
+                    randomness: blinders_open[5],
+                },
+            },
+            max_minus_min_amount: LinkableCommitment {
+                val: values_open[6],
+                randomness: values_open[6],
+            },
+            min_amount_order_index: LinkableCommitment {
+                val: values_open[7],
+                randomness: values_open[7],
+            },
+        })
     }
 }
