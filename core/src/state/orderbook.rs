@@ -273,16 +273,29 @@ impl NetworkOrderBook {
             .collect_vec()
     }
 
-    /// Fetch all the locally managed, verified orders
+    /// Return whether the given locally managed order is ready to schedule handshakes on
     ///
-    /// Used to choose a match candidate for a scheduled remote order handshake
-    pub fn get_local_verified_orders(&self) -> Vec<OrderIdentifier> {
+    /// This amounts to validating that a copy of the validity proof and witness are stored
+    /// locally
+    pub fn order_ready_for_handshake(&self, order_id: &OrderIdentifier) -> bool {
+        self.has_validity_proof(order_id) && self.has_validity_witness(order_id)
+    }
+
+    /// Fetch a list of locally managed orders for which
+    pub fn get_local_scheduleable_orders(&self) -> Vec<OrderIdentifier> {
         let locked_verified_orders = self.read_verified_orders();
         let locked_local_orders = self.read_local_orders();
 
-        locked_verified_orders
+        // Get the set of local, verified orders
+        let local_verified_orders = locked_verified_orders
             .intersection(&locked_local_orders)
             .cloned()
+            .collect_vec();
+
+        // Filter out those for which the local node does not have a copy of the witness
+        local_verified_orders
+            .into_iter()
+            .filter(|order_id| self.has_validity_witness(order_id))
             .collect_vec()
     }
 
@@ -326,6 +339,16 @@ impl NetworkOrderBook {
     /// is not locally stored
     pub fn get_validity_proof(&self, order_id: &OrderIdentifier) -> Option<ValidCommitmentsBundle> {
         self.read_order(order_id)?.valid_commit_proof.clone()
+    }
+
+    /// Returns whether the local node holds a witness to a the proof of `VALID COMMITMENTS`
+    /// for the given order
+    pub fn has_validity_witness(&self, order_id: &OrderIdentifier) -> bool {
+        if let Some(order_info) = self.read_order(order_id) {
+            return order_info.valid_commit_witness.is_some();
+        }
+
+        false
     }
 
     /// Fetch a copy of the witness to the validity proof if one exists

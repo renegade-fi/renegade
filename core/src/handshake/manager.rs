@@ -374,6 +374,22 @@ impl HandshakeExecutor {
             );
         }
 
+        // Do not accept handshakes on local orders that we don't have
+        // validity proof or witness for
+        if !self
+            .global_state
+            .read_order_book()
+            .order_ready_for_handshake(&my_order)
+        {
+            return self.reject_match_proposal(
+                request_id,
+                sender_order,
+                my_order,
+                MatchRejectionReason::LocalOrderNotReady,
+                response_channel,
+            );
+        }
+
         // Add an entry to the handshake state index
         self.handshake_state_index
             .new_handshake(request_id, sender_order, my_order);
@@ -564,7 +580,7 @@ impl HandshakeExecutor {
         let local_verified_orders = self
             .global_state
             .read_order_book()
-            .get_local_verified_orders();
+            .get_local_scheduleable_orders();
 
         // Choose an order that isn't cached
         for order_id in local_verified_orders.iter() {

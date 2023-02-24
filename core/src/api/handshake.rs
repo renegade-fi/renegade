@@ -66,6 +66,8 @@ pub enum HandshakeMessage {
 pub enum MatchRejectionReason {
     /// The order pair is already cached by the rejecting peer
     Cached,
+    /// The local order proposed is not ready for scheduling
+    LocalOrderNotReady,
     /// The rejecting peer has not yet verified the proposer's proof of `VALID COMMITMENTS`
     NoValidityProof,
 }

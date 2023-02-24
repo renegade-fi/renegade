@@ -168,7 +168,9 @@ impl GossipProtocolExecutor {
         // If the order is locally managed, also fetch the wintess used in the proof,
         // this is used for proof linking. I.e. the local node needs the commitment parameters
         // for each witness element so that it may share commitments with future proofs
-        self.request_order_witness(order_id)?;
+        if is_local {
+            self.request_order_witness(order_id)?;
+        }
 
         Ok(())
     }
