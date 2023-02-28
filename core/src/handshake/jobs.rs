@@ -1,5 +1,6 @@
 //! Defines jobs that other workers in the relayer may enqueue for the handshake module
 
+use curve25519_dalek::scalar::Scalar;
 use libp2p::request_response::ResponseChannel;
 use mpc_ristretto::network::QuicTwoPartyNet;
 use uuid::Uuid;
@@ -43,6 +44,16 @@ pub enum HandshakeExecutionJob {
         party_id: u64,
         /// The net that was setup for the party
         net: QuicTwoPartyNet,
+    },
+    /// Indicates that the local peer should halt any MPCs active on the given match nullifier
+    ///
+    /// This job is constructed when a nullifier is seen on chain, indicating that it is
+    /// no longer valid to match on. The local party should hangup immediately to avoid
+    /// leaking the order after opening
+    MpcShootdown {
+        /// The match-nullifier value seen on-chain; any in-flight MPCs on this nullifier
+        /// are to be terminated
+        match_nullifier: Scalar,
     },
     /// Indicates that a cluster replica has initiated a match on the given order pair.
     /// The local peer should not schedule this order pair for a match for some duration

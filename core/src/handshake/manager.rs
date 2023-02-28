@@ -3,6 +3,7 @@
 
 use crossbeam::channel::{Receiver, Sender};
 
+use curve25519_dalek::scalar::Scalar;
 use libp2p::request_response::ResponseChannel;
 use portpicker::pick_unused_port;
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -244,6 +245,12 @@ impl HandshakeExecutor {
 
                 // Record the match in the cache
                 self.record_completed_match(request_id)
+            }
+
+            // Indicates that in-flight MPCs on the given nullifier should be terminated
+            HandshakeExecutionJob::MpcShootdown { match_nullifier } => {
+                self.handle_mpc_shootdown(match_nullifier);
+                Ok(())
             }
         }
     }
@@ -533,6 +540,11 @@ impl HandshakeExecutor {
 
         // Send back an ack
         self.send_request_response(request_id, peer_id, HandshakeMessage::Ack, response_channel)
+    }
+
+    /// Handles an MPC shootdown request from elsewhere in the local node
+    fn handle_mpc_shootdown(&self, match_nullifier: Scalar) {
+        unimplemented!("implement mpc shootdowns")
     }
 
     /// Sends a request or response depending on whether the response channel is None
