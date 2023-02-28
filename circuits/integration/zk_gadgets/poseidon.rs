@@ -1,6 +1,6 @@
 //! Groups integration tests for multiprover poseidon gadget
 
-use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
 use circuits::{
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
     zk_gadgets::poseidon::{

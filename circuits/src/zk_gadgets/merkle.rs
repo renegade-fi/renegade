@@ -420,9 +420,11 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
 #[cfg(test)]
 pub(crate) mod merkle_test {
     use ark_crypto_primitives::{
-        crh::poseidon::{TwoToOneCRH, CRH},
-        merkle_tree::{Config, IdentityDigestConverter},
-        CRHScheme, MerkleTree,
+        crh::{
+            poseidon::{TwoToOneCRH, CRH},
+            CRHScheme,
+        },
+        merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
     };
     use crypto::{
         fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField},

@@ -1,6 +1,6 @@
 //! Implementations of cryptographic hash functions
 
-use ark_sponge::{
+use ark_crypto_primitives::sponge::{
     poseidon::{PoseidonConfig, PoseidonSponge},
     CryptographicSponge,
 };

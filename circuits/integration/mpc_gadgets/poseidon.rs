@@ -1,6 +1,6 @@
 //! Groups integration tests for Poseidon hashing
 
-use ark_sponge::{
+use ark_crypto_primitives::sponge::{
     poseidon::{PoseidonConfig, PoseidonSponge},
     CryptographicSponge,
 };

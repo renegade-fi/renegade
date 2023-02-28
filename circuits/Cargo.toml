@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ark-ff = { git = "https://github.com/arkworks-rs/algebra", rev = "6e3e804" }
-ark-sponge = { git = "https://github.com/arkworks-rs/sponge", rev = "2d5f91b" }
+ark-crypto-primitives = { version = "0.4", features = ["crh", "merkle_tree", "sponge"] }
+ark-ff = "0.4"
 bigdecimal = "0.3"
 bitvec = "1.0"
 circuit-macros = { path = "../circuit-macros" }
@@ -25,9 +25,8 @@ serde = { version = "1.0.139", features = ["serde_derive"] }
 serde_arrays = "0.1"
 
 [dev-dependencies]
-ark-crypto-primitives = { git = "https://github.com/arkworks-rs/crypto-primitives", rev = "bd44745" }
-ark-ec = { git = "https://github.com/arkworks-rs/algebra", rev = "6e3e804" }
-ark-ed25519 = { git = "https://github.com/arkworks-rs/curves", rev = "9983165" }
+ark-ec = "0.4"
+ark-ed25519 = "0.4"
 clap = { version = "4.0", features = ["derive"] }
 colored = "2"
 ctor = "0.1"
@@ -44,16 +43,3 @@ tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
 name = "integration"
 path = "integration/main.rs"
 harness = false
-
-# Patches normally only belong in the workspace root. However, we run integration
-# tests outside the context of a workspace (i.e. as a standalone crate), so these
-# crate patches are duplicated in the crate-local Cargo.toml 
-[patch.crates-io]
-ark-std = { git = "https://github.com/arkworks-rs/std", rev = "7019830" }
-ark-ff = { git = "https://github.com/arkworks-rs/algebra", rev = "6e3e804" }
-ark-ec = { git = "https://github.com/arkworks-rs/algebra", rev = "6e3e804" }
-ark-serialize = { git = "https://github.com/arkworks-rs/algebra", rev = "6e3e804" }
-ark-snark = { git = "git+https://github.com/arkworks-rs/snark", rev = "f6df807" }
-ark-sponge = { git = "https://github.com/arkworks-rs/sponge", rev = "2d5f91b" }
-ark-r1cs-std = { git = "https://github.com/arkworks-rs/r1cs-std", rev = "38b0057" }
-ark-relations =  { git = "https://github.com/arkworks-rs/snark", rev = "f6df807" }

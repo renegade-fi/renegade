@@ -271,7 +271,7 @@ where
 
 #[cfg(test)]
 mod test_valid_wallet_create {
-    use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+    use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use crypto::{
         fields::{
             biguint_to_scalar, prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField,

@@ -9,7 +9,7 @@ pub mod valid_wallet_update;
 
 #[cfg(test)]
 mod test_helpers {
-    use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+    use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use crypto::{
         fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField},
         hash::default_poseidon_params,

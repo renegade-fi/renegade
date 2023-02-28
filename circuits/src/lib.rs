@@ -619,7 +619,7 @@ pub(crate) mod test_helpers {
 /// For example; when computing witnesses, wallet commitments, note commitments,
 /// nullifiers, etc are all useful helpers
 pub mod native_helpers {
-    use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+    use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use crypto::{
         fields::{
             biguint_to_prime_field, prime_field_to_scalar, scalar_to_prime_field,

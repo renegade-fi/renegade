@@ -667,7 +667,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProv
 
 #[cfg(test)]
 mod single_prover_test {
-    use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+    use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use crypto::{
         fields::{prime_field_to_scalar, DalekRistrettoField},
         hash::default_poseidon_params,

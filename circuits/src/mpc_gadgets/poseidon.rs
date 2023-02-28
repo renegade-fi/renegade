@@ -12,8 +12,8 @@
 
 use std::cell::Ref;
 
+use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 use ark_ff::PrimeField;
-use ark_sponge::poseidon::PoseidonConfig;
 use crypto::{fields::prime_field_to_scalar, hash::default_poseidon_params};
 use curve25519_dalek::scalar::Scalar;
 use mpc_ristretto::{
@@ -184,12 +184,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHa
     /// TODO: Ideally we don't pass in the fabric here, this makes the gadget non-general between
     /// AuthenticatedScalar and Scalar
     pub fn new(params: &PoseidonSpongeParameters, fabric: SharedFabric<N, S>) -> Self {
-        let inital_state = fabric
+        let initial_state = fabric
             .borrow_fabric()
             .allocate_zeros(params.rate + params.capacity);
         Self {
             params: params.clone(),
-            state: inital_state,
+            state: initial_state,
             next_index: 0,
             in_squeeze_state: false, // Start in absorb state
             fabric,
@@ -325,8 +325,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHa
 }
 
 #[cfg(test)]
-mod posiedon_tests {
-    use ark_sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+mod poseidon_tests {
+    use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use crypto::{fields::DalekRistrettoField, hash::default_poseidon_params};
     use integration_helpers::mpc_network::mock_mpc_fabric;
     use rand::{thread_rng, Rng, RngCore};

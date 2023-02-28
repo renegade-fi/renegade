@@ -10,13 +10,3 @@ members = [
 [profile.bench]
 opt-level = 3 # Full optimizations
 lto = true
-
-[patch.crates-io]
-ark-std = { git = "https://github.com/arkworks-rs/std", rev = "7019830" }
-ark-ff = { git = "https://github.com/arkworks-rs/algebra", rev = "6e3e804" }
-ark-ec = { git = "https://github.com/arkworks-rs/algebra", rev = "6e3e804" }
-ark-serialize = { git = "https://github.com/arkworks-rs/algebra", rev = "6e3e804" }
-ark-snark = { git = "git+https://github.com/arkworks-rs/snark", rev = "f6df807" }
-ark-sponge = { git = "https://github.com/arkworks-rs/sponge", rev = "2d5f91b" }
-ark-r1cs-std = { git = "https://github.com/arkworks-rs/r1cs-std", rev = "38b0057" }
-ark-relations =  { git = "https://github.com/arkworks-rs/snark", rev = "f6df807" }

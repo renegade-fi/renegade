@@ -274,7 +274,7 @@ pub(crate) mod edwards_tests {
     use ark_ec::{
         models::twisted_edwards::TECurveConfig, twisted_edwards::Affine as TEAffine, CurveGroup,
     };
-    use ark_ed25519::{EdwardsParameters, Fr as Ed25519Scalar};
+    use ark_ed25519::{EdwardsConfig, Fr as Ed25519Scalar};
     use crypto::fields::prime_field_to_biguint;
     use merlin::Transcript;
     use mpc_bulletproof::{
@@ -296,15 +296,15 @@ pub(crate) mod edwards_tests {
 
     /// Create a representation of ed25519 in the constrain system
     pub(crate) fn create_ed25519_repr() -> TwistedEdwardsCurve {
-        let a_bigint = prime_field_to_biguint(&EdwardsParameters::COEFF_A);
-        let d_bigint = prime_field_to_biguint(&EdwardsParameters::COEFF_D);
+        let a_bigint = prime_field_to_biguint(&EdwardsConfig::COEFF_A);
+        let d_bigint = prime_field_to_biguint(&EdwardsConfig::COEFF_D);
         TwistedEdwardsCurve::new(a_bigint, d_bigint)
     }
 
     /// Multiply a scalar by the ed25519 basepoint defined in:
     /// https://www.rfc-editor.org/rfc/rfc7748
-    pub(crate) fn ed25519_basepoint_mul(scalar: BigUint) -> TEAffine<EdwardsParameters> {
-        let basepoint = EdwardsParameters::GENERATOR;
+    pub(crate) fn ed25519_basepoint_mul(scalar: BigUint) -> TEAffine<EdwardsConfig> {
+        let basepoint = EdwardsConfig::GENERATOR;
         (basepoint * Ed25519Scalar::from(scalar)).into_affine()
     }
 
@@ -312,7 +312,7 @@ pub(crate) mod edwards_tests {
     /// the basepoint defined in: https://www.rfc-editor.org/rfc/rfc7748
     pub(crate) fn ed25519_random_point<R: RngCore + CryptoRng>(
         rng: &mut R,
-    ) -> TEAffine<EdwardsParameters> {
+    ) -> TEAffine<EdwardsConfig> {
         // Generate random bytes to fill a BigUint
         let mut bytes = vec![0u8; 32];
         rng.fill_bytes(&mut bytes);
@@ -324,7 +324,7 @@ pub(crate) mod edwards_tests {
 
     /// Convert an arkworks ed25519 point into one allocated in a constraint system
     fn ed25519_to_nonnative_edwards<CS: RandomizableConstraintSystem>(
-        point: TEAffine<EdwardsParameters>,
+        point: TEAffine<EdwardsConfig>,
         cs: &mut CS,
     ) -> EdwardsPoint {
         let x_bigint = prime_field_to_biguint(&point.x);
@@ -338,7 +338,7 @@ pub(crate) mod edwards_tests {
 
     /// Assert that an Arkworks point and a EdwardsPoint from the local gadget are equal
     fn assert_points_equal<CS: RandomizableConstraintSystem>(
-        expected: TEAffine<EdwardsParameters>,
+        expected: TEAffine<EdwardsConfig>,
         res: EdwardsPoint,
         cs: &CS,
     ) {
