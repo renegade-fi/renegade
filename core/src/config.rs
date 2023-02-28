@@ -86,6 +86,9 @@ struct Cli {
     /// The Ethereum RPC node websocket address to dial for on-chain data
     #[clap(long = "eth-websocket", value_parser)]
     pub eth_websocket_addr: Option<String>,
+    /// The StarkNet JSON-RPC gateway
+    #[clap(long = "starknet-gateway", value_parser)]
+    pub starknet_gateway: Option<String>,
     /// A file holding a json representation of the wallets the local node
     /// should manage
     #[clap(short, long, value_parser)]
@@ -121,6 +124,8 @@ pub struct RelayerConfig {
     pub coinbase_api_key: Option<String>,
     /// The Coinbase API secret to use for price streaming
     pub coinbase_api_secret: Option<String>,
+    /// The StarkNet JSON-RPC API gateway
+    pub starknet_gateway: Option<String>,
     /// The Ethereum RPC node websocket address to dial for on-chain data
     pub eth_websocket_addr: Option<String>,
     /// Whether or not the relayer is in debug mode
@@ -202,6 +207,7 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
         cluster_id,
         coinbase_api_key: cli_args.coinbase_api_key,
         coinbase_api_secret: cli_args.coinbase_api_secret,
+        starknet_gateway: cli_args.starknet_gateway,
         eth_websocket_addr: cli_args.eth_websocket_addr,
         debug: cli_args.debug,
     };
