@@ -8,6 +8,7 @@
 
 mod api;
 mod api_server;
+mod chain_events;
 mod config;
 mod error;
 mod gossip;
@@ -38,6 +39,7 @@ use tracing::log::{self, LevelFilter};
 use crate::{
     api::gossip::GossipOutbound,
     api_server::{server::ApiServer, worker::ApiServerConfig},
+    chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig},
     gossip::server::GossipServer,
     handshake::manager::HandshakeManager,
     network_manager::manager::NetworkManager,
@@ -228,6 +230,20 @@ async fn main() -> Result<(), CoordinatorError> {
         price_reporter_failure_sender,
     );
 
+    // Start the on-chain event listener
+    let (chain_listener_cancel_sender, chain_listener_cancel_receiver) =
+        channel::bounded(1 /* capacity */);
+    let mut chain_listener = OnChainEventListener::new(OnChainEventListenerConfig {
+        cancel_channel: chain_listener_cancel_receiver,
+    })
+    .expect("failed to build on-chain event listener");
+    chain_listener
+        .start()
+        .expect("failed to start on-chain event listener");
+    let (chain_listener_failure_sender, mut chain_listener_failure_receiver) =
+        mpsc::channel(1 /* buffer_size */);
+    watch_worker::<OnChainEventListener>(&mut chain_listener, chain_listener_failure_sender);
+
     // Start the API server
     let (api_cancel_sender, api_cancel_receiver) = channel::bounded(1 /* capacity */);
     let mut api_server = ApiServer::new(ApiServerConfig {
@@ -265,6 +281,7 @@ async fn main() -> Result<(), CoordinatorError> {
         gossip_cancel_sender.clone(),
         handshake_cancel_sender.clone(),
         price_reporter_cancel_sender.clone(),
+        chain_listener_cancel_sender.clone(),
         api_cancel_sender.clone(),
         proof_manager_cancel_sender.clone(),
     ];
@@ -305,6 +322,11 @@ async fn main() -> Result<(), CoordinatorError> {
                     price_reporter_cancel_sender.send(())
                         .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
                     price_reporter_manager = recover_worker(price_reporter_manager)?;
+                }
+                _= chain_listener_failure_receiver.recv() => {
+                    chain_listener_cancel_sender.send(())
+                        .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
+                    chain_listener = recover_worker(chain_listener)?;
                 }
                 _ = api_failure_receiver.recv() => {
                     api_cancel_sender.send(())
