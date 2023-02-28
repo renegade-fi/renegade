@@ -1,10 +1,14 @@
 //! Defines the core implementation of the on-chain event listener
 
-use std::{thread::JoinHandle, time::Duration};
+use std::{str::FromStr, thread::JoinHandle, time::Duration};
 
 use crossbeam::channel::Receiver;
 use reqwest::Url;
-use starknet_providers::jsonrpc::{HttpTransport, JsonRpcClient};
+use starknet::core::types::FieldElement;
+use starknet_providers::jsonrpc::{
+    models::{BlockId, EmittedEvent, ErrorCode, EventFilter},
+    HttpTransport, JsonRpcClient, JsonRpcClientError, RpcError,
+};
 use tokio::time::{sleep_until, Instant};
 use tracing::log;
 
@@ -14,6 +18,8 @@ use super::error::OnChainEventListenerError;
 // | Constants |
 // -------------
 
+/// The chunk size to request paginated events in
+const EVENT_CHUNK_SIZE: u64 = 100;
 /// The interval at which the worker should poll for new contract events
 const EVENTS_POLL_INTERVAL_MS: u64 = 5_000; // 5 seconds
 
@@ -28,6 +34,8 @@ pub struct OnChainEventListenerConfig {
     pub starknet_api_gateway: Option<String>,
     /// The infura API key to use for API access
     pub infura_api_key: Option<String>,
+    /// The address of the Darkpool contract in the target network
+    pub contract_address: String,
     /// The channel on which the coordinator may send a cancel signal
     pub cancel_channel: Receiver<()>,
 }
@@ -62,6 +70,10 @@ pub struct OnChainEventListener {
 pub struct OnChainEventListenerExecutor {
     /// The JSON-RPC client used to connect to StarkNet
     rpc_client: JsonRpcClient<HttpTransport>,
+    /// The earliest block that the client will poll events from
+    start_block: u64,
+    /// The event pagination token
+    pagination_token: Option<String>,
     /// A copy of the config that the executor maintains
     config: OnChainEventListenerConfig,
 }
@@ -73,11 +85,16 @@ impl OnChainEventListenerExecutor {
             Url::parse(&config.starknet_api_gateway.clone().unwrap_or_default()).unwrap(),
         ));
 
-        Self { rpc_client, config }
+        Self {
+            rpc_client,
+            config,
+            start_block: 0,
+            pagination_token: None,
+        }
     }
 
     /// The main execution loop for the executor
-    pub async fn execute(self) -> OnChainEventListenerError {
+    pub async fn execute(mut self) -> OnChainEventListenerError {
         // Get the current block number to start from
         let starting_block_number = self.get_block_number().await;
         if starting_block_number.is_err() {
@@ -86,12 +103,15 @@ impl OnChainEventListenerExecutor {
 
         let starting_block_number = starting_block_number.unwrap();
         log::info!("Starting on-chain event listener with current block {starting_block_number}");
+        self.start_block = starting_block_number;
 
         // Poll for new events in a loop
         loop {
             // Sleep for some time then re-poll events
             sleep_until(Instant::now() + Duration::from_millis(EVENTS_POLL_INTERVAL_MS)).await;
-            self.poll_contract_events().await;
+            if let Err(e) = self.poll_contract_events().await {
+                log::error!("error polling events: {e}");
+            };
         }
     }
 
@@ -104,7 +124,70 @@ impl OnChainEventListenerExecutor {
     }
 
     /// Poll for new contract events
-    async fn poll_contract_events(&self) {
-        log::info!("polling for events...");
+    async fn poll_contract_events(&mut self) -> Result<(), OnChainEventListenerError> {
+        log::debug!("polling for events...");
+        loop {
+            let (events, more_pages) = self.fetch_next_events_page().await?;
+            for event in events.iter() {
+                log::info!("found event with keys: {:?}", event.keys);
+            }
+
+            if !more_pages {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Fetch the next page of events from the contract
+    ///
+    /// Returns the events in the next page and a boolean indicating whether
+    /// the caller should continue paging
+    async fn fetch_next_events_page(
+        &mut self,
+    ) -> Result<(Vec<EmittedEvent>, bool), OnChainEventListenerError> {
+        let filter = EventFilter {
+            from_block: Some(BlockId::Number(self.start_block)),
+            to_block: None,
+            address: Some(FieldElement::from_str(&self.config.contract_address).unwrap()),
+            keys: None,
+        };
+
+        let resp = self
+            .rpc_client
+            .get_events(filter, self.pagination_token.clone(), EVENT_CHUNK_SIZE)
+            .await;
+
+        // If the error is an unknown continuation token, ignore it and stop paging
+        if let Err(JsonRpcClientError::RpcError(RpcError::Code(
+            ErrorCode::InvalidContinuationToken,
+        ))) = resp
+        {
+            return Ok((Vec::new(), false));
+        }
+
+        // Otherwise, propagate the error
+        let resp = resp.map_err(|err| OnChainEventListenerError::Rpc(err.to_string()))?;
+
+        // Update the executor held continuation token used across calls to `getEvents`
+        if let Some(pagination_token) = resp.continuation_token.clone() {
+            self.pagination_token = Some(pagination_token);
+        } else {
+            // If no explicit pagination token is given, increment the pagination token by the
+            // number of events received. Ideally the API would do this, but it simply returns None
+            // to indication no more pages are ready. We would like to persist this token across polls
+            // to getEvents.
+            let curr_token: usize = self
+                .pagination_token
+                .clone()
+                .unwrap_or_else(|| "0".to_string())
+                .parse()
+                .unwrap();
+            self.pagination_token = Some((curr_token + resp.events.len()).to_string());
+        }
+
+        let continue_paging = resp.continuation_token.is_some();
+        Ok((resp.events, continue_paging))
     }
 }

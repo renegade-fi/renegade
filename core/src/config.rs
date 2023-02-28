@@ -36,6 +36,13 @@ struct Cli {
     #[clap(long, value_parser)]
     pub config_file: Option<String>,
 
+    // -----------------------
+    // | Environment Configs |
+    // -----------------------
+    /// The address of the darkpool contract, defaults to the Goerli deployment
+    #[clap(long, value_parser, default_value = "0x07d45b975709b894c87ef0318b4f20924e5542ce85116d523c2faef602e491a0")]
+    pub contract_address: String,
+    
     // -------------------------
     // | Cluster Configuration |
     // -------------------------
@@ -100,6 +107,8 @@ struct Cli {
 pub struct RelayerConfig {
     /// Software version of the relayer
     pub version: String,
+    /// The address of the contract in the target network
+    pub contract_address: String,
     /// Bootstrap servers that the peer should connect to
     pub bootstrap_servers: Vec<(WrappedPeerId, Multiaddr)>,
     /// The port to listen on for libp2p
@@ -196,6 +205,7 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
         version: cli_args
             .version
             .unwrap_or_else(|| String::from(DEFAULT_VERSION)),
+        contract_address: cli_args.contract_address,
         bootstrap_servers: parsed_bootstrap_addrs,
         p2p_port: cli_args.p2p_port,
         http_port: cli_args.http_port,
