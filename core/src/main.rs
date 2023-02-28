@@ -235,6 +235,8 @@ async fn main() -> Result<(), CoordinatorError> {
         channel::bounded(1 /* capacity */);
     let mut chain_listener = OnChainEventListener::new(OnChainEventListenerConfig {
         cancel_channel: chain_listener_cancel_receiver,
+        starknet_api_gateway: args.starknet_gateway,
+        infura_api_key: None,
     })
     .expect("failed to build on-chain event listener");
     chain_listener
