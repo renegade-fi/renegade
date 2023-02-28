@@ -58,7 +58,7 @@ reqwest = "0.11.13"
 ring-channel = "0.11.0"
 serde = { version = "1.0.139", features = ["serde_derive"] }
 serde_json = "1.0"
-starknet = "0.2"
+starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "ca077d3" }
 starknet-providers = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "ca077d3" }
 streaming-stats = "0.1.28"
 termion = "2.0"
