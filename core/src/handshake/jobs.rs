@@ -50,6 +50,8 @@ pub enum HandshakeExecutionJob {
     /// This job is constructed when a nullifier is seen on chain, indicating that it is
     /// no longer valid to match on. The local party should hangup immediately to avoid
     /// leaking the order after opening
+    /// TODO: Remove this lint allowance
+    #[allow(unused)]
     MpcShootdown {
         /// The match-nullifier value seen on-chain; any in-flight MPCs on this nullifier
         /// are to be terminated

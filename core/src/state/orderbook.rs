@@ -14,6 +14,7 @@
 #![allow(unused)]
 
 use circuits::zk_circuits::valid_commitments::ValidCommitmentsWitness;
+use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -263,6 +264,14 @@ impl NetworkOrderBook {
         self.order_map
             .get(order_id)
             .map(|order| order.read().expect(ERR_ORDER_POISONED).clone())
+    }
+
+    /// Fetch the match nullifier for an order
+    pub fn get_match_nullifier(&self, order_id: &OrderIdentifier) -> Option<Scalar> {
+        self.read_order(order_id)?
+            .valid_commit_proof
+            .as_ref()
+            .map(|proof| proof.statement.nullifier)
     }
 
     /// Fetch all the verified orders in the order book

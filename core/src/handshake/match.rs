@@ -22,6 +22,7 @@ use circuits::{
     },
     Allocate, LinkableCommitment, Open, SharePublic,
 };
+use crossbeam::channel::{bounded, Receiver};
 use curve25519_dalek::scalar::Scalar;
 use futures::executor::block_on;
 use integration_helpers::mpc_network::mocks::PartyIDBeaverSource;
@@ -33,6 +34,7 @@ use mpc_ristretto::{
 };
 use tokio::runtime::Builder as TokioBuilder;
 use tracing::log;
+use uuid::Uuid;
 
 use crate::types::SizedValidCommitmentsWitness;
 
@@ -73,10 +75,20 @@ impl HandshakeExecutor {
     /// to be run inside of a Tokio runtime
     pub(super) fn execute_match(
         &self,
+        request_id: Uuid,
         party_id: u64,
-        handshake_state: HandshakeState,
         mpc_net: QuicTwoPartyNet,
     ) -> Result<HandshakeResult, HandshakeManagerError> {
+        // Fetch the handshake state from the state index
+        let handshake_state = self
+            .handshake_state_index
+            .get_state(&request_id)
+            .ok_or_else(|| {
+                HandshakeManagerError::StateNotFound(
+                    "missing handshake state for request".to_string(),
+                )
+            })?;
+
         // Build a tokio runtime in the current thread for the MPC to run inside of
         let tid = thread::current().id();
         let tokio_runtime = TokioBuilder::new_multi_thread()
@@ -86,12 +98,26 @@ impl HandshakeExecutor {
             .build()
             .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
 
+        // Build a cancel channel; the coordinator may use this to cancel (shootdown) an in flight MPC
+        let (cancel_sender, cancel_receiver) = bounded(1 /* capacity */);
+
         // Wrap the current thread's execution in a Tokio blocking thread
         let self_clone = self.clone();
         let join_handle = tokio_runtime.spawn_blocking(move || {
-            self_clone.execute_match_impl(party_id, handshake_state.to_owned(), mpc_net)
+            self_clone.execute_match_impl(
+                party_id,
+                handshake_state.to_owned(),
+                mpc_net,
+                cancel_receiver,
+            )
         });
 
+        // Record the match as in progress and tag it with a cancel channel that may be used to
+        // abort the MPC
+        self.handshake_state_index
+            .in_progress(&request_id, cancel_sender);
+
+        // Await MPC completion
         let res = block_on(join_handle).unwrap()?;
         log::info!("Finished match!");
 
@@ -104,6 +130,7 @@ impl HandshakeExecutor {
         party_id: u64,
         handshake_state: HandshakeState,
         mut mpc_net: QuicTwoPartyNet,
+        cancel_channel: Receiver<()>,
     ) -> Result<HandshakeResult, HandshakeManagerError> {
         log::info!("Matching order...");
         // Connect the network
@@ -139,6 +166,11 @@ impl HandshakeExecutor {
             shared_fabric.clone(),
         )?;
 
+        // Check if a cancel has come in after the MPC
+        if !cancel_channel.is_empty() {
+            return Err(HandshakeManagerError::MpcShootdown);
+        }
+
         // The statement parameterization of the VALID MATCH MPC circuit is empty
         let statement = ValidMatchMpcStatement {};
         let (witness, proof) = Self::prove_valid_match(
@@ -149,12 +181,18 @@ impl HandshakeExecutor {
             shared_fabric.clone(),
         )?;
 
+        // Check if a cancel has come in after the collaborative proof
+        if !cancel_channel.is_empty() {
+            return Err(HandshakeManagerError::MpcShootdown);
+        }
+
         self.build_handshake_result(
             witness.match_res,
             proof,
             commitments_witness,
             handshake_state,
             shared_fabric,
+            cancel_channel,
         )
     }
 
@@ -177,8 +215,6 @@ impl HandshakeExecutor {
     }
 
     /// Generates a collaborative proof of the validity of a given match result
-    #[allow(unused)]
-    #[allow(unused_variables)]
     fn prove_valid_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         my_order: LinkableOrderCommitment,
         my_balance: LinkableBalanceCommitment,
@@ -229,6 +265,7 @@ impl HandshakeExecutor {
         validity_proof_witness: SizedValidCommitmentsWitness,
         handshake_state: HandshakeState,
         fabric: SharedFabric<N, S>,
+        cancel_channel: Receiver<()>,
     ) -> Result<HandshakeResult, HandshakeManagerError> {
         // Exchange fees, randomness, and keys before opening the match result
         let party0_fee = validity_proof_witness
@@ -278,6 +315,12 @@ impl HandshakeExecutor {
             .borrow_fabric()
             .share_plaintext_scalar(1 /* owning_party */, my_key)
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+
+        // Finally, before revealing the match, we make a check that the MPC has
+        // not been terminated by the coordinator
+        if !cancel_channel.is_empty() {
+            return Err(HandshakeManagerError::MpcShootdown);
+        }
 
         // Open the match result and build the handshake result
         let match_res_open = shared_match_res
