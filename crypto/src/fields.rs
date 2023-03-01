@@ -6,6 +6,7 @@ use ark_ff::{Fp256, MontBackend, MontConfig, PrimeField};
 use bigdecimal::BigDecimal;
 use curve25519_dalek::scalar::Scalar;
 use num_bigint::{BigInt, BigUint, Sign};
+use starknet::core::types::FieldElement as StarknetFieldElement;
 
 /// Defines a custom Arkworks field with the same modulus as the Dalek Ristretto group
 ///
@@ -16,6 +17,10 @@ use num_bigint::{BigInt, BigUint, Sign};
 pub struct DalekRistrettoFieldConfig;
 #[allow(missing_docs, clippy::missing_docs_in_private_items)]
 pub type DalekRistrettoField = Fp256<MontBackend<DalekRistrettoFieldConfig, 4>>;
+
+// ---------------------------
+// | Conversions From Scalar |
+// ---------------------------
 
 /// Convert a scalar to a BigInt
 pub fn scalar_to_bigint(a: &Scalar) -> BigInt {
@@ -32,6 +37,15 @@ pub fn scalar_to_bigdecimal(a: &Scalar) -> BigDecimal {
     let bigint = scalar_to_bigint(a);
     BigDecimal::from(bigint)
 }
+
+/// Converts a dalek scalar to an arkworks ff element
+pub fn scalar_to_prime_field(a: &Scalar) -> DalekRistrettoField {
+    Fp256::from(scalar_to_biguint(a))
+}
+
+// ----------------------------
+// | Conversions from Bigints |
+// ----------------------------
 
 /// Convert a bigint to a scalar
 pub fn bigint_to_scalar(a: &BigInt) -> Scalar {
@@ -78,10 +92,9 @@ pub fn bigint_to_scalar_bits<const D: usize>(a: &BigInt) -> Vec<Scalar> {
     res
 }
 
-/// Converts a dalek scalar to an arkworks ff element
-pub fn scalar_to_prime_field(a: &Scalar) -> DalekRistrettoField {
-    Fp256::from(scalar_to_biguint(a))
-}
+// -----------------------------------------
+// | Conversions from Arkworks Field Types |
+// -----------------------------------------
 
 /// Convert an Arkworks field element to a Dalek scalar
 pub fn prime_field_to_scalar<F: PrimeField>(a: &F) -> Scalar {
@@ -99,13 +112,33 @@ pub fn prime_field_to_biguint<F: PrimeField>(element: &F) -> BigUint {
     (*element).into()
 }
 
+// -----------------------------------
+// | Conversions from StarkNet Types |
+// -----------------------------------
+
+/// Convert from a Starknet felt to a Dalek scalar
+pub fn starknet_felt_to_scalar(element: &StarknetFieldElement) -> Scalar {
+    // A dalek scalar stores its bytes in little-endian order and
+    // a Starknet felt stores its bytes in big-endian order
+    let mut felt_bytes = element.to_bytes_be();
+    felt_bytes.reverse();
+    Scalar::from_bytes_mod_order(felt_bytes)
+}
+
+// ---------
+// | Tests |
+// ---------
+
 #[cfg(test)]
 mod field_helper_test {
     use curve25519_dalek::scalar::Scalar;
-    use num_bigint::BigInt;
+    use num_bigint::{BigInt, BigUint};
     use rand::{thread_rng, Rng, RngCore};
+    use starknet::core::types::FieldElement as StarknetFieldElement;
 
     use crate::fields::{bigint_to_scalar, bigint_to_scalar_bits, scalar_to_bigint};
+
+    use super::starknet_felt_to_scalar;
 
     #[test]
     fn test_scalar_to_bigint() {
@@ -145,5 +178,20 @@ mod field_helper_test {
 
         assert_eq!(res.len(), scalar_bits.len());
         assert_eq!(res, scalar_bits);
+    }
+
+    #[test]
+    fn test_felt_to_scalar() {
+        let mut rng = thread_rng();
+        let x = rng.next_u64();
+
+        let felt_x = StarknetFieldElement::from(x);
+        let scalar_x = Scalar::from(x);
+        let converted_x = starknet_felt_to_scalar(&felt_x);
+
+        let bigint_converted_x = BigUint::from_bytes_be(&felt_x.to_bytes_be());
+        println!("x: {x}\nbigint_converted_x: {bigint_converted_x}");
+
+        assert_eq!(scalar_x, converted_x);
     }
 }

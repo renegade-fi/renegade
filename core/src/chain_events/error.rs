@@ -7,6 +7,8 @@ use std::fmt::Display;
 pub enum OnChainEventListenerError {
     /// An RPC error with the StarkNet provider
     Rpc(String),
+    /// An error sending a message to another worker in the local node
+    SendMessage(String),
     /// Error setting up the on-chain event listener
     Setup(String),
 }

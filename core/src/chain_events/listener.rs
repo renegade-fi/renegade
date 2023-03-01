@@ -2,15 +2,19 @@
 
 use std::{str::FromStr, thread::JoinHandle, time::Duration};
 
-use crossbeam::channel::Receiver;
+use crossbeam::channel::{Receiver, Sender};
+
+use crypto::fields::starknet_felt_to_scalar;
 use reqwest::Url;
-use starknet::core::types::FieldElement;
+use starknet::core::{types::FieldElement, utils::get_selector_from_name};
 use starknet_providers::jsonrpc::{
     models::{BlockId, EmittedEvent, ErrorCode, EventFilter},
     HttpTransport, JsonRpcClient, JsonRpcClientError, RpcError,
 };
 use tokio::time::{sleep_until, Instant};
 use tracing::log;
+
+use crate::handshake::jobs::HandshakeExecutionJob;
 
 use super::error::OnChainEventListenerError;
 
@@ -22,6 +26,13 @@ use super::error::OnChainEventListenerError;
 const EVENT_CHUNK_SIZE: u64 = 100;
 /// The interval at which the worker should poll for new contract events
 const EVENTS_POLL_INTERVAL_MS: u64 = 5_000; // 5 seconds
+
+lazy_static! {
+    /// The event selector for a Merkle root update
+    static ref MERKLE_ROOT_CHANGED_EVENT_SELECTOR: FieldElement = get_selector_from_name("Merkle_root_changed").unwrap();
+    /// The event selector for a nullifier spend
+    static ref NULLIFIER_SPENT_EVENT_SELECTOR: FieldElement = get_selector_from_name("Nullifier_spent").unwrap();
+}
 
 // ----------
 // | Worker |
@@ -36,6 +47,9 @@ pub struct OnChainEventListenerConfig {
     pub infura_api_key: Option<String>,
     /// The address of the Darkpool contract in the target network
     pub contract_address: String,
+    /// A sender to the handshake manager's job queue, used to enqueue
+    /// MPC shootdown jobs
+    pub handshake_manager_job_queue: Sender<HandshakeExecutionJob>,
     /// The channel on which the coordinator may send a cancel signal
     pub cancel_channel: Receiver<()>,
 }
@@ -128,8 +142,8 @@ impl OnChainEventListenerExecutor {
         log::debug!("polling for events...");
         loop {
             let (events, more_pages) = self.fetch_next_events_page().await?;
-            for event in events.iter() {
-                log::info!("found event with keys: {:?}", event.keys);
+            for event in events.into_iter() {
+                self.handle_event(event)?;
             }
 
             if !more_pages {
@@ -176,7 +190,7 @@ impl OnChainEventListenerExecutor {
         } else {
             // If no explicit pagination token is given, increment the pagination token by the
             // number of events received. Ideally the API would do this, but it simply returns None
-            // to indication no more pages are ready. We would like to persist this token across polls
+            // to indicate no more pages are ready. We would like to persist this token across polls
             // to getEvents.
             let curr_token: usize = self
                 .pagination_token
@@ -189,5 +203,28 @@ impl OnChainEventListenerExecutor {
 
         let continue_paging = resp.continuation_token.is_some();
         Ok((resp.events, continue_paging))
+    }
+
+    /// Handle an event from the contract
+    fn handle_event(&self, event: EmittedEvent) -> Result<(), OnChainEventListenerError> {
+        // Dispatch based on key
+        let key = event.keys[0];
+        if key == *MERKLE_ROOT_CHANGED_EVENT_SELECTOR {
+            log::info!("Handling merkle root update event")
+        } else if key == *NULLIFIER_SPENT_EVENT_SELECTOR {
+            // Parse the nullifier into a Scalar and send an MPC shootdown request to the
+            // handshake manager
+            log::info!("Handling nullifier spent event");
+
+            let match_nullifier = starknet_felt_to_scalar(&event.data[0]);
+            self.config
+                .handshake_manager_job_queue
+                .send(HandshakeExecutionJob::MpcShootdown { match_nullifier })
+                .map_err(|err| OnChainEventListenerError::SendMessage(err.to_string()))?;
+        } else {
+            log::info!("Unknown event emitted from contract")
+        }
+
+        Ok(())
     }
 }
