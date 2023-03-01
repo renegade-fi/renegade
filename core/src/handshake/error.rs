@@ -12,6 +12,8 @@ pub enum HandshakeManagerError {
     InvalidRequest(String),
     /// Error in MPC networking
     MpcNetwork(String),
+    /// An MpcShootdown request has stopped the handshake
+    MpcShootdown,
     /// Error verifying a proof
     VerificationError(String),
     /// Error awaiting a proof from the proof generation module

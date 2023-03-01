@@ -3,7 +3,6 @@
 
 use crossbeam::channel::{Receiver, Sender};
 
-use curve25519_dalek::scalar::Scalar;
 use libp2p::request_response::ResponseChannel;
 use portpicker::pick_unused_port;
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -108,7 +107,7 @@ impl HandshakeExecutor {
             .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
 
         let handshake_cache = Arc::new(RwLock::new(HandshakeCache::new(HANDSHAKE_CACHE_SIZE)));
-        let handshake_state_index = HandshakeStateIndex::new();
+        let handshake_state_index = HandshakeStateIndex::new(global_state.clone());
 
         Ok(Self {
             thread_pool: Arc::new(thread_pool),
@@ -204,9 +203,6 @@ impl HandshakeExecutor {
                 party_id,
                 net,
             } => {
-                // Place the handshake in the execution state
-                self.handshake_state_index.in_progress(&request_id);
-
                 // Fetch the local handshake state to get an order for the MPC
                 let order_state = self
                     .handshake_state_index
@@ -238,7 +234,7 @@ impl HandshakeExecutor {
                 );
 
                 // Run the MPC match process
-                let res = self.execute_match(party_id, order_state, net)?;
+                let res = self.execute_match(request_id, party_id, net)?;
 
                 // Submit the match to the contract
                 self.submit_match(res)?;
@@ -248,10 +244,9 @@ impl HandshakeExecutor {
             }
 
             // Indicates that in-flight MPCs on the given nullifier should be terminated
-            HandshakeExecutionJob::MpcShootdown { match_nullifier } => {
-                self.handle_mpc_shootdown(match_nullifier);
-                Ok(())
-            }
+            HandshakeExecutionJob::MpcShootdown { match_nullifier } => self
+                .handshake_state_index
+                .shootdown_nullifier(match_nullifier),
         }
     }
 
@@ -286,7 +281,7 @@ impl HandshakeExecutor {
                 .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
             self.handshake_state_index
-                .new_handshake(request_id, peer_order_id, local_order_id);
+                .new_handshake(request_id, peer_order_id, local_order_id)?;
         }
 
         Ok(())
@@ -399,7 +394,7 @@ impl HandshakeExecutor {
 
         // Add an entry to the handshake state index
         self.handshake_state_index
-            .new_handshake(request_id, sender_order, my_order);
+            .new_handshake(request_id, sender_order, my_order)?;
 
         // Check if the order pair has previously been matched, if so notify the peer and
         // terminate the handshake
@@ -540,11 +535,6 @@ impl HandshakeExecutor {
 
         // Send back an ack
         self.send_request_response(request_id, peer_id, HandshakeMessage::Ack, response_channel)
-    }
-
-    /// Handles an MPC shootdown request from elsewhere in the local node
-    fn handle_mpc_shootdown(&self, match_nullifier: Scalar) {
-        unimplemented!("implement mpc shootdowns")
     }
 
     /// Sends a request or response depending on whether the response channel is None
