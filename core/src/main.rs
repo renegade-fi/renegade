@@ -237,6 +237,7 @@ async fn main() -> Result<(), CoordinatorError> {
         starknet_api_gateway: args.starknet_gateway,
         infura_api_key: None,
         contract_address: args.contract_address,
+        handshake_manager_job_queue: handshake_worker_sender,
         cancel_channel: chain_listener_cancel_receiver,
     })
     .expect("failed to build on-chain event listener");
