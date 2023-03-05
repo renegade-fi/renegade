@@ -10,3 +10,7 @@ members = [
 [profile.bench]
 opt-level = 3 # Full optimizations
 lto = true
+
+[profile.release]
+opt-level = 3 # Full optimizations
+lto = true

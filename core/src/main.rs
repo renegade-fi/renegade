@@ -51,6 +51,9 @@ use crate::{
     worker::{watch_worker, Worker},
 };
 
+#[cfg(feature = "debug-tui")]
+use crate::state::tui::StateTuiApp;
+
 #[macro_use]
 extern crate lazy_static;
 
@@ -101,19 +104,9 @@ const TERMINATION_TIMEOUT_MS: u64 = 10_000; // 10 seconds
 ///     4. Allocate a thread to monitor the worker for faults
 #[tokio::main]
 async fn main() -> Result<(), CoordinatorError> {
-    // Configure logging
-    Builder::new()
-        .format(|buf, record| {
-            writeln!(
-                buf,
-                "{} [{}] - {}",
-                Local::now().format("%Y-%m-%dT%H:%M:%S"),
-                record.level(),
-                record.args()
-            )
-        })
-        .filter(None, LevelFilter::Info)
-        .init();
+    // ---------------------
+    // | Environment Setup |
+    // ---------------------
 
     // Parse command line arguments
     let args = config::parse_command_line_args().expect("error parsing command line args");
@@ -144,6 +137,36 @@ async fn main() -> Result<(), CoordinatorError> {
         proof_generation_worker_sender.clone(),
         network_sender.clone(),
     );
+
+    // Configure logging and TUI
+    #[cfg(feature = "debug-tui")]
+    {
+        if args.debug {
+            // Build the TUI
+            let tui = StateTuiApp::new(global_state.clone());
+            tui.run();
+        } else {
+            configure_default_log_capture()
+        }
+    }
+
+    #[cfg(not(feature = "debug-tui"))]
+    {
+        configure_default_log_capture();
+    }
+
+    thread::spawn(|| {
+        let mut loop_counter = 0;
+        loop {
+            log::info!("Timer {loop_counter}...");
+            thread::sleep(Duration::from_secs(1));
+            loop_counter += 1;
+        }
+    });
+
+    // ----------------
+    // | Worker Setup |
+    // ----------------
 
     // Start the network manager
     let (network_cancel_sender, network_cancel_receiver) = channel::bounded(1 /* capacity */);
@@ -363,6 +386,22 @@ async fn main() -> Result<(), CoordinatorError> {
     log::info!("Terminating...");
 
     Err(err)
+}
+
+/// Configures the default log capture which logs to stdout
+fn configure_default_log_capture() {
+    Builder::new()
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "{} [{}] - {}",
+                Local::now().format("%Y-%m-%dT%H:%M:%S"),
+                record.level(),
+                record.args()
+            )
+        })
+        .filter(None, LevelFilter::Info)
+        .init();
 }
 
 /// Attempt to recover a failed module by cleaning up its resources and re-allocating it

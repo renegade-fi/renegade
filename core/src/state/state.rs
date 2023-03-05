@@ -342,7 +342,9 @@ impl RelayerState {
     }
 
     /// Print the local relayer state to the screen for debugging
+    #[allow(unreachable_code)]
     pub fn print_screen(&self) {
+        return;
         if !self.debug {
             return;
         }
