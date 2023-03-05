@@ -5,6 +5,7 @@ pub mod peers;
 mod priority;
 #[allow(clippy::module_inception)]
 mod state;
+pub mod tui;
 pub mod wallet;
 
 pub use self::orderbook::{NetworkOrder, NetworkOrderBook, NetworkOrderState, OrderIdentifier};

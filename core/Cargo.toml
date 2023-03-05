@@ -3,7 +3,9 @@ name = "darkpool-relayer"
 version = "0.1.0"
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = ["debug-tui"]
+debug-tui = ["dep:tui", "dep:tui-logger", "dep:crossterm"]
 
 [dependencies]
 ark-serialize = "0.4"
@@ -15,6 +17,7 @@ circuits = { path = "../circuits" }
 chrono = "0.4.23"
 clap = { version = "3.2.8", features = ["derive"] }
 crossbeam = { version = "0.8.1" }
+crossterm = { version = "0.26", optional = true }
 create2 = "0.0.2"
 crypto = { path = "../crypto" }
 curve25519-dalek = "2"
@@ -67,6 +70,8 @@ toml = { version = "0.5.9" }
 tracing = { version = "0.1", features = ["log"] }
 tokio-stream = { version = "0.1" }
 tokio-tungstenite = { version = "0.18.0", features = ["native-tls"] }
+tui = { version = "0.19", optional = true }
+tui-logger = { version = "0.8", optional = true }
 tungstenite = { version = "0.18.0" }
 url = "2.3.1"
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
