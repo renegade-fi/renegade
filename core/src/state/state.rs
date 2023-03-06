@@ -557,24 +557,6 @@ const RES: color::Fg<color::Reset> = color::Fg(color::Reset);
 /// Display implementation for easy-to-read command line print-out
 impl Display for RelayerState {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.write_fmt(format_args!("{CY}Local Relayer State:{RES}\n",))?;
-        f.write_fmt(format_args!(
-            "\t{LG}Listening on:{RES} {}/p2p/{}\n",
-            self.read_peer_index()
-                .read_peer(&self.local_peer_id())
-                .unwrap()
-                .get_addr(),
-            self.local_peer_id().0
-        ))?;
-        f.write_fmt(format_args!(
-            "\t{LG}PeerId:{RES} {}\n",
-            self.local_peer_id().0
-        ))?;
-        f.write_fmt(format_args!(
-            "\t{LG}ClusterId:{RES} {:?}\n",
-            self.local_cluster_id
-        ))?;
-
         // Write wallet info to the format
         self.read_wallet_index().fmt(f)?;
         f.write_str("\n\n\n")?;

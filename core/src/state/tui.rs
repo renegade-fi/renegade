@@ -38,6 +38,11 @@ lazy_static! {
     static ref GREEN_TEXT: Style = Style::default().fg(Color::Green);
     /// Plain yellow text
     static ref YELLOW_TEXT: Style = Style::default().fg(Color::Yellow);
+    /// Plain blue text
+    static ref BLUE_TEXT: Style = Style::default().fg(Color::Blue);
+    /// The style of section titles
+    static ref TITLE_STYLE: Style = Style::default().fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
 }
 
 // -----------------
@@ -152,6 +157,14 @@ impl StateTuiApp {
         let metadata_pane = self.create_metadata_pane();
         frame.render_widget(metadata_pane, top_left);
 
+        // Build a cluster metadata section
+        let cluster_metadata_pane = self.create_cluster_metadata_pane();
+        frame.render_widget(cluster_metadata_pane, top_right);
+
+        // -------------------
+        // | Bottom Row Pane |
+        // -------------------
+
         // Build a logs section
         let log_widget = Self::create_log_widget();
         frame.render_widget(log_widget, bottom_row);
@@ -159,8 +172,9 @@ impl StateTuiApp {
 
     /// Create a new, default block with the given title
     fn create_block_with_title(title: &str) -> Block {
+        let styled_title = Span::styled(title, *TITLE_STYLE);
         Block::default()
-            .title(title)
+            .title(styled_title)
             .borders(Borders::all())
             .border_style(Style::default().add_modifier(Modifier::BOLD))
             .style(Style::default().fg(Color::LightYellow))
@@ -245,7 +259,34 @@ impl StateTuiApp {
             ListItem::new(line9),
         ];
 
-        List::new(items).block(Self::create_block_with_title("Metadata"))
+        List::new(items).block(Self::create_block_with_title("Local Node Metadata"))
+    }
+
+    /// Create a cluster metadata pane    
+    fn create_cluster_metadata_pane(&self) -> List {
+        // Read the relevant state
+        let cluster_id = self.global_state.local_cluster_id.clone();
+        let cluster_peers = {
+            self.global_state
+                .read_peer_index()
+                .get_all_cluster_peers(&cluster_id)
+        };
+
+        // Style and collect into a list
+        let line1 = Spans::from(vec![
+            Span::styled("Cluster ID: ", *GREEN_TEXT),
+            Span::styled(cluster_id.to_string(), *YELLOW_TEXT),
+        ]);
+        let line2 = Span::styled("Cluster Peers:", *GREEN_TEXT);
+        let mut items = vec![ListItem::new(line1), ListItem::new(line2)];
+
+        // Add all cluster peers
+        for peer in cluster_peers.iter() {
+            let line = Span::styled(format!(" - {peer}"), *BLUE_TEXT);
+            items.push(ListItem::new(line));
+        }
+
+        List::new(items).block(Self::create_block_with_title("Cluster Metadata"))
     }
 
     /// Create a log widget that dumps the system logs
