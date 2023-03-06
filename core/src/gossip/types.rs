@@ -146,7 +146,7 @@ impl Clone for PeerInfo {
     }
 }
 
-#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
 /// Wraps PeerID so that we can implement various traits on the type
 pub struct WrappedPeerId(pub PeerId);
 

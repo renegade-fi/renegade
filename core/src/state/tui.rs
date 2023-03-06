@@ -6,7 +6,11 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use std::cell::RefCell;
+use itertools::Itertools;
+use std::{
+    cell::RefCell,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use std::{io::Stdout, thread::Builder as ThreadBuilder, time::Duration};
 use tracing::log::LevelFilter;
 use tui::{
@@ -14,7 +18,7 @@ use tui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, List, ListItem},
+    widgets::{Block, Borders, List, ListItem, Row, Table},
     Frame, Terminal,
 };
 use tui_logger::{init_logger, TuiLoggerWidget};
@@ -43,6 +47,10 @@ lazy_static! {
     /// The style of section titles
     static ref TITLE_STYLE: Style = Style::default().fg(Color::Cyan)
         .add_modifier(Modifier::BOLD);
+    /// The style of table headers
+    static ref TABLE_HEADER_STYLE: Style = Style::default().fg(Color::Green);
+    /// The style of table rows
+    static ref TABLE_ROW_STYLE: Style = Style::default().fg(Color::Yellow);
 }
 
 // -----------------
@@ -160,6 +168,21 @@ impl StateTuiApp {
         // Build a cluster metadata section
         let cluster_metadata_pane = self.create_cluster_metadata_pane();
         frame.render_widget(cluster_metadata_pane, top_right);
+
+        // --------------------
+        // | Middle Row Panes |
+        // --------------------
+
+        // Split the middle row into two panes
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(middle_row);
+        let mid_left = chunks[0];
+        let mid_right = chunks[1];
+
+        let peer_index_pane = self.create_peer_index_pane();
+        frame.render_widget(peer_index_pane, mid_left);
 
         // -------------------
         // | Bottom Row Pane |
@@ -287,6 +310,56 @@ impl StateTuiApp {
         }
 
         List::new(items).block(Self::create_block_with_title("Cluster Metadata"))
+    }
+
+    /// Create a peer index pane    
+    fn create_peer_index_pane(&self) -> Table {
+        // Read the necessary state
+        let local_peer_id = self.global_state.local_peer_id();
+        let peer_info = { self.global_state.read_peer_index().get_info_map() };
+
+        // Sort the keys so that the table does not re-arrange every frame
+        let mut sorted_keys = peer_info.keys().cloned().collect_vec();
+        sorted_keys.sort();
+
+        // Collect into a table
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let mut rows = Vec::new();
+        for (peer_id, info) in sorted_keys
+            .iter()
+            .map(|key| (key, peer_info.get(key).unwrap()))
+        {
+            let last_heartbeat_elapsed = if peer_id.ne(&local_peer_id) {
+                (now - info.get_last_heartbeat()) * 1000
+            } else {
+                0
+            };
+
+            let row = Row::new(vec![
+                peer_id.to_string(),
+                format!("{last_heartbeat_elapsed} ms"),
+            ])
+            .style(*TABLE_ROW_STYLE);
+            rows.push(row);
+        }
+
+        Table::new(rows)
+            .header(
+                Row::new(vec!["Peer", "Last Heartbeat"])
+                    .style(*TABLE_HEADER_STYLE)
+                    .bottom_margin(1),
+            )
+            .block(Self::create_block_with_title("Peer Index"))
+            .widths(&[Constraint::Percentage(50), Constraint::Percentage(50)])
+            .column_spacing(5)
+    }
+
+    /// Create an order book pane
+    fn create_order_book_pane(&self) -> Table {
+        unimplemented!("")
     }
 
     /// Create a log widget that dumps the system logs
