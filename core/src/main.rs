@@ -110,6 +110,7 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Parse command line arguments
     let args = config::parse_command_line_args().expect("error parsing command line args");
+    let args_clone = args.clone();
     log::info!(
         "Relayer running with\n\t version: {}\n\t port: {}\n\t cluster: {:?}",
         args.version,
@@ -143,7 +144,7 @@ async fn main() -> Result<(), CoordinatorError> {
     {
         if args.debug {
             // Build the TUI
-            let tui = StateTuiApp::new(global_state.clone());
+            let tui = StateTuiApp::new(args_clone, global_state.clone());
             tui.run();
         } else {
             configure_default_log_capture()

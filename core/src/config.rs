@@ -141,6 +141,31 @@ pub struct RelayerConfig {
     pub debug: bool,
 }
 
+/// A custom clone implementation specifically for the cluster keypair which does not
+/// implement clone
+impl Clone for RelayerConfig {
+    fn clone(&self) -> Self {
+        Self {
+            version: self.version.clone(),
+            contract_address: self.contract_address.clone(),
+            bootstrap_servers: self.bootstrap_servers.clone(),
+            p2p_port: self.p2p_port,
+            http_port: self.http_port,
+            websocket_port: self.websocket_port,
+            disable_api_server: self.disable_api_server,
+            disable_price_reporter: self.disable_price_reporter,
+            wallets: self.wallets.clone(),
+            cluster_keypair: Keypair::from_bytes(&self.cluster_keypair.to_bytes()).unwrap(),
+            cluster_id: self.cluster_id.clone(),
+            coinbase_api_key: self.coinbase_api_key.clone(),
+            coinbase_api_secret: self.coinbase_api_secret.clone(),
+            starknet_gateway: self.starknet_gateway.clone(),
+            eth_websocket_addr: self.eth_websocket_addr.clone(),
+            debug: self.debug,
+        }
+    }
+}
+
 /// Parses command line args into the node config
 ///
 /// We allow for configurations to come from both a config file and overrides
@@ -148,7 +173,7 @@ pub struct RelayerConfig {
 /// options from the config file, prepend them to the cli args string, and parse
 /// using the `overrides_with("self")` option so that cli args (which come after
 /// config file args) take precedence.
-pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError> {
+pub fn parse_command_line_args() -> Result<RelayerConfig, CoordinatorError> {
     // Parse args from command line and config file, place the config file args
     // *before* the command line args so that clap will give precedence to the
     // command line arguments
@@ -222,7 +247,7 @@ pub fn parse_command_line_args() -> Result<Box<RelayerConfig>, CoordinatorError>
         debug: cli_args.debug,
     };
 
-    Ok(Box::new(config))
+    Ok(config)
 }
 
 /// Parse args from a config file
