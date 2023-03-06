@@ -156,15 +156,6 @@ async fn main() -> Result<(), CoordinatorError> {
         configure_default_log_capture();
     }
 
-    thread::spawn(|| {
-        let mut loop_counter = 0;
-        loop {
-            log::info!("Timer {loop_counter}...");
-            thread::sleep(Duration::from_secs(1));
-            loop_counter += 1;
-        }
-    });
-
     // ----------------
     // | Worker Setup |
     // ----------------

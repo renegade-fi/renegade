@@ -468,9 +468,6 @@ impl HeartbeatTimer {
             peer_index += 1;
             if peer_index >= peer_count {
                 peer_index = 0;
-
-                // Log the state if in debug mode once per heartbeat period
-                global_state.print_screen();
             }
 
             // Compute the time quantum to sleep for, may change between loops if peers are added or removed

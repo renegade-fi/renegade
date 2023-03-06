@@ -22,7 +22,6 @@ use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     sync::{RwLockReadGuard, RwLockWriteGuard},
 };
-use termion::color;
 use uuid::Uuid;
 
 use crate::{
@@ -368,6 +367,17 @@ impl NetworkOrderBook {
         self.read_order(order_id)?.valid_commit_witness.clone()
     }
 
+    /// Fetch a copy of the local order book
+    pub fn get_order_book_snapshot(&self) -> HashMap<OrderIdentifier, NetworkOrder> {
+        let mut res = HashMap::new();
+        for order_id in self.order_map.keys() {
+            let mut info = { self.read_order(order_id).unwrap().clone() };
+            res.insert(*order_id, info);
+        }
+
+        res
+    }
+
     // -----------
     // | Setters |
     // -----------
@@ -537,38 +547,5 @@ impl NetworkOrderBook {
                 },
             );
         }
-    }
-}
-
-/// Display color for light green text
-const LG: color::Fg<color::LightGreen> = color::Fg(color::LightGreen);
-/// Display color for light yellow text
-const LY: color::Fg<color::LightYellow> = color::Fg(color::LightYellow);
-/// Display color for cyan text
-const CY: color::Fg<color::Cyan> = color::Fg(color::Cyan);
-/// Terminal control to reset text color
-const RES: color::Fg<color::Reset> = color::Fg(color::Reset);
-
-impl Display for NetworkOrderBook {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.write_fmt(format_args!("\n\t{LG}Order Book:{RES}\n",))?;
-
-        // Loop over the locally managed orders and print info
-        for order_id in self.order_map.keys() {
-            let order_info = self.read_order(order_id).unwrap();
-            // Write the order_id
-            f.write_fmt(format_args!(
-                "\t\t- {LY}{}{RES} ({}): {CY}{}{RES}\n",
-                order_id,
-                if order_info.local {
-                    "local"
-                } else {
-                    "non-local"
-                },
-                order_info.state,
-            ));
-        }
-
-        Ok(())
     }
 }
