@@ -34,6 +34,18 @@ pub struct PeerInfo {
     cluster_auth_signature: Vec<u8>,
 }
 
+impl Default for PeerInfo {
+    fn default() -> Self {
+        Self {
+            peer_id: WrappedPeerId(PeerId::random()),
+            addr: Multiaddr::empty(),
+            last_heartbeat: AtomicU64::from(0u64),
+            cluster_id: ClusterId("0".to_string()),
+            cluster_auth_signature: vec![],
+        }
+    }
+}
+
 impl Eq for PeerInfo {}
 impl PartialEq for PeerInfo {
     fn eq(&self, other: &Self) -> bool {
@@ -235,6 +247,12 @@ impl ClusterId {
     pub fn get_public_key(&self) -> Result<PublicKey, SignatureError> {
         let decoded_key = base64::decode(&self.0).map_err(|_| SignatureError::new())?;
         PublicKey::from_bytes(&decoded_key)
+    }
+}
+
+impl Display for ClusterId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{}", self.0)
     }
 }
 
