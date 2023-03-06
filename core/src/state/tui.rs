@@ -181,8 +181,13 @@ impl StateTuiApp {
         let mid_left = chunks[0];
         let mid_right = chunks[1];
 
+        // Build a peer index pane
         let peer_index_pane = self.create_peer_index_pane();
         frame.render_widget(peer_index_pane, mid_left);
+
+        // Build an orderbook pane
+        let order_book_pane = self.create_order_book_pane();
+        frame.render_widget(order_book_pane, mid_right);
 
         // -------------------
         // | Bottom Row Pane |
@@ -359,7 +364,42 @@ impl StateTuiApp {
 
     /// Create an order book pane
     fn create_order_book_pane(&self) -> Table {
-        unimplemented!("")
+        // Read the necessary state
+        let order_book = {
+            self.global_state
+                .read_order_book()
+                .get_order_book_snapshot()
+        };
+
+        let mut sorted_keys = order_book.keys().clone().collect_vec();
+        sorted_keys.sort();
+
+        // Style and collect into a table
+        let mut rows = Vec::new();
+        for (order_id, info) in sorted_keys
+            .iter()
+            .map(|key| (*key, order_book.get(key).unwrap()))
+        {
+            let local_nonlocal = if info.local { "local" } else { "nonlocal" }.to_string();
+            let row = Row::new(vec![
+                order_id.to_string(),
+                info.state.to_string(),
+                local_nonlocal,
+            ])
+            .style(*TABLE_ROW_STYLE);
+
+            rows.push(row)
+        }
+
+        Table::new(rows)
+            .header(
+                Row::new(vec!["Order ID", "State", "Management"])
+                    .style(*TABLE_HEADER_STYLE)
+                    .bottom_margin(1),
+            )
+            .block(Self::create_block_with_title("Peer Index"))
+            .widths(&[Constraint::Percentage(50), Constraint::Percentage(50)])
+            .column_spacing(5)
     }
 
     /// Create a log widget that dumps the system logs
