@@ -18,11 +18,9 @@ use libp2p::{
 use rand::{distributions::WeightedIndex, prelude::Distribution, thread_rng};
 use std::{
     collections::HashMap,
-    fmt::{Display, Formatter, Result as FmtResult},
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
     thread::Builder,
 };
-use termion::color;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use crate::{
@@ -115,7 +113,7 @@ impl RelayerState {
         }
 
         // Setup the peer index
-        let peer_index = PeerIndex::new(local_peer_id);
+        let peer_index = PeerIndex::new();
 
         // Setup the order book
         let order_book = NetworkOrderBook::new(system_bus);
@@ -341,21 +339,6 @@ impl RelayerState {
             .sample_cluster_peer(&managing_cluster)
     }
 
-    /// Print the local relayer state to the screen for debugging
-    #[allow(unreachable_code)]
-    pub fn print_screen(&self) {
-        return;
-        if !self.debug {
-            return;
-        }
-
-        // Terminal control emissions to clear the terminal screen and
-        // move the cursor to position (1, 1), then print self
-        print!("{}[2J", 27 as char);
-        print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
-        println!("{}", self);
-    }
-
     // -----------
     // | Setters |
     // -----------
@@ -488,6 +471,7 @@ impl RelayerState {
     }
 
     /// Acquire a read lock on `matched_order_pairs`
+    #[allow(unused)]
     pub fn read_matched_order_pairs(
         &self,
     ) -> RwLockReadGuard<Vec<(OrderIdentifier, OrderIdentifier)>> {
@@ -542,55 +526,5 @@ impl From<&RelayerState> for HeartbeatMessage {
             known_peers: peer_info,
             orders: order_info,
         }
-    }
-}
-
-/// Display color for light green text
-const LG: color::Fg<color::LightGreen> = color::Fg(color::LightGreen);
-/// Display color for light yellow text
-const LY: color::Fg<color::LightYellow> = color::Fg(color::LightYellow);
-/// Display color for cyan text
-const CY: color::Fg<color::Cyan> = color::Fg(color::Cyan);
-/// Terminal control to reset text color
-const RES: color::Fg<color::Reset> = color::Fg(color::Reset);
-
-/// Display implementation for easy-to-read command line print-out
-impl Display for RelayerState {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        // Write wallet info to the format
-        self.read_wallet_index().fmt(f)?;
-        f.write_str("\n\n\n")?;
-
-        // Write order information for locally managed orders
-        self.read_order_book().fmt(f)?;
-        f.write_str("\n\n")?;
-
-        // Write historically matched orders to the format
-        f.write_fmt(format_args!("\n\t{LG}Matched Order Pairs:{RES}\n",))?;
-        for (o1, o2) in self.read_matched_order_pairs().iter() {
-            f.write_fmt(format_args!("\t\t - {LY}({:?}, {:?}){RES}\n", o1, o2,))?;
-        }
-
-        f.write_str("\n\n\n")?;
-        // Write the known peers to the format
-        f.write_fmt(format_args!("\t{LG}Known Peers{LG}:\n",))?;
-        self.peer_index.read().unwrap().fmt(f)?;
-        f.write_str("\n\n")?;
-
-        // Write the set of known cluster peers to the formatter
-        f.write_fmt(format_args!(
-            "\t{LG}Cluster Metadata{RES} (ID = {LY}{:?}{RES})\n",
-            self.local_cluster_id,
-        ))?;
-        f.write_fmt(format_args!("\t\t{LY}Members{RES}: [\n",))?;
-        for member in self
-            .read_peer_index()
-            .get_all_cluster_peers(&self.local_cluster_id)
-        {
-            f.write_fmt(format_args!("\t\t\t{}\n", member.0))?;
-        }
-        f.write_str("\t\t]")?;
-
-        Ok(())
     }
 }

@@ -3,7 +3,7 @@
 use std::{
     collections::{HashMap, HashSet},
     convert::TryInto,
-    fmt::{Display, Formatter, Result as FmtResult},
+    fmt::{Formatter, Result as FmtResult},
     iter,
     str::FromStr,
     sync::RwLockReadGuard,
@@ -28,7 +28,6 @@ use serde::{
     ser::SerializeSeq,
     Deserialize, Deserializer, Serialize, Serializer,
 };
-use termion::color;
 use uuid::Uuid;
 
 use crate::{gossip::types::WrappedPeerId, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
@@ -411,37 +410,6 @@ impl WalletIndex {
             let mut locked_wallet = wallet.write().expect("wallet lock poisoned");
             locked_wallet.metadata.replicas.remove(peer);
         }
-    }
-}
-
-/// Display implementation for when the relayer is placed in Debug mode
-impl Display for WalletIndex {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        // Write a header
-        f.write_fmt(format_args!(
-            "\n\t{}Managed Wallets:{}\n",
-            color::Fg(color::LightGreen),
-            color::Fg(color::Reset)
-        ))?;
-
-        // Write each wallet into the debug
-        for (wallet_id, wallet) in self.wallet_map.iter() {
-            f.write_fmt(format_args!(
-                "\t\t- {}{:?}:{} {{\n\t\t\t{}replicas{}: [\n",
-                color::Fg(color::LightYellow),
-                wallet_id,
-                color::Fg(color::Reset),
-                color::Fg(color::Blue),
-                color::Fg(color::Reset),
-            ))?;
-            for replica in wallet.read().unwrap().metadata.replicas.iter() {
-                f.write_fmt(format_args!("\t\t\t\t{}\n", replica.0))?;
-            }
-
-            f.write_str("\t\t\t]\n\t\t}")?;
-        }
-
-        Ok(())
     }
 }
 

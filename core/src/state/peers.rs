@@ -2,14 +2,12 @@
 
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
-    fmt::{Debug, Display, Formatter, Result as FmtResult},
+    fmt::Debug,
     sync::{RwLockReadGuard, RwLockWriteGuard},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use itertools::Itertools;
 use rand::{thread_rng, Rng};
-use termion::color;
 
 use crate::gossip::types::{ClusterId, PeerInfo, WrappedPeerId};
 
@@ -23,8 +21,6 @@ const ERR_PEER_POISONED: &str = "peer lock poisoned";
 /// An index over known peers in the network
 #[derive(Debug)]
 pub struct PeerIndex {
-    /// The peer ID of the local peer
-    peer_id: WrappedPeerId,
     /// A mapping from peer ID to information about the peer
     peer_map: HashMap<WrappedPeerId, Shared<PeerInfo>>,
     /// A mapping from cluster ID to a list of known peers in the cluster
@@ -33,9 +29,8 @@ pub struct PeerIndex {
 
 impl PeerIndex {
     /// Create a new peer index
-    pub fn new(peer_id: WrappedPeerId) -> Self {
+    pub fn new() -> Self {
         Self {
-            peer_id,
             peer_map: HashMap::new(),
             cluster_peers: HashMap::new(),
         }
@@ -196,38 +191,5 @@ impl PeerIndex {
         if let Some(peer_info_guard) = self.write_peer(peer_id) {
             peer_info_guard.successful_heartbeat();
         }
-    }
-}
-
-/// Debug implementation used for printing known peer state when the local node is in debug mode
-impl Display for PeerIndex {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("negative timestamp")
-            .as_secs();
-        for (peer_id, info) in self.peer_map.iter() {
-            let peer_info = info.read().expect(ERR_PEER_POISONED);
-            let last_heartbeat_elapsed = if peer_id.ne(&self.peer_id) {
-                (now - peer_info.get_last_heartbeat()) * 1000
-            } else {
-                0
-            };
-
-            f.write_fmt(format_args!(
-                "\t\t- {}{}{}: \n\t\t\t{}last_heartbeat{}: {:?}ms \n\t\t\t{}cluster_id{}: {:?} }}\n\n",
-                color::Fg(color::LightYellow),
-                peer_id.0,
-                color::Fg(color::Reset),
-                color::Fg(color::Blue),
-                color::Fg(color::Reset),
-                last_heartbeat_elapsed,
-                color::Fg(color::Blue),
-                color::Fg(color::Reset),
-                peer_info.get_cluster_id(),
-            ))?;
-        }
-
-        Ok(())
     }
 }

@@ -221,6 +221,7 @@ impl StateTuiApp {
                 .unwrap_or_default()
                 .get_addr()
         };
+        let full_addr = format!("{local_addr}/p2p/{peer_id}");
         let api_server_enabled = if self.config.disable_api_server {
             STR_DISABLED
         } else {
@@ -240,7 +241,7 @@ impl StateTuiApp {
         // Style and collect into a list
         let line1 = Spans::from(vec![
             Span::styled("Listening on: ", *GREEN_TEXT),
-            Span::styled(local_addr.to_string(), *YELLOW_TEXT),
+            Span::styled(full_addr, *YELLOW_TEXT),
         ]);
         let line2 = Spans::from(vec![
             Span::styled("Peer ID: ", *GREEN_TEXT),
@@ -397,8 +398,12 @@ impl StateTuiApp {
                     .style(*TABLE_HEADER_STYLE)
                     .bottom_margin(1),
             )
-            .block(Self::create_block_with_title("Peer Index"))
-            .widths(&[Constraint::Percentage(50), Constraint::Percentage(50)])
+            .block(Self::create_block_with_title("Order Book"))
+            .widths(&[
+                Constraint::Percentage(33),
+                Constraint::Percentage(33),
+                Constraint::Percentage(33),
+            ])
             .column_spacing(5)
     }
 
