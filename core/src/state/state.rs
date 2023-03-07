@@ -244,8 +244,7 @@ impl RelayerState {
             let proof_bundle: ValidCommitmentsBundle = receiver.blocking_recv().unwrap().into();
 
             // Update the local orderbook state
-            self.read_order_book()
-                .update_order_validity_proof(&order_id, proof_bundle.clone());
+            self.add_order_validity_proof(&order_id, proof_bundle.clone());
 
             // Gossip about the updated proof to the network
             let message = GossipOutbound::Pubsub {
@@ -340,9 +339,9 @@ impl RelayerState {
             .sample_cluster_peer(&managing_cluster)
     }
 
-    // -----------
-    // | Setters |
-    // -----------
+    // ----------------------
+    // | Peer Index Setters |
+    // ----------------------
 
     /// Add a single peer to the global state
     pub fn add_single_peer(&self, peer_id: WrappedPeerId, peer_info: PeerInfo) {
@@ -377,12 +376,26 @@ impl RelayerState {
         self.read_wallet_index().remove_peer_replicas(peer);
     }
 
+    // ----------------------
+    // | Order Book Setters |
+    // ----------------------
+
     /// Add an order to the book
     pub fn add_order(&self, order: NetworkOrder) {
         // Add the order to the book and to the priority store
         self.write_handshake_priorities()
             .new_order(order.id, order.cluster.clone());
         self.write_order_book().add_order(order);
+    }
+
+    /// Add a validity proof for an order
+    pub fn add_order_validity_proof(
+        &self,
+        order_id: &OrderIdentifier,
+        proof: ValidCommitmentsBundle,
+    ) {
+        self.write_order_book()
+            .update_order_validity_proof(order_id, proof)
     }
 
     /// Add wallets to the state as managed wallets

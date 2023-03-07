@@ -181,8 +181,7 @@ impl GossipProtocolExecutor {
         }
 
         self.global_state
-            .read_order_book()
-            .update_order_validity_proof(&order_id, proof_bundle);
+            .add_order_validity_proof(&order_id, proof_bundle);
 
         // If the order is locally managed, also fetch the wintess used in the proof,
         // this is used for proof linking. I.e. the local node needs the commitment parameters

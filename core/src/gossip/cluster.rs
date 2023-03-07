@@ -214,8 +214,6 @@ impl GossipProtocolExecutor {
         order_id: OrderIdentifier,
         proof: ValidCommitmentsBundle,
     ) {
-        self.global_state
-            .read_order_book()
-            .update_order_validity_proof(&order_id, proof);
+        self.global_state.add_order_validity_proof(&order_id, proof)
     }
 }
