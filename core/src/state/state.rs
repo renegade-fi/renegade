@@ -10,7 +10,6 @@ use circuits::{
 use crossbeam::channel::Sender;
 use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::scalar::Scalar;
-use itertools::Itertools;
 use libp2p::{
     identity::{self, Keypair},
     Multiaddr,
@@ -169,11 +168,13 @@ impl RelayerState {
         {
             // Iterate over all orders in all managed wallets and generate proofs
             let locked_wallet_index = self.read_wallet_index();
-            for wallet in locked_wallet_index.get_all_wallets().iter() {
+            for wallet in locked_wallet_index.get_all_wallets().into_iter() {
+                let match_nullifier = wallet.get_match_nullifier();
                 for (order_id, order) in wallet.orders.iter() {
                     {
                         self.write_order_book().add_order(NetworkOrder::new(
                             *order_id,
+                            match_nullifier,
                             self.local_cluster_id.clone(),
                             true, /* local */
                         ));
@@ -183,7 +184,7 @@ impl RelayerState {
                         locked_wallet_index.get_order_balance_and_fee(&wallet.wallet_id, order_id)
                     {
                         // Generate a merkle proof of inclusion for this wallet in the contract state
-                        let (merkle_root, wallet_opening) = Self::generate_merkle_proof(wallet);
+                        let (merkle_root, wallet_opening) = Self::generate_merkle_proof(&wallet);
 
                         // Attach a copy of the witness to the locally managed state
                         // This witness is reference by match computations which compute linkable commitments
@@ -386,28 +387,27 @@ impl RelayerState {
 
     /// Add wallets to the state as managed wallets
     ///
+    /// The orders in the wallet are assumed to be locally managed, as the
+    /// wallet is given in plaintext
+    ///
     /// This may happen at startup when a relayer advertises its presence to
     /// cluster peers; or when a new wallet is created on a remote cluster peer
     pub fn add_wallets(&self, wallets: Vec<Wallet>) {
-        let mut new_orders = Vec::new();
-
-        // Add all wallets to the index of locally managed wallets
-        {
-            let mut locked_wallet_index = self.write_wallet_index();
-            for wallet in wallets.into_iter() {
-                new_orders.append(&mut wallet.orders.keys().cloned().collect_vec());
-                locked_wallet_index.add_wallet(wallet);
-            }
-        } // locked_wallet_index released
-
-        // Add all new orders to the order book
+        let mut locked_wallet_index = self.write_wallet_index();
         let mut locked_order_book = self.write_order_book();
-        for order_id in new_orders.into_iter() {
-            locked_order_book.add_order(NetworkOrder::new(
-                order_id,
-                self.local_cluster_id.clone(),
-                true, /* local */
-            ));
+
+        for wallet in wallets.into_iter() {
+            let wallet_match_nullifier = wallet.get_match_nullifier();
+            locked_wallet_index.add_wallet(wallet.clone());
+
+            for order_id in wallet.orders.into_keys() {
+                locked_order_book.add_order(NetworkOrder::new(
+                    order_id,
+                    wallet_match_nullifier,
+                    self.local_cluster_id.clone(),
+                    true, /* local */
+                ));
+            }
         }
     }
 
@@ -457,15 +457,11 @@ impl RelayerState {
     }
 
     /// Acquire a read lock on `order_book`
-    /// TODO: Remove this lint allowance
-    #[allow(unused)]
     pub fn read_order_book(&self) -> RwLockReadGuard<NetworkOrderBook> {
         self.order_book.read().expect("order_book lock poisoned")
     }
 
     /// Acquire a write lock on `order_book`
-    /// TODO: Remove this lint allowance
-    #[allow(unused)]
     fn write_order_book(&self) -> RwLockWriteGuard<NetworkOrderBook> {
         self.order_book.write().expect("order_book lock poisoned")
     }

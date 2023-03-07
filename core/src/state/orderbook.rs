@@ -13,8 +13,7 @@
 // TODO: Remove this lint allowance
 #![allow(unused)]
 
-use circuits::zk_circuits::valid_commitments::ValidCommitmentsWitness;
-use curve25519_dalek::scalar::Scalar;
+use circuits::{types::wallet::Nullifier, zk_circuits::valid_commitments::ValidCommitmentsWitness};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -80,6 +79,8 @@ pub enum NetworkOrderState {
 pub struct NetworkOrder {
     /// The identifier of the order
     pub id: OrderIdentifier,
+    /// The match nullifier of the containing wallet
+    pub match_nullifier: Nullifier,
     /// Whether or not the order is managed locally, this does not imply that the owner
     /// field is the same as the local peer's ID. For simplicity the owner field is the
     /// relayer that originated the order. If the owner is a cluster peer, then the local
@@ -102,9 +103,15 @@ pub struct NetworkOrder {
 
 impl NetworkOrder {
     /// Create a new order in the `Received` state
-    pub fn new(order_id: OrderIdentifier, cluster: ClusterId, local: bool) -> Self {
+    pub fn new(
+        order_id: OrderIdentifier,
+        match_nullifier: Nullifier,
+        cluster: ClusterId,
+        local: bool,
+    ) -> Self {
         Self {
             id: order_id,
+            match_nullifier,
             local,
             cluster,
             state: NetworkOrderState::Received,
@@ -117,6 +124,7 @@ impl NetworkOrder {
     /// attaching a proof of `VALID COMMITMENTS` to the order
     pub(self) fn attach_commitment_proof(&mut self, proof: ValidCommitmentsBundle) {
         self.state = NetworkOrderState::Verified;
+        self.match_nullifier = proof.statement.nullifier;
         self.valid_commit_proof = Some(proof);
     }
 
@@ -266,7 +274,7 @@ impl NetworkOrderBook {
     }
 
     /// Fetch the match nullifier for an order
-    pub fn get_match_nullifier(&self, order_id: &OrderIdentifier) -> Option<Scalar> {
+    pub fn get_match_nullifier(&self, order_id: &OrderIdentifier) -> Option<Nullifier> {
         self.read_order(order_id)?
             .valid_commit_proof
             .as_ref()

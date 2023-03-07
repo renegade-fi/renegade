@@ -10,13 +10,13 @@ use std::{
 };
 
 use circuits::{
-    native_helpers::compute_wallet_commitment,
+    native_helpers::{compute_wallet_commitment, compute_wallet_match_nullifier},
     types::{
         balance::Balance,
         fee::Fee,
         keychain::{KeyChain, NUM_KEYS},
         order::{Order, OrderSide},
-        wallet::{Wallet as CircuitWallet, WalletCommitment},
+        wallet::{Nullifier, Wallet as CircuitWallet, WalletCommitment},
     },
 };
 use crypto::fields::{biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint};
@@ -230,6 +230,15 @@ impl Wallet {
     pub fn get_commitment(&self) -> WalletCommitment {
         let circuit_wallet: SizedCircuitWallet = self.clone().into();
         prime_field_to_scalar(&compute_wallet_commitment(&circuit_wallet))
+    }
+
+    /// Computes the match nullifier of the wallet
+    pub fn get_match_nullifier(&self) -> Nullifier {
+        let circuit_wallet: SizedCircuitWallet = self.clone().into();
+        prime_field_to_scalar(&compute_wallet_match_nullifier(
+            &circuit_wallet,
+            compute_wallet_commitment(&circuit_wallet),
+        ))
     }
 }
 

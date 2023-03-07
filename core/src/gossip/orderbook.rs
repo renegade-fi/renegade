@@ -1,7 +1,7 @@
 //! Groups handlers for updating and managing order book state in response to
 //! events elsewhere in the local node or the network
 
-use circuits::verify_singleprover_proof;
+use circuits::{types::wallet::Nullifier, verify_singleprover_proof};
 use libp2p::request_response::ResponseChannel;
 
 use crate::{
@@ -45,8 +45,12 @@ impl GossipProtocolExecutor {
                 Ok(())
             }
 
-            OrderBookManagementJob::OrderReceived { order_id, cluster } => {
-                self.handle_new_order(order_id, cluster);
+            OrderBookManagementJob::OrderReceived {
+                order_id,
+                match_nullifier,
+                cluster,
+            } => {
+                self.handle_new_order(order_id, match_nullifier, cluster);
                 Ok(())
             }
 
@@ -122,10 +126,19 @@ impl GossipProtocolExecutor {
     }
 
     /// Handles a newly discovered order added to the book
-    fn handle_new_order(&self, order_id: OrderIdentifier, cluster: ClusterId) {
+    fn handle_new_order(
+        &self,
+        order_id: OrderIdentifier,
+        match_nullifier: Nullifier,
+        cluster: ClusterId,
+    ) {
         let is_local = cluster == self.global_state.local_cluster_id;
-        self.global_state
-            .add_order(NetworkOrder::new(order_id, cluster, is_local))
+        self.global_state.add_order(NetworkOrder::new(
+            order_id,
+            match_nullifier,
+            cluster,
+            is_local,
+        ))
     }
 
     /// Handles a new validity proof attached to an order
@@ -138,6 +151,8 @@ impl GossipProtocolExecutor {
         cluster: ClusterId,
         proof_bundle: ValidCommitmentsBundle,
     ) -> Result<(), GossipError> {
+        // Verify that the order's identifier is the same as the match nullifier
+        // in the given circuit statement
         let is_local = cluster.eq(&self.global_state.local_cluster_id);
 
         // Verify the proof
@@ -157,8 +172,12 @@ impl GossipProtocolExecutor {
             .read_order_book()
             .contains_order(&order_id)
         {
-            self.global_state
-                .add_order(NetworkOrder::new(order_id, cluster, is_local));
+            self.global_state.add_order(NetworkOrder::new(
+                order_id,
+                proof_bundle.statement.nullifier,
+                cluster,
+                is_local,
+            ));
         }
 
         self.global_state
