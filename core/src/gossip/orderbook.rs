@@ -151,8 +151,6 @@ impl GossipProtocolExecutor {
         cluster: ClusterId,
         proof_bundle: ValidCommitmentsBundle,
     ) -> Result<(), GossipError> {
-        // Verify that the order's identifier is the same as the match nullifier
-        // in the given circuit statement
         let is_local = cluster.eq(&self.global_state.local_cluster_id);
 
         // Verify the proof

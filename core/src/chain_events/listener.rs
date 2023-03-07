@@ -2,6 +2,7 @@
 
 use std::{str::FromStr, thread::JoinHandle, time::Duration};
 
+use circuits::types::wallet::Nullifier;
 use crossbeam::channel::{Receiver, Sender};
 
 use crypto::fields::starknet_felt_to_scalar;
@@ -14,7 +15,7 @@ use starknet_providers::jsonrpc::{
 use tokio::time::{sleep_until, Instant};
 use tracing::log;
 
-use crate::handshake::jobs::HandshakeExecutionJob;
+use crate::{handshake::jobs::HandshakeExecutionJob, state::RelayerState};
 
 use super::error::OnChainEventListenerError;
 
@@ -47,6 +48,8 @@ pub struct OnChainEventListenerConfig {
     pub infura_api_key: Option<String>,
     /// The address of the Darkpool contract in the target network
     pub contract_address: String,
+    /// A copy of the relayer global state
+    pub global_state: RelayerState,
     /// A sender to the handshake manager's job queue, used to enqueue
     /// MPC shootdown jobs
     pub handshake_manager_job_queue: Sender<HandshakeExecutionJob>,
@@ -212,18 +215,32 @@ impl OnChainEventListenerExecutor {
         if key == *MERKLE_ROOT_CHANGED_EVENT_SELECTOR {
             log::info!("Handling merkle root update event")
         } else if key == *NULLIFIER_SPENT_EVENT_SELECTOR {
-            // Parse the nullifier into a Scalar and send an MPC shootdown request to the
-            // handshake manager
+            // Parse the nullifier from the felt
             log::info!("Handling nullifier spent event");
-
             let match_nullifier = starknet_felt_to_scalar(&event.data[0]);
-            self.config
-                .handshake_manager_job_queue
-                .send(HandshakeExecutionJob::MpcShootdown { match_nullifier })
-                .map_err(|err| OnChainEventListenerError::SendMessage(err.to_string()))?;
+            self.handle_nullifier_spent(match_nullifier)?;
         } else {
             log::info!("Unknown event emitted from contract")
         }
+
+        Ok(())
+    }
+
+    /// Handle a nullifier spent event
+    fn handle_nullifier_spent(
+        &self,
+        nullifier: Nullifier,
+    ) -> Result<(), OnChainEventListenerError> {
+        // Send an MPC shootdown request to the handshake manager
+        self.config
+            .handshake_manager_job_queue
+            .send(HandshakeExecutionJob::MpcShootdown {
+                match_nullifier: nullifier,
+            })
+            .map_err(|err| OnChainEventListenerError::SendMessage(err.to_string()))?;
+
+        // Nullify any orders that used this nullifier in their validity proof
+        self.config.global_state.nullify_orders(nullifier);
 
         Ok(())
     }

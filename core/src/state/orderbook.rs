@@ -161,11 +161,21 @@ impl NetworkOrder {
     /// Transitions the state of an order to `Cancelled`
     pub(self) fn transition_cancelled(&mut self) {
         self.state = NetworkOrderState::Cancelled;
+
+        // We no longer need the validity proof (if it exists)
+        // so it is safe to drop
+        self.valid_commit_proof = None;
+        self.valid_commit_witness = None;
     }
 
     /// Transitions the state of an order to `Pruned`
     pub(self) fn transition_pruned(&mut self) {
         self.state = NetworkOrderState::Pruned;
+
+        // We no longer need the validity proof (if it exists)
+        // so it is safe to drop
+        self.valid_commit_proof = None;
+        self.valid_commit_witness = None;
     }
 }
 
@@ -260,6 +270,16 @@ impl NetworkOrderBook {
         self.local_orders.write().expect(ERR_LOCAL_ORDERS_POISONED)
     }
 
+    /// Acquire a read lock on an order by nullifier set
+    pub fn read_nullifier_order_set(
+        &self,
+        nullifier: &Nullifier,
+    ) -> Option<RwLockReadGuard<HashSet<OrderIdentifier>>> {
+        self.orders_by_nullifier
+            .get(nullifier)
+            .map(|locked_set| locked_set.read().expect(ERR_NULLIFIER_INDEX_POISONED))
+    }
+
     /// Acquire a write lock on an order by nullifier set
     pub fn write_nullifier_order_set(
         &mut self,
@@ -294,6 +314,15 @@ impl NetworkOrderBook {
             .valid_commit_proof
             .as_ref()
             .map(|proof| proof.statement.nullifier)
+    }
+
+    /// Fetch all orders under a given nullifier
+    pub fn get_orders_by_nullifier(&self, nullifier: Nullifier) -> Vec<OrderIdentifier> {
+        if let Some(set) = self.read_nullifier_order_set(&nullifier) {
+            set.iter().cloned().collect_vec()
+        } else {
+            Vec::new()
+        }
     }
 
     /// Fetch all the verified orders in the order book
