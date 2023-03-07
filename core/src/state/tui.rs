@@ -7,8 +7,10 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use itertools::Itertools;
+
 use std::{
     cell::RefCell,
+    thread::JoinHandle,
     time::{SystemTime, UNIX_EPOCH},
 };
 use std::{io::Stdout, thread::Builder as ThreadBuilder, time::Duration};
@@ -92,11 +94,11 @@ impl StateTuiApp {
     // ------------------
 
     /// Consume the state TUI in a thread and run an execution loop
-    pub fn run(self) {
+    pub fn run(self) -> JoinHandle<()> {
         ThreadBuilder::new()
             .name("state-tui-execution-loop".to_string())
             .spawn(|| self.execution_loop())
-            .unwrap();
+            .unwrap()
     }
 
     /// An implementation of the execution loop
@@ -152,7 +154,6 @@ impl StateTuiApp {
         // -----------------
         // | Top Row Panes |
         // -----------------
-
         // Split the top row into two panes horizontally
         let chunks = Layout::default()
             .direction(Direction::Horizontal)

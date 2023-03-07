@@ -21,7 +21,7 @@ mod system_bus;
 mod types;
 mod worker;
 
-use std::{io::Write, thread, time::Duration};
+use std::{io::Write, process::exit, thread, time::Duration};
 
 use chrono::Local;
 use circuits::{types::wallet::Wallet, zk_gadgets::fixed_point::FixedPoint};
@@ -145,7 +145,14 @@ async fn main() -> Result<(), CoordinatorError> {
         if args.debug {
             // Build the TUI
             let tui = StateTuiApp::new(args_clone, global_state.clone());
-            tui.run();
+
+            // Attach a watcher to the TUI and exit the process when the TUI quits
+            let join_handle = tui.run();
+            thread::spawn(move || {
+                #[allow(unused_must_use)]
+                join_handle.join();
+                exit(0);
+            });
         } else {
             configure_default_log_capture()
         }
