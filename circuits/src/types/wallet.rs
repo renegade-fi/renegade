@@ -18,8 +18,10 @@ use super::{
     serialize_array,
 };
 
-/// A type alias for readability
+/// Commitment type alias for readability
 pub type WalletCommitment = Scalar;
+/// Nullifier type alias for readability
+pub type Nullifier = Scalar;
 
 /// Represents the base type of a wallet holding orders, balances, fees, keys
 /// and cryptographic randomness

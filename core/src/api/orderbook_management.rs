@@ -1,5 +1,6 @@
 //! Defines types related to orderbook message passing within the p2p network
 
+use circuits::types::wallet::Nullifier;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -38,6 +39,8 @@ pub enum OrderBookManagementMessage {
     OrderReceived {
         /// The identifier of the new order
         order_id: OrderIdentifier,
+        /// The match nullifier of the new order
+        match_nullifier: Nullifier,
         /// The cluster that manages this order
         cluster: ClusterId,
     },

@@ -673,10 +673,10 @@ impl NetworkManagerExecutor {
                 }
             }
             PubsubMessage::OrderBookManagement(msg) => match msg {
-                OrderBookManagementMessage::OrderReceived { order_id, cluster } => self
+                OrderBookManagementMessage::OrderReceived { order_id, match_nullifier, cluster } => self
                     .gossip_work_queue
                     .send(GossipServerJob::OrderBookManagement(
-                        OrderBookManagementJob::OrderReceived { order_id, cluster },
+                        OrderBookManagementJob::OrderReceived { order_id, match_nullifier, cluster },
                     ))
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?,
 

@@ -1,6 +1,6 @@
 //! Defines jobs that other workers in the relayer may enqueue for the handshake module
 
-use curve25519_dalek::scalar::Scalar;
+use circuits::types::wallet::Nullifier;
 use libp2p::request_response::ResponseChannel;
 use mpc_ristretto::network::QuicTwoPartyNet;
 use uuid::Uuid;
@@ -53,7 +53,7 @@ pub enum HandshakeExecutionJob {
     MpcShootdown {
         /// The match-nullifier value seen on-chain; any in-flight MPCs on this nullifier
         /// are to be terminated
-        match_nullifier: Scalar,
+        match_nullifier: Nullifier,
     },
     /// Indicates that a cluster replica has initiated a match on the given order pair.
     /// The local peer should not schedule this order pair for a match for some duration
