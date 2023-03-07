@@ -3,6 +3,7 @@
 
 use circuits::{
     native_helpers::compute_poseidon_hash,
+    types::wallet::Nullifier,
     zk_circuits::valid_commitments::ValidCommitmentsWitness,
     zk_gadgets::merkle::{MerkleOpening, MerkleRoot},
     LinkableCommitment,
@@ -397,6 +398,19 @@ impl RelayerState {
         self.write_order_book()
             .update_order_validity_proof(order_id, proof)
     }
+
+    /// Nullify all orders with a given nullifier
+    pub fn nullify_orders(&self, nullifier: Nullifier) {
+        let mut locked_order_book = self.write_order_book();
+        let orders_to_nullify = locked_order_book.get_orders_by_nullifier(nullifier);
+        for order_id in orders_to_nullify.into_iter() {
+            locked_order_book.transition_cancelled(&order_id);
+        }
+    }
+
+    // ------------------------
+    // | Wallet Index Setters |
+    // ------------------------
 
     /// Add wallets to the state as managed wallets
     ///
