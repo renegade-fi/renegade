@@ -36,11 +36,12 @@ use super::{new_shared, Shared};
 const ERR_LOCAL_ORDERS_POISONED: &str = "local order lock poisoned";
 /// Error message emitted when an order lock is poisoned
 const ERR_ORDER_POISONED: &str = "order lock poisoned";
+/// Error message emitted when the nullifier index is poisoned
+const ERR_NULLIFIER_INDEX_POISONED: &str = "orderbook nullifier index poisoned";
 /// Error message emitted when the verified orders set lock is poisoned
 const ERR_VERIFIED_ORDERS_POISONED: &str = "verified orders lock poisoned";
 
 /// An identifier of an order used for caching
-/// TODO: Update this with a commitment to an order, UUID for testing
 pub type OrderIdentifier = Uuid;
 
 /// The state of a known order in the network
@@ -91,7 +92,6 @@ pub struct NetworkOrder {
     /// The state of the order via the local peer
     pub state: NetworkOrderState,
     /// The proof of `VALID COMMITMENTS` that has been verified by the local node
-    /// TODO: Update this proof with a fleshed out bundle
     pub valid_commit_proof: Option<ValidCommitmentsBundle>,
     /// The witness to the proof of `VALID COMMITMENTS`, this is only stored for orders that
     /// the local node directly manages
@@ -187,6 +187,8 @@ impl Display for NetworkOrderState {
 pub struct NetworkOrderBook {
     /// The mapping from order identifier to order information
     order_map: HashMap<OrderIdentifier, Shared<NetworkOrder>>,
+    /// A mapping from the wallet match nullifier to the order
+    orders_by_nullifier: HashMap<Nullifier, Shared<HashSet<OrderIdentifier>>>,
     /// A list of order IDs maintained locally
     local_orders: Shared<HashSet<OrderIdentifier>>,
     /// The set of orders in the `Verified` state; i.e. ready to match
@@ -200,6 +202,7 @@ impl NetworkOrderBook {
     pub fn new(system_bus: SystemBus<SystemBusMessage>) -> Self {
         Self {
             order_map: HashMap::new(),
+            orders_by_nullifier: HashMap::new(),
             local_orders: new_shared(HashSet::new()),
             verified_orders: new_shared(HashSet::new()),
             system_bus,
@@ -255,6 +258,18 @@ impl NetworkOrderBook {
     /// Acquire a write lock on the locally managed orders
     pub fn write_local_orders(&self) -> RwLockWriteGuard<HashSet<OrderIdentifier>> {
         self.local_orders.write().expect(ERR_LOCAL_ORDERS_POISONED)
+    }
+
+    /// Acquire a write lock on an order by nullifier set
+    pub fn write_nullifier_order_set(
+        &mut self,
+        match_nullifier: Nullifier,
+    ) -> RwLockWriteGuard<HashSet<OrderIdentifier>> {
+        self.orders_by_nullifier
+            .entry(match_nullifier)
+            .or_insert_with(|| new_shared(HashSet::new()))
+            .write()
+            .expect(ERR_NULLIFIER_INDEX_POISONED)
     }
 
     // -----------
@@ -403,16 +418,24 @@ impl NetworkOrderBook {
             self.add_verified_order(order.id)
         }
 
+        // Add an entry in the orders by nullifier index
+        self.write_nullifier_order_set(order.match_nullifier)
+            .insert(order.id);
+
         // Add an entry in the order index
         self.order_map.insert(order.id, new_shared(order));
     }
 
     /// Update the validity proof for an order
     pub fn update_order_validity_proof(
-        &self,
+        &mut self,
         order_id: &OrderIdentifier,
         proof: ValidCommitmentsBundle,
     ) {
+        // Index by the match nullifier seen in the proof, this is guaranteed correct
+        self.write_nullifier_order_set(proof.statement.nullifier)
+            .insert(*order_id);
+
         if let Some(mut locked_order) = self.write_order(order_id) {
             locked_order.attach_commitment_proof(proof);
         }
