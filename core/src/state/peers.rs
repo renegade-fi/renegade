@@ -12,11 +12,6 @@ use crate::gossip::types::{ClusterId, PeerInfo, WrappedPeerId};
 
 use super::{new_async_shared, AsyncShared};
 
-/// Error message emitted when a cluster peer list lock is poisoned
-const ERR_CLUSTER_LIST_POISONED: &str = "cluster peer list poisoned";
-/// The error message to panic with when a peer's lock has been poisoned
-const ERR_PEER_POISONED: &str = "peer lock poisoned";
-
 /// An index over known peers in the network
 #[derive(Debug)]
 pub struct PeerIndex {

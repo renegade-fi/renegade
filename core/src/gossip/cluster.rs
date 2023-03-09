@@ -67,7 +67,8 @@ impl GossipProtocolExecutor {
 
         // Add the peer to the cluster metadata
         // Move out of message to avoid clones
-        self.add_peer_to_cluster(message.peer_id, message.peer_info, cluster_id).await?;
+        self.add_peer_to_cluster(message.peer_id, message.peer_info, cluster_id)
+            .await?;
 
         // Request that the peer replicate all locally replicated wallets
         let wallets = self
@@ -92,7 +93,7 @@ impl GossipProtocolExecutor {
         }
 
         // Add the peer to the known peers index
-        self.global_state.add_single_peer(peer_id, peer_info);
+        self.global_state.add_single_peer(peer_id, peer_info).await;
 
         // Request that the peer replicate all locally replicated wallets
         let wallets = self

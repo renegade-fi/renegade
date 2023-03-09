@@ -2,12 +2,8 @@
 // TODO: Remove this lint allowance
 #![allow(dead_code)]
 
-use std::{
-    collections::{HashMap, HashSet},
-    sync::{Arc, RwLock},
-};
-
-use crate::state::{OrderIdentifier, RelayerState, Shared};
+use crate::state::{new_async_shared, AsyncShared, OrderIdentifier, RelayerState};
+use std::collections::{HashMap, HashSet};
 
 use super::error::HandshakeManagerError;
 use crossbeam::channel::Sender;
@@ -21,9 +17,9 @@ use uuid::Uuid;
 #[derive(Clone, Debug)]
 pub struct HandshakeStateIndex {
     /// The underlying map of request identifiers to state machine instances
-    state_map: Shared<HashMap<Uuid, HandshakeState>>,
+    state_map: AsyncShared<HashMap<Uuid, HandshakeState>>,
     /// A mapping from nullifier to a set of request_ids on that nullifier
-    nullifier_map: Shared<HashMap<Scalar, HashSet<Uuid>>>,
+    nullifier_map: AsyncShared<HashMap<Scalar, HashSet<Uuid>>>,
     /// A copy of the relayer global state
     global_state: RelayerState,
 }
@@ -32,8 +28,8 @@ impl HandshakeStateIndex {
     /// Creates a new instance of the state index
     pub fn new(global_state: RelayerState) -> Self {
         Self {
-            state_map: Arc::new(RwLock::new(HashMap::new())),
-            nullifier_map: Arc::new(RwLock::new(HashMap::new())),
+            state_map: new_async_shared(HashMap::new()),
+            nullifier_map: new_async_shared(HashMap::new()),
             global_state,
         }
     }
@@ -44,16 +40,17 @@ impl HandshakeStateIndex {
 
     /// Adds a new handshake to the state where the peer's order is already known (e.g. the peer initiated the handshake)
     #[allow(clippy::too_many_arguments)]
-    pub fn new_handshake(
+    pub async fn new_handshake(
         &self,
         request_id: Uuid,
         peer_order_id: OrderIdentifier,
         local_order_id: OrderIdentifier,
     ) -> Result<(), HandshakeManagerError> {
         // Lookup the match nullifiers for the order
-        let locked_order_book = self.global_state.read_order_book();
+        let locked_order_book = self.global_state.read_order_book().await;
         let local_nullifier = locked_order_book
             .get_match_nullifier(&local_order_id)
+            .await
             .ok_or_else(|| {
                 HandshakeManagerError::StateNotFound(
                     "match nullifier not found for order".to_string(),
@@ -61,6 +58,7 @@ impl HandshakeStateIndex {
             })?;
         let peer_nullifier = locked_order_book
             .get_match_nullifier(&peer_order_id)
+            .await
             .ok_or_else(|| {
                 HandshakeManagerError::StateNotFound(
                     "match nullifier not found for order".to_string(),
@@ -69,7 +67,7 @@ impl HandshakeStateIndex {
 
         // Index by request ID
         {
-            let mut locked_state = self.state_map.write().expect("state_map lock poisoned");
+            let mut locked_state = self.state_map.write().await;
             locked_state.insert(
                 request_id,
                 HandshakeState::new(
@@ -84,11 +82,7 @@ impl HandshakeStateIndex {
 
         // Index by nullifier
         {
-            let mut locked_nullifier_map = self
-                .nullifier_map
-                .write()
-                .expect("nullifier_map lock poisoned");
-
+            let mut locked_nullifier_map = self.nullifier_map.write().await;
             locked_nullifier_map
                 .entry(local_nullifier)
                 .or_default()
@@ -103,19 +97,16 @@ impl HandshakeStateIndex {
     }
 
     /// Removes a handshake after processing is complete; either by match completion or error
-    pub fn remove_handshake(&self, request_id: &Uuid) -> Option<HandshakeState> {
+    pub async fn remove_handshake(&self, request_id: &Uuid) -> Option<HandshakeState> {
         // Remove from the state
         let state = {
-            let mut locked_state = self.state_map.write().expect("state_map lock poisoned");
+            let mut locked_state = self.state_map.write().await;
             locked_state.remove(request_id)
         }; // locked_state released
 
         // Remove from the nullifier index
         if let Some(state) = state.clone() {
-            let mut locked_nullifier_map = self
-                .nullifier_map
-                .write()
-                .expect("nullifier_map lock poisoned");
+            let mut locked_nullifier_map = self.nullifier_map.write().await;
 
             if let Some(nullifier_set) = locked_nullifier_map.get_mut(&state.local_match_nullifier)
             {
@@ -131,13 +122,12 @@ impl HandshakeStateIndex {
     }
 
     /// Shootdown all active handshakes on a given nullifier
-    pub fn shootdown_nullifier(&self, nullifier: Scalar) -> Result<(), HandshakeManagerError> {
+    pub async fn shootdown_nullifier(
+        &self,
+        nullifier: Scalar,
+    ) -> Result<(), HandshakeManagerError> {
         let requests = {
-            let mut locked_nullifier_map = self
-                .nullifier_map
-                .write()
-                .expect("nullifier_map lock poisoned");
-
+            let mut locked_nullifier_map = self.nullifier_map.write().await;
             locked_nullifier_map.remove(&nullifier).unwrap_or_default()
         }; // locked_nullifier_map released
 
@@ -145,7 +135,7 @@ impl HandshakeStateIndex {
         // over the request's cancel channel if one has already been allocated. The receiver
         // of this channel is the worker running in the MPC runtime
         for request in requests.iter() {
-            if let Some(state) = self.remove_handshake(request)
+            if let Some(state) = self.remove_handshake(request).await
             && let Some(channel) = state.cancel_channel
             {
                 channel.send(())
@@ -161,14 +151,14 @@ impl HandshakeStateIndex {
     // --------------------
 
     /// Gets the state of the given handshake
-    pub fn get_state(&self, request_id: &Uuid) -> Option<HandshakeState> {
-        let locked_state = self.state_map.read().expect("state_map lock poisoned");
+    pub async fn get_state(&self, request_id: &Uuid) -> Option<HandshakeState> {
+        let locked_state = self.state_map.read().await;
         locked_state.get(request_id).cloned()
     }
 
     /// Transition the given handshake into the MatchInProgress state
-    pub fn in_progress(&self, request_id: &Uuid, cancel_channel: Sender<()>) {
-        let mut locked_state = self.state_map.write().expect("state_map lock poisoned");
+    pub async fn in_progress(&self, request_id: &Uuid, cancel_channel: Sender<()>) {
+        let mut locked_state = self.state_map.write().await;
         if let Some(entry) = locked_state.get_mut(request_id) {
             entry.in_progress();
             entry.cancel_channel = Some(cancel_channel);
@@ -176,25 +166,25 @@ impl HandshakeStateIndex {
     }
 
     /// Transition the given handshake into the Completed state
-    pub fn completed(&self, request_id: &Uuid) {
-        let mut locked_state = self.state_map.write().expect("state_map lock poisoned");
+    pub async fn completed(&self, request_id: &Uuid) {
+        let mut locked_state = self.state_map.write().await;
         if let Some(entry) = locked_state.get_mut(request_id) {
             entry.completed()
         }
 
         // For now, we simply remove the handshake from the state
-        self.remove_handshake(request_id);
+        self.remove_handshake(request_id).await;
     }
 
     /// Transition the given handshake into the Error state
-    pub fn error(&self, request_id: &Uuid, err: HandshakeManagerError) {
-        let mut locked_state = self.state_map.write().expect("state_map lock poisoned");
+    pub async fn error(&self, request_id: &Uuid, err: HandshakeManagerError) {
+        let mut locked_state = self.state_map.write().await;
         if let Some(entry) = locked_state.get_mut(request_id) {
             entry.error(err)
         }
 
         // For now we simply remove the handshake from the state
-        self.remove_handshake(request_id);
+        self.remove_handshake(request_id).await;
     }
 }
 

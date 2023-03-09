@@ -3,18 +3,13 @@
 
 use std::{
     collections::HashMap,
-    sync::{
-        atomic::{AtomicU32, Ordering},
-    },
+    sync::atomic::{AtomicU32, Ordering},
 };
 use tokio::sync::RwLockReadGuard;
 
 use crate::gossip::types::ClusterId;
 
 use super::{new_async_shared, AsyncShared, OrderIdentifier};
-
-/// The error emitted when an order's priority lock is poisoned
-const ERR_ORDER_PRIORITY_POISONED: &str = "order priority lock poisoned";
 
 /// The default priority for a cluster
 const CLUSTER_DEFAULT_PRIORITY: u32 = 1;

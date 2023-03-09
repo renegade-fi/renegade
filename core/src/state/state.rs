@@ -66,11 +66,6 @@ pub fn new_async_shared<T>(wrapped: T) -> AsyncShared<T> {
     Arc::new(AsyncRwLock::new(wrapped))
 }
 
-/// Wrap an abstract value in a shared lock
-pub fn new_shared<T>(wrapped: T) -> Shared<T> {
-    Arc::new(RwLock::new(wrapped))
-}
-
 /// The top level object in the global state tree
 ///
 /// The implementation of `RelayerState` handles locking various
@@ -186,12 +181,15 @@ impl RelayerState {
                 let match_nullifier = wallet.get_match_nullifier();
                 for (order_id, order) in wallet.orders.iter() {
                     {
-                        self.write_order_book().await.add_order(NetworkOrder::new(
-                            *order_id,
-                            match_nullifier,
-                            self.local_cluster_id.clone(),
-                            true, /* local */
-                        ));
+                        self.write_order_book()
+                            .await
+                            .add_order(NetworkOrder::new(
+                                *order_id,
+                                match_nullifier,
+                                self.local_cluster_id.clone(),
+                                true, /* local */
+                            ))
+                            .await;
                     } // order_book lock released
 
                     if let Some((_, balance, fee, fee_balance)) = locked_wallet_index
@@ -207,19 +205,22 @@ impl RelayerState {
                         {
                             let randomness_hash =
                                 compute_poseidon_hash(&[biguint_to_scalar(&wallet.randomness)]);
-                            self.read_order_book().await.attach_validity_proof_witness(
-                                order_id,
-                                ValidCommitmentsWitness {
-                                    wallet: wallet.clone().into(),
-                                    order: order.clone().into(),
-                                    balance: balance.clone().into(),
-                                    fee: fee.clone().into(),
-                                    fee_balance: fee_balance.clone().into(),
-                                    wallet_opening: wallet_opening.clone(),
-                                    randomness_hash: LinkableCommitment::new(randomness_hash),
-                                    sk_match: wallet.secret_keys.sk_match,
-                                },
-                            );
+                            self.read_order_book()
+                                .await
+                                .attach_validity_proof_witness(
+                                    order_id,
+                                    ValidCommitmentsWitness {
+                                        wallet: wallet.clone().into(),
+                                        order: order.clone().into(),
+                                        balance: balance.clone().into(),
+                                        fee: fee.clone().into(),
+                                        fee_balance: fee_balance.clone().into(),
+                                        wallet_opening: wallet_opening.clone(),
+                                        randomness_hash: LinkableCommitment::new(randomness_hash),
+                                        sk_match: wallet.secret_keys.sk_match,
+                                    },
+                                )
+                                .await;
                         } // order_book lock released
 
                         // Create a job and a response channel to get proofs back on
@@ -259,7 +260,8 @@ impl RelayerState {
             let proof_bundle: ValidCommitmentsBundle = receiver.blocking_recv().unwrap().into();
 
             // Update the local orderbook state
-            self.add_order_validity_proof(&order_id, proof_bundle.clone());
+            self.add_order_validity_proof(&order_id, proof_bundle.clone())
+                .await;
 
             // Gossip about the updated proof to the network
             let message = GossipOutbound::Pubsub {
@@ -377,9 +379,9 @@ impl RelayerState {
     // ----------------------
 
     /// Add a single peer to the global state
-    pub fn add_single_peer(&self, peer_id: WrappedPeerId, peer_info: PeerInfo) {
+    pub async fn add_single_peer(&self, peer_id: WrappedPeerId, peer_info: PeerInfo) {
         let info_map = HashMap::from([(peer_id, peer_info)]);
-        self.add_peers(&[peer_id], &info_map);
+        self.add_peers(&[peer_id], &info_map).await;
     }
 
     /// Add a set of new peers to the global state
@@ -404,9 +406,12 @@ impl RelayerState {
     /// Expire a set of peers that have been determined to have failed
     pub async fn remove_peer(&self, peer: &WrappedPeerId) {
         // Update the peer index
-        self.write_peer_index().await.remove_peer(peer);
+        self.write_peer_index().await.remove_peer(peer).await;
         // Update the replicas set for any wallets replicated by the expired peer
-        self.read_wallet_index().await.remove_peer_replicas(peer);
+        self.read_wallet_index()
+            .await
+            .remove_peer_replicas(peer)
+            .await;
     }
 
     // ----------------------
@@ -419,7 +424,7 @@ impl RelayerState {
         self.write_handshake_priorities()
             .await
             .new_order(order.id, order.cluster.clone());
-        self.write_order_book().await.add_order(order);
+        self.write_order_book().await.add_order(order).await;
     }
 
     /// Add a validity proof for an order
@@ -439,7 +444,7 @@ impl RelayerState {
         let mut locked_order_book = self.write_order_book().await;
         let orders_to_nullify = locked_order_book.get_orders_by_nullifier(nullifier).await;
         for order_id in orders_to_nullify.into_iter() {
-            locked_order_book.transition_cancelled(&order_id);
+            locked_order_book.transition_cancelled(&order_id).await;
         }
     }
 
@@ -463,12 +468,14 @@ impl RelayerState {
             locked_wallet_index.add_wallet(wallet.clone());
 
             for order_id in wallet.orders.into_keys() {
-                locked_order_book.add_order(NetworkOrder::new(
-                    order_id,
-                    wallet_match_nullifier,
-                    self.local_cluster_id.clone(),
-                    true, /* local */
-                ));
+                locked_order_book
+                    .add_order(NetworkOrder::new(
+                        order_id,
+                        wallet_match_nullifier,
+                        self.local_cluster_id.clone(),
+                        true, /* local */
+                    ))
+                    .await;
             }
         }
     }

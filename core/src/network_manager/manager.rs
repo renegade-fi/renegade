@@ -1,6 +1,5 @@
 //! The network manager handles lower level interaction with the p2p network
 
-use crossbeam::channel::Sender;
 use ed25519_dalek::Keypair as SigKeypair;
 use futures::StreamExt;
 use itertools::Itertools;
@@ -15,6 +14,7 @@ use libp2p::{
 use libp2p_swarm::NetworkBehaviour;
 use mpc_ristretto::network::QuicTwoPartyNet;
 use portpicker::Port;
+use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
 
 use std::{net::SocketAddr, thread::JoinHandle};
@@ -96,7 +96,7 @@ pub struct NetworkManager {
 /// out to the network; as well as listening on the network for messages from other peers.
 impl NetworkManager {
     /// Setup global state after peer_id and address have been assigned
-    pub(super) fn update_global_state_after_startup(&self) {
+    pub(super) async fn update_global_state_after_startup(&self) {
         // Add self to peer info index
         self.config.global_state.add_single_peer(
             self.local_peer_id,
@@ -106,7 +106,7 @@ impl NetworkManager {
                 self.local_addr.clone(),
                 self.config.cluster_keypair.as_ref().unwrap(),
             ),
-        );
+        ).await;
     }
 
     /// Setup pubsub subscriptions for the network manager
@@ -163,9 +163,9 @@ pub(super) struct NetworkManagerExecutor {
     /// The channel to receive outbound requests on from other workers
     send_channel: UnboundedReceiver<GossipOutbound>,
     /// The sender for the gossip server's work queue
-    gossip_work_queue: Sender<GossipServerJob>,
+    gossip_work_queue: TokioSender<GossipServerJob>,
     /// The sender for the handshake manager's work queue
-    handshake_work_queue: Sender<HandshakeExecutionJob>,
+    handshake_work_queue: TokioSender<HandshakeExecutionJob>,
     /// A copy of the relayer-global state
     #[allow(unused)]
     global_state: RelayerState,
@@ -181,8 +181,8 @@ impl NetworkManagerExecutor {
         cluster_key: SigKeypair,
         swarm: Swarm<ComposedNetworkBehavior>,
         send_channel: UnboundedReceiver<GossipOutbound>,
-        gossip_work_queue: Sender<GossipServerJob>,
-        handshake_work_queue: Sender<HandshakeExecutionJob>,
+        gossip_work_queue: TokioSender<GossipServerJob>,
+        handshake_work_queue: TokioSender<HandshakeExecutionJob>,
         global_state: RelayerState,
         cancel: Receiver<()>,
     ) -> Self {

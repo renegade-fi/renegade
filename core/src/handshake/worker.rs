@@ -2,18 +2,23 @@
 
 use std::thread::{Builder, JoinHandle};
 
-use crossbeam::channel::{Receiver, Sender};
-use tokio::sync::mpsc::UnboundedSender;
+use crossbeam::channel::Sender as CrossbeamSender;
+use futures::executor::block_on;
+use tokio::{
+    runtime::Builder as RuntimeBuilder,
+    sync::mpsc::{UnboundedReceiver, UnboundedSender},
+};
 use tracing::log;
 
 use crate::{
     api::gossip::GossipOutbound,
-    handshake::manager::{HandshakeExecutor, HandshakeScheduler},
+    handshake::manager::{HandshakeExecutor, HandshakeScheduler, HANDSHAKE_EXECUTOR_N_THREADS},
     proof_generation::jobs::ProofManagerJob,
     state::RelayerState,
     system_bus::SystemBus,
     types::SystemBusMessage,
     worker::Worker,
+    CancelChannel,
 };
 
 use super::{error::HandshakeManagerError, jobs::HandshakeExecutionJob, manager::HandshakeManager};
@@ -27,23 +32,23 @@ pub struct HandshakeManagerConfig {
     pub network_channel: UnboundedSender<GossipOutbound>,
     /// A sender on the handshake manager's job queue, used by the timer
     /// thread to enqueue outbound handshakes
-    pub job_sender: Sender<HandshakeExecutionJob>,
+    pub job_sender: UnboundedSender<HandshakeExecutionJob>,
     /// The job queue on which to receive handshake requests
-    pub job_receiver: Receiver<HandshakeExecutionJob>,
+    pub job_receiver: Option<UnboundedReceiver<HandshakeExecutionJob>>,
     /// A sender to forward jobs to the proof manager on
-    pub proof_manager_sender: Sender<ProofManagerJob>,
+    pub proof_manager_sender: CrossbeamSender<ProofManagerJob>,
     /// The system bus to which all workers have access
     pub system_bus: SystemBus<SystemBusMessage>,
     /// The channel on which the coordinator may mandate that the
     /// handshake manager cancel its execution
-    pub(crate) cancel_channel: Receiver<()>,
+    pub(crate) cancel_channel: CancelChannel,
 }
 
 impl Worker for HandshakeManager {
     type WorkerConfig = HandshakeManagerConfig;
     type Error = HandshakeManagerError;
 
-    fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
+    fn new(mut config: Self::WorkerConfig) -> Result<Self, Self::Error> {
         // Start a timer thread, periodically asks workers to begin handshakes with peers
         let scheduler = HandshakeScheduler::new(
             config.job_sender.clone(),
@@ -51,7 +56,7 @@ impl Worker for HandshakeManager {
             config.cancel_channel.clone(),
         );
         let executor = HandshakeExecutor::new(
-            config.job_receiver.clone(),
+            config.job_receiver.take().unwrap(),
             config.network_channel.clone(),
             config.proof_manager_sender.clone(),
             config.global_state.clone(),
@@ -90,13 +95,22 @@ impl Worker for HandshakeManager {
         let executor = self.executor.take().unwrap();
         let executor_handle = Builder::new()
             .name("handshake-executor-main".to_string())
-            .spawn(move || executor.execution_loop())
+            .spawn(move || {
+                // Build a Tokio runtime for the handshake manager
+                let runtime = RuntimeBuilder::new_multi_thread()
+                    .enable_all()
+                    .max_blocking_threads(HANDSHAKE_EXECUTOR_N_THREADS)
+                    .build()
+                    .unwrap();
+
+                runtime.block_on(executor.execution_loop())
+            })
             .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
 
         let scheduler = self.scheduler.take().unwrap();
         let scheduler_handle = Builder::new()
             .name("handshake-scheduler-main".to_string())
-            .spawn(move || scheduler.execution_loop())
+            .spawn(move || block_on(scheduler.execution_loop()))
             .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
 
         self.executor_handle = Some(executor_handle);

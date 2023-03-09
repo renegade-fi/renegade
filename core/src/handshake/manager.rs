@@ -1,17 +1,15 @@
 //! The handshake module handles the execution of handshakes from negotiating
 //! a pair of orders to match, all the way through settling any resulting match
 
-use crossbeam::channel::{Receiver, Sender};
-
+use crossbeam::channel::Sender as CrossbeamSender;
+use futures::executor::block_on;
 use libp2p::request_response::ResponseChannel;
 use portpicker::pick_unused_port;
-use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::{
-    sync::{Arc, RwLock},
     thread::{self, JoinHandle},
     time::Duration,
 };
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::log;
 use uuid::Uuid;
 
@@ -24,9 +22,10 @@ use crate::{
         },
         handshake::{HandshakeMessage, MatchRejectionReason},
     },
+    default_wrapper::DefaultWrapper,
     gossip::types::WrappedPeerId,
     proof_generation::jobs::ProofManagerJob,
-    state::{NetworkOrderState, OrderIdentifier, RelayerState},
+    state::{new_async_shared, NetworkOrderState, OrderIdentifier, RelayerState},
     system_bus::SystemBus,
     types::{SystemBusMessage, HANDSHAKE_STATUS_TOPIC},
     CancelChannel,
@@ -50,7 +49,7 @@ pub(super) const HANDSHAKE_INTERVAL_MS: u64 = 2_000; // 2 seconds
 /// Number of nanoseconds in a millisecond, for convenience
 const NANOS_PER_MILLI: u64 = 1_000_000;
 /// The number of threads executing handshakes
-const HANDSHAKE_EXECUTOR_N_THREADS: usize = 8;
+pub(super) const HANDSHAKE_EXECUTOR_N_THREADS: usize = 8;
 
 /// Manages requests to handshake from a peer and sends outbound requests to initiate
 /// a handshake
@@ -74,14 +73,12 @@ pub struct HandshakeExecutor {
     pub(super) handshake_cache: SharedHandshakeCache<OrderIdentifier>,
     /// Stores the state of existing handshake executions
     pub(super) handshake_state_index: HandshakeStateIndex,
-    /// The thread pool backing the execution
-    pub(super) thread_pool: Arc<ThreadPool>,
     /// The channel on which other workers enqueue jobs for the protocol executor
-    pub(super) job_channel: Receiver<HandshakeExecutionJob>,
+    pub(super) job_channel: DefaultWrapper<Option<UnboundedReceiver<HandshakeExecutionJob>>>,
     /// The channel on which the handshake executor may forward requests to the network
     pub(super) network_channel: UnboundedSender<GossipOutbound>,
     /// The channel on which to send proof manager jobs
-    pub(super) proof_manager_work_queue: Sender<ProofManagerJob>,
+    pub(super) proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     /// The global relayer state
     pub(super) global_state: RelayerState,
     /// The system bus used to publish internal broadcast messages
@@ -93,27 +90,21 @@ pub struct HandshakeExecutor {
 impl HandshakeExecutor {
     /// Create a new protocol executor
     pub fn new(
-        job_channel: Receiver<HandshakeExecutionJob>,
+        job_channel: UnboundedReceiver<HandshakeExecutionJob>,
         network_channel: UnboundedSender<GossipOutbound>,
-        proof_manager_work_queue: Sender<ProofManagerJob>,
+        proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         global_state: RelayerState,
         system_bus: SystemBus<SystemBusMessage>,
         cancel: CancelChannel,
     ) -> Result<Self, HandshakeManagerError> {
-        // Build the thread pool, cache, and state index
-        let thread_pool = ThreadPoolBuilder::new()
-            .num_threads(HANDSHAKE_EXECUTOR_N_THREADS)
-            .build()
-            .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
-
-        let handshake_cache = Arc::new(RwLock::new(HandshakeCache::new(HANDSHAKE_CACHE_SIZE)));
+        // Build the handshake cache and state machine structures
+        let handshake_cache = new_async_shared(HandshakeCache::new(HANDSHAKE_CACHE_SIZE));
         let handshake_state_index = HandshakeStateIndex::new(global_state.clone());
 
         Ok(Self {
-            thread_pool: Arc::new(thread_pool),
             handshake_cache,
             handshake_state_index,
-            job_channel,
+            job_channel: DefaultWrapper::new(Some(job_channel)),
             network_channel,
             proof_manager_work_queue,
             global_state,
@@ -123,8 +114,9 @@ impl HandshakeExecutor {
     }
 
     /// The main loop: dequeues jobs and forwards them to the thread pool
-    pub fn execution_loop(mut self) -> HandshakeManagerError {
+    pub async fn execution_loop(mut self) -> HandshakeManagerError {
         let cancel = self.cancel.take().unwrap();
+        let mut job_channel = self.job_channel.take().unwrap();
 
         loop {
             // Check if the coordinator has cancelled the handshake manager
@@ -133,7 +125,7 @@ impl HandshakeExecutor {
             }
 
             // Wait for the next message and forward to the thread pool
-            let job = self.job_channel.recv().unwrap();
+            let job = job_channel.recv().await.unwrap();
 
             // After blocking, check again for a cancel signal
             if !cancel.is_empty() {
@@ -142,8 +134,8 @@ impl HandshakeExecutor {
 
             // Otherwise, install the job into the thread pool
             let self_clone = self.clone();
-            self.thread_pool.spawn(move || {
-                if let Err(e) = self_clone.handle_handshake_job(job) {
+            tokio::task::spawn(async move {
+                if let Err(e) = self_clone.handle_handshake_job(job).await {
                     log::info!("error executing handshake: {e}")
                 }
             });
@@ -154,13 +146,15 @@ impl HandshakeExecutor {
 /// Main event handler implementations; each of these methods are run inside the threadpool
 impl HandshakeExecutor {
     /// Handle a handshake message from the peer
-    pub fn handle_handshake_job(
+    pub async fn handle_handshake_job(
         &self,
         job: HandshakeExecutionJob,
     ) -> Result<(), HandshakeManagerError> {
         match job {
             // The timer thread has scheduled an outbound handshake
-            HandshakeExecutionJob::PerformHandshake { order } => self.perform_handshake(order),
+            HandshakeExecutionJob::PerformHandshake { order } => {
+                self.perform_handshake(order).await
+            }
 
             // Indicates that a peer has sent a message during the course of a handshake
             HandshakeExecutionJob::ProcessHandshakeMessage {
@@ -168,14 +162,17 @@ impl HandshakeExecutor {
                 message,
                 response_channel,
                 ..
-            } => self.handle_handshake_message(request_id, message, response_channel),
+            } => {
+                self.handle_handshake_message(request_id, message, response_channel)
+                    .await
+            }
 
             // A peer has completed a match on the given order pair; cache this match pair as completed
             // and do not schedule the pair going forward
             HandshakeExecutionJob::CacheEntry { order1, order2 } => {
                 self.handshake_cache
                     .write()
-                    .expect("handshake_cache lock poisoned")
+                    .await
                     .mark_completed(order1, order2);
 
                 Ok(())
@@ -184,14 +181,11 @@ impl HandshakeExecutor {
             // A peer has initiated a match on the given order pair; place this order pair in an invisibility
             // window, i.e. do not initiate matches on this pair
             HandshakeExecutionJob::PeerMatchInProgress { order1, order2 } => {
-                self.handshake_cache
-                    .write()
-                    .expect("handshake_cache lock poisoned")
-                    .mark_invisible(
-                        order1,
-                        order2,
-                        Duration::from_millis(HANDSHAKE_INVISIBILITY_WINDOW_MS),
-                    );
+                self.handshake_cache.write().await.mark_invisible(
+                    order1,
+                    order2,
+                    Duration::from_millis(HANDSHAKE_INVISIBILITY_WINDOW_MS),
+                );
 
                 Ok(())
             }
@@ -207,6 +201,7 @@ impl HandshakeExecutor {
                 let order_state = self
                     .handshake_state_index
                     .get_state(&request_id)
+                    .await
                     .ok_or_else(|| {
                         HandshakeManagerError::InvalidRequest(format!(
                             "request_id: {:?}",
@@ -215,14 +210,11 @@ impl HandshakeExecutor {
                     })?;
 
                 // Mark the handshake cache entry as invisible to avoid re-scheduling
-                self.handshake_cache
-                    .write()
-                    .expect("handshake_cache lock poisoned")
-                    .mark_invisible(
-                        order_state.local_order_id,
-                        order_state.peer_order_id,
-                        Duration::from_millis(HANDSHAKE_INVISIBILITY_WINDOW_MS),
-                    );
+                self.handshake_cache.write().await.mark_invisible(
+                    order_state.local_order_id,
+                    order_state.peer_order_id,
+                    Duration::from_millis(HANDSHAKE_INVISIBILITY_WINDOW_MS),
+                );
 
                 // Publish an internal event signalling that a match is beginning
                 self.system_bus.publish(
@@ -234,30 +226,41 @@ impl HandshakeExecutor {
                 );
 
                 // Run the MPC match process
-                let res = self.execute_match(request_id, party_id, net)?;
+                let self_clone = self.clone();
+                let res = tokio::task::spawn_blocking(move || {
+                    block_on(self_clone.execute_match(request_id, party_id, net))
+                })
+                .await
+                .unwrap()?;
+                // let res = self.execute_match(request_id, party_id, net)?;
 
                 // Submit the match to the contract
                 self.submit_match(res)?;
 
                 // Record the match in the cache
-                self.record_completed_match(request_id)
+                self.record_completed_match(request_id).await
             }
 
             // Indicates that in-flight MPCs on the given nullifier should be terminated
-            HandshakeExecutionJob::MpcShootdown { match_nullifier } => self
-                .handshake_state_index
-                .shootdown_nullifier(match_nullifier),
+            HandshakeExecutionJob::MpcShootdown { match_nullifier } => {
+                self.handshake_state_index
+                    .shootdown_nullifier(match_nullifier)
+                    .await
+            }
         }
     }
 
     /// Perform a handshake with a peer
-    pub fn perform_handshake(
+    pub async fn perform_handshake(
         &self,
         peer_order_id: OrderIdentifier,
     ) -> Result<(), HandshakeManagerError> {
-        if let Some(local_order_id) = self.choose_match_proposal(peer_order_id) {
+        if let Some(local_order_id) = self.choose_match_proposal(peer_order_id).await {
             // Choose a peer to match this order with
-            let managing_peer = self.global_state.get_peer_managing_order(&peer_order_id);
+            let managing_peer = self
+                .global_state
+                .get_peer_managing_order(&peer_order_id)
+                .await;
             if managing_peer.is_none() {
                 // TODO: Lower the order priority for this order
                 return Ok(());
@@ -281,14 +284,15 @@ impl HandshakeExecutor {
                 .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
             self.handshake_state_index
-                .new_handshake(request_id, peer_order_id, local_order_id)?;
+                .new_handshake(request_id, peer_order_id, local_order_id)
+                .await?;
         }
 
         Ok(())
     }
 
     /// Respond to a handshake request from a peer
-    pub fn handle_handshake_message(
+    pub async fn handle_handshake_message(
         &self,
         request_id: Uuid,
         message: HandshakeMessage,
@@ -304,13 +308,16 @@ impl HandshakeExecutor {
                 peer_id,
                 peer_order: my_order,
                 sender_order,
-            } => self.handle_propose_match_candidate(
-                request_id,
-                peer_id,
-                my_order,
-                sender_order,
-                response_channel.unwrap(),
-            ),
+            } => {
+                self.handle_propose_match_candidate(
+                    request_id,
+                    peer_id,
+                    my_order,
+                    sender_order,
+                    response_channel.unwrap(),
+                )
+                .await
+            }
 
             // A peer has rejected a proposed match candidate, this can happen for a number of reasons, enumerated
             // by the `reason` field in the message
@@ -320,7 +327,8 @@ impl HandshakeExecutor {
                 reason,
                 ..
             } => {
-                self.handle_proposal_rejection(peer_order, sender_order, reason);
+                self.handle_proposal_rejection(peer_order, sender_order, reason)
+                    .await;
                 Ok(())
             }
 
@@ -333,14 +341,17 @@ impl HandshakeExecutor {
                 order1,
                 order2,
                 ..
-            } => self.handle_execute_match(
-                request_id,
-                peer_id,
-                port,
-                order1,
-                order2,
-                response_channel,
-            ),
+            } => {
+                self.handle_execute_match(
+                    request_id,
+                    peer_id,
+                    port,
+                    order1,
+                    order2,
+                    response_channel,
+                )
+                .await
+            }
         }
     }
 
@@ -350,7 +361,7 @@ impl HandshakeExecutor {
     /// The local peer first checks that this pair has not been matched, and then proceeds to broker an
     /// MPC network for it
     #[allow(clippy::too_many_arguments)]
-    fn handle_propose_match_candidate(
+    async fn handle_propose_match_candidate(
         &self,
         request_id: Uuid,
         peer_id: WrappedPeerId,
@@ -363,7 +374,9 @@ impl HandshakeExecutor {
         let peer_order_info = self
             .global_state
             .read_order_book()
-            .get_order_info(&sender_order);
+            .await
+            .get_order_info(&sender_order)
+            .await;
         if peer_order_info.is_none()
             || peer_order_info.unwrap().state != NetworkOrderState::Verified
         {
@@ -381,7 +394,9 @@ impl HandshakeExecutor {
         if !self
             .global_state
             .read_order_book()
+            .await
             .order_ready_for_handshake(&my_order)
+            .await
         {
             return self.reject_match_proposal(
                 request_id,
@@ -394,15 +409,13 @@ impl HandshakeExecutor {
 
         // Add an entry to the handshake state index
         self.handshake_state_index
-            .new_handshake(request_id, sender_order, my_order)?;
+            .new_handshake(request_id, sender_order, my_order)
+            .await?;
 
         // Check if the order pair has previously been matched, if so notify the peer and
         // terminate the handshake
         let previously_matched = {
-            let locked_handshake_cache = self
-                .handshake_cache
-                .read()
-                .expect("handshake_cache lock poisoned");
+            let locked_handshake_cache = self.handshake_cache.read().await;
             locked_handshake_cache.contains(my_order, sender_order)
         }; // locked_handshake_cache released
 
@@ -487,7 +500,7 @@ impl HandshakeExecutor {
     }
 
     /// Handles a rejected match proposal, possibly updating the cache for a missing entry
-    fn handle_proposal_rejection(
+    async fn handle_proposal_rejection(
         &self,
         my_order: OrderIdentifier,
         sender_order: OrderIdentifier,
@@ -497,14 +510,14 @@ impl HandshakeExecutor {
             // Update the local cache
             self.handshake_cache
                 .write()
-                .expect("handshake_cache lock poisoned")
+                .await
                 .mark_completed(my_order, sender_order)
         }
     }
 
     /// Handles the flow of executing a match after both parties have agreed on an order
     /// pair to attempt a match with
-    fn handle_execute_match(
+    async fn handle_execute_match(
         &self,
         request_id: Uuid,
         peer_id: WrappedPeerId,
@@ -516,7 +529,7 @@ impl HandshakeExecutor {
         // Cache the result of a handshake
         self.handshake_cache
             .write()
-            .expect("handshake_cache lock poisoned")
+            .await
             .mark_completed(order1, order2);
 
         // Choose a local port to execute the handshake on
@@ -573,16 +586,14 @@ impl HandshakeExecutor {
     }
 
     /// Chooses an order to match against a remote order
-    fn choose_match_proposal(&self, peer_order: OrderIdentifier) -> Option<OrderIdentifier> {
-        let locked_handshake_cache = self
-            .handshake_cache
-            .read()
-            .expect("handshake_cache lock poisoned");
-
+    async fn choose_match_proposal(&self, peer_order: OrderIdentifier) -> Option<OrderIdentifier> {
+        let locked_handshake_cache = self.handshake_cache.read().await;
         let local_verified_orders = self
             .global_state
             .read_order_book()
-            .get_local_scheduleable_orders();
+            .await
+            .get_local_scheduleable_orders()
+            .await;
 
         // Choose an order that isn't cached
         for order_id in local_verified_orders.iter() {
@@ -595,11 +606,12 @@ impl HandshakeExecutor {
     }
 
     /// Record a match as completed in the various state objects
-    fn record_completed_match(&self, request_id: Uuid) -> Result<(), HandshakeManagerError> {
+    async fn record_completed_match(&self, request_id: Uuid) -> Result<(), HandshakeManagerError> {
         // Get the order IDs from the state machine
         let state = self
             .handshake_state_index
             .get_state(&request_id)
+            .await
             .ok_or_else(|| {
                 HandshakeManagerError::InvalidRequest(format!("request_id {:?}", request_id))
             })?;
@@ -607,15 +619,16 @@ impl HandshakeExecutor {
         // Cache the order pair as completed
         self.handshake_cache
             .write()
-            .expect("handshake_cache lock poisoned")
+            .await
             .mark_completed(state.local_order_id, state.peer_order_id);
 
         // Write to global state for debugging
         self.global_state
-            .mark_order_pair_matched(state.local_order_id, state.peer_order_id);
+            .mark_order_pair_matched(state.local_order_id, state.peer_order_id)
+            .await;
 
         // Update the state of the handshake in the completed state
-        self.handshake_state_index.completed(&request_id);
+        self.handshake_state_index.completed(&request_id).await;
 
         // Send a message to cluster peers indicating that the local peer has completed a match
         // Cluster peers should cache the matched order pair as completed and not initiate matches
@@ -651,18 +664,18 @@ impl HandshakeExecutor {
 /// tell the manager to send outbound handshake requests
 #[derive(Clone)]
 pub struct HandshakeScheduler {
-    /// The sender to enqueue jobs on
-    job_sender: Sender<HandshakeExecutionJob>,
+    /// The UnboundedSender to enqueue jobs on
+    job_sender: UnboundedSender<HandshakeExecutionJob>,
     /// A copy of the relayer-global state
     global_state: RelayerState,
     /// The cancel channel to receive cancel signals on
-    cancel: Receiver<()>,
+    cancel: CancelChannel,
 }
 
 impl HandshakeScheduler {
     /// Construct a new timer
     pub fn new(
-        job_sender: Sender<HandshakeExecutionJob>,
+        job_sender: UnboundedSender<HandshakeExecutionJob>,
         global_state: RelayerState,
         cancel: CancelChannel,
     ) -> Self {
@@ -674,7 +687,7 @@ impl HandshakeScheduler {
     }
 
     /// The execution loop of the timer, periodically enqueues handshake jobs
-    pub fn execution_loop(self) -> HandshakeManagerError {
+    pub async fn execution_loop(self) -> HandshakeManagerError {
         let interval_seconds = HANDSHAKE_INTERVAL_MS / 1000;
         let interval_nanos = (HANDSHAKE_INTERVAL_MS % 1000 * NANOS_PER_MILLI) as u32;
 
@@ -683,7 +696,7 @@ impl HandshakeScheduler {
         // Enqueue handshakes periodically
         loop {
             // Enqueue a job to handshake with the randomly selected peer
-            if let Some(order) = self.global_state.choose_handshake_order() {
+            if let Some(order) = self.global_state.choose_handshake_order().await {
                 if let Err(e) = self
                     .job_sender
                     .send(HandshakeExecutionJob::PerformHandshake { order })
