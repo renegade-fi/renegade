@@ -6,7 +6,6 @@ use std::{
     fmt::{Formatter, Result as FmtResult},
     iter,
     str::FromStr,
-    sync::RwLockReadGuard,
 };
 
 use circuits::{
@@ -21,6 +20,7 @@ use circuits::{
 };
 use crypto::fields::{biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint};
 use curve25519_dalek::scalar::Scalar;
+use futures::{stream::iter as to_stream, StreamExt};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use serde::{
@@ -28,11 +28,12 @@ use serde::{
     ser::SerializeSeq,
     Deserialize, Deserializer, Serialize, Serializer,
 };
+use tokio::sync::{RwLock, RwLockReadGuard};
 use uuid::Uuid;
 
 use crate::{gossip::types::WrappedPeerId, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 
-use super::{new_shared, orderbook::OrderIdentifier, Shared};
+use super::{new_async_shared, orderbook::OrderIdentifier, AsyncShared};
 
 /// A type that attaches default size parameters to a circuit allocated wallet
 type SizedCircuitWallet = CircuitWallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
@@ -256,7 +257,7 @@ pub struct WalletIndex {
     /// The peer_id of the local node
     peer_id: WrappedPeerId,
     /// A mapping from wallet ID to wallet information
-    wallet_map: HashMap<Uuid, Shared<Wallet>>,
+    wallet_map: HashMap<Uuid, AsyncShared<Wallet>>,
     /// A reverse index mapping from order to wallet
     order_to_wallet: HashMap<OrderIdentifier, WalletIdentifier>,
 }
@@ -276,10 +277,12 @@ impl WalletIndex {
     // -----------
 
     /// Acquire a read lock on a wallet
-    pub fn read_wallet(&self, wallet_id: &Uuid) -> Option<RwLockReadGuard<Wallet>> {
-        self.wallet_map
-            .get(wallet_id)
-            .map(|wallet| wallet.read().expect(ERR_WALLET_POISONED))
+    pub async fn read_wallet(&self, wallet_id: &Uuid) -> Option<RwLockReadGuard<Wallet>> {
+        if let Some(locked_wallet) = self.wallet_map.get(wallet_id) {
+            Some(locked_wallet.read().await)
+        } else {
+            None
+        }
     }
 
     // -----------
@@ -292,23 +295,25 @@ impl WalletIndex {
     }
 
     /// Returns a list of all wallets
-    pub fn get_all_wallets(&self) -> Vec<Wallet> {
-        self.wallet_map
-            .values()
-            .map(|wallet| wallet.read().expect(ERR_WALLET_POISONED).clone())
-            .collect_vec()
+    pub async fn get_all_wallets(&self) -> Vec<Wallet> {
+        let wallet_values = self.wallet_map.values().cloned();
+        for wallet in self.wallet_map.values().cloned() {
+            let val = wallet.read().await.clone();
+        }
+
+        to_stream(self.wallet_map.values().cloned())
+            .then(|locked_wallet| async move { locked_wallet.read().await.clone() })
+            .collect::<Vec<_>>()
+            .await
     }
 
     /// Returns a mapping from wallet ID to the wallet's metadata
     ///
     /// Used to serialize into the handshake response
-    pub fn get_metadata_map(&self) -> HashMap<WalletIdentifier, WalletMetadata> {
+    pub async fn get_metadata_map(&self) -> HashMap<WalletIdentifier, WalletMetadata> {
         let mut res = HashMap::new();
         for (id, wallet) in self.wallet_map.iter() {
-            res.insert(
-                *id,
-                wallet.read().expect(ERR_WALLET_POISONED).metadata.clone(),
-            );
+            res.insert(*id, wallet.read().await.metadata.clone());
         }
 
         res
@@ -318,12 +323,12 @@ impl WalletIndex {
     ///
     /// Returns a 4-tuple of (order, balance, fee, fee_balance) where fee_balance is the
     /// balance used to cover the payable fee
-    pub fn get_order_balance_and_fee(
+    pub async fn get_order_balance_and_fee(
         &self,
         wallet_id: &Uuid,
         order_id: &OrderIdentifier,
     ) -> Option<(Order, Balance, Fee, Balance)> {
-        let locked_wallet = self.read_wallet(wallet_id)?;
+        let locked_wallet = self.read_wallet(wallet_id).await?;
         let order = locked_wallet.orders.get(order_id)?;
 
         // The mint the local party will be spending if the order is matched
@@ -375,27 +380,23 @@ impl WalletIndex {
 
         // Index the wallet
         wallet.metadata.replicas.insert(self.peer_id);
-        self.wallet_map.insert(wallet.wallet_id, new_shared(wallet));
+        self.wallet_map
+            .insert(wallet.wallet_id, new_async_shared(wallet));
     }
 
     /// Add a given peer as a replica of a wallet
-    pub fn add_replica(&self, wallet_id: &WalletIdentifier, peer_id: WrappedPeerId) {
+    pub async fn add_replica(&self, wallet_id: &WalletIdentifier, peer_id: WrappedPeerId) {
         if let Some(wallet) = self.wallet_map.get(wallet_id) {
-            wallet
-                .write()
-                .expect(ERR_WALLET_POISONED)
-                .metadata
-                .replicas
-                .insert(peer_id);
+            wallet.write().await.metadata.replicas.insert(peer_id);
         }
     }
 
     /// Merge metadata for a given wallet into the local wallet state
-    pub fn merge_metadata(&self, wallet_id: &WalletIdentifier, metadata: &WalletMetadata) {
+    pub async fn merge_metadata(&self, wallet_id: &WalletIdentifier, metadata: &WalletMetadata) {
         if let Some(wallet) = self.wallet_map.get(wallet_id) {
             if wallet
                 .read()
-                .expect(ERR_WALLET_POISONED)
+                .await
                 .metadata
                 .replicas
                 .is_superset(&metadata.replicas)
@@ -404,7 +405,7 @@ impl WalletIndex {
             }
 
             // Acquire a write lock only if we are missing replicas
-            let mut locked_wallet = wallet.write().expect(ERR_WALLET_POISONED);
+            let mut locked_wallet = wallet.write().await;
             locked_wallet.metadata.replicas.extend(&metadata.replicas);
         }
     }
@@ -414,9 +415,9 @@ impl WalletIndex {
     /// This method is called when a cluster peer is determined to have failed; we should
     /// update the replication state and take any steps necessary to get the wallet replicated
     /// on a safe number of peers
-    pub fn remove_peer_replicas(&self, peer: &WrappedPeerId) {
+    pub async fn remove_peer_replicas(&self, peer: &WrappedPeerId) {
         for (_, wallet) in self.wallet_map.iter() {
-            let mut locked_wallet = wallet.write().expect("wallet lock poisoned");
+            let mut locked_wallet = wallet.write().await;
             locked_wallet.metadata.replicas.remove(peer);
         }
     }
