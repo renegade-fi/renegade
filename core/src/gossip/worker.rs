@@ -4,7 +4,7 @@ use futures::executor::block_on;
 use libp2p::Multiaddr;
 use std::thread::{Builder, JoinHandle};
 use tokio::runtime::Builder as RuntimeBuilder;
-use tokio::sync::mpsc::{Receiver, Sender, UnboundedSender as TokioSender};
+use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};
 
 use crate::{api::gossip::GossipOutbound, state::RelayerState, worker::Worker, CancelChannel};
 
@@ -30,9 +30,9 @@ pub struct GossipServerConfig {
     /// A reference to the relayer-global state
     pub(crate) global_state: RelayerState,
     /// A job queue to send outbound heartbeat requests on
-    pub(crate) job_sender: Sender<GossipServerJob>,
+    pub(crate) job_sender: TokioSender<GossipServerJob>,
     /// A job queue to receive inbound heartbeat requests on
-    pub(crate) job_receiver: Option<Receiver<GossipServerJob>>,
+    pub(crate) job_receiver: Option<TokioReceiver<GossipServerJob>>,
     /// A job queue to send outbound network requests on
     pub(crate) network_sender: TokioSender<GossipOutbound>,
     /// The channel on which the coordinator may mandate that the

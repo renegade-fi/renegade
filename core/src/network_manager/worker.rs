@@ -2,11 +2,10 @@
 
 use std::thread::{Builder, JoinHandle};
 
-use crossbeam::channel::{Receiver, Sender};
 use ed25519_dalek::Keypair;
 use futures::executor::block_on;
 use libp2p::{Multiaddr, Swarm};
-use tokio::sync::mpsc::{self, UnboundedReceiver};
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tracing::log;
 
 use crate::{
@@ -16,6 +15,7 @@ use crate::{
     network_manager::composed_protocol::ComposedNetworkBehavior,
     state::RelayerState,
     worker::Worker,
+    CancelChannel,
 };
 
 use super::{
@@ -41,14 +41,14 @@ pub struct NetworkManagerConfig {
     /// will be left with `None` after this happens
     pub(crate) send_channel: Option<UnboundedReceiver<GossipOutbound>>,
     /// The work queue to forward inbound heartbeat requests to
-    pub(crate) heartbeat_work_queue: Sender<GossipServerJob>,
+    pub(crate) gossip_work_queue: UnboundedSender<GossipServerJob>,
     /// The work queue to forward inbound handshake requests to
-    pub(crate) handshake_work_queue: Sender<HandshakeExecutionJob>,
+    pub(crate) handshake_work_queue: UnboundedSender<HandshakeExecutionJob>,
     /// The global shared state of the local relayer
     pub(crate) global_state: RelayerState,
     /// The channel on which the coordinator can send a cancel signal to
     /// all network worker threads
-    pub(crate) cancel_channel: Receiver<()>,
+    pub(crate) cancel_channel: CancelChannel,
 }
 
 impl Worker for NetworkManager {
@@ -135,7 +135,7 @@ impl Worker for NetworkManager {
             .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
         // After assigning address and peer ID, update the global state
-        self.update_global_state_after_startup();
+        block_on(self.update_global_state_after_startup());
 
         // Subscribe to all relevant topics
         self.setup_pubsub_subscriptions(&mut swarm)?;
@@ -166,7 +166,7 @@ impl Worker for NetworkManager {
             self.config.cluster_keypair.take().unwrap(),
             swarm,
             self.config.send_channel.take().unwrap(),
-            self.config.heartbeat_work_queue.clone(),
+            self.config.gossip_work_queue.clone(),
             self.config.handshake_work_queue.clone(),
             self.config.global_state.clone(),
             async_cancel_receiver,

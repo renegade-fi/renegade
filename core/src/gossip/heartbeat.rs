@@ -8,7 +8,7 @@ use std::{
 };
 
 use futures::executor::block_on;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
 
 use crate::{
@@ -96,7 +96,7 @@ impl GossipProtocolExecutor {
 
         // Merge in state primitives from the heartbeat message
         self.merge_peer_index(&incoming_peer_info).await?;
-        self.merge_wallets(message.managed_wallets);
+        self.merge_wallets(message.managed_wallets).await;
         self.merge_order_book(message.orders).await
     }
 
@@ -123,7 +123,8 @@ impl GossipProtocolExecutor {
             return Ok(());
         }
 
-        self.add_new_peers(&peers_to_add, incoming_peer_info).await?;
+        self.add_new_peers(&peers_to_add, incoming_peer_info)
+            .await?;
         Ok(())
     }
 
@@ -342,7 +343,7 @@ impl HeartbeatTimer {
     /// The interval parameters specify how often the timers should cycle through all peers in their
     /// target list
     pub fn new(
-        job_queue: Sender<GossipServerJob>,
+        job_queue: TokioSender<GossipServerJob>,
         intra_cluster_interval_ms: u64,
         inter_cluster_interval_ms: u64,
         global_state: RelayerState,
@@ -395,7 +396,7 @@ impl HeartbeatTimer {
     /// to the heartbeat period constant defined above. That is, we specify the interval in between
     /// heartbeats for a given peer, and space out all heartbeats in that interval
     async fn inter_cluster_execution_loop(
-        job_queue: Sender<GossipServerJob>,
+        job_queue: TokioSender<GossipServerJob>,
         wait_period: Duration,
         global_state: RelayerState,
     ) -> GossipError {
@@ -422,10 +423,7 @@ impl HeartbeatTimer {
 
             // Enqueue a job to send the heartbeat
             if let Some(peer_id) = next_peer_id {
-                if let Err(err) = job_queue
-                    .send(GossipServerJob::ExecuteHeartbeat(peer_id))
-                    .await
-                {
+                if let Err(err) = job_queue.send(GossipServerJob::ExecuteHeartbeat(peer_id)) {
                     return GossipError::TimerFailed(err.to_string());
                 }
             }
@@ -448,7 +446,7 @@ impl HeartbeatTimer {
     /// Slightly more readable to break this out into its own method as opposed to
     /// adding more control flow statements above
     async fn intra_cluster_execution_loop(
-        job_queue: Sender<GossipServerJob>,
+        job_queue: TokioSender<GossipServerJob>,
         wait_period: Duration,
         global_state: RelayerState,
     ) -> GossipError {
@@ -470,7 +468,7 @@ impl HeartbeatTimer {
 
             // Enqueue a job to send the heartbeat
             if let Some(peer_id) = next_peer_id && peer_id != global_state.local_peer_id {
-                if let Err(err) = job_queue.send(GossipServerJob::ExecuteHeartbeat(peer_id)).await {
+                if let Err(err) = job_queue.send(GossipServerJob::ExecuteHeartbeat(peer_id)) {
                     return GossipError::TimerFailed(err.to_string());
                 }
             }

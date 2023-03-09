@@ -41,8 +41,8 @@ use crate::{
     api::gossip::GossipOutbound,
     api_server::{server::ApiServer, worker::ApiServerConfig},
     chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig},
-    gossip::server::GossipServer,
-    handshake::manager::HandshakeManager,
+    gossip::{jobs::GossipServerJob, server::GossipServer},
+    handshake::{jobs::HandshakeExecutionJob, manager::HandshakeManager},
     network_manager::manager::NetworkManager,
     price_reporter::manager::PriceReporterManager,
     proof_generation::{proof_manager::ProofManager, worker::ProofManagerConfig},
@@ -123,8 +123,10 @@ async fn main() -> Result<(), CoordinatorError> {
     // First, the global shared mpmc bus that all workers have access to
     let system_bus = SystemBus::<SystemBusMessage>::new();
     let (network_sender, network_receiver) = mpsc::unbounded_channel::<GossipOutbound>();
-    let (heartbeat_worker_sender, heartbeat_worker_receiver) = channel::unbounded();
-    let (handshake_worker_sender, handshake_worker_receiver) = channel::unbounded();
+    let (gossip_worker_sender, gossip_worker_receiver) =
+        mpsc::unbounded_channel::<GossipServerJob>();
+    let (handshake_worker_sender, handshake_worker_receiver) =
+        mpsc::unbounded_channel::<HandshakeExecutionJob>();
     let (price_reporter_worker_sender, price_reporter_worker_receiver) = channel::unbounded();
     let (proof_generation_worker_sender, proof_generation_worker_receiver) = channel::unbounded();
 
@@ -175,7 +177,7 @@ async fn main() -> Result<(), CoordinatorError> {
         cluster_id: args.cluster_id.clone(),
         cluster_keypair: Some(args.cluster_keypair),
         send_channel: Some(network_receiver),
-        heartbeat_work_queue: heartbeat_worker_sender.clone(),
+        gossip_work_queue: gossip_worker_sender.clone(),
         handshake_work_queue: handshake_worker_sender.clone(),
         global_state: global_state.clone(),
         cancel_channel: network_cancel_receiver,
@@ -198,8 +200,8 @@ async fn main() -> Result<(), CoordinatorError> {
         cluster_id: args.cluster_id,
         bootstrap_servers: args.bootstrap_servers,
         global_state: global_state.clone(),
-        job_sender: heartbeat_worker_sender,
-        job_receiver: heartbeat_worker_receiver,
+        job_sender: gossip_worker_sender.clone(),
+        job_receiver: Some(gossip_worker_receiver),
         network_sender: network_sender.clone(),
         cancel_channel: gossip_cancel_receiver,
     })
@@ -217,7 +219,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let mut handshake_manager = HandshakeManager::new(HandshakeManagerConfig {
         global_state: global_state.clone(),
         network_channel: network_sender,
-        job_receiver: handshake_worker_receiver,
+        job_receiver: Some(handshake_worker_receiver),
         job_sender: handshake_worker_sender.clone(),
         proof_manager_sender: proof_generation_worker_sender.clone(),
         system_bus: system_bus.clone(),

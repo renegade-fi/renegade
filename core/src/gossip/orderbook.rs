@@ -127,6 +127,7 @@ impl GossipProtocolExecutor {
                     )
                 })
                 .await
+                .unwrap()
                 .map_err(|err| GossipError::ValidCommitmentVerification(err.to_string()))?;
             }
 
@@ -185,6 +186,7 @@ impl GossipProtocolExecutor {
                 )
             })
             .await
+            .unwrap()
             .map_err(|err| GossipError::ValidCommitmentVerification(err.to_string()))?;
         }
 

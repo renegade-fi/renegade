@@ -37,8 +37,6 @@ use super::{new_async_shared, orderbook::OrderIdentifier, AsyncShared};
 
 /// A type that attaches default size parameters to a circuit allocated wallet
 type SizedCircuitWallet = CircuitWallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-/// An error message to panic with when a wallet lock is poisoned
-const ERR_WALLET_POISONED: &str = "wallet lock poisoned";
 
 /// A type alias for the wallet identifier type, currently a UUID
 pub type WalletIdentifier = Uuid;
@@ -296,11 +294,6 @@ impl WalletIndex {
 
     /// Returns a list of all wallets
     pub async fn get_all_wallets(&self) -> Vec<Wallet> {
-        let wallet_values = self.wallet_map.values().cloned();
-        for wallet in self.wallet_map.values().cloned() {
-            let val = wallet.read().await.clone();
-        }
-
         to_stream(self.wallet_map.values().cloned())
             .then(|locked_wallet| async move { locked_wallet.read().await.clone() })
             .collect::<Vec<_>>()

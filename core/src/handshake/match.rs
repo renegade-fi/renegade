@@ -1,7 +1,7 @@
 //! Groups the handshake manager definitions necessary to run the MPC match computation
 //! and collaboratively generate a proof of `VALID MATCH MPC`
 
-use std::{cell::RefCell, rc::Rc, thread};
+use std::{cell::RefCell, rc::Rc};
 
 use circuits::{
     mpc::SharedFabric,
@@ -24,7 +24,6 @@ use circuits::{
 };
 use crossbeam::channel::{bounded, Receiver};
 use curve25519_dalek::scalar::Scalar;
-use futures::executor::block_on;
 use integration_helpers::mpc_network::mocks::PartyIDBeaverSource;
 use mpc_bulletproof::r1cs::R1CSProof;
 use mpc_ristretto::{
@@ -32,7 +31,7 @@ use mpc_ristretto::{
     fabric::AuthenticatedMpcFabric,
     network::{MpcNetwork, QuicTwoPartyNet},
 };
-use tokio::runtime::Builder as TokioBuilder;
+use tokio::runtime::Handle;
 use tracing::log;
 use uuid::Uuid;
 
@@ -73,7 +72,7 @@ impl HandshakeExecutor {
     /// Spawns the match computation in a separate thread wrapped by a custom
     /// Tokio runtime. The QUIC implementation in quinn is async and expects
     /// to be run inside of a Tokio runtime
-    pub(super) fn execute_match(
+    pub(super) async fn execute_match(
         &self,
         request_id: Uuid,
         party_id: u64,
@@ -83,49 +82,42 @@ impl HandshakeExecutor {
         let handshake_state = self
             .handshake_state_index
             .get_state(&request_id)
+            .await
             .ok_or_else(|| {
                 HandshakeManagerError::StateNotFound(
                     "missing handshake state for request".to_string(),
                 )
             })?;
 
-        // Build a tokio runtime in the current thread for the MPC to run inside of
-        let tid = thread::current().id();
-        let tokio_runtime = TokioBuilder::new_multi_thread()
-            .thread_name(format!("handshake-mpc-{:?}", tid))
-            .enable_io()
-            .enable_time()
-            .build()
-            .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
-
         // Build a cancel channel; the coordinator may use this to cancel (shootdown) an in flight MPC
         let (cancel_sender, cancel_receiver) = bounded(1 /* capacity */);
-
-        // Wrap the current thread's execution in a Tokio blocking thread
-        let self_clone = self.clone();
-        let join_handle = tokio_runtime.spawn_blocking(move || {
-            self_clone.execute_match_impl(
-                party_id,
-                handshake_state.to_owned(),
-                mpc_net,
-                cancel_receiver,
-            )
-        });
-
         // Record the match as in progress and tag it with a cancel channel that may be used to
         // abort the MPC
         self.handshake_state_index
-            .in_progress(&request_id, cancel_sender);
+            .in_progress(&request_id, cancel_sender)
+            .await;
+
+        // Wrap the current thread's execution in a Tokio blocking thread
+        let self_clone = self.clone();
+        let res = Handle::current().block_on(async move {
+            self_clone
+                .execute_match_impl(
+                    party_id,
+                    handshake_state.to_owned(),
+                    mpc_net,
+                    cancel_receiver,
+                )
+                .await
+        })?;
 
         // Await MPC completion
-        let res = block_on(join_handle).unwrap()?;
         log::info!("Finished match!");
 
         Ok(res)
     }
 
     /// Implementation of the execute_match method that is wrapped in a Tokio runtime
-    fn execute_match_impl(
+    async fn execute_match_impl(
         &self,
         party_id: u64,
         handshake_state: HandshakeState,
@@ -134,7 +126,8 @@ impl HandshakeExecutor {
     ) -> Result<HandshakeResult, HandshakeManagerError> {
         log::info!("Matching order...");
         // Connect the network
-        block_on(mpc_net.connect())
+        Handle::current()
+            .block_on(mpc_net.connect())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
         // Build a fabric
@@ -153,7 +146,9 @@ impl HandshakeExecutor {
         let commitments_witness = self
             .global_state
             .read_order_book()
+            .await
             .get_validity_proof_witness(&handshake_state.local_order_id)
+            .await
             .ok_or_else(|| {
                 HandshakeManagerError::StateNotFound(
                     "missing validity proof witness, cannot link proofs".to_string(),
@@ -179,7 +174,8 @@ impl HandshakeExecutor {
             statement,
             match_res,
             shared_fabric.clone(),
-        )?;
+        )
+        .await?;
 
         // Check if a cancel has come in after the collaborative proof
         if !cancel_channel.is_empty() {
@@ -194,6 +190,7 @@ impl HandshakeExecutor {
             shared_fabric,
             cancel_channel,
         )
+        .await
     }
 
     /// Execute the match MPC over the provisioned QUIC stream
@@ -215,7 +212,7 @@ impl HandshakeExecutor {
     }
 
     /// Generates a collaborative proof of the validity of a given match result
-    fn prove_valid_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    async fn prove_valid_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         my_order: LinkableOrderCommitment,
         my_balance: LinkableBalanceCommitment,
         statement: ValidMatchMpcStatement,
@@ -245,7 +242,7 @@ impl HandshakeExecutor {
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
         let opened_proof = proof
             .open()
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+            .map_err(|_| HandshakeManagerError::MpcNetwork("error opening proof".to_string()))?;
 
         verify_collaborative_proof::<'_, N, S, ValidMatchMpcCircuit<'_, N, S>>(
             statement,
@@ -258,7 +255,7 @@ impl HandshakeExecutor {
     }
 
     /// Build the handshake result from a match and proof
-    fn build_handshake_result<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    async fn build_handshake_result<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         &self,
         shared_match_res: AuthenticatedLinkableMatchResultCommitment<N, S>,
         proof: R1CSProof,
@@ -279,7 +276,7 @@ impl HandshakeExecutor {
 
         // Lookup the wallet that the matched order belongs to in the global state
         let wallet = {
-            let locked_wallet_index = self.global_state.read_wallet_index();
+            let locked_wallet_index = self.global_state.read_wallet_index().await;
             let wallet_id = locked_wallet_index
                 .get_wallet_for_order(&handshake_state.local_order_id)
                 .ok_or_else(|| {
@@ -289,6 +286,7 @@ impl HandshakeExecutor {
                 })?;
             locked_wallet_index
                 .read_wallet(&wallet_id)
+                .await
                 .map(|wallet| wallet.clone())
                 .ok_or_else(|| {
                     HandshakeManagerError::StateNotFound("no wallet found for ID".to_string())

@@ -3,7 +3,6 @@
 use std::{str::FromStr, thread::JoinHandle, time::Duration};
 
 use circuits::types::wallet::Nullifier;
-use crossbeam::channel::{Receiver, Sender};
 
 use crypto::fields::starknet_felt_to_scalar;
 use reqwest::Url;
@@ -12,10 +11,11 @@ use starknet_providers::jsonrpc::{
     models::{BlockId, EmittedEvent, ErrorCode, EventFilter},
     HttpTransport, JsonRpcClient, JsonRpcClientError, RpcError,
 };
+use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tokio::time::{sleep_until, Instant};
 use tracing::log;
 
-use crate::{handshake::jobs::HandshakeExecutionJob, state::RelayerState};
+use crate::{handshake::jobs::HandshakeExecutionJob, state::RelayerState, CancelChannel};
 
 use super::error::OnChainEventListenerError;
 
@@ -52,9 +52,9 @@ pub struct OnChainEventListenerConfig {
     pub global_state: RelayerState,
     /// A sender to the handshake manager's job queue, used to enqueue
     /// MPC shootdown jobs
-    pub handshake_manager_job_queue: Sender<HandshakeExecutionJob>,
+    pub handshake_manager_job_queue: TokioSender<HandshakeExecutionJob>,
     /// The channel on which the coordinator may send a cancel signal
-    pub cancel_channel: Receiver<()>,
+    pub cancel_channel: CancelChannel,
 }
 
 impl OnChainEventListenerConfig {
@@ -146,7 +146,7 @@ impl OnChainEventListenerExecutor {
         loop {
             let (events, more_pages) = self.fetch_next_events_page().await?;
             for event in events.into_iter() {
-                self.handle_event(event)?;
+                self.handle_event(event).await?;
             }
 
             if !more_pages {
@@ -209,7 +209,7 @@ impl OnChainEventListenerExecutor {
     }
 
     /// Handle an event from the contract
-    fn handle_event(&self, event: EmittedEvent) -> Result<(), OnChainEventListenerError> {
+    async fn handle_event(&self, event: EmittedEvent) -> Result<(), OnChainEventListenerError> {
         // Dispatch based on key
         let key = event.keys[0];
         if key == *MERKLE_ROOT_CHANGED_EVENT_SELECTOR {
@@ -218,7 +218,7 @@ impl OnChainEventListenerExecutor {
             // Parse the nullifier from the felt
             log::info!("Handling nullifier spent event");
             let match_nullifier = starknet_felt_to_scalar(&event.data[0]);
-            self.handle_nullifier_spent(match_nullifier)?;
+            self.handle_nullifier_spent(match_nullifier).await?;
         } else {
             log::info!("Unknown event emitted from contract")
         }
@@ -227,7 +227,7 @@ impl OnChainEventListenerExecutor {
     }
 
     /// Handle a nullifier spent event
-    fn handle_nullifier_spent(
+    async fn handle_nullifier_spent(
         &self,
         nullifier: Nullifier,
     ) -> Result<(), OnChainEventListenerError> {
@@ -240,7 +240,7 @@ impl OnChainEventListenerExecutor {
             .map_err(|err| OnChainEventListenerError::SendMessage(err.to_string()))?;
 
         // Nullify any orders that used this nullifier in their validity proof
-        self.config.global_state.nullify_orders(nullifier);
+        self.config.global_state.nullify_orders(nullifier).await;
 
         Ok(())
     }

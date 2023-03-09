@@ -3,7 +3,6 @@
 //! This file groups logic for creating the server as well as the central dispatch/execution
 //! loop of the workers
 
-use crossbeam::channel::Receiver as CrossbeamReceiver;
 use lru::LruCache;
 use std::{
     collections::HashMap,
@@ -11,7 +10,7 @@ use std::{
     thread::{self, Builder, JoinHandle},
     time::Duration,
 };
-use tokio::sync::mpsc::{Receiver, Sender, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};
 use tracing::log;
 
 use crate::{
@@ -24,6 +23,7 @@ use crate::{
     },
     default_wrapper::DefaultWrapper,
     state::{new_async_shared, AsyncShared, RelayerState},
+    CancelChannel,
 };
 
 use super::{
@@ -107,7 +107,6 @@ impl GossipServer {
             self.config
                 .job_sender
                 .send(GossipServerJob::ExecuteHeartbeat(peer))
-                .await
                 .map_err(|err| GossipError::SendMessage(err.to_string()))?;
         }
 
@@ -186,23 +185,23 @@ pub struct GossipProtocolExecutor {
     /// has had time to propagate
     pub(super) peer_expiry_cache: SharedLRUCache,
     /// The channel on which to receive jobs
-    pub(super) job_receiver: DefaultWrapper<Option<Receiver<GossipServerJob>>>,
+    pub(super) job_receiver: DefaultWrapper<Option<TokioReceiver<GossipServerJob>>>,
     /// The channel to send outbound network requests on
-    pub(super) network_channel: UnboundedSender<GossipOutbound>,
+    pub(super) network_channel: TokioSender<GossipOutbound>,
     /// The global state of the relayer
     pub(super) global_state: RelayerState,
     /// The channel that the coordinator thread uses to cancel gossip execution
-    pub(super) cancel_channel: Option<CrossbeamReceiver<()>>,
+    pub(super) cancel_channel: Option<CancelChannel>,
 }
 
 impl GossipProtocolExecutor {
     /// Creates a new executor
     pub fn new(
         local_peer_id: WrappedPeerId,
-        network_channel: UnboundedSender<GossipOutbound>,
-        job_receiver: Receiver<GossipServerJob>,
+        network_channel: TokioSender<GossipOutbound>,
+        job_receiver: TokioReceiver<GossipServerJob>,
         global_state: RelayerState,
-        cancel_channel: CrossbeamReceiver<()>,
+        cancel_channel: CancelChannel,
     ) -> Result<Self, GossipError> {
         // Tracks recently expired peers and blocks them from being re-registered
         // until the state has synced. Maps peer_id to expiry time
@@ -222,7 +221,7 @@ impl GossipProtocolExecutor {
     /// Runs the executor loop
     pub async fn execution_loop(
         mut self,
-        job_sender: Sender<GossipServerJob>,
+        job_sender: TokioSender<GossipServerJob>,
     ) -> Result<(), GossipError> {
         log::info!("Starting executor loop for heartbeat protocol executor...");
 

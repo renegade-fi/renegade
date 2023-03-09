@@ -17,10 +17,10 @@ use std::{
 
 use lru::LruCache;
 
-use crate::state::Shared;
+use crate::state::AsyncShared;
 
 /// A type alias for a HandshakeCache shared between threads
-pub(super) type SharedHandshakeCache<O> = Shared<HandshakeCache<O>>;
+pub(super) type SharedHandshakeCache<O> = AsyncShared<HandshakeCache<O>>;
 
 /// Caches pairs of orders that have already been matched so that we may avoid attempting to
 /// match orders multiple times
