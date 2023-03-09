@@ -111,7 +111,6 @@ impl PeerIndex {
 
     /// Returns a random cluster peer for the given cluster
     pub async fn sample_cluster_peer(&self, cluster_id: &ClusterId) -> Option<WrappedPeerId> {
-        let mut rng = thread_rng();
         let cluster_peers = self.read_cluster_peers(cluster_id).await?;
 
         // Choose a random value from the set of peers
@@ -119,6 +118,7 @@ impl PeerIndex {
             return None;
         }
 
+        let mut rng = thread_rng();
         let random_index = rng.gen_range(0..cluster_peers.len());
         cluster_peers.iter().nth(random_index).cloned()
     }

@@ -10,6 +10,7 @@ mod api;
 mod api_server;
 mod chain_events;
 mod config;
+mod default_wrapper;
 mod error;
 mod gossip;
 mod handshake;
@@ -197,8 +198,8 @@ async fn main() -> Result<(), CoordinatorError> {
         cluster_id: args.cluster_id,
         bootstrap_servers: args.bootstrap_servers,
         global_state: global_state.clone(),
-        heartbeat_worker_sender,
-        heartbeat_worker_receiver,
+        job_sender: heartbeat_worker_sender,
+        job_receiver: heartbeat_worker_receiver,
         network_sender: network_sender.clone(),
         cancel_channel: gossip_cancel_receiver,
     })

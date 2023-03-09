@@ -552,7 +552,7 @@ impl RelayerState {
     /// Construct a heartbeat message from the relayer state
     pub async fn construct_heartbeat(&self) -> HeartbeatMessage {
         // Get a mapping from wallet ID to information
-        let wallet_info = self.read_wallet_index().await.get_metadata_map();
+        let wallet_info = self.read_wallet_index().await.get_metadata_map().await;
 
         // Convert peer info keys to strings for serialization/deserialization
         let peer_info = self

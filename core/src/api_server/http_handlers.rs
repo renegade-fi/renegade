@@ -189,7 +189,9 @@ impl TypedHandler for ReplicasHandler {
         let replicas = if let Some(wallet_info) = self
             .global_state
             .read_wallet_index()
+            .await
             .read_wallet(&req.wallet_id)
+            .await
         {
             wallet_info.metadata.replicas.clone().into_iter().collect()
         } else {

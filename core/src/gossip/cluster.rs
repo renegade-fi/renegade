@@ -25,29 +25,29 @@ use super::{
 /// Cluster management implementation of the protocol executor
 impl GossipProtocolExecutor {
     /// Handles an incoming cluster management job
-    pub(super) fn handle_cluster_management_job(
+    pub(super) async fn handle_cluster_management_job(
         &self,
         job: ClusterManagementJob,
     ) -> Result<(), GossipError> {
         match job {
             ClusterManagementJob::ClusterJoinRequest(cluster_id, req) => {
-                self.handle_cluster_join_job(cluster_id, req)?;
+                self.handle_cluster_join_job(cluster_id, req).await?;
             }
 
             ClusterManagementJob::ReplicateRequest(req) => {
-                self.handle_replicate_request(req)?;
+                self.handle_replicate_request(req).await?;
             }
 
             ClusterManagementJob::AddWalletReplica { wallet_id, peer_id } => {
-                self.handle_add_replica_job(peer_id, wallet_id)
+                self.handle_add_replica_job(peer_id, wallet_id).await
             }
 
             ClusterManagementJob::ShareValidityProofs(req) => {
-                self.handle_share_validity_proofs_job(req)?;
+                self.handle_share_validity_proofs_job(req).await?;
             }
 
             ClusterManagementJob::UpdateValidityProof(order_id, proof) => {
-                self.handle_updated_validity_proof(order_id, proof);
+                self.handle_updated_validity_proof(order_id, proof).await;
             }
         }
 
@@ -55,7 +55,7 @@ impl GossipProtocolExecutor {
     }
 
     /// Handles a cluster management job to add a new node to the local peer's cluster
-    fn handle_cluster_join_job(
+    async fn handle_cluster_join_job(
         &self,
         cluster_id: ClusterId,
         message: ClusterJoinMessage,
@@ -67,15 +67,20 @@ impl GossipProtocolExecutor {
 
         // Add the peer to the cluster metadata
         // Move out of message to avoid clones
-        self.add_peer_to_cluster(message.peer_id, message.peer_info, cluster_id)?;
+        self.add_peer_to_cluster(message.peer_id, message.peer_info, cluster_id).await?;
 
         // Request that the peer replicate all locally replicated wallets
-        let wallets = self.global_state.read_wallet_index().get_all_wallets();
+        let wallets = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_all_wallets()
+            .await;
         self.send_replicate_request(message.peer_id, wallets)
     }
 
     /// Add a peer to the given cluster
-    fn add_peer_to_cluster(
+    async fn add_peer_to_cluster(
         &self,
         peer_id: WrappedPeerId,
         peer_info: PeerInfo,
@@ -90,7 +95,12 @@ impl GossipProtocolExecutor {
         self.global_state.add_single_peer(peer_id, peer_info);
 
         // Request that the peer replicate all locally replicated wallets
-        let wallets = self.global_state.read_wallet_index().get_all_wallets();
+        let wallets = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_all_wallets()
+            .await;
         self.send_replicate_request(peer_id, wallets)
     }
 
@@ -113,13 +123,13 @@ impl GossipProtocolExecutor {
     }
 
     /// Handles a request from a peer to replicate a given set of wallets
-    fn handle_replicate_request(&self, req: ReplicateRequestBody) -> Result<(), GossipError> {
+    async fn handle_replicate_request(&self, req: ReplicateRequestBody) -> Result<(), GossipError> {
         if req.wallets.is_empty() {
             return Ok(());
         }
 
         // Add wallets to global state
-        self.global_state.add_wallets(req.wallets.clone());
+        self.global_state.add_wallets(req.wallets.clone()).await;
 
         // Update cluster management bookkeeping
         let topic = self.global_state.local_cluster_id.get_management_topic();
@@ -142,10 +152,10 @@ impl GossipProtocolExecutor {
         // Broadcast a message requesting proofs for all new orders
         let mut orders_needing_proofs = Vec::new();
         {
-            let locked_order_state = self.global_state.read_order_book();
+            let locked_order_state = self.global_state.read_order_book().await;
             for wallet in req.wallets.iter() {
                 for order_id in wallet.orders.keys() {
-                    if !locked_order_state.has_validity_proof(order_id) {
+                    if !locked_order_state.has_validity_proof(order_id).await {
                         orders_needing_proofs.push(*order_id);
                     }
                 }
@@ -170,23 +180,25 @@ impl GossipProtocolExecutor {
     }
 
     /// Handles an incoming job to update a wallet's replicas with a newly added peer
-    fn handle_add_replica_job(&self, peer_id: WrappedPeerId, wallet_id: WalletIdentifier) {
+    async fn handle_add_replica_job(&self, peer_id: WrappedPeerId, wallet_id: WalletIdentifier) {
         self.global_state
             .read_wallet_index()
-            .add_replica(&wallet_id, peer_id);
+            .await
+            .add_replica(&wallet_id, peer_id)
+            .await;
     }
 
     /// Handles an incoming job to check for validity proofs and send them to a cluster peer
-    fn handle_share_validity_proofs_job(
+    async fn handle_share_validity_proofs_job(
         &self,
         req: ValidityProofRequest,
     ) -> Result<(), GossipError> {
         // Check the local order book for any requested proofs that the local peer has stored
         let mut outbound_messages = Vec::new();
         {
-            let locked_order_book = self.global_state.read_order_book();
+            let locked_order_book = self.global_state.read_order_book().await;
             for order_id in req.order_ids.iter() {
-                if let Some(proof) = locked_order_book.get_validity_proof(order_id) {
+                if let Some(proof) = locked_order_book.get_validity_proof(order_id).await {
                     outbound_messages.push(GossipRequest::ValidityProof {
                         order_id: *order_id,
                         proof,
@@ -209,11 +221,13 @@ impl GossipProtocolExecutor {
     }
 
     /// Handle a message from a cluster peer that sends a proof of `VALID COMMITMENTS` for an order
-    fn handle_updated_validity_proof(
+    async fn handle_updated_validity_proof(
         &self,
         order_id: OrderIdentifier,
         proof: ValidCommitmentsBundle,
     ) {
-        self.global_state.add_order_validity_proof(&order_id, proof)
+        self.global_state
+            .add_order_validity_proof(&order_id, proof)
+            .await
     }
 }

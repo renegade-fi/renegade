@@ -28,7 +28,7 @@ use serde::{
     ser::SerializeSeq,
     Deserialize, Deserializer, Serialize, Serializer,
 };
-use tokio::sync::{RwLock, RwLockReadGuard};
+use tokio::sync::RwLockReadGuard;
 use uuid::Uuid;
 
 use crate::{gossip::types::WrappedPeerId, MAX_BALANCES, MAX_FEES, MAX_ORDERS};

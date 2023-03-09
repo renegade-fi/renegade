@@ -6,7 +6,7 @@ use std::fmt::Display;
 /// An error type at the coordinator level
 #[derive(Clone, Debug)]
 pub enum CoordinatorError {
-    /// Error attemting to recover a failed worker
+    /// Error attempting to recover a failed worker
     Recovery(String),
     /// Failure to send a cancel signal to a worker
     CancelSend(String),
