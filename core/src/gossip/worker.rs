@@ -1,21 +1,14 @@
 //! Implements the `Worker` trait for the GossipServer
 
-use std::thread::{Builder, JoinHandle};
-
-use crossbeam::channel::{Receiver, Sender};
+use futures::executor::block_on;
 use libp2p::Multiaddr;
-use tokio::sync::mpsc::UnboundedSender as TokioSender;
+use std::thread::{Builder, JoinHandle};
+use tokio::runtime::Builder as RuntimeBuilder;
+use tokio::sync::mpsc::{Receiver, Sender, UnboundedSender as TokioSender};
 
-use crate::{
-    api::{
-        gossip::{GossipOutbound, GossipRequest, ManagerControlDirective},
-        heartbeat::BootstrapRequest,
-    },
-    state::RelayerState,
-    worker::Worker,
-    CancelChannel,
-};
+use crate::{api::gossip::GossipOutbound, state::RelayerState, worker::Worker, CancelChannel};
 
+use super::server::{GOSSIP_EXECUTOR_N_BLOCKING_THREADS, GOSSIP_EXECUTOR_N_THREADS};
 use super::{
     errors::GossipError,
     jobs::GossipServerJob,
@@ -37,9 +30,9 @@ pub struct GossipServerConfig {
     /// A reference to the relayer-global state
     pub(crate) global_state: RelayerState,
     /// A job queue to send outbound heartbeat requests on
-    pub(crate) heartbeat_worker_sender: Sender<GossipServerJob>,
+    pub(crate) job_sender: Sender<GossipServerJob>,
     /// A job queue to receive inbound heartbeat requests on
-    pub(crate) heartbeat_worker_receiver: Receiver<GossipServerJob>,
+    pub(crate) job_receiver: Option<Receiver<GossipServerJob>>,
     /// A job queue to send outbound network requests on
     pub(crate) network_sender: TokioSender<GossipOutbound>,
     /// The channel on which the coordinator may mandate that the
@@ -76,55 +69,34 @@ impl Worker for GossipServer {
         let protocol_executor = GossipProtocolExecutor::new(
             self.config.local_peer_id,
             self.config.network_sender.clone(),
-            self.config.heartbeat_worker_receiver.clone(),
+            self.config.job_receiver.take().unwrap(),
             self.config.global_state.clone(),
             self.config.cancel_channel.clone(),
         )?;
 
-        let sender = self.config.heartbeat_worker_sender.clone();
-        self.protocol_executor_handle = Some(
-            Builder::new()
-                .name("gossip-executor-main".to_string())
-                .spawn(move || protocol_executor.execution_loop(sender))
-                .map_err(|err| GossipError::ServerSetup(err.to_string()))?,
-        );
+        let sender = self.config.job_sender.clone();
+        let executor_handle = Builder::new()
+            .name("gossip-executor-main".to_string())
+            .spawn(move || {
+                // Build a runtime for the gossip server to work in, then enter the runtime via
+                // the gossip server's execution loop
+                let tokio_runtime = RuntimeBuilder::new_multi_thread()
+                    .worker_threads(GOSSIP_EXECUTOR_N_THREADS)
+                    .max_blocking_threads(GOSSIP_EXECUTOR_N_BLOCKING_THREADS)
+                    .enable_all()
+                    .build()
+                    .unwrap();
 
-        // Bootstrap into the network in two steps:
-        //  1. Forward all bootstrap addresses to the network manager so it may dial them
-        //  2. Send bootstrap requests to all bootstrapping peers
-        // Wait until all peers have been indexed before sending requests to give async network
-        // manager time to index the peers in the case that these messages are processed concurrently
-        for (peer_id, peer_addr) in self.config.bootstrap_servers.iter() {
-            self.config
-                .network_sender
-                .send(GossipOutbound::ManagementMessage(
-                    ManagerControlDirective::NewAddr {
-                        peer_id: *peer_id,
-                        address: peer_addr.clone(),
-                    },
-                ))
-                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
-        }
+                tokio_runtime
+                    .block_on(protocol_executor.execution_loop(sender))
+                    .err()
+                    .unwrap()
+            })
+            .map_err(|err| GossipError::ServerSetup(err.to_string()))?;
+        self.protocol_executor_handle = Some(executor_handle);
 
-        let req = BootstrapRequest {
-            peer_info: self.config.global_state.local_peer_info(),
-        };
-        for (peer_id, _) in self.config.bootstrap_servers.iter() {
-            self.config
-                .network_sender
-                .send(GossipOutbound::Request {
-                    peer_id: *peer_id,
-                    message: GossipRequest::Bootstrap(req.clone()),
-                })
-                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
-        }
-
-        // Wait for the local peer to handshake with known other peers
-        // before sending a cluster membership message
-        self.warmup_then_join_cluster(
-            &self.config.global_state,
-            self.config.heartbeat_worker_sender.clone(),
-        )?;
+        // Bootstrap the local peer into the gossip network
+        block_on(async { self.bootstrap_into_network().await })?;
 
         Ok(())
     }

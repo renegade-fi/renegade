@@ -27,7 +27,7 @@ use super::{
 
 impl GossipProtocolExecutor {
     /// Dispatches messages from the cluster regarding order book management
-    pub(super) fn handle_order_book_management_job(
+    pub(super) async fn handle_order_book_management_job(
         &self,
         message: OrderBookManagementJob,
     ) -> Result<(), GossipError> {
@@ -35,11 +35,14 @@ impl GossipProtocolExecutor {
             OrderBookManagementJob::OrderInfo {
                 order_id,
                 response_channel,
-            } => self.handle_order_info_request(order_id, response_channel),
+            } => {
+                self.handle_order_info_request(order_id, response_channel)
+                    .await
+            }
 
             OrderBookManagementJob::OrderInfoResponse { info, .. } => {
                 if let Some(order_info) = info {
-                    self.handle_order_info_response(order_info)?;
+                    self.handle_order_info_response(order_info).await?;
                 }
 
                 Ok(())
@@ -50,7 +53,8 @@ impl GossipProtocolExecutor {
                 match_nullifier,
                 cluster,
             } => {
-                self.handle_new_order(order_id, match_nullifier, cluster);
+                self.handle_new_order(order_id, match_nullifier, cluster)
+                    .await;
                 Ok(())
             }
 
@@ -58,22 +62,29 @@ impl GossipProtocolExecutor {
                 order_id,
                 cluster,
                 proof,
-            } => self.handle_new_validity_proof(order_id, cluster, proof),
+            } => {
+                self.handle_new_validity_proof(order_id, cluster, proof)
+                    .await
+            }
 
             OrderBookManagementJob::OrderWitness {
                 order_id,
                 requesting_peer,
-            } => self.handle_validity_witness_request(order_id, requesting_peer),
+            } => {
+                self.handle_validity_witness_request(order_id, requesting_peer)
+                    .await
+            }
 
             OrderBookManagementJob::OrderWitnessResponse { order_id, witness } => {
-                self.handle_validity_witness_response(order_id, witness);
+                self.handle_validity_witness_response(order_id, witness)
+                    .await;
                 Ok(())
             }
         }
     }
 
     /// Handles a request for order information from a peer
-    fn handle_order_info_request(
+    async fn handle_order_info_request(
         &self,
         order_id: OrderIdentifier,
         response_channel: ResponseChannel<AuthenticatedGossipResponse>,
@@ -81,7 +92,9 @@ impl GossipProtocolExecutor {
         let order_info = self
             .global_state
             .read_order_book()
-            .get_order_info(&order_id);
+            .await
+            .get_order_info(&order_id)
+            .await;
 
         self.network_channel
             .send(GossipOutbound::Response {
@@ -97,17 +110,23 @@ impl GossipProtocolExecutor {
     }
 
     /// Handles a response to a request for order info
-    fn handle_order_info_response(&self, mut order_info: NetworkOrder) -> Result<(), GossipError> {
+    async fn handle_order_info_response(
+        &self,
+        mut order_info: NetworkOrder,
+    ) -> Result<(), GossipError> {
         // If there is a proof attached to the order, verify it
         let is_local = order_info.cluster == self.global_state.local_cluster_id;
         if let Some(proof_bundle) = order_info.valid_commit_proof.clone() {
             // We can trust local (i.e. originating from cluster peers) proofs
             if !is_local {
-                verify_singleprover_proof::<SizedValidCommitments>(
-                    proof_bundle.statement,
-                    proof_bundle.commitment,
-                    proof_bundle.proof,
-                )
+                tokio::task::spawn_blocking(move || {
+                    verify_singleprover_proof::<SizedValidCommitments>(
+                        proof_bundle.statement,
+                        proof_bundle.commitment,
+                        proof_bundle.proof,
+                    )
+                })
+                .await
                 .map_err(|err| GossipError::ValidCommitmentVerification(err.to_string()))?;
             }
 
@@ -120,32 +139,34 @@ impl GossipProtocolExecutor {
         }
 
         order_info.local = is_local;
-        self.global_state.add_order(order_info);
+        self.global_state.add_order(order_info).await;
 
         Ok(())
     }
 
     /// Handles a newly discovered order added to the book
-    fn handle_new_order(
+    async fn handle_new_order(
         &self,
         order_id: OrderIdentifier,
         match_nullifier: Nullifier,
         cluster: ClusterId,
     ) {
         let is_local = cluster == self.global_state.local_cluster_id;
-        self.global_state.add_order(NetworkOrder::new(
-            order_id,
-            match_nullifier,
-            cluster,
-            is_local,
-        ))
+        self.global_state
+            .add_order(NetworkOrder::new(
+                order_id,
+                match_nullifier,
+                cluster,
+                is_local,
+            ))
+            .await
     }
 
     /// Handles a new validity proof attached to an order
     ///
     /// TODO: We also need to sanity check the statement variables with the contract state,
     /// e.g. merkle root, nullifiers, etc.
-    fn handle_new_validity_proof(
+    async fn handle_new_validity_proof(
         &self,
         order_id: OrderIdentifier,
         cluster: ClusterId,
@@ -156,11 +177,14 @@ impl GossipProtocolExecutor {
         // Verify the proof
         if !is_local {
             let bundle_clone = proof_bundle.clone();
-            verify_singleprover_proof::<SizedValidCommitments>(
-                bundle_clone.statement,
-                bundle_clone.commitment,
-                bundle_clone.proof,
-            )
+            tokio::task::spawn_blocking(move || {
+                verify_singleprover_proof::<SizedValidCommitments>(
+                    bundle_clone.statement,
+                    bundle_clone.commitment,
+                    bundle_clone.proof,
+                )
+            })
+            .await
             .map_err(|err| GossipError::ValidCommitmentVerification(err.to_string()))?;
         }
 
@@ -168,18 +192,22 @@ impl GossipProtocolExecutor {
         if !self
             .global_state
             .read_order_book()
+            .await
             .contains_order(&order_id)
         {
-            self.global_state.add_order(NetworkOrder::new(
-                order_id,
-                proof_bundle.statement.nullifier,
-                cluster,
-                is_local,
-            ));
+            self.global_state
+                .add_order(NetworkOrder::new(
+                    order_id,
+                    proof_bundle.statement.nullifier,
+                    cluster,
+                    is_local,
+                ))
+                .await;
         }
 
         self.global_state
-            .add_order_validity_proof(&order_id, proof_bundle);
+            .add_order_validity_proof(&order_id, proof_bundle)
+            .await;
 
         // If the order is locally managed, also fetch the wintess used in the proof,
         // this is used for proof linking. I.e. the local node needs the commitment parameters
@@ -212,7 +240,7 @@ impl GossipProtocolExecutor {
     }
 
     /// Handles a request for a validity proof witness from a peer
-    fn handle_validity_witness_request(
+    async fn handle_validity_witness_request(
         &self,
         order_id: OrderIdentifier,
         requesting_peer: WrappedPeerId,
@@ -224,7 +252,9 @@ impl GossipProtocolExecutor {
             let info = self
                 .global_state
                 .read_peer_index()
+                .await
                 .get_peer_info(&requesting_peer)
+                .await
                 .ok_or_else(|| {
                     GossipError::MissingState("peer info not found in state".to_string())
                 })?;
@@ -238,7 +268,9 @@ impl GossipProtocolExecutor {
         if let Some(order_info) = self
             .global_state
             .read_order_book()
+            .await
             .get_order_info(&order_id)
+            .await
         && let Some(witness) = order_info.valid_commit_witness
         {
             self.network_channel
@@ -252,13 +284,15 @@ impl GossipProtocolExecutor {
     }
 
     /// Handle a response from a peer containing a witness for `VALID COMMITMENTS`
-    fn handle_validity_witness_response(
+    async fn handle_validity_witness_response(
         &self,
         order_id: OrderIdentifier,
         witness: SizedValidCommitmentsWitness,
     ) {
         self.global_state
             .read_order_book()
-            .attach_validity_proof_witness(&order_id, witness);
+            .await
+            .attach_validity_proof_witness(&order_id, witness)
+            .await;
     }
 }

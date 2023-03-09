@@ -7,6 +7,7 @@ use ed25519_dalek::Keypair;
 use futures::executor::block_on;
 use libp2p::{Multiaddr, Swarm};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
+use tracing::log;
 
 use crate::{
     api::gossip::GossipOutbound,
@@ -101,14 +102,16 @@ impl Worker for NetworkManager {
         )?;
 
         // Add any bootstrap addresses to the peer info table
-        for (peer_id, peer_info) in self
-            .config
-            .global_state
-            .read_peer_index()
-            .get_info_map()
-            .iter()
-        {
-            println!(
+        let peer_index = block_on(async {
+            self.config
+                .global_state
+                .read_peer_index()
+                .await
+                .get_info_map()
+                .await
+        });
+        for (peer_id, peer_info) in peer_index.iter() {
+            log::info!(
                 "Adding {:?}: {} to routing table...",
                 peer_id,
                 peer_info.get_addr()
@@ -124,7 +127,9 @@ impl Worker for NetworkManager {
         let hostport = format!("/ip4/127.0.0.1/tcp/{}", self.config.port);
         let addr: Multiaddr = hostport.parse().unwrap();
         self.local_addr = addr.clone();
-        *self.config.global_state.write_local_addr() = self.local_addr.clone();
+        block_on(async {
+            *self.config.global_state.write_local_addr().await = self.local_addr.clone()
+        });
         swarm
             .listen_on(addr)
             .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
