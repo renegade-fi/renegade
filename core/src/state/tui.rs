@@ -6,8 +6,9 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use itertools::Itertools;
 
+use futures::executor::block_on;
+use itertools::Itertools;
 use std::{
     cell::RefCell,
     thread::JoinHandle,
@@ -215,13 +216,15 @@ impl StateTuiApp {
         // Fetch the relevant state
         let peer_id = self.global_state.local_peer_id();
         let cluster_id = self.global_state.local_cluster_id.clone();
-        let local_addr = {
+        let local_addr = block_on(async {
             self.global_state
                 .read_peer_index()
+                .await
                 .get_peer_info(&peer_id)
+                .await
                 .unwrap_or_default()
                 .get_addr()
-        };
+        });
         let full_addr = format!("{local_addr}/p2p/{peer_id}");
         let api_server_enabled = if self.config.disable_api_server {
             STR_DISABLED
@@ -296,11 +299,13 @@ impl StateTuiApp {
     fn create_cluster_metadata_pane(&self) -> List {
         // Read the relevant state
         let cluster_id = self.global_state.local_cluster_id.clone();
-        let cluster_peers = {
+        let cluster_peers = block_on(async {
             self.global_state
                 .read_peer_index()
+                .await
                 .get_all_cluster_peers(&cluster_id)
-        };
+                .await
+        });
 
         // Style and collect into a list
         let line1 = Spans::from(vec![
@@ -323,7 +328,13 @@ impl StateTuiApp {
     fn create_peer_index_pane(&self) -> Table {
         // Read the necessary state
         let local_peer_id = self.global_state.local_peer_id();
-        let peer_info = { self.global_state.read_peer_index().get_info_map() };
+        let peer_info = block_on(async {
+            self.global_state
+                .read_peer_index()
+                .await
+                .get_info_map()
+                .await
+        });
 
         // Sort the keys so that the table does not re-arrange every frame
         let mut sorted_keys = peer_info.keys().cloned().collect_vec();
@@ -367,11 +378,13 @@ impl StateTuiApp {
     /// Create an order book pane
     fn create_order_book_pane(&self) -> Table {
         // Read the necessary state
-        let order_book = {
+        let order_book = block_on(async {
             self.global_state
                 .read_order_book()
+                .await
                 .get_order_book_snapshot()
-        };
+                .await
+        });
 
         let mut sorted_keys = order_book.keys().clone().collect_vec();
         sorted_keys.sort();

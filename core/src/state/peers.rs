@@ -1,17 +1,16 @@
 //! Groups concurrent safe type definitions for indexing peers in the network
 
+use itertools::Itertools;
+use rand::{thread_rng, Rng};
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     fmt::Debug,
-    sync::{RwLockReadGuard, RwLockWriteGuard},
 };
-
-use itertools::Itertools;
-use rand::{thread_rng, Rng};
+use tokio::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 use crate::gossip::types::{ClusterId, PeerInfo, WrappedPeerId};
 
-use super::{new_shared, Shared};
+use super::{new_async_shared, AsyncShared};
 
 /// Error message emitted when a cluster peer list lock is poisoned
 const ERR_CLUSTER_LIST_POISONED: &str = "cluster peer list poisoned";
@@ -22,9 +21,9 @@ const ERR_PEER_POISONED: &str = "peer lock poisoned";
 #[derive(Debug)]
 pub struct PeerIndex {
     /// A mapping from peer ID to information about the peer
-    peer_map: HashMap<WrappedPeerId, Shared<PeerInfo>>,
+    peer_map: HashMap<WrappedPeerId, AsyncShared<PeerInfo>>,
     /// A mapping from cluster ID to a list of known peers in the cluster
-    cluster_peers: HashMap<ClusterId, Shared<HashSet<WrappedPeerId>>>,
+    cluster_peers: HashMap<ClusterId, AsyncShared<HashSet<WrappedPeerId>>>,
 }
 
 impl PeerIndex {
@@ -41,37 +40,45 @@ impl PeerIndex {
     // -----------
 
     /// Acquire a read lock on a peer's info
-    pub fn read_peer(&self, peer_id: &WrappedPeerId) -> Option<RwLockReadGuard<PeerInfo>> {
-        self.peer_map
-            .get(peer_id)
-            .map(|peer_info| peer_info.read().expect(ERR_PEER_POISONED))
+    pub async fn read_peer(&self, peer_id: &WrappedPeerId) -> Option<RwLockReadGuard<PeerInfo>> {
+        if let Some(peer_info) = self.peer_map.get(peer_id) {
+            Some(peer_info.read().await)
+        } else {
+            None
+        }
     }
 
     /// Acquires a read lock on a cluster's peer list
-    pub fn read_cluster_peers(
+    pub async fn read_cluster_peers(
         &self,
         cluster_id: &ClusterId,
     ) -> Option<RwLockReadGuard<HashSet<WrappedPeerId>>> {
-        self.cluster_peers
-            .get(cluster_id)
-            .map(|cluster| cluster.read().expect(ERR_CLUSTER_LIST_POISONED))
+        if let Some(cluster) = self.cluster_peers.get(cluster_id) {
+            Some(cluster.read().await)
+        } else {
+            None
+        }
     }
 
     /// Acquire a write lock on a peer's info
-    pub fn write_peer(&self, peer_id: &WrappedPeerId) -> Option<RwLockWriteGuard<PeerInfo>> {
-        self.peer_map
-            .get(peer_id)
-            .map(|peer_info| peer_info.write().expect(ERR_PEER_POISONED))
+    pub async fn write_peer(&self, peer_id: &WrappedPeerId) -> Option<RwLockWriteGuard<PeerInfo>> {
+        if let Some(peer_info) = self.peer_map.get(peer_id) {
+            Some(peer_info.write().await)
+        } else {
+            None
+        }
     }
 
     /// Acquire a write lock on a cluster's peer list
-    pub fn write_cluster_peers(
+    pub async fn write_cluster_peers(
         &self,
         cluster_id: &ClusterId,
     ) -> Option<RwLockWriteGuard<HashSet<WrappedPeerId>>> {
-        self.cluster_peers
-            .get(cluster_id)
-            .map(|cluster| cluster.write().expect(ERR_CLUSTER_LIST_POISONED))
+        if let Some(cluster) = self.cluster_peers.get(cluster_id) {
+            Some(cluster.write().await)
+        } else {
+            None
+        }
     }
 
     // -----------
@@ -84,10 +91,8 @@ impl PeerIndex {
     }
 
     /// Returns the info for a given peer
-    pub fn get_peer_info(&self, peer_id: &WrappedPeerId) -> Option<PeerInfo> {
-        self.peer_map
-            .get(peer_id)
-            .map(|info| info.read().expect(ERR_PEER_POISONED).clone())
+    pub async fn get_peer_info(&self, peer_id: &WrappedPeerId) -> Option<PeerInfo> {
+        Some(self.peer_map.get(peer_id)?.read().await.clone())
     }
 
     /// Returns whether the given peer is already indexed by the peer index
@@ -96,16 +101,18 @@ impl PeerIndex {
     }
 
     /// Returns a list of all cluster peers
-    pub fn get_all_cluster_peers(&self, cluster_id: &ClusterId) -> Vec<WrappedPeerId> {
-        self.read_cluster_peers(cluster_id)
-            .map(|peers| peers.iter().cloned().collect_vec())
-            .unwrap_or_default()
+    pub async fn get_all_cluster_peers(&self, cluster_id: &ClusterId) -> Vec<WrappedPeerId> {
+        if let Some(peers) = self.read_cluster_peers(cluster_id).await {
+            peers.clone().into_iter().collect_vec()
+        } else {
+            Vec::new()
+        }
     }
 
     /// Returns a random cluster peer for the given cluster
-    pub fn sample_cluster_peer(&self, cluster_id: &ClusterId) -> Option<WrappedPeerId> {
+    pub async fn sample_cluster_peer(&self, cluster_id: &ClusterId) -> Option<WrappedPeerId> {
         let mut rng = thread_rng();
-        let cluster_peers = self.read_cluster_peers(cluster_id)?;
+        let cluster_peers = self.read_cluster_peers(cluster_id).await?;
 
         // Choose a random value from the set of peers
         if cluster_peers.is_empty() {
@@ -117,15 +124,8 @@ impl PeerIndex {
     }
 
     /// Return an nth index into an iterator formed over the hashmap
-    pub fn nth(&self, index: usize) -> Option<RwLockReadGuard<PeerInfo>> {
-        Some(
-            self.peer_map
-                .iter()
-                .nth(index)?
-                .1
-                .read()
-                .expect(ERR_PEER_POISONED),
-        )
+    pub async fn nth(&self, index: usize) -> Option<RwLockReadGuard<PeerInfo>> {
+        Some(self.peer_map.iter().nth(index)?.1.read().await)
     }
 
     /// Returns a list of known peer IDs
@@ -137,10 +137,10 @@ impl PeerIndex {
     ///
     /// This is constructed when the heartbeat message is constructed and sent to
     /// heartbeat peers
-    pub fn get_info_map(&self) -> HashMap<WrappedPeerId, PeerInfo> {
+    pub async fn get_info_map(&self) -> HashMap<WrappedPeerId, PeerInfo> {
         let mut res = HashMap::new();
         for (peer_id, info) in self.peer_map.iter() {
-            res.insert(*peer_id, info.read().expect(ERR_PEER_POISONED).clone());
+            res.insert(*peer_id, info.read().await.clone());
         }
 
         res
@@ -151,35 +151,31 @@ impl PeerIndex {
     // -----------
 
     /// Add a peer to the peer index
-    pub fn add_peer(&mut self, peer_info: PeerInfo) {
+    pub async fn add_peer(&mut self, peer_info: PeerInfo) {
         // Add the peer to the list of known peers in its cluster
         let peer_cluster_record = self
             .cluster_peers
             .entry(peer_info.get_cluster_id())
-            .or_insert_with(|| new_shared(HashSet::new()));
+            .or_insert_with(|| new_async_shared(HashSet::new()));
         peer_cluster_record
             .write()
-            .expect(ERR_CLUSTER_LIST_POISONED)
+            .await
             .insert(peer_info.get_peer_id());
 
         // Add the peer only if it does not already exist
         if let Entry::Vacant(e) = self.peer_map.entry(peer_info.get_peer_id()) {
-            e.insert(new_shared(peer_info));
+            e.insert(new_async_shared(peer_info));
         }
     }
 
     /// Remove a peer from the index
-    pub fn remove_peer(&mut self, peer_id: &WrappedPeerId) -> Option<PeerInfo> {
+    pub async fn remove_peer(&mut self, peer_id: &WrappedPeerId) -> Option<PeerInfo> {
         // Remove from the peer info index
-        let entry = self
-            .peer_map
-            .remove(peer_id)?
-            .read()
-            .expect(ERR_PEER_POISONED)
-            .clone();
+        let entry = self.peer_map.remove(peer_id)?.read().await.clone();
 
         // Remove from the peer's cluster list
         self.write_cluster_peers(&entry.get_cluster_id())
+            .await
             .unwrap()
             .remove(&entry.get_peer_id());
 
@@ -187,8 +183,8 @@ impl PeerIndex {
     }
 
     /// Record a successful heartbeat for a peer
-    pub fn record_heartbeat(&self, peer_id: &WrappedPeerId) {
-        if let Some(peer_info_guard) = self.write_peer(peer_id) {
+    pub async fn record_heartbeat(&self, peer_id: &WrappedPeerId) {
+        if let Some(peer_info_guard) = self.write_peer(peer_id).await {
             peer_info_guard.successful_heartbeat();
         }
     }

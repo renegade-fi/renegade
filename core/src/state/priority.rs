@@ -5,13 +5,13 @@ use std::{
     collections::HashMap,
     sync::{
         atomic::{AtomicU32, Ordering},
-        RwLockReadGuard,
     },
 };
+use tokio::sync::RwLockReadGuard;
 
 use crate::gossip::types::ClusterId;
 
-use super::{new_shared, OrderIdentifier, Shared};
+use super::{new_async_shared, AsyncShared, OrderIdentifier};
 
 /// The error emitted when an order's priority lock is poisoned
 const ERR_ORDER_PRIORITY_POISONED: &str = "order priority lock poisoned";
@@ -60,7 +60,7 @@ pub struct HandshakePriorityStore {
     /// A mapping from cluster ID to priority
     cluster_priorities: HashMap<ClusterId, ClusterPriority>,
     /// A mapping from order ID to priority
-    order_priorities: HashMap<OrderIdentifier, Shared<OrderPriority>>,
+    order_priorities: HashMap<OrderIdentifier, AsyncShared<OrderPriority>>,
 }
 
 impl HandshakePriorityStore {
@@ -77,13 +77,11 @@ impl HandshakePriorityStore {
     // -----------
 
     /// Acquire a read lock on an order's priority
-    pub fn read_order_priority(
+    pub async fn read_order_priority(
         &self,
         order_id: &OrderIdentifier,
     ) -> Option<RwLockReadGuard<OrderPriority>> {
-        self.order_priorities
-            .get(order_id)
-            .map(|order| order.read().expect(ERR_ORDER_PRIORITY_POISONED))
+        Some(self.order_priorities.get(order_id)?.read().await)
     }
 
     // -----------
@@ -91,8 +89,9 @@ impl HandshakePriorityStore {
     // -----------
 
     /// Read an order's priority
-    pub fn get_order_priority(&self, order_id: &OrderIdentifier) -> OrderPriority {
+    pub async fn get_order_priority(&self, order_id: &OrderIdentifier) -> OrderPriority {
         self.read_order_priority(order_id)
+            .await
             .map(|order| order.clone())
             .unwrap_or_default()
     }
@@ -114,7 +113,7 @@ impl HandshakePriorityStore {
         let cluster_priority = self.get_cluster_priority(&cluster_id);
         self.order_priorities.insert(
             order_id,
-            new_shared(OrderPriority {
+            new_async_shared(OrderPriority {
                 cluster_priority,
                 order_priority: ORDER_DEFAULT_PRIORITY,
             }),

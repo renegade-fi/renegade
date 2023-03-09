@@ -23,7 +23,7 @@ crypto = { path = "../crypto" }
 curve25519-dalek = "2"
 ed25519-dalek = { version = "1.0.1" }
 env_logger = "0.10"
-futures = { version = "0.3.25" }
+futures = { version = "0.3.26" }
 futures-util = { version = "0.3" }
 hex = "0.3.1"
 hmac-sha256 = "1.1.6"

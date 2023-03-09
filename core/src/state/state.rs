@@ -11,6 +11,7 @@ use circuits::{
 use crossbeam::channel::Sender;
 use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::scalar::Scalar;
+use futures::executor::block_on;
 use libp2p::{
     identity::{self, Keypair},
     Multiaddr,
@@ -18,10 +19,12 @@ use libp2p::{
 use rand::{distributions::WeightedIndex, prelude::Distribution, thread_rng};
 use std::{
     collections::HashMap,
-    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{Arc, RwLock},
     thread::Builder,
 };
-use tokio::sync::{mpsc::UnboundedSender, oneshot};
+use tokio::sync::{
+    mpsc::UnboundedSender, oneshot, RwLock as AsyncRwLock, RwLockReadGuard, RwLockWriteGuard,
+};
 
 use crate::{
     api::{
@@ -53,10 +56,18 @@ const ERR_ORDER_INIT_FAILED: &str = "order commitment initialization thread pani
 /// The name of the thread initialized to generate proofs of `VALID COMMITMENTS` at startup
 const ORDER_INIT_THREAD: &str = "order-commitment-init";
 
+/// A type alias for a shared element, wrapped in an async capable readers-writer mutex
+pub type AsyncShared<T> = Arc<AsyncRwLock<T>>;
 /// A type alias for a shared element, wrapped in a readers-writer mutex
 pub type Shared<T> = Arc<RwLock<T>>;
+
+/// Wrap an abstract value in an async shared lock
+pub fn new_async_shared<T>(wrapped: T) -> AsyncShared<T> {
+    Arc::new(AsyncRwLock::new(wrapped))
+}
+
 /// Wrap an abstract value in a shared lock
-pub(crate) fn new_shared<T>(wrapped: T) -> Shared<T> {
+pub fn new_shared<T>(wrapped: T) -> Shared<T> {
     Arc::new(RwLock::new(wrapped))
 }
 
@@ -80,18 +91,18 @@ pub struct RelayerState {
     /// Despite being static after initialization, this value is
     /// set by the network manager, so we maintain a cross-worker
     /// reference
-    pub local_addr: Shared<Multiaddr>,
+    pub local_addr: AsyncShared<Multiaddr>,
     /// The list of wallets managed by the sending relayer
-    wallet_index: Shared<WalletIndex>,
+    wallet_index: AsyncShared<WalletIndex>,
     /// The set of peers known to the sending relayer
-    peer_index: Shared<PeerIndex>,
+    peer_index: AsyncShared<PeerIndex>,
     /// The order book and indexing structure for orders in the network
-    order_book: Shared<NetworkOrderBook>,
+    order_book: AsyncShared<NetworkOrderBook>,
     /// A list of matched orders
     /// TODO: Remove this
-    matched_order_pairs: Shared<Vec<(OrderIdentifier, OrderIdentifier)>>,
+    matched_order_pairs: AsyncShared<Vec<(OrderIdentifier, OrderIdentifier)>>,
     /// Priorities for scheduling handshakes with each peer
-    pub handshake_priorities: Shared<HandshakePriorityStore>,
+    pub handshake_priorities: AsyncShared<HandshakePriorityStore>,
 }
 
 impl RelayerState {
@@ -123,12 +134,12 @@ impl RelayerState {
             local_peer_id,
             local_keypair,
             local_cluster_id: cluster_id,
-            local_addr: new_shared(Multiaddr::empty()),
-            wallet_index: new_shared(wallet_index),
-            matched_order_pairs: new_shared(vec![]),
-            peer_index: new_shared(peer_index),
-            order_book: new_shared(order_book),
-            handshake_priorities: new_shared(HandshakePriorityStore::new()),
+            local_addr: new_async_shared(Multiaddr::empty()),
+            wallet_index: new_async_shared(wallet_index),
+            matched_order_pairs: new_async_shared(vec![]),
+            peer_index: new_async_shared(peer_index),
+            order_book: new_async_shared(order_book),
+            handshake_priorities: new_async_shared(HandshakePriorityStore::new()),
         }
     }
 
@@ -152,13 +163,15 @@ impl RelayerState {
         Builder::new()
             .name(ORDER_INIT_THREAD.to_string())
             .spawn(move || {
-                self_clone.initialize_order_proof_helper(proof_manager_queue, network_sender)
+                block_on(
+                    self_clone.initialize_order_proof_helper(proof_manager_queue, network_sender),
+                )
             })
             .expect(ERR_ORDER_INIT_FAILED);
     }
 
     /// A helper passed as a callback to the threading logic in the caller
-    fn initialize_order_proof_helper(
+    async fn initialize_order_proof_helper(
         &self,
         proof_manager_queue: Sender<ProofManagerJob>,
         network_sender: UnboundedSender<GossipOutbound>,
@@ -168,12 +181,12 @@ impl RelayerState {
 
         {
             // Iterate over all orders in all managed wallets and generate proofs
-            let locked_wallet_index = self.read_wallet_index();
-            for wallet in locked_wallet_index.get_all_wallets().into_iter() {
+            let locked_wallet_index = self.read_wallet_index().await;
+            for wallet in locked_wallet_index.get_all_wallets().await.into_iter() {
                 let match_nullifier = wallet.get_match_nullifier();
                 for (order_id, order) in wallet.orders.iter() {
                     {
-                        self.write_order_book().add_order(NetworkOrder::new(
+                        self.write_order_book().await.add_order(NetworkOrder::new(
                             *order_id,
                             match_nullifier,
                             self.local_cluster_id.clone(),
@@ -181,8 +194,9 @@ impl RelayerState {
                         ));
                     } // order_book lock released
 
-                    if let Some((_, balance, fee, fee_balance)) =
-                        locked_wallet_index.get_order_balance_and_fee(&wallet.wallet_id, order_id)
+                    if let Some((_, balance, fee, fee_balance)) = locked_wallet_index
+                        .get_order_balance_and_fee(&wallet.wallet_id, order_id)
+                        .await
                     {
                         // Generate a merkle proof of inclusion for this wallet in the contract state
                         let (merkle_root, wallet_opening) = Self::generate_merkle_proof(&wallet);
@@ -193,7 +207,7 @@ impl RelayerState {
                         {
                             let randomness_hash =
                                 compute_poseidon_hash(&[biguint_to_scalar(&wallet.randomness)]);
-                            self.read_order_book().attach_validity_proof_witness(
+                            self.read_order_book().await.attach_validity_proof_witness(
                                 order_id,
                                 ValidCommitmentsWitness {
                                     wallet: wallet.clone().into(),
@@ -299,16 +313,23 @@ impl RelayerState {
     }
 
     /// Get the peer info for the local peer
-    pub fn local_peer_info(&self) -> PeerInfo {
+    pub async fn local_peer_info(&self) -> PeerInfo {
         self.read_peer_index()
+            .await
             .get_peer_info(&self.local_peer_id)
+            .await
             .unwrap()
     }
 
     /// Sample an order for handshake
-    pub fn choose_handshake_order(&self) -> Option<OrderIdentifier> {
+    pub async fn choose_handshake_order(&self) -> Option<OrderIdentifier> {
         // Read the set of orders that are verified and thereby ready for batch
-        let verified_orders = { self.read_order_book().get_nonlocal_verified_orders() };
+        let verified_orders = {
+            self.read_order_book()
+                .await
+                .get_nonlocal_verified_orders()
+                .await
+        };
         if verified_orders.is_empty() {
             return None;
         }
@@ -316,9 +337,9 @@ impl RelayerState {
         // Fetch the priorities for the verified orders
         let mut priorities = Vec::with_capacity(verified_orders.len());
         {
-            let locked_priority_store = self.read_handshake_priorities();
+            let locked_priority_store = self.read_handshake_priorities().await;
             for order_id in verified_orders.iter() {
-                let priority = locked_priority_store.get_order_priority(order_id);
+                let priority = locked_priority_store.get_order_priority(order_id).await;
                 priorities.push(priority.get_effective_priority());
             }
         } // locked_priority_store released
@@ -331,13 +352,24 @@ impl RelayerState {
 
     /// Get a peer in the cluster that manages the given order, used to dial during
     /// handshake scheduling
-    pub fn get_peer_managing_order(&self, order_id: &OrderIdentifier) -> Option<WrappedPeerId> {
+    pub async fn get_peer_managing_order(
+        &self,
+        order_id: &OrderIdentifier,
+    ) -> Option<WrappedPeerId> {
         // Get the cluster that manages this order
-        let managing_cluster = { self.read_order_book().get_order_info(order_id)?.cluster };
+        let managing_cluster = {
+            self.read_order_book()
+                .await
+                .get_order_info(order_id)
+                .await?
+                .cluster
+        };
 
         // Get a peer in this cluster
         self.read_peer_index()
+            .await
             .sample_cluster_peer(&managing_cluster)
+            .await
     }
 
     // ----------------------
@@ -351,18 +383,18 @@ impl RelayerState {
     }
 
     /// Add a set of new peers to the global state
-    pub fn add_peers(
+    pub async fn add_peers(
         &self,
         peer_ids: &[WrappedPeerId],
         peer_info: &HashMap<WrappedPeerId, PeerInfo>,
     ) {
-        let mut locked_peer_index = self.write_peer_index();
+        let mut locked_peer_index = self.write_peer_index().await;
         for peer in peer_ids.iter() {
             // Skip this peer if peer info wasn't sent, or if their cluster auth signature doesn't verify
             if let Some(info) = peer_info.get(peer) && info.verify_cluster_auth_sig().is_ok() {
                 // Record a dummy heartbeat to setup the initial state
                 info.successful_heartbeat();
-                locked_peer_index.add_peer(info.clone())
+                locked_peer_index.add_peer(info.clone()).await
             } else {
                 continue;
             }
@@ -370,11 +402,11 @@ impl RelayerState {
     }
 
     /// Expire a set of peers that have been determined to have failed
-    pub fn remove_peer(&self, peer: &WrappedPeerId) {
+    pub async fn remove_peer(&self, peer: &WrappedPeerId) {
         // Update the peer index
-        self.write_peer_index().remove_peer(peer);
+        self.write_peer_index().await.remove_peer(peer);
         // Update the replicas set for any wallets replicated by the expired peer
-        self.read_wallet_index().remove_peer_replicas(peer);
+        self.read_wallet_index().await.remove_peer_replicas(peer);
     }
 
     // ----------------------
@@ -382,27 +414,30 @@ impl RelayerState {
     // ----------------------
 
     /// Add an order to the book
-    pub fn add_order(&self, order: NetworkOrder) {
+    pub async fn add_order(&self, order: NetworkOrder) {
         // Add the order to the book and to the priority store
         self.write_handshake_priorities()
+            .await
             .new_order(order.id, order.cluster.clone());
-        self.write_order_book().add_order(order);
+        self.write_order_book().await.add_order(order);
     }
 
     /// Add a validity proof for an order
-    pub fn add_order_validity_proof(
+    pub async fn add_order_validity_proof(
         &self,
         order_id: &OrderIdentifier,
         proof: ValidCommitmentsBundle,
     ) {
         self.write_order_book()
+            .await
             .update_order_validity_proof(order_id, proof)
+            .await
     }
 
     /// Nullify all orders with a given nullifier
-    pub fn nullify_orders(&self, nullifier: Nullifier) {
-        let mut locked_order_book = self.write_order_book();
-        let orders_to_nullify = locked_order_book.get_orders_by_nullifier(nullifier);
+    pub async fn nullify_orders(&self, nullifier: Nullifier) {
+        let mut locked_order_book = self.write_order_book().await;
+        let orders_to_nullify = locked_order_book.get_orders_by_nullifier(nullifier).await;
         for order_id in orders_to_nullify.into_iter() {
             locked_order_book.transition_cancelled(&order_id);
         }
@@ -419,9 +454,9 @@ impl RelayerState {
     ///
     /// This may happen at startup when a relayer advertises its presence to
     /// cluster peers; or when a new wallet is created on a remote cluster peer
-    pub fn add_wallets(&self, wallets: Vec<Wallet>) {
-        let mut locked_wallet_index = self.write_wallet_index();
-        let mut locked_order_book = self.write_order_book();
+    pub async fn add_wallets(&self, wallets: Vec<Wallet>) {
+        let mut locked_wallet_index = self.write_wallet_index().await;
+        let mut locked_order_book = self.write_order_book().await;
 
         for wallet in wallets.into_iter() {
             let wallet_match_nullifier = wallet.get_match_nullifier();
@@ -440,14 +475,14 @@ impl RelayerState {
 
     /// Mark an order pair as matched, this is both for bookkeeping and for
     /// order state updates that are available to the frontend
-    pub fn mark_order_pair_matched(&self, o1: OrderIdentifier, o2: OrderIdentifier) {
+    pub async fn mark_order_pair_matched(&self, o1: OrderIdentifier, o2: OrderIdentifier) {
         // Remove the scheduling priorities for the orders
-        let mut locked_handshake_priorities = self.write_handshake_priorities();
+        let mut locked_handshake_priorities = self.write_handshake_priorities().await;
         locked_handshake_priorities.remove_order(&o1);
         locked_handshake_priorities.remove_order(&o2);
 
         // Mark the order pair as matched
-        self.write_matched_order_pairs().push((o1, o2));
+        self.write_matched_order_pairs().await.push((o1, o2));
     }
 
     // -----------
@@ -455,94 +490,82 @@ impl RelayerState {
     // -----------
 
     /// Acquire a write lock on `local_addr`
-    pub fn write_local_addr(&self) -> RwLockWriteGuard<Multiaddr> {
-        self.local_addr.write().expect("local_addr lock poisoned")
+    pub async fn write_local_addr(&self) -> RwLockWriteGuard<Multiaddr> {
+        self.local_addr.write().await
     }
 
     /// Acquire a read lock on `managed_wallets`
-    pub fn read_wallet_index(&self) -> RwLockReadGuard<WalletIndex> {
-        self.wallet_index
-            .read()
-            .expect("managed_wallets lock poisoned")
+    pub async fn read_wallet_index(&self) -> RwLockReadGuard<WalletIndex> {
+        self.wallet_index.read().await
     }
 
     /// Acquire a write lock on `managed_wallets`
-    fn write_wallet_index(&self) -> RwLockWriteGuard<WalletIndex> {
-        self.wallet_index
-            .write()
-            .expect("managed_wallets lock poisoned")
+    async fn write_wallet_index(&self) -> RwLockWriteGuard<WalletIndex> {
+        self.wallet_index.write().await
     }
 
     /// Acquire a read lock on `known_peers`
-    pub fn read_peer_index(&self) -> RwLockReadGuard<PeerIndex> {
-        self.peer_index.read().expect("known_peers lock poisoned")
+    pub async fn read_peer_index(&self) -> RwLockReadGuard<PeerIndex> {
+        self.peer_index.read().await
     }
 
     /// Acquire a write lock on `known_peers`
-    fn write_peer_index(&self) -> RwLockWriteGuard<PeerIndex> {
-        self.peer_index.write().expect("known_peers lock poisoned")
+    async fn write_peer_index(&self) -> RwLockWriteGuard<PeerIndex> {
+        self.peer_index.write().await
     }
 
     /// Acquire a read lock on `order_book`
-    pub fn read_order_book(&self) -> RwLockReadGuard<NetworkOrderBook> {
-        self.order_book.read().expect("order_book lock poisoned")
+    pub async fn read_order_book(&self) -> RwLockReadGuard<NetworkOrderBook> {
+        self.order_book.read().await
     }
 
     /// Acquire a write lock on `order_book`
-    fn write_order_book(&self) -> RwLockWriteGuard<NetworkOrderBook> {
-        self.order_book.write().expect("order_book lock poisoned")
+    async fn write_order_book(&self) -> RwLockWriteGuard<NetworkOrderBook> {
+        self.order_book.write().await
     }
 
     /// Acquire a read lock on `matched_order_pairs`
     #[allow(unused)]
-    pub fn read_matched_order_pairs(
+    pub async fn read_matched_order_pairs(
         &self,
     ) -> RwLockReadGuard<Vec<(OrderIdentifier, OrderIdentifier)>> {
-        self.matched_order_pairs
-            .read()
-            .expect("matched_order_pairs lock poisoned")
+        self.matched_order_pairs.read().await
     }
 
     /// Acquire a write lock on `matched_order_pairs`
-    fn write_matched_order_pairs(
+    async fn write_matched_order_pairs(
         &self,
     ) -> RwLockWriteGuard<Vec<(OrderIdentifier, OrderIdentifier)>> {
-        self.matched_order_pairs
-            .write()
-            .expect("matched_order_pairs lock poisoned")
+        self.matched_order_pairs.write().await
     }
 
     /// Acquire a read lock on `handshake_priorities`
-    pub fn read_handshake_priorities(&self) -> RwLockReadGuard<HandshakePriorityStore> {
-        self.handshake_priorities
-            .read()
-            .expect("handshake_priorities lock poisoned")
+    pub async fn read_handshake_priorities(&self) -> RwLockReadGuard<HandshakePriorityStore> {
+        self.handshake_priorities.read().await
     }
 
     /// Acquire a write lock on `handshake_priorities`
-    fn write_handshake_priorities(&self) -> RwLockWriteGuard<HandshakePriorityStore> {
-        self.handshake_priorities
-            .write()
-            .expect("handshake_priorities lock poisoned")
+    async fn write_handshake_priorities(&self) -> RwLockWriteGuard<HandshakePriorityStore> {
+        self.handshake_priorities.write().await
     }
-}
 
-/// The derivation from global state to heartbeat message
-impl From<&RelayerState> for HeartbeatMessage {
-    fn from(state: &RelayerState) -> Self {
+    /// Construct a heartbeat message from the relayer state
+    pub async fn construct_heartbeat(&self) -> HeartbeatMessage {
         // Get a mapping from wallet ID to information
-        let wallet_info = state.read_wallet_index().get_metadata_map();
+        let wallet_info = self.read_wallet_index().await.get_metadata_map();
 
         // Convert peer info keys to strings for serialization/deserialization
-        let peer_info = state
+        let peer_info = self
             .read_peer_index()
+            .await
             .get_info_map()
+            .await
             .into_iter()
             .map(|(key, value)| (key.to_string(), value))
             .collect();
 
         // Get a list of all orders in the book
-        let order_info = state.read_order_book().get_order_owner_pairs();
+        let order_info = self.read_order_book().await.get_order_owner_pairs().await;
 
         HeartbeatMessage {
             managed_wallets: wallet_info,
