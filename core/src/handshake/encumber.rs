@@ -43,7 +43,7 @@ use super::{error::HandshakeManagerError, manager::HandshakeExecutor, r#match::H
 impl HandshakeExecutor {
     /// Entrypoint to the encumbering flow, creates notes, proves `VALID MATCH ENCRYPTION`,
     /// and submits the match bundle to the contract
-    pub(super) fn submit_match(
+    pub(super) async fn submit_match(
         &self,
         handshake_result: HandshakeResult,
     ) -> Result<(), HandshakeManagerError> {
@@ -157,7 +157,7 @@ impl HandshakeExecutor {
             randomness_protocol_ciphertext,
         };
 
-        self.prove_valid_encryption(witness, statement)?;
+        self.prove_valid_encryption(witness, statement).await?;
 
         Ok(())
     }
@@ -167,7 +167,7 @@ impl HandshakeExecutor {
     ///
     /// This code path is executed relatively infrequently (only when a valid match is found), so it
     /// is likely okay to directly block a thread in the pool. If this becomes an issue we can go async
-    fn prove_valid_encryption(
+    async fn prove_valid_encryption(
         &self,
         witness: ValidMatchEncryptionWitness,
         statement: ValidMatchEncryptionStatement,
@@ -183,7 +183,7 @@ impl HandshakeExecutor {
 
         // Await the proof manager's response
         let _proof = response_channel_receiver
-            .blocking_recv()
+            .await
             .map_err(|err| HandshakeManagerError::ReceiveProof(err.to_string()))?;
 
         log::info!("finished proving VALID MATCH ENCRYPTION, encumbering");

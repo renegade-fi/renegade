@@ -222,7 +222,6 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, CoordinatorError> {
             .expect("Invalid address passed as --bootstrap-server");
         let peer_id = PeerId::try_from_multiaddr(&parsed_addr)
             .expect("Invalid address passed as --bootstrap-server");
-        println!("parsed peer {}: {}", peer_id, parsed_addr);
         parsed_bootstrap_addrs.push((WrappedPeerId(peer_id), parsed_addr));
     }
 

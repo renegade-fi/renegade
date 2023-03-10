@@ -476,7 +476,7 @@ impl NetworkOrderBook {
             locked_order.attach_commitment_proof(proof);
         }
 
-        self.add_verified_order(*order_id);
+        self.add_verified_order(*order_id).await;
     }
 
     /// Attach a validity proof witness to the local order state
@@ -495,6 +495,8 @@ impl NetworkOrderBook {
         if !self.read_verified_orders().await.contains(&order_id) {
             self.write_verified_orders().await.insert(order_id);
         }
+
+        let orders = self.read_verified_orders().await.clone();
     }
 
     /// Remove an order from the verified orders list

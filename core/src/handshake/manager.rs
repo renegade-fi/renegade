@@ -232,13 +232,12 @@ impl HandshakeExecutor {
                 })
                 .await
                 .unwrap()?;
-                // let res = self.execute_match(request_id, party_id, net)?;
-
-                // Submit the match to the contract
-                self.submit_match(res)?;
 
                 // Record the match in the cache
-                self.record_completed_match(request_id).await
+                self.record_completed_match(request_id).await?;
+
+                // Submit the match to the contract
+                self.submit_match(res).await
             }
 
             // Indicates that in-flight MPCs on the given nullifier should be terminated

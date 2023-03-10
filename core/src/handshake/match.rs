@@ -31,7 +31,6 @@ use mpc_ristretto::{
     fabric::AuthenticatedMpcFabric,
     network::{MpcNetwork, QuicTwoPartyNet},
 };
-use tokio::runtime::Handle;
 use tracing::log;
 use uuid::Uuid;
 
@@ -99,16 +98,14 @@ impl HandshakeExecutor {
 
         // Wrap the current thread's execution in a Tokio blocking thread
         let self_clone = self.clone();
-        let res = Handle::current().block_on(async move {
-            self_clone
-                .execute_match_impl(
-                    party_id,
-                    handshake_state.to_owned(),
-                    mpc_net,
-                    cancel_receiver,
-                )
-                .await
-        })?;
+        let res = self_clone
+            .execute_match_impl(
+                party_id,
+                handshake_state.to_owned(),
+                mpc_net,
+                cancel_receiver,
+            )
+            .await?;
 
         // Await MPC completion
         log::info!("Finished match!");
@@ -126,8 +123,9 @@ impl HandshakeExecutor {
     ) -> Result<HandshakeResult, HandshakeManagerError> {
         log::info!("Matching order...");
         // Connect the network
-        Handle::current()
-            .block_on(mpc_net.connect())
+        mpc_net
+            .connect()
+            .await
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
         // Build a fabric
