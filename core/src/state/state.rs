@@ -1,6 +1,19 @@
 //! This file groups type definitions and helpers around global state that
 //! is passed around throughout the code
 
+use crate::{
+    api::{
+        gossip::{GossipOutbound, PubsubMessage},
+        heartbeat::HeartbeatMessage,
+        orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
+    },
+    gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
+    proof_generation::jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle},
+    state::orderbook::NetworkOrder,
+    system_bus::SystemBus,
+    types::SystemBusMessage,
+    MERKLE_HEIGHT,
+};
 use circuits::{
     native_helpers::compute_poseidon_hash,
     types::wallet::Nullifier,
@@ -24,20 +37,6 @@ use std::{
 };
 use tokio::sync::{
     mpsc::UnboundedSender, oneshot, RwLock as AsyncRwLock, RwLockReadGuard, RwLockWriteGuard,
-};
-
-use crate::{
-    api::{
-        gossip::{GossipOutbound, PubsubMessage},
-        heartbeat::HeartbeatMessage,
-        orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
-    },
-    gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
-    proof_generation::jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle},
-    state::orderbook::NetworkOrder,
-    system_bus::SystemBus,
-    types::SystemBusMessage,
-    MERKLE_HEIGHT,
 };
 
 use super::{

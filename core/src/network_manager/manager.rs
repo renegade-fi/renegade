@@ -98,15 +98,18 @@ impl NetworkManager {
     /// Setup global state after peer_id and address have been assigned
     pub(super) async fn update_global_state_after_startup(&self) {
         // Add self to peer info index
-        self.config.global_state.add_single_peer(
-            self.local_peer_id,
-            PeerInfo::new_with_cluster_secret_key(
+        self.config
+            .global_state
+            .add_single_peer(
                 self.local_peer_id,
-                self.cluster_id.clone(),
-                self.local_addr.clone(),
-                self.config.cluster_keypair.as_ref().unwrap(),
-            ),
-        ).await;
+                PeerInfo::new_with_cluster_secret_key(
+                    self.local_peer_id,
+                    self.cluster_id.clone(),
+                    self.local_addr.clone(),
+                    self.config.cluster_keypair.as_ref().unwrap(),
+                ),
+            )
+            .await;
     }
 
     /// Setup pubsub subscriptions for the network manager
