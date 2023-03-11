@@ -1,8 +1,17 @@
 //! Groups handlers for updating and managing order book state in response to
 //! events elsewhere in the local node or the network
 
+use std::str::FromStr;
+
 use circuits::{types::wallet::Nullifier, verify_singleprover_proof};
+use crypto::fields::{biguint_to_starknet_felt, scalar_to_biguint, starknet_felt_to_biguint};
 use libp2p::request_response::ResponseChannel;
+use starknet::core::{
+    types::{BlockId, CallFunction, FieldElement as StarknetFieldElement},
+    utils::get_selector_from_name,
+};
+use starknet_providers::Provider;
+use tracing::log;
 
 use crate::{
     api::{
@@ -24,6 +33,9 @@ use super::{
     server::GossipProtocolExecutor,
     types::{ClusterId, WrappedPeerId},
 };
+
+/// The darkpool contract's function name for checking nullifiers
+const NULLIFIER_USED_FUNCTION: &str = "is_nullifier_used";
 
 impl GossipProtocolExecutor {
     /// Dispatches messages from the cluster regarding order book management
@@ -54,8 +66,7 @@ impl GossipProtocolExecutor {
                 cluster,
             } => {
                 self.handle_new_order(order_id, match_nullifier, cluster)
-                    .await;
-                Ok(())
+                    .await
             }
 
             OrderBookManagementJob::OrderProofUpdated {
@@ -114,6 +125,15 @@ impl GossipProtocolExecutor {
         &self,
         mut order_info: NetworkOrder,
     ) -> Result<(), GossipError> {
+        // Ensure that the nullifier has not been used for this order
+        if !self
+            .check_nullifier_unused(order_info.match_nullifier)
+            .await?
+        {
+            log::info!("received order with spent nullifier, skipping...");
+            return Ok(());
+        }
+
         // If there is a proof attached to the order, verify it
         let is_local = order_info.cluster == self.global_state.local_cluster_id;
         if let Some(proof_bundle) = order_info.valid_commit_proof.clone() {
@@ -151,7 +171,13 @@ impl GossipProtocolExecutor {
         order_id: OrderIdentifier,
         match_nullifier: Nullifier,
         cluster: ClusterId,
-    ) {
+    ) -> Result<(), GossipError> {
+        // Ensure that the nullifier has not been used for this order
+        if !self.check_nullifier_unused(match_nullifier).await? {
+            log::info!("received order with spent nullifier, skipping...");
+            return Ok(());
+        }
+
         let is_local = cluster == self.global_state.local_cluster_id;
         self.global_state
             .add_order(NetworkOrder::new(
@@ -160,7 +186,8 @@ impl GossipProtocolExecutor {
                 cluster,
                 is_local,
             ))
-            .await
+            .await;
+        Ok(())
     }
 
     /// Handles a new validity proof attached to an order
@@ -173,6 +200,15 @@ impl GossipProtocolExecutor {
         cluster: ClusterId,
         proof_bundle: ValidCommitmentsBundle,
     ) -> Result<(), GossipError> {
+        // Ensure that the nullifier has not been used for this order
+        if !self
+            .check_nullifier_unused(proof_bundle.statement.nullifier)
+            .await?
+        {
+            log::info!("received order with spent nullifier, skipping...");
+            return Ok(());
+        }
+
         let is_local = cluster.eq(&self.global_state.local_cluster_id);
 
         // Verify the proof
@@ -296,5 +332,32 @@ impl GossipProtocolExecutor {
             .await
             .attach_validity_proof_witness(&order_id, witness)
             .await;
+    }
+
+    /// Checks that a nullifier has not been seen on-chain for a given order
+    async fn check_nullifier_unused(&self, nullifier: Nullifier) -> Result<bool, GossipError> {
+        // TODO: Remove this in favor of bigint implementation:
+        // Take the nullifier modulo the Starknet prime field
+        let nullifier_bigint = scalar_to_biguint(&nullifier);
+        let modulus_bigint = starknet_felt_to_biguint(&StarknetFieldElement::MAX) + 1u8;
+        let nullifier_mod_starknet_prime = nullifier_bigint % modulus_bigint;
+
+        let call = CallFunction {
+            contract_address: StarknetFieldElement::from_str(&self.config.contract_address)
+                .unwrap(),
+            entry_point_selector: get_selector_from_name(NULLIFIER_USED_FUNCTION).unwrap(),
+            calldata: vec![biguint_to_starknet_felt(&nullifier_mod_starknet_prime)],
+        };
+        let res = self
+            .starknet_client
+            .call_contract(call, BlockId::Pending)
+            .await
+            .map_err(|err| GossipError::StarknetRequest(err.to_string()))?;
+
+        if res.result[0].eq(&StarknetFieldElement::from(0u8)) {
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }

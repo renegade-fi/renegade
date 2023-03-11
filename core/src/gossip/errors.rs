@@ -15,6 +15,8 @@ pub enum GossipError {
     ServerSetup(String),
     /// An error forwarding a message to the network manager
     SendMessage(String),
+    /// An error occurred making a request to a StarkNet node
+    StarknetRequest(String),
     /// Timer failed to send a heartbeat
     TimerFailed(String),
     /// An error verifying a peer's proof of `VALID COMMITMENTS`

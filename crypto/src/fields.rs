@@ -43,6 +43,15 @@ pub fn scalar_to_prime_field(a: &Scalar) -> DalekRistrettoField {
     Fp256::from(scalar_to_biguint(a))
 }
 
+/// Converts a dalek scalar to a StarkNet field element
+pub fn scalar_to_starknet_felt(a: &Scalar) -> StarknetFieldElement {
+    // A dalek scalar stores its bytes in little-endian order and
+    // a Starknet felt stores its bytes in big-endian order
+    let mut bytes = a.to_bytes();
+    bytes.reverse();
+    StarknetFieldElement::from_bytes_be(&bytes).unwrap()
+}
+
 // ----------------------------
 // | Conversions from Bigints |
 // ----------------------------
@@ -92,6 +101,12 @@ pub fn bigint_to_scalar_bits<const D: usize>(a: &BigInt) -> Vec<Scalar> {
     res
 }
 
+/// Convert a biguint to a Starknet field element
+pub fn biguint_to_starknet_felt(a: &BigUint) -> StarknetFieldElement {
+    // Simpler than padding bytes
+    scalar_to_starknet_felt(&biguint_to_scalar(a))
+}
+
 // -----------------------------------------
 // | Conversions from Arkworks Field Types |
 // -----------------------------------------
@@ -123,6 +138,11 @@ pub fn starknet_felt_to_scalar(element: &StarknetFieldElement) -> Scalar {
     let mut felt_bytes = element.to_bytes_be();
     felt_bytes.reverse();
     Scalar::from_bytes_mod_order(felt_bytes)
+}
+
+/// Convert from a Starknet felt to a BigUint
+pub fn starknet_felt_to_biguint(element: &StarknetFieldElement) -> BigUint {
+    BigUint::from_bytes_be(&element.to_bytes_be())
 }
 
 // ---------

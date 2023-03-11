@@ -6,6 +6,7 @@ use std::thread::{Builder, JoinHandle};
 use tokio::runtime::Builder as RuntimeBuilder;
 use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};
 
+use crate::default_wrapper::DefaultWrapper;
 use crate::{api::gossip::GossipOutbound, state::RelayerState, worker::Worker, CancelChannel};
 
 use super::server::{GOSSIP_EXECUTOR_N_BLOCKING_THREADS, GOSSIP_EXECUTOR_N_THREADS};
@@ -17,27 +18,29 @@ use super::{
 };
 
 /// The configuration passed from the coordinator to the GossipServer
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GossipServerConfig {
     /// The libp2p PeerId of the local peer
-    pub(crate) local_peer_id: WrappedPeerId,
+    pub local_peer_id: WrappedPeerId,
     /// The multiaddr of the local peer
-    pub(crate) local_addr: Multiaddr,
+    pub local_addr: Multiaddr,
     /// The cluster ID of the local peer
-    pub(crate) cluster_id: ClusterId,
+    pub cluster_id: ClusterId,
+    /// The address of the darkpool contract deployment
+    pub contract_address: String,
     /// The servers to bootstrap into the network with
-    pub(crate) bootstrap_servers: Vec<(WrappedPeerId, Multiaddr)>,
+    pub bootstrap_servers: Vec<(WrappedPeerId, Multiaddr)>,
     /// A reference to the relayer-global state
-    pub(crate) global_state: RelayerState,
+    pub global_state: RelayerState,
     /// A job queue to send outbound heartbeat requests on
     pub(crate) job_sender: TokioSender<GossipServerJob>,
     /// A job queue to receive inbound heartbeat requests on
-    pub(crate) job_receiver: Option<TokioReceiver<GossipServerJob>>,
+    pub(crate) job_receiver: DefaultWrapper<Option<TokioReceiver<GossipServerJob>>>,
     /// A job queue to send outbound network requests on
-    pub(crate) network_sender: TokioSender<GossipOutbound>,
+    pub network_sender: TokioSender<GossipOutbound>,
     /// The channel on which the coordinator may mandate that the
     /// gossip server cancel its execution
-    pub(crate) cancel_channel: CancelChannel,
+    pub cancel_channel: CancelChannel,
 }
 
 impl Worker for GossipServer {
@@ -67,10 +70,10 @@ impl Worker for GossipServer {
         // Start the heartbeat executor, this worker manages pinging peers and responding to
         // heartbeat requests from peers
         let protocol_executor = GossipProtocolExecutor::new(
-            self.config.local_peer_id,
             self.config.network_sender.clone(),
             self.config.job_receiver.take().unwrap(),
             self.config.global_state.clone(),
+            self.config.clone(),
             self.config.cancel_channel.clone(),
         )?;
 

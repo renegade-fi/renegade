@@ -4,6 +4,7 @@
 //! loop of the workers
 
 use lru::LruCache;
+use starknet_providers::SequencerGatewayProvider;
 use std::{
     collections::HashMap,
     num::NonZeroUsize,
@@ -176,20 +177,22 @@ impl GossipServer {
 // ---------------------
 
 /// Executes the heartbeat protocols
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct GossipProtocolExecutor {
-    /// The peer ID of the local node
-    pub(super) local_peer_id: WrappedPeerId,
     /// The peer expiry cache holds peers in an invisibility window so that when a peer is
     /// expired, it cannot be incorrectly re-discovered for some time, until its expiry
     /// has had time to propagate
     pub(super) peer_expiry_cache: SharedLRUCache,
     /// The channel on which to receive jobs
     pub(super) job_receiver: DefaultWrapper<Option<TokioReceiver<GossipServerJob>>>,
+    /// The StarkNet provider for API access
+    pub(super) starknet_client: SequencerGatewayProvider,
     /// The channel to send outbound network requests on
     pub(super) network_channel: TokioSender<GossipOutbound>,
     /// The global state of the relayer
     pub(super) global_state: RelayerState,
+    /// A copy of the config passed to the worker
+    pub(super) config: GossipServerConfig,
     /// The channel that the coordinator thread uses to cancel gossip execution
     pub(super) cancel_channel: CancelChannel,
 }
@@ -197,10 +200,10 @@ pub struct GossipProtocolExecutor {
 impl GossipProtocolExecutor {
     /// Creates a new executor
     pub fn new(
-        local_peer_id: WrappedPeerId,
         network_channel: TokioSender<GossipOutbound>,
         job_receiver: TokioReceiver<GossipServerJob>,
         global_state: RelayerState,
+        config: GossipServerConfig,
         cancel_channel: CancelChannel,
     ) -> Result<Self, GossipError> {
         // Tracks recently expired peers and blocks them from being re-registered
@@ -208,12 +211,16 @@ impl GossipProtocolExecutor {
         let peer_expiry_cache: SharedLRUCache =
             new_async_shared(LruCache::new(NonZeroUsize::new(EXPIRY_CACHE_SIZE).unwrap()));
 
+        // Connect a client to the StarkNet gateway
+        let starknet_client = SequencerGatewayProvider::starknet_alpha_goerli();
+
         Ok(Self {
-            local_peer_id,
             peer_expiry_cache,
             job_receiver: DefaultWrapper::new(Some(job_receiver)),
+            starknet_client,
             network_channel,
             global_state,
+            config,
             cancel_channel,
         })
     }

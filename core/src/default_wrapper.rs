@@ -17,6 +17,12 @@ use std::{
 /// be taken or cloned once.
 pub struct DefaultWrapper<D: Default>(D);
 
+impl<D: Default> From<D> for DefaultWrapper<D> {
+    fn from(d: D) -> Self {
+        Self(d)
+    }
+}
+
 impl<D: Default> DefaultWrapper<D> {
     /// Wrap a value
     pub fn new(d: D) -> Self {

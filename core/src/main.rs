@@ -47,7 +47,6 @@ use crate::{
     api::gossip::GossipOutbound,
     api_server::{server::ApiServer, worker::ApiServerConfig},
     chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig},
-    default_wrapper::DefaultWrapper,
     gossip::{jobs::GossipServerJob, server::GossipServer},
     handshake::{jobs::HandshakeExecutionJob, manager::HandshakeManager},
     network_manager::manager::NetworkManager,
@@ -206,10 +205,11 @@ async fn main() -> Result<(), CoordinatorError> {
         local_peer_id: network_manager.local_peer_id,
         local_addr: network_manager.local_addr.clone(),
         cluster_id: args.cluster_id,
+        contract_address: args.contract_address.clone(),
         bootstrap_servers: args.bootstrap_servers,
         global_state: global_state.clone(),
         job_sender: gossip_worker_sender.clone(),
-        job_receiver: Some(gossip_worker_receiver),
+        job_receiver: Some(gossip_worker_receiver).into(),
         network_sender: network_sender.clone(),
         cancel_channel: gossip_cancel_receiver,
     })
@@ -244,7 +244,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (price_reporter_cancel_sender, price_reporter_cancel_receiver) = watch::channel(());
     let mut price_reporter_manager = PriceReporterManager::new(PriceReporterManagerConfig {
         system_bus: system_bus.clone(),
-        job_receiver: DefaultWrapper::new(Some(price_reporter_worker_receiver)),
+        job_receiver: Some(price_reporter_worker_receiver).into(),
         cancel_channel: price_reporter_cancel_receiver,
         coinbase_api_key: args.coinbase_api_key,
         coinbase_api_secret: args.coinbase_api_secret,
