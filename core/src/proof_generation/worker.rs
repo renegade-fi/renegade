@@ -9,7 +9,7 @@ use std::{
 use crossbeam::channel::Receiver;
 use rayon::ThreadPoolBuilder;
 
-use crate::worker::Worker;
+use crate::{worker::Worker, CancelChannel};
 
 use super::{
     error::ProofManagerError,
@@ -27,7 +27,7 @@ pub struct ProofManagerConfig {
     pub job_queue: Receiver<ProofManagerJob>,
     /// The cancel channel that the coordinator uses to signal to the proof generation
     /// module that it should shut down
-    pub cancel_channel: Receiver<()>,
+    pub cancel_channel: CancelChannel,
 }
 
 impl Worker for ProofManager {
@@ -48,6 +48,7 @@ impl Worker for ProofManager {
             job_queue: Some(config.job_queue),
             join_handle: None,
             thread_pool: Arc::new(proof_generation_thread_pool),
+            cancel_channel: config.cancel_channel,
         })
     }
 
@@ -63,9 +64,14 @@ impl Worker for ProofManager {
         // Take ownership of the thread pool and job queue
         let job_queue = self.job_queue.take().unwrap();
         let thread_pool = self.thread_pool.clone();
+        let cancel_channel = self.cancel_channel.clone();
         let handle = Builder::new()
             .name(MAIN_THREAD_NAME.to_string())
-            .spawn(move || Self::execution_loop(job_queue, thread_pool).err().unwrap())
+            .spawn(move || {
+                Self::execution_loop(job_queue, thread_pool, cancel_channel)
+                    .err()
+                    .unwrap()
+            })
             .map_err(|err| ProofManagerError::Setup(err.to_string()))?;
 
         self.join_handle = Some(handle);

@@ -28,7 +28,7 @@ use curve25519_dalek::scalar::Scalar;
 use rayon::ThreadPool;
 use tracing::log;
 
-use crate::{proof_generation::jobs::ProofJob, SizedWallet, MAX_FEES};
+use crate::{proof_generation::jobs::ProofJob, CancelChannel, SizedWallet, MAX_FEES};
 
 use super::{
     error::ProofManagerError,
@@ -62,6 +62,8 @@ pub struct ProofManager {
     pub(crate) join_handle: Option<JoinHandle<ProofManagerError>>,
     /// The threadpool of workers generating proofs for the system
     pub(crate) thread_pool: Arc<ThreadPool>,
+    /// The channel on which a coordinator may cancel execution
+    pub(crate) cancel_channel: CancelChannel,
 }
 
 impl ProofManager {
@@ -70,8 +72,20 @@ impl ProofManager {
     pub(crate) fn execution_loop(
         job_queue: Receiver<ProofManagerJob>,
         thread_pool: Arc<ThreadPool>,
+        cancel_channel: CancelChannel,
     ) -> Result<(), ProofManagerError> {
         loop {
+            // Check the cancel channel before blocking on a job
+            if cancel_channel
+                .has_changed()
+                .map_err(|err| ProofManagerError::RecvError(err.to_string()))?
+            {
+                log::info!("Proof manager cancelled, shutting down...");
+                return Err(ProofManagerError::Cancelled(
+                    "received cancel signal".to_string(),
+                ));
+            }
+
             // Dequeue the next job and hand it to the thread pool
             let job = job_queue
                 .recv()

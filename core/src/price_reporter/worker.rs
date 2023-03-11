@@ -1,10 +1,12 @@
 //! Defines the Worker logic for the PriceReporterManger, which simply dispatches jobs to the
 //! PriceReporterManagerExecutor.
-use crossbeam::channel::Receiver;
 use std::thread::{self, JoinHandle};
-use tokio::runtime::Builder as TokioBuilder;
+use tokio::{runtime::Builder as TokioBuilder, sync::mpsc::UnboundedReceiver as TokioReceiver};
 
-use crate::{system_bus::SystemBus, types::SystemBusMessage, worker::Worker, CancelChannel};
+use crate::{
+    default_wrapper::DefaultWrapper, system_bus::SystemBus, types::SystemBusMessage,
+    worker::Worker, CancelChannel,
+};
 
 use super::{
     errors::PriceReporterManagerError,
@@ -22,7 +24,7 @@ pub struct PriceReporterManagerConfig {
     /// The global system bus
     pub(crate) system_bus: SystemBus<SystemBusMessage>,
     /// The receiver for jobs from other workers
-    pub(crate) job_receiver: Receiver<PriceReporterManagerJob>,
+    pub(crate) job_receiver: DefaultWrapper<Option<TokioReceiver<PriceReporterManagerJob>>>,
     /// The coinbase API key that the price reporter may use
     pub(crate) coinbase_api_key: Option<String>,
     /// The coinbase API secret that the price reporter may use
@@ -87,40 +89,28 @@ impl Worker for PriceReporterManager {
             .map_err(|err| PriceReporterManagerError::ManagerSetup(err.to_string()))?;
 
         // Start the loop that dispatches incoming jobs to the executor
-        let tokio_handle = tokio_runtime.handle().clone();
-        let mut manager_executor = PriceReporterManagerExecutor::new(
-            self.config.system_bus.clone(),
-            tokio_handle,
+        let manager_executor = PriceReporterManagerExecutor::new(
+            self.config.job_receiver.take().unwrap(),
             self.config.clone(),
+            self.config.cancel_channel.clone(),
+            self.config.system_bus.clone(),
         )?;
-        let config = self.config.clone();
+
         let manager_executor_handle = {
             thread::Builder::new()
                 .name("price-reporter-manager-executor".to_string())
-                .spawn(move || loop {
-                    // Check for cancel before sleeping
-                    if !config.cancel_channel.is_empty() {
-                        return PriceReporterManagerError::Cancelled(
-                            "received cancel signal".to_string(),
-                        );
-                    }
-                    // Dequeue the next job
-                    let job = config.job_receiver.recv().expect("recv should not panic");
-                    // Check for cancel after receiving job
-                    if !config.cancel_channel.is_empty() {
-                        return PriceReporterManagerError::Cancelled(
-                            "received cancel signal".to_string(),
-                        );
-                    }
-                    // Send the job to the executor
-                    let execution_result = manager_executor.handle_job(job);
-                    if let Err(manager_error) = execution_result {
-                        println!(
-                            "Error in PriceReporterManager execution loop: {}",
-                            manager_error
-                        );
-                        return manager_error;
-                    }
+                .spawn(move || {
+                    // Build a tokio runtime to drive the price reporter
+                    let runtime = TokioBuilder::new_multi_thread()
+                        .worker_threads(PRICE_REPORTER_MANAGER_NUM_THREADS)
+                        .enable_all()
+                        .build()
+                        .unwrap();
+
+                    runtime
+                        .block_on(manager_executor.execution_loop())
+                        .err()
+                        .unwrap()
                 })
                 .map_err(|err| PriceReporterManagerError::ManagerSetup(err.to_string()))
         }?;

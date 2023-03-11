@@ -5,10 +5,7 @@ use crossbeam::channel::Sender as CrossbeamSender;
 use futures::executor::block_on;
 use libp2p::request_response::ResponseChannel;
 use portpicker::pick_unused_port;
-use std::{
-    thread::{self, JoinHandle},
-    time::Duration,
-};
+use std::{thread::JoinHandle, time::Duration};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::log;
 use uuid::Uuid;
@@ -84,7 +81,7 @@ pub struct HandshakeExecutor {
     /// The system bus used to publish internal broadcast messages
     pub(super) system_bus: SystemBus<SystemBusMessage>,
     /// The channel on which the coordinator thread may cancel handshake execution
-    pub(super) cancel: Option<CancelChannel>,
+    pub(super) cancel: CancelChannel,
 }
 
 impl HandshakeExecutor {
@@ -109,36 +106,32 @@ impl HandshakeExecutor {
             proof_manager_work_queue,
             global_state,
             system_bus,
-            cancel: Some(cancel),
+            cancel,
         })
     }
 
     /// The main loop: dequeues jobs and forwards them to the thread pool
     pub async fn execution_loop(mut self) -> HandshakeManagerError {
-        let cancel = self.cancel.take().unwrap();
         let mut job_channel = self.job_channel.take().unwrap();
 
         loop {
-            // Check if the coordinator has cancelled the handshake manager
-            if !cancel.is_empty() {
-                return HandshakeManagerError::Cancelled("received cancel signal".to_string());
-            }
+            // Await the next job from the scheduler or elsewhere
+            tokio::select! {
+                Some(job) = job_channel.recv() => {
+                    let self_clone = self.clone();
+                    tokio::task::spawn(async move {
+                        if let Err(e) = self_clone.handle_handshake_job(job).await {
+                            log::info!("error executing handshake: {e}")
+                        }
+                    });
+                },
 
-            // Wait for the next message and forward to the thread pool
-            let job = job_channel.recv().await.unwrap();
-
-            // After blocking, check again for a cancel signal
-            if !cancel.is_empty() {
-                return HandshakeManagerError::Cancelled("received cancel signal".to_string());
-            }
-
-            // Otherwise, install the job into the thread pool
-            let self_clone = self.clone();
-            tokio::task::spawn(async move {
-                if let Err(e) = self_clone.handle_handshake_job(job).await {
-                    log::info!("error executing handshake: {e}")
+                // Await cancellation by the coordinator
+                _ = self.cancel.changed() => {
+                    log::info!("Handshake manager received cancel signal, shutting down...");
+                    return HandshakeManagerError::Cancelled("received cancel signal".to_string());
                 }
-            });
+            }
         }
     }
 }
@@ -686,33 +679,32 @@ impl HandshakeScheduler {
     }
 
     /// The execution loop of the timer, periodically enqueues handshake jobs
-    pub async fn execution_loop(self) -> HandshakeManagerError {
+    pub async fn execution_loop(mut self) -> HandshakeManagerError {
         let interval_seconds = HANDSHAKE_INTERVAL_MS / 1000;
         let interval_nanos = (HANDSHAKE_INTERVAL_MS % 1000 * NANOS_PER_MILLI) as u32;
 
         let refresh_interval = Duration::new(interval_seconds, interval_nanos);
 
-        // Enqueue handshakes periodically
         loop {
-            // Enqueue a job to handshake with the randomly selected peer
-            if let Some(order) = self.global_state.choose_handshake_order().await {
-                if let Err(e) = self
-                    .job_sender
-                    .send(HandshakeExecutionJob::PerformHandshake { order })
-                    .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))
-                {
-                    return e;
+            tokio::select! {
+                // Enqueue handshakes periodically according to a timer
+                _ = tokio::time::sleep(refresh_interval) => {
+                    // Enqueue a job to handshake with the randomly selected peer
+                    if let Some(order) = self.global_state.choose_handshake_order().await {
+                        if let Err(e) = self
+                            .job_sender
+                            .send(HandshakeExecutionJob::PerformHandshake { order })
+                            .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))
+                        {
+                            return e;
+                        }
+                    }
+                },
+
+                _ = self.cancel.changed() => {
+                    log::info!("Handshake manager cancelled, winding down");
+                    return HandshakeManagerError::Cancelled("received cancel signal".to_string());
                 }
-            }
-
-            // Check for a cancel signal before sleeping and after
-            if !self.cancel.is_empty() {
-                return HandshakeManagerError::Cancelled("received cancel signal".to_string());
-            }
-
-            thread::sleep(refresh_interval);
-            if !self.cancel.is_empty() {
-                return HandshakeManagerError::Cancelled("received cancel signal".to_string());
             }
         }
     }

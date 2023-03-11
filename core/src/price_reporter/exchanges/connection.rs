@@ -6,10 +6,7 @@ use std::{
     num::NonZeroUsize,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::{
-    runtime::Handle,
-    time::{sleep, Duration},
-};
+use tokio::time::{sleep, Duration};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use url::Url;
 
@@ -122,7 +119,6 @@ impl ExchangeConnection {
         base_token: Token,
         quote_token: Token,
         exchange: Exchange,
-        tokio_handle: Handle,
         config: PriceReporterManagerConfig,
     ) -> Result<(RingReceiver<PriceReport>, WorkerHandles), ExchangeConnectionError> {
         // Create the vector of JoinHandles for all spawned threads.
@@ -139,7 +135,6 @@ impl ExchangeConnection {
                 base_token,
                 quote_token,
                 price_report_sender,
-                tokio_handle,
                 config,
             )
             .await?;
@@ -202,7 +197,7 @@ impl ExchangeConnection {
         .await;
         if let Some(pre_stream_price_report) = pre_stream_price_report? {
             let mut price_report_sender_clone = price_report_sender.clone();
-            tokio_handle.spawn(async move {
+            tokio::spawn(async move {
                 // TODO: Sleeping is a somewhat hacky way of ensuring that the
                 // pre_stream_price_report is received.
                 sleep(Duration::from_secs(5)).await;
@@ -284,7 +279,7 @@ impl ExchangeConnection {
 
         // Start listening for inbound messages.
         let (mut socket_sink, mut socket_stream) = socket.split();
-        let worker_handle = tokio_handle.spawn(async move {
+        let worker_handle = tokio::spawn(async move {
             loop {
                 let message =
                     socket_stream.next().await.unwrap().map_err(|err| {
@@ -296,7 +291,7 @@ impl ExchangeConnection {
         worker_handles.push(worker_handle);
 
         // Periodically send a ping to prevent websocket hangup
-        let worker_handle = tokio_handle.spawn(async move {
+        let worker_handle = tokio::spawn(async move {
             loop {
                 sleep(Duration::from_secs(15)).await;
                 if exchange == Exchange::Okx {

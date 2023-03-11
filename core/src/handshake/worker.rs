@@ -3,7 +3,6 @@
 use std::thread::{Builder, JoinHandle};
 
 use crossbeam::channel::Sender as CrossbeamSender;
-use futures::executor::block_on;
 use tokio::{
     runtime::Builder as RuntimeBuilder,
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
@@ -110,7 +109,13 @@ impl Worker for HandshakeManager {
         let scheduler = self.scheduler.take().unwrap();
         let scheduler_handle = Builder::new()
             .name("handshake-scheduler-main".to_string())
-            .spawn(move || block_on(scheduler.execution_loop()))
+            .spawn(move || {
+                let runtime = RuntimeBuilder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                runtime.block_on(scheduler.execution_loop())
+            })
             .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
 
         self.executor_handle = Some(executor_handle);

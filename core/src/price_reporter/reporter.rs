@@ -11,7 +11,6 @@ use std::{
     num::NonZeroUsize,
     sync::{Arc, RwLock},
 };
-use tokio::runtime::Handle;
 
 use super::{
     errors::ExchangeConnectionError,
@@ -119,12 +118,7 @@ pub struct PriceReporter {
 
 impl PriceReporter {
     /// Creates a new PriceReporter.
-    pub fn new(
-        base_token: Token,
-        quote_token: Token,
-        tokio_handle: Handle,
-        config: PriceReporterManagerConfig,
-    ) -> Self {
+    pub fn new(base_token: Token, quote_token: Token, config: PriceReporterManagerConfig) -> Self {
         // Pre-compute some data about the Token pair.
         let is_named = base_token.is_named() && quote_token.is_named();
         let (base_token_decimals, quote_token_decimals) =
@@ -154,19 +148,12 @@ impl PriceReporter {
             quote_token: Token,
             exchange: Exchange,
             mut all_price_reports_sender: RingSender<PriceReport>,
-            tokio_handle: Handle,
             config: PriceReporterManagerConfig,
         ) -> Result<(), ExchangeConnectionError> {
             let (mut price_report_receiver, mut worker_handles) =
-                ExchangeConnection::create_receiver(
-                    base_token,
-                    quote_token,
-                    exchange,
-                    tokio_handle.clone(),
-                    config,
-                )
-                .await?;
-            let worker_handle = tokio_handle.spawn(async move {
+                ExchangeConnection::create_receiver(base_token, quote_token, exchange, config)
+                    .await?;
+            let worker_handle = tokio::spawn(async move {
                 loop {
                     let price_report = price_report_receiver.next().await.ok_or_else(|| {
                         ExchangeConnectionError::ConnectionHangup(
@@ -198,11 +185,9 @@ impl PriceReporter {
             let base_token = base_token.clone();
             let quote_token = quote_token.clone();
             let all_price_reports_sender = all_price_reports_sender.clone();
-            let tokio_handle1 = tokio_handle.clone();
-            let tokio_handle2 = tokio_handle.clone();
             let config_clone = config.clone();
 
-            let exchange_connection_worker_handle = tokio_handle1.spawn(async move {
+            let exchange_connection_worker_handle = tokio::spawn(async move {
                 let mut num_failures = 0;
                 loop {
                     if num_failures >= MAX_CONNECTION_FAILURES {
@@ -215,12 +200,11 @@ impl PriceReporter {
                     let quote_token = quote_token.clone();
                     let all_price_reports_sender = all_price_reports_sender.clone();
                     let config_clone = config_clone.clone();
-                    let exchange_connection_handle = tokio_handle2.spawn(connect_to_exchange(
+                    let exchange_connection_handle = tokio::spawn(connect_to_exchange(
                         base_token,
                         quote_token,
                         exchange,
                         all_price_reports_sender,
-                        tokio_handle2.clone(),
                         config_clone,
                     ));
                     let exchange_connection_error =
@@ -257,7 +241,7 @@ impl PriceReporter {
                 .insert(*exchange, vec![]);
         }
         let price_report_exchanges_senders_clone = price_report_exchanges_senders.clone();
-        tokio_handle.spawn(async move {
+        tokio::spawn(async move {
             loop {
                 // Receive a new (Exchange, PriceReport) from the aggregate stream.
                 let mut price_report = all_price_reports_receiver.next().await.unwrap();
@@ -305,7 +289,7 @@ impl PriceReporter {
                 .unwrap()
                 .push(sender);
             let price_report_exchanges_latest_clone = price_report_exchanges_latest.clone();
-            tokio_handle.spawn(async move {
+            tokio::spawn(async move {
                 loop {
                     let price_report = receiver.next().await.unwrap();
                     price_report_exchanges_latest_clone
@@ -339,7 +323,7 @@ impl PriceReporter {
         let quote_token_clone = quote_token.clone();
         let active_exchanges_clone = active_exchanges.clone();
 
-        tokio_handle.spawn(async move {
+        tokio::spawn(async move {
             let mut current_price_reports = HashMap::<Exchange, PriceReport>::new();
             for exchange in active_exchanges_clone.iter() {
                 current_price_reports.insert(*exchange, PriceReport::default());

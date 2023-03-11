@@ -1,24 +1,24 @@
 //! Defines the implementation of the `Worker` trait for the ApiServer
 
-use std::{
-    convert::Infallible,
-    net::SocketAddr,
-    sync::Arc,
-    thread::{self, JoinHandle},
-};
-
-use crossbeam::channel::{Receiver, Sender};
+use crossbeam::channel::Sender as CrossbeamSender;
 use futures::executor::block_on;
 use hyper::{
     server::conn::AddrStream,
     service::{make_service_fn, service_fn},
     Body, Error, Request, Server,
 };
-use tokio::runtime::Builder as TokioBuilder;
+use std::{
+    convert::Infallible,
+    net::SocketAddr,
+    sync::Arc,
+    thread::{self, JoinHandle},
+};
+use tokio::{runtime::Builder as TokioBuilder, sync::mpsc::UnboundedSender as TokioSender};
 
 use crate::{
     price_reporter::jobs::PriceReporterManagerJob, proof_generation::jobs::ProofManagerJob,
     state::RelayerState, system_bus::SystemBus, types::SystemBusMessage, worker::Worker,
+    CancelChannel,
 };
 
 use super::{error::ApiServerError, routes::Router, server::ApiServer};
@@ -34,9 +34,9 @@ pub struct ApiServerConfig {
     /// The port that the websocket server should listen on
     pub websocket_port: u16,
     /// The worker job queue for the PriceReporterManager
-    pub price_reporter_work_queue: Sender<PriceReporterManagerJob>,
+    pub price_reporter_work_queue: TokioSender<PriceReporterManagerJob>,
     /// The worker job queue for the ProofGenerationManager
-    pub proof_generation_work_queue: Sender<ProofManagerJob>,
+    pub proof_generation_work_queue: CrossbeamSender<ProofManagerJob>,
     /// The relayer-global state
     pub global_state: RelayerState,
     /// The system pubsub bus that all workers have access to
@@ -44,7 +44,7 @@ pub struct ApiServerConfig {
     /// websocket connections
     pub system_bus: SystemBus<SystemBusMessage>,
     /// The channel to receive cancellation signals on from the coordinator
-    pub cancel_channel: Receiver<()>,
+    pub cancel_channel: CancelChannel,
 }
 
 impl Worker for ApiServer {

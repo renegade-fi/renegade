@@ -26,7 +26,7 @@ use std::{io::Write, process::exit, thread, time::Duration};
 
 use chrono::Local;
 use circuits::{types::wallet::Wallet, zk_gadgets::fixed_point::FixedPoint};
-use crossbeam::channel::{self, Receiver};
+use crossbeam::channel;
 use env_logger::Builder;
 use error::CoordinatorError;
 use gossip::worker::GossipServerConfig;
@@ -34,17 +34,24 @@ use handshake::worker::HandshakeManagerConfig;
 use network_manager::worker::NetworkManagerConfig;
 use num_bigint::BigUint;
 use price_reporter::worker::PriceReporterManagerConfig;
-use tokio::{select, sync::mpsc};
+use tokio::{
+    select,
+    sync::{
+        mpsc,
+        watch::{self, Receiver as WatchReceiver},
+    },
+};
 use tracing::log::{self, LevelFilter};
 
 use crate::{
     api::gossip::GossipOutbound,
     api_server::{server::ApiServer, worker::ApiServerConfig},
     chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig},
+    default_wrapper::DefaultWrapper,
     gossip::{jobs::GossipServerJob, server::GossipServer},
     handshake::{jobs::HandshakeExecutionJob, manager::HandshakeManager},
     network_manager::manager::NetworkManager,
-    price_reporter::manager::PriceReporterManager,
+    price_reporter::{jobs::PriceReporterManagerJob, manager::PriceReporterManager},
     proof_generation::{proof_manager::ProofManager, worker::ProofManagerConfig},
     state::RelayerState,
     system_bus::SystemBus,
@@ -59,7 +66,7 @@ use crate::state::tui::StateTuiApp;
 extern crate lazy_static;
 
 /// A type alias for an empty channel used to signal cancellation to workers
-pub(crate) type CancelChannel = Receiver<()>;
+pub(crate) type CancelChannel = WatchReceiver<()>;
 
 // --------------------
 // | Global Constants |
@@ -127,7 +134,8 @@ async fn main() -> Result<(), CoordinatorError> {
         mpsc::unbounded_channel::<GossipServerJob>();
     let (handshake_worker_sender, handshake_worker_receiver) =
         mpsc::unbounded_channel::<HandshakeExecutionJob>();
-    let (price_reporter_worker_sender, price_reporter_worker_receiver) = channel::unbounded();
+    let (price_reporter_worker_sender, price_reporter_worker_receiver) =
+        mpsc::unbounded_channel::<PriceReporterManagerJob>();
     let (proof_generation_worker_sender, proof_generation_worker_receiver) = channel::unbounded();
 
     // Construct the global state and warm up the config orders by generating proofs of `VALID COMMITMENTS`
@@ -171,7 +179,7 @@ async fn main() -> Result<(), CoordinatorError> {
     // ----------------
 
     // Start the network manager
-    let (network_cancel_sender, network_cancel_receiver) = channel::bounded(1 /* capacity */);
+    let (network_cancel_sender, network_cancel_receiver) = watch::channel(());
     let network_manager_config = NetworkManagerConfig {
         port: args.p2p_port,
         cluster_id: args.cluster_id.clone(),
@@ -193,7 +201,7 @@ async fn main() -> Result<(), CoordinatorError> {
     watch_worker::<NetworkManager>(&mut network_manager, network_failure_sender);
 
     // Start the gossip server
-    let (gossip_cancel_sender, gossip_cancel_receiver) = channel::bounded(1 /* capacity */);
+    let (gossip_cancel_sender, gossip_cancel_receiver) = watch::channel(());
     let mut gossip_server = GossipServer::new(GossipServerConfig {
         local_peer_id: network_manager.local_peer_id,
         local_addr: network_manager.local_addr.clone(),
@@ -214,8 +222,7 @@ async fn main() -> Result<(), CoordinatorError> {
     watch_worker::<GossipServer>(&mut gossip_server, gossip_failure_sender);
 
     // Start the handshake manager
-    let (handshake_cancel_sender, handshake_cancel_receiver) =
-        channel::bounded(1 /* capacity */);
+    let (handshake_cancel_sender, handshake_cancel_receiver) = watch::channel(());
     let mut handshake_manager = HandshakeManager::new(HandshakeManagerConfig {
         global_state: global_state.clone(),
         network_channel: network_sender,
@@ -234,11 +241,10 @@ async fn main() -> Result<(), CoordinatorError> {
     watch_worker::<HandshakeManager>(&mut handshake_manager, handshake_failure_sender);
 
     // Start the price reporter manager
-    let (price_reporter_cancel_sender, price_reporter_cancel_receiver) =
-        channel::bounded(1 /* capacity */);
+    let (price_reporter_cancel_sender, price_reporter_cancel_receiver) = watch::channel(());
     let mut price_reporter_manager = PriceReporterManager::new(PriceReporterManagerConfig {
         system_bus: system_bus.clone(),
-        job_receiver: price_reporter_worker_receiver,
+        job_receiver: DefaultWrapper::new(Some(price_reporter_worker_receiver)),
         cancel_channel: price_reporter_cancel_receiver,
         coinbase_api_key: args.coinbase_api_key,
         coinbase_api_secret: args.coinbase_api_secret,
@@ -256,8 +262,7 @@ async fn main() -> Result<(), CoordinatorError> {
     );
 
     // Start the on-chain event listener
-    let (chain_listener_cancel_sender, chain_listener_cancel_receiver) =
-        channel::bounded(1 /* capacity */);
+    let (chain_listener_cancel_sender, chain_listener_cancel_receiver) = watch::channel(());
     let mut chain_listener = OnChainEventListener::new(OnChainEventListenerConfig {
         starknet_api_gateway: args.starknet_gateway,
         infura_api_key: None,
@@ -275,7 +280,7 @@ async fn main() -> Result<(), CoordinatorError> {
     watch_worker::<OnChainEventListener>(&mut chain_listener, chain_listener_failure_sender);
 
     // Start the API server
-    let (api_cancel_sender, api_cancel_receiver) = channel::bounded(1 /* capacity */);
+    let (api_cancel_sender, api_cancel_receiver) = watch::channel(());
     let mut api_server = ApiServer::new(ApiServerConfig {
         http_port: args.http_port,
         websocket_port: args.websocket_port,
@@ -291,8 +296,7 @@ async fn main() -> Result<(), CoordinatorError> {
     watch_worker::<ApiServer>(&mut api_server, api_failure_sender);
 
     // Start the proof generation module
-    let (proof_manager_cancel_sender, proof_manager_cancel_receiver) =
-        channel::bounded(1 /* capacity */);
+    let (proof_manager_cancel_sender, proof_manager_cancel_receiver) = watch::channel(());
     let mut proof_manager = ProofManager::new(ProofManagerConfig {
         job_queue: proof_generation_worker_receiver,
         cancel_channel: proof_manager_cancel_receiver,
@@ -304,17 +308,6 @@ async fn main() -> Result<(), CoordinatorError> {
     let (proof_manager_failure_sender, mut proof_manager_failure_receiver) =
         mpsc::channel(1 /* buffer_size */);
     watch_worker::<ProofManager>(&mut proof_manager, proof_manager_failure_sender);
-
-    // Hold onto copies of the cancel channels for use at teardown
-    let cancel_channels = vec![
-        network_cancel_sender.clone(),
-        gossip_cancel_sender.clone(),
-        handshake_cancel_sender.clone(),
-        price_reporter_cancel_sender.clone(),
-        chain_listener_cancel_sender.clone(),
-        api_cancel_sender.clone(),
-        proof_manager_cancel_sender.clone(),
-    ];
 
     // For simplicity, we simply cancel all disabled workers, it is simpler to do this than work with
     // a dynamic list of futures
@@ -330,7 +323,7 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Await module termination, and send a cancel signal for any modules that
     // have been detected to fault
-    let recovery_loop = || async move {
+    let recovery_loop = || async {
         loop {
             select! {
                 _ = network_failure_receiver.recv() => {
@@ -378,9 +371,18 @@ async fn main() -> Result<(), CoordinatorError> {
     log::info!("Error in coordinator thread: {:?}", err);
 
     // Send cancel signals to all workers
-    for cancel_channel in cancel_channels.iter() {
-        #[allow(unused_must_use)]
-        cancel_channel.send(());
+    for cancel_channel in [
+        network_cancel_sender,
+        gossip_cancel_sender,
+        handshake_cancel_sender,
+        price_reporter_cancel_sender,
+        chain_listener_cancel_sender,
+        api_cancel_sender,
+        proof_manager_cancel_sender,
+    ]
+    .iter()
+    {
+        cancel_channel.send(()).unwrap();
     }
 
     // Give workers time to teardown execution then terminate

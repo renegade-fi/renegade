@@ -191,7 +191,7 @@ pub struct GossipProtocolExecutor {
     /// The global state of the relayer
     pub(super) global_state: RelayerState,
     /// The channel that the coordinator thread uses to cancel gossip execution
-    pub(super) cancel_channel: Option<CancelChannel>,
+    pub(super) cancel_channel: CancelChannel,
 }
 
 impl GossipProtocolExecutor {
@@ -214,7 +214,7 @@ impl GossipProtocolExecutor {
             job_receiver: DefaultWrapper::new(Some(job_receiver)),
             network_channel,
             global_state,
-            cancel_channel: Some(cancel_channel),
+            cancel_channel,
         })
     }
 
@@ -235,28 +235,21 @@ impl GossipProtocolExecutor {
 
         // We check for cancels both before receiving a job (so that we don't sleep after cancellation)
         // and after a receiving a job (so that we avoid unnecessary work)
-        let cancel_channel = self.cancel_channel.take().unwrap();
         let mut job_receiver = self.job_receiver.take().unwrap();
         loop {
-            // Check for cancel before sleeping
-            if !cancel_channel.is_empty() {
-                return Err(GossipError::Cancelled("received cancel signal".to_string()));
+            tokio::select! {
+                // Await the next job
+                Some(job) = job_receiver.recv() => {
+                    let self_clone = self.clone();
+                    tokio::spawn(async move { self_clone.handle_job(job).await });
+                },
+
+                // Await a cancel signal from the coordinator
+                _ = self.cancel_channel.changed() => {
+                    log::info!("Gossip server cancelled, shutting down...");
+                    return Err(GossipError::Cancelled("server cancelled".to_string()));
+                }
             }
-
-            // Dequeue the next job
-            let job = job_receiver
-                .recv()
-                .await
-                .ok_or_else(|| GossipError::ChannelClosed("job channel closed".to_string()))?;
-
-            // Check for cancel after receiving job
-            if !cancel_channel.is_empty() {
-                return Err(GossipError::Cancelled("received cancel signal".to_string()));
-            }
-
-            // Forward the job to the threadpool
-            let self_clone = self.clone();
-            tokio::spawn(async move { self_clone.handle_job(job).await });
         }
     }
 

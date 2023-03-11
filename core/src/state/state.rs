@@ -256,7 +256,7 @@ impl RelayerState {
         // Await a proof response for each order then attach it to the order index entry
         for (order_id, receiver) in proof_response_channels.into_iter() {
             // Await a proof
-            let proof_bundle: ValidCommitmentsBundle = receiver.blocking_recv().unwrap().into();
+            let proof_bundle: ValidCommitmentsBundle = receiver.await.unwrap().into();
 
             // Update the local orderbook state
             self.add_order_validity_proof(&order_id, proof_bundle.clone())

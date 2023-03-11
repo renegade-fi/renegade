@@ -2,7 +2,6 @@ use core::time::Duration;
 use futures::StreamExt;
 use ring_channel::RingSender;
 use std::{cmp::Ordering, convert::TryInto, str::FromStr};
-use tokio::runtime::Handle;
 use web3::{
     self, ethabi,
     signing::keccak256,
@@ -42,7 +41,6 @@ impl UniswapV3Handler {
         base_token: Token,
         quote_token: Token,
         mut sender: RingSender<PriceReport>,
-        tokio_handle: Handle,
         config: PriceReporterManagerConfig,
     ) -> Result<WorkerHandles, ExchangeConnectionError> {
         // Create the Web3 connection.
@@ -167,7 +165,7 @@ impl UniswapV3Handler {
         // Start streaming events from the swap_filter.
         let base_token_clone = base_token.clone();
         let quote_token_clone = quote_token.clone();
-        let worker_handle = tokio_handle.spawn(async move {
+        let worker_handle = tokio::spawn(async move {
             let swap_stream = swap_filter.stream(Duration::new(1, 0));
             futures::pin_mut!(swap_stream);
             loop {

@@ -7,10 +7,11 @@ use std::{
     collections::{HashMap, HashSet},
     thread::JoinHandle,
 };
-use tokio::runtime::{Handle, Runtime};
+use tokio::{runtime::Runtime, sync::mpsc::UnboundedReceiver as TokioReceiver};
+use tracing::log;
 use uuid::Uuid;
 
-use crate::{system_bus::SystemBus, types::SystemBusMessage};
+use crate::{system_bus::SystemBus, types::SystemBusMessage, CancelChannel};
 
 use super::{
     errors::PriceReporterManagerError,
@@ -38,10 +39,12 @@ pub struct PriceReporterManager {
 /// The actual executor that handles incoming jobs, to create and destroy PriceReporters, and peek
 /// at PriceReports.
 pub struct PriceReporterManagerExecutor {
+    /// The channel along which jobs are passed to the price reporter
+    pub(super) job_receiver: TokioReceiver<PriceReporterManagerJob>,
+    /// The channel on which the coordinator may cancel execution
+    cancel_channel: CancelChannel,
     /// The global system bus
     pub(super) system_bus: SystemBus<SystemBusMessage>,
-    /// A handle to the tokio runtime that the manager runs inside of
-    pub(super) tokio_handle: Handle,
     /// The map between base/quote token pairs and the instantiated PriceReporter
     pub(super) spawned_price_reporters: HashMap<(Token, Token), PriceReporter>,
     /// The map between base/quote token pairs and the set of registered listeners
@@ -52,19 +55,41 @@ pub struct PriceReporterManagerExecutor {
 impl PriceReporterManagerExecutor {
     /// Creates the executor for the PriceReporterManager worker.
     pub(super) fn new(
-        system_bus: SystemBus<SystemBusMessage>,
-        tokio_handle: Handle,
+        job_receiver: TokioReceiver<PriceReporterManagerJob>,
         config: PriceReporterManagerConfig,
+        cancel_channel: CancelChannel,
+        system_bus: SystemBus<SystemBusMessage>,
     ) -> Result<Self, PriceReporterManagerError> {
         let spawned_price_reporters = HashMap::new();
         let registered_listeners = HashMap::new();
         Ok(Self {
+            job_receiver,
+            cancel_channel,
             system_bus,
-            tokio_handle,
             spawned_price_reporters,
             registered_listeners,
             config,
         })
+    }
+
+    /// The execution loop for the price reporter
+    pub(super) async fn execution_loop(mut self) -> Result<(), PriceReporterManagerError> {
+        loop {
+            tokio::select! {
+                // Dequeue the next job from elsewhere in the local node
+                Some(job) = self.job_receiver.recv() => {
+                    if let Err(e) = self.handle_job(job) {
+                        log::error!("Error in PriceReporterManager execution loop: {e}");
+                    }
+                },
+
+                // Await cancellation by the coordinator
+                _ = self.cancel_channel.changed() => {
+                    log::info!("PriceReporterManager cancelled, shutting down...");
+                    return Err(PriceReporterManagerError::Cancelled("received cancel signal".to_string()));
+                }
+            }
+        }
     }
 
     /// Handles a job for the PriceReporterManager worker.
@@ -162,7 +187,6 @@ impl PriceReporterManagerExecutor {
     ) -> Result<(), PriceReporterManagerError> {
         // If the PriceReporter does not already exist, create it
         let system_bus = self.system_bus.clone();
-        let tokio_handle = self.tokio_handle.clone();
         let median_price_report_topic = format!(
             "median-price-report-{}-{}",
             base_token.get_addr(),
@@ -173,17 +197,13 @@ impl PriceReporterManagerExecutor {
             .entry((base_token.clone(), quote_token.clone()))
             .or_insert_with(|| {
                 // Create the PriceReporter
-                let price_reporter = PriceReporter::new(
-                    base_token.clone(),
-                    quote_token.clone(),
-                    tokio_handle.clone(),
-                    config_clone,
-                );
+                let price_reporter =
+                    PriceReporter::new(base_token.clone(), quote_token.clone(), config_clone);
                 // Stream all median PriceReports to the system bus, only if the midpoint price
                 // changes
                 let mut median_receiver = price_reporter.create_new_median_receiver();
                 let system_bus_clone = system_bus.clone();
-                tokio_handle.spawn(async move {
+                tokio::spawn(async move {
                     let mut last_median_price_report = PriceReport::default();
                     loop {
                         let median_price_report = median_receiver.next().await.unwrap();
@@ -210,7 +230,7 @@ impl PriceReporterManagerExecutor {
                         quote_token.get_addr()
                     );
                     let system_bus_clone = system_bus.clone();
-                    tokio_handle.spawn(async move {
+                    tokio::spawn(async move {
                         let mut last_price_report = PriceReport::default();
                         loop {
                             let price_report = exchange_receiver.next().await.unwrap();

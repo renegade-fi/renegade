@@ -7,8 +7,6 @@ use std::fmt;
 pub enum GossipError {
     /// An error resulting from a cancellation signal
     Cancelled(String),
-    /// The job queue for the gossip server has closed
-    ChannelClosed(String),
     /// An error occurred looking up a critical state element
     MissingState(String),
     /// An error parsing a gossip message

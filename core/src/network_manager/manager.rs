@@ -18,7 +18,7 @@ use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
 
 use std::{net::SocketAddr, thread::JoinHandle};
-use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
+use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::{
     api::{
@@ -30,12 +30,14 @@ use crate::{
         },
         orderbook_management::{OrderBookManagementMessage, OrderInfoResponse, ORDER_BOOK_TOPIC},
     },
+    default_wrapper::DefaultWrapper,
     gossip::{
         jobs::{ClusterManagementJob, GossipServerJob, OrderBookManagementJob},
         types::{ClusterId, PeerInfo, WrappedPeerId},
     },
     handshake::jobs::HandshakeExecutionJob,
     state::RelayerState,
+    CancelChannel,
 };
 
 use super::{
@@ -87,8 +89,6 @@ pub struct NetworkManager {
     pub(super) local_keypair: Keypair,
     /// The join handle of the executor loop
     pub(super) thread_handle: Option<JoinHandle<NetworkManagerError>>,
-    /// The join handle of the cancellation relay
-    pub(super) cancellation_relay_handle: Option<JoinHandle<NetworkManagerError>>,
 }
 
 /// The NetworkManager handles both incoming and outbound messages to the p2p network
@@ -173,7 +173,7 @@ pub(super) struct NetworkManagerExecutor {
     #[allow(unused)]
     global_state: RelayerState,
     /// The cancel channel that the coordinator thread may use to cancel this worker
-    cancel: Receiver<()>,
+    cancel: DefaultWrapper<Option<CancelChannel>>,
 }
 
 impl NetworkManagerExecutor {
@@ -187,7 +187,7 @@ impl NetworkManagerExecutor {
         gossip_work_queue: TokioSender<GossipServerJob>,
         handshake_work_queue: TokioSender<HandshakeExecutionJob>,
         global_state: RelayerState,
-        cancel: Receiver<()>,
+        cancel: CancelChannel,
     ) -> Self {
         Self {
             local_peer_id,
@@ -199,7 +199,7 @@ impl NetworkManagerExecutor {
             gossip_work_queue,
             handshake_work_queue,
             global_state,
-            cancel,
+            cancel: DefaultWrapper::new(Some(cancel)),
         }
     }
 
@@ -210,6 +210,8 @@ impl NetworkManagerExecutor {
     /// It handles these in the tokio select! macro below
     pub(super) async fn executor_loop(mut self) -> NetworkManagerError {
         log::info!("Starting executor loop for network manager...");
+        let mut cancel_channel = self.cancel.take().unwrap();
+
         loop {
             tokio::select! {
                 // Handle network requests from worker components of the relayer
@@ -239,7 +241,7 @@ impl NetworkManagerExecutor {
                 }
 
                 // Handle a cancel signal from the coordinator
-                _ = self.cancel.recv() => {
+                _ = cancel_channel.changed() => {
                     return NetworkManagerError::Cancelled("received cancel signal".to_string())
                 }
             }

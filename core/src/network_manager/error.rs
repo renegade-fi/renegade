@@ -9,8 +9,6 @@ pub enum NetworkManagerError {
     Authentication(String),
     /// An error originating from a cancel signal
     Cancelled(String),
-    /// An error forwarding a cancel signal to the network worker
-    CancelForwardFailed(String),
     /// Error forwarding a job from the network layer to a worker
     EnqueueJob(String),
     /// An error with the underlying network operation

@@ -2,7 +2,7 @@
 
 use std::{net::SocketAddr, sync::Arc};
 
-use crossbeam::channel::{self, Sender};
+use crossbeam::channel;
 use futures::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use hyper::{
@@ -12,6 +12,7 @@ use hyper::{
 use tokio::{
     net::{TcpListener, TcpStream},
     runtime::Runtime,
+    sync::mpsc::UnboundedSender as TokioSender,
     task::JoinHandle as TokioJoinHandle,
 };
 use tokio_stream::StreamMap;
@@ -74,7 +75,7 @@ impl ApiServer {
     /// The main execution loop for the websocket server
     pub(super) async fn websocket_execution_loop(
         addr: SocketAddr,
-        price_reporter_worker_sender: Sender<PriceReporterManagerJob>,
+        price_reporter_worker_sender: TokioSender<PriceReporterManagerJob>,
         system_bus: SystemBus<SystemBusMessage>,
     ) -> Result<(), ApiServerError> {
         // Bind to the addr
@@ -145,7 +146,7 @@ pub struct WebsocketHandler {
     /// The TCP stream underlying the websocket that has been opened
     tcp_stream: Option<TcpStream>,
     /// The worker job queue for the PriceReporterManager
-    price_reporter_worker_sender: Sender<PriceReporterManagerJob>,
+    price_reporter_worker_sender: TokioSender<PriceReporterManagerJob>,
     /// The system bus to receive events on
     system_bus: SystemBus<SystemBusMessage>,
 }
@@ -154,7 +155,7 @@ impl WebsocketHandler {
     /// Create a new websocket handler
     pub fn new(
         inbound_stream: TcpStream,
-        price_reporter_worker_sender: Sender<PriceReporterManagerJob>,
+        price_reporter_worker_sender: TokioSender<PriceReporterManagerJob>,
         system_bus: SystemBus<SystemBusMessage>,
     ) -> Self {
         Self {
