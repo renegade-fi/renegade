@@ -268,7 +268,7 @@ impl GossipProtocolExecutor {
         &self,
         recipient_peer_id: WrappedPeerId,
     ) -> Result<(), GossipError> {
-        if recipient_peer_id == self.local_peer_id {
+        if recipient_peer_id == self.config.local_peer_id {
             return Ok(());
         }
 
