@@ -2,29 +2,14 @@
 //! is passed around throughout the code
 
 use crate::{
-    api::{
-        gossip::{GossipOutbound, PubsubMessage},
-        heartbeat::HeartbeatMessage,
-        orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
-    },
+    api::heartbeat::HeartbeatMessage,
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
-    proof_generation::jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle},
+    proof_generation::jobs::ValidCommitmentsBundle,
     state::orderbook::NetworkOrder,
     system_bus::SystemBus,
     types::SystemBusMessage,
-    MERKLE_HEIGHT,
 };
-use circuits::{
-    native_helpers::compute_poseidon_hash,
-    types::wallet::Nullifier,
-    zk_circuits::valid_commitments::ValidCommitmentsWitness,
-    zk_gadgets::merkle::{MerkleOpening, MerkleRoot},
-    LinkableCommitment,
-};
-use crossbeam::channel::Sender;
-use crypto::fields::biguint_to_scalar;
-use curve25519_dalek::scalar::Scalar;
-use futures::executor::block_on;
+use circuits::types::wallet::Nullifier;
 use libp2p::{
     identity::{self, Keypair},
     Multiaddr,
@@ -33,11 +18,8 @@ use rand::{distributions::WeightedIndex, prelude::Distribution, thread_rng};
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
-    thread::Builder,
 };
-use tokio::sync::{
-    mpsc::UnboundedSender, oneshot, RwLock as AsyncRwLock, RwLockReadGuard, RwLockWriteGuard,
-};
+use tokio::sync::{RwLock as AsyncRwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use super::{
     orderbook::{NetworkOrderBook, OrderIdentifier},
@@ -49,11 +31,6 @@ use super::{
 // -----------------------
 // | Constants and Types |
 // -----------------------
-
-/// An error emitted when order initialization fails
-const ERR_ORDER_INIT_FAILED: &str = "order commitment initialization thread panic";
-/// The name of the thread initialized to generate proofs of `VALID COMMITMENTS` at startup
-const ORDER_INIT_THREAD: &str = "order-commitment-init";
 
 /// A type alias for a shared element, wrapped in an async capable readers-writer mutex
 pub type AsyncShared<T> = Arc<AsyncRwLock<T>>;
@@ -135,173 +112,6 @@ impl RelayerState {
             order_book: new_async_shared(order_book),
             handshake_priorities: new_async_shared(HandshakePriorityStore::new()),
         }
-    }
-
-    /// Initialize proofs of `VALID COMMITMENTS` for any locally managed orders
-    ///
-    /// At startup; if a relayer is initialized with wallets in its config, we generate
-    /// proofs of `VALID COMMITMENTS` as a pre-requisite to entering them into match
-    /// MPCs
-    ///
-    /// This method does not block, instead it spawns a thread to manage the process of
-    /// updating the order state. For this reason, the method is defined as a static
-    /// method instead of an instance method, so that a lock need not be held on the
-    /// state the entire time
-    pub fn initialize_order_proofs(
-        &self,
-        proof_manager_queue: Sender<ProofManagerJob>,
-        network_sender: UnboundedSender<GossipOutbound>,
-    ) {
-        // Spawn the helpers in a thread
-        let self_clone = self.clone();
-        Builder::new()
-            .name(ORDER_INIT_THREAD.to_string())
-            .spawn(move || {
-                block_on(
-                    self_clone.initialize_order_proof_helper(proof_manager_queue, network_sender),
-                )
-            })
-            .expect(ERR_ORDER_INIT_FAILED);
-    }
-
-    /// A helper passed as a callback to the threading logic in the caller
-    async fn initialize_order_proof_helper(
-        &self,
-        proof_manager_queue: Sender<ProofManagerJob>,
-        network_sender: UnboundedSender<GossipOutbound>,
-    ) {
-        // Store a handle to the response channels for each proof; await them one by one
-        let mut proof_response_channels = Vec::new();
-
-        {
-            // Iterate over all orders in all managed wallets and generate proofs
-            let locked_wallet_index = self.read_wallet_index().await;
-            for wallet in locked_wallet_index.get_all_wallets().await.into_iter() {
-                let match_nullifier = wallet.get_match_nullifier();
-                for (order_id, order) in wallet.orders.iter() {
-                    {
-                        self.write_order_book()
-                            .await
-                            .add_order(NetworkOrder::new(
-                                *order_id,
-                                match_nullifier,
-                                self.local_cluster_id.clone(),
-                                true, /* local */
-                            ))
-                            .await;
-                    } // order_book lock released
-
-                    if let Some((_, balance, fee, fee_balance)) = locked_wallet_index
-                        .get_order_balance_and_fee(&wallet.wallet_id, order_id)
-                        .await
-                    {
-                        // Generate a merkle proof of inclusion for this wallet in the contract state
-                        let (merkle_root, wallet_opening) = Self::generate_merkle_proof(&wallet);
-
-                        // Attach a copy of the witness to the locally managed state
-                        // This witness is reference by match computations which compute linkable commitments
-                        // to the order and balance; i.e. they commit with the same randomness
-                        {
-                            let randomness_hash =
-                                compute_poseidon_hash(&[biguint_to_scalar(&wallet.randomness)]);
-                            self.read_order_book()
-                                .await
-                                .attach_validity_proof_witness(
-                                    order_id,
-                                    ValidCommitmentsWitness {
-                                        wallet: wallet.clone().into(),
-                                        order: order.clone().into(),
-                                        balance: balance.clone().into(),
-                                        fee: fee.clone().into(),
-                                        fee_balance: fee_balance.clone().into(),
-                                        wallet_opening: wallet_opening.clone(),
-                                        randomness_hash: LinkableCommitment::new(randomness_hash),
-                                        sk_match: wallet.secret_keys.sk_match,
-                                    },
-                                )
-                                .await;
-                        } // order_book lock released
-
-                        // Create a job and a response channel to get proofs back on
-                        let job = ProofJob::ValidCommitments {
-                            wallet: wallet.clone().into(),
-                            wallet_opening,
-                            order: order.clone(),
-                            balance,
-                            fee,
-                            fee_balance,
-                            sk_match: wallet.secret_keys.sk_match,
-                            merkle_root,
-                        };
-                        let (response_sender, response_receiver) = oneshot::channel();
-
-                        // Send a request to build a proof
-                        proof_manager_queue
-                            .send(ProofManagerJob {
-                                type_: job,
-                                response_channel: response_sender,
-                            })
-                            .unwrap();
-
-                        // Store a handle to the response channel
-                        proof_response_channels.push((*order_id, response_receiver));
-                    } else {
-                        println!("Skipping wallet validity proof; no balance and fee found");
-                        continue;
-                    }
-                }
-            }
-        } // locked_wallet_index released
-
-        // Await a proof response for each order then attach it to the order index entry
-        for (order_id, receiver) in proof_response_channels.into_iter() {
-            // Await a proof
-            let proof_bundle: ValidCommitmentsBundle = receiver.await.unwrap().into();
-
-            // Update the local orderbook state
-            self.add_order_validity_proof(&order_id, proof_bundle.clone())
-                .await;
-
-            // Gossip about the updated proof to the network
-            let message = GossipOutbound::Pubsub {
-                topic: ORDER_BOOK_TOPIC.to_string(),
-                message: PubsubMessage::OrderBookManagement(
-                    OrderBookManagementMessage::OrderProofUpdated {
-                        order_id,
-                        cluster: self.local_cluster_id.clone(),
-                        proof: proof_bundle,
-                    },
-                ),
-            };
-            network_sender.send(message).unwrap()
-        }
-    }
-
-    /// Generate a dummy Merkle proof for an order
-    ///
-    /// Returns a tuple of (dummy root, merkle opening)
-    ///
-    /// TODO: Replace this with a method that retrieves or has access to the on-chain Merkle state
-    /// and creates a legitimate Merkle proof
-    fn generate_merkle_proof(wallet: &Wallet) -> (MerkleRoot, MerkleOpening) {
-        // For now, just assume the wallet is the zero'th entry in the tree, and
-        // the rest of the tree is zeros
-        let opening_elems = vec![Scalar::zero(); MERKLE_HEIGHT];
-        let opening_indices = vec![Scalar::zero(); MERKLE_HEIGHT];
-
-        // Compute the dummy root
-        let mut curr_root = wallet.get_commitment();
-        for sibling in opening_elems.iter() {
-            curr_root = compute_poseidon_hash(&[curr_root, *sibling]);
-        }
-
-        (
-            curr_root,
-            MerkleOpening {
-                elems: opening_elems,
-                indices: opening_indices,
-            },
-        )
     }
 
     // -----------
@@ -526,7 +336,7 @@ impl RelayerState {
     }
 
     /// Acquire a write lock on `order_book`
-    async fn write_order_book(&self) -> RwLockWriteGuard<NetworkOrderBook> {
+    pub(super) async fn write_order_book(&self) -> RwLockWriteGuard<NetworkOrderBook> {
         self.order_book.write().await
     }
 
