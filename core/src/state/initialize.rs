@@ -9,13 +9,18 @@ use circuits::{
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::{
     biguint_to_scalar, biguint_to_starknet_felt, scalar_to_biguint, starknet_felt_to_biguint,
+    starknet_felt_to_scalar, starknet_felt_to_u64,
 };
 use curve25519_dalek::scalar::Scalar;
 use num_bigint::BigUint;
 use reqwest::Url;
 use starknet::core::{types::FieldElement as StarknetFieldElement, utils::get_selector_from_name};
 use starknet_providers::jsonrpc::{models::EventFilter, HttpTransport, JsonRpcClient};
-use std::{str::FromStr, thread::Builder as ThreadBuilder};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+    thread::Builder as ThreadBuilder,
+};
 use tokio::{
     runtime::Builder as RuntimeBuilder,
     sync::{mpsc::UnboundedSender, oneshot},
@@ -27,11 +32,15 @@ use crate::{
         gossip::{GossipOutbound, PubsubMessage},
         orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
     },
+    error::CoordinatorError,
     proof_generation::jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle},
     MERKLE_HEIGHT,
 };
 
-use super::{wallet::Wallet, NetworkOrder, RelayerState};
+use super::{
+    wallet::{MerkleAuthenticationPath, Wallet},
+    NetworkOrder, RelayerState,
+};
 
 /// An error emitted when order initialization fails
 const ERR_STATE_INIT_FAILED: &str = "state initialization thread panic";
@@ -39,9 +48,33 @@ const ERR_STATE_INIT_FAILED: &str = "state initialization thread panic";
 const STATE_INIT_THREAD: &str = "state-init";
 
 lazy_static! {
+    /// The event selector for internal node changes
+    static ref INTERNAL_NODE_CHANGED_EVENT_SELECTOR: StarknetFieldElement =
+        get_selector_from_name("Merkle_internal_node_changed").unwrap();
     /// The event selector for Merkle value insertion
     static ref VALUE_INSERTED_EVENT_SELECTOR: StarknetFieldElement =
         get_selector_from_name("Merkle_value_inserted").unwrap();
+}
+
+/// A wrapper representing the coordinates of a value in a Merkle tree
+///
+/// Used largely for readability
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MerkleTreeCoords {
+    /// The height (0 is root) of the coordinate in the tree
+    height: usize,
+    /// The leaf index of the coordinate
+    ///
+    /// I.e. if we look at the nodes at a given height left to right in a list
+    /// the index of the coordinate in that list
+    index: BigUint,
+}
+
+impl MerkleTreeCoords {
+    /// Constructor
+    pub fn new(height: usize, index: BigUint) -> Self {
+        Self { height, index }
+    }
 }
 
 impl RelayerState {
@@ -85,7 +118,7 @@ impl RelayerState {
         starknet_api_gateway: String,
         proof_manager_queue: CrossbeamSender<ProofManagerJob>,
         network_sender: UnboundedSender<GossipOutbound>,
-    ) {
+    ) -> Result<(), CoordinatorError> {
         // Build a starknet RPC client
         let starknet_client = JsonRpcClient::new(HttpTransport::new(
             Url::parse(&starknet_api_gateway).unwrap(),
@@ -99,15 +132,18 @@ impl RelayerState {
             let locked_wallet_index = self.read_wallet_index().await;
             for wallet in locked_wallet_index.get_all_wallets().await.into_iter() {
                 // Find the wallet's Merkle insertion index
-                let leaf_index = self
-                    .find_wallet_in_merkle_tree(&wallet, contract_address.clone(), &starknet_client)
-                    .await;
-                if leaf_index.is_none() {
-                    log::info!("Did not find wallet in transaction history");
-                    continue;
-                }
-                let leaf_index = leaf_index.unwrap();
-                log::info!("Found wallet at leaf index: {leaf_index}");
+                let merkle_path = self
+                    .build_merkle_authentication_path(
+                        &wallet,
+                        contract_address.clone(),
+                        &starknet_client,
+                    )
+                    .await?;
+                log::info!(
+                    "Created merkle authentication path of length {} for wallet at commitment index {}",
+                    merkle_path.path_siblings.len(),
+                    merkle_path.leaf_index
+                );
 
                 let match_nullifier = wallet.get_match_nullifier();
                 for (order_id, order) in wallet.orders.iter() {
@@ -207,6 +243,54 @@ impl RelayerState {
             };
             network_sender.send(message).unwrap()
         }
+
+        Ok(())
+    }
+
+    /// Searches on-chain state for the insertion of the given wallet, then finds the most
+    /// recent updates of the path's siblings and creates a Merkle authentication path
+    async fn build_merkle_authentication_path(
+        &self,
+        wallet: &Wallet,
+        contract_address: String,
+        starknet_client: &JsonRpcClient<HttpTransport>,
+    ) -> Result<MerkleAuthenticationPath, CoordinatorError> {
+        // Find the wallet in the commitment tree
+        let leaf_index = self
+            .find_wallet_in_merkle_tree(wallet, contract_address.clone(), starknet_client)
+            .await?;
+
+        // Construct a set that holds pairs of (depth, index) values in the authentication path; i.e. the
+        // tree coordinates of the sibling nodes in the authentication path
+        let mut sibling_tree_coords = HashSet::new();
+        let mut curr_height_index = leaf_index.clone();
+        for height in (0..MERKLE_HEIGHT).rev() {
+            // If the LSB of the node index at the current height is zero, the node
+            // is a left hand child. If the LSB is one, it is a right hand child.
+            // Choose the index of its sibling
+            let sibling_index = if &curr_height_index % 2u8 == BigUint::from(0u8) {
+                &curr_height_index + 1u8
+            } else {
+                &curr_height_index - 1u8
+            };
+
+            sibling_tree_coords.insert(MerkleTreeCoords::new(height, sibling_index));
+            curr_height_index >>= 1;
+        }
+
+        // Search for the last time these values changed in the tree
+        let path_values = self
+            .scan_for_tree_coords(sibling_tree_coords, contract_address, starknet_client)
+            .await?;
+
+        // Order by height and return
+        let mut path = [Scalar::zero(); MERKLE_HEIGHT];
+        for (coordinate, value) in path_values.into_iter() {
+            let path_index = MERKLE_HEIGHT - coordinate.height;
+            path[path_index] = starknet_felt_to_scalar(&value);
+        }
+
+        Ok(MerkleAuthenticationPath::new(path, leaf_index))
     }
 
     /// Finds the commitment to the wallet in the Merkle tree and returns its
@@ -216,7 +300,7 @@ impl RelayerState {
         wallet: &Wallet,
         contract_address: String,
         starknet_client: &JsonRpcClient<HttpTransport>,
-    ) -> Option<BigUint> {
+    ) -> Result<BigUint, CoordinatorError> {
         // TODO: Do this as a bigint instead of a scalar mod the starknet prime
         let wallet_commitment = scalar_to_biguint(&wallet.get_commitment());
         let starknet_mod = starknet_felt_to_biguint(&StarknetFieldElement::MAX) + 1u8;
@@ -233,7 +317,11 @@ impl RelayerState {
         let mut pagination_token = Some("0".to_string());
         while pagination_token.is_some() {
             let events_batch = starknet_client
-                .get_events(events_filter.clone(), None, 100 /* chunk_size */)
+                .get_events(
+                    events_filter.clone(),
+                    pagination_token,
+                    100, /* chunk_size */
+                )
                 .await
                 .unwrap();
             pagination_token = events_batch.continuation_token;
@@ -243,12 +331,59 @@ impl RelayerState {
                 let value = event.data[1];
 
                 if value == wallet_commit_mod {
-                    return Some(starknet_felt_to_biguint(&index));
+                    return Ok(starknet_felt_to_biguint(&index));
                 }
             }
         }
 
-        None
+        Err(CoordinatorError::StateInit(
+            "could not find wallet in commitment tree".to_string(),
+        ))
+    }
+
+    /// Finds the last time the given tree coordinate pairs changed in the
+    /// transaction history, and returns their most recent value
+    #[allow(unused)]
+    async fn scan_for_tree_coords(
+        &self,
+        coords: HashSet<MerkleTreeCoords>,
+        contract_address: String,
+        starknet_client: &JsonRpcClient<HttpTransport>,
+    ) -> Result<HashMap<MerkleTreeCoords, StarknetFieldElement>, CoordinatorError> {
+        // Build a filter to query events with
+        let parsed_contract_address = StarknetFieldElement::from_str(&contract_address).unwrap();
+        let filter = EventFilter {
+            from_block: None,
+            to_block: None,
+            address: Some(parsed_contract_address),
+            keys: Some(vec![*INTERNAL_NODE_CHANGED_EVENT_SELECTOR]),
+        };
+
+        // Loop over pages to find all the coords
+        let mut pagination_token = Some("0".to_string());
+        let mut result_map = HashMap::new();
+        while pagination_token.is_some() {
+            // Fetch the next page of events
+            let events_page = starknet_client
+                .get_events(filter.clone(), pagination_token, 100 /* chunk_size */)
+                .await
+                .map_err(|err| CoordinatorError::StateInit(err.to_string()))?;
+
+            pagination_token = events_page.continuation_token;
+            for event in events_page.events.into_iter() {
+                let height: usize = starknet_felt_to_u64(&event.data[0]) as usize;
+                let index = starknet_felt_to_biguint(&event.data[1]);
+                let new_value = event.data[2];
+
+                // If this is one of the coordinates requested, add it to the result
+                let tree_coords = MerkleTreeCoords { height, index };
+                if coords.contains(&tree_coords) {
+                    result_map.insert(tree_coords, new_value);
+                }
+            }
+        }
+
+        Ok(result_map)
     }
 
     /// Generate a dummy Merkle proof for an order

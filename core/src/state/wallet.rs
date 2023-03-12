@@ -140,6 +140,16 @@ pub struct MerkleAuthenticationPath {
     pub leaf_index: BigUint,
 }
 
+impl MerkleAuthenticationPath {
+    /// Constructor
+    pub fn new(path_siblings: [Scalar; MERKLE_HEIGHT], leaf_index: BigUint) -> Self {
+        Self {
+            path_siblings,
+            leaf_index,
+        }
+    }
+}
+
 /// Represents a wallet managed by the local relayer
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Wallet {

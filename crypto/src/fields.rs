@@ -145,6 +145,12 @@ pub fn starknet_felt_to_biguint(element: &StarknetFieldElement) -> BigUint {
     BigUint::from_bytes_be(&element.to_bytes_be())
 }
 
+/// Convert from a Starknet felt to a u64; truncating anything about 2^64 -1
+pub fn starknet_felt_to_u64(element: &StarknetFieldElement) -> u64 {
+    let bytes: [u8; 8] = element.to_bytes_be()[24..].try_into().unwrap();
+    u64::from_be_bytes(bytes)
+}
+
 // ---------
 // | Tests |
 // ---------
