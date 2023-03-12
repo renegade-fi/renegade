@@ -144,10 +144,6 @@ async fn main() -> Result<(), CoordinatorError> {
         args.cluster_id.clone(),
         system_bus.clone(),
     );
-    global_state.initialize_order_proofs(
-        proof_generation_worker_sender.clone(),
-        network_sender.clone(),
-    );
 
     // Configure logging and TUI
     #[cfg(feature = "debug-tui")]
@@ -172,6 +168,15 @@ async fn main() -> Result<(), CoordinatorError> {
     {
         configure_default_log_capture();
     }
+
+    // Spawn a thread to sync the relayer-global state with on-chain state and
+    // network state
+    global_state.initialize(
+        args.contract_address.clone(),
+        args.starknet_gateway.clone().unwrap(),
+        proof_generation_worker_sender.clone(),
+        network_sender.clone(),
+    );
 
     // ----------------
     // | Worker Setup |

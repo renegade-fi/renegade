@@ -31,7 +31,7 @@ use serde::{
 use tokio::sync::RwLockReadGuard;
 use uuid::Uuid;
 
-use crate::{gossip::types::WrappedPeerId, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use crate::{gossip::types::WrappedPeerId, MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
 
 use super::{new_async_shared, orderbook::OrderIdentifier, AsyncShared};
 
@@ -127,6 +127,19 @@ impl<'de> Visitor<'de> for PrivateKeyChainVisitor {
     }
 }
 
+/// Represents a Merkle authentication path for a wallet
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct MerkleAuthenticationPath {
+    /// A list of sibling node values that are hashed with
+    /// the wallet commitment in the root computation
+    ///
+    /// The first value in this list is a leaf, the last value is
+    /// one of the root's children
+    pub path_siblings: [Scalar; MERKLE_HEIGHT],
+    /// The leaf index that this node sits at
+    pub leaf_index: BigUint,
+}
+
 /// Represents a wallet managed by the local relayer
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Wallet {
@@ -150,6 +163,9 @@ pub struct Wallet {
     pub randomness: BigUint,
     /// Wallet metadata; replicas, trusted peers, etc
     pub metadata: WalletMetadata,
+    /// The authentication path for the wallet
+    #[serde(default)]
+    pub merkle_proof: Option<MerkleAuthenticationPath>,
 }
 
 /// Custom serialization logic for the balance map that re-keys the map via String
