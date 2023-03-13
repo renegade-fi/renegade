@@ -5,13 +5,11 @@
 use std::{convert::TryInto, sync::Arc, thread::JoinHandle};
 
 use circuits::{
-    native_helpers::{
-        compute_poseidon_hash, compute_wallet_commitment, compute_wallet_match_nullifier,
-    },
+    native_helpers::compute_wallet_commitment,
     singleprover_prove,
     types::{balance::Balance, fee::Fee, keychain::KeyChain, order::Order},
     zk_circuits::{
-        valid_commitments::{ValidCommitments, ValidCommitmentsStatement, ValidCommitmentsWitness},
+        valid_commitments::{ValidCommitments, ValidCommitmentsStatement},
         valid_match_encryption::{
             ValidMatchEncryption, ValidMatchEncryptionStatement, ValidMatchEncryptionWitness,
         },
@@ -19,8 +17,7 @@ use circuits::{
             ValidWalletCreate, ValidWalletCreateStatement, ValidWalletCreateWitness,
         },
     },
-    zk_gadgets::merkle::MerkleOpening,
-    LinkableCommitment, MAX_BALANCES, MAX_ORDERS,
+    MAX_BALANCES, MAX_ORDERS,
 };
 use crossbeam::channel::Receiver;
 use crypto::fields::prime_field_to_scalar;
@@ -28,7 +25,10 @@ use curve25519_dalek::scalar::Scalar;
 use rayon::ThreadPool;
 use tracing::log;
 
-use crate::{proof_generation::jobs::ProofJob, CancelChannel, SizedWallet, MAX_FEES};
+use crate::{
+    proof_generation::jobs::ProofJob, types::SizedValidCommitmentsWitness, CancelChannel,
+    SizedWallet, MAX_FEES,
+};
 
 use super::{
     error::ProofManagerError,
@@ -114,27 +114,9 @@ impl ProofManager {
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))?
             }
 
-            ProofJob::ValidCommitments {
-                wallet,
-                wallet_opening,
-                order,
-                balance,
-                fee,
-                fee_balance,
-                sk_match,
-                merkle_root,
-            } => {
+            ProofJob::ValidCommitments { witness, statement } => {
                 // Prove `VALID COMMITMENTS`
-                let proof_bundle = Self::prove_valid_commitments(
-                    wallet,
-                    wallet_opening,
-                    order,
-                    balance,
-                    fee,
-                    fee_balance,
-                    sk_match,
-                    merkle_root,
-                )?;
+                let proof_bundle = Self::prove_valid_commitments(witness, statement)?;
                 job.response_channel
                     .send(ProofBundle::ValidCommitments(proof_bundle))
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))?
@@ -195,38 +177,9 @@ impl ProofManager {
     /// Create a proof of `VALID COMMITMENTS`
     #[allow(clippy::too_many_arguments)]
     fn prove_valid_commitments(
-        wallet: SizedWallet,
-        wallet_opening: MerkleOpening,
-        order: Order,
-        balance: Balance,
-        fee: Fee,
-        fee_balance: Balance,
-        sk_match: Scalar,
-        merkle_root: Scalar,
+        witness: SizedValidCommitmentsWitness,
+        statement: ValidCommitmentsStatement,
     ) -> Result<ValidCommitmentsBundle, ProofManagerError> {
-        // Compute the hash of the randomness
-        let randomness_hash = LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness]));
-        let wallet_nullifier =
-            compute_wallet_match_nullifier(&wallet, compute_wallet_commitment(&wallet));
-        let pk_settle = wallet.keys.pk_settle;
-
-        // Build a witness and statement
-        let witness = ValidCommitmentsWitness {
-            wallet,
-            order: order.into(),
-            balance: balance.into(),
-            fee: fee.into(),
-            fee_balance: fee_balance.into(),
-            wallet_opening,
-            randomness_hash,
-            sk_match,
-        };
-        let statement = ValidCommitmentsStatement {
-            nullifier: prime_field_to_scalar(&wallet_nullifier),
-            merkle_root,
-            pk_settle,
-        };
-
         // Prove the statement `VALID COMMITMENTS`
         let (witness_comm, proof) = singleprover_prove::<
             ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,

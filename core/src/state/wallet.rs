@@ -6,6 +6,7 @@ use std::{
     fmt::{Formatter, Result as FmtResult},
     iter,
     str::FromStr,
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 use circuits::{
@@ -34,9 +35,28 @@ use serde::{
 use tokio::sync::{RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
-use crate::{gossip::types::WrappedPeerId, MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
+use crate::{
+    gossip::types::WrappedPeerId, MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT,
+    MERKLE_ROOT_HISTORY_LENGTH,
+};
 
 use super::{new_async_shared, orderbook::OrderIdentifier, AsyncShared, MerkleTreeCoords};
+
+/// The staleness factor; the ratio of the root history that has elapsed before a new proof of
+/// `VALID COMMITMENTS` is required for an order
+const ROOT_HISTORY_STALENESS_FACTOR: f32 = 0.75;
+
+lazy_static! {
+    /// The staleness threshold at which new proofs of `VALID COMMITMENTS` should be generated
+    static ref STALENESS_THRESHOLD: u32 = {
+        let threshold_f32 = ROOT_HISTORY_STALENESS_FACTOR * (MERKLE_ROOT_HISTORY_LENGTH as f32);
+        threshold_f32 as u32
+    };
+}
+
+// --------------------------
+// | State Type Definitions |
+// --------------------------
 
 /// A type that attaches default size parameters to a circuit allocated wallet
 type SizedCircuitWallet = CircuitWallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
@@ -215,7 +235,7 @@ impl From<MerkleAuthenticationPath> for MerkleOpening {
 }
 
 /// Represents a wallet managed by the local relayer
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Wallet {
     /// The identifier used to index the wallet
     pub wallet_id: WalletIdentifier,
@@ -240,6 +260,31 @@ pub struct Wallet {
     /// The authentication path for the wallet
     #[serde(default)]
     pub merkle_proof: Option<MerkleAuthenticationPath>,
+    /// The staleness of the valid commitments proof for each order in
+    /// the wallet, i.e. the number of new roots that have been seen
+    /// on-chain since `VALID COMMITMENTS` was last proved for this wallet
+    #[serde(default)]
+    pub proof_staleness: AtomicU32,
+}
+
+/// Custom clone implementation, cannot be derived with the AtomicU32
+impl Clone for Wallet {
+    fn clone(&self) -> Self {
+        let staleness = self.proof_staleness.load(Ordering::Relaxed);
+
+        Self {
+            wallet_id: self.wallet_id,
+            orders: self.orders.clone(),
+            balances: self.balances.clone(),
+            fees: self.fees.clone(),
+            public_keys: self.public_keys,
+            secret_keys: self.secret_keys,
+            randomness: self.randomness.clone(),
+            metadata: self.metadata.clone(),
+            merkle_proof: self.merkle_proof.clone(),
+            proof_staleness: AtomicU32::new(staleness),
+        }
+    }
 }
 
 /// Custom serialization logic for the balance map that re-keys the map via String
@@ -329,6 +374,19 @@ impl Wallet {
             compute_wallet_commitment(&circuit_wallet),
         ))
     }
+
+    /// Decides whether the wallet's orders need new commitment proofs
+    ///
+    /// When the Merkle roots get too stale, we need to re-prove the
+    /// `VALID COMMITMENTS` entry for each order in the wallet on a fresh
+    /// root that the contract will have stored when matches occur
+    ///
+    /// This method, although simple, is written abstractly to allow us to change
+    /// the logic that decides this down the line
+    pub fn needs_new_commitment_proof(&self) -> bool {
+        let staleness = self.proof_staleness.load(Ordering::Relaxed);
+        staleness > *STALENESS_THRESHOLD
+    }
 }
 
 /// Metadata relevant to the wallet's network state
@@ -337,6 +395,10 @@ pub struct WalletMetadata {
     /// The peers which are believed by the local node to be replicating a given wallet
     pub replicas: HashSet<WrappedPeerId>,
 }
+
+// ------------------
+// | State Indexing |
+// ------------------
 
 /// An abstraction over a set of wallets that indexes wallet and de-normalizes
 /// their data

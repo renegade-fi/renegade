@@ -1,9 +1,16 @@
 //! Defines the core implementation of the on-chain event listener
 
-use std::{collections::HashMap, str::FromStr, thread::JoinHandle, time::Duration};
+use std::{
+    borrow::BorrowMut, collections::HashMap, str::FromStr, sync::atomic::Ordering,
+    thread::JoinHandle, time::Duration,
+};
 
-use circuits::types::wallet::Nullifier;
+use circuits::{
+    types::wallet::Nullifier, zk_circuits::valid_commitments::ValidCommitmentsStatement,
+    zk_gadgets::merkle::MerkleOpening,
+};
 
+use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::{starknet_felt_to_biguint, starknet_felt_to_scalar, starknet_felt_to_u64};
 use curve25519_dalek::scalar::Scalar;
 use reqwest::Url;
@@ -12,13 +19,17 @@ use starknet_providers::jsonrpc::{
     models::{BlockId, EmittedEvent, ErrorCode, EventFilter},
     HttpTransport, JsonRpcClient, JsonRpcClientError, RpcError,
 };
-use tokio::sync::mpsc::UnboundedSender as TokioSender;
+use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
 use tokio::time::{sleep_until, Instant};
 use tracing::log;
 
 use crate::{
     handshake::jobs::HandshakeExecutionJob,
-    state::{wallet::MerkleAuthenticationPath, MerkleTreeCoords, RelayerState},
+    proof_generation::jobs::{ProofJob, ProofManagerJob},
+    state::{
+        wallet::{MerkleAuthenticationPath, Wallet},
+        MerkleTreeCoords, RelayerState,
+    },
     CancelChannel,
 };
 
@@ -60,6 +71,8 @@ pub struct OnChainEventListenerConfig {
     /// A sender to the handshake manager's job queue, used to enqueue
     /// MPC shootdown jobs
     pub handshake_manager_job_queue: TokioSender<HandshakeExecutionJob>,
+    /// The worker job queue for the ProofGenerationManager
+    pub proof_generation_work_queue: CrossbeamSender<ProofManagerJob>,
     /// The channel on which the coordinator may send a cancel signal
     pub cancel_channel: CancelChannel,
 }
@@ -319,10 +332,23 @@ impl OnChainEventListenerExecutor {
                 continue;
             }
 
+            // Increment the staleness counter; tracks the number of roots since the orders in this wallet
+            // had `VALID COMMITMENTS` proven
+            locked_wallet
+                .proof_staleness
+                .fetch_add(1u32, Ordering::Relaxed);
+
             self.update_wallet_merkle_path(
                 locked_wallet.merkle_proof.as_mut().unwrap(),
                 &node_change_events,
             );
+
+            // Check if the wallet needs a new commitment proof
+            if locked_wallet.needs_new_commitment_proof() {
+                // TODO: Spawn a task to update the root
+                self.update_wallet_commitment_proofs(locked_wallet.borrow_mut())
+                    .await?;
+            }
         }
 
         Ok(())
@@ -344,5 +370,75 @@ impl OnChainEventListenerExecutor {
                 merkle_proof.path_siblings[i] = *updated_value;
             }
         }
+    }
+
+    /// Generate a new commitment proof for a wallet's orders on a fresh Merkle state
+    async fn update_wallet_commitment_proofs(
+        &self,
+        wallet: &mut Wallet,
+    ) -> Result<(), OnChainEventListenerError> {
+        // Calling this function on a wallet without a Merkle proof should not happen, but we do
+        // not fail the worker in the case that it does
+        if wallet.merkle_proof.is_none() {
+            log::error!("tried to update VALID COMMITMENTS for a wallet that has no Merkle authentication path");
+            return Ok(());
+        }
+
+        // Generate new witness and statement variables from the freshly synced state
+        let merkle_proof = wallet.merkle_proof.clone().unwrap();
+        let new_root = merkle_proof.compute_root();
+        let new_opening: MerkleOpening = wallet.merkle_proof.clone().unwrap().into();
+        let wallet_match_nullifier = wallet.get_match_nullifier();
+
+        // Loop over orders and enqueue a proof generation job for each
+        let locked_order_book = self.global_state.read_order_book().await;
+        let mut proof_response_channels = HashMap::new();
+        for order_id in wallet.orders.keys() {
+            let stale_witness = locked_order_book.get_validity_proof_witness(order_id).await;
+            if stale_witness.is_none() {
+                log::error!("tried to update VALID COMMITMENTS for order without existing witness");
+                return Ok(());
+            }
+            let mut stale_witness = stale_witness.unwrap();
+
+            stale_witness.wallet_opening = new_opening.clone();
+
+            // Enqueue a job with the proof manager
+            let (response_sender, response_receiver) = oneshot::channel();
+            let job = ProofJob::ValidCommitments {
+                witness: stale_witness,
+                statement: ValidCommitmentsStatement {
+                    nullifier: wallet_match_nullifier,
+                    merkle_root: new_root,
+                    pk_settle: wallet.public_keys.pk_settle,
+                },
+            };
+
+            self.config
+                .proof_generation_work_queue
+                .send(ProofManagerJob {
+                    type_: job,
+                    response_channel: response_sender,
+                })
+                .map_err(|err| OnChainEventListenerError::SendMessage(err.to_string()))?;
+
+            proof_response_channels.insert(order_id, response_receiver);
+        }
+        drop(locked_order_book); // release lock
+
+        // Await proof responses for all orders
+        // TODO: Gossip the new proof to all cluster peers
+        for (order_id, channel) in proof_response_channels.into_iter() {
+            let proof = channel
+                .await
+                .map_err(|err| OnChainEventListenerError::ProofGeneration(err.to_string()))?;
+
+            // Update the locally stored proof
+            self.global_state
+                .add_order_validity_proof(order_id, proof.into())
+                .await;
+        }
+
+        Ok(())
     }
 }

@@ -1,8 +1,10 @@
 //! Handles state sync and startup when the node first comes online
 
 use circuits::{
-    native_helpers::compute_poseidon_hash, zk_circuits::valid_commitments::ValidCommitmentsWitness,
-    zk_gadgets::merkle::MerkleOpening, LinkableCommitment,
+    native_helpers::compute_poseidon_hash,
+    zk_circuits::valid_commitments::{ValidCommitmentsStatement, ValidCommitmentsWitness},
+    zk_gadgets::merkle::MerkleOpening,
+    LinkableCommitment,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::{
@@ -155,6 +157,7 @@ impl RelayerState {
 
                 let match_nullifier = wallet.get_match_nullifier();
                 for (order_id, order) in wallet.orders.iter() {
+                    // Add the order to the book
                     {
                         self.write_order_book()
                             .await
@@ -171,53 +174,50 @@ impl RelayerState {
                         .get_order_balance_and_fee(&wallet.wallet_id, order_id)
                         .await
                     {
-                        // Attach a copy of the witness to the locally managed state
-                        // This witness is reference by match computations which compute linkable commitments
-                        // to the order and balance; i.e. they commit with the same randomness
-                        {
-                            let randomness_hash =
-                                compute_poseidon_hash(&[biguint_to_scalar(&wallet.randomness)]);
-                            self.read_order_book()
-                                .await
-                                .attach_validity_proof_witness(
-                                    order_id,
-                                    ValidCommitmentsWitness {
-                                        wallet: wallet.clone().into(),
-                                        order: order.clone().into(),
-                                        balance: balance.clone().into(),
-                                        fee: fee.clone().into(),
-                                        fee_balance: fee_balance.clone().into(),
-                                        wallet_opening: wallet_opening.clone(),
-                                        randomness_hash: LinkableCommitment::new(randomness_hash),
-                                        sk_match: wallet.secret_keys.sk_match,
-                                    },
-                                )
-                                .await;
-                        } // order_book lock released
-
-                        // Create a job and a response channel to get proofs back on
-                        let job = ProofJob::ValidCommitments {
+                        // Construct the witness and statement to generate a commitments proof from
+                        let randomness_hash =
+                            compute_poseidon_hash(&[biguint_to_scalar(&wallet.randomness)]);
+                        let witness = ValidCommitmentsWitness {
                             wallet: wallet.clone().into(),
+                            order: order.clone().into(),
+                            balance: balance.clone().into(),
+                            fee: fee.clone().into(),
+                            fee_balance: fee_balance.clone().into(),
                             wallet_opening: wallet_opening.clone(),
-                            order: order.clone(),
-                            balance,
-                            fee,
-                            fee_balance,
+                            randomness_hash: LinkableCommitment::new(randomness_hash),
                             sk_match: wallet.secret_keys.sk_match,
-                            merkle_root,
                         };
-                        let (response_sender, response_receiver) = oneshot::channel();
 
-                        // Send a request to build a proof
+                        let statement = ValidCommitmentsStatement {
+                            nullifier: match_nullifier,
+                            merkle_root,
+                            pk_settle: wallet.public_keys.pk_settle,
+                        };
+
+                        // Create a job and a response channel to get proofs back on, and forward the job
+                        let (response_sender, response_receiver) = oneshot::channel();
                         proof_manager_queue
                             .send(ProofManagerJob {
-                                type_: job,
+                                type_: ProofJob::ValidCommitments {
+                                    witness: witness.clone(),
+                                    statement,
+                                },
                                 response_channel: response_sender,
                             })
                             .unwrap();
 
                         // Store a handle to the response channel
                         proof_response_channels.push((*order_id, response_receiver));
+
+                        // Attach a copy of the witness to the locally managed state
+                        // This witness is reference by match computations which compute linkable commitments
+                        // to the order and balance; i.e. they commit with the same randomness
+                        {
+                            self.read_order_book()
+                                .await
+                                .attach_validity_proof_witness(order_id, witness.clone())
+                                .await;
+                        } // order_book lock released
                     } else {
                         println!("Skipping wallet validity proof; no balance and fee found");
                         continue;

@@ -88,6 +88,8 @@ pub(crate) const MAX_ORDERS: usize = 5;
 pub(crate) const MAX_FEES: usize = 2;
 /// The height of the Merkle state tree used by the contract
 pub(crate) const MERKLE_HEIGHT: usize = 32;
+/// The number of historical roots the contract stores as being valid
+pub(crate) const MERKLE_ROOT_HISTORY_LENGTH: usize = 30;
 /// A type wrapper around the wallet type that adds the default generics above
 pub(crate) type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 /// The amount of time to wait between sending teardown signals and terminating execution
@@ -274,6 +276,7 @@ async fn main() -> Result<(), CoordinatorError> {
         contract_address: args.contract_address,
         global_state: global_state.clone(),
         handshake_manager_job_queue: handshake_worker_sender,
+        proof_generation_work_queue: proof_generation_worker_sender.clone(),
         cancel_channel: chain_listener_cancel_receiver,
     })
     .expect("failed to build on-chain event listener");
