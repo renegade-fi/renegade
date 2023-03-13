@@ -4,9 +4,9 @@ use std::{str::FromStr, thread::JoinHandle, time::Duration};
 
 use circuits::types::wallet::Nullifier;
 
-use crypto::fields::starknet_felt_to_scalar;
+use crypto::fields::{starknet_felt_to_biguint, starknet_felt_to_scalar, starknet_felt_to_u64};
 use reqwest::Url;
-use starknet::core::{types::FieldElement, utils::get_selector_from_name};
+use starknet::core::{types::FieldElement as StarknetFieldElement, utils::get_selector_from_name};
 use starknet_providers::jsonrpc::{
     models::{BlockId, EmittedEvent, ErrorCode, EventFilter},
     HttpTransport, JsonRpcClient, JsonRpcClientError, RpcError,
@@ -15,7 +15,11 @@ use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tokio::time::{sleep_until, Instant};
 use tracing::log;
 
-use crate::{handshake::jobs::HandshakeExecutionJob, state::RelayerState, CancelChannel};
+use crate::{
+    handshake::jobs::HandshakeExecutionJob,
+    state::{MerkleTreeCoords, RelayerState},
+    CancelChannel,
+};
 
 use super::error::OnChainEventListenerError;
 
@@ -30,9 +34,11 @@ const EVENTS_POLL_INTERVAL_MS: u64 = 5_000; // 5 seconds
 
 lazy_static! {
     /// The event selector for a Merkle root update
-    static ref MERKLE_ROOT_CHANGED_EVENT_SELECTOR: FieldElement = get_selector_from_name("Merkle_root_changed").unwrap();
+    static ref MERKLE_ROOT_CHANGED_EVENT_SELECTOR: StarknetFieldElement = get_selector_from_name("Merkle_root_changed").unwrap();
+    /// The event selector for a Merkle internal node change
+    static ref MERKLE_NODE_CHANGED_EVENT_SELECTOR: StarknetFieldElement = get_selector_from_name("Merkle_internal_node_changed").unwrap();
     /// The event selector for a nullifier spend
-    static ref NULLIFIER_SPENT_EVENT_SELECTOR: FieldElement = get_selector_from_name("Nullifier_spent").unwrap();
+    static ref NULLIFIER_SPENT_EVENT_SELECTOR: StarknetFieldElement = get_selector_from_name("Nullifier_spent").unwrap();
 }
 
 // ----------
@@ -167,7 +173,7 @@ impl OnChainEventListenerExecutor {
         let filter = EventFilter {
             from_block: Some(BlockId::Number(self.start_block)),
             to_block: None,
-            address: Some(FieldElement::from_str(&self.config.contract_address).unwrap()),
+            address: Some(StarknetFieldElement::from_str(&self.config.contract_address).unwrap()),
             keys: None,
         };
 
@@ -213,7 +219,9 @@ impl OnChainEventListenerExecutor {
         // Dispatch based on key
         let key = event.keys[0];
         if key == *MERKLE_ROOT_CHANGED_EVENT_SELECTOR {
-            log::info!("Handling merkle root update event")
+            log::info!("Handling merkle root update event");
+            let block_number = BlockId::Number(event.block_number);
+            self.handle_root_changed(block_number).await?;
         } else if key == *NULLIFIER_SPENT_EVENT_SELECTOR {
             // Parse the nullifier from the felt
             log::info!("Handling nullifier spent event");
@@ -243,5 +251,51 @@ impl OnChainEventListenerExecutor {
         self.config.global_state.nullify_orders(nullifier).await;
 
         Ok(())
+    }
+
+    /// Handle a root change event
+    async fn handle_root_changed(
+        &self,
+        block_number: BlockId,
+    ) -> Result<(), OnChainEventListenerError> {
+        // Fetch all the internal node changed events in this block
+        let contract_addr = StarknetFieldElement::from_str(&self.config.contract_address).unwrap();
+        let filter = EventFilter {
+            from_block: Some(block_number.clone()),
+            to_block: Some(block_number),
+            address: Some(contract_addr),
+            keys: Some(vec![*MERKLE_NODE_CHANGED_EVENT_SELECTOR]),
+        };
+
+        // Holds tuples that represent changes to Merkle tree internal nodes; encoded as:
+        //    (merkle tree coordinate, new value)
+        let mut node_change_events = Vec::new();
+        let mut pagination_token = Some("0".to_string());
+
+        while pagination_token.is_some() {
+            // Fetch the next page of events
+            let events_batch = self
+                .rpc_client
+                .get_events(filter.clone(), pagination_token, 100 /* chunk_size */)
+                .await
+                .map_err(|err| OnChainEventListenerError::Rpc(err.to_string()))?;
+
+            for event in events_batch.events.into_iter() {
+                // Build tree coordinate from event
+                let height: usize = starknet_felt_to_u64(&event.data[0]) as usize;
+                let index = starknet_felt_to_biguint(&event.data[1]);
+                let tree_coordinate = MerkleTreeCoords::new(height, index);
+
+                // Add the value to the list of changes
+                let new_value = starknet_felt_to_scalar(&event.data[2]);
+                node_change_events.push((tree_coordinate, new_value));
+            }
+
+            pagination_token = events_batch.continuation_token;
+        }
+
+        // Lock the wallet state and apply them one by one to the wallet Merkle paths
+
+        unimplemented!("")
     }
 }

@@ -38,7 +38,7 @@ use crate::{
 
 use super::{
     wallet::{MerkleAuthenticationPath, Wallet},
-    NetworkOrder, RelayerState,
+    MerkleTreeCoords, NetworkOrder, RelayerState,
 };
 
 /// An error emitted when order initialization fails
@@ -75,27 +75,6 @@ lazy_static! {
 
         values.try_into().unwrap()
     };
-}
-
-/// A wrapper representing the coordinates of a value in a Merkle tree
-///
-/// Used largely for readability
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MerkleTreeCoords {
-    /// The height (0 is root) of the coordinate in the tree
-    height: usize,
-    /// The leaf index of the coordinate
-    ///
-    /// I.e. if we look at the nodes at a given height left to right in a list
-    /// the index of the coordinate in that list
-    index: BigUint,
-}
-
-impl MerkleTreeCoords {
-    /// Constructor
-    pub fn new(height: usize, index: BigUint) -> Self {
-        Self { height, index }
-    }
 }
 
 impl RelayerState {
