@@ -1,8 +1,14 @@
 //! Defines the core implementation of the on-chain event listener
 
 use std::{
-    borrow::BorrowMut, collections::HashMap, str::FromStr, sync::atomic::Ordering,
-    thread::JoinHandle, time::Duration,
+    collections::HashMap,
+    str::FromStr,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    thread::JoinHandle,
+    time::Duration,
 };
 
 use circuits::{
@@ -103,16 +109,16 @@ pub struct OnChainEventListener {
 // ------------
 
 /// The executor that runs in a thread and polls events from on-chain state
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct OnChainEventListenerExecutor {
     /// The JSON-RPC client used to connect to StarkNet
-    rpc_client: JsonRpcClient<HttpTransport>,
+    rpc_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The earliest block that the client will poll events from
     start_block: u64,
     /// The latest block for which the local node has updated Merkle state
-    merkle_last_consistent_block: u64,
+    merkle_last_consistent_block: Arc<AtomicU64>,
     /// The event pagination token
-    pagination_token: Option<String>,
+    pagination_token: Arc<AtomicU64>,
     /// A copy of the config that the executor maintains
     config: OnChainEventListenerConfig,
     /// A copy of the relayer-global state
@@ -128,11 +134,11 @@ impl OnChainEventListenerExecutor {
         let global_state = config.global_state.clone();
 
         Self {
-            rpc_client,
+            rpc_client: Arc::new(rpc_client),
             config,
             start_block: 0,
-            merkle_last_consistent_block: 0,
-            pagination_token: None,
+            merkle_last_consistent_block: Arc::new(0.into()),
+            pagination_token: Arc::new(0.into()),
             global_state,
         }
     }
@@ -146,7 +152,8 @@ impl OnChainEventListenerExecutor {
         }
 
         self.start_block = starting_block_number.unwrap();
-        self.merkle_last_consistent_block = self.start_block;
+        self.merkle_last_consistent_block
+            .store(self.start_block, Ordering::Relaxed);
         log::info!(
             "Starting on-chain event listener with current block {}",
             self.start_block
@@ -156,9 +163,12 @@ impl OnChainEventListenerExecutor {
         loop {
             // Sleep for some time then re-poll events
             sleep_until(Instant::now() + Duration::from_millis(EVENTS_POLL_INTERVAL_MS)).await;
-            if let Err(e) = self.poll_contract_events().await {
-                log::error!("error polling events: {e}");
-            };
+            let mut self_clone = self.clone();
+            tokio::spawn(async move {
+                if let Err(e) = self_clone.poll_contract_events().await {
+                    log::error!("error polling events: {e}");
+                };
+            });
         }
     }
 
@@ -201,9 +211,10 @@ impl OnChainEventListenerExecutor {
             keys: None,
         };
 
+        let pagination_token = self.pagination_token.load(Ordering::Relaxed).to_string();
         let resp = self
             .rpc_client
-            .get_events(filter, self.pagination_token.clone(), EVENT_CHUNK_SIZE)
+            .get_events(filter, Some(pagination_token), EVENT_CHUNK_SIZE)
             .await;
 
         // If the error is an unknown continuation token, ignore it and stop paging
@@ -219,19 +230,15 @@ impl OnChainEventListenerExecutor {
 
         // Update the executor held continuation token used across calls to `getEvents`
         if let Some(pagination_token) = resp.continuation_token.clone() {
-            self.pagination_token = Some(pagination_token);
+            let parsed_token = u64::from_str(&pagination_token).unwrap();
+            self.pagination_token.store(parsed_token, Ordering::Relaxed);
         } else {
             // If no explicit pagination token is given, increment the pagination token by the
             // number of events received. Ideally the API would do this, but it simply returns None
             // to indicate no more pages are ready. We would like to persist this token across polls
             // to getEvents.
-            let curr_token: usize = self
-                .pagination_token
-                .clone()
-                .unwrap_or_else(|| "0".to_string())
-                .parse()
-                .unwrap();
-            self.pagination_token = Some((curr_token + resp.events.len()).to_string());
+            self.pagination_token
+                .fetch_add(resp.events.len() as u64, Ordering::Relaxed);
         }
 
         let continue_paging = resp.continuation_token.is_some();
@@ -246,12 +253,17 @@ impl OnChainEventListenerExecutor {
             log::info!("Handling merkle root update event");
 
             // Skip this event if all Merkle events for this block have been consumed
-            if event.block_number <= self.merkle_last_consistent_block {
+            let last_consistent_block = self.merkle_last_consistent_block.load(Ordering::Relaxed);
+            if event.block_number <= last_consistent_block {
                 return Ok(());
             }
 
             let block_number = BlockId::Number(event.block_number);
             self.handle_root_changed(block_number).await?;
+
+            // Update the last consistent block
+            self.merkle_last_consistent_block
+                .store(event.block_number, Ordering::Relaxed);
         } else if key == *NULLIFIER_SPENT_EVENT_SELECTOR {
             // Parse the nullifier from the felt
             log::info!("Handling nullifier spent event");
@@ -290,7 +302,7 @@ impl OnChainEventListenerExecutor {
         let contract_addr = StarknetFieldElement::from_str(&self.config.contract_address).unwrap();
         let filter = EventFilter {
             from_block: Some(block_number.clone()),
-            to_block: Some(block_number),
+            to_block: None,
             address: Some(contract_addr),
             keys: Some(vec![*MERKLE_NODE_CHANGED_EVENT_SELECTOR]),
         };
@@ -345,9 +357,18 @@ impl OnChainEventListenerExecutor {
 
             // Check if the wallet needs a new commitment proof
             if locked_wallet.needs_new_commitment_proof() {
-                // TODO: Spawn a task to update the root
-                self.update_wallet_commitment_proofs(locked_wallet.borrow_mut())
-                    .await?;
+                // Clone out of the wallet lock so that the lock may be dropped
+                let self_clone = self.clone();
+                let wallet_clone = locked_wallet.clone();
+
+                tokio::spawn(async move {
+                    if let Err(e) = self_clone
+                        .update_wallet_commitment_proofs(wallet_clone)
+                        .await
+                    {
+                        log::error!("error updating wallet commitment proofs: {e}");
+                    }
+                });
             }
         }
 
@@ -375,7 +396,7 @@ impl OnChainEventListenerExecutor {
     /// Generate a new commitment proof for a wallet's orders on a fresh Merkle state
     async fn update_wallet_commitment_proofs(
         &self,
-        wallet: &mut Wallet,
+        wallet: Wallet,
     ) -> Result<(), OnChainEventListenerError> {
         // Calling this function on a wallet without a Merkle proof should not happen, but we do
         // not fail the worker in the case that it does
