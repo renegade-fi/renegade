@@ -1,10 +1,11 @@
 //! Defines the core implementation of the on-chain event listener
 
-use std::{str::FromStr, thread::JoinHandle, time::Duration};
+use std::{collections::HashMap, str::FromStr, thread::JoinHandle, time::Duration};
 
 use circuits::types::wallet::Nullifier;
 
 use crypto::fields::{starknet_felt_to_biguint, starknet_felt_to_scalar, starknet_felt_to_u64};
+use curve25519_dalek::scalar::Scalar;
 use reqwest::Url;
 use starknet::core::{types::FieldElement as StarknetFieldElement, utils::get_selector_from_name};
 use starknet_providers::jsonrpc::{
@@ -17,7 +18,7 @@ use tracing::log;
 
 use crate::{
     handshake::jobs::HandshakeExecutionJob,
-    state::{MerkleTreeCoords, RelayerState},
+    state::{wallet::MerkleAuthenticationPath, MerkleTreeCoords, RelayerState},
     CancelChannel,
 };
 
@@ -95,10 +96,14 @@ pub struct OnChainEventListenerExecutor {
     rpc_client: JsonRpcClient<HttpTransport>,
     /// The earliest block that the client will poll events from
     start_block: u64,
+    /// The latest block for which the local node has updated Merkle state
+    merkle_last_consistent_block: u64,
     /// The event pagination token
     pagination_token: Option<String>,
     /// A copy of the config that the executor maintains
     config: OnChainEventListenerConfig,
+    /// A copy of the relayer-global state
+    global_state: RelayerState,
 }
 
 impl OnChainEventListenerExecutor {
@@ -107,12 +112,15 @@ impl OnChainEventListenerExecutor {
         let rpc_client = JsonRpcClient::new(HttpTransport::new(
             Url::parse(&config.starknet_api_gateway.clone().unwrap_or_default()).unwrap(),
         ));
+        let global_state = config.global_state.clone();
 
         Self {
             rpc_client,
             config,
             start_block: 0,
+            merkle_last_consistent_block: 0,
             pagination_token: None,
+            global_state,
         }
     }
 
@@ -124,9 +132,12 @@ impl OnChainEventListenerExecutor {
             return starting_block_number.err().unwrap();
         }
 
-        let starting_block_number = starting_block_number.unwrap();
-        log::info!("Starting on-chain event listener with current block {starting_block_number}");
-        self.start_block = starting_block_number;
+        self.start_block = starting_block_number.unwrap();
+        self.merkle_last_consistent_block = self.start_block;
+        log::info!(
+            "Starting on-chain event listener with current block {}",
+            self.start_block
+        );
 
         // Poll for new events in a loop
         loop {
@@ -220,6 +231,12 @@ impl OnChainEventListenerExecutor {
         let key = event.keys[0];
         if key == *MERKLE_ROOT_CHANGED_EVENT_SELECTOR {
             log::info!("Handling merkle root update event");
+
+            // Skip this event if all Merkle events for this block have been consumed
+            if event.block_number <= self.merkle_last_consistent_block {
+                return Ok(());
+            }
+
             let block_number = BlockId::Number(event.block_number);
             self.handle_root_changed(block_number).await?;
         } else if key == *NULLIFIER_SPENT_EVENT_SELECTOR {
@@ -227,8 +244,6 @@ impl OnChainEventListenerExecutor {
             log::info!("Handling nullifier spent event");
             let match_nullifier = starknet_felt_to_scalar(&event.data[0]);
             self.handle_nullifier_spent(match_nullifier).await?;
-        } else {
-            log::info!("Unknown event emitted from contract")
         }
 
         Ok(())
@@ -267,9 +282,8 @@ impl OnChainEventListenerExecutor {
             keys: Some(vec![*MERKLE_NODE_CHANGED_EVENT_SELECTOR]),
         };
 
-        // Holds tuples that represent changes to Merkle tree internal nodes; encoded as:
-        //    (merkle tree coordinate, new value)
-        let mut node_change_events = Vec::new();
+        // Maps updated tree coordinates to their new values
+        let mut node_change_events = HashMap::new();
         let mut pagination_token = Some("0".to_string());
 
         while pagination_token.is_some() {
@@ -287,15 +301,48 @@ impl OnChainEventListenerExecutor {
                 let tree_coordinate = MerkleTreeCoords::new(height, index);
 
                 // Add the value to the list of changes
+                // The events stream comes in transaction order, so the most recent value of each
+                // internal node in the block will overwrite older values and be the final value stored
                 let new_value = starknet_felt_to_scalar(&event.data[2]);
-                node_change_events.push((tree_coordinate, new_value));
+                node_change_events.insert(tree_coordinate, new_value);
             }
 
             pagination_token = events_batch.continuation_token;
         }
 
         // Lock the wallet state and apply them one by one to the wallet Merkle paths
+        let locked_wallet_index = self.global_state.read_wallet_index().await;
+        for wallet_id in locked_wallet_index.get_all_wallet_ids() {
+            // Merge in the map of updated nodes into the wallet's merkle proof
+            let mut locked_wallet = locked_wallet_index.write_wallet(&wallet_id).await.unwrap();
+            if locked_wallet.merkle_proof.is_none() {
+                continue;
+            }
 
-        unimplemented!("")
+            self.update_wallet_merkle_path(
+                locked_wallet.merkle_proof.as_mut().unwrap(),
+                &node_change_events,
+            );
+        }
+
+        Ok(())
+    }
+
+    /// A helper to update the Merkle path of a wallet given the Merkle internal nodes
+    /// that have changed
+    fn update_wallet_merkle_path(
+        &self,
+        merkle_proof: &mut MerkleAuthenticationPath,
+        updated_nodes: &HashMap<MerkleTreeCoords, Scalar>,
+    ) {
+        for (i, coord) in merkle_proof
+            .compute_authentication_path_coords()
+            .iter()
+            .enumerate()
+        {
+            if let Some(updated_value) = updated_nodes.get(coord) {
+                merkle_proof.path_siblings[i] = *updated_value;
+            }
+        }
     }
 }

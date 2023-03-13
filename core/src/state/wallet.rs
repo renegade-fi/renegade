@@ -31,12 +31,12 @@ use serde::{
     ser::SerializeSeq,
     Deserialize, Deserializer, Serialize, Serializer,
 };
-use tokio::sync::RwLockReadGuard;
+use tokio::sync::{RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
 use crate::{gossip::types::WrappedPeerId, MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
 
-use super::{new_async_shared, orderbook::OrderIdentifier, AsyncShared};
+use super::{new_async_shared, orderbook::OrderIdentifier, AsyncShared, MerkleTreeCoords};
 
 /// A type that attaches default size parameters to a circuit allocated wallet
 type SizedCircuitWallet = CircuitWallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
@@ -153,6 +153,29 @@ impl MerkleAuthenticationPath {
             leaf_index,
             value,
         }
+    }
+
+    /// Compute the coordinates of the wallet's authentication path in the tree
+    ///
+    /// The result is sorted from leaf level to depth 1
+    pub fn compute_authentication_path_coords(&self) -> Vec<MerkleTreeCoords> {
+        let mut current_index = self.leaf_index.clone();
+
+        let mut coords = Vec::with_capacity(MERKLE_HEIGHT);
+        for height in (1..MERKLE_HEIGHT + 1).rev() {
+            let sibling_index = if &current_index % 2u8 == BigUint::from(0u8) {
+                // Left hand node
+                &current_index + 1u8
+            } else {
+                // Right hand node
+                &current_index - 1u8
+            };
+
+            coords.push(MerkleTreeCoords::new(height, sibling_index));
+            current_index >>= 1u8;
+        }
+
+        coords
     }
 
     /// Compute the root implied by the path
@@ -350,6 +373,15 @@ impl WalletIndex {
         }
     }
 
+    /// Acquire a write lock on a wallet
+    pub async fn write_wallet(&self, wallet_id: &Uuid) -> Option<RwLockWriteGuard<Wallet>> {
+        if let Some(locked_wallet) = self.wallet_map.get(wallet_id) {
+            Some(locked_wallet.write().await)
+        } else {
+            None
+        }
+    }
+
     // -----------
     // | Getters |
     // -----------
@@ -357,6 +389,11 @@ impl WalletIndex {
     /// Get the wallet that an order is allocated in
     pub fn get_wallet_for_order(&self, order_id: &OrderIdentifier) -> Option<WalletIdentifier> {
         self.order_to_wallet.get(order_id).cloned()
+    }
+
+    /// Get all the wallet ids that are indexed
+    pub fn get_all_wallet_ids(&self) -> Vec<WalletIdentifier> {
+        self.wallet_map.keys().cloned().collect_vec()
     }
 
     /// Returns a list of all wallets
