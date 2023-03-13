@@ -87,7 +87,7 @@ pub(crate) const MAX_ORDERS: usize = 5;
 /// The system-wide value of MAX_FEES; the number of allowable fees a wallet holds
 pub(crate) const MAX_FEES: usize = 2;
 /// The height of the Merkle state tree used by the contract
-pub(crate) const MERKLE_HEIGHT: usize = 30;
+pub(crate) const MERKLE_HEIGHT: usize = 32;
 /// A type wrapper around the wallet type that adds the default generics above
 pub(crate) type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 /// The amount of time to wait between sending teardown signals and terminating execution
