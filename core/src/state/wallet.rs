@@ -9,7 +9,9 @@ use std::{
 };
 
 use circuits::{
-    native_helpers::{compute_wallet_commitment, compute_wallet_match_nullifier},
+    native_helpers::{
+        compute_poseidon_hash, compute_wallet_commitment, compute_wallet_match_nullifier,
+    },
     types::{
         balance::Balance,
         fee::Fee,
@@ -17,6 +19,7 @@ use circuits::{
         order::{Order, OrderSide},
         wallet::{Nullifier, Wallet as CircuitWallet, WalletCommitment},
     },
+    zk_gadgets::merkle::MerkleOpening,
 };
 use crypto::fields::{biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint};
 use curve25519_dalek::scalar::Scalar;
@@ -138,14 +141,52 @@ pub struct MerkleAuthenticationPath {
     pub path_siblings: [Scalar; MERKLE_HEIGHT],
     /// The leaf index that this node sits at
     pub leaf_index: BigUint,
+    /// The value being authenticated
+    pub value: Scalar,
 }
 
 impl MerkleAuthenticationPath {
     /// Constructor
-    pub fn new(path_siblings: [Scalar; MERKLE_HEIGHT], leaf_index: BigUint) -> Self {
+    pub fn new(path_siblings: [Scalar; MERKLE_HEIGHT], leaf_index: BigUint, value: Scalar) -> Self {
         Self {
             path_siblings,
             leaf_index,
+            value,
+        }
+    }
+
+    /// Compute the root implied by the path
+    pub fn compute_root(&self) -> Scalar {
+        let mut current_index = self.leaf_index.clone();
+        let mut current_value = self.value;
+
+        for sibling in self.path_siblings.iter() {
+            current_value = if &current_index % 2u8 == BigUint::from(0u8) {
+                compute_poseidon_hash(&[current_value, *sibling])
+            } else {
+                compute_poseidon_hash(&[*sibling, current_value])
+            };
+
+            current_index >>= 1;
+        }
+
+        current_value
+    }
+}
+
+/// Conversion to circuit type
+impl From<MerkleAuthenticationPath> for MerkleOpening {
+    fn from(native_path: MerkleAuthenticationPath) -> Self {
+        // The path conversion is simply the first `MERKLE_HEIGHT` bits of
+        // the leaf index
+        let path_indices = (0..MERKLE_HEIGHT)
+            .map(|bit| native_path.leaf_index.bit(bit as u64))
+            .map(|bit| if bit { Scalar::one() } else { Scalar::zero() })
+            .collect_vec();
+
+        MerkleOpening {
+            elems: native_path.path_siblings.to_vec(),
+            indices: path_indices,
         }
     }
 }
@@ -407,6 +448,17 @@ impl WalletIndex {
     pub async fn add_replica(&self, wallet_id: &WalletIdentifier, peer_id: WrappedPeerId) {
         if let Some(wallet) = self.wallet_map.get(wallet_id) {
             wallet.write().await.metadata.replicas.insert(peer_id);
+        }
+    }
+
+    /// Add a Merkle authentication proof for a given wallet
+    pub async fn add_wallet_merkle_proof(
+        &self,
+        wallet_id: &WalletIdentifier,
+        merkle_proof: MerkleAuthenticationPath,
+    ) {
+        if let Some(wallet) = self.wallet_map.get(wallet_id) {
+            wallet.write().await.merkle_proof = Some(merkle_proof)
         }
     }
 

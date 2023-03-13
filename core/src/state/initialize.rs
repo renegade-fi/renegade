@@ -1,10 +1,8 @@
 //! Handles state sync and startup when the node first comes online
 
 use circuits::{
-    native_helpers::compute_poseidon_hash,
-    zk_circuits::valid_commitments::ValidCommitmentsWitness,
-    zk_gadgets::merkle::{MerkleOpening, MerkleRoot},
-    LinkableCommitment,
+    native_helpers::compute_poseidon_hash, zk_circuits::valid_commitments::ValidCommitmentsWitness,
+    zk_gadgets::merkle::MerkleOpening, LinkableCommitment,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::{
@@ -18,6 +16,7 @@ use starknet::core::{types::FieldElement as StarknetFieldElement, utils::get_sel
 use starknet_providers::jsonrpc::{models::EventFilter, HttpTransport, JsonRpcClient};
 use std::{
     collections::{HashMap, HashSet},
+    convert::TryInto,
     str::FromStr,
     thread::Builder as ThreadBuilder,
 };
@@ -54,6 +53,28 @@ lazy_static! {
     /// The event selector for Merkle value insertion
     static ref VALUE_INSERTED_EVENT_SELECTOR: StarknetFieldElement =
         get_selector_from_name("Merkle_value_inserted").unwrap();
+    /// The value of an empty leaf in the Merkle tree
+    static ref EMPTY_LEAF_VALUE: Scalar = {
+        let val_bigint = BigUint::from_str(
+            "306932273398430716639340090025251549301604242969558673011416862133942957551"
+        ).unwrap();
+        biguint_to_scalar(&val_bigint)
+    };
+    /// The default values of an authentication path; i.e. the values in the path before any
+    /// path elements are changed by insertions
+    ///
+    /// These values are simply recursive hashes of the empty leaf value, as this builds the
+    /// empty tree
+    static ref DEFAULT_AUTHENTICATION_PATH: [Scalar; MERKLE_HEIGHT] = {
+        let mut values = Vec::with_capacity(MERKLE_HEIGHT);
+
+        let curr_val = *EMPTY_LEAF_VALUE;
+        for _ in 0..MERKLE_HEIGHT {
+            values.push(compute_poseidon_hash(&[curr_val, curr_val]));
+        }
+
+        values.try_into().unwrap()
+    };
 }
 
 /// A wrapper representing the coordinates of a value in a Merkle tree
@@ -131,7 +152,7 @@ impl RelayerState {
             // Iterate over all orders in all managed wallets and generate proofs
             let locked_wallet_index = self.read_wallet_index().await;
             for wallet in locked_wallet_index.get_all_wallets().await.into_iter() {
-                // Find the wallet's Merkle insertion index
+                // Build a Merkle authentication path for the wallet and attach it to the state
                 let merkle_path = self
                     .build_merkle_authentication_path(
                         &wallet,
@@ -139,11 +160,19 @@ impl RelayerState {
                         &starknet_client,
                     )
                     .await?;
+
+                locked_wallet_index
+                    .add_wallet_merkle_proof(&wallet.wallet_id, merkle_path.clone())
+                    .await;
+
                 log::info!(
-                    "Created merkle authentication path of length {} for wallet at commitment index {}",
-                    merkle_path.path_siblings.len(),
-                    merkle_path.leaf_index
+                    "successfully recovered wallet {} authentication path from Starknet",
+                    wallet.wallet_id
                 );
+
+                // Generate a merkle proof of inclusion for this wallet in the contract state
+                let merkle_root = merkle_path.compute_root();
+                let wallet_opening: MerkleOpening = merkle_path.into();
 
                 let match_nullifier = wallet.get_match_nullifier();
                 for (order_id, order) in wallet.orders.iter() {
@@ -163,9 +192,6 @@ impl RelayerState {
                         .get_order_balance_and_fee(&wallet.wallet_id, order_id)
                         .await
                     {
-                        // Generate a merkle proof of inclusion for this wallet in the contract state
-                        let (merkle_root, wallet_opening) = Self::generate_merkle_proof(&wallet);
-
                         // Attach a copy of the witness to the locally managed state
                         // This witness is reference by match computations which compute linkable commitments
                         // to the order and balance; i.e. they commit with the same randomness
@@ -193,7 +219,7 @@ impl RelayerState {
                         // Create a job and a response channel to get proofs back on
                         let job = ProofJob::ValidCommitments {
                             wallet: wallet.clone().into(),
-                            wallet_opening,
+                            wallet_opening: wallet_opening.clone(),
                             order: order.clone(),
                             balance,
                             fee,
@@ -264,7 +290,7 @@ impl RelayerState {
         // tree coordinates of the sibling nodes in the authentication path
         let mut sibling_tree_coords = HashSet::new();
         let mut curr_height_index = leaf_index.clone();
-        for height in (0..MERKLE_HEIGHT).rev() {
+        for height in (1..MERKLE_HEIGHT + 1).rev() {
             // If the LSB of the node index at the current height is zero, the node
             // is a left hand child. If the LSB is one, it is a right hand child.
             // Choose the index of its sibling
@@ -284,13 +310,17 @@ impl RelayerState {
             .await?;
 
         // Order by height and return
-        let mut path = [Scalar::zero(); MERKLE_HEIGHT];
+        let mut path = *DEFAULT_AUTHENTICATION_PATH;
         for (coordinate, value) in path_values.into_iter() {
             let path_index = MERKLE_HEIGHT - coordinate.height;
             path[path_index] = starknet_felt_to_scalar(&value);
         }
 
-        Ok(MerkleAuthenticationPath::new(path, leaf_index))
+        Ok(MerkleAuthenticationPath::new(
+            path,
+            leaf_index,
+            wallet.get_commitment(),
+        ))
     }
 
     /// Finds the commitment to the wallet in the Merkle tree and returns its
@@ -336,6 +366,7 @@ impl RelayerState {
             }
         }
 
+        log::info!("Failed to find wallet in commitment tree");
         Err(CoordinatorError::StateInit(
             "could not find wallet in commitment tree".to_string(),
         ))
@@ -384,32 +415,5 @@ impl RelayerState {
         }
 
         Ok(result_map)
-    }
-
-    /// Generate a dummy Merkle proof for an order
-    ///
-    /// Returns a tuple of (dummy root, merkle opening)
-    ///
-    /// TODO: Replace this with a method that retrieves or has access to the on-chain Merkle state
-    /// and creates a legitimate Merkle proof
-    fn generate_merkle_proof(wallet: &Wallet) -> (MerkleRoot, MerkleOpening) {
-        // For now, just assume the wallet is the zero'th entry in the tree, and
-        // the rest of the tree is zeros
-        let opening_elems = vec![Scalar::zero(); MERKLE_HEIGHT];
-        let opening_indices = vec![Scalar::zero(); MERKLE_HEIGHT];
-
-        // Compute the dummy root
-        let mut curr_root = wallet.get_commitment();
-        for sibling in opening_elems.iter() {
-            curr_root = compute_poseidon_hash(&[curr_root, *sibling]);
-        }
-
-        (
-            curr_root,
-            MerkleOpening {
-                elems: opening_elems,
-                indices: opening_indices,
-            },
-        )
     }
 }

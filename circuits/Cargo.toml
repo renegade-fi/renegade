@@ -23,6 +23,7 @@ rand = { version = "0.8" }
 rand_core = "0.5"
 serde = { version = "1.0.139", features = ["serde_derive"] }
 serde_arrays = "0.1"
+tracing = { version = "0.1", features = ["log"] }
 
 [dev-dependencies]
 ark-ec = "0.4"
