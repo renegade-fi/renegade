@@ -30,11 +30,15 @@ use tokio::time::{sleep_until, Instant};
 use tracing::log;
 
 use crate::{
+    api::{
+        gossip::{GossipOutbound, PubsubMessage},
+        orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
+    },
     handshake::jobs::HandshakeExecutionJob,
-    proof_generation::jobs::{ProofJob, ProofManagerJob},
+    proof_generation::jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle},
     state::{
         wallet::{MerkleAuthenticationPath, Wallet},
-        MerkleTreeCoords, RelayerState,
+        MerkleTreeCoords, OrderIdentifier, RelayerState,
     },
     CancelChannel,
 };
@@ -79,6 +83,8 @@ pub struct OnChainEventListenerConfig {
     pub handshake_manager_job_queue: TokioSender<HandshakeExecutionJob>,
     /// The worker job queue for the ProofGenerationManager
     pub proof_generation_work_queue: CrossbeamSender<ProofManagerJob>,
+    /// The work queue for the network manager, used to send outbound gossip messages
+    pub network_manager_work_queue: TokioSender<GossipOutbound>,
     /// The channel on which the coordinator may send a cancel signal
     pub cancel_channel: CancelChannel,
 }
@@ -454,12 +460,38 @@ impl OnChainEventListenerExecutor {
                 .await
                 .map_err(|err| OnChainEventListenerError::ProofGeneration(err.to_string()))?;
 
-            // Update the locally stored proof
-            self.global_state
-                .add_order_validity_proof(order_id, proof.into())
-                .await;
+            self.update_order_proof(*order_id, proof.into()).await?;
         }
 
         Ok(())
+    }
+
+    /// Update the order validity proof in the global state and gossip
+    /// the new proof to the cluster
+    async fn update_order_proof(
+        &self,
+        order_id: OrderIdentifier,
+        proof: ValidCommitmentsBundle,
+    ) -> Result<(), OnChainEventListenerError> {
+        // Update the locally stored proof
+        self.global_state
+            .add_order_validity_proof(&order_id, proof.clone())
+            .await;
+
+        // Gossip the new validity proof onto the pubsub mesh
+        let cluster = self.global_state.local_cluster_id.clone();
+        let message = OrderBookManagementMessage::OrderProofUpdated {
+            order_id,
+            cluster,
+            proof,
+        };
+
+        self.config
+            .network_manager_work_queue
+            .send(GossipOutbound::Pubsub {
+                topic: ORDER_BOOK_TOPIC.to_string(),
+                message: PubsubMessage::OrderBookManagement(message),
+            })
+            .map_err(|err| OnChainEventListenerError::SendMessage(err.to_string()))
     }
 }

@@ -232,7 +232,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (handshake_cancel_sender, handshake_cancel_receiver) = watch::channel(());
     let mut handshake_manager = HandshakeManager::new(HandshakeManagerConfig {
         global_state: global_state.clone(),
-        network_channel: network_sender,
+        network_channel: network_sender.clone(),
         job_receiver: Some(handshake_worker_receiver),
         job_sender: handshake_worker_sender.clone(),
         proof_manager_sender: proof_generation_worker_sender.clone(),
@@ -277,6 +277,7 @@ async fn main() -> Result<(), CoordinatorError> {
         global_state: global_state.clone(),
         handshake_manager_job_queue: handshake_worker_sender,
         proof_generation_work_queue: proof_generation_worker_sender.clone(),
+        network_manager_work_queue: network_sender.clone(),
         cancel_channel: chain_listener_cancel_receiver,
     })
     .expect("failed to build on-chain event listener");
