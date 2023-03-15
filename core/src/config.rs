@@ -40,7 +40,7 @@ struct Cli {
     // | Environment Configs |
     // -----------------------
     /// The address of the darkpool contract, defaults to the Goerli deployment
-    #[clap(long, value_parser, default_value = "0x03d1937bccc781f0ccf9a3fe5432e7fc205abd1eb9bfa381efd70b712c05a0c7")]
+    #[clap(long, value_parser, default_value = "0x1e7857cdd3d73838b0e053be1fa068aa15113793fea95ab663501789d3d0b51")]
     pub contract_address: String,
     
     // -------------------------
