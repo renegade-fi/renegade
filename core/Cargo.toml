@@ -27,6 +27,7 @@ futures = { version = "0.3.26" }
 futures-util = { version = "0.3" }
 hex = "0.3.1"
 hmac-sha256 = "1.1.6"
+httprouter = "0.5"
 hyper = { version = "0.14", features = ["http1", "http2", "server", "tcp"] }
 integration-helpers = { path = "../integration-helpers" }
 itertools = "0.10"

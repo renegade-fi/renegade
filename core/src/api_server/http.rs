@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use circuits::types::fee::Fee;
 use crossbeam::channel::{self, Sender};
 use crypto::fields::biguint_to_scalar;
+use hyper::Method;
 use itertools::Itertools;
 use std::{
     iter,
@@ -22,7 +23,62 @@ use crate::{
     MAX_FEES,
 };
 
-use super::{error::ApiServerError, routes::TypedHandler, worker::ApiServerConfig};
+use super::{
+    error::ApiServerError,
+    router::{Router, TypedHandler},
+    server::ApiServer,
+    worker::ApiServerConfig,
+};
+
+// ---------------
+// | HTTP Routes |
+// ---------------
+
+/// Health check
+const PING_ROUTE: &str = "/ping";
+/// Exchange health check route
+const EXCHANGE_HEALTH_ROUTE: &str = "/exchange/health_check";
+/// Returns the replicating nodes of a given wallet
+const REPLICAS_ROUTE: &str = "/replicas";
+/// Creates a new wallet with the given fees and keys and submits it to the contract
+const WALLET_CREATE_ROUTE: &str = "/wallet/create";
+
+// ----------------
+// | Router Setup |
+// ----------------
+
+impl ApiServer {
+    /// Sets up the routes that the API service exposes in the router
+    pub(super) fn setup_routes(
+        router: &mut Router,
+        config: ApiServerConfig,
+        global_state: RelayerState,
+    ) {
+        // The "/exchangeHealthStates" route
+        router.add_route(
+            Method::POST,
+            EXCHANGE_HEALTH_ROUTE.to_string(),
+            ExchangeHealthStatesHandler::new(config.clone()),
+        );
+
+        // The "/ping" route
+        router.add_route(Method::GET, PING_ROUTE.to_string(), PingHandler::new());
+
+        // The "/replicas" route
+        router.add_route(
+            Method::POST,
+            REPLICAS_ROUTE.to_string(),
+            ReplicasHandler::new(global_state),
+        );
+
+        // The "/wallet/create" route
+        router.add_route(
+            Method::POST,
+            WALLET_CREATE_ROUTE.to_string(),
+            WalletCreateHandler::new(config.proof_generation_work_queue),
+        );
+    }
+}
 
 // ----------------
 // | Generic APIs |

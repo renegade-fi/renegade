@@ -21,7 +21,7 @@ use crate::{
     CancelChannel,
 };
 
-use super::{error::ApiServerError, routes::Router, server::ApiServer};
+use super::{error::ApiServerError, router::Router, server::ApiServer};
 
 /// The number of threads backing the HTTP server
 const API_SERVER_NUM_THREADS: usize = 2;

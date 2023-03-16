@@ -6,9 +6,9 @@ use async_trait::async_trait;
 use hyper::{Body, Method, Request, Response, StatusCode};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-/**
- * Helpers
- */
+// -----------
+// | Helpers |
+// -----------
 
 /// Builds an empty HTTP 400 (Bad Request) response
 fn build_400_response(err: String) -> Response<Body> {
@@ -34,9 +34,9 @@ fn build_500_response() -> Response<Body> {
         .unwrap()
 }
 
-/**
- * Trait implementations
- */
+// -------------------------
+// | Trait Implementations |
+// -------------------------
 
 /// A handler is attached to a route and handles the process of translating an
 /// abstract request type into a response
