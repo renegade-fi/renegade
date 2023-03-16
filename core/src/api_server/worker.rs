@@ -2,15 +2,8 @@
 
 use crossbeam::channel::Sender as CrossbeamSender;
 use futures::executor::block_on;
-use hyper::{
-    server::conn::AddrStream,
-    service::{make_service_fn, service_fn},
-    Body, Error, Request, Server,
-};
 use std::{
-    convert::Infallible,
     net::SocketAddr,
-    sync::Arc,
     thread::{self, JoinHandle},
 };
 use tokio::{runtime::Builder as TokioBuilder, sync::mpsc::UnboundedSender as TokioSender};
@@ -21,7 +14,7 @@ use crate::{
     CancelChannel,
 };
 
-use super::{error::ApiServerError, router::Router, server::ApiServer};
+use super::{error::ApiServerError, http::HttpServer, server::ApiServer};
 
 /// The number of threads backing the HTTP server
 const API_SERVER_NUM_THREADS: usize = 2;
@@ -55,13 +48,8 @@ impl Worker for ApiServer {
     where
         Self: Sized,
     {
-        // Build the http server
-        let addr: SocketAddr = format!("0.0.0.0:{}", config.http_port).parse().unwrap();
-        let builder = Server::bind(&addr);
-
         Ok(Self {
             config,
-            http_server_builder: Some(builder),
             http_server_join_handle: None,
             websocket_server_join_handle: None,
             server_runtime: None,
@@ -69,44 +57,19 @@ impl Worker for ApiServer {
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
-        // Take ownership of the http server, begin listening
-        let server_builder = self.http_server_builder.take().unwrap();
-
-        // Build the routes for the HTTP server
-        let mut router = Router::new();
-        Self::setup_routes(
-            &mut router,
-            self.config.clone(),
-            self.config.global_state.clone(),
-        );
-
-        let shared_router = Arc::new(router);
-
-        // Clone the global state and move it into each layer of the callback so that each
-        // scope has its own copy of the global state
-        let make_service = make_service_fn(move |_: &AddrStream| {
-            let shared_router = shared_router.clone();
-            async move {
-                Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
-                    let shared_router = shared_router.clone();
-                    async move { Ok::<_, Error>(Self::handle_http_req(req, shared_router).await) }
-                }))
-            }
-        });
-
-        // Spawn a tokio thread pool to run the server in
+        // Build a tokio runtime and spawn two blocking tasks; one
+        // for the http server, another for the websocket server
         let tokio_runtime = TokioBuilder::new_multi_thread()
             .worker_threads(API_SERVER_NUM_THREADS)
-            .enable_io()
-            .enable_time()
+            .enable_all()
             .build()
             .map_err(|err| ApiServerError::Setup(err.to_string()))?;
+
+        // Build the http server
+        let http_server = HttpServer::new(self.config.clone(), self.config.global_state.clone());
         let http_thread_handle = tokio_runtime.spawn_blocking(move || {
-            let server = server_builder.serve(make_service);
-            if let Err(err) = block_on(server) {
-                return ApiServerError::HttpServerFailure(err.to_string());
-            }
-            ApiServerError::HttpServerFailure("http server spuriously shut down".to_string())
+            let err = block_on(http_server.execution_loop()).err().unwrap();
+            ApiServerError::HttpServerFailure(err.to_string())
         });
 
         // Start up the websocket server

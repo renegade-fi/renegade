@@ -4,10 +4,17 @@ use async_trait::async_trait;
 use circuits::types::fee::Fee;
 use crossbeam::channel::{self, Sender};
 use crypto::fields::biguint_to_scalar;
-use hyper::Method;
+use hyper::{
+    server::conn::AddrStream,
+    service::{make_service_fn, service_fn},
+    Body, Error as HyperError, Method, Request, Response, Server,
+};
 use itertools::Itertools;
 use std::{
+    convert::Infallible,
     iter,
+    net::SocketAddr,
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::oneshot::channel as oneshot_channel;
@@ -26,7 +33,6 @@ use crate::{
 use super::{
     error::ApiServerError,
     router::{Router, TypedHandler},
-    server::ApiServer,
     worker::ApiServerConfig,
 };
 
@@ -47,13 +53,33 @@ const WALLET_CREATE_ROUTE: &str = "/wallet/create";
 // | Router Setup |
 // ----------------
 
-impl ApiServer {
-    /// Sets up the routes that the API service exposes in the router
-    pub(super) fn setup_routes(
-        router: &mut Router,
-        config: ApiServerConfig,
-        global_state: RelayerState,
-    ) {
+/// A wrapper around the router and task management operations that
+/// the worker may delegate to
+
+#[derive(Clone)]
+pub(super) struct HttpServer {
+    /// The http router, used to dispatch requests to handlers
+    router: Arc<Router>,
+    /// The API server config
+    config: ApiServerConfig,
+}
+
+impl HttpServer {
+    /// Create a new http server
+    pub(super) fn new(config: ApiServerConfig, global_state: RelayerState) -> Self {
+        // Build the router, server, and register routes
+        let router = Self::build_router(&config, global_state);
+        Self {
+            router: Arc::new(router),
+            config,
+        }
+    }
+
+    /// Build a router and register routes on it
+    fn build_router(config: &ApiServerConfig, global_state: RelayerState) -> Router {
+        // Build the router and register its routes
+        let mut router = Router::new();
+
         // The "/exchangeHealthStates" route
         router.add_route(
             Method::POST,
@@ -75,8 +101,44 @@ impl ApiServer {
         router.add_route(
             Method::POST,
             WALLET_CREATE_ROUTE.to_string(),
-            WalletCreateHandler::new(config.proof_generation_work_queue),
+            WalletCreateHandler::new(config.proof_generation_work_queue.clone()),
         );
+
+        router
+    }
+
+    /// The execution loop for the http server, accepts incoming connections, serves them,
+    /// and awaits the next connection
+    pub async fn execution_loop(self) -> Result<(), ApiServerError> {
+        // Build an HTTP handler callback
+        // Clone self and move it into each layer of the callback so that each
+        // scope has its own copy of self
+        let self_clone = self.clone();
+        let make_service = make_service_fn(move |_: &AddrStream| {
+            let self_clone = self_clone.clone();
+            async move {
+                Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
+                    let self_clone = self_clone.clone();
+                    async move { Ok::<_, HyperError>(self_clone.serve_request(req).await) }
+                }))
+            }
+        });
+
+        // Build the http server and enter its execution loop
+        let addr: SocketAddr = format!("0.0.0.0:{}", self.config.http_port)
+            .parse()
+            .unwrap();
+        Server::bind(&addr)
+            .serve(make_service)
+            .await
+            .map_err(|err| ApiServerError::HttpServerFailure(err.to_string()))
+    }
+
+    /// Serve an http request
+    async fn serve_request(&self, req: Request<Body>) -> Response<Body> {
+        self.router
+            .handle_req(req.method().to_owned(), req.uri().path().to_string(), req)
+            .await
     }
 }
 
