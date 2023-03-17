@@ -16,7 +16,7 @@ pub(super) type UrlParams = HashMap<String, String>;
 // -----------
 
 /// Builds an empty HTTP 400 (Bad Request) response
-fn build_400_response(err: String) -> Response<Body> {
+pub(super) fn build_400_response(err: String) -> Response<Body> {
     Response::builder()
         .status(StatusCode::BAD_REQUEST)
         .body(Body::from(err))
@@ -24,7 +24,7 @@ fn build_400_response(err: String) -> Response<Body> {
 }
 
 /// Builds an empty HTTP 404 (Not Found) response
-fn build_404_response() -> Response<Body> {
+pub(super) fn build_404_response() -> Response<Body> {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
         .body(Body::empty())
@@ -32,7 +32,7 @@ fn build_404_response() -> Response<Body> {
 }
 
 /// Builds an empty HTTP 500 (Internal Server Error) response
-fn build_500_response() -> Response<Body> {
+pub(super) fn build_500_response() -> Response<Body> {
     Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)
         .body(Body::empty())

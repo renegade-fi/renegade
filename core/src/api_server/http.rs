@@ -1,33 +1,30 @@
 //! Groups handlers for the HTTP API
 
 use async_trait::async_trait;
-use circuits::types::fee::Fee;
-use crossbeam::channel::{self, Sender};
-use crypto::fields::biguint_to_scalar;
+use crossbeam::channel;
 use hyper::{
     server::conn::AddrStream,
     service::{make_service_fn, service_fn},
     Body, Error as HyperError, Method, Request, Response, Server,
 };
-use itertools::Itertools;
 use std::{
     convert::Infallible,
-    iter,
     net::SocketAddr,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::sync::oneshot::channel as oneshot_channel;
+use uuid::Uuid;
 
 use crate::{
-    api::http::{
-        CreateWalletRequest, GetExchangeHealthStatesRequest, GetExchangeHealthStatesResponse,
-        GetReplicasRequest, GetReplicasResponse, PingRequest, PingResponse,
+    api::{
+        http::{
+            GetExchangeHealthStatesRequest, GetExchangeHealthStatesResponse, GetWalletResponse,
+            PingResponse,
+        },
+        EmptyRequestResponse,
     },
     price_reporter::jobs::PriceReporterManagerJob,
-    proof_generation::jobs::{ProofJob, ProofManagerJob},
     state::RelayerState,
-    MAX_FEES,
 };
 
 use super::{
@@ -36,18 +33,19 @@ use super::{
     worker::ApiServerConfig,
 };
 
+/// The :id param in a URL
+const ID_URL_PARAM: &str = "id";
+
 // ---------------
 // | HTTP Routes |
 // ---------------
 
 /// Health check
-const PING_ROUTE: &str = "/ping";
+const PING_ROUTE: &str = "/v0/ping";
 /// Exchange health check route
-const EXCHANGE_HEALTH_ROUTE: &str = "/exchange/health_check";
-/// Returns the replicating nodes of a given wallet
-const REPLICAS_ROUTE: &str = "/replicas";
-/// Creates a new wallet with the given fees and keys and submits it to the contract
-const WALLET_CREATE_ROUTE: &str = "/wallet/create";
+const EXCHANGE_HEALTH_ROUTE: &str = "/v0/exchange/health_check";
+/// Returns the wallet information for the given id
+const GET_WALLET_ROUTE: &str = "/v0/wallet/:id";
 
 // ----------------
 // | Router Setup |
@@ -90,18 +88,11 @@ impl HttpServer {
         // The "/ping" route
         router.add_route(Method::GET, PING_ROUTE.to_string(), PingHandler::new());
 
-        // The "/replicas" route
+        // The "/wallet/:id" route
         router.add_route(
-            Method::POST,
-            REPLICAS_ROUTE.to_string(),
-            ReplicasHandler::new(global_state),
-        );
-
-        // The "/wallet/create" route
-        router.add_route(
-            Method::POST,
-            WALLET_CREATE_ROUTE.to_string(),
-            WalletCreateHandler::new(config.proof_generation_work_queue.clone()),
+            Method::GET,
+            GET_WALLET_ROUTE.to_string(),
+            GetWalletHandler::new(global_state),
         );
 
         router
@@ -158,7 +149,7 @@ impl PingHandler {
 
 #[async_trait]
 impl TypedHandler for PingHandler {
-    type Request = PingRequest;
+    type Request = EmptyRequestResponse;
     type Response = PingResponse;
     type Error = ApiServerError;
 
@@ -179,59 +170,43 @@ impl TypedHandler for PingHandler {
 // | Wallet Operations APIs |
 // --------------------------
 
-/// Handler for the /wallet/create route
+/// Handler for the GET /wallet/:id route
 #[derive(Debug)]
-pub struct WalletCreateHandler {
-    /// The channel to enqueue a proof generation request of `VALID WALLET CREATE` on
-    proof_job_queue: Sender<ProofManagerJob>,
+pub struct GetWalletHandler {
+    /// A copy of the relayer-global state
+    global_state: RelayerState,
 }
 
-impl WalletCreateHandler {
-    /// Create a new handler for the /wallet/create route
-    pub fn new(proof_manager_job_queue: Sender<ProofManagerJob>) -> Self {
-        Self {
-            proof_job_queue: proof_manager_job_queue,
-        }
+impl GetWalletHandler {
+    /// Create a new handler for the /v0/wallet/:id route
+    pub fn new(global_state: RelayerState) -> Self {
+        Self { global_state }
     }
 }
 
 #[async_trait]
-impl TypedHandler for WalletCreateHandler {
-    type Request = CreateWalletRequest;
-    type Response = (); // TODO: Define a response type
+impl TypedHandler for GetWalletHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetWalletResponse;
     type Error = ApiServerError;
 
     async fn handle_typed(
         &self,
-        req: Self::Request,
-        _params: UrlParams,
+        _req: Self::Request,
+        params: UrlParams,
     ) -> Result<Self::Response, Self::Error> {
-        // Pad the fees to be of length MAX_FEES
-        let fees_padded = req
-            .fees
-            .into_iter()
-            .chain(iter::repeat(Fee::default()))
-            .take(MAX_FEES)
-            .collect_vec();
-
-        // Forward a request to the proof generation module to build a proof of
-        // `VALID WALLET CREATE`
-        let (response_sender, response_receiver) = oneshot_channel();
-        self.proof_job_queue
-            .send(ProofManagerJob {
-                type_: ProofJob::ValidWalletCreate {
-                    fees: fees_padded,
-                    keys: req.keys.into(),
-                    randomness: biguint_to_scalar(&req.randomness),
-                },
-                response_channel: response_sender,
-            })
-            .map_err(|err| ApiServerError::EnqueueJob(err.to_string()))?;
-
-        // Await a response
-        let resp = response_receiver.await.unwrap();
-        println!("got proof back: {:?}", resp);
-        Ok(())
+        let wallet_id: Uuid = params.get(ID_URL_PARAM).unwrap().parse().unwrap();
+        if let Some(wallet) = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&wallet_id)
+            .await
+        {
+            Ok(GetWalletResponse { wallet })
+        } else {
+            panic!("implement http error passing from handler")
+        }
     }
 }
 
@@ -288,50 +263,5 @@ impl TypedHandler for ExchangeHealthStatesHandler {
             median: price_reporter_state_receiver.recv().unwrap(),
             all_exchanges: exchange_connection_state_receiver.recv().unwrap(),
         })
-    }
-}
-
-// ---------------------
-// | Cluster Info APIs |
-// ---------------------
-
-/// Handler for the replicas route, returns the number of replicas a given wallet has
-#[derive(Clone, Debug)]
-pub struct ReplicasHandler {
-    /// The global state of the relayer, used to query information for requests
-    global_state: RelayerState,
-}
-
-impl ReplicasHandler {
-    /// Create a new handler for "/replicas"
-    pub fn new(global_state: RelayerState) -> Self {
-        Self { global_state }
-    }
-}
-
-#[async_trait]
-impl TypedHandler for ReplicasHandler {
-    type Request = GetReplicasRequest;
-    type Response = GetReplicasResponse;
-    type Error = ApiServerError;
-
-    async fn handle_typed(
-        &self,
-        req: Self::Request,
-        _params: UrlParams,
-    ) -> Result<Self::Response, Self::Error> {
-        let replicas = if let Some(wallet_info) = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .read_wallet(&req.wallet_id)
-            .await
-        {
-            wallet_info.metadata.replicas.clone().into_iter().collect()
-        } else {
-            vec![]
-        };
-
-        Ok(GetReplicasResponse { replicas })
     }
 }

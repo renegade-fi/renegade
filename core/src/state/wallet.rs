@@ -448,6 +448,13 @@ impl WalletIndex {
     // | Getters |
     // -----------
 
+    /// Get the wallet with the given ID
+    pub async fn get_wallet(&self, wallet_id: &WalletIdentifier) -> Option<Wallet> {
+        self.read_wallet(wallet_id)
+            .await
+            .map(|locked_val| locked_val.clone())
+    }
+
     /// Get the wallet that an order is allocated in
     pub fn get_wallet_for_order(&self, order_id: &OrderIdentifier) -> Option<WalletIdentifier> {
         self.order_to_wallet.get(order_id).cloned()
