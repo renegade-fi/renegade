@@ -4,7 +4,12 @@ use std::{collections::HashMap, fmt::Display};
 
 use async_trait::async_trait;
 use hyper::{Body, Method, Request, Response, StatusCode};
+use matchit::Router as MatchRouter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use tracing::log;
+
+/// A type alias for URL generic params maps, i.e. /path/to/resource/:id
+pub(super) type UrlParams = HashMap<String, String>;
 
 // -----------
 // | Helpers |
@@ -43,7 +48,7 @@ fn build_500_response() -> Response<Body> {
 #[async_trait]
 pub trait Handler: Send + Sync {
     /// The handler method for the request/response on the handler's route
-    async fn handle(&self, req: Request<Body>) -> Response<Body>;
+    async fn handle(&self, req: Request<Body>, url_params: UrlParams) -> Response<Body>;
 }
 
 /// A handler that has associated Request/Response type information attached to it.
@@ -60,7 +65,11 @@ pub trait TypedHandler: Send + Sync {
     type Error: Display;
 
     /// The handler logic, translate request into response
-    async fn handle_typed(&self, req: Self::Request) -> Result<Self::Response, Self::Error>;
+    async fn handle_typed(
+        &self,
+        req: Self::Request,
+        url_params: UrlParams,
+    ) -> Result<Self::Response, Self::Error>;
 }
 
 /// Auto-implementation of the Handler trait for a TypedHandler which covers the process
@@ -73,7 +82,7 @@ impl<
         T: TypedHandler<Request = Req, Response = Resp, Error = E>,
     > Handler for T
 {
-    async fn handle(&self, req: Request<Body>) -> Response<Body> {
+    async fn handle(&self, req: Request<Body>, url_params: UrlParams) -> Response<Body> {
         // Deserialize the request into the request type, return HTTP 400 if deserialization fails
         let req_body_bytes = hyper::body::to_bytes(req.into_body()).await;
         if let Err(e) = req_body_bytes {
@@ -94,7 +103,7 @@ impl<
         let req_body: Req = deserialized.unwrap();
 
         // Forward to the typed handler
-        if let Ok(resp) = self.handle_typed(req_body).await {
+        if let Ok(resp) = self.handle_typed(req_body, url_params).await {
             // Serialize the response into a body. We explicitly allow for all cross-origin
             // requests, as users connecting to a locally-run node have a different origin port.
 
@@ -110,24 +119,45 @@ impl<
     }
 }
 
-/// A router handles the process of serialization/deserialization, and routing
-/// to the appropriate handler
+/// Wrapper around a matchit router that allows different HTTP request types to be matches
+///
 pub struct Router {
-    /// The routing information, mapping endpoint to handler
-    routes: HashMap<(Method, String), Box<dyn Handler>>,
+    /// The underlying router
+    router: MatchRouter<Box<dyn Handler>>,
 }
 
 impl Router {
     /// Create a new router with no routes established
     pub fn new() -> Self {
-        Self {
-            routes: HashMap::new(),
+        let router = MatchRouter::new();
+        Self { router }
+    }
+
+    /// Helper to build a routable path from a method and a concrete route
+    ///
+    /// The `matchit::Router` works only on URLs directly; so we prepend the
+    /// path to the URL when creating the route
+    ///
+    /// Concretely, if POST is valid to /route then we route to /POST/route
+    fn create_full_route(method: Method, mut route: String) -> String {
+        // Prepend a "/" if not already done
+        if !route.starts_with('/') {
+            route = String::from("/") + &route;
         }
+
+        // Matchit is URL only, so we prepend the request type to match directly
+        let method_str = method.to_string();
+        format!("/{}{}", method_str, route)
     }
 
     /// Add a route to the router
     pub fn add_route<H: Handler + 'static>(&mut self, method: Method, route: String, handler: H) {
-        self.routes.insert((method, route), Box::new(handler));
+        log::debug!("Attached handler to route {route} with method {method}");
+        let full_route = Self::create_full_route(method, route);
+
+        self.router
+            .insert(full_route, Box::new(handler))
+            .expect("error attaching handler to route");
     }
 
     /// Route a request to a handler
@@ -137,8 +167,21 @@ impl Router {
         route: String,
         req: Request<Body>,
     ) -> Response<Body> {
-        if let Some(handler) = self.routes.get(&(method, route)) {
-            handler.as_ref().handle(req).await
+        // Get the full routable path
+        let full_route = Self::create_full_route(method, route);
+
+        // Dispatch to handler
+        if let Ok(matched_path) = self.router.at(&full_route) {
+            let handler = matched_path.value;
+            let params = matched_path.params;
+
+            // Clone the params to take ownership
+            let mut params_map = HashMap::with_capacity(params.len());
+            for (key, value) in params.iter() {
+                params_map.insert(key.to_string(), value.to_string());
+            }
+
+            handler.as_ref().handle(req, params_map).await
         } else {
             build_404_response()
         }

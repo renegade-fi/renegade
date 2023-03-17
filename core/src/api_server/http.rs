@@ -32,7 +32,7 @@ use crate::{
 
 use super::{
     error::ApiServerError,
-    router::{Router, TypedHandler},
+    router::{Router, TypedHandler, UrlParams},
     worker::ApiServerConfig,
 };
 
@@ -162,7 +162,11 @@ impl TypedHandler for PingHandler {
     type Response = PingResponse;
     type Error = ApiServerError;
 
-    async fn handle_typed(&self, _req: Self::Request) -> Result<Self::Response, Self::Error> {
+    async fn handle_typed(
+        &self,
+        _req: Self::Request,
+        _params: UrlParams,
+    ) -> Result<Self::Response, Self::Error> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -197,7 +201,11 @@ impl TypedHandler for WalletCreateHandler {
     type Response = (); // TODO: Define a response type
     type Error = ApiServerError;
 
-    async fn handle_typed(&self, req: Self::Request) -> Result<Self::Response, Self::Error> {
+    async fn handle_typed(
+        &self,
+        req: Self::Request,
+        _params: UrlParams,
+    ) -> Result<Self::Response, Self::Error> {
         // Pad the fees to be of length MAX_FEES
         let fees_padded = req
             .fees
@@ -252,7 +260,11 @@ impl TypedHandler for ExchangeHealthStatesHandler {
     type Response = GetExchangeHealthStatesResponse;
     type Error = ApiServerError;
 
-    async fn handle_typed(&self, req: Self::Request) -> Result<Self::Response, Self::Error> {
+    async fn handle_typed(
+        &self,
+        req: Self::Request,
+        _params: UrlParams,
+    ) -> Result<Self::Response, Self::Error> {
         let (price_reporter_state_sender, price_reporter_state_receiver) = channel::unbounded();
         self.config
             .price_reporter_work_queue
@@ -303,7 +315,11 @@ impl TypedHandler for ReplicasHandler {
     type Response = GetReplicasResponse;
     type Error = ApiServerError;
 
-    async fn handle_typed(&self, req: Self::Request) -> Result<Self::Response, Self::Error> {
+    async fn handle_typed(
+        &self,
+        req: Self::Request,
+        _params: UrlParams,
+    ) -> Result<Self::Response, Self::Error> {
         let replicas = if let Some(wallet_info) = self
             .global_state
             .read_wallet_index()
