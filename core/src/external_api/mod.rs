@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod http;
+pub mod types;
 pub mod websocket;
 
 /// An empty request/response type
