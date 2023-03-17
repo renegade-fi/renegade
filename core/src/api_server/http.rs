@@ -5,7 +5,7 @@ use crossbeam::channel;
 use hyper::{
     server::conn::AddrStream,
     service::{make_service_fn, service_fn},
-    Body, Error as HyperError, Method, Request, Response, Server,
+    Body, Error as HyperError, Method, Request, Response, Server, StatusCode,
 };
 use std::{
     convert::Infallible,
@@ -35,6 +35,9 @@ use super::{
 
 /// The :id param in a URL
 const ID_URL_PARAM: &str = "id";
+
+/// The error message to display when a wallet cannot be found
+const ERR_WALLET_NOT_FOUND: &str = "wallet not found";
 
 // ---------------
 // | HTTP Routes |
@@ -151,13 +154,12 @@ impl PingHandler {
 impl TypedHandler for PingHandler {
     type Request = EmptyRequestResponse;
     type Response = PingResponse;
-    type Error = ApiServerError;
 
     async fn handle_typed(
         &self,
         _req: Self::Request,
         _params: UrlParams,
-    ) -> Result<Self::Response, Self::Error> {
+    ) -> Result<Self::Response, ApiServerError> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -188,13 +190,12 @@ impl GetWalletHandler {
 impl TypedHandler for GetWalletHandler {
     type Request = EmptyRequestResponse;
     type Response = GetWalletResponse;
-    type Error = ApiServerError;
 
     async fn handle_typed(
         &self,
         _req: Self::Request,
         params: UrlParams,
-    ) -> Result<Self::Response, Self::Error> {
+    ) -> Result<Self::Response, ApiServerError> {
         let wallet_id: Uuid = params.get(ID_URL_PARAM).unwrap().parse().unwrap();
         if let Some(wallet) = self
             .global_state
@@ -205,7 +206,10 @@ impl TypedHandler for GetWalletHandler {
         {
             Ok(GetWalletResponse { wallet })
         } else {
-            panic!("implement http error passing from handler")
+            Err(ApiServerError::HttpStatusCode(
+                StatusCode::NOT_FOUND,
+                ERR_WALLET_NOT_FOUND.to_string(),
+            ))
         }
     }
 }
@@ -233,13 +237,12 @@ impl ExchangeHealthStatesHandler {
 impl TypedHandler for ExchangeHealthStatesHandler {
     type Request = GetExchangeHealthStatesRequest;
     type Response = GetExchangeHealthStatesResponse;
-    type Error = ApiServerError;
 
     async fn handle_typed(
         &self,
         req: Self::Request,
         _params: UrlParams,
-    ) -> Result<Self::Response, Self::Error> {
+    ) -> Result<Self::Response, ApiServerError> {
         let (price_reporter_state_sender, price_reporter_state_receiver) = channel::unbounded();
         self.config
             .price_reporter_work_queue
