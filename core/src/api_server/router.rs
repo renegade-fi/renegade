@@ -1,12 +1,14 @@
 //! Abstracts routing logic from the HTTP server
 
-use std::{collections::HashMap, fmt::Display};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hyper::{Body, Method, Request, Response, StatusCode};
 use matchit::Router as MatchRouter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tracing::log;
+
+use super::error::ApiServerError;
 
 /// A type alias for URL generic params maps, i.e. /path/to/resource/:id
 pub(super) type UrlParams = HashMap<String, String>;
@@ -24,18 +26,29 @@ pub(super) fn build_400_response(err: String) -> Response<Body> {
 }
 
 /// Builds an empty HTTP 404 (Not Found) response
-pub(super) fn build_404_response() -> Response<Body> {
+pub(super) fn build_404_response(err: String) -> Response<Body> {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
-        .body(Body::empty())
+        .body(Body::from(err))
         .unwrap()
 }
 
 /// Builds an empty HTTP 500 (Internal Server Error) response
-pub(super) fn build_500_response() -> Response<Body> {
+pub(super) fn build_500_response(err: String) -> Response<Body> {
     Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)
-        .body(Body::empty())
+        .body(Body::from(err))
+        .unwrap()
+}
+
+/// Builds an empty HTTP XXX response
+pub(super) fn build_response_from_status_code(
+    status_code: StatusCode,
+    err: String,
+) -> Response<Body> {
+    Response::builder()
+        .status(status_code)
+        .body(Body::from(err))
         .unwrap()
 }
 
@@ -61,15 +74,13 @@ pub trait TypedHandler: Send + Sync {
     type Request: DeserializeOwned + for<'de> Deserialize<'de>;
     /// The response type that the handler returns
     type Response: Serialize + Send;
-    /// The error type that the handler returns
-    type Error: Display;
 
     /// The handler logic, translate request into response
     async fn handle_typed(
         &self,
         req: Self::Request,
         url_params: UrlParams,
-    ) -> Result<Self::Response, Self::Error>;
+    ) -> Result<Self::Response, ApiServerError>;
 }
 
 /// Auto-implementation of the Handler trait for a TypedHandler which covers the process
@@ -78,8 +89,7 @@ pub trait TypedHandler: Send + Sync {
 impl<
         Req: DeserializeOwned + for<'de> Deserialize<'de> + Send,
         Resp: Serialize,
-        E: Display,
-        T: TypedHandler<Request = Req, Response = Resp, Error = E>,
+        T: TypedHandler<Request = Req, Response = Resp>,
     > Handler for T
 {
     async fn handle(&self, req: Request<Body>, url_params: UrlParams) -> Response<Body> {
@@ -103,7 +113,8 @@ impl<
         let req_body: Req = deserialized.unwrap();
 
         // Forward to the typed handler
-        if let Ok(resp) = self.handle_typed(req_body, url_params).await {
+        let res = self.handle_typed(req_body, url_params).await;
+        if let Ok(resp) = res {
             // Serialize the response into a body. We explicitly allow for all cross-origin
             // requests, as users connecting to a locally-run node have a different origin port.
 
@@ -114,7 +125,13 @@ impl<
                 .body(Body::from(serde_json::to_vec(&resp).unwrap()))
                 .unwrap()
         } else {
-            build_500_response()
+            let err = res.err().unwrap();
+            match err.clone() {
+                ApiServerError::HttpStatusCode(status, message) => {
+                    build_response_from_status_code(status, message)
+                }
+                _ => build_500_response(err.to_string()),
+            }
         }
     }
 }
@@ -168,7 +185,7 @@ impl Router {
         req: Request<Body>,
     ) -> Response<Body> {
         // Get the full routable path
-        let full_route = Self::create_full_route(method, route);
+        let full_route = Self::create_full_route(method.clone(), route.clone());
 
         // Dispatch to handler
         if let Ok(matched_path) = self.router.at(&full_route) {
@@ -183,7 +200,7 @@ impl Router {
 
             handler.as_ref().handle(req, params_map).await
         } else {
-            build_404_response()
+            build_404_response(format!("Route {} for method {} not found", route, method))
         }
     }
 }
