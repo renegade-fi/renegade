@@ -7,7 +7,9 @@ use tokio::runtime::Builder as RuntimeBuilder;
 use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};
 
 use crate::default_wrapper::DefaultWrapper;
-use crate::{api::gossip::GossipOutbound, state::RelayerState, worker::Worker, CancelChannel};
+use crate::{
+    gossip_api::gossip::GossipOutbound, state::RelayerState, worker::Worker, CancelChannel,
+};
 
 use super::server::{GOSSIP_EXECUTOR_N_BLOCKING_THREADS, GOSSIP_EXECUTOR_N_THREADS};
 use super::{

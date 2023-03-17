@@ -12,7 +12,7 @@ use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
 
 use crate::{
-    api::{
+    gossip_api::{
         gossip::{GossipOutbound, GossipRequest, ManagerControlDirective},
         heartbeat::HeartbeatMessage,
         orderbook_management::OrderInfoRequest,

@@ -17,7 +17,7 @@ use starknet_providers::Provider;
 use tracing::log;
 
 use crate::{
-    api::{
+    gossip_api::{
         cluster_management::{ClusterManagementMessage, ValidityWitnessRequest},
         gossip::{
             AuthenticatedGossipResponse, GossipOutbound, GossipRequest, GossipResponse,

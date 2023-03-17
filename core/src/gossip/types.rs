@@ -15,7 +15,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::api::cluster_management::CLUSTER_MANAGEMENT_TOPIC_PREFIX;
+use crate::gossip_api::cluster_management::CLUSTER_MANAGEMENT_TOPIC_PREFIX;
 
 /// Contains information about connected peers
 #[derive(Debug, Serialize, Deserialize)]

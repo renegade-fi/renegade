@@ -9,8 +9,8 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::log;
 
 use crate::{
-    api::gossip::GossipOutbound,
     gossip::{jobs::GossipServerJob, types::ClusterId},
+    gossip_api::gossip::GossipOutbound,
     handshake::jobs::HandshakeExecutionJob,
     network_manager::composed_protocol::ComposedNetworkBehavior,
     state::RelayerState,

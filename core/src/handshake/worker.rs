@@ -10,7 +10,7 @@ use tokio::{
 use tracing::log;
 
 use crate::{
-    api::gossip::GossipOutbound,
+    gossip_api::gossip::GossipOutbound,
     handshake::manager::{HandshakeExecutor, HandshakeScheduler, HANDSHAKE_EXECUTOR_N_THREADS},
     proof_generation::jobs::ProofManagerJob,
     state::RelayerState,

@@ -6,8 +6,8 @@ use mpc_ristretto::network::QuicTwoPartyNet;
 use uuid::Uuid;
 
 use crate::{
-    api::{gossip::AuthenticatedGossipResponse, handshake::HandshakeMessage},
     gossip::types::WrappedPeerId,
+    gossip_api::{gossip::AuthenticatedGossipResponse, handshake::HandshakeMessage},
     state::OrderIdentifier,
 };
 

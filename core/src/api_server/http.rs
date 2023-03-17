@@ -16,7 +16,7 @@ use std::{
 use uuid::Uuid;
 
 use crate::{
-    api::{
+    external_api::{
         http::{
             GetExchangeHealthStatesRequest, GetExchangeHealthStatesResponse, GetWalletResponse,
             PingResponse,
