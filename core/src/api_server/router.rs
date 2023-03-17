@@ -153,7 +153,7 @@ impl Router {
     /// Helper to build a routable path from a method and a concrete route
     ///
     /// The `matchit::Router` works only on URLs directly; so we prepend the
-    /// path to the URL when creating the route
+    /// operation type to the URL when creating the route
     ///
     /// Concretely, if POST is valid to /route then we route to /POST/route
     fn create_full_route(method: Method, mut route: String) -> String {
@@ -200,7 +200,7 @@ impl Router {
 
             handler.as_ref().handle(req, params_map).await
         } else {
-            build_404_response(format!("Route {} for method {} not found", route, method))
+            build_404_response(format!("Route {route} for method {method} not found"))
         }
     }
 }
