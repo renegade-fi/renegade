@@ -134,6 +134,8 @@ pub enum ProofJob {
     /// A request has to create a new wallet
     /// The proof generation module should generate a proof of
     /// `VALID WALLET CREATE`
+    /// TODO: Remove this lint allowance
+    #[allow(unused)]
     ValidWalletCreate {
         /// The fees to initialize the wallet with
         fees: Vec<Fee>,
