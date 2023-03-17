@@ -45,7 +45,7 @@ use tracing::log::{self, LevelFilter};
 
 use crate::{
     api::gossip::GossipOutbound,
-    api_server::{server::ApiServer, worker::ApiServerConfig},
+    api_server::worker::{ApiServer, ApiServerConfig},
     chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig},
     gossip::{jobs::GossipServerJob, server::GossipServer},
     handshake::{jobs::HandshakeExecutionJob, manager::HandshakeManager},

@@ -3,6 +3,5 @@
 pub mod error;
 mod http;
 mod router;
-pub mod server;
 mod websocket;
 pub mod worker;

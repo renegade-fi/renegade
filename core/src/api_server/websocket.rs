@@ -1,8 +1,10 @@
 //! Groups logic for managing websocket connections
 
+use std::net::SocketAddr;
+
 use crossbeam::channel;
 use futures::{stream::SplitSink, SinkExt, StreamExt};
-use tokio::{net::TcpStream, sync::mpsc::UnboundedSender as TokioSender};
+use tokio::net::{TcpListener, TcpStream};
 use tokio_stream::StreamMap;
 use tokio_tungstenite::{accept_async, WebSocketStream};
 use tungstenite::Message;
@@ -14,45 +16,56 @@ use crate::{
     types::{SystemBusMessage, SystemBusMessageWithTopic},
 };
 
-use super::error::ApiServerError;
+use super::{error::ApiServerError, worker::ApiServerConfig};
 
 /// The dummy stream used to seed the websocket subscriptions `StreamMap`
 const DUMMY_SUBSCRIPTION_TOPIC: &str = "dummy-topic";
 
-/// Handler for connections to the websocket server
-#[derive(Debug)]
-pub struct WebsocketHandler {
-    /// The TCP stream underlying the websocket that has been opened
-    tcp_stream: Option<TcpStream>,
-    /// The worker job queue for the PriceReporterManager
-    price_reporter_worker_sender: TokioSender<PriceReporterManagerJob>,
+/// A wrapper around request handling and task management
+#[derive(Clone)]
+pub struct WebsocketServer {
+    /// The api server config
+    config: ApiServerConfig,
     /// The system bus to receive events on
     system_bus: SystemBus<SystemBusMessage>,
 }
 
-impl WebsocketHandler {
-    /// Create a new websocket handler
-    pub fn new(
-        inbound_stream: TcpStream,
-        price_reporter_worker_sender: TokioSender<PriceReporterManagerJob>,
-        system_bus: SystemBus<SystemBusMessage>,
-    ) -> Self {
-        Self {
-            tcp_stream: Some(inbound_stream),
-            price_reporter_worker_sender,
-            system_bus,
-        }
+impl WebsocketServer {
+    /// Create a new websocket server
+    pub fn new(config: ApiServerConfig, system_bus: SystemBus<SystemBusMessage>) -> Self {
+        Self { config, system_bus }
     }
 
-    /// Start the websocket handler and run it
-    ///
-    /// Consumes the reference to the handler
-    pub async fn start(mut self) -> Result<(), ApiServerError> {
-        // Accept the websocket upgrade and split into read/write streams
-        let tcp_stream = self.tcp_stream.take().unwrap();
-        let websocket_stream = accept_async(tcp_stream)
+    /// The main execution loop of the websocket server
+    pub async fn execution_loop(self) -> Result<(), ApiServerError> {
+        // Bind the server to the given port
+        let addr: SocketAddr = format!("0.0.0.0:{:?}", self.config.websocket_port)
+            .parse()
+            .unwrap();
+
+        let listener = TcpListener::bind(addr)
             .await
-            .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
+            .map_err(|err| ApiServerError::Setup(err.to_string()))?;
+
+        // Await incoming websocket connections
+        while let Ok((stream, _)) = listener.accept().await {
+            // Create a new handler on this stream
+            let self_clone = self.clone();
+            tokio::spawn(async move { self_clone.handle_connection(stream).await });
+        }
+
+        // If the listener fails, the server has failed
+        Err(ApiServerError::WebsocketServerFailure(
+            "websocket server spuriously shutdown".to_string(),
+        ))
+    }
+
+    /// Handle a websocket connection
+    async fn handle_connection(&self, stream: TcpStream) -> Result<(), ApiServerError> {
+        // Accept the websocket upgrade and split into read/write streams
+        let websocket_stream = accept_async(stream)
+            .await
+            .map_err(|err| ApiServerError::WebsocketServerFailure(err.to_string()))?;
         let (mut write_stream, mut read_stream) = websocket_stream.split();
 
         // The websocket client will add subscriptions throughout the communication; this tracks the
@@ -80,7 +93,7 @@ impl WebsocketHandler {
                     match message {
                         Some(msg) => {
                             if let Err(e) = msg {
-                                return Err(ApiServerError::WebsocketHandlerFailure(e.to_string()));
+                                return Err(ApiServerError::WebsocketServerFailure(e.to_string()));
                             }
 
                             let message_unwrapped = msg.unwrap();
@@ -121,7 +134,7 @@ impl WebsocketHandler {
                         .handle_subscription_message(message_body, client_subscriptions, system_bus)
                         .await;
                     let response_serialized = serde_json::to_string(&response)
-                        .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
+                        .map_err(|err| ApiServerError::WebsocketServerFailure(err.to_string()))?;
 
                     Message::Text(response_serialized)
                 }
@@ -133,7 +146,7 @@ impl WebsocketHandler {
             write_stream
                 .send(resp)
                 .await
-                .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
+                .map_err(|err| ApiServerError::WebsocketServerFailure(err.to_string()))?;
         }
 
         Ok(())
@@ -159,7 +172,8 @@ impl WebsocketHandler {
                     let base_token = Token::from_addr(topic_split[3]);
                     let quote_token = Token::from_addr(topic_split[4]);
                     let (channel_sender, channel_receiver) = channel::unbounded();
-                    self.price_reporter_worker_sender
+                    self.config
+                        .price_reporter_work_queue
                         .send(PriceReporterManagerJob::StartPriceReporter {
                             base_token,
                             quote_token,
@@ -194,13 +208,13 @@ impl WebsocketHandler {
         // Serialize the message and push it onto the stream
         let event_serialized =
             serde_json::to_string(&SystemBusMessageWithTopic { topic, event })
-                .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
+                .map_err(|err| ApiServerError::WebsocketServerFailure(err.to_string()))?;
         let message = Message::Text(event_serialized);
 
         write_stream
             .send(message)
             .await
-            .map_err(|err| ApiServerError::WebsocketHandlerFailure(err.to_string()))?;
+            .map_err(|err| ApiServerError::WebsocketServerFailure(err.to_string()))?;
 
         Ok(())
     }

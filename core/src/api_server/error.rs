@@ -11,8 +11,6 @@ pub enum ApiServerError {
     HttpServerFailure(String),
     /// Error setting up the API server
     Setup(String),
-    /// A failure while handling a websocket connection
-    WebsocketHandlerFailure(String),
     /// Websocket server has failed
     WebsocketServerFailure(String),
 }

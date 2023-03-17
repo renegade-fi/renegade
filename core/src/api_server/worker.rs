@@ -2,11 +2,12 @@
 
 use crossbeam::channel::Sender as CrossbeamSender;
 use futures::executor::block_on;
-use std::{
-    net::SocketAddr,
-    thread::{self, JoinHandle},
+use std::thread::{self, JoinHandle};
+use tokio::{
+    runtime::{Builder as TokioBuilder, Runtime},
+    sync::mpsc::UnboundedSender as TokioSender,
+    task::JoinHandle as TokioJoinHandle,
 };
-use tokio::{runtime::Builder as TokioBuilder, sync::mpsc::UnboundedSender as TokioSender};
 
 use crate::{
     price_reporter::jobs::PriceReporterManagerJob, proof_generation::jobs::ProofManagerJob,
@@ -14,10 +15,26 @@ use crate::{
     CancelChannel,
 };
 
-use super::{error::ApiServerError, http::HttpServer, server::ApiServer};
+use super::{error::ApiServerError, http::HttpServer, websocket::WebsocketServer};
 
 /// The number of threads backing the HTTP server
 const API_SERVER_NUM_THREADS: usize = 2;
+
+/// Accepts inbound HTTP requests and websocket subscriptions and
+/// serves requests from those connections
+///
+/// Clients of this server might be traders looking to manage their
+/// trades, view live execution events, etc
+pub struct ApiServer {
+    /// The config passed to the worker
+    pub(super) config: ApiServerConfig,
+    /// The join handle for the http server
+    pub(super) http_server_join_handle: Option<TokioJoinHandle<ApiServerError>>,
+    /// The join handle for the websocket server
+    pub(super) websocket_server_join_handle: Option<TokioJoinHandle<ApiServerError>>,
+    /// The tokio runtime that the http server runs inside of
+    pub(super) server_runtime: Option<Runtime>,
+}
 
 /// The worker config for the ApiServer
 #[derive(Clone, Debug)]
@@ -72,29 +89,12 @@ impl Worker for ApiServer {
             ApiServerError::HttpServerFailure(err.to_string())
         });
 
-        // Start up the websocket server
-        let addr: SocketAddr = format!("0.0.0.0:{:?}", self.config.websocket_port)
-            .parse()
-            .unwrap();
-
-        let system_bus_clone = self.config.system_bus.clone();
-        let price_reporter_work_queue_clone = self.config.price_reporter_work_queue.clone();
+        // Build the websocket server
+        let websocket_server =
+            WebsocketServer::new(self.config.clone(), self.config.system_bus.clone());
         let websocket_thread_handle = tokio_runtime.spawn_blocking(move || {
-            block_on(async {
-                if let Err(err) = Self::websocket_execution_loop(
-                    addr,
-                    price_reporter_work_queue_clone,
-                    system_bus_clone,
-                )
-                .await
-                {
-                    return ApiServerError::WebsocketServerFailure(err.to_string());
-                }
-
-                ApiServerError::WebsocketServerFailure(
-                    "websocket server spuriously shut down".to_string(),
-                )
-            })
+            let err = block_on(websocket_server.execution_loop()).err().unwrap();
+            ApiServerError::WebsocketServerFailure(err.to_string())
         });
 
         self.http_server_join_handle = Some(http_thread_handle);
