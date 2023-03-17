@@ -27,7 +27,6 @@ futures = { version = "0.3.26" }
 futures-util = { version = "0.3" }
 hex = "0.3.1"
 hmac-sha256 = "1.1.6"
-httprouter = "0.5"
 hyper = { version = "0.14", features = ["http1", "http2", "server", "tcp"] }
 integration-helpers = { path = "../integration-helpers" }
 itertools = "0.10"
@@ -50,6 +49,7 @@ libp2p-core = { version = "0.38" }
 libp2p-swarm = { version = "0.41" }
 libp2p-swarm-derive = { version = "0.31" }
 lru = { version = "0.8" }
+matchit = "0.7"
 mpc-ristretto = { git = "https://github.com/renegade-fi/MPC-Ristretto" }
 mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
 num-bigint = { version = "0.4.3" }
