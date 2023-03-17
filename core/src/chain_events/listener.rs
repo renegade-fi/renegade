@@ -30,7 +30,7 @@ use tokio::time::{sleep_until, Instant};
 use tracing::log;
 
 use crate::{
-    api::{
+    gossip_api::{
         gossip::{GossipOutbound, PubsubMessage},
         orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
     },

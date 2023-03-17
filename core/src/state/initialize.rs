@@ -29,11 +29,11 @@ use tokio::{
 use tracing::log;
 
 use crate::{
-    api::{
+    error::CoordinatorError,
+    gossip_api::{
         gossip::{GossipOutbound, PubsubMessage},
         orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
     },
-    error::CoordinatorError,
     proof_generation::jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle},
     MERKLE_HEIGHT,
 };

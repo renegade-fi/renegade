@@ -10,7 +10,7 @@ use tokio_tungstenite::{accept_async, WebSocketStream};
 use tungstenite::Message;
 
 use crate::{
-    api::websocket::{SubscriptionMessage, SubscriptionResponse},
+    external_api::websocket::{SubscriptionMessage, SubscriptionResponse},
     price_reporter::{jobs::PriceReporterManagerJob, tokens::Token},
     system_bus::{SystemBus, TopicReader},
     types::{SystemBusMessage, SystemBusMessageWithTopic},

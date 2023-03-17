@@ -2,8 +2,8 @@
 //! is passed around throughout the code
 
 use crate::{
-    api::heartbeat::HeartbeatMessage,
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
+    gossip_api::heartbeat::HeartbeatMessage,
     proof_generation::jobs::ValidCommitmentsBundle,
     state::orderbook::NetworkOrder,
     system_bus::SystemBus,

@@ -1,7 +1,7 @@
 //! Groups handlers for gossiping about cluster management events
 
 use crate::{
-    api::{
+    gossip_api::{
         cluster_management::{
             ClusterJoinMessage, ClusterManagementMessage, ReplicateRequestBody, ReplicatedMessage,
             ValidityProofRequest,

@@ -6,13 +6,14 @@
 #![deny(unsafe_code)]
 #![deny(clippy::missing_docs_in_private_items)]
 
-mod api;
 mod api_server;
 mod chain_events;
 mod config;
 mod default_wrapper;
 mod error;
+mod external_api;
 mod gossip;
+mod gossip_api;
 mod handshake;
 mod network_manager;
 mod price_reporter;
@@ -44,10 +45,10 @@ use tokio::{
 use tracing::log::{self, LevelFilter};
 
 use crate::{
-    api::gossip::GossipOutbound,
     api_server::worker::{ApiServer, ApiServerConfig},
     chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig},
     gossip::{jobs::GossipServerJob, server::GossipServer},
+    gossip_api::gossip::GossipOutbound,
     handshake::{jobs::HandshakeExecutionJob, manager::HandshakeManager},
     network_manager::manager::NetworkManager,
     price_reporter::{jobs::PriceReporterManagerJob, manager::PriceReporterManager},

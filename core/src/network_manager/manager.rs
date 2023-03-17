@@ -21,7 +21,12 @@ use std::{net::SocketAddr, thread::JoinHandle};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::{
-    api::{
+    default_wrapper::DefaultWrapper,
+    gossip::{
+        jobs::{ClusterManagementJob, GossipServerJob, OrderBookManagementJob},
+        types::{ClusterId, PeerInfo, WrappedPeerId},
+    },
+    gossip_api::{
         cluster_management::{ClusterManagementMessage, ReplicatedMessage},
         gossip::{
             AuthenticatedGossipRequest, AuthenticatedGossipResponse, AuthenticatedPubsubMessage,
@@ -29,11 +34,6 @@ use crate::{
             ManagerControlDirective, PubsubMessage,
         },
         orderbook_management::{OrderBookManagementMessage, OrderInfoResponse, ORDER_BOOK_TOPIC},
-    },
-    default_wrapper::DefaultWrapper,
-    gossip::{
-        jobs::{ClusterManagementJob, GossipServerJob, OrderBookManagementJob},
-        types::{ClusterId, PeerInfo, WrappedPeerId},
     },
     handshake::jobs::HandshakeExecutionJob,
     state::RelayerState,

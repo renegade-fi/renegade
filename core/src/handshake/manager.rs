@@ -11,7 +11,9 @@ use tracing::log;
 use uuid::Uuid;
 
 use crate::{
-    api::{
+    default_wrapper::DefaultWrapper,
+    gossip::types::WrappedPeerId,
+    gossip_api::{
         cluster_management::ClusterManagementMessage,
         gossip::{
             AuthenticatedGossipResponse, ConnectionRole, GossipOutbound, GossipRequest,
@@ -19,8 +21,6 @@ use crate::{
         },
         handshake::{HandshakeMessage, MatchRejectionReason},
     },
-    default_wrapper::DefaultWrapper,
-    gossip::types::WrappedPeerId,
     proof_generation::jobs::ProofManagerJob,
     state::{new_async_shared, NetworkOrderState, OrderIdentifier, RelayerState},
     system_bus::SystemBus,

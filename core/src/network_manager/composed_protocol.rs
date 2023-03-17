@@ -25,7 +25,7 @@ use std::{
     iter,
 };
 
-use crate::api::gossip::{AuthenticatedGossipRequest, AuthenticatedGossipResponse};
+use crate::gossip_api::gossip::{AuthenticatedGossipRequest, AuthenticatedGossipResponse};
 
 use super::error::NetworkManagerError;
 

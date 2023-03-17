@@ -15,14 +15,14 @@ use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as T
 use tracing::log;
 
 use crate::{
-    api::{
+    default_wrapper::DefaultWrapper,
+    gossip_api::{
         cluster_management::{ClusterJoinMessage, ClusterManagementMessage},
         gossip::{
             GossipOutbound, GossipRequest, GossipResponse, ManagerControlDirective, PubsubMessage,
         },
         heartbeat::BootstrapRequest,
     },
-    default_wrapper::DefaultWrapper,
     state::{new_async_shared, AsyncShared, RelayerState},
     CancelChannel,
 };

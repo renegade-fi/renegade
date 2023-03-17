@@ -5,7 +5,7 @@ use circuits::types::wallet::Nullifier;
 use libp2p::request_response::ResponseChannel;
 
 use crate::{
-    api::{
+    gossip_api::{
         cluster_management::{ClusterJoinMessage, ReplicateRequestBody, ValidityProofRequest},
         gossip::AuthenticatedGossipResponse,
         heartbeat::{BootstrapRequest, HeartbeatMessage},
