@@ -18,9 +18,10 @@ use uuid::Uuid;
 use crate::{
     external_api::{
         http::{
-            GetExchangeHealthStatesRequest, GetExchangeHealthStatesResponse, GetWalletResponse,
-            PingResponse,
+            GetExchangeHealthStatesRequest, GetExchangeHealthStatesResponse, GetOrdersResponse,
+            GetWalletResponse, PingResponse,
         },
+        types::Wallet,
         EmptyRequestResponse,
     },
     price_reporter::jobs::PriceReporterManagerJob,
@@ -36,6 +37,8 @@ use super::{
 /// The :id param in a URL
 const ID_URL_PARAM: &str = "id";
 
+/// Error message displayed when a given wallet ID is not parsable
+const ERR_WALLET_ID_PARSE: &str = "could not parse wallet id";
 /// The error message to display when a wallet cannot be found
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found";
 
@@ -49,6 +52,8 @@ const PING_ROUTE: &str = "/v0/ping";
 const EXCHANGE_HEALTH_ROUTE: &str = "/v0/exchange/health_check";
 /// Returns the wallet information for the given id
 const GET_WALLET_ROUTE: &str = "/v0/wallet/:id";
+/// Returns the orders within a given wallet
+const GET_ORDERS_ROUTE: &str = "/v0/wallet/:id/orders";
 
 // ----------------
 // | Router Setup |
@@ -95,7 +100,14 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_WALLET_ROUTE.to_string(),
-            GetWalletHandler::new(global_state),
+            GetWalletHandler::new(global_state.clone()),
+        );
+
+        // The "/wallet/:id/orders" route
+        router.add_route(
+            Method::GET,
+            GET_ORDERS_ROUTE.to_string(),
+            GetOrdersHandler::new(global_state),
         );
 
         router
@@ -197,9 +209,56 @@ impl TypedHandler for GetWalletHandler {
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id: Uuid = params.get(ID_URL_PARAM).unwrap().parse().map_err(|_| {
+            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_WALLET_ID_PARSE.to_string())
+        })?;
+
+        if let Some(wallet) = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&wallet_id)
+            .await
+        {
+            Ok(GetWalletResponse {
+                wallet: wallet.into(),
+            })
+        } else {
+            Err(ApiServerError::HttpStatusCode(
+                StatusCode::NOT_FOUND,
+                ERR_WALLET_NOT_FOUND.to_string(),
+            ))
+        }
+    }
+}
+
+/// Handler for the GET /wallet/:id/orders route
+#[derive(Clone, Debug)]
+pub struct GetOrdersHandler {
+    /// A copy of the relayer-global state
+    pub global_state: RelayerState,
+}
+
+impl GetOrdersHandler {
+    /// Create a new handler for the /wallet/:id/orders route
+    pub fn new(global_state: RelayerState) -> Self {
+        Self { global_state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for GetOrdersHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetOrdersResponse;
+
+    async fn handle_typed(
+        &self,
+        _req: Self::Request,
+        params: UrlParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let wallet_id: Uuid = params.get(ID_URL_PARAM).unwrap().parse().map_err(|_| {
             ApiServerError::HttpStatusCode(
                 StatusCode::BAD_REQUEST,
-                "could not parse wallet id".to_string(),
+                ERR_WALLET_NOT_FOUND.to_string(),
             )
         })?;
 
@@ -210,7 +269,10 @@ impl TypedHandler for GetWalletHandler {
             .get_wallet(&wallet_id)
             .await
         {
-            Ok(GetWalletResponse { wallet })
+            let wallet: Wallet = wallet.into();
+            Ok(GetOrdersResponse {
+                orders: wallet.orders,
+            })
         } else {
             Err(ApiServerError::HttpStatusCode(
                 StatusCode::NOT_FOUND,
