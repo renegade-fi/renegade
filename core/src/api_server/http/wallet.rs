@@ -12,8 +12,8 @@ use crate::{
     },
     external_api::{
         http::wallet::{
-            GetBalanceByMintResponse, GetBalancesResponse, GetOrderByIdResponse, GetOrdersResponse,
-            GetWalletResponse,
+            GetBalanceByMintResponse, GetBalancesResponse, GetFeesResponse, GetOrderByIdResponse,
+            GetOrdersResponse, GetWalletResponse,
         },
         types::{Balance, Wallet},
         EmptyRequestResponse,
@@ -75,6 +75,8 @@ pub(super) const GET_ORDER_BY_ID_ROUTE: &str = "/v0/wallet/:wallet_id/orders/:or
 pub(super) const GET_BALANCES_ROUTE: &str = "/v0/wallet/:wallet_id/balances";
 /// Returns the balance associated with the given mint
 pub(super) const GET_BALANCE_BY_MINT_ROUTE: &str = "/v0/wallet/:wallet_id/balances/:mint";
+/// Returns the fees within a given wallet
+pub(super) const GET_FEES_ROUTE: &str = "/v0/wallet/:wallet_id/fees";
 
 // ------------------
 // | Error Messages |
@@ -332,6 +334,54 @@ impl TypedHandler for GetBalanceByMintHandler {
                 });
 
             Ok(GetBalanceByMintResponse { balance })
+        } else {
+            Err(ApiServerError::HttpStatusCode(
+                StatusCode::NOT_FOUND,
+                ERR_WALLET_NOT_FOUND.to_string(),
+            ))
+        }
+    }
+}
+
+// ----------------------
+// | Fee Route Handlers |
+// ----------------------
+
+/// Handler for the GET /wallet/:id/fees route
+#[derive(Clone, Debug)]
+pub struct GetFeesHandler {
+    /// A copy of the relayer-global state
+    global_state: RelayerState,
+}
+
+impl GetFeesHandler {
+    /// Constructor
+    pub fn new(global_state: RelayerState) -> Self {
+        Self { global_state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for GetFeesHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetFeesResponse;
+
+    async fn handle_typed(
+        &self,
+        _req: Self::Request,
+        params: UrlParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+
+        if let Some(wallet) = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&wallet_id)
+            .await
+        {
+            let wallet: Wallet = wallet.into();
+            Ok(GetFeesResponse { fees: wallet.fees })
         } else {
             Err(ApiServerError::HttpStatusCode(
                 StatusCode::NOT_FOUND,
