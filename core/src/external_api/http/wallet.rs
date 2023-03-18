@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::external_api::types::{Balance, Order, Wallet};
+use crate::external_api::types::{Balance, Fee, Order, Wallet};
 
 /// The response type to get a wallet's information
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -37,4 +37,11 @@ pub struct GetBalancesResponse {
 pub struct GetBalanceByMintResponse {
     /// The requested balance
     pub balance: Balance,
+}
+
+/// The response type to get a wallet's fees
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetFeesResponse {
+    /// The fees in a given wallet
+    pub fees: Vec<Fee>,
 }
