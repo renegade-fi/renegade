@@ -196,7 +196,13 @@ impl TypedHandler for GetWalletHandler {
         _req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let wallet_id: Uuid = params.get(ID_URL_PARAM).unwrap().parse().unwrap();
+        let wallet_id: Uuid = params.get(ID_URL_PARAM).unwrap().parse().map_err(|_| {
+            ApiServerError::HttpStatusCode(
+                StatusCode::BAD_REQUEST,
+                "could not parse wallet id".to_string(),
+            )
+        })?;
+
         if let Some(wallet) = self
             .global_state
             .read_wallet_index()

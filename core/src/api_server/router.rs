@@ -137,7 +137,6 @@ impl<
 }
 
 /// Wrapper around a matchit router that allows different HTTP request types to be matches
-///
 pub struct Router {
     /// The underlying router
     router: MatchRouter<Box<dyn Handler>>,
