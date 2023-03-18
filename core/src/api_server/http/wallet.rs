@@ -10,7 +10,9 @@ use crate::{
         router::{TypedHandler, UrlParams},
     },
     external_api::{
-        http::wallet::{GetOrderByIdResponse, GetOrdersResponse, GetWalletResponse},
+        http::wallet::{
+            GetBalancesResponse, GetOrderByIdResponse, GetOrdersResponse, GetWalletResponse,
+        },
         types::Wallet,
         EmptyRequestResponse,
     },
@@ -36,6 +38,8 @@ pub(super) const GET_WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
 pub(super) const GET_ORDERS_ROUTE: &str = "/v0/wallet/:wallet_id/orders";
 /// Returns a single order by the given identifier
 pub(super) const GET_ORDER_BY_ID_ROUTE: &str = "/v0/wallet/:wallet_id/orders/:order_id";
+/// Returns the balances within a given wallet
+pub(super) const GET_BALANCES_ROUTE: &str = "/v0/wallet/:wallet_id/balances";
 
 // ------------------
 // | Error Messages |
@@ -50,9 +54,9 @@ const ERR_ORDER_NOT_FOUND: &str = "order not found";
 /// The error message to display when a wallet cannot be found
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found";
 
-// ------------------
-// | Route Handlers |
-// ------------------
+// -------------------------
+// | Wallet Route Handlers |
+// -------------------------
 
 /// Handler for the GET /wallet/:id route
 #[derive(Debug)]
@@ -107,6 +111,10 @@ impl TypedHandler for GetWalletHandler {
         }
     }
 }
+
+// -------------------------
+// | Orders Route Handlers |
+// -------------------------
 
 /// Handler for the GET /wallet/:id/orders route
 #[derive(Clone, Debug)]
@@ -227,6 +235,65 @@ impl TypedHandler for GetOrderByIdHandler {
             Err(ApiServerError::HttpStatusCode(
                 StatusCode::NOT_FOUND,
                 ERR_ORDER_NOT_FOUND.to_string(),
+            ))
+        }
+    }
+}
+
+// --------------------------
+// | Balance Route Handlers |
+// --------------------------
+
+/// Handler for the GET /wallet/:id/balances route
+#[derive(Clone, Debug)]
+pub struct GetBalancesHandler {
+    /// A copy of the relayer-global state
+    pub global_state: RelayerState,
+}
+
+impl GetBalancesHandler {
+    /// Constructor
+    pub fn new(global_state: RelayerState) -> Self {
+        Self { global_state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for GetBalancesHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetBalancesResponse;
+
+    async fn handle_typed(
+        &self,
+        _req: Self::Request,
+        params: UrlParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let wallet_id: Uuid = params
+            .get(WALLET_ID_URL_PARAM)
+            .unwrap()
+            .parse()
+            .map_err(|_| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::BAD_REQUEST,
+                    ERR_WALLET_ID_PARSE.to_string(),
+                )
+            })?;
+
+        if let Some(wallet) = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&wallet_id)
+            .await
+        {
+            let wallet: Wallet = wallet.into();
+            Ok(GetBalancesResponse {
+                balances: wallet.balances,
+            })
+        } else {
+            Err(ApiServerError::HttpStatusCode(
+                StatusCode::NOT_FOUND,
+                ERR_WALLET_NOT_FOUND.to_string(),
             ))
         }
     }

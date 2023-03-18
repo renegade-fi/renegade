@@ -21,8 +21,8 @@ use crate::{
 use self::{
     price_report::{ExchangeHealthStatesHandler, EXCHANGE_HEALTH_ROUTE},
     wallet::{
-        GetOrderByIdHandler, GetOrdersHandler, GetWalletHandler, GET_ORDERS_ROUTE,
-        GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE,
+        GetBalancesHandler, GetOrderByIdHandler, GetOrdersHandler, GetWalletHandler,
+        GET_BALANCES_ROUTE, GET_ORDERS_ROUTE, GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE,
     },
 };
 
@@ -93,7 +93,14 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_ORDER_BY_ID_ROUTE.to_string(),
-            GetOrderByIdHandler::new(global_state),
+            GetOrderByIdHandler::new(global_state.clone()),
+        );
+
+        // The "/wallet/:id/balances" route
+        router.add_route(
+            Method::GET,
+            GET_BALANCES_ROUTE.to_string(),
+            GetBalancesHandler::new(global_state),
         );
 
         router
