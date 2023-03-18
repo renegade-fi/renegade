@@ -40,6 +40,13 @@ pub struct GetOrdersResponse {
     pub orders: Vec<Order>,
 }
 
+/// The response type to get a single order by ID
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetOrderByIdResponse {
+    /// The order requested
+    pub order: Order,
+}
+
 // --------------------------------------------
 // | Price Reporting Request Response Formats |
 // --------------------------------------------
