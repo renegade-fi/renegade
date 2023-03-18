@@ -3,14 +3,13 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::{
-    price_reporter::{
-        exchanges::{Exchange, ExchangeConnectionState},
-        reporter::PriceReporterState,
-        tokens::Token,
-    },
-    state::wallet::Wallet,
+use crate::price_reporter::{
+    exchanges::{Exchange, ExchangeConnectionState},
+    reporter::PriceReporterState,
+    tokens::Token,
 };
+
+use super::types::{Order, Wallet};
 
 // ------------------------------------
 // | Generic Request Response Formats |
@@ -32,6 +31,13 @@ pub struct PingResponse {
 pub struct GetWalletResponse {
     /// The wallet requested by the client
     pub wallet: Wallet,
+}
+
+/// The response type to get a wallet's orders
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetOrdersResponse {
+    /// The orders within a given wallet
+    pub orders: Vec<Order>,
 }
 
 // --------------------------------------------
