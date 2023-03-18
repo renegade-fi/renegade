@@ -89,7 +89,7 @@ impl From<IndexedWallet> for Wallet {
 }
 
 /// The order type, represents a trader's intention in the pool
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Order {
     /// Identifier
     pub id: Uuid,
@@ -134,8 +134,14 @@ pub enum OrderType {
     Limit,
 }
 
+impl Default for OrderType {
+    fn default() -> Self {
+        OrderType::Midpoint
+    }
+}
+
 /// A balance that a wallet holds of some asset
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Balance {
     /// The ERC-20 address of the token
     pub mint: BigUint,
