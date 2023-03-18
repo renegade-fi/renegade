@@ -18,8 +18,8 @@ use uuid::Uuid;
 use crate::{
     external_api::{
         http::{
-            GetExchangeHealthStatesRequest, GetExchangeHealthStatesResponse, GetOrdersResponse,
-            GetWalletResponse, PingResponse,
+            GetExchangeHealthStatesRequest, GetExchangeHealthStatesResponse, GetOrderByIdResponse,
+            GetOrdersResponse, GetWalletResponse, PingResponse,
         },
         types::Wallet,
         EmptyRequestResponse,
@@ -34,11 +34,17 @@ use super::{
     worker::ApiServerConfig,
 };
 
-/// The :id param in a URL
-const ID_URL_PARAM: &str = "id";
+/// The :wallet_id param in a URL
+const WALLET_ID_URL_PARAM: &str = "wallet_id";
+/// The :order_id param in a URL
+const ORDER_ID_URL_PARAM: &str = "order_id";
 
+/// Error message displayed when a given order ID is not parsable
+const ERR_ORDER_ID_PARSE: &str = "could not parse order id";
 /// Error message displayed when a given wallet ID is not parsable
 const ERR_WALLET_ID_PARSE: &str = "could not parse wallet id";
+/// Error message displayed when a given order cannot be found
+const ERR_ORDER_NOT_FOUND: &str = "order not found";
 /// The error message to display when a wallet cannot be found
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found";
 
@@ -51,9 +57,11 @@ const PING_ROUTE: &str = "/v0/ping";
 /// Exchange health check route
 const EXCHANGE_HEALTH_ROUTE: &str = "/v0/exchange/health_check";
 /// Returns the wallet information for the given id
-const GET_WALLET_ROUTE: &str = "/v0/wallet/:id";
+const GET_WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
 /// Returns the orders within a given wallet
-const GET_ORDERS_ROUTE: &str = "/v0/wallet/:id/orders";
+const GET_ORDERS_ROUTE: &str = "/v0/wallet/:wallet_id/orders";
+/// Returns a single order by the given identifier
+const GET_ORDER_BY_ID_ROUTE: &str = "/v0/wallet/:wallet_id/orders/:order_id";
 
 // ----------------
 // | Router Setup |
@@ -107,7 +115,14 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_ORDERS_ROUTE.to_string(),
-            GetOrdersHandler::new(global_state),
+            GetOrdersHandler::new(global_state.clone()),
+        );
+
+        // The "/wallet/:id/orders/:id" route
+        router.add_route(
+            Method::GET,
+            GET_ORDER_BY_ID_ROUTE.to_string(),
+            GetOrderByIdHandler::new(global_state),
         );
 
         router
@@ -208,9 +223,16 @@ impl TypedHandler for GetWalletHandler {
         _req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let wallet_id: Uuid = params.get(ID_URL_PARAM).unwrap().parse().map_err(|_| {
-            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_WALLET_ID_PARSE.to_string())
-        })?;
+        let wallet_id: Uuid = params
+            .get(WALLET_ID_URL_PARAM)
+            .unwrap()
+            .parse()
+            .map_err(|_| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::BAD_REQUEST,
+                    ERR_WALLET_ID_PARSE.to_string(),
+                )
+            })?;
 
         if let Some(wallet) = self
             .global_state
@@ -255,12 +277,16 @@ impl TypedHandler for GetOrdersHandler {
         _req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let wallet_id: Uuid = params.get(ID_URL_PARAM).unwrap().parse().map_err(|_| {
-            ApiServerError::HttpStatusCode(
-                StatusCode::BAD_REQUEST,
-                ERR_WALLET_NOT_FOUND.to_string(),
-            )
-        })?;
+        let wallet_id: Uuid = params
+            .get(WALLET_ID_URL_PARAM)
+            .unwrap()
+            .parse()
+            .map_err(|_| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::BAD_REQUEST,
+                    ERR_WALLET_NOT_FOUND.to_string(),
+                )
+            })?;
 
         if let Some(wallet) = self
             .global_state
@@ -277,6 +303,75 @@ impl TypedHandler for GetOrdersHandler {
             Err(ApiServerError::HttpStatusCode(
                 StatusCode::NOT_FOUND,
                 ERR_WALLET_NOT_FOUND.to_string(),
+            ))
+        }
+    }
+}
+
+/// Handler for the GET /wallet/:id/orders/:id route
+#[derive(Clone, Debug)]
+pub struct GetOrderByIdHandler {
+    /// A copy of the relayer-global state
+    pub global_state: RelayerState,
+}
+
+impl GetOrderByIdHandler {
+    /// Constructor
+    pub fn new(global_state: RelayerState) -> Self {
+        Self { global_state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for GetOrderByIdHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetOrderByIdResponse;
+
+    async fn handle_typed(
+        &self,
+        _req: Self::Request,
+        params: UrlParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let wallet_id: Uuid = params
+            .get(WALLET_ID_URL_PARAM)
+            .unwrap()
+            .parse()
+            .map_err(|_| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::BAD_REQUEST,
+                    ERR_WALLET_ID_PARSE.to_string(),
+                )
+            })?;
+        let order_id: Uuid = params
+            .get(ORDER_ID_URL_PARAM)
+            .unwrap()
+            .parse()
+            .map_err(|_| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::BAD_REQUEST,
+                    ERR_ORDER_ID_PARSE.to_string(),
+                )
+            })?;
+
+        if let Some(order) = (|| async {
+            self.global_state
+                .read_wallet_index()
+                .await
+                .get_wallet(&wallet_id)
+                .await?
+                .orders
+                .get(&order_id)
+                .cloned()
+        })()
+        .await
+        {
+            Ok(GetOrderByIdResponse {
+                order: (order_id, order).into(),
+            })
+        } else {
+            Err(ApiServerError::HttpStatusCode(
+                StatusCode::NOT_FOUND,
+                ERR_ORDER_NOT_FOUND.to_string(),
             ))
         }
     }
