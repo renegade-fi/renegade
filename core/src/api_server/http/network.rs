@@ -1,16 +1,9 @@
 //! Groups API routes and handlers for network information API operations
 
-// ------------------
-// | Error Messages |
-// ------------------
-
-// ---------------
-// | HTTP Routes |
-// ---------------
-
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use hyper::StatusCode;
 use itertools::Itertools;
 
 use crate::{
@@ -19,19 +12,32 @@ use crate::{
         router::{TypedHandler, UrlParams},
     },
     external_api::{
-        http::network::{GetClusterInfoResponse, GetNetworkTopologyResponse},
+        http::network::{GetClusterInfoResponse, GetNetworkTopologyResponse, GetPeerInfoResponse},
         types::{Cluster, Peer},
         EmptyRequestResponse,
     },
     state::RelayerState,
 };
 
-use super::parse_cluster_id_from_params;
+use super::{parse_cluster_id_from_params, parse_peer_id_from_params};
+
+// ------------------
+// | Error Messages |
+// ------------------
+
+/// Error displayed when a requested peer could not be found in the peer index
+const ERR_PEER_NOT_FOUND: &str = "could not find peer in index";
+
+// ---------------
+// | HTTP Routes |
+// ---------------
 
 /// Returns the full network topology known to the local node
 pub(super) const GET_NETWORK_TOPOLOGY_ROUTE: &str = "/v0/network";
 /// Returns the cluster information for the specified cluster
 pub(super) const GET_CLUSTER_INFO_ROUTE: &str = "/v0/network/clusters/:cluster_id";
+/// Returns the peer info for a given peer
+pub(super) const GET_PEER_INFO_ROUTE: &str = "/v0/network/peers/:peer_id";
 
 // ------------------
 // | Route Handlers |
@@ -132,5 +138,47 @@ impl TypedHandler for GetClusterInfoHandler {
                 peers,
             },
         })
+    }
+}
+
+/// Handler for the GET "/network/clusters" route
+#[derive(Clone, Debug)]
+pub struct GetPeerInfoHandler {
+    /// A copy of the relayer-global state
+    global_state: RelayerState,
+}
+
+impl GetPeerInfoHandler {
+    /// Constructor
+    pub fn new(global_state: RelayerState) -> Self {
+        Self { global_state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for GetPeerInfoHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetPeerInfoResponse;
+
+    async fn handle_typed(
+        &self,
+        _req: Self::Request,
+        params: UrlParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let peer_id = parse_peer_id_from_params(&params)?;
+        if let Some(info) = self
+            .global_state
+            .read_peer_index()
+            .await
+            .get_peer_info(&peer_id)
+            .await
+        {
+            Ok(GetPeerInfoResponse { peer: info.into() })
+        } else {
+            Err(ApiServerError::HttpStatusCode(
+                StatusCode::NOT_FOUND,
+                ERR_PEER_NOT_FOUND.to_string(),
+            ))
+        }
     }
 }

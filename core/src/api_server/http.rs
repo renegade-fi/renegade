@@ -17,14 +17,14 @@ use uuid::Uuid;
 
 use crate::{
     external_api::{http::PingResponse, EmptyRequestResponse},
-    gossip::types::ClusterId,
+    gossip::types::{ClusterId, WrappedPeerId},
     state::RelayerState,
 };
 
 use self::{
     network::{
-        GetClusterInfoHandler, GetNetworkTopologyHandler, GET_CLUSTER_INFO_ROUTE,
-        GET_NETWORK_TOPOLOGY_ROUTE,
+        GetClusterInfoHandler, GetNetworkTopologyHandler, GetPeerInfoHandler,
+        GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE,
     },
     order_book::{
         GetNetworkOrderByIdHandler, GetNetworkOrdersHandler, GET_NETWORK_ORDERS_ROUTE,
@@ -64,6 +64,8 @@ const ERR_ORDER_ID_PARSE: &str = "could not parse order id";
 const ERR_WALLET_ID_PARSE: &str = "could not parse wallet id";
 /// Error message displayed when a given cluster ID is not parsable
 const ERR_CLUSTER_ID_PARSE: &str = "could not parse cluster id";
+/// Error message displayed when a given peer ID is not parsable
+const ERR_PEER_ID_PARSE: &str = "could not parse peer id";
 
 // ----------------
 // | URL Captures |
@@ -77,6 +79,8 @@ const WALLET_ID_URL_PARAM: &str = "wallet_id";
 const ORDER_ID_URL_PARAM: &str = "order_id";
 /// The :cluster_id param in a URL
 const CLUSTER_ID_URL_PARAM: &str = "cluster_id";
+/// The :peer_id param in a URL
+const PEER_ID_URL_PARAM: &str = "peer_id";
 
 /// A helper to parse out a mint from a URL param
 fn parse_mint_from_params(params: &UrlParams) -> Result<BigUint, ApiServerError> {
@@ -119,6 +123,13 @@ fn parse_cluster_id_from_params(params: &UrlParams) -> Result<ClusterId, ApiServ
                 ERR_CLUSTER_ID_PARSE.to_string(),
             )
         })
+}
+
+/// A helper to parse out a peer ID from a URL param
+fn parse_peer_id_from_params(params: &UrlParams) -> Result<WrappedPeerId, ApiServerError> {
+    params.get(PEER_ID_URL_PARAM).unwrap().parse().map_err(|_| {
+        ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_PEER_ID_PARSE.to_string())
+    })
 }
 
 /// A wrapper around the router and task management operations that
@@ -225,7 +236,14 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_CLUSTER_INFO_ROUTE.to_string(),
-            GetClusterInfoHandler::new(global_state),
+            GetClusterInfoHandler::new(global_state.clone()),
+        );
+
+        // The "/network/peers/:id" route
+        router.add_route(
+            Method::GET,
+            GET_PEER_INFO_ROUTE.to_string(),
+            GetPeerInfoHandler::new(global_state),
         );
 
         router
