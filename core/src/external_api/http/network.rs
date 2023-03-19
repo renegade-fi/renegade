@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::external_api::types::{Cluster, Network};
+use crate::external_api::types::{Cluster, Network, Peer};
 
 /// The response type to fetch the entire known network topology
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -16,4 +16,11 @@ pub struct GetNetworkTopologyResponse {
 pub struct GetClusterInfoResponse {
     /// The requested cluster
     pub cluster: Cluster,
+}
+
+/// The response type to fetch a given peer's info
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetPeerInfoResponse {
+    /// The requested peer
+    pub peer: Peer,
 }
