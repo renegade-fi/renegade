@@ -4,14 +4,16 @@ use async_trait::async_trait;
 use hyper::{
     server::conn::AddrStream,
     service::{make_service_fn, service_fn},
-    Body, Error as HyperError, Method, Request, Response, Server,
+    Body, Error as HyperError, Method, Request, Response, Server, StatusCode,
 };
+use num_bigint::BigUint;
 use std::{
     convert::Infallible,
     net::SocketAddr,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
+use uuid::Uuid;
 
 use crate::{
     external_api::{http::PingResponse, EmptyRequestResponse},
@@ -19,7 +21,10 @@ use crate::{
 };
 
 use self::{
-    order_book::{GetNetworkOrdersHandler, GET_NETWORK_ORDERS_ROUTE},
+    order_book::{
+        GetNetworkOrderByIdHandler, GetNetworkOrdersHandler, GET_NETWORK_ORDERS_ROUTE,
+        GET_NETWORK_ORDER_BY_ID_ROUTE,
+    },
     price_report::{ExchangeHealthStatesHandler, EXCHANGE_HEALTH_ROUTE},
     wallet::{
         GetBalanceByMintHandler, GetBalancesHandler, GetFeesHandler, GetOrderByIdHandler,
@@ -40,6 +45,57 @@ mod wallet;
 
 /// Health check
 const PING_ROUTE: &str = "/v0/ping";
+
+// ------------------
+// | Error Messages |
+// ------------------
+
+/// Error message displayed when a mint cannot be parsed from URL
+const ERR_MINT_PARSE: &str = "could not parse mint";
+/// Error message displayed when a given order ID is not parsable
+const ERR_ORDER_ID_PARSE: &str = "could not parse order id";
+/// Error message displayed when a given wallet ID is not parsable
+const ERR_WALLET_ID_PARSE: &str = "could not parse wallet id";
+
+// ----------------
+// | URL Captures |
+// ----------------
+
+/// The :mint param in a URL
+const MINT_URL_PARAM: &str = "mint";
+/// The :wallet_id param in a URL
+const WALLET_ID_URL_PARAM: &str = "wallet_id";
+/// The :order_id param in a URL
+const ORDER_ID_URL_PARAM: &str = "order_id";
+
+/// A helper to parse out a mint from a URL param
+fn parse_mint_from_params(params: &UrlParams) -> Result<BigUint, ApiServerError> {
+    params.get(MINT_URL_PARAM).unwrap().parse().map_err(|_| {
+        ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_MINT_PARSE.to_string())
+    })
+}
+
+/// A helper to parse out a wallet ID from a URL param
+fn parse_wallet_id_from_params(params: &UrlParams) -> Result<Uuid, ApiServerError> {
+    params
+        .get(WALLET_ID_URL_PARAM)
+        .unwrap()
+        .parse()
+        .map_err(|_| {
+            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_WALLET_ID_PARSE.to_string())
+        })
+}
+
+/// A helper to parse out an order ID from a URL param
+fn parse_order_id_from_params(params: &UrlParams) -> Result<Uuid, ApiServerError> {
+    params
+        .get(ORDER_ID_URL_PARAM)
+        .unwrap()
+        .parse()
+        .map_err(|_| {
+            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_ORDER_ID_PARSE.to_string())
+        })
+}
 
 /// A wrapper around the router and task management operations that
 /// the worker may delegate to
@@ -124,7 +180,14 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_NETWORK_ORDERS_ROUTE.to_string(),
-            GetNetworkOrdersHandler::new(global_state),
+            GetNetworkOrdersHandler::new(global_state.clone()),
+        );
+
+        // The "/order_book/orders/:id" route
+        router.add_route(
+            Method::GET,
+            GET_NETWORK_ORDER_BY_ID_ROUTE.to_string(),
+            GetNetworkOrderByIdHandler::new(global_state),
         );
 
         router

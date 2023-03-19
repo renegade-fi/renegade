@@ -2,8 +2,6 @@
 
 use async_trait::async_trait;
 use hyper::StatusCode;
-use num_bigint::BigUint;
-use uuid::Uuid;
 
 use crate::{
     api_server::{
@@ -21,45 +19,7 @@ use crate::{
     state::RelayerState,
 };
 
-// ----------------
-// | URL Captures |
-// ----------------
-
-/// The :mint param in a URL
-const MINT_URL_PARAM: &str = "mint";
-/// The :wallet_id param in a URL
-const WALLET_ID_URL_PARAM: &str = "wallet_id";
-/// The :order_id param in a URL
-const ORDER_ID_URL_PARAM: &str = "order_id";
-
-/// A helper to parse out a mint from a URL param
-fn parse_mint_from_params(params: &UrlParams) -> Result<BigUint, ApiServerError> {
-    params.get(MINT_URL_PARAM).unwrap().parse().map_err(|_| {
-        ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_MINT_PARSE.to_string())
-    })
-}
-
-/// A helper to parse out a wallet ID from a URL param
-fn parse_wallet_id_from_params(params: &UrlParams) -> Result<Uuid, ApiServerError> {
-    params
-        .get(WALLET_ID_URL_PARAM)
-        .unwrap()
-        .parse()
-        .map_err(|_| {
-            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_WALLET_ID_PARSE.to_string())
-        })
-}
-
-/// A helper to parse out an order ID from a URL param
-fn parse_order_id_from_params(params: &UrlParams) -> Result<Uuid, ApiServerError> {
-    params
-        .get(ORDER_ID_URL_PARAM)
-        .unwrap()
-        .parse()
-        .map_err(|_| {
-            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_ORDER_ID_PARSE.to_string())
-        })
-}
+use super::{parse_mint_from_params, parse_order_id_from_params, parse_wallet_id_from_params};
 
 // ---------------
 // | HTTP Routes |
@@ -82,12 +42,6 @@ pub(super) const GET_FEES_ROUTE: &str = "/v0/wallet/:wallet_id/fees";
 // | Error Messages |
 // ------------------
 
-/// Error message displayed when a mint cannot be parsed from URL
-const ERR_MINT_PARSE: &str = "could not parse mint";
-/// Error message displayed when a given order ID is not parsable
-const ERR_ORDER_ID_PARSE: &str = "could not parse order id";
-/// Error message displayed when a given wallet ID is not parsable
-const ERR_WALLET_ID_PARSE: &str = "could not parse wallet id";
 /// Error message displayed when a given order cannot be found
 const ERR_ORDER_NOT_FOUND: &str = "order not found";
 /// The error message to display when a wallet cannot be found
