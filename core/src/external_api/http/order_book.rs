@@ -10,3 +10,10 @@ pub struct GetNetworkOrdersResponse {
     /// The orders known to the local peer
     pub orders: Vec<NetworkOrder>,
 }
+
+/// The response type to fetch a given network order by its ID
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetNetworkOrderByIdResponse {
+    /// The requested network order
+    pub order: NetworkOrder,
+}
