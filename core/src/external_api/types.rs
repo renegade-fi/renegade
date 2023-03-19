@@ -1,5 +1,7 @@
 //! Defines API type definitions used in request/response messages
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use circuits::{
     types::{
         balance::Balance as IndexedBalance,
@@ -14,7 +16,10 @@ use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::state::{wallet::Wallet as IndexedWallet, NetworkOrderState, OrderIdentifier};
+use crate::state::{
+    wallet::Wallet as IndexedWallet, NetworkOrder as IndexedNetworkOrder, NetworkOrderState,
+    OrderIdentifier,
+};
 
 // --------------------
 // | Wallet API Types |
@@ -254,6 +259,25 @@ pub struct NetworkOrder {
     pub state: NetworkOrderState,
     /// The timestamp that this order was first received at
     pub timestamp: u64,
+}
+
+impl From<IndexedNetworkOrder> for NetworkOrder {
+    fn from(order: IndexedNetworkOrder) -> Self {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        NetworkOrder {
+            id: order.id,
+            match_nullifier: scalar_to_biguint(&order.match_nullifier),
+            local: order.local,
+            cluster: order.cluster.to_string(),
+            state: order.state,
+            // TODO: Replace this with the time the order was received
+            timestamp: now,
+        }
+    }
 }
 
 // ------------------------------
