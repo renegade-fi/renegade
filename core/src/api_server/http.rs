@@ -19,6 +19,7 @@ use crate::{
 };
 
 use self::{
+    order_book::{GetNetworkOrdersHandler, GET_NETWORK_ORDERS_ROUTE},
     price_report::{ExchangeHealthStatesHandler, EXCHANGE_HEALTH_ROUTE},
     wallet::{
         GetBalanceByMintHandler, GetBalancesHandler, GetFeesHandler, GetOrderByIdHandler,
@@ -33,6 +34,7 @@ use super::{
     worker::ApiServerConfig,
 };
 
+mod order_book;
 mod price_report;
 mod wallet;
 
@@ -115,7 +117,14 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_FEES_ROUTE.to_string(),
-            GetFeesHandler::new(global_state),
+            GetFeesHandler::new(global_state.clone()),
+        );
+
+        // The "/order_book/orders" route
+        router.add_route(
+            Method::GET,
+            GET_NETWORK_ORDERS_ROUTE.to_string(),
+            GetNetworkOrdersHandler::new(global_state),
         );
 
         router
