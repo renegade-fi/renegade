@@ -21,6 +21,7 @@ use crate::{
 };
 
 use self::{
+    network::{GetNetworkTopologyHandler, GET_NETWORK_TOPOLOGY_ROUTE},
     order_book::{
         GetNetworkOrderByIdHandler, GetNetworkOrdersHandler, GET_NETWORK_ORDERS_ROUTE,
         GET_NETWORK_ORDER_BY_ID_ROUTE,
@@ -39,6 +40,7 @@ use super::{
     worker::ApiServerConfig,
 };
 
+mod network;
 mod order_book;
 mod price_report;
 mod wallet;
@@ -187,7 +189,13 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_NETWORK_ORDER_BY_ID_ROUTE.to_string(),
-            GetNetworkOrderByIdHandler::new(global_state),
+            GetNetworkOrderByIdHandler::new(global_state.clone()),
+        );
+
+        router.add_route(
+            Method::GET,
+            GET_NETWORK_TOPOLOGY_ROUTE.to_string(),
+            GetNetworkTopologyHandler::new(global_state),
         );
 
         router

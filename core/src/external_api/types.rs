@@ -1,6 +1,9 @@
 //! Defines API type definitions used in request/response messages
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    collections::HashMap,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use circuits::{
     types::{
@@ -16,10 +19,16 @@ use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::state::{
-    wallet::Wallet as IndexedWallet, NetworkOrder as IndexedNetworkOrder, NetworkOrderState,
-    OrderIdentifier,
+use crate::{
+    gossip::types::PeerInfo as IndexedPeerInfo,
+    state::{
+        wallet::Wallet as IndexedWallet, NetworkOrder as IndexedNetworkOrder, NetworkOrderState,
+        OrderIdentifier,
+    },
 };
+
+/// The Goerli network identifier
+const STARKNET_ALPHA_GOERLI: &str = "starknet-alpha-goerli";
 
 // --------------------
 // | Wallet API Types |
@@ -290,7 +299,26 @@ pub struct Network {
     /// Identifier, e.g. "goerli"
     pub id: String,
     /// The list of clusters known to the local peer
-    pub cluster: Vec<Cluster>,
+    pub clusters: Vec<Cluster>,
+}
+
+/// Cast from a map of cluster ID to peer list to the `Cluster` API type
+impl From<HashMap<String, Vec<Peer>>> for Network {
+    fn from(cluster_membership: HashMap<String, Vec<Peer>>) -> Self {
+        let mut clusters = Vec::with_capacity(cluster_membership.len());
+        for (cluster_id, peers) in cluster_membership.into_iter() {
+            clusters.push(Cluster {
+                id: cluster_id,
+                peers,
+            });
+        }
+
+        Self {
+            // TODO: Make this not a constant
+            id: STARKNET_ALPHA_GOERLI.to_string(),
+            clusters,
+        }
+    }
 }
 
 /// A cluster of peers, in the security model a cluster is assumed to be controlled
@@ -312,4 +340,14 @@ pub struct Peer {
     pub cluster_id: String,
     /// The dialable, libp2p address of the peer
     pub addr: String,
+}
+
+impl From<IndexedPeerInfo> for Peer {
+    fn from(peer_info: IndexedPeerInfo) -> Self {
+        Self {
+            id: peer_info.get_peer_id().to_string(),
+            cluster_id: peer_info.get_cluster_id().to_string(),
+            addr: peer_info.get_addr().to_string(),
+        }
+    }
 }
