@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod price_report;
 pub mod order_book;
+pub mod network;
 pub mod wallet;
 
 /// A ping response
