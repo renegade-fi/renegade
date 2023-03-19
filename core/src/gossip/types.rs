@@ -229,7 +229,6 @@ impl<'de> Visitor<'de> for PeerIDVisitor {
 /// A type alias for the cluster identifier
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClusterId(String);
-
 impl ClusterId {
     /// Construct a clusterID, it's more readable and debuggable to compress the
     /// public key into a base64 encoded representation than to use the value directly
@@ -253,6 +252,14 @@ impl ClusterId {
 impl Display for ClusterId {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{}", self.0)
+    }
+}
+
+impl FromStr for ClusterId {
+    // Conversion does not error
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(s.to_string()))
     }
 }
 

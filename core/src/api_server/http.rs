@@ -17,11 +17,15 @@ use uuid::Uuid;
 
 use crate::{
     external_api::{http::PingResponse, EmptyRequestResponse},
+    gossip::types::ClusterId,
     state::RelayerState,
 };
 
 use self::{
-    network::{GetNetworkTopologyHandler, GET_NETWORK_TOPOLOGY_ROUTE},
+    network::{
+        GetClusterInfoHandler, GetNetworkTopologyHandler, GET_CLUSTER_INFO_ROUTE,
+        GET_NETWORK_TOPOLOGY_ROUTE,
+    },
     order_book::{
         GetNetworkOrderByIdHandler, GetNetworkOrdersHandler, GET_NETWORK_ORDERS_ROUTE,
         GET_NETWORK_ORDER_BY_ID_ROUTE,
@@ -58,6 +62,8 @@ const ERR_MINT_PARSE: &str = "could not parse mint";
 const ERR_ORDER_ID_PARSE: &str = "could not parse order id";
 /// Error message displayed when a given wallet ID is not parsable
 const ERR_WALLET_ID_PARSE: &str = "could not parse wallet id";
+/// Error message displayed when a given cluster ID is not parsable
+const ERR_CLUSTER_ID_PARSE: &str = "could not parse cluster id";
 
 // ----------------
 // | URL Captures |
@@ -69,6 +75,8 @@ const MINT_URL_PARAM: &str = "mint";
 const WALLET_ID_URL_PARAM: &str = "wallet_id";
 /// The :order_id param in a URL
 const ORDER_ID_URL_PARAM: &str = "order_id";
+/// The :cluster_id param in a URL
+const CLUSTER_ID_URL_PARAM: &str = "cluster_id";
 
 /// A helper to parse out a mint from a URL param
 fn parse_mint_from_params(params: &UrlParams) -> Result<BigUint, ApiServerError> {
@@ -96,6 +104,20 @@ fn parse_order_id_from_params(params: &UrlParams) -> Result<Uuid, ApiServerError
         .parse()
         .map_err(|_| {
             ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_ORDER_ID_PARSE.to_string())
+        })
+}
+
+/// A helper to parse out a cluster ID from a URL param
+fn parse_cluster_id_from_params(params: &UrlParams) -> Result<ClusterId, ApiServerError> {
+    params
+        .get(CLUSTER_ID_URL_PARAM)
+        .unwrap()
+        .parse()
+        .map_err(|_| {
+            ApiServerError::HttpStatusCode(
+                StatusCode::BAD_REQUEST,
+                ERR_CLUSTER_ID_PARSE.to_string(),
+            )
         })
 }
 
@@ -192,10 +214,18 @@ impl HttpServer {
             GetNetworkOrderByIdHandler::new(global_state.clone()),
         );
 
+        // The "/network" route
         router.add_route(
             Method::GET,
             GET_NETWORK_TOPOLOGY_ROUTE.to_string(),
-            GetNetworkTopologyHandler::new(global_state),
+            GetNetworkTopologyHandler::new(global_state.clone()),
+        );
+
+        // The "/network/clusters/:id" route
+        router.add_route(
+            Method::GET,
+            GET_CLUSTER_INFO_ROUTE.to_string(),
+            GetClusterInfoHandler::new(global_state),
         );
 
         router
