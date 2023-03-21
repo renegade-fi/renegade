@@ -5,7 +5,6 @@
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
-use serde_json::error::Error as SerdeError;
 use starknet::core::types::FieldElement as StarknetFieldElement;
 
 pub mod client;
@@ -48,9 +47,15 @@ impl From<ChainId> for StarknetFieldElement {
 }
 
 impl FromStr for ChainId {
-    type Err = SerdeError;
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        serde_json::from_str(s)
+        if s == "goerli" {
+            Ok(Self::AlphaGoerli)
+        } else if s == "mainnet" {
+            Ok(Self::Mainnet)
+        } else {
+            Err(format!("unknown chain ID {s}"))
+        }
     }
 }

@@ -236,7 +236,7 @@ impl StateTuiApp {
         } else {
             STR_ENABLED
         };
-        let chain_events_enabled = if self.config.starknet_gateway.is_some() {
+        let chain_events_enabled = if self.config.starknet_jsonrpc_node.is_some() {
             STR_ENABLED
         } else {
             STR_DISABLED

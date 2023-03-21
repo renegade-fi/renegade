@@ -11,6 +11,7 @@ use std::{
     borrow::{Borrow, BorrowMut},
     fmt::{Debug, Display},
     mem,
+    ops::{Deref, DerefMut},
 };
 
 /// The default wrapper structure, wraps a default capable value in a cell that may
@@ -55,6 +56,20 @@ impl<D: Default> Borrow<D> for DefaultWrapper<D> {
 
 impl<D: Default> BorrowMut<D> for DefaultWrapper<D> {
     fn borrow_mut(&mut self) -> &mut D {
+        &mut self.0
+    }
+}
+
+impl<D: Default> Deref for DefaultWrapper<D> {
+    type Target = D;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<D: Default> DerefMut for DefaultWrapper<D> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }

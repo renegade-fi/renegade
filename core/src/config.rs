@@ -14,6 +14,7 @@ use toml::{value::Map, Value};
 use crate::{
     error::CoordinatorError,
     gossip::types::{ClusterId, WrappedPeerId},
+    starknet_client::ChainId,
     state::wallet::Wallet,
 };
 
@@ -39,6 +40,10 @@ struct Cli {
     // -----------------------
     // | Environment Configs |
     // -----------------------
+
+    /// The blockchain this node targets for settlement
+    #[clap(long)]
+    pub chain_id: ChainId,
     /// The address of the darkpool contract, defaults to the Goerli deployment
     #[clap(long, value_parser, default_value = "0x1e7857cdd3d73838b0e053be1fa068aa15113793fea95ab663501789d3d0b51")]
     pub contract_address: String,
@@ -93,9 +98,12 @@ struct Cli {
     /// The Ethereum RPC node websocket address to dial for on-chain data
     #[clap(long = "eth-websocket", value_parser)]
     pub eth_websocket_addr: Option<String>,
-    /// The StarkNet JSON-RPC gateway
+    /// The HTTP addressable StarkNet JSON-RPC node
     #[clap(long = "starknet-gateway", value_parser)]
-    pub starknet_gateway: Option<String>,
+    pub starknet_jsonrpc_node: Option<String>,
+    /// The StarkNet private key used to send transactions
+    #[clap(long = "starknet-pkey", value_parser)]
+    pub starknet_private_key: Option<String>,
     /// A file holding a json representation of the wallets the local node
     /// should manage
     #[clap(short, long, value_parser)]
@@ -107,6 +115,8 @@ struct Cli {
 pub struct RelayerConfig {
     /// Software version of the relayer
     pub version: String,
+    /// The blockchain this node targets for settlement
+    pub chain_id: ChainId,
     /// The address of the contract in the target network
     pub contract_address: String,
     /// Bootstrap servers that the peer should connect to
@@ -134,7 +144,9 @@ pub struct RelayerConfig {
     /// The Coinbase API secret to use for price streaming
     pub coinbase_api_secret: Option<String>,
     /// The StarkNet JSON-RPC API gateway
-    pub starknet_gateway: Option<String>,
+    pub starknet_jsonrpc_node: Option<String>,
+    /// The StarkNet private key used for signing transactions
+    pub starknet_private_key: Option<String>,
     /// The Ethereum RPC node websocket address to dial for on-chain data
     pub eth_websocket_addr: Option<String>,
     /// Whether or not the relayer is in debug mode
@@ -147,6 +159,7 @@ impl Clone for RelayerConfig {
     fn clone(&self) -> Self {
         Self {
             version: self.version.clone(),
+            chain_id: self.chain_id,
             contract_address: self.contract_address.clone(),
             bootstrap_servers: self.bootstrap_servers.clone(),
             p2p_port: self.p2p_port,
@@ -159,7 +172,8 @@ impl Clone for RelayerConfig {
             cluster_id: self.cluster_id.clone(),
             coinbase_api_key: self.coinbase_api_key.clone(),
             coinbase_api_secret: self.coinbase_api_secret.clone(),
-            starknet_gateway: self.starknet_gateway.clone(),
+            starknet_jsonrpc_node: self.starknet_jsonrpc_node.clone(),
+            starknet_private_key: self.starknet_private_key.clone(),
             eth_websocket_addr: self.eth_websocket_addr.clone(),
             debug: self.debug,
         }
@@ -229,6 +243,7 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, CoordinatorError> {
         version: cli_args
             .version
             .unwrap_or_else(|| String::from(DEFAULT_VERSION)),
+        chain_id: cli_args.chain_id,
         contract_address: cli_args.contract_address,
         bootstrap_servers: parsed_bootstrap_addrs,
         p2p_port: cli_args.p2p_port,
@@ -241,7 +256,8 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, CoordinatorError> {
         cluster_id,
         coinbase_api_key: cli_args.coinbase_api_key,
         coinbase_api_secret: cli_args.coinbase_api_secret,
-        starknet_gateway: cli_args.starknet_gateway,
+        starknet_jsonrpc_node: cli_args.starknet_jsonrpc_node,
+        starknet_private_key: cli_args.starknet_private_key,
         eth_websocket_addr: cli_args.eth_websocket_addr,
         debug: cli_args.debug,
     };

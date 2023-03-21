@@ -19,7 +19,6 @@ use circuits::{
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::{starknet_felt_to_biguint, starknet_felt_to_scalar, starknet_felt_to_u64};
 use curve25519_dalek::scalar::Scalar;
-use reqwest::Url;
 use starknet::core::{types::FieldElement as StarknetFieldElement, utils::get_selector_from_name};
 use starknet_providers::jsonrpc::{
     models::{BlockId, EmittedEvent, ErrorCode, EventFilter},
@@ -36,6 +35,7 @@ use crate::{
     },
     handshake::jobs::HandshakeExecutionJob,
     proof_generation::jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle},
+    starknet_client::client::StarknetClient,
     state::{
         wallet::{MerkleAuthenticationPath, Wallet},
         MerkleTreeCoords, OrderIdentifier, RelayerState,
@@ -68,14 +68,10 @@ lazy_static! {
 // ----------
 
 /// The configuration passed to the listener upon startup
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OnChainEventListenerConfig {
-    /// The starknet HTTP api url
-    pub starknet_api_gateway: Option<String>,
-    /// The infura API key to use for API access
-    pub infura_api_key: Option<String>,
-    /// The address of the Darkpool contract in the target network
-    pub contract_address: String,
+    /// A client for connecting to Starknet gateway and jsonrpc nodes
+    pub starknet_client: StarknetClient,
     /// A copy of the relayer global state
     pub global_state: RelayerState,
     /// A sender to the handshake manager's job queue, used to enqueue
@@ -93,13 +89,12 @@ impl OnChainEventListenerConfig {
     /// Determines whether the parameters needed to enable the on-chain event
     /// listener are present. If not the worker should not startup
     pub fn enabled(&self) -> bool {
-        self.starknet_api_gateway.is_some()
+        self.starknet_client.jsonrpc_enabled()
     }
 }
 
 /// The worker responsible for listening for on-chain events, translating them to jobs for
 /// other workers, and forwarding these jobs to the relevant workers
-#[derive(Debug)]
 pub struct OnChainEventListener {
     /// The config passed to the listener at startup
     #[allow(unused)]
@@ -115,10 +110,8 @@ pub struct OnChainEventListener {
 // ------------
 
 /// The executor that runs in a thread and polls events from on-chain state
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct OnChainEventListenerExecutor {
-    /// The JSON-RPC client used to connect to StarkNet
-    rpc_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The earliest block that the client will poll events from
     start_block: u64,
     /// The latest block for which the local node has updated Merkle state
@@ -134,19 +127,25 @@ pub struct OnChainEventListenerExecutor {
 impl OnChainEventListenerExecutor {
     /// Create a new executor
     pub fn new(config: OnChainEventListenerConfig) -> Self {
-        let rpc_client = JsonRpcClient::new(HttpTransport::new(
-            Url::parse(&config.starknet_api_gateway.clone().unwrap_or_default()).unwrap(),
-        ));
         let global_state = config.global_state.clone();
 
         Self {
-            rpc_client: Arc::new(rpc_client),
             config,
             start_block: 0,
             merkle_last_consistent_block: Arc::new(0.into()),
             pagination_token: Arc::new(0.into()),
             global_state,
         }
+    }
+
+    /// Helper to fetch the RPC client in the executor's config
+    fn rpc_client(&self) -> &JsonRpcClient<HttpTransport> {
+        self.config.starknet_client.get_jsonrpc_client()
+    }
+
+    /// Helper to get the contract address from the underlying client
+    fn contract_address(&self) -> StarknetFieldElement {
+        self.config.starknet_client.contract_address
     }
 
     /// The main execution loop for the executor
@@ -180,7 +179,7 @@ impl OnChainEventListenerExecutor {
 
     /// Get the current StarkNet block number
     async fn get_block_number(&self) -> Result<u64, OnChainEventListenerError> {
-        self.rpc_client
+        self.rpc_client()
             .block_number()
             .await
             .map_err(|err| OnChainEventListenerError::Rpc(err.to_string()))
@@ -213,13 +212,13 @@ impl OnChainEventListenerExecutor {
         let filter = EventFilter {
             from_block: Some(BlockId::Number(self.start_block)),
             to_block: None,
-            address: Some(StarknetFieldElement::from_str(&self.config.contract_address).unwrap()),
+            address: Some(self.contract_address()),
             keys: None,
         };
 
         let pagination_token = self.pagination_token.load(Ordering::Relaxed).to_string();
         let resp = self
-            .rpc_client
+            .rpc_client()
             .get_events(filter, Some(pagination_token), EVENT_CHUNK_SIZE)
             .await;
 
@@ -305,11 +304,10 @@ impl OnChainEventListenerExecutor {
         block_number: BlockId,
     ) -> Result<(), OnChainEventListenerError> {
         // Fetch all the internal node changed events in this block
-        let contract_addr = StarknetFieldElement::from_str(&self.config.contract_address).unwrap();
         let filter = EventFilter {
             from_block: Some(block_number.clone()),
             to_block: None,
-            address: Some(contract_addr),
+            address: Some(self.contract_address()),
             keys: Some(vec![*MERKLE_NODE_CHANGED_EVENT_SELECTOR]),
         };
 
@@ -320,7 +318,7 @@ impl OnChainEventListenerExecutor {
         while pagination_token.is_some() {
             // Fetch the next page of events
             let events_batch = self
-                .rpc_client
+                .rpc_client()
                 .get_events(filter.clone(), pagination_token, 100 /* chunk_size */)
                 .await
                 .map_err(|err| OnChainEventListenerError::Rpc(err.to_string()))?;
