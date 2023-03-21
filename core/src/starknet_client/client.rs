@@ -38,12 +38,6 @@ impl StarknetClientConfig {
         self.starknet_json_rpc_addr.is_some()
     }
 
-    /// Whether or not the client's write ability (submit transaction) is
-    /// enabled given its config
-    pub fn write_enabled(&self) -> bool {
-        self.enabled() && self.starknet_pkey.is_some()
-    }
-
     /// Build a gateway client from the config values
     pub fn new_gateway_client(&self) -> SequencerGatewayProvider {
         match self.chain {
@@ -84,14 +78,13 @@ impl StarknetClient {
     /// Constructor
     pub fn new(config: StarknetClientConfig) -> Self {
         let gateway_client = Arc::new(config.new_gateway_client());
-        let jsonrpc_client = config.new_jsonrpc_client().map(|client| Arc::new(client));
+        let jsonrpc_client = config.new_jsonrpc_client().map(Arc::new);
 
         // Parse the contract address
         let contract_address: StarknetFieldElement =
-            StarknetFieldElement::from_str(&config.contract_addr).expect(&format!(
-                "could not parse contract address {}",
-                config.contract_addr
-            ));
+            StarknetFieldElement::from_str(&config.contract_addr).unwrap_or_else(|_| {
+                panic!("could not parse contract address {}", config.contract_addr)
+            });
 
         Self {
             config,

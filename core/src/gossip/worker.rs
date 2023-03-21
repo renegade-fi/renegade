@@ -7,6 +7,7 @@ use tokio::runtime::Builder as RuntimeBuilder;
 use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};
 
 use crate::default_wrapper::DefaultWrapper;
+use crate::starknet_client::client::StarknetClient;
 use crate::{
     gossip_api::gossip::GossipOutbound, state::RelayerState, worker::Worker, CancelChannel,
 };
@@ -20,7 +21,7 @@ use super::{
 };
 
 /// The configuration passed from the coordinator to the GossipServer
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GossipServerConfig {
     /// The libp2p PeerId of the local peer
     pub local_peer_id: WrappedPeerId,
@@ -28,10 +29,11 @@ pub struct GossipServerConfig {
     pub local_addr: Multiaddr,
     /// The cluster ID of the local peer
     pub cluster_id: ClusterId,
-    /// The address of the darkpool contract deployment
-    pub contract_address: String,
     /// The servers to bootstrap into the network with
     pub bootstrap_servers: Vec<(WrappedPeerId, Multiaddr)>,
+    /// The starknet client used to connect to sequencer gateway
+    /// and jsonrpc nodes
+    pub starknet_client: StarknetClient,
     /// A reference to the relayer-global state
     pub global_state: RelayerState,
     /// A job queue to send outbound heartbeat requests on
