@@ -18,6 +18,7 @@ mod handshake;
 mod network_manager;
 mod price_reporter;
 mod proof_generation;
+mod starknet_client;
 mod state;
 mod system_bus;
 mod types;
@@ -53,6 +54,7 @@ use crate::{
     network_manager::manager::NetworkManager,
     price_reporter::{jobs::PriceReporterManagerJob, manager::PriceReporterManager},
     proof_generation::{proof_manager::ProofManager, worker::ProofManagerConfig},
+    starknet_client::client::{StarknetClient, StarknetClientConfig},
     state::RelayerState,
     system_bus::SystemBus,
     types::SystemBusMessage,
@@ -176,7 +178,7 @@ async fn main() -> Result<(), CoordinatorError> {
     // network state
     global_state.initialize(
         args.contract_address.clone(),
-        args.starknet_gateway.clone().unwrap(),
+        args.starknet_jsonrpc_node.clone().unwrap(),
         proof_generation_worker_sender.clone(),
         network_sender.clone(),
     );
@@ -184,6 +186,15 @@ async fn main() -> Result<(), CoordinatorError> {
     // ----------------
     // | Worker Setup |
     // ----------------
+
+    // Construct a starknet client that workers will use to communicate with Starknet
+    let starknet_client = StarknetClient::new(StarknetClientConfig {
+        chain: args.chain_id,
+        contract_addr: args.contract_address.clone(),
+        infura_api_key: None,
+        starknet_json_rpc_addr: args.starknet_jsonrpc_node.clone(),
+        starknet_pkey: None,
+    });
 
     // Start the network manager
     let (network_cancel_sender, network_cancel_receiver) = watch::channel(());
@@ -272,9 +283,7 @@ async fn main() -> Result<(), CoordinatorError> {
     // Start the on-chain event listener
     let (chain_listener_cancel_sender, chain_listener_cancel_receiver) = watch::channel(());
     let mut chain_listener = OnChainEventListener::new(OnChainEventListenerConfig {
-        starknet_api_gateway: args.starknet_gateway,
-        infura_api_key: None,
-        contract_address: args.contract_address,
+        starknet_client: starknet_client.clone(),
         global_state: global_state.clone(),
         handshake_manager_job_queue: handshake_worker_sender,
         proof_generation_work_queue: proof_generation_worker_sender.clone(),
