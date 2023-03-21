@@ -1,8 +1,6 @@
 //! Groups handlers for updating and managing order book state in response to
 //! events elsewhere in the local node or the network
 
-use std::str::FromStr;
-
 use circuits::{
     types::wallet::Nullifier, verify_singleprover_proof, zk_gadgets::merkle::MerkleRoot,
 };
@@ -366,15 +364,14 @@ impl GossipProtocolExecutor {
         let root_mod_starknet_prime = root_bigint % modulus_bigint;
 
         let call = CallFunction {
-            contract_address: StarknetFieldElement::from_str(&self.config.contract_address)
-                .unwrap(),
+            contract_address: self.get_contract_address(),
             entry_point_selector: get_selector_from_name(MERKLE_ROOT_IN_HISTORY_FUNCTION).unwrap(),
             calldata: vec![biguint_to_starknet_felt(&root_mod_starknet_prime)],
         };
 
         #[allow(unused)]
         let res = self
-            .starknet_client
+            .get_gateway_client()
             .call_contract(call, BlockId::Pending)
             .await
             .map_err(|err| GossipError::StarknetRequest(err.to_string()))?;
@@ -393,13 +390,12 @@ impl GossipProtocolExecutor {
         let nullifier_mod_starknet_prime = nullifier_bigint % modulus_bigint;
 
         let call = CallFunction {
-            contract_address: StarknetFieldElement::from_str(&self.config.contract_address)
-                .unwrap(),
+            contract_address: self.get_contract_address(),
             entry_point_selector: get_selector_from_name(NULLIFIER_USED_FUNCTION).unwrap(),
             calldata: vec![biguint_to_starknet_felt(&nullifier_mod_starknet_prime)],
         };
         let res = self
-            .starknet_client
+            .get_gateway_client()
             .call_contract(call, BlockId::Pending)
             .await
             .map_err(|err| GossipError::StarknetRequest(err.to_string()))?;

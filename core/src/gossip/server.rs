@@ -4,6 +4,7 @@
 //! loop of the workers
 
 use lru::LruCache;
+use starknet::core::types::FieldElement as StarknetFieldElement;
 use starknet_providers::SequencerGatewayProvider;
 use std::{
     collections::HashMap,
@@ -49,7 +50,6 @@ const PUBSUB_WARMUP_TIME_MS: u64 = 5_000; // 5 seconds
 pub(super) type SharedLRUCache = AsyncShared<LruCache<WrappedPeerId, u64>>;
 
 /// The server type that manages interactions with the gossip network
-#[derive(Debug)]
 pub struct GossipServer {
     /// The config for the Gossip Server
     pub(super) config: GossipServerConfig,
@@ -185,8 +185,6 @@ pub struct GossipProtocolExecutor {
     pub(super) peer_expiry_cache: SharedLRUCache,
     /// The channel on which to receive jobs
     pub(super) job_receiver: DefaultWrapper<Option<TokioReceiver<GossipServerJob>>>,
-    /// The StarkNet provider for API access
-    pub(super) starknet_client: SequencerGatewayProvider,
     /// The channel to send outbound network requests on
     pub(super) network_channel: TokioSender<GossipOutbound>,
     /// The global state of the relayer
@@ -211,18 +209,24 @@ impl GossipProtocolExecutor {
         let peer_expiry_cache: SharedLRUCache =
             new_async_shared(LruCache::new(NonZeroUsize::new(EXPIRY_CACHE_SIZE).unwrap()));
 
-        // Connect a client to the StarkNet gateway
-        let starknet_client = SequencerGatewayProvider::starknet_alpha_goerli();
-
         Ok(Self {
             peer_expiry_cache,
             job_receiver: DefaultWrapper::new(Some(job_receiver)),
-            starknet_client,
             network_channel,
             global_state,
             config,
             cancel_channel,
         })
+    }
+
+    /// Helper to get the contract address of the darkpool
+    pub(super) fn get_contract_address(&self) -> StarknetFieldElement {
+        self.config.starknet_client.contract_address
+    }
+
+    /// Helper to get the gateway client from the config
+    pub(super) fn get_gateway_client(&self) -> &SequencerGatewayProvider {
+        self.config.starknet_client.get_gateway_client()
     }
 
     /// Runs the executor loop
