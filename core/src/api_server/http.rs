@@ -181,7 +181,10 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             POST_WALLET_ROUTE.to_string(),
-            PostWalletHandler::new(config.proof_generation_work_queue.clone()),
+            PostWalletHandler::new(
+                global_state.clone(),
+                config.proof_generation_work_queue.clone(),
+            ),
         );
 
         // The "/wallet/:id/orders" route
