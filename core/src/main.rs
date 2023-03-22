@@ -21,6 +21,7 @@ mod proof_generation;
 mod starknet_client;
 mod state;
 mod system_bus;
+mod tasks;
 mod types;
 mod worker;
 

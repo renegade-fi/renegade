@@ -11,8 +11,6 @@ pub enum ApiServerError {
     HttpStatusCode(StatusCode, String),
     /// HTTP server has failed
     HttpServerFailure(String),
-    /// Error enqueueing a job in another worker
-    SendMessage(String),
     /// Error setting up the API server
     Setup(String),
     /// Websocket server has failed
