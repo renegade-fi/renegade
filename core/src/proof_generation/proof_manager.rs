@@ -2,7 +2,7 @@
 //! happen to the state. It provides an abstracted messaging interface for other
 //! workers to submit proof requests to.
 
-use std::{convert::TryInto, sync::Arc, thread::JoinHandle};
+use std::{convert::TryInto, iter, sync::Arc, thread::JoinHandle};
 
 use circuits::{
     native_helpers::compute_wallet_commitment,
@@ -22,6 +22,7 @@ use circuits::{
 use crossbeam::channel::Receiver;
 use crypto::fields::prime_field_to_scalar;
 use curve25519_dalek::scalar::Scalar;
+use itertools::Itertools;
 use rayon::ThreadPool;
 use tracing::log;
 
@@ -44,7 +45,7 @@ use super::{
 /// Error message when sending a proof response fails
 const ERR_SENDING_RESPONSE: &str = "error sending proof response, channel closed";
 /// The number of threads to allocate towards the proof generation worker pool
-pub(crate) const PROOF_GENERATION_N_THREADS: usize = 2;
+pub(crate) const PROOF_GENERATION_N_THREADS: usize = 3;
 
 // --------------------
 // | Proof Generation |
@@ -91,7 +92,7 @@ impl ProofManager {
                 .recv()
                 .map_err(|err| ProofManagerError::JobQueueClosed(err.to_string()))?;
 
-            thread_pool.install(move || {
+            thread_pool.spawn(move || {
                 if let Err(e) = Self::handle_proof_job(job) {
                     println!("Error handling proof manager job: {}", e)
                 }
@@ -141,7 +142,14 @@ impl ProofManager {
         randomness: Scalar,
     ) -> Result<ValidWalletCreateBundle, ProofManagerError> {
         // Build an empty wallet and compute its commitment
-        let sized_fees: [Fee; MAX_FEES] = fees.try_into().unwrap();
+        let sized_fees: [Fee; MAX_FEES] = fees
+            .into_iter()
+            .chain(iter::repeat(Fee::default()))
+            .take(MAX_FEES)
+            .collect_vec()
+            .try_into()
+            .unwrap();
+
         let empty_wallet = SizedWallet {
             balances: vec![Balance::default(); MAX_BALANCES].try_into().unwrap(),
             orders: vec![Order::default(); MAX_ORDERS].try_into().unwrap(),

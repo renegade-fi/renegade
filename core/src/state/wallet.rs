@@ -390,7 +390,7 @@ impl Wallet {
 }
 
 /// Metadata relevant to the wallet's network state
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WalletMetadata {
     /// The peers which are believed by the local node to be replicating a given wallet
     pub replicas: HashSet<WrappedPeerId>,

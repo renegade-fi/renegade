@@ -33,8 +33,9 @@ use self::{
     price_report::{ExchangeHealthStatesHandler, EXCHANGE_HEALTH_ROUTE},
     wallet::{
         GetBalanceByMintHandler, GetBalancesHandler, GetFeesHandler, GetOrderByIdHandler,
-        GetOrdersHandler, GetWalletHandler, GET_BALANCES_ROUTE, GET_BALANCE_BY_MINT_ROUTE,
-        GET_FEES_ROUTE, GET_ORDERS_ROUTE, GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE,
+        GetOrdersHandler, GetWalletHandler, PostWalletHandler, GET_BALANCES_ROUTE,
+        GET_BALANCE_BY_MINT_ROUTE, GET_FEES_ROUTE, GET_ORDERS_ROUTE, GET_ORDER_BY_ID_ROUTE,
+        GET_WALLET_ROUTE, POST_WALLET_ROUTE,
     },
 };
 
@@ -174,6 +175,13 @@ impl HttpServer {
             Method::GET,
             GET_WALLET_ROUTE.to_string(),
             GetWalletHandler::new(global_state.clone()),
+        );
+
+        // The "/wallet" route
+        router.add_route(
+            Method::POST,
+            POST_WALLET_ROUTE.to_string(),
+            PostWalletHandler::new(config.proof_generation_work_queue.clone()),
         );
 
         // The "/wallet/:id/orders" route

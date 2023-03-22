@@ -1,7 +1,13 @@
 //! Groups wallet API handlers and definitions
 
 use async_trait::async_trait;
+use circuits::types::keychain::KeyChain as CircuitKeyChain;
+use crossbeam::channel::Sender as CrossbeamSender;
+use crypto::fields::biguint_to_scalar;
 use hyper::StatusCode;
+use itertools::Itertools;
+use tokio::sync::oneshot;
+use tracing::log;
 
 use crate::{
     api_server::{
@@ -10,12 +16,14 @@ use crate::{
     },
     external_api::{
         http::wallet::{
-            GetBalanceByMintResponse, GetBalancesResponse, GetFeesResponse, GetOrderByIdResponse,
-            GetOrdersResponse, GetWalletResponse,
+            CreateWalletRequest, CreateWalletResponse, GetBalanceByMintResponse,
+            GetBalancesResponse, GetFeesResponse, GetOrderByIdResponse, GetOrdersResponse,
+            GetWalletResponse,
         },
         types::{Balance, Wallet},
         EmptyRequestResponse,
     },
+    proof_generation::jobs::{ProofJob, ProofManagerJob},
     state::RelayerState,
 };
 
@@ -25,6 +33,8 @@ use super::{parse_mint_from_params, parse_order_id_from_params, parse_wallet_id_
 // | HTTP Routes |
 // ---------------
 
+/// Create a new wallet
+pub(super) const POST_WALLET_ROUTE: &str = "/v0/wallet";
 /// Returns the wallet information for the given id
 pub(super) const GET_WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
 /// Returns the orders within a given wallet
@@ -92,6 +102,81 @@ impl TypedHandler for GetWalletHandler {
                 ERR_WALLET_NOT_FOUND.to_string(),
             ))
         }
+    }
+}
+
+/// Handler for the POST /wallet route
+#[derive(Debug)]
+pub struct PostWalletHandler {
+    /// A sender to the proof manager's work queue, used to enqueue
+    /// proofs of `VALID NEW WALLET` and await their completion
+    proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+}
+
+impl PostWalletHandler {
+    /// Constructor
+    pub fn new(
+        global_state: RelayerState,
+        proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    ) -> Self {
+        Self {
+            proof_manager_work_queue,
+        }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for PostWalletHandler {
+    type Request = CreateWalletRequest;
+    type Response = CreateWalletResponse;
+
+    async fn handle_typed(
+        &self,
+        req: Self::Request,
+        _params: UrlParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        // Convert API types to circuit specific types
+        let fees = req
+            .wallet
+            .fees
+            .into_iter()
+            .map(|fee| fee.into())
+            .collect_vec();
+
+        let keys = CircuitKeyChain {
+            pk_root: biguint_to_scalar(&req.wallet.key_chain.public_keys.pk_root),
+            pk_match: biguint_to_scalar(&req.wallet.key_chain.public_keys.pk_match),
+            pk_settle: biguint_to_scalar(&req.wallet.key_chain.public_keys.pk_settle),
+            pk_view: biguint_to_scalar(&req.wallet.key_chain.public_keys.pk_view),
+        };
+
+        // 1. Add the wallet to the global state
+        // 2. Prove `VALID NEW WALLET`
+        // 3. Submit this on-chain
+        // 4. Await transaction confirmation
+        // 5. Prove `VALID COMMITMENTS` once this wallet is on-chain and has a Merkle entry
+
+        // Enqueue a job with the proof manager to prove `VALID NEW WALLET`
+        let (response_sender, response_receiver) = oneshot::channel();
+        let job_req = ProofManagerJob {
+            type_: ProofJob::ValidWalletCreate {
+                fees,
+                keys,
+                randomness: biguint_to_scalar(&req.wallet.randomness),
+            },
+            response_channel: response_sender,
+        };
+        self.proof_manager_work_queue
+            .send(job_req)
+            .map_err(|err| ApiServerError::SendMessage(err.to_string()))?;
+
+        tokio::spawn(async move {
+            // Await a proof response
+            let _proof_bundle = response_receiver.await;
+            log::info!("got back proof of valid new wallet");
+        });
+
+        Ok(CreateWalletResponse { id: req.wallet.id })
     }
 }
 

@@ -2,6 +2,8 @@
 
 use std::{
     collections::HashMap,
+    convert::TryInto,
+    sync::atomic::AtomicU32,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -9,11 +11,12 @@ use circuits::{
     types::{
         balance::Balance as IndexedBalance,
         fee::Fee as IndexedFee,
+        keychain::KeyChain as IndexedKeychain,
         order::{Order as IndexedOrder, OrderSide},
     },
     zk_gadgets::fixed_point::FixedPoint,
 };
-use crypto::fields::scalar_to_biguint;
+use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
@@ -22,8 +25,10 @@ use uuid::Uuid;
 use crate::{
     gossip::types::PeerInfo as IndexedPeerInfo,
     state::{
-        wallet::Wallet as IndexedWallet, NetworkOrder as IndexedNetworkOrder, NetworkOrderState,
-        OrderIdentifier,
+        wallet::{
+            PrivateKeyChain as IndexedPrivateKeychain, Wallet as IndexedWallet, WalletMetadata,
+        },
+        NetworkOrder as IndexedNetworkOrder, NetworkOrderState, OrderIdentifier,
     },
 };
 
@@ -102,6 +107,49 @@ impl From<IndexedWallet> for Wallet {
     }
 }
 
+impl From<Wallet> for IndexedWallet {
+    fn from(wallet: Wallet) -> Self {
+        let orders = wallet
+            .orders
+            .into_iter()
+            .map(|order| (Uuid::new_v4(), order.into()))
+            .collect();
+        let balances = wallet
+            .balances
+            .into_iter()
+            .map(|balance| (balance.mint.clone(), balance.into()))
+            .collect();
+        let fees = wallet.fees.into_iter().map(|fee| fee.into()).collect();
+
+        IndexedWallet {
+            wallet_id: Uuid::new_v4(),
+            orders,
+            balances,
+            fees,
+            public_keys: IndexedKeychain {
+                pk_root: biguint_to_scalar(&wallet.key_chain.public_keys.pk_root),
+                pk_match: biguint_to_scalar(&wallet.key_chain.public_keys.pk_match),
+                pk_settle: biguint_to_scalar(&wallet.key_chain.public_keys.pk_settle),
+                pk_view: biguint_to_scalar(&wallet.key_chain.public_keys.pk_view),
+            },
+            secret_keys: IndexedPrivateKeychain {
+                sk_root: wallet
+                    .key_chain
+                    .secret_keys
+                    .sk_root
+                    .map(|key| biguint_to_scalar(&key)),
+                sk_match: biguint_to_scalar(&wallet.key_chain.secret_keys.sk_match),
+                sk_settle: biguint_to_scalar(&wallet.key_chain.secret_keys.sk_settle),
+                sk_view: biguint_to_scalar(&wallet.key_chain.secret_keys.sk_view),
+            },
+            randomness: wallet.randomness,
+            metadata: WalletMetadata::default(),
+            proof_staleness: AtomicU32::new(0),
+            merkle_proof: None,
+        }
+    }
+}
+
 /// The order type, represents a trader's intention in the pool
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Order {
@@ -134,6 +182,19 @@ impl From<(OrderIdentifier, IndexedOrder)> for Order {
             type_: OrderType::Limit,
             price: order.price,
             amount: BigUint::from(order.amount),
+            timestamp: order.timestamp,
+        }
+    }
+}
+
+impl From<Order> for IndexedOrder {
+    fn from(order: Order) -> Self {
+        IndexedOrder {
+            quote_mint: order.quote_mint,
+            base_mint: order.base_mint,
+            side: order.side,
+            price: order.price,
+            amount: order.amount.try_into().unwrap(),
             timestamp: order.timestamp,
         }
     }
@@ -172,6 +233,15 @@ impl From<IndexedBalance> for Balance {
     }
 }
 
+impl From<Balance> for IndexedBalance {
+    fn from(balance: Balance) -> Self {
+        IndexedBalance {
+            mint: balance.mint,
+            amount: balance.amount.try_into().unwrap(),
+        }
+    }
+}
+
 /// A fee, payable to the relayer that matches orders on behalf of a wallet
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Fee {
@@ -191,6 +261,17 @@ impl From<IndexedFee> for Fee {
             recipient_key: fee.settle_key,
             gas_addr: fee.gas_addr,
             gas_amount: BigUint::from(fee.gas_token_amount),
+            percentage_fee: fee.percentage_fee,
+        }
+    }
+}
+
+impl From<Fee> for IndexedFee {
+    fn from(fee: Fee) -> Self {
+        IndexedFee {
+            settle_key: fee.recipient_key,
+            gas_addr: fee.gas_addr,
+            gas_token_amount: fee.gas_amount.try_into().unwrap(),
             percentage_fee: fee.percentage_fee,
         }
     }
