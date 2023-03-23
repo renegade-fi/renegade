@@ -13,7 +13,7 @@ use tracing::log;
 use crate::{
     external_api::types::Wallet,
     proof_generation::jobs::{ProofJob, ProofManagerJob, ValidWalletCreateBundle},
-    starknet_client::client::{AccountErr, StarknetClient},
+    starknet_client::{client::StarknetClient, error::StarknetClientError},
     state::{wallet::Wallet as StateWallet, RelayerState},
 };
 
@@ -91,7 +91,10 @@ impl NewWalletTask {
     /// Submits a proof and wallet commitment + encryption on-chain
     ///
     /// TODO: Add wallet encryptions as well
-    async fn submit_new_wallet(&self, proof: ValidWalletCreateBundle) -> Result<(), AccountErr> {
+    async fn submit_new_wallet(
+        &self,
+        proof: ValidWalletCreateBundle,
+    ) -> Result<(), StarknetClientError> {
         // Compute a commitment to the wallet and submit the bundle on-chain
         let wallet_commitment = self.wallet.get_commitment();
         let tx_hash = self

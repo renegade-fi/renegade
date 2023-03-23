@@ -3,16 +3,15 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    convert::TryInto,
     str::FromStr,
     sync::Arc,
     time::Duration,
 };
 
-use circuits::{native_helpers::compute_poseidon_hash, types::wallet::WalletCommitment};
+use circuits::types::wallet::WalletCommitment;
 use crypto::fields::{
-    biguint_to_scalar, biguint_to_starknet_felt, scalar_to_biguint, starknet_felt_to_biguint,
-    starknet_felt_to_scalar, starknet_felt_to_u64,
+    biguint_to_starknet_felt, scalar_to_biguint, starknet_felt_to_biguint, starknet_felt_to_scalar,
+    starknet_felt_to_u64,
 };
 use curve25519_dalek::scalar::Scalar;
 use lazy_static::lazy_static;
@@ -26,11 +25,8 @@ use starknet::providers::{
     Provider, ProviderError,
 };
 use starknet::{
-    accounts::{Account, AccountError, Call, SingleOwnerAccount},
-    core::{
-        types::{FieldElement as StarknetFieldElement, TransactionInfo, TransactionStatus},
-        utils::get_selector_from_name,
-    },
+    accounts::{Account, Call, SingleOwnerAccount},
+    core::types::{FieldElement as StarknetFieldElement, TransactionInfo, TransactionStatus},
     providers::{
         jsonrpc::models::{BlockTag, EventFilter},
         SequencerGatewayProvider, SequencerGatewayProviderError,
@@ -41,18 +37,14 @@ use tracing::log;
 
 use crate::{
     proof_generation::jobs::ValidWalletCreateBundle,
-    starknet_client::{INTERNAL_NODE_CHANGED_EVENT_SELECTOR, VALUE_INSERTED_EVENT_SELECTOR},
+    starknet_client::{
+        INTERNAL_NODE_CHANGED_EVENT_SELECTOR, NEW_WALLET_SELECTOR, VALUE_INSERTED_EVENT_SELECTOR,
+    },
     state::{wallet::MerkleAuthenticationPath, MerkleTreeCoords},
     MERKLE_HEIGHT,
 };
 
-use super::{error::StarknetClientError, ChainId};
-
-/// A type alias for the Starknet client's common account error pattern
-pub type AccountErr = AccountError<
-    <SingleOwnerAccount<SequencerGatewayProvider, LocalWallet> as Account>::SignError,
-    <SequencerGatewayProvider as Provider>::Error,
->;
+use super::{error::StarknetClientError, ChainId, DEFAULT_AUTHENTICATION_PATH};
 
 /// The block length of the window to poll events in while paginating
 ///
@@ -70,33 +62,7 @@ const TX_STATUS_POLL_INTERVAL_MS: u64 = 10_000; // 10 seconds
 /// The fee estimate multiplier to use as `MAX_FEE` for transactions
 const MAX_FEE_MULTIPLIER: f32 = 1.5;
 
-lazy_static! {
-    /// Contract selector to create a new wallet
-    static ref NEW_WALLET_SELECTOR: StarknetFieldElement = get_selector_from_name("new_wallet")
-        .unwrap();
-    /// The value of an empty leaf in the Merkle tree
-    static ref EMPTY_LEAF_VALUE: Scalar = {
-        let val_bigint = BigUint::from_str(
-            "306932273398430716639340090025251549301604242969558673011416862133942957551"
-        ).unwrap();
-        biguint_to_scalar(&val_bigint)
-    };
-    /// The default values of an authentication path; i.e. the values in the path before any
-    /// path elements are changed by insertions
-    ///
-    /// These values are simply recursive hashes of the empty leaf value, as this builds the
-    /// empty tree
-    pub static ref DEFAULT_AUTHENTICATION_PATH: [Scalar; MERKLE_HEIGHT] = {
-        let mut values = Vec::with_capacity(MERKLE_HEIGHT);
-
-        let curr_val = *EMPTY_LEAF_VALUE;
-        for _ in 0..MERKLE_HEIGHT {
-            values.push(compute_poseidon_hash(&[curr_val, curr_val]));
-        }
-
-        values.try_into().unwrap()
-    };
-}
+lazy_static! {}
 
 /// The config type for the client, consists of secrets needed to connect to
 /// the gateway and API server, as well as keys for sending transactions
@@ -430,7 +396,7 @@ impl StarknetClient {
         &self,
         wallet_commitment: WalletCommitment,
         _valid_wallet_create: ValidWalletCreateBundle,
-    ) -> Result<StarknetFieldElement, AccountErr> {
+    ) -> Result<StarknetFieldElement, StarknetClientError> {
         assert!(
             self.config.account_enabled(),
             "no private key given to sign transactions with"
@@ -447,7 +413,10 @@ impl StarknetClient {
         // Estimate the fee and add a buffer to avoid rejected transaction
         let execution = self.get_account().execute(vec![call]);
 
-        let fee_estimate = execution.estimate_fee().await?;
+        let fee_estimate = execution
+            .estimate_fee()
+            .await
+            .map_err(|err| StarknetClientError::ExecuteTransaction(err.to_string()))?;
         let max_fee = (fee_estimate.overall_fee as f32) * MAX_FEE_MULTIPLIER;
         let max_fee = StarknetFieldElement::from(max_fee as u64);
 
@@ -457,5 +426,6 @@ impl StarknetClient {
             .send()
             .await
             .map(|res| res.transaction_hash)
+            .map_err(|err| StarknetClientError::ExecuteTransaction(err.to_string()))
     }
 }
