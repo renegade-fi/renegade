@@ -194,7 +194,8 @@ async fn main() -> Result<(), CoordinatorError> {
         contract_addr: args.contract_address.clone(),
         infura_api_key: None,
         starknet_json_rpc_addr: args.starknet_jsonrpc_node.clone(),
-        starknet_pkey: None,
+        starknet_account_address: args.starknet_account_address,
+        starknet_pkey: args.starknet_private_key,
     });
 
     // Start the network manager
@@ -304,6 +305,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let mut api_server = ApiServer::new(ApiServerConfig {
         http_port: args.http_port,
         websocket_port: args.websocket_port,
+        starknet_client: starknet_client.clone(),
         global_state: global_state.clone(),
         system_bus,
         price_reporter_work_queue: price_reporter_worker_sender,

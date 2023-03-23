@@ -19,6 +19,7 @@ use crate::{
         EmptyRequestResponse,
     },
     proof_generation::jobs::ProofManagerJob,
+    starknet_client::client::StarknetClient,
     state::RelayerState,
     tasks::create_new_wallet::NewWalletTask,
 };
@@ -102,8 +103,9 @@ impl TypedHandler for GetWalletHandler {
 }
 
 /// Handler for the POST /wallet route
-#[derive(Debug)]
 pub struct PostWalletHandler {
+    /// A starknet client
+    starknet_client: StarknetClient,
     /// A copy of the relayer-global state
     global_state: RelayerState,
     /// A sender to the proof manager's work queue, used to enqueue
@@ -114,10 +116,12 @@ pub struct PostWalletHandler {
 impl PostWalletHandler {
     /// Constructor
     pub fn new(
+        starknet_client: StarknetClient,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     ) -> Self {
         Self {
+            starknet_client,
             global_state,
             proof_manager_work_queue,
         }
@@ -139,6 +143,7 @@ impl TypedHandler for PostWalletHandler {
         let id = req.wallet.id;
         let task = NewWalletTask::new(
             req.wallet,
+            self.starknet_client.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
         );

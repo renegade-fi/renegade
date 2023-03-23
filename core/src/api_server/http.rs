@@ -182,6 +182,7 @@ impl HttpServer {
             Method::POST,
             POST_WALLET_ROUTE.to_string(),
             PostWalletHandler::new(
+                config.starknet_client.clone(),
                 global_state.clone(),
                 config.proof_generation_work_queue.clone(),
             ),

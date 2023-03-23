@@ -5,7 +5,7 @@
 
 use lru::LruCache;
 use starknet::core::types::FieldElement as StarknetFieldElement;
-use starknet_providers::SequencerGatewayProvider;
+use starknet::providers::SequencerGatewayProvider;
 use std::{
     collections::HashMap,
     num::NonZeroUsize,

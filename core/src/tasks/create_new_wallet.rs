@@ -5,23 +5,24 @@
 //!     4. Pull the Merkle authentication path of the newly created wallet from on-chain state
 //!     5. Prove `VALID COMMITMENTS`
 
-use circuits::types::keychain::KeyChain as CircuitKeyChain;
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::biguint_to_scalar;
-use itertools::Itertools;
+use crypto::fields::{biguint_to_scalar, starknet_felt_to_biguint};
 use tokio::sync::oneshot;
 use tracing::log;
 
 use crate::{
     external_api::types::Wallet,
-    proof_generation::jobs::{ProofJob, ProofManagerJob},
-    state::RelayerState,
+    proof_generation::jobs::{ProofJob, ProofManagerJob, ValidWalletCreateBundle},
+    starknet_client::client::{AccountErr, StarknetClient},
+    state::{wallet::Wallet as StateWallet, RelayerState},
 };
 
 /// The task struct defining the long-run async flow for creating a new wallet
 pub struct NewWalletTask {
     /// The wallet to create
-    pub wallet: Wallet,
+    pub wallet: StateWallet,
+    /// A starknet client for the task to submit transactions
+    pub starknet_client: StarknetClient,
     /// A copy of the relayer-global state
     pub global_state: RelayerState,
     /// The work queue to add proof management jobs to
@@ -32,11 +33,13 @@ impl NewWalletTask {
     /// Constructor
     pub fn new(
         wallet: Wallet,
+        starknet_client: StarknetClient,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     ) -> Self {
         Self {
-            wallet,
+            wallet: wallet.into(),
+            starknet_client,
             global_state,
             proof_manager_work_queue,
         }
@@ -46,28 +49,12 @@ impl NewWalletTask {
     pub async fn run(self) {
         log::info!("Beginning new wallet task execution");
 
-        // Convert API types to circuit specific types
-        let fees = self
-            .wallet
-            .fees
-            .clone()
-            .into_iter()
-            .map(|fee| fee.into())
-            .collect_vec();
-
-        let keys = CircuitKeyChain {
-            pk_root: biguint_to_scalar(&self.wallet.key_chain.public_keys.pk_root),
-            pk_match: biguint_to_scalar(&self.wallet.key_chain.public_keys.pk_match),
-            pk_settle: biguint_to_scalar(&self.wallet.key_chain.public_keys.pk_settle),
-            pk_view: biguint_to_scalar(&self.wallet.key_chain.public_keys.pk_view),
-        };
-
         // Enqueue a job with the proof manager to prove `VALID NEW WALLET`
         let (response_sender, response_receiver) = oneshot::channel();
         let job_req = ProofManagerJob {
             type_: ProofJob::ValidWalletCreate {
-                fees,
-                keys,
+                fees: self.wallet.fees.clone(),
+                keys: self.wallet.public_keys,
                 randomness: biguint_to_scalar(&self.wallet.randomness),
             },
             response_channel: response_sender,
@@ -76,7 +63,43 @@ impl NewWalletTask {
             .send(job_req)
             .expect("error enqueuing proof manager job");
 
-        let _proof_bundle = response_receiver.await;
+        let proof_bundle = response_receiver.await.unwrap();
         log::info!("got proof bundle for new wallet");
+
+        // Submit the wallet on-chain
+        let _res = self.submit_new_wallet(proof_bundle.into()).await;
+        log::info!("submitted wallet on-chain")
+    }
+
+    /// Submits a proof and wallet commitment + encryption on-chain
+    ///
+    /// TODO: Add wallet encryptions as well
+    async fn submit_new_wallet(&self, proof: ValidWalletCreateBundle) -> Result<(), AccountErr> {
+        // Compute a commitment to the wallet and submit the bundle on-chain
+        let wallet_commitment = self.wallet.get_commitment();
+        let tx_hash = self
+            .starknet_client
+            .new_wallet(wallet_commitment, proof)
+            .await?;
+
+        log::info!(
+            "submitted wallet on-chain polling for transaction completion, tx_hash = {}",
+            starknet_felt_to_biguint(&tx_hash)
+        );
+        let res = self
+            .starknet_client
+            .poll_transaction_completed(tx_hash)
+            .await;
+
+        if let Err(e) = res {
+            log::error!("error polling tx: {e:?}");
+        } else {
+            log::info!(
+                "transaction complete for wallet, status: {:?}",
+                res.unwrap().status
+            );
+        }
+
+        Ok(())
     }
 }

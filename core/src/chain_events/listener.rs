@@ -20,7 +20,7 @@ use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::{starknet_felt_to_biguint, starknet_felt_to_scalar, starknet_felt_to_u64};
 use curve25519_dalek::scalar::Scalar;
 use starknet::core::{types::FieldElement as StarknetFieldElement, utils::get_selector_from_name};
-use starknet_providers::jsonrpc::{
+use starknet::providers::jsonrpc::{
     models::{BlockId, EmittedEvent, ErrorCode, EventFilter},
     HttpTransport, JsonRpcClient, JsonRpcClientError, RpcError,
 };
