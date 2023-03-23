@@ -1,10 +1,19 @@
 //! A wrapper around the starknet client made available by:
 //! https://docs.rs/starknet-core/latest/starknet_core/
 
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    convert::TryInto,
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
+};
 
-use circuits::types::wallet::WalletCommitment;
-use crypto::fields::{biguint_to_starknet_felt, scalar_to_biguint, starknet_felt_to_biguint};
+use circuits::{native_helpers::compute_poseidon_hash, types::wallet::WalletCommitment};
+use crypto::fields::{
+    biguint_to_scalar, biguint_to_starknet_felt, scalar_to_biguint, starknet_felt_to_biguint,
+    starknet_felt_to_scalar, starknet_felt_to_u64,
+};
 use curve25519_dalek::scalar::Scalar;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
@@ -31,7 +40,10 @@ use starknet::{
 use tracing::log;
 
 use crate::{
-    proof_generation::jobs::ValidWalletCreateBundle, starknet_client::VALUE_INSERTED_EVENT_SELECTOR,
+    proof_generation::jobs::ValidWalletCreateBundle,
+    starknet_client::{INTERNAL_NODE_CHANGED_EVENT_SELECTOR, VALUE_INSERTED_EVENT_SELECTOR},
+    state::{wallet::MerkleAuthenticationPath, MerkleTreeCoords},
+    MERKLE_HEIGHT,
 };
 
 use super::{error::StarknetClientError, ChainId};
@@ -42,6 +54,15 @@ pub type AccountErr = AccountError<
     <SequencerGatewayProvider as Provider>::Error,
 >;
 
+/// The block length of the window to poll events in while paginating
+///
+/// I.e. when paginating events, we paginate backwards by increments of
+/// `BLOCK_PAGINATION_WINDOW` blocks. Meaning we first fetch the most recent
+/// `BLOCK_PAGINATION_WINDOW` blocks; scan them, then search the next
+/// `BLOCK_PAGINATION_WINDOW` blocks
+const BLOCK_PAGINATION_WINDOW: u64 = 1000;
+/// The earliest block to search events for, i.e. the contract deployment block
+const EARLIEST_BLOCK: u64 = 780361;
 /// The page size to request when querying events
 const EVENTS_PAGE_SIZE: u64 = 50;
 /// The interval at which to poll the gateway for transaction status
@@ -53,6 +74,28 @@ lazy_static! {
     /// Contract selector to create a new wallet
     static ref NEW_WALLET_SELECTOR: StarknetFieldElement = get_selector_from_name("new_wallet")
         .unwrap();
+    /// The value of an empty leaf in the Merkle tree
+    static ref EMPTY_LEAF_VALUE: Scalar = {
+        let val_bigint = BigUint::from_str(
+            "306932273398430716639340090025251549301604242969558673011416862133942957551"
+        ).unwrap();
+        biguint_to_scalar(&val_bigint)
+    };
+    /// The default values of an authentication path; i.e. the values in the path before any
+    /// path elements are changed by insertions
+    ///
+    /// These values are simply recursive hashes of the empty leaf value, as this builds the
+    /// empty tree
+    pub static ref DEFAULT_AUTHENTICATION_PATH: [Scalar; MERKLE_HEIGHT] = {
+        let mut values = Vec::with_capacity(MERKLE_HEIGHT);
+
+        let curr_val = *EMPTY_LEAF_VALUE;
+        for _ in 0..MERKLE_HEIGHT {
+            values.push(compute_poseidon_hash(&[curr_val, curr_val]));
+        }
+
+        values.try_into().unwrap()
+    };
 }
 
 /// The config type for the client, consists of secrets needed to connect to
@@ -134,8 +177,6 @@ impl StarknetClient {
         // Build the gateway and JSON-RPC clients
         let gateway_client = Arc::new(config.new_gateway_client());
         let jsonrpc_client = config.new_jsonrpc_client().map(Arc::new);
-
-        log::info!("write enabled: {}", config.account_enabled());
 
         // Build an account to sign transactions with
         let account = if config.account_enabled() {
@@ -242,6 +283,56 @@ impl StarknetClient {
         }
     }
 
+    /// Searches on-chain state for the insertion of the given wallet, then finds the most
+    /// recent updates of the path's siblings and creates a Merkle authentication path
+    pub async fn find_merkle_authentication_path(
+        &self,
+        commitment: Scalar,
+    ) -> Result<MerkleAuthenticationPath, StarknetClientError> {
+        // Find the index of the wallet in the commitment tree
+        let leaf_index = self.find_commitment_in_state(commitment).await?;
+
+        // Construct a set that holds pairs of (depth, index) values in the authentication path; i.e. the
+        // tree coordinates of the sibling nodes in the authentication path
+        let mut authentication_path_coords: HashSet<MerkleTreeCoords> =
+            MerkleAuthenticationPath::construct_path_coords(leaf_index.clone(), MERKLE_HEIGHT)
+                .into_iter()
+                .collect();
+
+        // Search for these on-chain
+        let mut found_coords: HashMap<MerkleTreeCoords, StarknetFieldElement> = HashMap::new();
+        let coords_ref = &mut found_coords;
+        self.paginate_events(
+            move |event| {
+                let height: usize = starknet_felt_to_u64(&event.data[0]) as usize;
+                let index = starknet_felt_to_biguint(&event.data[1]);
+                let new_value = event.data[2];
+
+                let coords = MerkleTreeCoords::new(height, index);
+                if authentication_path_coords.remove(&coords) {
+                    coords_ref.insert(coords, new_value);
+                }
+
+                if authentication_path_coords.is_empty() {
+                    Ok(Some(()))
+                } else {
+                    Ok(None)
+                }
+            },
+            vec![*INTERNAL_NODE_CHANGED_EVENT_SELECTOR],
+        )
+        .await?;
+
+        // Gather the coordinates found on-chain into a Merkle authentication path
+        let mut path = *DEFAULT_AUTHENTICATION_PATH;
+        for (coordinate, value) in found_coords.into_iter() {
+            let path_index = MERKLE_HEIGHT - coordinate.height;
+            path[path_index] = starknet_felt_to_scalar(&value);
+        }
+
+        Ok(MerkleAuthenticationPath::new(path, leaf_index, commitment))
+    }
+
     /// A helper to find a commitment in the Merkle tree
     pub async fn find_commitment_in_state(
         &self,
@@ -266,7 +357,10 @@ impl StarknetClient {
             },
             vec![*VALUE_INSERTED_EVENT_SELECTOR],
         )
-        .await
+        .await?
+        .ok_or_else(|| {
+            StarknetClientError::NotFound("commitment not found in Merkle tree".to_string())
+        })
     }
 
     /// A helper for paginating backwards in block history over contract events
@@ -275,11 +369,11 @@ impl StarknetClient {
     /// stop, and gives a response value
     async fn paginate_events<T>(
         &self,
-        handler: impl Fn(EmittedEvent) -> Result<Option<T>, StarknetClientError>,
+        mut handler: impl FnMut(EmittedEvent) -> Result<Option<T>, StarknetClientError>,
         event_keys: Vec<StarknetFieldElement>,
-    ) -> Result<T, StarknetClientError> {
+    ) -> Result<Option<T>, StarknetClientError> {
         // Paginate backwards in block history
-        let mut start_block = self.get_block_number().await?;
+        let mut start_block = self.get_block_number().await? - BLOCK_PAGINATION_WINDOW;
         let mut end_block = BlockId::Tag(BlockTag::Pending);
         let keys = if event_keys.is_empty() {
             None
@@ -287,7 +381,7 @@ impl StarknetClient {
             Some(event_keys)
         };
 
-        while start_block > 0 {
+        while start_block > EARLIEST_BLOCK - BLOCK_PAGINATION_WINDOW {
             // Exhaust events from the start block to the end block
             let mut pagination_token = Some(String::from("0"));
             let filter = EventFilter {
@@ -308,7 +402,7 @@ impl StarknetClient {
                 // Process each event with the handler
                 for event in res.events.into_iter() {
                     if let Some(ret_val) = handler(event)? {
-                        return Ok(ret_val);
+                        return Ok(Some(ret_val));
                     }
                 }
 
@@ -317,10 +411,10 @@ impl StarknetClient {
 
             // If no return value is found decrement the start and end block
             end_block = BlockId::Number(start_block - 1);
-            start_block -= 1;
+            start_block -= BLOCK_PAGINATION_WINDOW;
         }
 
-        Err(StarknetClientError::PaginationFinished)
+        Ok(None)
     }
 
     // ------------------------
