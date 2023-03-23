@@ -14,7 +14,7 @@ use crypto::fields::{
 use curve25519_dalek::scalar::Scalar;
 use num_bigint::BigUint;
 use reqwest::Url;
-use starknet::core::{types::FieldElement as StarknetFieldElement, utils::get_selector_from_name};
+use starknet::core::types::FieldElement as StarknetFieldElement;
 use starknet::providers::jsonrpc::{models::EventFilter, HttpTransport, JsonRpcClient};
 use std::{
     collections::{HashMap, HashSet},
@@ -35,6 +35,7 @@ use crate::{
         orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
     },
     proof_generation::jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle},
+    starknet_client::{INTERNAL_NODE_CHANGED_EVENT_SELECTOR, VALUE_INSERTED_EVENT_SELECTOR},
     MERKLE_HEIGHT,
 };
 
@@ -49,12 +50,6 @@ const ERR_STATE_INIT_FAILED: &str = "state initialization thread panic";
 const STATE_INIT_THREAD: &str = "state-init";
 
 lazy_static! {
-    /// The event selector for internal node changes
-    static ref INTERNAL_NODE_CHANGED_EVENT_SELECTOR: StarknetFieldElement =
-        get_selector_from_name("Merkle_internal_node_changed").unwrap();
-    /// The event selector for Merkle value insertion
-    static ref VALUE_INSERTED_EVENT_SELECTOR: StarknetFieldElement =
-        get_selector_from_name("Merkle_value_inserted").unwrap();
     /// The value of an empty leaf in the Merkle tree
     static ref EMPTY_LEAF_VALUE: Scalar = {
         let val_bigint = BigUint::from_str(

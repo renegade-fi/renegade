@@ -67,7 +67,24 @@ impl NewWalletTask {
         log::info!("got proof bundle for new wallet");
 
         // Submit the wallet on-chain
-        let _res = self.submit_new_wallet(proof_bundle.into()).await;
+        if let Err(e) = self.submit_new_wallet(proof_bundle.into()).await {
+            log::error!("error submitting new wallet on-chain: {e}");
+        };
+
+        // Find the updated Merkle path for the wallet
+        let merkle_index = self
+            .starknet_client
+            .find_commitment_in_state(self.wallet.get_commitment())
+            .await;
+        match merkle_index {
+            Ok(index) => {
+                log::info!("found wallet at merkle index: {index} ")
+            }
+            Err(e) => {
+                log::error!("error finding merkle index: {e}")
+            }
+        }
+
         log::info!("submitted wallet on-chain")
     }
 
