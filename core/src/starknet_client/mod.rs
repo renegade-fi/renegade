@@ -5,9 +5,23 @@
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
-use starknet::core::types::FieldElement as StarknetFieldElement;
+use starknet::core::{types::FieldElement as StarknetFieldElement, utils::get_selector_from_name};
 
 pub mod client;
+pub mod error;
+
+// -------------
+// | Selectors |
+// -------------
+
+lazy_static! {
+    /// The event selector for internal node changes
+    pub static ref INTERNAL_NODE_CHANGED_EVENT_SELECTOR: StarknetFieldElement =
+        get_selector_from_name("Merkle_internal_node_changed").unwrap();
+    /// The event selector for Merkle value insertion
+    pub static ref VALUE_INSERTED_EVENT_SELECTOR: StarknetFieldElement =
+        get_selector_from_name("Merkle_value_inserted").unwrap();
+}
 
 /// Starknet mainnet chain-id
 /// TODO: use `starknet-rs` implementation once we upgrade versions

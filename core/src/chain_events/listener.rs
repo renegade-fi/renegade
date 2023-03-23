@@ -138,6 +138,11 @@ impl OnChainEventListenerExecutor {
         }
     }
 
+    /// Shorthand for fetching a reference to the starknet client
+    fn starknet_client(&self) -> &StarknetClient {
+        &self.config.starknet_client
+    }
+
     /// Helper to fetch the RPC client in the executor's config
     fn rpc_client(&self) -> &JsonRpcClient<HttpTransport> {
         self.config.starknet_client.get_jsonrpc_client()
@@ -151,7 +156,11 @@ impl OnChainEventListenerExecutor {
     /// The main execution loop for the executor
     pub async fn execute(mut self) -> OnChainEventListenerError {
         // Get the current block number to start from
-        let starting_block_number = self.get_block_number().await;
+        let starting_block_number = self
+            .starknet_client()
+            .get_block_number()
+            .await
+            .map_err(|err| OnChainEventListenerError::StarknetClient(err.to_string()));
         if starting_block_number.is_err() {
             return starting_block_number.err().unwrap();
         }
@@ -175,14 +184,6 @@ impl OnChainEventListenerExecutor {
                 };
             });
         }
-    }
-
-    /// Get the current StarkNet block number
-    async fn get_block_number(&self) -> Result<u64, OnChainEventListenerError> {
-        self.rpc_client()
-            .block_number()
-            .await
-            .map_err(|err| OnChainEventListenerError::Rpc(err.to_string()))
     }
 
     /// Poll for new contract events

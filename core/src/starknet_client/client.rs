@@ -7,9 +7,13 @@ use circuits::types::wallet::WalletCommitment;
 use crypto::fields::{biguint_to_starknet_felt, scalar_to_biguint, starknet_felt_to_biguint};
 use curve25519_dalek::scalar::Scalar;
 use lazy_static::lazy_static;
+use num_bigint::BigUint;
 use reqwest::Url;
 use starknet::providers::{
-    jsonrpc::{HttpTransport, JsonRpcClient},
+    jsonrpc::{
+        models::{BlockId, EmittedEvent},
+        HttpTransport, JsonRpcClient,
+    },
     Provider, ProviderError,
 };
 use starknet::{
@@ -18,14 +22,19 @@ use starknet::{
         types::{FieldElement as StarknetFieldElement, TransactionInfo, TransactionStatus},
         utils::get_selector_from_name,
     },
-    providers::{SequencerGatewayProvider, SequencerGatewayProviderError},
+    providers::{
+        jsonrpc::models::{BlockTag, EventFilter},
+        SequencerGatewayProvider, SequencerGatewayProviderError,
+    },
     signers::{LocalWallet, SigningKey},
 };
 use tracing::log;
 
-use crate::proof_generation::jobs::ValidWalletCreateBundle;
+use crate::{
+    proof_generation::jobs::ValidWalletCreateBundle, starknet_client::VALUE_INSERTED_EVENT_SELECTOR,
+};
 
-use super::ChainId;
+use super::{error::StarknetClientError, ChainId};
 
 /// A type alias for the Starknet client's common account error pattern
 pub type AccountErr = AccountError<
@@ -33,6 +42,8 @@ pub type AccountErr = AccountError<
     <SequencerGatewayProvider as Provider>::Error,
 >;
 
+/// The page size to request when querying events
+const EVENTS_PAGE_SIZE: u64 = 50;
 /// The interval at which to poll the gateway for transaction status
 const TX_STATUS_POLL_INTERVAL_MS: u64 = 10_000; // 10 seconds
 /// The fee estimate multiplier to use as `MAX_FEE` for transactions
@@ -200,6 +211,14 @@ impl StarknetClient {
     // | Chain State |
     // ---------------
 
+    /// Get the current StarkNet block number
+    pub async fn get_block_number(&self) -> Result<u64, StarknetClientError> {
+        self.get_jsonrpc_client()
+            .block_number()
+            .await
+            .map_err(|err| StarknetClientError::Rpc(err.to_string()))
+    }
+
     /// Poll a transaction until it is finalized into the accepted on L2 state
     pub async fn poll_transaction_completed(
         &self,
@@ -221,6 +240,87 @@ impl StarknetClient {
             // Sleep and poll again
             tokio::time::sleep(sleep_duration).await;
         }
+    }
+
+    /// A helper to find a commitment in the Merkle tree
+    pub async fn find_commitment_in_state(
+        &self,
+        commitment: Scalar,
+    ) -> Result<BigUint, StarknetClientError> {
+        let commitment_starknet_felt = Self::reduce_scalar_to_felt(&commitment);
+
+        // Paginate through events in the contract, searching for the Merkle tree insertion event that
+        // corresponds to the given commitment
+        //
+        // Return the Merkle leaf index at which the commitment was inserted
+        self.paginate_events(
+            |event| {
+                let index = event.data[0];
+                let value = event.data[1];
+
+                if value == commitment_starknet_felt {
+                    return Ok(Some(starknet_felt_to_biguint(&index)));
+                }
+
+                Ok(None)
+            },
+            vec![*VALUE_INSERTED_EVENT_SELECTOR],
+        )
+        .await
+    }
+
+    /// A helper for paginating backwards in block history over contract events
+    ///
+    /// Calls the handler on each event, which indicates whether the pagination should
+    /// stop, and gives a response value
+    async fn paginate_events<T>(
+        &self,
+        handler: impl Fn(EmittedEvent) -> Result<Option<T>, StarknetClientError>,
+        event_keys: Vec<StarknetFieldElement>,
+    ) -> Result<T, StarknetClientError> {
+        // Paginate backwards in block history
+        let mut start_block = self.get_block_number().await?;
+        let mut end_block = BlockId::Tag(BlockTag::Pending);
+        let keys = if event_keys.is_empty() {
+            None
+        } else {
+            Some(event_keys)
+        };
+
+        while start_block > 0 {
+            // Exhaust events from the start block to the end block
+            let mut pagination_token = Some(String::from("0"));
+            let filter = EventFilter {
+                from_block: Some(BlockId::Number(start_block)),
+                to_block: Some(end_block.clone()),
+                address: Some(self.contract_address),
+                keys: keys.clone(),
+            };
+
+            while pagination_token.is_some() {
+                // Fetch the next page of events
+                let res = self
+                    .get_jsonrpc_client()
+                    .get_events(filter.clone(), pagination_token.clone(), EVENTS_PAGE_SIZE)
+                    .await
+                    .map_err(|err| StarknetClientError::Rpc(err.to_string()))?;
+
+                // Process each event with the handler
+                for event in res.events.into_iter() {
+                    if let Some(ret_val) = handler(event)? {
+                        return Ok(ret_val);
+                    }
+                }
+
+                pagination_token = res.continuation_token;
+            }
+
+            // If no return value is found decrement the start and end block
+            end_block = BlockId::Number(start_block - 1);
+            start_block -= 1;
+        }
+
+        Err(StarknetClientError::PaginationFinished)
     }
 
     // ------------------------

@@ -13,6 +13,8 @@ pub enum OnChainEventListenerError {
     SendMessage(String),
     /// Error setting up the on-chain event listener
     Setup(String),
+    /// An error executing some method in the Starknet client
+    StarknetClient(String),
 }
 
 impl Display for OnChainEventListenerError {
