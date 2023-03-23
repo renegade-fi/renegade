@@ -15,4 +15,4 @@ memoize = "0.4"
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
 rand = { version = "0.8" }
 rand_core = "0.5"
-starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "ca077d3" }
+starknet = { git = "https://github.com/joeykraut/starknet-rs" }
