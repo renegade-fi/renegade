@@ -11,8 +11,8 @@ use tokio::{
 
 use crate::{
     price_reporter::jobs::PriceReporterManagerJob, proof_generation::jobs::ProofManagerJob,
-    state::RelayerState, system_bus::SystemBus, types::SystemBusMessage, worker::Worker,
-    CancelChannel,
+    starknet_client::client::StarknetClient, state::RelayerState, system_bus::SystemBus,
+    types::SystemBusMessage, worker::Worker, CancelChannel,
 };
 
 use super::{error::ApiServerError, http::HttpServer, websocket::WebsocketServer};
@@ -37,12 +37,14 @@ pub struct ApiServer {
 }
 
 /// The worker config for the ApiServer
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ApiServerConfig {
     /// The port that the HTTP server should listen on
     pub http_port: u16,
     /// The port that the websocket server should listen on
     pub websocket_port: u16,
+    /// A starknet client
+    pub starknet_client: StarknetClient,
     /// The worker job queue for the PriceReporterManager
     pub price_reporter_work_queue: TokioSender<PriceReporterManagerJob>,
     /// The worker job queue for the ProofGenerationManager

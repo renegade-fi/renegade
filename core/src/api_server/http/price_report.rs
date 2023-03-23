@@ -28,7 +28,7 @@ pub(super) const EXCHANGE_HEALTH_ROUTE: &str = "/v0/exchange/health_check";
 
 /// Handler for the / route, returns the health report for each individual
 /// exchange and the aggregate median
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct ExchangeHealthStatesHandler {
     /// The config for the API server
     config: ApiServerConfig,

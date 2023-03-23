@@ -11,7 +11,7 @@ use starknet::core::{
     types::{BlockId, CallFunction, FieldElement as StarknetFieldElement},
     utils::get_selector_from_name,
 };
-use starknet_providers::Provider;
+use starknet::providers::Provider;
 use tracing::log;
 
 use crate::{

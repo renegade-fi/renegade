@@ -15,7 +15,7 @@ use curve25519_dalek::scalar::Scalar;
 use num_bigint::BigUint;
 use reqwest::Url;
 use starknet::core::{types::FieldElement as StarknetFieldElement, utils::get_selector_from_name};
-use starknet_providers::jsonrpc::{models::EventFilter, HttpTransport, JsonRpcClient};
+use starknet::providers::jsonrpc::{models::EventFilter, HttpTransport, JsonRpcClient};
 use std::{
     collections::{HashMap, HashSet},
     convert::TryInto,
