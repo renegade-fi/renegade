@@ -20,12 +20,12 @@ pub use self::state::*;
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MerkleTreeCoords {
     /// The height (0 is root) of the coordinate in the tree
-    height: usize,
+    pub height: usize,
     /// The leaf index of the coordinate
     ///
     /// I.e. if we look at the nodes at a given height left to right in a list
     /// the index of the coordinate in that list
-    index: BigUint,
+    pub index: BigUint,
 }
 
 impl MerkleTreeCoords {

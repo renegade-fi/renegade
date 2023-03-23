@@ -5,8 +5,8 @@ use std::fmt::Display;
 /// The error type returned by the StarknetClient interface
 #[derive(Clone, Debug)]
 pub enum StarknetClientError {
-    /// Pagination finished without finding a satisfactory value
-    PaginationFinished,
+    /// No value was found when scanning contract state
+    NotFound(String),
     /// An error performing a JSON-RPC request
     Rpc(String),
 }

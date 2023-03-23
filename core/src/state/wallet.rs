@@ -175,6 +175,28 @@ impl MerkleAuthenticationPath {
         }
     }
 
+    /// Static helper method to get the coordinates of a Merkle authentication path from
+    /// the leaf value
+    pub fn construct_path_coords(leaf_index: BigUint, height: usize) -> Vec<MerkleTreeCoords> {
+        let mut coords = Vec::with_capacity(height);
+        let mut curr_height_index = leaf_index;
+        for height in (1..height + 1).rev() {
+            // If the LSB of the node index at the current height is zero, the node
+            // is a left hand child. If the LSB is one, it is a right hand child.
+            // Choose the index of its sibling
+            let sibling_index = if &curr_height_index % 2u8 == BigUint::from(0u8) {
+                &curr_height_index + 1u8
+            } else {
+                &curr_height_index - 1u8
+            };
+
+            coords.push(MerkleTreeCoords::new(height, sibling_index));
+            curr_height_index >>= 1;
+        }
+
+        coords
+    }
+
     /// Compute the coordinates of the wallet's authentication path in the tree
     ///
     /// The result is sorted from leaf level to depth 1

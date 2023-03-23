@@ -6,7 +6,7 @@
 //!     5. Prove `VALID COMMITMENTS`
 
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::{biguint_to_scalar, starknet_felt_to_biguint};
+use crypto::fields::biguint_to_scalar;
 use tokio::sync::oneshot;
 use tracing::log;
 
@@ -72,13 +72,13 @@ impl NewWalletTask {
         };
 
         // Find the updated Merkle path for the wallet
-        let merkle_index = self
+        let merkle_auth_path = self
             .starknet_client
-            .find_commitment_in_state(self.wallet.get_commitment())
+            .find_merkle_authentication_path(self.wallet.get_commitment())
             .await;
-        match merkle_index {
-            Ok(index) => {
-                log::info!("found wallet at merkle index: {index} ")
+        match merkle_auth_path {
+            Ok(auth_path) => {
+                log::info!("found wallet at merkle index: {:?}", auth_path.leaf_index);
             }
             Err(e) => {
                 log::error!("error finding merkle index: {e}")
@@ -99,10 +99,6 @@ impl NewWalletTask {
             .new_wallet(wallet_commitment, proof)
             .await?;
 
-        log::info!(
-            "submitted wallet on-chain polling for transaction completion, tx_hash = {}",
-            starknet_felt_to_biguint(&tx_hash)
-        );
         let res = self
             .starknet_client
             .poll_transaction_completed(tx_hash)

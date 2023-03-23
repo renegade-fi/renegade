@@ -175,19 +175,6 @@ async fn main() -> Result<(), CoordinatorError> {
         configure_default_log_capture();
     }
 
-    // Spawn a thread to sync the relayer-global state with on-chain state and
-    // network state
-    global_state.initialize(
-        args.contract_address.clone(),
-        args.starknet_jsonrpc_node.clone().unwrap(),
-        proof_generation_worker_sender.clone(),
-        network_sender.clone(),
-    );
-
-    // ----------------
-    // | Worker Setup |
-    // ----------------
-
     // Construct a starknet client that workers will use to communicate with Starknet
     let starknet_client = StarknetClient::new(StarknetClientConfig {
         chain: args.chain_id,
@@ -197,6 +184,18 @@ async fn main() -> Result<(), CoordinatorError> {
         starknet_account_address: args.starknet_account_address,
         starknet_pkey: args.starknet_private_key,
     });
+
+    // Spawn a thread to sync the relayer-global state with on-chain state and
+    // network state
+    global_state.initialize(
+        starknet_client.clone(),
+        proof_generation_worker_sender.clone(),
+        network_sender.clone(),
+    );
+
+    // ----------------
+    // | Worker Setup |
+    // ----------------
 
     // Start the network manager
     let (network_cancel_sender, network_cancel_receiver) = watch::channel(());
