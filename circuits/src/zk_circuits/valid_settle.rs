@@ -10,6 +10,7 @@
 
 use std::ops::Neg;
 
+use crypto::elgamal::ElGamalCiphertext;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
@@ -33,7 +34,7 @@ use crate::{
     zk_gadgets::{
         commitments::{NoteCommitmentGadget, NullifierGadget, WalletCommitGadget},
         comparators::{EqGadget, EqVecGadget, EqZeroGadget, NotEqualGadget},
-        elgamal::{ElGamalCiphertext, ElGamalCiphertextVar},
+        elgamal::ElGamalCiphertextVar,
         gates::OrGate,
         merkle::{
             MerkleOpening, MerkleOpeningCommitment, MerkleOpeningVar, PoseidonMerkleHashGadget,
@@ -544,7 +545,7 @@ where
         let post_wallet_ciphertext_vars = self
             .post_wallet_ciphertext
             .iter()
-            .map(|ciphertext| ciphertext.commit_public(prover))
+            .map(|ciphertext| ElGamalCiphertextVar::commit_public_from_native(*ciphertext, prover))
             .collect_vec();
         let wallet_spend_nullifier_var = prover.commit_public(self.wallet_spend_nullifier);
         let wallet_match_nullifier_var = prover.commit_public(self.wallet_match_nullifier);
@@ -584,7 +585,9 @@ where
         let post_wallet_ciphertext_vars = self
             .post_wallet_ciphertext
             .iter()
-            .map(|ciphertext| ciphertext.commit_public(verifier))
+            .map(|ciphertext| {
+                ElGamalCiphertextVar::commit_public_from_native(*ciphertext, verifier)
+            })
             .collect_vec();
         let wallet_spend_nullifier_var = verifier.commit_public(self.wallet_spend_nullifier);
         let wallet_match_nullifier_var = verifier.commit_public(self.wallet_match_nullifier);
@@ -661,7 +664,10 @@ where
 
 #[cfg(test)]
 mod valid_settle_tests {
-    use crypto::fields::{prime_field_to_scalar, scalar_to_prime_field};
+    use crypto::{
+        elgamal::ElGamalCiphertext,
+        fields::{prime_field_to_scalar, scalar_to_prime_field},
+    };
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
     use lazy_static::lazy_static;
@@ -684,7 +690,7 @@ mod valid_settle_tests {
             create_multi_opening, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
             PRIVATE_KEYS,
         },
-        zk_gadgets::{elgamal::ElGamalCiphertext, merkle::MerkleOpening},
+        zk_gadgets::merkle::MerkleOpening,
         CommitProver,
     };
 
