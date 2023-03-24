@@ -142,6 +142,7 @@ impl TypedHandler for PostWalletHandler {
         // and create proofs of validity
         let id = req.wallet.id;
         let task = NewWalletTask::new(
+            req.wallet.id,
             req.wallet,
             self.starknet_client.clone(),
             self.global_state.clone(),

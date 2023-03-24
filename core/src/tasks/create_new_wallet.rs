@@ -5,6 +5,8 @@
 //!     4. Pull the Merkle authentication path of the newly created wallet from on-chain state
 //!     5. Prove `VALID COMMITMENTS`
 
+use std::fmt::{Display, Formatter, Result as FmtResult};
+
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::biguint_to_scalar;
 use tokio::sync::oneshot;
@@ -14,8 +16,26 @@ use crate::{
     external_api::types::Wallet,
     proof_generation::jobs::{ProofJob, ProofManagerJob, ValidWalletCreateBundle},
     starknet_client::{client::StarknetClient, error::StarknetClientError},
-    state::{wallet::Wallet as StateWallet, RelayerState},
+    state::{
+        wallet::{Wallet as StateWallet, WalletIdentifier},
+        RelayerState,
+    },
 };
+
+/// The error type for the task
+#[derive(Clone, Debug)]
+pub enum NewWalletTaskError {
+    /// Error interacting with the Starknet client
+    Starknet(String),
+    /// Error sending a message to another worker
+    SendMessage(String),
+}
+
+impl Display for NewWalletTaskError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{self:?}")
+    }
+}
 
 /// The task struct defining the long-run async flow for creating a new wallet
 pub struct NewWalletTask {
@@ -32,22 +52,46 @@ pub struct NewWalletTask {
 impl NewWalletTask {
     /// Constructor
     pub fn new(
+        wallet_id: WalletIdentifier,
         wallet: Wallet,
         starknet_client: StarknetClient,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     ) -> Self {
+        // When we cast to a state wallet, the identifier is erased, add
+        // it from the request explicitly
+        let mut wallet: StateWallet = wallet.into();
+        wallet.wallet_id = wallet_id;
+
         Self {
-            wallet: wallet.into(),
+            wallet,
             starknet_client,
             global_state,
             proof_manager_work_queue,
         }
     }
 
-    /// Run the task to completion
-    pub async fn run(self) {
+    /// Run the task to completion, provides a wrapper of error logging
+    /// around the helper defined below
+    pub async fn run(self) -> Result<(), NewWalletTaskError> {
+        let res = self.run_helper().await;
+        if let Err(e) = res.clone() {
+            log::error!("error running new wallet task: {e}");
+        } else {
+            log::info!("successfully created new wallet");
+        }
+
+        res
+    }
+
+    /// A helper to run the task to completion
+    async fn run_helper(self) -> Result<(), NewWalletTaskError> {
         log::info!("Beginning new wallet task execution");
+
+        // Index the wallet in the global state
+        self.global_state
+            .add_wallets(vec![self.wallet.clone()])
+            .await;
 
         // Enqueue a job with the proof manager to prove `VALID NEW WALLET`
         let (response_sender, response_receiver) = oneshot::channel();
@@ -61,31 +105,30 @@ impl NewWalletTask {
         };
         self.proof_manager_work_queue
             .send(job_req)
-            .expect("error enqueuing proof manager job");
+            .map_err(|err| NewWalletTaskError::SendMessage(err.to_string()))?;
 
         let proof_bundle = response_receiver.await.unwrap();
-        log::info!("got proof bundle for new wallet");
 
         // Submit the wallet on-chain
-        if let Err(e) = self.submit_new_wallet(proof_bundle.into()).await {
-            log::error!("error submitting new wallet on-chain: {e}");
-        };
+        self.submit_new_wallet(proof_bundle.into())
+            .await
+            .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))?;
 
         // Find the updated Merkle path for the wallet
         let merkle_auth_path = self
             .starknet_client
             .find_merkle_authentication_path(self.wallet.get_commitment())
-            .await;
-        match merkle_auth_path {
-            Ok(auth_path) => {
-                log::info!("found wallet at merkle index: {:?}", auth_path.leaf_index);
-            }
-            Err(e) => {
-                log::error!("error finding merkle index: {e}")
-            }
-        }
+            .await
+            .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))?;
 
-        log::info!("submitted wallet on-chain")
+        // Add the authentication path to the wallet in the global state
+        self.global_state
+            .read_wallet_index()
+            .await
+            .add_wallet_merkle_proof(&self.wallet.wallet_id, merkle_auth_path)
+            .await;
+
+        Ok(())
     }
 
     /// Submits a proof and wallet commitment + encryption on-chain
