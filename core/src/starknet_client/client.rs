@@ -11,13 +11,15 @@ use std::{
 };
 
 use circuits::types::wallet::WalletCommitment;
-use crypto::fields::{
-    biguint_to_starknet_felt, scalar_to_biguint, starknet_felt_to_biguint, starknet_felt_to_scalar,
-    starknet_felt_to_u64,
+use crypto::{
+    elgamal::ElGamalCiphertext,
+    fields::{
+        biguint_to_starknet_felt, scalar_to_biguint, starknet_felt_to_biguint,
+        starknet_felt_to_scalar, starknet_felt_to_u64,
+    },
 };
 use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use reqwest::Url;
 use starknet::providers::{
@@ -72,8 +74,6 @@ const EVENTS_PAGE_SIZE: u64 = 50;
 const TX_STATUS_POLL_INTERVAL_MS: u64 = 10_000; // 10 seconds
 /// The fee estimate multiplier to use as `MAX_FEE` for transactions
 const MAX_FEE_MULTIPLIER: f32 = 1.5;
-
-lazy_static! {}
 
 /// The config type for the client, consists of secrets needed to connect to
 /// the gateway and API server, as well as keys for sending transactions
@@ -249,15 +249,6 @@ impl StarknetClient {
 
             // Cast to array
             let bytes_padded: [u8; 32] = bytes_padded.try_into().unwrap();
-
-            let packed_biguint = BigUint::from_bytes_be(&bytes_padded);
-            let starknet_field_order = starknet_felt_to_biguint(&StarknetFieldElement::MAX) + 1u8;
-
-            assert!(
-                packed_biguint < starknet_field_order,
-                "must pack values less than felt"
-            );
-
             res.push(StarknetFieldElement::from_bytes_be(&bytes_padded).unwrap());
         }
 
@@ -453,6 +444,7 @@ impl StarknetClient {
     pub async fn new_wallet(
         &self,
         wallet_commitment: WalletCommitment,
+        wallet_ciphertext: Vec<ElGamalCiphertext>,
         valid_wallet_create: ValidWalletCreateBundle,
     ) -> Result<StarknetFieldElement, StarknetClientError> {
         assert!(
@@ -462,6 +454,11 @@ impl StarknetClient {
 
         // Reduce the wallet commitment mod the Starknet field
         let commitment_felt = Self::reduce_scalar_to_felt(&wallet_commitment);
+
+        // Pack the ciphertext into a list of felts
+        let ciphertext_bytes = serde_json::to_vec(&wallet_ciphertext)
+            .map_err(|err| StarknetClientError::Serde(err.to_string()))?;
+        let mut ciphertext_packed_felts = Self::pack_bytes_into_felts(&ciphertext_bytes);
 
         // Pack the proof into a list of felts
         let proof_bytes = serde_json::to_vec(&valid_wallet_create)
@@ -474,7 +471,8 @@ impl StarknetClient {
         // the second array represents the proof blob, currently not-validated
         let mut calldata = Vec::new();
         calldata.push(commitment_felt);
-        calldata.push(0u8.into()); // Currently no encryption blob, set length = 0
+        calldata.push((ciphertext_packed_felts.len() as u64).into());
+        calldata.append(&mut ciphertext_packed_felts);
         calldata.push((proof_packed_felts.len() as u64).into()); // length of proof
         calldata.append(&mut proof_packed_felts);
 

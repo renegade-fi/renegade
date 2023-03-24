@@ -9,6 +9,7 @@
 //! See the whitepaper (https://renegade.fi/whitepaper.pdf) appendix A.7
 //! for a formal specification
 
+use crypto::elgamal::ElGamalCiphertext;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
@@ -29,9 +30,7 @@ use crate::{
     zk_gadgets::{
         commitments::NoteCommitmentGadget,
         comparators::EqGadget,
-        elgamal::{
-            ElGamalCiphertext, ElGamalCiphertextVar, ElGamalGadget, DEFAULT_ELGAMAL_GENERATOR,
-        },
+        elgamal::{ElGamalCiphertextVar, ElGamalGadget, DEFAULT_ELGAMAL_GENERATOR},
         fixed_point::{FixedPoint, FixedPointVar},
         select::CondSelectGadget,
     },
@@ -846,18 +845,30 @@ impl CommitProver for ValidMatchEncryptionStatement {
         let pk_settle_relayer1_var = prover.commit_public(self.pk_settle_relayer1);
         let pk_settle_protocol_var = prover.commit_public(self.pk_settle_protocol);
         let protocol_fee_var = self.protocol_fee.commit_public(prover);
-        let volume1_ciphertext1_var = self.volume1_ciphertext1.commit_public(prover);
-        let volume2_ciphertext1_var = self.volume2_ciphertext1.commit_public(prover);
-        let volume1_ciphertext2_var = self.volume1_ciphertext2.commit_public(prover);
-        let volume2_ciphertext2_var = self.volume2_ciphertext2.commit_public(prover);
-        let mint1_protocol_ciphertext_var = self.mint1_protocol_ciphertext.commit_public(prover);
-        let volume1_protocol_ciphertext_var =
-            self.volume1_protocol_ciphertext.commit_public(prover);
-        let mint2_protocol_ciphertext_var = self.mint2_protocol_ciphertext.commit_public(prover);
-        let volume2_protocol_ciphertext_var =
-            self.volume2_protocol_ciphertext.commit_public(prover);
-        let randomness_protocol_ciphertext_var =
-            self.randomness_protocol_ciphertext.commit_public(prover);
+        let volume1_ciphertext1_var =
+            ElGamalCiphertextVar::commit_public_from_native(self.volume1_ciphertext1, prover);
+        let volume2_ciphertext1_var =
+            ElGamalCiphertextVar::commit_public_from_native(self.volume2_ciphertext1, prover);
+        let volume1_ciphertext2_var =
+            ElGamalCiphertextVar::commit_public_from_native(self.volume1_ciphertext2, prover);
+        let volume2_ciphertext2_var =
+            ElGamalCiphertextVar::commit_public_from_native(self.volume2_ciphertext2, prover);
+        let mint1_protocol_ciphertext_var =
+            ElGamalCiphertextVar::commit_public_from_native(self.mint1_protocol_ciphertext, prover);
+        let volume1_protocol_ciphertext_var = ElGamalCiphertextVar::commit_public_from_native(
+            self.volume1_protocol_ciphertext,
+            prover,
+        );
+        let mint2_protocol_ciphertext_var =
+            ElGamalCiphertextVar::commit_public_from_native(self.mint2_protocol_ciphertext, prover);
+        let volume2_protocol_ciphertext_var = ElGamalCiphertextVar::commit_public_from_native(
+            self.volume2_protocol_ciphertext,
+            prover,
+        );
+        let randomness_protocol_ciphertext_var = ElGamalCiphertextVar::commit_public_from_native(
+            self.randomness_protocol_ciphertext,
+            prover,
+        );
 
         Ok((
             ValidMatchEncryptionStatementVar {
@@ -903,18 +914,34 @@ impl CommitVerifier for ValidMatchEncryptionStatement {
         let pk_settle_relayer1_var = verifier.commit_public(self.pk_settle_relayer1);
         let pk_settle_protocol_var = verifier.commit_public(self.pk_settle_protocol);
         let protocol_fee_var = self.protocol_fee.commit_public(verifier);
-        let volume1_ciphertext1_var = self.volume1_ciphertext1.commit_public(verifier);
-        let volume2_ciphertext1_var = self.volume2_ciphertext1.commit_public(verifier);
-        let volume1_ciphertext2_var = self.volume1_ciphertext2.commit_public(verifier);
-        let volume2_ciphertext2_var = self.volume2_ciphertext2.commit_public(verifier);
-        let mint1_protocol_ciphertext_var = self.mint1_protocol_ciphertext.commit_public(verifier);
-        let volume1_protocol_ciphertext_var =
-            self.volume1_protocol_ciphertext.commit_public(verifier);
-        let mint2_protocol_ciphertext_var = self.mint2_protocol_ciphertext.commit_public(verifier);
-        let volume2_protocol_ciphertext_var =
-            self.volume2_protocol_ciphertext.commit_public(verifier);
-        let randomness_protocol_ciphertext_var =
-            self.randomness_protocol_ciphertext.commit_public(verifier);
+        let volume1_ciphertext1_var =
+            ElGamalCiphertextVar::commit_public_from_native(self.volume1_ciphertext1, verifier);
+        let volume2_ciphertext1_var =
+            ElGamalCiphertextVar::commit_public_from_native(self.volume2_ciphertext1, verifier);
+        let volume1_ciphertext2_var =
+            ElGamalCiphertextVar::commit_public_from_native(self.volume1_ciphertext2, verifier);
+        let volume2_ciphertext2_var =
+            ElGamalCiphertextVar::commit_public_from_native(self.volume2_ciphertext2, verifier);
+        let mint1_protocol_ciphertext_var = ElGamalCiphertextVar::commit_public_from_native(
+            self.mint1_protocol_ciphertext,
+            verifier,
+        );
+        let volume1_protocol_ciphertext_var = ElGamalCiphertextVar::commit_public_from_native(
+            self.volume1_protocol_ciphertext,
+            verifier,
+        );
+        let mint2_protocol_ciphertext_var = ElGamalCiphertextVar::commit_public_from_native(
+            self.mint2_protocol_ciphertext,
+            verifier,
+        );
+        let volume2_protocol_ciphertext_var = ElGamalCiphertextVar::commit_public_from_native(
+            self.volume2_protocol_ciphertext,
+            verifier,
+        );
+        let randomness_protocol_ciphertext_var = ElGamalCiphertextVar::commit_public_from_native(
+            self.randomness_protocol_ciphertext,
+            verifier,
+        );
 
         Ok(ValidMatchEncryptionStatementVar {
             party0_note_commit: party0_note_commit_var,
@@ -992,7 +1019,10 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ValidMatchEncryption<SCAL
 #[cfg(test)]
 mod valid_match_encryption_tests {
 
-    use crypto::fields::{biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint};
+    use crypto::{
+        elgamal::ElGamalCiphertext,
+        fields::{biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint},
+    };
     use curve25519_dalek::scalar::Scalar;
     use integration_helpers::mpc_network::field::get_ristretto_group_modulus;
     use lazy_static::lazy_static;
@@ -1011,10 +1041,7 @@ mod valid_match_encryption_tests {
             order::OrderSide,
             r#match::MatchResult,
         },
-        zk_gadgets::{
-            elgamal::{ElGamalCiphertext, DEFAULT_ELGAMAL_GENERATOR},
-            fixed_point::FixedPoint,
-        },
+        zk_gadgets::{elgamal::DEFAULT_ELGAMAL_GENERATOR, fixed_point::FixedPoint},
         CommitProver,
     };
 

@@ -1,5 +1,6 @@
 //! Implements the ZK gadgetry for ElGamal encryption
 
+use crypto::elgamal::ElGamalCiphertext;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use lazy_static::lazy_static;
 use mpc_bulletproof::{
@@ -11,7 +12,6 @@ use mpc_bulletproof::{
     BulletproofGens,
 };
 use rand_core::OsRng;
-use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::{ProverError, VerifierError},
@@ -66,31 +66,6 @@ impl<const SCALAR_BITS: usize> ElGamalGadget<SCALAR_BITS> {
     }
 }
 
-/// A type representing an ElGamal ciphertext
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub struct ElGamalCiphertext {
-    /// The shared secret; the generator raised to the randomness
-    pub partial_shared_secret: Scalar,
-    /// The encrypted value; the pubkey raised to the randomness, multiplied with the message
-    pub encrypted_message: Scalar,
-}
-
-impl ElGamalCiphertext {
-    /// Commit to the ciphertext as a public input
-    pub fn commit_public<CS: RandomizableConstraintSystem>(
-        &self,
-        cs: &mut CS,
-    ) -> ElGamalCiphertextVar {
-        let partial_shared_secret_var = cs.commit_public(self.partial_shared_secret);
-        let encrypted_message_var = cs.commit_public(self.encrypted_message);
-
-        ElGamalCiphertextVar {
-            partial_shared_secret: partial_shared_secret_var,
-            encrypted_message: encrypted_message_var,
-        }
-    }
-}
-
 /// An ElGamal ciphertext that has been allocated in a constraint system
 #[derive(Copy, Clone, Debug)]
 pub struct ElGamalCiphertextVar {
@@ -98,6 +73,23 @@ pub struct ElGamalCiphertextVar {
     pub partial_shared_secret: Variable,
     /// The encrypted value; the pubkey raised to the randomness, multiplied with the message
     pub encrypted_message: Variable,
+}
+
+impl ElGamalCiphertextVar {
+    /// Commit to a native (outside constraint system) ciphertext as a public input
+    /// to create a ciphertext var
+    pub fn commit_public_from_native<CS: RandomizableConstraintSystem>(
+        ciphertext: ElGamalCiphertext,
+        cs: &mut CS,
+    ) -> ElGamalCiphertextVar {
+        let partial_shared_secret_var = cs.commit_public(ciphertext.partial_shared_secret);
+        let encrypted_message_var = cs.commit_public(ciphertext.encrypted_message);
+
+        ElGamalCiphertextVar {
+            partial_shared_secret: partial_shared_secret_var,
+            encrypted_message: encrypted_message_var,
+        }
+    }
 }
 
 /// An ElGamal ciphertext that has been committed to by a prover

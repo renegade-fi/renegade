@@ -17,19 +17,16 @@ use circuits::{
     zk_circuits::valid_match_encryption::{
         ValidMatchEncryptionStatement, ValidMatchEncryptionWitness,
     },
-    zk_gadgets::{
-        elgamal::{ElGamalCiphertext, DEFAULT_ELGAMAL_GENERATOR},
-        fixed_point::FixedPoint,
-    },
+    zk_gadgets::fixed_point::FixedPoint,
     LinkableCommitment,
 };
 
-use crypto::fields::{biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint};
+use crypto::{
+    elgamal::encrypt_scalar,
+    fields::{biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint},
+};
 use curve25519_dalek::scalar::Scalar;
-use integration_helpers::mpc_network::field::get_ristretto_group_modulus;
 use mpc_ristretto::mpc_scalar::scalar_to_u64;
-use num_bigint::BigUint;
-use rand_core::OsRng;
 use tokio::sync::oneshot;
 use tracing::log;
 
@@ -64,45 +61,45 @@ impl HandshakeExecutor {
         // Encrypt the volumes of the first party's note under their key
         let pk_settle0_bigint = scalar_to_biguint(&handshake_result.pk_settle0);
         let (volume1_ciphertext1, randomness) =
-            Self::encrypt_scalar(party0_note.volume1.into(), &pk_settle0_bigint);
+            encrypt_scalar(party0_note.volume1.into(), &pk_settle0_bigint);
         randomness_values.push(randomness);
 
         let (volume2_ciphertext1, randomness) =
-            Self::encrypt_scalar(party0_note.volume2.into(), &pk_settle0_bigint);
+            encrypt_scalar(party0_note.volume2.into(), &pk_settle0_bigint);
         randomness_values.push(randomness);
 
         // Encrypt the volumes of the second party's note under their key
         let pk_settle1_bigint = scalar_to_biguint(&handshake_result.pk_settle1);
         let (volume1_ciphertext2, randomness) =
-            Self::encrypt_scalar(party1_note.volume1.into(), &pk_settle1_bigint);
+            encrypt_scalar(party1_note.volume1.into(), &pk_settle1_bigint);
         randomness_values.push(randomness);
 
         let (volume2_ciphertext2, randomness) =
-            Self::encrypt_scalar(party1_note.volume2.into(), &pk_settle1_bigint);
+            encrypt_scalar(party1_note.volume2.into(), &pk_settle1_bigint);
         randomness_values.push(randomness);
 
         // Encrypt the mints, volumes and randomness of the protocol note under the protocol key
-        let (mint1_protocol_ciphertext, randomness) = Self::encrypt_scalar(
+        let (mint1_protocol_ciphertext, randomness) = encrypt_scalar(
             biguint_to_scalar(&protocol_note.mint1),
             &PROTOCOL_SETTLE_KEY,
         );
         randomness_values.push(randomness);
 
-        let (mint2_protocol_ciphertext, randomness) = Self::encrypt_scalar(
+        let (mint2_protocol_ciphertext, randomness) = encrypt_scalar(
             biguint_to_scalar(&protocol_note.mint2),
             &PROTOCOL_SETTLE_KEY,
         );
         randomness_values.push(randomness);
 
         let (volume1_protocol_ciphertext, randomness) =
-            Self::encrypt_scalar(protocol_note.volume1.into(), &PROTOCOL_SETTLE_KEY);
+            encrypt_scalar(protocol_note.volume1.into(), &PROTOCOL_SETTLE_KEY);
         randomness_values.push(randomness);
 
         let (volume2_protocol_ciphertext, randomness) =
-            Self::encrypt_scalar(protocol_note.volume2.into(), &PROTOCOL_SETTLE_KEY);
+            encrypt_scalar(protocol_note.volume2.into(), &PROTOCOL_SETTLE_KEY);
         randomness_values.push(randomness);
 
-        let (randomness_protocol_ciphertext, encryption_randomness) = Self::encrypt_scalar(
+        let (randomness_protocol_ciphertext, encryption_randomness) = encrypt_scalar(
             biguint_to_scalar(&protocol_note.randomness),
             &PROTOCOL_SETTLE_KEY,
         );
@@ -355,30 +352,6 @@ impl HandshakeExecutor {
             relayer0_note,
             relayer1_note,
             protocol_note,
-        )
-    }
-
-    /// Create an ElGamal encryption of the given value
-    ///
-    /// Return both the encryption (used as a public variable) and the randomness
-    /// used to generate the encryption (used as a witness variable)
-    fn encrypt_scalar(val: Scalar, pubkey: &BigUint) -> (ElGamalCiphertext, Scalar) {
-        let mut rng = OsRng {};
-        let randomness = scalar_to_biguint(&Scalar::random(&mut rng));
-
-        let field_mod = get_ristretto_group_modulus();
-        let ciphertext1 =
-            scalar_to_biguint(&DEFAULT_ELGAMAL_GENERATOR).modpow(&randomness, &field_mod);
-        let shared_secret = pubkey.modpow(&randomness, &field_mod);
-
-        let encrypted_message = (shared_secret * scalar_to_biguint(&val)) % &field_mod;
-
-        (
-            ElGamalCiphertext {
-                partial_shared_secret: biguint_to_scalar(&ciphertext1),
-                encrypted_message: biguint_to_scalar(&encrypted_message),
-            },
-            biguint_to_scalar(&randomness),
         )
     }
 }

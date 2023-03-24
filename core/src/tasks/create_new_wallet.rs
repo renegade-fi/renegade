@@ -8,7 +8,11 @@
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::biguint_to_scalar;
+use crypto::{
+    elgamal::{encrypt_scalar, ElGamalCiphertext},
+    fields::{biguint_to_scalar, scalar_to_biguint},
+};
+use itertools::Itertools;
 use tokio::sync::oneshot;
 use tracing::log;
 
@@ -20,6 +24,7 @@ use crate::{
         wallet::{Wallet as StateWallet, WalletIdentifier},
         RelayerState,
     },
+    SizedWallet,
 };
 
 /// The error type for the task
@@ -140,9 +145,11 @@ impl NewWalletTask {
     ) -> Result<(), StarknetClientError> {
         // Compute a commitment to the wallet and submit the bundle on-chain
         let wallet_commitment = self.wallet.get_commitment();
+        let wallet_ciphertext = self.encrypt_wallet();
+
         let tx_hash = self
             .starknet_client
-            .new_wallet(wallet_commitment, proof)
+            .new_wallet(wallet_commitment, wallet_ciphertext, proof)
             .await?;
 
         let res = self
@@ -160,5 +167,58 @@ impl NewWalletTask {
         }
 
         Ok(())
+    }
+
+    /// Generate an unstructured encryption of the wallet
+    ///
+    /// We will add structure to this later, for now it is sufficient to blob the
+    /// encryption
+    fn encrypt_wallet(&self) -> Vec<ElGamalCiphertext> {
+        let circuit_wallet_type: SizedWallet = self.wallet.clone().into();
+        let pk_view = scalar_to_biguint(&self.wallet.public_keys.pk_view);
+        let mut ciphertexts = Vec::new();
+
+        // Encrypt the balances
+        circuit_wallet_type.balances.iter().for_each(|balance| {
+            ciphertexts.push(encrypt_scalar(biguint_to_scalar(&balance.mint), &pk_view));
+            ciphertexts.push(encrypt_scalar(balance.amount.into(), &pk_view));
+        });
+
+        // Encrypt the orders
+        circuit_wallet_type.orders.iter().for_each(|order| {
+            ciphertexts.push(encrypt_scalar(
+                biguint_to_scalar(&order.quote_mint),
+                &pk_view,
+            ));
+            ciphertexts.push(encrypt_scalar(
+                biguint_to_scalar(&order.base_mint),
+                &pk_view,
+            ));
+            ciphertexts.push(encrypt_scalar(order.side.into(), &pk_view));
+            ciphertexts.push(encrypt_scalar(order.price.into(), &pk_view));
+            ciphertexts.push(encrypt_scalar(order.amount.into(), &pk_view));
+            ciphertexts.push(encrypt_scalar(order.timestamp.into(), &pk_view));
+        });
+
+        // Encrypt the fees
+        circuit_wallet_type.fees.iter().for_each(|fee| {
+            ciphertexts.push(encrypt_scalar(biguint_to_scalar(&fee.settle_key), &pk_view));
+            ciphertexts.push(encrypt_scalar(biguint_to_scalar(&fee.gas_addr), &pk_view));
+            ciphertexts.push(encrypt_scalar(fee.gas_token_amount.into(), &pk_view));
+            ciphertexts.push(encrypt_scalar(fee.percentage_fee.into(), &pk_view));
+        });
+
+        // Encrypt the wallet randomness
+        ciphertexts.push(encrypt_scalar(
+            biguint_to_scalar(&self.wallet.randomness),
+            &pk_view,
+        ));
+
+        // Remove the randomness used in each encryption, cleaner this way than
+        // indexing into the tuple struct in all of the above
+        ciphertexts
+            .into_iter()
+            .map(|(cipher, _)| cipher)
+            .collect_vec()
     }
 }
