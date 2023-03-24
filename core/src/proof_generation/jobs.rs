@@ -27,7 +27,7 @@ use crate::{types::SizedValidCommitmentsWitness, MAX_BALANCES, MAX_FEES, MAX_ORD
 // ----------------------
 
 /// The response type for a request to generate a proof of `VALID WALLET CREATE`
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidWalletCreateBundle {
     /// A commitment to the witness type for `VALID WALLET CREATE`
     pub commitment: ValidWalletCreateCommitment<MAX_FEES>,

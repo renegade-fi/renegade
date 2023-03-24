@@ -16,13 +16,16 @@ use mpc_bulletproof::{
     BulletproofGens,
 };
 use rand_core::OsRng;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::{ProverError, VerifierError},
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
     types::{
+        deserialize_array,
         fee::{CommittedFee, Fee, FeeVar},
         keychain::{CommittedKeyChain, KeyChain, KeyChainVar},
+        serialize_array,
     },
     zk_gadgets::poseidon::PoseidonHashGadget,
     CommitProver, CommitVerifier, SingleProverCircuit, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
@@ -116,7 +119,7 @@ where
 }
 
 /// The parameterization for the VALID WALLET CREATE statement
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct ValidWalletCreateStatement {
     /// The expected commitment of the newly created wallet
     pub wallet_commitment: Scalar,
@@ -134,9 +137,13 @@ pub struct ValidWalletCreateWitness<const MAX_FEES: usize> {
 }
 
 /// The committed witness for the VALID WALLET CREATE proof
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidWalletCreateCommitment<const MAX_FEES: usize> {
     /// The fees to initialize the wallet with; may be nonzero
+    #[serde(
+        serialize_with = "serialize_array",
+        deserialize_with = "deserialize_array"
+    )]
     pub fees: [CommittedFee; MAX_FEES],
     /// The keys used to authenticate operations on the wallet
     pub keys: CommittedKeyChain,
