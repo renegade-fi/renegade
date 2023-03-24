@@ -11,6 +11,8 @@ pub enum StarknetClientError {
     NotFound(String),
     /// An error performing a JSON-RPC request
     Rpc(String),
+    /// An error serializing/deserializing calldata
+    Serde(String),
 }
 
 impl Display for StarknetClientError {

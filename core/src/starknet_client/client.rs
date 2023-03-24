@@ -3,6 +3,8 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    convert::TryInto,
+    iter,
     str::FromStr,
     sync::Arc,
     time::Duration,
@@ -14,6 +16,7 @@ use crypto::fields::{
     starknet_felt_to_u64,
 };
 use curve25519_dalek::scalar::Scalar;
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use reqwest::Url;
@@ -26,7 +29,10 @@ use starknet::providers::{
 };
 use starknet::{
     accounts::{Account, Call, SingleOwnerAccount},
-    core::types::{FieldElement as StarknetFieldElement, TransactionInfo, TransactionStatus},
+    core::types::{
+        BlockId as CoreBlockId, FieldElement as StarknetFieldElement, TransactionInfo,
+        TransactionStatus,
+    },
     providers::{
         jsonrpc::models::{BlockTag, EventFilter},
         SequencerGatewayProvider, SequencerGatewayProviderError,
@@ -53,6 +59,11 @@ use super::{error::StarknetClientError, ChainId, DEFAULT_AUTHENTICATION_PATH};
 /// `BLOCK_PAGINATION_WINDOW` blocks; scan them, then search the next
 /// `BLOCK_PAGINATION_WINDOW` blocks
 const BLOCK_PAGINATION_WINDOW: u64 = 1000;
+/// The number of bytes we can pack into a given Starknet field element
+///
+/// The starknet field is of size 2 ** 251 + \delta, which fits at most
+/// 31 bytes cleanly into a single felt
+const BYTES_PER_FELT: usize = 31;
 /// The earliest block to search events for, i.e. the contract deployment block
 const EARLIEST_BLOCK: u64 = 780361;
 /// The page size to request when querying events
@@ -182,6 +193,10 @@ impl StarknetClient {
         }
     }
 
+    // -----------
+    // | Helpers |
+    // -----------
+
     /// Whether or not JSON-RPC is enabled via the given config values
     pub fn jsonrpc_enabled(&self) -> bool {
         self.config.enabled()
@@ -214,6 +229,41 @@ impl StarknetClient {
         biguint_to_starknet_felt(&val_mod_starknet_prime)
     }
 
+    /// Pack bytes into Starknet field elements
+    fn pack_bytes_into_felts(bytes: &[u8]) -> Vec<StarknetFieldElement> {
+        let mut res = Vec::new();
+
+        for i in (0..bytes.len()).step_by(BYTES_PER_FELT) {
+            // Construct a felt from bytes [i..i+BYTES_PER_FELT], padding
+            // to 32 in length
+            let range_end = usize::min(i + BYTES_PER_FELT, bytes.len());
+            let mut bytes_padded: Vec<u8> = bytes[i..range_end]
+                .iter()
+                .cloned()
+                .chain(iter::repeat(0u8))
+                .take(32)
+                .collect_vec();
+
+            // Starknet felts store bytes in big-endian order, reverse the bytes
+            bytes_padded.reverse();
+
+            // Cast to array
+            let bytes_padded: [u8; 32] = bytes_padded.try_into().unwrap();
+
+            let packed_biguint = BigUint::from_bytes_be(&bytes_padded);
+            let starknet_field_order = starknet_felt_to_biguint(&StarknetFieldElement::MAX) + 1u8;
+
+            assert!(
+                packed_biguint < starknet_field_order,
+                "must pack values less than felt"
+            );
+
+            res.push(StarknetFieldElement::from_bytes_be(&bytes_padded).unwrap());
+        }
+
+        res
+    }
+
     // ---------------
     // | Chain State |
     // ---------------
@@ -222,6 +272,14 @@ impl StarknetClient {
     pub async fn get_block_number(&self) -> Result<u64, StarknetClientError> {
         self.get_jsonrpc_client()
             .block_number()
+            .await
+            .map_err(|err| StarknetClientError::Rpc(err.to_string()))
+    }
+
+    /// Get the nonce of the account in the pending block
+    pub async fn pending_block_nonce(&self) -> Result<StarknetFieldElement, StarknetClientError> {
+        self.gateway_client
+            .get_nonce(self.get_account().address(), CoreBlockId::Pending)
             .await
             .map_err(|err| StarknetClientError::Rpc(err.to_string()))
     }
@@ -395,23 +453,41 @@ impl StarknetClient {
     pub async fn new_wallet(
         &self,
         wallet_commitment: WalletCommitment,
-        _valid_wallet_create: ValidWalletCreateBundle,
+        valid_wallet_create: ValidWalletCreateBundle,
     ) -> Result<StarknetFieldElement, StarknetClientError> {
         assert!(
             self.config.account_enabled(),
             "no private key given to sign transactions with"
         );
 
-        // Call the `new_wallet` contract function
+        // Reduce the wallet commitment mod the Starknet field
         let commitment_felt = Self::reduce_scalar_to_felt(&wallet_commitment);
+
+        // Pack the proof into a list of felts
+        let proof_bytes = serde_json::to_vec(&valid_wallet_create)
+            .map_err(|err| StarknetClientError::Serde(err.to_string()))?;
+        let mut proof_packed_felts = Self::pack_bytes_into_felts(&proof_bytes);
+
+        // Build the calldata for `new_wallet`
+        // The first element is the commitment to the wallet, followed by two arrays
+        // the first array represents the encryption blob stored on-chain for the wallet
+        // the second array represents the proof blob, currently not-validated
+        let mut calldata = Vec::new();
+        calldata.push(commitment_felt);
+        calldata.push(0u8.into()); // Currently no encryption blob, set length = 0
+        calldata.push((proof_packed_felts.len() as u64).into()); // length of proof
+        calldata.append(&mut proof_packed_felts);
+
+        // Call the `new_wallet` contract function
         let call = Call {
             to: self.contract_address,
             selector: *NEW_WALLET_SELECTOR,
-            calldata: vec![commitment_felt],
+            calldata,
         };
 
         // Estimate the fee and add a buffer to avoid rejected transaction
-        let execution = self.get_account().execute(vec![call]);
+        let acct_nonce = self.pending_block_nonce().await?;
+        let execution = self.get_account().execute(vec![call]).nonce(acct_nonce);
 
         let fee_estimate = execution
             .estimate_fee()
