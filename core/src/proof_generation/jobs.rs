@@ -13,6 +13,7 @@ use circuits::{
             ValidMatchEncryptionWitnessCommitment,
         },
         valid_wallet_create::{ValidWalletCreateCommitment, ValidWalletCreateStatement},
+        valid_wallet_update::{ValidWalletUpdateStatement, ValidWalletUpdateWitnessCommitment},
     },
 };
 use curve25519_dalek::scalar::Scalar;
@@ -20,7 +21,10 @@ use mpc_bulletproof::r1cs::R1CSProof;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot::Sender;
 
-use crate::{types::SizedValidCommitmentsWitness, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use crate::{
+    types::{SizedValidCommitmentsWitness, SizedValidWalletUpdateWitness},
+    MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+};
 
 // ----------------------
 // | Proof Return Types |
@@ -57,6 +61,27 @@ pub struct GenericValidCommitmentsBundle<
 /// A type alias that specifies the default generics for `GenericValidCommitmentsBundle`
 pub type ValidCommitmentsBundle = GenericValidCommitmentsBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
+/// The response type for a request to generate a proof of `VALID WALLET UPDATE`
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenericValidWalletUpdateBundle<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+    const MAX_FEES: usize,
+> where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
+    /// A commitment to the witness type of `VALID WALLET UPDATE`
+    pub commitment: ValidWalletUpdateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    /// The statement (public variables) used to prove `VALID WALLET UPDATE`
+    pub statement: ValidWalletUpdateStatement,
+    /// The proof itself
+    pub proof: R1CSProof,
+}
+
+/// A type alias that specifies the default generics for `GenericValidWalletUpdateBundle`
+pub type ValidWalletUpdateBundle =
+    GenericValidWalletUpdateBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+
 /// The response type for a request to generate a proof of `VALID MATCH ENCRYPTION`
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidMatchEncryptBundle {
@@ -75,8 +100,9 @@ pub enum ProofBundle {
     /// A witness commitment, statement, and proof of `VALID WALLET CREATE`
     ValidWalletCreate(ValidWalletCreateBundle),
     /// A witness commitment, statement, and proof of `VALID COMMITMENTS`
-    #[allow(unused)]
     ValidCommitments(ValidCommitmentsBundle),
+    /// A witness commitment, statement, and proof of `VALID WALLET UPDATE`
+    ValidWalletUpdate(ValidWalletUpdateBundle),
     /// A witness commitment, statement, and proof of `VALID MATCH ENCRYPTION`
     ValidMatchEncryption(ValidMatchEncryptBundle),
 }
@@ -105,6 +131,19 @@ impl From<ProofBundle> for ValidCommitmentsBundle {
     }
 }
 
+impl From<ProofBundle> for ValidWalletUpdateBundle {
+    fn from(bundle: ProofBundle) -> Self {
+        if let ProofBundle::ValidWalletUpdate(b) = bundle {
+            b
+        } else {
+            panic!(
+                "Proof bundle is not of type ValidWalletUpdate: {:?}",
+                bundle
+            );
+        }
+    }
+}
+
 impl From<ProofBundle> for ValidMatchEncryptBundle {
     fn from(bundle: ProofBundle) -> Self {
         if let ProofBundle::ValidMatchEncryption(b) = bundle {
@@ -117,6 +156,10 @@ impl From<ProofBundle> for ValidMatchEncryptBundle {
         }
     }
 }
+
+// -------------
+// | Job Types |
+// -------------
 
 /// Represents a job enqueued in the proof manager's work queue
 #[derive(Debug)]
@@ -150,6 +193,15 @@ pub enum ProofJob {
         witness: SizedValidCommitmentsWitness,
         /// The statement (public variables) to use in the proof of `VALID COMMITMENTS`
         statement: ValidCommitmentsStatement,
+    },
+    /// a request to create a proof of `VALID WALLET UPDATE` specifying a user generated
+    /// change to the underlying wallet. This nullifies the old wallet and becomes a new
+    /// entry in the commitment tree
+    ValidWalletUpdate {
+        /// The witness to the statement of `VALID WALLET UPDATE`
+        witness: SizedValidWalletUpdateWitness,
+        /// The statement (public variables) parameterizing the proof
+        statement: ValidWalletUpdateStatement,
     },
     /// A request to create a proof of `VALID MATCH ENCRYPTION` for a match result
     ///

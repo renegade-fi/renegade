@@ -18,6 +18,7 @@ use mpc_bulletproof::{
     BulletproofGens,
 };
 use rand_core::OsRng;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::{ProverError, VerifierError},
@@ -437,7 +438,7 @@ pub struct ValidWalletUpdateWitnessVar<
 }
 
 /// A commitment to the witness of VALID WALLET UPDATE
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidWalletUpdateWitnessCommitment<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
@@ -522,7 +523,7 @@ where
 }
 
 /// The statement type for VALID WALLET UPDATE
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidWalletUpdateStatement {
     /// The timestamp (user set) of the request, used for order timestamping
     pub timestamp: Scalar,

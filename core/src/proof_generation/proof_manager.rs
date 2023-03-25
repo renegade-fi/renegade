@@ -16,6 +16,7 @@ use circuits::{
         valid_wallet_create::{
             ValidWalletCreate, ValidWalletCreateStatement, ValidWalletCreateWitness,
         },
+        valid_wallet_update::{ValidWalletUpdate, ValidWalletUpdateStatement},
     },
     MAX_BALANCES, MAX_ORDERS,
 };
@@ -27,15 +28,16 @@ use rayon::ThreadPool;
 use tracing::log;
 
 use crate::{
-    proof_generation::jobs::ProofJob, types::SizedValidCommitmentsWitness, CancelChannel,
-    SizedWallet, MAX_FEES,
+    proof_generation::jobs::ProofJob,
+    types::{SizedValidCommitmentsWitness, SizedValidWalletUpdateWitness},
+    CancelChannel, SizedWallet, MAX_FEES,
 };
 
 use super::{
     error::ProofManagerError,
     jobs::{
         ProofBundle, ProofManagerJob, ValidCommitmentsBundle, ValidMatchEncryptBundle,
-        ValidWalletCreateBundle,
+        ValidWalletCreateBundle, ValidWalletUpdateBundle,
     },
 };
 
@@ -112,7 +114,7 @@ impl ProofManager {
                 let proof_bundle = Self::prove_valid_wallet_create(fees, keys, randomness)?;
                 job.response_channel
                     .send(ProofBundle::ValidWalletCreate(proof_bundle))
-                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))?
+                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
             }
 
             ProofJob::ValidCommitments { witness, statement } => {
@@ -120,7 +122,14 @@ impl ProofManager {
                 let proof_bundle = Self::prove_valid_commitments(witness, statement)?;
                 job.response_channel
                     .send(ProofBundle::ValidCommitments(proof_bundle))
-                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))?
+                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
+            }
+
+            ProofJob::ValidWalletUpdate { witness, statement } => {
+                let proof_bundle = Self::prove_valid_wallet_update(witness, statement)?;
+                job.response_channel
+                    .send(ProofBundle::ValidWalletUpdate(proof_bundle))
+                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
             }
 
             ProofJob::ValidMatchEncrypt { statement, witness } => {
@@ -128,11 +137,9 @@ impl ProofManager {
                 let proof_bundle = Self::prove_valid_match_encrypt(statement, witness)?;
                 job.response_channel
                     .send(ProofBundle::ValidMatchEncryption(proof_bundle))
-                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))?;
+                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
             }
-        };
-
-        Ok(())
+        }
     }
 
     /// Create a proof of `VALID WALLET CREATE`
@@ -183,7 +190,6 @@ impl ProofManager {
     }
 
     /// Create a proof of `VALID COMMITMENTS`
-    #[allow(clippy::too_many_arguments)]
     fn prove_valid_commitments(
         witness: SizedValidCommitmentsWitness,
         statement: ValidCommitmentsStatement,
@@ -201,12 +207,29 @@ impl ProofManager {
         })
     }
 
+    /// Create a proof of `VALID WALLET UPDATE`
+    fn prove_valid_wallet_update(
+        witness: SizedValidWalletUpdateWitness,
+        statement: ValidWalletUpdateStatement,
+    ) -> Result<ValidWalletUpdateBundle, ProofManagerError> {
+        let statement_clone = statement.clone();
+        let (witness_comm, proof) = singleprover_prove::<
+            ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        >(witness, statement_clone)
+        .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+
+        Ok(ValidWalletUpdateBundle {
+            commitment: witness_comm,
+            statement,
+            proof,
+        })
+    }
+
     /// Create a proof of `VALID MATCH ENCRYPTION`
     fn prove_valid_match_encrypt(
         statement: ValidMatchEncryptionStatement,
         witness: ValidMatchEncryptionWitness,
     ) -> Result<ValidMatchEncryptBundle, ProofManagerError> {
-        log::info!("generating proof of VALID MATCH ENCRYPTION");
         let (witness_comm, proof) =
             singleprover_prove::<ValidMatchEncryption<252 /* SCALAR_BITS */>>(
                 witness,
