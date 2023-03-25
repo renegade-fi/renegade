@@ -11,9 +11,9 @@ use crate::{
     },
     external_api::{
         http::wallet::{
-            CreateWalletRequest, CreateWalletResponse, GetBalanceByMintResponse,
-            GetBalancesResponse, GetFeesResponse, GetOrderByIdResponse, GetOrdersResponse,
-            GetWalletResponse,
+            CreateOrderRequest, CreateOrderResponse, CreateWalletRequest, CreateWalletResponse,
+            GetBalanceByMintResponse, GetBalancesResponse, GetFeesResponse, GetOrderByIdResponse,
+            GetOrdersResponse, GetWalletResponse,
         },
         types::{Balance, Wallet},
         EmptyRequestResponse,
@@ -21,7 +21,7 @@ use crate::{
     proof_generation::jobs::ProofManagerJob,
     starknet_client::client::StarknetClient,
     state::RelayerState,
-    tasks::create_new_wallet::NewWalletTask,
+    tasks::{create_new_order::NewOrderTask, create_new_wallet::NewWalletTask},
 };
 
 use super::{parse_mint_from_params, parse_order_id_from_params, parse_wallet_id_from_params};
@@ -31,11 +31,11 @@ use super::{parse_mint_from_params, parse_order_id_from_params, parse_wallet_id_
 // ---------------
 
 /// Create a new wallet
-pub(super) const POST_WALLET_ROUTE: &str = "/v0/wallet";
+pub(super) const CREATE_WALLET_ROUTE: &str = "/v0/wallet";
 /// Returns the wallet information for the given id
 pub(super) const GET_WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
-/// Returns the orders within a given wallet
-pub(super) const GET_ORDERS_ROUTE: &str = "/v0/wallet/:wallet_id/orders";
+/// Route to the orders of a given wallet
+pub(super) const WALLET_ORDERS_ROUTE: &str = "/v0/wallet/:wallet_id/orders";
 /// Returns a single order by the given identifier
 pub(super) const GET_ORDER_BY_ID_ROUTE: &str = "/v0/wallet/:wallet_id/orders/:order_id";
 /// Returns the balances within a given wallet
@@ -103,7 +103,7 @@ impl TypedHandler for GetWalletHandler {
 }
 
 /// Handler for the POST /wallet route
-pub struct PostWalletHandler {
+pub struct CreateWalletHandler {
     /// A starknet client
     starknet_client: StarknetClient,
     /// A copy of the relayer-global state
@@ -113,7 +113,7 @@ pub struct PostWalletHandler {
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
 }
 
-impl PostWalletHandler {
+impl CreateWalletHandler {
     /// Constructor
     pub fn new(
         starknet_client: StarknetClient,
@@ -129,7 +129,7 @@ impl PostWalletHandler {
 }
 
 #[async_trait]
-impl TypedHandler for PostWalletHandler {
+impl TypedHandler for CreateWalletHandler {
     type Request = CreateWalletRequest;
     type Response = CreateWalletResponse;
 
@@ -250,6 +250,59 @@ impl TypedHandler for GetOrderByIdHandler {
                 ERR_ORDER_NOT_FOUND.to_string(),
             ))
         }
+    }
+}
+
+/// Handler for the POST /wallet/:id/orders route
+pub struct CreateOrderHandler {
+    /// A starknet client
+    starknet_client: StarknetClient,
+    /// A copy of the relayer-global state
+    global_state: RelayerState,
+    /// A sender to the proof manager's work queue, used to enqueue
+    /// proofs of `VALID NEW WALLET` and await their completion
+    proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+}
+
+impl CreateOrderHandler {
+    /// Constructor
+    pub fn new(
+        starknet_client: StarknetClient,
+        global_state: RelayerState,
+        proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    ) -> Self {
+        Self {
+            starknet_client,
+            global_state,
+            proof_manager_work_queue,
+        }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for CreateOrderHandler {
+    type Request = CreateOrderRequest;
+    type Response = CreateOrderResponse;
+
+    async fn handle_typed(
+        &self,
+        req: Self::Request,
+        params: UrlParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let id = req.order.id;
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+
+        // Spawn a task to handle the order creation flow
+        let task = NewOrderTask::new(
+            wallet_id,
+            req.order,
+            self.starknet_client.clone(),
+            self.global_state.clone(),
+            self.proof_manager_work_queue.clone(),
+        );
+        tokio::spawn(task.run());
+
+        Ok(CreateOrderResponse { id })
     }
 }
 

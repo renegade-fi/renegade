@@ -32,10 +32,10 @@ use self::{
     },
     price_report::{ExchangeHealthStatesHandler, EXCHANGE_HEALTH_ROUTE},
     wallet::{
-        GetBalanceByMintHandler, GetBalancesHandler, GetFeesHandler, GetOrderByIdHandler,
-        GetOrdersHandler, GetWalletHandler, PostWalletHandler, GET_BALANCES_ROUTE,
-        GET_BALANCE_BY_MINT_ROUTE, GET_FEES_ROUTE, GET_ORDERS_ROUTE, GET_ORDER_BY_ID_ROUTE,
-        GET_WALLET_ROUTE, POST_WALLET_ROUTE,
+        CreateOrderHandler, CreateWalletHandler, GetBalanceByMintHandler, GetBalancesHandler,
+        GetFeesHandler, GetOrderByIdHandler, GetOrdersHandler, GetWalletHandler,
+        CREATE_WALLET_ROUTE, GET_BALANCES_ROUTE, GET_BALANCE_BY_MINT_ROUTE, GET_FEES_ROUTE,
+        GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE, WALLET_ORDERS_ROUTE,
     },
 };
 
@@ -180,19 +180,30 @@ impl HttpServer {
         // The "/wallet" route
         router.add_route(
             Method::POST,
-            POST_WALLET_ROUTE.to_string(),
-            PostWalletHandler::new(
+            CREATE_WALLET_ROUTE.to_string(),
+            CreateWalletHandler::new(
                 config.starknet_client.clone(),
                 global_state.clone(),
                 config.proof_generation_work_queue.clone(),
             ),
         );
 
-        // The "/wallet/:id/orders" route
+        // Getter for the "/wallet/:id/orders" route
         router.add_route(
             Method::GET,
-            GET_ORDERS_ROUTE.to_string(),
+            WALLET_ORDERS_ROUTE.to_string(),
             GetOrdersHandler::new(global_state.clone()),
+        );
+
+        // Post to the "/wallet/:id/orders" route
+        router.add_route(
+            Method::POST,
+            WALLET_ORDERS_ROUTE.to_string(),
+            CreateOrderHandler::new(
+                config.starknet_client.clone(),
+                config.global_state.clone(),
+                config.proof_generation_work_queue.clone(),
+            ),
         );
 
         // The "/wallet/:id/orders/:id" route
