@@ -1,6 +1,9 @@
 //! Groups type definitions relevant to all modules and at the top level
 
-use circuits::zk_circuits::valid_commitments::{ValidCommitments, ValidCommitmentsWitness};
+use circuits::zk_circuits::{
+    valid_commitments::{ValidCommitments, ValidCommitmentsWitness},
+    valid_wallet_update::ValidWalletUpdateWitness,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -17,6 +20,9 @@ use crate::{
 pub type SizedValidCommitments = ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 /// A `VALID COMMITMENTS` witness with default const generic sizing parameters
 pub type SizedValidCommitmentsWitness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+/// A `VALID WALLET UPDATE` witness with default const generic sizing parameters
+pub type SizedValidWalletUpdateWitness =
+    ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 // ----------------------
 // | Pubsub Topic Names |

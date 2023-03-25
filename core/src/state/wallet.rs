@@ -12,6 +12,7 @@ use std::{
 use circuits::{
     native_helpers::{
         compute_poseidon_hash, compute_wallet_commitment, compute_wallet_match_nullifier,
+        compute_wallet_spend_nullifier,
     },
     types::{
         balance::Balance,
@@ -392,6 +393,15 @@ impl Wallet {
     pub fn get_match_nullifier(&self) -> Nullifier {
         let circuit_wallet: SizedCircuitWallet = self.clone().into();
         prime_field_to_scalar(&compute_wallet_match_nullifier(
+            &circuit_wallet,
+            compute_wallet_commitment(&circuit_wallet),
+        ))
+    }
+
+    /// Computes the spend nullifier of the wallet
+    pub fn get_spend_nullifier(&self) -> Nullifier {
+        let circuit_wallet: SizedCircuitWallet = self.clone().into();
+        prime_field_to_scalar(&compute_wallet_spend_nullifier(
             &circuit_wallet,
             compute_wallet_commitment(&circuit_wallet),
         ))
