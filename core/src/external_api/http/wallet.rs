@@ -1,6 +1,7 @@
 //! Groups API type definitions for wallet API operations
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{
     external_api::types::{Balance, Fee, Order, Wallet},
@@ -42,12 +43,32 @@ pub struct GetOrdersResponse {
     /// The orders within a given wallet
     pub orders: Vec<Order>,
 }
-
 /// The response type to get a single order by ID
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetOrderByIdResponse {
     /// The order requested
     pub order: Order,
+}
+
+/// The request type to add a new order to a given wallet
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CreateOrderRequest {
+    /// The order to be created
+    pub order: Order,
+    /// A signature of the public variables used in the proof of
+    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
+    /// to guarantee that the wallet updates are properly authorized
+    ///
+    /// TODO: For now this is just a blob, we will add this feature in
+    /// a follow up
+    pub public_var_sig: Vec<u8>,
+}
+
+/// The response type to a request that adds a new order to a wallet
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CreateOrderResponse {
+    /// The ID of the order created
+    pub id: Uuid,
 }
 
 // -----------------------------

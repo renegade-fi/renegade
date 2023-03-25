@@ -4,4 +4,5 @@
 //! node to prove `VALID NEW WALLET`, submit the wallet on-chain, wait for
 //! transaction success, and then prove `VALID COMMITMENTS`
 
+pub mod create_new_order;
 pub mod create_new_wallet;

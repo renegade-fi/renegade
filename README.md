@@ -59,7 +59,7 @@ privacy, both pre- and post-trade. For full cryptographic details, see the
 [documentation](https://docs.renegade.fi).
 
 Relayers are organized into fail-stop fault-tolerant clusters that replicate
-and horiztonally scale matching engine execution for increased trading
+and horizontally scale matching engine execution for increased trading
 throughput.
 
 Note that even though intra-cluster logic depends on fail-stop assumptions, the
