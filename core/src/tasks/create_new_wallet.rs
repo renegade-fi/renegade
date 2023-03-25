@@ -30,6 +30,8 @@ use crate::{
 /// The error type for the task
 #[derive(Clone, Debug)]
 pub enum NewWalletTaskError {
+    /// Error generating a proof of `VALID WALLET CREATE`
+    ProofGeneration(String),
     /// Error interacting with the Starknet client
     Starknet(String),
     /// Error sending a message to another worker
@@ -112,7 +114,9 @@ impl NewWalletTask {
             .send(job_req)
             .map_err(|err| NewWalletTaskError::SendMessage(err.to_string()))?;
 
-        let proof_bundle = response_receiver.await.unwrap();
+        let proof_bundle = response_receiver
+            .await
+            .map_err(|err| NewWalletTaskError::ProofGeneration(err.to_string()))?;
 
         // Submit the wallet on-chain
         self.submit_new_wallet(proof_bundle.into())
