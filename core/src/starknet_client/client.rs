@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use circuits::types::wallet::WalletCommitment;
+use circuits::types::wallet::{Nullifier, WalletCommitment};
 use crypto::{
     elgamal::ElGamalCiphertext,
     fields::{
@@ -27,7 +27,7 @@ use starknet::providers::{
         models::{BlockId, EmittedEvent},
         HttpTransport, JsonRpcClient,
     },
-    Provider, ProviderError,
+    Provider,
 };
 use starknet::{
     accounts::{Account, Call, SingleOwnerAccount},
@@ -37,22 +37,26 @@ use starknet::{
     },
     providers::{
         jsonrpc::models::{BlockTag, EventFilter},
-        SequencerGatewayProvider, SequencerGatewayProviderError,
+        SequencerGatewayProvider,
     },
     signers::{LocalWallet, SigningKey},
 };
 use tracing::log;
 
 use crate::{
-    proof_generation::jobs::ValidWalletCreateBundle,
+    proof_generation::jobs::{ValidWalletCreateBundle, ValidWalletUpdateBundle},
     starknet_client::{
-        INTERNAL_NODE_CHANGED_EVENT_SELECTOR, NEW_WALLET_SELECTOR, VALUE_INSERTED_EVENT_SELECTOR,
+        INTERNAL_NODE_CHANGED_EVENT_SELECTOR, NEW_WALLET_SELECTOR, UPDATE_WALLET_SELECTOR,
+        VALUE_INSERTED_EVENT_SELECTOR,
     },
     state::{wallet::MerkleAuthenticationPath, MerkleTreeCoords},
     MERKLE_HEIGHT,
 };
 
 use super::{error::StarknetClientError, ChainId, DEFAULT_AUTHENTICATION_PATH};
+
+/// A type alias for a felt that represents a transaction hash
+pub type TransactionHash = StarknetFieldElement;
 
 /// The block length of the window to poll events in while paginating
 ///
@@ -255,6 +259,28 @@ impl StarknetClient {
         res
     }
 
+    /// Helper to setup a contract call with the correct max fee and account nonce
+    async fn call_contract(&self, call: Call) -> Result<TransactionHash, StarknetClientError> {
+        // Estimate the fee and add a buffer to avoid rejected transaction
+        let acct_nonce = self.pending_block_nonce().await?;
+        let execution = self.get_account().execute(vec![call]).nonce(acct_nonce);
+
+        let fee_estimate = execution
+            .estimate_fee()
+            .await
+            .map_err(|err| StarknetClientError::ExecuteTransaction(err.to_string()))?;
+        let max_fee = (fee_estimate.overall_fee as f32) * MAX_FEE_MULTIPLIER;
+        let max_fee = StarknetFieldElement::from(max_fee as u64);
+
+        // Send the transaction and await receipt
+        execution
+            .max_fee(max_fee)
+            .send()
+            .await
+            .map(|res| res.transaction_hash)
+            .map_err(|err| StarknetClientError::ExecuteTransaction(err.to_string()))
+    }
+
     // ---------------
     // | Chain State |
     // ---------------
@@ -279,10 +305,14 @@ impl StarknetClient {
     pub async fn poll_transaction_completed(
         &self,
         tx_hash: StarknetFieldElement,
-    ) -> Result<TransactionInfo, ProviderError<SequencerGatewayProviderError>> {
+    ) -> Result<TransactionInfo, StarknetClientError> {
         let sleep_duration = Duration::from_millis(TX_STATUS_POLL_INTERVAL_MS);
         loop {
-            let res = self.gateway_client.get_transaction(tx_hash).await?;
+            let res = self
+                .gateway_client
+                .get_transaction(tx_hash)
+                .await
+                .map_err(|err| StarknetClientError::Gateway(err.to_string()))?;
             log::info!("polling transaction, status: {:?}", res.status);
 
             // Break if the transaction has made it out of the received state
@@ -446,7 +476,7 @@ impl StarknetClient {
         wallet_commitment: WalletCommitment,
         wallet_ciphertext: Vec<ElGamalCiphertext>,
         valid_wallet_create: ValidWalletCreateBundle,
-    ) -> Result<StarknetFieldElement, StarknetClientError> {
+    ) -> Result<TransactionHash, StarknetClientError> {
         assert!(
             self.config.account_enabled(),
             "no private key given to sign transactions with"
@@ -477,29 +507,57 @@ impl StarknetClient {
         calldata.append(&mut proof_packed_felts);
 
         // Call the `new_wallet` contract function
-        let call = Call {
+        self.call_contract(Call {
             to: self.contract_address,
             selector: *NEW_WALLET_SELECTOR,
             calldata,
-        };
+        })
+        .await
+    }
 
-        // Estimate the fee and add a buffer to avoid rejected transaction
-        let acct_nonce = self.pending_block_nonce().await?;
-        let execution = self.get_account().execute(vec![call]).nonce(acct_nonce);
+    /// Call the `update_wallet` function in the contract, passing it all the information
+    /// needed to nullify the old wallet, transition the wallet to a newly committed one,
+    /// and handle internal/external transfers
+    ///
+    /// Returns the transaction hash of the `update_wallet` call
+    ///
+    /// TODO: Add internal/external transfers
+    pub async fn update_wallet(
+        &self,
+        new_wallet_commitment: WalletCommitment,
+        old_match_nullifier: Nullifier,
+        old_spend_nullifier: Nullifier,
+        wallet_ciphertext: Vec<ElGamalCiphertext>,
+        valid_wallet_update: ValidWalletUpdateBundle,
+    ) -> Result<TransactionHash, StarknetClientError> {
+        let mut calldata = vec![
+            Self::reduce_scalar_to_felt(&new_wallet_commitment),
+            Self::reduce_scalar_to_felt(&old_match_nullifier),
+            Self::reduce_scalar_to_felt(&old_spend_nullifier),
+            0u8.into(), // TODO: add internal transfer tuple
+            0u8.into(), // TODO: add external transfer tuple
+        ];
 
-        let fee_estimate = execution
-            .estimate_fee()
-            .await
-            .map_err(|err| StarknetClientError::ExecuteTransaction(err.to_string()))?;
-        let max_fee = (fee_estimate.overall_fee as f32) * MAX_FEE_MULTIPLIER;
-        let max_fee = StarknetFieldElement::from(max_fee as u64);
+        let encryption_bytes = serde_json::to_vec(&wallet_ciphertext)
+            .map_err(|err| StarknetClientError::Serde(err.to_string()))?;
+        let mut encryption_bytes_packed = Self::pack_bytes_into_felts(&encryption_bytes);
 
-        // Send the transaction and await receipt
-        execution
-            .max_fee(max_fee)
-            .send()
-            .await
-            .map(|res| res.transaction_hash)
-            .map_err(|err| StarknetClientError::ExecuteTransaction(err.to_string()))
+        let proof_bytes = serde_json::to_vec(&valid_wallet_update)
+            .map_err(|err| StarknetClientError::Serde(err.to_string()))?;
+        let mut proof_bytes_packed = Self::pack_bytes_into_felts(&proof_bytes);
+
+        calldata.push((encryption_bytes_packed.len() as u64).into());
+        calldata.append(&mut encryption_bytes_packed);
+
+        calldata.push((proof_bytes_packed.len() as u64).into());
+        calldata.append(&mut proof_bytes_packed);
+
+        // Call the `update_wallet` function in the contract
+        self.call_contract(Call {
+            to: self.contract_address,
+            selector: *UPDATE_WALLET_SELECTOR,
+            calldata,
+        })
+        .await
     }
 }

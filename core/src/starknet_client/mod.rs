@@ -16,20 +16,29 @@ use crate::MERKLE_HEIGHT;
 pub mod client;
 pub mod error;
 
-// -------------
-// | Selectors |
-// -------------
-
 lazy_static! {
-    /// Contract selector to create a new wallet
+    // -------------
+    // | Selectors |
+    // -------------
+
+    /// Contract function selector to create a new wallet
     static ref NEW_WALLET_SELECTOR: StarknetFieldElement = get_selector_from_name("new_wallet")
         .unwrap();
+    /// Contract function selector to update an existing wallet, nullifying the previous version
+    static ref UPDATE_WALLET_SELECTOR: StarknetFieldElement = get_selector_from_name("update_wallet")
+        .unwrap();
+
     /// The event selector for internal node changes
     pub static ref INTERNAL_NODE_CHANGED_EVENT_SELECTOR: StarknetFieldElement =
         get_selector_from_name("Merkle_internal_node_changed").unwrap();
     /// The event selector for Merkle value insertion
     pub static ref VALUE_INSERTED_EVENT_SELECTOR: StarknetFieldElement =
         get_selector_from_name("Merkle_value_inserted").unwrap();
+
+    // ------------------------
+    // | Merkle Tree Metadata |
+    // ------------------------
+
     /// The value of an empty leaf in the Merkle tree
     static ref EMPTY_LEAF_VALUE: Scalar = {
         let val_bigint = BigUint::from_str(
