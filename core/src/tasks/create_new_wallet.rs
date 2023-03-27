@@ -7,8 +7,10 @@
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+use async_trait::async_trait;
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
+use serde::{Deserialize, Serialize};
 use starknet::core::types::TransactionStatus;
 use tokio::sync::oneshot;
 use tracing::log;
@@ -24,10 +26,27 @@ use crate::{
     SizedWallet,
 };
 
-use super::encrypt_wallet;
+use super::{
+    driver::{StateWrapper, Task},
+    encrypt_wallet,
+};
 
 /// Error occurs when a Starknet transaction fails
 const ERR_TRANSACTION_FAILED: &str = "transaction rejected";
+
+/// The task struct defining the long-run async flow for creating a new wallet
+pub struct NewWalletTask {
+    /// The wallet to create
+    pub wallet: StateWallet,
+    /// A starknet client for the task to submit transactions
+    pub starknet_client: StarknetClient,
+    /// A copy of the relayer-global state
+    pub global_state: RelayerState,
+    /// The work queue to add proof management jobs to
+    pub proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    /// The state of the task's execution
+    pub task_state: NewWalletTaskState,
+}
 
 /// The error type for the task
 #[derive(Clone, Debug)]
@@ -46,17 +65,72 @@ impl Display for NewWalletTaskError {
     }
 }
 
-/// The task struct defining the long-run async flow for creating a new wallet
-pub struct NewWalletTask {
-    /// The wallet to create
-    pub wallet: StateWallet,
-    /// A starknet client for the task to submit transactions
-    pub starknet_client: StarknetClient,
-    /// A copy of the relayer-global state
-    pub global_state: RelayerState,
-    /// The work queue to add proof management jobs to
-    pub proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+// -------------------
+// | Task Definition |
+// -------------------
+
+/// Defines the state of the long-running wallet create flow
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub enum NewWalletTaskState {
+    /// The task is awaiting scheduling
+    Pending,
+    /// The task is awaiting a proof of `VALID WALLET CREATE`
+    Proving,
+    /// The task has submitted the wallet on-chain and is awaiting
+    /// transaction finality
+    Submitted,
+    /// The task is searching for the Merkle authentication proof for the
+    /// new wallet on-chain
+    FindingMerkleOpening,
+    /// Task completed
+    Completed,
 }
+
+impl From<NewWalletTaskState> for StateWrapper {
+    fn from(state: NewWalletTaskState) -> Self {
+        StateWrapper::NewWallet(state)
+    }
+}
+
+#[async_trait]
+impl Task for NewWalletTask {
+    type Error = NewWalletTaskError;
+    type State = NewWalletTaskState;
+
+    async fn step(&mut self) -> Result<(), Self::Error> {
+        // Dispatch based on state
+        match self.state() {
+            NewWalletTaskState::Pending => {
+                unimplemented!()
+            }
+            NewWalletTaskState::Proving => {
+                unimplemented!()
+            }
+            NewWalletTaskState::Submitted => {
+                unimplemented!()
+            }
+            NewWalletTaskState::FindingMerkleOpening => {
+                unimplemented!()
+            }
+            NewWalletTaskState::Completed => {
+                unimplemented!()
+            }
+        }
+    }
+
+    fn state(&self) -> Self::State {
+        self.task_state
+    }
+
+    fn completed(&self) -> bool {
+        matches!(self.state(), NewWalletTaskState::Completed)
+    }
+}
+
+// -----------------------
+// | Task Implementation |
+// -----------------------
+
 
 impl NewWalletTask {
     /// Constructor
@@ -77,6 +151,7 @@ impl NewWalletTask {
             starknet_client,
             global_state,
             proof_manager_work_queue,
+            task_state: NewWalletTaskState::Pending,
         }
     }
 

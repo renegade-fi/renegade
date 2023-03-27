@@ -15,6 +15,7 @@ use crate::SizedWallet;
 
 pub mod create_new_order;
 pub mod create_new_wallet;
+pub mod driver;
 
 // -----------
 // | Helpers |

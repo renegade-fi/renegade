@@ -185,6 +185,7 @@ impl HttpServer {
                 config.starknet_client.clone(),
                 global_state.clone(),
                 config.proof_generation_work_queue.clone(),
+                config.task_driver.clone(),
             ),
         );
 
@@ -203,6 +204,7 @@ impl HttpServer {
                 config.starknet_client.clone(),
                 config.global_state.clone(),
                 config.proof_generation_work_queue.clone(),
+                config.task_driver.clone(),
             ),
         );
 

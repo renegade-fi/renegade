@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     external_api::types::{Balance, Fee, Order, Wallet},
-    state::wallet::WalletIdentifier,
+    state::wallet::WalletIdentifier, tasks::driver::TaskIdentifier,
 };
 
 // --------------------
@@ -31,6 +31,9 @@ pub struct CreateWalletRequest {
 pub struct CreateWalletResponse {
     /// The wallet identifier provisioned for the new wallet
     pub id: WalletIdentifier,
+    /// The system-internal task ID that the client may use to query
+    /// task status
+    pub task_id: TaskIdentifier,
 }
 
 // ---------------------------

@@ -21,7 +21,7 @@ use crate::{
     proof_generation::jobs::ProofManagerJob,
     starknet_client::client::StarknetClient,
     state::RelayerState,
-    tasks::{create_new_order::NewOrderTask, create_new_wallet::NewWalletTask},
+    tasks::{create_new_order::NewOrderTask, create_new_wallet::NewWalletTask, driver::TaskDriver},
 };
 
 use super::{parse_mint_from_params, parse_order_id_from_params, parse_wallet_id_from_params};
@@ -111,6 +111,9 @@ pub struct CreateWalletHandler {
     /// A sender to the proof manager's work queue, used to enqueue
     /// proofs of `VALID NEW WALLET` and await their completion
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    /// A copy of the task driver used to create an manage long-lived
+    /// async workflows
+    task_driver: TaskDriver,
 }
 
 impl CreateWalletHandler {
@@ -119,11 +122,13 @@ impl CreateWalletHandler {
         starknet_client: StarknetClient,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+        task_driver: TaskDriver,
     ) -> Self {
         Self {
             starknet_client,
             global_state,
             proof_manager_work_queue,
+            task_driver,
         }
     }
 }
@@ -148,9 +153,9 @@ impl TypedHandler for CreateWalletHandler {
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
         );
-        tokio::spawn(task.run());
+        let task_id = self.task_driver.run(task).await;
 
-        Ok(CreateWalletResponse { id })
+        Ok(CreateWalletResponse { id, task_id })
     }
 }
 
@@ -262,6 +267,8 @@ pub struct CreateOrderHandler {
     /// A sender to the proof manager's work queue, used to enqueue
     /// proofs of `VALID NEW WALLET` and await their completion
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    /// A copy of the task driver used for long-lived async workflows
+    task_driver: TaskDriver,
 }
 
 impl CreateOrderHandler {
@@ -270,11 +277,13 @@ impl CreateOrderHandler {
         starknet_client: StarknetClient,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+        task_driver: TaskDriver,
     ) -> Self {
         Self {
             starknet_client,
             global_state,
             proof_manager_work_queue,
+            task_driver,
         }
     }
 }
@@ -300,7 +309,7 @@ impl TypedHandler for CreateOrderHandler {
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
         );
-        tokio::spawn(task.run());
+        unimplemented!("add task driver here");
 
         Ok(CreateOrderResponse { id })
     }
