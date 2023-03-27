@@ -58,6 +58,7 @@ use crate::{
     starknet_client::client::{StarknetClient, StarknetClientConfig},
     state::RelayerState,
     system_bus::SystemBus,
+    tasks::driver::TaskDriver,
     types::SystemBusMessage,
     worker::{watch_worker, Worker},
 };
@@ -193,6 +194,10 @@ async fn main() -> Result<(), CoordinatorError> {
         network_sender.clone(),
     );
 
+    // Build a task driver that may be used to spawn long-lived asynchronous tasks that
+    // are common among workers
+    let task_driver = TaskDriver::new();
+
     // ----------------
     // | Worker Setup |
     // ----------------
@@ -306,6 +311,7 @@ async fn main() -> Result<(), CoordinatorError> {
         websocket_port: args.websocket_port,
         starknet_client: starknet_client.clone(),
         global_state: global_state.clone(),
+        task_driver,
         system_bus,
         price_reporter_work_queue: price_reporter_worker_sender,
         proof_generation_work_queue: proof_generation_worker_sender,

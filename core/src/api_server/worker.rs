@@ -12,7 +12,7 @@ use tokio::{
 use crate::{
     price_reporter::jobs::PriceReporterManagerJob, proof_generation::jobs::ProofManagerJob,
     starknet_client::client::StarknetClient, state::RelayerState, system_bus::SystemBus,
-    types::SystemBusMessage, worker::Worker, CancelChannel,
+    tasks::driver::TaskDriver, types::SystemBusMessage, worker::Worker, CancelChannel,
 };
 
 use super::{error::ApiServerError, http::HttpServer, websocket::WebsocketServer};
@@ -51,6 +51,8 @@ pub struct ApiServerConfig {
     pub proof_generation_work_queue: CrossbeamSender<ProofManagerJob>,
     /// The relayer-global state
     pub global_state: RelayerState,
+    /// The task driver, used to create and manage long-running async tasks
+    pub task_driver: TaskDriver,
     /// The system pubsub bus that all workers have access to
     /// The ApiServer uses this bus to forward internal events onto open
     /// websocket connections
