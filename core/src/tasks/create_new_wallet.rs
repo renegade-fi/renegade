@@ -5,12 +5,13 @@
 //!     4. Pull the Merkle authentication path of the newly created wallet from on-chain state
 //!     5. Prove `VALID COMMITMENTS`
 
+use core::panic;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use async_trait::async_trait;
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use starknet::core::types::TransactionStatus;
 use tokio::sync::oneshot;
 use tracing::log;
@@ -33,6 +34,8 @@ use super::{
 
 /// Error occurs when a Starknet transaction fails
 const ERR_TRANSACTION_FAILED: &str = "transaction rejected";
+/// The task name to display when logging
+const NEW_WALLET_TASK_NAME: &str = "create-new-wallet";
 
 /// The task struct defining the long-run async flow for creating a new wallet
 pub struct NewWalletTask {
@@ -70,20 +73,37 @@ impl Display for NewWalletTaskError {
 // -------------------
 
 /// Defines the state of the long-running wallet create flow
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum NewWalletTaskState {
     /// The task is awaiting scheduling
     Pending,
     /// The task is awaiting a proof of `VALID WALLET CREATE`
     Proving,
-    /// The task has submitted the wallet on-chain and is awaiting
-    /// transaction finality
-    Submitted,
+    /// The task is submitting the transaction to the contract and
+    /// awaiting finality
+    SubmittingTx {
+        /// The proof of `VALID WALLET CREATE` from the last step
+        #[serde(skip_serializing)]
+        proof_bundle: ValidWalletCreateBundle,
+    },
     /// The task is searching for the Merkle authentication proof for the
     /// new wallet on-chain
     FindingMerkleOpening,
     /// Task completed
     Completed,
+}
+
+/// Display implementation that ignores structure fields
+impl Display for NewWalletTaskState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            NewWalletTaskState::SubmittingTx { .. } => {
+                write!(f, "SubmittingTx")
+            }
+            _ => write!(f, "{self:?}"),
+        }
+    }
 }
 
 impl From<NewWalletTaskState> for StateWrapper {
@@ -98,39 +118,51 @@ impl Task for NewWalletTask {
     type State = NewWalletTaskState;
 
     async fn step(&mut self) -> Result<(), Self::Error> {
-        // Dispatch based on state
+        // Dispatch based on the current state of the task
         match self.state() {
             NewWalletTaskState::Pending => {
-                unimplemented!()
+                self.task_state = NewWalletTaskState::Proving;
             }
             NewWalletTaskState::Proving => {
-                unimplemented!()
+                // Begin proof and attach the proof to the state afterwards
+                let proof_bundle = self.generate_proof().await?;
+                self.task_state = NewWalletTaskState::SubmittingTx { proof_bundle }
             }
-            NewWalletTaskState::Submitted => {
-                unimplemented!()
+            NewWalletTaskState::SubmittingTx { .. } => {
+                // Submit the wallet on-chain
+                self.submit_wallet_tx().await?;
+                self.task_state = NewWalletTaskState::FindingMerkleOpening;
             }
             NewWalletTaskState::FindingMerkleOpening => {
-                unimplemented!()
+                // Find the authentication path via contract events, and index this
+                // in the global state
+                self.find_merkle_path().await?;
+                self.task_state = NewWalletTaskState::Completed;
             }
             NewWalletTaskState::Completed => {
-                unimplemented!()
+                panic!("step() called in completed state")
             }
         }
+
+        Ok(())
     }
 
     fn state(&self) -> Self::State {
-        self.task_state
+        self.task_state.clone()
     }
 
     fn completed(&self) -> bool {
         matches!(self.state(), NewWalletTaskState::Completed)
+    }
+
+    fn name(&self) -> String {
+        NEW_WALLET_TASK_NAME.to_string()
     }
 }
 
 // -----------------------
 // | Task Implementation |
 // -----------------------
-
 
 impl NewWalletTask {
     /// Constructor
@@ -155,23 +187,8 @@ impl NewWalletTask {
         }
     }
 
-    /// Run the task to completion, provides a wrapper of error logging
-    /// around the helper defined below
-    pub async fn run(self) -> Result<(), NewWalletTaskError> {
-        let res = self.run_helper().await;
-        if let Err(e) = res.clone() {
-            log::error!("error running new wallet task: {e}");
-        } else {
-            log::info!("successfully created new wallet");
-        }
-
-        res
-    }
-
-    /// A helper to run the task to completion
-    async fn run_helper(self) -> Result<(), NewWalletTaskError> {
-        log::info!("Beginning new wallet task execution");
-
+    /// Generate a proof of `VALID NEW WALLET` for the new wallet
+    async fn generate_proof(&self) -> Result<ValidWalletCreateBundle, NewWalletTaskError> {
         // Index the wallet in the global state
         self.global_state
             .add_wallets(vec![self.wallet.clone()])
@@ -195,35 +212,17 @@ impl NewWalletTask {
             .await
             .map_err(|err| NewWalletTaskError::ProofGeneration(err.to_string()))?;
 
-        // Submit the wallet on-chain
-        self.submit_new_wallet(proof_bundle.into())
-            .await
-            .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))?;
-
-        // Find the updated Merkle path for the wallet
-        let merkle_auth_path = self
-            .starknet_client
-            .find_merkle_authentication_path(self.wallet.get_commitment())
-            .await
-            .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))?;
-
-        // Add the authentication path to the wallet in the global state
-        self.global_state
-            .read_wallet_index()
-            .await
-            .add_wallet_merkle_proof(&self.wallet.wallet_id, merkle_auth_path)
-            .await;
-
-        Ok(())
+        Ok(proof_bundle.into())
     }
 
-    /// Submits a proof and wallet commitment + encryption on-chain
-    ///
-    /// TODO: Add wallet encryptions as well
-    async fn submit_new_wallet(
-        &self,
-        proof: ValidWalletCreateBundle,
-    ) -> Result<(), NewWalletTaskError> {
+    /// Submit the newly created wallet on-chain with proof of validity
+    async fn submit_wallet_tx(&self) -> Result<(), NewWalletTaskError> {
+        let proof = if let NewWalletTaskState::SubmittingTx { proof_bundle } = self.state() {
+            proof_bundle
+        } else {
+            unreachable!("can only begin submitting wallet after proof is generated")
+        };
+
         // Compute a commitment to the wallet and submit the bundle on-chain
         let wallet_commitment = self.wallet.get_commitment();
 
@@ -249,6 +248,27 @@ impl NewWalletTask {
                 ERR_TRANSACTION_FAILED.to_string(),
             ));
         }
+
+        Ok(())
+    }
+
+    /// A helper to find the new Merkle authentication path in the contract state
+    /// and update the global state with the new wallet's authentication path
+    async fn find_merkle_path(&self) -> Result<(), NewWalletTaskError> {
+        log::info!("starting find_merkle_path");
+        // Find the updated Merkle path for the wallet
+        let merkle_auth_path = self
+            .starknet_client
+            .find_merkle_authentication_path(self.wallet.get_commitment())
+            .await
+            .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))?;
+
+        // Add the authentication path to the wallet in the global state
+        self.global_state
+            .read_wallet_index()
+            .await
+            .add_wallet_merkle_proof(&self.wallet.wallet_id, merkle_auth_path)
+            .await;
 
         Ok(())
     }
