@@ -1,10 +1,10 @@
 //! The task driver drives a task forwards and executes partial retries
 //! of certain critical sections of a task
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::fmt::Debug;
 use tokio::runtime::{Builder as TokioRuntimeBuilder, Runtime as TokioRuntime};
 use tracing::log;
@@ -29,22 +29,22 @@ const TASK_DRIVER_N_RETRIES: usize = 5;
 #[async_trait]
 pub trait Task: Send {
     /// The state type of the task, used for task introspection
-    type State: Send + Serialize + Deserialize<'static> + Into<StateWrapper>;
+    type State: Debug + Display + Send + Serialize + Into<StateWrapper>;
     /// The error type that the task may give
     type Error: Send + Debug;
 
-    /// Take a step in the task, steps should represent largely async behavior
-    async fn step(&mut self) -> Result<(), Self::Error>;
-
     /// Get the current state of the task
     fn state(&self) -> Self::State;
-
     /// Whether or not the task is completed
     fn completed(&self) -> bool;
+    /// Get a displayable name for the task
+    fn name(&self) -> String;
+    /// Take a step in the task, steps should represent largely async behavior
+    async fn step(&mut self) -> Result<(), Self::Error>;
 }
 
 /// Defines a wrapper that allows state objects to be stored generically
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub enum StateWrapper {
     /// The state object for the new wallet task
     NewWallet(NewWalletTaskState),
@@ -100,8 +100,10 @@ impl TaskDriver {
 
     /// Run a task to completion
     async fn run_task_to_completion<T: Task>(&self, task_id: Uuid, mut task: T) {
+        let task_name = task.name();
+
         // Run each step individually and update the state after each step
-        while !task.completed() {
+        'outer: while !task.completed() {
             // Take a step
             let mut retries = TASK_DRIVER_N_RETRIES;
             while let Err(e) = task.step().await {
@@ -110,12 +112,14 @@ impl TaskDriver {
 
                 if retries == 0 {
                     log::error!("retries exceeded... task failed");
-                    break;
+                    break 'outer;
                 }
             }
 
             // Update the state in the registry
             let task_state = task.state();
+            log::info!("task {task_name} transitioning to state {task_state}");
+
             {
                 *self.open_tasks.write().await.get_mut(&task_id).unwrap() = task_state.into()
             } // open_tasks lock released
