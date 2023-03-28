@@ -5,7 +5,8 @@ use uuid::Uuid;
 
 use crate::{
     external_api::types::{Balance, Fee, Order, Wallet},
-    state::wallet::WalletIdentifier, tasks::driver::TaskIdentifier,
+    state::wallet::WalletIdentifier,
+    tasks::driver::TaskIdentifier,
 };
 
 // --------------------
@@ -72,6 +73,8 @@ pub struct CreateOrderRequest {
 pub struct CreateOrderResponse {
     /// The ID of the order created
     pub id: Uuid,
+    /// The ID of the internal task created for the operation
+    pub task_id: TaskIdentifier,
 }
 
 // -----------------------------

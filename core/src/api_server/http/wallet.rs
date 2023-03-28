@@ -308,10 +308,14 @@ impl TypedHandler for CreateOrderHandler {
             self.starknet_client.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
-        );
-        unimplemented!("add task driver here");
+        )
+        .await
+        .map_err(|err| {
+            ApiServerError::HttpStatusCode(StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+        })?;
+        let task_id = self.task_driver.run(task).await;
 
-        Ok(CreateOrderResponse { id })
+        Ok(CreateOrderResponse { id, task_id })
     }
 }
 
