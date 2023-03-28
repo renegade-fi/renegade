@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::state::{new_async_shared, AsyncShared};
 
-use super::create_new_wallet::NewWalletTaskState;
+use super::{create_new_order::NewOrderTaskState, create_new_wallet::NewWalletTaskState};
 
 /// A type alias for the identifier underlying a task
 pub type TaskIdentifier = Uuid;
@@ -45,9 +45,12 @@ pub trait Task: Send {
 
 /// Defines a wrapper that allows state objects to be stored generically
 #[derive(Clone, Debug, Serialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum StateWrapper {
     /// The state object for the new wallet task
     NewWallet(NewWalletTaskState),
+    /// The state object for the new order task
+    NewOrder(NewOrderTaskState),
 }
 
 /// Drives tasks to completion
@@ -114,6 +117,8 @@ impl TaskDriver {
                     log::error!("retries exceeded... task failed");
                     break 'outer;
                 }
+
+                log::info!("retrying task from state: {}", task.state())
             }
 
             // Update the state in the registry

@@ -14,7 +14,6 @@ use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use serde::Serialize;
 use starknet::core::types::TransactionStatus;
 use tokio::sync::oneshot;
-use tracing::log;
 
 use crate::{
     external_api::types::Wallet,
@@ -255,7 +254,6 @@ impl NewWalletTask {
     /// A helper to find the new Merkle authentication path in the contract state
     /// and update the global state with the new wallet's authentication path
     async fn find_merkle_path(&self) -> Result<(), NewWalletTaskError> {
-        log::info!("starting find_merkle_path");
         // Find the updated Merkle path for the wallet
         let merkle_auth_path = self
             .starknet_client
