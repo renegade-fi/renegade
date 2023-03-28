@@ -46,6 +46,7 @@ pub trait Task: Send {
 /// Defines a wrapper that allows state objects to be stored generically
 #[derive(Clone, Debug, Serialize)]
 #[allow(clippy::large_enum_variant)]
+#[serde(tag = "task_type", content = "state")]
 pub enum StateWrapper {
     /// The state object for the new wallet task
     NewWallet(NewWalletTaskState),
@@ -77,6 +78,11 @@ impl TaskDriver {
             open_tasks: new_async_shared(HashMap::new()),
             runtime: new_async_shared(runtime),
         }
+    }
+
+    /// Fetch the status of the requested task
+    pub async fn get_task_state(&self, task_id: &TaskIdentifier) -> Option<StateWrapper> {
+        self.open_tasks.read().await.get(task_id).cloned()
     }
 
     /// Spawn a new task in the driver

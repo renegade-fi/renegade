@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub mod network;
 pub mod order_book;
 pub mod price_report;
+pub mod task;
 pub mod wallet;
 
 /// A ping response

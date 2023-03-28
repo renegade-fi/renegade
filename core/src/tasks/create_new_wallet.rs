@@ -72,7 +72,7 @@ impl Display for NewWalletTaskError {
 // -------------------
 
 /// Defines the state of the long-running wallet create flow
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum NewWalletTaskState {
     /// The task is awaiting scheduling
@@ -83,7 +83,6 @@ pub enum NewWalletTaskState {
     /// awaiting finality
     SubmittingTx {
         /// The proof of `VALID WALLET CREATE` from the last step
-        #[serde(skip_serializing)]
         proof_bundle: ValidWalletCreateBundle,
     },
     /// The task is searching for the Merkle authentication proof for the
@@ -102,6 +101,16 @@ impl Display for NewWalletTaskState {
             }
             _ => write!(f, "{self:?}"),
         }
+    }
+}
+
+/// Serialize implementation that uses the display implementation above
+impl Serialize for NewWalletTaskState {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_str(self)
     }
 }
 

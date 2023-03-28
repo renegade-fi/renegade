@@ -98,7 +98,7 @@ impl Display for NewOrderTaskError {
 // -------------------
 
 /// Defines the state of the order create flow
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum NewOrderTaskState {
     /// The task is awaiting scheduling
@@ -109,7 +109,6 @@ pub enum NewOrderTaskState {
     /// the contract and awaiting transaction finality
     SubmittingTx {
         /// The proof of `VALID WALLET UPDATE` from the proving step
-        #[serde(skip_serializing)]
         proof_bundle: ValidWalletUpdateBundle,
     },
     /// The task is updating the validity proofs for all orders in the
@@ -125,6 +124,15 @@ impl Display for NewOrderTaskState {
             NewOrderTaskState::SubmittingTx { .. } => write!(f, "SubmittingTx"),
             _ => write!(f, "{self:?}"),
         }
+    }
+}
+
+impl Serialize for NewOrderTaskState {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_str(self)
     }
 }
 

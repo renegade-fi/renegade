@@ -19,6 +19,7 @@ use crate::{
     external_api::{http::PingResponse, EmptyRequestResponse},
     gossip::types::{ClusterId, WrappedPeerId},
     state::RelayerState,
+    tasks::driver::TaskIdentifier,
 };
 
 use self::{
@@ -31,6 +32,7 @@ use self::{
         GET_NETWORK_ORDER_BY_ID_ROUTE,
     },
     price_report::{ExchangeHealthStatesHandler, EXCHANGE_HEALTH_ROUTE},
+    task::{GetTaskStatusHandler, GET_TASK_STATUS_ROUTE},
     wallet::{
         CreateOrderHandler, CreateWalletHandler, GetBalanceByMintHandler, GetBalancesHandler,
         GetFeesHandler, GetOrderByIdHandler, GetOrdersHandler, GetWalletHandler,
@@ -48,6 +50,7 @@ use super::{
 mod network;
 mod order_book;
 mod price_report;
+mod task;
 mod wallet;
 
 /// Health check
@@ -67,6 +70,8 @@ const ERR_WALLET_ID_PARSE: &str = "could not parse wallet id";
 const ERR_CLUSTER_ID_PARSE: &str = "could not parse cluster id";
 /// Error message displayed when a given peer ID is not parsable
 const ERR_PEER_ID_PARSE: &str = "could not parse peer id";
+/// Error message displayed when parsing a task ID from URL fails
+const ERR_TASK_ID_PARSE: &str = "could not parse task id";
 
 // ----------------
 // | URL Captures |
@@ -82,6 +87,8 @@ const ORDER_ID_URL_PARAM: &str = "order_id";
 const CLUSTER_ID_URL_PARAM: &str = "cluster_id";
 /// The :peer_id param in a URL
 const PEER_ID_URL_PARAM: &str = "peer_id";
+/// The :task_id param in a URL
+const TASK_ID_URL_PARAM: &str = "task_id";
 
 /// A helper to parse out a mint from a URL param
 fn parse_mint_from_params(params: &UrlParams) -> Result<BigUint, ApiServerError> {
@@ -133,6 +140,13 @@ fn parse_peer_id_from_params(params: &UrlParams) -> Result<WrappedPeerId, ApiSer
     })
 }
 
+/// A helper to parse out a task ID from a URL param
+fn parse_task_id_from_params(params: &UrlParams) -> Result<TaskIdentifier, ApiServerError> {
+    params.get(TASK_ID_URL_PARAM).unwrap().parse().map_err(|_| {
+        ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_TASK_ID_PARSE.to_string())
+    })
+}
+
 /// A wrapper around the router and task management operations that
 /// the worker may delegate to
 
@@ -169,6 +183,13 @@ impl HttpServer {
 
         // The "/ping" route
         router.add_route(Method::GET, PING_ROUTE.to_string(), PingHandler::new());
+
+        // The "/task/:id" route
+        router.add_route(
+            Method::GET,
+            GET_TASK_STATUS_ROUTE.to_string(),
+            GetTaskStatusHandler::new(config.task_driver.clone()),
+        );
 
         // The "/wallet/:id" route
         router.add_route(
