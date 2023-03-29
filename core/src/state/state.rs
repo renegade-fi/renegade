@@ -289,6 +289,12 @@ impl RelayerState {
         }
     }
 
+    /// Update an existing wallet in the global state
+    pub async fn update_wallet(&self, wallet: Wallet) {
+        let mut locked_wallet_index = self.write_wallet_index().await;
+        locked_wallet_index.add_wallet(wallet);
+    }
+
     /// Mark an order pair as matched, this is both for bookkeeping and for
     /// order state updates that are available to the frontend
     pub async fn mark_order_pair_matched(&self, o1: OrderIdentifier, o2: OrderIdentifier) {
