@@ -526,9 +526,28 @@ impl WalletIndex {
         wallet_id: &Uuid,
         order_id: &OrderIdentifier,
     ) -> Option<(Order, Balance, Fee, Balance)> {
-        let locked_wallet = self.read_wallet(wallet_id).await?;
-        let order = locked_wallet.orders.get(order_id)?;
+        let order = {
+            self.read_wallet(wallet_id)
+                .await?
+                .orders
+                .get(order_id)?
+                .clone()
+        };
+        let (balance, fee, fee_balance) = self
+            .get_balance_and_fee_for_order(wallet_id, &order)
+            .await?;
 
+        Some((order, balance, fee, fee_balance))
+    }
+
+    /// Get the balance, fee, and fee_balance for an order by specifying the order directly
+    ///
+    /// This is useful for new orders that come in, and are not yet indexed in the global state
+    pub async fn get_balance_and_fee_for_order(
+        &self,
+        wallet_id: &WalletIdentifier,
+        order: &Order,
+    ) -> Option<(Balance, Fee, Balance)> {
         // The mint the local party will be spending if the order is matched
         let order_mint = match order.side {
             OrderSide::Buy => order.quote_mint.clone(),
@@ -546,6 +565,7 @@ impl WalletIndex {
 
         // Find a balance and fee to associate with this order
         // Choose the first fee for simplicity
+        let locked_wallet = self.read_wallet(wallet_id).await?;
         let balance = locked_wallet.balances.get(&order_mint)?;
         if balance.amount < order_amount {
             return None;
@@ -557,12 +577,7 @@ impl WalletIndex {
             return None;
         }
 
-        Some((
-            order.clone(),
-            balance.clone(),
-            fee.clone(),
-            fee_balance.clone(),
-        ))
+        Some((balance.clone(), fee.clone(), fee_balance.clone()))
     }
 
     // -----------

@@ -8,14 +8,17 @@ use std::{
 
 use async_trait::async_trait;
 use circuits::{
-    native_helpers::compute_poseidon_hash, types::order::Order as CircuitOrder,
-    zk_circuits::valid_wallet_update::ValidWalletUpdateStatement,
+    native_helpers::compute_poseidon_hash,
+    types::order::Order as CircuitOrder,
+    zk_circuits::{
+        valid_commitments::ValidCommitmentsStatement,
+        valid_wallet_update::ValidWalletUpdateStatement,
+    },
     zk_gadgets::merkle::MerkleOpening,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::{scalar_to_biguint, starknet_felt_to_biguint};
 use curve25519_dalek::scalar::Scalar;
-use rand_core::OsRng;
 use serde::Serialize;
 use starknet::core::types::TransactionStatus;
 use tokio::sync::oneshot;
@@ -294,13 +297,12 @@ impl NewOrderTask {
 
         // Submit on-chain
         // TODO: Remove this
-        let mut rng = OsRng {};
         let tx_hash = self
             .starknet_client
             .update_wallet(
                 self.new_wallet.get_commitment(),
-                self.old_wallet.get_match_nullifier() + Scalar::random(&mut rng),
-                self.old_wallet.get_spend_nullifier() + Scalar::random(&mut rng),
+                self.old_wallet.get_match_nullifier(),
+                self.old_wallet.get_spend_nullifier(),
                 encrypted_wallet,
                 proof,
             )
@@ -336,62 +338,62 @@ impl NewOrderTask {
         let new_root = authentication_path.compute_root();
         log::info!("found merkle path in contract state");
 
-        let match_nullifier = self.new_wallet.get_match_nullifier();
-
         // A wallet that is compatible with circuit types
         let circuit_wallet: SizedWallet = self.new_wallet.clone().into();
         let randomness_hash = compute_poseidon_hash(&[circuit_wallet.randomness]);
         let wallet_opening: MerkleOpening = authentication_path.into();
 
+        // The statement in `VALID COMMITMENTS` is only parameterized by wallet-specific variables;
+        // so we construct it once and use it for all order commitment proofs
+        let new_statement = ValidCommitmentsStatement {
+            nullifier: self.new_wallet.get_match_nullifier(),
+            merkle_root: new_root,
+            pk_settle: self.new_wallet.public_keys.pk_settle,
+        };
+
         // Request that the proof manager prove `VALID COMMITMENTS` for each order
         let mut proof_response_channels = HashMap::new();
-        {
-            let locked_order_book = self.global_state.read_order_book().await;
-            for order_id in self.new_wallet.orders.keys() {
-                // Fetch the old witness
-                let old_witness = locked_order_book.get_validity_proof_witness(order_id).await;
-                if old_witness.is_none() {
-                    // TODO: If a witness is not present, generate one now
-                    continue;
-                }
-                let mut new_witness = old_witness.unwrap();
+        for (order_id, order) in self.new_wallet.orders.clone().into_iter() {
+            // Build a witness for this order's validity proof
+            let witness = if let Some(witness) = self
+                .get_witness_for_order(
+                    &order_id,
+                    &self.new_wallet.wallet_id,
+                    order,
+                    circuit_wallet.clone(),
+                    wallet_opening.clone(),
+                    randomness_hash,
+                    self.new_wallet.secret_keys.sk_match,
+                )
+                .await
+            {
+                witness
+            } else {
+                log::error!("could not find witness for order {order_id}, skipping...");
+                continue;
+            };
 
-                // Update the witness with the new wallet information
-                new_witness.wallet = circuit_wallet.clone();
-                new_witness.wallet_opening = wallet_opening.clone();
-                new_witness.randomness_hash = randomness_hash.into();
+            // Send a job to the proof manager to prove `VALID COMMITMENTS` for this wallet
+            let (response_sender, response_receiver) = oneshot::channel();
+            self.proof_manager_work_queue
+                .send(ProofManagerJob {
+                    type_: ProofJob::ValidCommitments {
+                        witness: witness.clone(),
+                        statement: new_statement,
+                    },
+                    response_channel: response_sender,
+                })
+                .map_err(|err| NewOrderTaskError::SendMessage(err.to_string()))?;
 
-                // Update the statement for the new wallet
-                let mut new_statement = locked_order_book
-                    .get_validity_proof(order_id)
-                    .await
-                    .unwrap()
-                    .statement;
-
-                new_statement.nullifier = match_nullifier;
-                new_statement.merkle_root = new_root;
-
-                // Send a job to the proof manager to prove `VALID COMMITMENTS` for this wallet
-                let (response_sender, response_receiver) = oneshot::channel();
-                self.proof_manager_work_queue
-                    .send(ProofManagerJob {
-                        type_: ProofJob::ValidCommitments {
-                            witness: new_witness.clone(),
-                            statement: new_statement,
-                        },
-                        response_channel: response_sender,
-                    })
-                    .map_err(|err| NewOrderTaskError::SendMessage(err.to_string()))?;
-
-                proof_response_channels.insert(*order_id, (response_receiver, new_witness));
-            }
-        } // locked_order_book released
+            proof_response_channels.insert(order_id, (response_receiver, witness));
+        }
 
         // Await proofs for all orders
         for (order_id, (proof_channel, witness)) in proof_response_channels.into_iter() {
             let proof = proof_channel
                 .await
                 .map_err(|err| NewOrderTaskError::ProofGeneration(err.to_string()))?;
+            log::info!("got proof for order {order_id}");
 
             // Update the global state of the order
             self.update_order_state(order_id, proof.into(), witness)
@@ -404,6 +406,56 @@ impl NewOrderTask {
             .await;
 
         Ok(())
+    }
+
+    /// Generate a `VALID COMMITMENTS` witness for the given order
+    ///
+    /// This will use the old witness -- modifying it appropriately -- if one exists,
+    /// otherwise, it will create a brand new witness
+    #[allow(clippy::too_many_arguments)]
+    async fn get_witness_for_order(
+        &self,
+        order_id: &OrderIdentifier,
+        wallet_id: &WalletIdentifier,
+        order: CircuitOrder,
+        wallet: SizedWallet,
+        wallet_opening: MerkleOpening,
+        randomness_hash: Scalar,
+        sk_match: Scalar,
+    ) -> Option<SizedValidCommitmentsWitness> {
+        if let Some(mut old_witness) = self
+            .global_state
+            .read_order_book()
+            .await
+            .get_validity_proof_witness(order_id)
+            .await
+        {
+            // If a previous witness exists; modify the witness with the new variables
+            old_witness.wallet = wallet;
+            old_witness.wallet_opening = wallet_opening;
+            old_witness.randomness_hash = randomness_hash.into();
+            Some(old_witness)
+        } else {
+            // Otherwise, create a brand new witness
+            // Select a balance and fee for the order
+            let (balance, fee, fee_balance) = self
+                .global_state
+                .read_wallet_index()
+                .await
+                .get_balance_and_fee_for_order(wallet_id, &order)
+                .await?;
+
+            Some(SizedValidCommitmentsWitness {
+                wallet,
+                order: order.into(),
+                balance: balance.into(),
+                fee: fee.into(),
+                fee_balance: fee_balance.into(),
+                wallet_opening,
+                randomness_hash: randomness_hash.into(),
+                sk_match,
+            })
+        }
     }
 
     /// Update the order in the state
