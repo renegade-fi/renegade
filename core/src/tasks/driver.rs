@@ -1,7 +1,7 @@
 //! The task driver drives a task forwards and executes partial retries
 //! of certain critical sections of a task
 
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display, time::Duration};
 
 use async_trait::async_trait;
 use serde::Serialize;
@@ -17,12 +17,16 @@ use super::{create_new_order::NewOrderTaskState, create_new_wallet::NewWalletTas
 /// A type alias for the identifier underlying a task
 pub type TaskIdentifier = Uuid;
 
+/// The amount to increase the backoff delay by every retry
+const BACKOFF_AMPLIFICATION_FACTOR: u32 = 2;
+/// The initial backoff time when retrying a task
+const INITIAL_BACKOFF_MS: u64 = 1000; // 1 second
 /// The number of threads backing the tokio runtime
 const TASK_DRIVER_N_THREADS: usize = 1;
 /// The name of the threads backing the task driver
 const TASK_DRIVER_THREAD_NAME: &str = "renegade-task-driver";
 /// The number of times to retry a step in a task before propagating the error
-const TASK_DRIVER_N_RETRIES: usize = 5;
+const TASK_DRIVER_N_RETRIES: usize = 8;
 
 /// The task trait defines a sequence of largely async flows, each of which is possibly
 /// unreliable and may need to be retried until completion or to some retry threshold
@@ -115,6 +119,8 @@ impl TaskDriver {
         'outer: while !task.completed() {
             // Take a step
             let mut retries = TASK_DRIVER_N_RETRIES;
+            let mut curr_backoff = Duration::from_millis(INITIAL_BACKOFF_MS);
+
             while let Err(e) = task.step().await {
                 log::error!("error executing task step: {e:?}");
                 retries -= 1;
@@ -124,7 +130,9 @@ impl TaskDriver {
                     break 'outer;
                 }
 
-                log::info!("retrying task from state: {}", task.state())
+                log::info!("retrying task from state: {}", task.state());
+                tokio::time::sleep(curr_backoff).await;
+                curr_backoff *= BACKOFF_AMPLIFICATION_FACTOR;
             }
 
             // Update the state in the registry
