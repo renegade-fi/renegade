@@ -23,13 +23,15 @@ use tracing::log;
 
 use crate::{
     external_api::types::Order,
-    proof_generation::jobs::{ProofJob, ProofManagerJob, ValidWalletUpdateBundle},
+    proof_generation::jobs::{
+        ProofJob, ProofManagerJob, ValidCommitmentsBundle, ValidWalletUpdateBundle,
+    },
     starknet_client::client::StarknetClient,
     state::{
         wallet::{Wallet, WalletIdentifier},
-        RelayerState,
+        NetworkOrder, NetworkOrderState, OrderIdentifier, RelayerState,
     },
-    types::SizedValidWalletUpdateWitness,
+    types::{SizedValidCommitmentsWitness, SizedValidWalletUpdateWitness},
     SizedWallet,
 };
 
@@ -332,6 +334,7 @@ impl NewOrderTask {
             .await
             .map_err(|err| NewOrderTaskError::StarknetClient(err.to_string()))?;
         let new_root = authentication_path.compute_root();
+        log::info!("found merkle path in contract state");
 
         let match_nullifier = self.new_wallet.get_match_nullifier();
 
@@ -342,57 +345,102 @@ impl NewOrderTask {
 
         // Request that the proof manager prove `VALID COMMITMENTS` for each order
         let mut proof_response_channels = HashMap::new();
-        let locked_order_book = self.global_state.read_order_book().await;
-        for order_id in self.new_wallet.orders.keys() {
-            // Fetch the old witness
-            let old_witness = locked_order_book.get_validity_proof_witness(order_id).await;
-            if old_witness.is_none() {
-                // TODO: If a witness is not present, generate one now
-                continue;
+        {
+            let locked_order_book = self.global_state.read_order_book().await;
+            for order_id in self.new_wallet.orders.keys() {
+                // Fetch the old witness
+                let old_witness = locked_order_book.get_validity_proof_witness(order_id).await;
+                if old_witness.is_none() {
+                    // TODO: If a witness is not present, generate one now
+                    continue;
+                }
+                let mut new_witness = old_witness.unwrap();
+
+                // Update the witness with the new wallet information
+                new_witness.wallet = circuit_wallet.clone();
+                new_witness.wallet_opening = wallet_opening.clone();
+                new_witness.randomness_hash = randomness_hash.into();
+
+                // Update the statement for the new wallet
+                let mut new_statement = locked_order_book
+                    .get_validity_proof(order_id)
+                    .await
+                    .unwrap()
+                    .statement;
+
+                new_statement.nullifier = match_nullifier;
+                new_statement.merkle_root = new_root;
+
+                // Send a job to the proof manager to prove `VALID COMMITMENTS` for this wallet
+                let (response_sender, response_receiver) = oneshot::channel();
+                self.proof_manager_work_queue
+                    .send(ProofManagerJob {
+                        type_: ProofJob::ValidCommitments {
+                            witness: new_witness.clone(),
+                            statement: new_statement,
+                        },
+                        response_channel: response_sender,
+                    })
+                    .map_err(|err| NewOrderTaskError::SendMessage(err.to_string()))?;
+
+                proof_response_channels.insert(*order_id, (response_receiver, new_witness));
             }
-            let mut new_witness = old_witness.unwrap();
-
-            // Update the witness with the new wallet information
-            new_witness.wallet = circuit_wallet.clone();
-            new_witness.wallet_opening = wallet_opening.clone();
-            new_witness.randomness_hash = randomness_hash.into();
-
-            // Update the statement for the new wallet
-            let mut new_statement = locked_order_book
-                .get_validity_proof(order_id)
-                .await
-                .unwrap()
-                .statement;
-
-            new_statement.nullifier = match_nullifier;
-            new_statement.merkle_root = new_root;
-
-            // Send a job to the proof manager to prove `VALID COMMITMENTS` for this wallet
-            let (response_sender, response_receiver) = oneshot::channel();
-            self.proof_manager_work_queue
-                .send(ProofManagerJob {
-                    type_: ProofJob::ValidCommitments {
-                        witness: new_witness,
-                        statement: new_statement,
-                    },
-                    response_channel: response_sender,
-                })
-                .map_err(|err| NewOrderTaskError::SendMessage(err.to_string()))?;
-
-            proof_response_channels.insert(*order_id, response_receiver);
-        }
+        } // locked_order_book released
 
         // Await proofs for all orders
-        for (order_id, proof_channel) in proof_response_channels.into_iter() {
-            let _proof = proof_channel
+        for (order_id, (proof_channel, witness)) in proof_response_channels.into_iter() {
+            let proof = proof_channel
                 .await
                 .map_err(|err| NewOrderTaskError::ProofGeneration(err.to_string()))?;
 
-            log::info!("received proof for order: {order_id}");
+            // Update the global state of the order
+            self.update_order_state(order_id, proof.into(), witness)
+                .await;
         }
 
-        log::info!("got proofs for all orders");
+        // Update the wallet in the global state
+        self.global_state
+            .update_wallet(self.new_wallet.clone())
+            .await;
 
         Ok(())
+    }
+
+    /// Update the order in the state
+    async fn update_order_state(
+        &self,
+        order_id: OrderIdentifier,
+        proof: ValidCommitmentsBundle,
+        witness: SizedValidCommitmentsWitness,
+    ) {
+        // If the order does not currently exist in the book, add it
+        if !self
+            .global_state
+            .read_order_book()
+            .await
+            .contains_order(&order_id)
+        {
+            self.global_state
+                .add_order(NetworkOrder {
+                    id: order_id,
+                    match_nullifier: self.new_wallet.get_match_nullifier(),
+                    local: true,
+                    cluster: self.global_state.local_cluster_id.clone(),
+                    state: NetworkOrderState::Verified,
+                    valid_commit_proof: Some(proof),
+                    valid_commit_witness: Some(witness),
+                })
+                .await;
+        } else {
+            // Otherwise, update the existing proof
+            self.global_state
+                .add_order_validity_proof(&order_id, proof)
+                .await;
+            self.global_state
+                .read_order_book()
+                .await
+                .attach_validity_proof_witness(&order_id, witness)
+                .await;
+        }
     }
 }
