@@ -419,6 +419,41 @@ impl Wallet {
         let staleness = self.proof_staleness.load(Ordering::Relaxed);
         staleness > *STALENESS_THRESHOLD
     }
+
+    /// Get the balance, fee, and fee_balance for an order by specifying the order directly
+    ///
+    /// This is useful for new orders that come in, and are not yet indexed in the global state
+    pub fn get_balance_and_fee_for_order(&self, order: &Order) -> Option<(Balance, Fee, Balance)> {
+        // The mint the local party will be spending if the order is matched
+        let order_mint = match order.side {
+            OrderSide::Buy => order.quote_mint.clone(),
+            OrderSide::Sell => order.base_mint.clone(),
+        };
+
+        // The maximum quantity of the mint that the local party will be spending
+        let order_amount = match order.side {
+            OrderSide::Buy => {
+                let res_amount = (order.amount as f64) * order.price.to_f64();
+                res_amount as u64
+            }
+            OrderSide::Sell => order.amount,
+        };
+
+        // Find a balance and fee to associate with this order
+        // Choose the first fee for simplicity
+        let balance = self.balances.get(&order_mint)?;
+        if balance.amount < order_amount {
+            return None;
+        }
+
+        let fee = self.fees.get(0 /* index */)?;
+        let fee_balance = self.balances.get(&fee.gas_addr.clone())?;
+        if fee_balance.amount < fee.gas_token_amount {
+            return None;
+        }
+
+        Some((balance.clone(), fee.clone(), fee_balance.clone()))
+    }
 }
 
 /// Metadata relevant to the wallet's network state
@@ -526,58 +561,11 @@ impl WalletIndex {
         wallet_id: &Uuid,
         order_id: &OrderIdentifier,
     ) -> Option<(Order, Balance, Fee, Balance)> {
-        let order = {
-            self.read_wallet(wallet_id)
-                .await?
-                .orders
-                .get(order_id)?
-                .clone()
-        };
-        let (balance, fee, fee_balance) = self
-            .get_balance_and_fee_for_order(wallet_id, &order)
-            .await?;
+        let locked_wallet = self.read_wallet(wallet_id).await?;
+        let order = locked_wallet.orders.get(order_id)?.clone();
+        let (balance, fee, fee_balance) = locked_wallet.get_balance_and_fee_for_order(&order)?;
 
         Some((order, balance, fee, fee_balance))
-    }
-
-    /// Get the balance, fee, and fee_balance for an order by specifying the order directly
-    ///
-    /// This is useful for new orders that come in, and are not yet indexed in the global state
-    pub async fn get_balance_and_fee_for_order(
-        &self,
-        wallet_id: &WalletIdentifier,
-        order: &Order,
-    ) -> Option<(Balance, Fee, Balance)> {
-        // The mint the local party will be spending if the order is matched
-        let order_mint = match order.side {
-            OrderSide::Buy => order.quote_mint.clone(),
-            OrderSide::Sell => order.base_mint.clone(),
-        };
-
-        // The maximum quantity of the mint that the local party will be spending
-        let order_amount = match order.side {
-            OrderSide::Buy => {
-                let res_amount = (order.amount as f64) * order.price.to_f64();
-                res_amount as u64
-            }
-            OrderSide::Sell => order.amount,
-        };
-
-        // Find a balance and fee to associate with this order
-        // Choose the first fee for simplicity
-        let locked_wallet = self.read_wallet(wallet_id).await?;
-        let balance = locked_wallet.balances.get(&order_mint)?;
-        if balance.amount < order_amount {
-            return None;
-        }
-
-        let fee = locked_wallet.fees.get(0 /* index */)?;
-        let fee_balance = locked_wallet.balances.get(&fee.gas_addr.clone())?;
-        if fee_balance.amount < fee.gas_token_amount {
-            return None;
-        }
-
-        Some((balance.clone(), fee.clone(), fee_balance.clone()))
     }
 
     // -----------

@@ -356,7 +356,6 @@ impl NewOrderTask {
             let witness = if let Some(witness) = self
                 .get_witness_for_order(
                     &order_id,
-                    &self.new_wallet.wallet_id,
                     order,
                     circuit_wallet.clone(),
                     wallet_opening.clone(),
@@ -414,7 +413,6 @@ impl NewOrderTask {
     async fn get_witness_for_order(
         &self,
         order_id: &OrderIdentifier,
-        wallet_id: &WalletIdentifier,
         order: CircuitOrder,
         wallet: SizedWallet,
         wallet_opening: MerkleOpening,
@@ -436,12 +434,8 @@ impl NewOrderTask {
         } else {
             // Otherwise, create a brand new witness
             // Select a balance and fee for the order
-            let (balance, fee, fee_balance) = self
-                .global_state
-                .read_wallet_index()
-                .await
-                .get_balance_and_fee_for_order(wallet_id, &order)
-                .await?;
+            let (balance, fee, fee_balance) =
+                self.new_wallet.get_balance_and_fee_for_order(&order)?;
 
             Some(SizedValidCommitmentsWitness {
                 wallet,
