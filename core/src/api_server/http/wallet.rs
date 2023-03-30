@@ -23,7 +23,10 @@ use crate::{
     proof_generation::jobs::ProofManagerJob,
     starknet_client::client::StarknetClient,
     state::RelayerState,
-    tasks::{create_new_order::NewOrderTask, create_new_wallet::NewWalletTask, driver::TaskDriver},
+    tasks::{
+        create_new_order::NewOrderTask, create_new_wallet::NewWalletTask,
+        deposit_balance::DepositBalanceTask, driver::TaskDriver,
+    },
 };
 
 use super::{parse_mint_from_params, parse_order_id_from_params, parse_wallet_id_from_params};
@@ -157,7 +160,7 @@ impl TypedHandler for CreateWalletHandler {
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
         );
-        let task_id = self.task_driver.run(task).await;
+        let task_id = self.task_driver.start_task(task).await;
 
         Ok(CreateWalletResponse { id, task_id })
     }
@@ -317,7 +320,7 @@ impl TypedHandler for CreateOrderHandler {
         .map_err(|err| {
             ApiServerError::HttpStatusCode(StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
         })?;
-        let task_id = self.task_driver.run(task).await;
+        let task_id = self.task_driver.start_task(task).await;
 
         Ok(CreateOrderResponse { id, task_id })
     }
@@ -427,8 +430,6 @@ impl TypedHandler for GetBalanceByMintHandler {
 }
 
 /// Handler for the POST /wallet/:id/balances/deposit route
-/// TODO: Remove this
-#[allow(unused)]
 pub struct DepositBalanceHandler {
     /// A starknet client
     starknet_client: StarknetClient,
@@ -439,27 +440,6 @@ pub struct DepositBalanceHandler {
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     /// A copy of the task driver used for long-lived async workflows
     task_driver: TaskDriver,
-}
-
-#[async_trait]
-impl TypedHandler for DepositBalanceHandler {
-    type Request = DepositBalanceRequest;
-    type Response = DepositBalanceResponse;
-
-    async fn handle_typed(
-        &self,
-        req: Self::Request,
-        params: UrlParams,
-    ) -> Result<Self::Response, ApiServerError> {
-        // Parse the wallet ID from the params
-        let wallet_id = parse_wallet_id_from_params(&params)?;
-        log::info!("got request {req:?} for wallet {wallet_id}");
-
-        Err(ApiServerError::HttpStatusCode(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "not implemented".to_string(),
-        ))
-    }
 }
 
 impl DepositBalanceHandler {
@@ -476,6 +456,35 @@ impl DepositBalanceHandler {
             proof_manager_work_queue,
             task_driver,
         }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for DepositBalanceHandler {
+    type Request = DepositBalanceRequest;
+    type Response = DepositBalanceResponse;
+
+    async fn handle_typed(
+        &self,
+        req: Self::Request,
+        params: UrlParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        // Parse the wallet ID from the params
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+        log::info!("got request {req:?} for wallet {wallet_id}");
+
+        // Begin a task
+        let task = DepositBalanceTask::new(
+            req.mint,
+            req.amount,
+            req.from_addr,
+            self.starknet_client.clone(),
+            self.global_state.clone(),
+            self.proof_manager_work_queue.clone(),
+        );
+        let task_id = self.task_driver.start_task(task).await;
+
+        Ok(DepositBalanceResponse { task_id })
     }
 }
 

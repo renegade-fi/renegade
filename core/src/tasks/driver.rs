@@ -12,7 +12,10 @@ use uuid::Uuid;
 
 use crate::state::{new_async_shared, AsyncShared};
 
-use super::{create_new_order::NewOrderTaskState, create_new_wallet::NewWalletTaskState};
+use super::{
+    create_new_order::NewOrderTaskState, create_new_wallet::NewWalletTaskState,
+    deposit_balance::DepositBalanceTaskState,
+};
 
 /// A type alias for the identifier underlying a task
 pub type TaskIdentifier = Uuid;
@@ -52,6 +55,8 @@ pub trait Task: Send {
 #[allow(clippy::large_enum_variant)]
 #[serde(tag = "task_type", content = "state")]
 pub enum StateWrapper {
+    /// The state object for the deposit balance task
+    DepositBalance(DepositBalanceTaskState),
     /// The state object for the new wallet task
     NewWallet(NewWalletTaskState),
     /// The state object for the new order task
@@ -92,7 +97,7 @@ impl TaskDriver {
     /// Spawn a new task in the driver
     ///
     /// Returns the ID of the task being spawned
-    pub async fn run<T: Task + 'static>(&self, task: T) -> Uuid {
+    pub async fn start_task<T: Task + 'static>(&self, task: T) -> Uuid {
         // Add the task to the bookkeeping structure
         let task_id = Uuid::new_v4();
         {
