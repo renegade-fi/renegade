@@ -3,7 +3,6 @@
 use async_trait::async_trait;
 use crossbeam::channel::Sender as CrossbeamSender;
 use hyper::StatusCode;
-use tracing::log;
 
 use crate::{
     api_server::{
@@ -471,17 +470,24 @@ impl TypedHandler for DepositBalanceHandler {
     ) -> Result<Self::Response, ApiServerError> {
         // Parse the wallet ID from the params
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        log::info!("got request {req:?} for wallet {wallet_id}");
 
         // Begin a task
         let task = DepositBalanceTask::new(
             req.mint,
             req.amount,
             req.from_addr,
+            &wallet_id,
             self.starknet_client.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
-        );
+        )
+        .await
+        .map_err(|_| {
+            ApiServerError::HttpStatusCode(
+                StatusCode::BAD_REQUEST,
+                ERR_WALLET_NOT_FOUND.to_string(),
+            )
+        })?;
         let task_id = self.task_driver.start_task(task).await;
 
         Ok(DepositBalanceResponse { task_id })

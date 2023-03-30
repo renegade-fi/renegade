@@ -3,26 +3,42 @@
 //!
 //! This involves proving `VALID WALLET UPDATE`, submitting on-chain, and re-indexing state
 
-// TODO: Remove this
-#![allow(unused)]
-
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use async_trait::async_trait;
+use circuits::{
+    types::balance::Balance, zk_circuits::valid_wallet_update::ValidWalletUpdateStatement,
+};
 use crossbeam::channel::Sender as CrossbeamSender;
+use curve25519_dalek::scalar::Scalar;
 use num_bigint::BigUint;
+use num_traits::ToPrimitive;
 use serde::Serialize;
+use tokio::sync::oneshot;
 
 use crate::{
-    proof_generation::jobs::{ProofManagerJob, ValidWalletUpdateBundle},
+    price_reporter::exchanges::get_current_time,
+    proof_generation::jobs::{ProofJob, ProofManagerJob, ValidWalletUpdateBundle},
     starknet_client::client::StarknetClient,
-    state::RelayerState,
+    state::{
+        wallet::{Wallet, WalletIdentifier},
+        RelayerState,
+    },
+    types::SizedValidWalletUpdateWitness,
+    SizedWallet,
 };
 
-use super::driver::{StateWrapper, Task};
+use super::{
+    driver::{StateWrapper, Task},
+    RANDOMNESS_INCREMENT,
+};
 
 /// The display name of the task
 const DEPOSIT_BALANCE_TASK_NAME: &str = "deposit-balance";
+/// The wallet does not have a known Merkle proof attached
+const ERR_NO_MERKLE_PROOF: &str = "merkle proof for wallet not found";
+/// The wallet to update was not found in global state
+const ERR_WALLET_NOT_FOUND: &str = "wallet not found in global state";
 
 /// Defines the long running flow for adding a balance to a wallet
 pub struct DepositBalanceTask {
@@ -32,6 +48,10 @@ pub struct DepositBalanceTask {
     pub amount: BigUint,
     /// The address to deposit from
     pub sender_address: BigUint,
+    /// The old wallet before update
+    pub old_wallet: Wallet,
+    /// The new wallet after update
+    pub new_wallet: Wallet,
     /// The starknet client to use for submitting transactions
     pub starknet_client: StarknetClient,
     /// A copy of the relayer-global state
@@ -39,7 +59,7 @@ pub struct DepositBalanceTask {
     /// The work queue to add proof management jobs to
     pub proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     /// The state of the task
-    pub state: DepositBalanceTaskState,
+    pub task_state: DepositBalanceTaskState,
 }
 
 /// The error type for the deposit balance task
@@ -47,6 +67,10 @@ pub struct DepositBalanceTask {
 pub enum DepositBalanceTaskError {
     /// Error generating a proof of `VALID WALLET UPDATE`
     ProofGeneration(String),
+    /// An error enqueuing a message for another worker
+    SendMessage(String),
+    /// A state element was not found that is necessary for task execution
+    StateMissing(String),
 }
 
 // -------------------
@@ -68,6 +92,9 @@ pub enum DepositBalanceTaskState {
         /// The proof of `VALID WALLET UPDATE` submitted to the contract
         proof_bundle: ValidWalletUpdateBundle,
     },
+    /// The task is updating the validity proofs for all orders in the
+    /// now nullified wallet
+    UpdatingValidityProofs,
     /// The task has finished
     Completed,
 }
@@ -102,7 +129,35 @@ impl Task for DepositBalanceTask {
     type State = DepositBalanceTaskState;
 
     async fn step(&mut self) -> Result<(), Self::Error> {
-        unimplemented!("")
+        // Dispatch based on the current transaction step
+        match self.state() {
+            DepositBalanceTaskState::Pending => {
+                self.task_state = DepositBalanceTaskState::Proving;
+            }
+            DepositBalanceTaskState::Proving => {
+                // Begin the proof of `VALID WALLET UPDATE`
+                let proof = self.generate_proof().await?;
+                self.task_state = DepositBalanceTaskState::SubmittingTx {
+                    proof_bundle: proof,
+                };
+            }
+            DepositBalanceTaskState::SubmittingTx { .. } => {
+                // Submit the proof and transaction info to the contract and await
+                // transaction finality
+                self.submit_tx().await?;
+                self.task_state = DepositBalanceTaskState::UpdatingValidityProofs;
+            }
+            DepositBalanceTaskState::UpdatingValidityProofs => {
+                // Update validity proofs for now-nullified orders
+                self.update_validity_proofs().await?;
+                self.task_state = DepositBalanceTaskState::Completed;
+            }
+            DepositBalanceTaskState::Completed => {
+                panic!("step() called in state Completed")
+            }
+        }
+
+        Ok(())
     }
 
     fn completed(&self) -> bool {
@@ -110,7 +165,7 @@ impl Task for DepositBalanceTask {
     }
 
     fn state(&self) -> Self::State {
-        self.state.clone()
+        self.task_state.clone()
     }
 
     fn name(&self) -> String {
@@ -124,22 +179,99 @@ impl Task for DepositBalanceTask {
 
 impl DepositBalanceTask {
     /// Constructor
-    pub fn new(
+    pub async fn new(
         mint: BigUint,
         amount: BigUint,
         sender_address: BigUint,
+        wallet_id: &WalletIdentifier,
         starknet_client: StarknetClient,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, DepositBalanceTaskError> {
+        // Lookup the wallet in global state
+        let old_wallet = global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(wallet_id)
+            .await
+            .ok_or_else(|| {
+                DepositBalanceTaskError::StateMissing(ERR_WALLET_NOT_FOUND.to_string())
+            })?;
+
+        let mut new_wallet = old_wallet.clone();
+        new_wallet
+            .balances
+            .entry(mint.clone())
+            .or_insert(Balance {
+                mint: mint.clone(),
+                amount: 0u64,
+            })
+            .amount += amount.to_u64().unwrap();
+        new_wallet.randomness += RANDOMNESS_INCREMENT;
+
+        Ok(Self {
             mint,
             amount,
             sender_address,
+            old_wallet,
+            new_wallet,
             starknet_client,
             global_state,
             proof_manager_work_queue,
-            state: DepositBalanceTaskState::Pending,
-        }
+            task_state: DepositBalanceTaskState::Pending,
+        })
+    }
+
+    /// Generate a proof of `VALID WALLET UPDATE` for the wallet with added balance
+    async fn generate_proof(&self) -> Result<ValidWalletUpdateBundle, DepositBalanceTaskError> {
+        let timestamp: Scalar = get_current_time().into();
+        let merkle_opening = self.old_wallet.merkle_proof.clone().ok_or_else(|| {
+            DepositBalanceTaskError::StateMissing(ERR_NO_MERKLE_PROOF.to_string())
+        })?;
+
+        // Build the statement
+        let statement = ValidWalletUpdateStatement {
+            timestamp,
+            pk_root: self.old_wallet.public_keys.pk_root,
+            new_wallet_commitment: self.new_wallet.get_commitment(),
+            wallet_match_nullifier: self.old_wallet.get_match_nullifier(),
+            wallet_spend_nullifier: self.old_wallet.get_spend_nullifier(),
+            merkle_root: merkle_opening.compute_root(),
+            external_transfer: (Scalar::zero(), Scalar::zero(), Scalar::zero()),
+        };
+
+        // Construct the witness
+        let old_circuit_wallet: SizedWallet = self.old_wallet.clone().into();
+        let new_circuit_wallet: SizedWallet = self.new_wallet.clone().into();
+        let witness = SizedValidWalletUpdateWitness {
+            wallet1: old_circuit_wallet,
+            wallet2: new_circuit_wallet,
+            wallet1_opening: merkle_opening.into(),
+            internal_transfer: (Scalar::zero(), Scalar::zero()),
+        };
+
+        // Send a job to the proof manager and await completion
+        let (response_sender, response_receiver) = oneshot::channel();
+        self.proof_manager_work_queue
+            .send(ProofManagerJob {
+                type_: ProofJob::ValidWalletUpdate { witness, statement },
+                response_channel: response_sender,
+            })
+            .map_err(|err| DepositBalanceTaskError::SendMessage(err.to_string()))?;
+
+        response_receiver
+            .await
+            .map(|bundle| bundle.into())
+            .map_err(|err| DepositBalanceTaskError::ProofGeneration(err.to_string()))
+    }
+
+    /// Submit the `update_wallet` transaction to the contract and await finality
+    async fn submit_tx(&self) -> Result<(), DepositBalanceTaskError> {
+        unimplemented!("")
+    }
+
+    /// Update the proofs of `VALID COMMITMENTS` for each order after the wallet update is complete
+    async fn update_validity_proofs(&self) -> Result<(), DepositBalanceTaskError> {
+        unimplemented!("")
     }
 }

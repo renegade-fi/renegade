@@ -18,6 +18,9 @@ pub mod create_new_wallet;
 pub mod deposit_balance;
 pub mod driver;
 
+/// The amount to increment the randomness each time a wallet is nullified
+pub(self) const RANDOMNESS_INCREMENT: u8 = 2;
+
 // -----------
 // | Helpers |
 // -----------

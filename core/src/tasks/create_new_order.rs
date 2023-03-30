@@ -40,7 +40,7 @@ use crate::{
 
 use super::{
     driver::{StateWrapper, Task},
-    encrypt_wallet,
+    encrypt_wallet, RANDOMNESS_INCREMENT,
 };
 
 /// The wallet does not have a merkle proof attached to it
@@ -51,8 +51,6 @@ const ERR_TRANSACTION_FAILED: &str = "transaction rejected";
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found in state";
 /// The order creation task name
 const NEW_ORDER_TASK_NAME: &str = "create-new-order";
-/// The amount to increment the randomness each time a wallet is nullified
-const RANDOMNESS_INCREMENT: u8 = 2;
 
 /// Helper function to get the current UNIX epoch time in milliseconds
 pub fn get_current_time() -> u128 {
