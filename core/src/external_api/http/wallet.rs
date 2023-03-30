@@ -1,10 +1,14 @@
 //! Groups API type definitions for wallet API operations
 
+use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    external_api::types::{Balance, Fee, Order, Wallet},
+    external_api::{
+        biguint_from_hex_string, biguint_to_hex_string,
+        types::{Balance, Fee, Order, Wallet},
+    },
     state::wallet::WalletIdentifier,
     tasks::driver::TaskIdentifier,
 };
@@ -93,6 +97,40 @@ pub struct GetBalancesResponse {
 pub struct GetBalanceByMintResponse {
     /// The requested balance
     pub balance: Balance,
+}
+
+/// The request type to deposit a balance into the darkpool
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DepositBalanceRequest {
+    /// The starknet account contract address to send the balance from
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
+    pub from_addr: BigUint,
+    /// The mint (ERC-20 contract address) of the token to deposit
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
+    pub mint: BigUint,
+    /// The amount of the token to deposit
+    pub amount: BigUint,
+    /// A signature of the public variables used in the proof of
+    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
+    /// to guarantee that the wallet updates are properly authorized
+    ///
+    /// TODO: For now this is just a blob, we will add this feature in
+    /// a follow up
+    pub public_var_sig: Vec<u8>,
+}
+
+/// The response type to a request to deposit into the darkpool
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DepositBalanceResponse {
+    /// The ID of the internal task created for this request
+    /// May be used by the client to query task status
+    pub task_id: TaskIdentifier,
 }
 
 // -------------------------

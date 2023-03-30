@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use crossbeam::channel::Sender as CrossbeamSender;
 use hyper::StatusCode;
+use tracing::log;
 
 use crate::{
     api_server::{
@@ -12,8 +13,9 @@ use crate::{
     external_api::{
         http::wallet::{
             CreateOrderRequest, CreateOrderResponse, CreateWalletRequest, CreateWalletResponse,
-            GetBalanceByMintResponse, GetBalancesResponse, GetFeesResponse, GetOrderByIdResponse,
-            GetOrdersResponse, GetWalletResponse,
+            DepositBalanceRequest, DepositBalanceResponse, GetBalanceByMintResponse,
+            GetBalancesResponse, GetFeesResponse, GetOrderByIdResponse, GetOrdersResponse,
+            GetWalletResponse,
         },
         types::{Balance, Wallet},
         EmptyRequestResponse,
@@ -42,6 +44,8 @@ pub(super) const GET_ORDER_BY_ID_ROUTE: &str = "/v0/wallet/:wallet_id/orders/:or
 pub(super) const GET_BALANCES_ROUTE: &str = "/v0/wallet/:wallet_id/balances";
 /// Returns the balance associated with the given mint
 pub(super) const GET_BALANCE_BY_MINT_ROUTE: &str = "/v0/wallet/:wallet_id/balances/:mint";
+/// Deposits an ERC-20 token into the darkpool
+pub(super) const DEPOSIT_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/deposit";
 /// Returns the fees within a given wallet
 pub(super) const GET_FEES_ROUTE: &str = "/v0/wallet/:wallet_id/fees";
 
@@ -418,6 +422,59 @@ impl TypedHandler for GetBalanceByMintHandler {
                 StatusCode::NOT_FOUND,
                 ERR_WALLET_NOT_FOUND.to_string(),
             ))
+        }
+    }
+}
+
+/// Handler for the POST /wallet/:id/balances/deposit route
+/// TODO: Remove this
+#[allow(unused)]
+pub struct DepositBalanceHandler {
+    /// A starknet client
+    starknet_client: StarknetClient,
+    /// A copy of the relayer-global state
+    global_state: RelayerState,
+    /// A sender to the proof manager's work queue, used to enqueue
+    /// proofs of `VALID NEW WALLET` and await their completion
+    proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    /// A copy of the task driver used for long-lived async workflows
+    task_driver: TaskDriver,
+}
+
+#[async_trait]
+impl TypedHandler for DepositBalanceHandler {
+    type Request = DepositBalanceRequest;
+    type Response = DepositBalanceResponse;
+
+    async fn handle_typed(
+        &self,
+        req: Self::Request,
+        params: UrlParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        // Parse the wallet ID from the params
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+        log::info!("got request {req:?} for wallet {wallet_id}");
+
+        Err(ApiServerError::HttpStatusCode(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "not implemented".to_string(),
+        ))
+    }
+}
+
+impl DepositBalanceHandler {
+    /// Constructor
+    pub fn new(
+        starknet_client: StarknetClient,
+        global_state: RelayerState,
+        proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+        task_driver: TaskDriver,
+    ) -> Self {
+        Self {
+            starknet_client,
+            global_state,
+            proof_manager_work_queue,
+            task_driver,
         }
     }
 }

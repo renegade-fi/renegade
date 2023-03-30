@@ -34,10 +34,11 @@ use self::{
     price_report::{ExchangeHealthStatesHandler, EXCHANGE_HEALTH_ROUTE},
     task::{GetTaskStatusHandler, GET_TASK_STATUS_ROUTE},
     wallet::{
-        CreateOrderHandler, CreateWalletHandler, GetBalanceByMintHandler, GetBalancesHandler,
-        GetFeesHandler, GetOrderByIdHandler, GetOrdersHandler, GetWalletHandler,
-        CREATE_WALLET_ROUTE, GET_BALANCES_ROUTE, GET_BALANCE_BY_MINT_ROUTE, GET_FEES_ROUTE,
-        GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE, WALLET_ORDERS_ROUTE,
+        CreateOrderHandler, CreateWalletHandler, DepositBalanceHandler, GetBalanceByMintHandler,
+        GetBalancesHandler, GetFeesHandler, GetOrderByIdHandler, GetOrdersHandler,
+        GetWalletHandler, CREATE_WALLET_ROUTE, DEPOSIT_BALANCE_ROUTE, GET_BALANCES_ROUTE,
+        GET_BALANCE_BY_MINT_ROUTE, GET_FEES_ROUTE, GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE,
+        WALLET_ORDERS_ROUTE,
     },
 };
 
@@ -248,6 +249,18 @@ impl HttpServer {
             Method::GET,
             GET_BALANCE_BY_MINT_ROUTE.to_string(),
             GetBalanceByMintHandler::new(global_state.clone()),
+        );
+
+        // The "/wallet/:id/balances/deposit" route
+        router.add_route(
+            Method::POST,
+            DEPOSIT_BALANCE_ROUTE.to_string(),
+            DepositBalanceHandler::new(
+                config.starknet_client.clone(),
+                global_state.clone(),
+                config.proof_generation_work_queue.clone(),
+                config.task_driver.clone(),
+            ),
         );
 
         // The "/wallet/:id/fees" route
