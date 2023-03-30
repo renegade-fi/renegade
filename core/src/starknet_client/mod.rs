@@ -15,6 +15,7 @@ use crate::MERKLE_HEIGHT;
 
 pub mod client;
 pub mod error;
+pub mod types;
 
 lazy_static! {
     // -------------

@@ -294,13 +294,13 @@ impl NewOrderTask {
         let encrypted_wallet = encrypt_wallet(self.new_wallet.clone().into(), &pk_view);
 
         // Submit on-chain
-        // TODO: Remove this
         let tx_hash = self
             .starknet_client
             .update_wallet(
                 self.new_wallet.get_commitment(),
                 self.old_wallet.get_match_nullifier(),
                 self.old_wallet.get_spend_nullifier(),
+                None, /* external_transfer */
                 encrypted_wallet,
                 proof,
             )

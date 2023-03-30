@@ -53,7 +53,9 @@ use crate::{
     MERKLE_HEIGHT,
 };
 
-use super::{error::StarknetClientError, ChainId, DEFAULT_AUTHENTICATION_PATH};
+use super::{
+    error::StarknetClientError, types::ExternalTransfer, ChainId, DEFAULT_AUTHENTICATION_PATH,
+};
 
 /// A type alias for a felt that represents a transaction hash
 pub type TransactionHash = StarknetFieldElement;
@@ -527,6 +529,7 @@ impl StarknetClient {
         new_wallet_commitment: WalletCommitment,
         old_match_nullifier: Nullifier,
         old_spend_nullifier: Nullifier,
+        external_transfer: Option<ExternalTransfer>,
         wallet_ciphertext: Vec<ElGamalCiphertext>,
         valid_wallet_update: ValidWalletUpdateBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
@@ -535,8 +538,15 @@ impl StarknetClient {
             Self::reduce_scalar_to_felt(&old_match_nullifier),
             Self::reduce_scalar_to_felt(&old_spend_nullifier),
             0u8.into(), // TODO: add internal transfer tuple
-            0u8.into(), // TODO: add external transfer tuple
         ];
+
+        // Add the external transfer tuple to the calldata
+        if let Some(transfer) = external_transfer {
+            calldata.push(1u8.into() /* external_transfers_len */);
+            calldata.append(&mut transfer.into());
+        } else {
+            calldata.push(0u8.into() /* external_transfers_len */);
+        }
 
         let encryption_bytes = serde_json::to_vec(&wallet_ciphertext)
             .map_err(|err| StarknetClientError::Serde(err.to_string()))?;

@@ -10,20 +10,28 @@ use circuits::{
     types::balance::Balance, zk_circuits::valid_wallet_update::ValidWalletUpdateStatement,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
+use crypto::fields::{scalar_to_biguint, starknet_felt_to_biguint};
 use curve25519_dalek::scalar::Scalar;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
+use rand_core::OsRng;
 use serde::Serialize;
+use starknet::core::types::TransactionStatus;
 use tokio::sync::oneshot;
+use tracing::log;
 
 use crate::{
     price_reporter::exchanges::get_current_time,
     proof_generation::jobs::{ProofJob, ProofManagerJob, ValidWalletUpdateBundle},
-    starknet_client::client::StarknetClient,
+    starknet_client::{
+        client::StarknetClient,
+        types::{ExternalTransfer, ExternalTransferDirection},
+    },
     state::{
         wallet::{Wallet, WalletIdentifier},
         RelayerState,
     },
+    tasks::encrypt_wallet,
     types::SizedValidWalletUpdateWitness,
     SizedWallet,
 };
@@ -37,6 +45,8 @@ use super::{
 const DEPOSIT_BALANCE_TASK_NAME: &str = "deposit-balance";
 /// The wallet does not have a known Merkle proof attached
 const ERR_NO_MERKLE_PROOF: &str = "merkle proof for wallet not found";
+/// A transaction submitted to the contract failed to execute
+const ERR_TRANSACTION_FAILED: &str = "transaction failed";
 /// The wallet to update was not found in global state
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found in global state";
 
@@ -69,6 +79,8 @@ pub enum DepositBalanceTaskError {
     ProofGeneration(String),
     /// An error enqueuing a message for another worker
     SendMessage(String),
+    /// An error occurred interacting with Starknet
+    StarknetClient(String),
     /// A state element was not found that is necessary for task execution
     StateMissing(String),
 }
@@ -267,7 +279,55 @@ impl DepositBalanceTask {
 
     /// Submit the `update_wallet` transaction to the contract and await finality
     async fn submit_tx(&self) -> Result<(), DepositBalanceTaskError> {
-        unimplemented!("")
+        let external_transfer = ExternalTransfer::new(
+            self.sender_address.clone(),
+            self.mint.clone(),
+            self.amount.clone(),
+            ExternalTransferDirection::Deposit,
+        );
+
+        let proof = if let DepositBalanceTaskState::SubmittingTx { proof_bundle } = self.state() {
+            proof_bundle
+        } else {
+            unreachable!("submit_tx may only be called from a SubmittingTx task state")
+        };
+
+        // Encrypt the new wallet under the public view key
+        // TODO: This will eventually come directly from the user as they sign the encryption
+        let pk_view = scalar_to_biguint(&self.new_wallet.public_keys.pk_view);
+        let encrypted_wallet = encrypt_wallet(self.new_wallet.clone().into(), &pk_view);
+
+        // Submit on-chain
+        // TODO: Remove this
+        let mut rng = OsRng {};
+        let tx_hash = self
+            .starknet_client
+            .update_wallet(
+                self.new_wallet.get_commitment(),
+                self.old_wallet.get_match_nullifier() + Scalar::random(&mut rng),
+                self.old_wallet.get_spend_nullifier() + Scalar::random(&mut rng),
+                Some(external_transfer),
+                encrypted_wallet,
+                proof,
+            )
+            .await
+            .map_err(|err| DepositBalanceTaskError::StarknetClient(err.to_string()))?;
+        log::info!("got tx hash: {}", starknet_felt_to_biguint(&tx_hash));
+
+        // Await transaction completion
+        let tx_info = self
+            .starknet_client
+            .poll_transaction_completed(tx_hash)
+            .await
+            .map_err(|err| DepositBalanceTaskError::StarknetClient(err.to_string()))?;
+
+        if let TransactionStatus::Rejected = tx_info.status {
+            return Err(DepositBalanceTaskError::StarknetClient(
+                ERR_TRANSACTION_FAILED.to_string(),
+            ));
+        }
+
+        Ok(())
     }
 
     /// Update the proofs of `VALID COMMITMENTS` for each order after the wallet update is complete
