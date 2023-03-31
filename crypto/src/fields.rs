@@ -1,10 +1,11 @@
 //! Helpers for manipulating values within a field and translating between fields
 
-use std::ops::Neg;
+use std::{iter, ops::Neg};
 
 use ark_ff::{Fp256, MontBackend, MontConfig, PrimeField};
 use bigdecimal::BigDecimal;
 use curve25519_dalek::scalar::Scalar;
+use itertools::Itertools;
 use num_bigint::{BigInt, BigUint, Sign};
 use starknet::core::types::FieldElement as StarknetFieldElement;
 
@@ -168,6 +169,22 @@ pub fn starknet_felt_to_u64(element: &StarknetFieldElement) -> u64 {
     u64::from_be_bytes(bytes)
 }
 
+/// Convert a u128 to a Starknet felt
+pub fn u128_to_starknet_felt(val: u128) -> StarknetFieldElement {
+    // Pad to 32 bytes, reverse to big endian and then cast to felt
+    let mut u128_bytes_le = val
+        .to_le_bytes()
+        .into_iter()
+        .chain(iter::repeat(0u8))
+        .take(32 /* n */)
+        .collect_vec();
+    u128_bytes_le.reverse();
+
+    let u128_bytes_be: [u8; 32] = u128_bytes_le.try_into().unwrap();
+
+    StarknetFieldElement::from_bytes_be(&u128_bytes_be).unwrap()
+}
+
 // ---------
 // | Tests |
 // ---------
@@ -181,7 +198,7 @@ mod field_helper_test {
 
     use crate::fields::{bigint_to_scalar, bigint_to_scalar_bits, scalar_to_bigint};
 
-    use super::starknet_felt_to_scalar;
+    use super::{starknet_felt_to_biguint, starknet_felt_to_scalar, u128_to_starknet_felt};
 
     #[test]
     fn test_scalar_to_bigint() {
@@ -236,5 +253,16 @@ mod field_helper_test {
         println!("x: {x}\nbigint_converted_x: {bigint_converted_x}");
 
         assert_eq!(scalar_x, converted_x);
+    }
+
+    #[test]
+    fn test_u128_to_starknet_felt() {
+        let mut rng = thread_rng();
+        let random_u128: u128 = rng.gen();
+
+        let starknet_felt = u128_to_starknet_felt(random_u128);
+        let res_biguint = starknet_felt_to_biguint(&starknet_felt);
+
+        assert_eq!(res_biguint, BigUint::from(random_u128));
     }
 }

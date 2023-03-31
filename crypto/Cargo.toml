@@ -9,7 +9,7 @@ edition = "2021"
 ark-ff = "0.4"
 ark-crypto-primitives = { version = "0.4", features = ["sponge"] }
 bigdecimal = "0.3"
-curve25519-dalek = "2"
+curve25519-dalek = { version = "2", features = ["serde"] }
 itertools = "0.10"
 lazy_static = "1.4"
 memoize = "0.4"
