@@ -13,8 +13,10 @@ use crate::{
     gossip_api::gossip::GossipOutbound,
     handshake::manager::{HandshakeExecutor, HandshakeScheduler, HANDSHAKE_EXECUTOR_N_THREADS},
     proof_generation::jobs::ProofManagerJob,
+    starknet_client::client::StarknetClient,
     state::RelayerState,
     system_bus::SystemBus,
+    tasks::driver::TaskDriver,
     types::SystemBusMessage,
     worker::Worker,
     CancelChannel,
@@ -23,12 +25,13 @@ use crate::{
 use super::{error::HandshakeManagerError, jobs::HandshakeExecutionJob, manager::HandshakeManager};
 
 /// The config type for the handshake manager
-#[derive(Debug)]
 pub struct HandshakeManagerConfig {
     /// The relayer-global state
     pub global_state: RelayerState,
     /// The channel on which to send outbound network requests
     pub network_channel: UnboundedSender<GossipOutbound>,
+    /// A starknet client for interacting with the contract
+    pub starknet_client: StarknetClient,
     /// A sender on the handshake manager's job queue, used by the timer
     /// thread to enqueue outbound handshakes
     pub job_sender: UnboundedSender<HandshakeExecutionJob>,
@@ -36,6 +39,8 @@ pub struct HandshakeManagerConfig {
     pub job_receiver: Option<UnboundedReceiver<HandshakeExecutionJob>>,
     /// A sender to forward jobs to the proof manager on
     pub proof_manager_sender: CrossbeamSender<ProofManagerJob>,
+    /// The task driver, used to manage long-running async tasks
+    pub task_driver: TaskDriver,
     /// The system bus to which all workers have access
     pub system_bus: SystemBus<SystemBusMessage>,
     /// The channel on which the coordinator may mandate that the
@@ -57,8 +62,10 @@ impl Worker for HandshakeManager {
         let executor = HandshakeExecutor::new(
             config.job_receiver.take().unwrap(),
             config.network_channel.clone(),
+            config.starknet_client.clone(),
             config.proof_manager_sender.clone(),
             config.global_state.clone(),
+            config.task_driver.clone(),
             config.system_bus.clone(),
             config.cancel_channel.clone(),
         )?;

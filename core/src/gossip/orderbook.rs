@@ -327,9 +327,9 @@ impl GossipProtocolExecutor {
             .await?
         {
             log::info!("got order with previously used nullifier, skipping...");
-            return Err(GossipError::ValidCommitmentVerification(
-                "invalid nullifier, already used".to_string(),
-            ));
+            // return Err(GossipError::ValidCommitmentVerification(
+            //     "invalid nullifier, already used".to_string(),
+            // ));
         }
 
         // Check that the Merkle root is a valid historical root

@@ -16,8 +16,6 @@ pub enum HandshakeManagerError {
     MpcShootdown,
     /// Error verifying a proof
     VerificationError(String),
-    /// Error awaiting a proof from the proof generation module
-    ReceiveProof(String),
     /// Error sending a message to the network
     SendMessage(String),
     /// Error while setting up the handshake manager
