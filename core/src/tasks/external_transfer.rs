@@ -19,7 +19,7 @@ use circuits::{
     zk_gadgets::merkle::MerkleOpening,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::{scalar_to_biguint, starknet_felt_to_biguint};
+use crypto::fields::{biguint_to_scalar, scalar_to_biguint, starknet_felt_to_biguint};
 use curve25519_dalek::scalar::Scalar;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
@@ -52,8 +52,10 @@ use super::{
     RANDOMNESS_INCREMENT,
 };
 
-/// The display name of the task
+/// The display name of the deposit task
 const DEPOSIT_BALANCE_TASK_NAME: &str = "deposit-balance";
+/// The display name of the withdraw task
+const WITHDRAW_BALANCE_TASK_NAME: &str = "withdraw-balance";
 /// The wallet does not have a known Merkle proof attached
 const ERR_NO_MERKLE_PROOF: &str = "merkle proof for wallet not found";
 /// A transaction submitted to the contract failed to execute
@@ -62,13 +64,15 @@ const ERR_TRANSACTION_FAILED: &str = "transaction failed";
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found in global state";
 
 /// Defines the long running flow for adding a balance to a wallet
-pub struct DepositBalanceTask {
+pub struct ExternalTransferTask {
     /// The ERC20 address of the token to deposit
     pub mint: BigUint,
     /// The amount of the token to deposit
     pub amount: BigUint,
     /// The address to deposit from
-    pub sender_address: BigUint,
+    pub external_address: BigUint,
+    /// The direction of transfer
+    pub direction: ExternalTransferDirection,
     /// The old wallet before update
     pub old_wallet: Wallet,
     /// The new wallet after update
@@ -80,12 +84,12 @@ pub struct DepositBalanceTask {
     /// The work queue to add proof management jobs to
     pub proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     /// The state of the task
-    pub task_state: DepositBalanceTaskState,
+    pub task_state: ExternalTransferTaskState,
 }
 
 /// The error type for the deposit balance task
 #[derive(Clone, Debug)]
-pub enum DepositBalanceTaskError {
+pub enum ExternalTransferTaskError {
     /// Error generating a proof of `VALID WALLET UPDATE`
     ProofGeneration(String),
     /// An error enqueuing a message for another worker
@@ -103,7 +107,7 @@ pub enum DepositBalanceTaskError {
 /// Defines the state of the deposit balance task
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum DepositBalanceTaskState {
+pub enum ExternalTransferTaskState {
     /// The task is awaiting scheduling
     Pending,
     /// The task is awaiting a proof of `VALID WALLET UPDATE` from
@@ -122,7 +126,7 @@ pub enum DepositBalanceTaskState {
     Completed,
 }
 
-impl Display for DepositBalanceTaskState {
+impl Display for ExternalTransferTaskState {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Self::SubmittingTx { .. } => write!(f, "SubmittingTx"),
@@ -131,7 +135,7 @@ impl Display for DepositBalanceTaskState {
     }
 }
 
-impl Serialize for DepositBalanceTaskState {
+impl Serialize for ExternalTransferTaskState {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -140,42 +144,42 @@ impl Serialize for DepositBalanceTaskState {
     }
 }
 
-impl From<DepositBalanceTaskState> for StateWrapper {
-    fn from(state: DepositBalanceTaskState) -> Self {
-        StateWrapper::DepositBalance(state)
+impl From<ExternalTransferTaskState> for StateWrapper {
+    fn from(state: ExternalTransferTaskState) -> Self {
+        StateWrapper::ExternalTransfer(state)
     }
 }
 
 #[async_trait]
-impl Task for DepositBalanceTask {
-    type Error = DepositBalanceTaskError;
-    type State = DepositBalanceTaskState;
+impl Task for ExternalTransferTask {
+    type Error = ExternalTransferTaskError;
+    type State = ExternalTransferTaskState;
 
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current transaction step
         match self.state() {
-            DepositBalanceTaskState::Pending => {
-                self.task_state = DepositBalanceTaskState::Proving;
+            ExternalTransferTaskState::Pending => {
+                self.task_state = ExternalTransferTaskState::Proving;
             }
-            DepositBalanceTaskState::Proving => {
+            ExternalTransferTaskState::Proving => {
                 // Begin the proof of `VALID WALLET UPDATE`
                 let proof = self.generate_proof().await?;
-                self.task_state = DepositBalanceTaskState::SubmittingTx {
+                self.task_state = ExternalTransferTaskState::SubmittingTx {
                     proof_bundle: proof,
                 };
             }
-            DepositBalanceTaskState::SubmittingTx { .. } => {
+            ExternalTransferTaskState::SubmittingTx { .. } => {
                 // Submit the proof and transaction info to the contract and await
                 // transaction finality
                 self.submit_tx().await?;
-                self.task_state = DepositBalanceTaskState::UpdatingValidityProofs;
+                self.task_state = ExternalTransferTaskState::UpdatingValidityProofs;
             }
-            DepositBalanceTaskState::UpdatingValidityProofs => {
+            ExternalTransferTaskState::UpdatingValidityProofs => {
                 // Update validity proofs for now-nullified orders
                 self.update_validity_proofs().await?;
-                self.task_state = DepositBalanceTaskState::Completed;
+                self.task_state = ExternalTransferTaskState::Completed;
             }
-            DepositBalanceTaskState::Completed => {
+            ExternalTransferTaskState::Completed => {
                 panic!("step() called in state Completed")
             }
         }
@@ -192,7 +196,10 @@ impl Task for DepositBalanceTask {
     }
 
     fn name(&self) -> String {
-        DEPOSIT_BALANCE_TASK_NAME.to_string()
+        match self.direction {
+            ExternalTransferDirection::Deposit => DEPOSIT_BALANCE_TASK_NAME.to_string(),
+            ExternalTransferDirection::Withdrawal => WITHDRAW_BALANCE_TASK_NAME.to_string(),
+        }
     }
 }
 
@@ -200,17 +207,19 @@ impl Task for DepositBalanceTask {
 // | Task Implementation |
 // -----------------------
 
-impl DepositBalanceTask {
+impl ExternalTransferTask {
     /// Constructor
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         mint: BigUint,
         amount: BigUint,
-        sender_address: BigUint,
+        external_address: BigUint,
+        direction: ExternalTransferDirection,
         wallet_id: &WalletIdentifier,
         starknet_client: StarknetClient,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
-    ) -> Result<Self, DepositBalanceTaskError> {
+    ) -> Result<Self, ExternalTransferTaskError> {
         // Lookup the wallet in global state
         let old_wallet = global_state
             .read_wallet_index()
@@ -218,38 +227,42 @@ impl DepositBalanceTask {
             .get_wallet(wallet_id)
             .await
             .ok_or_else(|| {
-                DepositBalanceTaskError::StateMissing(ERR_WALLET_NOT_FOUND.to_string())
+                ExternalTransferTaskError::StateMissing(ERR_WALLET_NOT_FOUND.to_string())
             })?;
 
         let mut new_wallet = old_wallet.clone();
-        new_wallet
-            .balances
-            .entry(mint.clone())
-            .or_insert(Balance {
-                mint: mint.clone(),
-                amount: 0u64,
-            })
-            .amount += amount.to_u64().unwrap();
+        let mut balance_entry = new_wallet.balances.entry(mint.clone()).or_insert(Balance {
+            mint: mint.clone(),
+            amount: 0u64,
+        });
+
+        let amount_u64 = amount.to_u64().unwrap();
+        match direction {
+            ExternalTransferDirection::Deposit => balance_entry.amount += amount_u64,
+            ExternalTransferDirection::Withdrawal => balance_entry.amount -= amount_u64,
+        }
+
         new_wallet.randomness += RANDOMNESS_INCREMENT;
 
         Ok(Self {
             mint,
             amount,
-            sender_address,
+            external_address,
+            direction,
             old_wallet,
             new_wallet,
             starknet_client,
             global_state,
             proof_manager_work_queue,
-            task_state: DepositBalanceTaskState::Pending,
+            task_state: ExternalTransferTaskState::Pending,
         })
     }
 
     /// Generate a proof of `VALID WALLET UPDATE` for the wallet with added balance
-    async fn generate_proof(&self) -> Result<ValidWalletUpdateBundle, DepositBalanceTaskError> {
+    async fn generate_proof(&self) -> Result<ValidWalletUpdateBundle, ExternalTransferTaskError> {
         let timestamp: Scalar = get_current_time().into();
         let merkle_opening = self.old_wallet.merkle_proof.clone().ok_or_else(|| {
-            DepositBalanceTaskError::StateMissing(ERR_NO_MERKLE_PROOF.to_string())
+            ExternalTransferTaskError::StateMissing(ERR_NO_MERKLE_PROOF.to_string())
         })?;
 
         // Build the statement
@@ -260,7 +273,11 @@ impl DepositBalanceTask {
             wallet_match_nullifier: self.old_wallet.get_match_nullifier(),
             wallet_spend_nullifier: self.old_wallet.get_spend_nullifier(),
             merkle_root: merkle_opening.compute_root(),
-            external_transfer: (Scalar::zero(), Scalar::zero(), Scalar::zero()),
+            external_transfer: (
+                biguint_to_scalar(&self.mint),
+                biguint_to_scalar(&self.amount),
+                self.direction.into(),
+            ),
         };
 
         // Construct the witness
@@ -280,24 +297,24 @@ impl DepositBalanceTask {
                 type_: ProofJob::ValidWalletUpdate { witness, statement },
                 response_channel: response_sender,
             })
-            .map_err(|err| DepositBalanceTaskError::SendMessage(err.to_string()))?;
+            .map_err(|err| ExternalTransferTaskError::SendMessage(err.to_string()))?;
 
         response_receiver
             .await
             .map(|bundle| bundle.into())
-            .map_err(|err| DepositBalanceTaskError::ProofGeneration(err.to_string()))
+            .map_err(|err| ExternalTransferTaskError::ProofGeneration(err.to_string()))
     }
 
     /// Submit the `update_wallet` transaction to the contract and await finality
-    async fn submit_tx(&self) -> Result<(), DepositBalanceTaskError> {
+    async fn submit_tx(&self) -> Result<(), ExternalTransferTaskError> {
         let external_transfer = ExternalTransfer::new(
-            self.sender_address.clone(),
+            self.external_address.clone(),
             self.mint.clone(),
             self.amount.clone(),
-            ExternalTransferDirection::Deposit,
+            self.direction,
         );
 
-        let proof = if let DepositBalanceTaskState::SubmittingTx { proof_bundle } = self.state() {
+        let proof = if let ExternalTransferTaskState::SubmittingTx { proof_bundle } = self.state() {
             proof_bundle
         } else {
             unreachable!("submit_tx may only be called from a SubmittingTx task state")
@@ -322,7 +339,7 @@ impl DepositBalanceTask {
                 proof,
             )
             .await
-            .map_err(|err| DepositBalanceTaskError::StarknetClient(err.to_string()))?;
+            .map_err(|err| ExternalTransferTaskError::StarknetClient(err.to_string()))?;
         log::info!("got tx hash: {}", starknet_felt_to_biguint(&tx_hash));
 
         // Await transaction completion
@@ -330,10 +347,10 @@ impl DepositBalanceTask {
             .starknet_client
             .poll_transaction_completed(tx_hash)
             .await
-            .map_err(|err| DepositBalanceTaskError::StarknetClient(err.to_string()))?;
+            .map_err(|err| ExternalTransferTaskError::StarknetClient(err.to_string()))?;
 
         if let TransactionStatus::Rejected = tx_info.status {
-            return Err(DepositBalanceTaskError::StarknetClient(
+            return Err(ExternalTransferTaskError::StarknetClient(
                 ERR_TRANSACTION_FAILED.to_string(),
             ));
         }
@@ -343,13 +360,13 @@ impl DepositBalanceTask {
 
     /// After a wallet update has been submitted on-chain, find its authentication
     /// path, and re-prove `VALID COMMITMENTS` for all orders in the wallet
-    async fn update_validity_proofs(&self) -> Result<(), DepositBalanceTaskError> {
+    async fn update_validity_proofs(&self) -> Result<(), ExternalTransferTaskError> {
         // Find the new wallet in the Merkle state
         let authentication_path = self
             .starknet_client
             .find_merkle_authentication_path(self.new_wallet.get_commitment())
             .await
-            .map_err(|err| DepositBalanceTaskError::StarknetClient(err.to_string()))?;
+            .map_err(|err| ExternalTransferTaskError::StarknetClient(err.to_string()))?;
         let new_root = authentication_path.compute_root();
         log::info!("found merkle path in contract state");
 
@@ -396,7 +413,7 @@ impl DepositBalanceTask {
                     },
                     response_channel: response_sender,
                 })
-                .map_err(|err| DepositBalanceTaskError::SendMessage(err.to_string()))?;
+                .map_err(|err| ExternalTransferTaskError::SendMessage(err.to_string()))?;
 
             proof_response_channels.insert(order_id, (response_receiver, witness));
         }
@@ -405,7 +422,7 @@ impl DepositBalanceTask {
         for (order_id, (proof_channel, witness)) in proof_response_channels.into_iter() {
             let proof = proof_channel
                 .await
-                .map_err(|err| DepositBalanceTaskError::ProofGeneration(err.to_string()))?;
+                .map_err(|err| ExternalTransferTaskError::ProofGeneration(err.to_string()))?;
             log::info!("got proof for order {order_id}");
 
             // Update the global state of the order

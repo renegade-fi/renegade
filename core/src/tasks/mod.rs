@@ -15,8 +15,8 @@ use crate::SizedWallet;
 
 pub mod create_new_order;
 pub mod create_new_wallet;
-pub mod deposit_balance;
 pub mod driver;
+pub mod external_transfer;
 
 /// The amount to increment the randomness each time a wallet is nullified
 pub(self) const RANDOMNESS_INCREMENT: u8 = 2;

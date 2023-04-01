@@ -6,6 +6,7 @@ use std::{
 };
 
 use crypto::fields::{biguint_to_starknet_felt, u128_to_starknet_felt};
+use curve25519_dalek::scalar::Scalar;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
@@ -65,7 +66,7 @@ impl From<ExternalTransfer> for Vec<StarknetFieldElement> {
 }
 
 /// Represents the direction (deposit/withdraw) of a transfer
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum ExternalTransferDirection {
     /// Deposit an ERC20 into the darkpool from an external address
     Deposit = 0,
@@ -76,6 +77,12 @@ pub enum ExternalTransferDirection {
 impl From<ExternalTransferDirection> for StarknetFieldElement {
     fn from(dir: ExternalTransferDirection) -> Self {
         StarknetFieldElement::from(dir as u8)
+    }
+}
+
+impl From<ExternalTransferDirection> for Scalar {
+    fn from(dir: ExternalTransferDirection) -> Self {
+        Scalar::from(dir as u8)
     }
 }
 
