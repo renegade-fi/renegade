@@ -17,6 +17,7 @@ pub mod create_new_order;
 pub mod create_new_wallet;
 pub mod driver;
 pub mod external_transfer;
+pub mod settle_match;
 
 /// The amount to increment the randomness each time a wallet is nullified
 pub(self) const RANDOMNESS_INCREMENT: u8 = 2;
