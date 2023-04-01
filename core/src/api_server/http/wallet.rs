@@ -14,7 +14,7 @@ use crate::{
             CreateOrderRequest, CreateOrderResponse, CreateWalletRequest, CreateWalletResponse,
             DepositBalanceRequest, DepositBalanceResponse, GetBalanceByMintResponse,
             GetBalancesResponse, GetFeesResponse, GetOrderByIdResponse, GetOrdersResponse,
-            GetWalletResponse,
+            GetWalletResponse, WithdrawBalanceRequest, WithdrawBalanceResponse,
         },
         types::{Balance, Wallet},
         EmptyRequestResponse,
@@ -48,6 +48,8 @@ pub(super) const GET_BALANCES_ROUTE: &str = "/v0/wallet/:wallet_id/balances";
 pub(super) const GET_BALANCE_BY_MINT_ROUTE: &str = "/v0/wallet/:wallet_id/balances/:mint";
 /// Deposits an ERC-20 token into the darkpool
 pub(super) const DEPOSIT_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/deposit";
+/// Withdraws an ERC-20 token from the darkpool
+pub(super) const WITHDRAW_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/:mint/withdraw";
 /// Returns the fees within a given wallet
 pub(super) const GET_FEES_ROUTE: &str = "/v0/wallet/:wallet_id/fees";
 
@@ -491,6 +493,73 @@ impl TypedHandler for DepositBalanceHandler {
         let task_id = self.task_driver.start_task(task).await;
 
         Ok(DepositBalanceResponse { task_id })
+    }
+}
+
+/// Handler for the POST /wallet/:id/balances/:mint/withdraw route
+pub struct WithdrawBalanceHandler {
+    /// A starknet client
+    starknet_client: StarknetClient,
+    /// A copy of the relayer-global state
+    global_state: RelayerState,
+    /// A sender to the proof manager's work queue, used to enqueue
+    /// proofs of `VALID NEW WALLET` and await their completion
+    proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    /// A copy of the task driver used for long-lived async workflows
+    task_driver: TaskDriver,
+}
+
+impl WithdrawBalanceHandler {
+    /// Constructor
+    pub fn new(
+        starknet_client: StarknetClient,
+        global_state: RelayerState,
+        proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+        task_driver: TaskDriver,
+    ) -> Self {
+        Self {
+            starknet_client,
+            global_state,
+            proof_manager_work_queue,
+            task_driver,
+        }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for WithdrawBalanceHandler {
+    type Request = WithdrawBalanceRequest;
+    type Response = WithdrawBalanceResponse;
+
+    async fn handle_typed(
+        &self,
+        req: Self::Request,
+        params: UrlParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        // Parse the wallet ID and mint from the params
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+        let mint = parse_mint_from_params(&params)?;
+
+        // Begin a task
+        let task = DepositBalanceTask::new(
+            mint,
+            0u8.into(),
+            req.destination_addr,
+            &wallet_id,
+            self.starknet_client.clone(),
+            self.global_state.clone(),
+            self.proof_manager_work_queue.clone(),
+        )
+        .await
+        .map_err(|_| {
+            ApiServerError::HttpStatusCode(
+                StatusCode::BAD_REQUEST,
+                ERR_WALLET_NOT_FOUND.to_string(),
+            )
+        })?;
+        let task_id = self.task_driver.start_task(task).await;
+
+        Ok(WithdrawBalanceResponse { task_id })
     }
 }
 
