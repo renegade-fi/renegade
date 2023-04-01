@@ -20,11 +20,11 @@ use crate::{
         EmptyRequestResponse,
     },
     proof_generation::jobs::ProofManagerJob,
-    starknet_client::client::StarknetClient,
+    starknet_client::{client::StarknetClient, types::ExternalTransferDirection},
     state::RelayerState,
     tasks::{
-        create_new_order::NewOrderTask, create_new_wallet::NewWalletTask,
-        deposit_balance::DepositBalanceTask, driver::TaskDriver,
+        create_new_order::NewOrderTask, create_new_wallet::NewWalletTask, driver::TaskDriver,
+        external_transfer::ExternalTransferTask,
     },
 };
 
@@ -474,10 +474,11 @@ impl TypedHandler for DepositBalanceHandler {
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
         // Begin a task
-        let task = DepositBalanceTask::new(
+        let task = ExternalTransferTask::new(
             req.mint,
             req.amount,
             req.from_addr,
+            ExternalTransferDirection::Deposit,
             &wallet_id,
             self.starknet_client.clone(),
             self.global_state.clone(),
@@ -541,10 +542,11 @@ impl TypedHandler for WithdrawBalanceHandler {
         let mint = parse_mint_from_params(&params)?;
 
         // Begin a task
-        let task = DepositBalanceTask::new(
+        let task = ExternalTransferTask::new(
             mint,
-            0u8.into(),
+            req.amount,
             req.destination_addr,
+            ExternalTransferDirection::Withdrawal,
             &wallet_id,
             self.starknet_client.clone(),
             self.global_state.clone(),

@@ -14,7 +14,7 @@ use crate::state::{new_async_shared, AsyncShared};
 
 use super::{
     create_new_order::NewOrderTaskState, create_new_wallet::NewWalletTaskState,
-    deposit_balance::DepositBalanceTaskState,
+    external_transfer::ExternalTransferTaskState,
 };
 
 /// A type alias for the identifier underlying a task
@@ -56,7 +56,7 @@ pub trait Task: Send {
 #[serde(tag = "task_type", content = "state")]
 pub enum StateWrapper {
     /// The state object for the deposit balance task
-    DepositBalance(DepositBalanceTaskState),
+    ExternalTransfer(ExternalTransferTaskState),
     /// The state object for the new wallet task
     NewWallet(NewWalletTaskState),
     /// The state object for the new order task
