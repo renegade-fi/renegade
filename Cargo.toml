@@ -14,3 +14,8 @@ lto = true
 [profile.release]
 opt-level = 3 # Full optimizations
 lto = true
+
+[patch.crates-io]
+# We pin the transitive dependency (through libp2p-noise) on snow to the
+# latest version, which is up to date with curve25519-dalek interfaces
+snow = { git = "https://github.com/mcginty/snow", rev = "abf1989" }
