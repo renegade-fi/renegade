@@ -62,6 +62,10 @@ const ERR_TRANSACTION_FAILED: &str = "transaction failed";
 /// The wallet to update was not found in global state
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found in global state";
 
+// -------------------
+// | Task Definition |
+// -------------------
+
 /// Defines the long running flow for adding a balance to a wallet
 pub struct ExternalTransferTask {
     /// The ERC20 address of the token to deposit
@@ -98,10 +102,6 @@ pub enum ExternalTransferTaskError {
     /// A state element was not found that is necessary for task execution
     StateMissing(String),
 }
-
-// -------------------
-// | Task Definition |
-// -------------------
 
 /// Defines the state of the deposit balance task
 #[derive(Clone, Debug)]

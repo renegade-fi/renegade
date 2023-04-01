@@ -14,7 +14,7 @@ use crate::state::{new_async_shared, AsyncShared};
 
 use super::{
     create_new_order::NewOrderTaskState, create_new_wallet::NewWalletTaskState,
-    external_transfer::ExternalTransferTaskState,
+    external_transfer::ExternalTransferTaskState, settle_match::SettleMatchTaskState,
 };
 
 /// A type alias for the identifier underlying a task
@@ -61,6 +61,8 @@ pub enum StateWrapper {
     NewWallet(NewWalletTaskState),
     /// The state object for the new order task
     NewOrder(NewOrderTaskState),
+    /// The state object for the settle match task
+    SettleMatch(SettleMatchTaskState),
 }
 
 /// Drives tasks to completion
