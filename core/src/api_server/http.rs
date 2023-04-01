@@ -7,6 +7,7 @@ use hyper::{
     Body, Error as HyperError, Method, Request, Response, Server, StatusCode,
 };
 use num_bigint::BigUint;
+use num_traits::Num;
 use std::{
     convert::Infallible,
     net::SocketAddr,
@@ -36,9 +37,9 @@ use self::{
     wallet::{
         CreateOrderHandler, CreateWalletHandler, DepositBalanceHandler, GetBalanceByMintHandler,
         GetBalancesHandler, GetFeesHandler, GetOrderByIdHandler, GetOrdersHandler,
-        GetWalletHandler, CREATE_WALLET_ROUTE, DEPOSIT_BALANCE_ROUTE, GET_BALANCES_ROUTE,
-        GET_BALANCE_BY_MINT_ROUTE, GET_FEES_ROUTE, GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE,
-        WALLET_ORDERS_ROUTE,
+        GetWalletHandler, WithdrawBalanceHandler, CREATE_WALLET_ROUTE, DEPOSIT_BALANCE_ROUTE,
+        GET_BALANCES_ROUTE, GET_BALANCE_BY_MINT_ROUTE, GET_FEES_ROUTE, GET_ORDER_BY_ID_ROUTE,
+        GET_WALLET_ROUTE, WALLET_ORDERS_ROUTE, WITHDRAW_BALANCE_ROUTE,
     },
 };
 
@@ -93,6 +94,13 @@ const TASK_ID_URL_PARAM: &str = "task_id";
 
 /// A helper to parse out a mint from a URL param
 fn parse_mint_from_params(params: &UrlParams) -> Result<BigUint, ApiServerError> {
+    // Try to parse as a hex string, then fall back to decimal
+    let mint_str = params.get(MINT_URL_PARAM).unwrap();
+    let stripped_param = mint_str.strip_prefix("0x").unwrap_or(mint_str);
+    if let Ok(mint) = BigUint::from_str_radix(stripped_param, 16 /* radix */) {
+        return Ok(mint);
+    }
+
     params.get(MINT_URL_PARAM).unwrap().parse().map_err(|_| {
         ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_MINT_PARSE.to_string())
     })
@@ -256,6 +264,18 @@ impl HttpServer {
             Method::POST,
             DEPOSIT_BALANCE_ROUTE.to_string(),
             DepositBalanceHandler::new(
+                config.starknet_client.clone(),
+                global_state.clone(),
+                config.proof_generation_work_queue.clone(),
+                config.task_driver.clone(),
+            ),
+        );
+
+        // The "/wallet/:id/balances/:mint/withdraw" route
+        router.add_route(
+            Method::POST,
+            WITHDRAW_BALANCE_ROUTE.to_string(),
+            WithdrawBalanceHandler::new(
                 config.starknet_client.clone(),
                 global_state.clone(),
                 config.proof_generation_work_queue.clone(),

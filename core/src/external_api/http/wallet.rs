@@ -133,6 +133,33 @@ pub struct DepositBalanceResponse {
     pub task_id: TaskIdentifier,
 }
 
+/// The request type to withdraw a balance from the Darkpool
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WithdrawBalanceRequest {
+    /// The destination address to withdraw the balance to
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
+    pub destination_addr: BigUint,
+    /// The amount of the token to withdraw
+    pub amount: BigUint,
+    /// A signature of the public variables used in the proof of
+    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
+    /// to guarantee that the wallet updates are properly authorized
+    ///
+    /// TODO: For now this is just a blob, we will add this feature in
+    /// a follow up
+    pub public_var_sig: Vec<u8>,
+}
+
+/// The response type to a request to withdraw a balance
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WithdrawBalanceResponse {
+    /// The ID of the task allocated for this operation
+    pub task_id: TaskIdentifier,
+}
+
 // -------------------------
 // | Wallet Fees API Types |
 // -------------------------
