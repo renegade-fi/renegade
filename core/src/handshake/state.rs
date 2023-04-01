@@ -167,10 +167,12 @@ impl HandshakeStateIndex {
 
     /// Transition the given handshake into the Completed state
     pub async fn completed(&self, request_id: &Uuid) {
-        let mut locked_state = self.state_map.write().await;
-        if let Some(entry) = locked_state.get_mut(request_id) {
-            entry.completed()
-        }
+        {
+            let mut locked_state = self.state_map.write().await;
+            if let Some(entry) = locked_state.get_mut(request_id) {
+                entry.completed()
+            }
+        } // locked_state released
 
         // For now, we simply remove the handshake from the state
         self.remove_handshake(request_id).await;
@@ -178,10 +180,12 @@ impl HandshakeStateIndex {
 
     /// Transition the given handshake into the Error state
     pub async fn error(&self, request_id: &Uuid, err: HandshakeManagerError) {
-        let mut locked_state = self.state_map.write().await;
-        if let Some(entry) = locked_state.get_mut(request_id) {
-            entry.error(err)
-        }
+        {
+            let mut locked_state = self.state_map.write().await;
+            if let Some(entry) = locked_state.get_mut(request_id) {
+                entry.error(err)
+            }
+        } // locked_state released
 
         // For now we simply remove the handshake from the state
         self.remove_handshake(request_id).await;

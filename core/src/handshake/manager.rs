@@ -22,8 +22,10 @@ use crate::{
         handshake::{HandshakeMessage, MatchRejectionReason},
     },
     proof_generation::jobs::ProofManagerJob,
+    starknet_client::client::StarknetClient,
     state::{new_async_shared, NetworkOrderState, OrderIdentifier, RelayerState},
     system_bus::SystemBus,
+    tasks::{driver::TaskDriver, settle_match::SettleMatchTask},
     types::{SystemBusMessage, HANDSHAKE_STATUS_TOPIC},
     CancelChannel,
 };
@@ -74,10 +76,14 @@ pub struct HandshakeExecutor {
     pub(super) job_channel: DefaultWrapper<Option<UnboundedReceiver<HandshakeExecutionJob>>>,
     /// The channel on which the handshake executor may forward requests to the network
     pub(super) network_channel: UnboundedSender<GossipOutbound>,
+    /// A Starknet client used for interacting with the contract
+    pub(super) starknet_client: StarknetClient,
     /// The channel on which to send proof manager jobs
     pub(super) proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     /// The global relayer state
     pub(super) global_state: RelayerState,
+    /// The task driver, used to manage long-running async tasks
+    pub(super) task_driver: TaskDriver,
     /// The system bus used to publish internal broadcast messages
     pub(super) system_bus: SystemBus<SystemBusMessage>,
     /// The channel on which the coordinator thread may cancel handshake execution
@@ -86,11 +92,14 @@ pub struct HandshakeExecutor {
 
 impl HandshakeExecutor {
     /// Create a new protocol executor
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         job_channel: UnboundedReceiver<HandshakeExecutionJob>,
         network_channel: UnboundedSender<GossipOutbound>,
+        starknet_client: StarknetClient,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         global_state: RelayerState,
+        task_driver: TaskDriver,
         system_bus: SystemBus<SystemBusMessage>,
         cancel: CancelChannel,
     ) -> Result<Self, HandshakeManagerError> {
@@ -103,8 +112,10 @@ impl HandshakeExecutor {
             handshake_state_index,
             job_channel: DefaultWrapper::new(Some(job_channel)),
             network_channel,
+            starknet_client,
             proof_manager_work_queue,
             global_state,
+            task_driver,
             system_bus,
             cancel,
         })
@@ -230,7 +241,15 @@ impl HandshakeExecutor {
                 self.record_completed_match(request_id).await?;
 
                 // Submit the match to the contract
-                self.submit_match(res).await
+                let task = SettleMatchTask::new(
+                    res,
+                    self.starknet_client.clone(),
+                    self.global_state.clone(),
+                    self.proof_manager_work_queue.clone(),
+                );
+                self.task_driver.start_task(task).await;
+
+                Ok(())
             }
 
             // Indicates that in-flight MPCs on the given nullifier should be terminated
@@ -625,12 +644,12 @@ impl HandshakeExecutor {
         // Send a message to cluster peers indicating that the local peer has completed a match
         // Cluster peers should cache the matched order pair as completed and not initiate matches
         // on this pair going forward
-        let locked_cluster_id = self.global_state.local_cluster_id.clone();
+        let cluster_id = self.global_state.local_cluster_id.clone();
         self.network_channel
             .send(GossipOutbound::Pubsub {
-                topic: locked_cluster_id.get_management_topic(),
+                topic: cluster_id.get_management_topic(),
                 message: PubsubMessage::ClusterManagement {
-                    cluster_id: locked_cluster_id,
+                    cluster_id,
                     message: ClusterManagementMessage::CacheSync(
                         state.local_order_id,
                         state.peer_order_id,
