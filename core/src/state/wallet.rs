@@ -23,16 +23,20 @@ use circuits::{
     },
     zk_gadgets::merkle::MerkleOpening,
 };
-use crypto::fields::{biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint};
+use crypto::fields::{
+    biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint, starknet_felt_to_biguint,
+};
 use curve25519_dalek::scalar::Scalar;
 use futures::{stream::iter as to_stream, StreamExt};
 use itertools::Itertools;
-use num_bigint::BigUint;
+use num_bigint::{BigUint, ToBigUint};
+use rand::{distributions::Uniform, thread_rng, Rng};
 use serde::{
     de::{Error as SerdeErr, SeqAccess, Visitor},
     ser::SerializeSeq,
     Deserialize, Deserializer, Serialize, Serializer,
 };
+use starknet::core::types::FieldElement as StarknetFieldElement;
 use tokio::sync::{RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
@@ -53,6 +57,21 @@ lazy_static! {
         let threshold_f32 = ROOT_HISTORY_STALENESS_FACTOR * (MERKLE_ROOT_HISTORY_LENGTH as f32);
         threshold_f32 as u32
     };
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Generate wallet randomness
+///  
+/// For now, this is simply a random BigUint in the Starknet finite field
+pub fn generate_wallet_randomness() -> BigUint {
+    let mut rng = thread_rng();
+    let starknet_modulus = starknet_felt_to_biguint(&StarknetFieldElement::MAX) + 1u8;
+
+    let dist = Uniform::from(0.to_biguint().unwrap()..starknet_modulus);
+    rng.sample(dist)
 }
 
 // --------------------------
@@ -277,6 +296,9 @@ pub struct Wallet {
     /// A list of the secret keys the relayer has access to
     pub secret_keys: PrivateKeyChain,
     /// The wallet randomness
+    ///
+    /// Generate randomness if not specified in a serialized blob
+    #[serde(default = "generate_wallet_randomness")]
     pub randomness: BigUint,
     /// Wallet metadata; replicas, trusted peers, etc
     pub metadata: WalletMetadata,

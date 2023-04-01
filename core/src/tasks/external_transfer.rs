@@ -23,7 +23,6 @@ use crypto::fields::{biguint_to_scalar, scalar_to_biguint, starknet_felt_to_bigu
 use curve25519_dalek::scalar::Scalar;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
-use rand_core::OsRng;
 use serde::Serialize;
 use starknet::core::types::TransactionStatus;
 use tokio::sync::oneshot;
@@ -326,14 +325,12 @@ impl ExternalTransferTask {
         let encrypted_wallet = encrypt_wallet(self.new_wallet.clone().into(), &pk_view);
 
         // Submit on-chain
-        // TODO: Remove this
-        let mut rng = OsRng {};
         let tx_hash = self
             .starknet_client
             .update_wallet(
                 self.new_wallet.get_commitment(),
-                self.old_wallet.get_match_nullifier() + Scalar::random(&mut rng),
-                self.old_wallet.get_spend_nullifier() + Scalar::random(&mut rng),
+                self.old_wallet.get_match_nullifier(),
+                self.old_wallet.get_spend_nullifier(),
                 Some(external_transfer),
                 encrypted_wallet,
                 proof,
