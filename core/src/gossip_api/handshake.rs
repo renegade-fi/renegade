@@ -40,7 +40,7 @@ pub enum HandshakeMessage {
         reason: MatchRejectionReason,
     },
     /// Go forward with a handshake after a proposed order pair is setup
-    ExecuteMatch {
+    AcceptMatchCandidate {
         /// The ID of the peer ACKing the proposal
         peer_id: WrappedPeerId,
         /// The port that the sender can be dialed on to begin the request

@@ -28,6 +28,9 @@ lazy_static! {
     /// Contract function selector to update an existing wallet, nullifying the previous version
     static ref UPDATE_WALLET_SELECTOR: StarknetFieldElement = get_selector_from_name("update_wallet")
         .unwrap();
+    /// Contract function selector to submit a match, encumbering two wallets
+    static ref MATCH_SELECTOR: StarknetFieldElement = get_selector_from_name("match")
+        .unwrap();
 
     /// The event selector for internal node changes
     pub static ref INTERNAL_NODE_CHANGED_EVENT_SELECTOR: StarknetFieldElement =

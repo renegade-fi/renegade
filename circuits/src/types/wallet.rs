@@ -20,6 +20,8 @@ use super::{
 
 /// Commitment type alias for readability
 pub type WalletCommitment = Scalar;
+/// Commitment type alias for readability
+pub type NoteCommitment = Scalar;
 /// Nullifier type alias for readability
 pub type Nullifier = Scalar;
 
