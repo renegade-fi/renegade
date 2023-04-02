@@ -21,7 +21,7 @@ use tui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, List, ListItem, Row, Table},
+    widgets::{Block, Borders, List, ListItem, Row, Table, Tabs},
     Frame, Terminal,
 };
 use tui_logger::{init_logger, TuiLoggerWidget};
@@ -54,20 +54,48 @@ lazy_static! {
     static ref TABLE_HEADER_STYLE: Style = Style::default().fg(Color::Green);
     /// The style of table rows
     static ref TABLE_ROW_STYLE: Style = Style::default().fg(Color::Yellow);
+    /// The style of a highlighted element
+    static ref HIGHLIGHT_STYLE: Style = Style::default()
+        .fg(Color::White)
+        .bg(Color::Black)
+        .add_modifier(Modifier::BOLD);
 }
-
-// -----------------
-// | Color Aliases |
-// -----------------
 
 /// The text user interface app, prints the state at regular intervals
 pub struct StateTuiApp {
+    /// The selected TUI tab
+    selected_tab: AppTab,
     /// A copy of the config passed to the relayer
     config: RelayerConfig,
     /// A copy of the global state to read from
     global_state: RelayerState,
     /// A terminal implementation for creating the TUI
     terminal: RefCell<Terminal<CrosstermBackend<Stdout>>>,
+}
+
+/// Defines the tabs available to the app
+#[derive(Copy, Clone, Debug)]
+pub enum AppTab {
+    /// The main tab, all high level relayer information is available
+    Main = 0,
+    /// The logs tab gives a full screen log view
+    Logs,
+}
+
+impl AppTab {
+    /// Get the list of tab names
+    pub fn tab_names() -> Vec<String> {
+        vec!["Main", "Logs"]
+            .iter()
+            .map(|str| str.to_string())
+            .collect_vec()
+    }
+}
+
+impl ToString for AppTab {
+    fn to_string(&self) -> String {
+        Self::tab_names()[*self as usize].to_owned()
+    }
 }
 
 impl StateTuiApp {
@@ -84,6 +112,7 @@ impl StateTuiApp {
         // Setup logging widget
         init_logger(LevelFilter::Info).unwrap();
         Self {
+            selected_tab: AppTab::Main,
             config,
             global_state,
             terminal: RefCell::new(terminal),
@@ -103,7 +132,7 @@ impl StateTuiApp {
     }
 
     /// An implementation of the execution loop
-    fn execution_loop(self) {
+    fn execution_loop(mut self) {
         let timeout = Duration::from_millis(TUI_REFRESH_RATE_MS);
         loop {
             // Borrow the terminal explicitly so that the closure may use self
@@ -113,9 +142,16 @@ impl StateTuiApp {
             // Stop the TUI when 'q' is pressed
             if crossterm::event::poll(timeout).unwrap() {
                 if let Event::Key(key) = event::read().unwrap() {
-                    if let KeyCode::Char('q') = key.code {
-                        println!("Quitting");
-                        break;
+                    match key.code {
+                        KeyCode::Char('q') => break,
+                        // TODO: Switch tab
+                        KeyCode::Tab => {
+                            self.selected_tab = match self.selected_tab {
+                                AppTab::Main => AppTab::Logs,
+                                AppTab::Logs => AppTab::Main,
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -137,20 +173,37 @@ impl StateTuiApp {
 
     /// Build the UI on a frame render tick
     fn ui<B: Backend>(&self, frame: &mut Frame<B>) {
-        // Chunk into three vertical rows
+        // Dispatch based on the selected tab
+        match self.selected_tab {
+            AppTab::Main => self.main_tab(frame),
+            AppTab::Logs => self.logs_tab(frame),
+        }
+    }
+
+    /// Render the main tab
+    fn main_tab<B: Backend>(&self, frame: &mut Frame<B>) {
+        // Chunk into four vertical rows
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints(vec![
+                Constraint::Percentage(5),
                 Constraint::Percentage(25),
-                Constraint::Percentage(35),
+                Constraint::Percentage(30),
                 Constraint::Percentage(40),
             ])
             .split(frame.size());
 
         // Split out the chunks
-        let top_row = chunks[0];
-        let middle_row = chunks[1];
-        let bottom_row = chunks[2];
+        let tab_select = chunks[0];
+        let top_row = chunks[1];
+        let middle_row = chunks[2];
+        let bottom_row = chunks[3];
+
+        // -------------------
+        // | Tab Select Pane |
+        // -------------------
+        let tab_pane = self.create_tab_selection();
+        frame.render_widget(tab_pane, tab_select);
 
         // -----------------
         // | Top Row Panes |
@@ -200,6 +253,26 @@ impl StateTuiApp {
         frame.render_widget(log_widget, bottom_row);
     }
 
+    /// Render the logs tab, a full screen view of the relayer logs
+    fn logs_tab<B: Backend>(&self, frame: &mut Frame<B>) {
+        // Chunk into two vertical rows, one for tab select, one for logs
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(vec![Constraint::Percentage(5), Constraint::Percentage(95)])
+            .split(frame.size());
+
+        // Split out the chunks
+        let tab_select_pane = chunks[0];
+        let logs_pane = chunks[1];
+
+        let tab_select = self.create_tab_selection();
+        let log_widget = Self::create_log_widget();
+
+        // Render into the chunks
+        frame.render_widget(tab_select, tab_select_pane);
+        frame.render_widget(log_widget, logs_pane);
+    }
+
     /// Create a new, default block with the given title
     fn create_block_with_title(title: &str) -> Block {
         let styled_title = Span::styled(title, *TITLE_STYLE);
@@ -209,6 +282,20 @@ impl StateTuiApp {
             .border_style(Style::default().add_modifier(Modifier::BOLD))
             .style(Style::default().fg(Color::LightYellow))
             .title_alignment(Alignment::Center)
+    }
+
+    /// Create a tab selection pane
+    fn create_tab_selection(&self) -> Tabs {
+        let tab_names = AppTab::tab_names()
+            .into_iter()
+            .map(Spans::from)
+            .collect_vec();
+
+        Tabs::new(tab_names)
+            .block(Self::create_block_with_title("Tabs"))
+            .select(self.selected_tab as usize)
+            .highlight_style(*HIGHLIGHT_STYLE)
+            .divider("|")
     }
 
     /// Create a metadata pane
