@@ -4,10 +4,12 @@
 //! node to prove `VALID NEW WALLET`, submit the wallet on-chain, wait for
 //! transaction success, and then prove `VALID COMMITMENTS`
 
+use circuits::types::note::Note;
 use crypto::{
     elgamal::{encrypt_scalar, ElGamalCiphertext},
     fields::biguint_to_scalar,
 };
+use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 use num_bigint::BigUint;
 
@@ -64,6 +66,15 @@ pub(self) fn encrypt_wallet(wallet: SizedWallet, pk_view: &BigUint) -> Vec<ElGam
     // indexing into the tuple struct in all of the above
     ciphertexts
         .into_iter()
+        .map(|(cipher, _)| cipher)
+        .collect_vec()
+}
+
+/// Helper to encrypt a note under a given key
+pub(self) fn encrypt_note(note: Note, pk_settle: &BigUint) -> Vec<ElGamalCiphertext> {
+    Into::<Vec<Scalar>>::into(note)
+        .into_iter()
+        .map(|val| encrypt_scalar(val, pk_settle))
         .map(|(cipher, _)| cipher)
         .collect_vec()
 }

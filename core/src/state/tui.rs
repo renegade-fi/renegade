@@ -15,7 +15,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use std::{io::Stdout, thread::Builder as ThreadBuilder, time::Duration};
-use tracing::log::{self, LevelFilter};
+use tracing::log::LevelFilter;
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout},
@@ -148,7 +148,6 @@ impl StateTuiApp {
             // Stop the TUI when 'q' is pressed
             if crossterm::event::poll(timeout).unwrap() {
                 if let Event::Key(key) = event::read().unwrap() {
-                    log::info!("got here");
                     match key.code {
                         KeyCode::Char('q') => break,
                         // TODO: Switch tab

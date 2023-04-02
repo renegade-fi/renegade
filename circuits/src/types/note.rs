@@ -20,6 +20,12 @@ pub enum NoteType {
     Match = 1,
 }
 
+impl From<NoteType> for Scalar {
+    fn from(note_type: NoteType) -> Self {
+        Scalar::from(note_type as u8)
+    }
+}
+
 /// Represents a note base type
 #[derive(Clone, Debug)]
 pub struct Note {
@@ -46,6 +52,24 @@ pub struct Note {
     pub type_: NoteType,
     /// The randomness included with the note, used to authenticate notes
     pub randomness: BigUint,
+}
+
+impl From<Note> for Vec<Scalar> {
+    fn from(note: Note) -> Self {
+        vec![
+            biguint_to_scalar(&note.mint1),
+            note.volume1.into(),
+            note.direction1.into(),
+            biguint_to_scalar(&note.mint2),
+            note.volume2.into(),
+            note.direction2.into(),
+            biguint_to_scalar(&note.fee_mint),
+            note.fee_volume.into(),
+            note.fee_direction.into(),
+            note.type_.into(),
+            biguint_to_scalar(&note.randomness),
+        ]
+    }
 }
 
 /// Represents a note that has been allocated in a constraint system

@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use circuits::types::wallet::{Nullifier, WalletCommitment};
+use circuits::types::wallet::{NoteCommitment, Nullifier, WalletCommitment};
 use crypto::{
     elgamal::ElGamalCiphertext,
     fields::{
@@ -44,10 +44,12 @@ use starknet::{
 use tracing::log;
 
 use crate::{
-    proof_generation::jobs::{ValidWalletCreateBundle, ValidWalletUpdateBundle},
+    proof_generation::jobs::{
+        ValidMatchEncryptBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
+    },
     starknet_client::{
-        INTERNAL_NODE_CHANGED_EVENT_SELECTOR, NEW_WALLET_SELECTOR, UPDATE_WALLET_SELECTOR,
-        VALUE_INSERTED_EVENT_SELECTOR,
+        INTERNAL_NODE_CHANGED_EVENT_SELECTOR, MATCH_SELECTOR, NEW_WALLET_SELECTOR,
+        UPDATE_WALLET_SELECTOR, VALUE_INSERTED_EVENT_SELECTOR,
     },
     state::{wallet::MerkleAuthenticationPath, MerkleTreeCoords},
     MERKLE_HEIGHT,
@@ -81,6 +83,19 @@ const TX_STATUS_POLL_INTERVAL_MS: u64 = 10_000; // 10 seconds
 /// The fee estimate multiplier to use as `MAX_FEE` for transactions
 const MAX_FEE_MULTIPLIER: f32 = 1.5;
 
+/// Macro helper to pack a serializable value into a vector of felts
+///
+/// Prepends a length felt for run length encoding
+macro_rules! pack_serializable {
+    ($val:ident) => {{
+        let bytes = serde_json::to_vec(&($val))
+            .map_err(|err| StarknetClientError::Serde(err.to_string()))?;
+        let mut felts = StarknetClient::pack_bytes_into_felts(&bytes);
+        felts.insert(0, (felts.len() as u64).into());
+
+        felts
+    }};
+}
 /// The config type for the client, consists of secrets needed to connect to
 /// the gateway and API server, as well as keys for sending transactions
 #[derive(Clone)]
@@ -485,28 +500,11 @@ impl StarknetClient {
         );
 
         // Reduce the wallet commitment mod the Starknet field
-        let commitment_felt = Self::reduce_scalar_to_felt(&wallet_commitment);
-
+        let mut calldata = vec![Self::reduce_scalar_to_felt(&wallet_commitment)];
         // Pack the ciphertext into a list of felts
-        let ciphertext_bytes = serde_json::to_vec(&wallet_ciphertext)
-            .map_err(|err| StarknetClientError::Serde(err.to_string()))?;
-        let mut ciphertext_packed_felts = Self::pack_bytes_into_felts(&ciphertext_bytes);
-
+        calldata.append(&mut pack_serializable!(wallet_ciphertext));
         // Pack the proof into a list of felts
-        let proof_bytes = serde_json::to_vec(&valid_wallet_create)
-            .map_err(|err| StarknetClientError::Serde(err.to_string()))?;
-        let mut proof_packed_felts = Self::pack_bytes_into_felts(&proof_bytes);
-
-        // Build the calldata for `new_wallet`
-        // The first element is the commitment to the wallet, followed by two arrays
-        // the first array represents the encryption blob stored on-chain for the wallet
-        // the second array represents the proof blob, currently not-validated
-        let mut calldata = Vec::new();
-        calldata.push(commitment_felt);
-        calldata.push((ciphertext_packed_felts.len() as u64).into());
-        calldata.append(&mut ciphertext_packed_felts);
-        calldata.push((proof_packed_felts.len() as u64).into()); // length of proof
-        calldata.append(&mut proof_packed_felts);
+        calldata.append(&mut pack_serializable!(valid_wallet_create));
 
         // Call the `new_wallet` contract function
         self.call_contract(Call {
@@ -548,24 +546,65 @@ impl StarknetClient {
             calldata.push(0u8.into() /* external_transfers_len */);
         }
 
-        let encryption_bytes = serde_json::to_vec(&wallet_ciphertext)
-            .map_err(|err| StarknetClientError::Serde(err.to_string()))?;
-        let mut encryption_bytes_packed = Self::pack_bytes_into_felts(&encryption_bytes);
-
-        let proof_bytes = serde_json::to_vec(&valid_wallet_update)
-            .map_err(|err| StarknetClientError::Serde(err.to_string()))?;
-        let mut proof_bytes_packed = Self::pack_bytes_into_felts(&proof_bytes);
-
-        calldata.push((encryption_bytes_packed.len() as u64).into());
-        calldata.append(&mut encryption_bytes_packed);
-
-        calldata.push((proof_bytes_packed.len() as u64).into());
-        calldata.append(&mut proof_bytes_packed);
+        // Append the packed wallet ciphertext and proof of `VALID WALLET UPDATE`
+        calldata.append(&mut pack_serializable!(wallet_ciphertext));
+        calldata.append(&mut pack_serializable!(valid_wallet_update));
 
         // Call the `update_wallet` function in the contract
         self.call_contract(Call {
             to: self.contract_address,
             selector: *UPDATE_WALLET_SELECTOR,
+            calldata,
+        })
+        .await
+    }
+
+    /// Submit a `match` transaction to the contract
+    ///
+    /// Returns the transaction hash of the call
+    #[allow(clippy::too_many_arguments)]
+    pub async fn submit_match(
+        &self,
+        match_nullifier1: Nullifier,
+        match_nullifier2: Nullifier,
+        party0_note_commitment: NoteCommitment,
+        party0_note_ciphertext: Vec<ElGamalCiphertext>,
+        party1_note_commitment: NoteCommitment,
+        party1_note_ciphertext: Vec<ElGamalCiphertext>,
+        relayer0_note_commitment: NoteCommitment,
+        relayer0_note_ciphertext: Vec<ElGamalCiphertext>,
+        relayer1_note_commitment: NoteCommitment,
+        relayer1_note_ciphertext: Vec<ElGamalCiphertext>,
+        protocol_note_commitment: NoteCommitment,
+        protocol_note_ciphertext: Vec<ElGamalCiphertext>,
+        proof: ValidMatchEncryptBundle,
+    ) -> Result<TransactionHash, StarknetClientError> {
+        // Build the calldata
+        let mut calldata = vec![
+            Self::reduce_scalar_to_felt(&match_nullifier1),
+            Self::reduce_scalar_to_felt(&match_nullifier2),
+        ];
+        calldata.push(Self::reduce_scalar_to_felt(&party0_note_commitment));
+        calldata.append(&mut pack_serializable!(party0_note_ciphertext));
+
+        calldata.push(Self::reduce_scalar_to_felt(&party1_note_commitment));
+        calldata.append(&mut pack_serializable!(party1_note_ciphertext));
+
+        calldata.push(Self::reduce_scalar_to_felt(&relayer0_note_commitment));
+        calldata.append(&mut pack_serializable!(relayer0_note_ciphertext));
+
+        calldata.push(Self::reduce_scalar_to_felt(&relayer1_note_commitment));
+        calldata.append(&mut pack_serializable!(relayer1_note_ciphertext));
+
+        calldata.push(Self::reduce_scalar_to_felt(&protocol_note_commitment));
+        calldata.append(&mut pack_serializable!(protocol_note_ciphertext));
+
+        calldata.append(&mut pack_serializable!(proof));
+
+        // Call the contract
+        self.call_contract(Call {
+            to: self.contract_address,
+            selector: *MATCH_SELECTOR,
             calldata,
         })
         .await

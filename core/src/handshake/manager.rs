@@ -25,7 +25,10 @@ use crate::{
     starknet_client::client::StarknetClient,
     state::{new_async_shared, NetworkOrderState, OrderIdentifier, RelayerState},
     system_bus::SystemBus,
-    tasks::{driver::TaskDriver, settle_match::SettleMatchTask},
+    tasks::{
+        driver::{TaskDriver, TaskIdentifier},
+        settle_match::SettleMatchTask,
+    },
     types::{SystemBusMessage, HANDSHAKE_STATUS_TOPIC},
     CancelChannel,
 };
@@ -34,7 +37,8 @@ use super::{
     error::HandshakeManagerError,
     handshake_cache::{HandshakeCache, SharedHandshakeCache},
     jobs::HandshakeExecutionJob,
-    state::HandshakeStateIndex,
+    r#match::HandshakeResult,
+    state::{HandshakeState, HandshakeStateIndex},
     worker::HandshakeManagerConfig,
 };
 
@@ -240,15 +244,9 @@ impl HandshakeExecutor {
                 // Record the match in the cache
                 self.record_completed_match(request_id).await?;
 
-                // Submit the match to the contract
-                let task = SettleMatchTask::new(
-                    res,
-                    self.starknet_client.clone(),
-                    self.global_state.clone(),
-                    self.proof_manager_work_queue.clone(),
-                );
-                self.task_driver.start_task(task).await;
-
+                if res.is_nontrivial() {
+                    self.submit_match(order_state, res).await;
+                }
                 Ok(())
             }
 
@@ -295,7 +293,12 @@ impl HandshakeExecutor {
                 .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
             self.handshake_state_index
-                .new_handshake(request_id, peer_order_id, local_order_id)
+                .new_handshake(
+                    request_id,
+                    ConnectionRole::Dialer,
+                    peer_order_id,
+                    local_order_id,
+                )
                 .await?;
         }
 
@@ -346,7 +349,7 @@ impl HandshakeExecutor {
             // The response to ProposeMatchCandidate, indicating whether the peers should initiate an MPC; if the
             // responding peer has the proposed order pair cached it will indicate so and the two peers will abandon
             // the handshake
-            HandshakeMessage::ExecuteMatch {
+            HandshakeMessage::AcceptMatchCandidate {
                 peer_id,
                 port,
                 order1,
@@ -420,7 +423,7 @@ impl HandshakeExecutor {
 
         // Add an entry to the handshake state index
         self.handshake_state_index
-            .new_handshake(request_id, sender_order, my_order)
+            .new_handshake(request_id, ConnectionRole::Listener, sender_order, my_order)
             .await?;
 
         // Check if the order pair has previously been matched, if so notify the peer and
@@ -471,7 +474,7 @@ impl HandshakeExecutor {
             })
             .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
-        let resp = HandshakeMessage::ExecuteMatch {
+        let resp = HandshakeMessage::AcceptMatchCandidate {
             peer_id: self.global_state.local_peer_id(),
             port: local_port,
             previously_matched,
@@ -668,6 +671,59 @@ impl HandshakeExecutor {
         );
 
         Ok(())
+    }
+
+    /// Helper to spawn a task in the task driver that submits a match and settles its result
+    async fn submit_match(
+        &self,
+        handshake_state: HandshakeState,
+        match_res: HandshakeResult,
+    ) -> TaskIdentifier {
+        /// Macro helper to re-order two state elements (one for the local party
+        /// and another for the remote) by party ID in the MPC.
+        /// The proofs require that the witness variables be ordered properly
+        macro_rules! order_by_party_id {
+            ($local:expr, $remote:expr) => {
+                match handshake_state.role {
+                    ConnectionRole::Dialer => ($local, $remote),
+                    ConnectionRole::Listener => ($remote, $local),
+                }
+            };
+        }
+
+        // Re-order the match nullifiers by party
+        let (party0_nullifier, party1_nullifier) = order_by_party_id!(
+            handshake_state.local_match_nullifier,
+            handshake_state.peer_match_nullifier
+        );
+
+        // Re-order the validity proofs by party
+        let (party0_proof, party1_proof) = {
+            let locked_order_book = self.global_state.read_order_book().await;
+            let local_validity_proof = locked_order_book
+                .get_validity_proof(&handshake_state.local_order_id)
+                .await
+                .unwrap();
+            let remote_validity_proof = locked_order_book
+                .get_validity_proof(&handshake_state.peer_order_id)
+                .await
+                .unwrap();
+
+            order_by_party_id!(local_validity_proof, remote_validity_proof)
+        }; // locked_order_book released
+
+        // Submit the match to the contract
+        let task = SettleMatchTask::new(
+            match_res,
+            party0_nullifier,
+            party1_nullifier,
+            party0_proof,
+            party1_proof,
+            self.starknet_client.clone(),
+            self.global_state.clone(),
+            self.proof_manager_work_queue.clone(),
+        );
+        self.task_driver.start_task(task).await
     }
 }
 

@@ -2,7 +2,10 @@
 // TODO: Remove this lint allowance
 #![allow(dead_code)]
 
-use crate::state::{new_async_shared, AsyncShared, OrderIdentifier, RelayerState};
+use crate::{
+    gossip_api::gossip::ConnectionRole,
+    state::{new_async_shared, AsyncShared, OrderIdentifier, RelayerState},
+};
 use std::collections::{HashMap, HashSet};
 
 use super::error::HandshakeManagerError;
@@ -43,6 +46,7 @@ impl HandshakeStateIndex {
     pub async fn new_handshake(
         &self,
         request_id: Uuid,
+        role: ConnectionRole,
         peer_order_id: OrderIdentifier,
         local_order_id: OrderIdentifier,
     ) -> Result<(), HandshakeManagerError> {
@@ -72,6 +76,7 @@ impl HandshakeStateIndex {
                 request_id,
                 HandshakeState::new(
                     request_id,
+                    role,
                     peer_order_id,
                     local_order_id,
                     peer_nullifier,
@@ -198,6 +203,8 @@ pub struct HandshakeState {
     /// The request identifier of the handshake, used to uniquely identify a handshake
     /// correspondence between peers
     pub request_id: Uuid,
+    /// The role of the local peer in the MPC, dialer is party 0, listener is party 1
+    pub role: ConnectionRole,
     /// The identifier of the order that the remote peer has proposed for match
     pub peer_order_id: OrderIdentifier,
     /// The identifier of the order that the local peer has proposed for match
@@ -236,6 +243,7 @@ impl HandshakeState {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         request_id: Uuid,
+        role: ConnectionRole,
         peer_order_id: OrderIdentifier,
         local_order_id: OrderIdentifier,
         peer_match_nullifier: Scalar,
@@ -243,6 +251,7 @@ impl HandshakeState {
     ) -> Self {
         Self {
             request_id,
+            role,
             peer_order_id,
             local_order_id,
             peer_match_nullifier,

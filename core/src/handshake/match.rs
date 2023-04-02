@@ -15,6 +15,7 @@ use circuits::{
             AuthenticatedLinkableMatchResultCommitment, AuthenticatedMatchResult,
             LinkableMatchResultCommitment,
         },
+        wallet::Nullifier,
     },
     verify_collaborative_proof,
     zk_circuits::valid_match_mpc::{
@@ -44,6 +45,10 @@ use super::{error::HandshakeManagerError, manager::HandshakeExecutor, state::Han
 pub struct HandshakeResult {
     /// The plaintext, opened result of the match
     pub match_: LinkableMatchResultCommitment,
+    /// The first party's match nullifier
+    pub party0_match_nullifier: Nullifier,
+    /// The second party's match nullifier,
+    pub party1_match_nullifier: Nullifier,
     /// The collaboratively proved proof of `VALID MATCH MPC`
     pub proof: R1CSProof,
     /// The first party's fee, opened to create fee notes
@@ -62,6 +67,16 @@ pub struct HandshakeResult {
     pub pk_settle_cluster0: Scalar,
     /// The public settle key fo the cluster managing the second party's order
     pub pk_settle_cluster1: Scalar,
+}
+
+impl HandshakeResult {
+    /// Whether or not the match is non-trivial, a match is trivial if it
+    /// represents the result of running the matching engine on two orders
+    /// that do not cross. In this case the fields of the match will be
+    /// zero'd out
+    pub fn is_nontrivial(&self) -> bool {
+        self.match_.base_amount.val.ne(&Scalar::zero())
+    }
 }
 
 /// Match-centric implementations for the handshake manager
@@ -326,6 +341,8 @@ impl HandshakeExecutor {
         Ok(HandshakeResult {
             match_: match_res_open,
             proof,
+            party0_match_nullifier: handshake_state.local_match_nullifier,
+            party1_match_nullifier: handshake_state.peer_match_nullifier,
             party0_fee,
             party1_fee,
             party0_randomness_hash,
