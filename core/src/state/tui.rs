@@ -15,7 +15,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use std::{io::Stdout, thread::Builder as ThreadBuilder, time::Duration};
-use tracing::log::LevelFilter;
+use tracing::log::{self, LevelFilter};
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout},
@@ -24,7 +24,10 @@ use tui::{
     widgets::{Block, Borders, List, ListItem, Row, Table, Tabs},
     Frame, Terminal,
 };
-use tui_logger::{init_logger, TuiLoggerWidget};
+use tui_logger::{
+    init_logger, TuiLoggerLevelOutput, TuiLoggerSmartWidget, TuiLoggerWidget,
+    TuiWidgetEvent as LoggerEvent, TuiWidgetState as SmartLoggerState,
+};
 
 use std::io;
 
@@ -65,6 +68,8 @@ lazy_static! {
 pub struct StateTuiApp {
     /// The selected TUI tab
     selected_tab: AppTab,
+    /// The widget state for the smart logger
+    smart_logger_state: SmartLoggerState,
     /// A copy of the config passed to the relayer
     config: RelayerConfig,
     /// A copy of the global state to read from
@@ -113,6 +118,7 @@ impl StateTuiApp {
         init_logger(LevelFilter::Info).unwrap();
         Self {
             selected_tab: AppTab::Main,
+            smart_logger_state: SmartLoggerState::new(),
             config,
             global_state,
             terminal: RefCell::new(terminal),
@@ -142,6 +148,7 @@ impl StateTuiApp {
             // Stop the TUI when 'q' is pressed
             if crossterm::event::poll(timeout).unwrap() {
                 if let Event::Key(key) = event::read().unwrap() {
+                    log::info!("got here");
                     match key.code {
                         KeyCode::Char('q') => break,
                         // TODO: Switch tab
@@ -151,7 +158,24 @@ impl StateTuiApp {
                                 AppTab::Logs => AppTab::Main,
                             }
                         }
-                        _ => {}
+                        // Dispatch the state transition to the smart logger if
+                        // the logs tab is selected
+                        _ => {
+                            if let AppTab::Logs = self.selected_tab {
+                                let state = &mut self.smart_logger_state;
+                                match key.code {
+                                    KeyCode::Esc => state.transition(&LoggerEvent::EscapeKey),
+                                    // Vim style scrolling
+                                    KeyCode::Char('j') => {
+                                        state.transition(&LoggerEvent::NextPageKey)
+                                    }
+                                    KeyCode::Char('k') => {
+                                        state.transition(&LoggerEvent::PrevPageKey)
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -266,7 +290,7 @@ impl StateTuiApp {
         let logs_pane = chunks[1];
 
         let tab_select = self.create_tab_selection();
-        let log_widget = Self::create_log_widget();
+        let log_widget = self.create_smart_log_widget();
 
         // Render into the chunks
         frame.render_widget(tab_select, tab_select_pane);
@@ -520,5 +544,21 @@ impl StateTuiApp {
             .output_target(false)
             .output_line(false)
             .output_separator(' ')
+    }
+
+    /// Create a smart logger widget that gives more control over the log view
+    fn create_smart_log_widget<'a>(&self) -> TuiLoggerSmartWidget<'a> {
+        TuiLoggerSmartWidget::default()
+            .style_error(Style::default().fg(Color::Red))
+            .style_debug(Style::default().fg(Color::Green))
+            .style_warn(Style::default().fg(Color::Yellow))
+            .style_trace(Style::default().fg(Color::Magenta))
+            .style_info(Style::default().fg(Color::Cyan))
+            .output_separator(':')
+            .output_timestamp(Some("%H:%M:%S".to_string()))
+            .output_level(Some(TuiLoggerLevelOutput::Abbreviated))
+            .output_target(true)
+            .output_line(true)
+            .state(&self.smart_logger_state)
     }
 }
