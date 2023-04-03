@@ -22,13 +22,16 @@ use mpc_bulletproof::{
     BulletproofGens,
 };
 use rand_core::OsRng;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::{ProverError, VerifierError},
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
     types::{
+        deserialize_array,
         note::{CommittedNote, Note, NoteType, NoteVar},
         order::OrderVar,
+        serialize_array,
         wallet::{CommittedWallet, Wallet, WalletVar},
     },
     zk_gadgets::{
@@ -55,7 +58,7 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
     ValidSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    [(); 2 * MAX_BALANCES + 8 * MAX_ORDERS + 4 * MAX_FEES + 5]: Sized,
+    [(); 2 * MAX_BALANCES + 6 * MAX_ORDERS + 4 * MAX_FEES + 1]: Sized,
 {
     /// Implements the circuitry for VALID SETTLE
     #[allow(unused)]
@@ -367,7 +370,7 @@ pub struct ValidSettleWitnessVar<
 }
 
 /// A commitment to the witness type for VALID SETTLE
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidSettleWitnessCommitment<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
@@ -473,20 +476,24 @@ where
 }
 
 /// The statement type for VALID SETTLE
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidSettleStatement<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
 > where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    [(); 2 * MAX_BALANCES + 8 * MAX_ORDERS + 4 * MAX_FEES + 5]: Sized,
+    [(); 2 * MAX_BALANCES + 6 * MAX_ORDERS + 4 * MAX_FEES + 1]: Sized,
 {
     /// The commitment to the updated wallet
     pub post_wallet_commit: Scalar,
     /// The encryption of the updated wallet
+    #[serde(
+        serialize_with = "serialize_array",
+        deserialize_with = "deserialize_array"
+    )]
     pub post_wallet_ciphertext:
-        [ElGamalCiphertext; 2 * MAX_BALANCES + 8 * MAX_ORDERS + 4 * MAX_FEES + 5],
+        [ElGamalCiphertext; 2 * MAX_BALANCES + 6 * MAX_ORDERS + 4 * MAX_FEES + 1],
     /// The wallet spend nullifier of the pre-wallet
     pub wallet_spend_nullifier: Scalar,
     /// The wallet match nullifier of the pre-wallet
@@ -507,13 +514,13 @@ pub struct ValidSettleStatementVar<
     const MAX_FEES: usize,
 > where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    [(); 2 * MAX_BALANCES + 8 * MAX_ORDERS + 4 * MAX_FEES + 5]: Sized,
+    [(); 2 * MAX_BALANCES + 6 * MAX_ORDERS + 4 * MAX_FEES + 1]: Sized,
 {
     /// The commitment to the updated wallet
     pub post_wallet_commit: Variable,
     /// The encryption of the updated wallet
     pub post_wallet_ciphertext:
-        [ElGamalCiphertextVar; 2 * MAX_BALANCES + 8 * MAX_ORDERS + 4 * MAX_FEES + 5],
+        [ElGamalCiphertextVar; 2 * MAX_BALANCES + 6 * MAX_ORDERS + 4 * MAX_FEES + 1],
     /// The wallet spend nullifier of the pre-wallet
     pub wallet_spend_nullifier: Variable,
     /// The wallet match nullifier of the pre-wallet
@@ -530,7 +537,7 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> 
     for ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    [(); 2 * MAX_BALANCES + 8 * MAX_ORDERS + 4 * MAX_FEES + 5]: Sized,
+    [(); 2 * MAX_BALANCES + 6 * MAX_ORDERS + 4 * MAX_FEES + 1]: Sized,
 {
     type VarType = ValidSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type CommitType = ();
@@ -575,7 +582,7 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> 
     for ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    [(); 2 * MAX_BALANCES + 8 * MAX_ORDERS + 4 * MAX_FEES + 5]: Sized,
+    [(); 2 * MAX_BALANCES + 6 * MAX_ORDERS + 4 * MAX_FEES + 1]: Sized,
 {
     type VarType = ValidSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type ErrorType = ();
@@ -614,7 +621,7 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> 
     for ValidSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    [(); 2 * MAX_BALANCES + 8 * MAX_ORDERS + 4 * MAX_FEES + 5]: Sized,
+    [(); 2 * MAX_BALANCES + 6 * MAX_ORDERS + 4 * MAX_FEES + 1]: Sized,
 {
     type Witness = ValidSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type WitnessCommitment = ValidSettleWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
@@ -810,6 +817,7 @@ mod valid_settle_tests {
             &mut rng,
         );
 
+        // TODO: Either remove encryption, or change this to properly encrypt
         let elgamal_ciphertexts = (0..TOTAL_ENCRYPTIONS)
             .map(|_| ElGamalCiphertext {
                 partial_shared_secret: Scalar::random(&mut rng),

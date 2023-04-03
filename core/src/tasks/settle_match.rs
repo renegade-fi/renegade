@@ -15,7 +15,7 @@ use std::{
 
 use async_trait::async_trait;
 use circuits::{
-    native_helpers::compute_note_commitment,
+    native_helpers::{compute_note_commitment, compute_note_redeem_nullifier},
     types::{
         fee::LinkableFeeCommitment,
         note::{Note, NoteType},
@@ -23,8 +23,9 @@ use circuits::{
         r#match::LinkableMatchResultCommitment,
         wallet::Nullifier,
     },
-    zk_circuits::valid_match_encryption::{
-        ValidMatchEncryptionStatement, ValidMatchEncryptionWitness,
+    zk_circuits::{
+        valid_match_encryption::{ValidMatchEncryptionStatement, ValidMatchEncryptionWitness},
+        valid_settle::ValidSettleStatement,
     },
     zk_gadgets::fixed_point::FixedPoint,
     LinkableCommitment,
@@ -32,9 +33,13 @@ use circuits::{
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::{
     elgamal::encrypt_scalar,
-    fields::{biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint},
+    fields::{
+        biguint_to_prime_field, biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint,
+        scalar_to_prime_field, starknet_felt_to_biguint,
+    },
 };
 use curve25519_dalek::scalar::Scalar;
+use futures::TryFutureExt;
 use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use rand_core::OsRng;
 use serde::Serialize;
@@ -43,13 +48,17 @@ use tokio::sync::oneshot;
 use tracing::log;
 
 use crate::{
-    handshake::r#match::HandshakeResult,
+    gossip_api::gossip::ConnectionRole,
+    handshake::{r#match::HandshakeResult, state::HandshakeState},
     proof_generation::jobs::{
         ProofJob, ProofManagerJob, ValidCommitmentsBundle, ValidMatchEncryptBundle,
+        ValidSettleBundle,
     },
     starknet_client::client::StarknetClient,
     state::RelayerState,
-    PROTOCOL_FEE, PROTOCOL_SETTLE_KEY,
+    tasks::{encrypt_wallet, RANDOMNESS_INCREMENT},
+    types::{SizedValidCommitments, SizedValidSettleStatement, SizedValidSettleWitness},
+    SizedWallet, PROTOCOL_FEE, PROTOCOL_SETTLE_KEY,
 };
 
 use super::{
@@ -78,6 +87,9 @@ fn note_commit(note: &Note, receiver_key: Scalar) -> Scalar {
 
 /// Describes the settle task
 pub struct SettleMatchTask {
+    /// The state entry from the handshake manager that parameterizes the
+    /// match process
+    pub handshake_state: HandshakeState,
     /// The result of the match process
     pub handshake_result: HandshakeResult,
     /// The notes that result from the match
@@ -126,7 +138,7 @@ pub enum SettleMatchTaskState {
     /// The task is submitting the settle transaction
     SubmittingSettle {
         /// The proof of `VALID SETTLE`
-        proof: (),
+        proof: ValidSettleBundle,
     },
     /// The task is updating order proofs after the settled walled is confirmed
     UpdatingValidityProofs,
@@ -186,12 +198,12 @@ impl Task for SettleMatchTask {
             }
 
             SettleMatchTaskState::SubmittingMatch { proof } => {
-                self.submit_match(proof).await?;
+                // self.submit_match(proof).await?;
                 self.task_state = SettleMatchTaskState::ProvingSettle;
             }
 
             SettleMatchTaskState::ProvingSettle => {
-                let proof = self.prove_settle()?;
+                let proof = self.prove_settle().await?;
                 self.task_state = SettleMatchTaskState::SubmittingSettle { proof };
             }
 
@@ -234,6 +246,7 @@ impl SettleMatchTask {
     /// Constructor
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        handshake_state: HandshakeState,
         handshake_result: HandshakeResult,
         party0_match_nullifier: Nullifier,
         party1_match_nullifier: Nullifier,
@@ -255,6 +268,7 @@ impl SettleMatchTask {
         };
 
         Self {
+            handshake_state,
             handshake_result,
             match_notes,
             starknet_client,
@@ -612,6 +626,7 @@ impl SettleMatchTask {
             .await
             .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
 
+        log::info!("got tx hash: {}", starknet_felt_to_biguint(&tx_hash));
         let tx_info = self
             .starknet_client
             .poll_transaction_completed(tx_hash)
@@ -628,12 +643,97 @@ impl SettleMatchTask {
     }
 
     /// Prove `VALID SETTLE` on the transaction
-    fn prove_settle(&self) -> Result<(), SettleMatchTaskError> {
-        unimplemented!("")
+    async fn prove_settle(&self) -> Result<ValidSettleBundle, SettleMatchTaskError> {
+        // Get the wallet that holds the local order in the match
+        let old_wallet = {
+            let locked_wallet_index = self.global_state.read_wallet_index().await;
+            let wallet_id = locked_wallet_index
+                .get_wallet_for_order(&self.handshake_state.local_order_id)
+                .expect("wallet not found for order");
+            locked_wallet_index
+                .get_wallet(&wallet_id)
+                .await
+                .expect("wallet not found for order")
+        };
+
+        let my_note = match self.handshake_state.role.get_party_id() {
+            0 => &self.match_notes.party0_note,
+            1 => &self.match_notes.party1_note,
+            _ => unreachable!("party ID may only be 0 or 1"),
+        };
+
+        // TODO: Find the wallet and note commitments together to ensure they have the same root
+        // Find the wallet in the commitment tree
+        let wallet_commitment = old_wallet.get_commitment();
+        let wallet_opening = self
+            .starknet_client
+            .find_merkle_authentication_path(wallet_commitment)
+            .await
+            .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
+
+        // Find the note in the commitment tree
+        let note_commitment = compute_note_commitment(my_note, old_wallet.public_keys.pk_settle);
+        let note_redeem_nullifier = compute_note_redeem_nullifier(
+            note_commitment,
+            scalar_to_prime_field(&old_wallet.public_keys.pk_settle),
+        );
+        let note_opening = self
+            .starknet_client
+            .find_merkle_authentication_path(prime_field_to_scalar(&note_commitment))
+            .await
+            .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
+
+        // Apply the note to the wallet to get the new wallet
+        let mut new_wallet = old_wallet.apply_note(my_note);
+        new_wallet.randomness += RANDOMNESS_INCREMENT;
+
+        let new_circuit_wallet: SizedWallet = new_wallet.clone().into();
+
+        // Build the statement and witness for the proof
+        let statement = SizedValidSettleStatement {
+            post_wallet_commit: new_wallet.get_commitment(),
+            post_wallet_ciphertext: encrypt_wallet(
+                new_circuit_wallet.clone(),
+                &scalar_to_biguint(&new_wallet.public_keys.pk_view),
+            )
+            .try_into()
+            .unwrap(),
+            wallet_spend_nullifier: old_wallet.get_spend_nullifier(),
+            wallet_match_nullifier: old_wallet.get_match_nullifier(),
+            note_redeem_nullifier: prime_field_to_scalar(&note_redeem_nullifier),
+            merkle_root: note_opening.compute_root(),
+            type_: NoteType::Match,
+        };
+
+        let sk_settle = old_wallet.secret_keys.sk_settle;
+        let witness = SizedValidSettleWitness {
+            pre_wallet: old_wallet.into(),
+            pre_wallet_opening: wallet_opening.into(),
+            post_wallet: new_circuit_wallet,
+            note: my_note.clone(),
+            note_commitment: prime_field_to_scalar(&note_commitment),
+            note_opening: note_opening.into(),
+            sk_settle,
+        };
+
+        // Enqueue a job with the proof manager to prove `VALID SETTLE`
+        let (response_sender, response_receiver) = oneshot::channel();
+        self.proof_manager_work_queue
+            .send(ProofManagerJob {
+                type_: ProofJob::ValidSettle { witness, statement },
+                response_channel: response_sender,
+            })
+            .map_err(|err| SettleMatchTaskError::SendMessage(err.to_string()))?;
+
+        response_receiver
+            .await
+            .map(|proof_bundle| proof_bundle.into())
+            .map_err(|err| SettleMatchTaskError::ProofGeneration(err.to_string()))
     }
 
     /// Submit the settle transaction to the contract
-    fn submit_settle(&self, proof: ()) -> Result<(), SettleMatchTaskError> {
+    fn submit_settle(&self, proof: ValidSettleBundle) -> Result<(), SettleMatchTaskError> {
+        log::info!("got to submit_settle");
         unimplemented!("")
     }
 

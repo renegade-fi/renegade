@@ -13,6 +13,7 @@ use circuits::{
         valid_match_encryption::{
             ValidMatchEncryption, ValidMatchEncryptionStatement, ValidMatchEncryptionWitness,
         },
+        valid_settle::ValidSettle,
         valid_wallet_create::{
             ValidWalletCreate, ValidWalletCreateStatement, ValidWalletCreateWitness,
         },
@@ -29,7 +30,10 @@ use tracing::log;
 
 use crate::{
     proof_generation::jobs::ProofJob,
-    types::{SizedValidCommitmentsWitness, SizedValidWalletUpdateWitness},
+    types::{
+        SizedValidCommitmentsWitness, SizedValidSettleStatement, SizedValidSettleWitness,
+        SizedValidWalletUpdateWitness,
+    },
     CancelChannel, SizedWallet, MAX_FEES,
 };
 
@@ -37,7 +41,7 @@ use super::{
     error::ProofManagerError,
     jobs::{
         ProofBundle, ProofManagerJob, ValidCommitmentsBundle, ValidMatchEncryptBundle,
-        ValidWalletCreateBundle, ValidWalletUpdateBundle,
+        ValidSettleBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
     },
 };
 
@@ -139,6 +143,14 @@ impl ProofManager {
                     .send(ProofBundle::ValidMatchEncryption(proof_bundle))
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
             }
+
+            ProofJob::ValidSettle { witness, statement } => {
+                // Prove `VALID SETTLE`
+                let proof_bundle = Self::prove_valid_settle(statement, witness)?;
+                job.response_channel
+                    .send(ProofBundle::ValidSettle(proof_bundle))
+                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
+            }
         }
     }
 
@@ -238,6 +250,23 @@ impl ProofManager {
             .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
         Ok(ValidMatchEncryptBundle {
+            commitment: witness_comm,
+            statement,
+            proof,
+        })
+    }
+
+    /// Create a proof of `VALID SETTLE`
+    fn prove_valid_settle(
+        statement: SizedValidSettleStatement,
+        witness: SizedValidSettleWitness,
+    ) -> Result<ValidSettleBundle, ProofManagerError> {
+        let (witness_comm, proof) = singleprover_prove::<
+            ValidSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        >(witness, statement.clone())
+        .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+
+        Ok(ValidSettleBundle {
             commitment: witness_comm,
             statement,
             proof,
