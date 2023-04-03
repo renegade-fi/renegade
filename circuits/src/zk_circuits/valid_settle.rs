@@ -704,7 +704,7 @@ mod valid_settle_tests {
     use super::{ValidSettle, ValidSettleStatement, ValidSettleWitness};
 
     const MERKLE_HEIGHT: usize = 3;
-    const TOTAL_ENCRYPTIONS: usize = 2 * MAX_BALANCES + 8 * MAX_ORDERS + 4 * MAX_FEES + 5;
+    const TOTAL_ENCRYPTIONS: usize = 2 * MAX_BALANCES + 6 * MAX_ORDERS + 4 * MAX_FEES + 1;
 
     // --------------
     // | Dummy Data |

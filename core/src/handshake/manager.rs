@@ -723,7 +723,8 @@ impl HandshakeExecutor {
             self.starknet_client.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
-        );
+        )
+        .await;
         self.task_driver.start_task(task).await
     }
 }

@@ -45,7 +45,8 @@ use tracing::log;
 
 use crate::{
     proof_generation::jobs::{
-        ValidMatchEncryptBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
+        ValidMatchEncryptBundle, ValidSettleBundle, ValidWalletCreateBundle,
+        ValidWalletUpdateBundle,
     },
     starknet_client::{
         INTERNAL_NODE_CHANGED_EVENT_SELECTOR, MATCH_SELECTOR, NEW_WALLET_SELECTOR,
@@ -57,6 +58,7 @@ use crate::{
 
 use super::{
     error::StarknetClientError, types::ExternalTransfer, ChainId, DEFAULT_AUTHENTICATION_PATH,
+    SETTLE_SELECTOR,
 };
 
 /// A type alias for a felt that represents a transaction hash
@@ -605,6 +607,38 @@ impl StarknetClient {
         self.call_contract(Call {
             to: self.contract_address,
             selector: *MATCH_SELECTOR,
+            calldata,
+        })
+        .await
+    }
+
+    /// Submit a `settle` transaction to the contract
+    ///
+    /// Returns the transaction hash of the call
+    pub async fn submit_settle(
+        &self,
+        new_wallet_commit: WalletCommitment,
+        old_match_nullifier: Nullifier,
+        old_spend_nullifier: Nullifier,
+        note_redeem_nullifier: Nullifier,
+        wallet_ciphertext: Vec<ElGamalCiphertext>,
+        proof: ValidSettleBundle,
+    ) -> Result<TransactionHash, StarknetClientError> {
+        let mut calldata = vec![
+            StarknetFieldElement::from(0u8), // from_internal_transfer
+            Self::reduce_scalar_to_felt(&new_wallet_commit),
+            Self::reduce_scalar_to_felt(&old_match_nullifier),
+            Self::reduce_scalar_to_felt(&old_spend_nullifier),
+            Self::reduce_scalar_to_felt(&note_redeem_nullifier),
+        ];
+
+        calldata.append(&mut pack_serializable!(wallet_ciphertext));
+        calldata.append(&mut pack_serializable!(proof));
+
+        // Call the `settle` contract function
+        self.call_contract(Call {
+            to: self.contract_address,
+            selector: *SETTLE_SELECTOR,
             calldata,
         })
         .await

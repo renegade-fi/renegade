@@ -164,6 +164,7 @@ impl StateTuiApp {
                                 let state = &mut self.smart_logger_state;
                                 match key.code {
                                     KeyCode::Esc => state.transition(&LoggerEvent::EscapeKey),
+                                    KeyCode::Char('h') => state.transition(&LoggerEvent::HideKey),
                                     // Vim style scrolling
                                     KeyCode::Char('j') => {
                                         state.transition(&LoggerEvent::NextPageKey)
