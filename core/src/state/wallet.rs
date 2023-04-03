@@ -18,6 +18,7 @@ use circuits::{
         balance::Balance,
         fee::Fee,
         keychain::{KeyChain, NUM_KEYS},
+        note::Note,
         order::{Order, OrderSide},
         wallet::{Nullifier, Wallet as CircuitWallet, WalletCommitment},
     },
@@ -475,6 +476,34 @@ impl Wallet {
         }
 
         Some((balance.clone(), fee.clone(), fee_balance.clone()))
+    }
+
+    /// Apply a note to the wallet, returning an updated wallet
+    pub fn apply_note(&self, note: &Note) -> Wallet {
+        let mut new_wallet = self.clone();
+
+        new_wallet.apply_balance_update(note.mint1.clone(), note.volume1, note.direction1);
+        new_wallet.apply_balance_update(note.mint2.clone(), note.volume2, note.direction2);
+        new_wallet.apply_balance_update(note.fee_mint.clone(), note.fee_volume, note.fee_direction);
+
+        new_wallet
+    }
+
+    /// Helper to apply a balance update within a note to the wallet
+    fn apply_balance_update(&mut self, mint: BigUint, volume: u64, direction: OrderSide) {
+        let existing_amount = &mut self
+            .balances
+            .entry(mint.clone())
+            .or_insert(Balance { mint, amount: 0 })
+            .amount;
+
+        match direction {
+            OrderSide::Buy => *existing_amount += volume,
+            OrderSide::Sell => {
+                // Allow the operation to panic on underflow, we can handle this explicitly if needed down the road
+                *existing_amount -= volume;
+            }
+        };
     }
 }
 

@@ -12,6 +12,7 @@ use circuits::{
             ValidMatchEncryptionStatement, ValidMatchEncryptionWitness,
             ValidMatchEncryptionWitnessCommitment,
         },
+        valid_settle::{ValidSettleStatement, ValidSettleWitnessCommitment},
         valid_wallet_create::{ValidWalletCreateCommitment, ValidWalletCreateStatement},
         valid_wallet_update::{ValidWalletUpdateStatement, ValidWalletUpdateWitnessCommitment},
     },
@@ -22,7 +23,10 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot::Sender;
 
 use crate::{
-    types::{SizedValidCommitmentsWitness, SizedValidWalletUpdateWitness},
+    types::{
+        SizedValidCommitmentsWitness, SizedValidSettleStatement, SizedValidSettleWitness,
+        SizedValidWalletUpdateWitness,
+    },
     MAX_BALANCES, MAX_FEES, MAX_ORDERS,
 };
 
@@ -93,6 +97,27 @@ pub struct ValidMatchEncryptBundle {
     pub proof: R1CSProof,
 }
 
+/// The response type for a request to generate a proof of `VALID SETTLE`
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenericValidSettleBundle<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+    const MAX_FEES: usize,
+> where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); 2 * MAX_BALANCES + 6 * MAX_ORDERS + 4 * MAX_FEES + 1]: Sized,
+{
+    /// A commitment to the witness type of `VALID SETTLE`
+    pub commitment: ValidSettleWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    /// The statement (public variables) used to prove `VALID SETTLE`
+    pub statement: ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    /// The proof itself
+    pub proof: R1CSProof,
+}
+
+/// A type alias that specifies default generics for `GenericValidSettleBundle`
+pub type ValidSettleBundle = GenericValidSettleBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+
 /// The bundle returned by the proof generation module
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant, clippy::enum_variant_names)]
@@ -105,6 +130,8 @@ pub enum ProofBundle {
     ValidWalletUpdate(ValidWalletUpdateBundle),
     /// A witness commitment, statement, and proof of `VALID MATCH ENCRYPTION`
     ValidMatchEncryption(ValidMatchEncryptBundle),
+    /// A witness commitment, statement, and proof of `VALID SETTLE`
+    ValidSettle(ValidSettleBundle),
 }
 
 /// Unsafe cast implementations, will panic if type is incorrect
@@ -150,9 +177,19 @@ impl From<ProofBundle> for ValidMatchEncryptBundle {
             b
         } else {
             panic!(
-                "Proof bundle is not of type ValidWalletCreate: {:?}",
+                "Proof bundle is not of type ValidMatchEncrypt: {:?}",
                 bundle
             )
+        }
+    }
+}
+
+impl From<ProofBundle> for ValidSettleBundle {
+    fn from(bundle: ProofBundle) -> Self {
+        if let ProofBundle::ValidSettle(b) = bundle {
+            b
+        } else {
+            panic!("Proof bundle is not of type ValidSettle: {:?}", bundle)
         }
     }
 }
@@ -208,11 +245,17 @@ pub enum ProofJob {
     /// The statement and witness types are complicated enough for `VALID MATCH ENCRYPTION`
     /// that we don't bother constructing them in the proof manager; this responsibility is
     /// passed to the caller; so the job definition directly stores the witness and statement
-    #[allow(unused)]
     ValidMatchEncrypt {
         /// The witness to use in the proof of `VALID MATCH ENCRYPTION`
         witness: ValidMatchEncryptionWitness,
         /// The statement (public variables) to use in the proof of `VALID MATCH ENCRYPTION`
         statement: ValidMatchEncryptionStatement,
+    },
+    /// A request to create a proof of `VALID SETTLE` for a note applied ot a wallet
+    ValidSettle {
+        /// The witness to use in the proof of `VALID SETTLE`
+        witness: SizedValidSettleWitness,
+        /// The statement (public variables) to use in the proof of `VALID SETTLE`
+        statement: SizedValidSettleStatement,
     },
 }

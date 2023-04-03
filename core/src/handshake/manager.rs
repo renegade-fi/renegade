@@ -714,6 +714,7 @@ impl HandshakeExecutor {
 
         // Submit the match to the contract
         let task = SettleMatchTask::new(
+            handshake_state,
             match_res,
             party0_nullifier,
             party1_nullifier,

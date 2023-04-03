@@ -2,7 +2,7 @@
 
 use circuits::zk_circuits::{
     valid_commitments::{ValidCommitments, ValidCommitmentsWitness},
-    valid_wallet_update::ValidWalletUpdateWitness,
+    valid_wallet_update::ValidWalletUpdateWitness, valid_settle::{ValidSettleStatement, ValidSettleWitness},
 };
 use serde::{Deserialize, Serialize};
 
@@ -23,6 +23,10 @@ pub type SizedValidCommitmentsWitness = ValidCommitmentsWitness<MAX_BALANCES, MA
 /// A `VALID WALLET UPDATE` witness with default const generic sizing parameters
 pub type SizedValidWalletUpdateWitness =
     ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+/// A `VALID SETTLE` statement with default const generic sizing parameters
+pub type SizedValidSettleStatement = ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+/// A `VALID SETTLE` witness with default const generic sizing parameters
+pub type SizedValidSettleWitness = ValidSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 // ----------------------
 // | Pubsub Topic Names |
