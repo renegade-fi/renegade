@@ -2,7 +2,8 @@
 
 use circuits::zk_circuits::{
     valid_commitments::{ValidCommitments, ValidCommitmentsWitness},
-    valid_wallet_update::ValidWalletUpdateWitness, valid_settle::{ValidSettleStatement, ValidSettleWitness},
+    valid_settle::{ValidSettleStatement, ValidSettleWitness},
+    valid_wallet_update::ValidWalletUpdateWitness,
 };
 use serde::{Deserialize, Serialize};
 

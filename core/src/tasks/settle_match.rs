@@ -55,7 +55,7 @@ use crate::{
         ValidSettleBundle,
     },
     starknet_client::client::StarknetClient,
-    state::RelayerState,
+    state::{wallet::Wallet, RelayerState},
     tasks::{encrypt_wallet, RANDOMNESS_INCREMENT},
     types::{SizedValidCommitments, SizedValidSettleStatement, SizedValidSettleWitness},
     SizedWallet, PROTOCOL_FEE, PROTOCOL_SETTLE_KEY,
@@ -94,6 +94,12 @@ pub struct SettleMatchTask {
     pub handshake_result: HandshakeResult,
     /// The notes that result from the match
     pub match_notes: MatchNotes,
+    /// The note that settles into the local wallet
+    pub my_note: Note,
+    /// The local wallet before a note is settled into it
+    pub old_wallet: Wallet,
+    /// The local wallet after settling a note into it
+    pub new_wallet: Wallet,
     /// The starknet client to use for submitting transactions
     pub starknet_client: StarknetClient,
     /// A copy of the relayer-global state
@@ -193,8 +199,9 @@ impl Task for SettleMatchTask {
             }
 
             SettleMatchTaskState::ProvingEncryption => {
-                let proof = self.prove_encryption().await?;
-                self.task_state = SettleMatchTaskState::SubmittingMatch { proof };
+                // let proof = self.prove_encryption().await?;
+                // self.task_state = SettleMatchTaskState::SubmittingMatch { proof };
+                self.task_state = SettleMatchTaskState::ProvingSettle;
             }
 
             SettleMatchTaskState::SubmittingMatch { proof } => {
@@ -208,12 +215,12 @@ impl Task for SettleMatchTask {
             }
 
             SettleMatchTaskState::SubmittingSettle { proof } => {
-                self.submit_settle(proof)?;
+                self.submit_settle(proof).await?;
                 self.task_state = SettleMatchTaskState::UpdatingValidityProofs;
             }
 
             SettleMatchTaskState::UpdatingValidityProofs => {
-                self.update_validity_proofs()?;
+                self.update_validity_proofs().await?;
                 self.task_state = SettleMatchTaskState::Completed;
             }
 
@@ -245,7 +252,7 @@ impl Task for SettleMatchTask {
 impl SettleMatchTask {
     /// Constructor
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub async fn new(
         handshake_state: HandshakeState,
         handshake_result: HandshakeResult,
         party0_match_nullifier: Nullifier,
@@ -267,10 +274,36 @@ impl SettleMatchTask {
             protocol_note,
         };
 
+        // Get a copy of the old wallet from the global state, apply the note to it, and
+        // store both the new and old wallet
+
+        let old_wallet = {
+            let locked_wallet_index = global_state.read_wallet_index().await;
+            let wallet_id = locked_wallet_index
+                .get_wallet_for_order(&handshake_state.local_order_id)
+                .expect("wallet not found for order");
+            locked_wallet_index
+                .get_wallet(&wallet_id)
+                .await
+                .expect("wallet not found for order")
+        };
+
+        let my_note = match handshake_state.role.get_party_id() {
+            0 => match_notes.party0_note.clone(),
+            1 => match_notes.party1_note.clone(),
+            _ => unreachable!("party ID may only be 0 or 1"),
+        };
+
+        let mut new_wallet = old_wallet.apply_note(&my_note);
+        new_wallet.randomness += RANDOMNESS_INCREMENT;
+
         Self {
             handshake_state,
             handshake_result,
             match_notes,
+            my_note,
+            old_wallet,
+            new_wallet,
             starknet_client,
             global_state,
             proof_manager_work_queue,
@@ -644,18 +677,6 @@ impl SettleMatchTask {
 
     /// Prove `VALID SETTLE` on the transaction
     async fn prove_settle(&self) -> Result<ValidSettleBundle, SettleMatchTaskError> {
-        // Get the wallet that holds the local order in the match
-        let old_wallet = {
-            let locked_wallet_index = self.global_state.read_wallet_index().await;
-            let wallet_id = locked_wallet_index
-                .get_wallet_for_order(&self.handshake_state.local_order_id)
-                .expect("wallet not found for order");
-            locked_wallet_index
-                .get_wallet(&wallet_id)
-                .await
-                .expect("wallet not found for order")
-        };
-
         let my_note = match self.handshake_state.role.get_party_id() {
             0 => &self.match_notes.party0_note,
             1 => &self.match_notes.party1_note,
@@ -664,7 +685,7 @@ impl SettleMatchTask {
 
         // TODO: Find the wallet and note commitments together to ensure they have the same root
         // Find the wallet in the commitment tree
-        let wallet_commitment = old_wallet.get_commitment();
+        let wallet_commitment = self.old_wallet.get_commitment();
         let wallet_opening = self
             .starknet_client
             .find_merkle_authentication_path(wallet_commitment)
@@ -672,10 +693,11 @@ impl SettleMatchTask {
             .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
 
         // Find the note in the commitment tree
-        let note_commitment = compute_note_commitment(my_note, old_wallet.public_keys.pk_settle);
+        let note_commitment =
+            compute_note_commitment(my_note, self.old_wallet.public_keys.pk_settle);
         let note_redeem_nullifier = compute_note_redeem_nullifier(
             note_commitment,
-            scalar_to_prime_field(&old_wallet.public_keys.pk_settle),
+            scalar_to_prime_field(&self.old_wallet.public_keys.pk_settle),
         );
         let note_opening = self
             .starknet_client
@@ -683,31 +705,27 @@ impl SettleMatchTask {
             .await
             .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
 
-        // Apply the note to the wallet to get the new wallet
-        let mut new_wallet = old_wallet.apply_note(my_note);
-        new_wallet.randomness += RANDOMNESS_INCREMENT;
-
-        let new_circuit_wallet: SizedWallet = new_wallet.clone().into();
+        let new_circuit_wallet: SizedWallet = self.new_wallet.clone().into();
 
         // Build the statement and witness for the proof
         let statement = SizedValidSettleStatement {
-            post_wallet_commit: new_wallet.get_commitment(),
+            post_wallet_commit: self.new_wallet.get_commitment(),
             post_wallet_ciphertext: encrypt_wallet(
                 new_circuit_wallet.clone(),
-                &scalar_to_biguint(&new_wallet.public_keys.pk_view),
+                &scalar_to_biguint(&self.new_wallet.public_keys.pk_view),
             )
             .try_into()
             .unwrap(),
-            wallet_spend_nullifier: old_wallet.get_spend_nullifier(),
-            wallet_match_nullifier: old_wallet.get_match_nullifier(),
+            wallet_spend_nullifier: self.old_wallet.get_spend_nullifier(),
+            wallet_match_nullifier: self.old_wallet.get_match_nullifier(),
             note_redeem_nullifier: prime_field_to_scalar(&note_redeem_nullifier),
             merkle_root: note_opening.compute_root(),
             type_: NoteType::Match,
         };
 
-        let sk_settle = old_wallet.secret_keys.sk_settle;
+        let sk_settle = self.old_wallet.secret_keys.sk_settle;
         let witness = SizedValidSettleWitness {
-            pre_wallet: old_wallet.into(),
+            pre_wallet: self.old_wallet.clone().into(),
             pre_wallet_opening: wallet_opening.into(),
             post_wallet: new_circuit_wallet,
             note: my_note.clone(),
@@ -732,13 +750,48 @@ impl SettleMatchTask {
     }
 
     /// Submit the settle transaction to the contract
-    fn submit_settle(&self, proof: ValidSettleBundle) -> Result<(), SettleMatchTaskError> {
-        log::info!("got to submit_settle");
-        unimplemented!("")
+    async fn submit_settle(&self, proof: ValidSettleBundle) -> Result<(), SettleMatchTaskError> {
+        let note_commitment =
+            compute_note_commitment(&self.my_note, self.old_wallet.public_keys.pk_settle);
+        let wallet_ciphertext = encrypt_wallet(
+            self.new_wallet.clone().into(),
+            &scalar_to_biguint(&self.new_wallet.public_keys.pk_view),
+        );
+
+        // Submit the transaction and await success
+        let mut rng = OsRng {};
+        let tx_hash = self
+            .starknet_client
+            .submit_settle(
+                self.new_wallet.get_commitment(),
+                self.old_wallet.get_match_nullifier() + Scalar::random(&mut rng),
+                self.old_wallet.get_spend_nullifier() + Scalar::random(&mut rng),
+                prime_field_to_scalar(&note_commitment),
+                wallet_ciphertext,
+                proof,
+            )
+            .await
+            .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
+
+        log::info!("got tx hash: {}", starknet_felt_to_biguint(&tx_hash));
+
+        let tx_result = self
+            .starknet_client
+            .poll_transaction_completed(tx_hash)
+            .await
+            .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
+
+        if let TransactionStatus::Rejected = tx_result.status {
+            return Err(SettleMatchTaskError::StarknetClient(
+                ERR_TRANSACTION_FAILED.to_string(),
+            ));
+        }
+
+        Ok(())
     }
 
     /// Update the validity proofs for all orders in the wallet after settlement
-    fn update_validity_proofs(&self) -> Result<(), SettleMatchTaskError> {
+    async fn update_validity_proofs(&self) -> Result<(), SettleMatchTaskError> {
         unimplemented!("")
     }
 }

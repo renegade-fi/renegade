@@ -31,6 +31,9 @@ lazy_static! {
     /// Contract function selector to submit a match, encumbering two wallets
     static ref MATCH_SELECTOR: StarknetFieldElement = get_selector_from_name("match")
         .unwrap();
+    /// Contract function selector to settle a note into a wallet
+    static ref SETTLE_SELECTOR: StarknetFieldElement = get_selector_from_name("settle")
+        .unwrap();
 
     /// The event selector for internal node changes
     pub static ref INTERNAL_NODE_CHANGED_EVENT_SELECTOR: StarknetFieldElement =
