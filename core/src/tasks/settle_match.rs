@@ -9,25 +9,29 @@
 #![allow(unused)]
 
 use std::{
+    collections::HashMap,
     convert::TryInto,
     fmt::{Display, Formatter, Result as FmtResult},
 };
 
 use async_trait::async_trait;
 use circuits::{
-    native_helpers::{compute_note_commitment, compute_note_redeem_nullifier},
+    native_helpers::{
+        compute_note_commitment, compute_note_redeem_nullifier, compute_poseidon_hash,
+    },
     types::{
         fee::LinkableFeeCommitment,
         note::{Note, NoteType},
-        order::OrderSide,
+        order::{Order as CircuitOrder, OrderSide},
         r#match::LinkableMatchResultCommitment,
         wallet::Nullifier,
     },
     zk_circuits::{
+        valid_commitments::ValidCommitmentsStatement,
         valid_match_encryption::{ValidMatchEncryptionStatement, ValidMatchEncryptionWitness},
         valid_settle::ValidSettleStatement,
     },
-    zk_gadgets::fixed_point::FixedPoint,
+    zk_gadgets::{fixed_point::FixedPoint, merkle::MerkleOpening},
     LinkableCommitment,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
@@ -55,9 +59,12 @@ use crate::{
         ValidSettleBundle,
     },
     starknet_client::client::StarknetClient,
-    state::{wallet::Wallet, RelayerState},
+    state::{wallet::Wallet, NetworkOrder, NetworkOrderState, OrderIdentifier, RelayerState},
     tasks::{encrypt_wallet, RANDOMNESS_INCREMENT},
-    types::{SizedValidCommitments, SizedValidSettleStatement, SizedValidSettleWitness},
+    types::{
+        SizedValidCommitments, SizedValidCommitmentsWitness, SizedValidSettleStatement,
+        SizedValidSettleWitness,
+    },
     SizedWallet, PROTOCOL_FEE, PROTOCOL_SETTLE_KEY,
 };
 
@@ -792,6 +799,147 @@ impl SettleMatchTask {
 
     /// Update the validity proofs for all orders in the wallet after settlement
     async fn update_validity_proofs(&self) -> Result<(), SettleMatchTaskError> {
-        unimplemented!("")
+        // Find the new wallet in the Merkle state
+        let authentication_path = self
+            .starknet_client
+            .find_merkle_authentication_path(self.new_wallet.get_commitment())
+            .await
+            .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
+        let new_root = authentication_path.compute_root();
+        log::info!("found merkle path in contract state");
+
+        // A wallet that is compatible with circuit types
+        let circuit_wallet: SizedWallet = self.new_wallet.clone().into();
+        let randomness_hash = compute_poseidon_hash(&[circuit_wallet.randomness]);
+        let wallet_opening: MerkleOpening = authentication_path.into();
+
+        // The statement in `VALID COMMITMENTS` is only parameterized by wallet-specific variables;
+        // so we construct it once and use it for all order commitment proofs
+        let new_statement = ValidCommitmentsStatement {
+            nullifier: self.new_wallet.get_match_nullifier(),
+            merkle_root: new_root,
+            pk_settle: self.new_wallet.public_keys.pk_settle,
+        };
+
+        // Request that the proof manager prove `VALID COMMITMENTS` for each order
+        let mut proof_response_channels = HashMap::new();
+        for (order_id, order) in self.new_wallet.orders.clone().into_iter() {
+            // Build a witness for this order's validity proof
+            let witness = if let Some(witness) = self
+                .get_witness_for_order(
+                    order,
+                    circuit_wallet.clone(),
+                    wallet_opening.clone(),
+                    randomness_hash,
+                    self.new_wallet.secret_keys.sk_match,
+                )
+                .await
+            {
+                witness
+            } else {
+                log::error!("could not find witness for order {order_id}, skipping...");
+                continue;
+            };
+
+            // Send a job to the proof manager to prove `VALID COMMITMENTS` for this wallet
+            let (response_sender, response_receiver) = oneshot::channel();
+            self.proof_manager_work_queue
+                .send(ProofManagerJob {
+                    type_: ProofJob::ValidCommitments {
+                        witness: witness.clone(),
+                        statement: new_statement,
+                    },
+                    response_channel: response_sender,
+                })
+                .map_err(|err| SettleMatchTaskError::SendMessage(err.to_string()))?;
+
+            proof_response_channels.insert(order_id, (response_receiver, witness));
+        }
+
+        // Await proofs for all orders
+        for (order_id, (proof_channel, witness)) in proof_response_channels.into_iter() {
+            let proof = proof_channel
+                .await
+                .map_err(|err| SettleMatchTaskError::ProofGeneration(err.to_string()))?;
+            log::info!("got proof for order {order_id}");
+
+            // Update the global state of the order
+            self.update_order_state(order_id, proof.into(), witness)
+                .await;
+        }
+
+        // Update the wallet in the global state
+        self.global_state
+            .update_wallet(self.new_wallet.clone())
+            .await;
+
+        Ok(())
+    }
+
+    /// Generate a `VALID COMMITMENTS` witness for the given order
+    ///
+    /// This will use the old witness -- modifying it appropriately -- if one exists,
+    /// otherwise, it will create a brand new witness
+    #[allow(clippy::too_many_arguments)]
+    async fn get_witness_for_order(
+        &self,
+        order: CircuitOrder,
+        wallet: SizedWallet,
+        wallet_opening: MerkleOpening,
+        randomness_hash: Scalar,
+        sk_match: Scalar,
+    ) -> Option<SizedValidCommitmentsWitness> {
+        // Always recreate the witness anew, even if a witness previously existed
+        // The balances used in a witness may have changes so it is easier to just
+        // recreate the witness
+        let (balance, fee, fee_balance) = self.new_wallet.get_balance_and_fee_for_order(&order)?;
+        Some(SizedValidCommitmentsWitness {
+            wallet,
+            order: order.into(),
+            balance: balance.into(),
+            fee: fee.into(),
+            fee_balance: fee_balance.into(),
+            wallet_opening,
+            randomness_hash: randomness_hash.into(),
+            sk_match,
+        })
+    }
+
+    /// Update the order in the state
+    async fn update_order_state(
+        &self,
+        order_id: OrderIdentifier,
+        proof: ValidCommitmentsBundle,
+        witness: SizedValidCommitmentsWitness,
+    ) {
+        // If the order does not currently exist in the book, add it
+        if !self
+            .global_state
+            .read_order_book()
+            .await
+            .contains_order(&order_id)
+        {
+            self.global_state
+                .add_order(NetworkOrder {
+                    id: order_id,
+                    match_nullifier: self.new_wallet.get_match_nullifier(),
+                    local: true,
+                    cluster: self.global_state.local_cluster_id.clone(),
+                    state: NetworkOrderState::Verified,
+                    valid_commit_proof: Some(proof),
+                    valid_commit_witness: Some(witness),
+                })
+                .await;
+        } else {
+            // Otherwise, update the existing proof
+            self.global_state
+                .add_order_validity_proof(&order_id, proof)
+                .await;
+            self.global_state
+                .read_order_book()
+                .await
+                .attach_validity_proof_witness(&order_id, witness)
+                .await;
+        }
     }
 }
