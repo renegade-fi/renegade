@@ -12,9 +12,13 @@
             }
         },
         "balances": {
+            "0x049D36570D4e46f48e99674bd3fcc84644DdD6b96F7C741B1562B82f9e004dC7": {
+                "mint": "0x049D36570D4e46f48e99674bd3fcc84644DdD6b96F7C741B1562B82f9e004dC7",
+                "amount": 200
+            },
             "0x2": {
                 "mint": "0x2",
-                "amount": 200
+                "amount": 10
             }
         },
         "fees": [

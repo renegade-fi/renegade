@@ -1,6 +1,5 @@
 //! Groups state object definitions and handles logic for serializing access to shared
 //! global state elements
-mod initialize;
 mod orderbook;
 pub mod peers;
 mod priority;

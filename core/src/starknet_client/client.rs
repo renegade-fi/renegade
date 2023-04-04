@@ -384,6 +384,7 @@ impl StarknetClient {
                 }
             },
             vec![*INTERNAL_NODE_CHANGED_EVENT_SELECTOR],
+            false, /* pending */
         )
         .await?;
 
@@ -420,6 +421,7 @@ impl StarknetClient {
                 Ok(None)
             },
             vec![*VALUE_INSERTED_EVENT_SELECTOR],
+            false, /* pending */
         )
         .await?
         .ok_or_else(|| {
@@ -435,10 +437,16 @@ impl StarknetClient {
         &self,
         mut handler: impl FnMut(EmittedEvent) -> Result<Option<T>, StarknetClientError>,
         event_keys: Vec<StarknetFieldElement>,
+        pending: bool,
     ) -> Result<Option<T>, StarknetClientError> {
         // Paginate backwards in block history
         let mut start_block = self.get_block_number().await? - BLOCK_PAGINATION_WINDOW;
-        let mut end_block = BlockId::Tag(BlockTag::Pending);
+        let mut end_block = if pending {
+            BlockId::Tag(BlockTag::Pending)
+        } else {
+            BlockId::Number(self.get_block_number().await?)
+        };
+
         let keys = if event_keys.is_empty() {
             None
         } else {

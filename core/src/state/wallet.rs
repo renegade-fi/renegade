@@ -605,22 +605,6 @@ impl WalletIndex {
         res
     }
 
-    /// Get a balance and a fee for a given order in a given wallet
-    ///
-    /// Returns a 4-tuple of (order, balance, fee, fee_balance) where fee_balance is the
-    /// balance used to cover the payable fee
-    pub async fn get_order_balance_and_fee(
-        &self,
-        wallet_id: &Uuid,
-        order_id: &OrderIdentifier,
-    ) -> Option<(Order, Balance, Fee, Balance)> {
-        let locked_wallet = self.read_wallet(wallet_id).await?;
-        let order = locked_wallet.orders.get(order_id)?.clone();
-        let (balance, fee, fee_balance) = locked_wallet.get_balance_and_fee_for_order(&order)?;
-
-        Some((order, balance, fee, fee_balance))
-    }
-
     // -----------
     // | Setters |
     // -----------

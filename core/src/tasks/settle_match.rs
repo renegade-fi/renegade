@@ -206,13 +206,12 @@ impl Task for SettleMatchTask {
             }
 
             SettleMatchTaskState::ProvingEncryption => {
-                // let proof = self.prove_encryption().await?;
-                // self.task_state = SettleMatchTaskState::SubmittingMatch { proof };
-                self.task_state = SettleMatchTaskState::ProvingSettle;
+                let proof = self.prove_encryption().await?;
+                self.task_state = SettleMatchTaskState::SubmittingMatch { proof };
             }
 
             SettleMatchTaskState::SubmittingMatch { proof } => {
-                // self.submit_match(proof).await?;
+                self.submit_match(proof).await?;
                 self.task_state = SettleMatchTaskState::ProvingSettle;
             }
 

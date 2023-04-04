@@ -12,8 +12,6 @@ pub enum CoordinatorError {
     CancelSend(String),
     /// Failure to parse config correctly
     ConfigParse(String),
-    /// Failure to initialize the on-chain state index
-    StateInit(String),
 }
 
 impl Error for CoordinatorError {}

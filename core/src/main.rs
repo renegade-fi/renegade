@@ -58,7 +58,7 @@ use crate::{
     starknet_client::client::{StarknetClient, StarknetClientConfig},
     state::RelayerState,
     system_bus::SystemBus,
-    tasks::driver::TaskDriver,
+    tasks::{driver::TaskDriver, initialize_state::InitializeStateTask},
     types::SystemBusMessage,
     worker::{watch_worker, Worker},
 };
@@ -186,17 +186,19 @@ async fn main() -> Result<(), CoordinatorError> {
         starknet_pkey: args.starknet_private_key,
     });
 
+    // Build a task driver that may be used to spawn long-lived asynchronous tasks that
+    // are common among workers
+    let task_driver = TaskDriver::new();
+
     // Spawn a thread to sync the relayer-global state with on-chain state and
     // network state
-    global_state.initialize(
+    let task = InitializeStateTask::new(
+        global_state.clone(),
         starknet_client.clone(),
         proof_generation_worker_sender.clone(),
         network_sender.clone(),
     );
-
-    // Build a task driver that may be used to spawn long-lived asynchronous tasks that
-    // are common among workers
-    let task_driver = TaskDriver::new();
+    task_driver.start_task(task).await;
 
     // ----------------
     // | Worker Setup |

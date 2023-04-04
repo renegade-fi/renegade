@@ -14,7 +14,8 @@ use crate::state::{new_async_shared, AsyncShared};
 
 use super::{
     create_new_order::NewOrderTaskState, create_new_wallet::NewWalletTaskState,
-    external_transfer::ExternalTransferTaskState, settle_match::SettleMatchTaskState,
+    external_transfer::ExternalTransferTaskState, initialize_state::InitializeStateTaskState,
+    settle_match::SettleMatchTaskState,
 };
 
 /// A type alias for the identifier underlying a task
@@ -55,6 +56,8 @@ pub trait Task: Send {
 #[allow(clippy::large_enum_variant)]
 #[serde(tag = "task_type", content = "state")]
 pub enum StateWrapper {
+    /// The state object for the relayer state initialization task
+    InitializeState(InitializeStateTaskState),
     /// The state object for the deposit balance task
     ExternalTransfer(ExternalTransferTaskState),
     /// The state object for the new wallet task
