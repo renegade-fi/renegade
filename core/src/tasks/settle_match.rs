@@ -665,7 +665,7 @@ impl SettleMatchTask {
             .await
             .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
 
-        log::info!("got tx hash: {}", starknet_felt_to_biguint(&tx_hash));
+        log::info!("got tx hash: {:x}", starknet_felt_to_biguint(&tx_hash));
         let tx_info = self
             .starknet_client
             .poll_transaction_completed(tx_hash)
@@ -779,7 +779,7 @@ impl SettleMatchTask {
             .await
             .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
 
-        log::info!("got tx hash: {}", starknet_felt_to_biguint(&tx_hash));
+        log::info!("got tx hash: {:x}", starknet_felt_to_biguint(&tx_hash));
 
         let tx_result = self
             .starknet_client
