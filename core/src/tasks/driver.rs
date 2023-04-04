@@ -23,6 +23,8 @@ pub type TaskIdentifier = Uuid;
 
 /// The amount to increase the backoff delay by every retry
 const BACKOFF_AMPLIFICATION_FACTOR: u32 = 2;
+/// The maximum to increase the backoff to in milliseconds
+const BACKOFF_CEILING_MS: u64 = 30_000; // 30 seconds
 /// The initial backoff time when retrying a task
 const INITIAL_BACKOFF_MS: u64 = 1000; // 1 second
 /// The number of threads backing the tokio runtime
@@ -140,9 +142,11 @@ impl TaskDriver {
                     break 'outer;
                 }
 
-                log::info!("retrying task from state: {}", task.state());
                 tokio::time::sleep(curr_backoff).await;
+                log::info!("retrying task from state: {}", task.state());
                 curr_backoff *= BACKOFF_AMPLIFICATION_FACTOR;
+                curr_backoff =
+                    Duration::min(curr_backoff, Duration::from_millis(BACKOFF_CEILING_MS));
             }
 
             // Update the state in the registry

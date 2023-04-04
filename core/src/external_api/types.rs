@@ -23,6 +23,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
+    external_api::{
+        biguint_from_hex_string, biguint_to_hex_string, maybe_biguint_from_hex_string,
+        maybe_biguint_to_hex_string,
+    },
     gossip::types::PeerInfo as IndexedPeerInfo,
     state::{
         wallet::{
@@ -156,8 +160,16 @@ pub struct Order {
     /// Identifier
     pub id: Uuid,
     /// The quote token mint
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
     pub quote_mint: BigUint,
     /// The base token mint
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
     pub base_mint: BigUint,
     /// The side of the market this order is on
     pub side: OrderSide,
@@ -219,6 +231,10 @@ impl Default for OrderType {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Balance {
     /// The ERC-20 address of the token
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
     pub mint: BigUint,
     /// The amount held in the balance
     pub amount: BigUint,
@@ -246,8 +262,16 @@ impl From<Balance> for IndexedBalance {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Fee {
     /// The public settle key of the fee recipient
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
     pub recipient_key: BigUint,
     /// The ERC-20 address of the token to pay for gas in
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
     pub gas_addr: BigUint,
     /// The amount of the gas token to pay out covering transaction fees
     pub gas_amount: BigUint,
@@ -293,12 +317,28 @@ pub struct KeyChain {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PublicKeys {
     /// The public root key
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
     pub pk_root: BigUint,
     /// The public match key
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
     pub pk_match: BigUint,
     /// The public settle key
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
     pub pk_settle: BigUint,
     /// The public view key
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
     pub pk_view: BigUint,
 }
 
@@ -312,12 +352,28 @@ pub struct PublicKeys {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SecretKeys {
     /// The secret root key, non-super relayers will hold `None`
+    #[serde(
+        serialize_with = "maybe_biguint_to_hex_string",
+        deserialize_with = "maybe_biguint_from_hex_string"
+    )]
     pub sk_root: Option<BigUint>,
     /// The secret match key
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
     pub sk_match: BigUint,
     /// The secret settle key
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
     pub sk_settle: BigUint,
     /// The secret view key
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
     pub sk_view: BigUint,
 }
 
