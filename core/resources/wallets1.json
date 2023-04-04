@@ -3,12 +3,8 @@
         "wallet_id": "8aa4691e-dd9e-4c31-b1fa-5ae1ba53d128",
         "orders": {
             "13b6f558-d480-4289-ab12-05b020d1afab": {
-                "quote_mint": [
-                    1
-                ],
-                "base_mint": [
-                    2
-                ],
+                "quote_mint": "0x049D36570D4e46f48e99674bd3fcc84644DdD6b96F7C741B1562B82f9e004dC7",
+                "base_mint": "0x2",
                 "side": "Buy",
                 "price": 10.0,
                 "amount": 20,
@@ -16,46 +12,24 @@
             }
         },
         "balances": {
-            "1": {
-                "mint": [
-                    1
-                ],
+            "0x2": {
+                "mint": "0x2",
                 "amount": 200
             }
         },
         "fees": [
             {
-                "settle_key": [],
-                "gas_addr": [
-                    1
-                ],
+                "settle_key": "0x0",
+                "gas_addr": "0x2",
                 "gas_token_amount": 3,
                 "percentage_fee": 0.01
             }
         ],
         "public_keys": [
-            [],
-            [
-                1200017519,
-                1292986518,
-                991276505,
-                264850525,
-                3597422926,
-                374509427,
-                3339450660,
-                230008319
-            ],
-            [
-                1200017519,
-                1292986518,
-                991276505,
-                264850525,
-                3597422926,
-                374509427,
-                3339450660,
-                230008319
-            ],
-            []
+            "0x0",
+            "0xdb5a5ffc70bf92416528f73d66c514e0fc94c5d3b15add94d1168964786d06f",
+            "0xdb5a5ffc70bf92416528f73d66c514e0fc94c5d3b15add94d1168964786d06f",
+            "0x0"
         ],
         "secret_keys": [
             [],

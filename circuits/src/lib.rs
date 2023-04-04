@@ -19,6 +19,7 @@ use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto,
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
+use serde::{Deserialize, Serialize};
 
 use rand_core::{CryptoRng, OsRng, RngCore};
 
@@ -84,7 +85,6 @@ pub(crate) use print_mpc_wire;
 pub(crate) use print_multiprover_wire;
 #[allow(unused)]
 pub(crate) use print_wire;
-use serde::{Deserialize, Serialize};
 
 // ------------------
 // | Helper Methods |

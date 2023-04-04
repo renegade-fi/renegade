@@ -7,7 +7,10 @@ use mpc_bulletproof::r1cs::{Prover, Variable, Verifier};
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
-use crate::{CommitProver, CommitVerifier};
+use crate::{
+    types::{scalar_from_hex_string, scalar_to_hex_string},
+    CommitProver, CommitVerifier,
+};
 
 use super::{
     balance::{Balance, BalanceVar, CommittedBalance},
@@ -53,6 +56,10 @@ where
     /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle, pk_view)
     pub keys: KeyChain,
     /// The wallet randomness used to blind commitments, nullifiers, etc
+    #[serde(
+        serialize_with = "scalar_to_hex_string",
+        deserialize_with = "scalar_from_hex_string"
+    )]
     pub randomness: Scalar,
 }
 

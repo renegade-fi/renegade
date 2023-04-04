@@ -5,7 +5,6 @@ use std::{
     convert::TryInto,
     fmt::{Formatter, Result as FmtResult},
     iter,
-    str::FromStr,
     sync::atomic::{AtomicU32, Ordering},
 };
 
@@ -31,6 +30,7 @@ use curve25519_dalek::scalar::Scalar;
 use futures::{stream::iter as to_stream, StreamExt};
 use itertools::Itertools;
 use num_bigint::{BigUint, ToBigUint};
+use num_traits::Num;
 use rand::{distributions::Uniform, thread_rng, Rng};
 use serde::{
     de::{Error as SerdeErr, SeqAccess, Visitor},
@@ -356,7 +356,9 @@ where
     let mut bigint_keyed_map = HashMap::new();
 
     for (k, balance) in string_keyed_map.into_iter() {
-        let bigint_key = BigUint::from_str(&k).map_err(|err| SerdeErr::custom(err.to_string()))?;
+        let key_stripped = k.strip_prefix("0x").unwrap_or(&k);
+        let bigint_key = BigUint::from_str_radix(key_stripped, 16 /* radix */)
+            .map_err(|err| SerdeErr::custom(err.to_string()))?;
         bigint_keyed_map.insert(bigint_key, balance);
     }
 

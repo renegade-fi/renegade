@@ -15,8 +15,10 @@ use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    errors::MpcError, mpc::SharedFabric, Allocate, CommitProver, CommitSharedProver,
-    CommitVerifier, LinkableCommitment,
+    errors::MpcError,
+    mpc::SharedFabric,
+    types::{biguint_from_hex_string, biguint_to_hex_string},
+    Allocate, CommitProver, CommitSharedProver, CommitVerifier, LinkableCommitment,
 };
 
 /// Represents the base type of a balance in tuple holding a reference to the
@@ -24,6 +26,10 @@ use crate::{
 #[derive(Clone, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Balance {
     /// The mint (ERC-20 token address) of the token in the balance
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
     pub mint: BigUint,
     /// The amount of the given token stored in this balance
     pub amount: u64,

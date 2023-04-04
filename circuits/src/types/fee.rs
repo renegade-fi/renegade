@@ -2,6 +2,7 @@
 use crate::{
     errors::{MpcError, TypeConversionError},
     mpc::SharedFabric,
+    types::{biguint_from_hex_string, biguint_to_hex_string},
     zk_gadgets::fixed_point::{
         AuthenticatedCommittedFixedPoint, AuthenticatedFixedPoint, AuthenticatedFixedPointVar,
         CommittedFixedPoint, FixedPoint, FixedPointVar, LinkableFixedPointCommitment,
@@ -29,8 +30,16 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Fee {
     /// The public settle key of the cluster collecting fees
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
     pub settle_key: BigUint,
     /// The mint (ERC-20 Address) of the token used to pay gas
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
     pub gas_addr: BigUint,
     /// The amount of the mint token to use for gas
     pub gas_token_amount: u64,

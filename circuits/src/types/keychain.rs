@@ -1,18 +1,14 @@
 //! Defines the constraint system types for the set of keys a wallet holds
 
-use std::fmt::{Formatter, Result as FmtResult};
-
-use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use mpc_bulletproof::r1cs::{Prover, Variable, Verifier};
-use num_bigint::BigUint;
-use serde::{
-    de::{Error as SerdeErr, SeqAccess, Visitor},
-    ser::SerializeSeq,
-    Deserialize, Serialize,
-};
+use serde::{Deserialize, Serialize};
 
-use crate::{errors::TypeConversionError, CommitProver, CommitVerifier};
+use crate::{
+    errors::TypeConversionError,
+    types::{scalar_from_hex_string, scalar_to_hex_string},
+    CommitProver, CommitVerifier,
+};
 
 /// The number of keys held in a wallet's keychain
 pub const NUM_KEYS: usize = 4;
@@ -32,78 +28,32 @@ pub const NUM_KEYS: usize = 4;
 /// identification scheme (not necessarily a signature scheme). Concretely, this currently
 /// is setup as `pk_identity` = Hash(`sk_identity`), and the prover proves knowledge of
 /// pre-image in a related circuit
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeyChain {
     /// The public root key
+    #[serde(
+        serialize_with = "scalar_to_hex_string",
+        deserialize_with = "scalar_from_hex_string"
+    )]
     pub pk_root: Scalar,
     /// The public match key
+    #[serde(
+        serialize_with = "scalar_to_hex_string",
+        deserialize_with = "scalar_from_hex_string"
+    )]
     pub pk_match: Scalar,
     /// The public settle key
+    #[serde(
+        serialize_with = "scalar_to_hex_string",
+        deserialize_with = "scalar_from_hex_string"
+    )]
     pub pk_settle: Scalar,
     /// The public view key
+    #[serde(
+        serialize_with = "scalar_to_hex_string",
+        deserialize_with = "scalar_from_hex_string"
+    )]
     pub pk_view: Scalar,
-}
-
-/// Custom serialize/deserialize logic to serialize/deserialize as BigUint
-///
-/// The BigUint serialized structure is cleaner and more interpretable
-impl Serialize for KeyChain {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut seq = serializer.serialize_seq(Some(NUM_KEYS))?;
-        seq.serialize_element(&scalar_to_biguint(&self.pk_root))?;
-        seq.serialize_element(&scalar_to_biguint(&self.pk_match))?;
-        seq.serialize_element(&scalar_to_biguint(&self.pk_settle))?;
-        seq.serialize_element(&scalar_to_biguint(&self.pk_view))?;
-
-        seq.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for KeyChain {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_seq(KeyChainVisitor)
-    }
-}
-
-/// A serde visitor implementation for the KeyChain type
-struct KeyChainVisitor;
-impl<'de> Visitor<'de> for KeyChainVisitor {
-    type Value = KeyChain;
-
-    fn expecting(&self, formatter: &mut Formatter) -> FmtResult {
-        write!(formatter, "a sequence of {} BigUint values", NUM_KEYS)
-    }
-
-    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-    where
-        A: SeqAccess<'de>,
-    {
-        let pk_root: BigUint = seq
-            .next_element()?
-            .ok_or_else(|| SerdeErr::custom("pk_root not found in serialized value"))?;
-        let pk_match: BigUint = seq
-            .next_element()?
-            .ok_or_else(|| SerdeErr::custom("pk_match not found in serialized value"))?;
-        let pk_settle: BigUint = seq
-            .next_element()?
-            .ok_or_else(|| SerdeErr::custom("pk_settle not found in serialized value"))?;
-        let pk_view: BigUint = seq
-            .next_element()?
-            .ok_or_else(|| SerdeErr::custom("pk_view not found in serialized value"))?;
-
-        Ok(Self::Value {
-            pk_root: biguint_to_scalar(&pk_root),
-            pk_match: biguint_to_scalar(&pk_match),
-            pk_settle: biguint_to_scalar(&pk_settle),
-            pk_view: biguint_to_scalar(&pk_view),
-        })
-    }
 }
 
 impl TryFrom<Vec<Scalar>> for KeyChain {
