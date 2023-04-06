@@ -769,6 +769,7 @@ impl SettleMatchTask {
         let tx_hash = self
             .starknet_client
             .submit_settle(
+                self.new_wallet.public_keys.pk_view,
                 self.new_wallet.get_commitment(),
                 self.old_wallet.get_match_nullifier() + Scalar::random(&mut rng),
                 self.old_wallet.get_spend_nullifier() + Scalar::random(&mut rng),
