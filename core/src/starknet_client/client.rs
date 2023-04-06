@@ -3,7 +3,6 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    convert::TryInto,
     iter,
     str::FromStr,
     sync::Arc,
@@ -19,16 +18,8 @@ use crypto::{
     },
 };
 use curve25519_dalek::scalar::Scalar;
-use itertools::Itertools;
 use num_bigint::BigUint;
 use reqwest::Url;
-use starknet::providers::{
-    jsonrpc::{
-        models::{BlockId, EmittedEvent},
-        HttpTransport, JsonRpcClient,
-    },
-    Provider,
-};
 use starknet::{
     accounts::{Account, Call, SingleOwnerAccount},
     core::types::{
@@ -41,6 +32,16 @@ use starknet::{
     },
     signers::{LocalWallet, SigningKey},
 };
+use starknet::{
+    core::types::{CallContractResult, CallFunction},
+    providers::{
+        jsonrpc::{
+            models::{BlockId, EmittedEvent},
+            HttpTransport, JsonRpcClient,
+        },
+        Provider,
+    },
+};
 use tracing::log;
 
 use crate::{
@@ -49,16 +50,18 @@ use crate::{
         ValidWalletUpdateBundle,
     },
     starknet_client::{
-        INTERNAL_NODE_CHANGED_EVENT_SELECTOR, MATCH_SELECTOR, NEW_WALLET_SELECTOR,
-        UPDATE_WALLET_SELECTOR, VALUE_INSERTED_EVENT_SELECTOR,
+        GET_WALLET_LAST_UPDATED_SELECTOR, INTERNAL_NODE_CHANGED_EVENT_SELECTOR, MATCH_SELECTOR,
+        NEW_WALLET_SELECTOR, UPDATE_WALLET_SELECTOR, VALUE_INSERTED_EVENT_SELECTOR,
     },
     state::{wallet::MerkleAuthenticationPath, MerkleTreeCoords},
     MERKLE_HEIGHT,
 };
 
 use super::{
-    error::StarknetClientError, types::ExternalTransfer, ChainId, DEFAULT_AUTHENTICATION_PATH,
-    SETTLE_SELECTOR,
+    error::StarknetClientError,
+    helpers::{pack_bytes_into_felts, parse_ciphertext_from_calldata},
+    types::ExternalTransfer,
+    ChainId, DEFAULT_AUTHENTICATION_PATH, SETTLE_SELECTOR,
 };
 
 /// A type alias for a felt that represents a transaction hash
@@ -71,11 +74,6 @@ pub type TransactionHash = StarknetFieldElement;
 /// `BLOCK_PAGINATION_WINDOW` blocks; scan them, then search the next
 /// `BLOCK_PAGINATION_WINDOW` blocks
 const BLOCK_PAGINATION_WINDOW: u64 = 1000;
-/// The number of bytes we can pack into a given Starknet field element
-///
-/// The starknet field is of size 2 ** 251 + \delta, which fits at most
-/// 31 bytes cleanly into a single felt
-const BYTES_PER_FELT: usize = 31;
 /// The earliest block to search events for, i.e. the contract deployment block
 const EARLIEST_BLOCK: u64 = 780361;
 /// The page size to request when querying events
@@ -85,14 +83,18 @@ const TX_STATUS_POLL_INTERVAL_MS: u64 = 10_000; // 10 seconds
 /// The fee estimate multiplier to use as `MAX_FEE` for transactions
 const MAX_FEE_MULTIPLIER: f32 = 1.5;
 
-/// Macro helper to pack a serializable value into a vector of felts
+/// Error message thrown when the client cannot find a ciphertext blob in
+/// a transaction's trace
+const ERR_CIPHERTEXT_NOT_FOUND: &str = "ciphertext blob not found in tx trace";
+
+//r Macro helper to pack a serializable value into a vector of felts
 ///
 /// Prepends a length felt for run length encoding
 macro_rules! pack_serializable {
     ($val:ident) => {{
         let bytes = serde_json::to_vec(&($val))
             .map_err(|err| StarknetClientError::Serde(err.to_string()))?;
-        let mut felts = StarknetClient::pack_bytes_into_felts(&bytes);
+        let mut felts = pack_bytes_into_felts(&bytes);
         felts.insert(0, (felts.len() as u64).into());
 
         felts
@@ -252,34 +254,22 @@ impl StarknetClient {
         biguint_to_starknet_felt(&val_mod_starknet_prime)
     }
 
-    /// Pack bytes into Starknet field elements
-    fn pack_bytes_into_felts(bytes: &[u8]) -> Vec<StarknetFieldElement> {
-        let mut res = Vec::new();
-
-        for i in (0..bytes.len()).step_by(BYTES_PER_FELT) {
-            // Construct a felt from bytes [i..i+BYTES_PER_FELT], padding
-            // to 32 in length
-            let range_end = usize::min(i + BYTES_PER_FELT, bytes.len());
-            let mut bytes_padded: Vec<u8> = bytes[i..range_end]
-                .iter()
-                .cloned()
-                .chain(iter::repeat(0u8))
-                .take(32)
-                .collect_vec();
-
-            // Starknet felts store bytes in big-endian order, reverse the bytes
-            bytes_padded.reverse();
-
-            // Cast to array
-            let bytes_padded: [u8; 32] = bytes_padded.try_into().unwrap();
-            res.push(StarknetFieldElement::from_bytes_be(&bytes_padded).unwrap());
-        }
-
-        res
+    /// Helper to make a view call to the contract
+    async fn call_contract(
+        &self,
+        call: CallFunction,
+    ) -> Result<CallContractResult, StarknetClientError> {
+        self.get_gateway_client()
+            .call_contract(call, CoreBlockId::Pending)
+            .await
+            .map_err(|err| StarknetClientError::Gateway(err.to_string()))
     }
 
     /// Helper to setup a contract call with the correct max fee and account nonce
-    async fn call_contract(&self, call: Call) -> Result<TransactionHash, StarknetClientError> {
+    async fn execute_transaction(
+        &self,
+        call: Call,
+    ) -> Result<TransactionHash, StarknetClientError> {
         // Estimate the fee and add a buffer to avoid rejected transaction
         let acct_nonce = self.pending_block_nonce().await?;
         let execution = self.get_account().execute(vec![call]).nonce(acct_nonce);
@@ -489,9 +479,64 @@ impl StarknetClient {
         Ok(None)
     }
 
+    /// Pull the ciphertext blob from the calldata of the given transaction, return it
+    /// as a vector of ElGamal ciphertexts
+    pub async fn fetch_ciphertext_from_tx(
+        &self,
+        tx_hash: TransactionHash,
+    ) -> Result<Vec<ElGamalCiphertext>, StarknetClientError> {
+        // Lookup the calldata for the given tx
+        let invocation_details = self
+            .get_gateway_client()
+            .get_transaction_trace(tx_hash)
+            .await
+            .map_err(|err| StarknetClientError::Gateway(err.to_string()))?
+            .function_invocation
+            .unwrap();
+
+        // Check the wrapper call as well as any internal calls for the ciphertext
+        // Typically the relevant calldata will be found in an internal call that the account
+        // contract delegates to via __execute__
+        for invocation in
+            iter::once(&invocation_details).chain(invocation_details.internal_calls.iter())
+        {
+            if let Ok(ciphertext) =
+                parse_ciphertext_from_calldata(invocation.selector.unwrap(), &invocation.calldata)
+            {
+                return Ok(ciphertext);
+            }
+        }
+
+        log::error!("could not parse ciphertext blob from transaction trace");
+        Err(StarknetClientError::NotFound(
+            ERR_CIPHERTEXT_NOT_FOUND.to_string(),
+        ))
+    }
+
     // ------------------------
     // | Contract Interaction |
     // ------------------------
+
+    // --- Getters ---
+
+    /// Call the "get_wallet_update" view function in the contract
+    pub async fn get_wallet_last_updated(
+        &self,
+        pk_view: Scalar,
+    ) -> Result<TransactionHash, StarknetClientError> {
+        let reduced_pk_view = Self::reduce_scalar_to_felt(&pk_view);
+        let call = CallFunction {
+            contract_address: self.contract_address,
+            entry_point_selector: *GET_WALLET_LAST_UPDATED_SELECTOR,
+            calldata: vec![reduced_pk_view],
+        };
+
+        self.call_contract(call)
+            .await
+            .map(|call_res| call_res.result[0])
+    }
+
+    // --- Setters ---
 
     /// Call the `new_wallet` contract method with the given source data
     ///
@@ -521,7 +566,7 @@ impl StarknetClient {
         calldata.append(&mut pack_serializable!(valid_wallet_create));
 
         // Call the `new_wallet` contract function
-        self.call_contract(Call {
+        self.execute_transaction(Call {
             to: self.contract_address,
             selector: *NEW_WALLET_SELECTOR,
             calldata,
@@ -568,7 +613,7 @@ impl StarknetClient {
         calldata.append(&mut pack_serializable!(valid_wallet_update));
 
         // Call the `update_wallet` function in the contract
-        self.call_contract(Call {
+        self.execute_transaction(Call {
             to: self.contract_address,
             selector: *UPDATE_WALLET_SELECTOR,
             calldata,
@@ -619,7 +664,7 @@ impl StarknetClient {
         calldata.append(&mut pack_serializable!(proof));
 
         // Call the contract
-        self.call_contract(Call {
+        self.execute_transaction(Call {
             to: self.contract_address,
             selector: *MATCH_SELECTOR,
             calldata,
@@ -654,7 +699,7 @@ impl StarknetClient {
         calldata.append(&mut pack_serializable!(proof));
 
         // Call the `settle` contract function
-        self.call_contract(Call {
+        self.execute_transaction(Call {
             to: self.contract_address,
             selector: *SETTLE_SELECTOR,
             calldata,
