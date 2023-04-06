@@ -35,11 +35,12 @@ use self::{
     price_report::{ExchangeHealthStatesHandler, EXCHANGE_HEALTH_ROUTE},
     task::{GetTaskStatusHandler, GET_TASK_STATUS_ROUTE},
     wallet::{
-        CreateOrderHandler, CreateWalletHandler, DepositBalanceHandler, GetBalanceByMintHandler,
-        GetBalancesHandler, GetFeesHandler, GetOrderByIdHandler, GetOrdersHandler,
-        GetWalletHandler, WithdrawBalanceHandler, CREATE_WALLET_ROUTE, DEPOSIT_BALANCE_ROUTE,
-        GET_BALANCES_ROUTE, GET_BALANCE_BY_MINT_ROUTE, GET_FEES_ROUTE, GET_ORDER_BY_ID_ROUTE,
-        GET_WALLET_ROUTE, WALLET_ORDERS_ROUTE, WITHDRAW_BALANCE_ROUTE,
+        CreateOrderHandler, CreateWalletHandler, DepositBalanceHandler, FindWalletHandler,
+        GetBalanceByMintHandler, GetBalancesHandler, GetFeesHandler, GetOrderByIdHandler,
+        GetOrdersHandler, GetWalletHandler, WithdrawBalanceHandler, CREATE_WALLET_ROUTE,
+        DEPOSIT_BALANCE_ROUTE, FIND_WALLET_ROUTE, GET_BALANCES_ROUTE, GET_BALANCE_BY_MINT_ROUTE,
+        GET_FEES_ROUTE, GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE, WALLET_ORDERS_ROUTE,
+        WITHDRAW_BALANCE_ROUTE,
     },
 };
 
@@ -214,6 +215,18 @@ impl HttpServer {
             CreateWalletHandler::new(
                 config.starknet_client.clone(),
                 global_state.clone(),
+                config.proof_generation_work_queue.clone(),
+                config.task_driver.clone(),
+            ),
+        );
+
+        // The "/wallet/lookup" route
+        router.add_route(
+            Method::POST,
+            FIND_WALLET_ROUTE.to_string(),
+            FindWalletHandler::new(
+                config.starknet_client.clone(),
+                config.global_state.clone(),
                 config.proof_generation_work_queue.clone(),
                 config.task_driver.clone(),
             ),

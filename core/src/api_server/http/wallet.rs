@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use crossbeam::channel::Sender as CrossbeamSender;
 use hyper::StatusCode;
+use uuid::Uuid;
 
 use crate::{
     api_server::{
@@ -12,9 +13,9 @@ use crate::{
     external_api::{
         http::wallet::{
             CreateOrderRequest, CreateOrderResponse, CreateWalletRequest, CreateWalletResponse,
-            DepositBalanceRequest, DepositBalanceResponse, GetBalanceByMintResponse,
-            GetBalancesResponse, GetFeesResponse, GetOrderByIdResponse, GetOrdersResponse,
-            GetWalletResponse, WithdrawBalanceRequest, WithdrawBalanceResponse,
+            DepositBalanceRequest, DepositBalanceResponse, FindWalletRequest, FindWalletResponse,
+            GetBalanceByMintResponse, GetBalancesResponse, GetFeesResponse, GetOrderByIdResponse,
+            GetOrdersResponse, GetWalletResponse, WithdrawBalanceRequest, WithdrawBalanceResponse,
         },
         types::{Balance, Wallet},
         EmptyRequestResponse,
@@ -36,6 +37,8 @@ use super::{parse_mint_from_params, parse_order_id_from_params, parse_wallet_id_
 
 /// Create a new wallet
 pub(super) const CREATE_WALLET_ROUTE: &str = "/v0/wallet";
+/// Find a wallet in contract storage
+pub(super) const FIND_WALLET_ROUTE: &str = "/v0/wallet/lookup";
 /// Returns the wallet information for the given id
 pub(super) const GET_WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
 /// Route to the orders of a given wallet
@@ -153,9 +156,9 @@ impl TypedHandler for CreateWalletHandler {
     ) -> Result<Self::Response, ApiServerError> {
         // Create an async task to drive this new wallet into the on-chain state
         // and create proofs of validity
-        let id = req.wallet.id;
+        let wallet_id = req.wallet.id;
         let task = NewWalletTask::new(
-            req.wallet.id,
+            wallet_id,
             req.wallet,
             self.starknet_client.clone(),
             self.global_state.clone(),
@@ -163,7 +166,58 @@ impl TypedHandler for CreateWalletHandler {
         );
         let task_id = self.task_driver.start_task(task).await;
 
-        Ok(CreateWalletResponse { id, task_id })
+        Ok(CreateWalletResponse { wallet_id, task_id })
+    }
+}
+
+/// Handler for the POST /wallet route
+pub struct FindWalletHandler {
+    /// A starknet client
+    starknet_client: StarknetClient,
+    /// A copy of the relayer-global state
+    global_state: RelayerState,
+    /// A sender to the proof manager's work queue, used to enqueue
+    /// proofs of `VALID NEW WALLET` and await their completion
+    proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    /// A copy of the task driver used to create an manage long-lived
+    /// async workflows
+    task_driver: TaskDriver,
+}
+
+impl FindWalletHandler {
+    /// Constructor
+    pub fn new(
+        starknet_client: StarknetClient,
+        global_state: RelayerState,
+        proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+        task_driver: TaskDriver,
+    ) -> Self {
+        Self {
+            starknet_client,
+            global_state,
+            proof_manager_work_queue,
+            task_driver,
+        }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for FindWalletHandler {
+    type Request = FindWalletRequest;
+    type Response = FindWalletResponse;
+
+    async fn handle_typed(
+        &self,
+        req: Self::Request,
+        _params: UrlParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        // Create a task in thew driver to find and prove validity for
+        // the wallet
+        let wallet_id = Uuid::new_v4();
+        let task_id = Uuid::new_v4();
+
+        // TODO: Create task and start it
+        Ok(FindWalletResponse { wallet_id, task_id })
     }
 }
 
