@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::{
     external_api::{
         biguint_from_hex_string, biguint_to_hex_string,
-        types::{Balance, Fee, Order, Wallet},
+        types::{Balance, Fee, KeyChain, Order, Wallet},
     },
     state::wallet::WalletIdentifier,
     tasks::driver::TaskIdentifier,
@@ -35,9 +35,25 @@ pub struct CreateWalletRequest {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CreateWalletResponse {
     /// The wallet identifier provisioned for the new wallet
-    pub id: WalletIdentifier,
+    pub wallet_id: WalletIdentifier,
     /// The system-internal task ID that the client may use to query
     /// task status
+    pub task_id: TaskIdentifier,
+}
+
+/// The request type to find a wallet in contract storage and begin managing it
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FindWalletRequest {
+    /// The keychain to use for management after the wallet is found
+    pub key_chain: KeyChain,
+}
+
+/// The response type to a request to find a wallet in contract storage
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FindWalletResponse {
+    /// The ID provisioned as a handle for the wallet
+    pub wallet_id: WalletIdentifier,
+    /// The ID of the task created on behalf of this request
     pub task_id: TaskIdentifier,
 }
 
