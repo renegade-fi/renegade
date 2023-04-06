@@ -328,6 +328,7 @@ impl ExternalTransferTask {
         let tx_hash = self
             .starknet_client
             .update_wallet(
+                self.new_wallet.public_keys.pk_view,
                 self.new_wallet.get_commitment(),
                 self.old_wallet.get_match_nullifier(),
                 self.old_wallet.get_spend_nullifier(),

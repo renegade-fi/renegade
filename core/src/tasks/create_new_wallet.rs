@@ -241,7 +241,12 @@ impl NewWalletTask {
 
         let tx_hash = self
             .starknet_client
-            .new_wallet(wallet_commitment, wallet_ciphertext, proof)
+            .new_wallet(
+                self.wallet.public_keys.pk_view,
+                wallet_commitment,
+                wallet_ciphertext,
+                proof,
+            )
             .await
             .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))?;
 
