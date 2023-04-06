@@ -1,20 +1,28 @@
 //! Defines a task that looks up a wallet in contract storage by its
 //! public view key identifier, then begins managing the wallet
 
-use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::{
+    fmt::{Display, Formatter, Result as FmtResult},
+    sync::atomic::AtomicU32,
+};
 
 use async_trait::async_trait;
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::{biguint_to_scalar, starknet_felt_to_biguint};
+use crypto::fields::{biguint_to_scalar, scalar_to_biguint, starknet_felt_to_biguint};
 use serde::Serialize;
 use starknet::core::types::FieldElement as StarknetFieldElement;
 use tracing::log;
+use uuid::Uuid;
 
 use crate::{
     external_api::types::KeyChain,
     proof_generation::jobs::ProofManagerJob,
     starknet_client::client::{StarknetClient, TransactionHash},
-    state::RelayerState,
+    state::{
+        wallet::{Wallet, WalletIdentifier, WalletMetadata},
+        RelayerState,
+    },
+    tasks::decrypt_wallet,
 };
 
 use super::driver::{StateWrapper, Task};
@@ -26,8 +34,12 @@ const LOOKUP_WALLET_TASK_NAME: &str = "lookup-wallet";
 
 /// Represents a task to lookup a wallet in contract storage
 pub struct LookupWalletTask {
+    /// The ID to provision for the wallet
+    pub wallet_id: WalletIdentifier,
     /// The keychain to manage the wallet with
     pub key_chain: KeyChain,
+    /// The wallet parsed and decrypted from contract state
+    pub wallet: Option<Wallet>,
     /// A starknet client for the task to submit transactions
     pub starknet_client: StarknetClient,
     /// A copy of the relayer-global state
@@ -125,13 +137,16 @@ impl Task for LookupWalletTask {
 impl LookupWalletTask {
     /// Constructor
     pub fn new(
+        wallet_id: WalletIdentifier,
         key_chain: KeyChain,
         starknet_client: StarknetClient,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     ) -> Self {
         Self {
+            wallet_id,
             key_chain,
+            wallet: None, // replaced in the first task step
             starknet_client,
             global_state,
             proof_manager_work_queue,
@@ -160,20 +175,58 @@ impl LookupWalletTask {
             starknet_felt_to_biguint(&last_updated)
         );
 
-        let _ciphertext_blob = self
+        let ciphertext_blob = self
             .starknet_client
             .fetch_ciphertext_from_tx(last_updated)
             .await
             .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?;
 
-        // Parse the ciphertext into an encrypted wallet
-        log::info!("parsed ciphertext blob!");
+        // Decrypt the ciphertext into an encrypted wallet
+        let decrypted_wallet = decrypt_wallet(
+            ciphertext_blob,
+            &self.key_chain.secret_keys.sk_view,
+            self.key_chain.public_keys.clone().into(),
+        );
 
-        unimplemented!("")
+        let mut wallet = Wallet {
+            wallet_id: self.wallet_id,
+            orders: decrypted_wallet
+                .orders
+                .iter()
+                .cloned()
+                .map(|order| (Uuid::new_v4(), order))
+                .collect(),
+            balances: decrypted_wallet
+                .balances
+                .iter()
+                .cloned()
+                .map(|balance| (balance.mint.clone(), balance))
+                .collect(),
+            fees: decrypted_wallet.fees.to_vec(),
+            public_keys: decrypted_wallet.keys,
+            secret_keys: self.key_chain.secret_keys.clone().into(),
+            randomness: scalar_to_biguint(&decrypted_wallet.randomness),
+            metadata: WalletMetadata::default(),
+            merkle_proof: None, // found in next step
+            proof_staleness: AtomicU32::default(),
+        };
+
+        // Find the Merkle authentication path for the wallet
+        let wallet_commitment = wallet.get_commitment();
+        let authentication_path = self
+            .starknet_client
+            .find_merkle_authentication_path(wallet_commitment)
+            .await
+            .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?;
+        wallet.merkle_proof = Some(authentication_path);
+
+        self.wallet = Some(wallet);
+        Ok(())
     }
 
     /// Prove `VALID COMMITMENTS` for all orders in the wallet
     async fn create_validity_proofs(&self) -> Result<(), LookupWalletTaskError> {
-        unimplemented!("")
+        log::info!("create validity proofs");
+        Ok(())
     }
 }

@@ -215,6 +215,7 @@ impl TypedHandler for FindWalletHandler {
         // the wallet
         let wallet_id = Uuid::new_v4();
         let task = LookupWalletTask::new(
+            wallet_id,
             req.key_chain,
             self.starknet_client.clone(),
             self.global_state.clone(),

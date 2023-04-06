@@ -4,16 +4,21 @@
 //! node to prove `VALID NEW WALLET`, submit the wallet on-chain, wait for
 //! transaction success, and then prove `VALID COMMITMENTS`
 
-use circuits::types::note::Note;
+use std::convert::TryInto;
+
+use circuits::types::{
+    balance::Balance, fee::Fee, keychain::KeyChain as CircuitKeyChain, note::Note, order::Order,
+};
 use crypto::{
-    elgamal::{encrypt_scalar, ElGamalCiphertext},
-    fields::biguint_to_scalar,
+    elgamal::{decrypt_scalar, encrypt_scalar, ElGamalCiphertext},
+    fields::{biguint_to_scalar, scalar_to_biguint},
 };
 use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
+use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use num_bigint::BigUint;
 
-use crate::SizedWallet;
+use crate::{SizedWallet, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 
 pub mod create_new_order;
 pub mod create_new_wallet;
@@ -70,6 +75,66 @@ pub(self) fn encrypt_wallet(wallet: SizedWallet, pk_view: &BigUint) -> Vec<ElGam
         .into_iter()
         .map(|(cipher, _)| cipher)
         .collect_vec()
+}
+
+/// Helper to decrypt a wallet under a given key
+pub(self) fn decrypt_wallet(
+    ciphertext: Vec<ElGamalCiphertext>,
+    secret_key: &BigUint,
+    keys: CircuitKeyChain,
+) -> SizedWallet {
+    // Decrypt the ciphertext blob
+    let mut plaintexts = ciphertext
+        .into_iter()
+        .map(|cipher| decrypt_scalar(cipher, secret_key))
+        .collect_vec();
+
+    // Reverse so that we can pop in the following restructuring process
+    plaintexts.reverse();
+
+    // Re-structure into a wallet
+    // Re-structure the balances
+    let mut balances = Vec::with_capacity(MAX_BALANCES);
+    for _ in 0..MAX_BALANCES {
+        balances.push(Balance {
+            mint: scalar_to_biguint(&plaintexts.pop().unwrap()),
+            amount: scalar_to_u64(&plaintexts.pop().unwrap()),
+        })
+    }
+
+    // Re-structure the orders
+    let mut orders = Vec::with_capacity(MAX_ORDERS);
+    for _ in 0..MAX_ORDERS {
+        orders.push(Order {
+            quote_mint: scalar_to_biguint(&plaintexts.pop().unwrap()),
+            base_mint: scalar_to_biguint(&plaintexts.pop().unwrap()),
+            side: plaintexts.pop().unwrap().into(),
+            price: plaintexts.pop().unwrap().into(),
+            amount: scalar_to_u64(&plaintexts.pop().unwrap()),
+            timestamp: scalar_to_u64(&plaintexts.pop().unwrap()),
+        })
+    }
+
+    // Re-structure the fees
+    let mut fees = Vec::with_capacity(MAX_FEES);
+    for _ in 0..MAX_FEES {
+        fees.push(Fee {
+            settle_key: scalar_to_biguint(&plaintexts.pop().unwrap()),
+            gas_addr: scalar_to_biguint(&plaintexts.pop().unwrap()),
+            gas_token_amount: scalar_to_u64(&plaintexts.pop().unwrap()),
+            percentage_fee: plaintexts.pop().unwrap().into(),
+        })
+    }
+
+    let randomness = plaintexts.pop().unwrap();
+
+    SizedWallet {
+        balances: balances.try_into().unwrap(),
+        orders: orders.try_into().unwrap(),
+        fees: fees.try_into().unwrap(),
+        keys,
+        randomness,
+    }
 }
 
 /// Helper to encrypt a note under a given key
