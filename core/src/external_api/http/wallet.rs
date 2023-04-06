@@ -44,6 +44,8 @@ pub struct CreateWalletResponse {
 /// The request type to find a wallet in contract storage and begin managing it
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FindWalletRequest {
+    /// The ID to handle the wallet by
+    pub wallet_id: WalletIdentifier,
     /// The keychain to use for management after the wallet is found
     pub key_chain: KeyChain,
 }
@@ -51,7 +53,7 @@ pub struct FindWalletRequest {
 /// The response type to a request to find a wallet in contract storage
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FindWalletResponse {
-    /// The ID provisioned as a handle for the wallet
+    /// The ID to handle the wallet by
     pub wallet_id: WalletIdentifier,
     /// The ID of the task created on behalf of this request
     pub task_id: TaskIdentifier,

@@ -3,7 +3,6 @@
 use async_trait::async_trait;
 use crossbeam::channel::Sender as CrossbeamSender;
 use hyper::StatusCode;
-use uuid::Uuid;
 
 use crate::{
     api_server::{
@@ -213,9 +212,8 @@ impl TypedHandler for FindWalletHandler {
     ) -> Result<Self::Response, ApiServerError> {
         // Create a task in thew driver to find and prove validity for
         // the wallet
-        let wallet_id = Uuid::new_v4();
         let task = LookupWalletTask::new(
-            wallet_id,
+            req.wallet_id,
             req.key_chain,
             self.starknet_client.clone(),
             self.global_state.clone(),
@@ -223,7 +221,10 @@ impl TypedHandler for FindWalletHandler {
         );
         let task_id = self.task_driver.start_task(task).await;
 
-        Ok(FindWalletResponse { wallet_id, task_id })
+        Ok(FindWalletResponse {
+            wallet_id: req.wallet_id,
+            task_id,
+        })
     }
 }
 
