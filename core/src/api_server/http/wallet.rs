@@ -25,7 +25,7 @@ use crate::{
     state::RelayerState,
     tasks::{
         create_new_order::NewOrderTask, create_new_wallet::NewWalletTask, driver::TaskDriver,
-        external_transfer::ExternalTransferTask,
+        external_transfer::ExternalTransferTask, lookup_wallet::LookupWalletTask,
     },
 };
 
@@ -214,9 +214,14 @@ impl TypedHandler for FindWalletHandler {
         // Create a task in thew driver to find and prove validity for
         // the wallet
         let wallet_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let task = LookupWalletTask::new(
+            req.key_chain,
+            self.starknet_client.clone(),
+            self.global_state.clone(),
+            self.proof_manager_work_queue.clone(),
+        );
+        let task_id = self.task_driver.start_task(task).await;
 
-        // TODO: Create task and start it
         Ok(FindWalletResponse { wallet_id, task_id })
     }
 }
