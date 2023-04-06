@@ -16,6 +16,8 @@ lazy_static! {
     /// order defined here:
     /// https://docs.rs/curve25519-dalek-ng/latest/curve25519_dalek_ng/scalar/index.html
     pub static ref DEFAULT_ELGAMAL_GENERATOR: Scalar = Scalar::from(2u64);
+    /// A bigint version of the above generator
+    pub static ref DEFAULT_ELGAMAL_GENERATOR_BIGUINT: BigUint = scalar_to_biguint(&DEFAULT_ELGAMAL_GENERATOR);
 }
 
 /// The result of creating an ElGamal encryption
@@ -36,7 +38,7 @@ pub fn encrypt_scalar(val: Scalar, pubkey: &BigUint) -> (ElGamalCiphertext, Scal
     let randomness = scalar_to_biguint(&Scalar::random(&mut rng));
 
     let field_mod = get_ristretto_group_modulus();
-    let ciphertext1 = scalar_to_biguint(&DEFAULT_ELGAMAL_GENERATOR).modpow(&randomness, &field_mod);
+    let ciphertext1 = DEFAULT_ELGAMAL_GENERATOR_BIGUINT.modpow(&randomness, &field_mod);
     let shared_secret = pubkey.modpow(&randomness, &field_mod);
 
     let encrypted_message = (shared_secret * scalar_to_biguint(&val)) % &field_mod;
@@ -48,4 +50,41 @@ pub fn encrypt_scalar(val: Scalar, pubkey: &BigUint) -> (ElGamalCiphertext, Scal
         },
         biguint_to_scalar(&randomness),
     )
+}
+
+/// Decrypt an ElGamal encrypted scalar using the given private key
+pub fn decrypt_scalar(cipher: ElGamalCiphertext, secret_key: &BigUint) -> Scalar {
+    let field_mod = get_ristretto_group_modulus();
+    let partial_shared_secret_biguint = scalar_to_biguint(&cipher.partial_shared_secret);
+    let shared_secret = partial_shared_secret_biguint.modpow(secret_key, &field_mod);
+
+    let shared_secret_scalar = biguint_to_scalar(&shared_secret);
+
+    shared_secret_scalar.invert() * cipher.encrypted_message
+}
+
+#[cfg(test)]
+mod tests {
+    use curve25519_dalek::scalar::Scalar;
+    use rand_core::OsRng;
+
+    use crate::fields::{get_ristretto_group_modulus, scalar_to_biguint};
+
+    use super::{decrypt_scalar, encrypt_scalar, DEFAULT_ELGAMAL_GENERATOR_BIGUINT};
+
+    /// Generates a random keypair and encrypts a random scalar under this keypair
+    /// decrypts the ciphertext and verifies that the decryption succeeded
+    #[test]
+    fn test_random_keypair_and_ciphertext() {
+        let mut rng = OsRng {};
+        let modulus = get_ristretto_group_modulus();
+        let secret_key = scalar_to_biguint(&Scalar::random(&mut rng));
+        let public_key = DEFAULT_ELGAMAL_GENERATOR_BIGUINT.modpow(&secret_key, &modulus);
+
+        let plaintext = Scalar::random(&mut rng);
+        let (ciphertext, _) = encrypt_scalar(plaintext, &public_key);
+        let recovered_plaintext = decrypt_scalar(ciphertext, &secret_key);
+
+        assert_eq!(recovered_plaintext, plaintext);
+    }
 }

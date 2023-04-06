@@ -130,22 +130,8 @@ impl From<Wallet> for IndexedWallet {
             orders,
             balances,
             fees,
-            public_keys: IndexedKeychain {
-                pk_root: biguint_to_scalar(&wallet.key_chain.public_keys.pk_root),
-                pk_match: biguint_to_scalar(&wallet.key_chain.public_keys.pk_match),
-                pk_settle: biguint_to_scalar(&wallet.key_chain.public_keys.pk_settle),
-                pk_view: biguint_to_scalar(&wallet.key_chain.public_keys.pk_view),
-            },
-            secret_keys: IndexedPrivateKeychain {
-                sk_root: wallet
-                    .key_chain
-                    .secret_keys
-                    .sk_root
-                    .map(|key| biguint_to_scalar(&key)),
-                sk_match: biguint_to_scalar(&wallet.key_chain.secret_keys.sk_match),
-                sk_settle: biguint_to_scalar(&wallet.key_chain.secret_keys.sk_settle),
-                sk_view: biguint_to_scalar(&wallet.key_chain.secret_keys.sk_view),
-            },
+            public_keys: wallet.key_chain.public_keys.into(),
+            secret_keys: wallet.key_chain.secret_keys.into(),
             randomness: wallet.randomness,
             metadata: WalletMetadata::default(),
             proof_staleness: AtomicU32::new(0),
@@ -342,6 +328,17 @@ pub struct PublicKeys {
     pub pk_view: BigUint,
 }
 
+impl From<PublicKeys> for IndexedKeychain {
+    fn from(keys: PublicKeys) -> Self {
+        IndexedKeychain {
+            pk_root: biguint_to_scalar(&keys.pk_root),
+            pk_match: biguint_to_scalar(&keys.pk_match),
+            pk_settle: biguint_to_scalar(&keys.pk_settle),
+            pk_view: biguint_to_scalar(&keys.pk_view),
+        }
+    }
+}
+
 /// The set of secret keys for a wallet
 ///
 /// Note that `sk_root` may be unknown as a relayer that holds `sk_root` is said
@@ -375,6 +372,17 @@ pub struct SecretKeys {
         deserialize_with = "biguint_from_hex_string"
     )]
     pub sk_view: BigUint,
+}
+
+impl From<SecretKeys> for IndexedPrivateKeychain {
+    fn from(keys: SecretKeys) -> Self {
+        IndexedPrivateKeychain {
+            sk_root: keys.sk_root.map(|key| biguint_to_scalar(&key)),
+            sk_match: biguint_to_scalar(&keys.sk_match),
+            sk_settle: biguint_to_scalar(&keys.sk_settle),
+            sk_view: biguint_to_scalar(&keys.sk_view),
+        }
+    }
 }
 
 // ------------------------
