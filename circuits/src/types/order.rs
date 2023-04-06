@@ -51,6 +51,13 @@ pub struct Order {
     pub timestamp: u64,
 }
 
+impl Order {
+    /// Whether or not this is the zero'd order
+    pub fn is_default(&self) -> bool {
+        self.eq(&Self::default())
+    }
+}
+
 /// Convert a vector of u64s to an Order
 impl TryFrom<&[u64]> for Order {
     type Error = TypeConversionError;

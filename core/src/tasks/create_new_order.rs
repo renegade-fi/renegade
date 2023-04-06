@@ -335,7 +335,6 @@ impl NewOrderTask {
             .await
             .map_err(|err| NewOrderTaskError::StarknetClient(err.to_string()))?;
         let new_root = authentication_path.compute_root();
-        log::info!("found merkle path in contract state");
 
         // A wallet that is compatible with circuit types
         let circuit_wallet: SizedWallet = self.new_wallet.clone().into();
