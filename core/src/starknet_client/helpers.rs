@@ -15,6 +15,10 @@ use super::error::StarknetClientError;
 /// The starknet field is of size 2 ** 251 + \delta, which fits at most
 /// 31 bytes cleanly into a single felt
 const BYTES_PER_FELT: usize = 31;
+/// The number of felts in an external transfer struct
+///
+/// 1 for the sender/recipient account, 1 for the mint, 2 for the amount (U256) and 1 for the direction
+const EXTERNAL_TRANSFER_N_FELTS: usize = 5;
 /// The index of the `encryption_blob_len` parameter in the `new_wallet` calldata
 const NEW_WALLET_ENCRYPTION_BLOB_IDX: usize = 2;
 /// The index of the `internal_transfer_ciphertext_len` argument in the `update_wallet` calldata
@@ -65,7 +69,7 @@ fn parse_ciphertext_update_wallet(calldata: &[StarknetFieldElement]) -> Vec<Star
 
     // Read through the external transfers
     let external_transfers_len: u64 = calldata[cursor].try_into().unwrap();
-    cursor += (external_transfers_len as usize) + 1;
+    cursor += (external_transfers_len as usize) * EXTERNAL_TRANSFER_N_FELTS + 1;
 
     // The next argument is the ciphertext blob length
     let ciphertext_blob_len: u64 = calldata[cursor].try_into().unwrap();
