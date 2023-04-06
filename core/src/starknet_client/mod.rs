@@ -15,12 +15,21 @@ use crate::MERKLE_HEIGHT;
 
 pub mod client;
 pub mod error;
+mod helpers;
 pub mod types;
 
 lazy_static! {
     // -------------
     // | Selectors |
     // -------------
+
+    // -- Getters --
+
+    /// Contract view function selector to get the most recent transaction updating a given wallet
+    static ref GET_WALLET_LAST_UPDATED_SELECTOR: StarknetFieldElement = get_selector_from_name("get_wallet_update")
+        .unwrap();
+
+    // -- Setters --
 
     /// Contract function selector to create a new wallet
     static ref NEW_WALLET_SELECTOR: StarknetFieldElement = get_selector_from_name("new_wallet")

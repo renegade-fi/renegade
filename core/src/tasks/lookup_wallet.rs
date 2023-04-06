@@ -5,15 +5,22 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use async_trait::async_trait;
 use crossbeam::channel::Sender as CrossbeamSender;
+use crypto::fields::{biguint_to_scalar, starknet_felt_to_biguint};
 use serde::Serialize;
+use starknet::core::types::FieldElement as StarknetFieldElement;
+use tracing::log;
 
 use crate::{
-    external_api::types::KeyChain, proof_generation::jobs::ProofManagerJob,
-    starknet_client::client::StarknetClient, state::RelayerState,
+    external_api::types::KeyChain,
+    proof_generation::jobs::ProofManagerJob,
+    starknet_client::client::{StarknetClient, TransactionHash},
+    state::RelayerState,
 };
 
 use super::driver::{StateWrapper, Task};
 
+/// The error thrown when the wallet cannot be found in tx history
+const ERR_WALLET_NOT_FOUND: &str = "wallet not found in wallet_last_updated map";
 /// The task name for the lookup wallet task
 const LOOKUP_WALLET_TASK_NAME: &str = "lookup-wallet";
 
@@ -59,6 +66,8 @@ impl From<LookupWalletTaskState> for StateWrapper {
 /// The error type thrown by the wallet lookup task
 #[derive(Clone, Debug)]
 pub enum LookupWalletTaskError {
+    /// Wallet was not found in contract storage
+    NotFound(String),
     /// Error interacting with the starknet client
     Starknet(String),
 }
@@ -132,6 +141,34 @@ impl LookupWalletTask {
 
     /// Find the wallet in the contract storage and create an opening for the wallet
     async fn find_wallet(&mut self) -> Result<(), LookupWalletTaskError> {
+        // Get the transaction that last updated the given wallet
+        let pk_view_scalar = biguint_to_scalar(&self.key_chain.public_keys.pk_view);
+        let last_updated: TransactionHash = self
+            .starknet_client
+            .get_wallet_last_updated(pk_view_scalar)
+            .await
+            .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?;
+
+        if last_updated == StarknetFieldElement::ZERO {
+            return Err(LookupWalletTaskError::NotFound(
+                ERR_WALLET_NOT_FOUND.to_string(),
+            ));
+        }
+
+        log::info!(
+            "wallet last updated at: 0x{:x}",
+            starknet_felt_to_biguint(&last_updated)
+        );
+
+        let _ciphertext_blob = self
+            .starknet_client
+            .fetch_ciphertext_from_tx(last_updated)
+            .await
+            .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?;
+
+        // Parse the ciphertext into an encrypted wallet
+        log::info!("parsed ciphertext blob!");
+
         unimplemented!("")
     }
 

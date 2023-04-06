@@ -10,10 +10,11 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use async_trait::async_trait;
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
+use crypto::fields::{biguint_to_scalar, scalar_to_biguint, starknet_felt_to_biguint};
 use serde::Serialize;
 use starknet::core::types::TransactionStatus;
 use tokio::sync::oneshot;
+use tracing::log;
 
 use crate::{
     external_api::types::Wallet,
@@ -249,6 +250,7 @@ impl NewWalletTask {
             )
             .await
             .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))?;
+        log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
 
         let res = self
             .starknet_client

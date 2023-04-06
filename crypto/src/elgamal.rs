@@ -19,7 +19,7 @@ lazy_static! {
 }
 
 /// The result of creating an ElGamal encryption
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ElGamalCiphertext {
     /// The shared secret; the generator raised to the randomness
     pub partial_shared_secret: Scalar,

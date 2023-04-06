@@ -307,7 +307,7 @@ impl NewOrderTask {
             )
             .await
             .map_err(|err| NewOrderTaskError::StarknetClient(err.to_string()))?;
-        log::info!("got tx hash: {:x}", starknet_felt_to_biguint(&tx_hash));
+        log::info!("tx hash: {:x}", starknet_felt_to_biguint(&tx_hash));
 
         // Await transaction completion
         let tx_info = self
