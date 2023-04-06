@@ -49,6 +49,13 @@ pub struct Fee {
     pub percentage_fee: FixedPoint,
 }
 
+impl Fee {
+    /// Whether or not the given instance is a default fee
+    pub fn is_default(&self) -> bool {
+        self.eq(&Fee::default())
+    }
+}
+
 impl TryFrom<&[u64]> for Fee {
     type Error = TypeConversionError;
 

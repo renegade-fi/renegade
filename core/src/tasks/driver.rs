@@ -26,13 +26,13 @@ const BACKOFF_AMPLIFICATION_FACTOR: u32 = 2;
 /// The maximum to increase the backoff to in milliseconds
 const BACKOFF_CEILING_MS: u64 = 30_000; // 30 seconds
 /// The initial backoff time when retrying a task
-const INITIAL_BACKOFF_MS: u64 = 1000; // 1 second
+const INITIAL_BACKOFF_MS: u64 = 2000; // 2 seconds
 /// The number of threads backing the tokio runtime
 const TASK_DRIVER_N_THREADS: usize = 1;
 /// The name of the threads backing the task driver
 const TASK_DRIVER_THREAD_NAME: &str = "renegade-task-driver";
 /// The number of times to retry a step in a task before propagating the error
-const TASK_DRIVER_N_RETRIES: usize = 8;
+const TASK_DRIVER_N_RETRIES: usize = 12;
 
 /// The task trait defines a sequence of largely async flows, each of which is possibly
 /// unreliable and may need to be retried until completion or to some retry threshold

@@ -195,6 +195,11 @@ impl InitializeStateTask {
 
             let match_nullifier = wallet.get_match_nullifier();
             for (order_id, order) in wallet.orders.iter() {
+                // Skip default orders
+                if order.is_default() {
+                    continue;
+                }
+
                 // Add the order to the book
                 {
                     self.global_state

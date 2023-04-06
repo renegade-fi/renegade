@@ -276,7 +276,12 @@ impl RelayerState {
             let wallet_match_nullifier = wallet.get_match_nullifier();
             locked_wallet_index.add_wallet(wallet.clone());
 
-            for order_id in wallet.orders.into_keys() {
+            for (order_id, order) in wallet.orders.into_iter() {
+                // Skip default orders
+                if order.is_default() {
+                    continue;
+                }
+
                 locked_order_book
                     .add_order(NetworkOrder::new(
                         order_id,

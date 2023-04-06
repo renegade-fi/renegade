@@ -93,22 +93,39 @@ impl TypedHandler for GetWalletHandler {
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        if let Some(wallet) = self
+        let mut wallet = if let Some(wallet) = self
             .global_state
             .read_wallet_index()
             .await
             .get_wallet(&wallet_id)
             .await
         {
-            Ok(GetWalletResponse {
-                wallet: wallet.into(),
-            })
+            wallet
         } else {
-            Err(ApiServerError::HttpStatusCode(
+            return Err(ApiServerError::HttpStatusCode(
                 StatusCode::NOT_FOUND,
                 ERR_WALLET_NOT_FOUND.to_string(),
-            ))
-        }
+            ));
+        };
+
+        // Filter out empty orders, balances, and fees
+        wallet.orders = wallet
+            .orders
+            .into_iter()
+            .filter(|(_id, order)| !order.is_default())
+            .map(|(id, order)| (id, order))
+            .collect();
+        wallet.balances = wallet
+            .balances
+            .into_iter()
+            .filter(|(_mint, balance)| !balance.is_default())
+            .map(|(mint, balance)| (mint, balance))
+            .collect();
+        wallet.fees.retain(|fee| !fee.is_default());
+
+        Ok(GetWalletResponse {
+            wallet: wallet.into(),
+        })
     }
 }
 

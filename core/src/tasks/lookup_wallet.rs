@@ -234,6 +234,9 @@ impl LookupWalletTask {
             .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?;
         wallet.merkle_proof = Some(authentication_path);
 
+        // Index the wallet
+        self.global_state.add_wallets(vec![wallet.clone()]).await;
+
         self.wallet = Some(wallet);
         Ok(())
     }

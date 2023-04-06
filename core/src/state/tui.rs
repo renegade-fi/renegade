@@ -140,6 +140,9 @@ impl StateTuiApp {
     /// An implementation of the execution loop
     fn execution_loop(mut self) {
         let timeout = Duration::from_millis(TUI_REFRESH_RATE_MS);
+        // Hide the detailed log menu to begin
+        self.smart_logger_state.transition(&LoggerEvent::HideKey);
+
         loop {
             // Borrow the terminal explicitly so that the closure may use self
             let mut term = self.terminal.borrow_mut();
@@ -554,7 +557,7 @@ impl StateTuiApp {
             .style_warn(Style::default().fg(Color::Yellow))
             .style_trace(Style::default().fg(Color::Magenta))
             .style_info(Style::default().fg(Color::Cyan))
-            .output_separator(':')
+            .output_separator(' ')
             .output_timestamp(Some("%H:%M:%S".to_string()))
             .output_level(Some(TuiLoggerLevelOutput::Abbreviated))
             .output_target(true)

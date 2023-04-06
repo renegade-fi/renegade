@@ -35,6 +35,13 @@ pub struct Balance {
     pub amount: u64,
 }
 
+impl Balance {
+    /// Whether or not the instance is a default balance
+    pub fn is_default(&self) -> bool {
+        self.eq(&Balance::default())
+    }
+}
+
 /// Represents the constraint system allocated type of a balance in tuple holding a
 /// reference to the ERC-20 token and its amount
 #[derive(Copy, Clone, Debug)]

@@ -665,7 +665,7 @@ impl SettleMatchTask {
             .await
             .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
 
-        log::info!("got tx hash: {:x}", starknet_felt_to_biguint(&tx_hash));
+        log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
         let tx_info = self
             .starknet_client
             .poll_transaction_completed(tx_hash)
@@ -780,7 +780,7 @@ impl SettleMatchTask {
             .await
             .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
 
-        log::info!("got tx hash: {:x}", starknet_felt_to_biguint(&tx_hash));
+        log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
 
         let tx_result = self
             .starknet_client
@@ -824,6 +824,11 @@ impl SettleMatchTask {
         // Request that the proof manager prove `VALID COMMITMENTS` for each order
         let mut proof_response_channels = HashMap::new();
         for (order_id, order) in self.new_wallet.orders.clone().into_iter() {
+            // Skip default orders
+            if order.is_default() {
+                continue;
+            }
+
             // Build a witness for this order's validity proof
             let witness = if let Some(witness) = self
                 .get_witness_for_order(

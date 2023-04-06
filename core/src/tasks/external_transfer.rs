@@ -338,7 +338,7 @@ impl ExternalTransferTask {
             )
             .await
             .map_err(|err| ExternalTransferTaskError::StarknetClient(err.to_string()))?;
-        log::info!("tx hash: {:x}", starknet_felt_to_biguint(&tx_hash));
+        log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
 
         // Await transaction completion
         let tx_info = self
@@ -366,7 +366,6 @@ impl ExternalTransferTask {
             .await
             .map_err(|err| ExternalTransferTaskError::StarknetClient(err.to_string()))?;
         let new_root = authentication_path.compute_root();
-        log::info!("found merkle path in contract state");
 
         // A wallet that is compatible with circuit types
         let circuit_wallet: SizedWallet = self.new_wallet.clone().into();
@@ -384,6 +383,11 @@ impl ExternalTransferTask {
         // Request that the proof manager prove `VALID COMMITMENTS` for each order
         let mut proof_response_channels = HashMap::new();
         for (order_id, order) in self.new_wallet.orders.clone().into_iter() {
+            // Skip default orders
+            if order.is_default() {
+                continue;
+            }
+
             // Build a witness for this order's validity proof
             let witness = if let Some(witness) = self
                 .get_witness_for_order(
