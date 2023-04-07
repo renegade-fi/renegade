@@ -227,6 +227,7 @@ impl LookupWalletTask {
 
         // Find the Merkle authentication path for the wallet
         let wallet_commitment = wallet.get_commitment();
+
         let authentication_path = self
             .starknet_client
             .find_merkle_authentication_path(wallet_commitment)

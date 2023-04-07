@@ -352,6 +352,11 @@ impl NewOrderTask {
         // Request that the proof manager prove `VALID COMMITMENTS` for each order
         let mut proof_response_channels = HashMap::new();
         for (order_id, order) in self.new_wallet.orders.clone().into_iter() {
+            // Skip default orders
+            if order.is_default() {
+                continue;
+            }
+
             // Build a witness for this order's validity proof
             let witness = if let Some(witness) = self
                 .get_witness_for_order(

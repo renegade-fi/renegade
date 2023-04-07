@@ -368,38 +368,39 @@ where
 impl From<Wallet> for SizedCircuitWallet {
     fn from(wallet: Wallet) -> Self {
         // Pad the balances, orders, and fees to the size the wallet circuitry expects
-        let padded_balances: [Balance; MAX_BALANCES] = wallet
+        // Sort the values so they appear in the same order every time we commit to
+        // a wallet
+        let mut padded_balances = wallet
             .balances
             .values()
             .cloned()
             .chain(iter::repeat(Balance::default()))
             .take(MAX_BALANCES)
-            .collect_vec()
-            .try_into()
-            .unwrap();
-        let padded_orders: [Order; MAX_ORDERS] = wallet
+            .collect_vec();
+        padded_balances.sort_by(|a, b| a.mint.cmp(&b.mint));
+
+        let mut padded_orders = wallet
             .orders
             .values()
             .cloned()
             .chain(iter::repeat(Order::default()))
             .take(MAX_ORDERS)
-            .collect_vec()
-            .try_into()
-            .unwrap();
-        let padded_fees: [Fee; MAX_FEES] = wallet
+            .collect_vec();
+        padded_orders.sort_by(|a, b| a.quote_mint.cmp(&b.quote_mint));
+
+        let mut padded_fees = wallet
             .fees
             .iter()
             .cloned()
             .chain(iter::repeat(Fee::default()))
             .take(MAX_FEES)
-            .collect_vec()
-            .try_into()
-            .unwrap();
+            .collect_vec();
+        padded_fees.sort_by(|a, b| a.gas_addr.cmp(&b.gas_addr));
 
         CircuitWallet {
-            balances: padded_balances,
-            orders: padded_orders,
-            fees: padded_fees,
+            balances: padded_balances.try_into().unwrap(),
+            orders: padded_orders.try_into().unwrap(),
+            fees: padded_fees.try_into().unwrap(),
             keys: wallet.public_keys,
             randomness: biguint_to_scalar(&wallet.randomness),
         }
