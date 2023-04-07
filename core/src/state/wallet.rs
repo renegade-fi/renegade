@@ -395,7 +395,7 @@ impl From<Wallet> for SizedCircuitWallet {
             .chain(iter::repeat(Fee::default()))
             .take(MAX_FEES)
             .collect_vec();
-        padded_fees.sort_by(|a, b| a.gas_addr.cmp(&b.gas_addr));
+        padded_fees.sort_by(|a, b| a.gas_addr.cmp(&b.gas_addr).reverse());
 
         CircuitWallet {
             balances: padded_balances.try_into().unwrap(),
@@ -472,7 +472,8 @@ impl Wallet {
             return None;
         }
 
-        let fee = self.fees.get(0 /* index */)?;
+        // Choose the first non-default fee
+        let fee = self.fees.iter().find(|fee| !fee.is_default())?;
         let fee_balance = self.balances.get(&fee.gas_addr.clone())?;
         if fee_balance.amount < fee.gas_token_amount {
             return None;
