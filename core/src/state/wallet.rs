@@ -17,7 +17,7 @@ use circuits::{
         balance::Balance,
         fee::Fee,
         keychain::{KeyChain, NUM_KEYS},
-        note::Note,
+        note::{Note, NoteType},
         order::{Order, OrderSide},
         wallet::{Nullifier, Wallet as CircuitWallet, WalletCommitment},
     },
@@ -486,26 +486,51 @@ impl Wallet {
     pub fn apply_note(&self, note: &Note) -> Wallet {
         let mut new_wallet = self.clone();
 
+        // Apply the note to the balances list
         new_wallet.apply_balance_update(note.mint1.clone(), note.volume1, note.direction1);
         new_wallet.apply_balance_update(note.mint2.clone(), note.volume2, note.direction2);
         new_wallet.apply_balance_update(note.fee_mint.clone(), note.fee_volume, note.fee_direction);
+
+        // Apply the note to the orders list
+        if matches!(note.type_, NoteType::Match) {
+            // Find the order that was matched
+            let (order_id, order) = self
+                .orders
+                .iter()
+                .find(|(_order_id, order)| {
+                    order.base_mint == note.mint1
+                        && order.quote_mint == note.mint2
+                        && order.side == note.direction1 // base mint direction
+                })
+                .unwrap();
+
+            // Decrement the volume of the order by the
+            let mut new_order = order.clone();
+            new_order.amount -= note.volume1;
+
+            if new_order.amount == 0 {
+                new_order = Order::default();
+            }
+
+            // Replace the order in the wallet
+            new_wallet.orders.insert(*order_id, new_order);
+        }
 
         new_wallet
     }
 
     /// Helper to apply a balance update within a note to the wallet
     fn apply_balance_update(&mut self, mint: BigUint, volume: u64, direction: OrderSide) {
-        let existing_amount = &mut self
+        let current_balance = self
             .balances
             .entry(mint.clone())
-            .or_insert(Balance { mint, amount: 0 })
-            .amount;
+            .or_insert(Balance { mint, amount: 0 });
 
         match direction {
-            OrderSide::Buy => *existing_amount += volume,
+            OrderSide::Buy => current_balance.amount += volume,
             OrderSide::Sell => {
                 // Allow the operation to panic on underflow, we can handle this explicitly if needed down the road
-                *existing_amount -= volume;
+                current_balance.amount -= volume;
             }
         };
     }
@@ -676,10 +701,49 @@ impl WalletIndex {
 
 #[cfg(test)]
 mod tests {
-    use curve25519_dalek::scalar::Scalar;
-    use rand_core::OsRng;
+    use std::{collections::HashMap, sync::atomic::AtomicU32};
 
-    use super::PrivateKeyChain;
+    use circuits::{
+        types::{
+            balance::Balance,
+            keychain::KeyChain,
+            note::{Note, NoteType},
+            order::{Order, OrderSide},
+        },
+        zk_gadgets::fixed_point::FixedPoint,
+    };
+    use curve25519_dalek::scalar::Scalar;
+    use num_bigint::BigUint;
+    use rand_core::OsRng;
+    use uuid::Uuid;
+
+    use super::{PrivateKeyChain, Wallet, WalletMetadata};
+
+    /// Helper to create a dummy wallet for testing
+    fn create_dummy_wallet() -> Wallet {
+        Wallet {
+            wallet_id: Uuid::new_v4(),
+            orders: HashMap::new(),
+            balances: HashMap::new(),
+            fees: vec![],
+            public_keys: KeyChain {
+                pk_root: Scalar::zero(),
+                pk_match: Scalar::zero(),
+                pk_settle: Scalar::zero(),
+                pk_view: Scalar::zero(),
+            },
+            secret_keys: PrivateKeyChain {
+                sk_root: None,
+                sk_match: Scalar::zero(),
+                sk_settle: Scalar::zero(),
+                sk_view: Scalar::zero(),
+            },
+            randomness: BigUint::from(1u8),
+            merkle_proof: None,
+            metadata: WalletMetadata::default(),
+            proof_staleness: AtomicU32::default(),
+        }
+    }
 
     /// Test serialization/deserialization of a PrivateKeyChain
     #[test]
@@ -707,5 +771,120 @@ mod tests {
         let serialized = serde_json::to_string(&keychain).unwrap();
         let deserialized: PrivateKeyChain = serde_json::from_str(&serialized).unwrap();
         assert_eq!(keychain, deserialized);
+    }
+
+    /// Tests applying a note to a wallet
+    #[test]
+    fn test_apply_note_buy_side() {
+        let quote_mint = BigUint::from(5u8);
+        let base_mint = BigUint::from(6u8);
+        let fee_mint = BigUint::from(7u8);
+        let order_id = Uuid::new_v4();
+
+        // Create a dummy wallet with an order and a balance to update
+        let order = Order {
+            quote_mint: quote_mint.clone(),
+            base_mint: base_mint.clone(),
+            price: FixedPoint::from_integer(10),
+            side: OrderSide::Buy,
+            amount: 10,
+            timestamp: 0,
+        };
+        let balances = vec![
+            Balance {
+                mint: quote_mint.clone(),
+                amount: 200,
+            },
+            Balance {
+                mint: fee_mint.clone(),
+                amount: 500,
+            },
+        ];
+
+        let mut wallet = create_dummy_wallet();
+        wallet.orders.insert(order_id, order);
+        wallet.balances = balances
+            .into_iter()
+            .map(|balance| (balance.mint.clone(), balance))
+            .collect();
+
+        // Create a note to apply to the wallet
+        let dummy_note = Note {
+            mint1: base_mint.clone(),
+            volume1: 9,
+            direction1: OrderSide::Buy,
+            mint2: quote_mint.clone(),
+            volume2: 81, // at a price of 9 quote / base
+            direction2: OrderSide::Sell,
+            fee_mint: fee_mint.clone(),
+            fee_volume: 100,
+            fee_direction: OrderSide::Sell,
+            type_: NoteType::Match,
+            randomness: BigUint::from(1u8),
+        };
+        let new_wallet = wallet.apply_note(&dummy_note);
+
+        // Validate that the balances and orders are updated properly
+        assert_eq!(new_wallet.balances.get(&quote_mint).unwrap().amount, 119);
+        assert_eq!(new_wallet.balances.get(&base_mint).unwrap().amount, 9);
+        assert_eq!(new_wallet.balances.get(&fee_mint).unwrap().amount, 400);
+        assert_eq!(new_wallet.orders.get(&order_id).unwrap().amount, 1);
+    }
+
+    #[test]
+    fn test_apply_note_sell_side() {
+        let quote_mint = BigUint::from(5u8);
+        let base_mint = BigUint::from(6u8);
+        let fee_mint = BigUint::from(7u8);
+        let order_id = Uuid::new_v4();
+
+        // Create a dummy wallet with an order and a balance to update
+        let order = Order {
+            quote_mint: quote_mint.clone(),
+            base_mint: base_mint.clone(),
+            price: FixedPoint::from_integer(10),
+            side: OrderSide::Sell,
+            amount: 10,
+            timestamp: 0,
+        };
+        let balances = vec![
+            Balance {
+                mint: base_mint.clone(),
+                amount: 200,
+            },
+            Balance {
+                mint: fee_mint.clone(),
+                amount: 500,
+            },
+        ];
+
+        let mut wallet = create_dummy_wallet();
+        wallet.orders.insert(order_id, order);
+        wallet.balances = balances
+            .into_iter()
+            .map(|balance| (balance.mint.clone(), balance))
+            .collect();
+
+        // Create a note to apply to the wallet
+        let dummy_note = Note {
+            mint1: base_mint.clone(),
+            volume1: 9,
+            direction1: OrderSide::Sell,
+            mint2: quote_mint.clone(),
+            volume2: 81, // at a price of 9 quote / base
+            direction2: OrderSide::Buy,
+            fee_mint: fee_mint.clone(),
+            fee_volume: 100,
+            fee_direction: OrderSide::Sell,
+            type_: NoteType::Match,
+            randomness: BigUint::from(1u8),
+        };
+        let new_wallet = wallet.apply_note(&dummy_note);
+
+        // Validate that the balances and orders are updated properly
+        assert_eq!(new_wallet.balances.get(&quote_mint).unwrap().amount, 81);
+        assert_eq!(new_wallet.balances.get(&base_mint).unwrap().amount, 191);
+        assert_eq!(new_wallet.balances.get(&fee_mint).unwrap().amount, 400);
+        assert_eq!(new_wallet.orders.get(&order_id).unwrap().amount, 1);
     }
 }
