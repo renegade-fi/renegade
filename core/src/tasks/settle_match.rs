@@ -5,9 +5,6 @@
 //!     - Build a settlement proof, and submit this to the contract in a `settle` transaction
 //!     - Await finality then update the wallets into the relayer-global state
 
-// TODO: Remove this
-#![allow(unused)]
-
 use std::{
     collections::HashMap,
     convert::TryInto,
@@ -20,39 +17,33 @@ use circuits::{
         compute_note_commitment, compute_note_redeem_nullifier, compute_poseidon_hash,
     },
     types::{
-        fee::LinkableFeeCommitment,
         note::{Note, NoteType},
         order::{Order as CircuitOrder, OrderSide},
-        r#match::LinkableMatchResultCommitment,
         wallet::Nullifier,
     },
     zk_circuits::{
         valid_commitments::ValidCommitmentsStatement,
         valid_match_encryption::{ValidMatchEncryptionStatement, ValidMatchEncryptionWitness},
-        valid_settle::ValidSettleStatement,
     },
     zk_gadgets::{fixed_point::FixedPoint, merkle::MerkleOpening},
-    LinkableCommitment,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::{
     elgamal::encrypt_scalar,
     fields::{
-        biguint_to_prime_field, biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint,
-        scalar_to_prime_field, starknet_felt_to_biguint,
+        biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint, scalar_to_prime_field,
+        starknet_felt_to_biguint,
     },
 };
 use curve25519_dalek::scalar::Scalar;
-use futures::TryFutureExt;
 use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use rand_core::OsRng;
 use serde::Serialize;
-use starknet::core::types::TransactionStatus;
+use starknet::core::types::{TransactionInfo, TransactionStatus};
 use tokio::sync::oneshot;
 use tracing::log;
 
 use crate::{
-    gossip_api::gossip::ConnectionRole,
     handshake::{r#match::HandshakeResult, state::HandshakeState},
     proof_generation::jobs::{
         ProofJob, ProofManagerJob, ValidCommitmentsBundle, ValidMatchEncryptBundle,
@@ -61,10 +52,7 @@ use crate::{
     starknet_client::client::StarknetClient,
     state::{wallet::Wallet, NetworkOrder, NetworkOrderState, OrderIdentifier, RelayerState},
     tasks::{encrypt_wallet, RANDOMNESS_INCREMENT},
-    types::{
-        SizedValidCommitments, SizedValidCommitmentsWitness, SizedValidSettleStatement,
-        SizedValidSettleWitness,
-    },
+    types::{SizedValidCommitmentsWitness, SizedValidSettleStatement, SizedValidSettleWitness},
     SizedWallet, PROTOCOL_FEE, PROTOCOL_SETTLE_KEY,
 };
 
@@ -75,6 +63,8 @@ use super::{
 
 /// Error emitted when a transaction fails
 const ERR_TRANSACTION_FAILED: &str = "transaction rejected";
+/// The error message the contract emits when a nullifier has been used
+const NULLIFIER_USED_ERROR_MSG: &str = "nullifier already used";
 /// The displayable name for the settle match task
 const SETTLE_MATCH_TASK_NAME: &str = "settle-match";
 
@@ -261,8 +251,6 @@ impl SettleMatchTask {
     pub async fn new(
         handshake_state: HandshakeState,
         handshake_result: HandshakeResult,
-        party0_match_nullifier: Nullifier,
-        party1_match_nullifier: Nullifier,
         party0_validity_proof: ValidCommitmentsBundle,
         party1_validity_proof: ValidCommitmentsBundle,
         starknet_client: StarknetClient,
@@ -643,13 +631,11 @@ impl SettleMatchTask {
             encrypt_note(self.match_notes.protocol_note.clone(), &PROTOCOL_SETTLE_KEY);
 
         // Submit the bundle to the contract
-        // TODO: remove this
-        let mut rng = OsRng {};
         let tx_hash = self
             .starknet_client
             .submit_match(
-                self.handshake_result.party0_match_nullifier + Scalar::random(&mut rng),
-                self.handshake_result.party1_match_nullifier + Scalar::random(&mut rng),
+                self.handshake_result.party0_match_nullifier,
+                self.handshake_result.party1_match_nullifier,
                 party0_note_commit,
                 party0_note_cipher,
                 party1_note_commit,
@@ -672,13 +658,32 @@ impl SettleMatchTask {
             .await
             .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
 
+        // If the transaction fails because the local party's match nullifier is already spend, then
+        // the counterparty encumbered the local party, in this case, it is safe to move to settlement
         if let TransactionStatus::Rejected = tx_info.status {
-            return Err(SettleMatchTaskError::StarknetClient(
-                ERR_TRANSACTION_FAILED.to_string(),
-            ));
+            if Self::nullifier_spent_failure(tx_info, self.handshake_state.local_match_nullifier) {
+                return Ok(());
+            } else {
+                return Err(SettleMatchTaskError::StarknetClient(
+                    ERR_TRANSACTION_FAILED.to_string(),
+                ));
+            }
         }
 
         Ok(())
+    }
+
+    /// Whether or not a transaction failed because the given nullifier was already spent
+    fn nullifier_spent_failure(tx_info: TransactionInfo, nullifier: Nullifier) -> bool {
+        if let Some(failure_reason) = tx_info.transaction_failure_reason
+        && let Some(error_message) = failure_reason.error_message
+        {
+            // Search for the string "nullifier already used <decimal valued nullifier>"
+            let nullifier_used_pattern = format!("{} {}", NULLIFIER_USED_ERROR_MSG, scalar_to_biguint(&nullifier));
+            return error_message.contains(&nullifier_used_pattern)
+        }
+
+        false
     }
 
     /// Prove `VALID SETTLE` on the transaction

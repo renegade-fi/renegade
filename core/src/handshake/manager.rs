@@ -691,12 +691,6 @@ impl HandshakeExecutor {
             };
         }
 
-        // Re-order the match nullifiers by party
-        let (party0_nullifier, party1_nullifier) = order_by_party_id!(
-            handshake_state.local_match_nullifier,
-            handshake_state.peer_match_nullifier
-        );
-
         // Re-order the validity proofs by party
         let (party0_proof, party1_proof) = {
             let locked_order_book = self.global_state.read_order_book().await;
@@ -716,8 +710,6 @@ impl HandshakeExecutor {
         let task = SettleMatchTask::new(
             handshake_state,
             match_res,
-            party0_nullifier,
-            party1_nullifier,
             party0_proof,
             party1_proof,
             self.starknet_client.clone(),
