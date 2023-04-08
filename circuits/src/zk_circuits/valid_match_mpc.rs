@@ -21,6 +21,7 @@ use mpc_ristretto::{
     network::MpcNetwork,
 };
 use rand_core::OsRng;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::{MpcError, ProverError, VerifierError},
@@ -484,7 +485,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<ValidMatchCommitme
 }
 
 /// An opened commitment to the VALID MATCH MPC witness
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidMatchCommitment {
     /// A commitment to the first party's order
     pub order1: CommittedOrder,
@@ -579,7 +580,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open<N, S>
 /// The parameterization for the VALID MATCH MPC statement
 ///
 /// TODO: Add in midpoint oracle prices
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidMatchMpcStatement {}
 
 /// Prover implementation of the Valid Match circuit

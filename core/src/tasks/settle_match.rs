@@ -89,6 +89,10 @@ pub struct SettleMatchTask {
     pub handshake_state: HandshakeState,
     /// The result of the match process
     pub handshake_result: HandshakeResult,
+    /// The proof of `VALID COMMITMENTS` submitted by the first party
+    pub party0_validity_proof: ValidCommitmentsBundle,
+    /// The proof of `VALID COMMITMENTS` submitted by the second party
+    pub party1_validity_proof: ValidCommitmentsBundle,
     /// The notes that result from the match
     pub match_notes: MatchNotes,
     /// The note that settles into the local wallet
@@ -294,6 +298,8 @@ impl SettleMatchTask {
         Self {
             handshake_state,
             handshake_result,
+            party0_validity_proof,
+            party1_validity_proof,
             match_notes,
             my_note,
             old_wallet,
@@ -646,6 +652,9 @@ impl SettleMatchTask {
                 relayer1_note_cipher,
                 protocol_note_commit,
                 protocol_note_cipher,
+                self.party0_validity_proof.clone(),
+                self.party1_validity_proof.clone(),
+                self.handshake_result.match_proof.clone(),
                 proof,
             )
             .await

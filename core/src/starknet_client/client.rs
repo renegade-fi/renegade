@@ -46,8 +46,8 @@ use tracing::log;
 
 use crate::{
     proof_generation::jobs::{
-        ValidMatchEncryptBundle, ValidSettleBundle, ValidWalletCreateBundle,
-        ValidWalletUpdateBundle,
+        ValidCommitmentsBundle, ValidMatchEncryptBundle, ValidMatchMpcBundle, ValidSettleBundle,
+        ValidWalletCreateBundle, ValidWalletUpdateBundle,
     },
     starknet_client::{
         GET_WALLET_LAST_UPDATED_SELECTOR, INTERNAL_NODE_CHANGED_EVENT_SELECTOR, MATCH_SELECTOR,
@@ -639,7 +639,10 @@ impl StarknetClient {
         relayer1_note_ciphertext: Vec<ElGamalCiphertext>,
         protocol_note_commitment: NoteCommitment,
         protocol_note_ciphertext: Vec<ElGamalCiphertext>,
-        proof: ValidMatchEncryptBundle,
+        party0_validity_proof: ValidCommitmentsBundle,
+        party1_validity_proof: ValidCommitmentsBundle,
+        valid_match_proof: ValidMatchMpcBundle,
+        valid_encryption_proof: ValidMatchEncryptBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
         // Build the calldata
         let mut calldata = vec![
@@ -661,7 +664,14 @@ impl StarknetClient {
         calldata.push(Self::reduce_scalar_to_felt(&protocol_note_commitment));
         calldata.append(&mut pack_serializable!(protocol_note_ciphertext));
 
-        calldata.append(&mut pack_serializable!(proof));
+        // Build the proof blob that consists of all four proofs
+        let mut proof_blob = Vec::new();
+        proof_blob.append(&mut serde_json::to_vec(&party0_validity_proof).unwrap());
+        proof_blob.append(&mut serde_json::to_vec(&party1_validity_proof).unwrap());
+        proof_blob.append(&mut serde_json::to_vec(&valid_match_proof).unwrap());
+        proof_blob.append(&mut serde_json::to_vec(&valid_encryption_proof).unwrap());
+
+        calldata.append(&mut pack_serializable!(proof_blob));
 
         // Call the contract
         self.execute_transaction(Call {

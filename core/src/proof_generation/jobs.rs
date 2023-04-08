@@ -12,6 +12,7 @@ use circuits::{
             ValidMatchEncryptionStatement, ValidMatchEncryptionWitness,
             ValidMatchEncryptionWitnessCommitment,
         },
+        valid_match_mpc::{ValidMatchCommitment, ValidMatchMpcStatement},
         valid_settle::{ValidSettleStatement, ValidSettleWitnessCommitment},
         valid_wallet_create::{ValidWalletCreateCommitment, ValidWalletCreateStatement},
         valid_wallet_update::{ValidWalletUpdateStatement, ValidWalletUpdateWitnessCommitment},
@@ -64,6 +65,17 @@ pub struct GenericValidCommitmentsBundle<
 
 /// A type alias that specifies the default generics for `GenericValidCommitmentsBundle`
 pub type ValidCommitmentsBundle = GenericValidCommitmentsBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+
+/// A bundle of the statement, witness commitment, and proof of `VALID MATCH MPC`
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ValidMatchMpcBundle {
+    /// A commitment to the witness type of `VALID COMMITMENTS`
+    pub commitment: ValidMatchCommitment,
+    /// The statement (public variables) used to prove `VALID COMMITMENTS`
+    pub statement: ValidMatchMpcStatement,
+    /// The proof itself
+    pub proof: R1CSProof,
+}
 
 /// The response type for a request to generate a proof of `VALID WALLET UPDATE`
 #[derive(Clone, Debug, Serialize, Deserialize)]
