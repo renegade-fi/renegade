@@ -23,6 +23,7 @@ macro_rules! integration_test_main {
         use dns_lookup::lookup_host;
         use inventory::ctor;
         use std::io::{stdout, Write};
+        use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 
         use $crate::types::IntegrationTest;
 
@@ -51,11 +52,7 @@ macro_rules! integration_test_main {
         }
 
         #[allow(unused_doc_comments, clippy::await_holding_refcell_ref)]
-        #[tokio::main]
-        async fn main() {
-            /**
-             * Setup
-             */
+        fn main() {
             // Skip tests if the only CLI argument is --skip integration
             let skip_args = SkipCLI::try_parse();
             if skip_args.map_or(false, |x| x.skip == "integration") {
@@ -63,43 +60,58 @@ macro_rules! integration_test_main {
             }
 
             let args = <$cli_args>::parse();
-
-            // Call the setup callback if requested
-            $setup(&args);
-
-            /**
-             * Test harness
-             */
             let verbose = args.verbose;
-            if verbose {
-                println!("\n\n{}\n", "Running integration tests...".blue());
-            }
 
-            // Assumed From<$cli_args> is implemented for $test_args
-            let test_args: $test_args = args.clone().into();
-            let mut all_success = true;
+            let runtime = RuntimeBuilder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap();
 
-            for test_wrapper in inventory::iter::<TestWrapper> {
-                let test = test_wrapper.0.clone();
-                if args.borrow().test.is_some()
-                    && args.borrow().test.as_deref().unwrap() != test.name
-                {
-                    continue;
-                }
+            let result = runtime.spawn_blocking(move || {
+                // ---------
+                // | Setup |
+                // ---------
+
+                // Call the setup callback if requested
+                $setup(&args);
+
+                // ----------------
+                // | Test Harness |
+                // ----------------
 
                 if verbose {
-                    // Flush the write buffer before the test executes. We print success or failure on the same
-                    // line as the "Running", but if the test panics, we want to know which test was run
-                    print!("Running {}... ", test.name);
-                    stdout().flush().unwrap();
+                    println!("\n\n{}\n", "Running integration tests...".blue());
                 }
-                let res: Result<(), String> = (test.test_fn)(&test_args);
-                all_success &= validate_success(res, verbose);
-            }
 
-            // Call macro caller defined teardown
-            $teardown();
+                // Assumed From<$cli_args> is implemented for $test_args
+                let test_args: $test_args = args.clone().into();
+                let mut all_success = true;
 
+                for test_wrapper in inventory::iter::<TestWrapper> {
+                    let test = test_wrapper.0.clone();
+                    if args.borrow().test.is_some()
+                        && args.borrow().test.as_deref().unwrap() != test.name
+                    {
+                        continue;
+                    }
+
+                    if verbose {
+                        // Flush the write buffer before the test executes. We print success or failure on the same
+                        // line as the "Running", but if the test panics, we want to know which test was run
+                        print!("Running {}... ", test.name);
+                        stdout().flush().unwrap();
+                    }
+                    let res: Result<(), String> = (test.test_fn)(&test_args);
+                    all_success &= validate_success(res, verbose);
+                }
+
+                // Call macro caller defined teardown
+                $teardown();
+
+                all_success
+            });
+
+            let all_success = runtime.block_on(result).unwrap();
             if all_success {
                 if verbose {
                     println!("\n{}", "Integration tests successful!".green(),);
