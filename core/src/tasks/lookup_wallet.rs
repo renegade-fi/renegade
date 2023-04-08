@@ -18,12 +18,16 @@ use crypto::fields::{biguint_to_scalar, scalar_to_biguint, starknet_felt_to_bigu
 use curve25519_dalek::scalar::Scalar;
 use serde::Serialize;
 use starknet::core::types::FieldElement as StarknetFieldElement;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
 use tracing::log;
 use uuid::Uuid;
 
 use crate::{
     external_api::types::KeyChain,
+    gossip_api::{
+        gossip::{GossipOutbound, PubsubMessage},
+        orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
+    },
     proof_generation::jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle},
     starknet_client::client::{StarknetClient, TransactionHash},
     state::{
@@ -52,6 +56,8 @@ pub struct LookupWalletTask {
     pub wallet: Option<Wallet>,
     /// A starknet client for the task to submit transactions
     pub starknet_client: StarknetClient,
+    /// A sender to the network manager's work queue
+    pub network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
     pub global_state: RelayerState,
     /// The work queue to add proof management jobs to
@@ -154,6 +160,7 @@ impl LookupWalletTask {
         wallet_id: WalletIdentifier,
         key_chain: KeyChain,
         starknet_client: StarknetClient,
+        network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     ) -> Self {
@@ -162,6 +169,7 @@ impl LookupWalletTask {
             key_chain,
             wallet: None, // replaced in the first task step
             starknet_client,
+            network_sender,
             global_state,
             proof_manager_work_queue,
             task_state: LookupWalletTaskState::Pending,
@@ -311,7 +319,7 @@ impl LookupWalletTask {
 
             // Update the global state of the order
             self.update_order_state(order_id, wallet_match_nullifier, proof.into(), witness)
-                .await;
+                .await?;
         }
 
         // Update the wallet in the global state
@@ -362,7 +370,7 @@ impl LookupWalletTask {
         match_nullifier: Nullifier,
         proof: ValidCommitmentsBundle,
         witness: SizedValidCommitmentsWitness,
-    ) {
+    ) -> Result<(), LookupWalletTaskError> {
         // If the order does not currently exist in the book, add it
         if !self
             .global_state
@@ -377,14 +385,14 @@ impl LookupWalletTask {
                     local: true,
                     cluster: self.global_state.local_cluster_id.clone(),
                     state: NetworkOrderState::Verified,
-                    valid_commit_proof: Some(proof),
+                    valid_commit_proof: Some(proof.clone()),
                     valid_commit_witness: Some(witness),
                 })
                 .await;
         } else {
             // Otherwise, update the existing proof
             self.global_state
-                .add_order_validity_proof(&order_id, proof)
+                .add_order_validity_proof(&order_id, proof.clone())
                 .await;
             self.global_state
                 .read_order_book()
@@ -392,5 +400,20 @@ impl LookupWalletTask {
                 .attach_validity_proof_witness(&order_id, witness)
                 .await;
         }
+
+        // Broadcast the new order's validity proof to the network
+        let cluster = self.global_state.local_cluster_id.clone();
+        let message = OrderBookManagementMessage::OrderProofUpdated {
+            order_id,
+            cluster,
+            proof,
+        };
+
+        self.network_sender
+            .send(GossipOutbound::Pubsub {
+                topic: ORDER_BOOK_TOPIC.to_string(),
+                message: PubsubMessage::OrderBookManagement(message),
+            })
+            .map_err(|err| LookupWalletTaskError::SendMessage(err.to_string()))
     }
 }

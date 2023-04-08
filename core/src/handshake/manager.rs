@@ -713,6 +713,7 @@ impl HandshakeExecutor {
             party0_proof,
             party1_proof,
             self.starknet_client.clone(),
+            self.network_channel.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
         )

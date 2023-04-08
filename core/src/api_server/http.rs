@@ -226,6 +226,7 @@ impl HttpServer {
             FIND_WALLET_ROUTE.to_string(),
             FindWalletHandler::new(
                 config.starknet_client.clone(),
+                config.network_sender.clone(),
                 config.global_state.clone(),
                 config.proof_generation_work_queue.clone(),
                 config.task_driver.clone(),
@@ -245,6 +246,7 @@ impl HttpServer {
             WALLET_ORDERS_ROUTE.to_string(),
             CreateOrderHandler::new(
                 config.starknet_client.clone(),
+                config.network_sender.clone(),
                 config.global_state.clone(),
                 config.proof_generation_work_queue.clone(),
                 config.task_driver.clone(),
@@ -278,6 +280,7 @@ impl HttpServer {
             DEPOSIT_BALANCE_ROUTE.to_string(),
             DepositBalanceHandler::new(
                 config.starknet_client.clone(),
+                config.network_sender.clone(),
                 global_state.clone(),
                 config.proof_generation_work_queue.clone(),
                 config.task_driver.clone(),
@@ -290,6 +293,7 @@ impl HttpServer {
             WITHDRAW_BALANCE_ROUTE.to_string(),
             WithdrawBalanceHandler::new(
                 config.starknet_client.clone(),
+                config.network_sender.clone(),
                 global_state.clone(),
                 config.proof_generation_work_queue.clone(),
                 config.task_driver.clone(),

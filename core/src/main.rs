@@ -314,6 +314,7 @@ async fn main() -> Result<(), CoordinatorError> {
         http_port: args.http_port,
         websocket_port: args.websocket_port,
         starknet_client: starknet_client.clone(),
+        network_sender: network_sender.clone(),
         global_state: global_state.clone(),
         task_driver,
         system_bus,

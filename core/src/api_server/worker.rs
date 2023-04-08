@@ -10,9 +10,10 @@ use tokio::{
 };
 
 use crate::{
-    price_reporter::jobs::PriceReporterManagerJob, proof_generation::jobs::ProofManagerJob,
-    starknet_client::client::StarknetClient, state::RelayerState, system_bus::SystemBus,
-    tasks::driver::TaskDriver, types::SystemBusMessage, worker::Worker, CancelChannel,
+    gossip_api::gossip::GossipOutbound, price_reporter::jobs::PriceReporterManagerJob,
+    proof_generation::jobs::ProofManagerJob, starknet_client::client::StarknetClient,
+    state::RelayerState, system_bus::SystemBus, tasks::driver::TaskDriver, types::SystemBusMessage,
+    worker::Worker, CancelChannel,
 };
 
 use super::{error::ApiServerError, http::HttpServer, websocket::WebsocketServer};
@@ -45,6 +46,8 @@ pub struct ApiServerConfig {
     pub websocket_port: u16,
     /// A starknet client
     pub starknet_client: StarknetClient,
+    /// A sender to the network manager's work queue
+    pub network_sender: TokioSender<GossipOutbound>,
     /// The worker job queue for the PriceReporterManager
     pub price_reporter_work_queue: TokioSender<PriceReporterManagerJob>,
     /// The worker job queue for the ProofGenerationManager
