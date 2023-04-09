@@ -101,12 +101,15 @@ fn price_overlap<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     order2: &AuthenticatedOrder<N, S>,
     fabric: SharedFabric<N, S>,
 ) -> Result<AuthenticatedScalar<N, S>, MpcError> {
-    // We require that the sell order has a price less than or equal to the buy
-    // order. This is equivalent to:
-    //      (order1.side == sell) == (order1.price <= order2.price)
-    let order1_sell = &order1.side;
-    let price1_lt_price2 =
-        less_than_equal::<64, _, _>(&order1.price.repr, &order2.price.repr, fabric.clone())?;
+    // Mux between orders as sell and buy side
+    let selected_prices = cond_select_vec(
+        &order1.side,
+        &[order2.price.repr.clone(), order1.price.repr.clone()],
+        &[order1.price.repr.clone(), order2.price.repr.clone()],
+    )?;
 
-    eq::<1, _, _>(order1_sell, &price1_lt_price2, fabric)
+    let buy_side_price = &selected_prices[0];
+    let sell_side_price = &selected_prices[1];
+
+    less_than_equal::<64, _, _>(sell_side_price, buy_side_price, fabric)
 }
