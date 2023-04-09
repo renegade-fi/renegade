@@ -10,37 +10,25 @@
 //! order (e.g. volume, direction, base asset, etc). These are also taken into account
 //! when scheduling handshakes
 
-// TODO: Remove this lint allowance
-#![allow(unused)]
-
-use circuits::{types::wallet::Nullifier, zk_circuits::valid_commitments::ValidCommitmentsWitness};
-use futures::stream::{futures_unordered::FuturesUnordered, iter as to_stream, StreamExt};
+use circuits::types::wallet::Nullifier;
+use futures::stream::{iter as to_stream, StreamExt};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     fmt::{Display, Formatter, Result as FmtResult},
 };
 use tokio::sync::{RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
 use crate::{
-    gossip::types::{ClusterId, WrappedPeerId},
+    gossip::types::ClusterId,
     proof_generation::jobs::ValidCommitmentsBundle,
     system_bus::SystemBus,
     types::{SizedValidCommitmentsWitness, SystemBusMessage, ORDER_STATE_CHANGE_TOPIC},
 };
 
 use super::{new_async_shared, AsyncShared};
-
-/// Error message emitted when the local order lock is poisoned
-const ERR_LOCAL_ORDERS_POISONED: &str = "local order lock poisoned";
-/// Error message emitted when an order lock is poisoned
-const ERR_ORDER_POISONED: &str = "order lock poisoned";
-/// Error message emitted when the nullifier index is poisoned
-const ERR_NULLIFIER_INDEX_POISONED: &str = "orderbook nullifier index poisoned";
-/// Error message emitted when the verified orders set lock is poisoned
-const ERR_VERIFIED_ORDERS_POISONED: &str = "verified orders lock poisoned";
 
 /// An identifier of an order used for caching
 pub type OrderIdentifier = Uuid;
@@ -135,11 +123,13 @@ impl NetworkOrder {
 
     /// Transitions the state of an order back to the received state, this drops
     /// the existing proof of `VALID COMMITMENTS`
+    #[allow(unused)]
     pub(self) fn transition_received(&mut self) {
         self.state = NetworkOrderState::Received;
     }
 
     /// Transitions the state of an order to the verified state
+    #[allow(unused)]
     pub(self) fn transition_verified(&mut self, proof: ValidCommitmentsBundle) {
         assert_eq!(
             self.state,
@@ -150,6 +140,7 @@ impl NetworkOrder {
     }
 
     /// Transitions the state of an order from `Verified` to `Matched`
+    #[allow(unused)]
     pub(self) fn transition_matched(&mut self, by_local_node: bool) {
         assert_eq!(
             self.state,
@@ -160,6 +151,7 @@ impl NetworkOrder {
     }
 
     /// Transitions the state of an order to `Cancelled`
+    #[allow(unused)]
     pub(self) fn transition_cancelled(&mut self) {
         self.state = NetworkOrderState::Cancelled;
 
@@ -170,6 +162,7 @@ impl NetworkOrder {
     }
 
     /// Transitions the state of an order to `Pruned`
+    #[allow(unused)]
     pub(self) fn transition_pruned(&mut self) {
         self.state = NetworkOrderState::Pruned;
 
@@ -320,15 +313,6 @@ impl NetworkOrderBook {
         }
     }
 
-    /// Fetch all the verified orders in the order book
-    pub async fn get_verified_orders(&self) -> Vec<OrderIdentifier> {
-        self.read_verified_orders()
-            .await
-            .clone()
-            .into_iter()
-            .collect_vec()
-    }
-
     /// Return whether the given locally managed order is ready to schedule handshakes on
     ///
     /// This amounts to validating that a copy of the validity proof and witness are stored
@@ -428,7 +412,7 @@ impl NetworkOrderBook {
     pub async fn get_order_book_snapshot(&self) -> HashMap<OrderIdentifier, NetworkOrder> {
         let mut res = HashMap::new();
         for order_id in self.order_map.keys() {
-            let mut info = { self.read_order(order_id).await.unwrap().clone() };
+            let info = { self.read_order(order_id).await.unwrap().clone() };
             res.insert(*order_id, info);
         }
 
@@ -441,7 +425,7 @@ impl NetworkOrderBook {
 
     /// Add an order to the book, necessarily this order is in the received state because
     /// we must fetch a validity proof to move it to verified
-    pub async fn add_order(&mut self, mut order: NetworkOrder) {
+    pub async fn add_order(&mut self, order: NetworkOrder) {
         // If the order is local, add it to the local order list
         if order.local {
             self.write_local_orders().await.insert(order.id);
@@ -495,8 +479,6 @@ impl NetworkOrderBook {
         if !self.read_verified_orders().await.contains(&order_id) {
             self.write_verified_orders().await.insert(order_id);
         }
-
-        let orders = self.read_verified_orders().await.clone();
     }
 
     /// Remove an order from the verified orders list
@@ -512,6 +494,7 @@ impl NetworkOrderBook {
 
     /// Transitions the state of an order back to the received state, this drops
     /// the existing proof of `VALID COMMITMENTS`
+    #[allow(unused)]
     pub async fn transition_order_received(&mut self, order_id: &OrderIdentifier) {
         if let Some(mut order) = self.write_order(order_id).await {
             let prev_state = order.state;
@@ -531,6 +514,7 @@ impl NetworkOrderBook {
     }
 
     /// Transitions the state of an order to the verified state
+    #[allow(unused)]
     pub async fn transition_verified(
         &mut self,
         order_id: &OrderIdentifier,
@@ -554,6 +538,7 @@ impl NetworkOrderBook {
     }
 
     /// Transitions the state of an order from `Verified` to `Matched`
+    #[allow(unused)]
     pub async fn transition_matched(&mut self, order_id: &OrderIdentifier, by_local_node: bool) {
         if let Some(mut order) = self.write_order(order_id).await {
             let prev_state = order.state;
@@ -573,6 +558,7 @@ impl NetworkOrderBook {
     }
 
     /// Transitions the state of an order to `Cancelled`
+    #[allow(unused)]
     pub async fn transition_cancelled(&mut self, order_id: &OrderIdentifier) {
         if let Some(mut order) = self.write_order(order_id).await {
             let prev_state = order.state;
@@ -592,6 +578,7 @@ impl NetworkOrderBook {
     }
 
     /// Transitions the state of an order to `Pruned`
+    #[allow(unused)]
     pub async fn transition_pruned(&mut self, order_id: &OrderIdentifier) {
         if let Some(mut order) = self.write_order(order_id).await {
             let prev_state = order.state;

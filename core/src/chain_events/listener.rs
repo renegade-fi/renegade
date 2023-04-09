@@ -96,9 +96,6 @@ impl OnChainEventListenerConfig {
 /// The worker responsible for listening for on-chain events, translating them to jobs for
 /// other workers, and forwarding these jobs to the relevant workers
 pub struct OnChainEventListener {
-    /// The config passed to the listener at startup
-    #[allow(unused)]
-    pub(super) config: OnChainEventListenerConfig,
     /// The executor run in a separate thread
     pub(super) executor: Option<OnChainEventListenerExecutor>,
     /// The thread handle of the executor

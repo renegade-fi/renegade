@@ -61,7 +61,6 @@ where
     [(); 2 * MAX_BALANCES + 6 * MAX_ORDERS + 4 * MAX_FEES + 1]: Sized,
 {
     /// Implements the circuitry for VALID SETTLE
-    #[allow(unused)]
     pub fn circuit<CS: RandomizableConstraintSystem>(
         witness: ValidSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         statement: ValidSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,

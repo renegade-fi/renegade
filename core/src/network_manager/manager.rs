@@ -36,7 +36,6 @@ use crate::{
         orderbook_management::{OrderBookManagementMessage, OrderInfoResponse, ORDER_BOOK_TOPIC},
     },
     handshake::jobs::HandshakeExecutionJob,
-    state::RelayerState,
     CancelChannel,
 };
 
@@ -169,9 +168,6 @@ pub(super) struct NetworkManagerExecutor {
     gossip_work_queue: TokioSender<GossipServerJob>,
     /// The sender for the handshake manager's work queue
     handshake_work_queue: TokioSender<HandshakeExecutionJob>,
-    /// A copy of the relayer-global state
-    #[allow(unused)]
-    global_state: RelayerState,
     /// The cancel channel that the coordinator thread may use to cancel this worker
     cancel: DefaultWrapper<Option<CancelChannel>>,
 }
@@ -186,7 +182,6 @@ impl NetworkManagerExecutor {
         send_channel: UnboundedReceiver<GossipOutbound>,
         gossip_work_queue: TokioSender<GossipServerJob>,
         handshake_work_queue: TokioSender<HandshakeExecutionJob>,
-        global_state: RelayerState,
         cancel: CancelChannel,
     ) -> Self {
         Self {
@@ -198,7 +193,6 @@ impl NetworkManagerExecutor {
             send_channel,
             gossip_work_queue,
             handshake_work_queue,
-            global_state,
             cancel: DefaultWrapper::new(Some(cancel)),
         }
     }

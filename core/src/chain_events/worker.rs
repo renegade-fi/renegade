@@ -20,13 +20,12 @@ impl Worker for OnChainEventListener {
         Self: Sized,
     {
         let executor = if config.enabled() {
-            Some(OnChainEventListenerExecutor::new(config.clone()))
+            Some(OnChainEventListenerExecutor::new(config))
         } else {
             None
         };
 
         Ok(Self {
-            config,
             executor,
             // Replaced at startup
             executor_handle: None,

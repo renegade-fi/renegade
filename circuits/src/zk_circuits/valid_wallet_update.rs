@@ -52,7 +52,6 @@ pub struct ValidWalletUpdate<
 > where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized, {}
 
-#[allow(unused)]
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
     ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where

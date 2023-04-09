@@ -111,7 +111,6 @@ impl Gadget {
 /// A dummy macro target that is not an associated function of any abstract gadget, used to
 /// test the non-associated macro arg
 #[circuit_trace(non_associated, n_constraints, n_multipliers, latency)]
-#[allow(unused)]
 fn non_associated_gadget(cs: &mut Prover) {
     // Apply dummy constraints
     let mut rng = OsRng {};

@@ -144,7 +144,6 @@ impl Worker for NetworkManager {
             self.config.send_channel.take().unwrap(),
             self.config.gossip_work_queue.clone(),
             self.config.handshake_work_queue.clone(),
-            self.config.global_state.clone(),
             self.config.cancel_channel.clone(),
         );
 

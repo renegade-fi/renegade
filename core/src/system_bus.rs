@@ -407,16 +407,15 @@ mod system_bus_tests {
 
     /// Tests the num_listeners method
     #[tokio::test]
-    #[allow(unused)]
     async fn test_num_listeners() {
         // Start out with no listeners
         let pubsub = SystemBus::<()>::new();
         assert_eq!(0, pubsub.num_listeners(&TEST_TOPIC.to_string()));
 
-        let reader1 = pubsub.subscribe(TEST_TOPIC.to_string());
+        let _reader1 = pubsub.subscribe(TEST_TOPIC.to_string());
         assert_eq!(1, pubsub.num_listeners(&TEST_TOPIC.to_string()));
 
-        let reader2 = pubsub.subscribe(TEST_TOPIC.to_string());
+        let _reader2 = pubsub.subscribe(TEST_TOPIC.to_string());
         assert_eq!(2, pubsub.num_listeners(&TEST_TOPIC.to_string()));
     }
 

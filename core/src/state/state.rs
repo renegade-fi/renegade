@@ -351,14 +351,6 @@ impl RelayerState {
         self.order_book.write().await
     }
 
-    /// Acquire a read lock on `matched_order_pairs`
-    #[allow(unused)]
-    pub async fn read_matched_order_pairs(
-        &self,
-    ) -> RwLockReadGuard<Vec<(OrderIdentifier, OrderIdentifier)>> {
-        self.matched_order_pairs.read().await
-    }
-
     /// Acquire a write lock on `matched_order_pairs`
     async fn write_matched_order_pairs(
         &self,
