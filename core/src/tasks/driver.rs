@@ -32,7 +32,9 @@ const TASK_DRIVER_N_THREADS: usize = 1;
 /// The name of the threads backing the task driver
 const TASK_DRIVER_THREAD_NAME: &str = "renegade-task-driver";
 /// The number of times to retry a step in a task before propagating the error
-const TASK_DRIVER_N_RETRIES: usize = 12;
+///
+/// TODO: This is high for now, bring this down as Starknet stabilizes
+const TASK_DRIVER_N_RETRIES: usize = 20;
 
 /// The task trait defines a sequence of largely async flows, each of which is possibly
 /// unreliable and may need to be retried until completion or to some retry threshold

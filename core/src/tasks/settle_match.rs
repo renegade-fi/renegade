@@ -19,7 +19,6 @@ use circuits::{
     types::{
         note::{Note, NoteType},
         order::{Order as CircuitOrder, OrderSide},
-        wallet::Nullifier,
     },
     zk_circuits::{
         valid_commitments::ValidCommitmentsStatement,
@@ -92,7 +91,7 @@ pub struct SettleMatchTask {
     /// match process
     pub handshake_state: HandshakeState,
     /// The result of the match process
-    pub handshake_result: HandshakeResult,
+    pub handshake_result: Box<HandshakeResult>,
     /// The proof of `VALID COMMITMENTS` submitted by the first party
     pub party0_validity_proof: ValidCommitmentsBundle,
     /// The proof of `VALID COMMITMENTS` submitted by the second party
@@ -260,7 +259,7 @@ impl SettleMatchTask {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         handshake_state: HandshakeState,
-        handshake_result: HandshakeResult,
+        handshake_result: Box<HandshakeResult>,
         party0_validity_proof: ValidCommitmentsBundle,
         party1_validity_proof: ValidCommitmentsBundle,
         starknet_client: StarknetClient,
@@ -645,7 +644,7 @@ impl SettleMatchTask {
             encrypt_note(self.match_notes.protocol_note.clone(), &PROTOCOL_SETTLE_KEY);
 
         // Submit the bundle to the contract
-        let tx_hash = self
+        let tx_res = self
             .starknet_client
             .submit_match(
                 self.handshake_result.party0_match_nullifier,
@@ -665,8 +664,16 @@ impl SettleMatchTask {
                 self.handshake_result.match_proof.clone(),
                 proof,
             )
-            .await
-            .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
+            .await;
+
+        // If the transaction failed because a nullifier was already used, assume that the counterparty
+        // already submitted a `match` and move on to settlement
+        if let Err(ref tx_rejection) = tx_res
+        && tx_rejection.to_string().contains(NULLIFIER_USED_ERROR_MSG){
+            return Ok(())
+        }
+        let tx_hash =
+            tx_res.map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
 
         log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
         let tx_info = self
@@ -678,7 +685,7 @@ impl SettleMatchTask {
         // If the transaction fails because the local party's match nullifier is already spend, then
         // the counterparty encumbered the local party, in this case, it is safe to move to settlement
         if let TransactionStatus::Rejected = tx_info.status {
-            if Self::nullifier_spent_failure(tx_info, self.handshake_state.local_match_nullifier) {
+            if Self::nullifier_spent_failure(tx_info) {
                 return Ok(());
             } else {
                 return Err(SettleMatchTaskError::StarknetClient(
@@ -691,13 +698,11 @@ impl SettleMatchTask {
     }
 
     /// Whether or not a transaction failed because the given nullifier was already spent
-    fn nullifier_spent_failure(tx_info: TransactionInfo, nullifier: Nullifier) -> bool {
+    fn nullifier_spent_failure(tx_info: TransactionInfo) -> bool {
         if let Some(failure_reason) = tx_info.transaction_failure_reason
         && let Some(error_message) = failure_reason.error_message
         {
-            // Search for the string "nullifier already used <decimal valued nullifier>"
-            let nullifier_used_pattern = format!("{} {}", NULLIFIER_USED_ERROR_MSG, scalar_to_biguint(&nullifier));
-            return error_message.contains(&nullifier_used_pattern)
+            return error_message.contains(NULLIFIER_USED_ERROR_MSG)
         }
 
         false

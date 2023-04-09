@@ -677,7 +677,7 @@ impl HandshakeExecutor {
     async fn submit_match(
         &self,
         handshake_state: HandshakeState,
-        match_res: HandshakeResult,
+        match_res: Box<HandshakeResult>,
     ) -> TaskIdentifier {
         /// Macro helper to re-order two state elements (one for the local party
         /// and another for the remote) by party ID in the MPC.

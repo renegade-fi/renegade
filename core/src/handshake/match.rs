@@ -91,7 +91,7 @@ impl HandshakeExecutor {
         request_id: Uuid,
         party_id: u64,
         mpc_net: QuicTwoPartyNet,
-    ) -> Result<HandshakeResult, HandshakeManagerError> {
+    ) -> Result<Box<HandshakeResult>, HandshakeManagerError> {
         // Fetch the handshake state from the state index
         let handshake_state = self
             .handshake_state_index
@@ -135,7 +135,7 @@ impl HandshakeExecutor {
         handshake_state: HandshakeState,
         mut mpc_net: QuicTwoPartyNet,
         cancel_channel: Receiver<()>,
-    ) -> Result<HandshakeResult, HandshakeManagerError> {
+    ) -> Result<Box<HandshakeResult>, HandshakeManagerError> {
         log::info!("Matching order...");
         // Connect the network
         mpc_net
@@ -280,7 +280,7 @@ impl HandshakeExecutor {
         handshake_state: HandshakeState,
         fabric: SharedFabric<N, S>,
         cancel_channel: Receiver<()>,
-    ) -> Result<HandshakeResult, HandshakeManagerError> {
+    ) -> Result<Box<HandshakeResult>, HandshakeManagerError> {
         // Exchange fees, randomness, and keys before opening the match result
         let party0_fee = validity_proof_witness
             .fee
@@ -342,7 +342,7 @@ impl HandshakeExecutor {
             .open_and_authenticate(fabric)
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
-        Ok(HandshakeResult {
+        Ok(Box::new(HandshakeResult {
             match_: match_res_open,
             match_proof: ValidMatchMpcBundle {
                 commitment,
@@ -360,6 +360,6 @@ impl HandshakeExecutor {
             // Dummy values for now
             pk_settle_cluster0: Scalar::zero(),
             pk_settle_cluster1: Scalar::zero(),
-        })
+        }))
     }
 }
