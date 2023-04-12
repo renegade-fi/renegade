@@ -6,7 +6,7 @@
 
 use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
-use mpc_bulletproof::r1cs::{Prover, Variable, Verifier};
+use mpc_bulletproof::r1cs::{Prover, RandomizableConstraintSystem, Variable, Verifier};
 use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -15,7 +15,7 @@ use crate::{CommitProver, CommitVerifier};
 
 /// The base external transfer type, not allocated in a constraint system
 /// or an MPC circuit
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ExternalTransfer {
     /// The address of the account contract to transfer to/from
     pub account_addr: BigUint,
@@ -27,6 +27,26 @@ pub struct ExternalTransfer {
     pub direction: ExternalTransferDirection,
 }
 
+impl ExternalTransfer {
+    /// Commit to the external transfer as a public variable
+    pub fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> ExternalTransferVar {
+        let account_addr_var = cs.commit_public(biguint_to_scalar(&self.account_addr));
+        let mint_var = cs.commit_public(biguint_to_scalar(&self.mint));
+        let amount_var = cs.commit_public(biguint_to_scalar(&self.amount));
+        let dir_var = cs.commit_public(self.direction.into());
+
+        ExternalTransferVar {
+            account_addr: account_addr_var,
+            mint: mint_var,
+            amount: amount_var,
+            direction: dir_var,
+        }
+    }
+}
+
 /// Represents the direction (deposit/withdraw) of a transfer
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum ExternalTransferDirection {
@@ -34,6 +54,12 @@ pub enum ExternalTransferDirection {
     Deposit = 0,
     /// Withdraw an ERC20 from the darkpool to an external address
     Withdrawal,
+}
+
+impl Default for ExternalTransferDirection {
+    fn default() -> Self {
+        Self::Deposit
+    }
 }
 
 impl From<ExternalTransferDirection> for Scalar {
@@ -129,7 +155,7 @@ impl CommitVerifier for ExternalTransferCommitment {
 // ---------------------
 
 /// Represents an internal transfer tuple, not allocated in any constraint system
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct InternalTransfer {
     /// The mint to transfer
     pub mint: BigUint,
@@ -147,7 +173,7 @@ pub struct InternalTransferVar {
 }
 
 /// Represents a commitment to an allocated internal transfer
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct InternalTransferCommitment {
     /// The mint to transfer
     pub mint: CompressedRistretto,

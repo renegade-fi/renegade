@@ -5,7 +5,9 @@ use std::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
 };
 
-use circuits::types::transfers::ExternalTransferDirection;
+use circuits::types::transfers::{
+    ExternalTransfer as CircuitExternalTransfer, ExternalTransferDirection,
+};
 use crypto::fields::{biguint_to_starknet_felt, u128_to_starknet_felt};
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
@@ -44,6 +46,17 @@ impl ExternalTransfer {
             mint,
             amount: amount.into(),
             direction,
+        }
+    }
+}
+
+impl From<CircuitExternalTransfer> for ExternalTransfer {
+    fn from(transfer: CircuitExternalTransfer) -> Self {
+        ExternalTransfer {
+            sender_address: transfer.account_addr,
+            mint: transfer.mint,
+            amount: transfer.amount.into(),
+            direction: transfer.direction,
         }
     }
 }

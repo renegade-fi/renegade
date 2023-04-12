@@ -9,7 +9,10 @@ use std::{
 use async_trait::async_trait;
 use circuits::{
     native_helpers::compute_poseidon_hash,
-    types::order::Order as CircuitOrder,
+    types::{
+        order::Order as CircuitOrder,
+        transfers::{ExternalTransfer, InternalTransfer},
+    },
     zk_circuits::{
         valid_commitments::ValidCommitmentsStatement,
         valid_wallet_update::ValidWalletUpdateStatement,
@@ -257,10 +260,10 @@ impl NewOrderTask {
             timestamp,
             pk_root: self.old_wallet.public_keys.pk_root,
             new_wallet_commitment: self.new_wallet.get_commitment(),
-            wallet_match_nullifier: self.old_wallet.get_match_nullifier(),
-            wallet_spend_nullifier: self.old_wallet.get_spend_nullifier(),
+            match_nullifier: self.old_wallet.get_match_nullifier(),
+            spend_nullifier: self.old_wallet.get_spend_nullifier(),
             merkle_root: merkle_opening.compute_root(),
-            external_transfer: (Scalar::zero(), Scalar::zero(), Scalar::zero()),
+            external_transfer: ExternalTransfer::default(),
         };
 
         // Construct the witness
@@ -270,7 +273,7 @@ impl NewOrderTask {
             wallet1: old_circuit_wallet,
             wallet2: new_circuit_wallet,
             wallet1_opening: merkle_opening.into(),
-            internal_transfer: (Scalar::zero(), Scalar::zero()),
+            internal_transfer: InternalTransfer::default(),
         };
 
         // Send a job to the proof manager and await completion
