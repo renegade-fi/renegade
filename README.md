@@ -21,7 +21,7 @@
     src="https://github.com/renegade-fi/renegade/actions/workflows/clippy.yml/badge.svg"
   />
   <img
-    src="https://github.com/renegade-fi/darkpool-relayer/actions/workflows/rustfmt.yml/badge.svg"
+    src="https://github.com/renegade-fi/renegade/actions/workflows/rustfmt.yml/badge.svg"
   />
   <a href="https://twitter.com/renegade_fi" target="_blank">
     <img src="https://img.shields.io/twitter/follow/renegade_fi?style=social" />
@@ -102,7 +102,7 @@ cargo test --workspace -- --skip integration
 Finally, in order to run integration tests for any of the crates in the
 workspace, first run
 ```
-./setup.zsh
+./bin/setup.zsh
 ```
 to setup the `cargo integrate` command. Then, run `cargo integrate
 <crate-name>` for the desired crate. For example, to run the integration tests
