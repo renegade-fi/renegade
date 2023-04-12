@@ -1,5 +1,5 @@
 # Used for running integration tests on a simulated MPC network
-FROM rust:latest AS builder
+FROM --platform=arm64 rust:latest AS builder
 
 # Create a build dir and add local dependencies
 WORKDIR /build
@@ -40,7 +40,7 @@ ENV RUST_BACKTRACE=1
 RUN cargo build --release
 
 # Release stage
-FROM debian:bullseye-slim
+FROM --platform=arm64 debian:bullseye-slim
 
 RUN apt-get update && \
     apt-get install -y libssl-dev && \
