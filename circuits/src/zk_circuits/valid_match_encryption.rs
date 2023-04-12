@@ -40,6 +40,10 @@ use crate::{
 /// The number of encryptions that are actively verified by the circuit
 const NUM_ENCRYPTIONS: usize = 2 /* party0_note */ + 2 /* party1_note */ + 5 /* protocol_note */;
 
+// ----------------------
+// | Circuit Definition |
+// ----------------------
+
 /// Represents the circuit definition of VALID MATCH ENCRYPTION
 ///
 /// The generic constant `SCALAR_BITS` is the number of bits allowed in
@@ -532,6 +536,10 @@ impl<const SCALAR_BITS: usize> ValidMatchEncryption<SCALAR_BITS> {
     }
 }
 
+// ---------------------------
+// | Witness Type Definition |
+// ---------------------------
+
 /// The witness type for the VALID MATCH ENCRYPTION circuit
 #[derive(Clone, Debug)]
 pub struct ValidMatchEncryptionWitness {
@@ -725,6 +733,10 @@ impl CommitVerifier for ValidMatchEncryptionWitnessCommitment {
         })
     }
 }
+
+// -----------------------------
+// | Statement Type Definition |
+// -----------------------------
 
 /// The statement type for the VALID MATCH ENCRYPTION circuit
 ///
@@ -968,6 +980,10 @@ impl CommitVerifier for ValidMatchEncryptionStatement {
     }
 }
 
+// ---------------------
+// | Prove/Verify Flow |
+// ---------------------
+
 impl<const SCALAR_BITS: usize> SingleProverCircuit for ValidMatchEncryption<SCALAR_BITS> {
     type Witness = ValidMatchEncryptionWitness;
     type WitnessCommitment = ValidMatchEncryptionWitnessCommitment;
@@ -1015,6 +1031,10 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ValidMatchEncryption<SCAL
             .map_err(VerifierError::R1CS)
     }
 }
+
+// ---------
+// | Tests |
+// ---------
 
 #[cfg(test)]
 mod valid_match_encryption_tests {

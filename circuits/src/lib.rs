@@ -568,9 +568,9 @@ pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueS
     ) -> Result<(), VerifierError>;
 }
 
-/**
- * Test helpers
- */
+// ----------------
+// | Test Helpers |
+// ----------------
 
 #[cfg(test)]
 pub(crate) mod test_helpers {
@@ -586,9 +586,9 @@ pub(crate) mod test_helpers {
 
     const TRANSCRIPT_SEED: &str = "test";
 
-    /**
-     * Helpers
-     */
+    // -----------
+    // | Helpers |
+    // -----------
 
     /// Compares a Dalek Scalar to an Arkworks field element
     pub(crate) fn compare_scalar_to_felt(scalar: &Scalar, felt: &DalekRistrettoField) -> bool {

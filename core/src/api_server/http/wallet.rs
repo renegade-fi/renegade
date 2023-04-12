@@ -1,7 +1,7 @@
 //! Groups wallet API handlers and definitions
 
 use async_trait::async_trait;
-use circuits::types::transfers::ExternalTransferDirection;
+use circuits::types::transfers::{ExternalTransfer, ExternalTransferDirection};
 use crossbeam::channel::Sender as CrossbeamSender;
 use hyper::StatusCode;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
@@ -570,10 +570,12 @@ impl TypedHandler for DepositBalanceHandler {
 
         // Begin a task
         let task = ExternalTransferTask::new(
-            req.mint,
-            req.amount,
-            req.from_addr,
-            ExternalTransferDirection::Deposit,
+            ExternalTransfer {
+                account_addr: req.from_addr,
+                mint: req.mint,
+                amount: req.amount,
+                direction: ExternalTransferDirection::Deposit,
+            },
             &wallet_id,
             self.starknet_client.clone(),
             self.network_sender.clone(),
@@ -643,10 +645,12 @@ impl TypedHandler for WithdrawBalanceHandler {
 
         // Begin a task
         let task = ExternalTransferTask::new(
-            mint,
-            req.amount,
-            req.destination_addr,
-            ExternalTransferDirection::Withdrawal,
+            ExternalTransfer {
+                account_addr: req.destination_addr,
+                mint,
+                amount: req.amount,
+                direction: ExternalTransferDirection::Withdrawal,
+            },
             &wallet_id,
             self.starknet_client.clone(),
             self.network_sender.clone(),

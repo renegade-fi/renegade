@@ -48,6 +48,10 @@ use crate::{
     CommitProver, CommitVerifier, SingleProverCircuit,
 };
 
+// ----------------------
+// | Circuit Definition |
+// ----------------------
+
 /// Represents the circuit definition of VALID SETTLE
 #[derive(Clone, Debug)]
 pub struct ValidSettle<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
@@ -318,6 +322,10 @@ where
     }
 }
 
+// ---------------------------
+// | Witness Type Definition |
+// ---------------------------
+
 /// The witness type for the VALID SETTLE circuit
 #[derive(Clone, Debug)]
 pub struct ValidSettleWitness<
@@ -474,6 +482,10 @@ where
     }
 }
 
+// -----------------------------
+// | Statement Type Definition |
+// -----------------------------
+
 /// The statement type for VALID SETTLE
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidSettleStatement<
@@ -616,6 +628,10 @@ where
     }
 }
 
+// ---------------------
+// | Prove/Verify Flow |
+// ---------------------
+
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> SingleProverCircuit
     for ValidSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where
@@ -667,6 +683,10 @@ where
             .map_err(VerifierError::R1CS)
     }
 }
+
+// ---------
+// | Tests |
+// ---------
 
 #[cfg(test)]
 mod valid_settle_tests {

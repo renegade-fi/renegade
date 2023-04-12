@@ -40,6 +40,10 @@ use crate::{
     CommitProver, CommitVerifier, LinkableCommitment, SingleProverCircuit,
 };
 
+// ----------------------
+// | Circuit Definition |
+// ----------------------
+
 /// The circuitry for the VALID COMMITMENTS statement
 #[derive(Clone, Debug)]
 pub struct ValidCommitments<
@@ -177,6 +181,10 @@ where
         cs.constrain(fees_equal_sum - Variable::One());
     }
 }
+
+// ---------------------------
+// | Witness Type Definition |
+// ---------------------------
 
 /// The witness type for VALID COMMITMENTS
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -347,6 +355,10 @@ where
     }
 }
 
+// -----------------------------
+// | Statement Type Definition |
+// -----------------------------
+
 /// The statement type for VALID COMMITMENTS
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct ValidCommitmentsStatement {
@@ -411,6 +423,10 @@ impl CommitVerifier for ValidCommitmentsStatement {
     }
 }
 
+// ---------------------
+// | Prove/Verify Flow |
+// ---------------------
+
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> SingleProverCircuit
     for ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where
@@ -464,6 +480,10 @@ where
             .map_err(VerifierError::R1CS)
     }
 }
+
+// ---------
+// | Tests |
+// ---------
 
 #[cfg(test)]
 mod valid_commitments_test {

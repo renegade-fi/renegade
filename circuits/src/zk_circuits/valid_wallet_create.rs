@@ -41,6 +41,10 @@ const ORDER_ZEROS: usize = 5;
 /// A type alias for an instantiation of this circuit with default generics
 pub type ValidWalletCreateDefault = ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
+// ----------------------
+// | Circuit Definition |
+// ----------------------
+
 /// The circuitry for the valid wallet create statement
 #[derive(Clone, Debug)]
 pub struct ValidWalletCreate<
@@ -118,12 +122,9 @@ where
     }
 }
 
-/// The parameterization for the VALID WALLET CREATE statement
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub struct ValidWalletCreateStatement {
-    /// The expected commitment of the newly created wallet
-    pub wallet_commitment: Scalar,
-}
+// ---------------------------
+// | Witness Type Definition |
+// ---------------------------
 
 /// The witness for the VALID WALLET CREATE statement
 #[derive(Clone, Debug)]
@@ -219,6 +220,21 @@ impl<const MAX_FEES: usize> CommitVerifier for ValidWalletCreateCommitment<MAX_F
     }
 }
 
+// -----------------------------
+// | Statement Type Definition |
+// -----------------------------
+
+/// The parameterization for the VALID WALLET CREATE statement
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub struct ValidWalletCreateStatement {
+    /// The expected commitment of the newly created wallet
+    pub wallet_commitment: Scalar,
+}
+
+// ---------------------
+// | Prove/Verify Flow |
+// ---------------------
+
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> SingleProverCircuit
     for ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where
@@ -275,6 +291,10 @@ where
             .map_err(VerifierError::R1CS)
     }
 }
+
+// ---------
+// | Tests |
+// ---------
 
 #[cfg(test)]
 mod test_valid_wallet_create {

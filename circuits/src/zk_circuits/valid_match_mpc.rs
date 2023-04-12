@@ -61,6 +61,10 @@ use crate::{
     },
 };
 
+// ----------------------
+// | Circuit Definition |
+// ----------------------
+
 /// The circuitry for the valid match
 ///
 /// This statement is only proven within the context of an MPC, so it only
@@ -420,6 +424,10 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     }
 }
 
+// ---------------------------
+// | Witness Type Definition |
+// ---------------------------
+
 /// The witness type for the circuit proving the VALID MATCH MPC statement
 ///
 /// Note that the witness structure does not include both orders or balances.
@@ -576,6 +584,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open<N, S>
         Ok(Into::<ValidMatchCommitment>::into(opened_values.borrow()))
     }
 }
+
+// -----------------------------
+// | Statement Type Definition |
+// -----------------------------
 
 /// The parameterization for the VALID MATCH MPC statement
 ///

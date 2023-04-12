@@ -11,7 +11,11 @@ use std::{
 use async_trait::async_trait;
 use circuits::{
     native_helpers::compute_poseidon_hash,
-    types::{balance::Balance, order::Order as CircuitOrder, transfers::ExternalTransferDirection},
+    types::{
+        balance::Balance,
+        order::Order as CircuitOrder,
+        transfers::{ExternalTransfer, ExternalTransferDirection, InternalTransfer},
+    },
     zk_circuits::{
         valid_commitments::ValidCommitmentsStatement,
         valid_wallet_update::ValidWalletUpdateStatement,
@@ -19,9 +23,8 @@ use circuits::{
     zk_gadgets::merkle::MerkleOpening,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::{biguint_to_scalar, scalar_to_biguint, starknet_felt_to_biguint};
+use crypto::fields::{scalar_to_biguint, starknet_felt_to_biguint};
 use curve25519_dalek::scalar::Scalar;
-use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use serde::Serialize;
 use starknet::core::types::TransactionStatus;
@@ -37,7 +40,7 @@ use crate::{
     proof_generation::jobs::{
         ProofJob, ProofManagerJob, ValidCommitmentsBundle, ValidWalletUpdateBundle,
     },
-    starknet_client::{client::StarknetClient, types::ExternalTransfer},
+    starknet_client::client::StarknetClient,
     state::{
         wallet::{Wallet, WalletIdentifier},
         NetworkOrder, NetworkOrderState, OrderIdentifier, RelayerState,
@@ -69,14 +72,8 @@ const ERR_WALLET_NOT_FOUND: &str = "wallet not found in global state";
 
 /// Defines the long running flow for adding a balance to a wallet
 pub struct ExternalTransferTask {
-    /// The ERC20 address of the token to deposit
-    pub mint: BigUint,
-    /// The amount of the token to deposit
-    pub amount: BigUint,
-    /// The address to deposit from
-    pub external_address: BigUint,
-    /// The direction of transfer
-    pub direction: ExternalTransferDirection,
+    /// The transfer
+    pub transfer: ExternalTransfer,
     /// The old wallet before update
     pub old_wallet: Wallet,
     /// The new wallet after update
@@ -198,7 +195,7 @@ impl Task for ExternalTransferTask {
     }
 
     fn name(&self) -> String {
-        match self.direction {
+        match self.transfer.direction {
             ExternalTransferDirection::Deposit => DEPOSIT_BALANCE_TASK_NAME.to_string(),
             ExternalTransferDirection::Withdrawal => WITHDRAW_BALANCE_TASK_NAME.to_string(),
         }
@@ -213,10 +210,7 @@ impl ExternalTransferTask {
     /// Constructor
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
-        mint: BigUint,
-        amount: BigUint,
-        external_address: BigUint,
-        direction: ExternalTransferDirection,
+        transfer: ExternalTransfer,
         wallet_id: &WalletIdentifier,
         starknet_client: StarknetClient,
         network_sender: TokioSender<GossipOutbound>,
@@ -234,13 +228,17 @@ impl ExternalTransferTask {
             })?;
 
         let mut new_wallet = old_wallet.clone();
-        let mut balance_entry = new_wallet.balances.entry(mint.clone()).or_insert(Balance {
-            mint: mint.clone(),
-            amount: 0u64,
-        });
+        let mut balance_entry =
+            new_wallet
+                .balances
+                .entry(transfer.mint.clone())
+                .or_insert(Balance {
+                    mint: transfer.mint.clone(),
+                    amount: 0u64,
+                });
 
-        let amount_u64 = amount.to_u64().unwrap();
-        match direction {
+        let amount_u64 = transfer.amount.to_u64().unwrap();
+        match transfer.direction {
             ExternalTransferDirection::Deposit => balance_entry.amount += amount_u64,
             ExternalTransferDirection::Withdrawal => balance_entry.amount -= amount_u64,
         }
@@ -248,10 +246,7 @@ impl ExternalTransferTask {
         new_wallet.randomness += RANDOMNESS_INCREMENT;
 
         Ok(Self {
-            mint,
-            amount,
-            external_address,
-            direction,
+            transfer,
             old_wallet,
             new_wallet,
             starknet_client,
@@ -274,14 +269,10 @@ impl ExternalTransferTask {
             timestamp,
             pk_root: self.old_wallet.public_keys.pk_root,
             new_wallet_commitment: self.new_wallet.get_commitment(),
-            wallet_match_nullifier: self.old_wallet.get_match_nullifier(),
-            wallet_spend_nullifier: self.old_wallet.get_spend_nullifier(),
+            match_nullifier: self.old_wallet.get_match_nullifier(),
+            spend_nullifier: self.old_wallet.get_spend_nullifier(),
             merkle_root: merkle_opening.compute_root(),
-            external_transfer: (
-                biguint_to_scalar(&self.mint),
-                biguint_to_scalar(&self.amount),
-                self.direction.into(),
-            ),
+            external_transfer: self.transfer.clone(),
         };
 
         // Construct the witness
@@ -291,7 +282,7 @@ impl ExternalTransferTask {
             wallet1: old_circuit_wallet,
             wallet2: new_circuit_wallet,
             wallet1_opening: merkle_opening.into(),
-            internal_transfer: (Scalar::zero(), Scalar::zero()),
+            internal_transfer: InternalTransfer::default(),
         };
 
         // Send a job to the proof manager and await completion
@@ -311,13 +302,6 @@ impl ExternalTransferTask {
 
     /// Submit the `update_wallet` transaction to the contract and await finality
     async fn submit_tx(&self) -> Result<(), ExternalTransferTaskError> {
-        let external_transfer = ExternalTransfer::new(
-            self.external_address.clone(),
-            self.mint.clone(),
-            self.amount.clone(),
-            self.direction,
-        );
-
         let proof = if let ExternalTransferTaskState::SubmittingTx { proof_bundle } = self.state() {
             proof_bundle
         } else {
@@ -337,7 +321,7 @@ impl ExternalTransferTask {
                 self.new_wallet.get_commitment(),
                 self.old_wallet.get_match_nullifier(),
                 self.old_wallet.get_spend_nullifier(),
-                Some(external_transfer),
+                Some(self.transfer.clone().into()),
                 encrypted_wallet,
                 proof,
             )

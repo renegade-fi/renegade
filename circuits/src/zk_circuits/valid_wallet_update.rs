@@ -8,7 +8,7 @@
 //! See the whitepaper (https://renegade.fi/whitepaper.pdf) appendix A.2
 //! for a formal specification
 
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
+use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
     r1cs::{
         ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
@@ -24,6 +24,10 @@ use crate::{
     errors::{ProverError, VerifierError},
     types::{
         order::OrderVar,
+        transfers::{
+            ExternalTransfer, ExternalTransferVar, InternalTransfer, InternalTransferCommitment,
+            InternalTransferVar,
+        },
         wallet::{CommittedWallet, Wallet, WalletVar},
     },
     zk_gadgets::{
@@ -32,7 +36,7 @@ use crate::{
             EqGadget, EqVecGadget, EqZeroGadget, GreaterThanEqZeroGadget, NotEqualGadget,
         },
         fixed_point::FixedPointVar,
-        gates::{AndGate, OrGate},
+        gates::{AndGate, ConstrainBinaryGadget, OrGate},
         merkle::{
             MerkleOpening, MerkleOpeningCommitment, MerkleOpeningVar, PoseidonMerkleHashGadget,
         },
@@ -40,6 +44,10 @@ use crate::{
     },
     CommitProver, CommitVerifier, SingleProverCircuit,
 };
+
+// -----------------------
+/// | Circuit Definition |
+// -----------------------
 
 /// The circuitry for the VALID WALLET UPDATE statement
 ///
@@ -63,25 +71,19 @@ where
     #[allow(clippy::too_many_arguments)]
     pub fn circuit<CS: RandomizableConstraintSystem>(
         witness: ValidWalletUpdateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        timestamp: Variable,
-        pk_root: Variable,
-        merkle_root: Variable,
-        match_nullifier: Variable,
-        spend_nullifier: Variable,
-        new_wallet_commit: Variable,
-        external_transfer: (Variable, Variable, Variable),
+        statement: ValidWalletUpdateStatementVar,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
         // Commit to the new wallet and constrain it to equal the public variable
         let new_wallet_commit_res = Self::wallet_commit(&witness.wallet2, cs)?;
-        cs.constrain(new_wallet_commit - new_wallet_commit_res);
+        cs.constrain(statement.new_wallet_commitment - new_wallet_commit_res);
 
         // Commit to the old wallet, use this as a leaf in the Merkle opening
         let old_wallet_commit = Self::wallet_commit(&witness.wallet1, cs)?;
         PoseidonMerkleHashGadget::compute_and_constrain_root_prehashed(
             old_wallet_commit.clone(),
             witness.wallet1_opening,
-            merkle_root.into(),
+            statement.merkle_root.into(),
             cs,
         )?;
 
@@ -91,11 +93,11 @@ where
         let match_nullifier_res =
             Self::compute_match_nullifier(&witness.wallet1, old_wallet_commit, cs)?;
 
-        cs.constrain(spend_nullifier - spend_nullifier_res);
-        cs.constrain(match_nullifier - match_nullifier_res);
+        cs.constrain(statement.spend_nullifier - spend_nullifier_res);
+        cs.constrain(statement.match_nullifier - match_nullifier_res);
 
         // Verify that the given pk_root key is the same as the wallet
-        cs.constrain(pk_root - witness.wallet1.keys.pk_root);
+        cs.constrain(statement.pk_root - witness.wallet1.keys.pk_root);
 
         // Verify that the keys are unchanged between the two wallets
         Self::constrain_keys_equal(&witness.wallet1, &witness.wallet2, cs);
@@ -104,22 +106,18 @@ where
         cs.constrain(witness.wallet1.randomness + Scalar::from(2u64) - witness.wallet2.randomness);
 
         // Verify that the external transfer direction is binary
-        let (_, _, external_transfer_binary) = cs.multiply(
-            external_transfer.2.into(),
-            Variable::One() - external_transfer.2,
-        );
-        cs.constrain(external_transfer_binary.into());
+        ConstrainBinaryGadget::constrain_binary(statement.external_transfer.direction, cs);
 
         // Validate the balances of the new wallet
         Self::validate_transfers(
             &witness.wallet2,
             &witness.wallet1,
             witness.internal_transfer,
-            external_transfer,
+            statement.external_transfer,
             cs,
         );
 
-        Self::validate_wallet_orders(&witness.wallet2, &witness.wallet1, timestamp, cs);
+        Self::validate_wallet_orders(&witness.wallet2, &witness.wallet1, statement.timestamp, cs);
         Ok(())
     }
 
@@ -172,8 +170,8 @@ where
     pub(crate) fn validate_transfers<CS: RandomizableConstraintSystem>(
         new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        internal_transfer: (Variable, Variable),
-        external_transfer: (Variable, Variable, Variable),
+        internal_transfer: InternalTransferVar,
+        external_transfer: ExternalTransferVar,
         cs: &mut CS,
     ) {
         // Enforce all balance mints to be unique or 0
@@ -184,9 +182,9 @@ where
         // The external transfer term; negate the amount if the direction is 1 (withdraw)
         // otherwise keep the amount as positive
         let external_transfer_term = CondSelectGadget::select(
-            -external_transfer.1,
-            external_transfer.1.into(),
-            external_transfer.2.into(),
+            -external_transfer.amount,
+            external_transfer.amount.into(),
+            external_transfer.direction.into(),
             cs,
         );
 
@@ -207,7 +205,7 @@ where
 
             // Add in the external transfer information
             let equals_external_transfer_mint =
-                EqZeroGadget::eq_zero(new_balance.mint - external_transfer.0, cs);
+                EqZeroGadget::eq_zero(new_balance.mint - external_transfer.mint, cs);
             let (_, _, external_transfer_term) = cs.multiply(
                 equals_external_transfer_mint.into(),
                 external_transfer_term.clone(),
@@ -218,10 +216,10 @@ where
 
             // Add in the internal transfer information
             let equals_internal_transfer_mint =
-                EqZeroGadget::eq_zero(new_balance.mint - internal_transfer.0, cs);
+                EqZeroGadget::eq_zero(new_balance.mint - internal_transfer.mint, cs);
             let (_, _, internal_transfer_term) = cs.multiply(
                 equals_internal_transfer_mint.into(),
-                internal_transfer.1.into(),
+                internal_transfer.amount.into(),
             );
 
             internal_transfer_mint_present += equals_internal_transfer_mint;
@@ -238,7 +236,7 @@ where
         // Lastly, for the internal transfer (and the external transfer if it is a withdraw)
         // we must ensure that the user had a balance of this mint in the previous wallet.
         // The constraints above constrain this balance to have sufficient value if it exists
-        let internal_transfer_equals_zero = EqZeroGadget::eq_zero(internal_transfer.0, cs);
+        let internal_transfer_equals_zero = EqZeroGadget::eq_zero(internal_transfer.mint, cs);
         let internal_zero_or_valid_balance = OrGate::or(
             internal_transfer_equals_zero.into(),
             internal_transfer_mint_present,
@@ -246,7 +244,8 @@ where
         );
         cs.constrain(Variable::One() - internal_zero_or_valid_balance);
 
-        let external_transfer_is_deposit = EqGadget::eq(external_transfer.2, Variable::Zero(), cs);
+        let external_transfer_is_deposit =
+            EqGadget::eq(external_transfer.direction, Variable::Zero(), cs);
         let external_deposit_or_valid_balance = OrGate::or(
             external_transfer_is_deposit.into(),
             external_transfer_mint_present,
@@ -393,6 +392,10 @@ where
     }
 }
 
+// ---------------------------
+// | Witness Type Definition |
+// ---------------------------
+
 /// The witness type for VALID WALLET UPDATE
 #[derive(Clone, Debug)]
 pub struct ValidWalletUpdateWitness<
@@ -411,7 +414,7 @@ pub struct ValidWalletUpdateWitness<
     pub wallet1_opening: MerkleOpening,
     /// The internal transfer tuple, a pair of (mint, volume); used to transfer
     /// funds out of a wallet to a settle-able note
-    pub internal_transfer: (Scalar, Scalar),
+    pub internal_transfer: InternalTransfer,
 }
 
 /// The witness type for VALID WALLET UPDATE that has been allocated
@@ -433,7 +436,7 @@ pub struct ValidWalletUpdateWitnessVar<
     pub wallet1_opening: MerkleOpeningVar,
     /// The internal transfer tuple, a pair of (mint, volume); used to transfer
     /// funds out of a wallet to a settle-able note
-    pub internal_transfer: (Variable, Variable),
+    pub internal_transfer: InternalTransferVar,
 }
 
 /// A commitment to the witness of VALID WALLET UPDATE
@@ -454,7 +457,7 @@ pub struct ValidWalletUpdateWitnessCommitment<
     pub wallet1_opening: MerkleOpeningCommitment,
     /// The internal transfer tuple, a pair of (mint, volume); used to transfer
     /// funds out of a wallet to a settle-able note
-    pub internal_transfer: (CompressedRistretto, CompressedRistretto),
+    pub internal_transfer: InternalTransferCommitment,
 }
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitProver
@@ -475,23 +478,21 @@ where
         let (wallet2_var, wallet2_comm) = self.wallet2.commit_prover(rng, prover).unwrap();
         let (wallet1_opening_var, wallet1_opening_comm) =
             self.wallet1_opening.commit_prover(rng, prover).unwrap();
-        let (internal_transfer_mint_comm, internal_transfer_mint_var) =
-            prover.commit(self.internal_transfer.0, Scalar::random(rng));
-        let (internal_transfer_volume_comm, internal_transfer_volume_var) =
-            prover.commit(self.internal_transfer.1, Scalar::random(rng));
+        let (internal_transfer_var, internal_transfer_comm) =
+            self.internal_transfer.commit_prover(rng, prover).unwrap();
 
         Ok((
             ValidWalletUpdateWitnessVar {
                 wallet1: wallet1_var,
                 wallet2: wallet2_var,
                 wallet1_opening: wallet1_opening_var,
-                internal_transfer: (internal_transfer_mint_var, internal_transfer_volume_var),
+                internal_transfer: internal_transfer_var,
             },
             ValidWalletUpdateWitnessCommitment {
                 wallet1: wallet1_comm,
                 wallet2: wallet2_comm,
                 wallet1_opening: wallet1_opening_comm,
-                internal_transfer: (internal_transfer_mint_comm, internal_transfer_volume_comm),
+                internal_transfer: internal_transfer_comm,
             },
         ))
     }
@@ -509,17 +510,20 @@ where
         let wallet1_var = self.wallet1.commit_verifier(verifier).unwrap();
         let wallet2_var = self.wallet2.commit_verifier(verifier).unwrap();
         let wallet1_opening_var = self.wallet1_opening.commit_verifier(verifier).unwrap();
-        let internal_transfer_mint = verifier.commit(self.internal_transfer.0);
-        let internal_transfer_volume = verifier.commit(self.internal_transfer.1);
+        let internal_transfer_var = self.internal_transfer.commit_verifier(verifier).unwrap();
 
         Ok(ValidWalletUpdateWitnessVar {
             wallet1: wallet1_var,
             wallet2: wallet2_var,
             wallet1_opening: wallet1_opening_var,
-            internal_transfer: (internal_transfer_mint, internal_transfer_volume),
+            internal_transfer: internal_transfer_var,
         })
     }
 }
+
+// ------------------------------
+// | Statement Type Definitions |
+// ------------------------------
 
 /// The statement type for VALID WALLET UPDATE
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -531,15 +535,97 @@ pub struct ValidWalletUpdateStatement {
     /// The commitment to the new wallet
     pub new_wallet_commitment: Scalar,
     /// The wallet spend nullifier of the old wallet
-    pub wallet_spend_nullifier: Scalar,
+    pub spend_nullifier: Scalar,
     /// The wallet match nullifier of the old wallet
-    pub wallet_match_nullifier: Scalar,
+    pub match_nullifier: Scalar,
     /// The global state tree root used to prove opening
     pub merkle_root: Scalar,
     /// The external transfer tuple, used to deposit or withdraw funds
     /// of the form (mint, volume, direction)
-    pub external_transfer: (Scalar, Scalar, Scalar),
+    pub external_transfer: ExternalTransfer,
 }
+
+/// The statement type for VALID WALLET UPDATE, allocated in a constraint system
+#[derive(Clone, Debug)]
+pub struct ValidWalletUpdateStatementVar {
+    /// The timestamp (user set) of the request, used for order timestamping
+    pub timestamp: Variable,
+    /// The root public key of the wallet being updated
+    pub pk_root: Variable,
+    /// The commitment to the new wallet
+    pub new_wallet_commitment: Variable,
+    /// The wallet spend nullifier of the old wallet
+    pub spend_nullifier: Variable,
+    /// The wallet match nullifier of the old wallet
+    pub match_nullifier: Variable,
+    /// The global state tree root used to prove opening
+    pub merkle_root: Variable,
+    /// The external transfer tuple, used to deposit or withdraw funds
+    /// of the form (mint, volume, direction)
+    pub external_transfer: ExternalTransferVar,
+}
+
+impl CommitProver for ValidWalletUpdateStatement {
+    type VarType = ValidWalletUpdateStatementVar;
+    type CommitType = ();
+    type ErrorType = (); // Does not error
+
+    fn commit_prover<R: rand_core::RngCore + rand_core::CryptoRng>(
+        &self,
+        _rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let timestamp_var = prover.commit_public(self.timestamp);
+        let pk_root_var = prover.commit_public(self.pk_root);
+        let new_wallet_commitment_var = prover.commit_public(self.new_wallet_commitment);
+        let spend_nullifier_var = prover.commit_public(self.spend_nullifier);
+        let match_nullifier_var = prover.commit_public(self.match_nullifier);
+        let merkle_root_var = prover.commit_public(self.merkle_root);
+        let external_transfer_var = self.external_transfer.commit_public(prover);
+
+        Ok((
+            ValidWalletUpdateStatementVar {
+                timestamp: timestamp_var,
+                pk_root: pk_root_var,
+                new_wallet_commitment: new_wallet_commitment_var,
+                match_nullifier: match_nullifier_var,
+                spend_nullifier: spend_nullifier_var,
+                merkle_root: merkle_root_var,
+                external_transfer: external_transfer_var,
+            },
+            (),
+        ))
+    }
+}
+
+impl CommitVerifier for ValidWalletUpdateStatement {
+    type VarType = ValidWalletUpdateStatementVar;
+    type ErrorType = (); // Does not error
+
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
+        let timestamp_var = verifier.commit_public(self.timestamp);
+        let pk_root_var = verifier.commit_public(self.pk_root);
+        let new_wallet_commitment_var = verifier.commit_public(self.new_wallet_commitment);
+        let spend_nullifier_var = verifier.commit_public(self.spend_nullifier);
+        let match_nullifier_var = verifier.commit_public(self.match_nullifier);
+        let merkle_root_var = verifier.commit_public(self.merkle_root);
+        let external_transfer_var = self.external_transfer.commit_public(verifier);
+
+        Ok(ValidWalletUpdateStatementVar {
+            timestamp: timestamp_var,
+            pk_root: pk_root_var,
+            new_wallet_commitment: new_wallet_commitment_var,
+            match_nullifier: match_nullifier_var,
+            spend_nullifier: spend_nullifier_var,
+            merkle_root: merkle_root_var,
+            external_transfer: external_transfer_var,
+        })
+    }
+}
+
+// ----------------------
+// | Prove/Verify Flow |
+// ----------------------
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> SingleProverCircuit
     for ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
@@ -562,33 +648,10 @@ where
         let (witness_var, witness_comm) = witness.commit_prover(&mut rng, &mut prover).unwrap();
 
         // Commit to the statement
-        let timestamp_var = prover.commit_public(statement.timestamp);
-        let pk_root_var = prover.commit_public(statement.pk_root);
-        let new_wallet_commit_var = prover.commit_public(statement.new_wallet_commitment);
-        let match_nullifier_var = prover.commit_public(statement.wallet_match_nullifier);
-        let spend_nullifier_var = prover.commit_public(statement.wallet_spend_nullifier);
-        let merkle_root_var = prover.commit_public(statement.merkle_root);
-        let external_transfer_mint = prover.commit_public(statement.external_transfer.0);
-        let external_transfer_volume = prover.commit_public(statement.external_transfer.1);
-        let external_transfer_direction = prover.commit_public(statement.external_transfer.2);
+        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
 
         // Apply the constraints
-        Self::circuit(
-            witness_var,
-            timestamp_var,
-            pk_root_var,
-            merkle_root_var,
-            match_nullifier_var,
-            spend_nullifier_var,
-            new_wallet_commit_var,
-            (
-                external_transfer_mint,
-                external_transfer_volume,
-                external_transfer_direction,
-            ),
-            &mut prover,
-        )
-        .map_err(ProverError::R1CS)?;
+        Self::circuit(witness_var, statement_var, &mut prover).map_err(ProverError::R1CS)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -607,33 +670,10 @@ where
         let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
 
         // Commit to the statement
-        let timestamp_var = verifier.commit_public(statement.timestamp);
-        let pk_root_var = verifier.commit_public(statement.pk_root);
-        let new_wallet_commit_var = verifier.commit_public(statement.new_wallet_commitment);
-        let match_nullifier_var = verifier.commit_public(statement.wallet_match_nullifier);
-        let spend_nullifier_var = verifier.commit_public(statement.wallet_spend_nullifier);
-        let merkle_root_var = verifier.commit_public(statement.merkle_root);
-        let external_transfer_mint = verifier.commit_public(statement.external_transfer.0);
-        let external_transfer_volume = verifier.commit_public(statement.external_transfer.1);
-        let external_transfer_direction = verifier.commit_public(statement.external_transfer.2);
+        let statement_var = statement.commit_verifier(&mut verifier).unwrap();
 
         // Apply the constraints
-        Self::circuit(
-            witness_var,
-            timestamp_var,
-            pk_root_var,
-            merkle_root_var,
-            match_nullifier_var,
-            spend_nullifier_var,
-            new_wallet_commit_var,
-            (
-                external_transfer_mint,
-                external_transfer_volume,
-                external_transfer_direction,
-            ),
-            &mut verifier,
-        )
-        .map_err(VerifierError::R1CS)?;
+        Self::circuit(witness_var, statement_var, &mut verifier).map_err(VerifierError::R1CS)?;
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -643,17 +683,22 @@ where
     }
 }
 
+// ---------
+// | Tests |
+// ---------
+
 #[cfg(test)]
 mod valid_wallet_update_tests {
     use std::ops::Neg;
 
-    use crypto::fields::{biguint_to_scalar, prime_field_to_scalar};
+    use crypto::fields::prime_field_to_scalar;
     use curve25519_dalek::scalar::Scalar;
     use merlin::Transcript;
     use mpc_bulletproof::{
-        r1cs::{ConstraintSystem, Prover, Variable},
+        r1cs::{ConstraintSystem, Prover},
         PedersenGens,
     };
+    use num_bigint::BigUint;
     use rand_core::{OsRng, RngCore};
 
     use crate::{
@@ -662,16 +707,16 @@ mod valid_wallet_update_tests {
             compute_wallet_spend_nullifier,
         },
         test_helpers::bulletproof_prove_and_verify,
-        types::order::Order,
+        types::{
+            order::{Order, OrderSide},
+            transfers::{ExternalTransfer, ExternalTransferDirection, InternalTransfer},
+        },
         zk_circuits::test_helpers::{create_wallet_opening, INITIAL_WALLET},
-        zk_gadgets::merkle::MerkleOpening,
+        zk_gadgets::{fixed_point::FixedPoint, merkle::MerkleOpening},
         CommitProver,
     };
 
-    use super::{
-        ValidWalletUpdate, ValidWalletUpdateStatement, ValidWalletUpdateWitness,
-        ValidWalletUpdateWitnessVar,
-    };
+    use super::{ValidWalletUpdate, ValidWalletUpdateStatement, ValidWalletUpdateWitness};
 
     // -------------
     // | Constants |
@@ -703,75 +748,12 @@ mod valid_wallet_update_tests {
         let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
         // Allocate the witness and statement in the constraint system
-        let (witness_var, statement_vars) =
-            commit_witness_statement(witness, statement, &mut prover);
-
-        ValidWalletUpdate::circuit(
-            witness_var,
-            statement_vars[0].to_owned(),
-            statement_vars[1].to_owned(),
-            statement_vars[2].to_owned(),
-            statement_vars[3].to_owned(),
-            statement_vars[4].to_owned(),
-            statement_vars[5].to_owned(),
-            (
-                statement_vars[6].to_owned(),
-                statement_vars[7].to_owned(),
-                statement_vars[8].to_owned(),
-            ),
-            &mut prover,
-        )
-        .unwrap();
-
-        prover.constraints_satisfied()
-    }
-
-    /// A helper to commit to a witness and a statement directly, only returns the allocated variables
-    /// not the commitments
-    fn commit_witness_statement<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        witness: ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        statement: ValidWalletUpdateStatement,
-        prover: &mut Prover,
-    ) -> (
-        ValidWalletUpdateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        Vec<Variable>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    {
-        // Allocate the witness
         let mut rng = OsRng {};
-        let (witness_var, _) = witness.commit_prover(&mut rng, prover).unwrap();
+        let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
 
-        // Allocate the statement
-        let timestamp_var = prover.commit_public(statement.timestamp);
-        let pk_root_var = prover.commit_public(statement.pk_root);
-        let merkle_root_var = prover.commit_public(statement.merkle_root);
-        let match_nullifier_var = prover.commit_public(statement.wallet_match_nullifier);
-        let spend_nullifier_var = prover.commit_public(statement.wallet_spend_nullifier);
-        let new_wallet_commit_var = prover.commit_public(statement.new_wallet_commitment);
-        let external_transfer_mint = prover.commit_public(statement.external_transfer.0);
-        let external_transfer_volume = prover.commit_public(statement.external_transfer.1);
-        let external_transfer_direction = prover.commit_public(statement.external_transfer.2);
-
-        (
-            witness_var,
-            vec![
-                timestamp_var,
-                pk_root_var,
-                merkle_root_var,
-                match_nullifier_var,
-                spend_nullifier_var,
-                new_wallet_commit_var,
-                external_transfer_mint,
-                external_transfer_volume,
-                external_transfer_direction,
-            ],
-        )
+        ValidWalletUpdate::circuit(witness_var, statement_var, &mut prover).unwrap();
+        prover.constraints_satisfied()
     }
 
     // ---------
@@ -794,7 +776,14 @@ mod valid_wallet_update_tests {
         // Make changes to the initial and new wallet
         new_wallet.orders[1].timestamp = timestamp;
         new_wallet.randomness = initial_wallet.randomness + Scalar::from(2u32);
-        initial_wallet.orders[1] = Order::default();
+        initial_wallet.orders[1] = Order {
+            quote_mint: 1u8.into(),
+            base_mint: 3u8.into(),
+            side: OrderSide::Sell,
+            price: FixedPoint::from(20.),
+            amount: 10,
+            timestamp: TIMESTAMP,
+        };
 
         // Create a mock Merkle opening for the old wallet
         let random_index = rng.next_u32() % (2u32.pow(MERKLE_HEIGHT.try_into().unwrap()));
@@ -812,7 +801,7 @@ mod valid_wallet_update_tests {
                 elems: mock_opening,
                 indices: mock_opening_indices,
             },
-            internal_transfer: (Scalar::zero(), Scalar::zero()),
+            internal_transfer: InternalTransfer::default(),
         };
 
         let new_wallet_commit = compute_wallet_commitment(&new_wallet);
@@ -827,13 +816,12 @@ mod valid_wallet_update_tests {
             timestamp: Scalar::from(timestamp),
             pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
-            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
-            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
-            external_transfer: (Scalar::zero(), Scalar::zero(), Scalar::zero()),
+            external_transfer: ExternalTransfer::default(),
         };
 
-        // assert!(constraints_satisfied(witness.clone(), statement.clone()));
         let res = bulletproof_prove_and_verify::<
             ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         >(witness, statement);
@@ -872,7 +860,7 @@ mod valid_wallet_update_tests {
                 elems: mock_opening,
                 indices: mock_opening_indices,
             },
-            internal_transfer: (Scalar::zero(), Scalar::zero()),
+            internal_transfer: InternalTransfer::default(),
         };
 
         let new_wallet_commit = compute_wallet_commitment(&new_wallet);
@@ -887,10 +875,10 @@ mod valid_wallet_update_tests {
             timestamp: Scalar::from(timestamp),
             pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
-            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
-            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
-            external_transfer: (Scalar::zero(), Scalar::zero(), Scalar::zero()),
+            external_transfer: ExternalTransfer::default(),
         };
 
         assert!(!constraints_satisfied(witness, statement));
@@ -929,7 +917,7 @@ mod valid_wallet_update_tests {
                 elems: mock_opening,
                 indices: mock_opening_indices,
             },
-            internal_transfer: (Scalar::zero(), Scalar::zero()),
+            internal_transfer: InternalTransfer::default(),
         };
 
         let new_wallet_commit = compute_wallet_commitment(&new_wallet);
@@ -944,10 +932,10 @@ mod valid_wallet_update_tests {
             timestamp: Scalar::from(timestamp),
             pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
-            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
-            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
-            external_transfer: (Scalar::zero(), Scalar::zero(), Scalar::zero()),
+            external_transfer: ExternalTransfer::default(),
         };
 
         assert!(!constraints_satisfied(witness, statement));
@@ -991,7 +979,7 @@ mod valid_wallet_update_tests {
                 elems: mock_opening,
                 indices: mock_opening_indices,
             },
-            internal_transfer: (Scalar::zero(), Scalar::zero()),
+            internal_transfer: InternalTransfer::default(),
         };
 
         let new_wallet_commit = compute_wallet_commitment(&new_wallet);
@@ -1006,10 +994,10 @@ mod valid_wallet_update_tests {
             timestamp: Scalar::from(timestamp),
             pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
-            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
-            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
-            external_transfer: (Scalar::zero(), Scalar::zero(), Scalar::zero()),
+            external_transfer: ExternalTransfer::default(),
         };
 
         assert!(!constraints_satisfied(witness, statement));
@@ -1050,7 +1038,7 @@ mod valid_wallet_update_tests {
                 elems: mock_opening,
                 indices: mock_opening_indices,
             },
-            internal_transfer: (Scalar::zero(), Scalar::zero()),
+            internal_transfer: InternalTransfer::default(),
         };
 
         let new_wallet_commit = compute_wallet_commitment(&new_wallet);
@@ -1065,10 +1053,10 @@ mod valid_wallet_update_tests {
             timestamp: Scalar::from(timestamp),
             pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
-            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
-            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
-            external_transfer: (Scalar::zero(), Scalar::zero(), Scalar::zero()),
+            external_transfer: ExternalTransfer::default(),
         };
 
         assert!(!constraints_satisfied(witness, statement));
@@ -1111,10 +1099,10 @@ mod valid_wallet_update_tests {
                 elems: mock_opening,
                 indices: mock_opening_indices,
             },
-            internal_transfer: (
-                biguint_to_scalar(&internal_transfer_mint),
-                Scalar::from(internal_transfer_volume),
-            ),
+            internal_transfer: InternalTransfer {
+                mint: internal_transfer_mint,
+                amount: internal_transfer_volume.into(),
+            },
         };
 
         let new_wallet_commit = compute_wallet_commitment(&new_wallet);
@@ -1129,10 +1117,10 @@ mod valid_wallet_update_tests {
             timestamp: Scalar::from(timestamp),
             pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
-            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
-            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
-            external_transfer: (Scalar::zero(), Scalar::zero(), Scalar::zero()),
+            external_transfer: ExternalTransfer::default(),
         };
 
         assert!(constraints_satisfied(witness, statement));
@@ -1177,10 +1165,10 @@ mod valid_wallet_update_tests {
                 elems: mock_opening,
                 indices: mock_opening_indices,
             },
-            internal_transfer: (
-                biguint_to_scalar(&internal_transfer_mint),
-                Scalar::from(internal_transfer_volume),
-            ),
+            internal_transfer: InternalTransfer {
+                mint: internal_transfer_mint,
+                amount: internal_transfer_volume.into(),
+            },
         };
 
         let new_wallet_commit = compute_wallet_commitment(&new_wallet);
@@ -1195,10 +1183,10 @@ mod valid_wallet_update_tests {
             timestamp: Scalar::from(timestamp),
             pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
-            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
-            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
-            external_transfer: (Scalar::zero(), Scalar::zero(), Scalar::zero()),
+            external_transfer: ExternalTransfer::default(),
         };
 
         assert!(!constraints_satisfied(witness, statement));
@@ -1223,7 +1211,7 @@ mod valid_wallet_update_tests {
         // Modify the balance in balances[1] to deduct an amount for the internal transfer
         let external_transfer_mint = new_wallet.balances[1].mint.clone();
         let external_transfer_volume = new_wallet.balances[1].amount - 1; // all but 1 unit
-        let external_transfer_direction = 1u64; // withdraw
+        let external_transfer_direction = ExternalTransferDirection::Withdrawal;
 
         new_wallet.balances[1].amount -= external_transfer_volume;
 
@@ -1243,7 +1231,7 @@ mod valid_wallet_update_tests {
                 elems: mock_opening,
                 indices: mock_opening_indices,
             },
-            internal_transfer: (Scalar::zero(), Scalar::zero()),
+            internal_transfer: InternalTransfer::default(),
         };
 
         let new_wallet_commit = compute_wallet_commitment(&new_wallet);
@@ -1258,14 +1246,15 @@ mod valid_wallet_update_tests {
             timestamp: Scalar::from(timestamp),
             pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
-            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
-            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
-            external_transfer: (
-                biguint_to_scalar(&external_transfer_mint),
-                Scalar::from(external_transfer_volume),
-                Scalar::from(external_transfer_direction),
-            ),
+            external_transfer: ExternalTransfer {
+                account_addr: BigUint::default(),
+                mint: external_transfer_mint,
+                amount: external_transfer_volume.into(),
+                direction: external_transfer_direction,
+            },
         };
 
         assert!(constraints_satisfied(witness, statement));
@@ -1290,7 +1279,7 @@ mod valid_wallet_update_tests {
         // Modify the balance in balances[1] to deduct an amount for the internal transfer
         let external_transfer_mint = new_wallet.balances[1].mint.clone();
         let external_transfer_volume = new_wallet.balances[1].amount - 1; // all but 1 unit
-        let external_transfer_direction = 0u64; // withdraw
+        let external_transfer_direction = ExternalTransferDirection::Deposit;
 
         new_wallet.balances[1].amount += external_transfer_volume;
 
@@ -1310,7 +1299,7 @@ mod valid_wallet_update_tests {
                 elems: mock_opening,
                 indices: mock_opening_indices,
             },
-            internal_transfer: (Scalar::zero(), Scalar::zero()),
+            internal_transfer: InternalTransfer::default(),
         };
 
         let new_wallet_commit = compute_wallet_commitment(&new_wallet);
@@ -1325,14 +1314,15 @@ mod valid_wallet_update_tests {
             timestamp: Scalar::from(timestamp),
             pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
-            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
-            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
-            external_transfer: (
-                biguint_to_scalar(&external_transfer_mint),
-                Scalar::from(external_transfer_volume),
-                Scalar::from(external_transfer_direction),
-            ),
+            external_transfer: ExternalTransfer {
+                account_addr: BigUint::default(),
+                mint: external_transfer_mint,
+                amount: external_transfer_volume.into(),
+                direction: external_transfer_direction,
+            },
         };
 
         assert!(constraints_satisfied(witness, statement));
@@ -1357,7 +1347,7 @@ mod valid_wallet_update_tests {
         // Modify the balance in balances[1] to deduct an amount for the internal transfer
         let external_transfer_mint = new_wallet.balances[1].mint.clone();
         let external_transfer_volume = new_wallet.balances[1].amount - 1; // all but 1 unit
-        let external_transfer_direction = 1u64; // withdraw
+        let external_transfer_direction = ExternalTransferDirection::Withdrawal;
 
         // Invalid, prover tries to deduct too small of an amount from balance
         new_wallet.balances[1].amount -= external_transfer_volume - 1;
@@ -1378,7 +1368,7 @@ mod valid_wallet_update_tests {
                 elems: mock_opening,
                 indices: mock_opening_indices,
             },
-            internal_transfer: (Scalar::zero(), Scalar::zero()),
+            internal_transfer: InternalTransfer::default(),
         };
 
         let new_wallet_commit = compute_wallet_commitment(&new_wallet);
@@ -1393,14 +1383,15 @@ mod valid_wallet_update_tests {
             timestamp: Scalar::from(timestamp),
             pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
-            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
-            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
-            external_transfer: (
-                biguint_to_scalar(&external_transfer_mint),
-                Scalar::from(external_transfer_volume),
-                Scalar::from(external_transfer_direction),
-            ),
+            external_transfer: ExternalTransfer {
+                account_addr: BigUint::default(),
+                mint: external_transfer_mint,
+                amount: external_transfer_volume.into(),
+                direction: external_transfer_direction,
+            },
         };
 
         assert!(!constraints_satisfied(witness, statement));
@@ -1425,7 +1416,7 @@ mod valid_wallet_update_tests {
         // Modify the balance in balances[1] to deduct an amount for the internal transfer
         let external_transfer_mint = new_wallet.balances[1].mint.clone();
         let external_transfer_volume = new_wallet.balances[1].amount - 1; // all but 1 unit
-        let external_transfer_direction = 0u64; // withdraw
+        let external_transfer_direction = ExternalTransferDirection::Deposit;
 
         // Invalid, prover tries to add too large of an amount to balance
         new_wallet.balances[1].amount += external_transfer_volume + 1;
@@ -1446,7 +1437,7 @@ mod valid_wallet_update_tests {
                 elems: mock_opening,
                 indices: mock_opening_indices,
             },
-            internal_transfer: (Scalar::zero(), Scalar::zero()),
+            internal_transfer: InternalTransfer::default(),
         };
 
         let new_wallet_commit = compute_wallet_commitment(&new_wallet);
@@ -1461,14 +1452,15 @@ mod valid_wallet_update_tests {
             timestamp: Scalar::from(timestamp),
             pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
-            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
-            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
-            external_transfer: (
-                biguint_to_scalar(&external_transfer_mint),
-                Scalar::from(external_transfer_volume),
-                Scalar::from(external_transfer_direction),
-            ),
+            external_transfer: ExternalTransfer {
+                account_addr: BigUint::default(),
+                mint: external_transfer_mint,
+                amount: external_transfer_volume.into(),
+                direction: external_transfer_direction,
+            },
         };
 
         assert!(!constraints_satisfied(witness, statement));
@@ -1509,7 +1501,7 @@ mod valid_wallet_update_tests {
                 elems: mock_opening,
                 indices: mock_opening_indices,
             },
-            internal_transfer: (Scalar::zero(), Scalar::zero()),
+            internal_transfer: InternalTransfer::default(),
         };
 
         let new_wallet_commit = compute_wallet_commitment(&new_wallet);
@@ -1524,10 +1516,10 @@ mod valid_wallet_update_tests {
             timestamp: Scalar::from(timestamp),
             pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
-            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
-            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
-            external_transfer: (Scalar::from(0u64), Scalar::from(0u64), Scalar::from(0u64)),
+            external_transfer: ExternalTransfer::default(),
         };
 
         assert!(!constraints_satisfied(witness, statement));
@@ -1569,10 +1561,10 @@ mod valid_wallet_update_tests {
                 elems: mock_opening,
                 indices: mock_opening_indices,
             },
-            internal_transfer: (
-                Scalar::from(internal_transfer_mint),
-                Scalar::from(internal_transfer_volume),
-            ),
+            internal_transfer: InternalTransfer {
+                mint: internal_transfer_mint.into(),
+                amount: internal_transfer_volume.into(),
+            },
         };
 
         let new_wallet_commit = compute_wallet_commitment(&new_wallet);
@@ -1587,10 +1579,10 @@ mod valid_wallet_update_tests {
             timestamp: Scalar::from(timestamp),
             pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
-            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
-            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
-            external_transfer: (Scalar::zero(), Scalar::zero(), Scalar::zero()),
+            external_transfer: ExternalTransfer::default(),
         };
 
         assert!(!constraints_satisfied(witness, statement));
@@ -1615,7 +1607,7 @@ mod valid_wallet_update_tests {
         // Invalid, the user does not have an existing balance for the withdraw mint
         let external_transfer_mint = 1729u64;
         let external_transfer_volume = new_wallet.balances[1].amount - 1; // all but 1 unit
-        let external_transfer_direction = 1u64; // withdraw
+        let external_transfer_direction = ExternalTransferDirection::Withdrawal;
 
         // Create a mock Merkle opening for the old wallet
         let random_index = rng.next_u32() % (2u32.pow(MERKLE_HEIGHT.try_into().unwrap()));
@@ -1633,7 +1625,7 @@ mod valid_wallet_update_tests {
                 elems: mock_opening,
                 indices: mock_opening_indices,
             },
-            internal_transfer: (Scalar::zero(), Scalar::zero()),
+            internal_transfer: InternalTransfer::default(),
         };
 
         let new_wallet_commit = compute_wallet_commitment(&new_wallet);
@@ -1648,14 +1640,15 @@ mod valid_wallet_update_tests {
             timestamp: Scalar::from(timestamp),
             pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
-            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
-            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
-            external_transfer: (
-                Scalar::from(external_transfer_mint),
-                Scalar::from(external_transfer_volume),
-                Scalar::from(external_transfer_direction),
-            ),
+            external_transfer: ExternalTransfer {
+                account_addr: BigUint::default(),
+                mint: external_transfer_mint.into(),
+                amount: external_transfer_volume.into(),
+                direction: external_transfer_direction,
+            },
         };
 
         assert!(!constraints_satisfied(witness, statement));
@@ -1682,7 +1675,7 @@ mod valid_wallet_update_tests {
         // replace the balance in the witness with an underflowed scalar
         let external_transfer_mint = new_wallet.balances[1].mint.clone();
         let external_transfer_volume = new_wallet.balances[1].amount + 1; // overdraw
-        let external_transfer_direction = 1u64; // withdraw
+        let external_transfer_direction = ExternalTransferDirection::Withdrawal;
 
         // Create a mock Merkle opening for the old wallet
         let random_index = rng.next_u32() % (2u32.pow(MERKLE_HEIGHT.try_into().unwrap()));
@@ -1700,7 +1693,7 @@ mod valid_wallet_update_tests {
                 elems: mock_opening,
                 indices: mock_opening_indices,
             },
-            internal_transfer: (Scalar::zero(), Scalar::zero()),
+            internal_transfer: InternalTransfer::default(),
         };
 
         let new_wallet_commit = compute_wallet_commitment(&new_wallet);
@@ -1715,22 +1708,24 @@ mod valid_wallet_update_tests {
             timestamp: Scalar::from(timestamp),
             pk_root: new_wallet.keys.pk_root,
             new_wallet_commitment: prime_field_to_scalar(&new_wallet_commit),
-            wallet_spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
-            wallet_match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
+            spend_nullifier: prime_field_to_scalar(&old_wallet_spend_nullifier),
+            match_nullifier: prime_field_to_scalar(&old_wallet_match_nullifier),
             merkle_root: mock_root,
-            external_transfer: (
-                biguint_to_scalar(&external_transfer_mint),
-                Scalar::from(external_transfer_volume),
-                Scalar::from(external_transfer_direction),
-            ),
+            external_transfer: ExternalTransfer {
+                account_addr: BigUint::default(),
+                mint: external_transfer_mint,
+                amount: external_transfer_volume.into(),
+                direction: external_transfer_direction,
+            },
         };
 
         // Commit to the statement and witness
         let mut prover_transcript = Transcript::new("test".as_bytes());
         let pc_gens = PedersenGens::default();
         let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
-        let (mut witness_var, statement_vars) =
-            commit_witness_statement(witness, statement, &mut prover);
+
+        let (mut witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
 
         // Modify the second balance to explicitly underflow
         let negative_one = prover.commit_public(Scalar::one().neg());
@@ -1742,11 +1737,7 @@ mod valid_wallet_update_tests {
             &witness_var.wallet2,
             &witness_var.wallet1,
             witness_var.internal_transfer,
-            (
-                statement_vars[6].to_owned(),
-                statement_vars[7].to_owned(),
-                statement_vars[8].to_owned(),
-            ),
+            statement_var.external_transfer,
             &mut prover,
         );
 
