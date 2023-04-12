@@ -12,6 +12,7 @@ pub mod keychain;
 pub mod r#match;
 pub mod note;
 pub mod order;
+pub mod transfers;
 pub mod wallet;
 
 // -----------------------------------------

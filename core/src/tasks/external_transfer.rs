@@ -11,7 +11,7 @@ use std::{
 use async_trait::async_trait;
 use circuits::{
     native_helpers::compute_poseidon_hash,
-    types::{balance::Balance, order::Order as CircuitOrder},
+    types::{balance::Balance, order::Order as CircuitOrder, transfers::ExternalTransferDirection},
     zk_circuits::{
         valid_commitments::ValidCommitmentsStatement,
         valid_wallet_update::ValidWalletUpdateStatement,
@@ -37,10 +37,7 @@ use crate::{
     proof_generation::jobs::{
         ProofJob, ProofManagerJob, ValidCommitmentsBundle, ValidWalletUpdateBundle,
     },
-    starknet_client::{
-        client::StarknetClient,
-        types::{ExternalTransfer, ExternalTransferDirection},
-    },
+    starknet_client::{client::StarknetClient, types::ExternalTransfer},
     state::{
         wallet::{Wallet, WalletIdentifier},
         NetworkOrder, NetworkOrderState, OrderIdentifier, RelayerState,

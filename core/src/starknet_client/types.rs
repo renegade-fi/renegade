@@ -5,8 +5,8 @@ use std::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
 };
 
+use circuits::types::transfers::ExternalTransferDirection;
 use crypto::fields::{biguint_to_starknet_felt, u128_to_starknet_felt};
-use curve25519_dalek::scalar::Scalar;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
@@ -60,29 +60,8 @@ impl From<ExternalTransfer> for Vec<StarknetFieldElement> {
             biguint_to_starknet_felt(&transfer.mint),
             amount_felts[0],
             amount_felts[1],
-            transfer.direction.into(),
+            StarknetFieldElement::from(transfer.direction as u8),
         ]
-    }
-}
-
-/// Represents the direction (deposit/withdraw) of a transfer
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub enum ExternalTransferDirection {
-    /// Deposit an ERC20 into the darkpool from an external address
-    Deposit = 0,
-    /// Withdraw an ERC20 from the darkpool to an external address
-    Withdrawal,
-}
-
-impl From<ExternalTransferDirection> for StarknetFieldElement {
-    fn from(dir: ExternalTransferDirection) -> Self {
-        StarknetFieldElement::from(dir as u8)
-    }
-}
-
-impl From<ExternalTransferDirection> for Scalar {
-    fn from(dir: ExternalTransferDirection) -> Self {
-        Scalar::from(dir as u8)
     }
 }
 

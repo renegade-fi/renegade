@@ -1,6 +1,7 @@
 //! Groups wallet API handlers and definitions
 
 use async_trait::async_trait;
+use circuits::types::transfers::ExternalTransferDirection;
 use crossbeam::channel::Sender as CrossbeamSender;
 use hyper::StatusCode;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
@@ -22,7 +23,7 @@ use crate::{
     },
     gossip_api::gossip::GossipOutbound,
     proof_generation::jobs::ProofManagerJob,
-    starknet_client::{client::StarknetClient, types::ExternalTransferDirection},
+    starknet_client::client::StarknetClient,
     state::RelayerState,
     tasks::{
         create_new_order::NewOrderTask, create_new_wallet::NewWalletTask, driver::TaskDriver,
