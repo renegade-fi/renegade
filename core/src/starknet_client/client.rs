@@ -9,7 +9,10 @@ use std::{
     time::Duration,
 };
 
-use circuits::types::wallet::{NoteCommitment, Nullifier, WalletCommitment};
+use circuits::{
+    types::wallet::{NoteCommitment, Nullifier, WalletCommitment},
+    zk_gadgets::merkle::MerkleRoot,
+};
 use crypto::{
     elgamal::ElGamalCiphertext,
     fields::{
@@ -51,7 +54,8 @@ use crate::{
     },
     starknet_client::{
         GET_WALLET_LAST_UPDATED_SELECTOR, INTERNAL_NODE_CHANGED_EVENT_SELECTOR, MATCH_SELECTOR,
-        NEW_WALLET_SELECTOR, UPDATE_WALLET_SELECTOR, VALUE_INSERTED_EVENT_SELECTOR,
+        MERKLE_ROOT_IN_HISTORY_SELECTOR, NEW_WALLET_SELECTOR, UPDATE_WALLET_SELECTOR,
+        VALUE_INSERTED_EVENT_SELECTOR,
     },
     state::{wallet::MerkleAuthenticationPath, MerkleTreeCoords},
     MERKLE_HEIGHT,
@@ -61,7 +65,7 @@ use super::{
     error::StarknetClientError,
     helpers::{pack_bytes_into_felts, parse_ciphertext_from_calldata},
     types::ExternalTransfer,
-    ChainId, DEFAULT_AUTHENTICATION_PATH, SETTLE_SELECTOR,
+    ChainId, DEFAULT_AUTHENTICATION_PATH, NULLIFIER_USED_SELECTOR, SETTLE_SELECTOR,
 };
 
 /// A type alias for a felt that represents a transaction hash
@@ -518,6 +522,39 @@ impl StarknetClient {
     // ------------------------
 
     // --- Getters ---
+
+    /// Check whether the given Merkle root is valid
+    pub async fn check_merkle_root_valid(
+        &self,
+        root: MerkleRoot,
+    ) -> Result<bool, StarknetClientError> {
+        // TODO: Implement BigUint on the contract
+        let reduced_root = Self::reduce_scalar_to_felt(&root);
+        let call = CallFunction {
+            contract_address: self.contract_address,
+            entry_point_selector: *MERKLE_ROOT_IN_HISTORY_SELECTOR,
+            calldata: vec![reduced_root],
+        };
+
+        let res = self.call_contract(call).await?;
+        Ok(res.result[0].eq(&StarknetFieldElement::from(1u8)))
+    }
+
+    /// Check whether the given nullifier is used
+    pub async fn check_nullifier_unused(
+        &self,
+        nullifier: Nullifier,
+    ) -> Result<bool, StarknetClientError> {
+        let reduced_nullifier = Self::reduce_scalar_to_felt(&nullifier);
+        let call = CallFunction {
+            contract_address: self.contract_address,
+            entry_point_selector: *NULLIFIER_USED_SELECTOR,
+            calldata: vec![reduced_nullifier],
+        };
+
+        let res = self.call_contract(call).await?;
+        Ok(res.result[0].eq(&StarknetFieldElement::from(0u8)))
+    }
 
     /// Call the "get_wallet_update" view function in the contract
     pub async fn get_wallet_last_updated(

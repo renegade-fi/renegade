@@ -25,6 +25,12 @@ lazy_static! {
 
     // -- Getters --
 
+    /// Contract view function selector to test whether the given Merkle root is valid
+    static ref MERKLE_ROOT_IN_HISTORY_SELECTOR: StarknetFieldElement = get_selector_from_name("root_in_history")
+        .unwrap();
+    /// Contract view function selector to test whether the given nullifier is used
+    static ref NULLIFIER_USED_SELECTOR: StarknetFieldElement = get_selector_from_name("is_nullifier_used")
+        .unwrap();
     /// Contract view function selector to get the most recent transaction updating a given wallet
     static ref GET_WALLET_LAST_UPDATED_SELECTOR: StarknetFieldElement = get_selector_from_name("get_wallet_update")
         .unwrap();

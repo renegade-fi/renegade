@@ -4,8 +4,6 @@
 //! loop of the workers
 
 use lru::LruCache;
-use starknet::core::types::FieldElement as StarknetFieldElement;
-use starknet::providers::SequencerGatewayProvider;
 use std::{
     collections::HashMap,
     num::NonZeroUsize,
@@ -24,6 +22,7 @@ use crate::{
         },
         heartbeat::BootstrapRequest,
     },
+    starknet_client::client::StarknetClient,
     state::{new_async_shared, AsyncShared, RelayerState},
     CancelChannel,
 };
@@ -219,14 +218,9 @@ impl GossipProtocolExecutor {
         })
     }
 
-    /// Helper to get the contract address of the darkpool
-    pub(super) fn get_contract_address(&self) -> StarknetFieldElement {
-        self.config.starknet_client.contract_address
-    }
-
-    /// Helper to get the gateway client from the config
-    pub(super) fn get_gateway_client(&self) -> &SequencerGatewayProvider {
-        self.config.starknet_client.get_gateway_client()
+    /// Shorthand to fetch the starknet client from the config
+    pub(super) fn starknet_client(&self) -> &StarknetClient {
+        &self.config.starknet_client
     }
 
     /// Runs the executor loop

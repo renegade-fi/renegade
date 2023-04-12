@@ -1,17 +1,9 @@
 //! Groups handlers for updating and managing order book state in response to
 //! events elsewhere in the local node or the network
 
-use circuits::{
-    types::wallet::Nullifier, verify_singleprover_proof, zk_gadgets::merkle::MerkleRoot,
-};
-use crypto::fields::{biguint_to_starknet_felt, scalar_to_biguint, starknet_felt_to_biguint};
+use circuits::{types::wallet::Nullifier, verify_singleprover_proof};
 use futures::executor::block_on;
 use libp2p::request_response::ResponseChannel;
-use starknet::core::{
-    types::{BlockId, CallFunction, FieldElement as StarknetFieldElement},
-    utils::get_selector_from_name,
-};
-use starknet::providers::Provider;
 use tracing::log;
 
 use crate::{
@@ -34,11 +26,6 @@ use super::{
     server::GossipProtocolExecutor,
     types::{ClusterId, WrappedPeerId},
 };
-
-/// The darkpool contract's function name for checking nullifiers
-const NULLIFIER_USED_FUNCTION: &str = "is_nullifier_used";
-/// The darkpool contract's function name for checking historical merkle roots
-const MERKLE_ROOT_IN_HISTORY_FUNCTION: &str = "root_in_history";
 
 impl GossipProtocolExecutor {
     /// Dispatches messages from the cluster regarding order book management
@@ -164,7 +151,12 @@ impl GossipProtocolExecutor {
         cluster: ClusterId,
     ) -> Result<(), GossipError> {
         // Ensure that the nullifier has not been used for this order
-        if !self.check_nullifier_unused(match_nullifier).await? {
+        if !self
+            .starknet_client()
+            .check_nullifier_unused(match_nullifier)
+            .await
+            .map_err(|err| GossipError::StarknetRequest(err.to_string()))?
+        {
             log::info!("received order with spent nullifier, skipping...");
             return Ok(());
         }
@@ -323,19 +315,22 @@ impl GossipProtocolExecutor {
     ) -> Result<(), GossipError> {
         // Check that the nullifier is unused
         if !self
+            .starknet_client()
             .check_nullifier_unused(proof_bundle.statement.nullifier)
-            .await?
+            .await
+            .map_err(|err| GossipError::StarknetRequest(err.to_string()))?
         {
-            log::info!("got order with previously used nullifier, skipping...");
-            // return Err(GossipError::ValidCommitmentVerification(
-            //     "invalid nullifier, already used".to_string(),
-            // ));
+            return Err(GossipError::ValidCommitmentVerification(
+                "invalid nullifier, already used".to_string(),
+            ));
         }
 
         // Check that the Merkle root is a valid historical root
         if !self
+            .starknet_client()
             .check_merkle_root_valid(proof_bundle.statement.merkle_root)
-            .await?
+            .await
+            .map_err(|err| GossipError::StarknetRequest(err.to_string()))?
         {
             log::info!("got order with invalid merkle root, skipping...");
             return Err(GossipError::ValidCommitmentVerification(
@@ -354,53 +349,5 @@ impl GossipProtocolExecutor {
         }
 
         Ok(())
-    }
-
-    /// Checks that a given Merkle root is valid in the historical Merkle roots
-    async fn check_merkle_root_valid(&self, root: MerkleRoot) -> Result<bool, GossipError> {
-        // TODO: Implement bigint Merkle proofs in the contract
-        let root_bigint = scalar_to_biguint(&root);
-        let modulus_bigint = starknet_felt_to_biguint(&StarknetFieldElement::MAX) + 1u8;
-        let root_mod_starknet_prime = root_bigint % modulus_bigint;
-
-        let call = CallFunction {
-            contract_address: self.get_contract_address(),
-            entry_point_selector: get_selector_from_name(MERKLE_ROOT_IN_HISTORY_FUNCTION).unwrap(),
-            calldata: vec![biguint_to_starknet_felt(&root_mod_starknet_prime)],
-        };
-
-        #[allow(unused)]
-        let res = self
-            .get_gateway_client()
-            .call_contract(call, BlockId::Pending)
-            .await
-            .map_err(|err| GossipError::StarknetRequest(err.to_string()))?;
-
-        // TODO: Implement non-native on contract and actually enforce the Merkle root to be valid
-        // Ok(res.result[0].eq(&StarknetFieldElement::from(1u8)))
-        Ok(true)
-    }
-
-    /// Checks that a nullifier has not been seen on-chain for a given order
-    async fn check_nullifier_unused(&self, nullifier: Nullifier) -> Result<bool, GossipError> {
-        // TODO: Remove this in favor of bigint implementation:
-        // Take the nullifier modulo the Starknet prime field
-        let nullifier_bigint = scalar_to_biguint(&nullifier);
-        let modulus_bigint = starknet_felt_to_biguint(&StarknetFieldElement::MAX) + 1u8;
-        let nullifier_mod_starknet_prime = nullifier_bigint % modulus_bigint;
-
-        let call = CallFunction {
-            contract_address: self.get_contract_address(),
-            entry_point_selector: get_selector_from_name(NULLIFIER_USED_FUNCTION).unwrap(),
-            calldata: vec![biguint_to_starknet_felt(&nullifier_mod_starknet_prime)],
-        };
-        let res = self
-            .get_gateway_client()
-            .call_contract(call, BlockId::Pending)
-            .await
-            .map_err(|err| GossipError::StarknetRequest(err.to_string()))?;
-
-        // If the result is 0 (false) the nullifier is unused
-        Ok(res.result[0].eq(&StarknetFieldElement::from(0u8)))
     }
 }
