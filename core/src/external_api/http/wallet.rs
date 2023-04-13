@@ -187,6 +187,33 @@ pub struct WithdrawBalanceResponse {
     pub task_id: TaskIdentifier,
 }
 
+/// The request type to create an internal transfer to another darkpool wallet
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InternalTransferRequest {
+    /// A signature of the public variables used in the proof of
+    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
+    /// to guarantee that the wallet updates are properly authorized
+    ///
+    /// TODO: For now this is just a blob, we will add this feature in
+    /// a follow up
+    pub public_var_sig: Vec<u8>,
+    /// The recipient's settle key
+    #[serde(
+        serialize_with = "biguint_to_hex_string",
+        deserialize_with = "biguint_from_hex_string"
+    )]
+    pub recipient_key: BigUint,
+    /// The amount to transfer
+    pub amount: BigUint,
+}
+
+/// The response type to a request to create an internal transfer
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InternalTransferResponse {
+    /// The ID of the task that was allocated on behalf of this request
+    pub task_id: TaskIdentifier,
+}
+
 // -------------------------
 // | Wallet Fees API Types |
 // -------------------------
