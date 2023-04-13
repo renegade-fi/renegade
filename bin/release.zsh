@@ -12,7 +12,8 @@ aws ecr get-login-password --region $aws_region | \
         --password-stdin \
         $aws_account_id.dkr.ecr.$aws_region.amazonaws.com
 
-# Build the Docker image
+# Build the Docker image using buildkit for better caching
+export DOCKER_BUILDKIT=1
 docker build -t $image_name:$image_tag .
 
 # Tag the Docker image for ECR
