@@ -1,9 +1,13 @@
 //! Groups wallet API handlers and definitions
 
 use async_trait::async_trait;
-use circuits::types::transfers::{ExternalTransfer, ExternalTransferDirection};
+use circuits::types::{
+    balance::Balance as StateBalance,
+    transfers::{ExternalTransfer, ExternalTransferDirection},
+};
 use crossbeam::channel::Sender as CrossbeamSender;
 use hyper::StatusCode;
+use num_traits::ToPrimitive;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use crate::{
@@ -26,9 +30,10 @@ use crate::{
     starknet_client::client::StarknetClient,
     state::RelayerState,
     tasks::{
-        create_new_order::NewOrderTask, create_new_wallet::NewWalletTask, driver::TaskDriver,
-        external_transfer::ExternalTransferTask, lookup_wallet::LookupWalletTask,
+        create_new_wallet::NewWalletTask, driver::TaskDriver, lookup_wallet::LookupWalletTask,
+        update_wallet::UpdateWalletTask,
     },
+    MAX_ORDERS,
 };
 
 use super::{parse_mint_from_params, parse_order_id_from_params, parse_wallet_id_from_params};
@@ -64,6 +69,8 @@ pub(super) const GET_FEES_ROUTE: &str = "/v0/wallet/:wallet_id/fees";
 
 /// Error message displayed when a given order cannot be found
 const ERR_ORDER_NOT_FOUND: &str = "order not found";
+/// Error message displayed when `MAX_ORDERS` is exceeded
+const ERR_ORDERS_FULL: &str = "wallet's orderbook is full";
 /// The error message to display when a wallet cannot be found
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found";
 
@@ -399,19 +406,49 @@ impl TypedHandler for CreateOrderHandler {
         let id = req.order.id;
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
+        // Lookup the wallet in the global state
+        let old_wallet = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&wallet_id)
+            .await
+            .ok_or_else(|| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::NOT_FOUND,
+                    ERR_WALLET_NOT_FOUND.to_string(),
+                )
+            })?;
+
+        // Ensure that there is space below MAX_ORDERS for the new order
+        let num_orders = old_wallet
+            .orders
+            .values()
+            .filter(|order| !order.is_default())
+            .count();
+
+        if num_orders >= MAX_ORDERS {
+            return Err(ApiServerError::HttpStatusCode(
+                StatusCode::BAD_REQUEST,
+                ERR_ORDERS_FULL.to_string(),
+            ));
+        }
+
+        // Add the order to the new wallet
+        let mut new_wallet = old_wallet.clone();
+        new_wallet.orders.insert(id, req.order.into());
+        new_wallet.orders.retain(|_id, order| !order.is_default());
+
         // Spawn a task to handle the order creation flow
-        let task = NewOrderTask::new(
-            wallet_id,
-            req.order,
+        let task = UpdateWalletTask::new(
+            None, /* external_transfer */
+            old_wallet,
+            new_wallet,
             self.starknet_client.clone(),
             self.network_sender.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
-        )
-        .await
-        .map_err(|err| {
-            ApiServerError::HttpStatusCode(StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
-        })?;
+        );
         let task_id = self.task_driver.start_task(task).await;
 
         Ok(CreateOrderResponse { id, task_id })
@@ -568,27 +605,46 @@ impl TypedHandler for DepositBalanceHandler {
         // Parse the wallet ID from the params
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
-        // Begin a task
-        let task = ExternalTransferTask::new(
-            ExternalTransfer {
+        // Lookup the old wallet by id
+        let old_wallet = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&wallet_id)
+            .await
+            .ok_or_else(|| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::NOT_FOUND,
+                    ERR_WALLET_NOT_FOUND.to_string(),
+                )
+            })?;
+
+        // Apply the balance update to the old wallet to get the new wallet
+        let mut new_wallet = old_wallet.clone();
+        new_wallet
+            .balances
+            .entry(req.mint.clone())
+            .or_insert(StateBalance {
+                mint: req.mint.clone(),
+                amount: 0u64,
+            })
+            .amount += req.amount.to_u64().unwrap();
+
+        // Begin an update-wallet task
+        let task = UpdateWalletTask::new(
+            Some(ExternalTransfer {
                 account_addr: req.from_addr,
                 mint: req.mint,
                 amount: req.amount,
                 direction: ExternalTransferDirection::Deposit,
-            },
-            &wallet_id,
+            }),
+            old_wallet,
+            new_wallet,
             self.starknet_client.clone(),
             self.network_sender.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
-        )
-        .await
-        .map_err(|_| {
-            ApiServerError::HttpStatusCode(
-                StatusCode::BAD_REQUEST,
-                ERR_WALLET_NOT_FOUND.to_string(),
-            )
-        })?;
+        );
         let task_id = self.task_driver.start_task(task).await;
 
         Ok(DepositBalanceResponse { task_id })
@@ -643,27 +699,46 @@ impl TypedHandler for WithdrawBalanceHandler {
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let mint = parse_mint_from_params(&params)?;
 
+        // Lookup the wallet in the global state
+        let old_wallet = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&wallet_id)
+            .await
+            .ok_or_else(|| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::NOT_FOUND,
+                    ERR_WALLET_NOT_FOUND.to_string(),
+                )
+            })?;
+
+        // Apply the withdrawal to the wallet
+        let mut new_wallet = old_wallet.clone();
+        new_wallet
+            .balances
+            .entry(mint.clone())
+            .or_insert(StateBalance {
+                mint: mint.clone(),
+                amount: 0u64,
+            })
+            .amount -= req.amount.to_u64().unwrap();
+
         // Begin a task
-        let task = ExternalTransferTask::new(
-            ExternalTransfer {
+        let task = UpdateWalletTask::new(
+            Some(ExternalTransfer {
                 account_addr: req.destination_addr,
                 mint,
                 amount: req.amount,
                 direction: ExternalTransferDirection::Withdrawal,
-            },
-            &wallet_id,
+            }),
+            old_wallet,
+            new_wallet,
             self.starknet_client.clone(),
             self.network_sender.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
-        )
-        .await
-        .map_err(|_| {
-            ApiServerError::HttpStatusCode(
-                StatusCode::BAD_REQUEST,
-                ERR_WALLET_NOT_FOUND.to_string(),
-            )
-        })?;
+        );
         let task_id = self.task_driver.start_task(task).await;
 
         Ok(WithdrawBalanceResponse { task_id })
