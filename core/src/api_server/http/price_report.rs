@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use crossbeam::channel;
+use hyper::HeaderMap;
 
 use crate::{
     api_server::{
@@ -48,6 +49,7 @@ impl TypedHandler for ExchangeHealthStatesHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         req: Self::Request,
         _params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {

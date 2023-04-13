@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use hyper::{Body, Method, Request, Response, StatusCode};
+use hyper::{Body, HeaderMap, Method, Request, Response, StatusCode};
 use matchit::Router as MatchRouter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tracing::log;
@@ -78,6 +78,7 @@ pub trait TypedHandler: Send + Sync {
     /// The handler logic, translate request into response
     async fn handle_typed(
         &self,
+        headers: HeaderMap,
         req: Self::Request,
         url_params: UrlParams,
     ) -> Result<Self::Response, ApiServerError>;
@@ -93,6 +94,9 @@ impl<
     > Handler for T
 {
     async fn handle(&self, req: Request<Body>, url_params: UrlParams) -> Response<Body> {
+        // Copy the headers before consuming the body
+        let headers = req.headers().clone();
+
         // Deserialize the request into the request type, return HTTP 400 if deserialization fails
         let req_body_bytes = hyper::body::to_bytes(req.into_body()).await;
         if let Err(e) = req_body_bytes {
@@ -113,7 +117,7 @@ impl<
         let req_body: Req = deserialized.unwrap();
 
         // Forward to the typed handler
-        let res = self.handle_typed(req_body, url_params).await;
+        let res = self.handle_typed(headers, req_body, url_params).await;
         if let Ok(resp) = res {
             // Serialize the response into a body. We explicitly allow for all cross-origin
             // requests, as users connecting to a locally-run node have a different origin port.

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use hyper::StatusCode;
+use hyper::{HeaderMap, StatusCode};
 use itertools::Itertools;
 
 use crate::{
@@ -64,6 +64,7 @@ impl TypedHandler for GetNetworkTopologyHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         _req: Self::Request,
         _params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -113,6 +114,7 @@ impl TypedHandler for GetClusterInfoHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -162,6 +164,7 @@ impl TypedHandler for GetPeerInfoHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
