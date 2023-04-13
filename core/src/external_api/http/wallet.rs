@@ -99,6 +99,15 @@ pub struct CreateOrderResponse {
     pub task_id: TaskIdentifier,
 }
 
+/// The response type to a request to cancel a given order
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CancelOrderResponse {
+    /// The ID of the task allocated for this request
+    pub task_id: TaskIdentifier,
+    /// The order information of the now-cancelled order
+    pub order: Order,
+}
+
 // -----------------------------
 // | Wallet Balances API Types |
 // -----------------------------

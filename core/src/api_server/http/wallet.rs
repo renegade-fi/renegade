@@ -17,10 +17,11 @@ use crate::{
     },
     external_api::{
         http::wallet::{
-            CreateOrderRequest, CreateOrderResponse, CreateWalletRequest, CreateWalletResponse,
-            DepositBalanceRequest, DepositBalanceResponse, FindWalletRequest, FindWalletResponse,
-            GetBalanceByMintResponse, GetBalancesResponse, GetFeesResponse, GetOrderByIdResponse,
-            GetOrdersResponse, GetWalletResponse, WithdrawBalanceRequest, WithdrawBalanceResponse,
+            CancelOrderResponse, CreateOrderRequest, CreateOrderResponse, CreateWalletRequest,
+            CreateWalletResponse, DepositBalanceRequest, DepositBalanceResponse, FindWalletRequest,
+            FindWalletResponse, GetBalanceByMintResponse, GetBalancesResponse, GetFeesResponse,
+            GetOrderByIdResponse, GetOrdersResponse, GetWalletResponse, WithdrawBalanceRequest,
+            WithdrawBalanceResponse,
         },
         types::{Balance, Wallet},
         EmptyRequestResponse,
@@ -52,6 +53,8 @@ pub(super) const GET_WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
 pub(super) const WALLET_ORDERS_ROUTE: &str = "/v0/wallet/:wallet_id/orders";
 /// Returns a single order by the given identifier
 pub(super) const GET_ORDER_BY_ID_ROUTE: &str = "/v0/wallet/:wallet_id/orders/:order_id";
+/// Cancels a given order
+pub(super) const CANCEL_ORDER_ROUTE: &str = "/v0/wallet/:wallet_id/orders/:order_id/cancel";
 /// Returns the balances within a given wallet
 pub(super) const GET_BALANCES_ROUTE: &str = "/v0/wallet/:wallet_id/balances";
 /// Returns the balance associated with the given mint
@@ -452,6 +455,92 @@ impl TypedHandler for CreateOrderHandler {
         let task_id = self.task_driver.start_task(task).await;
 
         Ok(CreateOrderResponse { id, task_id })
+    }
+}
+
+/// Handler for the POST /wallet/:id/orders/:id/cancel route
+pub struct CancelOrderHandler {
+    /// A starknet client
+    starknet_client: StarknetClient,
+    /// A sender to the network manager's work queue
+    network_sender: TokioSender<GossipOutbound>,
+    /// A copy of the relayer-global state
+    global_state: RelayerState,
+    /// A sender to the proof manager's work queue, used to enqueue
+    /// proofs of `VALID NEW WALLET` and await their completion
+    proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    /// A copy of the task driver used for long-lived async workflows
+    task_driver: TaskDriver,
+}
+
+impl CancelOrderHandler {
+    /// Constructor
+    pub fn new(
+        starknet_client: StarknetClient,
+        network_sender: TokioSender<GossipOutbound>,
+        global_state: RelayerState,
+        proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+        task_driver: TaskDriver,
+    ) -> Self {
+        Self {
+            starknet_client,
+            network_sender,
+            global_state,
+            proof_manager_work_queue,
+            task_driver,
+        }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for CancelOrderHandler {
+    type Request = EmptyRequestResponse;
+    type Response = CancelOrderResponse;
+
+    async fn handle_typed(
+        &self,
+        _req: Self::Request,
+        params: UrlParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+        let order_id = parse_order_id_from_params(&params)?;
+
+        // Lookup the wallet in the global state
+        let old_wallet = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&wallet_id)
+            .await
+            .ok_or_else(|| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::NOT_FOUND,
+                    ERR_WALLET_NOT_FOUND.to_string(),
+                )
+            })?;
+
+        // Remove the order to the new wallet
+        let mut new_wallet = old_wallet.clone();
+        let order = new_wallet.orders.remove(&order_id).ok_or_else(|| {
+            ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, ERR_ORDER_NOT_FOUND.to_string())
+        })?;
+
+        // Spawn a task to handle the order creation flow
+        let task = UpdateWalletTask::new(
+            None, /* external_transfer */
+            old_wallet,
+            new_wallet,
+            self.starknet_client.clone(),
+            self.network_sender.clone(),
+            self.global_state.clone(),
+            self.proof_manager_work_queue.clone(),
+        );
+        let task_id = self.task_driver.start_task(task).await;
+
+        Ok(CancelOrderResponse {
+            task_id,
+            order: (order_id, order).into(),
+        })
     }
 }
 
