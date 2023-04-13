@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use hyper::{
     server::conn::AddrStream,
     service::{make_service_fn, service_fn},
-    Body, Error as HyperError, Method, Request, Response, Server, StatusCode,
+    Body, Error as HyperError, HeaderMap, Method, Request, Response, Server, StatusCode,
 };
 use num_bigint::BigUint;
 use num_traits::Num;
@@ -461,6 +461,7 @@ impl TypedHandler for PingHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         _req: Self::Request,
         _params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {

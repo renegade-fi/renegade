@@ -5,7 +5,7 @@
 // ---------------
 
 use async_trait::async_trait;
-use hyper::StatusCode;
+use hyper::{HeaderMap, StatusCode};
 
 use crate::{
     api_server::{
@@ -52,6 +52,7 @@ impl TypedHandler for GetTaskStatusHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {

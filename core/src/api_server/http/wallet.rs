@@ -6,7 +6,7 @@ use circuits::types::{
     transfers::{ExternalTransfer, ExternalTransferDirection, InternalTransfer},
 };
 use crossbeam::channel::Sender as CrossbeamSender;
-use hyper::StatusCode;
+use hyper::{HeaderMap, StatusCode};
 use num_traits::ToPrimitive;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
@@ -114,6 +114,7 @@ impl TypedHandler for GetWalletHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -192,6 +193,7 @@ impl TypedHandler for CreateWalletHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         req: Self::Request,
         _params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -253,6 +255,7 @@ impl TypedHandler for FindWalletHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         req: Self::Request,
         _params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -300,6 +303,7 @@ impl TypedHandler for GetOrdersHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -345,6 +349,7 @@ impl TypedHandler for GetOrderByIdHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -415,6 +420,7 @@ impl TypedHandler for CreateOrderHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -512,6 +518,7 @@ impl TypedHandler for CancelOrderHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -583,6 +590,7 @@ impl TypedHandler for GetBalancesHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -628,6 +636,7 @@ impl TypedHandler for GetBalanceByMintHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -702,6 +711,7 @@ impl TypedHandler for DepositBalanceHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -796,6 +806,7 @@ impl TypedHandler for WithdrawBalanceHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -891,6 +902,7 @@ impl TypedHandler for InternalTransferHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -969,6 +981,7 @@ impl TypedHandler for GetFeesHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -1033,6 +1046,7 @@ impl TypedHandler for AddFeeHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -1128,6 +1142,7 @@ impl TypedHandler for RemoveFeeHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {

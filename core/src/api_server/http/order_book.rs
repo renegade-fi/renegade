@@ -5,7 +5,7 @@
 // ---------------
 
 use async_trait::async_trait;
-use hyper::StatusCode;
+use hyper::{HeaderMap, StatusCode};
 use itertools::Itertools;
 
 use crate::{
@@ -64,6 +64,7 @@ impl TypedHandler for GetNetworkOrdersHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         _req: Self::Request,
         _params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -103,6 +104,7 @@ impl TypedHandler for GetNetworkOrderByIdHandler {
 
     async fn handle_typed(
         &self,
+        _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
