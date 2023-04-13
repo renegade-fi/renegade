@@ -13,6 +13,7 @@ use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use crate::{
     api_server::{
         error::ApiServerError,
+        http::parse_index_from_params,
         router::{TypedHandler, UrlParams},
     },
     external_api::{
@@ -22,7 +23,8 @@ use crate::{
             DepositBalanceResponse, FindWalletRequest, FindWalletResponse,
             GetBalanceByMintResponse, GetBalancesResponse, GetFeesResponse, GetOrderByIdResponse,
             GetOrdersResponse, GetWalletResponse, InternalTransferRequest,
-            InternalTransferResponse, WithdrawBalanceRequest, WithdrawBalanceResponse,
+            InternalTransferResponse, RemoveFeeRequest, RemoveFeeResponse, WithdrawBalanceRequest,
+            WithdrawBalanceResponse,
         },
         types::{Balance, Wallet},
         EmptyRequestResponse,
@@ -69,6 +71,8 @@ pub(super) const INTERNAL_TRANSFER_ROUTE: &str =
     "/v0/wallet/:wallet_id/balances/:mint/internal_transfer";
 /// Returns the fees within a given wallet
 pub(super) const FEES_ROUTE: &str = "/v0/wallet/:wallet_id/fees";
+/// Removes a fee from the given wallet
+pub(super) const REMOVE_FEE_ROUTE: &str = "/v0/wallet/:wallet_id/fees/:index/remove";
 
 // ------------------
 // | Error Messages |
@@ -82,6 +86,8 @@ const ERR_ORDERS_FULL: &str = "wallet's orderbook is full";
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found";
 /// The error message to display when a fee list is full
 const ERR_FEES_FULL: &str = "wallet's fee list is full";
+/// The error message to display when a fee index is out of range
+const ERR_FEE_OUT_OF_RANGE: &str = "fee index out of range";
 
 // -------------------------
 // | Wallet Route Handlers |
@@ -1078,5 +1084,98 @@ impl TypedHandler for AddFeeHandler {
         let task_id = self.task_driver.start_task(task).await;
 
         Ok(AddFeeResponse { task_id })
+    }
+}
+
+/// Handler for the POST /wallet/:id/fees/:index/remove route
+pub struct RemoveFeeHandler {
+    /// A starknet client
+    starknet_client: StarknetClient,
+    /// A sender to the network manager's work queue
+    network_sender: TokioSender<GossipOutbound>,
+    /// A copy of the relayer-global state
+    global_state: RelayerState,
+    /// A sender to the proof manager's work queue, used to enqueue
+    /// proofs of `VALID NEW WALLET` and await their completion
+    proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    /// A copy of the task driver used for long-lived async workflows
+    task_driver: TaskDriver,
+}
+
+impl RemoveFeeHandler {
+    /// Constructor
+    pub fn new(
+        starknet_client: StarknetClient,
+        network_sender: TokioSender<GossipOutbound>,
+        global_state: RelayerState,
+        proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+        task_driver: TaskDriver,
+    ) -> Self {
+        Self {
+            starknet_client,
+            network_sender,
+            global_state,
+            proof_manager_work_queue,
+            task_driver,
+        }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for RemoveFeeHandler {
+    type Request = RemoveFeeRequest;
+    type Response = RemoveFeeResponse;
+
+    async fn handle_typed(
+        &self,
+        _req: Self::Request,
+        params: UrlParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        // Parse the wallet id and fee index from the URL params
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+        let fee_index = parse_index_from_params(&params)?;
+
+        // Lookup the wallet in the global state
+        let old_wallet = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&wallet_id)
+            .await
+            .ok_or_else(|| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::NOT_FOUND,
+                    ERR_WALLET_NOT_FOUND.to_string(),
+                )
+            })?;
+
+        if fee_index >= old_wallet.fees.len() {
+            return Err(ApiServerError::HttpStatusCode(
+                StatusCode::NOT_FOUND,
+                ERR_FEE_OUT_OF_RANGE.to_string(),
+            ));
+        }
+
+        // Remove the fee from the old wallet
+        let mut new_wallet = old_wallet.clone();
+        let removed_fee = new_wallet.fees.remove(fee_index);
+
+        // Start a task to submit this update to the contract
+        let task = UpdateWalletTask::new(
+            None,
+            None,
+            old_wallet,
+            new_wallet,
+            self.starknet_client.clone(),
+            self.network_sender.clone(),
+            self.global_state.clone(),
+            self.proof_manager_work_queue.clone(),
+        );
+        let task_id = self.task_driver.start_task(task).await;
+
+        Ok(RemoveFeeResponse {
+            task_id,
+            fee: removed_fee.into(),
+        })
     }
 }

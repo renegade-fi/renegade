@@ -245,3 +245,24 @@ pub struct AddFeeResponse {
     /// The ID of the task allocated on behalf of this request
     pub task_id: TaskIdentifier,
 }
+
+/// The request type to remove a fee from a wallet
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RemoveFeeRequest {
+    /// A signature of the public variables used in the proof of
+    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
+    /// to guarantee that the wallet updates are properly authorized
+    ///
+    /// TODO: For now this is just a blob, we will add this feature in
+    /// a follow up
+    pub public_var_sig: Vec<u8>,
+}
+
+/// The response type for a request to remove a fee from a wallet
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RemoveFeeResponse {
+    /// The ID of the task allocated for this request
+    pub task_id: TaskIdentifier,
+    /// The fee that was removed
+    pub fee: Fee,
+}
