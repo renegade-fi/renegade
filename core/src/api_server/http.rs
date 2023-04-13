@@ -37,10 +37,11 @@ use self::{
     wallet::{
         CancelOrderHandler, CreateOrderHandler, CreateWalletHandler, DepositBalanceHandler,
         FindWalletHandler, GetBalanceByMintHandler, GetBalancesHandler, GetFeesHandler,
-        GetOrderByIdHandler, GetOrdersHandler, GetWalletHandler, WithdrawBalanceHandler,
-        CANCEL_ORDER_ROUTE, CREATE_WALLET_ROUTE, DEPOSIT_BALANCE_ROUTE, FIND_WALLET_ROUTE,
-        GET_BALANCES_ROUTE, GET_BALANCE_BY_MINT_ROUTE, GET_FEES_ROUTE, GET_ORDER_BY_ID_ROUTE,
-        GET_WALLET_ROUTE, WALLET_ORDERS_ROUTE, WITHDRAW_BALANCE_ROUTE,
+        GetOrderByIdHandler, GetOrdersHandler, GetWalletHandler, InternalTransferHandler,
+        WithdrawBalanceHandler, CANCEL_ORDER_ROUTE, CREATE_WALLET_ROUTE, DEPOSIT_BALANCE_ROUTE,
+        FIND_WALLET_ROUTE, GET_BALANCES_ROUTE, GET_BALANCE_BY_MINT_ROUTE, GET_FEES_ROUTE,
+        GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE, INTERNAL_TRANSFER_ROUTE, WALLET_ORDERS_ROUTE,
+        WITHDRAW_BALANCE_ROUTE,
     },
 };
 
@@ -305,6 +306,19 @@ impl HttpServer {
             Method::POST,
             WITHDRAW_BALANCE_ROUTE.to_string(),
             WithdrawBalanceHandler::new(
+                config.starknet_client.clone(),
+                config.network_sender.clone(),
+                global_state.clone(),
+                config.proof_generation_work_queue.clone(),
+                config.task_driver.clone(),
+            ),
+        );
+
+        // The "/wallet/:id/balances/:mint/internal_transfer" route
+        router.add_route(
+            Method::POST,
+            INTERNAL_TRANSFER_ROUTE.to_string(),
+            InternalTransferHandler::new(
                 config.starknet_client.clone(),
                 config.network_sender.clone(),
                 global_state.clone(),

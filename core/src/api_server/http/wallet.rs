@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use circuits::types::{
     balance::Balance as StateBalance,
-    transfers::{ExternalTransfer, ExternalTransferDirection},
+    transfers::{ExternalTransfer, ExternalTransferDirection, InternalTransfer},
 };
 use crossbeam::channel::Sender as CrossbeamSender;
 use hyper::StatusCode;
@@ -20,8 +20,8 @@ use crate::{
             CancelOrderResponse, CreateOrderRequest, CreateOrderResponse, CreateWalletRequest,
             CreateWalletResponse, DepositBalanceRequest, DepositBalanceResponse, FindWalletRequest,
             FindWalletResponse, GetBalanceByMintResponse, GetBalancesResponse, GetFeesResponse,
-            GetOrderByIdResponse, GetOrdersResponse, GetWalletResponse, WithdrawBalanceRequest,
-            WithdrawBalanceResponse,
+            GetOrderByIdResponse, GetOrdersResponse, GetWalletResponse, InternalTransferRequest,
+            InternalTransferResponse, WithdrawBalanceRequest, WithdrawBalanceResponse,
         },
         types::{Balance, Wallet},
         EmptyRequestResponse,
@@ -63,6 +63,9 @@ pub(super) const GET_BALANCE_BY_MINT_ROUTE: &str = "/v0/wallet/:wallet_id/balanc
 pub(super) const DEPOSIT_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/deposit";
 /// Withdraws an ERC-20 token from the darkpool
 pub(super) const WITHDRAW_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/:mint/withdraw";
+/// Creates an internal transfer to another wallet in the darkpool
+pub(super) const INTERNAL_TRANSFER_ROUTE: &str =
+    "/v0/wallet/:wallet_id/balances/:mint/internal_transfer";
 /// Returns the fees within a given wallet
 pub(super) const GET_FEES_ROUTE: &str = "/v0/wallet/:wallet_id/fees";
 
@@ -835,6 +838,100 @@ impl TypedHandler for WithdrawBalanceHandler {
         let task_id = self.task_driver.start_task(task).await;
 
         Ok(WithdrawBalanceResponse { task_id })
+    }
+}
+
+/// Handler for the POST /wallet/:id/balances/:mint/internal_transfer route
+pub struct InternalTransferHandler {
+    /// A starknet client
+    starknet_client: StarknetClient,
+    /// A sender to the network manager's work queue
+    network_sender: TokioSender<GossipOutbound>,
+    /// A copy of the relayer-global state
+    global_state: RelayerState,
+    /// A sender to the proof manager's work queue, used to enqueue
+    /// proofs of `VALID WALLET UPDATE` and await their completion
+    proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    /// A copy of the task driver used for long-lived async workflows
+    task_driver: TaskDriver,
+}
+
+impl InternalTransferHandler {
+    /// Constructor
+    pub fn new(
+        starknet_client: StarknetClient,
+        network_sender: TokioSender<GossipOutbound>,
+        global_state: RelayerState,
+        proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+        task_driver: TaskDriver,
+    ) -> Self {
+        Self {
+            starknet_client,
+            network_sender,
+            global_state,
+            proof_manager_work_queue,
+            task_driver,
+        }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for InternalTransferHandler {
+    type Request = InternalTransferRequest;
+    type Response = InternalTransferResponse;
+
+    async fn handle_typed(
+        &self,
+        req: Self::Request,
+        params: UrlParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        // Parse the wallet ID and mint from the params
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+        let mint = parse_mint_from_params(&params)?;
+
+        // Lookup the wallet in the global state
+        let old_wallet = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&wallet_id)
+            .await
+            .ok_or_else(|| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::NOT_FOUND,
+                    ERR_WALLET_NOT_FOUND.to_string(),
+                )
+            })?;
+
+        // Apply the balance reduction to the wallet
+        let mut new_wallet = old_wallet.clone();
+        new_wallet
+            .balances
+            .entry(mint.clone())
+            .or_insert(StateBalance {
+                mint: mint.clone(),
+                amount: 0u64,
+            })
+            .amount -= req.amount.to_u64().unwrap();
+
+        // Begin a task
+        let task = UpdateWalletTask::new(
+            None, /* external_transfer */
+            Some(InternalTransfer {
+                recipient_key: req.recipient_key,
+                mint,
+                amount: req.amount,
+            }),
+            old_wallet,
+            new_wallet,
+            self.starknet_client.clone(),
+            self.network_sender.clone(),
+            self.global_state.clone(),
+            self.proof_manager_work_queue.clone(),
+        );
+        let task_id = self.task_driver.start_task(task).await;
+
+        Ok(InternalTransferResponse { task_id })
     }
 }
 
