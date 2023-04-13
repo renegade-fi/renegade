@@ -11,6 +11,7 @@ bitvec = "1.0"
 circuit-macros = { path = "../circuit-macros" }
 crypto = { path = "../crypto" }
 curve25519-dalek = "2"
+ed25519-dalek = { version = "1.0.1" }
 itertools = "0.10"
 lazy_static = "1.4"
 merlin = "2.0"

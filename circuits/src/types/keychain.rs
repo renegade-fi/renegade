@@ -1,6 +1,7 @@
 //! Defines the constraint system types for the set of keys a wallet holds
 
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
+use ed25519_dalek::PublicKey as DalekKey;
 use mpc_bulletproof::r1cs::{Prover, RandomizableConstraintSystem, Variable, Verifier};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
@@ -207,6 +208,20 @@ impl From<PublicSigningKey> for Vec<Scalar> {
         };
 
         elem.into()
+    }
+}
+
+impl From<&PublicSigningKey> for DalekKey {
+    fn from(key: &PublicSigningKey) -> Self {
+        let key_bytes = key.0.to_bytes_le();
+        DalekKey::from_bytes(&key_bytes).unwrap()
+    }
+}
+
+impl From<DalekKey> for PublicSigningKey {
+    fn from(key: DalekKey) -> Self {
+        let key_bytes = key.as_bytes();
+        Self(BigUint::from_bytes_le(key_bytes))
     }
 }
 

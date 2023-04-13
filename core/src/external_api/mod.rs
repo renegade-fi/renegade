@@ -11,7 +11,7 @@ pub mod websocket;
 
 /// An empty request/response type
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-pub struct EmptyRequestResponse;
+pub struct EmptyRequestResponse {}
 
 /// A helper to serialize a BigUint to a hex string
 pub fn biguint_to_hex_string<S>(val: &BigUint, s: S) -> Result<S::Ok, S::Error>
@@ -33,4 +33,21 @@ where
     BigUint::from_str_radix(hex_string, 16 /* radix */).map_err(|e| {
         DeserializeError::custom(format!("error deserializing BigUint from hex string: {e}"))
     })
+}
+
+#[cfg(test)]
+mod test {
+    use super::EmptyRequestResponse;
+
+    /// Tests empty request/response serialization, expected behavior is that it serializes to and from
+    /// an empty json struct
+    #[test]
+    fn test_serde_empty() {
+        let req = EmptyRequestResponse {};
+        let serialized_str = serde_json::to_string(&req).unwrap();
+        assert_eq!(serialized_str, "{}");
+
+        // Test deserialization from empty json struct encoded as a string
+        let _req: EmptyRequestResponse = serde_json::from_str("{}").unwrap();
+    }
 }
