@@ -224,3 +224,24 @@ pub struct GetFeesResponse {
     /// The fees in a given wallet
     pub fees: Vec<Fee>,
 }
+
+/// The request type to add a fee to a wallet
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AddFeeRequest {
+    /// The fee to add to the wallet
+    pub fee: Fee,
+    /// A signature of the public variables used in the proof of
+    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
+    /// to guarantee that the wallet updates are properly authorized
+    ///
+    /// TODO: For now this is just a blob, we will add this feature in
+    /// a follow up
+    pub public_var_sig: Vec<u8>,
+}
+
+/// The response type to a request to add a fee to a wallet
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AddFeeResponse {
+    /// The ID of the task allocated on behalf of this request
+    pub task_id: TaskIdentifier,
+}

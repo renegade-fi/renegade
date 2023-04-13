@@ -17,10 +17,11 @@ use crate::{
     },
     external_api::{
         http::wallet::{
-            CancelOrderResponse, CreateOrderRequest, CreateOrderResponse, CreateWalletRequest,
-            CreateWalletResponse, DepositBalanceRequest, DepositBalanceResponse, FindWalletRequest,
-            FindWalletResponse, GetBalanceByMintResponse, GetBalancesResponse, GetFeesResponse,
-            GetOrderByIdResponse, GetOrdersResponse, GetWalletResponse, InternalTransferRequest,
+            AddFeeRequest, AddFeeResponse, CancelOrderResponse, CreateOrderRequest,
+            CreateOrderResponse, CreateWalletRequest, CreateWalletResponse, DepositBalanceRequest,
+            DepositBalanceResponse, FindWalletRequest, FindWalletResponse,
+            GetBalanceByMintResponse, GetBalancesResponse, GetFeesResponse, GetOrderByIdResponse,
+            GetOrdersResponse, GetWalletResponse, InternalTransferRequest,
             InternalTransferResponse, WithdrawBalanceRequest, WithdrawBalanceResponse,
         },
         types::{Balance, Wallet},
@@ -34,7 +35,7 @@ use crate::{
         create_new_wallet::NewWalletTask, driver::TaskDriver, lookup_wallet::LookupWalletTask,
         update_wallet::UpdateWalletTask,
     },
-    MAX_ORDERS,
+    MAX_FEES, MAX_ORDERS,
 };
 
 use super::{parse_mint_from_params, parse_order_id_from_params, parse_wallet_id_from_params};
@@ -67,7 +68,7 @@ pub(super) const WITHDRAW_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/
 pub(super) const INTERNAL_TRANSFER_ROUTE: &str =
     "/v0/wallet/:wallet_id/balances/:mint/internal_transfer";
 /// Returns the fees within a given wallet
-pub(super) const GET_FEES_ROUTE: &str = "/v0/wallet/:wallet_id/fees";
+pub(super) const FEES_ROUTE: &str = "/v0/wallet/:wallet_id/fees";
 
 // ------------------
 // | Error Messages |
@@ -79,6 +80,8 @@ const ERR_ORDER_NOT_FOUND: &str = "order not found";
 const ERR_ORDERS_FULL: &str = "wallet's orderbook is full";
 /// The error message to display when a wallet cannot be found
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found";
+/// The error message to display when a fee list is full
+const ERR_FEES_FULL: &str = "wallet's fee list is full";
 
 // -------------------------
 // | Wallet Route Handlers |
@@ -980,5 +983,100 @@ impl TypedHandler for GetFeesHandler {
                 ERR_WALLET_NOT_FOUND.to_string(),
             ))
         }
+    }
+}
+
+/// Handler for the POST /wallet/:id/fees route
+pub struct AddFeeHandler {
+    /// A starknet client
+    starknet_client: StarknetClient,
+    /// A sender to the network manager's work queue
+    network_sender: TokioSender<GossipOutbound>,
+    /// A copy of the relayer-global state
+    global_state: RelayerState,
+    /// A sender to the proof manager's work queue, used to enqueue
+    /// proofs of `VALID NEW WALLET` and await their completion
+    proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    /// A copy of the task driver used for long-lived async workflows
+    task_driver: TaskDriver,
+}
+
+impl AddFeeHandler {
+    /// Constructor
+    pub fn new(
+        starknet_client: StarknetClient,
+        network_sender: TokioSender<GossipOutbound>,
+        global_state: RelayerState,
+        proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+        task_driver: TaskDriver,
+    ) -> Self {
+        Self {
+            starknet_client,
+            network_sender,
+            global_state,
+            proof_manager_work_queue,
+            task_driver,
+        }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AddFeeHandler {
+    type Request = AddFeeRequest;
+    type Response = AddFeeResponse;
+
+    async fn handle_typed(
+        &self,
+        req: Self::Request,
+        params: UrlParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        // Parse the wallet from the URL params
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+
+        // Lookup the wallet in the global state
+        let old_wallet = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&wallet_id)
+            .await
+            .ok_or_else(|| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::NOT_FOUND,
+                    ERR_WALLET_NOT_FOUND.to_string(),
+                )
+            })?;
+
+        // Ensure that the fees list is not full
+        let num_fees = old_wallet
+            .fees
+            .iter()
+            .filter(|fee| !fee.is_default())
+            .count();
+        if num_fees >= MAX_FEES {
+            return Err(ApiServerError::HttpStatusCode(
+                StatusCode::BAD_REQUEST,
+                ERR_FEES_FULL.to_string(),
+            ));
+        }
+
+        // Add the fee to the new wallet
+        let mut new_wallet = old_wallet.clone();
+        new_wallet.fees.push(req.fee.into());
+
+        // Create a task to submit this update to the contract
+        let task = UpdateWalletTask::new(
+            None, /* external_transfer */
+            None, /* internal_transfer */
+            old_wallet,
+            new_wallet,
+            self.starknet_client.clone(),
+            self.network_sender.clone(),
+            self.global_state.clone(),
+            self.proof_manager_work_queue.clone(),
+        );
+        let task_id = self.task_driver.start_task(task).await;
+
+        Ok(AddFeeResponse { task_id })
     }
 }
