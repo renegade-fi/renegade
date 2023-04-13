@@ -445,6 +445,7 @@ impl TypedHandler for CreateOrderHandler {
         // Spawn a task to handle the order creation flow
         let task = UpdateWalletTask::new(
             None, /* external_transfer */
+            None, /* internal_transfer */
             old_wallet,
             new_wallet,
             self.starknet_client.clone(),
@@ -528,6 +529,7 @@ impl TypedHandler for CancelOrderHandler {
         // Spawn a task to handle the order creation flow
         let task = UpdateWalletTask::new(
             None, /* external_transfer */
+            None, /* internal_transfer */
             old_wallet,
             new_wallet,
             self.starknet_client.clone(),
@@ -727,6 +729,7 @@ impl TypedHandler for DepositBalanceHandler {
                 amount: req.amount,
                 direction: ExternalTransferDirection::Deposit,
             }),
+            None, /* internal_transfer */
             old_wallet,
             new_wallet,
             self.starknet_client.clone(),
@@ -821,6 +824,7 @@ impl TypedHandler for WithdrawBalanceHandler {
                 amount: req.amount,
                 direction: ExternalTransferDirection::Withdrawal,
             }),
+            None, /* internal_transfer */
             old_wallet,
             new_wallet,
             self.starknet_client.clone(),

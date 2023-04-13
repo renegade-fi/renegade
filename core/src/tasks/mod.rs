@@ -8,6 +8,7 @@ use std::convert::TryInto;
 
 use circuits::types::{
     balance::Balance, fee::Fee, keychain::KeyChain as CircuitKeyChain, note::Note, order::Order,
+    transfers::InternalTransfer,
 };
 use crypto::{
     elgamal::{decrypt_scalar, encrypt_scalar, ElGamalCiphertext},
@@ -143,4 +144,12 @@ pub(self) fn encrypt_note(note: Note, pk_settle: &BigUint) -> Vec<ElGamalCiphert
         .map(|val| encrypt_scalar(val, pk_settle))
         .map(|(cipher, _)| cipher)
         .collect_vec()
+}
+
+/// Helper to encrypt an internal transfer under a given key
+pub(self) fn encrypt_internal_transfer(transfer: &InternalTransfer) -> Vec<ElGamalCiphertext> {
+    vec![
+        encrypt_scalar(biguint_to_scalar(&transfer.mint), &transfer.recipient_key).0,
+        encrypt_scalar(biguint_to_scalar(&transfer.amount), &transfer.recipient_key).0,
+    ]
 }

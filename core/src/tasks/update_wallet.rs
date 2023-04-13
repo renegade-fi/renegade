@@ -40,7 +40,7 @@ use crate::{
     },
     starknet_client::client::StarknetClient,
     state::{wallet::Wallet, NetworkOrder, NetworkOrderState, OrderIdentifier, RelayerState},
-    tasks::encrypt_wallet,
+    tasks::{encrypt_internal_transfer, encrypt_wallet},
     types::{SizedValidCommitmentsWitness, SizedValidWalletUpdateWitness},
     SizedWallet,
 };
@@ -65,6 +65,8 @@ const ERR_TRANSACTION_FAILED: &str = "transaction failed";
 pub struct UpdateWalletTask {
     /// The external transfer, if one exists
     pub external_transfer: Option<ExternalTransfer>,
+    /// The internal transfer, if one exists
+    pub internal_transfer: Option<InternalTransfer>,
     /// The old wallet before update
     pub old_wallet: Wallet,
     /// The new wallet after update
@@ -202,6 +204,7 @@ impl UpdateWalletTask {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         external_transfer: Option<ExternalTransfer>,
+        internal_transfer: Option<InternalTransfer>,
         old_wallet: Wallet,
         mut new_wallet: Wallet,
         starknet_client: StarknetClient,
@@ -213,6 +216,7 @@ impl UpdateWalletTask {
         new_wallet.randomness = &old_wallet.randomness + RANDOMNESS_INCREMENT;
         Self {
             external_transfer,
+            internal_transfer,
             old_wallet,
             new_wallet,
             starknet_client,
@@ -275,9 +279,13 @@ impl UpdateWalletTask {
             unreachable!("submit_tx may only be called from a SubmittingTx task state")
         };
 
-        // Encrypt the new wallet under the public view key
+        // Encrypt the new wallet and internal transfer under the public view key
         // TODO: This will eventually come directly from the user as they sign the encryption
         let pk_view = scalar_to_biguint(&self.new_wallet.public_keys.pk_view);
+        let encrypted_internal_transfer = self
+            .internal_transfer
+            .clone()
+            .map(|transfer| encrypt_internal_transfer(&transfer));
         let encrypted_wallet = encrypt_wallet(self.new_wallet.clone().into(), &pk_view);
 
         // Submit on-chain
@@ -291,6 +299,7 @@ impl UpdateWalletTask {
                 self.external_transfer
                     .clone()
                     .map(|transfer| transfer.into()),
+                encrypted_internal_transfer,
                 encrypted_wallet,
                 proof,
             )

@@ -616,8 +616,6 @@ impl StarknetClient {
     /// and handle internal/external transfers
     ///
     /// Returns the transaction hash of the `update_wallet` call
-    ///
-    /// TODO: Add internal
     #[allow(clippy::too_many_arguments)]
     pub async fn update_wallet(
         &self,
@@ -626,6 +624,7 @@ impl StarknetClient {
         old_match_nullifier: Nullifier,
         old_spend_nullifier: Nullifier,
         external_transfer: Option<ExternalTransfer>,
+        internal_transfer_ciphertext: Option<Vec<ElGamalCiphertext>>,
         wallet_ciphertext: Vec<ElGamalCiphertext>,
         valid_wallet_update: ValidWalletUpdateBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
@@ -634,8 +633,15 @@ impl StarknetClient {
             Self::reduce_scalar_to_felt(&new_wallet_commitment),
             Self::reduce_scalar_to_felt(&old_match_nullifier),
             Self::reduce_scalar_to_felt(&old_spend_nullifier),
-            0u8.into(), // TODO: add internal transfer tuple
         ];
+
+        // Append the internal transfer ciphertext if there is one
+        if let Some(internal_transfer) = internal_transfer_ciphertext {
+            calldata.append(&mut pack_serializable!(internal_transfer));
+        } else {
+            // Otherwise, push 0 to the calldata to indicate a zero-length ciphertext blob
+            calldata.push(0u8.into());
+        }
 
         // Add the external transfer tuple to the calldata
         if let Some(transfer) = external_transfer {

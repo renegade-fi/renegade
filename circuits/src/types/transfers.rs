@@ -157,6 +157,11 @@ impl CommitVerifier for ExternalTransferCommitment {
 /// Represents an internal transfer tuple, not allocated in any constraint system
 #[derive(Clone, Debug, Default)]
 pub struct InternalTransfer {
+    /// The public settle key of the recipient
+    ///
+    /// This is not used in the circuits, so it is not present in the
+    /// allocated structures below
+    pub recipient_key: BigUint,
     /// The mint to transfer
     pub mint: BigUint,
     /// The amount to transfer

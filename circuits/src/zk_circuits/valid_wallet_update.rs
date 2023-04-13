@@ -1100,6 +1100,7 @@ mod valid_wallet_update_tests {
                 indices: mock_opening_indices,
             },
             internal_transfer: InternalTransfer {
+                recipient_key: BigUint::default(),
                 mint: internal_transfer_mint,
                 amount: internal_transfer_volume.into(),
             },
@@ -1166,6 +1167,7 @@ mod valid_wallet_update_tests {
                 indices: mock_opening_indices,
             },
             internal_transfer: InternalTransfer {
+                recipient_key: BigUint::default(),
                 mint: internal_transfer_mint,
                 amount: internal_transfer_volume.into(),
             },
@@ -1562,6 +1564,7 @@ mod valid_wallet_update_tests {
                 indices: mock_opening_indices,
             },
             internal_transfer: InternalTransfer {
+                recipient_key: BigUint::default(),
                 mint: internal_transfer_mint.into(),
                 amount: internal_transfer_volume.into(),
             },
