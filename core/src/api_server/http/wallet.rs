@@ -12,6 +12,7 @@ use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use crate::{
     api_server::{
+        authenticate_request_from_headers,
         error::ApiServerError,
         http::parse_index_from_params,
         router::{TypedHandler, UrlParams},
@@ -114,8 +115,8 @@ impl TypedHandler for GetWalletHandler {
 
     async fn handle_typed(
         &self,
-        _headers: HeaderMap,
-        _req: Self::Request,
+        headers: HeaderMap,
+        req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
@@ -133,6 +134,9 @@ impl TypedHandler for GetWalletHandler {
                 ERR_WALLET_NOT_FOUND.to_string(),
             ));
         };
+
+        // Authenticate the request
+        authenticate_request_from_headers(headers, &req, &wallet.key_chain.public_keys.pk_root)?;
 
         // Filter out empty orders, balances, and fees
         wallet.orders = wallet
