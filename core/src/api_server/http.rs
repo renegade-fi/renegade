@@ -35,13 +35,13 @@ use self::{
     price_report::{ExchangeHealthStatesHandler, EXCHANGE_HEALTH_ROUTE},
     task::{GetTaskStatusHandler, GET_TASK_STATUS_ROUTE},
     wallet::{
-        CancelOrderHandler, CreateOrderHandler, CreateWalletHandler, DepositBalanceHandler,
-        FindWalletHandler, GetBalanceByMintHandler, GetBalancesHandler, GetFeesHandler,
-        GetOrderByIdHandler, GetOrdersHandler, GetWalletHandler, InternalTransferHandler,
-        WithdrawBalanceHandler, CANCEL_ORDER_ROUTE, CREATE_WALLET_ROUTE, DEPOSIT_BALANCE_ROUTE,
-        FIND_WALLET_ROUTE, GET_BALANCES_ROUTE, GET_BALANCE_BY_MINT_ROUTE, GET_FEES_ROUTE,
-        GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE, INTERNAL_TRANSFER_ROUTE, WALLET_ORDERS_ROUTE,
-        WITHDRAW_BALANCE_ROUTE,
+        AddFeeHandler, CancelOrderHandler, CreateOrderHandler, CreateWalletHandler,
+        DepositBalanceHandler, FindWalletHandler, GetBalanceByMintHandler, GetBalancesHandler,
+        GetFeesHandler, GetOrderByIdHandler, GetOrdersHandler, GetWalletHandler,
+        InternalTransferHandler, WithdrawBalanceHandler, CANCEL_ORDER_ROUTE, CREATE_WALLET_ROUTE,
+        DEPOSIT_BALANCE_ROUTE, FEES_ROUTE, FIND_WALLET_ROUTE, GET_BALANCES_ROUTE,
+        GET_BALANCE_BY_MINT_ROUTE, GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE,
+        INTERNAL_TRANSFER_ROUTE, WALLET_ORDERS_ROUTE, WITHDRAW_BALANCE_ROUTE,
     },
 };
 
@@ -327,11 +327,24 @@ impl HttpServer {
             ),
         );
 
-        // The "/wallet/:id/fees" route
+        // The GET "/wallet/:id/fees" route
         router.add_route(
             Method::GET,
-            GET_FEES_ROUTE.to_string(),
+            FEES_ROUTE.to_string(),
             GetFeesHandler::new(global_state.clone()),
+        );
+
+        // The POST "/wallet/:id/fees" route
+        router.add_route(
+            Method::POST,
+            FEES_ROUTE.to_string(),
+            AddFeeHandler::new(
+                config.starknet_client.clone(),
+                config.network_sender.clone(),
+                global_state.clone(),
+                config.proof_generation_work_queue.clone(),
+                config.task_driver.clone(),
+            ),
         );
 
         // The "/order_book/orders" route
