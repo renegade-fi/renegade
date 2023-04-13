@@ -1,9 +1,11 @@
-//! Handles the flow of adding a new order to a wallet
+//! Defines a task for submitting `update_wallet` transactions, transitioning the state of
+//! an existing darkpool wallet
+//!
+//! This involves proving `VALID WALLET UPDATE`, submitting on-chain, and re-indexing state
 
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter, Result as FmtResult},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use async_trait::async_trait;
@@ -28,118 +30,102 @@ use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
 use tracing::log;
 
 use crate::{
-    external_api::types::Order,
     gossip_api::{
         gossip::{GossipOutbound, PubsubMessage},
         orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
     },
+    price_reporter::exchanges::get_current_time,
     proof_generation::jobs::{
         ProofJob, ProofManagerJob, ValidCommitmentsBundle, ValidWalletUpdateBundle,
     },
     starknet_client::client::StarknetClient,
-    state::{
-        wallet::{Wallet, WalletIdentifier},
-        NetworkOrder, NetworkOrderState, OrderIdentifier, RelayerState,
-    },
+    state::{wallet::Wallet, NetworkOrder, NetworkOrderState, OrderIdentifier, RelayerState},
+    tasks::encrypt_wallet,
     types::{SizedValidCommitmentsWitness, SizedValidWalletUpdateWitness},
     SizedWallet,
 };
 
 use super::{
     driver::{StateWrapper, Task},
-    encrypt_wallet, RANDOMNESS_INCREMENT,
+    RANDOMNESS_INCREMENT,
 };
 
-/// The wallet does not have a merkle proof attached to it
-const ERR_NO_MERKLE_PROOF: &str = "wallet merkle proof not attached";
-/// A transaction to the contract was rejected
-const ERR_TRANSACTION_FAILED: &str = "transaction rejected";
-/// The wallet to create the order within was not found
-const ERR_WALLET_NOT_FOUND: &str = "wallet not found in state";
-/// The order creation task name
-const NEW_ORDER_TASK_NAME: &str = "create-new-order";
-
-/// Helper function to get the current UNIX epoch time in milliseconds
-pub fn get_current_time() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis()
-}
-
-/// The task definition for the long-run async flow of creating
-/// a new order within a wallet
-pub struct NewOrderTask {
-    /// The wallet before the update
-    old_wallet: Wallet,
-    /// The wallet after update
-    new_wallet: Wallet,
-    /// A starknet client for the task to submit transactions
-    starknet_client: StarknetClient,
-    /// The network manager's work queue, used for sending outbound gossip
-    network_sender: TokioSender<GossipOutbound>,
-    /// A copy of the relayer-global state
-    global_state: RelayerState,
-    /// The work queue for the proof manager
-    proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
-    /// The state of the task execution
-    task_state: NewOrderTaskState,
-}
-
-/// The error type for the task
-#[derive(Clone, Debug)]
-pub enum NewOrderTaskError {
-    /// A piece of state necessary for task execution is missing
-    MissingState(String),
-    /// Error generating a proof of `VALID WALLET UPDATE`
-    ProofGeneration(String),
-    /// An error occurred sending a message to another local worker
-    SendMessage(String),
-    /// An error interacting with Starknet
-    StarknetClient(String),
-}
-
-impl Display for NewOrderTaskError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
-    }
-}
+/// The human-readable name of the the task
+const UPDATE_WALLET_TASK_NAME: &str = "update-wallet";
+/// The wallet does not have a known Merkle proof attached
+const ERR_NO_MERKLE_PROOF: &str = "merkle proof for wallet not found";
+/// A transaction submitted to the contract failed to execute
+const ERR_TRANSACTION_FAILED: &str = "transaction failed";
 
 // -------------------
 // | Task Definition |
 // -------------------
 
-/// Defines the state of the order create flow
+/// Defines the long running flow for adding a balance to a wallet
+pub struct UpdateWalletTask {
+    /// The external transfer, if one exists
+    pub external_transfer: Option<ExternalTransfer>,
+    /// The old wallet before update
+    pub old_wallet: Wallet,
+    /// The new wallet after update
+    pub new_wallet: Wallet,
+    /// The starknet client to use for submitting transactions
+    pub starknet_client: StarknetClient,
+    /// A sender to the network manager's work queue
+    pub network_sender: TokioSender<GossipOutbound>,
+    /// A copy of the relayer-global state
+    pub global_state: RelayerState,
+    /// The work queue to add proof management jobs to
+    pub proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    /// The state of the task
+    pub task_state: UpdateWalletTaskState,
+}
+
+/// The error type for the deposit balance task
+#[derive(Clone, Debug)]
+pub enum UpdateWalletTaskError {
+    /// Error generating a proof of `VALID WALLET UPDATE`
+    ProofGeneration(String),
+    /// An error enqueuing a message for another worker
+    SendMessage(String),
+    /// An error occurred interacting with Starknet
+    StarknetClient(String),
+    /// A state element was not found that is necessary for task execution
+    StateMissing(String),
+}
+
+/// Defines the state of the deposit balance task
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum NewOrderTaskState {
+pub enum UpdateWalletTaskState {
     /// The task is awaiting scheduling
     Pending,
-    /// The task is awaiting a proof of `VALID WALLET UPDATE`
+    /// The task is awaiting a proof of `VALID WALLET UPDATE` from
+    /// the proof management worker
     Proving,
-    /// The task is submitting the proof and transaction info to
-    /// the contract and awaiting transaction finality
+    /// The task is submitting the transaction to the contract and awaiting
+    /// transaction finality
     SubmittingTx {
-        /// The proof of `VALID WALLET UPDATE` from the proving step
+        /// The proof of `VALID WALLET UPDATE` submitted to the contract
         proof_bundle: ValidWalletUpdateBundle,
     },
     /// The task is updating the validity proofs for all orders in the
     /// now nullified wallet
     UpdatingValidityProofs,
-    /// The task has finished executing
+    /// The task has finished
     Completed,
 }
 
-impl Display for NewOrderTaskState {
+impl Display for UpdateWalletTaskState {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
-            NewOrderTaskState::SubmittingTx { .. } => write!(f, "SubmittingTx"),
+            Self::SubmittingTx { .. } => write!(f, "SubmittingTx"),
             _ => write!(f, "{self:?}"),
         }
     }
 }
 
-impl Serialize for NewOrderTaskState {
+impl Serialize for UpdateWalletTaskState {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -148,42 +134,42 @@ impl Serialize for NewOrderTaskState {
     }
 }
 
-impl From<NewOrderTaskState> for StateWrapper {
-    fn from(state: NewOrderTaskState) -> Self {
-        StateWrapper::NewOrder(state)
+impl From<UpdateWalletTaskState> for StateWrapper {
+    fn from(state: UpdateWalletTaskState) -> Self {
+        StateWrapper::UpdateWallet(state)
     }
 }
 
 #[async_trait]
-impl Task for NewOrderTask {
-    type Error = NewOrderTaskError;
-    type State = NewOrderTaskState;
+impl Task for UpdateWalletTask {
+    type Error = UpdateWalletTaskError;
+    type State = UpdateWalletTaskState;
 
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current transaction step
         match self.state() {
-            NewOrderTaskState::Pending => {
-                self.task_state = NewOrderTaskState::Proving;
+            UpdateWalletTaskState::Pending => {
+                self.task_state = UpdateWalletTaskState::Proving;
             }
-            NewOrderTaskState::Proving => {
+            UpdateWalletTaskState::Proving => {
                 // Begin the proof of `VALID WALLET UPDATE`
                 let proof = self.generate_proof().await?;
-                self.task_state = NewOrderTaskState::SubmittingTx {
+                self.task_state = UpdateWalletTaskState::SubmittingTx {
                     proof_bundle: proof,
                 };
             }
-            NewOrderTaskState::SubmittingTx { .. } => {
+            UpdateWalletTaskState::SubmittingTx { .. } => {
                 // Submit the proof and transaction info to the contract and await
                 // transaction finality
                 self.submit_tx().await?;
-                self.task_state = NewOrderTaskState::UpdatingValidityProofs;
+                self.task_state = UpdateWalletTaskState::UpdatingValidityProofs;
             }
-            NewOrderTaskState::UpdatingValidityProofs => {
+            UpdateWalletTaskState::UpdatingValidityProofs => {
                 // Update validity proofs for now-nullified orders
                 self.update_validity_proofs().await?;
-                self.task_state = NewOrderTaskState::Completed;
+                self.task_state = UpdateWalletTaskState::Completed;
             }
-            NewOrderTaskState::Completed => {
+            UpdateWalletTaskState::Completed => {
                 panic!("step() called in state Completed")
             }
         }
@@ -191,16 +177,16 @@ impl Task for NewOrderTask {
         Ok(())
     }
 
+    fn completed(&self) -> bool {
+        matches!(self.state(), Self::State::Completed)
+    }
+
     fn state(&self) -> Self::State {
         self.task_state.clone()
     }
 
-    fn completed(&self) -> bool {
-        matches!(self.state(), NewOrderTaskState::Completed)
-    }
-
     fn name(&self) -> String {
-        NEW_ORDER_TASK_NAME.to_string()
+        UPDATE_WALLET_TASK_NAME.to_string()
     }
 }
 
@@ -208,52 +194,42 @@ impl Task for NewOrderTask {
 // | Task Implementation |
 // -----------------------
 
-impl NewOrderTask {
+impl UpdateWalletTask {
     /// Constructor
-    pub async fn new(
-        wallet_id: WalletIdentifier,
-        order: Order,
+    ///
+    /// Assumes that the state updates to the wallet have been applied in
+    /// the caller
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        external_transfer: Option<ExternalTransfer>,
+        old_wallet: Wallet,
+        mut new_wallet: Wallet,
         starknet_client: StarknetClient,
         network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
-    ) -> Result<Self, NewOrderTaskError> {
-        // Cast explicitly to an order type that is indexed in the state
-        let order_id = order.id;
-        let order: CircuitOrder = order.into();
-
-        // Get a copy of the old wallet and update it with the new order
-        let old_wallet = global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
-            .ok_or_else(|| NewOrderTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string()))?;
-
-        let mut new_wallet = old_wallet.clone();
-        new_wallet.orders.insert(order_id, order.clone());
-        new_wallet.randomness += RANDOMNESS_INCREMENT;
-
-        Ok(Self {
+    ) -> Self {
+        // Increment the randomness
+        new_wallet.randomness = &old_wallet.randomness + RANDOMNESS_INCREMENT;
+        Self {
+            external_transfer,
             old_wallet,
             new_wallet,
             starknet_client,
             network_sender,
             global_state,
             proof_manager_work_queue,
-            task_state: NewOrderTaskState::Pending,
-        })
+            task_state: UpdateWalletTaskState::Pending,
+        }
     }
 
-    /// Prove `VALID WALLET UPDATE` on the new wallet transition
-    async fn generate_proof(&self) -> Result<ValidWalletUpdateBundle, NewOrderTaskError> {
-        // Prove `VALID WALLET UPDATE`
+    /// Generate a proof of `VALID WALLET UPDATE` for the wallet with added balance
+    async fn generate_proof(&self) -> Result<ValidWalletUpdateBundle, UpdateWalletTaskError> {
         let timestamp: Scalar = get_current_time().into();
-        let merkle_opening = self
-            .old_wallet
-            .merkle_proof
-            .clone()
-            .ok_or_else(|| NewOrderTaskError::MissingState(ERR_NO_MERKLE_PROOF.to_string()))?;
+        let merkle_opening =
+            self.old_wallet.merkle_proof.clone().ok_or_else(|| {
+                UpdateWalletTaskError::StateMissing(ERR_NO_MERKLE_PROOF.to_string())
+            })?;
 
         // Build the statement
         let statement = ValidWalletUpdateStatement {
@@ -263,7 +239,7 @@ impl NewOrderTask {
             match_nullifier: self.old_wallet.get_match_nullifier(),
             spend_nullifier: self.old_wallet.get_spend_nullifier(),
             merkle_root: merkle_opening.compute_root(),
-            external_transfer: ExternalTransfer::default(),
+            external_transfer: self.external_transfer.clone().unwrap_or_default(),
         };
 
         // Construct the witness
@@ -283,17 +259,17 @@ impl NewOrderTask {
                 type_: ProofJob::ValidWalletUpdate { witness, statement },
                 response_channel: response_sender,
             })
-            .map_err(|err| NewOrderTaskError::SendMessage(err.to_string()))?;
+            .map_err(|err| UpdateWalletTaskError::SendMessage(err.to_string()))?;
 
         response_receiver
             .await
             .map(|bundle| bundle.into())
-            .map_err(|err| NewOrderTaskError::ProofGeneration(err.to_string()))
+            .map_err(|err| UpdateWalletTaskError::ProofGeneration(err.to_string()))
     }
 
-    /// Submit the `update_wallet` transaction on-chain
-    async fn submit_tx(&self) -> Result<(), NewOrderTaskError> {
-        let proof = if let NewOrderTaskState::SubmittingTx { proof_bundle } = self.state() {
+    /// Submit the `update_wallet` transaction to the contract and await finality
+    async fn submit_tx(&self) -> Result<(), UpdateWalletTaskError> {
+        let proof = if let UpdateWalletTaskState::SubmittingTx { proof_bundle } = self.state() {
             proof_bundle
         } else {
             unreachable!("submit_tx may only be called from a SubmittingTx task state")
@@ -312,12 +288,14 @@ impl NewOrderTask {
                 self.new_wallet.get_commitment(),
                 self.old_wallet.get_match_nullifier(),
                 self.old_wallet.get_spend_nullifier(),
-                None, /* external_transfer */
+                self.external_transfer
+                    .clone()
+                    .map(|transfer| transfer.into()),
                 encrypted_wallet,
                 proof,
             )
             .await
-            .map_err(|err| NewOrderTaskError::StarknetClient(err.to_string()))?;
+            .map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))?;
         log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
 
         // Await transaction completion
@@ -325,10 +303,10 @@ impl NewOrderTask {
             .starknet_client
             .poll_transaction_completed(tx_hash)
             .await
-            .map_err(|err| NewOrderTaskError::StarknetClient(err.to_string()))?;
+            .map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))?;
 
         if let TransactionStatus::Rejected = tx_info.status {
-            return Err(NewOrderTaskError::StarknetClient(
+            return Err(UpdateWalletTaskError::StarknetClient(
                 ERR_TRANSACTION_FAILED.to_string(),
             ));
         }
@@ -338,13 +316,13 @@ impl NewOrderTask {
 
     /// After a wallet update has been submitted on-chain, find its authentication
     /// path, and re-prove `VALID COMMITMENTS` for all orders in the wallet
-    async fn update_validity_proofs(&self) -> Result<(), NewOrderTaskError> {
+    async fn update_validity_proofs(&self) -> Result<(), UpdateWalletTaskError> {
         // Find the new wallet in the Merkle state
         let authentication_path = self
             .starknet_client
             .find_merkle_authentication_path(self.new_wallet.get_commitment())
             .await
-            .map_err(|err| NewOrderTaskError::StarknetClient(err.to_string()))?;
+            .map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))?;
         let new_root = authentication_path.compute_root();
 
         // A wallet that is compatible with circuit types
@@ -371,7 +349,6 @@ impl NewOrderTask {
             // Build a witness for this order's validity proof
             let witness = if let Some(witness) = self
                 .get_witness_for_order(
-                    &order_id,
                     order,
                     circuit_wallet.clone(),
                     wallet_opening.clone(),
@@ -396,7 +373,7 @@ impl NewOrderTask {
                     },
                     response_channel: response_sender,
                 })
-                .map_err(|err| NewOrderTaskError::SendMessage(err.to_string()))?;
+                .map_err(|err| UpdateWalletTaskError::SendMessage(err.to_string()))?;
 
             proof_response_channels.insert(order_id, (response_receiver, witness));
         }
@@ -405,7 +382,7 @@ impl NewOrderTask {
         for (order_id, (proof_channel, witness)) in proof_response_channels.into_iter() {
             let proof = proof_channel
                 .await
-                .map_err(|err| NewOrderTaskError::ProofGeneration(err.to_string()))?;
+                .map_err(|err| UpdateWalletTaskError::ProofGeneration(err.to_string()))?;
             log::info!("got proof for order {order_id}");
 
             // Update the global state of the order
@@ -428,42 +405,26 @@ impl NewOrderTask {
     #[allow(clippy::too_many_arguments)]
     async fn get_witness_for_order(
         &self,
-        order_id: &OrderIdentifier,
         order: CircuitOrder,
         wallet: SizedWallet,
         wallet_opening: MerkleOpening,
         randomness_hash: Scalar,
         sk_match: Scalar,
     ) -> Option<SizedValidCommitmentsWitness> {
-        if let Some(mut old_witness) = self
-            .global_state
-            .read_order_book()
-            .await
-            .get_validity_proof_witness(order_id)
-            .await
-        {
-            // If a previous witness exists; modify the witness with the new variables
-            old_witness.wallet = wallet;
-            old_witness.wallet_opening = wallet_opening;
-            old_witness.randomness_hash = randomness_hash.into();
-            Some(old_witness)
-        } else {
-            // Otherwise, create a brand new witness
-            // Select a balance and fee for the order
-            let (balance, fee, fee_balance) =
-                self.new_wallet.get_balance_and_fee_for_order(&order)?;
-
-            Some(SizedValidCommitmentsWitness {
-                wallet,
-                order: order.into(),
-                balance: balance.into(),
-                fee: fee.into(),
-                fee_balance: fee_balance.into(),
-                wallet_opening,
-                randomness_hash: randomness_hash.into(),
-                sk_match,
-            })
-        }
+        // Always recreate the witness anew, even if a witness previously existed
+        // The balances used in a witness may have changes so it is easier to just
+        // recreate the witness
+        let (balance, fee, fee_balance) = self.new_wallet.get_balance_and_fee_for_order(&order)?;
+        Some(SizedValidCommitmentsWitness {
+            wallet,
+            order: order.into(),
+            balance: balance.into(),
+            fee: fee.into(),
+            fee_balance: fee_balance.into(),
+            wallet_opening,
+            randomness_hash: randomness_hash.into(),
+            sk_match,
+        })
     }
 
     /// Update the order in the state
@@ -472,7 +433,7 @@ impl NewOrderTask {
         order_id: OrderIdentifier,
         proof: ValidCommitmentsBundle,
         witness: SizedValidCommitmentsWitness,
-    ) -> Result<(), NewOrderTaskError> {
+    ) -> Result<(), UpdateWalletTaskError> {
         // If the order does not currently exist in the book, add it
         if !self
             .global_state
@@ -516,6 +477,6 @@ impl NewOrderTask {
                 topic: ORDER_BOOK_TOPIC.to_string(),
                 message: PubsubMessage::OrderBookManagement(message),
             })
-            .map_err(|err| NewOrderTaskError::SendMessage(err.to_string()))
+            .map_err(|err| UpdateWalletTaskError::SendMessage(err.to_string()))
     }
 }
