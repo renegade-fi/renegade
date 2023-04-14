@@ -18,7 +18,7 @@ use std::ops::Neg;
 use crate::{
     errors::{ProverError, VerifierError},
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    CommitProver, CommitVerifier, SingleProverCircuit,
+    CommitVerifier, CommitWitness, SingleProverCircuit,
 };
 
 use super::poseidon::PoseidonHashGadget;
@@ -210,12 +210,12 @@ pub struct MerkleOpeningCommitment {
     pub indices: Vec<CompressedRistretto>,
 }
 
-impl CommitProver for MerkleOpening {
+impl CommitWitness for MerkleOpening {
     type VarType = MerkleOpeningVar;
     type CommitType = MerkleOpeningCommitment;
     type ErrorType = ();
 
-    fn commit_prover<R: rand_core::RngCore + rand_core::CryptoRng>(
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
@@ -296,17 +296,17 @@ pub struct MerkleWitnessCommitment {
     leaf_data: Vec<CompressedRistretto>,
 }
 
-impl CommitProver for MerkleWitness {
+impl CommitWitness for MerkleWitness {
     type VarType = MerkleWitnessVar;
     type CommitType = MerkleWitnessCommitment;
     type ErrorType = ();
 
-    fn commit_prover<R: rand_core::RngCore + rand_core::CryptoRng>(
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (opening_var, opening_comm) = self.opening.commit_prover(rng, prover).unwrap();
+        let (opening_var, opening_comm) = self.opening.commit_witness(rng, prover).unwrap();
         let (leaf_comms, leaf_vars): (Vec<CompressedRistretto>, Vec<Variable>) = self
             .leaf_data
             .iter()
@@ -369,7 +369,7 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
     ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
         // Commit to the witness
         let mut rng = OsRng {};
-        let (witness_var, witness_comm) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Commit to the expected root
         let root_var = prover.commit_public(statement.expected_root);

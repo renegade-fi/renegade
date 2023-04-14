@@ -45,7 +45,7 @@ use crate::{
         poseidon::PoseidonHashGadget,
         select::CondSelectGadget,
     },
-    CommitProver, CommitVerifier, SingleProverCircuit,
+    CommitVerifier, CommitWitness, SingleProverCircuit,
 };
 
 // ----------------------
@@ -401,7 +401,7 @@ pub struct ValidSettleWitnessCommitment<
     pub sk_settle: CompressedRistretto,
 }
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitProver
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitWitness
     for ValidSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
@@ -410,24 +410,25 @@ where
     type CommitType = ValidSettleWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type ErrorType = ();
 
-    fn commit_prover<R: rand_core::RngCore + rand_core::CryptoRng>(
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
         // Commit to the wallets
-        let (pre_wallet_var, pre_wallet_comm) = self.pre_wallet.commit_prover(rng, prover).unwrap();
+        let (pre_wallet_var, pre_wallet_comm) =
+            self.pre_wallet.commit_witness(rng, prover).unwrap();
         let (pre_wallet_opening_var, pre_wallet_opening_comm) =
-            self.pre_wallet_opening.commit_prover(rng, prover).unwrap();
+            self.pre_wallet_opening.commit_witness(rng, prover).unwrap();
         let (post_wallet_var, post_wallet_comm) =
-            self.post_wallet.commit_prover(rng, prover).unwrap();
+            self.post_wallet.commit_witness(rng, prover).unwrap();
 
         // Commit to the note and its opening
-        let (note_var, note_comm) = self.note.commit_prover(rng, prover).unwrap();
+        let (note_var, note_comm) = self.note.commit_witness(rng, prover).unwrap();
         let (note_commitment_comm, note_commitment_var) =
             prover.commit(self.note_commitment, Scalar::random(rng));
         let (note_opening_var, note_opening_comm) =
-            self.note_opening.commit_prover(rng, prover).unwrap();
+            self.note_opening.commit_witness(rng, prover).unwrap();
         let (sk_settle_comm, sk_settle_var) = prover.commit(self.sk_settle, Scalar::random(rng));
 
         Ok((
@@ -544,7 +545,7 @@ pub struct ValidSettleStatementVar<
     pub type_: Variable,
 }
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitProver
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitWitness
     for ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
@@ -554,7 +555,7 @@ where
     type CommitType = ();
     type ErrorType = ();
 
-    fn commit_prover<R: rand_core::RngCore + rand_core::CryptoRng>(
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
         &self,
         _: &mut R,
         prover: &mut Prover,
@@ -651,8 +652,8 @@ where
     ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
         // Commit to the witness and statement
         let mut rng = OsRng {};
-        let (witness_var, witness_comm) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Apply the constraints
         Self::circuit(witness_var, statement_var, &mut prover).map_err(ProverError::R1CS)?;
@@ -717,7 +718,7 @@ mod valid_settle_tests {
             PRIVATE_KEYS,
         },
         zk_gadgets::merkle::MerkleOpening,
-        CommitProver,
+        CommitWitness,
     };
 
     use super::{ValidSettle, ValidSettleStatement, ValidSettleWitness};
@@ -919,8 +920,8 @@ mod valid_settle_tests {
         let pc_gens = PedersenGens::default();
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
-        let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Apply the constraints and verify that they are not satisfied
         ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
@@ -944,8 +945,8 @@ mod valid_settle_tests {
         let pc_gens = PedersenGens::default();
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
-        let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Apply the constraints and verify that they are not satisfied
         ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
@@ -971,8 +972,8 @@ mod valid_settle_tests {
         let pc_gens = PedersenGens::default();
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
-        let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Apply the constraints and verify that they are not satisfied
         ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
@@ -999,8 +1000,8 @@ mod valid_settle_tests {
         let pc_gens = PedersenGens::default();
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
-        let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Apply the constraints and verify that they are not satisfied
         ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
@@ -1026,8 +1027,8 @@ mod valid_settle_tests {
         let pc_gens = PedersenGens::default();
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
-        let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Apply the constraints and verify that they are not satisfied
         ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
@@ -1054,8 +1055,8 @@ mod valid_settle_tests {
         let pc_gens = PedersenGens::default();
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
-        let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Apply the constraints and verify that they are not satisfied
         ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
@@ -1108,8 +1109,8 @@ mod valid_settle_tests {
             let pc_gens = PedersenGens::default();
             let mut prover = Prover::new(&pc_gens, &mut transcript);
 
-            let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-            let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+            let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+            let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
 
             // Apply the constraints and verify that they are not satisfied
             ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();

@@ -7,7 +7,7 @@ use crate::{
         AuthenticatedCommittedFixedPoint, AuthenticatedFixedPoint, AuthenticatedFixedPointVar,
         CommittedFixedPoint, FixedPoint, FixedPointVar, LinkableFixedPointCommitment,
     },
-    Allocate, CommitProver, CommitSharedProver, CommitVerifier, LinkableCommitment,
+    Allocate, CommitSharedProver, CommitVerifier, CommitWitness, LinkableCommitment,
 };
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
@@ -189,12 +189,12 @@ impl From<OrderVar> for Vec<LinearCombination> {
     }
 }
 
-impl CommitProver for Order {
+impl CommitWitness for Order {
     type VarType = OrderVar;
     type CommitType = CommittedOrder;
     type ErrorType = (); // Does not error
 
-    fn commit_prover<R: RngCore + CryptoRng>(
+    fn commit_witness<R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
@@ -205,7 +205,7 @@ impl CommitProver for Order {
             prover.commit(biguint_to_scalar(&self.base_mint), Scalar::random(rng));
         let (side_comm, side_var) =
             prover.commit(Scalar::from(self.side as u64), Scalar::random(rng));
-        let (price_var, price_comm) = self.price.commit_prover(rng, prover).unwrap();
+        let (price_var, price_comm) = self.price.commit_witness(rng, prover).unwrap();
         let (amount_comm, amount_var) =
             prover.commit(Scalar::from(self.amount), Scalar::random(rng));
         let (timestamp_comm, timestamp_var) =
@@ -316,22 +316,22 @@ impl From<LinkableOrderCommitment> for Order {
     }
 }
 
-impl CommitProver for LinkableOrderCommitment {
+impl CommitWitness for LinkableOrderCommitment {
     type VarType = OrderVar;
     type CommitType = CommittedOrder;
     type ErrorType = ();
 
-    fn commit_prover<R: RngCore + CryptoRng>(
+    fn commit_witness<R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (quote_var, quote_comm) = self.quote_mint.commit_prover(rng, prover).unwrap();
-        let (base_var, base_comm) = self.base_mint.commit_prover(rng, prover).unwrap();
-        let (side_var, side_comm) = self.side.commit_prover(rng, prover).unwrap();
-        let (price_var, price_comm) = self.price.commit_prover(rng, prover).unwrap();
-        let (amount_var, amount_comm) = self.amount.commit_prover(rng, prover).unwrap();
-        let (timestamp_var, timestamp_comm) = self.timestamp.commit_prover(rng, prover).unwrap();
+        let (quote_var, quote_comm) = self.quote_mint.commit_witness(rng, prover).unwrap();
+        let (base_var, base_comm) = self.base_mint.commit_witness(rng, prover).unwrap();
+        let (side_var, side_comm) = self.side.commit_witness(rng, prover).unwrap();
+        let (price_var, price_comm) = self.price.commit_witness(rng, prover).unwrap();
+        let (amount_var, amount_comm) = self.amount.commit_witness(rng, prover).unwrap();
+        let (timestamp_var, timestamp_comm) = self.timestamp.commit_witness(rng, prover).unwrap();
 
         Ok((
             OrderVar {

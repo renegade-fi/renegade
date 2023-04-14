@@ -11,7 +11,7 @@ use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
-use crate::{CommitProver, CommitVerifier};
+use crate::{CommitWitness, CommitVerifier};
 
 /// The base external transfer type, not allocated in a constraint system
 /// or an MPC circuit
@@ -94,12 +94,12 @@ pub struct ExternalTransferCommitment {
     pub direction: CompressedRistretto,
 }
 
-impl CommitProver for ExternalTransfer {
+impl CommitWitness for ExternalTransfer {
     type VarType = ExternalTransferVar;
     type CommitType = ExternalTransferCommitment;
     type ErrorType = (); // Does not error
 
-    fn commit_prover<R: RngCore + CryptoRng>(
+    fn commit_witness<R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
@@ -186,12 +186,12 @@ pub struct InternalTransferCommitment {
     pub amount: CompressedRistretto,
 }
 
-impl CommitProver for InternalTransfer {
+impl CommitWitness for InternalTransfer {
     type VarType = InternalTransferVar;
     type CommitType = InternalTransferCommitment;
     type ErrorType = (); // Does not error
 
-    fn commit_prover<R: RngCore + CryptoRng>(
+    fn commit_witness<R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,

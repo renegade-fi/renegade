@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     errors::TypeConversionError,
     types::{scalar_from_hex_string, scalar_to_hex_string},
-    CommitProver, CommitVerifier,
+    CommitWitness, CommitVerifier,
 };
 
 /// The number of keys held in a wallet's keychain
@@ -114,12 +114,12 @@ pub struct CommittedKeyChain {
     pub pk_view: CompressedRistretto,
 }
 
-impl CommitProver for KeyChain {
+impl CommitWitness for KeyChain {
     type VarType = KeyChainVar;
     type CommitType = CommittedKeyChain;
     type ErrorType = ();
 
-    fn commit_prover<R: rand_core::RngCore + rand_core::CryptoRng>(
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,

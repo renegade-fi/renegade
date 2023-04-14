@@ -7,7 +7,7 @@ use mpc_bulletproof::r1cs::{Prover, Variable, Verifier};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
-use crate::{CommitProver, CommitVerifier};
+use crate::{CommitWitness, CommitVerifier};
 
 use super::order::OrderSide;
 
@@ -146,12 +146,12 @@ pub struct CommittedNote {
     pub randomness: CompressedRistretto,
 }
 
-impl CommitProver for Note {
+impl CommitWitness for Note {
     type VarType = NoteVar;
     type CommitType = CommittedNote;
     type ErrorType = ();
 
-    fn commit_prover<R: rand_core::RngCore + rand_core::CryptoRng>(
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,

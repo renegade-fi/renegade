@@ -18,7 +18,7 @@ use crate::{
     errors::MpcError,
     mpc::SharedFabric,
     types::{biguint_from_hex_string, biguint_to_hex_string},
-    Allocate, CommitProver, CommitSharedProver, CommitVerifier, LinkableCommitment,
+    Allocate, CommitSharedProver, CommitVerifier, CommitWitness, LinkableCommitment,
 };
 
 /// Represents the base type of a balance in tuple holding a reference to the
@@ -58,12 +58,12 @@ impl From<BalanceVar> for Vec<Variable> {
     }
 }
 
-impl CommitProver for Balance {
+impl CommitWitness for Balance {
     type VarType = BalanceVar;
     type CommitType = CommittedBalance;
     type ErrorType = (); // Does not error
 
-    fn commit_prover<R: RngCore + CryptoRng>(
+    fn commit_witness<R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
@@ -125,18 +125,18 @@ impl From<Balance> for LinkableBalanceCommitment {
     }
 }
 
-impl CommitProver for LinkableBalanceCommitment {
+impl CommitWitness for LinkableBalanceCommitment {
     type VarType = BalanceVar;
     type CommitType = CommittedBalance;
     type ErrorType = ();
 
-    fn commit_prover<R: RngCore + CryptoRng>(
+    fn commit_witness<R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (mint_var, mint_comm) = self.mint.commit_prover(rng, prover).unwrap();
-        let (amount_var, amount_comm) = self.amount.commit_prover(rng, prover).unwrap();
+        let (mint_var, mint_comm) = self.mint.commit_witness(rng, prover).unwrap();
+        let (amount_var, amount_comm) = self.amount.commit_witness(rng, prover).unwrap();
 
         Ok((
             BalanceVar {

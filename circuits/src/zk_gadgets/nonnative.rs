@@ -809,7 +809,7 @@ mod nonnative_tests {
     use crate::{
         errors::{ProverError, VerifierError},
         test_helpers::bulletproof_prove_and_verify,
-        CommitProver, CommitVerifier, SingleProverCircuit,
+        CommitVerifier, CommitWitness, SingleProverCircuit,
     };
 
     use super::{bigint_to_scalar_words, FieldMod, NonNativeElementVar};
@@ -860,12 +860,12 @@ mod nonnative_tests {
         field_mod: FieldMod,
     }
 
-    impl CommitProver for FanIn2Witness {
+    impl CommitWitness for FanIn2Witness {
         type VarType = FanIn2WitnessVar;
         type CommitType = FanIn2WitnessCommitment;
         type ErrorType = ();
 
-        fn commit_prover<R: RngCore + CryptoRng>(
+        fn commit_witness<R: RngCore + CryptoRng>(
             &self,
             rng: &mut R,
             prover: &mut Prover,
@@ -974,7 +974,8 @@ mod nonnative_tests {
         ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
             // Commit to the witness
             let mut rng = OsRng {};
-            let (witness_var, wintess_comm) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+            let (witness_var, wintess_comm) =
+                witness.commit_witness(&mut rng, &mut prover).unwrap();
 
             // Commit to the statement variable
             let expected_words = bigint_to_scalar_words(statement);
@@ -1064,7 +1065,8 @@ mod nonnative_tests {
         ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
             // Commit to the witness
             let mut rng = OsRng {};
-            let (witness_var, wintess_comm) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+            let (witness_var, wintess_comm) =
+                witness.commit_witness(&mut rng, &mut prover).unwrap();
 
             // Commit to the statement variable
             let expected_words = bigint_to_scalar_words(statement);
@@ -1143,7 +1145,8 @@ mod nonnative_tests {
         ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
             // Commit to the witness
             let mut rng = OsRng {};
-            let (witness_var, wintess_comm) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+            let (witness_var, wintess_comm) =
+                witness.commit_witness(&mut rng, &mut prover).unwrap();
 
             // Commit to the statement variable
             let expected_words = bigint_to_scalar_words(statement);
@@ -1224,7 +1227,8 @@ mod nonnative_tests {
         ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
             // Commit to the witness
             let mut rng = OsRng {};
-            let (witness_var, wintess_comm) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+            let (witness_var, wintess_comm) =
+                witness.commit_witness(&mut rng, &mut prover).unwrap();
 
             // Invert the witness, the constraint below is technically already added in the gadget itself,
             // we duplicate it here for completeness

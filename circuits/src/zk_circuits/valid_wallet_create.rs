@@ -28,7 +28,7 @@ use crate::{
         serialize_array,
     },
     zk_gadgets::poseidon::PoseidonHashGadget,
-    CommitProver, CommitVerifier, SingleProverCircuit, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+    CommitVerifier, CommitWitness, SingleProverCircuit, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
 };
 
 /// The number of zero Scalars to use when representing an empty balance
@@ -163,12 +163,12 @@ pub struct ValidWalletCreateVar<const MAX_FEES: usize> {
     pub wallet_randomness: Variable,
 }
 
-impl<const MAX_FEES: usize> CommitProver for ValidWalletCreateWitness<MAX_FEES> {
+impl<const MAX_FEES: usize> CommitWitness for ValidWalletCreateWitness<MAX_FEES> {
     type CommitType = ValidWalletCreateCommitment<MAX_FEES>;
     type VarType = ValidWalletCreateVar<MAX_FEES>;
     type ErrorType = ();
 
-    fn commit_prover<R: rand_core::RngCore + rand_core::CryptoRng>(
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
@@ -176,9 +176,9 @@ impl<const MAX_FEES: usize> CommitProver for ValidWalletCreateWitness<MAX_FEES> 
         let (fee_vars, fee_commitments): (Vec<FeeVar>, Vec<CommittedFee>) = self
             .fees
             .iter()
-            .map(|fee| fee.commit_prover(rng, prover).unwrap())
+            .map(|fee| fee.commit_witness(rng, prover).unwrap())
             .unzip();
-        let (keychain_var, keychain_comm) = self.keys.commit_prover(rng, prover).unwrap();
+        let (keychain_var, keychain_comm) = self.keys.commit_witness(rng, prover).unwrap();
 
         let (randomness_comm, randomness_var) =
             prover.commit(self.wallet_randomness, Scalar::random(rng));
@@ -253,7 +253,7 @@ where
     ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
         // Commit to the witness
         let mut rng = OsRng {};
-        let (witness_var, witness_comm) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Commit to the statement
         let wallet_commitment_var = prover.commit_public(statement.wallet_commitment);

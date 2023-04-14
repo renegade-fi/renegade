@@ -25,7 +25,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     errors::MpcError, mpc::SharedFabric, mpc_gadgets::modulo::shift_right, Allocate,
-    AuthenticatedLinkableCommitment, CommitProver, CommitSharedProver, CommitVerifier,
+    AuthenticatedLinkableCommitment, CommitSharedProver, CommitVerifier, CommitWitness,
     LinkableCommitment,
 };
 
@@ -255,17 +255,17 @@ pub struct LinkableFixedPointCommitment {
     pub(crate) repr: LinkableCommitment,
 }
 
-impl CommitProver for LinkableFixedPointCommitment {
+impl CommitWitness for LinkableFixedPointCommitment {
     type VarType = FixedPointVar;
     type CommitType = CommittedFixedPoint;
     type ErrorType = ();
 
-    fn commit_prover<R: RngCore + CryptoRng>(
+    fn commit_witness<R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (var, comm) = self.repr.commit_prover(rng, prover).unwrap();
+        let (var, comm) = self.repr.commit_witness(rng, prover).unwrap();
         Ok((
             FixedPointVar { repr: var.into() },
             CommittedFixedPoint { repr: comm },
@@ -293,12 +293,12 @@ pub struct CommittedFixedPoint {
     pub(crate) repr: CompressedRistretto,
 }
 
-impl CommitProver for FixedPoint {
+impl CommitWitness for FixedPoint {
     type VarType = FixedPointVar;
     type CommitType = CommittedFixedPoint;
     type ErrorType = ();
 
-    fn commit_prover<R: RngCore + CryptoRng>(
+    fn commit_witness<R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,

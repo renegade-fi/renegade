@@ -37,7 +37,7 @@ use crate::{
         poseidon::PoseidonHashGadget,
         select::CondSelectGadget,
     },
-    CommitProver, CommitVerifier, LinkableCommitment, SingleProverCircuit,
+    CommitVerifier, CommitWitness, LinkableCommitment, SingleProverCircuit,
 };
 
 // ----------------------
@@ -273,7 +273,7 @@ pub struct ValidCommitmentsWitnessCommitment<
     pub sk_match: CompressedRistretto,
 }
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitProver
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitWitness
     for ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
@@ -282,21 +282,22 @@ where
     type CommitType = ValidCommitmentsWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type ErrorType = ();
 
-    fn commit_prover<R: rand_core::RngCore + rand_core::CryptoRng>(
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
         // Commit to the variables individually
-        let (wallet_var, wallet_commit) = self.wallet.commit_prover(rng, prover).unwrap();
-        let (order_var, order_commit) = self.order.commit_prover(rng, prover).unwrap();
-        let (balance_var, balance_commit) = self.balance.commit_prover(rng, prover).unwrap();
+        let (wallet_var, wallet_commit) = self.wallet.commit_witness(rng, prover).unwrap();
+        let (order_var, order_commit) = self.order.commit_witness(rng, prover).unwrap();
+        let (balance_var, balance_commit) = self.balance.commit_witness(rng, prover).unwrap();
         let (fee_balance_var, fee_balance_comm) =
-            self.fee_balance.commit_prover(rng, prover).unwrap();
-        let (fee_var, fee_commit) = self.fee.commit_prover(rng, prover).unwrap();
-        let (opening_var, opening_commit) = self.wallet_opening.commit_prover(rng, prover).unwrap();
+            self.fee_balance.commit_witness(rng, prover).unwrap();
+        let (fee_var, fee_commit) = self.fee.commit_witness(rng, prover).unwrap();
+        let (opening_var, opening_commit) =
+            self.wallet_opening.commit_witness(rng, prover).unwrap();
         let (randomness_hash_var, randomness_hash_comm) =
-            self.randomness_hash.commit_prover(rng, prover).unwrap();
+            self.randomness_hash.commit_witness(rng, prover).unwrap();
         let (sk_match_comm, sk_match_var) = prover.commit(self.sk_match, Scalar::random(rng));
 
         Ok((
@@ -381,12 +382,12 @@ pub struct ValidCommitmentsStatementVar {
     pub pk_settle: Variable,
 }
 
-impl CommitProver for ValidCommitmentsStatement {
+impl CommitWitness for ValidCommitmentsStatement {
     type VarType = ValidCommitmentsStatementVar;
     type CommitType = ();
     type ErrorType = ();
 
-    fn commit_prover<R: rand_core::RngCore + rand_core::CryptoRng>(
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
         &self,
         _rng: &mut R,
         prover: &mut Prover,
@@ -445,8 +446,8 @@ where
     ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
         // Commit to the witness
         let mut rng = OsRng {};
-        let (witness_var, witness_commit) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+        let (witness_var, witness_commit) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Apply the constraints
         ValidCommitments::circuit(witness_var, statement_var, &mut prover)
@@ -508,7 +509,7 @@ mod valid_commitments_test {
             PRIVATE_KEYS,
         },
         zk_gadgets::{fixed_point::FixedPoint, merkle::MerkleOpening},
-        CommitProver, LinkableCommitment,
+        CommitWitness, LinkableCommitment,
     };
 
     use super::{ValidCommitments, ValidCommitmentsStatement, ValidCommitmentsWitness};
@@ -531,8 +532,8 @@ mod valid_commitments_test {
 
         // Commit to the witness
         let mut rng = OsRng {};
-        let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
 
         ValidCommitments::circuit(witness_var, statement_var, &mut prover).unwrap();
         prover.constraints_satisfied()

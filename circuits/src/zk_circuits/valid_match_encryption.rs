@@ -34,7 +34,7 @@ use crate::{
         fixed_point::{FixedPoint, FixedPointVar},
         select::CondSelectGadget,
     },
-    CommitProver, CommitVerifier, LinkableCommitment, SingleProverCircuit,
+    CommitVerifier, CommitWitness, LinkableCommitment, SingleProverCircuit,
 };
 
 /// The number of encryptions that are actively verified by the circuit
@@ -633,33 +633,33 @@ pub struct ValidMatchEncryptionWitnessCommitment {
     pub elgamal_randomness: [CompressedRistretto; NUM_ENCRYPTIONS],
 }
 
-impl CommitProver for ValidMatchEncryptionWitness {
+impl CommitWitness for ValidMatchEncryptionWitness {
     type VarType = ValidMatchEncryptionWitnessVar;
     type CommitType = ValidMatchEncryptionWitnessCommitment;
     type ErrorType = ();
 
-    fn commit_prover<R: rand_core::RngCore + rand_core::CryptoRng>(
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (match_res_var, match_res_comm) = self.match_res.commit_prover(rng, prover).unwrap();
-        let (fee1_var, fee1_comm) = self.party0_fee.commit_prover(rng, prover).unwrap();
-        let (fee2_var, fee2_comm) = self.party1_fee.commit_prover(rng, prover).unwrap();
+        let (match_res_var, match_res_comm) = self.match_res.commit_witness(rng, prover).unwrap();
+        let (fee1_var, fee1_comm) = self.party0_fee.commit_witness(rng, prover).unwrap();
+        let (fee2_var, fee2_comm) = self.party1_fee.commit_witness(rng, prover).unwrap();
         let (party0_randomness_hash_var, party0_randomness_hash_comm) =
-            self.party0_randomness_hash.commit_prover(rng, prover)?;
+            self.party0_randomness_hash.commit_witness(rng, prover)?;
         let (party1_randomness_hash_var, party1_randomness_hash_comm) =
-            self.party1_randomness_hash.commit_prover(rng, prover)?;
+            self.party1_randomness_hash.commit_witness(rng, prover)?;
         let (party0_note_var, party0_note_comm) =
-            self.party0_note.commit_prover(rng, prover).unwrap();
+            self.party0_note.commit_witness(rng, prover).unwrap();
         let (party1_note_var, party1_note_comm) =
-            self.party1_note.commit_prover(rng, prover).unwrap();
+            self.party1_note.commit_witness(rng, prover).unwrap();
         let (relayer0_note_var, relayer0_note_comm) =
-            self.relayer0_note.commit_prover(rng, prover).unwrap();
+            self.relayer0_note.commit_witness(rng, prover).unwrap();
         let (relayer1_note_var, relayer1_note_comm) =
-            self.relayer1_note.commit_prover(rng, prover).unwrap();
+            self.relayer1_note.commit_witness(rng, prover).unwrap();
         let (protocol_note_var, protocol_note_comm) =
-            self.protocol_note.commit_prover(rng, prover).unwrap();
+            self.protocol_note.commit_witness(rng, prover).unwrap();
         let (randomness_comms, randomness_vars): (Vec<CompressedRistretto>, Vec<Variable>) = self
             .elgamal_randomness
             .iter()
@@ -836,12 +836,12 @@ pub struct ValidMatchEncryptionStatementVar {
     pub randomness_protocol_ciphertext: ElGamalCiphertextVar,
 }
 
-impl CommitProver for ValidMatchEncryptionStatement {
+impl CommitWitness for ValidMatchEncryptionStatement {
     type VarType = ValidMatchEncryptionStatementVar;
     type CommitType = (); // Statement variables need no commitment
     type ErrorType = ();
 
-    fn commit_prover<R: rand_core::RngCore + rand_core::CryptoRng>(
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
         &self,
         _: &mut R,
         prover: &mut Prover,
@@ -998,8 +998,8 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ValidMatchEncryption<SCAL
     ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
         // Commit to the witness and statement
         let mut rng = OsRng {};
-        let (witness_var, witness_comm) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Apply the constraints
         Self::circuit(witness_var, statement_var, &mut prover).map_err(ProverError::R1CS)?;
@@ -1062,7 +1062,7 @@ mod valid_match_encryption_tests {
             r#match::MatchResult,
         },
         zk_gadgets::{elgamal::DEFAULT_ELGAMAL_GENERATOR, fixed_point::FixedPoint},
-        CommitProver,
+        CommitWitness,
     };
 
     use super::{ValidMatchEncryption, ValidMatchEncryptionStatement, ValidMatchEncryptionWitness};
@@ -1360,8 +1360,8 @@ mod valid_match_encryption_tests {
         let pc_gens = PedersenGens::default();
         let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
-        let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
 
         ValidMatchEncryption::<ELGAMAL_BITS>::circuit(witness_var, statement_var, &mut prover)
             .unwrap();
@@ -1428,8 +1428,8 @@ mod valid_match_encryption_tests {
             let pc_gens = PedersenGens::default();
             let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
-            let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-            let (statement_var, _) = stmt.commit_prover(&mut rng, &mut prover).unwrap();
+            let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+            let (statement_var, _) = stmt.commit_witness(&mut rng, &mut prover).unwrap();
 
             ValidMatchEncryption::<ELGAMAL_BITS>::circuit(witness_var, statement_var, &mut prover)
                 .unwrap();
@@ -1541,8 +1541,8 @@ mod valid_match_encryption_tests {
             let pc_gens = PedersenGens::default();
             let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
-            let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-            let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+            let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+            let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
 
             ValidMatchEncryption::<ELGAMAL_BITS>::circuit(witness_var, statement_var, &mut prover)
                 .unwrap();
@@ -1655,8 +1655,8 @@ mod valid_match_encryption_tests {
             let pc_gens = PedersenGens::default();
             let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
-            let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-            let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+            let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+            let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
 
             ValidMatchEncryption::<ELGAMAL_BITS>::circuit(witness_var, statement_var, &mut prover)
                 .unwrap();
@@ -1708,8 +1708,8 @@ mod valid_match_encryption_tests {
             let pc_gens = PedersenGens::default();
             let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
-            let (witness_var, _) = witness.commit_prover(&mut rng, &mut prover).unwrap();
-            let (statement_var, _) = statement.commit_prover(&mut rng, &mut prover).unwrap();
+            let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+            let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
 
             ValidMatchEncryption::<ELGAMAL_BITS>::circuit(witness_var, statement_var, &mut prover)
                 .unwrap();

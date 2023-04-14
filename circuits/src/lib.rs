@@ -11,7 +11,7 @@ use itertools::Itertools;
 use merlin::Transcript;
 use mpc::SharedFabric;
 use mpc_bulletproof::{
-    r1cs::{Prover, R1CSProof, Variable, Verifier},
+    r1cs::{Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
     r1cs_mpc::{MpcProver, MpcVariable, SharedR1CSProof},
     PedersenGens,
 };
@@ -225,41 +225,6 @@ impl From<LinkableCommitment> for Scalar {
     }
 }
 
-impl CommitProver for LinkableCommitment {
-    type VarType = Variable;
-    type CommitType = CompressedRistretto;
-    type ErrorType = ();
-
-    fn commit_prover<R: RngCore + CryptoRng>(
-        &self,
-        _rng: &mut R, // rng is unused, use the randomness in `self`
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (comm, var) = prover.commit(self.val, self.randomness);
-        Ok((var, comm))
-    }
-}
-
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> SharePublic<N, S> for LinkableCommitment {
-    type ErrorType = MpcError;
-
-    fn share_public(
-        &self,
-        owning_party: u64,
-        fabric: SharedFabric<N, S>,
-    ) -> Result<Self, Self::ErrorType> {
-        let shared_values = fabric
-            .borrow_fabric()
-            .batch_shared_plaintext_scalars(owning_party, &[self.val, self.randomness])
-            .map_err(|err| MpcError::SharingError(err.to_string()))?;
-
-        Ok(Self {
-            val: shared_values[0],
-            randomness: shared_values[1],
-        })
-    }
-}
-
 /// A linkable commitment that has been allocated inside of an MPC fabric
 #[derive(Debug)]
 pub struct AuthenticatedLinkableCommitment<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
@@ -317,8 +282,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
 // | Traits |
 // ----------
 
-/// Defines functionality to allocate a value within a single-prover constraint system
-pub trait CommitProver {
+/// Defines functionality to allocate a witness value within a single-prover constraint system
+pub trait CommitWitness {
     /// The type that results from committing to the base type
     type VarType;
     /// The type that consists of Pedersen commitments to the base type
@@ -331,11 +296,25 @@ pub trait CommitProver {
     /// Returns a tuple holding both the var type (used for operations)
     /// within the constraint system, and the commit type; which is passed
     /// to the verifier to use as hidden values
-    fn commit_prover<R: RngCore + CryptoRng>(
+    fn commit_witness<R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType>;
+}
+
+/// Defines functionality to allocate a public variable within a single-prover constraint system
+pub trait CommitPublic {
+    /// The type that results from committing to the base type
+    type VarType;
+    /// The error thrown by the commit method
+    type ErrorType;
+
+    /// Commit to the base type in the constraint system
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType>;
 }
 
 /// Defines functionality to commit to a value in a verifier's constraint system
@@ -568,6 +547,72 @@ pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueS
     ) -> Result<(), VerifierError>;
 }
 
+// -----------------------
+// | Default Trait Impls |
+// -----------------------
+
+impl CommitWitness for Scalar {
+    type VarType = Variable;
+    type CommitType = CompressedRistretto;
+    type ErrorType = (); // Does not error
+
+    fn commit_witness<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (comm, var) = prover.commit(*self, Scalar::random(rng));
+        Ok((var, comm))
+    }
+}
+
+impl CommitPublic for Scalar {
+    type VarType = Variable;
+    type ErrorType = (); // Does not error
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        Ok(cs.commit_public(*self))
+    }
+}
+
+impl CommitWitness for LinkableCommitment {
+    type VarType = Variable;
+    type CommitType = CompressedRistretto;
+    type ErrorType = ();
+
+    fn commit_witness<R: RngCore + CryptoRng>(
+        &self,
+        _rng: &mut R, // rng is unused, use the randomness in `self`
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (comm, var) = prover.commit(self.val, self.randomness);
+        Ok((var, comm))
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> SharePublic<N, S> for LinkableCommitment {
+    type ErrorType = MpcError;
+
+    fn share_public(
+        &self,
+        owning_party: u64,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self, Self::ErrorType> {
+        let shared_values = fabric
+            .borrow_fabric()
+            .batch_shared_plaintext_scalars(owning_party, &[self.val, self.randomness])
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+
+        Ok(Self {
+            val: shared_values[0],
+            randomness: shared_values[1],
+        })
+    }
+}
+
 // ----------------
 // | Test Helpers |
 // ----------------
@@ -633,7 +678,7 @@ pub mod native_helpers {
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
 
-    use crate::types::{note::Note, wallet::Wallet};
+    use crate::types::{keychain::PublicIdentificationKey, note::Note, wallet::Wallet};
 
     /// Compute the hash of the randomness of a given wallet
     pub fn compute_poseidon_hash(values: &[Scalar]) -> Scalar {
@@ -687,12 +732,12 @@ pub mod native_helpers {
         }
 
         // Hash the keys into the state
-        hasher.absorb(
-            &Into::<Vec<Scalar>>::into(wallet.keys)
-                .iter()
-                .map(scalar_to_prime_field)
-                .collect_vec(),
-        );
+        let mut key_scalars = Vec::<Scalar>::from(wallet.keys.pk_root.clone());
+        key_scalars.push(wallet.keys.pk_match.into());
+        key_scalars.push(wallet.keys.pk_settle.into());
+        key_scalars.push(wallet.keys.pk_view.into());
+
+        hasher.absorb(&key_scalars.iter().map(scalar_to_prime_field).collect_vec());
 
         // Hash the randomness into the state
         hasher.absorb(&scalar_to_prime_field(&wallet.randomness));
@@ -701,7 +746,10 @@ pub mod native_helpers {
     }
 
     /// Compute the commitment to a note
-    pub fn compute_note_commitment(note: &Note, pk_settle_receiver: Scalar) -> DalekRistrettoField {
+    pub fn compute_note_commitment(
+        note: &Note,
+        pk_settle_receiver: PublicIdentificationKey,
+    ) -> DalekRistrettoField {
         // Absorb the elements of the note in order into the sponge
         let mut hasher = PoseidonSponge::new(&default_poseidon_params());
         hasher.absorb(&biguint_to_prime_field(&note.mint1));
@@ -715,7 +763,7 @@ pub mod native_helpers {
             note.type_ as u64,
         ]);
         hasher.absorb(&biguint_to_prime_field(&note.randomness));
-        hasher.absorb(&scalar_to_prime_field(&pk_settle_receiver));
+        hasher.absorb(&scalar_to_prime_field(&pk_settle_receiver.into()));
         hasher.squeeze_field_elements(1 /* num_elements */)[0]
     }
 
@@ -759,10 +807,13 @@ pub mod native_helpers {
     /// Given a note and its commitment, compute the note redeem nullifier
     pub fn compute_note_redeem_nullifier(
         note_commitment: DalekRistrettoField,
-        pk_settle_receiver: DalekRistrettoField,
+        pk_settle_receiver: PublicIdentificationKey,
     ) -> DalekRistrettoField {
         let mut hasher = PoseidonSponge::new(&default_poseidon_params());
-        hasher.absorb(&vec![note_commitment, pk_settle_receiver]);
+        hasher.absorb(&vec![
+            note_commitment,
+            scalar_to_prime_field(&pk_settle_receiver.into()),
+        ]);
         hasher.squeeze_field_elements(1 /* num_elements */)[0]
     }
 }

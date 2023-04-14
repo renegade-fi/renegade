@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     types::{scalar_from_hex_string, scalar_to_hex_string},
-    CommitProver, CommitVerifier,
+    CommitVerifier, CommitWitness,
 };
 
 use super::{
@@ -81,7 +81,7 @@ where
     pub randomness: Variable,
 }
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitProver
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitWitness
     for Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
@@ -90,7 +90,7 @@ where
     type VarType = WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type ErrorType = ();
 
-    fn commit_prover<R: RngCore + CryptoRng>(
+    fn commit_witness<R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
@@ -98,22 +98,22 @@ where
         let (balance_vars, committed_balances): (Vec<BalanceVar>, Vec<CommittedBalance>) = self
             .balances
             .iter()
-            .map(|balance| balance.commit_prover(rng, prover).unwrap())
+            .map(|balance| balance.commit_witness(rng, prover).unwrap())
             .unzip();
 
         let (order_vars, committed_orders): (Vec<OrderVar>, Vec<CommittedOrder>) = self
             .orders
             .iter()
-            .map(|order| order.commit_prover(rng, prover).unwrap())
+            .map(|order| order.commit_witness(rng, prover).unwrap())
             .unzip();
 
         let (fee_vars, committed_fees): (Vec<FeeVar>, Vec<CommittedFee>) = self
             .fees
             .iter()
-            .map(|fee| fee.commit_prover(rng, prover).unwrap())
+            .map(|fee| fee.commit_witness(rng, prover).unwrap())
             .unzip();
 
-        let (key_vars, key_comms) = self.keys.commit_prover(rng, prover).unwrap();
+        let (key_vars, key_comms) = self.keys.commit_witness(rng, prover).unwrap();
         let (randomness_comm, randomness_var) = prover.commit(self.randomness, Scalar::random(rng));
 
         Ok((

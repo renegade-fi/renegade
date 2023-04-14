@@ -8,7 +8,7 @@ use crate::{
         AuthenticatedLinkableFixedPointCommitment, CommittedFixedPoint, FixedPoint, FixedPointVar,
         LinkableFixedPointCommitment,
     },
-    AuthenticatedLinkableCommitment, CommitProver, CommitSharedProver, CommitVerifier,
+    AuthenticatedLinkableCommitment, CommitSharedProver, CommitVerifier, CommitWitness,
     LinkableCommitment, Open,
 };
 use crypto::fields::biguint_to_scalar;
@@ -143,12 +143,12 @@ pub struct CommittedMatchResult {
     pub min_amount_order_index: CompressedRistretto,
 }
 
-impl CommitProver for MatchResult {
+impl CommitWitness for MatchResult {
     type VarType = MatchResultVar;
     type CommitType = CommittedMatchResult;
     type ErrorType = ();
 
-    fn commit_prover<R: RngCore + CryptoRng>(
+    fn commit_witness<R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut mpc_bulletproof::r1cs::Prover,
@@ -163,7 +163,7 @@ impl CommitProver for MatchResult {
             prover.commit(Scalar::from(self.base_amount), Scalar::random(rng));
         let (direction_comm, direction_var) =
             prover.commit(Scalar::from(self.direction), Scalar::random(rng));
-        let (price_var, price_comm) = self.execution_price.commit_prover(rng, prover).unwrap();
+        let (price_var, price_comm) = self.execution_price.commit_witness(rng, prover).unwrap();
         let (max_minus_min_comm, max_minus_min_var) =
             prover.commit(Scalar::from(self.max_minus_min_amount), Scalar::random(rng));
         let (min_index_comm, min_index_var) = prover.commit(
@@ -266,31 +266,32 @@ impl From<MatchResult> for LinkableMatchResultCommitment {
     }
 }
 
-impl CommitProver for LinkableMatchResultCommitment {
+impl CommitWitness for LinkableMatchResultCommitment {
     type VarType = MatchResultVar;
     type CommitType = CommittedMatchResult;
     type ErrorType = ();
 
-    fn commit_prover<R: RngCore + CryptoRng>(
+    fn commit_witness<R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (quote_mint_var, quote_mint_comm) = self.quote_mint.commit_prover(rng, prover).unwrap();
-        let (base_mint_var, base_mint_comm) = self.base_mint.commit_prover(rng, prover).unwrap();
+        let (quote_mint_var, quote_mint_comm) =
+            self.quote_mint.commit_witness(rng, prover).unwrap();
+        let (base_mint_var, base_mint_comm) = self.base_mint.commit_witness(rng, prover).unwrap();
         let (quote_amount_var, quote_amount_comm) =
-            self.quote_amount.commit_prover(rng, prover).unwrap();
+            self.quote_amount.commit_witness(rng, prover).unwrap();
         let (base_amount_var, base_amount_comm) =
-            self.base_amount.commit_prover(rng, prover).unwrap();
-        let (direction_var, direction_comm) = self.direction.commit_prover(rng, prover).unwrap();
-        let (price_var, price_comm) = self.execution_price.commit_prover(rng, prover).unwrap();
+            self.base_amount.commit_witness(rng, prover).unwrap();
+        let (direction_var, direction_comm) = self.direction.commit_witness(rng, prover).unwrap();
+        let (price_var, price_comm) = self.execution_price.commit_witness(rng, prover).unwrap();
         let (max_minus_min_var, max_minus_min_comm) = self
             .max_minus_min_amount
-            .commit_prover(rng, prover)
+            .commit_witness(rng, prover)
             .unwrap();
         let (min_amount_index_var, min_amount_index_comm) = self
             .min_amount_order_index
-            .commit_prover(rng, prover)
+            .commit_witness(rng, prover)
             .unwrap();
 
         Ok((

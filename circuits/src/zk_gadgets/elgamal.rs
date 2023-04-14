@@ -15,7 +15,7 @@ use rand_core::OsRng;
 
 use crate::{
     errors::{ProverError, VerifierError},
-    CommitProver, CommitVerifier, SingleProverCircuit,
+    CommitVerifier, CommitWitness, SingleProverCircuit,
 };
 
 use super::arithmetic::PrivateExpGadget;
@@ -101,12 +101,12 @@ pub struct ElGamalCiphertextCommitment {
     pub encrypted_message: CompressedRistretto,
 }
 
-impl CommitProver for ElGamalCiphertext {
+impl CommitWitness for ElGamalCiphertext {
     type VarType = ElGamalCiphertextVar;
     type CommitType = ElGamalCiphertextCommitment;
     type ErrorType = ();
 
-    fn commit_prover<R: rand_core::RngCore + rand_core::CryptoRng>(
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
@@ -183,12 +183,12 @@ pub struct ElGamalWitnessCommitment {
     pub plaintext: CompressedRistretto,
 }
 
-impl CommitProver for ElGamalWitness {
+impl CommitWitness for ElGamalWitness {
     type CommitType = ElGamalWitnessCommitment;
     type VarType = ElGamalWitnessVar;
     type ErrorType = ();
 
-    fn commit_prover<R: rand_core::RngCore + rand_core::CryptoRng>(
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
@@ -238,7 +238,7 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ElGamalGadget<SCALAR_BITS
     ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
         // Commit to the witness
         let mut rng = OsRng {};
-        let (witness_var, witness_comm) = witness.commit_prover(&mut rng, &mut prover).unwrap();
+        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Commit to the statement
         let pub_key_var = prover.commit_public(statement.pub_key);

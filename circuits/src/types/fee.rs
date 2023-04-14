@@ -7,7 +7,7 @@ use crate::{
         AuthenticatedCommittedFixedPoint, AuthenticatedFixedPoint, AuthenticatedFixedPointVar,
         CommittedFixedPoint, FixedPoint, FixedPointVar, LinkableFixedPointCommitment,
     },
-    Allocate, CommitProver, CommitSharedProver, CommitVerifier, LinkableCommitment, SharePublic,
+    Allocate, CommitSharedProver, CommitVerifier, CommitWitness, LinkableCommitment, SharePublic,
 };
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
@@ -117,12 +117,12 @@ impl From<FeeVar> for Vec<LinearCombination> {
     }
 }
 
-impl CommitProver for Fee {
+impl CommitWitness for Fee {
     type VarType = FeeVar;
     type CommitType = CommittedFee;
     type ErrorType = (); // Does not error
 
-    fn commit_prover<R: RngCore + CryptoRng>(
+    fn commit_witness<R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
@@ -133,7 +133,7 @@ impl CommitProver for Fee {
             prover.commit(biguint_to_scalar(&self.gas_addr), Scalar::random(rng));
         let (amount_comm, amount_var) =
             prover.commit(Scalar::from(self.gas_token_amount), Scalar::random(rng));
-        let (percent_var, percent_comm) = self.percentage_fee.commit_prover(rng, prover).unwrap();
+        let (percent_var, percent_comm) = self.percentage_fee.commit_witness(rng, prover).unwrap();
 
         Ok((
             FeeVar {
@@ -210,22 +210,22 @@ impl From<Fee> for LinkableFeeCommitment {
     }
 }
 
-impl CommitProver for LinkableFeeCommitment {
+impl CommitWitness for LinkableFeeCommitment {
     type VarType = FeeVar;
     type CommitType = CommittedFee;
     type ErrorType = ();
 
-    fn commit_prover<R: RngCore + CryptoRng>(
+    fn commit_witness<R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (key_var, key_comm) = self.settle_key.commit_prover(rng, prover).unwrap();
-        let (gas_addr_var, gas_addr_comm) = self.gas_addr.commit_prover(rng, prover).unwrap();
+        let (key_var, key_comm) = self.settle_key.commit_witness(rng, prover).unwrap();
+        let (gas_addr_var, gas_addr_comm) = self.gas_addr.commit_witness(rng, prover).unwrap();
         let (gas_amount_var, gas_amount_comm) =
-            self.gas_token_amount.commit_prover(rng, prover).unwrap();
+            self.gas_token_amount.commit_witness(rng, prover).unwrap();
         let (percent_fee_var, percent_fee_comm) =
-            self.percentage_fee.commit_prover(rng, prover).unwrap();
+            self.percentage_fee.commit_witness(rng, prover).unwrap();
 
         Ok((
             FeeVar {
