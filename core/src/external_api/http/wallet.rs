@@ -7,9 +7,9 @@ use uuid::Uuid;
 use crate::{
     external_api::{
         biguint_from_hex_string, biguint_to_hex_string,
-        types::{Balance, Fee, KeyChain, Order, Wallet},
+        types::{Balance, Fee, Order, Wallet},
     },
-    state::wallet::WalletIdentifier,
+    state::wallet::{KeyChain, WalletIdentifier},
     tasks::driver::TaskIdentifier,
 };
 

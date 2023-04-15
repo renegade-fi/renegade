@@ -3,7 +3,6 @@
 use std::{
     collections::{HashMap, HashSet},
     convert::TryInto,
-    fmt::{Formatter, Result as FmtResult},
     iter,
     sync::atomic::{AtomicU32, Ordering},
 };
@@ -16,27 +15,23 @@ use circuits::{
     types::{
         balance::Balance,
         fee::Fee,
-        keychain::{KeyChain, NUM_KEYS},
+        keychain::{
+            PublicKeyChain, SecretEncryptionKey, SecretIdentificationKey, SecretSigningKey,
+        },
         note::{Note, NoteType},
         order::{Order, OrderSide},
         wallet::{Nullifier, Wallet as CircuitWallet, WalletCommitment},
     },
     zk_gadgets::merkle::MerkleOpening,
 };
-use crypto::fields::{
-    biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint, starknet_felt_to_biguint,
-};
+use crypto::fields::{biguint_to_scalar, prime_field_to_scalar, starknet_felt_to_biguint};
 use curve25519_dalek::scalar::Scalar;
 use futures::{stream::iter as to_stream, StreamExt};
 use itertools::Itertools;
 use num_bigint::{BigUint, ToBigUint};
 use num_traits::Num;
 use rand::{distributions::Uniform, thread_rng, Rng};
-use serde::{
-    de::{Error as SerdeErr, SeqAccess, Visitor},
-    ser::SerializeSeq,
-    Deserialize, Deserializer, Serialize, Serializer,
-};
+use serde::{de::Error as SerdeErr, Deserialize, Deserializer, Serialize, Serializer};
 use starknet::core::types::FieldElement as StarknetFieldElement;
 use tokio::sync::{RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
@@ -86,89 +81,28 @@ type SizedCircuitWallet = CircuitWallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 pub type WalletIdentifier = Uuid;
 
 /// Represents the private keys a relayer has access to for a given wallet
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PrivateKeyChain {
     /// Optionally the relayer holds sk_root, in which case the relayer has
     /// heightened permissions than the standard case
     ///
     /// We call such a relayer a "super relayer"
-    pub sk_root: Option<Scalar>,
+    pub sk_root: Option<SecretSigningKey>,
     /// The match private key, authorizes the relayer to match orders for the wallet
-    pub sk_match: Scalar,
+    pub sk_match: SecretIdentificationKey,
     /// The settle private key, authorizes the relayer to settle matches for the wallet
-    pub sk_settle: Scalar,
+    pub sk_settle: SecretIdentificationKey,
     /// The view private key, allows the relayer to decrypt wallet state on chain
-    pub sk_view: Scalar,
+    pub sk_view: SecretEncryptionKey,
 }
 
-/// Custom serialization/deserialization for PrivateKeyChain, allowing us to serialize and
-/// deserialize the keys as BigUints rather than Dalek Scalars
-///
-/// The BigUint representation is cleaner and more interpretable
-impl Serialize for PrivateKeyChain {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let sk_root_bigint = self.sk_root.map(|scalar| scalar_to_biguint(&scalar));
-
-        // Serialize as a sequence of BigUints
-        let mut seq = serializer.serialize_seq(Some(NUM_KEYS))?;
-        seq.serialize_element(&sk_root_bigint)?;
-        seq.serialize_element(&scalar_to_biguint(&self.sk_match))?;
-        seq.serialize_element(&scalar_to_biguint(&self.sk_settle))?;
-        seq.serialize_element(&scalar_to_biguint(&self.sk_view))?;
-
-        seq.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for PrivateKeyChain {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_seq(PrivateKeyChainVisitor)
-    }
-}
-
-/// A serde visitor implementation for PrivateKeyChain
-struct PrivateKeyChainVisitor;
-impl<'de> Visitor<'de> for PrivateKeyChainVisitor {
-    type Value = PrivateKeyChain;
-
-    fn expecting(&self, formatter: &mut Formatter) -> FmtResult {
-        write!(
-            formatter,
-            "expecting sequence of {} BigUint values",
-            NUM_KEYS
-        )
-    }
-
-    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-    where
-        A: SeqAccess<'de>,
-    {
-        let sk_root: Option<BigUint> = seq
-            .next_element()?
-            .ok_or_else(|| SerdeErr::custom("sk_root not found in serialized value"))?;
-        let sk_match: BigUint = seq
-            .next_element()?
-            .ok_or_else(|| SerdeErr::custom("sk_match not found in serialized value"))?;
-        let sk_settle: BigUint = seq
-            .next_element()?
-            .ok_or_else(|| SerdeErr::custom("sk_settle not found in serialized value"))?;
-        let sk_view: BigUint = seq
-            .next_element()?
-            .ok_or_else(|| SerdeErr::custom("sk_view not found in serialized value"))?;
-
-        Ok(Self::Value {
-            sk_root: sk_root.map(|val| biguint_to_scalar(&val)),
-            sk_match: biguint_to_scalar(&sk_match),
-            sk_settle: biguint_to_scalar(&sk_settle),
-            sk_view: biguint_to_scalar(&sk_view),
-        })
-    }
+/// Represents the public and private keys given to the relayer managing a wallet
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeyChain {
+    /// The public keys in the wallet
+    pub public_keys: PublicKeyChain,
+    /// The secret keys in the wallet
+    pub secret_keys: PrivateKeyChain,
 }
 
 /// Represents a Merkle authentication path for a wallet
@@ -292,10 +226,8 @@ pub struct Wallet {
     pub balances: HashMap<BigUint, Balance>,
     /// A list of the fees in this wallet
     pub fees: Vec<Fee>,
-    /// A list of the public keys in the wallet
-    pub public_keys: KeyChain,
-    /// A list of the secret keys the relayer has access to
-    pub secret_keys: PrivateKeyChain,
+    /// The keys that the relayer has access to for this wallet
+    pub key_chain: KeyChain,
     /// The wallet randomness
     ///
     /// Generate randomness if not specified in a serialized blob
@@ -323,8 +255,7 @@ impl Clone for Wallet {
             orders: self.orders.clone(),
             balances: self.balances.clone(),
             fees: self.fees.clone(),
-            public_keys: self.public_keys,
-            secret_keys: self.secret_keys,
+            key_chain: self.key_chain.clone(),
             randomness: self.randomness.clone(),
             metadata: self.metadata.clone(),
             merkle_proof: self.merkle_proof.clone(),
@@ -401,7 +332,7 @@ impl From<Wallet> for SizedCircuitWallet {
             balances: padded_balances.try_into().unwrap(),
             orders: padded_orders.try_into().unwrap(),
             fees: padded_fees.try_into().unwrap(),
-            keys: wallet.public_keys,
+            keys: wallet.key_chain.public_keys,
             randomness: biguint_to_scalar(&wallet.randomness),
         }
     }
@@ -706,7 +637,7 @@ mod tests {
     use circuits::{
         types::{
             balance::Balance,
-            keychain::KeyChain,
+            keychain::PublicKeyChain,
             note::{Note, NoteType},
             order::{Order, OrderSide},
         },
@@ -717,7 +648,7 @@ mod tests {
     use rand_core::OsRng;
     use uuid::Uuid;
 
-    use super::{PrivateKeyChain, Wallet, WalletMetadata};
+    use super::{KeyChain, PrivateKeyChain, Wallet, WalletMetadata};
 
     /// Helper to create a dummy wallet for testing
     fn create_dummy_wallet() -> Wallet {
@@ -726,17 +657,19 @@ mod tests {
             orders: HashMap::new(),
             balances: HashMap::new(),
             fees: vec![],
-            public_keys: KeyChain {
-                pk_root: Scalar::zero(),
-                pk_match: Scalar::zero(),
-                pk_settle: Scalar::zero(),
-                pk_view: Scalar::zero(),
-            },
-            secret_keys: PrivateKeyChain {
-                sk_root: None,
-                sk_match: Scalar::zero(),
-                sk_settle: Scalar::zero(),
-                sk_view: Scalar::zero(),
+            key_chain: KeyChain {
+                public_keys: PublicKeyChain {
+                    pk_root: BigUint::from(0u8).into(),
+                    pk_match: Scalar::zero().into(),
+                    pk_settle: Scalar::zero().into(),
+                    pk_view: Scalar::zero().into(),
+                },
+                secret_keys: PrivateKeyChain {
+                    sk_root: None,
+                    sk_match: Scalar::zero().into(),
+                    sk_settle: Scalar::zero().into(),
+                    sk_view: Scalar::zero().into(),
+                },
             },
             randomness: BigUint::from(1u8),
             merkle_proof: None,
@@ -752,10 +685,10 @@ mod tests {
 
         // Test with root specified
         let keychain = PrivateKeyChain {
-            sk_root: Some(Scalar::random(&mut rng)),
-            sk_match: Scalar::random(&mut rng),
-            sk_settle: Scalar::random(&mut rng),
-            sk_view: Scalar::random(&mut rng),
+            sk_root: Some(BigUint::from(0u8).into()),
+            sk_match: Scalar::random(&mut rng).into(),
+            sk_settle: Scalar::random(&mut rng).into(),
+            sk_view: Scalar::random(&mut rng).into(),
         };
         let serialized = serde_json::to_string(&keychain).unwrap();
         let deserialized: PrivateKeyChain = serde_json::from_str(&serialized).unwrap();
@@ -764,9 +697,9 @@ mod tests {
         // Test with no root specified
         let keychain = PrivateKeyChain {
             sk_root: None,
-            sk_match: Scalar::random(&mut rng),
-            sk_settle: Scalar::random(&mut rng),
-            sk_view: Scalar::random(&mut rng),
+            sk_match: Scalar::random(&mut rng).into(),
+            sk_settle: Scalar::random(&mut rng).into(),
+            sk_view: Scalar::random(&mut rng).into(),
         };
         let serialized = serde_json::to_string(&keychain).unwrap();
         let deserialized: PrivateKeyChain = serde_json::from_str(&serialized).unwrap();

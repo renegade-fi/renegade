@@ -11,27 +11,21 @@ use circuits::{
     types::{
         balance::Balance as IndexedBalance,
         fee::Fee as IndexedFee,
-        keychain::KeyChain as IndexedKeychain,
         order::{Order as IndexedOrder, OrderSide},
     },
     zk_gadgets::fixed_point::FixedPoint,
 };
-use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
+use crypto::fields::scalar_to_biguint;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    external_api::{
-        biguint_from_hex_string, biguint_to_hex_string, maybe_biguint_from_hex_string,
-        maybe_biguint_to_hex_string,
-    },
+    external_api::{biguint_from_hex_string, biguint_to_hex_string},
     gossip::types::PeerInfo as IndexedPeerInfo,
     state::{
-        wallet::{
-            PrivateKeyChain as IndexedPrivateKeychain, Wallet as IndexedWallet, WalletMetadata,
-        },
+        wallet::{KeyChain, Wallet as IndexedWallet, WalletMetadata},
         NetworkOrder as IndexedNetworkOrder, NetworkOrderState, OrderIdentifier,
     },
 };
@@ -82,30 +76,12 @@ impl From<IndexedWallet> for Wallet {
 
         let fees = wallet.fees.into_iter().map(|fee| fee.into()).collect_vec();
 
-        let key_chain = KeyChain {
-            public_keys: PublicKeys {
-                pk_root: scalar_to_biguint(&wallet.public_keys.pk_root),
-                pk_match: scalar_to_biguint(&wallet.public_keys.pk_match),
-                pk_settle: scalar_to_biguint(&wallet.public_keys.pk_settle),
-                pk_view: scalar_to_biguint(&wallet.public_keys.pk_view),
-            },
-            secret_keys: SecretKeys {
-                sk_root: wallet
-                    .secret_keys
-                    .sk_root
-                    .map(|key| scalar_to_biguint(&key)),
-                sk_match: scalar_to_biguint(&wallet.secret_keys.sk_match),
-                sk_settle: scalar_to_biguint(&wallet.secret_keys.sk_settle),
-                sk_view: scalar_to_biguint(&wallet.secret_keys.sk_view),
-            },
-        };
-
         Self {
             id: wallet.wallet_id,
             orders,
             balances,
             fees,
-            key_chain,
+            key_chain: wallet.key_chain.clone(),
             randomness: wallet.randomness,
         }
     }
@@ -130,8 +106,7 @@ impl From<Wallet> for IndexedWallet {
             orders,
             balances,
             fees,
-            public_keys: wallet.key_chain.public_keys.into(),
-            secret_keys: wallet.key_chain.secret_keys.into(),
+            key_chain: wallet.key_chain,
             randomness: wallet.randomness,
             metadata: WalletMetadata::default(),
             proof_staleness: AtomicU32::new(0),
@@ -283,104 +258,6 @@ impl From<Fee> for IndexedFee {
             gas_addr: fee.gas_addr,
             gas_token_amount: fee.gas_amount.try_into().unwrap(),
             percentage_fee: fee.percentage_fee,
-        }
-    }
-}
-
-/// A keychain holds public and private keys that authorize various actions on a wallet
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct KeyChain {
-    /// The public keys in the wallet
-    pub public_keys: PublicKeys,
-    /// The secret keys in the wallet
-    pub secret_keys: SecretKeys,
-}
-
-/// A set of public keys for a given wallet
-///
-/// See the docs (https://docs.renegade.fi/advanced-concepts/super-relayers#key-hierarchy)
-/// for more information
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PublicKeys {
-    /// The public root key
-    #[serde(
-        serialize_with = "biguint_to_hex_string",
-        deserialize_with = "biguint_from_hex_string"
-    )]
-    pub pk_root: BigUint,
-    /// The public match key
-    #[serde(
-        serialize_with = "biguint_to_hex_string",
-        deserialize_with = "biguint_from_hex_string"
-    )]
-    pub pk_match: BigUint,
-    /// The public settle key
-    #[serde(
-        serialize_with = "biguint_to_hex_string",
-        deserialize_with = "biguint_from_hex_string"
-    )]
-    pub pk_settle: BigUint,
-    /// The public view key
-    #[serde(
-        serialize_with = "biguint_to_hex_string",
-        deserialize_with = "biguint_from_hex_string"
-    )]
-    pub pk_view: BigUint,
-}
-
-impl From<PublicKeys> for IndexedKeychain {
-    fn from(keys: PublicKeys) -> Self {
-        IndexedKeychain {
-            pk_root: biguint_to_scalar(&keys.pk_root),
-            pk_match: biguint_to_scalar(&keys.pk_match),
-            pk_settle: biguint_to_scalar(&keys.pk_settle),
-            pk_view: biguint_to_scalar(&keys.pk_view),
-        }
-    }
-}
-
-/// The set of secret keys for a wallet
-///
-/// Note that `sk_root` may be unknown as a relayer that holds `sk_root` is said
-/// to be in "super-relayer" mode, not all relayers are
-///
-/// See the docs (https://docs.renegade.fi/advanced-concepts/super-relayers#key-hierarchy)
-/// for more information
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SecretKeys {
-    /// The secret root key, non-super relayers will hold `None`
-    #[serde(
-        serialize_with = "maybe_biguint_to_hex_string",
-        deserialize_with = "maybe_biguint_from_hex_string"
-    )]
-    pub sk_root: Option<BigUint>,
-    /// The secret match key
-    #[serde(
-        serialize_with = "biguint_to_hex_string",
-        deserialize_with = "biguint_from_hex_string"
-    )]
-    pub sk_match: BigUint,
-    /// The secret settle key
-    #[serde(
-        serialize_with = "biguint_to_hex_string",
-        deserialize_with = "biguint_from_hex_string"
-    )]
-    pub sk_settle: BigUint,
-    /// The secret view key
-    #[serde(
-        serialize_with = "biguint_to_hex_string",
-        deserialize_with = "biguint_from_hex_string"
-    )]
-    pub sk_view: BigUint,
-}
-
-impl From<SecretKeys> for IndexedPrivateKeychain {
-    fn from(keys: SecretKeys) -> Self {
-        IndexedPrivateKeychain {
-            sk_root: keys.sk_root.map(|key| biguint_to_scalar(&key)),
-            sk_match: biguint_to_scalar(&keys.sk_match),
-            sk_settle: biguint_to_scalar(&keys.sk_settle),
-            sk_view: biguint_to_scalar(&keys.sk_view),
         }
     }
 }
