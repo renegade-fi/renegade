@@ -9,12 +9,12 @@ use std::{
 use async_trait::async_trait;
 use circuits::{
     native_helpers::compute_poseidon_hash,
-    types::{order::Order as CircuitOrder, wallet::Nullifier},
+    types::{keychain::SecretIdentificationKey, order::Order as CircuitOrder, wallet::Nullifier},
     zk_circuits::valid_commitments::ValidCommitmentsStatement,
     zk_gadgets::merkle::MerkleOpening,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::{biguint_to_scalar, scalar_to_biguint, starknet_felt_to_biguint};
+use crypto::fields::{scalar_to_biguint, starknet_felt_to_biguint};
 use curve25519_dalek::scalar::Scalar;
 use serde::Serialize;
 use starknet::core::types::FieldElement as StarknetFieldElement;
@@ -23,7 +23,6 @@ use tracing::log;
 use uuid::Uuid;
 
 use crate::{
-    external_api::types::KeyChain,
     gossip_api::{
         gossip::{GossipOutbound, PubsubMessage},
         orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
@@ -31,7 +30,7 @@ use crate::{
     proof_generation::jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle},
     starknet_client::client::{StarknetClient, TransactionHash},
     state::{
-        wallet::{Wallet, WalletIdentifier, WalletMetadata},
+        wallet::{KeyChain, Wallet, WalletIdentifier, WalletMetadata},
         NetworkOrder, NetworkOrderState, OrderIdentifier, RelayerState,
     },
     tasks::decrypt_wallet,
@@ -179,10 +178,9 @@ impl LookupWalletTask {
     /// Find the wallet in the contract storage and create an opening for the wallet
     async fn find_wallet(&mut self) -> Result<(), LookupWalletTaskError> {
         // Get the transaction that last updated the given wallet
-        let pk_view_scalar = biguint_to_scalar(&self.key_chain.public_keys.pk_view);
         let last_updated: TransactionHash = self
             .starknet_client
-            .get_wallet_last_updated(pk_view_scalar)
+            .get_wallet_last_updated(self.key_chain.public_keys.pk_view)
             .await
             .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?;
 
@@ -206,8 +204,8 @@ impl LookupWalletTask {
         // Decrypt the ciphertext into an encrypted wallet
         let decrypted_wallet = decrypt_wallet(
             ciphertext_blob,
-            &self.key_chain.secret_keys.sk_view,
-            self.key_chain.public_keys.clone().into(),
+            self.key_chain.secret_keys.sk_view,
+            self.key_chain.public_keys.clone(),
         );
 
         let mut wallet = Wallet {
@@ -225,8 +223,10 @@ impl LookupWalletTask {
                 .map(|balance| (balance.mint.clone(), balance))
                 .collect(),
             fees: decrypted_wallet.fees.to_vec(),
-            public_keys: decrypted_wallet.keys,
-            secret_keys: self.key_chain.secret_keys.clone().into(),
+            key_chain: KeyChain {
+                public_keys: decrypted_wallet.keys,
+                secret_keys: self.key_chain.secret_keys.clone(),
+            },
             randomness: scalar_to_biguint(&decrypted_wallet.randomness),
             metadata: WalletMetadata::default(),
             merkle_proof: None, // found in next step
@@ -271,7 +271,7 @@ impl LookupWalletTask {
         let statement = ValidCommitmentsStatement {
             nullifier: wallet_match_nullifier,
             merkle_root,
-            pk_settle: wallet.public_keys.pk_settle,
+            pk_settle: wallet.key_chain.public_keys.pk_settle,
         };
 
         let mut proof_response_channels = Vec::new();
@@ -287,7 +287,7 @@ impl LookupWalletTask {
                 circuit_wallet.clone(),
                 wallet_opening.clone(),
                 randomness_hash,
-                wallet.secret_keys.sk_match,
+                wallet.key_chain.secret_keys.sk_match,
             ) {
                 witness
             } else {
@@ -341,7 +341,7 @@ impl LookupWalletTask {
         wallet: SizedWallet,
         wallet_opening: MerkleOpening,
         randomness_hash: Scalar,
-        sk_match: Scalar,
+        sk_match: SecretIdentificationKey,
     ) -> Option<SizedValidCommitmentsWitness> {
         // Otherwise, create a brand new witness
         // Select a balance and fee for the order

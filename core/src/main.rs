@@ -28,14 +28,17 @@ mod worker;
 use std::{io::Write, process::exit, thread, time::Duration};
 
 use chrono::Local;
-use circuits::{types::wallet::Wallet, zk_gadgets::fixed_point::FixedPoint};
+use circuits::{
+    types::{keychain::PublicIdentificationKey, wallet::Wallet},
+    zk_gadgets::fixed_point::FixedPoint,
+};
 use crossbeam::channel;
+use curve25519_dalek::scalar::Scalar;
 use env_logger::Builder;
 use error::CoordinatorError;
 use gossip::worker::GossipServerConfig;
 use handshake::worker::HandshakeManagerConfig;
 use network_manager::worker::NetworkManagerConfig;
-use num_bigint::BigUint;
 use price_reporter::worker::PriceReporterManagerConfig;
 use tokio::{
     select,
@@ -82,7 +85,7 @@ lazy_static! {
     static ref PROTOCOL_FEE: FixedPoint = FixedPoint::from_f32_round_down(0.0002);
     /// The public settle key of the protocol wallet
     /// Dummy value for now
-    static ref PROTOCOL_SETTLE_KEY: BigUint = BigUint::from(0u8);
+    static ref PROTOCOL_SETTLE_KEY: PublicIdentificationKey = Scalar::from(0u8).into();
 }
 
 /// The system-wide value of MAX_BALANCES; the number of allowable balances a wallet holds

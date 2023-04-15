@@ -17,8 +17,10 @@ use circuits::{
         compute_note_commitment, compute_note_redeem_nullifier, compute_poseidon_hash,
     },
     types::{
+        keychain::{PublicIdentificationKey, SecretIdentificationKey},
         note::{Note, NoteType},
         order::{Order as CircuitOrder, OrderSide},
+        wallet::NoteCommitment,
     },
     zk_circuits::{
         valid_commitments::ValidCommitmentsStatement,
@@ -30,8 +32,7 @@ use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::{
     elgamal::encrypt_scalar,
     fields::{
-        biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint, scalar_to_prime_field,
-        starknet_felt_to_biguint,
+        biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint, starknet_felt_to_biguint,
     },
 };
 use curve25519_dalek::scalar::Scalar;
@@ -76,7 +77,7 @@ const SETTLE_MATCH_TASK_NAME: &str = "settle-match";
 // -----------
 
 /// A wrapper around the `circuits` crate's note commitment helper that handles type conversion
-fn note_commit(note: &Note, receiver_key: Scalar) -> Scalar {
+fn note_commit(note: &Note, receiver_key: PublicIdentificationKey) -> NoteCommitment {
     let commitment = compute_note_commitment(note, receiver_key);
     prime_field_to_scalar(&commitment)
 }
@@ -347,7 +348,7 @@ impl SettleMatchTask {
         let mut randomness_values = Vec::new();
 
         // Encrypt the volumes of the first party's note under their key
-        let pk_settle0_bigint = scalar_to_biguint(&self.handshake_result.pk_settle0);
+        let pk_settle0_bigint = scalar_to_biguint(&self.handshake_result.pk_settle0.into());
         let (volume1_ciphertext1, randomness) = encrypt_scalar(
             self.match_notes.party0_note.volume1.into(),
             &pk_settle0_bigint,
@@ -361,7 +362,7 @@ impl SettleMatchTask {
         randomness_values.push(randomness);
 
         // Encrypt the volumes of the second party's note under their key
-        let pk_settle1_bigint = scalar_to_biguint(&self.handshake_result.pk_settle1);
+        let pk_settle1_bigint = scalar_to_biguint(&self.handshake_result.pk_settle1.into());
         let (volume1_ciphertext2, randomness) = encrypt_scalar(
             self.match_notes.party1_note.volume1.into(),
             &pk_settle1_bigint,
@@ -375,33 +376,34 @@ impl SettleMatchTask {
         randomness_values.push(randomness);
 
         // Encrypt the mints, volumes and randomness of the protocol note under the protocol key
+        let protocol_key_biguint = scalar_to_biguint(&(*PROTOCOL_SETTLE_KEY).into());
         let (mint1_protocol_ciphertext, randomness) = encrypt_scalar(
             biguint_to_scalar(&self.match_notes.protocol_note.mint1),
-            &PROTOCOL_SETTLE_KEY,
+            &protocol_key_biguint,
         );
         randomness_values.push(randomness);
 
         let (mint2_protocol_ciphertext, randomness) = encrypt_scalar(
             biguint_to_scalar(&self.match_notes.protocol_note.mint2),
-            &PROTOCOL_SETTLE_KEY,
+            &protocol_key_biguint,
         );
         randomness_values.push(randomness);
 
         let (volume1_protocol_ciphertext, randomness) = encrypt_scalar(
             self.match_notes.protocol_note.volume1.into(),
-            &PROTOCOL_SETTLE_KEY,
+            &protocol_key_biguint,
         );
         randomness_values.push(randomness);
 
         let (volume2_protocol_ciphertext, randomness) = encrypt_scalar(
             self.match_notes.protocol_note.volume2.into(),
-            &PROTOCOL_SETTLE_KEY,
+            &protocol_key_biguint,
         );
         randomness_values.push(randomness);
 
         let (randomness_protocol_ciphertext, encryption_randomness) = encrypt_scalar(
             biguint_to_scalar(&self.match_notes.protocol_note.randomness),
-            &PROTOCOL_SETTLE_KEY,
+            &protocol_key_biguint,
         );
         randomness_values.push(encryption_randomness);
 
@@ -439,13 +441,13 @@ impl SettleMatchTask {
             ),
             protocol_note_commit: note_commit(
                 &self.match_notes.protocol_note,
-                biguint_to_scalar(&PROTOCOL_SETTLE_KEY),
+                *PROTOCOL_SETTLE_KEY,
             ),
             pk_settle_party0: self.handshake_result.pk_settle0,
             pk_settle_party1: self.handshake_result.pk_settle1,
             pk_settle_relayer0: self.handshake_result.pk_settle_cluster0,
             pk_settle_relayer1: self.handshake_result.pk_settle_cluster1,
-            pk_settle_protocol: biguint_to_scalar(&PROTOCOL_SETTLE_KEY),
+            pk_settle_protocol: *PROTOCOL_SETTLE_KEY,
             protocol_fee: *PROTOCOL_FEE,
             volume1_ciphertext1,
             volume2_ciphertext1,
@@ -629,19 +631,24 @@ impl SettleMatchTask {
         let protocol_note_commit = proof.statement.protocol_note_commit;
 
         // Encrypt the notes
-        let pk_settle0 = scalar_to_biguint(&self.handshake_result.pk_settle0);
-        let pk_settle1 = scalar_to_biguint(&self.handshake_result.pk_settle1);
-        let pk_settle_cluster0 = scalar_to_biguint(&self.handshake_result.pk_settle_cluster0);
-        let pk_settle_cluster1 = scalar_to_biguint(&self.handshake_result.pk_settle_cluster1);
-
-        let party0_note_cipher = encrypt_note(self.match_notes.party0_note.clone(), &pk_settle0);
-        let party1_note_cipher = encrypt_note(self.match_notes.party1_note.clone(), &pk_settle1);
-        let relayer0_note_cipher =
-            encrypt_note(self.match_notes.relayer0_note.clone(), &pk_settle_cluster0);
-        let relayer1_note_cipher =
-            encrypt_note(self.match_notes.relayer1_note.clone(), &pk_settle_cluster1);
+        let party0_note_cipher = encrypt_note(
+            self.match_notes.party0_note.clone(),
+            self.handshake_result.pk_settle0,
+        );
+        let party1_note_cipher = encrypt_note(
+            self.match_notes.party1_note.clone(),
+            self.handshake_result.pk_settle1,
+        );
+        let relayer0_note_cipher = encrypt_note(
+            self.match_notes.relayer0_note.clone(),
+            self.handshake_result.pk_settle_cluster0,
+        );
+        let relayer1_note_cipher = encrypt_note(
+            self.match_notes.relayer1_note.clone(),
+            self.handshake_result.pk_settle_cluster1,
+        );
         let protocol_note_cipher =
-            encrypt_note(self.match_notes.protocol_note.clone(), &PROTOCOL_SETTLE_KEY);
+            encrypt_note(self.match_notes.protocol_note.clone(), *PROTOCOL_SETTLE_KEY);
 
         // Submit the bundle to the contract
         let tx_res = self
@@ -727,10 +734,10 @@ impl SettleMatchTask {
 
         // Find the note in the commitment tree
         let note_commitment =
-            compute_note_commitment(my_note, self.old_wallet.public_keys.pk_settle);
+            compute_note_commitment(my_note, self.old_wallet.key_chain.public_keys.pk_settle);
         let note_redeem_nullifier = compute_note_redeem_nullifier(
             note_commitment,
-            scalar_to_prime_field(&self.old_wallet.public_keys.pk_settle),
+            self.old_wallet.key_chain.public_keys.pk_settle,
         );
         let note_opening = self
             .starknet_client
@@ -745,7 +752,7 @@ impl SettleMatchTask {
             post_wallet_commit: self.new_wallet.get_commitment(),
             post_wallet_ciphertext: encrypt_wallet(
                 new_circuit_wallet.clone(),
-                &scalar_to_biguint(&self.new_wallet.public_keys.pk_view),
+                self.new_wallet.key_chain.public_keys.pk_view,
             )
             .try_into()
             .unwrap(),
@@ -756,7 +763,7 @@ impl SettleMatchTask {
             type_: NoteType::Match,
         };
 
-        let sk_settle = self.old_wallet.secret_keys.sk_settle;
+        let sk_settle = self.old_wallet.key_chain.secret_keys.sk_settle;
         let witness = SizedValidSettleWitness {
             pre_wallet: self.old_wallet.clone().into(),
             pre_wallet_opening: wallet_opening.into(),
@@ -784,11 +791,13 @@ impl SettleMatchTask {
 
     /// Submit the settle transaction to the contract
     async fn submit_settle(&self, proof: ValidSettleBundle) -> Result<(), SettleMatchTaskError> {
-        let note_commitment =
-            compute_note_commitment(&self.my_note, self.old_wallet.public_keys.pk_settle);
+        let note_commitment = compute_note_commitment(
+            &self.my_note,
+            self.old_wallet.key_chain.public_keys.pk_settle,
+        );
         let wallet_ciphertext = encrypt_wallet(
             self.new_wallet.clone().into(),
-            &scalar_to_biguint(&self.new_wallet.public_keys.pk_view),
+            self.new_wallet.key_chain.public_keys.pk_view,
         );
 
         // Submit the transaction and await success
@@ -796,7 +805,7 @@ impl SettleMatchTask {
         let tx_hash = self
             .starknet_client
             .submit_settle(
-                self.new_wallet.public_keys.pk_view,
+                self.new_wallet.key_chain.public_keys.pk_view,
                 self.new_wallet.get_commitment(),
                 self.old_wallet.get_match_nullifier() + Scalar::random(&mut rng),
                 self.old_wallet.get_spend_nullifier() + Scalar::random(&mut rng),
@@ -845,7 +854,7 @@ impl SettleMatchTask {
         let new_statement = ValidCommitmentsStatement {
             nullifier: self.new_wallet.get_match_nullifier(),
             merkle_root: new_root,
-            pk_settle: self.new_wallet.public_keys.pk_settle,
+            pk_settle: self.new_wallet.key_chain.public_keys.pk_settle,
         };
 
         // Request that the proof manager prove `VALID COMMITMENTS` for each order
@@ -863,7 +872,7 @@ impl SettleMatchTask {
                     circuit_wallet.clone(),
                     wallet_opening.clone(),
                     randomness_hash,
-                    self.new_wallet.secret_keys.sk_match,
+                    self.new_wallet.key_chain.secret_keys.sk_match,
                 )
                 .await
             {
@@ -919,7 +928,7 @@ impl SettleMatchTask {
         wallet: SizedWallet,
         wallet_opening: MerkleOpening,
         randomness_hash: Scalar,
-        sk_match: Scalar,
+        sk_match: SecretIdentificationKey,
     ) -> Option<SizedValidCommitmentsWitness> {
         // Always recreate the witness anew, even if a witness previously existed
         // The balances used in a witness may have changes so it is easier to just

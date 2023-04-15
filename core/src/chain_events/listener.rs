@@ -434,7 +434,7 @@ impl OnChainEventListenerExecutor {
                 statement: ValidCommitmentsStatement {
                     nullifier: wallet_match_nullifier,
                     merkle_root: new_root,
-                    pk_settle: wallet.public_keys.pk_settle,
+                    pk_settle: wallet.key_chain.public_keys.pk_settle,
                 },
             };
 

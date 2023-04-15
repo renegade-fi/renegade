@@ -10,7 +10,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use async_trait::async_trait;
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::{biguint_to_scalar, scalar_to_biguint, starknet_felt_to_biguint};
+use crypto::fields::{biguint_to_scalar, starknet_felt_to_biguint};
 use serde::Serialize;
 use starknet::core::types::TransactionStatus;
 use tokio::sync::oneshot;
@@ -208,7 +208,7 @@ impl NewWalletTask {
         let job_req = ProofManagerJob {
             type_: ProofJob::ValidWalletCreate {
                 fees: self.wallet.fees.clone(),
-                keys: self.wallet.public_keys,
+                keys: self.wallet.key_chain.public_keys.clone(),
                 randomness: biguint_to_scalar(&self.wallet.randomness),
             },
             response_channel: response_sender,
@@ -237,13 +237,13 @@ impl NewWalletTask {
 
         // Generate an encryption of the wallet under the public view key
         let circuit_wallet: SizedWallet = self.wallet.clone().into();
-        let pk_view = scalar_to_biguint(&self.wallet.public_keys.pk_view);
-        let wallet_ciphertext = encrypt_wallet(circuit_wallet, &pk_view);
+        let wallet_ciphertext =
+            encrypt_wallet(circuit_wallet, self.wallet.key_chain.public_keys.pk_view);
 
         let tx_hash = self
             .starknet_client
             .new_wallet(
-                self.wallet.public_keys.pk_view,
+                self.wallet.key_chain.public_keys.pk_view,
                 wallet_commitment,
                 wallet_ciphertext,
                 proof,

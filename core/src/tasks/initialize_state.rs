@@ -226,13 +226,13 @@ impl InitializeStateTask {
                         fee_balance: fee_balance.clone().into(),
                         wallet_opening: wallet_opening.clone(),
                         randomness_hash: LinkableCommitment::new(randomness_hash),
-                        sk_match: wallet.secret_keys.sk_match,
+                        sk_match: wallet.key_chain.secret_keys.sk_match,
                     };
 
                     let statement = ValidCommitmentsStatement {
                         nullifier: match_nullifier,
                         merkle_root,
-                        pk_settle: wallet.public_keys.pk_settle,
+                        pk_settle: wallet.key_chain.public_keys.pk_settle,
                     };
 
                     // Create a job and a response channel to get proofs back on, and forward the job

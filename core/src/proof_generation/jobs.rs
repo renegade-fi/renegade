@@ -5,7 +5,7 @@
 //! of the types defined here
 
 use circuits::{
-    types::{fee::Fee, keychain::KeyChain},
+    types::{fee::Fee, keychain::PublicKeyChain},
     zk_circuits::{
         valid_commitments::{ValidCommitmentsStatement, ValidCommitmentsWitnessCommitment},
         valid_match_encryption::{
@@ -231,7 +231,7 @@ pub enum ProofJob {
         /// The fees to initialize the wallet with
         fees: Vec<Fee>,
         /// The keychain to use in the wallet
-        keys: KeyChain,
+        keys: PublicKeyChain,
         /// The wallet randomness to seed commitments and nullifiers with
         randomness: Scalar,
     },

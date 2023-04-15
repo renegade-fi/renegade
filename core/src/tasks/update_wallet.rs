@@ -12,6 +12,7 @@ use async_trait::async_trait;
 use circuits::{
     native_helpers::compute_poseidon_hash,
     types::{
+        keychain::SecretIdentificationKey,
         order::Order as CircuitOrder,
         transfers::{ExternalTransfer, InternalTransfer},
     },
@@ -22,7 +23,7 @@ use circuits::{
     zk_gadgets::merkle::MerkleOpening,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::{scalar_to_biguint, starknet_felt_to_biguint};
+use crypto::fields::starknet_felt_to_biguint;
 use curve25519_dalek::scalar::Scalar;
 use serde::Serialize;
 use starknet::core::types::TransactionStatus;
@@ -238,7 +239,7 @@ impl UpdateWalletTask {
         // Build the statement
         let statement = ValidWalletUpdateStatement {
             timestamp,
-            pk_root: self.old_wallet.public_keys.pk_root,
+            pk_root: self.old_wallet.key_chain.public_keys.pk_root.clone(),
             new_wallet_commitment: self.new_wallet.get_commitment(),
             match_nullifier: self.old_wallet.get_match_nullifier(),
             spend_nullifier: self.old_wallet.get_spend_nullifier(),
@@ -281,18 +282,20 @@ impl UpdateWalletTask {
 
         // Encrypt the new wallet and internal transfer under the public view key
         // TODO: This will eventually come directly from the user as they sign the encryption
-        let pk_view = scalar_to_biguint(&self.new_wallet.public_keys.pk_view);
         let encrypted_internal_transfer = self
             .internal_transfer
             .clone()
             .map(|transfer| encrypt_internal_transfer(&transfer));
-        let encrypted_wallet = encrypt_wallet(self.new_wallet.clone().into(), &pk_view);
+        let encrypted_wallet = encrypt_wallet(
+            self.new_wallet.clone().into(),
+            self.old_wallet.key_chain.public_keys.pk_view,
+        );
 
         // Submit on-chain
         let tx_hash = self
             .starknet_client
             .update_wallet(
-                self.new_wallet.public_keys.pk_view,
+                self.new_wallet.key_chain.public_keys.pk_view,
                 self.new_wallet.get_commitment(),
                 self.old_wallet.get_match_nullifier(),
                 self.old_wallet.get_spend_nullifier(),
@@ -344,7 +347,7 @@ impl UpdateWalletTask {
         let new_statement = ValidCommitmentsStatement {
             nullifier: self.new_wallet.get_match_nullifier(),
             merkle_root: new_root,
-            pk_settle: self.new_wallet.public_keys.pk_settle,
+            pk_settle: self.new_wallet.key_chain.public_keys.pk_settle,
         };
 
         // Request that the proof manager prove `VALID COMMITMENTS` for each order
@@ -362,7 +365,7 @@ impl UpdateWalletTask {
                     circuit_wallet.clone(),
                     wallet_opening.clone(),
                     randomness_hash,
-                    self.new_wallet.secret_keys.sk_match,
+                    self.new_wallet.key_chain.secret_keys.sk_match,
                 )
                 .await
             {
@@ -418,7 +421,7 @@ impl UpdateWalletTask {
         wallet: SizedWallet,
         wallet_opening: MerkleOpening,
         randomness_hash: Scalar,
-        sk_match: Scalar,
+        sk_match: SecretIdentificationKey,
     ) -> Option<SizedValidCommitmentsWitness> {
         // Always recreate the witness anew, even if a witness previously existed
         // The balances used in a witness may have changes so it is easier to just

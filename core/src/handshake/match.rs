@@ -10,6 +10,7 @@ use circuits::{
     types::{
         balance::LinkableBalanceCommitment,
         fee::LinkableFeeCommitment,
+        keychain::PublicIdentificationKey,
         order::{LinkableOrderCommitment, Order},
         r#match::{
             AuthenticatedLinkableMatchResultCommitment, AuthenticatedMatchResult,
@@ -60,13 +61,13 @@ pub struct HandshakeResult {
     /// The Poseidon hash of the second party's wallet randomness
     pub party1_randomness_hash: LinkableCommitment,
     /// The public settle key of the first party
-    pub pk_settle0: Scalar,
+    pub pk_settle0: PublicIdentificationKey,
     /// The public settle key of the second party
-    pub pk_settle1: Scalar,
+    pub pk_settle1: PublicIdentificationKey,
     /// The public settle key of the cluster managing the first party's order
-    pub pk_settle_cluster0: Scalar,
+    pub pk_settle_cluster0: PublicIdentificationKey,
     /// The public settle key fo the cluster managing the second party's order
-    pub pk_settle_cluster1: Scalar,
+    pub pk_settle_cluster1: PublicIdentificationKey,
 }
 
 impl HandshakeResult {
@@ -321,14 +322,14 @@ impl HandshakeExecutor {
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
         // Share the wallet public settle keys with the counterparty
-        let my_key = wallet.public_keys.pk_settle;
+        let my_key = wallet.key_chain.public_keys.pk_settle;
         let party0_key = fabric
             .borrow_fabric()
-            .share_plaintext_scalar(0 /* owning_party */, my_key)
+            .share_plaintext_scalar(0 /* owning_party */, my_key.into())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
         let party1_key = fabric
             .borrow_fabric()
-            .share_plaintext_scalar(1 /* owning_party */, my_key)
+            .share_plaintext_scalar(1 /* owning_party */, my_key.into())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
         // Finally, before revealing the match, we make a check that the MPC has
@@ -355,11 +356,11 @@ impl HandshakeExecutor {
             party1_fee,
             party0_randomness_hash,
             party1_randomness_hash,
-            pk_settle0: party0_key,
-            pk_settle1: party1_key,
+            pk_settle0: party0_key.into(),
+            pk_settle1: party1_key.into(),
             // Dummy values for now
-            pk_settle_cluster0: Scalar::zero(),
-            pk_settle_cluster1: Scalar::zero(),
+            pk_settle_cluster0: Scalar::zero().into(),
+            pk_settle_cluster1: Scalar::zero().into(),
         }))
     }
 }

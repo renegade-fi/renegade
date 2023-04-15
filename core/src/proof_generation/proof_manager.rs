@@ -7,7 +7,7 @@ use std::{convert::TryInto, iter, sync::Arc, thread::JoinHandle};
 use circuits::{
     native_helpers::compute_wallet_commitment,
     singleprover_prove,
-    types::{balance::Balance, fee::Fee, keychain::KeyChain, order::Order},
+    types::{balance::Balance, fee::Fee, keychain::PublicKeyChain, order::Order},
     zk_circuits::{
         valid_commitments::{ValidCommitments, ValidCommitmentsStatement},
         valid_match_encryption::{
@@ -157,7 +157,7 @@ impl ProofManager {
     /// Create a proof of `VALID WALLET CREATE`
     fn prove_valid_wallet_create(
         fees: Vec<Fee>,
-        keys: KeyChain,
+        keys: PublicKeyChain,
         randomness: Scalar,
     ) -> Result<ValidWalletCreateBundle, ProofManagerError> {
         // Build an empty wallet and compute its commitment
@@ -173,7 +173,7 @@ impl ProofManager {
             balances: vec![Balance::default(); MAX_BALANCES].try_into().unwrap(),
             orders: vec![Order::default(); MAX_ORDERS].try_into().unwrap(),
             fees: sized_fees.clone(),
-            keys,
+            keys: keys.clone(),
             randomness,
         };
 
