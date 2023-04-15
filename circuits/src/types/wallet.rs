@@ -16,7 +16,7 @@ use super::{
     balance::{Balance, BalanceVar, CommittedBalance},
     deserialize_array,
     fee::{CommittedFee, Fee, FeeVar},
-    keychain::{CommittedKeyChain, KeyChain, KeyChainVar},
+    keychain::{CommittedPublicKeyChain, PublicKeyChain, PublicKeyChainVar},
     order::{CommittedOrder, Order, OrderVar},
     serialize_array,
 };
@@ -54,7 +54,7 @@ where
     )]
     pub fees: [Fee; MAX_FEES],
     /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle, pk_view)
-    pub keys: KeyChain,
+    pub keys: PublicKeyChain,
     /// The wallet randomness used to blind commitments, nullifiers, etc
     #[serde(
         serialize_with = "scalar_to_hex_string",
@@ -76,7 +76,7 @@ where
     /// The list of payable fees in the wallet
     pub fees: [FeeVar; MAX_FEES],
     /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle, pk_view)
-    pub keys: KeyChainVar,
+    pub keys: PublicKeyChainVar,
     /// The wallet randomness used to blind commitments, nullifiers, etc
     pub randomness: Variable,
 }
@@ -154,7 +154,7 @@ pub struct CommittedWallet<
     #[serde(with = "serde_arrays")]
     pub fees: [CommittedFee; MAX_FEES],
     /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle, pk_view)
-    pub keys: CommittedKeyChain,
+    pub keys: CommittedPublicKeyChain,
     /// The wallet randomness used to blind commitments, nullifiers, etc
     pub randomness: CompressedRistretto,
 }
