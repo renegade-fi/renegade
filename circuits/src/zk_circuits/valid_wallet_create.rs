@@ -11,7 +11,7 @@
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
-    r1cs::{ConstraintSystem, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
+    r1cs::{Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
     r1cs_mpc::R1CSError,
     BulletproofGens,
 };
@@ -28,7 +28,8 @@ use crate::{
         serialize_array,
     },
     zk_gadgets::poseidon::PoseidonHashGadget,
-    CommitVerifier, CommitWitness, SingleProverCircuit, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+    CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit, MAX_BALANCES, MAX_FEES,
+    MAX_ORDERS,
 };
 
 /// The number of zero Scalars to use when representing an empty balance
@@ -253,7 +254,10 @@ where
         let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Commit to the statement
-        let wallet_commitment_var = prover.commit_public(statement.wallet_commitment);
+        let wallet_commitment_var = statement
+            .wallet_commitment
+            .commit_public(&mut prover)
+            .unwrap();
 
         // Apply the constraints
         Self::circuit(&mut prover, wallet_commitment_var, witness_var)
@@ -276,7 +280,10 @@ where
         let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
 
         // Commit to the statement
-        let wallet_commitment_var = verifier.commit_public(statement.wallet_commitment);
+        let wallet_commitment_var = statement
+            .wallet_commitment
+            .commit_public(&mut verifier)
+            .unwrap();
 
         // Apply the constraints
         Self::circuit(&mut verifier, wallet_commitment_var, witness_var)

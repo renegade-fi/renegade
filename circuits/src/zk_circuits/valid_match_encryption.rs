@@ -13,7 +13,7 @@ use crypto::elgamal::ElGamalCiphertext;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
-    r1cs::{ConstraintSystem, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
+    r1cs::{Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
     r1cs_mpc::R1CSError,
     BulletproofGens,
 };
@@ -35,7 +35,7 @@ use crate::{
         fixed_point::{FixedPoint, FixedPointVar},
         select::CondSelectGadget,
     },
-    CommitVerifier, CommitWitness, LinkableCommitment, SingleProverCircuit,
+    CommitPublic, CommitVerifier, CommitWitness, LinkableCommitment, SingleProverCircuit,
 };
 
 /// The number of encryptions that are actively verified by the circuit
@@ -837,124 +837,41 @@ pub struct ValidMatchEncryptionStatementVar {
     pub randomness_protocol_ciphertext: ElGamalCiphertextVar,
 }
 
-impl CommitWitness for ValidMatchEncryptionStatement {
+impl CommitPublic for ValidMatchEncryptionStatement {
     type VarType = ValidMatchEncryptionStatementVar;
-    type CommitType = (); // Statement variables need no commitment
     type ErrorType = ();
 
-    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
+    fn commit_public<CS: RandomizableConstraintSystem>(
         &self,
-        _: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let party0_note_commit_var = prover.commit_public(self.party0_note_commit);
-        let party1_note_commit_var = prover.commit_public(self.party1_note_commit);
-        let relayer0_note_commit_var = prover.commit_public(self.relayer0_note_commit);
-        let relayer1_note_commit_var = prover.commit_public(self.relayer1_note_commit);
-        let protocol_note_commit_var = prover.commit_public(self.protocol_note_commit);
-        let pk_settle_party0_var = prover.commit_public(self.pk_settle_party0.into());
-        let pk_settle_party1_var = prover.commit_public(self.pk_settle_party1.into());
-        let pk_settle_relayer0_var = prover.commit_public(self.pk_settle_relayer0.into());
-        let pk_settle_relayer1_var = prover.commit_public(self.pk_settle_relayer1.into());
-        let pk_settle_protocol_var = prover.commit_public(self.pk_settle_protocol.into());
-        let protocol_fee_var = self.protocol_fee.commit_public(prover);
-        let volume1_ciphertext1_var =
-            ElGamalCiphertextVar::commit_public_from_native(self.volume1_ciphertext1, prover);
-        let volume2_ciphertext1_var =
-            ElGamalCiphertextVar::commit_public_from_native(self.volume2_ciphertext1, prover);
-        let volume1_ciphertext2_var =
-            ElGamalCiphertextVar::commit_public_from_native(self.volume1_ciphertext2, prover);
-        let volume2_ciphertext2_var =
-            ElGamalCiphertextVar::commit_public_from_native(self.volume2_ciphertext2, prover);
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        let party0_note_commit_var = self.party0_note_commit.commit_public(cs).unwrap();
+        let party1_note_commit_var = self.party1_note_commit.commit_public(cs).unwrap();
+        let relayer0_note_commit_var = self.relayer0_note_commit.commit_public(cs).unwrap();
+        let relayer1_note_commit_var = self.relayer1_note_commit.commit_public(cs).unwrap();
+        let protocol_note_commit_var = self.protocol_note_commit.commit_public(cs).unwrap();
+        let pk_settle_party0_var = self.pk_settle_party0.commit_public(cs).unwrap();
+        let pk_settle_party1_var = self.pk_settle_party1.commit_public(cs).unwrap();
+        let pk_settle_relayer0_var = self.pk_settle_relayer0.commit_public(cs).unwrap();
+        let pk_settle_relayer1_var = self.pk_settle_relayer1.commit_public(cs).unwrap();
+        let pk_settle_protocol_var = self.pk_settle_protocol.commit_public(cs).unwrap();
+        let protocol_fee_var = self.protocol_fee.commit_public(cs);
+        let volume1_ciphertext1_var = self.volume1_ciphertext1.commit_public(cs).unwrap();
+        let volume1_ciphertext2_var = self.volume1_ciphertext2.commit_public(cs).unwrap();
+        let volume2_ciphertext1_var = self.volume2_ciphertext1.commit_public(cs).unwrap();
+        let volume2_ciphertext2_var = self.volume2_ciphertext2.commit_public(cs).unwrap();
         let mint1_protocol_ciphertext_var =
-            ElGamalCiphertextVar::commit_public_from_native(self.mint1_protocol_ciphertext, prover);
-        let volume1_protocol_ciphertext_var = ElGamalCiphertextVar::commit_public_from_native(
-            self.volume1_protocol_ciphertext,
-            prover,
-        );
+            self.mint1_protocol_ciphertext.commit_public(cs).unwrap();
+        let volume1_protocol_ciphertext_var =
+            self.volume1_protocol_ciphertext.commit_public(cs).unwrap();
         let mint2_protocol_ciphertext_var =
-            ElGamalCiphertextVar::commit_public_from_native(self.mint2_protocol_ciphertext, prover);
-        let volume2_protocol_ciphertext_var = ElGamalCiphertextVar::commit_public_from_native(
-            self.volume2_protocol_ciphertext,
-            prover,
-        );
-        let randomness_protocol_ciphertext_var = ElGamalCiphertextVar::commit_public_from_native(
-            self.randomness_protocol_ciphertext,
-            prover,
-        );
-
-        Ok((
-            ValidMatchEncryptionStatementVar {
-                party0_note_commit: party0_note_commit_var,
-                party1_note_commit: party1_note_commit_var,
-                relayer0_note_commit: relayer0_note_commit_var,
-                relayer1_note_commit: relayer1_note_commit_var,
-                protocol_note_commit: protocol_note_commit_var,
-                pk_settle_party0: pk_settle_party0_var,
-                pk_settle_party1: pk_settle_party1_var,
-                pk_settle_relayer0: pk_settle_relayer0_var,
-                pk_settle_relayer1: pk_settle_relayer1_var,
-                pk_settle_protocol: pk_settle_protocol_var,
-                protocol_fee: protocol_fee_var,
-                volume1_ciphertext1: volume1_ciphertext1_var,
-                volume2_ciphertext1: volume2_ciphertext1_var,
-                volume1_ciphertext2: volume1_ciphertext2_var,
-                volume2_ciphertext2: volume2_ciphertext2_var,
-                mint1_protocol_ciphertext: mint1_protocol_ciphertext_var,
-                volume1_protocol_ciphertext: volume1_protocol_ciphertext_var,
-                mint2_protocol_ciphertext: mint2_protocol_ciphertext_var,
-                volume2_protocol_ciphertext: volume2_protocol_ciphertext_var,
-                randomness_protocol_ciphertext: randomness_protocol_ciphertext_var,
-            },
-            (),
-        ))
-    }
-}
-
-impl CommitVerifier for ValidMatchEncryptionStatement {
-    type VarType = ValidMatchEncryptionStatementVar;
-    type ErrorType = ();
-
-    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        let party0_note_commit_var = verifier.commit_public(self.party0_note_commit);
-        let party1_note_commit_var = verifier.commit_public(self.party1_note_commit);
-        let relayer0_note_commit_var = verifier.commit_public(self.relayer0_note_commit);
-        let relayer1_note_commit_var = verifier.commit_public(self.relayer1_note_commit);
-        let protocol_note_commit_var = verifier.commit_public(self.protocol_note_commit);
-        let pk_settle_party0_var = verifier.commit_public(self.pk_settle_party0.into());
-        let pk_settle_party1_var = verifier.commit_public(self.pk_settle_party1.into());
-        let pk_settle_relayer0_var = verifier.commit_public(self.pk_settle_relayer0.into());
-        let pk_settle_relayer1_var = verifier.commit_public(self.pk_settle_relayer1.into());
-        let pk_settle_protocol_var = verifier.commit_public(self.pk_settle_protocol.into());
-        let protocol_fee_var = self.protocol_fee.commit_public(verifier);
-        let volume1_ciphertext1_var =
-            ElGamalCiphertextVar::commit_public_from_native(self.volume1_ciphertext1, verifier);
-        let volume2_ciphertext1_var =
-            ElGamalCiphertextVar::commit_public_from_native(self.volume2_ciphertext1, verifier);
-        let volume1_ciphertext2_var =
-            ElGamalCiphertextVar::commit_public_from_native(self.volume1_ciphertext2, verifier);
-        let volume2_ciphertext2_var =
-            ElGamalCiphertextVar::commit_public_from_native(self.volume2_ciphertext2, verifier);
-        let mint1_protocol_ciphertext_var = ElGamalCiphertextVar::commit_public_from_native(
-            self.mint1_protocol_ciphertext,
-            verifier,
-        );
-        let volume1_protocol_ciphertext_var = ElGamalCiphertextVar::commit_public_from_native(
-            self.volume1_protocol_ciphertext,
-            verifier,
-        );
-        let mint2_protocol_ciphertext_var = ElGamalCiphertextVar::commit_public_from_native(
-            self.mint2_protocol_ciphertext,
-            verifier,
-        );
-        let volume2_protocol_ciphertext_var = ElGamalCiphertextVar::commit_public_from_native(
-            self.volume2_protocol_ciphertext,
-            verifier,
-        );
-        let randomness_protocol_ciphertext_var = ElGamalCiphertextVar::commit_public_from_native(
-            self.randomness_protocol_ciphertext,
-            verifier,
-        );
+            self.mint2_protocol_ciphertext.commit_public(cs).unwrap();
+        let volume2_protocol_ciphertext_var =
+            self.volume2_protocol_ciphertext.commit_public(cs).unwrap();
+        let randomness_protocol_ciphertext_var = self
+            .randomness_protocol_ciphertext
+            .commit_public(cs)
+            .unwrap();
 
         Ok(ValidMatchEncryptionStatementVar {
             party0_note_commit: party0_note_commit_var,
@@ -1000,7 +917,7 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ValidMatchEncryption<SCAL
         // Commit to the witness and statement
         let mut rng = OsRng {};
         let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
         // Apply the constraints
         Self::circuit(witness_var, statement_var, &mut prover).map_err(ProverError::R1CS)?;
@@ -1020,7 +937,7 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ValidMatchEncryption<SCAL
     ) -> Result<(), VerifierError> {
         // Commit to the witness and statement
         let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
-        let statement_var = statement.commit_verifier(&mut verifier).unwrap();
+        let statement_var = statement.commit_public(&mut verifier).unwrap();
 
         // Apply the constraints
         Self::circuit(witness_var, statement_var, &mut verifier).map_err(VerifierError::R1CS)?;
@@ -1064,7 +981,7 @@ mod valid_match_encryption_tests {
             r#match::MatchResult,
         },
         zk_gadgets::{elgamal::DEFAULT_ELGAMAL_GENERATOR, fixed_point::FixedPoint},
-        CommitWitness,
+        CommitPublic, CommitWitness,
     };
 
     use super::{ValidMatchEncryption, ValidMatchEncryptionStatement, ValidMatchEncryptionWitness};
@@ -1381,7 +1298,7 @@ mod valid_match_encryption_tests {
         let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
         let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
         ValidMatchEncryption::<ELGAMAL_BITS>::circuit(witness_var, statement_var, &mut prover)
             .unwrap();
@@ -1449,7 +1366,7 @@ mod valid_match_encryption_tests {
             let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
             let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-            let (statement_var, _) = stmt.commit_witness(&mut rng, &mut prover).unwrap();
+            let statement_var = stmt.commit_public(&mut prover).unwrap();
 
             ValidMatchEncryption::<ELGAMAL_BITS>::circuit(witness_var, statement_var, &mut prover)
                 .unwrap();
@@ -1562,7 +1479,7 @@ mod valid_match_encryption_tests {
             let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
             let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-            let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
+            let statement_var = statement.commit_public(&mut prover).unwrap();
 
             ValidMatchEncryption::<ELGAMAL_BITS>::circuit(witness_var, statement_var, &mut prover)
                 .unwrap();
@@ -1676,7 +1593,7 @@ mod valid_match_encryption_tests {
             let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
             let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-            let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
+            let statement_var = statement.commit_public(&mut prover).unwrap();
 
             ValidMatchEncryption::<ELGAMAL_BITS>::circuit(witness_var, statement_var, &mut prover)
                 .unwrap();
@@ -1729,7 +1646,7 @@ mod valid_match_encryption_tests {
             let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
             let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-            let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
+            let statement_var = statement.commit_public(&mut prover).unwrap();
 
             ValidMatchEncryption::<ELGAMAL_BITS>::circuit(witness_var, statement_var, &mut prover)
                 .unwrap();

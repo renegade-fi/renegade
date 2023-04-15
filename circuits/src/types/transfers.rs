@@ -11,7 +11,7 @@ use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
-use crate::{CommitVerifier, CommitWitness};
+use crate::{CommitPublic, CommitVerifier, CommitWitness};
 
 /// The base external transfer type, not allocated in a constraint system
 /// or an MPC circuit
@@ -27,23 +27,25 @@ pub struct ExternalTransfer {
     pub direction: ExternalTransferDirection,
 }
 
-impl ExternalTransfer {
-    /// Commit to the external transfer as a public variable
-    pub fn commit_public<CS: RandomizableConstraintSystem>(
+impl CommitPublic for ExternalTransfer {
+    type VarType = ExternalTransferVar;
+    type ErrorType = (); // Does not error
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
         &self,
         cs: &mut CS,
-    ) -> ExternalTransferVar {
-        let account_addr_var = cs.commit_public(biguint_to_scalar(&self.account_addr));
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        let addr_var = cs.commit_public(biguint_to_scalar(&self.amount));
         let mint_var = cs.commit_public(biguint_to_scalar(&self.mint));
         let amount_var = cs.commit_public(biguint_to_scalar(&self.amount));
         let dir_var = cs.commit_public(self.direction.into());
 
-        ExternalTransferVar {
-            account_addr: account_addr_var,
+        Ok(ExternalTransferVar {
+            account_addr: addr_var,
             mint: mint_var,
             amount: amount_var,
             direction: dir_var,
-        }
+        })
     }
 }
 

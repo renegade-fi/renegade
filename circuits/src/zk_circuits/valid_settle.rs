@@ -15,8 +15,7 @@ use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{
-        ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
-        Variable, Verifier,
+        LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
     },
     r1cs_mpc::R1CSError,
     BulletproofGens,
@@ -47,7 +46,7 @@ use crate::{
         poseidon::PoseidonHashGadget,
         select::CondSelectGadget,
     },
-    CommitVerifier, CommitWitness, SingleProverCircuit,
+    CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit,
 };
 
 // ----------------------
@@ -551,77 +550,35 @@ pub struct ValidSettleStatementVar<
     pub type_: Variable,
 }
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitWitness
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitPublic
     for ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
     [(); 2 * MAX_BALANCES + 6 * MAX_ORDERS + 4 * MAX_FEES + 1]: Sized,
 {
     type VarType = ValidSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type CommitType = ();
-    type ErrorType = ();
+    type ErrorType = (); // Does not error
 
-    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
+    fn commit_public<CS: RandomizableConstraintSystem>(
         &self,
-        _: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let post_wallet_commit_var = prover.commit_public(self.post_wallet_commit);
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        let post_wallet_commit_var = self.post_wallet_commit.commit_public(cs).unwrap();
         let post_wallet_ciphertext_vars = self
             .post_wallet_ciphertext
             .iter()
-            .map(|ciphertext| ElGamalCiphertextVar::commit_public_from_native(*ciphertext, prover))
+            .map(|ciphertext| ciphertext.commit_public(cs).unwrap())
             .collect_vec();
-        let wallet_spend_nullifier_var = prover.commit_public(self.wallet_spend_nullifier);
-        let wallet_match_nullifier_var = prover.commit_public(self.wallet_match_nullifier);
-        let note_redeem_nullifier_var = prover.commit_public(self.note_redeem_nullifier);
-        let merkle_root_var = prover.commit_public(self.merkle_root);
-        let type_var = prover.commit_public(match self.type_ {
+        let wallet_spend_nullifier_var = self.wallet_spend_nullifier.commit_public(cs).unwrap();
+        let wallet_match_nullifier_var = self.wallet_match_nullifier.commit_public(cs).unwrap();
+        let note_redeem_nullifier_var = self.note_redeem_nullifier.commit_public(cs).unwrap();
+        let merkle_root_var = self.merkle_root.commit_public(cs).unwrap();
+        let type_var = match self.type_ {
             NoteType::InternalTransfer => Scalar::zero(),
             NoteType::Match => Scalar::one(),
-        });
-
-        Ok((
-            ValidSettleStatementVar {
-                post_wallet_commit: post_wallet_commit_var,
-                post_wallet_ciphertext: post_wallet_ciphertext_vars.try_into().unwrap(),
-                wallet_spend_nullifier: wallet_spend_nullifier_var,
-                wallet_match_nullifier: wallet_match_nullifier_var,
-                note_redeem_nullifier: note_redeem_nullifier_var,
-                merkle_root: merkle_root_var,
-                type_: type_var,
-            },
-            (),
-        ))
-    }
-}
-
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitVerifier
-    for ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
-where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    [(); 2 * MAX_BALANCES + 6 * MAX_ORDERS + 4 * MAX_FEES + 1]: Sized,
-{
-    type VarType = ValidSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type ErrorType = ();
-
-    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        let post_wallet_commit_var = verifier.commit_public(self.post_wallet_commit);
-        let post_wallet_ciphertext_vars = self
-            .post_wallet_ciphertext
-            .iter()
-            .map(|ciphertext| {
-                ElGamalCiphertextVar::commit_public_from_native(*ciphertext, verifier)
-            })
-            .collect_vec();
-        let wallet_spend_nullifier_var = verifier.commit_public(self.wallet_spend_nullifier);
-        let wallet_match_nullifier_var = verifier.commit_public(self.wallet_match_nullifier);
-        let note_redeem_nullifier_var = verifier.commit_public(self.note_redeem_nullifier);
-        let merkle_root_var = verifier.commit_public(self.merkle_root);
-        let type_var = verifier.commit_public(match self.type_ {
-            NoteType::InternalTransfer => Scalar::zero(),
-            NoteType::Match => Scalar::one(),
-        });
+        }
+        .commit_public(cs)
+        .unwrap();
 
         Ok(ValidSettleStatementVar {
             post_wallet_commit: post_wallet_commit_var,
@@ -659,7 +616,7 @@ where
         // Commit to the witness and statement
         let mut rng = OsRng {};
         let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
         // Apply the constraints
         Self::circuit(witness_var, statement_var, &mut prover).map_err(ProverError::R1CS)?;
@@ -678,7 +635,7 @@ where
     ) -> Result<(), VerifierError> {
         // Commit to the witness and statement
         let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
-        let statement_var = statement.commit_verifier(&mut verifier).unwrap();
+        let statement_var = statement.commit_public(&mut verifier).unwrap();
 
         // Apply the constraints
         Self::circuit(witness_var, statement_var, &mut verifier).map_err(VerifierError::R1CS)?;
@@ -721,7 +678,7 @@ mod valid_settle_tests {
             PRIVATE_KEYS,
         },
         zk_gadgets::merkle::MerkleOpening,
-        CommitWitness,
+        CommitPublic, CommitWitness,
     };
 
     use super::{ValidSettle, ValidSettleStatement, ValidSettleWitness};
@@ -922,7 +879,7 @@ mod valid_settle_tests {
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
         let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
         // Apply the constraints and verify that they are not satisfied
         ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
@@ -947,7 +904,7 @@ mod valid_settle_tests {
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
         let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
         // Apply the constraints and verify that they are not satisfied
         ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
@@ -974,7 +931,7 @@ mod valid_settle_tests {
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
         let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
         // Apply the constraints and verify that they are not satisfied
         ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
@@ -1002,7 +959,7 @@ mod valid_settle_tests {
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
         let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
         // Apply the constraints and verify that they are not satisfied
         ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
@@ -1029,7 +986,7 @@ mod valid_settle_tests {
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
         let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
         // Apply the constraints and verify that they are not satisfied
         ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
@@ -1057,7 +1014,7 @@ mod valid_settle_tests {
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
         let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
         // Apply the constraints and verify that they are not satisfied
         ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();
@@ -1111,7 +1068,7 @@ mod valid_settle_tests {
             let mut prover = Prover::new(&pc_gens, &mut transcript);
 
             let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-            let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
+            let statement_var = statement.commit_public(&mut prover).unwrap();
 
             // Apply the constraints and verify that they are not satisfied
             ValidSettle::circuit(witness_var, statement_var, &mut prover).unwrap();

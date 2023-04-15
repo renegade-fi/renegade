@@ -38,7 +38,7 @@ use crate::{
         poseidon::PoseidonHashGadget,
         select::CondSelectGadget,
     },
-    CommitVerifier, CommitWitness, LinkableCommitment, SingleProverCircuit,
+    CommitPublic, CommitVerifier, CommitWitness, LinkableCommitment, SingleProverCircuit,
 };
 
 // ----------------------
@@ -383,6 +383,26 @@ pub struct ValidCommitmentsStatementVar {
     pub pk_settle: Variable,
 }
 
+impl CommitPublic for ValidCommitmentsStatement {
+    type VarType = ValidCommitmentsStatementVar;
+    type ErrorType = (); // Does not error
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        let nullifier_var = self.nullifier.commit_public(cs).unwrap();
+        let merkle_root_var = self.merkle_root.commit_public(cs).unwrap();
+        let pk_settle_var = self.pk_settle.commit_public(cs).unwrap();
+
+        Ok(ValidCommitmentsStatementVar {
+            nullifier: nullifier_var,
+            merkle_root: merkle_root_var,
+            pk_settle: pk_settle_var,
+        })
+    }
+}
+
 impl CommitWitness for ValidCommitmentsStatement {
     type VarType = ValidCommitmentsStatementVar;
     type CommitType = ();
@@ -405,23 +425,6 @@ impl CommitWitness for ValidCommitmentsStatement {
             },
             (),
         ))
-    }
-}
-
-impl CommitVerifier for ValidCommitmentsStatement {
-    type VarType = ValidCommitmentsStatementVar;
-    type ErrorType = ();
-
-    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        let nullifier_var = verifier.commit_public(self.nullifier);
-        let merkle_root_var = verifier.commit_public(self.merkle_root);
-        let pk_settle_var = verifier.commit_public(self.pk_settle.into());
-
-        Ok(ValidCommitmentsStatementVar {
-            nullifier: nullifier_var,
-            merkle_root: merkle_root_var,
-            pk_settle: pk_settle_var,
-        })
     }
 }
 
@@ -448,7 +451,7 @@ where
         // Commit to the witness
         let mut rng = OsRng {};
         let (witness_var, witness_commit) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
         // Apply the constraints
         ValidCommitments::circuit(witness_var, statement_var, &mut prover)
@@ -469,7 +472,7 @@ where
     ) -> Result<(), VerifierError> {
         // Commit to the witness
         let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
-        let statement_var = statement.commit_verifier(&mut verifier).unwrap();
+        let statement_var = statement.commit_public(&mut verifier).unwrap();
 
         // Apply the constraints
         ValidCommitments::circuit(witness_var, statement_var, &mut verifier)

@@ -15,7 +15,7 @@ use rand_core::OsRng;
 
 use crate::{
     errors::{ProverError, VerifierError},
-    CommitVerifier, CommitWitness, SingleProverCircuit,
+    CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit,
 };
 
 use super::arithmetic::PrivateExpGadget;
@@ -75,23 +75,6 @@ pub struct ElGamalCiphertextVar {
     pub encrypted_message: Variable,
 }
 
-impl ElGamalCiphertextVar {
-    /// Commit to a native (outside constraint system) ciphertext as a public input
-    /// to create a ciphertext var
-    pub fn commit_public_from_native<CS: RandomizableConstraintSystem>(
-        ciphertext: ElGamalCiphertext,
-        cs: &mut CS,
-    ) -> ElGamalCiphertextVar {
-        let partial_shared_secret_var = cs.commit_public(ciphertext.partial_shared_secret);
-        let encrypted_message_var = cs.commit_public(ciphertext.encrypted_message);
-
-        ElGamalCiphertextVar {
-            partial_shared_secret: partial_shared_secret_var,
-            encrypted_message: encrypted_message_var,
-        }
-    }
-}
-
 /// An ElGamal ciphertext that has been committed to by a prover
 #[derive(Clone, Debug)]
 pub struct ElGamalCiphertextCommitment {
@@ -126,6 +109,24 @@ impl CommitWitness for ElGamalCiphertext {
                 encrypted_message: encrypted_message_comm,
             },
         ))
+    }
+}
+
+impl CommitPublic for ElGamalCiphertext {
+    type VarType = ElGamalCiphertextVar;
+    type ErrorType = (); // Does not error
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        let partial_shared_secret_var = self.partial_shared_secret.commit_public(cs).unwrap();
+        let encrypted_message_var = self.encrypted_message.commit_public(cs).unwrap();
+
+        Ok(ElGamalCiphertextVar {
+            partial_shared_secret: partial_shared_secret_var,
+            encrypted_message: encrypted_message_var,
+        })
     }
 }
 

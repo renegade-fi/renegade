@@ -59,6 +59,18 @@ impl CommitWitness for PublicIdentificationKey {
     }
 }
 
+impl CommitPublic for PublicIdentificationKey {
+    type VarType = Variable;
+    type ErrorType = (); // Does not error
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        self.0.commit_public(cs)
+    }
+}
+
 impl From<Scalar> for PublicIdentificationKey {
     fn from(key: Scalar) -> Self {
         Self(key)

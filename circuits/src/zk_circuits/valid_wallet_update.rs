@@ -11,8 +11,7 @@
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
     r1cs::{
-        ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
-        Variable, Verifier,
+        LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
     },
     r1cs_mpc::R1CSError,
     BulletproofGens,
@@ -567,51 +566,21 @@ pub struct ValidWalletUpdateStatementVar {
     pub external_transfer: ExternalTransferVar,
 }
 
-impl CommitWitness for ValidWalletUpdateStatement {
+impl CommitPublic for ValidWalletUpdateStatement {
     type VarType = ValidWalletUpdateStatementVar;
-    type CommitType = ();
     type ErrorType = (); // Does not error
 
-    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
+    fn commit_public<CS: RandomizableConstraintSystem>(
         &self,
-        _rng: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let timestamp_var = prover.commit_public(self.timestamp);
-        let pk_root_var = self.pk_root.commit_public(prover).unwrap();
-        let new_wallet_commitment_var = prover.commit_public(self.new_wallet_commitment);
-        let spend_nullifier_var = prover.commit_public(self.spend_nullifier);
-        let match_nullifier_var = prover.commit_public(self.match_nullifier);
-        let merkle_root_var = prover.commit_public(self.merkle_root);
-        let external_transfer_var = self.external_transfer.commit_public(prover);
-
-        Ok((
-            ValidWalletUpdateStatementVar {
-                timestamp: timestamp_var,
-                pk_root: pk_root_var,
-                new_wallet_commitment: new_wallet_commitment_var,
-                match_nullifier: match_nullifier_var,
-                spend_nullifier: spend_nullifier_var,
-                merkle_root: merkle_root_var,
-                external_transfer: external_transfer_var,
-            },
-            (),
-        ))
-    }
-}
-
-impl CommitVerifier for ValidWalletUpdateStatement {
-    type VarType = ValidWalletUpdateStatementVar;
-    type ErrorType = (); // Does not error
-
-    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        let timestamp_var = verifier.commit_public(self.timestamp);
-        let pk_root_var = self.pk_root.commit_public(verifier).unwrap();
-        let new_wallet_commitment_var = verifier.commit_public(self.new_wallet_commitment);
-        let spend_nullifier_var = verifier.commit_public(self.spend_nullifier);
-        let match_nullifier_var = verifier.commit_public(self.match_nullifier);
-        let merkle_root_var = verifier.commit_public(self.merkle_root);
-        let external_transfer_var = self.external_transfer.commit_public(verifier);
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        let timestamp_var = self.timestamp.commit_public(cs).unwrap();
+        let pk_root_var = self.pk_root.commit_public(cs).unwrap();
+        let new_wallet_commitment_var = self.new_wallet_commitment.commit_public(cs).unwrap();
+        let spend_nullifier_var = self.spend_nullifier.commit_public(cs).unwrap();
+        let match_nullifier_var = self.match_nullifier.commit_public(cs).unwrap();
+        let merkle_root_var = self.merkle_root.commit_public(cs).unwrap();
+        let external_transfer_var = self.external_transfer.commit_public(cs).unwrap();
 
         Ok(ValidWalletUpdateStatementVar {
             timestamp: timestamp_var,
@@ -650,7 +619,7 @@ where
         let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Commit to the statement
-        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
         // Apply the constraints
         Self::circuit(witness_var, statement_var, &mut prover).map_err(ProverError::R1CS)?;
@@ -672,7 +641,7 @@ where
         let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
 
         // Commit to the statement
-        let statement_var = statement.commit_verifier(&mut verifier).unwrap();
+        let statement_var = statement.commit_public(&mut verifier).unwrap();
 
         // Apply the constraints
         Self::circuit(witness_var, statement_var, &mut verifier).map_err(VerifierError::R1CS)?;
@@ -715,7 +684,7 @@ mod valid_wallet_update_tests {
         },
         zk_circuits::test_helpers::{create_wallet_opening, INITIAL_WALLET},
         zk_gadgets::{fixed_point::FixedPoint, merkle::MerkleOpening},
-        CommitWitness,
+        CommitPublic, CommitWitness,
     };
 
     use super::{ValidWalletUpdate, ValidWalletUpdateStatement, ValidWalletUpdateWitness};
@@ -752,7 +721,7 @@ mod valid_wallet_update_tests {
         // Allocate the witness and statement in the constraint system
         let mut rng = OsRng {};
         let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
         ValidWalletUpdate::circuit(witness_var, statement_var, &mut prover).unwrap();
         prover.constraints_satisfied()
@@ -1730,7 +1699,7 @@ mod valid_wallet_update_tests {
         let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
         let (mut witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-        let (statement_var, _) = statement.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
         // Modify the second balance to explicitly underflow
         let negative_one = prover.commit_public(Scalar::one().neg());
