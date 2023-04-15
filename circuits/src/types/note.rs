@@ -7,7 +7,7 @@ use mpc_bulletproof::r1cs::{Prover, Variable, Verifier};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
-use crate::{CommitWitness, CommitVerifier};
+use crate::{CommitVerifier, CommitWitness};
 
 use super::order::OrderSide;
 

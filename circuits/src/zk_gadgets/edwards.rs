@@ -145,7 +145,7 @@ impl EdwardsPointVar {
     pub fn zero(field_mod: FieldMod) -> EdwardsPointVar {
         EdwardsPointVar {
             x: NonNativeElementVar::new(vec![Variable::Zero().into()], field_mod.clone()),
-            y: NonNativeElementVar::new(vec![Variable::Zero().into()], field_mod),
+            y: NonNativeElementVar::new(vec![Variable::One().into()], field_mod),
         }
     }
 

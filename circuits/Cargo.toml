@@ -33,6 +33,7 @@ colored = "2"
 ctor = "0.1"
 criterion = { version = "0.4" } 
 dns-lookup = "1.0"
+env_logger = "0.9"
 integration-helpers = { path = "../integration-helpers" }
 inventory = "0.3"
 num-primes = "0.3"

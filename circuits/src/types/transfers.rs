@@ -11,7 +11,7 @@ use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
-use crate::{CommitWitness, CommitVerifier};
+use crate::{CommitVerifier, CommitWitness};
 
 /// The base external transfer type, not allocated in a constraint system
 /// or an MPC circuit

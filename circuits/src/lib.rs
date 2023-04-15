@@ -621,6 +621,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> SharePublic<N, S> for L
 pub(crate) mod test_helpers {
     use crypto::fields::{prime_field_to_bigint, scalar_to_bigint, DalekRistrettoField};
     use curve25519_dalek::scalar::Scalar;
+    use env_logger::{Builder, Env, Target};
     use merlin::Transcript;
     use mpc_bulletproof::{
         r1cs::{Prover, Verifier},
@@ -630,6 +631,25 @@ pub(crate) mod test_helpers {
     use crate::{errors::VerifierError, SingleProverCircuit};
 
     const TRANSCRIPT_SEED: &str = "test";
+
+    // ---------
+    // | Setup |
+    // ---------
+
+    /// Constructor to initialize logging in tests
+    #[ctor::ctor]
+    fn setup() {
+        init_logger()
+    }
+
+    pub fn init_logger() {
+        let env = Env::default().filter_or("MY_CRATE_LOG", "trace");
+
+        let mut builder = Builder::from_env(env);
+        builder.target(Target::Stdout);
+
+        builder.init();
+    }
 
     // -----------
     // | Helpers |
