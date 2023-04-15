@@ -1,13 +1,14 @@
 //! Groups gadget definitions for arithmetic on (possibly twisted) Edwards curves
 
-use curve25519_dalek::ristretto::CompressedRistretto;
 use mpc_bulletproof::r1cs::{LinearCombination, Prover, RandomizableConstraintSystem, Variable};
 use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
 
+use crate::{CommitPublic, CommitWitness};
+
 use super::{
     comparators::EqZeroGadget,
-    nonnative::{FieldMod, NonNativeElementVar},
+    nonnative::{FieldMod, NonNativeElement, NonNativeElementCommitment, NonNativeElementVar},
 };
 
 /// Represents a point on a (possibly twisted) Edwards curve
@@ -30,67 +31,29 @@ use super::{
 #[derive(Clone, Debug)]
 pub struct EdwardsPoint {
     /// The x coordinate of the point
-    x: NonNativeElementVar,
+    x: NonNativeElement,
     /// The y coordinate of the point
-    y: NonNativeElementVar,
+    y: NonNativeElement,
 }
 
 impl EdwardsPoint {
-    /// Create a new EdwardsPoint from affine coordinates that have been allocated in the
-    /// constraint system
-    pub fn new(x: NonNativeElementVar, y: NonNativeElementVar) -> Self {
-        Self { x, y }
-    }
-
-    /// Create a new EdwardsPoint from `BigUint` coordinates committed as witnesses in the
-    /// given constraint system
-    pub fn commit_witness<R: RngCore + CryptoRng>(
-        x: BigUint,
-        y: BigUint,
-        field_mod: FieldMod,
-        rng: &mut R,
-        cs: &mut Prover,
-    ) -> (Self, Vec<CompressedRistretto>, Vec<CompressedRistretto>) {
-        // Commit to the coordinates individually
-        let (x_var, x_comm) = NonNativeElementVar::commit_witness(x, field_mod.to_owned(), rng, cs);
-        let (y_var, y_comm) = NonNativeElementVar::commit_witness(y, field_mod, rng, cs);
-
-        (Self { x: x_var, y: y_var }, x_comm, y_comm)
-    }
-
-    /// Create a new EdwardsPoint from `BigUint` coordinates committed as statement variables
-    /// in the given constraint system
-    pub fn commit_public<CS: RandomizableConstraintSystem>(
-        x: BigUint,
-        y: BigUint,
-        field_mod: FieldMod,
-        cs: &mut CS,
-    ) -> Self {
-        let x_var = NonNativeElementVar::commit_public(x, field_mod.to_owned(), cs);
-        let y_var = NonNativeElementVar::commit_public(y, field_mod, cs);
-
-        Self { x: x_var, y: y_var }
-    }
-
     /// Get the field modulus that this point is defined in
     pub fn field_mod(&self) -> FieldMod {
         self.x.field_mod.clone()
     }
 
     /// Allocate the additive identity in the Edwards group into the constraint system
-    pub fn zero<CS: RandomizableConstraintSystem>(field_mod: FieldMod, cs: &mut CS) -> Self {
-        Self::new_from_bigints(BigUint::from(0u8), BigUint::from(1u8), field_mod, cs)
+    pub fn zero(field_mod: FieldMod) -> Self {
+        Self::new_from_bigints(BigUint::from(0u8), BigUint::from(1u8), field_mod)
     }
 
     /// Create a new EdwardsPoint from affine coordinates represented by `BigUint`s
-    pub fn new_from_bigints<CS: RandomizableConstraintSystem>(
-        x: BigUint,
-        y: BigUint,
-        field_mod: FieldMod,
-        cs: &mut CS,
-    ) -> Self {
-        let x_nonnative = NonNativeElementVar::from_bigint(x, field_mod.clone(), cs);
-        let y_nonnative = NonNativeElementVar::from_bigint(y, field_mod, cs);
+    pub fn new_from_bigints(x: BigUint, y: BigUint, field_mod: FieldMod) -> Self {
+        let x_nonnative = NonNativeElement {
+            val: x,
+            field_mod: field_mod.clone(),
+        };
+        let y_nonnative = NonNativeElement { val: y, field_mod };
 
         Self {
             x: x_nonnative,
@@ -99,6 +62,75 @@ impl EdwardsPoint {
     }
 
     /// Evaluate the point in the constraint system to get the affine coordinates as BigUints
+    pub fn get_affine_coordinates(&self) -> (BigUint, BigUint) {
+        (self.x.val.clone(), self.y.val.clone())
+    }
+}
+
+/// A point on an edwards curve that has been allocated in a constraint system
+#[derive(Clone, Debug)]
+pub struct EdwardsPointVar {
+    /// The x coordinate of the point
+    x: NonNativeElementVar,
+    /// The y coordinate of the point
+    y: NonNativeElementVar,
+}
+
+/// A commitment to a point on an edwards curve
+#[derive(Clone, Debug)]
+#[allow(unused)]
+pub struct EdwardsPointCommitment {
+    /// The x coordinate of the point
+    x: NonNativeElementCommitment,
+    /// The y coordinate of the point
+    y: NonNativeElementCommitment,
+}
+
+impl CommitWitness for EdwardsPoint {
+    type VarType = EdwardsPointVar;
+    type CommitType = EdwardsPointCommitment;
+    type ErrorType = (); // Does not error
+
+    fn commit_witness<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (x_var, x_comm) = self.x.commit_witness(rng, prover).unwrap();
+        let (y_var, y_comm) = self.y.commit_witness(rng, prover).unwrap();
+
+        Ok((
+            EdwardsPointVar { x: x_var, y: y_var },
+            EdwardsPointCommitment {
+                x: x_comm,
+                y: y_comm,
+            },
+        ))
+    }
+}
+
+impl CommitPublic for EdwardsPoint {
+    type VarType = EdwardsPointVar;
+    type ErrorType = (); // Does not error
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        let x_var = self.x.commit_public(cs).unwrap();
+        let y_var = self.y.commit_public(cs).unwrap();
+
+        Ok(EdwardsPointVar { x: x_var, y: y_var })
+    }
+}
+
+impl EdwardsPointVar {
+    /// Return the modulus of the scalar field this point's curve is defined over
+    pub fn field_mod(&self) -> FieldMod {
+        self.x.field_mod.clone()
+    }
+
+    /// Get the affine coordinates of the Edwards point
     pub fn get_affine_coordinates<CS: RandomizableConstraintSystem>(
         &self,
         cs: &CS,
@@ -109,13 +141,21 @@ impl EdwardsPoint {
         (x_bigint, y_bigint)
     }
 
+    /// Allocate the additive identity
+    pub fn zero(field_mod: FieldMod) -> EdwardsPointVar {
+        EdwardsPointVar {
+            x: NonNativeElementVar::new(vec![Variable::Zero().into()], field_mod.clone()),
+            y: NonNativeElementVar::new(vec![Variable::Zero().into()], field_mod),
+        }
+    }
+
     /// Select between two Edwards points, i.e. implements if selector { pt1 } else { pt2 }
     pub fn cond_select<L, CS>(
         selector: L,
-        pt1: &EdwardsPoint,
-        pt2: &EdwardsPoint,
+        pt1: &EdwardsPointVar,
+        pt2: &EdwardsPointVar,
         cs: &mut CS,
-    ) -> EdwardsPoint
+    ) -> EdwardsPointVar
     where
         L: Into<LinearCombination> + Clone,
         CS: RandomizableConstraintSystem,
@@ -128,8 +168,8 @@ impl EdwardsPoint {
 
     /// Constrain two points to be equal
     pub fn constrain_equal<CS: RandomizableConstraintSystem>(
-        pt1: &EdwardsPoint,
-        pt2: &EdwardsPoint,
+        pt1: &EdwardsPointVar,
+        pt2: &EdwardsPointVar,
         cs: &mut CS,
     ) {
         NonNativeElementVar::constrain_equal(&pt1.x, &pt2.x, cs);
@@ -168,10 +208,10 @@ impl TwistedEdwardsCurve {
     ///     y_3 = (y_1 * y_2 - a * x_1 * x_2) / (1 - d * x_1 * x_2 * y_1 * y_2)
     pub fn add_points<CS: RandomizableConstraintSystem>(
         &self,
-        lhs: &EdwardsPoint,
-        rhs: &EdwardsPoint,
+        lhs: &EdwardsPointVar,
+        rhs: &EdwardsPointVar,
         cs: &mut CS,
-    ) -> EdwardsPoint {
+    ) -> EdwardsPointVar {
         // Compute x_3
         let x1y2 = NonNativeElementVar::mul(&lhs.x, &rhs.y, cs);
         let x2y1 = NonNativeElementVar::mul(&lhs.y, &rhs.x, cs);
@@ -193,7 +233,7 @@ impl TwistedEdwardsCurve {
         let denom_inv = NonNativeElementVar::invert(&denom, cs);
         let y3 = NonNativeElementVar::mul(&numerator, &denom_inv, cs);
 
-        EdwardsPoint { x: x3, y: y3 }
+        EdwardsPointVar { x: x3, y: y3 }
     }
 
     /// Multiply an Edwards point by a scalar
@@ -203,11 +243,11 @@ impl TwistedEdwardsCurve {
     pub fn scalar_mul<const SCALAR_BITS: usize, CS: RandomizableConstraintSystem>(
         &self,
         scalar: &NonNativeElementVar,
-        ec_point: &EdwardsPoint,
+        ec_point: &EdwardsPointVar,
         cs: &mut CS,
-    ) -> EdwardsPoint {
+    ) -> EdwardsPointVar {
         if SCALAR_BITS == 0 {
-            return EdwardsPoint::zero(scalar.field_mod.clone(), cs);
+            return EdwardsPointVar::zero(scalar.field_mod.clone());
         }
 
         // Decompose the scalar into bits allocated in the constraint system, little endian
@@ -221,12 +261,12 @@ impl TwistedEdwardsCurve {
     /// bit-decomposed scalar.
     fn scalar_mul_impl<CS: RandomizableConstraintSystem>(
         &self,
-        ec_point: &EdwardsPoint,
+        ec_point: &EdwardsPointVar,
         scalar_bits: &[Variable],
         cs: &mut CS,
-    ) -> EdwardsPoint {
+    ) -> EdwardsPointVar {
         if scalar_bits.is_empty() {
-            return EdwardsPoint::zero(ec_point.field_mod(), cs);
+            return EdwardsPointVar::zero(ec_point.field_mod());
         }
         // Recursively compute the result on the rest of the bits of the scalar
         let recursive_result = self.scalar_mul_impl(ec_point, &scalar_bits[1..], cs);
@@ -237,14 +277,14 @@ impl TwistedEdwardsCurve {
         // The lowest order bit represents whether the current recursive scalar is odd
         let is_odd = scalar_bits[0].to_owned();
 
-        let identity = EdwardsPoint::zero(ec_point.field_mod(), cs);
-        let additive_term = EdwardsPoint::cond_select(is_odd, ec_point, &identity, cs);
+        let identity = EdwardsPointVar::zero(ec_point.field_mod());
+        let additive_term = EdwardsPointVar::cond_select(is_odd, ec_point, &identity, cs);
 
         let res = self.add_points(&doubled_recursive_res, &additive_term, cs);
 
         // If the scalar is zero, mask the output with the identity point
         let zero_mask = Self::all_bits_zero(scalar_bits, cs);
-        EdwardsPoint::cond_select(zero_mask, &identity, &res, cs)
+        EdwardsPointVar::cond_select(zero_mask, &identity, &res, cs)
     }
 
     /// A helper method to constrain the output variable to equal a boolean that is one if
@@ -284,9 +324,12 @@ pub(crate) mod edwards_tests {
     use num_bigint::BigUint;
     use rand_core::{CryptoRng, OsRng, RngCore};
 
-    use crate::zk_gadgets::nonnative::{FieldMod, NonNativeElementVar};
+    use crate::{
+        zk_gadgets::nonnative::{FieldMod, NonNativeElementVar},
+        CommitPublic,
+    };
 
-    use super::{EdwardsPoint, TwistedEdwardsCurve};
+    use super::{EdwardsPoint, EdwardsPointVar, TwistedEdwardsCurve};
 
     const TRANSCRIPT_SEED: &str = "test";
 
@@ -323,23 +366,20 @@ pub(crate) mod edwards_tests {
     }
 
     /// Convert an arkworks ed25519 point into one allocated in a constraint system
-    fn ed25519_to_nonnative_edwards<CS: RandomizableConstraintSystem>(
-        point: TEAffine<EdwardsConfig>,
-        cs: &mut CS,
-    ) -> EdwardsPoint {
+    fn ed25519_to_nonnative_edwards(point: TEAffine<EdwardsConfig>) -> EdwardsPoint {
         let x_bigint = prime_field_to_biguint(&point.x);
         let y_bigint = prime_field_to_biguint(&point.y);
 
         let modulus = (BigUint::from(1u8) << 255) - 19u8;
         let field_mod = FieldMod::new(modulus, true /* is_prime */);
 
-        EdwardsPoint::new_from_bigints(x_bigint, y_bigint, field_mod, cs)
+        EdwardsPoint::new_from_bigints(x_bigint, y_bigint, field_mod)
     }
 
     /// Assert that an Arkworks point and a EdwardsPoint from the local gadget are equal
     fn assert_points_equal<CS: RandomizableConstraintSystem>(
         expected: TEAffine<EdwardsConfig>,
-        res: EdwardsPoint,
+        res: EdwardsPointVar,
         cs: &CS,
     ) {
         let expected_x1 = prime_field_to_biguint(&expected.x);
@@ -377,8 +417,11 @@ pub(crate) mod edwards_tests {
             let expected = (pt1 + pt2).into_affine();
 
             // Allocate the points
-            let pt1_allocated = ed25519_to_nonnative_edwards(pt1, &mut prover);
-            let pt2_allocated = ed25519_to_nonnative_edwards(pt2, &mut prover);
+            let pt1 = ed25519_to_nonnative_edwards(pt1);
+            let pt2 = ed25519_to_nonnative_edwards(pt2);
+
+            let pt1_allocated = pt1.commit_public(&mut prover).unwrap();
+            let pt2_allocated = pt2.commit_public(&mut prover).unwrap();
 
             // Add the points together and check the result
             let res = curve.add_points(&pt1_allocated, &pt2_allocated, &mut prover);
@@ -410,7 +453,9 @@ pub(crate) mod edwards_tests {
         let expected = (random_point * Ed25519Scalar::from(random_bigint.clone())).into_affine();
 
         // Perform the multiplication in the constraint system
-        let basepoint = ed25519_to_nonnative_edwards(random_point, &mut prover);
+        let basepoint = ed25519_to_nonnative_edwards(random_point)
+            .commit_public(&mut prover)
+            .unwrap();
         let alloc_scalar = NonNativeElementVar::from_bigint(random_bigint, field_mod, &mut prover);
 
         let res =

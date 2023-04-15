@@ -67,15 +67,12 @@ where
         }
 
         // Hash the keys into the state
-        hasher.batch_absorb(
-            &[
-                wallet.keys.pk_root,
-                wallet.keys.pk_match,
-                wallet.keys.pk_settle,
-                wallet.keys.pk_view,
-            ],
-            cs,
-        )?;
+        let mut key_linear_combs: Vec<LinearCombination> = wallet.keys.pk_root.words();
+        key_linear_combs.push(wallet.keys.pk_match.into());
+        key_linear_combs.push(wallet.keys.pk_settle.into());
+        key_linear_combs.push(wallet.keys.pk_view.into());
+
+        hasher.batch_absorb(&key_linear_combs, cs)?;
 
         // Hash the randomness into the state
         hasher.absorb(wallet.randomness, cs)?;

@@ -25,7 +25,7 @@ mod test_helpers {
         types::{
             balance::Balance,
             fee::Fee,
-            keychain::{KeyChain, NUM_KEYS},
+            keychain::{PublicKeyChain, NUM_KEYS},
             order::{Order, OrderSide},
             wallet::Wallet,
         },
@@ -40,11 +40,11 @@ mod test_helpers {
         // The key data for the wallet, note that only the identification keys are currently
         // computed correctly
         pub(crate) static ref PRIVATE_KEYS: Vec<Scalar> = vec![Scalar::one(); NUM_KEYS];
-        pub(crate) static ref PUBLIC_KEYS: KeyChain = KeyChain {
-            pk_root: Scalar::one(),
-            pk_match: compute_poseidon_hash(&[PRIVATE_KEYS[1]]),
-            pk_settle: compute_poseidon_hash(&[PRIVATE_KEYS[2]]),
-            pk_view: Scalar::one(),
+        pub(crate) static ref PUBLIC_KEYS: PublicKeyChain = PublicKeyChain {
+            pk_root: BigUint::from(1u8).into(),
+            pk_match: compute_poseidon_hash(&[PRIVATE_KEYS[1]]).into(),
+            pk_settle: compute_poseidon_hash(&[PRIVATE_KEYS[2]]).into(),
+            pk_view: Scalar::one().into(),
         };
         pub(crate) static ref INITIAL_BALANCES: [Balance; MAX_BALANCES] = [
             Balance { mint: 1u8.into(), amount: 5 },
@@ -81,7 +81,7 @@ mod test_helpers {
             balances: INITIAL_BALANCES.clone(),
             orders: INITIAL_ORDERS.clone(),
             fees: INITIAL_FEES.clone(),
-            keys: *PUBLIC_KEYS,
+            keys: PUBLIC_KEYS.clone(),
             randomness: Scalar::from(42u64)
         };
     }

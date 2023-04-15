@@ -24,7 +24,7 @@ use crate::{
     types::{
         deserialize_array,
         fee::{CommittedFee, Fee, FeeVar},
-        keychain::{CommittedKeyChain, KeyChain, KeyChainVar},
+        keychain::{CommittedPublicKeyChain, PublicKeyChain, PublicKeyChainVar},
         serialize_array,
     },
     zk_gadgets::poseidon::PoseidonHashGadget,
@@ -105,15 +105,12 @@ where
         }
 
         // Hash the keys into the state
-        hasher.batch_absorb(
-            &[
-                witness.keys.pk_root,
-                witness.keys.pk_match,
-                witness.keys.pk_settle,
-                witness.keys.pk_view,
-            ],
-            cs,
-        )?;
+        let mut key_vars = witness.keys.pk_root.words();
+        key_vars.push(witness.keys.pk_match.into());
+        key_vars.push(witness.keys.pk_settle.into());
+        key_vars.push(witness.keys.pk_view.into());
+
+        hasher.batch_absorb(&key_vars, cs)?;
         hasher.absorb(witness.wallet_randomness, cs)?;
 
         // Enforce that the result is equal to the expected commitment
@@ -132,7 +129,7 @@ pub struct ValidWalletCreateWitness<const MAX_FEES: usize> {
     /// The fees to initialize the wallet with; may be nonzero
     pub fees: [Fee; MAX_FEES],
     /// The keys used to authenticate operations on the wallet
-    pub keys: KeyChain,
+    pub keys: PublicKeyChain,
     /// The wallet randomness, used to hide commitments and nullifiers
     pub wallet_randomness: Scalar,
 }
@@ -147,7 +144,7 @@ pub struct ValidWalletCreateCommitment<const MAX_FEES: usize> {
     )]
     pub fees: [CommittedFee; MAX_FEES],
     /// The keys used to authenticate operations on the wallet
-    pub keys: CommittedKeyChain,
+    pub keys: CommittedPublicKeyChain,
     /// The wallet randomness, used to hide commitments and nullifiers
     pub wallet_randomness: CompressedRistretto,
 }
@@ -158,7 +155,7 @@ pub struct ValidWalletCreateVar<const MAX_FEES: usize> {
     /// The fees to initialize the wallet with; may be nonzero
     pub fees: [FeeVar; MAX_FEES],
     /// The keys used to authenticate operations on the wallet
-    pub keys: KeyChainVar,
+    pub keys: PublicKeyChainVar,
     /// The wallet randomness, used to hide commitments and nullifiers
     pub wallet_randomness: Variable,
 }
@@ -359,10 +356,16 @@ mod test_valid_wallet_create {
         }
 
         // Absorb the public keys into the hasher state
-        arkworks_hasher.absorb(&scalar_to_prime_field(&witness.keys.pk_root));
-        arkworks_hasher.absorb(&scalar_to_prime_field(&witness.keys.pk_match));
-        arkworks_hasher.absorb(&scalar_to_prime_field(&witness.keys.pk_settle));
-        arkworks_hasher.absorb(&scalar_to_prime_field(&witness.keys.pk_view));
+        let pk_root_words: Vec<Scalar> = witness.keys.pk_root.clone().into();
+        arkworks_hasher.absorb(
+            &pk_root_words
+                .iter()
+                .map(scalar_to_prime_field)
+                .collect_vec(),
+        );
+        arkworks_hasher.absorb(&scalar_to_prime_field(&witness.keys.pk_match.into()));
+        arkworks_hasher.absorb(&scalar_to_prime_field(&witness.keys.pk_settle.into()));
+        arkworks_hasher.absorb(&scalar_to_prime_field(&witness.keys.pk_view.into()));
 
         // Absorb the wallet randomness into the hasher state
         arkworks_hasher.absorb(&scalar_to_prime_field(&witness.wallet_randomness));
@@ -381,7 +384,7 @@ mod test_valid_wallet_create {
 
         let witness = ValidWalletCreateWitness {
             fees: fees.try_into().unwrap(),
-            keys: *PUBLIC_KEYS,
+            keys: PUBLIC_KEYS.clone(),
             wallet_randomness: Scalar::random(&mut rng),
         };
         let statement = ValidWalletCreateStatement {

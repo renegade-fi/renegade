@@ -10,9 +10,14 @@ use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use miller_rabin::is_prime;
-use mpc_bulletproof::r1cs::{LinearCombination, Prover, RandomizableConstraintSystem, Variable};
+use mpc_bulletproof::r1cs::{
+    LinearCombination, Prover, RandomizableConstraintSystem, Variable, Verifier,
+};
 use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
+use serde::{Deserialize, Serialize};
+
+use crate::{CommitPublic, CommitVerifier, CommitWitness};
 
 use super::select::CondSelectVectorGadget;
 
@@ -27,6 +32,11 @@ lazy_static! {
     static ref BIGINT_ZERO: BigUint = BigUint::from(0u8);
     static ref BIGINT_2_TO_WORD_SIZE: BigUint = BigUint::from(1u8) << 126;
     static ref BIGINT_WORD_MASK: BigUint = &*BIGINT_2_TO_WORD_SIZE - 1u8;
+
+    /// The field modulus equal to 2^256
+    pub static ref TWO_TO_256_FIELD_MOD: FieldMod = FieldMod {
+        modulus: BigUint::from(1u8) << 256, is_prime: false
+    };
 }
 
 /// Returns the maximum number of words needed to represent an element from
@@ -65,15 +75,15 @@ where
     let div_var = cs.allocate(Some(biguint_to_scalar(&div_bigint))).unwrap();
     let rem_var = cs.allocate(Some(biguint_to_scalar(&rem_bigint))).unwrap();
 
-    let mod_scalar = biguint_to_scalar(modulus);
+    let field_mod_scalar = biguint_to_scalar(modulus);
 
     // Constrain the modulus to be correct, i.e. dividend = quotient * divisor + remainder
-    cs.constrain(val_lc - (mod_scalar * div_var + rem_var));
+    cs.constrain(val_lc - (field_mod_scalar * div_var + rem_var));
     (div_var, rem_var)
 }
 
 /// Convert a `BigUint` to a list of scalar words
-fn bigint_to_scalar_words(mut val: BigUint) -> Vec<Scalar> {
+pub(crate) fn bigint_to_scalar_words(mut val: BigUint) -> Vec<Scalar> {
     let mut words = Vec::new();
     while val.gt(&BIGINT_ZERO) {
         // Compute the next word and shift the input
@@ -85,19 +95,17 @@ fn bigint_to_scalar_words(mut val: BigUint) -> Vec<Scalar> {
     words
 }
 
-/// Compute the modular inverse of a value assuming that the field is
-/// of prime modulus
 ///
 /// This uses Euler's thm that a^{\phi(m)} (mod m) = 1 (mod m)
 /// and for prime m, we have \phi(m) = m - 1
 ///
 /// This implies that a^{\phi(m) - 1} = a^{m - 2} = a^-1 (mod m)
-fn mod_inv_prime(val: &BigUint, modulo: &BigUint) -> BigUint {
+fn field_modinv_prime(val: &BigUint, modulo: &BigUint) -> BigUint {
     val.modpow(&(modulo - 2u8), modulo)
 }
 
 /// A representation of a field's modulus that stores an extra primality flag
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FieldMod {
     /// The modulus value that the field is defined over
     pub modulus: BigUint,
@@ -116,6 +124,42 @@ impl FieldMod {
     pub fn from_modulus(modulus: BigUint) -> Self {
         let is_prime = is_prime(&modulus, MILLER_RABIN_ROUNDS);
         Self { modulus, is_prime }
+    }
+}
+
+/// A thin wrapper around a BigUint that allows us to implement commitment traits
+/// for a non-native element
+#[derive(Clone, Debug)]
+pub struct NonNativeElement {
+    /// The underlying BigUint
+    pub(crate) val: BigUint,
+    /// The modulus of the field this element is defined over
+    pub(crate) field_mod: FieldMod,
+}
+
+impl NonNativeElement {
+    /// Get the scalar word representation of the non-native element
+    pub fn get_words(&self) -> Vec<Scalar> {
+        // Split into words
+        let mut value = self.val.clone();
+        let field_words = repr_word_width(&self.field_mod.modulus);
+        let mut words = Vec::with_capacity(field_words);
+
+        for _ in 0..field_words {
+            // Allocate the next 126 bits in the constraint system
+            let next_word = biguint_to_scalar(&(&value & &*BIGINT_WORD_MASK));
+            words.push(next_word);
+
+            value >>= WORD_SIZE;
+        }
+
+        words
+    }
+}
+
+impl From<NonNativeElement> for Vec<Scalar> {
+    fn from(val: NonNativeElement) -> Self {
+        val.get_words()
     }
 }
 
@@ -140,7 +184,92 @@ pub struct NonNativeElementVar {
     pub(super) field_mod: FieldMod,
 }
 
+/// Represents a commitment to a non-native field element in a constraint system
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NonNativeElementCommitment {
+    /// The words representing the underlying field
+    /// stored in little endian order
+    pub(super) words: Vec<CompressedRistretto>,
+    /// The prime power modulus of the field
+    pub(super) field_mod: FieldMod,
+}
+
+impl CommitWitness for NonNativeElement {
+    type VarType = NonNativeElementVar;
+    type CommitType = NonNativeElementCommitment;
+    type ErrorType = (); // Does not error
+
+    fn commit_witness<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (word_comms, word_vars): (Vec<CompressedRistretto>, Vec<LinearCombination>) = self
+            .get_words()
+            .into_iter()
+            .map(|word| prover.commit(word, Scalar::random(rng)))
+            .map(|(comm, var)| (comm, LinearCombination::from(var)))
+            .unzip();
+
+        Ok((
+            NonNativeElementVar {
+                words: word_vars,
+                field_mod: self.field_mod.clone(),
+            },
+            NonNativeElementCommitment {
+                words: word_comms,
+                field_mod: self.field_mod.clone(),
+            },
+        ))
+    }
+}
+
+impl CommitPublic for NonNativeElement {
+    type VarType = NonNativeElementVar;
+    type ErrorType = (); // Does not error
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        let word_vars = self
+            .get_words()
+            .into_iter()
+            .map(|word| word.commit_public(cs).unwrap())
+            .map(LinearCombination::from)
+            .collect_vec();
+
+        Ok(NonNativeElementVar {
+            words: word_vars,
+            field_mod: self.field_mod.clone(),
+        })
+    }
+}
+
+impl CommitVerifier for NonNativeElementCommitment {
+    type VarType = NonNativeElementVar;
+    type ErrorType = (); // Does not error
+
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
+        let word_vars = self
+            .words
+            .iter()
+            .map(|word| verifier.commit(*word))
+            .map(LinearCombination::from)
+            .collect_vec();
+
+        Ok(NonNativeElementVar {
+            words: word_vars,
+            field_mod: self.field_mod.clone(),
+        })
+    }
+}
+
 impl NonNativeElementVar {
+    // ----------------
+    // | Constructors |
+    // ----------------
+
     /// Create a new value given a set of pre-allocated words
     pub fn new(mut words: Vec<LinearCombination>, field_mod: FieldMod) -> Self {
         let field_words = repr_word_width(&field_mod.modulus);
@@ -210,58 +339,6 @@ impl NonNativeElementVar {
         }
     }
 
-    /// commit to the given bigint in the constraint system and return a reference to the commitments
-    /// as well as the result
-    pub fn commit_witness<R>(
-        mut val: BigUint,
-        field_mod: FieldMod,
-        rng: &mut R,
-        cs: &mut Prover,
-    ) -> (Self, Vec<CompressedRistretto>)
-    where
-        R: RngCore + CryptoRng,
-    {
-        // Split the bigint into words
-        let field_words = repr_word_width(&field_mod.modulus);
-        let mut words = Vec::with_capacity(field_words);
-        let mut commitments = Vec::with_capacity(field_words);
-        for _ in 0..field_words {
-            // Allocate the next 126 bits in the constraint system
-            let next_word = biguint_to_scalar(&(&val & &*BIGINT_WORD_MASK));
-            let (next_word_commit, next_word_var) = cs.commit(next_word, Scalar::random(rng));
-
-            words.push(next_word_var.into());
-            commitments.push(next_word_commit);
-
-            val >>= WORD_SIZE;
-        }
-
-        (Self { words, field_mod }, commitments)
-    }
-
-    /// Commit to the given public bigint in the constraint system and return a
-    /// reference to the commitment as well as the result
-    pub fn commit_public<CS: RandomizableConstraintSystem>(
-        mut val: BigUint,
-        field_mod: FieldMod,
-        cs: &mut CS,
-    ) -> Self {
-        // Split the bigint into words
-        let field_words = repr_word_width(&field_mod.modulus);
-        let mut words = Vec::with_capacity(field_words);
-        for _ in 0..field_words {
-            // Allocate the next 126 bits in the constraint system
-            let next_word = biguint_to_scalar(&(&val & &*BIGINT_WORD_MASK));
-            let next_word_var = cs.commit_public(next_word);
-
-            words.push(next_word_var.into());
-
-            val >>= WORD_SIZE;
-        }
-
-        Self { words, field_mod }
-    }
-
     /// Generate an iterator over words
     ///
     /// Chains the iterator with an infinitely long repetition of the zero
@@ -284,6 +361,15 @@ impl NonNativeElementVar {
         }
 
         res
+    }
+
+    // ----------------------
+    // | Circuit Operations |
+    // ----------------------
+
+    /// Return a copy of the words allocated to the non native var
+    pub fn words(&self) -> Vec<LinearCombination> {
+        self.words.clone()
     }
 
     /// Compute and constrain the little-endian bit decomposition of the input
@@ -360,7 +446,7 @@ impl NonNativeElementVar {
         } else {
             (
                 Variable::Zero(),
-                mod_inv_prime(&self_bigint, &self.field_mod.modulus),
+                field_modinv_prime(&self_bigint, &self.field_mod.modulus),
             )
         };
 
@@ -453,12 +539,16 @@ impl NonNativeElementVar {
         }
     }
 
+    // ------------------------
+    // | Nonnative Arithmetic |
+    // ------------------------
+
     /// Reduce the given element modulo its field
     pub fn reduce<CS: RandomizableConstraintSystem>(&mut self, cs: &mut CS) {
         // Convert to bigint for reduction
         let self_bigint = self.as_bigint(cs);
         let div_bigint = &self_bigint / &self.field_mod.modulus;
-        let mod_bigint = &self_bigint % &self.field_mod.modulus;
+        let field_mod_bigint = &self_bigint % &self.field_mod.modulus;
 
         // Explicitly compute the representation width of the division result in the constraint system
         // We do this because the value is taken unreduced; so that verifier cannot infer the width
@@ -474,17 +564,18 @@ impl NonNativeElementVar {
             cs,
         );
 
-        let mod_nonnative =
-            NonNativeElementVar::from_bigint(mod_bigint, self.field_mod.clone(), cs);
+        let field_mod_nonnative =
+            NonNativeElementVar::from_bigint(field_mod_bigint, self.field_mod.clone(), cs);
 
         // Constrain the values to be a correct modulus
-        let div_mod_mul = Self::mul_bigint_unreduced(&div_nonnative, &self.field_mod.modulus, cs);
-        let reconstructed = Self::add_unreduced(&div_mod_mul, &mod_nonnative, cs);
+        let div_field_modmul =
+            Self::mul_bigint_unreduced(&div_nonnative, &self.field_mod.modulus, cs);
+        let reconstructed = Self::add_unreduced(&div_field_modmul, &field_mod_nonnative, cs);
 
         Self::constrain_equal(self, &reconstructed, cs);
 
         // Finally, update self to the correct modulus
-        self.words = mod_nonnative.words;
+        self.words = field_mod_nonnative.words;
     }
 
     /// Add together two non-native field elements
@@ -779,7 +870,7 @@ impl NonNativeElementVar {
         let mut val_bigint = val.as_bigint(cs);
         val_bigint %= &val.field_mod.modulus;
 
-        let inverse = mod_inv_prime(&val_bigint, &val.field_mod.modulus);
+        let inverse = field_modinv_prime(&val_bigint, &val.field_mod.modulus);
 
         // Constrain the inverse to be correctly computed
         let inverse_nonnative = Self::from_bigint(inverse, val.field_mod.clone(), cs);

@@ -29,6 +29,7 @@ use crate::{
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
     types::{
         deserialize_array,
+        keychain::SecretIdentificationKey,
         note::{CommittedNote, Note, NoteType, NoteVar},
         order::OrderVar,
         serialize_array,
@@ -42,6 +43,7 @@ use crate::{
         merkle::{
             MerkleOpening, MerkleOpeningCommitment, MerkleOpeningVar, PoseidonMerkleHashGadget,
         },
+        nonnative::NonNativeElementVar,
         poseidon::PoseidonHashGadget,
         select::CondSelectGadget,
     },
@@ -74,7 +76,11 @@ where
         Self::validate_state_primitives(&witness, &statement, cs)?;
 
         // Validate that all the keys have remained the same
-        cs.constrain(witness.pre_wallet.keys.pk_root - witness.post_wallet.keys.pk_root);
+        NonNativeElementVar::constrain_equal(
+            &witness.pre_wallet.keys.pk_root,
+            &witness.post_wallet.keys.pk_root,
+            cs,
+        );
         cs.constrain(witness.pre_wallet.keys.pk_match - witness.post_wallet.keys.pk_match);
         cs.constrain(witness.pre_wallet.keys.pk_settle - witness.post_wallet.keys.pk_settle);
         cs.constrain(witness.pre_wallet.keys.pk_view - witness.post_wallet.keys.pk_view);
@@ -348,7 +354,7 @@ pub struct ValidSettleWitness<
     /// The opening from the note commitment to the state root
     pub note_opening: MerkleOpening,
     /// The secret settle key of the wallet
-    pub sk_settle: Scalar,
+    pub sk_settle: SecretIdentificationKey,
 }
 
 /// The witness type for VALID SETTLE, allocated in a constraint system
@@ -429,7 +435,7 @@ where
             prover.commit(self.note_commitment, Scalar::random(rng));
         let (note_opening_var, note_opening_comm) =
             self.note_opening.commit_witness(rng, prover).unwrap();
-        let (sk_settle_comm, sk_settle_var) = prover.commit(self.sk_settle, Scalar::random(rng));
+        let (sk_settle_var, sk_settle_comm) = self.sk_settle.commit_witness(rng, prover).unwrap();
 
         Ok((
             ValidSettleWitnessVar {
@@ -691,10 +697,7 @@ where
 
 #[cfg(test)]
 mod valid_settle_tests {
-    use crypto::{
-        elgamal::ElGamalCiphertext,
-        fields::{prime_field_to_scalar, scalar_to_prime_field},
-    };
+    use crypto::{elgamal::ElGamalCiphertext, fields::prime_field_to_scalar};
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
     use lazy_static::lazy_static;
@@ -823,10 +826,8 @@ mod valid_settle_tests {
 
         let wallet_spend_nullifier = compute_wallet_spend_nullifier(&pre_wallet, pre_wallet_commit);
         let wallet_match_nullifier = compute_wallet_match_nullifier(&pre_wallet, pre_wallet_commit);
-        let note_redeem_nullifier = compute_note_redeem_nullifier(
-            note_commit,
-            scalar_to_prime_field(&pre_wallet.keys.pk_settle),
-        );
+        let note_redeem_nullifier =
+            compute_note_redeem_nullifier(note_commit, pre_wallet.keys.pk_settle);
 
         let (merkle_root, openings, openings_indices) = create_multi_opening(
             &[
@@ -859,7 +860,7 @@ mod valid_settle_tests {
                     elems: openings[1].to_owned(),
                     indices: openings_indices[1].to_owned(),
                 },
-                sk_settle: PRIVATE_KEYS[2],
+                sk_settle: PRIVATE_KEYS[2].into(),
             },
             ValidSettleStatement {
                 post_wallet_commit: prime_field_to_scalar(&post_wallet_commit),

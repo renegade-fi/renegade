@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     errors::{ProverError, VerifierError},
     types::{
+        keychain::PublicSigningKey,
         order::OrderVar,
         transfers::{
             ExternalTransfer, ExternalTransferVar, InternalTransfer, InternalTransferCommitment,
@@ -40,9 +41,10 @@ use crate::{
         merkle::{
             MerkleOpening, MerkleOpeningCommitment, MerkleOpeningVar, PoseidonMerkleHashGadget,
         },
+        nonnative::NonNativeElementVar,
         select::CondSelectGadget,
     },
-    CommitVerifier, CommitWitness, SingleProverCircuit,
+    CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit,
 };
 
 // -----------------------
@@ -97,7 +99,7 @@ where
         cs.constrain(statement.match_nullifier - match_nullifier_res);
 
         // Verify that the given pk_root key is the same as the wallet
-        cs.constrain(statement.pk_root - witness.wallet1.keys.pk_root);
+        NonNativeElementVar::constrain_equal(&statement.pk_root, &witness.wallet1.keys.pk_root, cs);
 
         // Verify that the keys are unchanged between the two wallets
         Self::constrain_keys_equal(&witness.wallet1, &witness.wallet2, cs);
@@ -155,7 +157,7 @@ where
         wallet2: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) {
-        cs.constrain(wallet1.keys.pk_root - wallet2.keys.pk_root);
+        NonNativeElementVar::constrain_equal(&wallet1.keys.pk_root, &wallet2.keys.pk_root, cs);
         cs.constrain(wallet1.keys.pk_match - wallet2.keys.pk_match);
         cs.constrain(wallet1.keys.pk_settle - wallet2.keys.pk_settle);
         cs.constrain(wallet1.keys.pk_view - wallet2.keys.pk_view);
@@ -531,7 +533,7 @@ pub struct ValidWalletUpdateStatement {
     /// The timestamp (user set) of the request, used for order timestamping
     pub timestamp: Scalar,
     /// The root public key of the wallet being updated
-    pub pk_root: Scalar,
+    pub pk_root: PublicSigningKey,
     /// The commitment to the new wallet
     pub new_wallet_commitment: Scalar,
     /// The wallet spend nullifier of the old wallet
@@ -551,7 +553,7 @@ pub struct ValidWalletUpdateStatementVar {
     /// The timestamp (user set) of the request, used for order timestamping
     pub timestamp: Variable,
     /// The root public key of the wallet being updated
-    pub pk_root: Variable,
+    pub pk_root: NonNativeElementVar,
     /// The commitment to the new wallet
     pub new_wallet_commitment: Variable,
     /// The wallet spend nullifier of the old wallet
@@ -576,7 +578,7 @@ impl CommitWitness for ValidWalletUpdateStatement {
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
         let timestamp_var = prover.commit_public(self.timestamp);
-        let pk_root_var = prover.commit_public(self.pk_root);
+        let pk_root_var = self.pk_root.commit_public(prover).unwrap();
         let new_wallet_commitment_var = prover.commit_public(self.new_wallet_commitment);
         let spend_nullifier_var = prover.commit_public(self.spend_nullifier);
         let match_nullifier_var = prover.commit_public(self.match_nullifier);
@@ -604,7 +606,7 @@ impl CommitVerifier for ValidWalletUpdateStatement {
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
         let timestamp_var = verifier.commit_public(self.timestamp);
-        let pk_root_var = verifier.commit_public(self.pk_root);
+        let pk_root_var = self.pk_root.commit_public(verifier).unwrap();
         let new_wallet_commitment_var = verifier.commit_public(self.new_wallet_commitment);
         let spend_nullifier_var = verifier.commit_public(self.spend_nullifier);
         let match_nullifier_var = verifier.commit_public(self.match_nullifier);

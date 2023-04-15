@@ -25,6 +25,7 @@ use crate::{
     types::{
         balance::{BalanceVar, CommittedBalance, LinkableBalanceCommitment},
         fee::{CommittedFee, FeeVar, LinkableFeeCommitment},
+        keychain::{PublicIdentificationKey, SecretIdentificationKey},
         order::{CommittedOrder, LinkableOrderCommitment, OrderVar},
         wallet::{CommittedWallet, Wallet, WalletVar},
     },
@@ -212,7 +213,7 @@ pub struct ValidCommitmentsWitness<
     pub randomness_hash: LinkableCommitment,
     /// The private match key, used as an authorization check that the prover
     /// may match for the given wallet
-    pub sk_match: Scalar,
+    pub sk_match: SecretIdentificationKey,
 }
 
 /// The witness type for VALID COMMITMENTS, allocated in a constraint system
@@ -298,7 +299,7 @@ where
             self.wallet_opening.commit_witness(rng, prover).unwrap();
         let (randomness_hash_var, randomness_hash_comm) =
             self.randomness_hash.commit_witness(rng, prover).unwrap();
-        let (sk_match_comm, sk_match_var) = prover.commit(self.sk_match, Scalar::random(rng));
+        let (sk_match_var, sk_match_comm) = self.sk_match.commit_witness(rng, prover).unwrap();
 
         Ok((
             ValidCommitmentsWitnessVar {
@@ -368,7 +369,7 @@ pub struct ValidCommitmentsStatement {
     /// The global merkle root being proved against
     pub merkle_root: Scalar,
     /// The public settle key of the wallet
-    pub pk_settle: Scalar,
+    pub pk_settle: PublicIdentificationKey,
 }
 
 /// A statement that has been allocated in a constraint system
@@ -394,7 +395,7 @@ impl CommitWitness for ValidCommitmentsStatement {
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
         let nullifier_var = prover.commit_public(self.nullifier);
         let merkle_root_var = prover.commit_public(self.merkle_root);
-        let pk_settle_var = prover.commit_public(self.pk_settle);
+        let pk_settle_var = prover.commit_public(self.pk_settle.into());
 
         Ok((
             ValidCommitmentsStatementVar {
@@ -414,7 +415,7 @@ impl CommitVerifier for ValidCommitmentsStatement {
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
         let nullifier_var = verifier.commit_public(self.nullifier);
         let merkle_root_var = verifier.commit_public(self.merkle_root);
-        let pk_settle_var = verifier.commit_public(self.pk_settle);
+        let pk_settle_var = verifier.commit_public(self.pk_settle.into());
 
         Ok(ValidCommitmentsStatementVar {
             nullifier: nullifier_var,
@@ -569,7 +570,7 @@ mod valid_commitments_test {
                 indices: opening_indices,
             },
             randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
-            sk_match: PRIVATE_KEYS[1],
+            sk_match: PRIVATE_KEYS[1].into(),
         };
         let statement = ValidCommitmentsStatement {
             nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
@@ -612,7 +613,7 @@ mod valid_commitments_test {
                 indices: opening_indices,
             },
             randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
-            sk_match: PRIVATE_KEYS[1],
+            sk_match: PRIVATE_KEYS[1].into(),
         };
         let statement = ValidCommitmentsStatement {
             nullifier: Scalar::random(&mut rng),
@@ -654,7 +655,7 @@ mod valid_commitments_test {
                 indices: opening_indices,
             },
             randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
-            sk_match: PRIVATE_KEYS[1],
+            sk_match: PRIVATE_KEYS[1].into(),
         };
         let statement = ValidCommitmentsStatement {
             nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
@@ -699,7 +700,7 @@ mod valid_commitments_test {
                 indices: opening_indices,
             },
             randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
-            sk_match: PRIVATE_KEYS[1],
+            sk_match: PRIVATE_KEYS[1].into(),
         };
         let statement = ValidCommitmentsStatement {
             nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
@@ -746,7 +747,7 @@ mod valid_commitments_test {
                 indices: opening_indices,
             },
             randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
-            sk_match: PRIVATE_KEYS[1],
+            sk_match: PRIVATE_KEYS[1].into(),
         };
         let statement = ValidCommitmentsStatement {
             nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
@@ -789,7 +790,7 @@ mod valid_commitments_test {
                 indices: opening_indices,
             },
             randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
-            sk_match: PRIVATE_KEYS[1],
+            sk_match: PRIVATE_KEYS[1].into(),
         };
         let statement = ValidCommitmentsStatement {
             nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
@@ -830,7 +831,7 @@ mod valid_commitments_test {
                 indices: opening_indices,
             },
             randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
-            sk_match: PRIVATE_KEYS[1],
+            sk_match: PRIVATE_KEYS[1].into(),
         };
         let statement = ValidCommitmentsStatement {
             nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
@@ -871,7 +872,7 @@ mod valid_commitments_test {
                 indices: opening_indices,
             },
             randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
-            sk_match: PRIVATE_KEYS[1],
+            sk_match: PRIVATE_KEYS[1].into(),
         };
         let statement = ValidCommitmentsStatement {
             nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(
@@ -914,7 +915,7 @@ mod valid_commitments_test {
                 indices: opening_indices,
             },
             randomness_hash: LinkableCommitment::new(compute_poseidon_hash(&[wallet.randomness])),
-            sk_match: PRIVATE_KEYS[1],
+            sk_match: PRIVATE_KEYS[1].into(),
         };
         let statement = ValidCommitmentsStatement {
             nullifier: prime_field_to_scalar(&compute_wallet_match_nullifier(

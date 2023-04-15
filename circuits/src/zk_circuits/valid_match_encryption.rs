@@ -24,6 +24,7 @@ use crate::{
     errors::{ProverError, VerifierError},
     types::{
         fee::{CommittedFee, FeeVar, LinkableFeeCommitment},
+        keychain::PublicIdentificationKey,
         note::{CommittedNote, Note, NoteVar},
         r#match::{CommittedMatchResult, LinkableMatchResultCommitment, MatchResultVar},
     },
@@ -760,15 +761,15 @@ pub struct ValidMatchEncryptionStatement {
     /// The commitment to the protocol's note
     pub protocol_note_commit: Scalar,
     /// The public settle key of the first party's wallet
-    pub pk_settle_party0: Scalar,
+    pub pk_settle_party0: PublicIdentificationKey,
     /// The public settle key of the second party's wallet
-    pub pk_settle_party1: Scalar,
+    pub pk_settle_party1: PublicIdentificationKey,
     /// The public settle key of the first relayer
-    pub pk_settle_relayer0: Scalar,
+    pub pk_settle_relayer0: PublicIdentificationKey,
     /// The public settle key of the second relayer
-    pub pk_settle_relayer1: Scalar,
+    pub pk_settle_relayer1: PublicIdentificationKey,
     /// The public settle key of the protocol
-    pub pk_settle_protocol: Scalar,
+    pub pk_settle_protocol: PublicIdentificationKey,
     /// The global protocol fee
     pub protocol_fee: FixedPoint,
     /// Encryption of the exchanged volume of mint1 under the first party's key
@@ -851,11 +852,11 @@ impl CommitWitness for ValidMatchEncryptionStatement {
         let relayer0_note_commit_var = prover.commit_public(self.relayer0_note_commit);
         let relayer1_note_commit_var = prover.commit_public(self.relayer1_note_commit);
         let protocol_note_commit_var = prover.commit_public(self.protocol_note_commit);
-        let pk_settle_party0_var = prover.commit_public(self.pk_settle_party0);
-        let pk_settle_party1_var = prover.commit_public(self.pk_settle_party1);
-        let pk_settle_relayer0_var = prover.commit_public(self.pk_settle_relayer0);
-        let pk_settle_relayer1_var = prover.commit_public(self.pk_settle_relayer1);
-        let pk_settle_protocol_var = prover.commit_public(self.pk_settle_protocol);
+        let pk_settle_party0_var = prover.commit_public(self.pk_settle_party0.into());
+        let pk_settle_party1_var = prover.commit_public(self.pk_settle_party1.into());
+        let pk_settle_relayer0_var = prover.commit_public(self.pk_settle_relayer0.into());
+        let pk_settle_relayer1_var = prover.commit_public(self.pk_settle_relayer1.into());
+        let pk_settle_protocol_var = prover.commit_public(self.pk_settle_protocol.into());
         let protocol_fee_var = self.protocol_fee.commit_public(prover);
         let volume1_ciphertext1_var =
             ElGamalCiphertextVar::commit_public_from_native(self.volume1_ciphertext1, prover);
@@ -920,11 +921,11 @@ impl CommitVerifier for ValidMatchEncryptionStatement {
         let relayer0_note_commit_var = verifier.commit_public(self.relayer0_note_commit);
         let relayer1_note_commit_var = verifier.commit_public(self.relayer1_note_commit);
         let protocol_note_commit_var = verifier.commit_public(self.protocol_note_commit);
-        let pk_settle_party0_var = verifier.commit_public(self.pk_settle_party0);
-        let pk_settle_party1_var = verifier.commit_public(self.pk_settle_party1);
-        let pk_settle_relayer0_var = verifier.commit_public(self.pk_settle_relayer0);
-        let pk_settle_relayer1_var = verifier.commit_public(self.pk_settle_relayer1);
-        let pk_settle_protocol_var = verifier.commit_public(self.pk_settle_protocol);
+        let pk_settle_party0_var = verifier.commit_public(self.pk_settle_party0.into());
+        let pk_settle_party1_var = verifier.commit_public(self.pk_settle_party1.into());
+        let pk_settle_relayer0_var = verifier.commit_public(self.pk_settle_relayer0.into());
+        let pk_settle_relayer1_var = verifier.commit_public(self.pk_settle_relayer1.into());
+        let pk_settle_protocol_var = verifier.commit_public(self.pk_settle_protocol.into());
         let protocol_fee_var = self.protocol_fee.commit_public(verifier);
         let volume1_ciphertext1_var =
             ElGamalCiphertextVar::commit_public_from_native(self.volume1_ciphertext1, verifier);
@@ -1057,6 +1058,7 @@ mod valid_match_encryption_tests {
         test_helpers::bulletproof_prove_and_verify,
         types::{
             fee::Fee,
+            keychain::PublicIdentificationKey,
             note::{Note, NoteType},
             order::OrderSide,
             r#match::MatchResult,
@@ -1222,31 +1224,49 @@ mod valid_match_encryption_tests {
 
         // Generate encryptions for the statement
         let mut rng = OsRng {};
-        let pk_settle_party0 = scalar_to_biguint(&Scalar::random(&mut rng));
-        let pk_settle_party1 = scalar_to_biguint(&Scalar::random(&mut rng));
-        let pk_settle_relayer0 = scalar_to_biguint(&Scalar::random(&mut rng));
-        let pk_settle_relayer1 = scalar_to_biguint(&Scalar::random(&mut rng));
-        let pk_settle_protocol = scalar_to_biguint(&Scalar::random(&mut rng));
+        let pk_settle_party0: PublicIdentificationKey = Scalar::random(&mut rng).into();
+        let pk_settle_party1: PublicIdentificationKey = Scalar::random(&mut rng).into();
+        let pk_settle_relayer0: PublicIdentificationKey = Scalar::random(&mut rng).into();
+        let pk_settle_relayer1: PublicIdentificationKey = Scalar::random(&mut rng).into();
+        let pk_settle_protocol: PublicIdentificationKey = Scalar::random(&mut rng).into();
 
-        let (v1c1_cipher, randomness1) =
-            elgamal_encrypt(&BigUint::from(party0_note.volume1), &pk_settle_party0);
-        let (v2c1_cipher, randomness2) =
-            elgamal_encrypt(&BigUint::from(party0_note.volume2), &pk_settle_party0);
-        let (v1c2_cipher, randomness3) =
-            elgamal_encrypt(&BigUint::from(party1_note.volume1), &pk_settle_party1);
-        let (v2c2_cipher, randomness4) =
-            elgamal_encrypt(&BigUint::from(party1_note.volume2), &pk_settle_party1);
+        let (v1c1_cipher, randomness1) = elgamal_encrypt(
+            &BigUint::from(party0_note.volume1),
+            &scalar_to_biguint(&pk_settle_party0.into()),
+        );
+        let (v2c1_cipher, randomness2) = elgamal_encrypt(
+            &BigUint::from(party0_note.volume2),
+            &scalar_to_biguint(&pk_settle_party0.into()),
+        );
+        let (v1c2_cipher, randomness3) = elgamal_encrypt(
+            &BigUint::from(party1_note.volume1),
+            &scalar_to_biguint(&pk_settle_party1.into()),
+        );
+        let (v2c2_cipher, randomness4) = elgamal_encrypt(
+            &BigUint::from(party1_note.volume2),
+            &scalar_to_biguint(&pk_settle_party1.into()),
+        );
 
-        let (protocol_mint1_cipher, randomness5) =
-            elgamal_encrypt(&protocol_note.mint1, &pk_settle_protocol);
-        let (protocol_volume1_cipher, randomness6) =
-            elgamal_encrypt(&BigUint::from(protocol_note.volume1), &pk_settle_protocol);
-        let (protocol_mint2_cipher, randomness7) =
-            elgamal_encrypt(&protocol_note.mint2, &pk_settle_protocol);
-        let (protocol_volume2_cipher, randomness8) =
-            elgamal_encrypt(&BigUint::from(protocol_note.volume2), &pk_settle_protocol);
-        let (protocol_randomness_cipher, randomness9) =
-            elgamal_encrypt(&protocol_note.randomness, &pk_settle_protocol);
+        let (protocol_mint1_cipher, randomness5) = elgamal_encrypt(
+            &protocol_note.mint1,
+            &scalar_to_biguint(&pk_settle_protocol.into()),
+        );
+        let (protocol_volume1_cipher, randomness6) = elgamal_encrypt(
+            &BigUint::from(protocol_note.volume1),
+            &scalar_to_biguint(&pk_settle_protocol.into()),
+        );
+        let (protocol_mint2_cipher, randomness7) = elgamal_encrypt(
+            &protocol_note.mint2,
+            &scalar_to_biguint(&pk_settle_protocol.into()),
+        );
+        let (protocol_volume2_cipher, randomness8) = elgamal_encrypt(
+            &BigUint::from(protocol_note.volume2),
+            &scalar_to_biguint(&pk_settle_protocol.into()),
+        );
+        let (protocol_randomness_cipher, randomness9) = elgamal_encrypt(
+            &protocol_note.randomness,
+            &scalar_to_biguint(&pk_settle_protocol.into()),
+        );
 
         (
             ValidMatchEncryptionWitness {
@@ -1275,29 +1295,29 @@ mod valid_match_encryption_tests {
             ValidMatchEncryptionStatement {
                 party0_note_commit: prime_field_to_scalar(&compute_note_commitment(
                     &party0_note,
-                    biguint_to_scalar(&pk_settle_party0),
+                    pk_settle_party0,
                 )),
                 party1_note_commit: prime_field_to_scalar(&compute_note_commitment(
                     &party1_note,
-                    biguint_to_scalar(&pk_settle_party1),
+                    pk_settle_party1,
                 )),
                 relayer0_note_commit: prime_field_to_scalar(&compute_note_commitment(
                     &relayer0_note,
-                    biguint_to_scalar(&pk_settle_relayer0),
+                    pk_settle_relayer0,
                 )),
                 relayer1_note_commit: prime_field_to_scalar(&compute_note_commitment(
                     &relayer1_note,
-                    biguint_to_scalar(&pk_settle_relayer1),
+                    pk_settle_relayer1,
                 )),
                 protocol_note_commit: prime_field_to_scalar(&compute_note_commitment(
                     &protocol_note,
-                    biguint_to_scalar(&pk_settle_protocol),
+                    pk_settle_protocol,
                 )),
-                pk_settle_party0: biguint_to_scalar(&pk_settle_party0),
-                pk_settle_party1: biguint_to_scalar(&pk_settle_party1),
-                pk_settle_relayer0: biguint_to_scalar(&pk_settle_relayer0),
-                pk_settle_relayer1: biguint_to_scalar(&pk_settle_relayer1),
-                pk_settle_protocol: biguint_to_scalar(&pk_settle_protocol),
+                pk_settle_party0,
+                pk_settle_party1,
+                pk_settle_relayer0,
+                pk_settle_relayer1,
+                pk_settle_protocol,
                 protocol_fee: FixedPoint::from(PROTOCOL_FEE),
                 volume1_ciphertext1: v1c1_cipher,
                 volume2_ciphertext1: v2c1_cipher,
@@ -1461,7 +1481,7 @@ mod valid_match_encryption_tests {
             bad_witness1.elgamal_randomness[0],
         ) = elgamal_encrypt(
             &bad_witness1.party0_note.volume1.into(),
-            &scalar_to_biguint(&statement.pk_settle_party0),
+            &scalar_to_biguint(&statement.pk_settle_party0.into()),
         );
         bad_witnesses.push(bad_witness1);
         bad_statements.push(bad_statement1);
@@ -1475,7 +1495,7 @@ mod valid_match_encryption_tests {
             bad_witness2.elgamal_randomness[1],
         ) = elgamal_encrypt(
             &bad_witness2.party0_note.volume2.into(),
-            &scalar_to_biguint(&statement.pk_settle_party0),
+            &scalar_to_biguint(&statement.pk_settle_party0.into()),
         );
         bad_witnesses.push(bad_witness2);
         bad_statements.push(bad_statement2);
@@ -1489,7 +1509,7 @@ mod valid_match_encryption_tests {
             bad_witness3.elgamal_randomness[2],
         ) = elgamal_encrypt(
             &bad_witness3.party0_note.volume1.into(),
-            &scalar_to_biguint(&statement.pk_settle_party1),
+            &scalar_to_biguint(&statement.pk_settle_party1.into()),
         );
         bad_witnesses.push(bad_witness3);
         bad_statements.push(bad_statement3);
@@ -1503,7 +1523,7 @@ mod valid_match_encryption_tests {
             bad_witness4.elgamal_randomness[3],
         ) = elgamal_encrypt(
             &bad_witness4.party1_note.volume2.into(),
-            &scalar_to_biguint(&statement.pk_settle_party1),
+            &scalar_to_biguint(&statement.pk_settle_party1.into()),
         );
         bad_witnesses.push(bad_witness4);
         bad_statements.push(bad_statement4);
@@ -1575,7 +1595,7 @@ mod valid_match_encryption_tests {
             bad_witness1.elgamal_randomness[0],
         ) = elgamal_encrypt(
             &bad_witness1.party0_note.volume1.into(),
-            &scalar_to_biguint(&statement.pk_settle_party0),
+            &scalar_to_biguint(&statement.pk_settle_party0.into()),
         );
         bad_witnesses.push(bad_witness1);
         bad_statements.push(bad_statement1);
@@ -1589,7 +1609,7 @@ mod valid_match_encryption_tests {
             bad_witness2.elgamal_randomness[1],
         ) = elgamal_encrypt(
             &bad_witness2.party0_note.volume2.into(),
-            &scalar_to_biguint(&statement.pk_settle_party0),
+            &scalar_to_biguint(&statement.pk_settle_party0.into()),
         );
         bad_witnesses.push(bad_witness2);
         bad_statements.push(bad_statement2);
@@ -1603,7 +1623,7 @@ mod valid_match_encryption_tests {
             bad_witness3.elgamal_randomness[2],
         ) = elgamal_encrypt(
             &bad_witness3.party0_note.volume1.into(),
-            &scalar_to_biguint(&statement.pk_settle_party1),
+            &scalar_to_biguint(&statement.pk_settle_party1.into()),
         );
         bad_witnesses.push(bad_witness3);
         bad_statements.push(bad_statement3);
@@ -1617,7 +1637,7 @@ mod valid_match_encryption_tests {
             bad_witness4.elgamal_randomness[3],
         ) = elgamal_encrypt(
             &bad_witness4.party1_note.volume2.into(),
-            &scalar_to_biguint(&statement.pk_settle_party1),
+            &scalar_to_biguint(&statement.pk_settle_party1.into()),
         );
         bad_witnesses.push(bad_witness4);
         bad_statements.push(bad_statement4);
@@ -1685,7 +1705,7 @@ mod valid_match_encryption_tests {
             bad_witness1.elgamal_randomness[5],
         ) = elgamal_encrypt(
             &bad_witness1.protocol_note.volume1.into(),
-            &scalar_to_biguint(&bad_statement1.pk_settle_protocol),
+            &scalar_to_biguint(&bad_statement1.pk_settle_protocol.into()),
         );
         bad_witnesses.push(bad_witness1);
         bad_statements.push(bad_statement1);
@@ -1698,7 +1718,7 @@ mod valid_match_encryption_tests {
             bad_witness2.elgamal_randomness[5],
         ) = elgamal_encrypt(
             &bad_witness2.protocol_note.volume2.into(),
-            &scalar_to_biguint(&bad_statement2.pk_settle_protocol),
+            &scalar_to_biguint(&bad_statement2.pk_settle_protocol.into()),
         );
         bad_witnesses.push(bad_witness2);
         bad_statements.push(bad_statement2);
