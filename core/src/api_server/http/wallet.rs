@@ -7,6 +7,7 @@ use circuits::types::{
 };
 use crossbeam::channel::Sender as CrossbeamSender;
 use hyper::{HeaderMap, StatusCode};
+use itertools::Itertools;
 use num_traits::ToPrimitive;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
@@ -27,7 +28,7 @@ use crate::{
             InternalTransferResponse, RemoveFeeRequest, RemoveFeeResponse, WithdrawBalanceRequest,
             WithdrawBalanceResponse,
         },
-        types::{Balance, Wallet},
+        types::{Balance as ApiBalance, Fee as ApiFee, Order as ApiOrder},
         EmptyRequestResponse,
     },
     gossip_api::gossip::GossipOutbound,
@@ -322,9 +323,16 @@ impl TypedHandler for GetOrdersHandler {
             // Authenticate the request with the wallet keys
             authenticate_wallet_request(headers, &req, &wallet.key_chain.public_keys.pk_root)?;
 
-            let wallet: Wallet = wallet.into();
+            // Filter out default orders used to pad the wallet to the circuit size
+            let non_default_orders = wallet
+                .orders
+                .into_iter()
+                .filter(|(_id, order)| !order.is_default())
+                .map(ApiOrder::from)
+                .collect_vec();
+
             Ok(GetOrdersResponse {
-                orders: wallet.orders,
+                orders: non_default_orders,
             })
         } else {
             Err(ApiServerError::HttpStatusCode(
@@ -623,9 +631,16 @@ impl TypedHandler for GetBalancesHandler {
             // Authenticate the request
             authenticate_wallet_request(headers, &req, &wallet.key_chain.public_keys.pk_root)?;
 
-            let wallet: Wallet = wallet.into();
+            // Filter out the default balances used to pad the wallet to the circuit size
+            let non_default_balances = wallet
+                .balances
+                .into_values()
+                .filter(|balance| !balance.is_default())
+                .map(ApiBalance::from)
+                .collect_vec();
+
             Ok(GetBalancesResponse {
-                balances: wallet.balances,
+                balances: non_default_balances,
             })
         } else {
             Err(ApiServerError::HttpStatusCode(
@@ -679,7 +694,7 @@ impl TypedHandler for GetBalanceByMintHandler {
                 .get(&mint)
                 .cloned()
                 .map(|balance| balance.into())
-                .unwrap_or_else(|| Balance {
+                .unwrap_or_else(|| ApiBalance {
                     mint,
                     amount: 0u8.into(),
                 });
@@ -1030,8 +1045,17 @@ impl TypedHandler for GetFeesHandler {
             // Authenticate the request
             authenticate_wallet_request(headers, &req, &wallet.key_chain.public_keys.pk_root)?;
 
-            let wallet: Wallet = wallet.into();
-            Ok(GetFeesResponse { fees: wallet.fees })
+            // Filter out all the default fees used to pad the wallet to the circuit size
+            let non_default_fees = wallet
+                .fees
+                .into_iter()
+                .filter(|fee| !fee.is_default())
+                .map(ApiFee::from)
+                .collect_vec();
+
+            Ok(GetFeesResponse {
+                fees: non_default_fees,
+            })
         } else {
             Err(ApiServerError::HttpStatusCode(
                 StatusCode::NOT_FOUND,
