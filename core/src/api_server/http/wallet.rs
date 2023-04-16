@@ -12,7 +12,7 @@ use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use crate::{
     api_server::{
-        authenticate_request_from_headers,
+        authenticate_wallet_request,
         error::ApiServerError,
         http::parse_index_from_params,
         router::{TypedHandler, UrlParams},
@@ -136,7 +136,7 @@ impl TypedHandler for GetWalletHandler {
         };
 
         // Authenticate the request
-        authenticate_request_from_headers(headers, &req, &wallet.key_chain.public_keys.pk_root)?;
+        authenticate_wallet_request(headers, &req, &wallet.key_chain.public_keys.pk_root)?;
 
         // Filter out empty orders, balances, and fees
         wallet.orders = wallet
@@ -307,8 +307,8 @@ impl TypedHandler for GetOrdersHandler {
 
     async fn handle_typed(
         &self,
-        _headers: HeaderMap,
-        _req: Self::Request,
+        headers: HeaderMap,
+        req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
@@ -319,6 +319,9 @@ impl TypedHandler for GetOrdersHandler {
             .get_wallet(&wallet_id)
             .await
         {
+            // Authenticate the request with the wallet keys
+            authenticate_wallet_request(headers, &req, &wallet.key_chain.public_keys.pk_root)?;
+
             let wallet: Wallet = wallet.into();
             Ok(GetOrdersResponse {
                 orders: wallet.orders,
@@ -353,24 +356,29 @@ impl TypedHandler for GetOrderByIdHandler {
 
     async fn handle_typed(
         &self,
-        _headers: HeaderMap,
-        _req: Self::Request,
+        headers: HeaderMap,
+        req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let order_id = parse_order_id_from_params(&params)?;
-        if let Some(order) = (|| async {
-            self.global_state
-                .read_wallet_index()
-                .await
-                .get_wallet(&wallet_id)
-                .await?
-                .orders
-                .get(&order_id)
-                .cloned()
-        })()
-        .await
-        {
+
+        // Find the wallet in global state and use its keys to authenticate the request
+        let wallet = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&wallet_id)
+            .await
+            .ok_or_else(|| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::NOT_FOUND,
+                    ERR_WALLET_NOT_FOUND.to_string(),
+                )
+            })?;
+        authenticate_wallet_request(headers, &req, &wallet.key_chain.public_keys.pk_root)?;
+
+        if let Some(order) = wallet.orders.get(&order_id).cloned() {
             Ok(GetOrderByIdResponse {
                 order: (order_id, order).into(),
             })
@@ -424,7 +432,7 @@ impl TypedHandler for CreateOrderHandler {
 
     async fn handle_typed(
         &self,
-        _headers: HeaderMap,
+        headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -444,6 +452,9 @@ impl TypedHandler for CreateOrderHandler {
                     ERR_WALLET_NOT_FOUND.to_string(),
                 )
             })?;
+
+        // Authenticate the request
+        authenticate_wallet_request(headers, &req, &old_wallet.key_chain.public_keys.pk_root)?;
 
         // Ensure that there is space below MAX_ORDERS for the new order
         let num_orders = old_wallet
@@ -522,8 +533,8 @@ impl TypedHandler for CancelOrderHandler {
 
     async fn handle_typed(
         &self,
-        _headers: HeaderMap,
-        _req: Self::Request,
+        headers: HeaderMap,
+        req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
@@ -543,7 +554,10 @@ impl TypedHandler for CancelOrderHandler {
                 )
             })?;
 
-        // Remove the order to the new wallet
+        // Authenticate the request
+        authenticate_wallet_request(headers, &req, &old_wallet.key_chain.public_keys.pk_root)?;
+
+        // Remove the order from the new wallet
         let mut new_wallet = old_wallet.clone();
         let order = new_wallet.orders.remove(&order_id).ok_or_else(|| {
             ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, ERR_ORDER_NOT_FOUND.to_string())
@@ -594,8 +608,8 @@ impl TypedHandler for GetBalancesHandler {
 
     async fn handle_typed(
         &self,
-        _headers: HeaderMap,
-        _req: Self::Request,
+        headers: HeaderMap,
+        req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
@@ -606,6 +620,9 @@ impl TypedHandler for GetBalancesHandler {
             .get_wallet(&wallet_id)
             .await
         {
+            // Authenticate the request
+            authenticate_wallet_request(headers, &req, &wallet.key_chain.public_keys.pk_root)?;
+
             let wallet: Wallet = wallet.into();
             Ok(GetBalancesResponse {
                 balances: wallet.balances,
@@ -640,8 +657,8 @@ impl TypedHandler for GetBalanceByMintHandler {
 
     async fn handle_typed(
         &self,
-        _headers: HeaderMap,
-        _req: Self::Request,
+        headers: HeaderMap,
+        req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
@@ -654,6 +671,9 @@ impl TypedHandler for GetBalanceByMintHandler {
             .get_wallet(&wallet_id)
             .await
         {
+            // Authenticate the request
+            authenticate_wallet_request(headers, &req, &wallet.key_chain.public_keys.pk_root)?;
+
             let balance = wallet
                 .balances
                 .get(&mint)
@@ -715,7 +735,7 @@ impl TypedHandler for DepositBalanceHandler {
 
     async fn handle_typed(
         &self,
-        _headers: HeaderMap,
+        headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -735,6 +755,9 @@ impl TypedHandler for DepositBalanceHandler {
                     ERR_WALLET_NOT_FOUND.to_string(),
                 )
             })?;
+
+        // Authenticate the request
+        authenticate_wallet_request(headers, &req, &old_wallet.key_chain.public_keys.pk_root)?;
 
         // Apply the balance update to the old wallet to get the new wallet
         let mut new_wallet = old_wallet.clone();
@@ -810,7 +833,7 @@ impl TypedHandler for WithdrawBalanceHandler {
 
     async fn handle_typed(
         &self,
-        _headers: HeaderMap,
+        headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -831,6 +854,9 @@ impl TypedHandler for WithdrawBalanceHandler {
                     ERR_WALLET_NOT_FOUND.to_string(),
                 )
             })?;
+
+        // Authenticate the request
+        authenticate_wallet_request(headers, &req, &old_wallet.key_chain.public_keys.pk_root)?;
 
         // Apply the withdrawal to the wallet
         let mut new_wallet = old_wallet.clone();
@@ -906,7 +932,7 @@ impl TypedHandler for InternalTransferHandler {
 
     async fn handle_typed(
         &self,
-        _headers: HeaderMap,
+        headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -927,6 +953,9 @@ impl TypedHandler for InternalTransferHandler {
                     ERR_WALLET_NOT_FOUND.to_string(),
                 )
             })?;
+
+        // Authenticate the request
+        authenticate_wallet_request(headers, &req, &old_wallet.key_chain.public_keys.pk_root)?;
 
         // Apply the balance reduction to the wallet
         let mut new_wallet = old_wallet.clone();
@@ -985,8 +1014,8 @@ impl TypedHandler for GetFeesHandler {
 
     async fn handle_typed(
         &self,
-        _headers: HeaderMap,
-        _req: Self::Request,
+        headers: HeaderMap,
+        req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
@@ -998,6 +1027,9 @@ impl TypedHandler for GetFeesHandler {
             .get_wallet(&wallet_id)
             .await
         {
+            // Authenticate the request
+            authenticate_wallet_request(headers, &req, &wallet.key_chain.public_keys.pk_root)?;
+
             let wallet: Wallet = wallet.into();
             Ok(GetFeesResponse { fees: wallet.fees })
         } else {
@@ -1050,7 +1082,7 @@ impl TypedHandler for AddFeeHandler {
 
     async fn handle_typed(
         &self,
-        _headers: HeaderMap,
+        headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
@@ -1070,6 +1102,9 @@ impl TypedHandler for AddFeeHandler {
                     ERR_WALLET_NOT_FOUND.to_string(),
                 )
             })?;
+
+        // Authenticate the request
+        authenticate_wallet_request(headers, &req, &old_wallet.key_chain.public_keys.pk_root)?;
 
         // Ensure that the fees list is not full
         let num_fees = old_wallet
@@ -1146,8 +1181,8 @@ impl TypedHandler for RemoveFeeHandler {
 
     async fn handle_typed(
         &self,
-        _headers: HeaderMap,
-        _req: Self::Request,
+        headers: HeaderMap,
+        req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Parse the wallet id and fee index from the URL params
@@ -1167,6 +1202,9 @@ impl TypedHandler for RemoveFeeHandler {
                     ERR_WALLET_NOT_FOUND.to_string(),
                 )
             })?;
+
+        // Authenticate the request
+        authenticate_wallet_request(headers, &req, &old_wallet.key_chain.public_keys.pk_root)?;
 
         if fee_index >= old_wallet.fees.len() {
             return Err(ApiServerError::HttpStatusCode(

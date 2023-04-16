@@ -7,7 +7,6 @@ use circuits::types::keychain::PublicSigningKey;
 use ed25519_dalek::{Digest, PublicKey, Sha512, Signature};
 use hyper::{HeaderMap, StatusCode};
 use serde::Serialize;
-use tracing::log;
 
 use self::error::ApiServerError;
 pub mod error;
@@ -33,7 +32,7 @@ const ERR_EXPIRATION_FORMAT_INVALID: &str = "could not parse signature expiratio
 const ERR_SIG_VERIFICATION_FAILED: &str = "signature verification failed";
 
 /// A helper to authenticate a request via expiring signatures using the method below
-pub(self) fn authenticate_request_from_headers<T>(
+pub(self) fn authenticate_wallet_request<T>(
     headers: HeaderMap,
     body: &T,
     pk_root: &PublicSigningKey,
@@ -114,15 +113,6 @@ where
     }
 
     // Hash the body and the expiration timestamp into a digest to check the signature against
-    let mut hasher = Sha512::default();
-    let body_bytes = serde_json::to_vec(&body).unwrap();
-    log::info!("body bytes: {body_bytes:?}");
-    hasher.update(&body_bytes);
-    hasher.update(expiration_timestamp.to_le_bytes());
-
-    let out = hasher.finalize();
-    log::info!("out: {out:?}");
-
     let mut hasher = Sha512::default();
     let body_bytes = serde_json::to_vec(&body).unwrap();
     hasher.update(&body_bytes);
