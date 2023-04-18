@@ -360,24 +360,12 @@ impl Router {
         let target_time = UNIX_EPOCH + target_duration;
 
         if now >= target_time {
-            log::info!("signature expired");
             return Ok(false);
         }
 
-        // DEBUG, REMOVE ME
-        let mut hasher = Sha512::default();
-        let body_bytes = serde_json::to_string(&body).unwrap();
-        log::info!("body bytes: {body_bytes:?}\n\n");
-        hasher.update(&body_bytes);
-        hasher.update(expiration_timestamp.to_le_bytes());
-
-        let out = hasher.finalize();
-        log::info!("hasher out: {out:?}");
-
         // Hash the body and the expiration timestamp into a digest to check the signature against
         let mut hasher = Sha512::default();
-        let body_bytes = serde_json::to_vec(&body).unwrap();
-        hasher.update(&body_bytes);
+        hasher.update(body);
         hasher.update(expiration_timestamp.to_le_bytes());
 
         // Check the signature

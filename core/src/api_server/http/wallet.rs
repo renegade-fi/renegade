@@ -79,6 +79,8 @@ pub(super) const REMOVE_FEE_ROUTE: &str = "/v0/wallet/:wallet_id/fees/:index/rem
 // | Error Messages |
 // ------------------
 
+/// Error message displayed when a balance is insufficient to transfer the requested amount
+const ERR_INSUFFICIENT_BALANCE: &str = "insufficient balance";
 /// Error message displayed when a given order cannot be found
 const ERR_ORDER_NOT_FOUND: &str = "order not found";
 /// Error message displayed when `MAX_ORDERS` is exceeded
@@ -846,15 +848,17 @@ impl TypedHandler for WithdrawBalanceHandler {
             })?;
 
         // Apply the withdrawal to the wallet
+        let withdrawal_amount = req.amount.to_u64().unwrap();
+
         let mut new_wallet = old_wallet.clone();
-        new_wallet
-            .balances
-            .entry(mint.clone())
-            .or_insert(StateBalance {
-                mint: mint.clone(),
-                amount: 0u64,
-            })
-            .amount -= req.amount.to_u64().unwrap();
+        if let Some(balance) = new_wallet.balances.get_mut(&mint)
+        && balance.amount >= withdrawal_amount {
+            balance.amount -= withdrawal_amount;
+        } else {
+            return Err(ApiServerError::HttpStatusCode(
+                StatusCode::BAD_REQUEST, ERR_INSUFFICIENT_BALANCE.to_string()
+            ));
+        }
 
         // Begin a task
         let task = UpdateWalletTask::new(
@@ -942,15 +946,18 @@ impl TypedHandler for InternalTransferHandler {
             })?;
 
         // Apply the balance reduction to the wallet
+        let transfer_amount = req.amount.to_u64().unwrap();
+
         let mut new_wallet = old_wallet.clone();
-        new_wallet
-            .balances
-            .entry(mint.clone())
-            .or_insert(StateBalance {
-                mint: mint.clone(),
-                amount: 0u64,
-            })
-            .amount -= req.amount.to_u64().unwrap();
+        if let Some(balance) = new_wallet.balances.get_mut(&mint)
+        && balance.amount >= transfer_amount
+        {
+            balance.amount -= transfer_amount;
+        } else {
+            return Err(ApiServerError::HttpStatusCode(
+                StatusCode::BAD_REQUEST, ERR_INSUFFICIENT_BALANCE.to_string()
+            ));
+        }
 
         // Begin a task
         let task = UpdateWalletTask::new(
