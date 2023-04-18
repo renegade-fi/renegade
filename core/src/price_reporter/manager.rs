@@ -1,12 +1,12 @@
 //! Defines the PriceReporterManagerExecutor, the handler that is responsible for executing
 //! individual PriceReporterManagerJobs.
-use crossbeam::channel::{self, Sender};
 use futures::StreamExt;
 use ring_channel::RingReceiver;
 use std::{
     collections::{HashMap, HashSet},
     thread::JoinHandle,
 };
+use tokio::sync::oneshot::{channel, Sender as TokioSender};
 use tokio::{runtime::Runtime, sync::mpsc::UnboundedReceiver as TokioReceiver};
 use tracing::log;
 use uuid::Uuid;
@@ -17,6 +17,7 @@ use super::{
     errors::PriceReporterManagerError,
     exchanges::{Exchange, ExchangeConnectionState},
     jobs::PriceReporterManagerJob,
+    price_report_topic_name,
     reporter::{PriceReport, PriceReporter, PriceReporterState},
     tokens::Token,
     worker::PriceReporterManagerConfig,
@@ -24,6 +25,9 @@ use super::{
 
 /// A listener ID on a PriceReporter is just a UUID.
 pub type PriceReporterListenerID = Uuid;
+
+/// The price report source name for the median
+const MEDIAN_SOURCE_NAME: &str = "median";
 
 /// The PriceReporterManager worker is a wrapper around the PriceReporterManagerExecutor, handling
 /// and dispatching jobs to the executor for spin-up and shut-down of individual PriceReporters.
@@ -166,7 +170,7 @@ impl PriceReporterManagerExecutor {
             .get(&(base_token.clone(), quote_token.clone()))
             .is_none()
         {
-            let (channel_sender, _channel_receiver) = channel::unbounded();
+            let (channel_sender, _channel_receiver) = channel();
             self.start_price_reporter(
                 base_token.clone(),
                 quote_token.clone(),
@@ -183,15 +187,13 @@ impl PriceReporterManagerExecutor {
         base_token: Token,
         quote_token: Token,
         id: Option<PriceReporterListenerID>,
-        channel: Sender<()>,
+        channel: TokioSender<()>,
     ) -> Result<(), PriceReporterManagerError> {
         // If the PriceReporter does not already exist, create it
         let system_bus = self.system_bus.clone();
-        let median_price_report_topic = format!(
-            "median-price-report-{}-{}",
-            base_token.get_addr(),
-            quote_token.get_addr()
-        );
+        let median_price_report_topic =
+            price_report_topic_name(MEDIAN_SOURCE_NAME, base_token.clone(), quote_token.clone());
+
         let config_clone = self.config.clone();
         self.spawned_price_reporters
             .entry((base_token.clone(), quote_token.clone()))
@@ -223,12 +225,12 @@ impl PriceReporterManagerExecutor {
                 for exchange in price_reporter.supported_exchanges.iter() {
                     let mut exchange_receiver =
                         price_reporter.create_new_exchange_receiver(*exchange);
-                    let exchange_price_report_topic = format!(
-                        "{}-price-report-{}-{}",
-                        exchange,
-                        base_token.get_addr(),
-                        quote_token.get_addr()
+                    let exchange_price_report_topic = price_report_topic_name(
+                        &exchange.to_string(),
+                        base_token.clone(),
+                        quote_token.clone(),
                     );
+
                     let system_bus_clone = system_bus.clone();
                     tokio::spawn(async move {
                         let mut last_price_report = PriceReport::default();
@@ -282,7 +284,7 @@ impl PriceReporterManagerExecutor {
         base_token: Token,
         quote_token: Token,
         id: PriceReporterListenerID,
-        channel: Sender<()>,
+        channel: TokioSender<()>,
     ) -> Result<(), PriceReporterManagerError> {
         let was_present = self
             .registered_listeners
@@ -306,7 +308,7 @@ impl PriceReporterManagerExecutor {
         &mut self,
         base_token: Token,
         quote_token: Token,
-        channel: Sender<PriceReporterState>,
+        channel: TokioSender<PriceReporterState>,
     ) -> Result<(), PriceReporterManagerError> {
         let price_reporter = self.get_price_reporter_or_create(base_token, quote_token)?;
         channel.send(price_reporter.peek_median()).unwrap();
@@ -318,7 +320,7 @@ impl PriceReporterManagerExecutor {
         &mut self,
         base_token: Token,
         quote_token: Token,
-        channel: Sender<HashMap<Exchange, ExchangeConnectionState>>,
+        channel: TokioSender<HashMap<Exchange, ExchangeConnectionState>>,
     ) -> Result<(), PriceReporterManagerError> {
         let price_reporter = self.get_price_reporter_or_create(base_token, quote_token)?;
         channel.send(price_reporter.peek_all_exchanges()).unwrap();
@@ -330,7 +332,7 @@ impl PriceReporterManagerExecutor {
         &mut self,
         base_token: Token,
         quote_token: Token,
-        channel: Sender<RingReceiver<PriceReport>>,
+        channel: TokioSender<RingReceiver<PriceReport>>,
     ) -> Result<(), PriceReporterManagerError> {
         let price_reporter = self.get_price_reporter_or_create(base_token, quote_token)?;
         channel
@@ -344,7 +346,7 @@ impl PriceReporterManagerExecutor {
         &mut self,
         base_token: Token,
         quote_token: Token,
-        channel: Sender<HashSet<Exchange>>,
+        channel: TokioSender<HashSet<Exchange>>,
     ) -> Result<(), PriceReporterManagerError> {
         let price_reporter = self.get_price_reporter_or_create(base_token, quote_token)?;
         channel
@@ -358,7 +360,7 @@ impl PriceReporterManagerExecutor {
         &mut self,
         base_token: Token,
         quote_token: Token,
-        channel: Sender<HashSet<Exchange>>,
+        channel: TokioSender<HashSet<Exchange>>,
     ) -> Result<(), PriceReporterManagerError> {
         let price_reporter = self.get_price_reporter_or_create(base_token, quote_token)?;
         channel
