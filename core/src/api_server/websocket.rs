@@ -14,10 +14,10 @@ use tungstenite::Message;
 use crate::{
     external_api::websocket::{SubscriptionMessage, SubscriptionResponse},
     system_bus::TopicReader,
-    types::{SystemBusMessage, SystemBusMessageWithTopic},
+    types::{SystemBusMessage, SystemBusMessageWithTopic, HANDSHAKE_STATUS_TOPIC},
 };
 
-use self::handler::WebsocketTopicHandler;
+use self::handler::{DefaultHandler, WebsocketTopicHandler};
 
 use super::{error::ApiServerError, router::UrlParams, worker::ApiServerConfig};
 
@@ -30,6 +30,17 @@ type WebsocketRouter = Router<Box<dyn WebsocketTopicHandler>>;
 const DUMMY_SUBSCRIPTION_TOPIC: &str = "dummy-topic";
 /// The error message given when an invalid topic is subscribed to
 const ERR_INVALID_TOPIC: &str = "invalid topic";
+
+// ----------
+// | Topics |
+// ----------
+
+/// The handshake topic, events include when a handshake beings and ends
+const HANDSHAKE_ROUTE: &str = "/v0/handshake";
+
+// --------------------
+// | Websocket Server |
+// --------------------
 
 /// A wrapper around request handling and task management
 #[derive(Clone)]
@@ -49,9 +60,20 @@ impl WebsocketServer {
 
     /// Setup the websocket routes for the server
     #[allow(unused)]
-    fn setup_routes(config: &ApiServerConfig) -> Router<Box<dyn WebsocketTopicHandler>> {
+    fn setup_routes(config: &ApiServerConfig) -> WebsocketRouter {
         // TODO: Implement routes
-        Router::new()
+        let mut router = WebsocketRouter::new();
+
+        // The "/v0/handshake" route
+        router.insert(
+            HANDSHAKE_ROUTE,
+            Box::new(DefaultHandler::new_with_remap(
+                HANDSHAKE_STATUS_TOPIC.to_string(),
+                config.system_bus.clone(),
+            )),
+        );
+
+        router
     }
 
     /// The main execution loop of the websocket server
@@ -194,14 +216,14 @@ impl WebsocketServer {
 
                 // Register the topic subscription in the system bus and in the stream
                 // map that the listener loop polls
-                let reader = route_handler.handle_subscribe_message(&params)?;
+                let reader = route_handler.handle_subscribe_message(topic.clone(), &params)?;
                 client_subscriptions.insert(topic.clone(), reader);
             }
 
             SubscriptionMessage::Unsubscribe { topic } => {
                 // Parse the route and apply a handler to it
                 let (params, route_handler) = self.parse_route_and_params(&topic)?;
-                route_handler.handle_unsubscribe_message(&params)?;
+                route_handler.handle_unsubscribe_message(topic.clone(), &params)?;
 
                 // Remove the topic subscription from the stream map
                 client_subscriptions.remove(&topic);
