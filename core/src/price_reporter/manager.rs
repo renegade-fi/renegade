@@ -251,7 +251,9 @@ impl PriceReporterManagerExecutor {
 
         // If there is no specified listener ID, we do not register any new IDs
         if id.is_none() {
-            channel.send(()).unwrap();
+            if !channel.is_closed() {
+                channel.send(()).unwrap();
+            }
             return Ok(());
         }
 
@@ -273,7 +275,9 @@ impl PriceReporterManagerExecutor {
         }
 
         // Send a response that we have handled the job
-        channel.send(()).unwrap();
+        if !channel.is_closed() {
+            channel.send(()).unwrap()
+        };
 
         Ok(())
     }
