@@ -7,7 +7,7 @@ use crate::{
     proof_generation::jobs::ValidCommitmentsBundle,
     state::orderbook::NetworkOrder,
     system_bus::SystemBus,
-    types::SystemBusMessage,
+    types::{wallet_topic_name, SystemBusMessage},
 };
 use circuits::types::wallet::Nullifier;
 use libp2p::{
@@ -74,6 +74,9 @@ pub struct RelayerState {
     matched_order_pairs: AsyncShared<Vec<(OrderIdentifier, OrderIdentifier)>>,
     /// Priorities for scheduling handshakes with each peer
     pub handshake_priorities: AsyncShared<HandshakePriorityStore>,
+    /// A reference to the relayer-global system bus; used to stream state updates
+    /// to listening parties
+    pub system_bus: SystemBus<SystemBusMessage>,
 }
 
 impl RelayerState {
@@ -98,7 +101,7 @@ impl RelayerState {
         let peer_index = PeerIndex::new();
 
         // Setup the order book
-        let order_book = NetworkOrderBook::new(system_bus);
+        let order_book = NetworkOrderBook::new(system_bus.clone());
 
         Self {
             debug,
@@ -111,6 +114,7 @@ impl RelayerState {
             peer_index: new_async_shared(peer_index),
             order_book: new_async_shared(order_book),
             handshake_priorities: new_async_shared(HandshakePriorityStore::new()),
+            system_bus,
         }
     }
 
@@ -273,9 +277,20 @@ impl RelayerState {
         let mut locked_order_book = self.write_order_book().await;
 
         for wallet in wallets.into_iter() {
+            // Index the wallet
             let wallet_match_nullifier = wallet.get_match_nullifier();
             locked_wallet_index.add_wallet(wallet.clone());
 
+            // Publish a message to the system bus indicating a wallet update
+            let wallet_topic = wallet_topic_name(&wallet.wallet_id);
+            self.system_bus.publish(
+                wallet_topic,
+                SystemBusMessage::WalletUpdate {
+                    wallet: wallet.clone().into(),
+                },
+            );
+
+            // Index all orders in the wallet
             for (order_id, order) in wallet.orders.into_iter() {
                 // Skip default orders
                 if order.is_default() {
@@ -297,7 +312,16 @@ impl RelayerState {
     /// Update an existing wallet in the global state
     pub async fn update_wallet(&self, wallet: Wallet) {
         let mut locked_wallet_index = self.write_wallet_index().await;
-        locked_wallet_index.add_wallet(wallet);
+        locked_wallet_index.add_wallet(wallet.clone());
+
+        // Publish a message to the system bus indicating a wallet update
+        let wallet_topic = wallet_topic_name(&wallet.wallet_id);
+        self.system_bus.publish(
+            wallet_topic,
+            SystemBusMessage::WalletUpdate {
+                wallet: wallet.clone().into(),
+            },
+        );
     }
 
     /// Mark an order pair as matched, this is both for bookkeeping and for

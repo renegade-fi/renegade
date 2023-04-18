@@ -377,6 +377,13 @@ impl Wallet {
         staleness > *STALENESS_THRESHOLD
     }
 
+    /// Remove default balances, orders, fees
+    pub fn remove_default_elements(&mut self) {
+        self.balances.retain(|_mint, balance| !balance.is_default());
+        self.orders.retain(|_id, order| !order.is_default());
+        self.fees.retain(|fee| !fee.is_default());
+    }
+
     /// Get the balance, fee, and fee_balance for an order by specifying the order directly
     ///
     /// This is useful for new orders that come in, and are not yet indexed in the global state
