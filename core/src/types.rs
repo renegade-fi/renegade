@@ -8,6 +8,7 @@ use circuits::zk_circuits::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    external_api::types::Wallet,
     price_reporter::reporter::PriceReport,
     state::{wallet::WalletIdentifier, NetworkOrderState, OrderIdentifier},
     MAX_BALANCES, MAX_FEES, MAX_ORDERS,
@@ -51,6 +52,7 @@ pub fn wallet_topic_name(wallet_id: &WalletIdentifier) -> String {
 /// A message type for generic system bus messages, broadcast to all modules
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
+#[allow(clippy::large_enum_variant)]
 pub enum SystemBusMessage {
     /// A message indicating that a handshake with a peer has started
     HandshakeInProgress {
@@ -80,6 +82,11 @@ pub enum SystemBusMessage {
     PriceReportMedian(PriceReport),
     /// A message indicating that a new individual exchange PriceReport has been published
     PriceReportExchange(PriceReport),
+    /// A message indicating that a wallet has been updated
+    WalletUpdate {
+        /// The new wallet after update
+        wallet: Wallet,
+    },
 }
 
 /// A wrapper around a SystemBusMessage containing the topic, used for serializing websocket

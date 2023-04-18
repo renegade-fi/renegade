@@ -1,7 +1,7 @@
 //! Handlers for price reporting websocket topics
 
-use hyper::StatusCode;
 use async_trait::async_trait;
+use hyper::StatusCode;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tokio::sync::oneshot::channel;
 
