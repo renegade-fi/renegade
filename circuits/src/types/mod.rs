@@ -40,7 +40,7 @@ pub fn biguint_to_hex_string<S>(val: &BigUint, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    s.serialize_str(&val.to_str_radix(16 /* radix */))
+    s.serialize_str(&format!("0x{}", val.to_str_radix(16 /* radix */)))
 }
 
 /// A helper to deserialize a BigUint from a hex string

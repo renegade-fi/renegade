@@ -1,17 +1,43 @@
 //! Abstracts routing logic from the HTTP server
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use async_trait::async_trait;
-use hyper::{Body, HeaderMap, Method, Request, Response, StatusCode};
+use circuits::types::keychain::PublicSigningKey;
+use ed25519_dalek::{Digest, PublicKey, Sha512, Signature};
+use hyper::{body::to_bytes, Body, HeaderMap, Method, Request, Response, StatusCode};
 use matchit::Router as MatchRouter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tracing::log;
 
-use super::error::ApiServerError;
+use crate::state::RelayerState;
+
+use super::{error::ApiServerError, http::parse_wallet_id_from_params};
 
 /// A type alias for URL generic params maps, i.e. /path/to/resource/:id
 pub(super) type UrlParams = HashMap<String, String>;
+
+/// Header name for the HTTP auth signature
+const RENEGADE_AUTH_HEADER_NAME: &str = "renegade-auth";
+/// Header name for the expiration timestamp of a signature
+const RENEGADE_SIG_EXPIRATION_HEADER_NAME: &str = "renegade-auth-expiration";
+
+/// Error displayed when the signature format is invalid
+const ERR_SIG_FORMAT_INVALID: &str = "signature format invalid";
+/// Error displayed when the signature header is missing
+const ERR_SIG_HEADER_MISSING: &str = "signature missing from request";
+/// Error displayed when the signature expiration header is missing
+const ERR_SIG_EXPIRATION_MISSING: &str = "signature expiration missing from headers";
+/// Error displayed when the expiration format is invalid
+const ERR_EXPIRATION_FORMAT_INVALID: &str = "could not parse signature expiration timestamp";
+/// Error displayed when signature verification fails on a request
+const ERR_SIG_VERIFICATION_FAILED: &str = "signature verification failed";
+
+/// Error message displayed when a wallet cannot be found in the global state
+pub(super) const ERR_WALLET_NOT_FOUND: &str = "wallet not found";
 
 // -----------
 // | Helpers |
@@ -129,13 +155,7 @@ impl<
                 .body(Body::from(serde_json::to_vec(&resp).unwrap()))
                 .unwrap()
         } else {
-            let err = res.err().unwrap();
-            match err.clone() {
-                ApiServerError::HttpStatusCode(status, message) => {
-                    build_response_from_status_code(status, message)
-                }
-                _ => build_500_response(err.to_string()),
-            }
+            res.err().unwrap().into()
         }
     }
 }
@@ -143,14 +163,22 @@ impl<
 /// Wrapper around a matchit router that allows different HTTP request types to be matches
 pub struct Router {
     /// The underlying router
-    router: MatchRouter<Box<dyn Handler>>,
+    ///
+    /// Holds a tuple of the handler and a boolean indicating whether
+    /// wallet authentication (sk_root) signature is required for the request
+    router: MatchRouter<(Box<dyn Handler>, bool)>,
+    /// A copy of the relayer global state, used to lookup wallet keys for authentication
+    global_state: RelayerState,
 }
 
 impl Router {
     /// Create a new router with no routes established
-    pub fn new() -> Self {
+    pub fn new(global_state: RelayerState) -> Self {
         let router = MatchRouter::new();
-        Self { router }
+        Self {
+            router,
+            global_state,
+        }
     }
 
     /// Helper to build a routable path from a method and a concrete route
@@ -171,12 +199,18 @@ impl Router {
     }
 
     /// Add a route to the router
-    pub fn add_route<H: Handler + 'static>(&mut self, method: Method, route: String, handler: H) {
+    pub fn add_route<H: Handler + 'static>(
+        &mut self,
+        method: Method,
+        route: String,
+        auth_required: bool,
+        handler: H,
+    ) {
         log::debug!("Attached handler to route {route} with method {method}");
         let full_route = Self::create_full_route(method, route);
 
         self.router
-            .insert(full_route, Box::new(handler))
+            .insert(full_route, (Box::new(handler), auth_required))
             .expect("error attaching handler to route");
     }
 
@@ -185,14 +219,14 @@ impl Router {
         &self,
         method: Method,
         route: String,
-        req: Request<Body>,
+        mut req: Request<Body>,
     ) -> Response<Body> {
         // Get the full routable path
         let full_route = Self::create_full_route(method.clone(), route.clone());
 
         // Dispatch to handler
         if let Ok(matched_path) = self.router.at(&full_route) {
-            let handler = matched_path.value;
+            let (handler, auth_required) = matched_path.value;
             let params = matched_path.params;
 
             // Clone the params to take ownership
@@ -201,9 +235,161 @@ impl Router {
                 params_map.insert(key.to_string(), value.to_string());
             }
 
+            if *auth_required {
+                if let Err(e) = self.check_wallet_auth(&params_map, &mut req).await {
+                    return e.into();
+                }
+            }
+
             handler.as_ref().handle(req, params_map).await
         } else {
             build_404_response(format!("Route {route} for method {method} not found"))
         }
+    }
+
+    /// Validate a signature of the request's body by sk_root of the wallet
+    async fn check_wallet_auth(
+        &self,
+        url_params: &HashMap<String, String>,
+        req: &mut Request<Body>,
+    ) -> Result<(), ApiServerError> {
+        // Parse the wallet ID from the URL params
+        let wallet_id = parse_wallet_id_from_params(url_params)?;
+
+        // Lookup the wallet in the global state
+        let wallet = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&wallet_id)
+            .await
+            .ok_or_else(|| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::NOT_FOUND,
+                    ERR_WALLET_NOT_FOUND.to_string(),
+                )
+            })?;
+
+        // Get the request bytes
+        let req_body = to_bytes(req.body_mut()).await.map_err(|err| {
+            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string())
+        })?;
+
+        // Authenticated the request
+        Self::authenticate_wallet_request(
+            req.headers().clone(),
+            &req_body,
+            &wallet.key_chain.public_keys.pk_root,
+        )?;
+
+        // Reconstruct the body, the above manipulation consumed the body from the
+        // request object
+        *req.body_mut() = Body::from(req_body);
+        Ok(())
+    }
+
+    /// A helper to authenticate a request via expiring signatures using the method below
+    pub(self) fn authenticate_wallet_request(
+        headers: HeaderMap,
+        body: &[u8],
+        pk_root: &PublicSigningKey,
+    ) -> Result<(), ApiServerError> {
+        // Parse the signature and the expiration timestamp from the header
+        let signature = headers
+            .get(RENEGADE_AUTH_HEADER_NAME)
+            .ok_or_else(|| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::BAD_REQUEST,
+                    ERR_SIG_HEADER_MISSING.to_string(),
+                )
+            })?
+            .as_bytes();
+        let sig_expiration = headers
+            .get(RENEGADE_SIG_EXPIRATION_HEADER_NAME)
+            .ok_or_else(|| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::BAD_REQUEST,
+                    ERR_SIG_EXPIRATION_MISSING.to_string(),
+                )
+            })?;
+
+        // Parse the expiration into a timestamp
+        let expiration = sig_expiration
+            .to_str()
+            .map_err(|_| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::BAD_REQUEST,
+                    ERR_EXPIRATION_FORMAT_INVALID.to_string(),
+                )
+            })
+            .and_then(|s| {
+                s.parse::<u64>().map_err(|_| {
+                    ApiServerError::HttpStatusCode(
+                        StatusCode::BAD_REQUEST,
+                        ERR_EXPIRATION_FORMAT_INVALID.to_string(),
+                    )
+                })
+            })?;
+
+        // Recover a public key from the byte packed scalar representing the public key
+        let root_key: PublicKey = pk_root.into();
+        if !Self::validate_expiring_signature(body, expiration, signature, root_key)? {
+            Err(ApiServerError::HttpStatusCode(
+                StatusCode::UNAUTHORIZED,
+                ERR_SIG_VERIFICATION_FAILED.to_string(),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// A helper to verify a signature on a request body
+    ///
+    /// The signature should be a sponge hash of the serialized request body
+    /// and a unix timestamp representing the expiration of the signature. A
+    /// call to this method after the expiration timestamp should return false
+    pub(self) fn validate_expiring_signature(
+        body: &[u8],
+        expiration_timestamp: u64,
+        signature: &[u8],
+        pk_root: PublicKey,
+    ) -> Result<bool, ApiServerError> {
+        // Check the expiration timestamp
+        let now = SystemTime::now();
+        let target_duration = Duration::from_millis(expiration_timestamp);
+        let target_time = UNIX_EPOCH + target_duration;
+
+        if now >= target_time {
+            log::info!("signature expired");
+            return Ok(false);
+        }
+
+        // DEBUG, REMOVE ME
+        let mut hasher = Sha512::default();
+        let body_bytes = serde_json::to_string(&body).unwrap();
+        log::info!("body bytes: {body_bytes:?}\n\n");
+        hasher.update(&body_bytes);
+        hasher.update(expiration_timestamp.to_le_bytes());
+
+        let out = hasher.finalize();
+        log::info!("hasher out: {out:?}");
+
+        // Hash the body and the expiration timestamp into a digest to check the signature against
+        let mut hasher = Sha512::default();
+        let body_bytes = serde_json::to_vec(&body).unwrap();
+        hasher.update(&body_bytes);
+        hasher.update(expiration_timestamp.to_le_bytes());
+
+        // Check the signature
+        let sig: Signature = serde_json::from_slice(signature).map_err(|_| {
+            ApiServerError::HttpStatusCode(
+                StatusCode::BAD_REQUEST,
+                ERR_SIG_FORMAT_INVALID.to_string(),
+            )
+        })?;
+
+        Ok(pk_root
+            .verify_prehashed(hasher, None /* context */, &sig)
+            .is_ok())
     }
 }

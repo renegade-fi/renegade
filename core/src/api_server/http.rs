@@ -99,9 +99,11 @@ const TASK_ID_URL_PARAM: &str = "task_id";
 const INDEX_URL_PARAM: &str = "index";
 
 /// A helper to parse out a mint from a URL param
-fn parse_mint_from_params(params: &UrlParams) -> Result<BigUint, ApiServerError> {
+pub(super) fn parse_mint_from_params(params: &UrlParams) -> Result<BigUint, ApiServerError> {
     // Try to parse as a hex string, then fall back to decimal
-    let mint_str = params.get(MINT_URL_PARAM).unwrap();
+    let mint_str = params.get(MINT_URL_PARAM).ok_or_else(|| {
+        ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, ERR_MINT_PARSE.to_string())
+    })?;
     let stripped_param = mint_str.strip_prefix("0x").unwrap_or(mint_str);
     if let Ok(mint) = BigUint::from_str_radix(stripped_param, 16 /* radix */) {
         return Ok(mint);
@@ -113,10 +115,12 @@ fn parse_mint_from_params(params: &UrlParams) -> Result<BigUint, ApiServerError>
 }
 
 /// A helper to parse out a wallet ID from a URL param
-fn parse_wallet_id_from_params(params: &UrlParams) -> Result<Uuid, ApiServerError> {
+pub(super) fn parse_wallet_id_from_params(params: &UrlParams) -> Result<Uuid, ApiServerError> {
     params
         .get(WALLET_ID_URL_PARAM)
-        .unwrap()
+        .ok_or_else(|| {
+            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_WALLET_ID_PARSE.to_string())
+        })?
         .parse()
         .map_err(|_| {
             ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_WALLET_ID_PARSE.to_string())
@@ -124,10 +128,12 @@ fn parse_wallet_id_from_params(params: &UrlParams) -> Result<Uuid, ApiServerErro
 }
 
 /// A helper to parse out an order ID from a URL param
-fn parse_order_id_from_params(params: &UrlParams) -> Result<Uuid, ApiServerError> {
+pub(super) fn parse_order_id_from_params(params: &UrlParams) -> Result<Uuid, ApiServerError> {
     params
         .get(ORDER_ID_URL_PARAM)
-        .unwrap()
+        .ok_or_else(|| {
+            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_ORDER_ID_PARSE.to_string())
+        })?
         .parse()
         .map_err(|_| {
             ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_ORDER_ID_PARSE.to_string())
@@ -135,10 +141,17 @@ fn parse_order_id_from_params(params: &UrlParams) -> Result<Uuid, ApiServerError
 }
 
 /// A helper to parse out a cluster ID from a URL param
-fn parse_cluster_id_from_params(params: &UrlParams) -> Result<ClusterId, ApiServerError> {
+pub(super) fn parse_cluster_id_from_params(
+    params: &UrlParams,
+) -> Result<ClusterId, ApiServerError> {
     params
         .get(CLUSTER_ID_URL_PARAM)
-        .unwrap()
+        .ok_or_else(|| {
+            ApiServerError::HttpStatusCode(
+                StatusCode::BAD_REQUEST,
+                ERR_CLUSTER_ID_PARSE.to_string(),
+            )
+        })?
         .parse()
         .map_err(|_| {
             ApiServerError::HttpStatusCode(
@@ -149,24 +162,46 @@ fn parse_cluster_id_from_params(params: &UrlParams) -> Result<ClusterId, ApiServ
 }
 
 /// A helper to parse out a peer ID from a URL param
-fn parse_peer_id_from_params(params: &UrlParams) -> Result<WrappedPeerId, ApiServerError> {
-    params.get(PEER_ID_URL_PARAM).unwrap().parse().map_err(|_| {
-        ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_PEER_ID_PARSE.to_string())
-    })
+pub(super) fn parse_peer_id_from_params(
+    params: &UrlParams,
+) -> Result<WrappedPeerId, ApiServerError> {
+    params
+        .get(PEER_ID_URL_PARAM)
+        .ok_or_else(|| {
+            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_PEER_ID_PARSE.to_string())
+        })?
+        .parse()
+        .map_err(|_| {
+            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_PEER_ID_PARSE.to_string())
+        })
 }
 
 /// A helper to parse out a task ID from a URL param
-fn parse_task_id_from_params(params: &UrlParams) -> Result<TaskIdentifier, ApiServerError> {
-    params.get(TASK_ID_URL_PARAM).unwrap().parse().map_err(|_| {
-        ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_TASK_ID_PARSE.to_string())
-    })
+pub(super) fn parse_task_id_from_params(
+    params: &UrlParams,
+) -> Result<TaskIdentifier, ApiServerError> {
+    params
+        .get(TASK_ID_URL_PARAM)
+        .ok_or_else(|| {
+            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_TASK_ID_PARSE.to_string())
+        })?
+        .parse()
+        .map_err(|_| {
+            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_TASK_ID_PARSE.to_string())
+        })
 }
 
 /// A helper to parse out an index from a URL param
-fn parse_index_from_params(params: &UrlParams) -> Result<usize, ApiServerError> {
-    params.get(INDEX_URL_PARAM).unwrap().parse().map_err(|_| {
-        ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_INDEX_PARSE.to_string())
-    })
+pub(super) fn parse_index_from_params(params: &UrlParams) -> Result<usize, ApiServerError> {
+    params
+        .get(INDEX_URL_PARAM)
+        .ok_or_else(|| {
+            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_INDEX_PARSE.to_string())
+        })?
+        .parse()
+        .map_err(|_| {
+            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_INDEX_PARSE.to_string())
+        })
 }
 
 /// A wrapper around the router and task management operations that
@@ -194,22 +229,29 @@ impl HttpServer {
     /// Build a router and register routes on it
     fn build_router(config: &ApiServerConfig, global_state: RelayerState) -> Router {
         // Build the router and register its routes
-        let mut router = Router::new();
+        let mut router = Router::new(global_state.clone());
 
         // The "/exchangeHealthStates" route
         router.add_route(
             Method::POST,
             EXCHANGE_HEALTH_ROUTE.to_string(),
+            false, /* auth_required */
             ExchangeHealthStatesHandler::new(config.clone()),
         );
 
         // The "/ping" route
-        router.add_route(Method::GET, PING_ROUTE.to_string(), PingHandler::new());
+        router.add_route(
+            Method::GET,
+            PING_ROUTE.to_string(),
+            false, /* auth_required */
+            PingHandler::new(),
+        );
 
         // The "/task/:id" route
         router.add_route(
             Method::GET,
             GET_TASK_STATUS_ROUTE.to_string(),
+            false, /* auth_required */
             GetTaskStatusHandler::new(config.task_driver.clone()),
         );
 
@@ -217,6 +259,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_WALLET_ROUTE.to_string(),
+            true, /* auth_required */
             GetWalletHandler::new(global_state.clone()),
         );
 
@@ -224,6 +267,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             CREATE_WALLET_ROUTE.to_string(),
+            true, /* auth_required */
             CreateWalletHandler::new(
                 config.starknet_client.clone(),
                 global_state.clone(),
@@ -236,6 +280,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             FIND_WALLET_ROUTE.to_string(),
+            false, /* auth_required */
             FindWalletHandler::new(
                 config.starknet_client.clone(),
                 config.network_sender.clone(),
@@ -249,6 +294,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             WALLET_ORDERS_ROUTE.to_string(),
+            true, /* auth_required */
             GetOrdersHandler::new(global_state.clone()),
         );
 
@@ -256,6 +302,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             WALLET_ORDERS_ROUTE.to_string(),
+            true, /* auth_required */
             CreateOrderHandler::new(
                 config.starknet_client.clone(),
                 config.network_sender.clone(),
@@ -269,6 +316,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_ORDER_BY_ID_ROUTE.to_string(),
+            true, /* auth_required */
             GetOrderByIdHandler::new(global_state.clone()),
         );
 
@@ -276,6 +324,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             CANCEL_ORDER_ROUTE.to_string(),
+            true, /* auth_required */
             CancelOrderHandler::new(
                 config.starknet_client.clone(),
                 config.network_sender.clone(),
@@ -289,6 +338,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_BALANCES_ROUTE.to_string(),
+            true, /* auth_required */
             GetBalancesHandler::new(global_state.clone()),
         );
 
@@ -296,6 +346,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_BALANCE_BY_MINT_ROUTE.to_string(),
+            true, /* auth_required */
             GetBalanceByMintHandler::new(global_state.clone()),
         );
 
@@ -303,6 +354,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             DEPOSIT_BALANCE_ROUTE.to_string(),
+            true, /* auth_required */
             DepositBalanceHandler::new(
                 config.starknet_client.clone(),
                 config.network_sender.clone(),
@@ -316,6 +368,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             WITHDRAW_BALANCE_ROUTE.to_string(),
+            true, /* auth_required */
             WithdrawBalanceHandler::new(
                 config.starknet_client.clone(),
                 config.network_sender.clone(),
@@ -329,6 +382,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             INTERNAL_TRANSFER_ROUTE.to_string(),
+            true, /* auth_required */
             InternalTransferHandler::new(
                 config.starknet_client.clone(),
                 config.network_sender.clone(),
@@ -342,6 +396,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             FEES_ROUTE.to_string(),
+            true, /* auth_required */
             GetFeesHandler::new(global_state.clone()),
         );
 
@@ -349,6 +404,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             FEES_ROUTE.to_string(),
+            true, /* auth_required */
             AddFeeHandler::new(
                 config.starknet_client.clone(),
                 config.network_sender.clone(),
@@ -362,6 +418,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             REMOVE_FEE_ROUTE.to_string(),
+            true, /* auth_required */
             RemoveFeeHandler::new(
                 config.starknet_client.clone(),
                 config.network_sender.clone(),
@@ -375,6 +432,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_NETWORK_ORDERS_ROUTE.to_string(),
+            false, /* auth_required */
             GetNetworkOrdersHandler::new(global_state.clone()),
         );
 
@@ -382,6 +440,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_NETWORK_ORDER_BY_ID_ROUTE.to_string(),
+            false, /* auth_required */
             GetNetworkOrderByIdHandler::new(global_state.clone()),
         );
 
@@ -389,6 +448,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_NETWORK_TOPOLOGY_ROUTE.to_string(),
+            false, /* auth_required */
             GetNetworkTopologyHandler::new(global_state.clone()),
         );
 
@@ -396,6 +456,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_CLUSTER_INFO_ROUTE.to_string(),
+            false, /* auth_required */
             GetClusterInfoHandler::new(global_state.clone()),
         );
 
@@ -403,6 +464,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_PEER_INFO_ROUTE.to_string(),
+            false, /* auth_required */
             GetPeerInfoHandler::new(global_state),
         );
 
