@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     price_reporter::reporter::PriceReport,
-    state::{NetworkOrderState, OrderIdentifier},
+    state::{wallet::WalletIdentifier, NetworkOrderState, OrderIdentifier},
     MAX_BALANCES, MAX_FEES, MAX_ORDERS,
 };
 
@@ -38,6 +38,11 @@ pub type SizedValidSettleWitness = ValidSettleWitness<MAX_BALANCES, MAX_ORDERS, 
 pub const HANDSHAKE_STATUS_TOPIC: &str = "handshakes";
 /// The topic published to when a state change occurs on an order
 pub const ORDER_STATE_CHANGE_TOPIC: &str = "order-state";
+
+/// Get the topic name for a given wallet
+pub fn wallet_topic_name(wallet_id: &WalletIdentifier) -> String {
+    format!("wallet-updates-{}", wallet_id)
+}
 
 // ----------------------------
 // | System Bus Message Types |

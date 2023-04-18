@@ -20,12 +20,14 @@ use crate::{
 use self::{
     handler::{DefaultHandler, WebsocketTopicHandler},
     price_report::PriceReporterHandler,
+    wallet::WalletTopicHandler,
 };
 
 use super::{error::ApiServerError, router::UrlParams, worker::ApiServerConfig};
 
 mod handler;
 mod price_report;
+mod wallet;
 
 /// The matchit router with generics specified for websocket use
 type WebsocketRouter = Router<Box<dyn WebsocketTopicHandler>>;
@@ -41,6 +43,8 @@ const ERR_INVALID_TOPIC: &str = "invalid topic";
 
 /// The handshake topic, events include when a handshake beings and ends
 const HANDSHAKE_ROUTE: &str = "/v0/handshake";
+/// The wallet topic, events about wallet updates are streamed here
+const WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
 /// The price report topic, events about price updates are streamed
 const PRICE_REPORT_ROUTE: &str = "/v0/price_report/:source/:base/:quote";
 
@@ -65,27 +69,41 @@ impl WebsocketServer {
     }
 
     /// Setup the websocket routes for the server
-    #[allow(unused)]
     fn setup_routes(config: &ApiServerConfig) -> WebsocketRouter {
         let mut router = WebsocketRouter::new();
 
         // The "/v0/handshake" route
-        router.insert(
-            HANDSHAKE_ROUTE,
-            Box::new(DefaultHandler::new_with_remap(
-                HANDSHAKE_STATUS_TOPIC.to_string(),
-                config.system_bus.clone(),
-            )),
-        );
+        router
+            .insert(
+                HANDSHAKE_ROUTE,
+                Box::new(DefaultHandler::new_with_remap(
+                    HANDSHAKE_STATUS_TOPIC.to_string(),
+                    config.system_bus.clone(),
+                )),
+            )
+            .unwrap();
+
+        // The "/v0/wallet/:id" route
+        router
+            .insert(
+                WALLET_ROUTE,
+                Box::new(WalletTopicHandler::new(
+                    config.global_state.clone(),
+                    config.system_bus.clone(),
+                )),
+            )
+            .unwrap();
 
         // The "/v0/price_report/:source/:base/:quote" route
-        router.insert(
-            PRICE_REPORT_ROUTE,
-            Box::new(PriceReporterHandler::new(
-                config.price_reporter_work_queue.clone(),
-                config.system_bus.clone(),
-            )),
-        );
+        router
+            .insert(
+                PRICE_REPORT_ROUTE,
+                Box::new(PriceReporterHandler::new(
+                    config.price_reporter_work_queue.clone(),
+                    config.system_bus.clone(),
+                )),
+            )
+            .unwrap();
 
         router
     }
@@ -229,14 +247,18 @@ impl WebsocketServer {
 
                 // Register the topic subscription in the system bus and in the stream
                 // map that the listener loop polls
-                let reader = route_handler.handle_subscribe_message(topic.clone(), &params)?;
+                let reader = route_handler
+                    .handle_subscribe_message(topic.clone(), &params)
+                    .await?;
                 client_subscriptions.insert(topic.clone(), reader);
             }
 
             SubscriptionMessage::Unsubscribe { topic } => {
                 // Parse the route and apply a handler to it
                 let (params, route_handler) = self.parse_route_and_params(&topic)?;
-                route_handler.handle_unsubscribe_message(topic.clone(), &params)?;
+                route_handler
+                    .handle_unsubscribe_message(topic.clone(), &params)
+                    .await?;
 
                 // Remove the topic subscription from the stream map
                 client_subscriptions.remove(&topic);
