@@ -1,8 +1,8 @@
 //! Defines all possible jobs for the PriceReporterManager.
 #![allow(dead_code)]
-use crossbeam::channel::Sender;
 use ring_channel::RingReceiver;
 use std::collections::{HashMap, HashSet};
+use tokio::sync::oneshot::Sender as TokioSender;
 
 use super::{
     exchanges::{Exchange, ExchangeConnectionState},
@@ -31,7 +31,7 @@ pub enum PriceReporterManagerJob {
         /// The ID of the listener
         id: Option<PriceReporterListenerID>,
         /// The channel to send a response after completion
-        channel: Sender<()>,
+        channel: TokioSender<()>,
     },
     /// Drop the specified id from the listeners
     DropListenerID {
@@ -42,7 +42,7 @@ pub enum PriceReporterManagerJob {
         /// The ID of the listener to drop
         id: PriceReporterListenerID,
         /// The channel to send a response after completion
-        channel: Sender<()>,
+        channel: TokioSender<()>,
     },
     /// Peek at the median price report
     PeekMedian {
@@ -51,7 +51,7 @@ pub enum PriceReporterManagerJob {
         /// The quote Token
         quote_token: Token,
         /// The return channel for the price report
-        channel: Sender<PriceReporterState>,
+        channel: TokioSender<PriceReporterState>,
     },
     /// Peek at each ExchangeConnectionState
     PeekAllExchanges {
@@ -60,7 +60,7 @@ pub enum PriceReporterManagerJob {
         /// The quote Token
         quote_token: Token,
         /// The return channel for the ExchangeConnectionStates
-        channel: Sender<HashMap<Exchange, ExchangeConnectionState>>,
+        channel: TokioSender<HashMap<Exchange, ExchangeConnectionState>>,
     },
     /// Create a forked median receiver
     CreateNewMedianReceiver {
@@ -69,7 +69,7 @@ pub enum PriceReporterManagerJob {
         /// The quote Token
         quote_token: Token,
         /// The return channel for the new receiver
-        channel: Sender<RingReceiver<PriceReport>>,
+        channel: TokioSender<RingReceiver<PriceReport>>,
     },
     /// Get all the exchanges that this price reporter supports
     GetSupportedExchanges {
@@ -78,7 +78,7 @@ pub enum PriceReporterManagerJob {
         /// The quote Token
         quote_token: Token,
         /// The return channel for the supported exchanges
-        channel: Sender<HashSet<Exchange>>,
+        channel: TokioSender<HashSet<Exchange>>,
     },
     /// Get all the supported exchanges that are in a healthy state
     GetHealthyExchanges {
@@ -87,6 +87,6 @@ pub enum PriceReporterManagerJob {
         /// The quote Token
         quote_token: Token,
         /// The return channel for the healthy exchanges
-        channel: Sender<HashSet<Exchange>>,
+        channel: TokioSender<HashSet<Exchange>>,
     },
 }
