@@ -12,8 +12,8 @@ use crate::{
     types::SystemBusMessage,
 };
 
-/// The main trait that route handlers hold for their topic, handles any custom logic
-/// required to handle a websocket subscribe/unsubscribe
+/// The main trait that route handlers implement for their topic, handles any custom logic
+/// required to process a websocket subscribe/unsubscribe request
 pub trait WebsocketTopicHandler: Send + Sync {
     /// Handle a request to subscribe to the topic
     fn handle_subscribe_message(

@@ -1,8 +1,8 @@
 //! Groups price reporting API handlers and types
 
 use async_trait::async_trait;
-use crossbeam::channel;
 use hyper::HeaderMap;
+use tokio::sync::oneshot::channel;
 
 use crate::{
     api_server::{
@@ -53,7 +53,7 @@ impl TypedHandler for ExchangeHealthStatesHandler {
         req: Self::Request,
         _params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let (price_reporter_state_sender, price_reporter_state_receiver) = channel::unbounded();
+        let (price_reporter_state_sender, price_reporter_state_receiver) = channel();
         self.config
             .price_reporter_work_queue
             .send(PriceReporterManagerJob::PeekMedian {
@@ -62,8 +62,7 @@ impl TypedHandler for ExchangeHealthStatesHandler {
                 channel: price_reporter_state_sender,
             })
             .unwrap();
-        let (exchange_connection_state_sender, exchange_connection_state_receiver) =
-            channel::unbounded();
+        let (exchange_connection_state_sender, exchange_connection_state_receiver) = channel();
         self.config
             .price_reporter_work_queue
             .send(PriceReporterManagerJob::PeekAllExchanges {
@@ -73,8 +72,8 @@ impl TypedHandler for ExchangeHealthStatesHandler {
             })
             .unwrap();
         Ok(GetExchangeHealthStatesResponse {
-            median: price_reporter_state_receiver.recv().unwrap(),
-            all_exchanges: exchange_connection_state_receiver.recv().unwrap(),
+            median: price_reporter_state_receiver.await.unwrap(),
+            all_exchanges: exchange_connection_state_receiver.await.unwrap(),
         })
     }
 }

@@ -17,11 +17,15 @@ use crate::{
     types::{SystemBusMessage, SystemBusMessageWithTopic, HANDSHAKE_STATUS_TOPIC},
 };
 
-use self::handler::{DefaultHandler, WebsocketTopicHandler};
+use self::{
+    handler::{DefaultHandler, WebsocketTopicHandler},
+    price_report::PriceReporterHandler,
+};
 
 use super::{error::ApiServerError, router::UrlParams, worker::ApiServerConfig};
 
 mod handler;
+mod price_report;
 
 /// The matchit router with generics specified for websocket use
 type WebsocketRouter = Router<Box<dyn WebsocketTopicHandler>>;
@@ -37,6 +41,8 @@ const ERR_INVALID_TOPIC: &str = "invalid topic";
 
 /// The handshake topic, events include when a handshake beings and ends
 const HANDSHAKE_ROUTE: &str = "/v0/handshake";
+/// The price report topic, events about price updates are streamed
+const PRICE_REPORT_ROUTE: &str = "/v0/price_report/:source/:base/:quote";
 
 // --------------------
 // | Websocket Server |
@@ -61,7 +67,6 @@ impl WebsocketServer {
     /// Setup the websocket routes for the server
     #[allow(unused)]
     fn setup_routes(config: &ApiServerConfig) -> WebsocketRouter {
-        // TODO: Implement routes
         let mut router = WebsocketRouter::new();
 
         // The "/v0/handshake" route
@@ -69,6 +74,15 @@ impl WebsocketServer {
             HANDSHAKE_ROUTE,
             Box::new(DefaultHandler::new_with_remap(
                 HANDSHAKE_STATUS_TOPIC.to_string(),
+                config.system_bus.clone(),
+            )),
+        );
+
+        // The "/v0/price_report/:source/:base/:quote" route
+        router.insert(
+            PRICE_REPORT_ROUTE,
+            Box::new(PriceReporterHandler::new(
+                config.price_reporter_work_queue.clone(),
                 config.system_bus.clone(),
             )),
         );
@@ -102,7 +116,7 @@ impl WebsocketServer {
 
     /// Handle a websocket connection
     ///
-    /// Manages subscriptions to internal channels and
+    /// Manages subscriptions to internal channels and dispatches subscribe/unsubscribe requests
     async fn handle_connection(&self, stream: TcpStream) -> Result<(), ApiServerError> {
         // Accept the websocket upgrade and split into read/write streams
         let websocket_stream = accept_async(stream)
@@ -157,7 +171,6 @@ impl WebsocketServer {
             };
         }
 
-        log::info!("tearing down connection");
         Ok(())
     }
 
