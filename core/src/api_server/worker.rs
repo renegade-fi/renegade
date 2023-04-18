@@ -19,7 +19,7 @@ use crate::{
 use super::{error::ApiServerError, http::HttpServer, websocket::WebsocketServer};
 
 /// The number of threads backing the HTTP server
-const API_SERVER_NUM_THREADS: usize = 2;
+const API_SERVER_NUM_THREADS: usize = 4;
 
 /// Accepts inbound HTTP requests and websocket subscriptions and
 /// serves requests from those connections
@@ -97,8 +97,7 @@ impl Worker for ApiServer {
         });
 
         // Build the websocket server
-        let websocket_server =
-            WebsocketServer::new(self.config.clone(), self.config.system_bus.clone());
+        let websocket_server = WebsocketServer::new(self.config.clone());
         let websocket_thread_handle = tokio_runtime.spawn_blocking(move || {
             let err = block_on(websocket_server.execution_loop()).err().unwrap();
             ApiServerError::WebsocketServerFailure(err.to_string())

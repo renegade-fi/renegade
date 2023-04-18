@@ -1,39 +1,57 @@
 //! Groups logic for managing websocket connections
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
-use crossbeam::channel;
 use futures::{stream::SplitSink, SinkExt, StreamExt};
+use hyper::StatusCode;
+use matchit::Router;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_stream::StreamMap;
 use tokio_tungstenite::{accept_async, WebSocketStream};
+use tracing::log;
 use tungstenite::Message;
 
 use crate::{
     external_api::websocket::{SubscriptionMessage, SubscriptionResponse},
-    price_reporter::{jobs::PriceReporterManagerJob, tokens::Token},
-    system_bus::{SystemBus, TopicReader},
+    system_bus::TopicReader,
     types::{SystemBusMessage, SystemBusMessageWithTopic},
 };
 
-use super::{error::ApiServerError, worker::ApiServerConfig};
+use self::handler::WebsocketTopicHandler;
+
+use super::{error::ApiServerError, router::UrlParams, worker::ApiServerConfig};
+
+mod handler;
+
+/// The matchit router with generics specified for websocket use
+type WebsocketRouter = Router<Box<dyn WebsocketTopicHandler>>;
 
 /// The dummy stream used to seed the websocket subscriptions `StreamMap`
 const DUMMY_SUBSCRIPTION_TOPIC: &str = "dummy-topic";
+/// The error message given when an invalid topic is subscribed to
+const ERR_INVALID_TOPIC: &str = "invalid topic";
 
 /// A wrapper around request handling and task management
 #[derive(Clone)]
 pub struct WebsocketServer {
     /// The api server config
     config: ApiServerConfig,
-    /// The system bus to receive events on
-    system_bus: SystemBus<SystemBusMessage>,
+    /// The router that dispatches incoming subscribe/unsubscribe messages
+    router: Arc<WebsocketRouter>,
 }
 
 impl WebsocketServer {
     /// Create a new websocket server
-    pub fn new(config: ApiServerConfig, system_bus: SystemBus<SystemBusMessage>) -> Self {
-        Self { config, system_bus }
+    pub fn new(config: ApiServerConfig) -> Self {
+        let router = Arc::new(Self::setup_routes(&config));
+        Self { config, router }
+    }
+
+    /// Setup the websocket routes for the server
+    #[allow(unused)]
+    fn setup_routes(config: &ApiServerConfig) -> Router<Box<dyn WebsocketTopicHandler>> {
+        // TODO: Implement routes
+        Router::new()
     }
 
     /// The main execution loop of the websocket server
@@ -61,6 +79,8 @@ impl WebsocketServer {
     }
 
     /// Handle a websocket connection
+    ///
+    /// Manages subscriptions to internal channels and
     async fn handle_connection(&self, stream: TcpStream) -> Result<(), ApiServerError> {
         // Accept the websocket upgrade and split into read/write streams
         let websocket_stream = accept_async(stream)
@@ -76,6 +96,7 @@ impl WebsocketServer {
         // registered, indicating that the mapped stream is empty. We would prefer it to return
         // `Poll::Pending` in this case, so we enter a dummy stream into the map.
         let dummy_reader = self
+            .config
             .system_bus
             .subscribe(DUMMY_SUBSCRIPTION_TOPIC.to_string());
         subscriptions.insert(DUMMY_SUBSCRIPTION_TOPIC.to_string(), dummy_reader);
@@ -93,6 +114,7 @@ impl WebsocketServer {
                     match message {
                         Some(msg) => {
                             if let Err(e) = msg {
+                                log::error!("error handling websocket connection: {e}");
                                 return Err(ApiServerError::WebsocketServerFailure(e.to_string()));
                             }
 
@@ -100,8 +122,7 @@ impl WebsocketServer {
                             match message_unwrapped {
                                 Message::Close(_) => break,
                                 _ => {
-                                    let bus_clone = self.system_bus.clone();
-                                    self.handle_incoming_ws_message(message_unwrapped, &mut subscriptions, &mut write_stream, bus_clone).await?;
+                                    self.handle_incoming_ws_message(message_unwrapped, &mut subscriptions, &mut write_stream).await?;
                                 }
                             };
                         }
@@ -114,6 +135,7 @@ impl WebsocketServer {
             };
         }
 
+        log::info!("tearing down connection");
         Ok(())
     }
 
@@ -123,22 +145,28 @@ impl WebsocketServer {
         message: Message,
         client_subscriptions: &mut StreamMap<String, TopicReader<SystemBusMessage>>,
         write_stream: &mut SplitSink<WebSocketStream<TcpStream>, Message>,
-        system_bus: SystemBus<SystemBusMessage>,
     ) -> Result<(), ApiServerError> {
         if let Message::Text(msg_text) = message {
             // Deserialize the message body and dispatch to a handler for a response
             let deserialized: Result<SubscriptionMessage, _> = serde_json::from_str(&msg_text);
             let resp = match deserialized {
+                // Valid message body
                 Ok(message_body) => {
-                    let response = self
-                        .handle_subscription_message(message_body, client_subscriptions, system_bus)
-                        .await;
-                    let response_serialized = serde_json::to_string(&response)
-                        .map_err(|err| ApiServerError::WebsocketServerFailure(err.to_string()))?;
+                    let response = match self
+                        .handle_subscription_message(message_body, client_subscriptions)
+                        .await
+                    {
+                        Ok(resp) => serde_json::to_string(&resp).map_err(|err| {
+                            ApiServerError::WebsocketServerFailure(err.to_string())
+                        })?,
 
-                    Message::Text(response_serialized)
+                        Err(e) => e.to_string(),
+                    };
+
+                    Message::Text(response)
                 }
 
+                // Respond with an error if deserialization fails
                 Err(e) => Message::Text(format!("Invalid request: {}", e)),
             };
 
@@ -157,45 +185,55 @@ impl WebsocketServer {
         &self,
         message: SubscriptionMessage,
         client_subscriptions: &mut StreamMap<String, TopicReader<SystemBusMessage>>,
-        system_bus: SystemBus<SystemBusMessage>,
-    ) -> SubscriptionResponse {
+    ) -> Result<SubscriptionResponse, ApiServerError> {
         // Update local subscriptions
         match message {
             SubscriptionMessage::Subscribe { topic } => {
-                // Register the topic subscription
-                let topic_reader = system_bus.subscribe(topic.clone());
-                client_subscriptions.insert(topic.clone(), topic_reader);
-                // If the topic is a *-price-report-*, then parse the tokens, send a
-                // StartPriceReporter job, and await until confirmed
-                let topic_split: Vec<&str> = topic.split('-').collect();
-                if topic.contains("-price-report-") && topic_split.len() == 5 {
-                    let base_token = Token::from_addr(topic_split[3]);
-                    let quote_token = Token::from_addr(topic_split[4]);
-                    let (channel_sender, channel_receiver) = channel::unbounded();
-                    self.config
-                        .price_reporter_work_queue
-                        .send(PriceReporterManagerJob::StartPriceReporter {
-                            base_token,
-                            quote_token,
-                            id: None, // TODO: Store an ID for later teardown
-                            channel: channel_sender,
-                        })
-                        .unwrap();
-                    channel_receiver.recv().unwrap();
-                }
+                // Find the handler for the given topic
+                let (params, route_handler) = self.parse_route_and_params(&topic)?;
+
+                // Register the topic subscription in the system bus and in the stream
+                // map that the listener loop polls
+                let reader = route_handler.handle_subscribe_message(&params)?;
+                client_subscriptions.insert(topic.clone(), reader);
             }
+
             SubscriptionMessage::Unsubscribe { topic } => {
+                // Parse the route and apply a handler to it
+                let (params, route_handler) = self.parse_route_and_params(&topic)?;
+                route_handler.handle_unsubscribe_message(&params)?;
+
+                // Remove the topic subscription from the stream map
                 client_subscriptions.remove(&topic);
             }
         };
 
-        SubscriptionResponse {
+        Ok(SubscriptionResponse {
             subscriptions: client_subscriptions
                 .keys()
                 .cloned()
                 .filter(|key| DUMMY_SUBSCRIPTION_TOPIC.to_string().ne(key))
                 .collect(),
+        })
+    }
+
+    /// Route a subscribe/unsubscribe message
+    fn parse_route_and_params(
+        &self,
+        topic: &str,
+    ) -> Result<(UrlParams, &dyn WebsocketTopicHandler), ApiServerError> {
+        // Find the route
+        let route = self.router.at(topic).map_err(|_| {
+            ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, ERR_INVALID_TOPIC.to_string())
+        })?;
+
+        // Clone the parameters from the route into a hashmap to take ownership
+        let mut params = UrlParams::new();
+        for (param_name, param_value) in route.params.iter() {
+            params.insert(param_name.to_string(), param_value.to_string());
         }
+
+        Ok((params, route.value.as_ref()))
     }
 
     /// Push an internal event that the client is subscribed to onto the websocket
