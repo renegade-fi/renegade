@@ -1,6 +1,7 @@
 //! Handlers for price reporting websocket topics
 
 use hyper::StatusCode;
+use async_trait::async_trait;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tokio::sync::oneshot::channel;
 
@@ -89,12 +90,13 @@ impl PriceReporterHandler {
     }
 }
 
+#[async_trait]
 impl WebsocketTopicHandler for PriceReporterHandler {
     /// Handle a subscription to a price report
     ///
     /// Send a message to the price reporter indicating that it should
     /// open websockets to the reporting exchanges
-    fn handle_subscribe_message(
+    async fn handle_subscribe_message(
         &self,
         _topic: String,
         route_params: &UrlParams,
@@ -124,7 +126,7 @@ impl WebsocketTopicHandler for PriceReporterHandler {
     ///
     /// TODO: Cleanup unused websocket connections after this happens
     /// for now, this does nothing
-    fn handle_unsubscribe_message(
+    async fn handle_unsubscribe_message(
         &self,
         _topic: String,
         _route_params: &UrlParams,

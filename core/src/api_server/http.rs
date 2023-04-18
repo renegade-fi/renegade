@@ -86,7 +86,7 @@ const ERR_INDEX_PARSE: &str = "could not parse index";
 /// The :mint param in a URL
 const MINT_URL_PARAM: &str = "mint";
 /// The :wallet_id param in a URL
-const WALLET_ID_URL_PARAM: &str = "wallet_id";
+pub(super) const WALLET_ID_URL_PARAM: &str = "wallet_id";
 /// The :order_id param in a URL
 const ORDER_ID_URL_PARAM: &str = "order_id";
 /// The :cluster_id param in a URL

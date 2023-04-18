@@ -11,18 +11,20 @@ use crate::{
     system_bus::{SystemBus, TopicReader},
     types::SystemBusMessage,
 };
+use async_trait::async_trait;
 
 /// The main trait that route handlers implement for their topic, handles any custom logic
 /// required to process a websocket subscribe/unsubscribe request
+#[async_trait]
 pub trait WebsocketTopicHandler: Send + Sync {
     /// Handle a request to subscribe to the topic
-    fn handle_subscribe_message(
+    async fn handle_subscribe_message(
         &self,
         topic: String,
         route_params: &UrlParams,
     ) -> Result<TopicReader<SystemBusMessage>, ApiServerError>;
     /// Handle a request to unsubscribe from a topic
-    fn handle_unsubscribe_message(
+    async fn handle_unsubscribe_message(
         &self,
         topic: String,
         route_params: &UrlParams,
@@ -50,9 +52,10 @@ impl DefaultHandler {
     }
 }
 
+#[async_trait]
 impl WebsocketTopicHandler for DefaultHandler {
     /// Handle a subscription by simply allocating a reader on the topic
-    fn handle_subscribe_message(
+    async fn handle_subscribe_message(
         &self,
         topic: String,
         _route_params: &UrlParams,
@@ -67,7 +70,7 @@ impl WebsocketTopicHandler for DefaultHandler {
 
     /// Unsubscribe does nothing, `TopicReader`s handle their own cleanup
     /// when they are dropped, so no extra cleanup needs to be done
-    fn handle_unsubscribe_message(
+    async fn handle_unsubscribe_message(
         &self,
         _topic: String,
         _route_params: &UrlParams,
