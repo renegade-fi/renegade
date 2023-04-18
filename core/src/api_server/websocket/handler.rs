@@ -1,0 +1,77 @@
+//! Defines handles for websocket routes
+//!
+//! Most websocket routes are fairly straightforward, they simply subscribe
+//! to the relevant topic on the system bus. However, the price reporting and
+//! potential future extensions require logic executed per connection
+//!
+//! Plus, this more closely follows the practice taken in the HTTP router
+
+use crate::{
+    api_server::{error::ApiServerError, router::UrlParams},
+    system_bus::{SystemBus, TopicReader},
+    types::SystemBusMessage,
+};
+
+/// The main trait that route handlers hold for their topic, handles any custom logic
+/// required to handle a websocket subscribe/unsubscribe
+pub trait WebsocketTopicHandler: Send + Sync {
+    /// Handle a request to subscribe to the topic
+    fn handle_subscribe_message(
+        &self,
+        topic: String,
+        route_params: &UrlParams,
+    ) -> Result<TopicReader<SystemBusMessage>, ApiServerError>;
+    /// Handle a request to unsubscribe from a topic
+    fn handle_unsubscribe_message(
+        &self,
+        topic: String,
+        route_params: &UrlParams,
+    ) -> Result<(), ApiServerError>;
+}
+
+/// The default handler directly subscribes and unsubscribes from the topic
+#[derive(Clone)]
+pub struct DefaultHandler {
+    /// A reference to the relayer-global system bus
+    system_bus: SystemBus<SystemBusMessage>,
+    /// The bus topic to subscribe to on a subscription message
+    ///
+    /// Defaults to the topic subscribed to at the router layer
+    topic_remap: Option<String>,
+}
+
+impl DefaultHandler {
+    /// Constructor
+    pub fn new_with_remap(topic_remap: String, system_bus: SystemBus<SystemBusMessage>) -> Self {
+        Self {
+            system_bus,
+            topic_remap: Some(topic_remap),
+        }
+    }
+}
+
+impl WebsocketTopicHandler for DefaultHandler {
+    /// Handle a subscription by simply allocating a reader on the topic
+    fn handle_subscribe_message(
+        &self,
+        topic: String,
+        _route_params: &UrlParams,
+    ) -> Result<TopicReader<SystemBusMessage>, ApiServerError> {
+        let bus_topic = match self.topic_remap {
+            Some(ref remap) => remap.clone(),
+            None => topic,
+        };
+
+        Ok(self.system_bus.subscribe(bus_topic))
+    }
+
+    /// Unsubscribe does nothing, `TopicReader`s handle their own cleanup
+    /// when they are dropped, so no extra cleanup needs to be done
+    fn handle_unsubscribe_message(
+        &self,
+        _topic: String,
+        _route_params: &UrlParams,
+    ) -> Result<(), ApiServerError> {
+        Ok(())
+    }
+}
