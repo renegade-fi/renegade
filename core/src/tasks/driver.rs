@@ -10,7 +10,11 @@ use tokio::runtime::{Builder as TokioRuntimeBuilder, Runtime as TokioRuntime};
 use tracing::log;
 use uuid::Uuid;
 
-use crate::state::{new_async_shared, AsyncShared};
+use crate::{
+    state::{new_async_shared, AsyncShared},
+    system_bus::SystemBus,
+    types::{task_topic_name, SystemBusMessage},
+};
 
 use super::{
     create_new_wallet::NewWalletTaskState, initialize_state::InitializeStateTaskState,
@@ -79,11 +83,13 @@ pub struct TaskDriver {
     open_tasks: AsyncShared<HashMap<Uuid, StateWrapper>>,
     /// The runtime to spawn tasks onto
     runtime: AsyncShared<TokioRuntime>,
+    /// A reference to the system bus for sending pubsub updates
+    system_bus: SystemBus<SystemBusMessage>,
 }
 
 impl TaskDriver {
     /// Constructor
-    pub fn new() -> Self {
+    pub fn new(system_bus: SystemBus<SystemBusMessage>) -> Self {
         // Build a runtime
         let runtime = TokioRuntimeBuilder::new_multi_thread()
             .enable_all()
@@ -95,7 +101,13 @@ impl TaskDriver {
         Self {
             open_tasks: new_async_shared(HashMap::new()),
             runtime: new_async_shared(runtime),
+            system_bus,
         }
+    }
+
+    /// Returns whether the given task ID is valid
+    pub async fn contains_task(&self, task_id: &TaskIdentifier) -> bool {
+        self.open_tasks.read().await.contains_key(task_id)
     }
 
     /// Fetch the status of the requested task
@@ -158,6 +170,15 @@ impl TaskDriver {
             {
                 *self.open_tasks.write().await.get_mut(&task_id).unwrap() = task_state.into()
             } // open_tasks lock released
+
+            // Publish the state to the system bus for listeners on this task
+            self.system_bus.publish(
+                task_topic_name(&task_id),
+                SystemBusMessage::TaskStatusUpdate {
+                    task_id,
+                    state: task.state().into(),
+                },
+            );
         }
     }
 }

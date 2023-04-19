@@ -5,12 +5,13 @@ use circuits::zk_circuits::{
     valid_settle::{ValidSettleStatement, ValidSettleWitness},
     valid_wallet_update::ValidWalletUpdateWitness,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::{
     external_api::types::{NetworkOrder, Peer, Wallet},
     price_reporter::reporter::PriceReport,
     state::{wallet::WalletIdentifier, OrderIdentifier},
+    tasks::driver::{StateWrapper as TaskStatus, TaskIdentifier},
     MAX_BALANCES, MAX_FEES, MAX_ORDERS,
 };
 
@@ -52,12 +53,17 @@ pub fn wallet_topic_name(wallet_id: &WalletIdentifier) -> String {
     format!("wallet-updates-{}", wallet_id)
 }
 
+/// Get the topic name for a given task
+pub fn task_topic_name(task_id: &TaskIdentifier) -> String {
+    format!("task-updates-{}", task_id)
+}
+
 /// A message type for generic system bus messages, broadcast to all modules
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type")]
 #[allow(clippy::large_enum_variant)]
 pub enum SystemBusMessage {
-    // -- Handshake --
+    // -- Handshake -- //
     /// A message indicating that a handshake with a peer has started
     HandshakeInProgress {
         /// The order_id of the local party
@@ -77,7 +83,7 @@ pub enum SystemBusMessage {
         timestamp: u64,
     },
 
-    // -- Order Book --
+    // -- Order Book -- //
     /// A message indicating that a new order has come into the network order book
     NewOrder {
         /// The newly discovered order
@@ -90,7 +96,7 @@ pub enum SystemBusMessage {
         order: NetworkOrder,
     },
 
-    // -- Network Updates --
+    // -- Network Updates -- //
     /// A new peer has been discovered on the network
     NewPeer {
         /// The peer discovered
@@ -108,6 +114,15 @@ pub enum SystemBusMessage {
     /// A message indicating that a new individual exchange PriceReport has been published
     PriceReportExchange(PriceReport),
 
+    // -- Tasks -- //
+    /// A message indicating that a task has
+    TaskStatusUpdate {
+        /// The ID of the task
+        task_id: TaskIdentifier,
+        /// The new state of the task
+        state: TaskStatus,
+    },
+
     // -- Wallet Updates -- //
     /// A message indicating that a wallet has been updated
     WalletUpdate {
@@ -118,7 +133,7 @@ pub enum SystemBusMessage {
 
 /// A wrapper around a SystemBusMessage containing the topic, used for serializing websocket
 /// messages to clients
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct SystemBusMessageWithTopic {
     /// The topic of this message
     pub topic: String,

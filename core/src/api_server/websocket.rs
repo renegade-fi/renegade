@@ -23,6 +23,7 @@ use crate::{
 use self::{
     handler::{DefaultHandler, WebsocketTopicHandler},
     price_report::PriceReporterHandler,
+    task::TaskStatusHandler,
     wallet::WalletTopicHandler,
 };
 
@@ -30,6 +31,7 @@ use super::{error::ApiServerError, router::UrlParams, worker::ApiServerConfig};
 
 mod handler;
 mod price_report;
+mod task;
 mod wallet;
 
 /// The matchit router with generics specified for websocket use
@@ -54,6 +56,8 @@ const PRICE_REPORT_ROUTE: &str = "/v0/price_report/:source/:base/:quote";
 const ORDER_BOOK_ROUTE: &str = "/v0/order_book";
 /// The network topic, streams events about network peers
 const NETWORK_INFO_TOPIC: &str = "/v0/network";
+/// The task status topic, streams information about task statuses
+const TASK_STATUS_TOPIC: &str = "/v0/task/:task_id";
 
 // --------------------
 // | Websocket Server |
@@ -129,6 +133,17 @@ impl WebsocketServer {
                 NETWORK_INFO_TOPIC,
                 Box::new(DefaultHandler::new_with_remap(
                     NETWORK_TOPOLOGY_TOPIC.to_string(),
+                    config.system_bus.clone(),
+                )),
+            )
+            .unwrap();
+
+        // The "/v0/task/:id" topic
+        router
+            .insert(
+                TASK_STATUS_TOPIC,
+                Box::new(TaskStatusHandler::new(
+                    config.task_driver.clone(),
                     config.system_bus.clone(),
                 )),
             )
