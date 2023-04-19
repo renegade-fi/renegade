@@ -64,6 +64,8 @@ pub enum SystemBusMessage {
         local_order_id: OrderIdentifier,
         /// The order_id of the remote peer
         peer_order_id: OrderIdentifier,
+        /// The timestamp of the event
+        timestamp: u64,
     },
     /// A message indicating that a handshake with a peer has completed
     HandshakeCompleted {
@@ -71,6 +73,8 @@ pub enum SystemBusMessage {
         local_order_id: OrderIdentifier,
         /// The order_id of the remote peer
         peer_order_id: OrderIdentifier,
+        /// The timestamp of the event
+        timestamp: u64,
     },
 
     // -- Order Book --

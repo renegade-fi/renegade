@@ -5,7 +5,11 @@ use crossbeam::channel::Sender as CrossbeamSender;
 use futures::executor::block_on;
 use libp2p::request_response::ResponseChannel;
 use portpicker::pick_unused_port;
-use std::{thread::JoinHandle, time::Duration};
+use std::{
+    convert::TryInto,
+    thread::JoinHandle,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::log;
 use uuid::Uuid;
@@ -53,6 +57,16 @@ pub(super) const HANDSHAKE_INTERVAL_MS: u64 = 2_000; // 2 seconds
 const NANOS_PER_MILLI: u64 = 1_000_000;
 /// The number of threads executing handshakes
 pub(super) const HANDSHAKE_EXECUTOR_N_THREADS: usize = 8;
+
+/// Get the current unix timestamp in milliseconds since the epoch
+fn get_timestamp_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        .try_into()
+        .unwrap()
+}
 
 /// Manages requests to handshake from a peer and sends outbound requests to initiate
 /// a handshake
@@ -230,6 +244,7 @@ impl HandshakeExecutor {
                     SystemBusMessage::HandshakeInProgress {
                         local_order_id: order_state.local_order_id,
                         peer_order_id: order_state.peer_order_id,
+                        timestamp: get_timestamp_millis(),
                     },
                 );
 
@@ -667,6 +682,7 @@ impl HandshakeExecutor {
             SystemBusMessage::HandshakeCompleted {
                 local_order_id: state.local_order_id,
                 peer_order_id: state.peer_order_id,
+                timestamp: get_timestamp_millis(),
             },
         );
 
