@@ -12,7 +12,7 @@ use tracing::log;
 use tungstenite::Message;
 
 use crate::{
-    external_api::websocket::{SubscriptionMessage, SubscriptionResponse},
+    external_api::websocket::{ClientWebsocketMessage, SubscriptionResponse, WebsocketMessage},
     system_bus::TopicReader,
     types::{
         SystemBusMessage, SystemBusMessageWithTopic, HANDSHAKE_STATUS_TOPIC,
@@ -57,7 +57,7 @@ const ORDER_BOOK_ROUTE: &str = "/v0/order_book";
 /// The network topic, streams events about network peers
 const NETWORK_INFO_TOPIC: &str = "/v0/network";
 /// The task status topic, streams information about task statuses
-const TASK_STATUS_TOPIC: &str = "/v0/task/:task_id";
+const TASK_STATUS_TOPIC: &str = "/v0/tasks/:task_id";
 
 // --------------------
 // | Websocket Server |
@@ -245,12 +245,12 @@ impl WebsocketServer {
     ) -> Result<(), ApiServerError> {
         if let Message::Text(msg_text) = message {
             // Deserialize the message body and dispatch to a handler for a response
-            let deserialized: Result<SubscriptionMessage, _> = serde_json::from_str(&msg_text);
+            let deserialized: Result<ClientWebsocketMessage, _> = serde_json::from_str(&msg_text);
             let resp = match deserialized {
                 // Valid message body
-                Ok(message_body) => {
+                Ok(message) => {
                     let response = match self
-                        .handle_subscription_message(message_body, client_subscriptions)
+                        .handle_subscription_message(message.body, client_subscriptions)
                         .await
                     {
                         Ok(resp) => serde_json::to_string(&resp).map_err(|err| {
@@ -280,12 +280,12 @@ impl WebsocketServer {
     /// Handles an incoming subscribe/unsubscribe message
     async fn handle_subscription_message(
         &self,
-        message: SubscriptionMessage,
+        message: WebsocketMessage,
         client_subscriptions: &mut StreamMap<String, TopicReader<SystemBusMessage>>,
     ) -> Result<SubscriptionResponse, ApiServerError> {
         // Update local subscriptions
         match message {
-            SubscriptionMessage::Subscribe { topic } => {
+            WebsocketMessage::Subscribe { topic } => {
                 // Find the handler for the given topic
                 let (params, route_handler) = self.parse_route_and_params(&topic)?;
 
@@ -297,7 +297,7 @@ impl WebsocketServer {
                 client_subscriptions.insert(topic.clone(), reader);
             }
 
-            SubscriptionMessage::Unsubscribe { topic } => {
+            WebsocketMessage::Unsubscribe { topic } => {
                 // Parse the route and apply a handler to it
                 let (params, route_handler) = self.parse_route_and_params(&topic)?;
                 route_handler
