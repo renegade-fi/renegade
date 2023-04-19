@@ -133,4 +133,8 @@ impl WebsocketTopicHandler for PriceReporterHandler {
     ) -> Result<(), ApiServerError> {
         Ok(())
     }
+
+    fn requires_wallet_auth(&self) -> bool {
+        false
+    }
 }

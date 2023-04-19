@@ -29,11 +29,16 @@ pub trait WebsocketTopicHandler: Send + Sync {
         topic: String,
         route_params: &UrlParams,
     ) -> Result<(), ApiServerError>;
+
+    /// Whether or not the route requires wallet auth
+    fn requires_wallet_auth(&self) -> bool;
 }
 
 /// The default handler directly subscribes and unsubscribes from the topic
 #[derive(Clone)]
 pub struct DefaultHandler {
+    /// Whether or not the endpoint is authenticated
+    authenticated: bool,
     /// A reference to the relayer-global system bus
     system_bus: SystemBus<SystemBusMessage>,
     /// The bus topic to subscribe to on a subscription message
@@ -44,8 +49,13 @@ pub struct DefaultHandler {
 
 impl DefaultHandler {
     /// Constructor
-    pub fn new_with_remap(topic_remap: String, system_bus: SystemBus<SystemBusMessage>) -> Self {
+    pub fn new_with_remap(
+        authenticated: bool,
+        topic_remap: String,
+        system_bus: SystemBus<SystemBusMessage>,
+    ) -> Self {
         Self {
+            authenticated,
             system_bus,
             topic_remap: Some(topic_remap),
         }
@@ -76,5 +86,9 @@ impl WebsocketTopicHandler for DefaultHandler {
         _route_params: &UrlParams,
     ) -> Result<(), ApiServerError> {
         Ok(())
+    }
+
+    fn requires_wallet_auth(&self) -> bool {
+        self.authenticated
     }
 }
