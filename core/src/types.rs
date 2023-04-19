@@ -8,7 +8,7 @@ use circuits::zk_circuits::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    external_api::types::{NetworkOrder, Wallet},
+    external_api::types::{NetworkOrder, Peer, Wallet},
     price_reporter::reporter::PriceReport,
     state::{wallet::WalletIdentifier, OrderIdentifier},
     MAX_BALANCES, MAX_FEES, MAX_ORDERS,
@@ -40,20 +40,24 @@ pub const HANDSHAKE_STATUS_TOPIC: &str = "handshakes";
 /// The topic published to when a state change occurs on an order
 pub const ORDER_STATE_CHANGE_TOPIC: &str = "order-state";
 
+// ----------------------------
+// | System Bus Message Types |
+// ----------------------------
+
+/// The system bus topic published to when a network topology change occurs
+pub const NETWORK_TOPOLOGY_TOPIC: &str = "network-topology";
+
 /// Get the topic name for a given wallet
 pub fn wallet_topic_name(wallet_id: &WalletIdentifier) -> String {
     format!("wallet-updates-{}", wallet_id)
 }
-
-// ----------------------------
-// | System Bus Message Types |
-// ----------------------------
 
 /// A message type for generic system bus messages, broadcast to all modules
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[allow(clippy::large_enum_variant)]
 pub enum SystemBusMessage {
+    // -- Handshake --
     /// A message indicating that a handshake with a peer has started
     HandshakeInProgress {
         /// The order_id of the local party
@@ -68,6 +72,8 @@ pub enum SystemBusMessage {
         /// The order_id of the remote peer
         peer_order_id: OrderIdentifier,
     },
+
+    // -- Order Book --
     /// A message indicating that a new order has come into the network order book
     NewOrder {
         /// The newly discovered order
@@ -79,10 +85,26 @@ pub enum SystemBusMessage {
         /// The new state of the order
         order: NetworkOrder,
     },
+
+    // -- Network Updates --
+    /// A new peer has been discovered on the network
+    NewPeer {
+        /// The peer discovered
+        peer: Peer,
+    },
+    /// A peer was expired after successive heartbeat failures
+    PeerExpired {
+        /// The expired peer
+        peer: Peer,
+    },
+
+    // -- Price Report -- //
     /// A message indicating that a new median PriceReport has been published
     PriceReportMedian(PriceReport),
     /// A message indicating that a new individual exchange PriceReport has been published
     PriceReportExchange(PriceReport),
+
+    // -- Wallet Updates -- //
     /// A message indicating that a wallet has been updated
     WalletUpdate {
         /// The new wallet after update

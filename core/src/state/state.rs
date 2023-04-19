@@ -7,7 +7,7 @@ use crate::{
     proof_generation::jobs::ValidCommitmentsBundle,
     state::orderbook::NetworkOrder,
     system_bus::SystemBus,
-    types::{wallet_topic_name, SystemBusMessage},
+    types::{wallet_topic_name, SystemBusMessage, NETWORK_TOPOLOGY_TOPIC},
 };
 use circuits::types::wallet::Nullifier;
 use libp2p::{
@@ -209,7 +209,14 @@ impl RelayerState {
             if let Some(info) = peer_info.get(peer) && info.verify_cluster_auth_sig().is_ok() {
                 // Record a dummy heartbeat to setup the initial state
                 info.successful_heartbeat();
-                locked_peer_index.add_peer(info.clone()).await
+                locked_peer_index.add_peer(info.clone()).await;
+
+                // Push a message onto the bus indicating the new peer discovery
+                self.system_bus
+                    .publish(
+                        NETWORK_TOPOLOGY_TOPIC.to_string(),
+                        SystemBusMessage::NewPeer { peer: info.clone().into() }
+                    );
             } else {
                 continue;
             }
@@ -219,12 +226,20 @@ impl RelayerState {
     /// Expire a set of peers that have been determined to have failed
     pub async fn remove_peer(&self, peer: &WrappedPeerId) {
         // Update the peer index
-        self.write_peer_index().await.remove_peer(peer).await;
+        let expired_peer = self.write_peer_index().await.remove_peer(peer).await;
         // Update the replicas set for any wallets replicated by the expired peer
         self.read_wallet_index()
             .await
             .remove_peer_replicas(peer)
             .await;
+
+        // Push an event onto the bus signalling the peer is expired
+        if let Some(peer) = expired_peer {
+            self.system_bus.publish(
+                NETWORK_TOPOLOGY_TOPIC.to_string(),
+                SystemBusMessage::PeerExpired { peer: peer.into() },
+            );
+        }
     }
 
     // ----------------------

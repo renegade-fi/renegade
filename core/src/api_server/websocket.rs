@@ -16,7 +16,7 @@ use crate::{
     system_bus::TopicReader,
     types::{
         SystemBusMessage, SystemBusMessageWithTopic, HANDSHAKE_STATUS_TOPIC,
-        ORDER_STATE_CHANGE_TOPIC,
+        NETWORK_TOPOLOGY_TOPIC, ORDER_STATE_CHANGE_TOPIC,
     },
 };
 
@@ -52,6 +52,8 @@ const WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
 const PRICE_REPORT_ROUTE: &str = "/v0/price_report/:source/:base/:quote";
 /// The order book topic, streams events about known network orders
 const ORDER_BOOK_ROUTE: &str = "/v0/order_book";
+/// The network topic, streams events about network peers
+const NETWORK_INFO_TOPIC: &str = "/v0/network";
 
 // --------------------
 // | Websocket Server |
@@ -116,6 +118,17 @@ impl WebsocketServer {
                 ORDER_BOOK_ROUTE,
                 Box::new(DefaultHandler::new_with_remap(
                     ORDER_STATE_CHANGE_TOPIC.to_string(),
+                    config.system_bus.clone(),
+                )),
+            )
+            .unwrap();
+
+        // The "/v0/network" topic
+        router
+            .insert(
+                NETWORK_INFO_TOPIC,
+                Box::new(DefaultHandler::new_with_remap(
+                    NETWORK_TOPOLOGY_TOPIC.to_string(),
                     config.system_bus.clone(),
                 )),
             )
