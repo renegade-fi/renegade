@@ -1,9 +1,9 @@
 //! Groups logic for managing websocket connections
 
-use std::{net::SocketAddr, sync::Arc};
+use std::{convert::TryFrom, net::SocketAddr, sync::Arc};
 
 use futures::{stream::SplitSink, SinkExt, StreamExt};
-use hyper::StatusCode;
+use hyper::{http::HeaderValue, HeaderMap, StatusCode};
 use matchit::Router;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_stream::StreamMap;
@@ -12,6 +12,7 @@ use tracing::log;
 use tungstenite::Message;
 
 use crate::{
+    api_server::router::ERR_WALLET_NOT_FOUND,
     external_api::websocket::{ClientWebsocketMessage, SubscriptionResponse, WebsocketMessage},
     system_bus::TopicReader,
     types::{
@@ -27,7 +28,10 @@ use self::{
     wallet::WalletTopicHandler,
 };
 
-use super::{error::ApiServerError, router::UrlParams, worker::ApiServerConfig};
+use super::{
+    authenticate_wallet_request, error::ApiServerError, http::parse_wallet_id_from_params,
+    router::UrlParams, worker::ApiServerConfig,
+};
 
 mod handler;
 mod price_report;
@@ -41,6 +45,8 @@ type WebsocketRouter = Router<Box<dyn WebsocketTopicHandler>>;
 const DUMMY_SUBSCRIPTION_TOPIC: &str = "dummy-topic";
 /// The error message given when an invalid topic is subscribed to
 const ERR_INVALID_TOPIC: &str = "invalid topic";
+/// The error message given when a header map cannot be parsed for a request
+const ERR_HEADER_PARSE: &str = "error parsing headers";
 
 // ----------
 // | Topics |
@@ -88,6 +94,7 @@ impl WebsocketServer {
             .insert(
                 HANDSHAKE_ROUTE,
                 Box::new(DefaultHandler::new_with_remap(
+                    false, /* authenticated */
                     HANDSHAKE_STATUS_TOPIC.to_string(),
                     config.system_bus.clone(),
                 )),
@@ -121,6 +128,7 @@ impl WebsocketServer {
             .insert(
                 ORDER_BOOK_ROUTE,
                 Box::new(DefaultHandler::new_with_remap(
+                    false, /* authenticated */
                     ORDER_STATE_CHANGE_TOPIC.to_string(),
                     config.system_bus.clone(),
                 )),
@@ -132,6 +140,7 @@ impl WebsocketServer {
             .insert(
                 NETWORK_INFO_TOPIC,
                 Box::new(DefaultHandler::new_with_remap(
+                    false, /* authenticated */
                     NETWORK_TOPOLOGY_TOPIC.to_string(),
                     config.system_bus.clone(),
                 )),
@@ -250,7 +259,7 @@ impl WebsocketServer {
                 // Valid message body
                 Ok(message) => {
                     let response = match self
-                        .handle_subscription_message(message.body, client_subscriptions)
+                        .handle_subscription_message(message, client_subscriptions)
                         .await
                     {
                         Ok(resp) => serde_json::to_string(&resp).map_err(|err| {
@@ -280,14 +289,19 @@ impl WebsocketServer {
     /// Handles an incoming subscribe/unsubscribe message
     async fn handle_subscription_message(
         &self,
-        message: WebsocketMessage,
+        message: ClientWebsocketMessage,
         client_subscriptions: &mut StreamMap<String, TopicReader<SystemBusMessage>>,
     ) -> Result<SubscriptionResponse, ApiServerError> {
         // Update local subscriptions
-        match message {
-            WebsocketMessage::Subscribe { topic } => {
+        match message.body {
+            WebsocketMessage::Subscribe { ref topic } => {
                 // Find the handler for the given topic
-                let (params, route_handler) = self.parse_route_and_params(&topic)?;
+                let (params, route_handler) = self.parse_route_and_params(topic)?;
+
+                // Validate auth
+                if route_handler.requires_wallet_auth() {
+                    self.authenticate_subscription(&params, &message).await?;
+                }
 
                 // Register the topic subscription in the system bus and in the stream
                 // map that the listener loop polls
@@ -335,6 +349,47 @@ impl WebsocketServer {
         }
 
         Ok((params, route.value.as_ref()))
+    }
+
+    /// Authenticate a request by verifying a signature of the body by `sk_root`
+    async fn authenticate_subscription(
+        &self,
+        params: &UrlParams,
+        message: &ClientWebsocketMessage,
+    ) -> Result<(), ApiServerError> {
+        // Parse the wallet ID from the params
+        let wallet_id = parse_wallet_id_from_params(params)?;
+        let headers: HeaderMap<HeaderValue> =
+            HeaderMap::try_from(&message.headers).map_err(|_| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::BAD_REQUEST,
+                    ERR_HEADER_PARSE.to_string(),
+                )
+            })?;
+
+        // Look up the verification key in the global state
+        let pk_root = self
+            .config
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&wallet_id)
+            .await
+            .ok_or_else(|| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::NOT_FOUND,
+                    ERR_WALLET_NOT_FOUND.to_string(),
+                )
+            })?
+            .key_chain
+            .public_keys
+            .pk_root;
+
+        // Serialize the body to bytes
+        let body_serialized =
+            serde_json::to_vec(&message.body).expect("re-serialization should not fail");
+
+        authenticate_wallet_request(headers, &body_serialized, &pk_root)
     }
 
     /// Push an internal event that the client is subscribed to onto the websocket

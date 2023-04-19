@@ -79,4 +79,8 @@ impl WebsocketTopicHandler for WalletTopicHandler {
     ) -> Result<(), ApiServerError> {
         Ok(())
     }
+
+    fn requires_wallet_auth(&self) -> bool {
+        true
+    }
 }

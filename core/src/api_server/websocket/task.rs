@@ -71,4 +71,8 @@ impl WebsocketTopicHandler for TaskStatusHandler {
     ) -> Result<(), ApiServerError> {
         Ok(())
     }
+
+    fn requires_wallet_auth(&self) -> bool {
+        false
+    }
 }
