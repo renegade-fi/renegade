@@ -191,7 +191,7 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Build a task driver that may be used to spawn long-lived asynchronous tasks that
     // are common among workers
-    let task_driver = TaskDriver::new();
+    let task_driver = TaskDriver::new(system_bus.clone());
 
     // Spawn a thread to sync the relayer-global state with on-chain state and
     // network state
