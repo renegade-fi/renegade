@@ -57,10 +57,6 @@ pub enum NetworkOrderState {
     /// A cancelled order is invalidated because a nullifier for the wallet was submitted
     /// on-chain
     Cancelled,
-    /// A pruned order was valid, but the originating relayer is not contactable, the local
-    /// node places an order in this state and allows some time for the originating relayer's
-    /// cluster peers to pick up the order and begin shopping it around the network
-    Pruned,
 }
 
 /// Represents an order discovered either via gossip, or from within the local
@@ -160,17 +156,6 @@ impl NetworkOrder {
         self.valid_commit_proof = None;
         self.valid_commit_witness = None;
     }
-
-    /// Transitions the state of an order to `Pruned`
-    #[allow(unused)]
-    pub(self) fn transition_pruned(&mut self) {
-        self.state = NetworkOrderState::Pruned;
-
-        // We no longer need the validity proof (if it exists)
-        // so it is safe to drop
-        self.valid_commit_proof = None;
-        self.valid_commit_witness = None;
-    }
 }
 
 /// Display implementation that ignores enum struct values
@@ -181,7 +166,6 @@ impl Display for NetworkOrderState {
             NetworkOrderState::Verified { .. } => f.write_str("Verified"),
             NetworkOrderState::Matched { .. } => f.write_str("Matched"),
             NetworkOrderState::Cancelled => f.write_str("Cancelled"),
-            NetworkOrderState::Pruned => f.write_str("Pruned"),
         }
     }
 }
@@ -442,7 +426,16 @@ impl NetworkOrderBook {
             .insert(order.id);
 
         // Add an entry in the order index
-        self.order_map.insert(order.id, new_async_shared(order));
+        self.order_map
+            .insert(order.id, new_async_shared(order.clone()));
+
+        // Publish the new order to the system bus
+        self.system_bus.publish(
+            ORDER_STATE_CHANGE_TOPIC.to_string(),
+            SystemBusMessage::NewOrder {
+                order: order.into(),
+            },
+        )
     }
 
     /// Update the validity proof for an order
@@ -455,12 +448,7 @@ impl NetworkOrderBook {
         self.write_nullifier_order_set(proof.statement.nullifier)
             .await
             .insert(*order_id);
-
-        if let Some(mut locked_order) = self.write_order(order_id).await {
-            locked_order.attach_commitment_proof(proof);
-        }
-
-        self.add_verified_order(*order_id).await;
+        self.transition_verified(order_id, proof).await;
     }
 
     /// Attach a validity proof witness to the local order state
@@ -492,27 +480,6 @@ impl NetworkOrderBook {
     // | Order State Transition |
     // --------------------------
 
-    /// Transitions the state of an order back to the received state, this drops
-    /// the existing proof of `VALID COMMITMENTS`
-    #[allow(unused)]
-    pub async fn transition_order_received(&mut self, order_id: &OrderIdentifier) {
-        if let Some(mut order) = self.write_order(order_id).await {
-            let prev_state = order.state;
-            order.transition_received();
-
-            self.remove_verified_order(order_id);
-
-            self.system_bus.publish(
-                ORDER_STATE_CHANGE_TOPIC.to_string(),
-                SystemBusMessage::OrderStateChange {
-                    order_id: *order_id,
-                    prev_state,
-                    new_state: order.state,
-                },
-            );
-        }
-    }
-
     /// Transitions the state of an order to the verified state
     #[allow(unused)]
     pub async fn transition_verified(
@@ -523,15 +490,12 @@ impl NetworkOrderBook {
         if let Some(mut order) = self.write_order(order_id).await {
             let prev_state = order.state;
             order.transition_verified(proof);
-
             self.add_verified_order(*order_id).await;
 
             self.system_bus.publish(
                 ORDER_STATE_CHANGE_TOPIC.to_string(),
                 SystemBusMessage::OrderStateChange {
-                    order_id: *order_id,
-                    prev_state,
-                    new_state: order.state,
+                    order: order.clone().into(),
                 },
             );
         }
@@ -543,15 +507,12 @@ impl NetworkOrderBook {
         if let Some(mut order) = self.write_order(order_id).await {
             let prev_state = order.state;
             order.transition_matched(by_local_node);
-
             self.remove_verified_order(order_id).await;
 
             self.system_bus.publish(
                 ORDER_STATE_CHANGE_TOPIC.to_string(),
                 SystemBusMessage::OrderStateChange {
-                    order_id: *order_id,
-                    prev_state,
-                    new_state: order.state,
+                    order: order.clone().into(),
                 },
             );
         }
@@ -563,35 +524,12 @@ impl NetworkOrderBook {
         if let Some(mut order) = self.write_order(order_id).await {
             let prev_state = order.state;
             order.transition_cancelled();
-
             self.remove_verified_order(order_id).await;
 
             self.system_bus.publish(
                 ORDER_STATE_CHANGE_TOPIC.to_string(),
                 SystemBusMessage::OrderStateChange {
-                    order_id: *order_id,
-                    prev_state,
-                    new_state: order.state,
-                },
-            );
-        }
-    }
-
-    /// Transitions the state of an order to `Pruned`
-    #[allow(unused)]
-    pub async fn transition_pruned(&mut self, order_id: &OrderIdentifier) {
-        if let Some(mut order) = self.write_order(order_id).await {
-            let prev_state = order.state;
-            order.transition_pruned();
-
-            self.remove_verified_order(order_id).await;
-
-            self.system_bus.publish(
-                ORDER_STATE_CHANGE_TOPIC.to_string(),
-                SystemBusMessage::OrderStateChange {
-                    order_id: *order_id,
-                    prev_state,
-                    new_state: order.state,
+                    order: order.clone().into(),
                 },
             );
         }
