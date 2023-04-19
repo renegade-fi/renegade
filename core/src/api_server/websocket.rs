@@ -14,7 +14,10 @@ use tungstenite::Message;
 use crate::{
     external_api::websocket::{SubscriptionMessage, SubscriptionResponse},
     system_bus::TopicReader,
-    types::{SystemBusMessage, SystemBusMessageWithTopic, HANDSHAKE_STATUS_TOPIC},
+    types::{
+        SystemBusMessage, SystemBusMessageWithTopic, HANDSHAKE_STATUS_TOPIC,
+        ORDER_STATE_CHANGE_TOPIC,
+    },
 };
 
 use self::{
@@ -47,6 +50,8 @@ const HANDSHAKE_ROUTE: &str = "/v0/handshake";
 const WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
 /// The price report topic, events about price updates are streamed
 const PRICE_REPORT_ROUTE: &str = "/v0/price_report/:source/:base/:quote";
+/// The order book topic, streams events about known network orders
+const ORDER_BOOK_ROUTE: &str = "/v0/order_book";
 
 // --------------------
 // | Websocket Server |
@@ -100,6 +105,17 @@ impl WebsocketServer {
                 PRICE_REPORT_ROUTE,
                 Box::new(PriceReporterHandler::new(
                     config.price_reporter_work_queue.clone(),
+                    config.system_bus.clone(),
+                )),
+            )
+            .unwrap();
+
+        // The "/v0/order_book" route
+        router
+            .insert(
+                ORDER_BOOK_ROUTE,
+                Box::new(DefaultHandler::new_with_remap(
+                    ORDER_STATE_CHANGE_TOPIC.to_string(),
                     config.system_bus.clone(),
                 )),
             )

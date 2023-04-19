@@ -8,9 +8,9 @@ use circuits::zk_circuits::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    external_api::types::Wallet,
+    external_api::types::{NetworkOrder, Wallet},
     price_reporter::reporter::PriceReport,
-    state::{wallet::WalletIdentifier, NetworkOrderState, OrderIdentifier},
+    state::{wallet::WalletIdentifier, OrderIdentifier},
     MAX_BALANCES, MAX_FEES, MAX_ORDERS,
 };
 
@@ -68,15 +68,16 @@ pub enum SystemBusMessage {
         /// The order_id of the remote peer
         peer_order_id: OrderIdentifier,
     },
+    /// A message indicating that a new order has come into the network order book
+    NewOrder {
+        /// The newly discovered order
+        order: NetworkOrder,
+    },
     /// A message indicating that an order has changed state in the local order
     /// book
     OrderStateChange {
-        /// The order identifier
-        order_id: OrderIdentifier,
-        /// The old state of the order
-        prev_state: NetworkOrderState,
         /// The new state of the order
-        new_state: NetworkOrderState,
+        order: NetworkOrder,
     },
     /// A message indicating that a new median PriceReport has been published
     PriceReportMedian(PriceReport),
