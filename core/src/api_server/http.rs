@@ -267,7 +267,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             CREATE_WALLET_ROUTE.to_string(),
-            true, /* auth_required */
+            false, /* auth_required */
             CreateWalletHandler::new(
                 config.starknet_client.clone(),
                 global_state.clone(),
