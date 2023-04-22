@@ -73,6 +73,10 @@ struct Cli {
     /// The port to listen on for the externally facing websocket API
     #[clap(long, value_parser, default_value = "4000")]
     pub websocket_port: u16,
+    /// The local peer's base64 encoded p2p key
+    /// A fresh key is generated at startup if this is not present
+    #[clap(long, value_parser)]
+    pub p2p_key: Option<String>,
     /// Flag to disable the API server
     #[clap(long, value_parser)]
     pub disable_api_server: bool,
@@ -130,6 +134,8 @@ pub struct RelayerConfig {
     pub http_port: u16,
     /// The port to listen on for the externally facing websocket API
     pub websocket_port: u16,
+    /// The local peer's base64 encoded p2p key
+    pub p2p_key: Option<String>,
     /// Whether to disable the API server on the local node if, for example,
     /// the local node is an MPC-only node
     pub disable_api_server: bool,
@@ -170,6 +176,7 @@ impl Clone for RelayerConfig {
             p2p_port: self.p2p_port,
             http_port: self.http_port,
             websocket_port: self.websocket_port,
+            p2p_key: self.p2p_key.clone(),
             disable_api_server: self.disable_api_server,
             disable_price_reporter: self.disable_price_reporter,
             wallets: self.wallets.clone(),
@@ -255,6 +262,7 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, CoordinatorError> {
         p2p_port: cli_args.p2p_port,
         http_port: cli_args.http_port,
         websocket_port: cli_args.websocket_port,
+        p2p_key: cli_args.p2p_key,
         disable_api_server: cli_args.disable_api_server,
         disable_price_reporter: cli_args.disable_price_reporter,
         wallets: parse_wallet_file(cli_args.wallet_file)?,

@@ -2,6 +2,7 @@
 //! is passed around throughout the code
 
 use crate::{
+    config::RelayerConfig,
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
     gossip_api::heartbeat::HeartbeatMessage,
     proof_generation::jobs::ValidCommitmentsBundle,
@@ -82,18 +83,23 @@ pub struct RelayerState {
 impl RelayerState {
     /// Initialize the global state at startup
     pub fn initialize_global_state(
-        debug: bool,
-        wallets: Vec<Wallet>,
-        cluster_id: ClusterId,
+        args: &RelayerConfig,
         system_bus: SystemBus<SystemBusMessage>,
     ) -> Self {
-        // Generate an keypair on curve 25519 for the local peer
-        let local_keypair = identity::Keypair::generate_ed25519();
+        // Generate an keypair on curve 25519 for the local peer or fetch from config
+        let local_keypair = args
+            .p2p_key
+            .clone()
+            .map(|b64_encoded| {
+                let decoded = base64::decode(&b64_encoded).expect("p2p key formatted incorrectly");
+                identity::Keypair::from_protobuf_encoding(&decoded).expect("error parsing p2p key")
+            })
+            .unwrap_or_else(identity::Keypair::generate_ed25519);
         let local_peer_id = WrappedPeerId(local_keypair.public().to_peer_id());
 
         // Setup initial wallets
         let mut wallet_index = WalletIndex::new(local_peer_id);
-        for wallet in wallets.into_iter() {
+        for wallet in args.wallets.iter().cloned() {
             wallet_index.add_wallet(wallet);
         }
 
@@ -104,10 +110,10 @@ impl RelayerState {
         let order_book = NetworkOrderBook::new(system_bus.clone());
 
         Self {
-            debug,
+            debug: args.debug,
             local_peer_id,
             local_keypair,
-            local_cluster_id: cluster_id,
+            local_cluster_id: args.cluster_id.clone(),
             local_addr: new_async_shared(Multiaddr::empty()),
             wallet_index: new_async_shared(wallet_index),
             matched_order_pairs: new_async_shared(vec![]),
