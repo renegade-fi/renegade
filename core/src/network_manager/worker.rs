@@ -120,7 +120,7 @@ impl Worker for NetworkManager {
         // Connect the behavior and the transport via swarm
         // and begin listening for requests
         let mut swarm = Swarm::with_threadpool_executor(transport, behavior, *self.local_peer_id);
-        let hostport = format!("/ip4/127.0.0.1/tcp/{}", self.config.port);
+        let hostport = format!("/ip4/0.0.0.0/tcp/{}", self.config.port);
         let addr: Multiaddr = hostport.parse().unwrap();
         self.local_addr = addr.clone();
         block_on(async {

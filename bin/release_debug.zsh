@@ -25,4 +25,4 @@ docker tag $image_name:$image_tag $aws_account_id.dkr.ecr.$aws_region.amazonaws.
 # Push the Docker image to ECR
 docker push $aws_account_id.dkr.ecr.$aws_region.amazonaws.com/$ecr_repository_name:$image_tag
 
-echo "Successfully released production build"
+echo "Successfully released debug build"
