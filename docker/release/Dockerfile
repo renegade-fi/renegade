@@ -50,4 +50,4 @@ RUN apt-get update && \
 COPY --from=builder /build/target/release/renegade-relayer /bin/renegade-relayer
 COPY ./core/resources/no_commit/release.toml /resources/release.toml
 
-ENTRYPOINT [ "/bin/renegade-relayer", "--config-file", "/resources/release.toml" ]
+ENTRYPOINT [ "/bin/renegade-relayer", "--config-file", "/config.toml" ]

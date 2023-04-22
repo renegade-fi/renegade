@@ -2,8 +2,8 @@
 aws_account_id="377928551571"
 aws_region="ca-central-1"
 ecr_repository_name="renegade-main"
-image_name="renegade-relayer"
-image_tag="latest"
+image_name="renegade-relayer-debug"
+image_tag="debug-latest"
 
 # Log in to Amazon ECR
 aws ecr get-login-password --region $aws_region | \
@@ -16,7 +16,7 @@ aws ecr get-login-password --region $aws_region | \
 export DOCKER_BUILDKIT=1
 docker build \
     -t $image_name:$image_tag \
-    -f ./docker/release/Dockerfile \
+    -f ./docker/debug/Dockerfile \
     .
 
 # Tag the Docker image for ECR
