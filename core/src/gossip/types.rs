@@ -21,17 +21,17 @@ use crate::gossip_api::cluster_management::CLUSTER_MANAGEMENT_TOPIC_PREFIX;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PeerInfo {
     /// The identifier used by libp2p for a peer
-    peer_id: WrappedPeerId,
+    pub peer_id: WrappedPeerId,
     /// The multiaddr of the peer
-    addr: Multiaddr,
+    pub addr: Multiaddr,
     /// Last time a successful heartbeat was received from this peer
     #[serde(skip)]
-    last_heartbeat: AtomicU64,
+    pub last_heartbeat: AtomicU64,
     /// The ID of the cluster the peer belongs to
-    cluster_id: ClusterId,
+    pub cluster_id: ClusterId,
     /// The signature of the peer's ID with their cluster private key, used to
     /// prove that the peer is a valid cluster member
-    cluster_auth_signature: Vec<u8>,
+    pub cluster_auth_signature: Vec<u8>,
 }
 
 impl Default for PeerInfo {

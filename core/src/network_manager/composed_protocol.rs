@@ -33,11 +33,11 @@ use crate::gossip_api::gossip::{AuthenticatedGossipRequest, AuthenticatedGossipR
 
 use super::error::NetworkManagerError;
 
-/**
- * Constants
- */
+// -------------
+// | Constants |
+// -------------
 
-// The maximum size libp2p should allocate buffer space for
+/// The maximum size libp2p should allocate buffer space for
 const MAX_MESSAGE_SIZE: usize = 1_000_000_000;
 
 /// The composed behavior that handles all types of network requests that various
@@ -146,9 +146,9 @@ impl From<IdentifyEvent> for ComposedProtocolEvent {
     }
 }
 
-/**
- * Heartbeat protocol versioning, metadata, and codec
- */
+// --------------------------
+// | Request Response Codec |
+// --------------------------
 
 /// Specifies versioning information about the protocol
 #[derive(Debug, Clone, Copy)]

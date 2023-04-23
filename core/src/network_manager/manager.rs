@@ -5,6 +5,7 @@ use futures::StreamExt;
 use itertools::Itertools;
 use libp2p::{
     gossipsub::{Event as GossipsubEvent, Message as GossipsubMessage, Sha256Topic},
+    identify::Event as IdentifyEvent,
     identity::Keypair,
     multiaddr::Protocol,
     request_response::{Event as RequestResponseEvent, Message as RequestResponseMessage},
@@ -18,11 +19,7 @@ use portpicker::Port;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
 
-use std::{
-    cmp::PartialEq,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    thread::JoinHandle,
-};
+use std::{net::SocketAddr, thread::JoinHandle};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::{
@@ -41,6 +38,7 @@ use crate::{
         orderbook_management::{OrderBookManagementMessage, OrderInfoResponse, ORDER_BOOK_TOPIC},
     },
     handshake::jobs::HandshakeExecutionJob,
+    state::RelayerState,
     CancelChannel,
 };
 
@@ -56,13 +54,16 @@ const ERR_NO_KNOWN_ADDR: &str = "no known address for peer";
 /// Emitted when signature verification for an authenticated request fails
 const ERR_SIG_VERIFY: &str = "signature verification failed";
 
+/// The TCP protocol name in libp2p
+const TCP_PROTOCOL_NAME: &str = "tcp";
+
 // -----------
 // | Helpers |
 // -----------
 
 /// Convert a libp2p multiaddr into a standard library socketaddr representation
-fn multiaddr_to_socketaddr(mut addr: Multiaddr, port: Port) -> Option<SocketAddr> {
-    while let Some(protoc) = addr.pop() {
+pub fn multiaddr_to_socketaddr(addr: &Multiaddr, port: Port) -> Option<SocketAddr> {
+    for protoc in addr.iter() {
         match protoc {
             Protocol::Ip4(ip4_addr) => return Some(SocketAddr::new(ip4_addr.into(), port)),
             Protocol::Ip6(ip6_addr) => return Some(SocketAddr::new(ip6_addr.into(), port)),
@@ -73,33 +74,34 @@ fn multiaddr_to_socketaddr(mut addr: Multiaddr, port: Port) -> Option<SocketAddr
     None
 }
 
-/// Returns true if the given address refers to a local address
-fn is_local_addr(addr: &SocketAddr) -> bool {
-    match addr.ip() {
-        IpAddr::V4(addr) => is_local_ipv4(&addr),
-        IpAddr::V6(addr) => is_local_ipv6(&addr),
+/// Replace the tcp port in a multiaddr with the given port
+pub fn replace_port(multiaddr: &mut Multiaddr, port: u16) {
+    // Find the port index
+    let mut index = None;
+    for (i, protocol) in multiaddr.protocol_stack().enumerate() {
+        if protocol == TCP_PROTOCOL_NAME {
+            index = Some(i);
+            break;
+        }
+    }
+
+    match index {
+        Some(tcp_index) => {
+            *multiaddr = multiaddr
+                .replace(tcp_index, |_| Some(Protocol::Tcp(port)))
+                .unwrap();
+        }
+        None => *multiaddr = multiaddr.clone().with(Protocol::Tcp(port)),
     }
 }
 
-/// Returns true if the given ipv4 address is a local address
-fn is_local_ipv4(ipv4: &Ipv4Addr) -> bool {
-    let private_class_a = Ipv4Addr::new(10, 0, 0, 0);
-    let private_class_b = Ipv4Addr::new(172, 16, 0, 0);
-    let private_class_c = Ipv4Addr::new(192, 168, 0, 0);
-    let localhost = Ipv4Addr::new(127, 0, 0, 1);
+/// Returns true if the given address refers to a local address
+pub fn is_local_addr(addr: &Multiaddr) -> bool {
+    if let Some(addr) = multiaddr_to_socketaddr(addr, 0 /* port */) {
+        return !addr.ip().is_global();
+    }
 
-    ipv4.is_private()
-        || ipv4.eq(&localhost)
-        || ipv4.is_loopback()
-        || (ipv4 >= &private_class_a && ipv4 < &Ipv4Addr::new(10, 255, 255, 255))
-        || (ipv4 >= &private_class_b && ipv4 < &Ipv4Addr::new(172, 31, 255, 255))
-        || (ipv4 >= &private_class_c && ipv4 < &Ipv4Addr::new(192, 168, 255, 255))
-}
-
-/// Returns true if the given ipv6 address is a local address
-fn is_local_ipv6(ipv6: &Ipv6Addr) -> bool {
-    let localhost = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
-    ipv6.is_loopback() || ipv6 == &localhost
+    false
 }
 
 // -----------
@@ -131,15 +133,12 @@ impl NetworkManager {
         // Add self to peer info index
         self.config
             .global_state
-            .add_single_peer(
+            .add_peer_unchecked(PeerInfo::new_with_cluster_secret_key(
                 self.local_peer_id,
-                PeerInfo::new_with_cluster_secret_key(
-                    self.local_peer_id,
-                    self.cluster_id.clone(),
-                    self.local_addr.clone(),
-                    self.config.cluster_keypair.as_ref().unwrap(),
-                ),
-            )
+                self.cluster_id.clone(),
+                self.local_addr.clone(),
+                self.config.cluster_keypair.as_ref().unwrap(),
+            ))
             .await;
     }
 
@@ -184,10 +183,15 @@ struct BufferedPubsubMessage {
 /// object-oriented operations while allowing the network manager ownership to be
 /// held by the coordinator thread
 pub(super) struct NetworkManagerExecutor {
+    /// The local port listened on
+    p2p_port: u16,
     /// The peer ID of the local node
     local_peer_id: WrappedPeerId,
     /// The local cluster's keypair, used to sign and authenticate requests
     cluster_key: SigKeypair,
+    /// Whether the network manager has discovered the local peer's public,
+    /// dialable address via `Identify` already
+    discovered_identity: bool,
     /// Whether or not the warmup period has already elapsed
     warmup_finished: bool,
     /// The messages buffered during the warmup period
@@ -195,11 +199,16 @@ pub(super) struct NetworkManagerExecutor {
     /// The underlying swarm that manages low level network behavior
     swarm: Swarm<ComposedNetworkBehavior>,
     /// The channel to receive outbound requests on from other workers
-    send_channel: UnboundedReceiver<GossipOutbound>,
+    ///
+    /// The runtime driver thread takes ownership of this channel via `take` in
+    /// the execution loop
+    job_channel: DefaultWrapper<Option<UnboundedReceiver<GossipOutbound>>>,
     /// The sender for the gossip server's work queue
     gossip_work_queue: TokioSender<GossipServerJob>,
     /// The sender for the handshake manager's work queue
     handshake_work_queue: TokioSender<HandshakeExecutionJob>,
+    /// A reference to the relayer-global state
+    global_state: RelayerState,
     /// The cancel channel that the coordinator thread may use to cancel this worker
     cancel: DefaultWrapper<Option<CancelChannel>>,
 }
@@ -208,23 +217,28 @@ impl NetworkManagerExecutor {
     /// Create a new executor
     #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
+        p2p_port: u16,
         local_peer_id: WrappedPeerId,
         cluster_key: SigKeypair,
         swarm: Swarm<ComposedNetworkBehavior>,
-        send_channel: UnboundedReceiver<GossipOutbound>,
+        job_channel: UnboundedReceiver<GossipOutbound>,
         gossip_work_queue: TokioSender<GossipServerJob>,
         handshake_work_queue: TokioSender<HandshakeExecutionJob>,
+        global_state: RelayerState,
         cancel: CancelChannel,
     ) -> Self {
         Self {
+            p2p_port,
             local_peer_id,
             cluster_key,
+            discovered_identity: false,
             warmup_finished: false,
             warmup_buffer: Vec::new(),
             swarm,
-            send_channel,
+            job_channel: DefaultWrapper::new(Some(job_channel)),
             gossip_work_queue,
             handshake_work_queue,
+            global_state,
             cancel: DefaultWrapper::new(Some(cancel)),
         }
     }
@@ -237,11 +251,12 @@ impl NetworkManagerExecutor {
     pub(super) async fn executor_loop(mut self) -> NetworkManagerError {
         log::info!("Starting executor loop for network manager...");
         let mut cancel_channel = self.cancel.take().unwrap();
+        let mut job_channel = self.job_channel.take().unwrap();
 
         loop {
             tokio::select! {
                 // Handle network requests from worker components of the relayer
-                Some(message) = self.send_channel.recv() => {
+                Some(message) = job_channel.recv() => {
                     // Forward the message
                     if let Err(err) = self.handle_outbound_message(message) {
                         log::info!("Error sending outbound message: {}", err);
@@ -254,7 +269,7 @@ impl NetworkManagerExecutor {
                         SwarmEvent::Behaviour(event) => {
                             if let Err(err) = self.handle_inbound_message(
                                 event,
-                            ) {
+                            ).await {
                                 log::info!("error in network manager: {:?}", err);
                             }
                         },
@@ -262,7 +277,7 @@ impl NetworkManagerExecutor {
                             log::info!("Listening on {}/p2p/{}\n", address, self.local_peer_id);
                         },
                         // This catchall may be enabled for fine-grained libp2p introspection
-                        _ => {  }
+                        e => { log::info!("got swarm event: {e:?}") }
                     }
                 }
 
@@ -275,7 +290,7 @@ impl NetworkManagerExecutor {
     }
 
     /// Handles a network event from the relayer's protocol
-    fn handle_inbound_message(
+    async fn handle_inbound_message(
         &mut self,
         message: ComposedProtocolEvent,
     ) -> Result<(), NetworkManagerError> {
@@ -296,17 +311,11 @@ impl NetworkManagerExecutor {
                 Ok(())
             }
             // KAD events do nothing for now, routing tables are automatically updated by libp2p
-            ComposedProtocolEvent::Kademlia(e) => {
-                log::info!("got network behavior for KAD: {e:?}");
-                Ok(())
-            }
+            ComposedProtocolEvent::Kademlia(_) => Ok(()),
 
             // Identify events do nothing for now, the behavior automatically updates the `external_addresses`
             // field in the swarm
-            ComposedProtocolEvent::Identify(e) => {
-                log::info!("got identify event: {e:?}");
-                Ok(())
-            }
+            ComposedProtocolEvent::Identify(e) => self.handle_identify_event(e).await,
         }
     }
 
@@ -391,6 +400,12 @@ impl NetworkManagerExecutor {
         match command {
             // Register a new peer in the distributed routing tables
             ManagerControlDirective::NewAddr { peer_id, address } => {
+                log::info!("adding addr: {address:?} for peer {peer_id:?}");
+                if is_local_addr(&address) {
+                    log::info!("skipping local addr {:?}", address);
+                    return Ok(());
+                }
+
                 self.swarm
                     .behaviour_mut()
                     .kademlia_dht
@@ -430,10 +445,9 @@ impl NetworkManagerExecutor {
                         // Map each resolved address into a SocketAddr and remove local addresses
                         let peer_addr = all_peer_addrs
                             .into_iter()
-                            .map(|addr| multiaddr_to_socketaddr(addr, peer_port))
-                            .filter(|addr| addr.is_some() && !is_local_addr(&addr.unwrap()))
-                            .map(|addr| addr.unwrap())
-                            .next()
+                            .find(|addr| !is_local_addr(addr))
+                            .map(|addr| multiaddr_to_socketaddr(&addr, peer_port))
+                            .unwrap_or(None)
                             .ok_or_else(|| {
                                 NetworkManagerError::Network(ERR_NO_KNOWN_ADDR.to_string())
                             })?;
@@ -476,6 +490,35 @@ impl NetworkManagerExecutor {
                 Ok(())
             }
         }
+    }
+
+    // ------------------------------
+    // | Identify Protocol Handlers |
+    // ------------------------------
+
+    /// Handle a message from the Identify protocol
+    async fn handle_identify_event(
+        &mut self,
+        event: IdentifyEvent,
+    ) -> Result<(), NetworkManagerError> {
+        // Update the local peer's public IP address if it has not already been discovered
+        if let IdentifyEvent::Received { info, .. } = event {
+            if !self.discovered_identity {
+                // Replace the port if the discovered NAT port is incorrect
+                let mut local_addr = info.observed_addr;
+                replace_port(&mut local_addr, self.p2p_port);
+
+                // Add the p2p multihash to the multiaddr
+                local_addr = local_addr.with(Protocol::P2p(self.local_peer_id.0.into()));
+
+                // Update the addr in the global state
+                log::info!("discovered local peer's public IP: {:?}", local_addr);
+                self.global_state.update_local_peer_addr(local_addr).await;
+                self.discovered_identity = true;
+            }
+        }
+
+        Ok(())
     }
 
     // -----------------------------
@@ -756,5 +799,22 @@ impl NetworkManagerExecutor {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use libp2p::Multiaddr;
+
+    use crate::network_manager::manager::is_local_addr;
+
+    /// Tests the helper that determines whether a multiaddr is a local addr
+    #[test]
+    fn test_local_addr() {
+        let addr_str =
+            "/ip4/35.183.229.42/tcp/8000/p2p/12D3KooWS9m8drb9NFtZB6t3S8hnUeikyG96DupQ6EvMJ6c1ARWn";
+        let addr_parsed: Multiaddr = addr_str.parse().unwrap();
+
+        assert!(!is_local_addr(&addr_parsed))
     }
 }

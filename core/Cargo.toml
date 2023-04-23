@@ -46,8 +46,8 @@ libp2p = { version = "0.51", features = [
     "yamux",
 ]}
 libp2p-core = { version = "0.39" }
-libp2p-identity = { verison = "0.1" }
 libp2p-kad = { version = "0.43" }
+libp2p-identity = { version = "0.1" }
 libp2p-swarm = { version = "0.42" }
 libp2p-swarm-derive = { version = "0.32" }
 lru = { version = "0.8" }

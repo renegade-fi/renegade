@@ -58,12 +58,6 @@ pub struct RelayerState {
     pub local_keypair: Keypair,
     /// The cluster id of the local relayer
     pub local_cluster_id: ClusterId,
-    /// The listening address of the local relayer
-    ///
-    /// Despite being static after initialization, this value is
-    /// set by the network manager, so we maintain a cross-worker
-    /// reference
-    pub local_addr: AsyncShared<Multiaddr>,
     /// The list of wallets managed by the sending relayer
     wallet_index: AsyncShared<WalletIndex>,
     /// The set of peers known to the sending relayer
@@ -96,7 +90,6 @@ impl RelayerState {
             })
             .unwrap_or_else(identity::Keypair::generate_ed25519);
         let local_peer_id = WrappedPeerId(local_keypair.public().to_peer_id());
-
         // Setup initial wallets
         let mut wallet_index = WalletIndex::new(local_peer_id);
         for wallet in args.wallets.iter().cloned() {
@@ -114,7 +107,6 @@ impl RelayerState {
             local_peer_id,
             local_keypair,
             local_cluster_id: args.cluster_id.clone(),
-            local_addr: new_async_shared(Multiaddr::empty()),
             wallet_index: new_async_shared(wallet_index),
             matched_order_pairs: new_async_shared(vec![]),
             peer_index: new_async_shared(peer_index),
@@ -197,6 +189,17 @@ impl RelayerState {
     // | Peer Index Setters |
     // ----------------------
 
+    /// Add a peer without validation that the cluster auth signature is valid or that the
+    /// peer's address is dialable
+    ///
+    /// This should only be used when validation can be assumed from context
+    pub async fn add_peer_unchecked(&self, peer_info: PeerInfo) {
+        self.write_peer_index()
+            .await
+            .add_peer_unchecked(peer_info)
+            .await;
+    }
+
     /// Add a single peer to the global state
     pub async fn add_single_peer(&self, peer_id: WrappedPeerId, peer_info: PeerInfo) {
         let info_map = HashMap::from([(peer_id, peer_info)]);
@@ -246,6 +249,16 @@ impl RelayerState {
                 SystemBusMessage::PeerExpired { peer: peer.into() },
             );
         }
+    }
+
+    /// Update the local peer's public IP address after discovery via gossip
+    ///
+    /// Returns the previous address if one existed
+    pub async fn update_local_peer_addr(&self, addr: Multiaddr) {
+        self.read_peer_index()
+            .await
+            .update_peer_addr(&self.local_peer_id, addr)
+            .await;
     }
 
     // ----------------------
@@ -360,11 +373,6 @@ impl RelayerState {
     // -----------
     // | Locking |
     // -----------
-
-    /// Acquire a write lock on `local_addr`
-    pub async fn write_local_addr(&self) -> RwLockWriteGuard<Multiaddr> {
-        self.local_addr.write().await
-    }
 
     /// Acquire a read lock on `managed_wallets`
     pub async fn read_wallet_index(&self) -> RwLockReadGuard<WalletIndex> {
