@@ -1,14 +1,20 @@
 //! Groups concurrent safe type definitions for indexing peers in the network
 
 use itertools::Itertools;
+use libp2p::Multiaddr;
 use rand::{thread_rng, Rng};
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     fmt::Debug,
+    mem,
 };
 use tokio::sync::{RwLockReadGuard, RwLockWriteGuard};
+use tracing::log;
 
-use crate::gossip::types::{ClusterId, PeerInfo, WrappedPeerId};
+use crate::{
+    gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
+    network_manager::manager::is_local_addr,
+};
 
 use super::{new_async_shared, AsyncShared};
 
@@ -146,7 +152,20 @@ impl PeerIndex {
     // -----------
 
     /// Add a peer to the peer index
+    ///
+    /// Validates that the known address for the peer is dialable, i.e. not a local address
     pub async fn add_peer(&mut self, peer_info: PeerInfo) {
+        // If the peer info specifies a local addr, skip adding the peer, it is not dialable
+        if is_local_addr(&peer_info.addr) {
+            log::debug!("got peer info with un-dialable addr, skipping indexing");
+            return;
+        }
+
+        self.add_peer_unchecked(peer_info).await;
+    }
+
+    /// Add a peer without validating that the given address is valid
+    pub async fn add_peer_unchecked(&mut self, peer_info: PeerInfo) {
         // Add the peer to the list of known peers in its cluster
         let peer_cluster_record = self
             .cluster_peers
@@ -175,6 +194,20 @@ impl PeerIndex {
             .remove(&entry.get_peer_id());
 
         Some(entry)
+    }
+
+    /// Update an address for a peer
+    ///
+    /// Returns the old address if one was found, otherwise `None`
+    pub async fn update_peer_addr(
+        &self,
+        peer_id: &WrappedPeerId,
+        new_addr: Multiaddr,
+    ) -> Option<Multiaddr> {
+        Some(mem::replace(
+            &mut self.write_peer(peer_id).await?.addr,
+            new_addr,
+        ))
     }
 
     /// Record a successful heartbeat for a peer

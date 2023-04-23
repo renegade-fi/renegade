@@ -6,6 +6,7 @@ use ed25519_dalek::Keypair;
 use futures::executor::block_on;
 use libp2p::Multiaddr;
 use libp2p_swarm::SwarmBuilder;
+use tokio::runtime::Builder as TokioRuntimeBuilder;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::log;
 
@@ -24,6 +25,9 @@ use super::{
     error::NetworkManagerError,
     manager::{NetworkManager, NetworkManagerExecutor},
 };
+
+/// The number of threads backing the network
+const NETWORK_MANAGER_N_THREADS: usize = 3;
 
 /// The worker configuration for the network manager
 #[derive(Debug)]
@@ -126,9 +130,6 @@ impl Worker for NetworkManager {
         let addr: Multiaddr = hostport.parse().unwrap();
         self.local_addr = addr.clone();
 
-        block_on(async {
-            *self.config.global_state.write_local_addr().await = self.local_addr.clone()
-        });
         swarm
             .listen_on(addr)
             .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
@@ -141,20 +142,29 @@ impl Worker for NetworkManager {
 
         // Start up the worker thread
         let executor = NetworkManagerExecutor::new(
+            self.config.port,
             self.local_peer_id,
             self.config.cluster_keypair.take().unwrap(),
             swarm,
             self.config.send_channel.take().unwrap(),
             self.config.gossip_work_queue.clone(),
             self.config.handshake_work_queue.clone(),
+            self.config.global_state.clone(),
             self.config.cancel_channel.clone(),
         );
 
         let thread_handle = Builder::new()
             .name("network-manager-main-loop".to_string())
             .spawn(move || {
+                // Build a tokio runtime for the network manager
+                let runtime = TokioRuntimeBuilder::new_multi_thread()
+                    .worker_threads(NETWORK_MANAGER_N_THREADS)
+                    .enable_all()
+                    .build()
+                    .expect("building a runtime to the network manager failed");
+
                 // Block on this to execute the future in a separate thread
-                block_on(executor.executor_loop())
+                runtime.block_on(executor.executor_loop())
             })
             .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
