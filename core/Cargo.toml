@@ -31,7 +31,7 @@ hyper = { version = "0.14", features = ["http1", "http2", "server", "tcp"] }
 integration-helpers = { path = "../integration-helpers" }
 itertools = "0.10"
 lazy_static = "1.4.0"
-libp2p = { version = "0.50", features = [
+libp2p = { version = "0.51", features = [
     "async-std",
     "dns",
     "gossipsub", 
@@ -45,9 +45,11 @@ libp2p = { version = "0.50", features = [
     "websocket",
     "yamux",
 ]}
-libp2p-core = { version = "0.38" }
-libp2p-swarm = { version = "0.41" }
-libp2p-swarm-derive = { version = "0.31" }
+libp2p-core = { version = "0.39" }
+libp2p-identity = { verison = "0.1" }
+libp2p-kad = { version = "0.43" }
+libp2p-swarm = { version = "0.42" }
+libp2p-swarm-derive = { version = "0.32" }
 lru = { version = "0.8" }
 matchit = "0.7"
 mpc-ristretto = { git = "https://github.com/renegade-fi/MPC-Ristretto" }
