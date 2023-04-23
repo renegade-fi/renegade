@@ -4,7 +4,8 @@ use std::thread::{Builder, JoinHandle};
 
 use ed25519_dalek::Keypair;
 use futures::executor::block_on;
-use libp2p::{Multiaddr, Swarm};
+use libp2p::Multiaddr;
+use libp2p_swarm::SwarmBuilder;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::log;
 
@@ -119,10 +120,12 @@ impl Worker for NetworkManager {
 
         // Connect the behavior and the transport via swarm
         // and begin listening for requests
-        let mut swarm = Swarm::with_threadpool_executor(transport, behavior, *self.local_peer_id);
+        let mut swarm =
+            SwarmBuilder::with_tokio_executor(transport, behavior, *self.local_peer_id).build();
         let hostport = format!("/ip4/0.0.0.0/tcp/{}", self.config.port);
         let addr: Multiaddr = hostport.parse().unwrap();
         self.local_addr = addr.clone();
+
         block_on(async {
             *self.config.global_state.write_local_addr().await = self.local_addr.clone()
         });

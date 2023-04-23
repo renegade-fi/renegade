@@ -2,7 +2,7 @@
 
 use ed25519_dalek::{Digest, Keypair, PublicKey, Sha512, Signature, SignatureError};
 use libp2p::{Multiaddr, PeerId};
-use libp2p_core::ParseError as PeerIdParseError;
+use libp2p_identity::ParseError as PeerIdParseError;
 use serde::{
     de::{Error as SerdeErr, Visitor},
     Deserialize, Serialize,

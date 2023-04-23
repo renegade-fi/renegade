@@ -4,20 +4,25 @@ use ed25519_dalek::Keypair as SigKeypair;
 use futures::StreamExt;
 use itertools::Itertools;
 use libp2p::{
-    gossipsub::{GossipsubEvent, GossipsubMessage, Sha256Topic},
+    gossipsub::{Event as GossipsubEvent, Message as GossipsubMessage, Sha256Topic},
     identity::Keypair,
     multiaddr::Protocol,
-    request_response::{RequestResponseEvent, RequestResponseMessage},
+    request_response::{Event as RequestResponseEvent, Message as RequestResponseMessage},
     swarm::SwarmEvent,
     Multiaddr, PeerId, Swarm,
 };
-use libp2p_swarm::NetworkBehaviour;
+use libp2p_core::Endpoint;
+use libp2p_swarm::{ConnectionId, NetworkBehaviour};
 use mpc_ristretto::network::QuicTwoPartyNet;
 use portpicker::Port;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
 
-use std::{net::SocketAddr, thread::JoinHandle};
+use std::{
+    cmp::PartialEq,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    thread::JoinHandle,
+};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::{
@@ -48,8 +53,6 @@ use super::{
 /// Occurs when a peer cannot be dialed because their address is not indexed in
 /// the network behavior
 const ERR_NO_KNOWN_ADDR: &str = "no known address for peer";
-/// Error parsing an address from Multiaddr to Socketaddr
-const ERR_PARSING_ADDR: &str = "could not parse Multiaddr to SocketAddr";
 /// Emitted when signature verification for an authenticated request fails
 const ERR_SIG_VERIFY: &str = "signature verification failed";
 
@@ -68,6 +71,35 @@ fn multiaddr_to_socketaddr(mut addr: Multiaddr, port: Port) -> Option<SocketAddr
     }
 
     None
+}
+
+/// Returns true if the given address refers to a local address
+fn is_local_addr(addr: &SocketAddr) -> bool {
+    match addr.ip() {
+        IpAddr::V4(addr) => is_local_ipv4(&addr),
+        IpAddr::V6(addr) => is_local_ipv6(&addr),
+    }
+}
+
+/// Returns true if the given ipv4 address is a local address
+fn is_local_ipv4(ipv4: &Ipv4Addr) -> bool {
+    let private_class_a = Ipv4Addr::new(10, 0, 0, 0);
+    let private_class_b = Ipv4Addr::new(172, 16, 0, 0);
+    let private_class_c = Ipv4Addr::new(192, 168, 0, 0);
+    let localhost = Ipv4Addr::new(127, 0, 0, 1);
+
+    ipv4.is_private()
+        || ipv4.eq(&localhost)
+        || ipv4.is_loopback()
+        || (ipv4 >= &private_class_a && ipv4 < &Ipv4Addr::new(10, 255, 255, 255))
+        || (ipv4 >= &private_class_b && ipv4 < &Ipv4Addr::new(172, 31, 255, 255))
+        || (ipv4 >= &private_class_c && ipv4 < &Ipv4Addr::new(192, 168, 255, 255))
+}
+
+/// Returns true if the given ipv6 address is a local address
+fn is_local_ipv6(ipv6: &Ipv6Addr) -> bool {
+    let localhost = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
+    ipv6.is_loopback() || ipv6 == &localhost
 }
 
 // -----------
@@ -264,11 +296,17 @@ impl NetworkManagerExecutor {
                 Ok(())
             }
             // KAD events do nothing for now, routing tables are automatically updated by libp2p
-            ComposedProtocolEvent::Kademlia(_) => Ok(()),
+            ComposedProtocolEvent::Kademlia(e) => {
+                log::info!("got network behavior for KAD: {e:?}");
+                Ok(())
+            }
 
             // Identify events do nothing for now, the behavior automatically updates the `external_addresses`
             // field in the swarm
-            ComposedProtocolEvent::Identify(_) => Ok(()),
+            ComposedProtocolEvent::Identify(e) => {
+                log::info!("got identify event: {e:?}");
+                Ok(())
+            }
         }
     }
 
@@ -376,15 +414,28 @@ impl NetworkManagerExecutor {
                 let mpc_net = match local_role {
                     ConnectionRole::Dialer => {
                         // Retrieve known dialable addresses for the peer from the network behavior
-                        let all_peer_addrs = self.swarm.behaviour_mut().addresses_of_peer(&peer_id);
-                        let peer_multiaddr = all_peer_addrs.get(0).ok_or_else(|| {
-                            NetworkManagerError::Network(ERR_NO_KNOWN_ADDR.to_string())
-                        })?;
-                        let peer_addr = multiaddr_to_socketaddr(peer_multiaddr.clone(), peer_port)
+                        let all_peer_addrs = self
+                            .swarm
+                            .behaviour_mut()
+                            .handle_pending_outbound_connection(
+                                ConnectionId::new_unchecked(0),
+                                Some(peer_id.0),
+                                &[],
+                                Endpoint::Dialer,
+                            )
+                            .map_err(|_| {
+                                NetworkManagerError::Network(ERR_NO_KNOWN_ADDR.to_string())
+                            })?;
+
+                        // Map each resolved address into a SocketAddr and remove local addresses
+                        let peer_addr = all_peer_addrs
+                            .into_iter()
+                            .map(|addr| multiaddr_to_socketaddr(addr, peer_port))
+                            .filter(|addr| addr.is_some() && !is_local_addr(&addr.unwrap()))
+                            .map(|addr| addr.unwrap())
+                            .next()
                             .ok_or_else(|| {
-                                NetworkManagerError::SerializeDeserialize(
-                                    ERR_PARSING_ADDR.to_string(),
-                                )
+                                NetworkManagerError::Network(ERR_NO_KNOWN_ADDR.to_string())
                             })?;
 
                         // Build an MPC net and dial the connection as the king party
@@ -392,7 +443,7 @@ impl NetworkManagerExecutor {
                     }
                     ConnectionRole::Listener => {
                         // As the listener, the peer address is inconsequential, and can be a dummy value
-                        let peer_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+                        let peer_addr: SocketAddr = "0.0.0.0:0".parse().unwrap();
                         QuicTwoPartyNet::new(party_id, local_addr, peer_addr)
                     }
                 };

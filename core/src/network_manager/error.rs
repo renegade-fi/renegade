@@ -13,8 +13,6 @@ pub enum NetworkManagerError {
     EnqueueJob(String),
     /// An error with the underlying network operation
     Network(String),
-    /// Serialization/Deserialization error
-    SerializeDeserialize(String),
     /// An error while setting up the network manager
     SetupError(String),
 }

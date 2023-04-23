@@ -9,12 +9,16 @@ use async_trait::async_trait;
 use libp2p::{
     core::upgrade::{read_length_prefixed, write_length_prefixed},
     futures::{AsyncRead, AsyncWrite, AsyncWriteExt},
-    gossipsub::{Gossipsub, GossipsubConfig, GossipsubEvent, MessageAuthenticity},
+    gossipsub::{
+        Behaviour as Gossipsub, Config as GossipsubConfig, Event as GossipsubEvent,
+        MessageAuthenticity,
+    },
     identify::{Behaviour as IdentifyProtocol, Config as IdentifyConfig, Event as IdentifyEvent},
     identity::Keypair,
     kad::{record::store::MemoryStore, Kademlia, KademliaEvent},
     request_response::{
-        ProtocolName, ProtocolSupport, RequestResponse, RequestResponseCodec, RequestResponseEvent,
+        Behaviour as RequestResponse, Codec as RequestResponseCodec, Event as RequestResponseEvent,
+        ProtocolName, ProtocolSupport,
     },
     PeerId,
 };
