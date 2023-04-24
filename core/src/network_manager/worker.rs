@@ -1,9 +1,11 @@
 //! Defines the implementation of the `Worker` trait for the network manager
 
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::thread::{Builder, JoinHandle};
 
 use ed25519_dalek::Keypair;
 use futures::executor::block_on;
+use libp2p::multiaddr::Protocol;
 use libp2p::Multiaddr;
 use libp2p_swarm::SwarmBuilder;
 use tokio::runtime::Builder as TokioRuntimeBuilder;
@@ -39,6 +41,8 @@ pub struct NetworkManagerConfig {
     /// The cluster keypair, wrapped in an option to allow the worker thread to
     /// take ownership of the keypair
     pub(crate) cluster_keypair: Option<Keypair>,
+    /// The known public addr that the local node is listening behind, if one exists
+    pub(crate) known_public_addr: Option<SocketAddr>,
     /// The channel on which to receive requests from other workers
     /// for outbound traffic
     /// This is wrapped in an option to allow the worker thread to take
@@ -63,12 +67,29 @@ impl Worker for NetworkManager {
     fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
         let local_peer_id = config.global_state.local_peer_id;
         let local_keypair = config.global_state.local_keypair.clone();
+
+        // If the local node is given a known dialable addr for itself at startup, construct
+        // the local addr directly, otherwise set it to the canonical unspecified addr targeting
+        // all network interfaces and allow it to be discovered via the `Identify` protocol
+        let ip_protoc = config
+            .known_public_addr
+            .map(|socketaddr| match socketaddr.ip() {
+                IpAddr::V4(addr) => Protocol::Ip4(addr),
+                IpAddr::V6(addr) => Protocol::Ip6(addr),
+            })
+            .unwrap_or_else(|| Protocol::Ip4(Ipv4Addr::new(0, 0, 0, 0)));
+
+        let local_addr = Multiaddr::empty()
+            .with(Protocol::P2p(local_peer_id.0.into()))
+            .with(Protocol::Tcp(config.port))
+            .with(ip_protoc);
+
         Ok(Self {
             cluster_id: config.cluster_id.clone(),
             config,
             local_peer_id,
             local_keypair,
-            local_addr: Multiaddr::empty(),
+            local_addr,
             thread_handle: None,
         })
     }
@@ -128,7 +149,6 @@ impl Worker for NetworkManager {
             SwarmBuilder::with_tokio_executor(transport, behavior, *self.local_peer_id).build();
         let hostport = format!("/ip4/0.0.0.0/tcp/{}", self.config.port);
         let addr: Multiaddr = hostport.parse().unwrap();
-        self.local_addr = addr.clone();
 
         swarm
             .listen_on(addr)

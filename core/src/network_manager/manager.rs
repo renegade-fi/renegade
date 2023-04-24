@@ -48,6 +48,8 @@ use super::{
     worker::NetworkManagerConfig,
 };
 
+/// Error converting between multiaddr and socketaddr
+const ERR_ADDR_CONVERSION: &str = "error parsing socketaddr from multiaddr";
 /// Occurs when a peer cannot be dialed because their address is not indexed in
 /// the network behavior
 const ERR_NO_KNOWN_ADDR: &str = "no known address for peer";
@@ -277,7 +279,7 @@ impl NetworkManagerExecutor {
                             log::info!("Listening on {}/p2p/{}\n", address, self.local_peer_id);
                         },
                         // This catchall may be enabled for fine-grained libp2p introspection
-                        e => { log::info!("got swarm event: {e:?}") }
+                        _ => {  }
                     }
                 }
 
@@ -400,7 +402,6 @@ impl NetworkManagerExecutor {
         match command {
             // Register a new peer in the distributed routing tables
             ManagerControlDirective::NewAddr { peer_id, address } => {
-                log::info!("adding addr: {address:?} for peer {peer_id:?}");
                 if is_local_addr(&address) {
                     log::info!("skipping local addr {:?}", address);
                     return Ok(());
@@ -447,9 +448,15 @@ impl NetworkManagerExecutor {
                             .into_iter()
                             .find(|addr| !is_local_addr(addr))
                             .map(|addr| multiaddr_to_socketaddr(&addr, peer_port))
-                            .unwrap_or(None)
                             .ok_or_else(|| {
+                                // Outer option from `find`
                                 NetworkManagerError::Network(ERR_NO_KNOWN_ADDR.to_string())
+                            })?
+                            .ok_or_else(|| {
+                                // Inner option from `multiaddr_to_socketaddr`
+                                NetworkManagerError::AddressConversion(
+                                    ERR_ADDR_CONVERSION.to_string(),
+                                )
                             })?;
 
                         // Build an MPC net and dial the connection as the king party
