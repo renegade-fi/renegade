@@ -207,6 +207,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (network_cancel_sender, network_cancel_receiver) = watch::channel(());
     let network_manager_config = NetworkManagerConfig {
         port: args.p2p_port,
+        known_public_addr: args.public_ip,
         cluster_id: args.cluster_id.clone(),
         cluster_keypair: Some(args.cluster_keypair),
         send_channel: Some(network_receiver),

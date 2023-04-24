@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     env::{self},
     fs,
+    net::SocketAddr,
 };
 use toml::{value::Map, Value};
 
@@ -47,6 +48,14 @@ struct Cli {
     /// The address of the darkpool contract, defaults to the Goerli deployment
     #[clap(long, value_parser, default_value = "0x1e7857cdd3d73838b0e053be1fa068aa15113793fea95ab663501789d3d0b51")]
     pub contract_address: String,
+
+    // ----------------------------
+    // | Networking Configuration |
+    // ----------------------------
+
+    /// The known public IP address of the local peer
+    #[clap(long, value_parser)] 
+    pub public_ip: Option<SocketAddr>,
     
     // -------------------------
     // | Cluster Configuration |
@@ -120,14 +129,33 @@ struct Cli {
 /// Defines the system config for the relayer
 #[derive(Debug)]
 pub struct RelayerConfig {
+    // -----------------------
+    // | Environment Configs |
+    // -----------------------
     /// Software version of the relayer
     pub version: String,
     /// The blockchain this node targets for settlement
     pub chain_id: ChainId,
     /// The address of the contract in the target network
     pub contract_address: String,
+
+    // ----------------------------
+    // | Networking Configuration |
+    // ----------------------------
+    /// The known public IP address of the local peer
+    pub public_ip: Option<SocketAddr>,
+
+    // -------------------------
+    // | Cluster Configuration |
+    // -------------------------
     /// Bootstrap servers that the peer should connect to
     pub bootstrap_servers: Vec<(WrappedPeerId, Multiaddr)>,
+    /// The cluster keypair
+    pub cluster_keypair: Keypair,
+
+    // ----------------------------
+    // | Local Node Configuration |
+    // ----------------------------
     /// The port to listen on for libp2p
     pub p2p_port: u16,
     /// The port to listen on for the externally facing HTTP API
@@ -142,10 +170,14 @@ pub struct RelayerConfig {
     /// Whether to disable the price reporter if e.g. we are streaming from a dedicated
     /// external API gateway node in the cluster
     pub disable_price_reporter: bool,
-    /// The wallet IDs to manage locally
+    /// Whether or not the relayer is in debug mode
+    pub debug: bool,
+
+    // -----------
+    // | Secrets |
+    // -----------
+    /// The apriori known wallets to begin managing
     pub wallets: Vec<Wallet>,
-    /// The cluster keypair
-    pub cluster_keypair: Keypair,
     /// The cluster ID, a parsed version of the cluster's pubkey
     pub cluster_id: ClusterId,
     /// The Coinbase API key to use for price streaming
@@ -160,8 +192,6 @@ pub struct RelayerConfig {
     pub starknet_private_key: Option<String>,
     /// The Ethereum RPC node websocket address to dial for on-chain data
     pub eth_websocket_addr: Option<String>,
-    /// Whether or not the relayer is in debug mode
-    pub debug: bool,
 }
 
 /// A custom clone implementation specifically for the cluster keypair which does not
@@ -177,6 +207,7 @@ impl Clone for RelayerConfig {
             http_port: self.http_port,
             websocket_port: self.websocket_port,
             p2p_key: self.p2p_key.clone(),
+            public_ip: self.public_ip,
             disable_api_server: self.disable_api_server,
             disable_price_reporter: self.disable_price_reporter,
             wallets: self.wallets.clone(),
@@ -263,6 +294,7 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, CoordinatorError> {
         http_port: cli_args.http_port,
         websocket_port: cli_args.websocket_port,
         p2p_key: cli_args.p2p_key,
+        public_ip: cli_args.public_ip,
         disable_api_server: cli_args.disable_api_server,
         disable_price_reporter: cli_args.disable_price_reporter,
         wallets: parse_wallet_file(cli_args.wallet_file)?,
