@@ -703,6 +703,28 @@ impl Add<OrderSecretShare> for OrderSecretShare {
     }
 }
 
+impl OrderSecretShare {
+    /// Apply a blinder to the secret shares
+    pub fn blind(&mut self, blinder: Scalar) {
+        self.quote_mint += blinder;
+        self.base_mint += blinder;
+        self.side += blinder;
+        self.price += blinder;
+        self.amount += blinder;
+        self.timestamp += blinder;
+    }
+
+    /// Remove a blinder from the secret shares
+    pub fn unblind(&mut self, blinder: Scalar) {
+        self.quote_mint -= blinder;
+        self.base_mint -= blinder;
+        self.side -= blinder;
+        self.price -= blinder;
+        self.amount -= blinder;
+        self.timestamp -= blinder;
+    }
+}
+
 /// Represents an additive secret share of an order committed into a constraint system
 #[derive(Clone, Copy, Debug)]
 pub struct OrderSecretShareVar {
@@ -739,6 +761,28 @@ impl Add<OrderSecretShareVar> for OrderSecretShareVar {
             amount,
             timestamp,
         }
+    }
+}
+
+impl OrderSecretShareVar {
+    /// Apply a blinder to the secret shares
+    pub fn blind(&mut self, blinder: Variable) {
+        self.quote_mint += blinder;
+        self.base_mint += blinder;
+        self.side += blinder;
+        self.price += blinder;
+        self.amount += blinder;
+        self.timestamp += blinder;
+    }
+
+    /// Remove a blinder from the secret shares
+    pub fn unblind(&mut self, blinder: Variable) {
+        self.quote_mint -= blinder;
+        self.base_mint -= blinder;
+        self.side -= blinder;
+        self.price -= blinder;
+        self.amount -= blinder;
+        self.timestamp -= blinder;
     }
 }
 

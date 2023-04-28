@@ -594,6 +594,24 @@ impl Add<FeeSecretShare> for FeeSecretShare {
     }
 }
 
+impl FeeSecretShare {
+    /// Apply a blinder to the secret shares
+    pub fn blind(&mut self, blinder: Scalar) {
+        self.settle_key += blinder;
+        self.gas_addr += blinder;
+        self.gas_token_amount += blinder;
+        self.percentage_fee += blinder;
+    }
+
+    /// Remove a blinder from the secret shares
+    pub fn unblind(&mut self, blinder: Scalar) {
+        self.settle_key -= blinder;
+        self.gas_addr -= blinder;
+        self.gas_token_amount -= blinder;
+        self.percentage_fee -= blinder;
+    }
+}
+
 /// Represents a fee secret share that has been allocated in a constraint system
 #[derive(Clone, Copy, Debug)]
 pub struct FeeSecretShareVar {
@@ -619,6 +637,24 @@ impl Add<FeeSecretShareVar> for FeeSecretShareVar {
             gas_token_amount: self.gas_token_amount + rhs.gas_token_amount,
             percentage_fee: self.percentage_fee + rhs.percentage_fee,
         }
+    }
+}
+
+impl FeeSecretShareVar {
+    /// Apply a blinder to the secret shares
+    pub fn blind(&mut self, blinder: Variable) {
+        self.settle_key += blinder;
+        self.gas_addr += blinder;
+        self.gas_token_amount += blinder;
+        self.percentage_fee += blinder;
+    }
+
+    /// Remove a blinder from the secret shares
+    pub fn unblind(&mut self, blinder: Variable) {
+        self.settle_key -= blinder;
+        self.gas_addr -= blinder;
+        self.gas_token_amount -= blinder;
+        self.percentage_fee -= blinder;
     }
 }
 
