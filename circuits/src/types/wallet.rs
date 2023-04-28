@@ -280,6 +280,28 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
     }
 }
 
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
+    WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+{
+    /// Apply the wallet blinder to the secret shares
+    pub fn blind(&mut self) {
+        self.balances.iter_mut().foreach(|b| b.blind(self.blinder));
+        self.orders.iter_mut().foreach(|o| o.blind(self.blinder));
+        self.fees.iter_mut().foreach(|f| f.blind(self.blinder));
+        self.keys.blind(self.blinder);
+    }
+
+    /// Remove the wallet blinder from the secret shares
+    pub fn unblind(&mut self) {
+        self.balances
+            .iter_mut()
+            .for_each(|b| b.unblind(self.blinder));
+        self.orders.iter_mut().foreach(|o| o.unblind(self.blinder));
+        self.fees.iter_mut().foreach(|f| f.unblind(self.blinder));
+        self.keys.unblind(self.blinder);
+    }
+}
+
 /// Represents an additive secret share of a wallet that
 /// has been allocated in a constraint system
 #[derive(Clone, Debug)]
@@ -338,6 +360,28 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
             keys,
             blinder,
         }
+    }
+}
+
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
+    WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+{
+    /// Apply the wallet blinder to the secret shares
+    pub fn blind(&mut self) {
+        self.balances.iter_mut().foreach(|b| b.blind(self.blinder));
+        self.orders.iter_mut().foreach(|o| o.blind(self.blinder));
+        self.fees.iter_mut().foreach(|f| f.blind(self.blinder));
+        self.keys.blind(self.blinder);
+    }
+
+    /// Remove the wallet blinder from the secret shares
+    pub fn unblind(&mut self) {
+        self.balances
+            .iter_mut()
+            .for_each(|b| b.unblind(self.blinder));
+        self.orders.iter_mut().foreach(|o| o.unblind(self.blinder));
+        self.fees.iter_mut().foreach(|f| f.unblind(self.blinder));
+        self.keys.unblind(self.blinder);
     }
 }
 

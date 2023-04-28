@@ -925,6 +925,18 @@ impl Add<NonNativeElementSecretShare> for NonNativeElementSecretShare {
     }
 }
 
+impl NonNativeElementSecretShare {
+    /// Apply a blinder to the secret shares
+    pub fn blind(&mut self, blinder: Scalar) {
+        self.words.iter_mut().for_each(|word| word += blinder);
+    }
+
+    /// Remove a blinder from the secret shares
+    pub fn unblind(&mut self, blinder: Scalar) {
+        self.words.iter_mut().for_each(|word| word -= blinder);
+    }
+}
+
 /// Represents an additive secret share of a non-native element that has been
 /// allocated in a constraint system
 #[derive(Clone, Debug)]
@@ -950,6 +962,18 @@ impl Add<NonNativeElementSecretShareVar> for NonNativeElementSecretShareVar {
             words: out_words,
             field_mod: self.field_mod,
         }
+    }
+}
+
+impl NonNativeElementSecretShareVar {
+    /// Apply a blinder to the secret shares
+    pub fn blind(&mut self, blinder: Variable) {
+        self.words.iter_mut().for_each(|word| word += blinder);
+    }
+
+    /// Remove a blinder from the secret shares
+    pub fn unblind(&mut self, blinder: Variable) {
+        self.words.iter_mut().for_each(|word| word -= blinder);
     }
 }
 

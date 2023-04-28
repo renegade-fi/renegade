@@ -390,6 +390,20 @@ impl Add<PublicKeyChainSecretShare> for PublicKeyChainSecretShare {
     }
 }
 
+impl PublicKeyChainSecretShare {
+    /// Apply a blinder to the secret shares
+    pub fn blind(&mut self, blinder: Scalar) {
+        self.pk_root.blind(blinder);
+        self.pk_match += blinder;
+    }
+
+    /// Remove a blinder from the secret shares
+    pub fn unblind(&mut self, blinder: Scalar) {
+        self.pk_root.unblind(blinder);
+        self.pk_match -= blinder;
+    }
+}
+
 /// Represents an additive secret share of a wallet's public keychain
 /// that has been allocated in a constraint system
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
