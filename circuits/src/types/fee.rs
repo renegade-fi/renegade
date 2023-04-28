@@ -1,4 +1,6 @@
 //! Groups the base type and derived types for the `Fee` entity
+use std::ops::Add;
+
 use crate::{
     errors::{MpcError, TypeConversionError},
     mpc::SharedFabric,
@@ -24,6 +26,10 @@ use mpc_ristretto::{
 use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
+
+// -----------------
+// | Fee Base Type |
+// -----------------
 
 /// Represents a fee-tuple in the state, i.e. a commitment to pay a relayer for a given
 /// match
@@ -93,21 +99,21 @@ impl From<&Fee> for Vec<u64> {
 
 /// A fee with values allocated in a single-prover constraint system
 #[derive(Clone, Debug)]
-pub struct FeeVar {
+pub struct FeeVar<L: Into<LinearCombination>> {
     /// The public settle key of the cluster collecting fees
-    pub settle_key: Variable,
+    pub settle_key: L,
     /// The mint (ERC-20 Address) of the token used to pay gas
-    pub gas_addr: Variable,
+    pub gas_addr: L,
     /// The amount of the mint token to use for gas
-    pub gas_token_amount: Variable,
+    pub gas_token_amount: L,
     /// The percentage fee that the cluster may take upon match
     /// For now this is encoded as a u64, which represents a
     /// fixed point rational under the hood
     pub percentage_fee: FixedPointVar,
 }
 
-impl From<FeeVar> for Vec<LinearCombination> {
-    fn from(fee: FeeVar) -> Self {
+impl<L: Into<LinearCombination>> From<FeeVar<L>> for Vec<LinearCombination> {
+    fn from(fee: FeeVar<L>) -> Self {
         vec![
             fee.settle_key.into(),
             fee.gas_addr.into(),
@@ -118,7 +124,7 @@ impl From<FeeVar> for Vec<LinearCombination> {
 }
 
 impl CommitWitness for Fee {
-    type VarType = FeeVar;
+    type VarType = FeeVar<Variable>;
     type CommitType = CommittedFee;
     type ErrorType = (); // Does not error
 
@@ -168,7 +174,7 @@ pub struct CommittedFee {
 }
 
 impl CommitVerifier for CommittedFee {
-    type VarType = FeeVar;
+    type VarType = FeeVar<Variable>;
     type ErrorType = (); // Does not error
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
@@ -185,6 +191,10 @@ impl CommitVerifier for CommittedFee {
         })
     }
 }
+
+// ------------------------------
+// | Commitment Linked Fee Type |
+// ------------------------------
 
 /// A fee that can be linked across proofs
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -211,7 +221,7 @@ impl From<Fee> for LinkableFeeCommitment {
 }
 
 impl CommitWitness for LinkableFeeCommitment {
-    type VarType = FeeVar;
+    type VarType = FeeVar<Variable>;
     type CommitType = CommittedFee;
     type ErrorType = ();
 
@@ -291,6 +301,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> SharePublic<N, S>
         })
     }
 }
+
+// -----------------
+// | MPC Fee Types |
+// -----------------
 
 /// A fee with values that have been allocated in an MPC network
 #[derive(Clone, Debug)]
@@ -472,7 +486,6 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
                     repr: shared_vars[3].to_owned().into(),
                 },
             },
-            // TODO: implement clone for AuthenticatedCompressedRistretto
             AuthenticatedCommittedFee {
                 settle_key: shared_comm[0].to_owned(),
                 gas_addr: shared_comm[1].to_owned(),
@@ -516,7 +529,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedCommi
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
     for AuthenticatedCommittedFee<N, S>
 {
-    type VarType = FeeVar;
+    type VarType = FeeVar<Variable>;
     type ErrorType = MpcError;
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
@@ -540,6 +553,140 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
             percentage_fee: FixedPointVar {
                 repr: percentage_var.into(),
             },
+        })
+    }
+}
+
+// -------------------------
+// | Secret Share Fee Type |
+// -------------------------
+
+/// Represents an additive secret share of a fee
+#[derive(Clone, Copy, Debug)]
+pub struct FeeSecretShare {
+    /// The public settle key of the cluster collecting fees
+    pub settle_key: Scalar,
+    /// The mint (ERC-20 Address) of the token used to pay gas
+    pub gas_addr: Scalar,
+    /// The amount of the mint token to use for gas
+    pub gas_token_amount: Scalar,
+    /// The percentage fee that the cluster may take upon match
+    /// For now this is encoded as a u64, which represents a
+    /// fixed point rational under the hood
+    pub percentage_fee: Scalar,
+}
+
+impl Add<FeeSecretShare> for FeeSecretShare {
+    type Output = Fee;
+
+    fn add(self, rhs: FeeSecretShare) -> Self::Output {
+        let settle_key = scalar_to_biguint(&(self.settle_key + rhs.settle_key));
+        let gas_addr = scalar_to_biguint(&(self.gas_addr + rhs.gas_addr));
+        let gas_token_amount = scalar_to_u64(&(self.gas_token_amount + rhs.gas_token_amount));
+        let percentage_fee = FixedPoint::from(self.percentage_fee + rhs.percentage_fee);
+
+        Fee {
+            settle_key,
+            gas_addr,
+            gas_token_amount,
+            percentage_fee,
+        }
+    }
+}
+
+/// Represents a fee secret share that has been allocated in a constraint system
+#[derive(Clone, Copy, Debug)]
+pub struct FeeSecretShareVar {
+    /// The public settle key of the cluster collecting fees
+    pub settle_key: Variable,
+    /// The mint (ERC-20 Address) of the token used to pay gas
+    pub gas_addr: Variable,
+    /// The amount of the mint token to use for gas
+    pub gas_token_amount: Variable,
+    /// The percentage fee that the cluster may take upon match
+    /// For now this is encoded as a u64, which represents a
+    /// fixed point rational under the hood
+    pub percentage_fee: Variable,
+}
+
+impl Add<FeeSecretShareVar> for FeeSecretShareVar {
+    type Output = FeeVar<LinearCombination>;
+
+    fn add(self, rhs: FeeSecretShareVar) -> Self::Output {
+        FeeVar {
+            settle_key: self.settle_key + rhs.settle_key,
+            gas_addr: self.gas_addr + rhs.gas_addr,
+            gas_token_amount: self.gas_token_amount + rhs.gas_token_amount,
+            percentage_fee: self.percentage_fee + rhs.percentage_fee,
+        }
+    }
+}
+
+/// Represents a commitment to a fee secret share that has been allocated in a constraint system
+#[derive(Clone, Copy, Debug)]
+pub struct FeeSecretShareCommitment {
+    /// The public settle key of the cluster collecting fees
+    pub settle_key: CompressedRistretto,
+    /// The mint (ERC-20 Address) of the token used to pay gas
+    pub gas_addr: CompressedRistretto,
+    /// The amount of the mint token to use for gas
+    pub gas_token_amount: CompressedRistretto,
+    /// The percentage fee that the cluster may take upon match
+    /// For now this is encoded as a u64, which represents a
+    /// fixed point rational under the hood
+    pub percentage_fee: CompressedRistretto,
+}
+
+impl CommitWitness for FeeSecretShare {
+    type VarType = FeeSecretShareVar;
+    type CommitType = FeeSecretShareCommitment;
+    type ErrorType = (); // Does not error
+
+    fn commit_witness<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (settle_key_var, settle_key_comm) =
+            self.settle_key.commit_witness(rng, prover).unwrap();
+        let (gas_addr_var, gas_addr_comm) = self.gas_addr.commit_witness(rng, prover).unwrap();
+        let (gas_amount_var, gas_amount_comm) =
+            self.gas_token_amount.commit_witness(rng, prover).unwrap();
+        let (percentage_var, percentage_comm) =
+            self.percentage_fee.commit_witness(rng, prover).unwrap();
+
+        Ok((
+            FeeSecretShareVar {
+                settle_key: settle_key_var,
+                gas_addr: gas_addr_var,
+                gas_token_amount: gas_amount_var,
+                percentage_fee: percentage_var,
+            },
+            FeeSecretShareCommitment {
+                settle_key: settle_key_comm,
+                gas_addr: gas_addr_comm,
+                gas_token_amount: gas_amount_comm,
+                percentage_fee: percentage_comm,
+            },
+        ))
+    }
+}
+
+impl CommitVerifier for FeeSecretShareCommitment {
+    type VarType = FeeSecretShareVar;
+    type ErrorType = (); // Does not error
+
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
+        let settle_key_var = self.settle_key.commit_verifier(verifier).unwrap();
+        let gas_addr_var = self.gas_addr.commit_verifier(verifier).unwrap();
+        let gas_amount_var = self.gas_token_amount.commit_verifier(verifier).unwrap();
+        let percentage_var = self.percentage_fee.commit_verifier(verifier).unwrap();
+
+        Ok(FeeSecretShareVar {
+            settle_key: settle_key_var,
+            gas_addr: gas_addr_var,
+            gas_token_amount: gas_amount_var,
+            percentage_fee: percentage_var,
         })
     }
 }

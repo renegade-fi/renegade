@@ -1,15 +1,20 @@
 //! Defines the constraint system types for the set of keys a wallet holds
 
+use std::ops::Add;
+
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use ed25519_dalek::PublicKey as DalekKey;
-use mpc_bulletproof::r1cs::{Prover, RandomizableConstraintSystem, Variable, Verifier};
+use mpc_bulletproof::r1cs::{
+    LinearCombination, Prover, RandomizableConstraintSystem, Variable, Verifier,
+};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     types::{scalar_from_hex_string, scalar_to_hex_string},
     zk_gadgets::nonnative::{
-        NonNativeElement, NonNativeElementCommitment, NonNativeElementVar, TWO_TO_256_FIELD_MOD,
+        NonNativeElement, NonNativeElementCommitment, NonNativeElementSecretShare,
+        NonNativeElementSecretShareVar, NonNativeElementVar, TWO_TO_256_FIELD_MOD,
     },
     CommitPublic, CommitVerifier, CommitWitness,
 };
@@ -275,118 +280,16 @@ impl CommitWitness for SecretSigningKey {
     }
 }
 
-/// A public encryption key is an ElGamal key over the Scalar field, this is likely
-/// to change in the near future to an elliptic curve non-native implementation
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct PublicEncryptionKey(pub(crate) Scalar);
-impl Serialize for PublicEncryptionKey {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        scalar_to_hex_string(&self.0, serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for PublicEncryptionKey {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let val = scalar_from_hex_string(deserializer)?;
-        Ok(Self(val))
-    }
-}
-
-impl CommitWitness for PublicEncryptionKey {
-    type VarType = Variable;
-    type CommitType = CompressedRistretto;
-    type ErrorType = (); // Does not error
-
-    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
-        &self,
-        rng: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        self.0.commit_witness(rng, prover)
-    }
-}
-
-impl From<Scalar> for PublicEncryptionKey {
-    fn from(key: Scalar) -> Self {
-        Self(key)
-    }
-}
-
-impl From<PublicEncryptionKey> for Scalar {
-    fn from(key: PublicEncryptionKey) -> Self {
-        key.0
-    }
-}
-
-/// A secret encryption key is an ElGamal key over the Scalar field, this is likely
-/// to change in the near future to an elliptic curve non-native implementation
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct SecretEncryptionKey(pub(crate) Scalar);
-impl Serialize for SecretEncryptionKey {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        scalar_to_hex_string(&self.0, serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for SecretEncryptionKey {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let val = scalar_from_hex_string(deserializer)?;
-        Ok(Self(val))
-    }
-}
-
-impl From<Scalar> for SecretEncryptionKey {
-    fn from(val: Scalar) -> Self {
-        Self(val)
-    }
-}
-
-impl From<SecretEncryptionKey> for Scalar {
-    fn from(val: SecretEncryptionKey) -> Self {
-        val.0
-    }
-}
-
-impl CommitWitness for SecretEncryptionKey {
-    type VarType = Variable;
-    type CommitType = CompressedRistretto;
-    type ErrorType = (); // Does not error
-
-    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
-        &self,
-        rng: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        self.0.commit_witness(rng, prover)
-    }
-}
-
 // -----------------
 // | Keychain Type |
 // -----------------
 
-/// Represents the base type, defining four keys with various access levels
+/// Represents the base type, defining two keys with different access levels
 ///
 /// Note that these keys are of different types, though over the same field
 ///     - `pk_root` is the public root key, the secret key is used as a signing key
 ///     - `pk_match` is the public match key, it is used as an identification key
 ///        authorizing a holder of `sk_match` to match orders in the wallet
-///     - `pk_settle` is the public settle key it is used as an identification key
-///        authorizing a holder of `sk_settle` to settle notes into the wallet
-///     - `pk_view` is the public view key, it is used as an encryption key, holders
-///        of `sk_view` may decrypt wallet and note ciphertexts related to this wallet
 ///
 /// When we say identification key, we are talking about an abstract, zero-knowledge
 /// identification scheme (not necessarily a signature scheme). Concretely, this currently
@@ -398,23 +301,15 @@ pub struct PublicKeyChain {
     pub pk_root: PublicSigningKey,
     /// The public match key
     pub pk_match: PublicIdentificationKey,
-    /// The public settle key
-    pub pk_settle: PublicIdentificationKey,
-    /// The public view key
-    pub pk_view: PublicEncryptionKey,
 }
 
 /// Represents a keychain that has been allocated in a single-prover constraint system
 #[derive(Clone, Debug)]
-pub struct PublicKeyChainVar {
+pub struct PublicKeyChainVar<L: Into<LinearCombination>> {
     /// The public root key
     pub pk_root: NonNativeElementVar,
     /// The public match key
-    pub pk_match: Variable,
-    /// The public settle key
-    pub pk_settle: Variable,
-    /// The public view key
-    pub pk_view: Variable,
+    pub pk_match: L,
 }
 
 /// Represents a commitment to a keychain that has been allocated in a single-prover constraint system
@@ -424,14 +319,10 @@ pub struct CommittedPublicKeyChain {
     pub pk_root: NonNativeElementCommitment,
     /// The public match key
     pub pk_match: CompressedRistretto,
-    /// The public settle key
-    pub pk_settle: CompressedRistretto,
-    /// The public view key
-    pub pk_view: CompressedRistretto,
 }
 
 impl CommitWitness for PublicKeyChain {
-    type VarType = PublicKeyChainVar;
+    type VarType = PublicKeyChainVar<Variable>;
     type CommitType = CommittedPublicKeyChain;
     type ErrorType = ();
 
@@ -449,21 +340,17 @@ impl CommitWitness for PublicKeyChain {
             PublicKeyChainVar {
                 pk_root: root_var,
                 pk_match: match_var,
-                pk_settle: settle_var,
-                pk_view: view_var,
             },
             CommittedPublicKeyChain {
                 pk_root: root_comm,
                 pk_match: match_comm,
-                pk_settle: settle_comm,
-                pk_view: view_comm,
             },
         ))
     }
 }
 
 impl CommitVerifier for CommittedPublicKeyChain {
-    type VarType = PublicKeyChainVar;
+    type VarType = PublicKeyChainVar<Variable>;
     type ErrorType = ();
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
@@ -475,8 +362,102 @@ impl CommitVerifier for CommittedPublicKeyChain {
         Ok(PublicKeyChainVar {
             pk_root: root_var,
             pk_match: match_var,
-            pk_settle: settle_var,
-            pk_view: view_var,
+        })
+    }
+}
+
+// -------------------------------
+// | Secret Shared Keychain Type |
+// -------------------------------
+
+/// Represents an additive secret share of a wallet's public keychain
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PublicKeyChainSecretShare {
+    /// The public root key
+    pub pk_root: NonNativeElementSecretShare,
+    /// The public match key
+    pub pk_match: Scalar,
+}
+
+impl Add<PublicKeyChainSecretShare> for PublicKeyChainSecretShare {
+    type Output = PublicKeyChain;
+
+    fn add(self, rhs: PublicKeyChainSecretShare) -> Self::Output {
+        let pk_root = self.pk_root + rhs.pk_root;
+        let pk_match = self.pk_match + rhs.pk_match;
+
+        PublicKeyChain { pk_root, pk_match }
+    }
+}
+
+/// Represents an additive secret share of a wallet's public keychain
+/// that has been allocated in a constraint system
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PublicKeyChainSecretShareVar {
+    /// The public root key
+    pub pk_root: NonNativeElementSecretShareVar,
+    /// The public match key
+    pub pk_match: Variable,
+}
+
+impl Add<PublicKeyChainSecretShareVar> for PublicKeyChainSecretShareVar {
+    type Output = PublicKeyChainVar<LinearCombination>;
+
+    fn add(self, rhs: PublicKeyChainSecretShareVar) -> Self::Output {
+        let pk_root = self.pk_root + rhs.pk_root;
+        let pk_match = self.pk_match + rhs.pk_match;
+
+        PublicKeyChainVar { pk_root, pk_match }
+    }
+}
+
+/// Represents a commitment to an additive secret share of a wallet's public keychain
+/// that has been allocated in a constraint system
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PublicKeyChainSecretShareCommitment {
+    /// The public root key
+    pub pk_root: NonNativeElementCommitment,
+    /// The public match key
+    pub pk_match: CompressedRistretto,
+}
+
+impl CommitWitness for PublicKeyChainSecretShare {
+    type VarType = PublicKeyChainSecretShareVar;
+    type CommitType = PublicKeyChainSecretShareCommitment;
+    type ErrorType = (); // Does not error
+
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (root_var, root_comm) = self.pk_root.commit_witness(rng, prover).unwrap();
+        let (match_var, match_comm) = self.pk_match.commit_witness(rng, prover).unwrap();
+
+        Ok((
+            PublicKeyChainSecretShareVar {
+                pk_root: root_var,
+                pk_match: match_var,
+            },
+            PublicKeyChainSecretShareCommitment {
+                pk_root: root_comm,
+                pk_match: match_comm,
+            },
+        ))
+    }
+}
+
+impl CommitVerifier for PublicKeyChainSecretShareCommitment {
+    type VarType = PublicKeyChainSecretShareVar;
+    type ErrorType = (); // Does not error
+
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
+        let root_var = self.pk_root.commit_verifier(verifier).unwrap();
+        let match_var = self.pk_match.commit_verifier(verifier).unwrap();
+
+        Ok(PublicKeyChainSecretShareVar {
+            pk_root: root_var,
+            pk_match: match_var,
         })
     }
 }
@@ -499,8 +480,6 @@ mod tests {
         let keychain = PublicKeyChain {
             pk_root: rng2.gen_biguint(256 /* bit_size */).into(),
             pk_match: Scalar::random(&mut rng).into(),
-            pk_settle: Scalar::random(&mut rng).into(),
-            pk_view: Scalar::random(&mut rng).into(),
         };
 
         let serialized = serde_json::to_string(&keychain).unwrap();
