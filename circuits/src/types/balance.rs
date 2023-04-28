@@ -324,6 +324,20 @@ impl Add<BalanceSecretShare> for BalanceSecretShare {
     }
 }
 
+impl BalanceSecretShare {
+    /// Apply a blinder to the secret shares
+    pub fn blind(&mut self, blinder: Scalar) {
+        self.mint += blinder;
+        self.amount += blinder;
+    }
+
+    /// Remove a blinder from the secret shares
+    pub fn unblind(&mut self, blinder: Scalar) {
+        self.mint -= blinder;
+        self.amount -= blinder;
+    }
+}
+
 /// A balance secret share that has been allocated in a constraint system
 #[derive(Copy, Clone, Debug)]
 pub struct BalanceSecretShareVar {
@@ -341,6 +355,20 @@ impl Add<BalanceSecretShareVar> for BalanceSecretShareVar {
             mint: self.mint + rhs.mint,
             amount: self.amount + rhs.amount,
         }
+    }
+}
+
+impl BalanceSecretShareVar {
+    /// Apply a blinder to the secret shares
+    pub fn blind(&mut self, blinder: Variable) {
+        self.mint += blinder;
+        self.amount += blinder;
+    }
+
+    /// Remove a blinder from the secret shares
+    pub fn unblind(&mut self, blinder: Variable) {
+        self.mint -= blinder;
+        self.amount -= blinder;
     }
 }
 
