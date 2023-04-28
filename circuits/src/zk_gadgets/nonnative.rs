@@ -2,6 +2,7 @@
 
 use std::{
     iter::{self, Chain, Cloned, Repeat},
+    ops::Add,
     slice::Iter,
 };
 
@@ -93,6 +94,17 @@ pub(crate) fn bigint_to_scalar_words(mut val: BigUint) -> Vec<Scalar> {
     }
 
     words
+}
+
+/// Convert a set of scalar words to a `BigUint`
+pub(crate) fn scalar_words_to_biguint(words: &[Scalar]) -> BigUint {
+    let mut res = BigUint::from(0u8);
+    for word in words.iter().rev().map(scalar_to_biguint) {
+        // Evaluate the underlying scalar representation of the word
+        res = (res << WORD_SIZE) + word;
+    }
+
+    res
 }
 
 ///
@@ -881,6 +893,126 @@ impl NonNativeElementVar {
         inverse_nonnative
     }
 }
+
+// -----------------------
+// | Secret Shared Types |
+// -----------------------
+
+/// Represents an additive secret share of a non-native element
+#[derive(Clone, Debug)]
+pub struct NonNativeElementSecretShare {
+    /// The scalar words underlying the value
+    pub(crate) words: Vec<Scalar>,
+    /// The field modulus of the non-native element
+    pub(crate) field_mod: FieldMod,
+}
+
+impl Add<NonNativeElementSecretShare> for NonNativeElementSecretShare {
+    type Output = NonNativeElement;
+
+    fn add(self, rhs: NonNativeElementSecretShare) -> Self::Output {
+        let new_words = self
+            .words
+            .iter()
+            .zip(rhs.words().iter())
+            .map(|w1, w2| w1 + w2)
+            .collect_vec();
+
+        NonNativeElement {
+            val: scalar_words_to_biguint(&new_words),
+            field_mod: self.field_mod,
+        }
+    }
+}
+
+/// Represents an additive secret share of a non-native element that has been
+/// allocated in a constraint system
+#[derive(Clone, Debug)]
+pub struct NonNativeElementSecretShareVar {
+    /// The scalar words underlying the value
+    pub(crate) words: Vec<Variable>,
+    /// The field modulus of the non-native element
+    pub(crate) field_mod: FieldMod,
+}
+
+impl Add<NonNativeElementSecretShareVar> for NonNativeElementSecretShareVar {
+    type Output = NonNativeElementVar;
+
+    fn add(self, rhs: NonNativeElementSecretShareVar) -> Self::Output {
+        let out_words = self
+            .words
+            .iter()
+            .zip(rhs.words.iter())
+            .map(|w1, w2| w1 + w2)
+            .collect_vec();
+
+        NonNativeElementVar {
+            words: out_words,
+            field_mod: self.field_mod,
+        }
+    }
+}
+
+/// Represents a commitment to an additive secret share of a non-native element that has been
+/// allocated in a constraint system
+#[derive(Clone, Debug)]
+pub struct NonNativeElementSecretShareCommitment {
+    /// The scalar words underlying the value
+    pub(crate) words: Vec<CompressedRistretto>,
+    /// The field modulus of the non-native element
+    pub(crate) field_mod: FieldMod,
+}
+
+impl CommitWitness for NonNativeElementSecretShare {
+    type VarType = NonNativeElementSecretShareVar;
+    type CommitType = NonNativeElementSecretShareCommitment;
+    type ErrorType = (); // Does not error
+
+    fn commit_witness<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (word_vars, word_comms): (Vec<Variable>, Vec<CompressedRistretto>) = self
+            .words
+            .iter()
+            .map(|word| word.commit_witness(rng, prover).unwrap())
+            .collect();
+
+        Ok((
+            NonNativeElementSecretShareVar {
+                words: word_vars,
+                field_mod: self.field_mod.clone(),
+            },
+            NonNativeElementSecretShareCommitment {
+                words: word_comms,
+                field_mod: self.field_mod.clone(),
+            },
+        ))
+    }
+}
+
+impl CommitVerifier for NonNativeElementSecretShareCommitment {
+    type VarType = NonNativeElementSecretShareVar;
+    type ErrorType = (); // Does not error
+
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
+        let word_vars = self
+            .words
+            .iter()
+            .map(|word| word.commit_verifier(verifier).unwrap())
+            .collect_vec();
+
+        Ok(NonNativeElementSecretShareVar {
+            words: word_vars,
+            field_mod: self.field_mod.clone(),
+        })
+    }
+}
+
+// ---------
+// | Tests |
+// ---------
 
 #[cfg(test)]
 mod nonnative_tests {
