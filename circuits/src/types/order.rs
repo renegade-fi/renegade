@@ -1,4 +1,6 @@
 //! Groups the base type and derived types for the `Order` entity
+use std::ops::Add;
+
 use crate::{
     errors::{MpcError, TypeConversionError},
     mpc::SharedFabric,
@@ -24,6 +26,10 @@ use mpc_ristretto::{
 use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
+
+// --------------------
+// | Base Order Types |
+// --------------------
 
 /// Represents the base type of an open order, including the asset pair, the amount, price,
 /// and direction
@@ -161,23 +167,23 @@ impl From<Scalar> for OrderSide {
 
 /// An order with values allocated in a single-prover constraint system
 #[derive(Clone, Debug)]
-pub struct OrderVar {
+pub struct OrderVar<L: Into<LinearCombination>> {
     /// The mint (ERC-20 contract address) of the quote token
-    pub quote_mint: Variable,
+    pub quote_mint: L,
     /// The mint (ERC-20 contract address) of the base token
-    pub base_mint: Variable,
+    pub base_mint: L,
     /// The side this order is for (0 = buy, 1 = sell)
-    pub side: Variable,
+    pub side: L,
     /// The limit price to be executed at, in units of quote
     pub price: FixedPointVar,
     /// The amount of base currency to buy or sell
-    pub amount: Variable,
+    pub amount: L,
     /// A timestamp indicating when the order was placed, set by the user
-    pub timestamp: Variable,
+    pub timestamp: L,
 }
 
-impl From<OrderVar> for Vec<LinearCombination> {
-    fn from(order: OrderVar) -> Self {
+impl<L: Into<LinearCombination>> From<OrderVar<L>> for Vec<LinearCombination> {
+    fn from(order: OrderVar<L>) -> Self {
         vec![
             order.quote_mint.into(),
             order.base_mint.into(),
@@ -190,7 +196,7 @@ impl From<OrderVar> for Vec<LinearCombination> {
 }
 
 impl CommitWitness for Order {
-    type VarType = OrderVar;
+    type VarType = OrderVar<Variable>;
     type CommitType = CommittedOrder;
     type ErrorType = (); // Does not error
 
@@ -250,7 +256,7 @@ pub struct CommittedOrder {
 }
 
 impl CommitVerifier for CommittedOrder {
-    type VarType = OrderVar;
+    type VarType = OrderVar<Variable>;
     type ErrorType = (); // Does not error
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
@@ -271,6 +277,10 @@ impl CommitVerifier for CommittedOrder {
         })
     }
 }
+
+// --------------------------------
+// | Commitment Linked Order Type |
+// --------------------------------
 
 /// A linkable commitment to an Order that may be used across proofs
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -317,7 +327,7 @@ impl From<LinkableOrderCommitment> for Order {
 }
 
 impl CommitWitness for LinkableOrderCommitment {
-    type VarType = OrderVar;
+    type VarType = OrderVar<Variable>;
     type CommitType = CommittedOrder;
     type ErrorType = ();
 
@@ -353,6 +363,10 @@ impl CommitWitness for LinkableOrderCommitment {
         ))
     }
 }
+
+// -------------------
+// | MPC Order Types |
+// -------------------
 
 /// Represents an order that has been allocated in an MPC network
 #[derive(Clone, Debug)]
@@ -615,7 +629,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedCommi
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
     for AuthenticatedCommittedOrder<N, S>
 {
-    type VarType = OrderVar;
+    type VarType = OrderVar<Variable>;
     type ErrorType = MpcError;
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
@@ -640,6 +654,166 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
             price: FixedPointVar {
                 repr: price_var.into(),
             },
+            amount: amount_var,
+            timestamp: timestamp_var,
+        })
+    }
+}
+
+// -----------------------------
+// | Secret Shared Order Types |
+// -----------------------------
+
+/// Represents an additive secret share of an order
+#[derive(Clone, Copy, Debug)]
+pub struct OrderSecretShare {
+    /// The mint (ERC-20 contract address) of the quote token
+    pub quote_mint: Scalar,
+    /// The mint (ERC-20 contract address) of the base token
+    pub base_mint: Scalar,
+    /// The side this order is for (0 = buy, 1 = sell)
+    pub side: Scalar,
+    /// The limit price to be executed at, in units of quote per base
+    pub price: Scalar,
+    /// The amount of base currency to buy or sell
+    pub amount: Scalar,
+    /// A timestamp indicating when the order was placed, set by the user
+    pub timestamp: Scalar,
+}
+
+impl Add<OrderSecretShare> for OrderSecretShare {
+    type Output = Order;
+
+    fn add(self, rhs: OrderSecretShare) -> Self::Output {
+        let quote_mint = scalar_to_biguint(&(self.quote_mint + rhs.quote_mint));
+        let base_mint = scalar_to_biguint(&(self.base_mint + rhs.base_mint));
+        let side = OrderSide::from(self.side + rhs.side);
+        let price = FixedPoint::from(self.price + rhs.price);
+        let amount = scalar_to_u64(&(self.amount + rhs.amount));
+        let timestamp = scalar_to_u64(&(self.timestamp + rhs.timestamp));
+
+        Order {
+            quote_mint,
+            base_mint,
+            side,
+            price,
+            amount,
+            timestamp,
+        }
+    }
+}
+
+/// Represents an additive secret share of an order committed into a constraint system
+#[derive(Clone, Copy, Debug)]
+pub struct OrderSecretShareVar {
+    /// The mint (ERC-20 contract address) of the quote token
+    pub quote_mint: Variable,
+    /// The mint (ERC-20 contract address) of the base token
+    pub base_mint: Variable,
+    /// The side this order is for (0 = buy, 1 = sell)
+    pub side: Variable,
+    /// The limit price to be executed at, in units of quote per base
+    pub price: Variable,
+    /// The amount of base currency to buy or sell
+    pub amount: Variable,
+    /// A timestamp indicating when the order was placed, set by the user
+    pub timestamp: Variable,
+}
+
+impl Add<OrderSecretShareVar> for OrderSecretShareVar {
+    type Output = OrderVar<LinearCombination>;
+
+    fn add(self, rhs: OrderSecretShareVar) -> Self::Output {
+        let quote_mint = self.quote_mint + rhs.quote_mint;
+        let base_mint = self.base_mint + rhs.base_mint;
+        let side = self.side + rhs.side;
+        let price = self.price + rhs.price;
+        let amount = self.amount + rhs.amount;
+        let timestamp = self.timestamp + rhs.timestamp;
+
+        OrderVar {
+            quote_mint,
+            base_mint,
+            side,
+            price,
+            amount,
+            timestamp,
+        }
+    }
+}
+
+/// Represents a commitment to an additive secret share of an order committed into a constraint system
+#[derive(Clone, Copy, Debug)]
+pub struct OrderSecretShareCommitment {
+    /// The mint (ERC-20 contract address) of the quote token
+    pub quote_mint: CompressedRistretto,
+    /// The mint (ERC-20 contract address) of the base token
+    pub base_mint: CompressedRistretto,
+    /// The side this order is for (0 = buy, 1 = sell)
+    pub side: CompressedRistretto,
+    /// The limit price to be executed at, in units of quote per base
+    pub price: CompressedRistretto,
+    /// The amount of base currency to buy or sell
+    pub amount: CompressedRistretto,
+    /// A timestamp indicating when the order was placed, set by the user
+    pub timestamp: CompressedRistretto,
+}
+
+impl CommitWitness for OrderSecretShare {
+    type VarType = OrderSecretShareVar;
+    type CommitType = OrderSecretShareCommitment;
+    type ErrorType = (); // Does not error
+
+    fn commit_witness<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (quote_var, quote_comm) = self.quote_mint.commit_witness(rng, prover).unwrap();
+        let (base_var, base_comm) = self.base_mint.commit_witness(rng, prover).unwrap();
+        let (side_var, side_comm) = self.side.commit_witness(rng, prover).unwrap();
+        let (price_var, price_comm) = self.price.commit_witness(rng, prover).unwrap();
+        let (amount_var, amount_comm) = self.amount.commit_witness(rng, prover).unwrap();
+        let (timestamp_var, timestamp_comm) = self.timestamp.commit_witness(rng, prover).unwrap();
+
+        Ok((
+            OrderSecretShareVar {
+                quote_mint: quote_var,
+                base_mint: base_var,
+                side: side_var,
+                price: price_var,
+                amount: amount_var,
+                timestamp: timestamp_var,
+            },
+            OrderSecretShareCommitment {
+                quote_mint: quote_comm,
+                base_mint: base_comm,
+                side: side_comm,
+                price: price_comm,
+                amount: amount_comm,
+                timestamp: timestamp_comm,
+            },
+        ))
+    }
+}
+
+impl CommitVerifier for OrderSecretShareCommitment {
+    type VarType = OrderSecretShareVar;
+    type ErrorType = (); // Does not error
+
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
+        let quote_var = self.quote_mint.commit_verifier(verifier).unwrap();
+        let base_var = self.base_mint.commit_verifier(verifier).unwrap();
+        let side_var = self.side.commit_verifier(verifier).unwrap();
+        let price_var = self.price.commit_verifier(verifier).unwrap();
+        let amount_var = self.amount.commit_verifier(verifier).unwrap();
+        let timestamp_var = self.timestamp.commit_verifier(verifier).unwrap();
+
+        Ok(OrderSecretShareVar {
+            quote_mint: quote_var,
+            base_mint: base_var,
+            side: side_var,
+            price: price_var,
             amount: amount_var,
             timestamp: timestamp_var,
         })
