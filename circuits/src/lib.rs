@@ -593,6 +593,15 @@ impl CommitWitness for LinkableCommitment {
     }
 }
 
+impl CommitVerifier for CompressedRistretto {
+    type VarType = Variable;
+    type ErrorType = (); // Does not error
+
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
+        Ok(verifier.commit(*self))
+    }
+}
+
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> SharePublic<N, S> for LinkableCommitment {
     type ErrorType = MpcError;
 

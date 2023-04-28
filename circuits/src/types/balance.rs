@@ -1,14 +1,17 @@
 //! Groups base and derived types for the `Balance` object
 
-use crypto::fields::biguint_to_scalar;
+use std::ops::Add;
+
+use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use mpc_bulletproof::{
-    r1cs::{Prover, Variable, Verifier},
+    r1cs::{LinearCombination, Prover, Variable, Verifier},
     r1cs_mpc::{MpcProver, MpcVariable},
 };
 use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto,
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource,
+    mpc_scalar::scalar_to_u64, network::MpcNetwork,
 };
 use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
@@ -20,6 +23,10 @@ use crate::{
     types::{biguint_from_hex_string, biguint_to_hex_string},
     Allocate, CommitSharedProver, CommitVerifier, CommitWitness, LinkableCommitment,
 };
+
+// ---------------------
+// | Base Balance Type |
+// ---------------------
 
 /// Represents the base type of a balance in tuple holding a reference to the
 /// ERC-20 token and its amount
@@ -45,21 +52,21 @@ impl Balance {
 /// Represents the constraint system allocated type of a balance in tuple holding a
 /// reference to the ERC-20 token and its amount
 #[derive(Copy, Clone, Debug)]
-pub struct BalanceVar {
+pub struct BalanceVar<L: Into<LinearCombination>> {
     /// the mint (erc-20 token address) of the token in the balance
-    pub mint: Variable,
+    pub mint: L,
     /// the amount of the given token stored in this balance
-    pub amount: Variable,
+    pub amount: L,
 }
 
-impl From<BalanceVar> for Vec<Variable> {
-    fn from(balance: BalanceVar) -> Self {
+impl<L: Into<LinearCombination>> From<BalanceVar<L>> for Vec<L> {
+    fn from(balance: BalanceVar<L>) -> Self {
         vec![balance.mint, balance.amount]
     }
 }
 
 impl CommitWitness for Balance {
-    type VarType = BalanceVar;
+    type VarType = BalanceVar<Variable>;
     type CommitType = CommittedBalance;
     type ErrorType = (); // Does not error
 
@@ -96,7 +103,7 @@ pub struct CommittedBalance {
 }
 
 impl CommitVerifier for CommittedBalance {
-    type VarType = BalanceVar;
+    type VarType = BalanceVar<Variable>;
     type ErrorType = (); // Does not error
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
@@ -106,6 +113,10 @@ impl CommitVerifier for CommittedBalance {
         })
     }
 }
+
+// --------------------------------
+// | Commitment Linkable Balances |
+// --------------------------------
 
 /// Represents a balance that may be linked across proofs
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -126,7 +137,7 @@ impl From<Balance> for LinkableBalanceCommitment {
 }
 
 impl CommitWitness for LinkableBalanceCommitment {
-    type VarType = BalanceVar;
+    type VarType = BalanceVar<Variable>;
     type CommitType = CommittedBalance;
     type ErrorType = ();
 
@@ -150,6 +161,10 @@ impl CommitWitness for LinkableBalanceCommitment {
         ))
     }
 }
+
+// ---------------------
+// | MPC Balance Types |
+// ---------------------
 
 /// Represents a balance that has been allocated in an MPC network
 #[derive(Clone, Debug)]
@@ -264,7 +279,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedCommi
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
     for AuthenticatedCommittedBalance<N, S>
 {
-    type VarType = BalanceVar;
+    type VarType = BalanceVar<Variable>;
     type ErrorType = MpcError;
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
@@ -279,6 +294,100 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
         let amount_var = verifier.commit(opened_commit[1].value());
 
         Ok(BalanceVar {
+            mint: mint_var,
+            amount: amount_var,
+        })
+    }
+}
+
+// ------------------------------
+// | Secret Shared Balance Type |
+// ------------------------------
+
+/// A balance that has been split into secret shares
+#[derive(Copy, Clone, Debug)]
+pub struct BalanceSecretShare {
+    /// The mint (ERC20 token addr) of the balance
+    pub mint: Scalar,
+    /// The amount of the balance held
+    pub amount: Scalar,
+}
+
+impl Add<BalanceSecretShare> for BalanceSecretShare {
+    type Output = Balance;
+
+    fn add(self, rhs: BalanceSecretShare) -> Self::Output {
+        let mint = scalar_to_biguint(&(self.mint + rhs.mint));
+        let amount = scalar_to_u64(&(self.amount + rhs.amount));
+
+        Balance { mint, amount }
+    }
+}
+
+/// A balance secret share that has been allocated in a constraint system
+#[derive(Copy, Clone, Debug)]
+pub struct BalanceSecretShareVar {
+    /// The mint (ERC20 token addr) of the balance
+    pub mint: Variable,
+    /// The amount of the balance held
+    pub amount: Variable,
+}
+
+impl Add<BalanceSecretShareVar> for BalanceSecretShareVar {
+    type Output = BalanceVar<LinearCombination>;
+
+    fn add(self, rhs: BalanceSecretShareVar) -> Self::Output {
+        BalanceVar {
+            mint: self.mint + rhs.mint,
+            amount: self.amount + rhs.amount,
+        }
+    }
+}
+
+/// A commitment to a balance allocate within a constraint system
+#[derive(Copy, Clone, Debug)]
+pub struct BalanceSecretShareCommitment {
+    /// The mint (ERC20 token addr) of the balance
+    pub mint: CompressedRistretto,
+    /// The amount of the balance held
+    pub amount: CompressedRistretto,
+}
+
+impl CommitWitness for BalanceSecretShare {
+    type VarType = BalanceSecretShareVar;
+    type CommitType = BalanceSecretShareCommitment;
+    type ErrorType = (); // Does not error
+
+    fn commit_witness<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (mint_var, mint_comm) = self.mint.commit_witness(rng, prover).unwrap();
+        let (amount_var, amount_comm) = self.amount.commit_witness(rng, prover).unwrap();
+
+        Ok((
+            BalanceSecretShareVar {
+                mint: mint_var,
+                amount: amount_var,
+            },
+            BalanceSecretShareCommitment {
+                mint: mint_comm,
+                amount: amount_comm,
+            },
+        ))
+    }
+}
+
+impl CommitVerifier for BalanceSecretShareCommitment {
+    type VarType = BalanceSecretShareVar;
+    type ErrorType = (); // Does not error
+
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
+        let mint_var = self.mint.commit_verifier(verifier).unwrap();
+        let amount_var = self.amount.commit_verifier(verifier).unwrap();
+
+        Ok(BalanceSecretShareVar {
             mint: mint_var,
             amount: amount_var,
         })
