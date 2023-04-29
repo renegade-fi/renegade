@@ -1,5 +1,5 @@
 //! Groups the base type and derived types for the `Fee` entity
-use std::{ops::Add, os::unix::fs::DirBuilderExt};
+use std::ops::Add;
 
 use crate::{
     errors::{MpcError, TypeConversionError},
