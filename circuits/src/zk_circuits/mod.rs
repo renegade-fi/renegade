@@ -39,8 +39,6 @@ mod test_helpers {
         pub(crate) static ref PUBLIC_KEYS: PublicKeyChain = PublicKeyChain {
             pk_root: BigUint::from(1u8).into(),
             pk_match: compute_poseidon_hash(&[PRIVATE_KEYS[1]]).into(),
-            pk_settle: compute_poseidon_hash(&[PRIVATE_KEYS[2]]).into(),
-            pk_view: Scalar::one().into(),
         };
         pub(crate) static ref INITIAL_BALANCES: [Balance; MAX_BALANCES] = [
             Balance { mint: 1u8.into(), amount: 5 },
@@ -78,7 +76,7 @@ mod test_helpers {
             orders: INITIAL_ORDERS.clone(),
             fees: INITIAL_FEES.clone(),
             keys: PUBLIC_KEYS.clone(),
-            randomness: Scalar::from(42u64)
+            blinder: Scalar::from(42u64)
         };
     }
 

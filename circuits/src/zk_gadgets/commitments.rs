@@ -8,26 +8,26 @@ use mpc_bulletproof::{
 
 use crate::{
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    types::{note::NoteVar, wallet::WalletVar},
+    types::{note::NoteVar, wallet::WalletSecretShareVar},
 };
 
 use super::poseidon::PoseidonHashGadget;
 
-/// A gadget for computing wallet commitments
+/// A gadget for computing the commitment to a secret share of a wallet
 #[derive(Clone, Debug)]
-pub struct WalletCommitGadget<
+pub struct WalletShareCommitGadget<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
 > {}
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
-    WalletCommitGadget<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+    WalletShareCommitGadget<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
     /// Compute the commitment to a wallet
-    pub fn wallet_commit<CS: RandomizableConstraintSystem>(
-        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub fn compute_commitment<CS: RandomizableConstraintSystem>(
+        wallet_share: &WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError> {
         // Create a new hash gadget
