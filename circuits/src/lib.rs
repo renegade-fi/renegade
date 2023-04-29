@@ -808,13 +808,10 @@ pub mod native_helpers {
         // Hash the keys into the state
         let mut key_scalars = Vec::<Scalar>::from(wallet.keys.pk_root.clone());
         key_scalars.push(wallet.keys.pk_match.into());
-        key_scalars.push(wallet.keys.pk_settle.into());
-        key_scalars.push(wallet.keys.pk_view.into());
-
         hasher.absorb(&key_scalars.iter().map(scalar_to_prime_field).collect_vec());
 
         // Hash the randomness into the state
-        hasher.absorb(&scalar_to_prime_field(&wallet.randomness));
+        hasher.absorb(&scalar_to_prime_field(&wallet.blinder));
 
         hasher.squeeze_field_elements(1 /* num_elements */)[0]
     }
@@ -857,7 +854,7 @@ pub mod native_helpers {
         [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
     {
         let mut hasher = PoseidonSponge::new(&default_poseidon_params());
-        hasher.absorb(&vec![commitment, scalar_to_prime_field(&wallet.randomness)]);
+        hasher.absorb(&vec![commitment, scalar_to_prime_field(&wallet.blinder)]);
         hasher.squeeze_field_elements(1 /* num_elements */)[0]
     }
 
@@ -877,7 +874,7 @@ pub mod native_helpers {
         let mut hasher = PoseidonSponge::new(&default_poseidon_params());
         hasher.absorb(&vec![
             commitment,
-            scalar_to_prime_field(&(wallet.randomness + Scalar::one())),
+            scalar_to_prime_field(&(wallet.blinder + Scalar::one())),
         ]);
         hasher.squeeze_field_elements(1 /* num_elements */)[0]
     }
