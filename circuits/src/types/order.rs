@@ -9,7 +9,7 @@ use crate::{
         AuthenticatedCommittedFixedPoint, AuthenticatedFixedPoint, AuthenticatedFixedPointVar,
         CommittedFixedPoint, FixedPoint, FixedPointVar, LinkableFixedPointCommitment,
     },
-    Allocate, CommitSharedProver, CommitVerifier, CommitWitness, LinkableCommitment,
+    Allocate, CommitPublic, CommitSharedProver, CommitVerifier, CommitWitness, LinkableCommitment,
 };
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
@@ -838,6 +838,32 @@ impl CommitWitness for OrderSecretShare {
                 timestamp: timestamp_comm,
             },
         ))
+    }
+}
+
+impl CommitPublic for OrderSecretShare {
+    type VarType = OrderSecretShareVar;
+    type ErrorType = (); // Does not error
+
+    fn commit_public<CS: mpc_bulletproof::r1cs::RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        let quote_var = self.quote_mint.commit_public(cs).unwrap();
+        let base_var = self.base_mint.commit_public(cs).unwrap();
+        let side_var = self.side.commit_public(cs).unwrap();
+        let price_var = self.price.commit_public(cs).unwrap();
+        let amount_var = self.amount.commit_public(cs).unwrap();
+        let timestamp_var = self.timestamp.commit_public(cs).unwrap();
+
+        Ok(OrderSecretShareVar {
+            quote_mint: quote_var,
+            base_mint: base_var,
+            side: side_var,
+            price: price_var,
+            amount: amount_var,
+            timestamp: timestamp_var,
+        })
     }
 }
 

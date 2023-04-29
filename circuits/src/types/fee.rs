@@ -9,7 +9,8 @@ use crate::{
         AuthenticatedCommittedFixedPoint, AuthenticatedFixedPoint, AuthenticatedFixedPointVar,
         CommittedFixedPoint, FixedPoint, FixedPointVar, LinkableFixedPointCommitment,
     },
-    Allocate, CommitSharedProver, CommitVerifier, CommitWitness, LinkableCommitment, SharePublic,
+    Allocate, CommitPublic, CommitSharedProver, CommitVerifier, CommitWitness, LinkableCommitment,
+    SharePublic,
 };
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
@@ -705,6 +706,28 @@ impl CommitWitness for FeeSecretShare {
                 percentage_fee: percentage_comm,
             },
         ))
+    }
+}
+
+impl CommitPublic for FeeSecretShare {
+    type VarType = FeeSecretShareVar;
+    type ErrorType = ();
+
+    fn commit_public<CS: mpc_bulletproof::r1cs::RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        let settle_key_var = self.settle_key.commit_public(cs).unwrap();
+        let gas_addr_var = self.gas_addr.commit_public(cs).unwrap();
+        let gas_amount_var = self.gas_token_amount.commit_public(cs).unwrap();
+        let percentage_var = self.percentage_fee.commit_public(cs).unwrap();
+
+        Ok(FeeSecretShareVar {
+            settle_key: settle_key_var,
+            gas_addr: gas_addr_var,
+            gas_token_amount: gas_amount_var,
+            percentage_fee: percentage_var,
+        })
     }
 }
 
