@@ -633,9 +633,10 @@ pub(crate) mod test_helpers {
     use env_logger::{Builder, Env, Target};
     use merlin::Transcript;
     use mpc_bulletproof::{
-        r1cs::{Prover, Verifier},
+        r1cs::{LinearCombination, Prover, RandomizableConstraintSystem, Verifier},
         PedersenGens,
     };
+    use rand_core::OsRng;
 
     use crate::{errors::VerifierError, SingleProverCircuit};
 
@@ -663,6 +664,24 @@ pub(crate) mod test_helpers {
     // -----------
     // | Helpers |
     // -----------
+
+    /// Construct a random scalar
+    pub(crate) fn random_scalar() -> Scalar {
+        let mut rng = OsRng {};
+        Scalar::random(&mut rng)
+    }
+
+    /// Assert that two linear combinations are equal in the given constraint system
+    pub(crate) fn assert_lcs_equal<CS: RandomizableConstraintSystem>(
+        lc1: &LinearCombination,
+        lc2: &LinearCombination,
+        cs: &CS,
+    ) {
+        let eval1 = cs.eval(lc1);
+        let eval2 = cs.eval(lc2);
+
+        assert_eq!(eval1, eval2);
+    }
 
     /// Compares a Dalek Scalar to an Arkworks field element
     pub(crate) fn compare_scalar_to_felt(scalar: &Scalar, felt: &DalekRistrettoField) -> bool {
@@ -707,7 +726,11 @@ pub mod native_helpers {
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
 
-    use crate::types::{keychain::PublicIdentificationKey, note::Note, wallet::Wallet};
+    use crate::types::{
+        keychain::PublicIdentificationKey,
+        note::Note,
+        wallet::{Wallet, WalletSecretShare},
+    };
 
     /// Compute the hash of the randomness of a given wallet
     pub fn compute_poseidon_hash(values: &[Scalar]) -> Scalar {
@@ -718,7 +741,29 @@ pub mod native_helpers {
         prime_field_to_scalar(&out)
     }
 
+    /// Compute a commitment to shares of a wallet
+    pub fn compute_wallet_share_commitment<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >(
+        share: &WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    ) -> Scalar {
+        let mut hash_input = Vec::new();
+        for balance in share.balances.iter() {
+            hash_input.append(&mut vec![balance.mint, balance.amount])
+        }
+
+        for order in share.orders.iter() {
+            hash_input.append(&mut vec![])
+        }
+
+        compute_poseidon_hash(&hash_input)
+    }
+
     /// Compute the commitment to a wallet
+    ///
+    /// TODO: Delete this method after refactor
     pub fn compute_wallet_commitment<
         const MAX_BALANCES: usize,
         const MAX_ORDERS: usize,
@@ -775,6 +820,8 @@ pub mod native_helpers {
     }
 
     /// Compute the commitment to a note
+    ///
+    /// TODO: Delete this method after refactor
     pub fn compute_note_commitment(
         note: &Note,
         pk_settle_receiver: PublicIdentificationKey,
@@ -797,6 +844,7 @@ pub mod native_helpers {
     }
 
     /// Given a wallet and its commitment, compute the wallet spend nullifier
+    /// TODO: Delete this method after refactor
     pub fn compute_wallet_spend_nullifier<
         const MAX_BALANCES: usize,
         const MAX_ORDERS: usize,
@@ -814,6 +862,7 @@ pub mod native_helpers {
     }
 
     /// Given a wallet and its commitment, compute the wallet match nullifier
+    /// TODO: Delete this method after refactor
     pub fn compute_wallet_match_nullifier<
         const MAX_BALANCES: usize,
         const MAX_ORDERS: usize,

@@ -1,5 +1,5 @@
 //! Groups the base type and derived types for the `Fee` entity
-use std::ops::Add;
+use std::{ops::Add, os::unix::fs::DirBuilderExt};
 
 use crate::{
     errors::{MpcError, TypeConversionError},
@@ -27,6 +27,9 @@ use mpc_ristretto::{
 use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
+
+/// The number of scalars in a serialized fee
+pub(crate) const SCALARS_PER_FEE: usize = 4;
 
 // -----------------
 // | Fee Base Type |
@@ -563,7 +566,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
 // -------------------------
 
 /// Represents an additive secret share of a fee
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FeeSecretShare {
     /// The public settle key of the cluster collecting fees
     pub settle_key: Scalar,
@@ -575,24 +578,6 @@ pub struct FeeSecretShare {
     /// For now this is encoded as a u64, which represents a
     /// fixed point rational under the hood
     pub percentage_fee: Scalar,
-}
-
-impl Add<FeeSecretShare> for FeeSecretShare {
-    type Output = Fee;
-
-    fn add(self, rhs: FeeSecretShare) -> Self::Output {
-        let settle_key = scalar_to_biguint(&(self.settle_key + rhs.settle_key));
-        let gas_addr = scalar_to_biguint(&(self.gas_addr + rhs.gas_addr));
-        let gas_token_amount = scalar_to_u64(&(self.gas_token_amount + rhs.gas_token_amount));
-        let percentage_fee = FixedPoint::from(self.percentage_fee + rhs.percentage_fee);
-
-        Fee {
-            settle_key,
-            gas_addr,
-            gas_token_amount,
-            percentage_fee,
-        }
-    }
 }
 
 impl FeeSecretShare {
@@ -613,6 +598,49 @@ impl FeeSecretShare {
     }
 }
 
+impl Add<FeeSecretShare> for FeeSecretShare {
+    type Output = Fee;
+
+    fn add(self, rhs: FeeSecretShare) -> Self::Output {
+        let settle_key = scalar_to_biguint(&(self.settle_key + rhs.settle_key));
+        let gas_addr = scalar_to_biguint(&(self.gas_addr + rhs.gas_addr));
+        let gas_token_amount = scalar_to_u64(&(self.gas_token_amount + rhs.gas_token_amount));
+        let percentage_fee = FixedPoint::from(self.percentage_fee + rhs.percentage_fee);
+
+        Fee {
+            settle_key,
+            gas_addr,
+            gas_token_amount,
+            percentage_fee,
+        }
+    }
+}
+
+// Fee share serialization
+impl From<FeeSecretShare> for Vec<Scalar> {
+    fn from(fee: FeeSecretShare) -> Self {
+        vec![
+            fee.settle_key,
+            fee.gas_addr,
+            fee.gas_token_amount,
+            fee.percentage_fee,
+        ]
+    }
+}
+
+// Fee share deserialization
+impl From<Vec<Scalar>> for FeeSecretShare {
+    fn from(mut serialized: Vec<Scalar>) -> Self {
+        let mut drain = serialized.drain(..);
+        FeeSecretShare {
+            settle_key: drain.next().unwrap(),
+            gas_addr: drain.next().unwrap(),
+            gas_token_amount: drain.next().unwrap(),
+            percentage_fee: drain.next().unwrap(),
+        }
+    }
+}
+
 /// Represents a fee secret share that has been allocated in a constraint system
 #[derive(Clone, Debug)]
 pub struct FeeSecretShareVar {
@@ -626,6 +654,24 @@ pub struct FeeSecretShareVar {
     /// For now this is encoded as a u64, which represents a
     /// fixed point rational under the hood
     pub percentage_fee: LinearCombination,
+}
+
+impl FeeSecretShareVar {
+    /// Apply a blinder to the secret shares
+    pub fn blind(&mut self, blinder: LinearCombination) {
+        self.settle_key += blinder.clone();
+        self.gas_addr += blinder.clone();
+        self.gas_token_amount += blinder.clone();
+        self.percentage_fee += blinder;
+    }
+
+    /// Remove a blinder from the secret shares
+    pub fn unblind(&mut self, blinder: LinearCombination) {
+        self.settle_key -= blinder.clone();
+        self.gas_addr -= blinder.clone();
+        self.gas_token_amount -= blinder.clone();
+        self.percentage_fee -= blinder;
+    }
 }
 
 impl Add<FeeSecretShareVar> for FeeSecretShareVar {
@@ -643,21 +689,28 @@ impl Add<FeeSecretShareVar> for FeeSecretShareVar {
     }
 }
 
-impl FeeSecretShareVar {
-    /// Apply a blinder to the secret shares
-    pub fn blind(&mut self, blinder: Variable) {
-        self.settle_key += blinder;
-        self.gas_addr += blinder;
-        self.gas_token_amount += blinder;
-        self.percentage_fee += blinder;
+// Fee share serialization
+impl From<FeeSecretShareVar> for Vec<LinearCombination> {
+    fn from(fee: FeeSecretShareVar) -> Self {
+        vec![
+            fee.settle_key,
+            fee.gas_addr,
+            fee.gas_token_amount,
+            fee.percentage_fee,
+        ]
     }
+}
 
-    /// Remove a blinder from the secret shares
-    pub fn unblind(&mut self, blinder: Variable) {
-        self.settle_key -= blinder;
-        self.gas_addr -= blinder;
-        self.gas_token_amount -= blinder;
-        self.percentage_fee -= blinder;
+// Fee share deserialization
+impl<L: Into<LinearCombination>> From<Vec<L>> for FeeSecretShareVar {
+    fn from(mut serialized: Vec<L>) -> Self {
+        let mut drain = serialized.drain(..);
+        FeeSecretShareVar {
+            settle_key: drain.next().unwrap().into(),
+            gas_addr: drain.next().unwrap().into(),
+            gas_token_amount: drain.next().unwrap().into(),
+            percentage_fee: drain.next().unwrap().into(),
+        }
     }
 }
 
@@ -749,5 +802,66 @@ impl CommitVerifier for FeeSecretShareCommitment {
             gas_token_amount: gas_amount_var.into(),
             percentage_fee: percentage_var.into(),
         })
+    }
+}
+
+// ---------
+// | Tests |
+// ---------
+
+#[cfg(test)]
+mod test {
+    use curve25519_dalek::scalar::Scalar;
+    use merlin::Transcript;
+    use mpc_bulletproof::{
+        r1cs::{LinearCombination, Prover},
+        PedersenGens,
+    };
+
+    use crate::{
+        test_helpers::{assert_lcs_equal, random_scalar},
+        types::fee::FeeSecretShareVar,
+        CommitPublic,
+    };
+
+    use super::FeeSecretShare;
+
+    /// Tests serialization and deserialization of fee secret share types
+    #[test]
+    fn test_fee_share_serde() {
+        let fee_share = FeeSecretShare {
+            settle_key: random_scalar(),
+            gas_addr: random_scalar(),
+            gas_token_amount: random_scalar(),
+            percentage_fee: random_scalar(),
+        };
+
+        // Serialize then deserialize
+        let serialized: Vec<Scalar> = fee_share.into();
+        let deserialized: FeeSecretShare = serialized.into();
+
+        assert_eq!(fee_share, deserialized);
+
+        // Allocate in a constraint system then test on allocated types
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        let fee_share_var = fee_share.commit_public(&mut prover).unwrap();
+        let serialized: Vec<LinearCombination> = fee_share_var.clone().into();
+        let deserialized: FeeSecretShareVar = serialized.into();
+
+        assert_lcs_equal(&fee_share_var.settle_key, &deserialized.settle_key, &prover);
+        assert_lcs_equal(&fee_share_var.gas_addr, &deserialized.gas_addr, &prover);
+        assert_lcs_equal(
+            &fee_share_var.gas_token_amount,
+            &deserialized.gas_token_amount,
+            &prover,
+        );
+        assert_lcs_equal(
+            &fee_share_var.percentage_fee,
+            &deserialized.percentage_fee,
+            &prover,
+        );
     }
 }

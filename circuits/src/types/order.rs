@@ -27,6 +27,9 @@ use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
+/// The number of scalars per serialized order
+pub(crate) const SCALARS_PER_ORDER: usize = 6;
+
 // --------------------
 // | Base Order Types |
 // --------------------
@@ -180,19 +183,6 @@ pub struct OrderVar<L: Into<LinearCombination>> {
     pub amount: L,
     /// A timestamp indicating when the order was placed, set by the user
     pub timestamp: L,
-}
-
-impl<L: Into<LinearCombination>> From<OrderVar<L>> for Vec<LinearCombination> {
-    fn from(order: OrderVar<L>) -> Self {
-        vec![
-            order.quote_mint.into(),
-            order.base_mint.into(),
-            order.side.into(),
-            order.price.repr,
-            order.amount.into(),
-            order.timestamp.into(),
-        ]
-    }
 }
 
 impl CommitWitness for Order {
@@ -665,7 +655,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
 // -----------------------------
 
 /// Represents an additive secret share of an order
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct OrderSecretShare {
     /// The mint (ERC-20 contract address) of the quote token
     pub quote_mint: Scalar,
@@ -679,28 +669,6 @@ pub struct OrderSecretShare {
     pub amount: Scalar,
     /// A timestamp indicating when the order was placed, set by the user
     pub timestamp: Scalar,
-}
-
-impl Add<OrderSecretShare> for OrderSecretShare {
-    type Output = Order;
-
-    fn add(self, rhs: OrderSecretShare) -> Self::Output {
-        let quote_mint = scalar_to_biguint(&(self.quote_mint + rhs.quote_mint));
-        let base_mint = scalar_to_biguint(&(self.base_mint + rhs.base_mint));
-        let side = OrderSide::from(self.side + rhs.side);
-        let price = FixedPoint::from(self.price + rhs.price);
-        let amount = scalar_to_u64(&(self.amount + rhs.amount));
-        let timestamp = scalar_to_u64(&(self.timestamp + rhs.timestamp));
-
-        Order {
-            quote_mint,
-            base_mint,
-            side,
-            price,
-            amount,
-            timestamp,
-        }
-    }
 }
 
 impl OrderSecretShare {
@@ -725,6 +693,57 @@ impl OrderSecretShare {
     }
 }
 
+impl Add<OrderSecretShare> for OrderSecretShare {
+    type Output = Order;
+
+    fn add(self, rhs: OrderSecretShare) -> Self::Output {
+        let quote_mint = scalar_to_biguint(&(self.quote_mint + rhs.quote_mint));
+        let base_mint = scalar_to_biguint(&(self.base_mint + rhs.base_mint));
+        let side = OrderSide::from(self.side + rhs.side);
+        let price = FixedPoint::from(self.price + rhs.price);
+        let amount = scalar_to_u64(&(self.amount + rhs.amount));
+        let timestamp = scalar_to_u64(&(self.timestamp + rhs.timestamp));
+
+        Order {
+            quote_mint,
+            base_mint,
+            side,
+            price,
+            amount,
+            timestamp,
+        }
+    }
+}
+
+// Order serialization
+impl From<OrderSecretShare> for Vec<Scalar> {
+    fn from(share: OrderSecretShare) -> Self {
+        vec![
+            share.quote_mint,
+            share.base_mint,
+            share.side,
+            share.price,
+            share.amount,
+            share.timestamp,
+        ]
+    }
+}
+
+// Order deserialization
+impl From<Vec<Scalar>> for OrderSecretShare {
+    fn from(mut serialized: Vec<Scalar>) -> Self {
+        let mut drain = serialized.drain(..);
+        OrderSecretShare {
+            quote_mint: drain.next().unwrap(),
+            base_mint: drain.next().unwrap(),
+            side: drain.next().unwrap(),
+            price: drain.next().unwrap(),
+            amount: drain.next().unwrap(),
+            timestamp: drain.next().unwrap(),
+        }
+    }
+}
+
 /// Represents an additive secret share of an order committed into a constraint system
 #[derive(Clone, Debug)]
 pub struct OrderSecretShareVar {
@@ -740,6 +759,28 @@ pub struct OrderSecretShareVar {
     pub amount: LinearCombination,
     /// A timestamp indicating when the order was placed, set by the user
     pub timestamp: LinearCombination,
+}
+
+impl OrderSecretShareVar {
+    /// Apply a blinder to the secret shares
+    pub fn blind(&mut self, blinder: LinearCombination) {
+        self.quote_mint += blinder.clone();
+        self.base_mint += blinder.clone();
+        self.side += blinder.clone();
+        self.price += blinder.clone();
+        self.amount += blinder.clone();
+        self.timestamp += blinder;
+    }
+
+    /// Remove a blinder from the secret shares
+    pub fn unblind(&mut self, blinder: LinearCombination) {
+        self.quote_mint -= blinder.clone();
+        self.base_mint -= blinder.clone();
+        self.side -= blinder.clone();
+        self.price -= blinder.clone();
+        self.amount -= blinder.clone();
+        self.timestamp -= blinder;
+    }
 }
 
 impl Add<OrderSecretShareVar> for OrderSecretShareVar {
@@ -764,25 +805,32 @@ impl Add<OrderSecretShareVar> for OrderSecretShareVar {
     }
 }
 
-impl OrderSecretShareVar {
-    /// Apply a blinder to the secret shares
-    pub fn blind(&mut self, blinder: Variable) {
-        self.quote_mint += blinder;
-        self.base_mint += blinder;
-        self.side += blinder;
-        self.price += blinder;
-        self.amount += blinder;
-        self.timestamp += blinder;
+// Order serialization
+impl From<OrderSecretShareVar> for Vec<LinearCombination> {
+    fn from(share: OrderSecretShareVar) -> Self {
+        vec![
+            share.quote_mint,
+            share.base_mint,
+            share.side,
+            share.price,
+            share.amount,
+            share.timestamp,
+        ]
     }
+}
 
-    /// Remove a blinder from the secret shares
-    pub fn unblind(&mut self, blinder: Variable) {
-        self.quote_mint -= blinder;
-        self.base_mint -= blinder;
-        self.side -= blinder;
-        self.price -= blinder;
-        self.amount -= blinder;
-        self.timestamp -= blinder;
+// Order deserialization
+impl<L: Into<LinearCombination>> From<Vec<L>> for OrderSecretShareVar {
+    fn from(mut serialized: Vec<L>) -> Self {
+        let mut drain = serialized.drain(..);
+        OrderSecretShareVar {
+            quote_mint: drain.next().unwrap().into(),
+            base_mint: drain.next().unwrap().into(),
+            side: drain.next().unwrap().into(),
+            price: drain.next().unwrap().into(),
+            amount: drain.next().unwrap().into(),
+            timestamp: drain.next().unwrap().into(),
+        }
     }
 }
 
@@ -887,5 +935,64 @@ impl CommitVerifier for OrderSecretShareCommitment {
             amount: amount_var.into(),
             timestamp: timestamp_var.into(),
         })
+    }
+}
+
+// ---------
+// | Tests |
+// ---------
+
+#[cfg(test)]
+mod test {
+    use curve25519_dalek::scalar::Scalar;
+    use merlin::Transcript;
+    use mpc_bulletproof::{
+        r1cs::{LinearCombination, Prover},
+        PedersenGens,
+    };
+
+    use crate::{
+        test_helpers::{assert_lcs_equal, random_scalar},
+        types::order::OrderSecretShareVar,
+        CommitPublic,
+    };
+
+    use super::OrderSecretShare;
+
+    /// Tests serialization of the order secret share types
+    #[test]
+    fn test_order_share_serde() {
+        let order_share = OrderSecretShare {
+            quote_mint: random_scalar(),
+            base_mint: random_scalar(),
+            side: random_scalar(),
+            price: random_scalar(),
+            amount: random_scalar(),
+            timestamp: random_scalar(),
+        };
+
+        // Serialize then deserialize
+        let serialized: Vec<Scalar> = order_share.into();
+        let deserialized: OrderSecretShare = serialized.into();
+
+        assert_eq!(deserialized, order_share);
+
+        // Convert to a constraint-system allocated type
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        let share_var = order_share.commit_public(&mut prover).unwrap();
+
+        // Serialize then deserialize the variable
+        let serialized: Vec<LinearCombination> = share_var.clone().into();
+        let deserialized: OrderSecretShareVar = serialized.into();
+
+        assert_lcs_equal(&share_var.quote_mint, &deserialized.quote_mint, &prover);
+        assert_lcs_equal(&share_var.base_mint, &deserialized.base_mint, &prover);
+        assert_lcs_equal(&share_var.side, &deserialized.side, &prover);
+        assert_lcs_equal(&share_var.price, &deserialized.price, &prover);
+        assert_lcs_equal(&share_var.amount, &deserialized.amount, &prover);
+        assert_lcs_equal(&share_var.timestamp, &deserialized.timestamp, &prover);
     }
 }
