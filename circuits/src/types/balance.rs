@@ -305,7 +305,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
 // ------------------------------
 
 /// A balance that has been split into secret shares
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct BalanceSecretShare {
     /// The mint (ERC20 token addr) of the balance
     pub mint: Scalar,
@@ -339,12 +339,12 @@ impl BalanceSecretShare {
 }
 
 /// A balance secret share that has been allocated in a constraint system
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct BalanceSecretShareVar {
     /// The mint (ERC20 token addr) of the balance
-    pub mint: Variable,
+    pub mint: LinearCombination,
     /// The amount of the balance held
-    pub amount: Variable,
+    pub amount: LinearCombination,
 }
 
 impl Add<BalanceSecretShareVar> for BalanceSecretShareVar {
@@ -373,7 +373,7 @@ impl BalanceSecretShareVar {
 }
 
 /// A commitment to a balance allocate within a constraint system
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct BalanceSecretShareCommitment {
     /// The mint (ERC20 token addr) of the balance
     pub mint: CompressedRistretto,
@@ -396,8 +396,8 @@ impl CommitWitness for BalanceSecretShare {
 
         Ok((
             BalanceSecretShareVar {
-                mint: mint_var,
-                amount: amount_var,
+                mint: mint_var.into(),
+                amount: amount_var.into(),
             },
             BalanceSecretShareCommitment {
                 mint: mint_comm,
@@ -419,8 +419,8 @@ impl CommitPublic for BalanceSecretShare {
         let amount_var = self.amount.commit_public(cs).unwrap();
 
         Ok(BalanceSecretShareVar {
-            mint: mint_var,
-            amount: amount_var,
+            mint: mint_var.into(),
+            amount: amount_var.into(),
         })
     }
 }
@@ -434,8 +434,8 @@ impl CommitVerifier for BalanceSecretShareCommitment {
         let amount_var = self.amount.commit_verifier(verifier).unwrap();
 
         Ok(BalanceSecretShareVar {
-            mint: mint_var,
-            amount: amount_var,
+            mint: mint_var.into(),
+            amount: amount_var.into(),
         })
     }
 }

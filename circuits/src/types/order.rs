@@ -665,7 +665,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
 // -----------------------------
 
 /// Represents an additive secret share of an order
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct OrderSecretShare {
     /// The mint (ERC-20 contract address) of the quote token
     pub quote_mint: Scalar,
@@ -726,20 +726,20 @@ impl OrderSecretShare {
 }
 
 /// Represents an additive secret share of an order committed into a constraint system
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct OrderSecretShareVar {
     /// The mint (ERC-20 contract address) of the quote token
-    pub quote_mint: Variable,
+    pub quote_mint: LinearCombination,
     /// The mint (ERC-20 contract address) of the base token
-    pub base_mint: Variable,
+    pub base_mint: LinearCombination,
     /// The side this order is for (0 = buy, 1 = sell)
-    pub side: Variable,
+    pub side: LinearCombination,
     /// The limit price to be executed at, in units of quote per base
-    pub price: Variable,
+    pub price: LinearCombination,
     /// The amount of base currency to buy or sell
-    pub amount: Variable,
+    pub amount: LinearCombination,
     /// A timestamp indicating when the order was placed, set by the user
-    pub timestamp: Variable,
+    pub timestamp: LinearCombination,
 }
 
 impl Add<OrderSecretShareVar> for OrderSecretShareVar {
@@ -757,7 +757,7 @@ impl Add<OrderSecretShareVar> for OrderSecretShareVar {
             quote_mint,
             base_mint,
             side,
-            price,
+            price: FixedPointVar { repr: price },
             amount,
             timestamp,
         }
@@ -787,7 +787,7 @@ impl OrderSecretShareVar {
 }
 
 /// Represents a commitment to an additive secret share of an order committed into a constraint system
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct OrderSecretShareCommitment {
     /// The mint (ERC-20 contract address) of the quote token
     pub quote_mint: CompressedRistretto,
@@ -822,12 +822,12 @@ impl CommitWitness for OrderSecretShare {
 
         Ok((
             OrderSecretShareVar {
-                quote_mint: quote_var,
-                base_mint: base_var,
-                side: side_var,
-                price: price_var,
-                amount: amount_var,
-                timestamp: timestamp_var,
+                quote_mint: quote_var.into(),
+                base_mint: base_var.into(),
+                side: side_var.into(),
+                price: price_var.into(),
+                amount: amount_var.into(),
+                timestamp: timestamp_var.into(),
             },
             OrderSecretShareCommitment {
                 quote_mint: quote_comm,
@@ -857,12 +857,12 @@ impl CommitPublic for OrderSecretShare {
         let timestamp_var = self.timestamp.commit_public(cs).unwrap();
 
         Ok(OrderSecretShareVar {
-            quote_mint: quote_var,
-            base_mint: base_var,
-            side: side_var,
-            price: price_var,
-            amount: amount_var,
-            timestamp: timestamp_var,
+            quote_mint: quote_var.into(),
+            base_mint: base_var.into(),
+            side: side_var.into(),
+            price: price_var.into(),
+            amount: amount_var.into(),
+            timestamp: timestamp_var.into(),
         })
     }
 }
@@ -880,12 +880,12 @@ impl CommitVerifier for OrderSecretShareCommitment {
         let timestamp_var = self.timestamp.commit_verifier(verifier).unwrap();
 
         Ok(OrderSecretShareVar {
-            quote_mint: quote_var,
-            base_mint: base_var,
-            side: side_var,
-            price: price_var,
-            amount: amount_var,
-            timestamp: timestamp_var,
+            quote_mint: quote_var.into(),
+            base_mint: base_var.into(),
+            side: side_var.into(),
+            price: price_var.into(),
+            amount: amount_var.into(),
+            timestamp: timestamp_var.into(),
         })
     }
 }

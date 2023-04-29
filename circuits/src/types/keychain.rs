@@ -14,7 +14,8 @@ use crate::{
     types::{scalar_from_hex_string, scalar_to_hex_string},
     zk_gadgets::nonnative::{
         NonNativeElement, NonNativeElementCommitment, NonNativeElementSecretShare,
-        NonNativeElementSecretShareVar, NonNativeElementVar, TWO_TO_256_FIELD_MOD,
+        NonNativeElementSecretShareCommitment, NonNativeElementSecretShareVar, NonNativeElementVar,
+        TWO_TO_256_FIELD_MOD,
     },
     CommitPublic, CommitVerifier, CommitWitness,
 };
@@ -333,8 +334,6 @@ impl CommitWitness for PublicKeyChain {
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
         let (root_var, root_comm) = self.pk_root.commit_witness(rng, prover).unwrap();
         let (match_var, match_comm) = self.pk_match.commit_witness(rng, prover).unwrap();
-        let (settle_var, settle_comm) = self.pk_settle.commit_witness(rng, prover).unwrap();
-        let (view_var, view_comm) = self.pk_view.commit_witness(rng, prover).unwrap();
 
         Ok((
             PublicKeyChainVar {
@@ -356,8 +355,6 @@ impl CommitVerifier for CommittedPublicKeyChain {
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
         let root_var = self.pk_root.commit_verifier(verifier).unwrap();
         let match_var = verifier.commit(self.pk_match);
-        let settle_var = verifier.commit(self.pk_settle);
-        let view_var = verifier.commit(self.pk_view);
 
         Ok(PublicKeyChainVar {
             pk_root: root_var,
@@ -371,7 +368,7 @@ impl CommitVerifier for CommittedPublicKeyChain {
 // -------------------------------
 
 /// Represents an additive secret share of a wallet's public keychain
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PublicKeyChainSecretShare {
     /// The public root key
     pub pk_root: NonNativeElementSecretShare,
@@ -386,7 +383,10 @@ impl Add<PublicKeyChainSecretShare> for PublicKeyChainSecretShare {
         let pk_root = self.pk_root + rhs.pk_root;
         let pk_match = self.pk_match + rhs.pk_match;
 
-        PublicKeyChain { pk_root, pk_match }
+        PublicKeyChain {
+            pk_root: PublicSigningKey(pk_root.val),
+            pk_match: PublicIdentificationKey(pk_match),
+        }
     }
 }
 
@@ -406,12 +406,12 @@ impl PublicKeyChainSecretShare {
 
 /// Represents an additive secret share of a wallet's public keychain
 /// that has been allocated in a constraint system
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct PublicKeyChainSecretShareVar {
     /// The public root key
     pub pk_root: NonNativeElementSecretShareVar,
     /// The public match key
-    pub pk_match: Variable,
+    pub pk_match: LinearCombination,
 }
 
 impl Add<PublicKeyChainSecretShareVar> for PublicKeyChainSecretShareVar {
@@ -425,12 +425,26 @@ impl Add<PublicKeyChainSecretShareVar> for PublicKeyChainSecretShareVar {
     }
 }
 
+impl PublicKeyChainSecretShareVar {
+    /// Apply a blinder to the secret shares
+    pub fn blind(&mut self, blinder: Variable) {
+        self.pk_root.blind(blinder);
+        self.pk_match += blinder;
+    }
+
+    /// Remove a blinder from the secret shares
+    pub fn unblind(&mut self, blinder: Variable) {
+        self.pk_root.unblind(blinder);
+        self.pk_match -= blinder;
+    }
+}
+
 /// Represents a commitment to an additive secret share of a wallet's public keychain
 /// that has been allocated in a constraint system
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PublicKeyChainSecretShareCommitment {
     /// The public root key
-    pub pk_root: NonNativeElementCommitment,
+    pub pk_root: NonNativeElementSecretShareCommitment,
     /// The public match key
     pub pk_match: CompressedRistretto,
 }
@@ -451,7 +465,7 @@ impl CommitWitness for PublicKeyChainSecretShare {
         Ok((
             PublicKeyChainSecretShareVar {
                 pk_root: root_var,
-                pk_match: match_var,
+                pk_match: match_var.into(),
             },
             PublicKeyChainSecretShareCommitment {
                 pk_root: root_comm,
@@ -474,7 +488,7 @@ impl CommitPublic for PublicKeyChainSecretShare {
 
         Ok(PublicKeyChainSecretShareVar {
             pk_root: root_var,
-            pk_match: match_var,
+            pk_match: match_var.into(),
         })
     }
 }
@@ -489,7 +503,7 @@ impl CommitVerifier for PublicKeyChainSecretShareCommitment {
 
         Ok(PublicKeyChainSecretShareVar {
             pk_root: root_var,
-            pk_match: match_var,
+            pk_match: match_var.into(),
         })
     }
 }
