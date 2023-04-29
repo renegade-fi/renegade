@@ -8,8 +8,7 @@
 //! See the whitepaper (https://renegade.fi/whitepaper.pdf) appendix A.1
 //! for a formal specification
 
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
-use itertools::Itertools;
+use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
     r1cs::{Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
     r1cs_mpc::R1CSError,
@@ -22,10 +21,10 @@ use crate::{
     errors::{ProverError, VerifierError},
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
     types::{
-        deserialize_array,
         fee::{CommittedFee, Fee, FeeVar},
         keychain::{CommittedPublicKeyChain, PublicKeyChain, PublicKeyChainVar},
         serialize_array,
+        wallet::{WalletSecretShare, WalletSecretShareCommitment, WalletSecretShareVar},
     },
     zk_gadgets::poseidon::PoseidonHashGadget,
     CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit, MAX_BALANCES, MAX_FEES,
@@ -62,16 +61,15 @@ where
     /// Applies constraints to the constraint system specifying the statement of
     /// VALID WALLET CREATE
     fn circuit<CS>(
+        statement: ValidWalletCreateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        witness: ValidWalletCreateVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
-        expected_commit: Variable,
-        witness: ValidWalletCreateVar<MAX_FEES>,
     ) -> Result<(), R1CSError>
     where
         CS: RandomizableConstraintSystem,
     {
         // Check that the commitment is to an empty wallet with the given randomness
         // keys, and fees
-        Self::check_commitment(cs, expected_commit, witness)?;
         Ok(())
     }
 
@@ -79,7 +77,7 @@ where
     fn check_commitment<CS>(
         cs: &mut CS,
         expected_commit: Variable,
-        witness: ValidWalletCreateVar<MAX_FEES>,
+        witness: ValidWalletCreateVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     ) -> Result<(), R1CSError>
     where
         CS: RandomizableConstraintSystem,
@@ -126,44 +124,42 @@ where
 
 /// The witness for the VALID WALLET CREATE statement
 #[derive(Clone, Debug)]
-pub struct ValidWalletCreateWitness<const MAX_FEES: usize> {
-    /// The fees to initialize the wallet with; may be nonzero
-    pub fees: [Fee; MAX_FEES],
-    /// The keys used to authenticate operations on the wallet
-    pub keys: PublicKeyChain,
-    /// The wallet randomness, used to hide commitments and nullifiers
-    pub wallet_randomness: Scalar,
-}
-
-/// The committed witness for the VALID WALLET CREATE proof
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidWalletCreateCommitment<const MAX_FEES: usize> {
-    /// The fees to initialize the wallet with; may be nonzero
-    #[serde(
-        serialize_with = "serialize_array",
-        deserialize_with = "deserialize_array"
-    )]
-    pub fees: [CommittedFee; MAX_FEES],
-    /// The keys used to authenticate operations on the wallet
-    pub keys: CommittedPublicKeyChain,
-    /// The wallet randomness, used to hide commitments and nullifiers
-    pub wallet_randomness: CompressedRistretto,
+pub struct ValidWalletCreateWitness<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+    const MAX_FEES: usize,
+> {
+    /// The private secret shares of the new wallet
+    pub private_wallet_share: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
 }
 
 /// The proof-system allocated witness for VALID WALLET CREATE
 #[derive(Clone, Debug)]
-pub struct ValidWalletCreateVar<const MAX_FEES: usize> {
-    /// The fees to initialize the wallet with; may be nonzero
-    pub fees: [FeeVar; MAX_FEES],
-    /// The keys used to authenticate operations on the wallet
-    pub keys: PublicKeyChainVar,
-    /// The wallet randomness, used to hide commitments and nullifiers
-    pub wallet_randomness: Variable,
+pub struct ValidWalletCreateVar<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+    const MAX_FEES: usize,
+> {
+    /// The private secret shares of the new wallet
+    pub private_wallet_share: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
 }
 
-impl<const MAX_FEES: usize> CommitWitness for ValidWalletCreateWitness<MAX_FEES> {
-    type CommitType = ValidWalletCreateCommitment<MAX_FEES>;
-    type VarType = ValidWalletCreateVar<MAX_FEES>;
+/// The committed witness for the VALID WALLET CREATE proof
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ValidWalletCreateWitnessCommitment<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+    const MAX_FEES: usize,
+> {
+    /// The private secret shares of the new wallet
+    pub private_wallet_share: WalletSecretShareCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+}
+
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitWitness
+    for ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+{
+    type CommitType = ValidWalletCreateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type VarType = ValidWalletCreateVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type ErrorType = ();
 
     fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
@@ -171,49 +167,31 @@ impl<const MAX_FEES: usize> CommitWitness for ValidWalletCreateWitness<MAX_FEES>
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (fee_vars, fee_commitments): (Vec<FeeVar>, Vec<CommittedFee>) = self
-            .fees
-            .iter()
-            .map(|fee| fee.commit_witness(rng, prover).unwrap())
-            .unzip();
-        let (keychain_var, keychain_comm) = self.keys.commit_witness(rng, prover).unwrap();
-
-        let (randomness_comm, randomness_var) =
-            prover.commit(self.wallet_randomness, Scalar::random(rng));
-
+        let (wallet_share_var, wallet_share_comm) = self
+            .private_wallet_share
+            .commit_witness(rng, prover)
+            .unwrap();
         Ok((
             ValidWalletCreateVar {
-                fees: fee_vars.try_into().unwrap(),
-                keys: keychain_var,
-                wallet_randomness: randomness_var,
+                private_wallet_share: wallet_share_var,
             },
-            ValidWalletCreateCommitment {
-                fees: fee_commitments.try_into().unwrap(),
-                keys: keychain_comm,
-                wallet_randomness: randomness_comm,
+            ValidWalletCreateWitnessCommitment {
+                private_wallet_share: wallet_share_comm,
             },
         ))
     }
 }
 
-impl<const MAX_FEES: usize> CommitVerifier for ValidWalletCreateCommitment<MAX_FEES> {
-    type VarType = ValidWalletCreateVar<MAX_FEES>;
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitVerifier
+    for ValidWalletCreateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+{
+    type VarType = ValidWalletCreateVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type ErrorType = ();
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        let fee_vars = self
-            .fees
-            .iter()
-            .map(|fee| fee.commit_verifier(verifier).unwrap())
-            .collect_vec();
-
-        let keychain_var = self.keys.commit_verifier(verifier).unwrap();
-        let randomness_var = verifier.commit(self.wallet_randomness);
-
+        let wallet_share_var = self.private_wallet_share.commit_verifier(verifier).unwrap();
         Ok(ValidWalletCreateVar {
-            fees: fee_vars.try_into().unwrap(),
-            keys: keychain_var,
-            wallet_randomness: randomness_var,
+            private_wallet_share: wallet_share_var,
         })
     }
 }
@@ -222,11 +200,50 @@ impl<const MAX_FEES: usize> CommitVerifier for ValidWalletCreateCommitment<MAX_F
 // | Statement Type Definition |
 // -----------------------------
 
-/// The parameterization for the VALID WALLET CREATE statement
+/// The statement type for the `VALID WALLET CREATE` circuit
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub struct ValidWalletCreateStatement {
-    /// The expected commitment of the newly created wallet
-    pub wallet_commitment: Scalar,
+pub struct ValidWalletCreateStatement<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+    const MAX_FEES: usize,
+> {
+    /// The commitment to the private secret shares of the wallet
+    pub private_shares_commitment: Scalar,
+    /// The public secret shares of the wallet
+    pub public_wallet_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+}
+
+/// The statement type for the `VALID WALLET CREATE` circuit, allocated in a constraint system
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub struct ValidWalletCreateStatementVar<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+    const MAX_FEES: usize,
+> {
+    /// The commitment to the private secret shares of the wallet
+    pub private_shares_commitment: Variable,
+    /// The public secret shares of the wallet
+    pub public_wallet_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+}
+
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitPublic
+    for ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+{
+    type VarType = ValidWalletCreateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type ErrorType = (); // Does not error
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        let private_commitment_var = self.private_shares_commitment.commit_public(cs).unwrap();
+        let public_shares_var = self.public_wallet_shares.commit_public(cs).unwrap();
+
+        Ok(ValidWalletCreateStatementVar {
+            private_shares_commitment: private_commitment_var,
+            public_wallet_shares: public_shares_var,
+        })
+    }
 }
 
 // ---------------------
@@ -238,9 +255,9 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> 
 where
     [(); MAX_BALANCES * BALANCE_ZEROS + MAX_ORDERS * ORDER_ZEROS]: Sized,
 {
-    type Statement = ValidWalletCreateStatement;
-    type Witness = ValidWalletCreateWitness<MAX_FEES>;
-    type WitnessCommitment = ValidWalletCreateCommitment<MAX_FEES>;
+    type Statement = ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type Witness = ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type WitnessCommitment = ValidWalletCreateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     const BP_GENS_CAPACITY: usize = 10000;
 
@@ -249,19 +266,13 @@ where
         statement: Self::Statement,
         mut prover: Prover,
     ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
-        // Commit to the witness
+        // Commit to the witness and statement
         let mut rng = OsRng {};
         let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-
-        // Commit to the statement
-        let wallet_commitment_var = statement
-            .wallet_commitment
-            .commit_public(&mut prover)
-            .unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
         // Apply the constraints
-        Self::circuit(&mut prover, wallet_commitment_var, witness_var)
-            .map_err(ProverError::R1CS)?;
+        Self::circuit(statement_var, witness_var, &mut prover).map_err(ProverError::R1CS)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -276,18 +287,12 @@ where
         proof: R1CSProof,
         mut verifier: Verifier,
     ) -> Result<(), VerifierError> {
-        // Commit to the witness
+        // Commit to the witness and statement
         let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
-
-        // Commit to the statement
-        let wallet_commitment_var = statement
-            .wallet_commitment
-            .commit_public(&mut verifier)
-            .unwrap();
+        let statement_var = statement.commit_public(&mut verifier).unwrap();
 
         // Apply the constraints
-        Self::circuit(&mut verifier, wallet_commitment_var, witness_var)
-            .map_err(VerifierError::R1CS)?;
+        Self::circuit(statement_var, witness_var, &mut verifier).map_err(VerifierError::R1CS)?;
 
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         verifier
