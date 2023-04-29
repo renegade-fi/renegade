@@ -747,17 +747,9 @@ pub mod native_helpers {
         const MAX_ORDERS: usize,
         const MAX_FEES: usize,
     >(
-        share: &WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        share: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     ) -> Scalar {
-        let mut hash_input = Vec::new();
-        for balance in share.balances.iter() {
-            hash_input.append(&mut vec![balance.mint, balance.amount])
-        }
-
-        for order in share.orders.iter() {
-            hash_input.append(&mut vec![])
-        }
-
+        let hash_input: Vec<Scalar> = share.into();
         compute_poseidon_hash(&hash_input)
     }
 
