@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     types::{scalar_from_hex_string, scalar_to_hex_string},
-    CommitVerifier, CommitWitness,
+    CommitPublic, CommitVerifier, CommitWitness,
 };
 
 use super::{
@@ -97,7 +97,7 @@ pub struct WalletVar<
     /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle, pk_view)
     pub keys: PublicKeyChainVar<L>,
     /// The wallet randomness used to blind secret shares
-    pub blinder: Variable,
+    pub blinder: L,
 }
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitWitness
@@ -454,6 +454,47 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> 
                 blinder: blinder_comm,
             },
         ))
+    }
+}
+
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitPublic
+    for WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+{
+    type VarType = WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type ErrorType = (); // Does not error
+
+    fn commit_public<CS: mpc_bulletproof::r1cs::RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        let balance_vars = self
+            .balances
+            .iter()
+            .map(|b| b.commit_public(cs).unwrap())
+            .collect_vec();
+
+        let order_vars = self
+            .orders
+            .iter()
+            .map(|o| o.commit_public(cs).unwrap())
+            .collect_vec();
+
+        let fee_vars = self
+            .fees
+            .iter()
+            .map(|f| f.commit_public(cs).unwrap())
+            .collect_vec();
+
+        let key_var = self.keys.commit_public(cs).unwrap();
+        let blinder_var = self.blinder.commit_public(cs).unwrap();
+
+        Ok(WalletSecretShareVar {
+            balances: balance_vars,
+            orders: order_vars,
+            fees: fee_vars,
+            keys: key_var,
+            blinder: blinder_var,
+        })
     }
 }
 

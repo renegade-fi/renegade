@@ -461,6 +461,24 @@ impl CommitWitness for PublicKeyChainSecretShare {
     }
 }
 
+impl CommitPublic for PublicKeyChainSecretShare {
+    type VarType = PublicKeyChainSecretShareVar;
+    type ErrorType = (); // Does not error
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        let root_var = self.pk_root.commit_public(cs).unwrap();
+        let match_var = self.pk_match.commit_public(cs).unwrap();
+
+        Ok(PublicKeyChainSecretShareVar {
+            pk_root: root_var,
+            pk_match: match_var,
+        })
+    }
+}
+
 impl CommitVerifier for PublicKeyChainSecretShareCommitment {
     type VarType = PublicKeyChainSecretShareVar;
     type ErrorType = (); // Does not error
