@@ -276,10 +276,10 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     /// Used to apply constraints to the verifier
     pub fn matching_engine_check_single_prover<CS>(
         cs: &mut CS,
-        order1: OrderVar,
-        order2: OrderVar,
-        balance1: BalanceVar,
-        balance2: BalanceVar,
+        order1: OrderVar<Variable>,
+        order2: OrderVar<Variable>,
+        balance1: BalanceVar<Variable>,
+        balance2: BalanceVar<Variable>,
         matches: MatchResultVar,
     ) -> Result<(), R1CSError>
     where
@@ -594,6 +594,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open<N, S>
 /// TODO: Add in midpoint oracle prices
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidMatchMpcStatement {}
+
+// ---------------------
+// | Prove Verify Flow |
+// ---------------------
 
 /// Prover implementation of the Valid Match circuit
 impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<'a, N, S>
