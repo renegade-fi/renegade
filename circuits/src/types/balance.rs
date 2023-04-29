@@ -21,7 +21,7 @@ use crate::{
     errors::MpcError,
     mpc::SharedFabric,
     types::{biguint_from_hex_string, biguint_to_hex_string},
-    Allocate, CommitSharedProver, CommitVerifier, CommitWitness, LinkableCommitment,
+    Allocate, CommitPublic, CommitSharedProver, CommitVerifier, CommitWitness, LinkableCommitment,
 };
 
 // ---------------------
@@ -404,6 +404,24 @@ impl CommitWitness for BalanceSecretShare {
                 amount: amount_comm,
             },
         ))
+    }
+}
+
+impl CommitPublic for BalanceSecretShare {
+    type VarType = BalanceSecretShareVar;
+    type ErrorType = (); // Does not error
+
+    fn commit_public<CS: mpc_bulletproof::r1cs::RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        let mint_var = self.mint.commit_public(cs).unwrap();
+        let amount_var = self.amount.commit_public(cs).unwrap();
+
+        Ok(BalanceSecretShareVar {
+            mint: mint_var,
+            amount: amount_var,
+        })
     }
 }
 
