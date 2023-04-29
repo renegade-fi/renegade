@@ -139,6 +139,12 @@ impl FieldMod {
     }
 }
 
+impl Default for FieldMod {
+    fn default() -> Self {
+        TWO_TO_256_FIELD_MOD.clone()
+    }
+}
+
 /// A thin wrapper around a BigUint that allows us to implement commitment traits
 /// for a non-native element
 #[derive(Clone, Debug)]
@@ -899,11 +905,12 @@ impl NonNativeElementVar {
 // -----------------------
 
 /// Represents an additive secret share of a non-native element
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct NonNativeElementSecretShare {
     /// The scalar words underlying the value
     pub(crate) words: Vec<Scalar>,
     /// The field modulus of the non-native element
+    #[serde(skip_serializing, default)]
     pub(crate) field_mod: FieldMod,
 }
 
@@ -914,8 +921,8 @@ impl Add<NonNativeElementSecretShare> for NonNativeElementSecretShare {
         let new_words = self
             .words
             .iter()
-            .zip(rhs.words().iter())
-            .map(|w1, w2| w1 + w2)
+            .zip(rhs.words.iter())
+            .map(|(w1, w2)| w1 + w2)
             .collect_vec();
 
         NonNativeElement {
@@ -928,12 +935,12 @@ impl Add<NonNativeElementSecretShare> for NonNativeElementSecretShare {
 impl NonNativeElementSecretShare {
     /// Apply a blinder to the secret shares
     pub fn blind(&mut self, blinder: Scalar) {
-        self.words.iter_mut().for_each(|word| word += blinder);
+        self.words.iter_mut().for_each(|word| *word += blinder);
     }
 
     /// Remove a blinder from the secret shares
     pub fn unblind(&mut self, blinder: Scalar) {
-        self.words.iter_mut().for_each(|word| word -= blinder);
+        self.words.iter_mut().for_each(|word| *word -= blinder);
     }
 }
 
@@ -942,7 +949,7 @@ impl NonNativeElementSecretShare {
 #[derive(Clone, Debug)]
 pub struct NonNativeElementSecretShareVar {
     /// The scalar words underlying the value
-    pub(crate) words: Vec<Variable>,
+    pub(crate) words: Vec<LinearCombination>,
     /// The field modulus of the non-native element
     pub(crate) field_mod: FieldMod,
 }
@@ -953,9 +960,9 @@ impl Add<NonNativeElementSecretShareVar> for NonNativeElementSecretShareVar {
     fn add(self, rhs: NonNativeElementSecretShareVar) -> Self::Output {
         let out_words = self
             .words
-            .iter()
-            .zip(rhs.words.iter())
-            .map(|w1, w2| w1 + w2)
+            .into_iter()
+            .zip(rhs.words.into_iter())
+            .map(|(w1, w2)| w1 + w2)
             .collect_vec();
 
         NonNativeElementVar {
@@ -983,11 +990,12 @@ impl NonNativeElementSecretShareVar {
 
 /// Represents a commitment to an additive secret share of a non-native element that has been
 /// allocated in a constraint system
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NonNativeElementSecretShareCommitment {
     /// The scalar words underlying the value
     pub(crate) words: Vec<CompressedRistretto>,
     /// The field modulus of the non-native element
+    #[serde(skip_serializing, default)]
     pub(crate) field_mod: FieldMod,
 }
 
@@ -1001,11 +1009,12 @@ impl CommitWitness for NonNativeElementSecretShare {
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (word_vars, word_comms): (Vec<Variable>, Vec<CompressedRistretto>) = self
+        let (word_vars, word_comms): (Vec<LinearCombination>, Vec<CompressedRistretto>) = self
             .words
             .iter()
             .map(|word| word.commit_witness(rng, prover).unwrap())
-            .collect();
+            .map(|(var, comm)| (var.into(), comm))
+            .unzip();
 
         Ok((
             NonNativeElementSecretShareVar {
@@ -1020,15 +1029,36 @@ impl CommitWitness for NonNativeElementSecretShare {
     }
 }
 
+impl CommitPublic for NonNativeElementSecretShare {
+    type VarType = NonNativeElementSecretShareVar;
+    type ErrorType = (); // Does not error
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        let word_vars: Vec<LinearCombination> = self
+            .words
+            .iter()
+            .map(|word| word.commit_public(cs).unwrap().into())
+            .collect_vec();
+
+        Ok(NonNativeElementSecretShareVar {
+            words: word_vars,
+            field_mod: self.field_mod.clone(),
+        })
+    }
+}
+
 impl CommitVerifier for NonNativeElementSecretShareCommitment {
     type VarType = NonNativeElementSecretShareVar;
     type ErrorType = (); // Does not error
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        let word_vars = self
+        let word_vars: Vec<LinearCombination> = self
             .words
             .iter()
-            .map(|word| word.commit_verifier(verifier).unwrap())
+            .map(|word| word.commit_verifier(verifier).unwrap().into())
             .collect_vec();
 
         Ok(NonNativeElementSecretShareVar {
