@@ -34,48 +34,9 @@ where
         let hash_params = PoseidonSpongeParameters::default();
         let mut hasher = PoseidonHashGadget::new(hash_params);
 
-        // Hash the balances into the state
-        for balance in wallet.balances.iter() {
-            hasher.batch_absorb(&[balance.mint, balance.amount], cs)?;
-        }
-
-        // Hash the orders into the state
-        for order in wallet.orders.iter() {
-            hasher.batch_absorb(
-                &[
-                    order.quote_mint.into(),
-                    order.base_mint.into(),
-                    order.side.into(),
-                    order.price.repr.clone(),
-                    order.amount.into(),
-                ],
-                cs,
-            )?;
-        }
-
-        // Hash the fees into the state
-        for fee in wallet.fees.iter() {
-            hasher.batch_absorb(
-                &[
-                    fee.settle_key.into(),
-                    fee.gas_addr.into(),
-                    fee.gas_token_amount.into(),
-                    fee.percentage_fee.repr.clone(),
-                ],
-                cs,
-            )?;
-        }
-
-        // Hash the keys into the state
-        let mut key_linear_combs: Vec<LinearCombination> = wallet.keys.pk_root.words();
-        key_linear_combs.push(wallet.keys.pk_match.into());
-        key_linear_combs.push(wallet.keys.pk_settle.into());
-        key_linear_combs.push(wallet.keys.pk_view.into());
-
-        hasher.batch_absorb(&key_linear_combs, cs)?;
-
-        // Hash the randomness into the state
-        hasher.absorb(wallet.randomness, cs)?;
+        // Serialize the wallet and hash it into the hasher's state
+        let serialized_wallet: Vec<LinearCombination> = wallet_share.clone().into();
+        hasher.batch_absorb(&serialized_wallet, cs)?;
 
         // Squeeze an element out of the state
         hasher.squeeze(cs)

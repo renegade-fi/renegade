@@ -24,6 +24,9 @@ use crate::{
     Allocate, CommitPublic, CommitSharedProver, CommitVerifier, CommitWitness, LinkableCommitment,
 };
 
+/// The number of scalars in a serialized balance
+pub(crate) const SCALARS_PER_BALANCE: usize = 2;
+
 // ---------------------
 // | Base Balance Type |
 // ---------------------
@@ -305,23 +308,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
 // ------------------------------
 
 /// A balance that has been split into secret shares
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BalanceSecretShare {
     /// The mint (ERC20 token addr) of the balance
     pub mint: Scalar,
     /// The amount of the balance held
     pub amount: Scalar,
-}
-
-impl Add<BalanceSecretShare> for BalanceSecretShare {
-    type Output = Balance;
-
-    fn add(self, rhs: BalanceSecretShare) -> Self::Output {
-        let mint = scalar_to_biguint(&(self.mint + rhs.mint));
-        let amount = scalar_to_u64(&(self.amount + rhs.amount));
-
-        Balance { mint, amount }
-    }
 }
 
 impl BalanceSecretShare {
@@ -338,6 +330,35 @@ impl BalanceSecretShare {
     }
 }
 
+impl Add<BalanceSecretShare> for BalanceSecretShare {
+    type Output = Balance;
+
+    fn add(self, rhs: BalanceSecretShare) -> Self::Output {
+        let mint = scalar_to_biguint(&(self.mint + rhs.mint));
+        let amount = scalar_to_u64(&(self.amount + rhs.amount));
+
+        Balance { mint, amount }
+    }
+}
+
+// Balance share serialization
+impl From<BalanceSecretShare> for Vec<Scalar> {
+    fn from(balance: BalanceSecretShare) -> Self {
+        vec![balance.mint, balance.amount]
+    }
+}
+
+// Balance share deserialization
+impl From<Vec<Scalar>> for BalanceSecretShare {
+    fn from(mut serialized: Vec<Scalar>) -> Self {
+        let mut drain = serialized.drain(..);
+        BalanceSecretShare {
+            mint: drain.next().unwrap(),
+            amount: drain.next().unwrap(),
+        }
+    }
+}
+
 /// A balance secret share that has been allocated in a constraint system
 #[derive(Clone, Debug)]
 pub struct BalanceSecretShareVar {
@@ -345,6 +366,20 @@ pub struct BalanceSecretShareVar {
     pub mint: LinearCombination,
     /// The amount of the balance held
     pub amount: LinearCombination,
+}
+
+impl BalanceSecretShareVar {
+    /// Apply a blinder to the secret shares
+    pub fn blind(&mut self, blinder: LinearCombination) {
+        self.mint += blinder.clone();
+        self.amount += blinder;
+    }
+
+    /// Remove a blinder from the secret shares
+    pub fn unblind(&mut self, blinder: LinearCombination) {
+        self.mint -= blinder.clone();
+        self.amount -= blinder;
+    }
 }
 
 impl Add<BalanceSecretShareVar> for BalanceSecretShareVar {
@@ -358,17 +393,21 @@ impl Add<BalanceSecretShareVar> for BalanceSecretShareVar {
     }
 }
 
-impl BalanceSecretShareVar {
-    /// Apply a blinder to the secret shares
-    pub fn blind(&mut self, blinder: Variable) {
-        self.mint += blinder;
-        self.amount += blinder;
+// Balance share serialization
+impl From<BalanceSecretShareVar> for Vec<LinearCombination> {
+    fn from(balance: BalanceSecretShareVar) -> Self {
+        vec![balance.mint, balance.amount]
     }
+}
 
-    /// Remove a blinder from the secret shares
-    pub fn unblind(&mut self, blinder: Variable) {
-        self.mint -= blinder;
-        self.amount -= blinder;
+// Balance share deserialization
+impl<L: Into<LinearCombination>> From<Vec<L>> for BalanceSecretShareVar {
+    fn from(mut serialized: Vec<L>) -> Self {
+        let mut drain = serialized.drain(..);
+        BalanceSecretShareVar {
+            mint: drain.next().unwrap().into(),
+            amount: drain.next().unwrap().into(),
+        }
     }
 }
 
@@ -437,5 +476,50 @@ impl CommitVerifier for BalanceSecretShareCommitment {
             mint: mint_var.into(),
             amount: amount_var.into(),
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use curve25519_dalek::scalar::Scalar;
+    use merlin::Transcript;
+    use mpc_bulletproof::{
+        r1cs::{LinearCombination, Prover},
+        PedersenGens,
+    };
+
+    use crate::{
+        test_helpers::{assert_lcs_equal, random_scalar},
+        types::balance::BalanceSecretShareVar,
+        CommitPublic,
+    };
+
+    use super::BalanceSecretShare;
+
+    /// Tests serialization of balance secret share types    
+    #[test]
+    fn test_balance_share_serde() {
+        let balance_share = BalanceSecretShare {
+            mint: random_scalar(),
+            amount: random_scalar(),
+        };
+
+        // Serialize then deserialize
+        let serialized: Vec<Scalar> = balance_share.into();
+        let deserialized: BalanceSecretShare = serialized.into();
+
+        assert_eq!(balance_share, deserialized);
+
+        // Convert to a constraint system allocated type
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        let share_var = balance_share.commit_public(&mut prover).unwrap();
+        let serialized: Vec<LinearCombination> = share_var.clone().into();
+        let deserialized: BalanceSecretShareVar = serialized.into();
+
+        assert_lcs_equal(&deserialized.mint, &share_var.mint, &prover);
+        assert_lcs_equal(&deserialized.amount, &share_var.amount, &prover);
     }
 }

@@ -4,6 +4,7 @@ use std::ops::Add;
 
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use ed25519_dalek::PublicKey as DalekKey;
+use itertools::Itertools;
 use mpc_bulletproof::r1cs::{
     LinearCombination, Prover, RandomizableConstraintSystem, Variable, Verifier,
 };
@@ -368,26 +369,12 @@ impl CommitVerifier for CommittedPublicKeyChain {
 // -------------------------------
 
 /// Represents an additive secret share of a wallet's public keychain
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicKeyChainSecretShare {
     /// The public root key
     pub pk_root: NonNativeElementSecretShare,
     /// The public match key
     pub pk_match: Scalar,
-}
-
-impl Add<PublicKeyChainSecretShare> for PublicKeyChainSecretShare {
-    type Output = PublicKeyChain;
-
-    fn add(self, rhs: PublicKeyChainSecretShare) -> Self::Output {
-        let pk_root = self.pk_root + rhs.pk_root;
-        let pk_match = self.pk_match + rhs.pk_match;
-
-        PublicKeyChain {
-            pk_root: PublicSigningKey(pk_root.val),
-            pk_match: PublicIdentificationKey(pk_match),
-        }
-    }
 }
 
 impl PublicKeyChainSecretShare {
@@ -404,6 +391,48 @@ impl PublicKeyChainSecretShare {
     }
 }
 
+impl Add<PublicKeyChainSecretShare> for PublicKeyChainSecretShare {
+    type Output = PublicKeyChain;
+
+    fn add(self, rhs: PublicKeyChainSecretShare) -> Self::Output {
+        let pk_root = self.pk_root + rhs.pk_root;
+        let pk_match = self.pk_match + rhs.pk_match;
+
+        PublicKeyChain {
+            pk_root: PublicSigningKey(pk_root.val),
+            pk_match: PublicIdentificationKey(pk_match),
+        }
+    }
+}
+
+// Keychain serialization
+impl From<PublicKeyChainSecretShare> for Vec<Scalar> {
+    fn from(keychain: PublicKeyChainSecretShare) -> Self {
+        let mut root_words = keychain.pk_root.words;
+        root_words.push(keychain.pk_match);
+
+        root_words
+    }
+}
+
+// Keychain deserialization
+impl From<Vec<Scalar>> for PublicKeyChainSecretShare {
+    fn from(mut serialized: Vec<Scalar>) -> Self {
+        let n_root_words = serialized.len() - 1;
+
+        let root_words: Vec<Scalar> = serialized.drain(..n_root_words).collect();
+        let pk_match = serialized.pop().unwrap();
+
+        PublicKeyChainSecretShare {
+            pk_root: NonNativeElementSecretShare {
+                words: root_words,
+                field_mod: TWO_TO_256_FIELD_MOD.clone(),
+            },
+            pk_match,
+        }
+    }
+}
+
 /// Represents an additive secret share of a wallet's public keychain
 /// that has been allocated in a constraint system
 #[derive(Clone, Debug)]
@@ -412,6 +441,20 @@ pub struct PublicKeyChainSecretShareVar {
     pub pk_root: NonNativeElementSecretShareVar,
     /// The public match key
     pub pk_match: LinearCombination,
+}
+
+impl PublicKeyChainSecretShareVar {
+    /// Apply a blinder to the secret shares
+    pub fn blind(&mut self, blinder: LinearCombination) {
+        self.pk_root.blind(blinder.clone());
+        self.pk_match += blinder;
+    }
+
+    /// Remove a blinder from the secret shares
+    pub fn unblind(&mut self, blinder: LinearCombination) {
+        self.pk_root.unblind(blinder.clone());
+        self.pk_match -= blinder;
+    }
 }
 
 impl Add<PublicKeyChainSecretShareVar> for PublicKeyChainSecretShareVar {
@@ -425,17 +468,33 @@ impl Add<PublicKeyChainSecretShareVar> for PublicKeyChainSecretShareVar {
     }
 }
 
-impl PublicKeyChainSecretShareVar {
-    /// Apply a blinder to the secret shares
-    pub fn blind(&mut self, blinder: Variable) {
-        self.pk_root.blind(blinder);
-        self.pk_match += blinder;
-    }
+// Keychain share serialization
+impl From<PublicKeyChainSecretShareVar> for Vec<LinearCombination> {
+    fn from(keychain: PublicKeyChainSecretShareVar) -> Self {
+        let mut root_words = keychain.pk_root.words;
+        root_words.push(keychain.pk_match);
 
-    /// Remove a blinder from the secret shares
-    pub fn unblind(&mut self, blinder: Variable) {
-        self.pk_root.unblind(blinder);
-        self.pk_match -= blinder;
+        root_words
+    }
+}
+
+// Keychain share deserialization
+impl<L: Into<LinearCombination>> From<Vec<L>> for PublicKeyChainSecretShareVar {
+    fn from(mut serialized: Vec<L>) -> Self {
+        let n_root_words = serialized.len() - 1;
+        let root_words: Vec<LinearCombination> = serialized
+            .drain(..n_root_words)
+            .map(|word| word.into())
+            .collect_vec();
+        let pk_match = serialized.pop().unwrap();
+
+        PublicKeyChainSecretShareVar {
+            pk_root: NonNativeElementSecretShareVar {
+                words: root_words,
+                field_mod: TWO_TO_256_FIELD_MOD.clone(),
+            },
+            pk_match: pk_match.into(),
+        }
     }
 }
 
@@ -512,11 +571,23 @@ impl CommitVerifier for PublicKeyChainSecretShareCommitment {
 #[cfg(test)]
 mod tests {
     use curve25519_dalek::scalar::Scalar;
+    use merlin::Transcript;
+    use mpc_bulletproof::{
+        r1cs::{LinearCombination, Prover},
+        PedersenGens,
+    };
     use num_bigint::RandBigInt;
     use rand::thread_rng;
     use rand_core::OsRng;
 
-    use crate::types::keychain::PublicKeyChain;
+    use crate::{
+        test_helpers::{assert_lcs_equal, random_scalar},
+        types::keychain::{PublicKeyChain, PublicKeyChainSecretShareVar},
+        zk_gadgets::nonnative::{NonNativeElementSecretShare, TWO_TO_256_FIELD_MOD},
+        CommitPublic,
+    };
+
+    use super::PublicKeyChainSecretShare;
 
     #[test]
     fn test_serde() {
@@ -532,5 +603,52 @@ mod tests {
         let deserialized: PublicKeyChain = serde_json::from_str(&serialized).unwrap();
 
         assert_eq!(keychain, deserialized);
+    }
+
+    /// Tests serialization and deserialization of keychain secret shares
+    #[test]
+    fn test_keychain_share_serde() {
+        let n_root_words = 3;
+        let keychain_share = PublicKeyChainSecretShare {
+            pk_root: NonNativeElementSecretShare {
+                words: (0..n_root_words).map(|_| random_scalar()).collect(),
+                field_mod: TWO_TO_256_FIELD_MOD.clone(),
+            },
+            pk_match: random_scalar(),
+        };
+
+        // Serialize and deserialize
+        let serialized: Vec<Scalar> = keychain_share.clone().into();
+        let deserialized: PublicKeyChainSecretShare = serialized.into();
+
+        assert_eq!(deserialized, keychain_share);
+
+        // Allocate in a constraint system, then test serialization/deserialization
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        let keychain_share_var = keychain_share.commit_public(&mut prover).unwrap();
+        let serialized: Vec<LinearCombination> = keychain_share_var.clone().into();
+        let deserialized: PublicKeyChainSecretShareVar = serialized.into();
+
+        assert_eq!(
+            deserialized.pk_root.words.len(),
+            keychain_share_var.pk_root.words.len()
+        );
+        for (left, right) in deserialized
+            .pk_root
+            .words
+            .iter()
+            .zip(keychain_share_var.pk_root.words.iter())
+        {
+            assert_lcs_equal(left, right, &prover);
+        }
+
+        assert_lcs_equal(
+            &deserialized.pk_match,
+            &keychain_share_var.pk_match,
+            &prover,
+        );
     }
 }
