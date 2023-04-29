@@ -7,25 +7,33 @@ pub mod valid_wallet_create;
 mod test_helpers {
     use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use crypto::{
-        fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField},
+        fields::{
+            biguint_to_scalar, prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField,
+        },
         hash::default_poseidon_params,
     };
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
     use lazy_static::lazy_static;
     use num_bigint::BigUint;
-    use rand_core::{CryptoRng, RngCore};
+    use rand_core::{CryptoRng, OsRng, RngCore};
 
     use crate::{
         native_helpers::{compute_poseidon_hash, compute_wallet_commitment},
         types::{
-            balance::Balance,
-            fee::Fee,
-            keychain::{PublicKeyChain, NUM_KEYS},
-            order::{Order, OrderSide},
-            wallet::Wallet,
+            balance::{Balance, BalanceSecretShare},
+            fee::{Fee, FeeSecretShare},
+            keychain::{PublicKeyChain, PublicKeyChainSecretShare, NUM_KEYS},
+            order::{Order, OrderSecretShare, OrderSide},
+            wallet::{Wallet, WalletSecretShare},
         },
-        zk_gadgets::{fixed_point::FixedPoint, merkle::merkle_test::get_opening_indices},
+        zk_gadgets::{
+            fixed_point::FixedPoint,
+            merkle::merkle_test::get_opening_indices,
+            nonnative::{
+                biguint_to_scalar_words, NonNativeElementSecretShare, TWO_TO_256_FIELD_MOD,
+            },
+        },
     };
 
     // --------------
@@ -94,10 +102,141 @@ mod test_helpers {
     pub(crate) const TIMESTAMP: u64 = 3; // dummy value
 
     pub type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    pub type SizedWalletShare = WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     // -----------
     // | Helpers |
     // -----------
+
+    /// Construct secret shares of a wallet for testing
+    pub(crate) fn create_wallet_shares(
+        wallet: &SizedWallet,
+    ) -> (SizedWalletShare, SizedWalletShare) {
+        // Sample a random secret share for the blinder
+        let mut rng = OsRng {};
+        let blinder_share = Scalar::random(&mut rng);
+
+        // Secret share the balances
+        let mut balances1 = Vec::with_capacity(MAX_BALANCES);
+        let mut balances2 = Vec::with_capacity(MAX_BALANCES);
+        for balance in wallet.balances.iter() {
+            let mint_share = Scalar::random(&mut rng);
+            let amount_share = Scalar::random(&mut rng);
+            balances1.push(BalanceSecretShare {
+                mint: mint_share,
+                amount: amount_share,
+            });
+
+            balances2.push(BalanceSecretShare {
+                mint: biguint_to_scalar(&balance.mint) - mint_share,
+                amount: Scalar::from(balance.amount) - amount_share,
+            });
+        }
+
+        // Secret share the orders
+        let mut orders1 = Vec::with_capacity(MAX_ORDERS);
+        let mut orders2 = Vec::with_capacity(MAX_ORDERS);
+        for order in wallet.orders.iter() {
+            let quote_share = Scalar::random(&mut rng);
+            let base_share = Scalar::random(&mut rng);
+            let side_share = Scalar::random(&mut rng);
+            let price_share = Scalar::random(&mut rng);
+            let amount_share = Scalar::random(&mut rng);
+            let timestamp_share = Scalar::random(&mut rng);
+
+            orders1.push(OrderSecretShare {
+                quote_mint: quote_share,
+                base_mint: base_share,
+                side: side_share,
+                price: price_share,
+                amount: amount_share,
+                timestamp: timestamp_share,
+            });
+
+            orders2.push(OrderSecretShare {
+                quote_mint: biguint_to_scalar(&order.quote_mint) - quote_share,
+                base_mint: biguint_to_scalar(&order.base_mint) - base_share,
+                side: Scalar::from(order.side) - side_share,
+                price: order.price.repr - price_share,
+                amount: Scalar::from(order.amount) - amount_share,
+                timestamp: Scalar::from(order.timestamp) - timestamp_share,
+            });
+        }
+
+        // Secret share the fees
+        let mut fees1 = Vec::with_capacity(MAX_FEES);
+        let mut fees2 = Vec::with_capacity(MAX_FEES);
+        for fee in wallet.fees.iter() {
+            let settle_key_share = Scalar::random(&mut rng);
+            let gas_addr_share = Scalar::random(&mut rng);
+            let gas_amount_share = Scalar::random(&mut rng);
+            let percentage_share = Scalar::random(&mut rng);
+
+            fees1.push(FeeSecretShare {
+                settle_key: settle_key_share,
+                gas_addr: gas_addr_share,
+                gas_token_amount: gas_amount_share,
+                percentage_fee: percentage_share,
+            });
+
+            fees2.push(FeeSecretShare {
+                settle_key: biguint_to_scalar(&fee.settle_key) - settle_key_share,
+                gas_addr: biguint_to_scalar(&fee.gas_addr) - gas_addr_share,
+                gas_token_amount: Scalar::from(fee.gas_token_amount) - gas_amount_share,
+                percentage_fee: fee.percentage_fee.repr - percentage_share,
+            })
+        }
+
+        // Secret share the keychain
+        let root_key_words = biguint_to_scalar_words(wallet.keys.pk_root.0.clone());
+        let root_shares1 = (0..root_key_words.len())
+            .map(|_| Scalar::random(&mut rng))
+            .collect_vec();
+        let root_shares2 = root_key_words
+            .iter()
+            .zip(root_shares1.iter())
+            .map(|(w1, w2)| w1 - w2)
+            .collect_vec();
+
+        let match_share = Scalar::random(&mut rng);
+
+        let keychain1 = PublicKeyChainSecretShare {
+            pk_root: NonNativeElementSecretShare {
+                words: root_shares1,
+                field_mod: TWO_TO_256_FIELD_MOD.clone(),
+            },
+            pk_match: match_share,
+        };
+        let keychain2 = PublicKeyChainSecretShare {
+            pk_root: NonNativeElementSecretShare {
+                words: root_shares2,
+                field_mod: TWO_TO_256_FIELD_MOD.clone(),
+            },
+            pk_match: wallet.keys.pk_match.0 - match_share,
+        };
+
+        // Construct the secret shares of the wallet
+        let mut wallet1 = SizedWalletShare {
+            balances: balances1.try_into().unwrap(),
+            orders: orders1.try_into().unwrap(),
+            fees: fees1.try_into().unwrap(),
+            keys: keychain1,
+            blinder: blinder_share,
+        };
+        let mut wallet2 = SizedWalletShare {
+            balances: balances2.try_into().unwrap(),
+            orders: orders2.try_into().unwrap(),
+            fees: fees2.try_into().unwrap(),
+            keys: keychain2,
+            blinder: wallet.blinder - blinder_share,
+        };
+
+        // Blind the shares
+        wallet1.blind();
+        wallet2.blind();
+
+        (wallet1, wallet2)
+    }
 
     /// Given a wallet, create a dummy opening to a dummy root
     ///

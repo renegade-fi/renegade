@@ -14,7 +14,6 @@ use crate::{
         fee::SCALARS_PER_FEE, order::SCALARS_PER_ORDER, scalar_from_hex_string,
         scalar_to_hex_string,
     },
-    zk_gadgets::commitments::WalletShareCommitGadget,
     CommitPublic, CommitVerifier, CommitWitness,
 };
 
@@ -495,7 +494,7 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
             .for_each(|f| wallet_shares.append(&mut f.into()));
 
         wallet_shares.append(&mut wallet.keys.into());
-        wallet_shares.push(wallet.blinder.into());
+        wallet_shares.push(wallet.blinder);
 
         wallet_shares
     }
