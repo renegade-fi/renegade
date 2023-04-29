@@ -84,7 +84,7 @@ where
 }
 
 /// Convert a `BigUint` to a list of scalar words
-pub(crate) fn bigint_to_scalar_words(mut val: BigUint) -> Vec<Scalar> {
+pub(crate) fn biguint_to_scalar_words(mut val: BigUint) -> Vec<Scalar> {
     let mut words = Vec::new();
     while val.gt(&BIGINT_ZERO) {
         // Compute the next word and shift the input
@@ -337,7 +337,7 @@ impl NonNativeElementVar {
             repr_word_width(&value)
         );
 
-        let mut words = bigint_to_scalar_words(value);
+        let mut words = biguint_to_scalar_words(value);
         words.append(&mut vec![Scalar::zero(); word_width - words.len()]);
 
         let allocated_words = words
@@ -536,7 +536,7 @@ impl NonNativeElementVar {
         rhs: &BigUint,
         cs: &mut CS,
     ) {
-        let biguint_words = bigint_to_scalar_words(rhs.clone());
+        let biguint_words = biguint_to_scalar_words(rhs.clone());
 
         // Equalize the word width of the two values
         let max_len = biguint_words.len().max(lhs.words.len());
@@ -653,7 +653,7 @@ impl NonNativeElementVar {
         cs: &mut CS,
     ) -> Self {
         // Convert the rhs to a list of words
-        let rhs_words = bigint_to_scalar_words(rhs.clone());
+        let rhs_words = biguint_to_scalar_words(rhs.clone());
 
         // Resize the lhs and rhs word iterators to be of equal size
         let max_len = rhs_words.len().max(lhs.words.len());
@@ -785,7 +785,7 @@ impl NonNativeElementVar {
         cs: &mut CS,
     ) -> Self {
         // Split the BigUint into words
-        let rhs_words = bigint_to_scalar_words(rhs.clone());
+        let rhs_words = biguint_to_scalar_words(rhs.clone());
         let n_result_words = rhs_words.len() + lhs.words.len();
 
         // Both lhs and rhs are represented as:
@@ -967,13 +967,17 @@ impl Add<NonNativeElementSecretShareVar> for NonNativeElementSecretShareVar {
 
 impl NonNativeElementSecretShareVar {
     /// Apply a blinder to the secret shares
-    pub fn blind(&mut self, blinder: Variable) {
-        self.words.iter_mut().for_each(|word| word += blinder);
+    pub fn blind(&mut self, blinder: LinearCombination) {
+        self.words
+            .iter_mut()
+            .for_each(|word| *word += blinder.clone());
     }
 
     /// Remove a blinder from the secret shares
-    pub fn unblind(&mut self, blinder: Variable) {
-        self.words.iter_mut().for_each(|word| word -= blinder);
+    pub fn unblind(&mut self, blinder: LinearCombination) {
+        self.words
+            .iter_mut()
+            .for_each(|word| *word -= blinder.clone());
     }
 }
 
@@ -1059,7 +1063,7 @@ mod nonnative_tests {
         CommitVerifier, CommitWitness, SingleProverCircuit,
     };
 
-    use super::{bigint_to_scalar_words, FieldMod, NonNativeElementVar};
+    use super::{biguint_to_scalar_words, FieldMod, NonNativeElementVar};
 
     // -------------
     // | Constants |
@@ -1118,7 +1122,7 @@ mod nonnative_tests {
             prover: &mut Prover,
         ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
             // Split the bigint into words
-            let lhs_words = bigint_to_scalar_words(self.lhs.clone());
+            let lhs_words = biguint_to_scalar_words(self.lhs.clone());
             let (lhs_comm, lhs_var): (Vec<CompressedRistretto>, Vec<Variable>) = lhs_words
                 .iter()
                 .map(|word| prover.commit(*word, Scalar::random(rng)))
@@ -1128,7 +1132,7 @@ mod nonnative_tests {
                 lhs_var.into_iter().map(Into::into).collect_vec();
             let lhs_var = NonNativeElementVar::new(lhs_var_lcs, self.field_mod.clone());
 
-            let rhs_words = bigint_to_scalar_words(self.rhs.clone());
+            let rhs_words = biguint_to_scalar_words(self.rhs.clone());
             let (rhs_comm, rhs_var): (Vec<CompressedRistretto>, Vec<Variable>) = rhs_words
                 .iter()
                 .map(|word| prover.commit(*word, Scalar::random(rng)))
@@ -1225,7 +1229,7 @@ mod nonnative_tests {
                 witness.commit_witness(&mut rng, &mut prover).unwrap();
 
             // Commit to the statement variable
-            let expected_words = bigint_to_scalar_words(statement);
+            let expected_words = biguint_to_scalar_words(statement);
             let statement_word_vars = expected_words
                 .iter()
                 .map(|word| prover.commit_public(*word))
@@ -1265,7 +1269,7 @@ mod nonnative_tests {
             let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
 
             // Commit to the statement variable
-            let expected_words = bigint_to_scalar_words(statement);
+            let expected_words = biguint_to_scalar_words(statement);
             let statement_word_vars = expected_words
                 .iter()
                 .map(|word| verifier.commit_public(*word))
@@ -1316,7 +1320,7 @@ mod nonnative_tests {
                 witness.commit_witness(&mut rng, &mut prover).unwrap();
 
             // Commit to the statement variable
-            let expected_words = bigint_to_scalar_words(statement);
+            let expected_words = biguint_to_scalar_words(statement);
             let statement_word_vars = expected_words
                 .iter()
                 .map(|word| prover.commit_public(*word))
@@ -1351,7 +1355,7 @@ mod nonnative_tests {
             let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
 
             // Commit to the statement variable
-            let expected_words = bigint_to_scalar_words(statement);
+            let expected_words = biguint_to_scalar_words(statement);
             let statement_word_vars = expected_words
                 .iter()
                 .map(|word| verifier.commit_public(*word))
@@ -1396,7 +1400,7 @@ mod nonnative_tests {
                 witness.commit_witness(&mut rng, &mut prover).unwrap();
 
             // Commit to the statement variable
-            let expected_words = bigint_to_scalar_words(statement);
+            let expected_words = biguint_to_scalar_words(statement);
             let statement_word_vars = expected_words
                 .iter()
                 .map(|word| prover.commit_public(*word))
@@ -1431,7 +1435,7 @@ mod nonnative_tests {
             let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
 
             // Commit to the statement variable
-            let expected_words = bigint_to_scalar_words(statement);
+            let expected_words = biguint_to_scalar_words(statement);
             let statement_word_vars = expected_words
                 .iter()
                 .map(|word| verifier.commit_public(*word))
@@ -1648,7 +1652,7 @@ mod nonnative_tests {
 
             let expected = &random_val % &random_mod;
 
-            let words = bigint_to_scalar_words(random_val);
+            let words = biguint_to_scalar_words(random_val);
             let allocated_words = words
                 .iter()
                 .map(|word| prover.commit_public(*word).into())
