@@ -563,7 +563,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitVerifier
 // -------------------------
 
 /// Represents an additive secret share of a fee
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct FeeSecretShare {
     /// The public settle key of the cluster collecting fees
     pub settle_key: Scalar,
@@ -614,18 +614,18 @@ impl FeeSecretShare {
 }
 
 /// Represents a fee secret share that has been allocated in a constraint system
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct FeeSecretShareVar {
     /// The public settle key of the cluster collecting fees
-    pub settle_key: Variable,
+    pub settle_key: LinearCombination,
     /// The mint (ERC-20 Address) of the token used to pay gas
-    pub gas_addr: Variable,
+    pub gas_addr: LinearCombination,
     /// The amount of the mint token to use for gas
-    pub gas_token_amount: Variable,
+    pub gas_token_amount: LinearCombination,
     /// The percentage fee that the cluster may take upon match
     /// For now this is encoded as a u64, which represents a
     /// fixed point rational under the hood
-    pub percentage_fee: Variable,
+    pub percentage_fee: LinearCombination,
 }
 
 impl Add<FeeSecretShareVar> for FeeSecretShareVar {
@@ -636,7 +636,9 @@ impl Add<FeeSecretShareVar> for FeeSecretShareVar {
             settle_key: self.settle_key + rhs.settle_key,
             gas_addr: self.gas_addr + rhs.gas_addr,
             gas_token_amount: self.gas_token_amount + rhs.gas_token_amount,
-            percentage_fee: self.percentage_fee + rhs.percentage_fee,
+            percentage_fee: FixedPointVar {
+                repr: self.percentage_fee + rhs.percentage_fee,
+            },
         }
     }
 }
@@ -660,7 +662,7 @@ impl FeeSecretShareVar {
 }
 
 /// Represents a commitment to a fee secret share that has been allocated in a constraint system
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct FeeSecretShareCommitment {
     /// The public settle key of the cluster collecting fees
     pub settle_key: CompressedRistretto,
@@ -694,10 +696,10 @@ impl CommitWitness for FeeSecretShare {
 
         Ok((
             FeeSecretShareVar {
-                settle_key: settle_key_var,
-                gas_addr: gas_addr_var,
-                gas_token_amount: gas_amount_var,
-                percentage_fee: percentage_var,
+                settle_key: settle_key_var.into(),
+                gas_addr: gas_addr_var.into(),
+                gas_token_amount: gas_amount_var.into(),
+                percentage_fee: percentage_var.into(),
             },
             FeeSecretShareCommitment {
                 settle_key: settle_key_comm,
@@ -723,10 +725,10 @@ impl CommitPublic for FeeSecretShare {
         let percentage_var = self.percentage_fee.commit_public(cs).unwrap();
 
         Ok(FeeSecretShareVar {
-            settle_key: settle_key_var,
-            gas_addr: gas_addr_var,
-            gas_token_amount: gas_amount_var,
-            percentage_fee: percentage_var,
+            settle_key: settle_key_var.into(),
+            gas_addr: gas_addr_var.into(),
+            gas_token_amount: gas_amount_var.into(),
+            percentage_fee: percentage_var.into(),
         })
     }
 }
@@ -742,10 +744,10 @@ impl CommitVerifier for FeeSecretShareCommitment {
         let percentage_var = self.percentage_fee.commit_verifier(verifier).unwrap();
 
         Ok(FeeSecretShareVar {
-            settle_key: settle_key_var,
-            gas_addr: gas_addr_var,
-            gas_token_amount: gas_amount_var,
-            percentage_fee: percentage_var,
+            settle_key: settle_key_var.into(),
+            gas_addr: gas_addr_var.into(),
+            gas_token_amount: gas_amount_var.into(),
+            percentage_fee: percentage_var.into(),
         })
     }
 }

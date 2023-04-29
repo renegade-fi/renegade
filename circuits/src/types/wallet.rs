@@ -114,26 +114,26 @@ where
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (balance_vars, committed_balances): (Vec<BalanceVar>, Vec<CommittedBalance>) = self
-            .balances
-            .iter()
-            .map(|balance| balance.commit_witness(rng, prover).unwrap())
-            .unzip();
+        let (balance_vars, committed_balances): (Vec<BalanceVar<Variable>>, Vec<CommittedBalance>) =
+            self.balances
+                .iter()
+                .map(|balance| balance.commit_witness(rng, prover).unwrap())
+                .unzip();
 
-        let (order_vars, committed_orders): (Vec<OrderVar>, Vec<CommittedOrder>) = self
+        let (order_vars, committed_orders): (Vec<OrderVar<Variable>>, Vec<CommittedOrder>) = self
             .orders
             .iter()
             .map(|order| order.commit_witness(rng, prover).unwrap())
             .unzip();
 
-        let (fee_vars, committed_fees): (Vec<FeeVar>, Vec<CommittedFee>) = self
+        let (fee_vars, committed_fees): (Vec<FeeVar<Variable>>, Vec<CommittedFee>) = self
             .fees
             .iter()
             .map(|fee| fee.commit_witness(rng, prover).unwrap())
             .unzip();
 
         let (key_vars, key_comms) = self.keys.commit_witness(rng, prover).unwrap();
-        let (blinder_comm, blinder_var) = prover.commit(self.randomness, Scalar::random(rng));
+        let (blinder_comm, blinder_var) = prover.commit(self.blinder, Scalar::random(rng));
 
         Ok((
             WalletVar {
@@ -204,7 +204,7 @@ where
             .collect_vec();
 
         let key_vars = self.keys.commit_verifier(verifier).unwrap();
-        let blinder_var = verifier.commit(self.randomness);
+        let blinder_var = verifier.commit(self.blinder);
 
         Ok(WalletVar {
             balances: balance_vars.try_into().unwrap(),
@@ -221,17 +221,20 @@ where
 // ----------------------------
 
 /// Represents an additive secret share of a wallet
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WalletSecretShare<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
 > {
     /// The list of balances in the wallet
+    #[serde(with = "serde_arrays")]
     pub balances: [BalanceSecretShare; MAX_BALANCES],
     /// The list of open orders in the wallet
+    #[serde(with = "serde_arrays")]
     pub orders: [OrderSecretShare; MAX_ORDERS],
     /// The list of payable fees in the wallet
+    #[serde(with = "serde_arrays")]
     pub fees: [FeeSecretShare; MAX_FEES],
     /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle, pk_view)
     pub keys: PublicKeyChainSecretShare,
@@ -242,38 +245,40 @@ pub struct WalletSecretShare<
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
     Add<WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>
     for WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
     type Output = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     fn add(self, rhs: Self) -> Self::Output {
         let balances = self
             .balances
-            .iter()
-            .zip(rhs.balances.iter())
-            .map(|b1, b2| b1 + b2)
+            .into_iter()
+            .zip(rhs.balances.into_iter())
+            .map(|(b1, b2)| b1 + b2)
             .collect_vec();
 
         let orders = self
             .orders
-            .iter()
-            .zip(rhs.orders.iter())
-            .map(|o1, o2| o1 + o2)
+            .into_iter()
+            .zip(rhs.orders.into_iter())
+            .map(|(o1, o2)| o1 + o2)
             .collect_vec();
 
         let fees = self
             .fees
-            .iter()
-            .zip(rhs.fees.iter())
-            .map(|f1, f2| f1 + f2)
+            .into_iter()
+            .zip(rhs.fees.into_iter())
+            .map(|(f1, f2)| f1 + f2)
             .collect_vec();
 
         let keys = self.keys + rhs.keys;
         let blinder = self.blinder + rhs.blinder;
 
         Self::Output {
-            balances,
-            orders,
-            fees,
+            balances: balances.try_into().unwrap(),
+            orders: orders.try_into().unwrap(),
+            fees: fees.try_into().unwrap(),
             keys,
             blinder,
         }
@@ -285,9 +290,9 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
 {
     /// Apply the wallet blinder to the secret shares
     pub fn blind(&mut self) {
-        self.balances.iter_mut().foreach(|b| b.blind(self.blinder));
-        self.orders.iter_mut().foreach(|o| o.blind(self.blinder));
-        self.fees.iter_mut().foreach(|f| f.blind(self.blinder));
+        self.balances.iter_mut().for_each(|b| b.blind(self.blinder));
+        self.orders.iter_mut().for_each(|o| o.blind(self.blinder));
+        self.fees.iter_mut().for_each(|f| f.blind(self.blinder));
         self.keys.blind(self.blinder);
     }
 
@@ -296,8 +301,8 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
         self.balances
             .iter_mut()
             .for_each(|b| b.unblind(self.blinder));
-        self.orders.iter_mut().foreach(|o| o.unblind(self.blinder));
-        self.fees.iter_mut().foreach(|f| f.unblind(self.blinder));
+        self.orders.iter_mut().for_each(|o| o.unblind(self.blinder));
+        self.fees.iter_mut().for_each(|f| f.unblind(self.blinder));
         self.keys.unblind(self.blinder);
     }
 }
@@ -325,38 +330,40 @@ pub struct WalletSecretShareVar<
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
     Add<WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>
     for WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
     type Output = WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, LinearCombination>;
 
     fn add(self, rhs: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>) -> Self::Output {
         let balances = self
             .balances
-            .iter()
-            .zip(rhs.balances.iter())
-            .map(|b1, b2| b1 + b2)
+            .into_iter()
+            .zip(rhs.balances.into_iter())
+            .map(|(b1, b2)| b1 + b2)
             .collect_vec();
 
         let orders = self
             .orders
-            .iter()
-            .zip(rhs.orders.iter())
-            .map(|o1, o2| o1 + o2)
+            .into_iter()
+            .zip(rhs.orders.into_iter())
+            .map(|(o1, o2)| o1 + o2)
             .collect_vec();
 
         let fees = self
             .fees
-            .iter()
-            .zip(rhs.fees.iter())
-            .map(|f1, f2| f1 + f2)
+            .into_iter()
+            .zip(rhs.fees.into_iter())
+            .map(|(f1, f2)| f1 + f2)
             .collect_vec();
 
         let keys = self.keys + rhs.keys;
         let blinder = self.blinder + rhs.blinder;
 
         Self::Output {
-            balances,
-            orders,
-            fees,
+            balances: balances.try_into().unwrap(),
+            orders: orders.try_into().unwrap(),
+            fees: fees.try_into().unwrap(),
             keys,
             blinder,
         }
@@ -368,9 +375,9 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
 {
     /// Apply the wallet blinder to the secret shares
     pub fn blind(&mut self) {
-        self.balances.iter_mut().foreach(|b| b.blind(self.blinder));
-        self.orders.iter_mut().foreach(|o| o.blind(self.blinder));
-        self.fees.iter_mut().foreach(|f| f.blind(self.blinder));
+        self.balances.iter_mut().for_each(|b| b.blind(self.blinder));
+        self.orders.iter_mut().for_each(|o| o.blind(self.blinder));
+        self.fees.iter_mut().for_each(|f| f.blind(self.blinder));
         self.keys.blind(self.blinder);
     }
 
@@ -379,25 +386,28 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
         self.balances
             .iter_mut()
             .for_each(|b| b.unblind(self.blinder));
-        self.orders.iter_mut().foreach(|o| o.unblind(self.blinder));
-        self.fees.iter_mut().foreach(|f| f.unblind(self.blinder));
+        self.orders.iter_mut().for_each(|o| o.unblind(self.blinder));
+        self.fees.iter_mut().for_each(|f| f.unblind(self.blinder));
         self.keys.unblind(self.blinder);
     }
 }
 
 /// Represents a commitment to an additive secret share of a wallet that
 /// has been allocated in a constraint system
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WalletSecretShareCommitment<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
 > {
     /// The list of balances in the wallet
+    #[serde(with = "serde_arrays")]
     pub balances: [BalanceSecretShareCommitment; MAX_BALANCES],
     /// The list of open orders in the wallet
+    #[serde(with = "serde_arrays")]
     pub orders: [OrderSecretShareCommitment; MAX_ORDERS],
     /// The list of payable fees in the wallet
+    #[serde(with = "serde_arrays")]
     pub fees: [FeeSecretShareCommitment; MAX_FEES],
     /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle, pk_view)
     pub keys: PublicKeyChainSecretShareCommitment,
@@ -417,39 +427,42 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> 
         rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (balance_vars, balance_comms) = self
+        let (balance_vars, balance_comms): (
+            Vec<BalanceSecretShareVar>,
+            Vec<BalanceSecretShareCommitment>,
+        ) = self
             .balances
             .iter()
             .map(|b| b.commit_witness(rng, prover).unwrap())
-            .collect();
+            .unzip();
 
-        let (order_vars, order_comms) = self
-            .orders
-            .iter()
-            .map(|o| o.commit_witness(rng, prover).unwrap())
-            .collect();
+        let (order_vars, order_comms): (Vec<OrderSecretShareVar>, Vec<OrderSecretShareCommitment>) =
+            self.orders
+                .iter()
+                .map(|o| o.commit_witness(rng, prover).unwrap())
+                .unzip();
 
-        let (fee_vars, fee_comms) = self
+        let (fee_vars, fee_comms): (Vec<FeeSecretShareVar>, Vec<FeeSecretShareCommitment>) = self
             .fees
             .iter()
             .map(|f| f.commit_witness(rng, prover).unwrap())
-            .collect();
+            .unzip();
 
         let (key_var, key_comm) = self.keys.commit_witness(rng, prover).unwrap();
         let (blinder_var, blinder_comm) = self.blinder.commit_witness(rng, prover).unwrap();
 
         Ok((
             WalletSecretShareVar {
-                balances: balance_vars,
-                orders: order_vars,
-                fees: fee_vars,
+                balances: balance_vars.try_into().unwrap(),
+                orders: order_vars.try_into().unwrap(),
+                fees: fee_vars.try_into().unwrap(),
                 keys: key_var,
                 blinder: blinder_var,
             },
             WalletSecretShareCommitment {
-                balances: balance_comms,
-                orders: order_comms,
-                fees: fee_comms,
+                balances: balance_comms.try_into().unwrap(),
+                orders: order_comms.try_into().unwrap(),
+                fees: fee_comms.try_into().unwrap(),
                 keys: key_comm,
                 blinder: blinder_comm,
             },
@@ -489,9 +502,9 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> 
         let blinder_var = self.blinder.commit_public(cs).unwrap();
 
         Ok(WalletSecretShareVar {
-            balances: balance_vars,
-            orders: order_vars,
-            fees: fee_vars,
+            balances: balance_vars.try_into().unwrap(),
+            orders: order_vars.try_into().unwrap(),
+            fees: fee_vars.try_into().unwrap(),
             keys: key_var,
             blinder: blinder_var,
         })
@@ -527,9 +540,9 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> 
         let blinder_var = self.blinder.commit_verifier(verifier).unwrap();
 
         Ok(WalletSecretShareVar {
-            balances: balance_vars,
-            orders: order_vars,
-            fees: fee_vars,
+            balances: balance_vars.try_into().unwrap(),
+            orders: order_vars.try_into().unwrap(),
+            fees: fee_vars.try_into().unwrap(),
             keys: key_var,
             blinder: blinder_var,
         })
