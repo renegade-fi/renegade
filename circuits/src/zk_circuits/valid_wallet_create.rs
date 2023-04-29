@@ -8,8 +8,6 @@
 //! See the whitepaper (https://renegade.fi/whitepaper.pdf) appendix A.1
 //! for a formal specification
 
-use std::char::MAX;
-
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
     r1cs::{
@@ -30,13 +28,6 @@ use crate::{
     CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit, MAX_BALANCES, MAX_FEES,
     MAX_ORDERS,
 };
-
-/// The number of zero Scalars to use when representing an empty balance
-/// One for the mint, one for the amount
-const BALANCE_ZEROS: usize = 2;
-/// The number of zero Scalars to use when representing an empty order
-/// zero'd fields are the two mints, the side, the amount, and the price
-const ORDER_ZEROS: usize = 5;
 
 /// A type alias for an instantiation of this circuit with default generics
 pub type ValidWalletCreateDefault = ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
@@ -62,7 +53,7 @@ where
     /// VALID WALLET CREATE
     fn circuit<CS>(
         mut statement: ValidWalletCreateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        mut witness: ValidWalletCreateVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        mut witness: ValidWalletCreateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) -> Result<(), R1CSError>
     where
@@ -124,7 +115,7 @@ pub struct ValidWalletCreateWitness<
 
 /// The proof-system allocated witness for VALID WALLET CREATE
 #[derive(Clone, Debug)]
-pub struct ValidWalletCreateVar<
+pub struct ValidWalletCreateWitnessVar<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
@@ -148,7 +139,7 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> 
     for ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 {
     type CommitType = ValidWalletCreateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type VarType = ValidWalletCreateVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type VarType = ValidWalletCreateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type ErrorType = ();
 
     fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
@@ -161,7 +152,7 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> 
             .commit_witness(rng, prover)
             .unwrap();
         Ok((
-            ValidWalletCreateVar {
+            ValidWalletCreateWitnessVar {
                 private_wallet_share: wallet_share_var,
             },
             ValidWalletCreateWitnessCommitment {
@@ -174,12 +165,12 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitVerifier
     for ValidWalletCreateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 {
-    type VarType = ValidWalletCreateVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type VarType = ValidWalletCreateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type ErrorType = ();
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
         let wallet_share_var = self.private_wallet_share.commit_verifier(verifier).unwrap();
-        Ok(ValidWalletCreateVar {
+        Ok(ValidWalletCreateWitnessVar {
             private_wallet_share: wallet_share_var,
         })
     }
@@ -293,3 +284,138 @@ where
 // ---------
 // | Tests |
 // ---------
+
+#[cfg(test)]
+mod test {
+    use curve25519_dalek::scalar::Scalar;
+    use merlin::Transcript;
+    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
+    use rand_core::OsRng;
+
+    use crate::{
+        native_helpers::compute_wallet_share_commitment,
+        test_helpers::bulletproof_prove_and_verify,
+        types::{balance::Balance, order::Order},
+        zk_circuits::{
+            test_helpers::{
+                create_wallet_shares, SizedWallet, INITIAL_BALANCES, INITIAL_ORDERS,
+                INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+            },
+            valid_wallet_create::{
+                ValidWalletCreate, ValidWalletCreateStatement, ValidWalletCreateWitness,
+            },
+        },
+        CommitPublic, CommitWitness,
+    };
+
+    /// Witness with default size parameters
+    type SizedWitness = ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    /// Statement with default size parameters
+    type SizedStatement = ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Helper to get a zero'd out dummy wallet
+    fn create_empty_wallet() -> SizedWallet {
+        // Zero out the balances and orders of the dummy wallet
+        let mut wallet = INITIAL_WALLET.clone();
+        wallet
+            .balances
+            .iter_mut()
+            .for_each(|b| *b = Balance::default());
+        wallet.orders.iter_mut().for_each(|o| *o = Order::default());
+
+        wallet
+    }
+
+    /// Create a default, valid witness and statement for `VALID WALLET CREATE`
+    fn create_default_witness_statement() -> (SizedWitness, SizedStatement) {
+        // Create a wallet and split it into secret shares
+        let wallet = create_empty_wallet();
+        create_witness_statement_from_wallet(&wallet)
+    }
+
+    /// Create a witness and statement from a given wallet
+    fn create_witness_statement_from_wallet(
+        wallet: &SizedWallet,
+    ) -> (SizedWitness, SizedStatement) {
+        let (private_shares, public_shares) = create_wallet_shares(wallet);
+
+        // Build a commitment to the private secret shares
+        let commitment = compute_wallet_share_commitment(private_shares.clone());
+
+        // Prove and verify
+        let witness = ValidWalletCreateWitness {
+            private_wallet_share: private_shares,
+        };
+        let statement = ValidWalletCreateStatement {
+            private_shares_commitment: commitment,
+            public_wallet_shares: public_shares,
+        };
+
+        (witness, statement)
+    }
+
+    /// Asserts that a given witness, statement pair is invalid
+    fn assert_invalid_witness_statement(witness: SizedWitness, statement: SizedStatement) {
+        // Create a constraint system
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        // Allocate the witness and statement in the constraint system
+        let mut rng = OsRng {};
+        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
+
+        // Apply the constraints
+        ValidWalletCreate::circuit(statement_var, witness_var, &mut prover).unwrap();
+        assert!(!prover.constraints_satisfied());
+    }
+
+    // ---------
+    // | Tests |
+    // ---------
+
+    /// Tests that the circuit correctly verifies with valid zero'd balance and orders lists
+    #[test]
+    fn test_valid_initial_wallet() {
+        let (witness, statement) = create_default_witness_statement();
+
+        let res = bulletproof_prove_and_verify::<
+            ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        >(witness, statement);
+        assert!(res.is_ok())
+    }
+
+    /// Tests the case in which the commitment to the private shares is incorrect
+    #[test]
+    fn test_invalid_commitment() {
+        let (witness, mut statement) = create_default_witness_statement();
+        statement.private_shares_commitment += Scalar::from(1u8);
+
+        assert_invalid_witness_statement(witness, statement);
+    }
+
+    /// Tests the case in which a non-zero order is given
+    #[test]
+    fn test_nonzero_order() {
+        let mut wallet = create_empty_wallet();
+        wallet.orders[0] = INITIAL_ORDERS[0].clone();
+
+        let (witness, statement) = create_witness_statement_from_wallet(&wallet);
+        assert_invalid_witness_statement(witness, statement);
+    }
+
+    /// Tests the cas in which a non-zero balance is given
+    #[test]
+    fn test_nonzero_balance() {
+        let mut wallet = create_empty_wallet();
+        wallet.balances[0] = INITIAL_BALANCES[0].clone();
+
+        let (witness, statement) = create_witness_statement_from_wallet(&wallet);
+        assert_invalid_witness_statement(witness, statement);
+    }
+}

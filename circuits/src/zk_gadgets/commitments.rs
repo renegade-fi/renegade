@@ -25,7 +25,7 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
-    /// Compute the commitment to a wallet
+    /// Compute the commitment to a wallet share
     pub fn compute_commitment<CS: RandomizableConstraintSystem>(
         wallet_share: &WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
