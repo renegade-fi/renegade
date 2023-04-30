@@ -20,7 +20,7 @@ mod test_helpers {
     use rand_core::{CryptoRng, OsRng, RngCore};
 
     use crate::{
-        native_helpers::{compute_poseidon_hash, compute_wallet_commitment},
+        native_helpers::compute_poseidon_hash,
         types::{
             balance::{Balance, BalanceSecretShare},
             fee::{Fee, FeeSecretShare},
@@ -30,7 +30,7 @@ mod test_helpers {
         },
         zk_gadgets::{
             fixed_point::FixedPoint,
-            merkle::merkle_test::get_opening_indices,
+            merkle::MerkleOpening,
             nonnative::{
                 biguint_to_scalar_words, NonNativeElementSecretShare, TWO_TO_256_FIELD_MOD,
             },
@@ -238,45 +238,6 @@ mod test_helpers {
         (wallet1, wallet2)
     }
 
-    /// Given a wallet, create a dummy opening to a dummy root
-    ///
-    /// Returns a scalar and two vectors representing:
-    ///     - The root of the Merkle tree
-    ///     - The opening values (sister nodes)
-    ///     - The opening indices (left or right)
-    pub(crate) fn create_wallet_opening<R: RngCore + CryptoRng>(
-        wallet: &SizedWallet,
-        height: usize,
-        index: usize,
-        rng: &mut R,
-    ) -> (Scalar, Vec<Scalar>, Vec<Scalar>) {
-        // Create random sister nodes for the opening
-        let random_opening = (0..height - 1).map(|_| Scalar::random(rng)).collect_vec();
-        let opening_indices = get_opening_indices(index, height);
-
-        // Compute the root of the mock Merkle tree
-        let mut curr_root = compute_wallet_commitment(wallet);
-        for (path_index, sister_node) in opening_indices.iter().zip(random_opening.iter()) {
-            let mut sponge = PoseidonSponge::new(&default_poseidon_params());
-
-            // Left hand child
-            let left_right = if path_index.eq(&Scalar::zero()) {
-                vec![curr_root, scalar_to_prime_field(sister_node)]
-            } else {
-                vec![scalar_to_prime_field(sister_node), curr_root]
-            };
-
-            sponge.absorb(&left_right);
-            curr_root = sponge.squeeze_field_elements(1 /* num_elements */)[0];
-        }
-
-        (
-            prime_field_to_scalar(&curr_root),
-            random_opening,
-            opening_indices,
-        )
-    }
-
     /// Create a multi-item opening in a Merkle tree, do so by constructing the Merkle tree
     /// from the given items, padded with zeros
     ///
@@ -288,7 +249,7 @@ mod test_helpers {
         items: &[Scalar],
         height: usize,
         rng: &mut R,
-    ) -> (Scalar, Vec<Vec<Scalar>>, Vec<Vec<Scalar>>) {
+    ) -> (Scalar, Vec<MerkleOpening>) {
         let tree_capacity = 2usize.pow(height as u32);
         assert!(
             items.len() < tree_capacity,
@@ -344,6 +305,32 @@ mod test_helpers {
         }
 
         let merkle_root = curr_internal_nodes[0];
-        (merkle_root, openings, opening_indices)
+
+        // Reformat the openings and indices into the `MerkleOpening` type
+        let merkle_openings = openings
+            .into_iter()
+            .zip(opening_indices.into_iter())
+            .map(|(elems, indices)| MerkleOpening { elems, indices })
+            .collect_vec();
+        (merkle_root, merkle_openings)
+    }
+
+    // ---------------------
+    // | Helper Validation |
+    // ---------------------
+
+    /// Verify that the wallet shares helper correctly splits and recombines
+    #[test]
+    fn test_split_wallet_into_shares() {
+        // Split into secret shares
+        let wallet = INITIAL_WALLET.clone();
+        let (mut share1, mut share2) = create_wallet_shares(&wallet);
+
+        // Recover from shares
+        share1.unblind();
+        share2.unblind();
+        let recovered_wallet = share1 + share2;
+
+        assert_eq!(wallet, recovered_wallet);
     }
 }

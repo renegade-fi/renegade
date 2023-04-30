@@ -1,18 +1,11 @@
 //! Groups logic for computing wallet commitments and nullifiers inside of a circuit
 
-use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
-    r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
+    r1cs::{LinearCombination, RandomizableConstraintSystem},
     r1cs_mpc::R1CSError,
 };
 
-use crate::{
-    mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    types::{
-        note::NoteVar,
-        wallet::{WalletSecretShareVar, WalletShareCommitment},
-    },
-};
+use crate::{mpc_gadgets::poseidon::PoseidonSpongeParameters, types::wallet::WalletSecretShareVar};
 
 use super::poseidon::PoseidonHashGadget;
 
