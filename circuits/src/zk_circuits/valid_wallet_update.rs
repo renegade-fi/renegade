@@ -59,7 +59,7 @@ where
 {
     /// Apply the circuit constraints to a given constraint system
     pub fn circuit<CS: RandomizableConstraintSystem>(
-        statement: ValidWalletUpdateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        mut statement: ValidWalletUpdateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         mut witness: ValidWalletUpdateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
@@ -118,7 +118,11 @@ where
 
         // -- State transition validity -- //
 
+        // Reconstruct the new wallet from shares
+        statement.new_public_shares.unblind();
+        witness.new_wallet_private_shares.unblind();
         let new_wallet = statement.new_public_shares + witness.new_wallet_private_shares;
+
         Self::verify_wallet_transition(
             old_wallet,
             new_wallet,
@@ -162,7 +166,7 @@ where
         // Ensure that all mints in the updated balances are unique
         Self::constrain_unique_balance_mints(new_wallet, cs);
         // Validate that the external transfer has been correctly applied
-        Self::validate_external_transfer(new_wallet, old_wallet, external_transfer, cs);
+        Self::validate_external_transfer(old_wallet, new_wallet, external_transfer, cs);
     }
 
     /// Validates the application of the external transfer to the balance state
@@ -171,8 +175,8 @@ where
     ///        in non-negative balances
     ///     2. The user has the funds to cover the transfers
     pub(crate) fn validate_external_transfer<CS: RandomizableConstraintSystem>(
-        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, LinearCombination>,
         old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, LinearCombination>,
+        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, LinearCombination>,
         external_transfer: ExternalTransferVar,
         cs: &mut CS,
     ) {
@@ -270,7 +274,7 @@ where
         Self::constrain_unique_order_pairs(new_wallet, cs);
 
         // Ensure that the timestamps for all orders are properly set
-        Self::constrain_updated_order_timestamps(new_wallet, old_wallet, new_timestamp, cs);
+        Self::constrain_updated_order_timestamps(old_wallet, new_wallet, new_timestamp, cs);
     }
 
     /// Constrain the timestamps to be properly updated
@@ -665,7 +669,7 @@ where
         let statement_var = statement.commit_public(&mut prover).unwrap();
 
         // Apply the constraints
-        Self::circuit(statement_var, witness_var, &mut prover);
+        Self::circuit(statement_var, witness_var, &mut prover).map_err(ProverError::R1CS)?;
 
         // Prove the circuit
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -685,12 +689,155 @@ where
         let statement_var = statement.commit_public(&mut verifier).unwrap();
 
         // Apply the constraints
-        Self::circuit(statement_var, witness_var, &mut verifier);
+        Self::circuit(statement_var, witness_var, &mut verifier).map_err(VerifierError::R1CS)?;
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         verifier
             .verify(&proof, &bp_gens)
             .map_err(VerifierError::R1CS)
+    }
+}
+
+// ---------
+// | Tests |
+// ---------
+
+#[cfg(test)]
+mod test {
+
+    use merlin::Transcript;
+    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
+    use rand_core::OsRng;
+
+    use crate::{
+        native_helpers::{compute_wallet_share_commitment, compute_wallet_share_nullifier},
+        types::{order::Order, transfers::ExternalTransfer},
+        zk_circuits::test_helpers::{
+            create_multi_opening, create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES,
+            MAX_FEES, MAX_ORDERS, TIMESTAMP,
+        },
+        CommitPublic, CommitWitness,
+    };
+
+    use super::{ValidWalletUpdate, ValidWalletUpdateStatement, ValidWalletUpdateWitness};
+
+    /// The witness type with default size parameters attached
+    type SizedWitness = ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    /// The statement type with default size parameters attached
+    type SizedStatement = ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+
+    /// The height of the Merkle tree to test on
+    const MERKLE_HEIGHT: usize = 3;
+    /// The timestamp of update
+    const NEW_TIMESTAMP: u64 = TIMESTAMP + 1;
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Returns true if the circuit constraints are satisfied on the given parameters
+    fn constraints_satisfied_on_wallets(
+        old_wallet: SizedWallet,
+        new_wallet: SizedWallet,
+        transfer: ExternalTransfer,
+    ) -> bool {
+        let (witness, statement) = construct_witness_statement(old_wallet, new_wallet, transfer);
+        constraints_satisfied(statement, witness)
+    }
+
+    /// Construct a witness and statement
+    fn construct_witness_statement(
+        old_wallet: SizedWallet,
+        new_wallet: SizedWallet,
+        external_transfer: ExternalTransfer,
+    ) -> (SizedWitness, SizedStatement) {
+        let mut rng = OsRng {};
+
+        // Construct secret shares of the wallets
+        let (old_wallet_private_shares, old_wallet_public_shares) =
+            create_wallet_shares(&old_wallet);
+        let (new_wallet_private_shares, new_wallet_public_shares) =
+            create_wallet_shares(&new_wallet);
+
+        // Create dummy openings for the old shares
+        let old_private_commitment =
+            compute_wallet_share_commitment(old_wallet_private_shares.clone());
+        let old_public_commitment =
+            compute_wallet_share_commitment(old_wallet_public_shares.clone());
+        let (merkle_root, mut openings) = create_multi_opening(
+            &[old_private_commitment, old_public_commitment],
+            MERKLE_HEIGHT,
+            &mut rng,
+        );
+
+        // Compute nullifiers for the old state
+        let old_private_nullifier =
+            compute_wallet_share_nullifier(old_private_commitment, old_wallet.blinder);
+        let old_public_nullifier =
+            compute_wallet_share_nullifier(old_public_commitment, old_wallet.blinder);
+
+        // Commit to the new private shares
+        let new_private_shares_commitment =
+            compute_wallet_share_commitment(new_wallet_private_shares.clone());
+
+        let witness = SizedWitness {
+            old_wallet_private_shares,
+            old_wallet_public_shares,
+            new_wallet_private_shares,
+            private_shares_opening: openings.remove(0),
+            public_shares_opening: openings.remove(0),
+        };
+        let statement = SizedStatement {
+            old_private_shares_nullifier: old_private_nullifier,
+            old_public_shares_nullifier: old_public_nullifier,
+            old_pk_root: old_wallet.keys.pk_root,
+            new_private_shares_commitment,
+            new_public_shares: new_wallet_public_shares,
+            merkle_root,
+            external_transfer,
+            timestamp: NEW_TIMESTAMP,
+        };
+
+        (witness, statement)
+    }
+
+    /// Return true if the circuit constraints are satisfied on a given
+    /// statement, witness pair
+    fn constraints_satisfied(statement: SizedStatement, witness: SizedWitness) -> bool {
+        // Build a constraint system
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        // Allocate the witness and statement in the constraint system
+        let mut rng = OsRng {};
+        let statement_var = statement.commit_public(&mut prover).unwrap();
+        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+
+        // Apply the constraints
+        ValidWalletUpdate::circuit(statement_var, witness_var, &mut prover).unwrap();
+        prover.constraints_satisfied()
+    }
+
+    // --------------
+    // | Test Cases |
+    // --------------
+
+    /// Tests a valid witness and statement for placing an order
+    #[test]
+    fn test_place_order() {
+        let mut old_wallet = INITIAL_WALLET.clone();
+        let mut new_wallet = INITIAL_WALLET.clone();
+        new_wallet.orders[0].timestamp = NEW_TIMESTAMP;
+
+        // Remove an order from the initial wallet
+        old_wallet.orders[0] = Order::default();
+
+        assert!(constraints_satisfied_on_wallets(
+            old_wallet,
+            new_wallet,
+            ExternalTransfer::default()
+        ));
     }
 }

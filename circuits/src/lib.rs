@@ -717,20 +717,13 @@ pub(crate) mod test_helpers {
 pub mod native_helpers {
     use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use crypto::{
-        fields::{
-            biguint_to_prime_field, prime_field_to_scalar, scalar_to_prime_field,
-            DalekRistrettoField,
-        },
+        fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField},
         hash::default_poseidon_params,
     };
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
 
-    use crate::types::{
-        keychain::PublicIdentificationKey,
-        note::Note,
-        wallet::{Wallet, WalletSecretShare},
-    };
+    use crate::types::wallet::{Nullifier, WalletSecretShare, WalletShareCommitment};
 
     /// Compute the hash of the randomness of a given wallet
     pub fn compute_poseidon_hash(values: &[Scalar]) -> Scalar {
@@ -748,140 +741,17 @@ pub mod native_helpers {
         const MAX_FEES: usize,
     >(
         share: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    ) -> Scalar {
+    ) -> WalletShareCommitment {
         let hash_input: Vec<Scalar> = share.into();
         compute_poseidon_hash(&hash_input)
     }
 
-    /// Compute the commitment to a wallet
-    ///
-    /// TODO: Delete this method after refactor
-    pub fn compute_wallet_commitment<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    ) -> DalekRistrettoField
-    where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    {
-        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
-
-        // Hash the balances into the state
-        for balance in wallet.balances.iter() {
-            hasher.absorb(&biguint_to_prime_field(&balance.mint));
-            hasher.absorb(&balance.amount);
-        }
-
-        // Hash the orders into the state
-        for order in wallet.orders.iter() {
-            hasher.absorb(&vec![
-                biguint_to_prime_field(&order.quote_mint),
-                biguint_to_prime_field(&order.base_mint),
-            ]);
-            hasher.absorb(&vec![
-                order.side as u64,
-                order.price.to_owned().into(),
-                order.amount,
-            ]);
-        }
-
-        // Hash the fees into the state
-        for fee in wallet.fees.iter() {
-            hasher.absorb(&vec![
-                biguint_to_prime_field(&fee.settle_key),
-                biguint_to_prime_field(&fee.gas_addr),
-            ]);
-
-            hasher.absorb(&vec![fee.gas_token_amount, fee.percentage_fee.into()]);
-        }
-
-        // Hash the keys into the state
-        let mut key_scalars = Vec::<Scalar>::from(wallet.keys.pk_root.clone());
-        key_scalars.push(wallet.keys.pk_match.into());
-        hasher.absorb(&key_scalars.iter().map(scalar_to_prime_field).collect_vec());
-
-        // Hash the randomness into the state
-        hasher.absorb(&scalar_to_prime_field(&wallet.blinder));
-
-        hasher.squeeze_field_elements(1 /* num_elements */)[0]
-    }
-
-    /// Compute the commitment to a note
-    ///
-    /// TODO: Delete this method after refactor
-    pub fn compute_note_commitment(
-        note: &Note,
-        pk_settle_receiver: PublicIdentificationKey,
-    ) -> DalekRistrettoField {
-        // Absorb the elements of the note in order into the sponge
-        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
-        hasher.absorb(&biguint_to_prime_field(&note.mint1));
-        hasher.absorb(&vec![note.volume1, note.direction1 as u64]);
-        hasher.absorb(&biguint_to_prime_field(&note.mint2));
-        hasher.absorb(&vec![note.volume2, note.direction2 as u64]);
-        hasher.absorb(&biguint_to_prime_field(&note.fee_mint));
-        hasher.absorb(&vec![
-            note.fee_volume,
-            note.fee_direction as u64,
-            note.type_ as u64,
-        ]);
-        hasher.absorb(&biguint_to_prime_field(&note.randomness));
-        hasher.absorb(&scalar_to_prime_field(&pk_settle_receiver.into()));
-        hasher.squeeze_field_elements(1 /* num_elements */)[0]
-    }
-
-    /// Given a wallet and its commitment, compute the wallet spend nullifier
-    /// TODO: Delete this method after refactor
-    pub fn compute_wallet_spend_nullifier<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        commitment: DalekRistrettoField,
-    ) -> DalekRistrettoField
-    where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    {
-        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
-        hasher.absorb(&vec![commitment, scalar_to_prime_field(&wallet.blinder)]);
-        hasher.squeeze_field_elements(1 /* num_elements */)[0]
-    }
-
-    /// Given a wallet and its commitment, compute the wallet match nullifier
-    /// TODO: Delete this method after refactor
-    pub fn compute_wallet_match_nullifier<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        commitment: DalekRistrettoField,
-    ) -> DalekRistrettoField
-    where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    {
-        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
-        hasher.absorb(&vec![
-            commitment,
-            scalar_to_prime_field(&(wallet.blinder + Scalar::one())),
-        ]);
-        hasher.squeeze_field_elements(1 /* num_elements */)[0]
-    }
-
-    /// Given a note and its commitment, compute the note redeem nullifier
-    pub fn compute_note_redeem_nullifier(
-        note_commitment: DalekRistrettoField,
-        pk_settle_receiver: PublicIdentificationKey,
-    ) -> DalekRistrettoField {
-        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
-        hasher.absorb(&vec![
-            note_commitment,
-            scalar_to_prime_field(&pk_settle_receiver.into()),
-        ]);
-        hasher.squeeze_field_elements(1 /* num_elements */)[0]
+    /// Compute the nullifier of a set of wallet shares
+    pub fn compute_wallet_share_nullifier(
+        share_commitment: WalletShareCommitment,
+        wallet_blinder: Scalar,
+    ) -> Nullifier {
+        compute_poseidon_hash(&[share_commitment, wallet_blinder])
     }
 }
 
