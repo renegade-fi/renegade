@@ -39,7 +39,7 @@ where
     }
 }
 
-/// A gadget for computing the nullifier of a wallet
+/// A gadget for computing the nullifier of secret share to a wallet
 #[derive(Clone, Debug)]
 pub struct NullifierGadget {}
 impl NullifierGadget {
