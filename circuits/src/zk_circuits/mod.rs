@@ -324,12 +324,11 @@ mod test_helpers {
     fn test_split_wallet_into_shares() {
         // Split into secret shares
         let wallet = INITIAL_WALLET.clone();
-        let (mut share1, mut share2) = create_wallet_shares(&wallet);
+        let (private_share, mut public_share) = create_wallet_shares(&wallet);
 
-        // Recover from shares
-        share1.unblind();
-        share2.unblind();
-        let recovered_wallet = share1 + share2;
+        // Unblind the public shares, recover from shares
+        public_share.unblind(wallet.blinder);
+        let recovered_wallet = private_share + public_share;
 
         assert_eq!(wallet, recovered_wallet);
     }
