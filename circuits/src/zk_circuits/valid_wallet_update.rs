@@ -35,7 +35,7 @@ use crate::{
             EqGadget, EqVecGadget, EqZeroGadget, GreaterThanEqZeroGadget, NotEqualGadget,
         },
         fixed_point::FixedPointVar,
-        gates::{AndGate, ConstrainBinaryGadget, OrGate},
+        gates::{AndGate, ConstrainBinaryGadget, NotGate, OrGate},
         merkle::{
             MerkleOpening, MerkleOpeningCommitment, MerkleOpeningVar, MerkleRoot,
             PoseidonMerkleHashGadget,
@@ -86,8 +86,9 @@ where
         cs.constrain(statement.merkle_root - computed_root);
 
         // Reconstruct the wallet from secret shares
-        witness.old_wallet_public_shares.unblind();
-        witness.old_wallet_private_shares.unblind();
+        let recovered_blinder = witness.old_wallet_private_shares.blinder.clone()
+            + witness.old_wallet_public_shares.blinder.clone();
+        witness.old_wallet_public_shares.unblind(recovered_blinder);
 
         let old_wallet = witness.old_wallet_private_shares + witness.old_wallet_public_shares;
 
@@ -119,8 +120,10 @@ where
         // -- State transition validity -- //
 
         // Reconstruct the new wallet from shares
-        statement.new_public_shares.unblind();
-        witness.new_wallet_private_shares.unblind();
+        let recovered_blinder = witness.new_wallet_private_shares.blinder.clone()
+            + statement.new_public_shares.blinder.clone();
+        statement.new_public_shares.unblind(recovered_blinder);
+
         let new_wallet = statement.new_public_shares + witness.new_wallet_private_shares;
 
         Self::verify_wallet_transition(
@@ -180,31 +183,31 @@ where
         external_transfer: ExternalTransferVar,
         cs: &mut CS,
     ) {
-        // The external transfer term; negate the amount if the direction is 1 (withdraw)
-        // otherwise keep the amount as positive (deposit)
+        // Zero out the external transfer amount if its mint is zero
+        let external_transfer_zero = EqZeroGadget::eq_zero(external_transfer.mint, cs);
+        let external_transfer_not_zero = NotGate::not(external_transfer_zero, cs);
+        let (_, _, transfer_amount) =
+            cs.multiply(external_transfer.amount.into(), external_transfer_not_zero);
+
+        // The term added to any balance matching the external transfer mint
         let external_transfer_term = CondSelectGadget::select(
-            -external_transfer.amount,
-            external_transfer.amount.into(),
+            -transfer_amount,
+            transfer_amount.into(),
             external_transfer.direction.into(),
             cs,
         );
 
-        // Stores the sum of the mints_eq gadgets; the internal/external transfers should either be
-        // zero'd, or equal to a non-zero mint in the balances
-        let mut external_transfer_mint_present: LinearCombination = Variable::Zero().into();
-        for new_balance in new_wallet.balances.iter() {
-            let mut expected_amount: LinearCombination = Variable::Zero().into();
+        // Stores a boolean indicating whether the external transfer appeared in the new balances
+        // it must be applied to at least one balance
+        let mut external_transfer_applied: LinearCombination = Variable::Zero().into();
 
-            // Match amounts in the old wallet, before transfers
-            for old_balance in old_wallet.balances.iter() {
-                let mints_eq =
-                    EqZeroGadget::eq_zero(new_balance.mint.clone() - old_balance.mint.clone(), cs);
-                let (_, _, masked_amount) =
-                    cs.multiply(mints_eq.into(), old_balance.amount.clone());
-                expected_amount += masked_amount;
-            }
+        // Check the balance state transition for each balance
+        for (old_balance, new_balance) in old_wallet.balances.iter().zip(new_wallet.balances.iter())
+        {
+            // The initial balance before updates
+            let mut expected_balance = old_balance.amount.clone();
 
-            // Add in the external transfer information
+            // Add in the external transfer information term if applicable
             let equals_external_transfer_mint =
                 EqGadget::eq(new_balance.mint.clone(), external_transfer.mint.into(), cs);
             let (_, _, external_transfer_term) = cs.multiply(
@@ -212,28 +215,60 @@ where
                 external_transfer_term.clone(),
             );
 
-            external_transfer_mint_present += equals_external_transfer_mint;
-            expected_amount += external_transfer_term;
+            external_transfer_applied += equals_external_transfer_mint;
+            expected_balance += external_transfer_term;
 
-            // Constrain the expected amount to equal the amount in the new wallet
-            cs.constrain(new_balance.amount.clone() - expected_amount);
+            // Constrain the updated balance to be non-negative and correctly updated
+            cs.constrain(new_balance.amount.clone() - expected_balance);
             GreaterThanEqZeroGadget::<64 /* bitwidth */>::constrain_greater_than_zero(
                 new_balance.amount.clone(),
                 cs,
             );
+
+            // Constrain the mints to be set correctly. A valid mint is one of:
+            //  1. The same mint as in the old wallet, if the balance previously existed and was not zero'd
+            //  2. The mint of the transfer if the balance was previously zero; balances are constrained
+            //     to be unique elsewhere in the circuit
+            //  3. The zero mint, if the balance is zero
+            let mints_equal = EqGadget::eq(old_balance.mint.clone(), new_balance.mint.clone(), cs);
+            let equals_transfer_mint =
+                EqGadget::eq(new_balance.mint.clone(), external_transfer.mint.into(), cs);
+            let mint_is_zero = EqZeroGadget::eq_zero(new_balance.mint.clone(), cs);
+            let new_balance_zero = EqZeroGadget::eq_zero(new_balance.amount.clone(), cs);
+            let prev_balance_zero = EqZeroGadget::eq_zero(old_balance.amount.clone(), cs);
+
+            // Condition 1 -- same mint as old wallet, balance not zero'd
+            let valid_mint1 = AndGate::multi_and(
+                &[
+                    mints_equal.into(),
+                    NotGate::not(prev_balance_zero, cs),
+                    NotGate::not(new_balance_zero, cs),
+                ],
+                cs,
+            );
+
+            // Condition 2 -- new mint added to wallet
+            let valid_mint2 = AndGate::multi_and(
+                &[
+                    equals_transfer_mint.into(),
+                    prev_balance_zero.into(),
+                    NotGate::not(new_balance_zero, cs),
+                ],
+                cs,
+            );
+
+            // Condition 3 -- withdrawal of entire balance, mint is now zero
+            let valid_mint3 = AndGate::multi_and(&[mint_is_zero, new_balance_zero], cs);
+
+            // Constrain one of the thee mint conditions to hold
+            let valid_mint = OrGate::multi_or(&[valid_mint1, valid_mint2, valid_mint3], cs);
+            cs.constrain(Variable::One() - valid_mint);
         }
 
-        // Lastly, we must verify that if the external transfer is a withdrawal, the previous wallet
-        // had a non-zero balance of the withdrawn mint. The above constraints verify that if this is
-        // the case, the resultant balance is non-negative
-        let external_transfer_is_deposit =
-            EqGadget::eq(external_transfer.direction, Variable::Zero(), cs);
-        let external_deposit_or_valid_balance = OrGate::or(
-            external_transfer_is_deposit.into(),
-            external_transfer_mint_present,
-            cs,
-        );
-        cs.constrain(Variable::One() - external_deposit_or_valid_balance);
+        // Validate that the external transfer's mint did show up in exactly one of the balances
+        let transfer_applied = EqGadget::eq(external_transfer_applied, Variable::One().into(), cs);
+        let transfer_applied_or_zero = OrGate::or(transfer_applied, external_transfer_zero, cs);
+        cs.constrain(transfer_applied_or_zero - Variable::One());
     }
 
     /// Constrains all balance mints to be unique or zero
@@ -288,6 +323,7 @@ where
         cs: &mut CS,
     ) {
         for (i, order) in new_wallet.orders.iter().enumerate() {
+            let order_is_zero = Self::order_is_zero(order, cs);
             let equals_old_order =
                 Self::orders_equal_except_timestamp(order, &old_wallet.orders[i], cs);
 
@@ -307,8 +343,13 @@ where
                 cs,
             );
 
-            let constraint = OrGate::or(not_equal_and_updated, equal_and_not_updated, cs);
-            cs.constrain(Variable::One() - constraint);
+            // Validate that if the order is in one of the following states:
+            //  1. Updated order with updated timestamp
+            //  2. Non-updated order with non-updated timestamp
+            //  3. Cancelled order
+            let or1 = OrGate::or(not_equal_and_updated, equal_and_not_updated, cs);
+            let or2 = OrGate::or(or1, order_is_zero.into(), cs);
+            cs.constrain(Variable::One() - or2);
         }
     }
 
@@ -705,18 +746,25 @@ where
 
 #[cfg(test)]
 mod test {
+    #![allow(non_snake_case)]
 
     use merlin::Transcript;
     use mpc_bulletproof::{r1cs::Prover, PedersenGens};
+    use num_bigint::BigUint;
     use rand_core::OsRng;
 
     use crate::{
         native_helpers::{compute_wallet_share_commitment, compute_wallet_share_nullifier},
-        types::{order::Order, transfers::ExternalTransfer},
+        types::{
+            balance::Balance,
+            order::Order,
+            transfers::{ExternalTransfer, ExternalTransferDirection},
+        },
         zk_circuits::test_helpers::{
             create_multi_opening, create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES,
             MAX_FEES, MAX_ORDERS, TIMESTAMP,
         },
+        zk_gadgets::fixed_point::FixedPoint,
         CommitPublic, CommitWitness,
     };
 
@@ -826,7 +874,7 @@ mod test {
 
     /// Tests a valid witness and statement for placing an order
     #[test]
-    fn test_place_order() {
+    fn test_place_order__valid() {
         let mut old_wallet = INITIAL_WALLET.clone();
         let mut new_wallet = INITIAL_WALLET.clone();
         new_wallet.orders[0].timestamp = NEW_TIMESTAMP;
@@ -838,6 +886,115 @@ mod test {
             old_wallet,
             new_wallet,
             ExternalTransfer::default()
+        ));
+    }
+
+    /// Tests order cancellation
+    #[test]
+    fn test_order_cancellation() {
+        let old_wallet = INITIAL_WALLET.clone();
+        let mut new_wallet = INITIAL_WALLET.clone();
+        new_wallet.orders[0] = Order::default();
+
+        assert!(constraints_satisfied_on_wallets(
+            old_wallet,
+            new_wallet,
+            ExternalTransfer::default()
+        ))
+    }
+
+    /// Tests placing an order without updating the timestamp
+    #[test]
+    fn test_place_order__invalid_timestamp() {
+        let mut old_wallet = INITIAL_WALLET.clone();
+        let mut new_wallet = INITIAL_WALLET.clone();
+        new_wallet.orders[0].timestamp = TIMESTAMP; // old timestamp
+
+        // Remove an order from the initial wallet
+        old_wallet.orders[0] = Order::default();
+
+        assert!(!constraints_satisfied_on_wallets(
+            old_wallet,
+            new_wallet,
+            ExternalTransfer::default()
+        ));
+    }
+
+    /// Tests modifying the timestamp of an existing order
+    #[test]
+    fn test_place_order__invalid_timestamp_update() {
+        // No update to the orders, but the timestamp is incorrect
+        let old_wallet = INITIAL_WALLET.clone();
+        let mut new_wallet = INITIAL_WALLET.clone();
+        new_wallet.orders[0].timestamp = NEW_TIMESTAMP;
+
+        assert!(!constraints_satisfied_on_wallets(
+            old_wallet,
+            new_wallet,
+            ExternalTransfer::default()
+        ));
+    }
+
+    /// Tests that orders with duplicate asset pairs will fail
+    #[test]
+    fn test_place_order__duplicate_mint() {
+        // No update to the orders, but the timestamp is incorrect
+        let mut old_wallet = INITIAL_WALLET.clone();
+        let mut new_wallet = INITIAL_WALLET.clone();
+
+        // Create the wallet's second order as a duplicate of the first
+        new_wallet.orders[1] = new_wallet.orders[0].clone();
+        new_wallet.orders[1].price = new_wallet.orders[1].price + FixedPoint::from_integer(10u64);
+        new_wallet.orders[1].timestamp = NEW_TIMESTAMP;
+
+        // Remove the order from the original wallet to simulate order placement
+        old_wallet.orders[1] = Order::default();
+
+        assert!(!constraints_satisfied_on_wallets(
+            old_wallet,
+            new_wallet,
+            ExternalTransfer::default()
+        ));
+    }
+
+    /// Tests the case in which a duplicate balance is given
+    #[test]
+    fn test_duplicate_balance() {
+        // No update to the orders, but the timestamp is incorrect
+        let mut old_wallet = INITIAL_WALLET.clone();
+        let mut new_wallet = INITIAL_WALLET.clone();
+
+        // Create the wallet's second balance as a duplicate of the first
+        new_wallet.balances[1] = new_wallet.balances[0].clone();
+        new_wallet.balances[1].amount += 10;
+
+        // Remove the duplicated balance from the old wallet
+        old_wallet.balances[1] = Balance::default();
+
+        assert!(!constraints_satisfied_on_wallets(
+            old_wallet,
+            new_wallet,
+            ExternalTransfer::default()
+        ));
+    }
+
+    /// Tests a valid external transfer that withdraws a balance
+    #[test]
+    fn test_external_transfer__valid_withdrawal() {
+        let old_wallet = INITIAL_WALLET.clone();
+        let mut new_wallet = INITIAL_WALLET.clone();
+
+        // Withdraw all of the first balance from the new wallet
+        new_wallet.balances[0] = Balance::default();
+        let transfer = ExternalTransfer {
+            mint: old_wallet.balances[0].mint.clone(),
+            amount: BigUint::from(old_wallet.balances[0].amount),
+            direction: ExternalTransferDirection::Withdrawal,
+            account_addr: BigUint::from(0u8),
+        };
+
+        assert!(constraints_satisfied_on_wallets(
+            old_wallet, new_wallet, transfer
         ));
     }
 }
