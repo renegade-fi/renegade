@@ -216,7 +216,7 @@ mod test_helpers {
         };
 
         // Construct the secret shares of the wallet
-        let mut wallet1 = SizedWalletShare {
+        let wallet1 = SizedWalletShare {
             balances: balances1.try_into().unwrap(),
             orders: orders1.try_into().unwrap(),
             fees: fees1.try_into().unwrap(),
@@ -231,9 +231,8 @@ mod test_helpers {
             blinder: wallet.blinder - blinder_share,
         };
 
-        // Blind the shares
-        wallet1.blind();
-        wallet2.blind();
+        // Blind the public shares
+        wallet2.blind(wallet.blinder);
 
         (wallet1, wallet2)
     }

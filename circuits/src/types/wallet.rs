@@ -249,21 +249,19 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
     WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 {
     /// Apply the wallet blinder to the secret shares
-    pub fn blind(&mut self) {
-        self.balances.iter_mut().for_each(|b| b.blind(self.blinder));
-        self.orders.iter_mut().for_each(|o| o.blind(self.blinder));
-        self.fees.iter_mut().for_each(|f| f.blind(self.blinder));
-        self.keys.blind(self.blinder);
+    pub fn blind(&mut self, blinder: Scalar) {
+        self.balances.iter_mut().for_each(|b| b.blind(blinder));
+        self.orders.iter_mut().for_each(|o| o.blind(blinder));
+        self.fees.iter_mut().for_each(|f| f.blind(blinder));
+        self.keys.blind(blinder);
     }
 
     /// Remove the wallet blinder from the secret shares
-    pub fn unblind(&mut self) {
-        self.balances
-            .iter_mut()
-            .for_each(|b| b.unblind(self.blinder));
-        self.orders.iter_mut().for_each(|o| o.unblind(self.blinder));
-        self.fees.iter_mut().for_each(|f| f.unblind(self.blinder));
-        self.keys.unblind(self.blinder);
+    pub fn unblind(&mut self, blinder: Scalar) {
+        self.balances.iter_mut().for_each(|b| b.unblind(blinder));
+        self.orders.iter_mut().for_each(|o| o.unblind(blinder));
+        self.fees.iter_mut().for_each(|f| f.unblind(blinder));
+        self.keys.unblind(blinder);
     }
 }
 
@@ -401,31 +399,29 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
     WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 {
     /// Apply the wallet blinder to the secret shares
-    pub fn blind(&mut self) {
+    pub fn blind(&mut self, blinder: LinearCombination) {
         self.balances
             .iter_mut()
-            .for_each(|b| b.blind(self.blinder.clone()));
+            .for_each(|b| b.blind(blinder.clone()));
         self.orders
             .iter_mut()
-            .for_each(|o| o.blind(self.blinder.clone()));
-        self.fees
-            .iter_mut()
-            .for_each(|f| f.blind(self.blinder.clone()));
-        self.keys.blind(self.blinder.clone());
+            .for_each(|o| o.blind(blinder.clone()));
+        self.fees.iter_mut().for_each(|f| f.blind(blinder.clone()));
+        self.keys.blind(blinder);
     }
 
     /// Remove the wallet blinder from the secret shares
-    pub fn unblind(&mut self) {
+    pub fn unblind(&mut self, blinder: LinearCombination) {
         self.balances
             .iter_mut()
-            .for_each(|b| b.unblind(self.blinder.clone()));
+            .for_each(|b| b.unblind(blinder.clone()));
         self.orders
             .iter_mut()
-            .for_each(|o| o.unblind(self.blinder.clone()));
+            .for_each(|o| o.unblind(blinder.clone()));
         self.fees
             .iter_mut()
-            .for_each(|f| f.unblind(self.blinder.clone()));
-        self.keys.unblind(self.blinder.clone());
+            .for_each(|f| f.unblind(blinder.clone()));
+        self.keys.unblind(blinder);
     }
 }
 
