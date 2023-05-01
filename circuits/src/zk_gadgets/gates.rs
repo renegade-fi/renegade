@@ -36,7 +36,7 @@ impl OrGate {
         L: Into<LinearCombination> + Clone,
         CS: RandomizableConstraintSystem,
     {
-        // Dispatch to the single or gate
+        // Dispatch to the single OR gate
         a.iter().fold(Variable::Zero().into(), |acc, val| {
             Self::or(acc, val.clone().into(), cs)
         })
