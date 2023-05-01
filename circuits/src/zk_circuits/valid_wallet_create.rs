@@ -53,7 +53,7 @@ where
     /// VALID WALLET CREATE
     fn circuit<CS>(
         mut statement: ValidWalletCreateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        mut witness: ValidWalletCreateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        witness: ValidWalletCreateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) -> Result<(), R1CSError>
     where
@@ -64,9 +64,10 @@ where
             WalletShareCommitGadget::compute_commitment(&witness.private_wallet_share, cs)?;
         cs.constrain(commitment - statement.private_shares_commitment);
 
-        // Unblind the shares then reconstruct the wallet
-        witness.private_wallet_share.unblind();
-        statement.public_wallet_shares.unblind();
+        // Unblind the public shares then reconstruct the wallet
+        let blinder = witness.private_wallet_share.blinder.clone()
+            + statement.public_wallet_shares.blinder.clone();
+        statement.public_wallet_shares.unblind(blinder);
         let wallet = witness.private_wallet_share + statement.public_wallet_shares;
 
         // Verify that the orders and balances are zero'd
