@@ -7,6 +7,8 @@ pub mod valid_wallet_update;
 
 #[cfg(test)]
 mod test_helpers {
+    use std::iter::from_fn;
+
     use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use crypto::{
         fields::{
@@ -110,6 +112,54 @@ mod test_helpers {
     // | Helpers |
     // -----------
 
+    /// Reblind a wallet given its secret shares
+    ///
+    /// Returns the reblinded private and public shares
+    pub(crate) fn reblind_wallet(
+        private_secret_shares: SizedWalletShare,
+        wallet: &SizedWallet,
+    ) -> (SizedWalletShare, SizedWalletShare) {
+        // Sample new wallet blinders from the `blinder` CSPRNG
+        // See the comments in `valid_reblind.rs` for an explanation of the two CSPRNGs
+        let mut blinder_samples =
+            evaluate_hash_chain(private_secret_shares.blinder, 2 /* length */);
+        let mut blinder_drain = blinder_samples.drain(..);
+        let new_blinder = blinder_drain.next().unwrap();
+        let new_blinder_private_share = blinder_drain.next().unwrap();
+
+        // Sample new secret shares for the wallet
+        let shares_serialized: Vec<Scalar> = private_secret_shares.into();
+        let serialized_len = shares_serialized.len();
+        let secret_shares =
+            evaluate_hash_chain(shares_serialized[serialized_len - 2], serialized_len - 1);
+
+        create_wallet_shares_with_randomness(
+            wallet,
+            new_blinder,
+            new_blinder_private_share,
+            secret_shares,
+        )
+    }
+
+    /// Compute a chained Poseidon hash of the given length from the given seed
+    pub(crate) fn evaluate_hash_chain(seed: Scalar, length: usize) -> Vec<Scalar> {
+        let mut seed = scalar_to_prime_field(&seed);
+        let mut res = Vec::with_capacity(length);
+
+        let poseidon_config = default_poseidon_params();
+        for _ in 0..length {
+            // New hasher every time to reset the hash state, Arkworks sponges don't natively
+            // support resets, so we pay the small re-initialization overhead
+            let mut hasher = PoseidonSponge::new(&poseidon_config);
+            hasher.absorb(&seed);
+            seed = hasher.squeeze_field_elements(1 /* num_elements */)[0];
+
+            res.push(prime_field_to_scalar(&seed));
+        }
+
+        res
+    }
+
     /// Construct secret shares of a wallet for testing
     pub(crate) fn create_wallet_shares(
         wallet: &SizedWallet,
@@ -118,12 +168,38 @@ mod test_helpers {
         let mut rng = OsRng {};
         let blinder_share = Scalar::random(&mut rng);
 
+        create_wallet_shares_with_randomness(
+            wallet,
+            wallet.blinder,
+            blinder_share,
+            from_fn(|| Some(Scalar::random(&mut rng))),
+        )
+    }
+
+    /// Create a secret sharing of a wallet given the secret shares and blinders
+    fn create_wallet_shares_with_randomness<T>(
+        wallet: &SizedWallet,
+        blinder: Scalar,
+        private_blinder_share: Scalar,
+        secret_shares: T,
+    ) -> (SizedWalletShare, SizedWalletShare)
+    where
+        T: IntoIterator<Item = Scalar>,
+    {
+        // Cast to iter and create a shorthand notation
+        let mut share_iter = secret_shares.into_iter();
+        macro_rules! next_share {
+            () => {
+                share_iter.next().unwrap()
+            };
+        }
+
         // Secret share the balances
         let mut balances1 = Vec::with_capacity(MAX_BALANCES);
         let mut balances2 = Vec::with_capacity(MAX_BALANCES);
         for balance in wallet.balances.iter() {
-            let mint_share = Scalar::random(&mut rng);
-            let amount_share = Scalar::random(&mut rng);
+            let mint_share = next_share!();
+            let amount_share = next_share!();
             balances1.push(BalanceSecretShare {
                 mint: mint_share,
                 amount: amount_share,
@@ -139,12 +215,12 @@ mod test_helpers {
         let mut orders1 = Vec::with_capacity(MAX_ORDERS);
         let mut orders2 = Vec::with_capacity(MAX_ORDERS);
         for order in wallet.orders.iter() {
-            let quote_share = Scalar::random(&mut rng);
-            let base_share = Scalar::random(&mut rng);
-            let side_share = Scalar::random(&mut rng);
-            let price_share = Scalar::random(&mut rng);
-            let amount_share = Scalar::random(&mut rng);
-            let timestamp_share = Scalar::random(&mut rng);
+            let quote_share = next_share!();
+            let base_share = next_share!();
+            let side_share = next_share!();
+            let price_share = next_share!();
+            let amount_share = next_share!();
+            let timestamp_share = next_share!();
 
             orders1.push(OrderSecretShare {
                 quote_mint: quote_share,
@@ -169,10 +245,10 @@ mod test_helpers {
         let mut fees1 = Vec::with_capacity(MAX_FEES);
         let mut fees2 = Vec::with_capacity(MAX_FEES);
         for fee in wallet.fees.iter() {
-            let settle_key_share = Scalar::random(&mut rng);
-            let gas_addr_share = Scalar::random(&mut rng);
-            let gas_amount_share = Scalar::random(&mut rng);
-            let percentage_share = Scalar::random(&mut rng);
+            let settle_key_share = next_share!();
+            let gas_addr_share = next_share!();
+            let gas_amount_share = next_share!();
+            let percentage_share = next_share!();
 
             fees1.push(FeeSecretShare {
                 settle_key: settle_key_share,
@@ -192,7 +268,7 @@ mod test_helpers {
         // Secret share the keychain
         let root_key_words = biguint_to_scalar_words(wallet.keys.pk_root.0.clone());
         let root_shares1 = (0..root_key_words.len())
-            .map(|_| Scalar::random(&mut rng))
+            .map(|_| next_share!())
             .collect_vec();
         let root_shares2 = root_key_words
             .iter()
@@ -200,7 +276,7 @@ mod test_helpers {
             .map(|(w1, w2)| w1 - w2)
             .collect_vec();
 
-        let match_share = Scalar::random(&mut rng);
+        let match_share = next_share!();
 
         let keychain1 = PublicKeyChainSecretShare {
             pk_root: NonNativeElementSecretShare {
@@ -223,18 +299,18 @@ mod test_helpers {
             orders: orders1.try_into().unwrap(),
             fees: fees1.try_into().unwrap(),
             keys: keychain1,
-            blinder: blinder_share,
+            blinder: private_blinder_share,
         };
         let mut wallet2 = SizedWalletShare {
             balances: balances2.try_into().unwrap(),
             orders: orders2.try_into().unwrap(),
             fees: fees2.try_into().unwrap(),
             keys: keychain2,
-            blinder: wallet.blinder - blinder_share,
+            blinder: blinder - private_blinder_share,
         };
 
         // Blind the public shares
-        wallet2.blind(wallet.blinder);
+        wallet2.blind(blinder);
 
         (wallet1, wallet2)
     }
@@ -331,6 +407,25 @@ mod test_helpers {
         public_share.unblind(wallet.blinder);
         let recovered_wallet = private_share + public_share;
 
+        assert_eq!(wallet, recovered_wallet);
+    }
+
+    /// Verify that reblinding a wallet creates valid secret shares of the underlying wallet
+    #[test]
+    fn test_reblind_wallet() {
+        let mut wallet = INITIAL_WALLET.clone();
+        let (private_share, _) = create_wallet_shares(&wallet);
+
+        // Reblind the shares
+        let (reblinded_private_shares, mut reblinded_public_shares) =
+            reblind_wallet(private_share, &wallet);
+
+        // Unblind the public shares, recover from shares
+        let recovered_blinder = reblinded_public_shares.blinder + reblinded_private_shares.blinder;
+        reblinded_public_shares.unblind(recovered_blinder);
+        let recovered_wallet = reblinded_private_shares + reblinded_public_shares;
+
+        wallet.blinder = recovered_blinder;
         assert_eq!(wallet, recovered_wallet);
     }
 }
