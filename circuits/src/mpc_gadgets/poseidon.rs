@@ -10,7 +10,7 @@
 //! Their poseidon implementation can be found here:
 //!     https://github.com/arkworks-rs/sponge/blob/master/src/poseidon/mod.rs
 
-use std::cell::Ref;
+use std::{cell::Ref, rc::Rc};
 
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 use ark_ff::PrimeField;
@@ -79,10 +79,10 @@ fn convert_scalars_nested_vec<F: PrimeField>(a: &Vec<Vec<F>>) -> Vec<Vec<Scalar>
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PoseidonSpongeParameters {
     /// The round constants added to the elements in between both full and partial rounds
-    pub round_constants: Vec<Vec<Scalar>>,
+    pub round_constants: Rc<Vec<Vec<Scalar>>>,
     /// The MDS (maximum distance separable) matrix that is used as a mix layer
     /// i.e. after the substitution box is applied and gives \vec{x} we take MDS * \vec{x}
-    pub mds_matrix: Vec<Vec<Scalar>>,
+    pub mds_matrix: Rc<Vec<Vec<Scalar>>>,
     /// The exponent that parameterizes the permutation; i.e. the SBox is of the form
     ///     SBox(x) = x^\alpha (mod p)
     pub alpha: u64,
@@ -136,8 +136,8 @@ impl PoseidonSpongeParameters {
         );
 
         Self {
-            round_constants,
-            mds_matrix,
+            round_constants: Rc::new(round_constants),
+            mds_matrix: Rc::new(mds_matrix),
             alpha,
             rate,
             capacity,
@@ -340,8 +340,8 @@ mod poseidon_tests {
     fn test_params() {
         let default_params = PoseidonSpongeParameters::default();
         PoseidonSpongeParameters::new(
-            default_params.round_constants,
-            default_params.mds_matrix,
+            (*default_params.round_constants).clone(),
+            (*default_params.mds_matrix).clone(),
             default_params.alpha,
             default_params.rate,
             default_params.capacity,
