@@ -109,14 +109,14 @@ where
         // -- Authorization -- //
 
         // Recover the old wallet
-        let mut unblinded_public_shares = witness.original_wallet_public_shares.clone();
-        unblinded_public_shares.unblind(recovered_old_blinder);
-        let old_wallet = witness.original_wallet_private_shares.clone() + unblinded_public_shares;
+        let recovered_public_key = witness.original_wallet_private_shares.keys.pk_match.clone()
+            + witness.original_wallet_public_shares.keys.pk_match.clone()
+            - recovered_old_blinder;
 
         // Check that the hash of `sk_match` is the wallet's `pk_match`
         let poseidon_params = PoseidonSpongeParameters::default();
         let mut hasher = PoseidonHashGadget::new(poseidon_params);
-        hasher.hash(&[witness.sk_match.into()], old_wallet.keys.pk_match, cs)?;
+        hasher.hash(&[witness.sk_match.into()], recovered_public_key, cs)?;
 
         // -- Reblind Operation -- //
 
@@ -152,7 +152,7 @@ where
         reblinded_public_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
-        // The seeds to the `blinder` CSPRNG
+        // Clone values out before consuming share ownership when serializing below
         let old_private_blinder_share = old_private_shares.blinder.clone();
         let old_blinder = old_private_shares.blinder.clone() + old_public_shares.blinder.clone();
 
@@ -225,8 +225,7 @@ where
         Ok(())
     }
 
-    /// Samples values from a chained Poseidon hash CSPRNG, seeded with the given
-    /// input
+    /// Samples values from a chained Poseidon hash CSPRNG, seeded with the given input
     fn sample_csprng<L, CS>(
         seed: L,
         num_vals: usize,
@@ -573,8 +572,11 @@ where
 
 #[cfg(test)]
 mod test {
+    #![allow(non_snake_case)]
+    use curve25519_dalek::scalar::Scalar;
     use merlin::Transcript;
     use mpc_bulletproof::{r1cs::Prover, PedersenGens};
+    use rand::{thread_rng, Rng};
     use rand_core::OsRng;
 
     use crate::{
@@ -582,7 +584,7 @@ mod test {
         types::keychain::SecretIdentificationKey,
         zk_circuits::test_helpers::{
             create_multi_opening, create_wallet_shares, reblind_wallet, SizedWallet,
-            INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS, PRIVATE_KEYS,
+            SizedWalletShare, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS, PRIVATE_KEYS,
         },
         CommitPublic, CommitWitness,
     };
@@ -618,13 +620,13 @@ mod test {
     }
 
     /// Construct a witness and statement for `VALID REBLIND` from a given wallet
-    fn construct_witness_statement(wallet: SizedWallet) -> (SizedWitness, ValidReblindStatement) {
+    fn construct_witness_statement(wallet: &SizedWallet) -> (SizedWitness, ValidReblindStatement) {
         let mut rng = OsRng {};
 
         // Build shares of the original wallet, then reblind it
-        let (old_wallet_private_shares, old_wallet_public_shares) = create_wallet_shares(&wallet);
+        let (old_wallet_private_shares, old_wallet_public_shares) = create_wallet_shares(wallet);
         let (reblinded_private_shares, reblinded_public_shares) =
-            reblind_wallet(old_wallet_private_shares.clone(), &wallet);
+            reblind_wallet(old_wallet_private_shares.clone(), wallet);
 
         // Create Merkle openings for the old shares
         let old_private_commitment =
@@ -668,17 +670,232 @@ mod test {
         (witness, statement)
     }
 
-    // --------------
-    // | Test Cases |
-    // --------------
+    /// Asserts that a set of secret shares is a valid reblinding of a wallet
+    ///
+    /// This is useful for testing that malicious modifications to the wallet's blinding have
+    /// left the wallet unaffected, for isolating failure cases
+    fn assert_valid_reblinding(
+        private_shares: SizedWalletShare,
+        mut public_shares: SizedWalletShare,
+        wallet: &SizedWallet,
+    ) {
+        // This boils down to checking equality on the recovered wallet and the original
+        // wallet except for the wallet blinder, so we clobber that field to be trivially
+        // equal between the wallets
+        let recovered_blinder = private_shares.blinder + public_shares.blinder;
+        public_shares.unblind(recovered_blinder);
+        let mut recovered_wallet = public_shares + private_shares;
+
+        recovered_wallet.blinder = wallet.blinder;
+        assert!(wallet.eq(&recovered_wallet));
+    }
+
+    // -------------------------
+    // | Reblinding Test Cases |
+    // -------------------------
 
     /// Tests a valid reblinding of the original wallet
     #[test]
     fn test_valid_reblind() {
         // Construct the witness and statement
         let wallet = INITIAL_WALLET.clone();
-        let (witness, statement) = construct_witness_statement(wallet);
+        let (witness, statement) = construct_witness_statement(&wallet);
 
         assert!(constraints_satisfied(witness, statement))
+    }
+
+    /// Tests an invalid reblinding, i.e. a secret share that was sampled incorrectly
+    #[test]
+    fn test_invalid_reblind__invalid_secret_share() {
+        // Construct the witness and statement
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, mut statement) = construct_witness_statement(&wallet);
+
+        // Choose a random index in the wallet and alter the secret shares such that it
+        // remains a valid blinding, but an incorrectly sampled one
+        let mut rng = thread_rng();
+        let mut private_shares_serialized: Vec<Scalar> =
+            witness.reblinded_wallet_private_shares.into();
+        let mut public_shares_serialized: Vec<Scalar> =
+            witness.reblinded_wallet_public_shares.into();
+
+        let random_index = rng.gen_range(0..private_shares_serialized.len());
+        private_shares_serialized[random_index] += Scalar::one();
+        public_shares_serialized[random_index] -= Scalar::one();
+
+        witness.reblinded_wallet_private_shares = private_shares_serialized.into();
+        witness.reblinded_wallet_public_shares = public_shares_serialized.into();
+        statement.reblinded_private_share_commitment =
+            compute_wallet_share_commitment(witness.reblinded_wallet_private_shares.clone());
+
+        // Verify that the reblinding is a valid secret sharing
+        assert_valid_reblinding(
+            witness.reblinded_wallet_private_shares.clone(),
+            witness.reblinded_wallet_public_shares.clone(),
+            &wallet,
+        );
+
+        // Verify that the constraints are not satisfied on this statement, witness pair
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Tests an invalidly re-sampled wallet blinder
+    #[test]
+    fn test_invalid_reblind__invalid_wallet_blinder() {
+        // Construct the witness and statement
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, mut statement) = construct_witness_statement(&wallet);
+
+        // Reblind the wallet with a new, incorrect blinder
+        let recovered_blinder = witness.reblinded_wallet_private_shares.blinder
+            + witness.reblinded_wallet_public_shares.blinder;
+
+        let mut rng = OsRng {};
+        let new_blinder = Scalar::random(&mut rng);
+        let new_blinder_private_share = Scalar::random(&mut rng);
+
+        witness
+            .reblinded_wallet_public_shares
+            .unblind(recovered_blinder);
+        witness.reblinded_wallet_public_shares.blind(new_blinder);
+        witness.reblinded_wallet_public_shares.blinder = new_blinder - new_blinder_private_share;
+        witness.reblinded_wallet_private_shares.blinder = new_blinder_private_share;
+        statement.reblinded_private_share_commitment =
+            compute_wallet_share_commitment(witness.reblinded_wallet_private_shares.clone());
+
+        assert_valid_reblinding(
+            witness.reblinded_wallet_private_shares.clone(),
+            witness.reblinded_wallet_public_shares.clone(),
+            &wallet,
+        );
+
+        // Verify that the constraints are not satisfied
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Tests a case in which the prover tries to modify a wallet element
+    /// in the reblinding by modifying a private secret share
+    #[test]
+    fn test_invalid_reblind__wallet_private_value_modified() {
+        // Construct the witness and statement
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, mut statement) = construct_witness_statement(&wallet);
+
+        // Prover attempt to increase the balance of one of the wallet's mints
+        witness.reblinded_wallet_private_shares.balances[0].amount += Scalar::one();
+        statement.reblinded_private_share_commitment =
+            compute_wallet_share_commitment(witness.reblinded_wallet_private_shares.clone());
+
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Tests the case in which the prover tries to modify a wallet element
+    /// in the reblinding by modifying a public secret share
+    #[test]
+    fn test_invalid_reblind__wallet_public_value_modified() {
+        // Construct the witness and statement
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, mut statement) = construct_witness_statement(&wallet);
+
+        // Prover attempt to increase the balance of one of the wallet's mints
+        witness.reblinded_wallet_public_shares.balances[0].amount += Scalar::one();
+        statement.reblinded_private_share_commitment =
+            compute_wallet_share_commitment(witness.reblinded_wallet_private_shares.clone());
+
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    // ----------------------------
+    // | Authorization Test Cases |
+    // ----------------------------
+
+    /// Tests the case in which a prover does not know `sk_match`
+    #[test]
+    fn test_invalid_key() {
+        // Construct the witness and statement
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, statement) = construct_witness_statement(&wallet);
+
+        // Modify the key to emulate an incorrectly specified key
+        witness.sk_match.0 += Scalar::one();
+
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    // -----------------------------
+    // | State Validity Test Cases |
+    // -----------------------------
+
+    /// Tests an invalid Merkle proof
+    #[test]
+    fn test_invalid_merkle_opening() {
+        // Construct the witness and statement
+        let wallet = INITIAL_WALLET.clone();
+        let (original_witness, original_statement) = construct_witness_statement(&wallet);
+
+        let mut rng = thread_rng();
+
+        // Invalid private share opening
+        let mut witness = original_witness.clone();
+        let statement = original_statement.clone();
+
+        let random_index = rng.gen_range(0..witness.private_share_opening.elems.len());
+        witness.private_share_opening.elems[random_index] = Scalar::random(&mut OsRng {});
+
+        assert!(!constraints_satisfied(witness, statement));
+
+        // Invalid public share opening
+        let mut witness = original_witness.clone();
+        let statement = original_statement.clone();
+
+        let random_index = rng.gen_range(0..witness.private_share_opening.elems.len());
+        witness.public_share_opening.elems[random_index] = Scalar::random(&mut OsRng {});
+
+        assert!(!constraints_satisfied(witness, statement));
+
+        // Invalid Merkle root
+        let witness = original_witness;
+        let mut statement = original_statement;
+
+        statement.merkle_root = Scalar::random(&mut OsRng {});
+
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Tests an invalid nullifier given as a public variable
+    #[test]
+    fn test_invalid_nullifier() {
+        // Construct the witness and statement
+        let wallet = INITIAL_WALLET.clone();
+        let (original_witness, original_statement) = construct_witness_statement(&wallet);
+
+        let mut rng = OsRng {};
+
+        // Invalid private shares nullifier
+        let witness = original_witness.clone();
+        let mut statement = original_statement.clone();
+        statement.original_private_share_nullifier = Scalar::random(&mut rng);
+
+        assert!(!constraints_satisfied(witness, statement));
+
+        // Invalid public shares nullifier
+        let witness = original_witness;
+        let mut statement = original_statement;
+        statement.original_public_share_nullifier = Scalar::random(&mut rng);
+
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Tests the case in which the prover uses an invalid private share commitment
+    #[test]
+    fn test_invalid_commitment() {
+        // Construct the witness and statement
+        let wallet = INITIAL_WALLET.clone();
+        let (witness, mut statement) = construct_witness_statement(&wallet);
+
+        let mut rng = OsRng {};
+        statement.reblinded_private_share_commitment = Scalar::random(&mut rng);
+
+        assert!(!constraints_satisfied(witness, statement));
     }
 }
