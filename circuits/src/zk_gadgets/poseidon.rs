@@ -72,6 +72,7 @@ impl PoseidonHashGadget {
         self.state = (0..self.params.capacity + self.params.rate)
             .map(|_| LinearCombination::from(Scalar::zero()))
             .collect::<Vec<_>>();
+        self.in_squeeze_state = false;
     }
 
     /// Hashes the given input and constraints the result to equal the expected output
