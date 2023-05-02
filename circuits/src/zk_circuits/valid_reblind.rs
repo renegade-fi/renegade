@@ -50,7 +50,7 @@ where
     /// Apply the constraints of `VALID REBLIND` to the given constraint system
     pub fn circuit<CS: RandomizableConstraintSystem>(
         statement: ValidReblindStatementVar,
-        mut witness: ValidReblindWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        witness: ValidReblindWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
         // -- State Validity -- //
@@ -69,7 +69,7 @@ where
 
         // Verify the opening of the old wallet's public secret shares to the Merkle root
         let old_public_shares_comm = WalletShareCommitGadget::compute_commitment(
-            &witness.original_wallet_private_shares,
+            &witness.original_wallet_public_shares,
             cs,
         )?;
         PoseidonMerkleHashGadget::compute_and_constrain_root_prehashed(
@@ -109,11 +109,9 @@ where
         // -- Authorization -- //
 
         // Recover the old wallet
-        witness
-            .original_wallet_public_shares
-            .unblind(recovered_old_blinder);
-        let old_wallet = witness.original_wallet_private_shares.clone()
-            + witness.original_wallet_public_shares.clone();
+        let mut unblinded_public_shares = witness.original_wallet_public_shares.clone();
+        unblinded_public_shares.unblind(recovered_old_blinder);
+        let old_wallet = witness.original_wallet_private_shares.clone() + unblinded_public_shares;
 
         // Check that the hash of `sk_match` is the wallet's `pk_match`
         let poseidon_params = PoseidonSpongeParameters::default();
@@ -172,8 +170,8 @@ where
         // Sample the wallet blinder and its public share from the blinder CSPRNG
         let mut blinder_samples =
             Self::sample_csprng(old_private_blinder_share, 2 /* num_vals */, cs)?;
-        let new_blinder = blinder_samples.pop().unwrap();
-        let new_blinder_private_share = blinder_samples.pop().unwrap();
+        let new_blinder = blinder_samples.remove(0);
+        let new_blinder_private_share = blinder_samples.remove(0);
 
         // Sample secret shares for individual wallet elements, we sample for n - 1 shares because
         // the wallet serialization includes the wallet blinder, which was resampled separately in
@@ -566,5 +564,121 @@ where
         verifier
             .verify(&proof, &bp_gens)
             .map_err(VerifierError::R1CS)
+    }
+}
+
+// ---------
+// | Tests |
+// ---------
+
+#[cfg(test)]
+mod test {
+    use merlin::Transcript;
+    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
+    use rand_core::OsRng;
+
+    use crate::{
+        native_helpers::{compute_wallet_share_commitment, compute_wallet_share_nullifier},
+        types::keychain::SecretIdentificationKey,
+        zk_circuits::test_helpers::{
+            create_multi_opening, create_wallet_shares, reblind_wallet, SizedWallet,
+            INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS, PRIVATE_KEYS,
+        },
+        CommitPublic, CommitWitness,
+    };
+
+    use super::{ValidReblind, ValidReblindStatement, ValidReblindWitness};
+
+    /// The height of the Merkle tree used for testing
+    const MERKLE_HEIGHT: usize = 3;
+
+    /// A witness type with default size parameters attached
+    type SizedWitness = ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Return true if the given witness and statement are in the VALID REBLIND relation
+    fn constraints_satisfied(witness: SizedWitness, statement: ValidReblindStatement) -> bool {
+        // Build a constraint system
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        // Allocate the witness and statement in the constraint system
+        let mut rng = OsRng {};
+        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
+
+        // Apply the constraints
+        ValidReblind::circuit(statement_var, witness_var, &mut prover).unwrap();
+
+        prover.constraints_satisfied()
+    }
+
+    /// Construct a witness and statement for `VALID REBLIND` from a given wallet
+    fn construct_witness_statement(wallet: SizedWallet) -> (SizedWitness, ValidReblindStatement) {
+        let mut rng = OsRng {};
+
+        // Build shares of the original wallet, then reblind it
+        let (old_wallet_private_shares, old_wallet_public_shares) = create_wallet_shares(&wallet);
+        let (reblinded_private_shares, reblinded_public_shares) =
+            reblind_wallet(old_wallet_private_shares.clone(), &wallet);
+
+        // Create Merkle openings for the old shares
+        let old_private_commitment =
+            compute_wallet_share_commitment(old_wallet_private_shares.clone());
+        let old_public_commitment =
+            compute_wallet_share_commitment(old_wallet_public_shares.clone());
+
+        let (merkle_root, mut openings) = create_multi_opening(
+            &[old_private_commitment, old_public_commitment],
+            MERKLE_HEIGHT,
+            &mut rng,
+        );
+
+        // Compute nullifiers for the old shares
+        let old_private_nullifier =
+            compute_wallet_share_nullifier(old_private_commitment, wallet.blinder);
+        let old_public_nullifier =
+            compute_wallet_share_nullifier(old_public_commitment, wallet.blinder);
+
+        // Compute a commitment to the new private share
+        let new_private_commitment =
+            compute_wallet_share_commitment(reblinded_private_shares.clone());
+
+        let witness = SizedWitness {
+            original_wallet_private_shares: old_wallet_private_shares,
+            original_wallet_public_shares: old_wallet_public_shares,
+            reblinded_wallet_private_shares: reblinded_private_shares,
+            reblinded_wallet_public_shares: reblinded_public_shares,
+            private_share_opening: openings.remove(0),
+            public_share_opening: openings.remove(0),
+            sk_match: SecretIdentificationKey(PRIVATE_KEYS[1]),
+        };
+
+        let statement = ValidReblindStatement {
+            original_private_share_nullifier: old_private_nullifier,
+            original_public_share_nullifier: old_public_nullifier,
+            reblinded_private_share_commitment: new_private_commitment,
+            merkle_root,
+        };
+
+        (witness, statement)
+    }
+
+    // --------------
+    // | Test Cases |
+    // --------------
+
+    /// Tests a valid reblinding of the original wallet
+    #[test]
+    fn test_valid_reblind() {
+        // Construct the witness and statement
+        let wallet = INITIAL_WALLET.clone();
+        let (witness, statement) = construct_witness_statement(wallet);
+
+        assert!(constraints_satisfied(witness, statement))
     }
 }
