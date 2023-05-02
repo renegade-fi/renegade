@@ -68,7 +68,6 @@ impl PoseidonHashGadget {
 
     /// Reset the internal state of the hasher
     pub fn reset_state(&mut self) {
-        // Initialize the state as all zeros
         self.state = (0..self.params.capacity + self.params.rate)
             .map(|_| LinearCombination::from(Scalar::zero()))
             .collect::<Vec<_>>();
