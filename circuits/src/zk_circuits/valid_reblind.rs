@@ -5,13 +5,15 @@
 
 use curve25519_dalek::ristretto::CompressedRistretto;
 use mpc_bulletproof::{
-    r1cs::{RandomizableConstraintSystem, Variable, Verifier},
+    r1cs::{Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
     r1cs_mpc::R1CSError,
+    BulletproofGens,
 };
-use rand_core::{CryptoRng, RngCore};
+use rand_core::{CryptoRng, OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    errors::{ProverError, VerifierError},
     types::{
         keychain::SecretIdentificationKey,
         wallet::{
@@ -20,7 +22,7 @@ use crate::{
         },
     },
     zk_gadgets::merkle::{MerkleOpening, MerkleOpeningCommitment, MerkleOpeningVar, MerkleRoot},
-    CommitPublic, CommitVerifier, CommitWitness,
+    CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit,
 };
 
 // ----------------------
@@ -287,5 +289,59 @@ impl CommitPublic for ValidReblindStatement {
             reblinded_private_share_commitment: private_share_commitment_var,
             merkle_root: merkle_root_var,
         })
+    }
+}
+
+// ---------------------
+// | Prove Verify Flow |
+// ---------------------
+
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> SingleProverCircuit
+    for ValidReblind<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+{
+    type Witness = ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type WitnessCommitment = ValidReblindWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type Statement = ValidReblindStatement;
+
+    const BP_GENS_CAPACITY: usize = 1024;
+
+    fn prove(
+        witness: Self::Witness,
+        statement: Self::Statement,
+        mut prover: Prover,
+    ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
+        // Commit to the witness and statement
+        let mut rng = OsRng {};
+        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
+
+        // Apply the constraints
+        Self::circuit(statement_var, witness_var, &mut prover).map_err(ProverError::R1CS)?;
+
+        // Prove the circuit
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
+
+        Ok((witness_comm, proof))
+    }
+
+    fn verify(
+        witness_commitment: Self::WitnessCommitment,
+        statement: Self::Statement,
+        proof: R1CSProof,
+        mut verifier: Verifier,
+    ) -> Result<(), VerifierError> {
+        // Commit to the witness and statement
+        let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
+        let statement_var = statement.commit_public(&mut verifier).unwrap();
+
+        // Apply the constraints
+        Self::circuit(statement_var, witness_var, &mut verifier).map_err(VerifierError::R1CS)?;
+
+        // Verify the proof
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        verifier
+            .verify(&proof, &bp_gens)
+            .map_err(VerifierError::R1CS)
     }
 }
