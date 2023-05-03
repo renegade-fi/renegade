@@ -177,6 +177,25 @@ mod test_helpers {
         )
     }
 
+    /// Construct public shares of a wallet given the private shares and blinder
+    ///
+    /// The return type is a tuple containing the private and public shares. Note
+    /// that the private shares returned are exactly those passed in
+    pub(crate) fn create_wallet_shares_from_private(
+        wallet: &SizedWallet,
+        private_shares: &SizedWalletShare,
+        blinder: Scalar,
+    ) -> (SizedWalletShare, SizedWalletShare) {
+        // Serialize the wallet's private shares and use this as the secret share stream
+        let private_shares_ser: Vec<Scalar> = private_shares.clone().into();
+        create_wallet_shares_with_randomness(
+            wallet,
+            blinder,
+            private_shares.blinder,
+            private_shares_ser,
+        )
+    }
+
     /// Create a secret sharing of a wallet given the secret shares and blinders
     fn create_wallet_shares_with_randomness<T>(
         wallet: &SizedWallet,
