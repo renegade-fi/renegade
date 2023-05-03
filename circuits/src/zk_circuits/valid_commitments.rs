@@ -10,16 +10,20 @@
 //! VALID COMMITMENTS is proven once per order in the wallet
 
 use curve25519_dalek::scalar::Scalar;
-use mpc_bulletproof::r1cs::{Prover, RandomizableConstraintSystem, Variable, Verifier};
-use rand_core::{CryptoRng, RngCore};
+use mpc_bulletproof::{
+    r1cs::{Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
+    BulletproofGens,
+};
+use rand_core::{CryptoRng, OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    errors::{ProverError, VerifierError},
     types::{
         balance::{Balance, BalanceVar, CommittedBalance},
         fee::{CommittedFee, Fee, FeeVar},
         order::{CommittedOrder, Order, OrderVar},
-        wallet::{Wallet, WalletSecretShare, WalletSecretShareCommitment, WalletSecretShareVar},
+        wallet::{WalletSecretShare, WalletSecretShareCommitment, WalletSecretShareVar},
     },
     CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit,
 };
@@ -40,7 +44,11 @@ where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
     /// The circuit constraints for VALID COMMITMENTS
-    pub fn circuit<CS: RandomizableConstraintSystem>(cs: &mut CS) {
+    pub fn circuit<CS: RandomizableConstraintSystem>(
+        statement: ValidCommitmentsStatementVar,
+        witness: ValidCommitmentsWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut CS,
+    ) {
         unimplemented!("")
     }
 }
@@ -267,5 +275,61 @@ impl CommitPublic for ValidCommitmentsStatement {
             balance_receive_index: receive_index_var,
             order_index: order_index_var,
         })
+    }
+}
+
+// ---------------------
+// | Prove Verify Flow |
+// ---------------------
+
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> SingleProverCircuit
+    for ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
+    type Statement = ValidCommitmentsStatement;
+    type Witness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type WitnessCommitment = ValidCommitmentsWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+
+    const BP_GENS_CAPACITY: usize = 1024;
+
+    fn prove(
+        witness: Self::Witness,
+        statement: Self::Statement,
+        mut prover: Prover,
+    ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
+        // Commit to the witness and statement
+        let mut rng = OsRng {};
+        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
+
+        // Apply the constraints
+        Self::circuit(statement_var, witness_var, &mut prover);
+
+        // Prove the relation
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
+
+        Ok((witness_comm, proof))
+    }
+
+    fn verify(
+        witness_commitment: Self::WitnessCommitment,
+        statement: Self::Statement,
+        proof: R1CSProof,
+        mut verifier: Verifier,
+    ) -> Result<(), VerifierError> {
+        // Commit to the witness and statement
+        let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
+        let statement_var = statement.commit_public(&mut verifier).unwrap();
+
+        // Apply the constrains
+        Self::circuit(statement_var, witness_var, &mut verifier);
+
+        // Verify the proof
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        verifier
+            .verify(&proof, &bp_gens)
+            .map_err(VerifierError::R1CS)
     }
 }
