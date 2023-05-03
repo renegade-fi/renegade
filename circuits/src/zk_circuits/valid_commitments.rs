@@ -73,8 +73,8 @@ where
 
         // The mint that the wallet will receive if the order is matched
         let mut receive_send_mint = CondSelectVectorGadget::select(
-            &[witness.order.base_mint, witness.order.quote_mint],
             &[witness.order.quote_mint, witness.order.base_mint],
+            &[witness.order.base_mint, witness.order.quote_mint],
             witness.order.side,
             cs,
         );
@@ -561,5 +561,410 @@ where
         verifier
             .verify(&proof, &bp_gens)
             .map_err(VerifierError::R1CS)
+    }
+}
+
+// ---------
+// | Tests |
+// ---------
+
+#[cfg(test)]
+mod test {
+    #![allow(non_snake_case)]
+
+    use curve25519_dalek::scalar::Scalar;
+    use lazy_static::lazy_static;
+    use merlin::Transcript;
+    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
+    use num_bigint::BigUint;
+    use rand::{thread_rng, Rng};
+    use rand_core::OsRng;
+
+    use crate::{
+        types::{
+            balance::{Balance, BalanceSecretShare},
+            fee::FeeSecretShare,
+            order::{OrderSecretShare, OrderSide},
+        },
+        zk_circuits::test_helpers::{
+            create_wallet_shares, create_wallet_shares_from_private, SizedWallet, INITIAL_WALLET,
+            MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+        },
+        CommitPublic, CommitWitness,
+    };
+
+    use super::{ValidCommitments, ValidCommitmentsStatement, ValidCommitmentsWitness};
+
+    // --------------
+    // | Dummy Data |
+    // --------------
+
+    lazy_static! {
+        /// A wallet needing augmentation to receive its side of an order
+        static ref UNAUGMENTED_WALLET: SizedWallet = {
+            // Zero the wallet balance corresponding to the received mint
+            let mut wallet = INITIAL_WALLET.clone();
+            let order_receive_mint = match wallet.orders[0].side {
+                OrderSide::Buy => wallet.orders[0].base_mint.clone(),
+                OrderSide::Sell => wallet.orders[0].quote_mint.clone(),
+            };
+
+            // Find the received mint balance
+            let (balance_ind, _) = find_balance_or_augment(order_receive_mint, &mut wallet, false /* augment */);
+            wallet.balances[balance_ind] = Balance::default();
+            wallet
+        };
+    }
+
+    /// A type alias for the VALID COMMITMENTS witness with size parameters attached
+    type SizedWitness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Construct a valid witness and statement from the given wallet
+    ///
+    /// Simply chooses a random order to match against from the wallet
+    fn create_witness_and_statement(
+        wallet: &SizedWallet,
+    ) -> (SizedWitness, ValidCommitmentsStatement) {
+        let mut rng = thread_rng();
+
+        // Split the wallet into secret shares
+        let (private_shares, public_shares) = create_wallet_shares(wallet);
+
+        // Choose an order and fee to match on
+        let ind_order = 0;
+        let ind_fee = rng.gen_range(0..wallet.fees.len());
+        let order = wallet.orders[ind_order].clone();
+        let fee = wallet.fees[ind_fee].clone();
+
+        // Restructure the mints from the order direction
+        let (received_mint, sent_mint) = if order.side == OrderSide::Buy {
+            (order.base_mint.clone(), order.quote_mint.clone())
+        } else {
+            (order.quote_mint.clone(), order.base_mint.clone())
+        };
+
+        let mut augmented_wallet = wallet.clone();
+
+        // Find appropriate balances in the wallet
+        let (ind_receive, balance_receive) = find_balance_or_augment(
+            received_mint,
+            &mut augmented_wallet,
+            true, /* augment */
+        );
+        let (ind_send, balance_send) =
+            find_balance_or_augment(sent_mint, &mut augmented_wallet, false /* augment */);
+        let (_, balance_fee) = find_balance_or_augment(
+            fee.gas_addr.clone(),
+            &mut augmented_wallet,
+            false, /* augment */
+        );
+
+        // After augmenting, split the augmented wallet into shares, using the same private secret shares
+        // as the original (un-augmented) wallet
+        let (_, augmented_public_shares) =
+            create_wallet_shares_from_private(&augmented_wallet, &private_shares, wallet.blinder);
+
+        let witness = SizedWitness {
+            private_secret_shares: private_shares,
+            public_secret_shares: public_shares,
+            augmented_public_shares,
+            order,
+            balance_send,
+            balance_receive,
+            balance_fee,
+            fee,
+        };
+
+        let statement = ValidCommitmentsStatement {
+            balance_send_index: ind_send,
+            balance_receive_index: ind_receive,
+            order_index: ind_order,
+        };
+
+        (witness, statement)
+    }
+
+    /// Finds a balance for the given order returning the index and the balance itself
+    ///
+    /// If the balance does not exist the `augment` flag lets the method augment the wallet
+    /// with a zero'd balance
+    fn find_balance_or_augment(
+        mint: BigUint,
+        wallet: &mut SizedWallet,
+        augment: bool,
+    ) -> (usize, Balance) {
+        let balance = wallet
+            .balances
+            .iter()
+            .enumerate()
+            .find(|(_ind, balance)| balance.mint == mint);
+
+        match balance {
+            Some((ind, balance)) => (ind, balance.clone()),
+            None => {
+                if !augment {
+                    panic!("balance not found in wallet");
+                }
+
+                // Find a zero'd balance
+                let (zerod_index, _) = wallet
+                    .balances
+                    .iter()
+                    .enumerate()
+                    .find(|(_ind, balance)| balance.mint == BigUint::from(0u8))
+                    .expect("wallet must have zero'd balance to augment");
+
+                wallet.balances[zerod_index] = Balance { mint, amount: 0 };
+                (zerod_index, wallet.balances[zerod_index].clone())
+            }
+        }
+    }
+
+    /// Returns true if the given witness and statement satisfy the relation defined by `VALID COMMITMENTS`
+    fn constraints_satisfied(witness: SizedWitness, statement: ValidCommitmentsStatement) -> bool {
+        let mut rng = OsRng {};
+
+        // Create a constrain system
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        // Commit to the witness and statement
+        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
+
+        // Apply the constraints
+        ValidCommitments::circuit(statement_var, witness_var, &mut prover);
+        prover.constraints_satisfied()
+    }
+
+    // --------------
+    // | Test Cases |
+    // --------------
+
+    /// Tests that the constraints may be satisfied by a valid witness
+    /// and statement pair
+    #[test]
+    fn test_valid_commitments() {
+        let wallet = INITIAL_WALLET.clone();
+        let (witness, statement) = create_witness_and_statement(&wallet);
+
+        assert!(constraints_satisfied(witness, statement))
+    }
+
+    /// Tests the case in which an augmented balance must be added
+    #[test]
+    fn test_valid_commitments__valid_augmentation() {
+        let wallet = UNAUGMENTED_WALLET.clone();
+        let (witness, statement) = create_witness_and_statement(&wallet);
+
+        assert!(constraints_satisfied(witness, statement))
+    }
+
+    /// Tests the case in which the prover attempts to add a non-zero balance to the augmented wallet
+    #[test]
+    fn test_invalid_commitment__augmented_nonzero_balance() {
+        let wallet = UNAUGMENTED_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Prover attempt to augment the wallet with a non-zero balance
+        let augmented_balance_index = statement.balance_receive_index;
+        witness.augmented_public_shares.balances[augmented_balance_index].amount += Scalar::one();
+        witness.balance_receive.amount += 1u64;
+
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Tests the case in which the prover clobbers a non-zero balance to augment the wallet
+    #[test]
+    fn test_invalid_commitment__augmentation_clobbers_balance() {
+        let wallet = UNAUGMENTED_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Reset the original wallet such that the augmented balance was non-zero
+        let augmentation_index = statement.balance_receive_index;
+        witness.public_secret_shares.balances[augmentation_index] = BalanceSecretShare {
+            amount: Scalar::one(),
+            mint: Scalar::one(),
+        };
+
+        assert!(!constraints_satisfied(witness, statement))
+    }
+
+    /// Tests the case in which a prover attempts to modify an order in the augmented wallet
+    #[test]
+    fn test_invalid_commitment__augmentation_modifies_order() {
+        let wallet = UNAUGMENTED_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify an order in the augmented wallet
+        witness.augmented_public_shares.orders[1].amount += Scalar::one();
+
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Test the case in which a prover attempts to modify a fee in the augmented wallet
+    #[test]
+    fn test_invalid_commitment__augmentation_modifies_fee() {
+        let wallet = UNAUGMENTED_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify a fee in the wallet
+        witness.augmented_public_shares.fees[0].gas_token_amount += Scalar::one();
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Test the case in which a prover attempts to modify wallet keys and blinders in augmentation
+    #[test]
+    fn test_invalid_commitment__augmentation_modifies_keys() {
+        let wallet = UNAUGMENTED_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify a key in the wallet
+        witness.augmented_public_shares.keys.pk_match += Scalar::one();
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Test the case in which a prover attempts to modify the blinder in augmentation
+    #[test]
+    fn test_invalid_commitment__augmentation_modifies_blinder() {
+        let wallet = UNAUGMENTED_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify the wallet blinder
+        witness.augmented_public_shares.blinder += Scalar::one();
+        assert!(!constraints_satisfied(witness, statement))
+    }
+
+    /// Test the case in which the index of the send balance is incorrect
+    #[test]
+    fn test_invalid_commitment__invalid_send_index() {
+        let wallet = UNAUGMENTED_WALLET.clone();
+        let (witness, mut statement) = create_witness_and_statement(&wallet);
+
+        // Modify the index of the send balance
+        statement.balance_send_index += 1;
+
+        assert!(!constraints_satisfied(witness, statement))
+    }
+
+    /// Test the case in which the index of the receive balance is incorrect
+    #[test]
+    fn test_invalid_commitment__invalid_receive_index() {
+        let wallet = UNAUGMENTED_WALLET.clone();
+        let (witness, mut statement) = create_witness_and_statement(&wallet);
+
+        // Modify the index of the send balance
+        statement.balance_receive_index += 1;
+
+        assert!(!constraints_satisfied(witness, statement))
+    }
+
+    /// Test the case in which the index of the matched order is incorrect
+    #[test]
+    fn test_invalid_commitment__invalid_order_index() {
+        let wallet = UNAUGMENTED_WALLET.clone();
+        let (witness, mut statement) = create_witness_and_statement(&wallet);
+
+        // Modify the index of the order
+        statement.order_index += 1;
+
+        assert!(!constraints_satisfied(witness, statement))
+    }
+
+    /// Test the case in which a balance is missing from the wallet
+    #[test]
+    fn test_invalid_commitment__send_balance_missing() {
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify the send balance from the order
+        witness.augmented_public_shares.balances[statement.balance_send_index] =
+            BalanceSecretShare {
+                mint: Scalar::zero(),
+                amount: Scalar::zero(),
+            };
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Test the case in which the receive balance is missing from the wallet
+    #[test]
+    fn test_invalid_commitment__receive_balance_missing() {
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify the receive balance from the order
+        witness.augmented_public_shares.balances[statement.balance_receive_index] =
+            BalanceSecretShare {
+                mint: Scalar::zero(),
+                amount: Scalar::zero(),
+            };
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Test the case in which the fee balance is missing from the wallet
+    #[test]
+    fn test_invalid_commitment__fee_balance_missing() {
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify the fee balance from the order; clobber all balances because this
+        // does not come with an index
+        witness
+            .augmented_public_shares
+            .balances
+            .iter_mut()
+            .for_each(|balance| {
+                *balance = BalanceSecretShare {
+                    mint: Scalar::zero(),
+                    amount: Scalar::zero(),
+                }
+            });
+
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Test the case in which the order is missing from the wallet
+    #[test]
+    fn test_invalid_commitment__order_missing() {
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify the order being proved on
+        witness.augmented_public_shares.orders[statement.order_index] = OrderSecretShare {
+            quote_mint: Scalar::zero(),
+            base_mint: Scalar::zero(),
+            side: Scalar::zero(),
+            price: Scalar::zero(),
+            amount: Scalar::zero(),
+            timestamp: Scalar::zero(),
+        };
+        assert!(!constraints_satisfied(witness, statement));
+    }
+
+    /// Test the case in which the fee is missing from the wallet
+    #[test]
+    fn test_invalid_commitment__fee_missing() {
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify the fees, clobber all of them because the fee does not contain an index
+        witness
+            .augmented_public_shares
+            .fees
+            .iter_mut()
+            .for_each(|fee| {
+                *fee = FeeSecretShare {
+                    settle_key: Scalar::zero(),
+                    gas_addr: Scalar::zero(),
+                    gas_token_amount: Scalar::zero(),
+                    percentage_fee: Scalar::zero(),
+                }
+            });
+        assert!(!constraints_satisfied(witness, statement));
     }
 }
