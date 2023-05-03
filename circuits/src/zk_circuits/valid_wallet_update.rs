@@ -30,7 +30,6 @@ use crate::{
         },
     },
     zk_gadgets::{
-        commitments::{NullifierGadget, WalletShareCommitGadget},
         comparators::{
             EqGadget, EqVecGadget, EqZeroGadget, GreaterThanEqZeroGadget, NotEqualGadget,
         },
@@ -42,6 +41,7 @@ use crate::{
         },
         nonnative::NonNativeElementVar,
         select::CondSelectGadget,
+        wallet_operations::{NullifierGadget, WalletShareCommitGadget},
     },
     CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit,
 };

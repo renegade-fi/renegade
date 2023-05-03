@@ -24,7 +24,7 @@ use crate::{
     types::wallet::{
         WalletSecretShare, WalletSecretShareCommitment, WalletSecretShareVar, WalletVar,
     },
-    zk_gadgets::commitments::WalletShareCommitGadget,
+    zk_gadgets::wallet_operations::WalletShareCommitGadget,
     CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit, MAX_BALANCES, MAX_FEES,
     MAX_ORDERS,
 };

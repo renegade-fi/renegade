@@ -11,7 +11,9 @@
 
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
-    r1cs::{Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
+    r1cs::{
+        LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
+    },
     BulletproofGens,
 };
 use rand_core::{CryptoRng, OsRng, RngCore};
@@ -23,7 +25,14 @@ use crate::{
         balance::{Balance, BalanceVar, CommittedBalance},
         fee::{CommittedFee, Fee, FeeVar},
         order::{CommittedOrder, Order, OrderVar},
-        wallet::{WalletSecretShare, WalletSecretShareCommitment, WalletSecretShareVar},
+        wallet::{WalletSecretShare, WalletSecretShareCommitment, WalletSecretShareVar, WalletVar},
+    },
+    zk_gadgets::{
+        comparators::EqGadget,
+        gates::{AndGate, OrGate},
+        nonnative::NonNativeElementVar,
+        select::CondSelectVectorGadget,
+        wallet_operations::{BalanceComparatorGadget, FeeComparatorGadget, OrderComparatorGadget},
     },
     CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit,
 };
@@ -46,10 +55,231 @@ where
     /// The circuit constraints for VALID COMMITMENTS
     pub fn circuit<CS: RandomizableConstraintSystem>(
         statement: ValidCommitmentsStatementVar,
-        witness: ValidCommitmentsWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        mut witness: ValidCommitmentsWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) {
-        unimplemented!("")
+        // Reconstruct the base and augmented wallets
+        let recovered_blinder = witness.private_secret_shares.blinder.clone()
+            + witness.public_secret_shares.blinder.clone();
+        witness
+            .public_secret_shares
+            .unblind(recovered_blinder.clone());
+        witness.augmented_public_shares.unblind(recovered_blinder);
+
+        let base_wallet =
+            witness.private_secret_shares.clone() + witness.public_secret_shares.clone();
+        let augmented_wallet =
+            witness.private_secret_shares.clone() + witness.augmented_public_shares.clone();
+
+        // The mint that the wallet will receive if the order is matched
+        let mut receive_send_mint = CondSelectVectorGadget::select(
+            &[witness.order.base_mint, witness.order.quote_mint],
+            &[witness.order.quote_mint, witness.order.base_mint],
+            witness.order.side,
+            cs,
+        );
+        let receive_mint = receive_send_mint.remove(0);
+        let send_mint = receive_send_mint.remove(0);
+
+        // Verify that the wallets are the same other than a possibly augmented balance of
+        // zero for the received mint of the order. This augmented balance must come in place of
+        // a previous balance that was zero.
+        Self::verify_wallets_equal_with_augmentation(
+            statement.balance_receive_index,
+            receive_mint.clone(),
+            &base_wallet,
+            &augmented_wallet,
+            cs,
+        );
+
+        // Verify that the send balance is at the correct index
+        Self::contains_balance_at_index(
+            statement.balance_send_index,
+            witness.balance_send,
+            &augmented_wallet,
+            cs,
+        );
+        cs.constrain(witness.balance_send.mint - send_mint);
+
+        // Verify that the receive balance is at the correct index
+        Self::contains_balance_at_index(
+            statement.balance_receive_index,
+            witness.balance_receive,
+            &augmented_wallet,
+            cs,
+        );
+        cs.constrain(witness.balance_receive.mint - receive_mint);
+
+        // Verify that the fee balance is in the wallet
+        // TODO: Implement fees properly
+        Self::contains_balance(witness.balance_fee, &augmented_wallet, cs);
+        cs.constrain(witness.balance_fee.mint - witness.fee.gas_addr);
+
+        // Verify that the order is at the correct index
+        Self::contains_order_at_index(statement.order_index, witness.order, &augmented_wallet, cs);
+
+        // Verify that the fee is contained in the wallet
+        Self::contains_fee(witness.fee, &augmented_wallet, cs);
+    }
+
+    /// Verify that two wallets are equal except possibly with a balance augmentation
+    fn verify_wallets_equal_with_augmentation<CS: RandomizableConstraintSystem>(
+        receive_index: Variable,
+        received_mint: LinearCombination,
+        base_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, LinearCombination>,
+        augmented_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, LinearCombination>,
+        cs: &mut CS,
+    ) {
+        // All balances should be the same except possibly the balance at the receive index. We allow
+        // This balance to be zero'd in the base wallet, and have the received mint with zero
+        // balance in the augmented wallet
+        let mut curr_index: LinearCombination = Variable::Zero().into();
+        for (base_balance, augmented_balance) in base_wallet
+            .balances
+            .iter()
+            .zip(augmented_wallet.balances.iter())
+        {
+            // Non-augmented case, balances are equal
+            let balances_eq = BalanceComparatorGadget::compare_eq(
+                base_balance.clone(),
+                augmented_balance.clone(),
+                cs,
+            );
+
+            // Validate a potential augmentation
+            let prev_balance_zero = BalanceComparatorGadget::compare_eq(
+                base_balance.clone(),
+                BalanceVar {
+                    mint: Variable::Zero(),
+                    amount: Variable::Zero(),
+                },
+                cs,
+            );
+            let augmented_balance = BalanceComparatorGadget::compare_eq(
+                augmented_balance.clone(),
+                BalanceVar {
+                    mint: received_mint.clone(),
+                    amount: Variable::Zero().into(),
+                },
+                cs,
+            );
+            let augmentation_index_mask =
+                EqGadget::eq(curr_index.clone(), receive_index.into(), cs);
+
+            // Validate that the balance is either unmodified or augmented from (0, 0) to (receive_mint, 0)
+            let augmented_from_zero = AndGate::multi_and(
+                &[
+                    prev_balance_zero,
+                    augmented_balance,
+                    augmentation_index_mask,
+                ],
+                cs,
+            );
+            let valid_balance = OrGate::or(augmented_from_zero, balances_eq, cs);
+
+            cs.constrain(Variable::One() - valid_balance);
+            curr_index += Variable::One();
+        }
+
+        // All orders should be the same
+        for (base_order, augmented_order) in base_wallet
+            .orders
+            .iter()
+            .zip(augmented_wallet.orders.iter())
+        {
+            OrderComparatorGadget::constrain_eq(base_order.clone(), augmented_order.clone(), cs);
+        }
+
+        // All fees should be the same
+        for (base_fee, augmented_fee) in base_wallet.fees.iter().zip(augmented_wallet.fees.iter()) {
+            FeeComparatorGadget::constrain_eq(base_fee.clone(), augmented_fee.clone(), cs);
+        }
+
+        // Keys should be equal
+        NonNativeElementVar::constrain_equal(
+            &base_wallet.keys.pk_root,
+            &augmented_wallet.keys.pk_root,
+            cs,
+        );
+        cs.constrain(base_wallet.keys.pk_match.clone() - augmented_wallet.keys.pk_match.clone());
+
+        // Blinders should be equal
+        cs.constrain(base_wallet.blinder.clone() - augmented_wallet.blinder.clone());
+    }
+
+    /// Verify that the wallet has the given balance at the specified index
+    fn contains_balance_at_index<CS: RandomizableConstraintSystem>(
+        index: Variable,
+        target_balance: BalanceVar<Variable>,
+        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, LinearCombination>,
+        cs: &mut CS,
+    ) {
+        let mut curr_index: LinearCombination = Variable::Zero().into();
+        let mut balance_found: LinearCombination = Variable::Zero().into();
+        for balance in wallet.balances.iter() {
+            let index_mask = EqGadget::eq(curr_index.clone(), index.into(), cs);
+            let balances_eq =
+                BalanceComparatorGadget::compare_eq(balance.clone(), target_balance, cs);
+
+            let found = AndGate::and(index_mask, balances_eq, cs);
+            balance_found += found;
+            curr_index += Variable::One();
+        }
+
+        cs.constrain(balance_found - Variable::One())
+    }
+
+    /// Verify that the wallet has the given order at the specified index
+    fn contains_order_at_index<CS: RandomizableConstraintSystem>(
+        index: Variable,
+        target_order: OrderVar<Variable>,
+        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, LinearCombination>,
+        cs: &mut CS,
+    ) {
+        let mut curr_index: LinearCombination = Variable::Zero().into();
+        let mut order_found: LinearCombination = Variable::Zero().into();
+        for order in wallet.orders.iter() {
+            let index_mask = EqGadget::eq(curr_index.clone(), index.into(), cs);
+            let orders_eq =
+                OrderComparatorGadget::compare_eq(order.clone(), target_order.clone(), cs);
+
+            let found = AndGate::and(index_mask, orders_eq, cs);
+            order_found += found;
+            curr_index += Variable::One();
+        }
+
+        cs.constrain(order_found - Variable::One())
+    }
+
+    /// Verify that the wallet contains the given balance at an unspecified index
+    fn contains_balance<CS: RandomizableConstraintSystem>(
+        target_balance: BalanceVar<Variable>,
+        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, LinearCombination>,
+        cs: &mut CS,
+    ) {
+        let mut balance_found: LinearCombination = Variable::Zero().into();
+        for balance in wallet.balances.iter() {
+            let balances_eq =
+                BalanceComparatorGadget::compare_eq(balance.clone(), target_balance, cs);
+            balance_found += balances_eq;
+        }
+
+        cs.constrain(balance_found - Variable::One());
+    }
+
+    /// Verify that the wallet contains the given fee at an unspecified index
+    fn contains_fee<CS: RandomizableConstraintSystem>(
+        target_fee: FeeVar<Variable>,
+        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, LinearCombination>,
+        cs: &mut CS,
+    ) {
+        let mut fee_found: LinearCombination = Variable::Zero().into();
+        for fee in wallet.fees.iter() {
+            let fees_eq = FeeComparatorGadget::compare_eq(fee.clone(), target_fee.clone(), cs);
+            fee_found += fees_eq;
+        }
+
+        cs.constrain(fee_found - Variable::One())
     }
 }
 
