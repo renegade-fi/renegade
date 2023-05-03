@@ -26,12 +26,12 @@ use crate::{
         },
     },
     zk_gadgets::{
-        commitments::{NullifierGadget, WalletShareCommitGadget},
         merkle::{
             MerkleOpening, MerkleOpeningCommitment, MerkleOpeningVar, MerkleRoot,
             PoseidonMerkleHashGadget,
         },
         poseidon::PoseidonHashGadget,
+        wallet_operations::{NullifierGadget, WalletShareCommitGadget},
     },
     CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit,
 };
