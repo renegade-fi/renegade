@@ -3,7 +3,9 @@
 
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
-    r1cs::{Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
+    r1cs::{
+        LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
+    },
     BulletproofGens,
 };
 use rand_core::{CryptoRng, OsRng, RngCore};
@@ -14,6 +16,10 @@ use crate::{
     types::{
         r#match::{CommittedMatchResult, LinkableMatchResultCommitment, MatchResultVar},
         wallet::{WalletSecretShare, WalletSecretShareCommitment, WalletSecretShareVar},
+    },
+    zk_gadgets::{
+        comparators::{EqGadget, EqVecGadget},
+        select::CondSelectVectorGadget,
     },
     CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit,
 };
@@ -35,7 +41,194 @@ where
         witness: ValidSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) {
-        unimplemented!()
+        // Select the balances received by each party
+        let mut party0_party1_received = CondSelectVectorGadget::select(
+            &[
+                witness.match_res.base_amount,
+                witness.match_res.quote_amount,
+            ],
+            &[
+                witness.match_res.quote_amount,
+                witness.match_res.base_amount,
+            ],
+            witness.match_res.direction,
+            cs,
+        );
+
+        let party0_received_amount = party0_party1_received.remove(0);
+        let party1_received_amount = party0_party1_received.remove(0);
+
+        // Constrain the wallet updates to party0's shares
+        Self::validate_balance_updates(
+            statement.party0_send_balance_index,
+            party1_received_amount.clone(),
+            statement.party0_receive_balance_index,
+            party0_received_amount.clone(),
+            &witness.party0_public_shares,
+            &statement.party0_modified_shares,
+            cs,
+        );
+
+        Self::validate_order_updates(
+            statement.party0_order_index,
+            witness.match_res.base_amount,
+            &witness.party0_public_shares,
+            &statement.party0_modified_shares,
+            cs,
+        );
+
+        Self::validate_fees_keys_blinder_updates(
+            witness.party0_public_shares,
+            statement.party0_modified_shares,
+            cs,
+        );
+
+        // Constrain the wallet update to party1's shares
+        Self::validate_balance_updates(
+            statement.party1_send_balance_index,
+            party0_received_amount,
+            statement.party1_receive_balance_index,
+            party1_received_amount,
+            &witness.party1_public_shares,
+            &statement.party1_modified_shares,
+            cs,
+        );
+
+        Self::validate_order_updates(
+            statement.party1_order_index,
+            witness.match_res.base_amount,
+            &witness.party1_public_shares,
+            &statement.party1_modified_shares,
+            cs,
+        );
+
+        Self::validate_fees_keys_blinder_updates(
+            witness.party1_public_shares,
+            statement.party1_modified_shares,
+            cs,
+        );
+    }
+
+    /// Verify that the balance updates to a wallet are valid
+    ///
+    /// That is, all balances in the settled wallet are the same as in the pre-settle wallet
+    /// except for the balance sent and the balance received, which have the correct amounts
+    /// applied from the match
+    fn validate_balance_updates<CS: RandomizableConstraintSystem>(
+        send_index: Variable,
+        send_amount: LinearCombination,
+        receive_index: Variable,
+        received_amount: LinearCombination,
+        pre_update_shares: &WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        post_update_shares: &WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut CS,
+    ) {
+        let mut send_term = -send_amount;
+        let mut receive_term: LinearCombination = received_amount;
+
+        let mut curr_index: LinearCombination = Variable::Zero().into();
+        for (pre_update_balance, post_update_balance) in pre_update_shares
+            .balances
+            .clone()
+            .into_iter()
+            .zip(post_update_shares.balances.clone().into_iter())
+        {
+            // Mask the send term
+            let send_term_index_mask = EqGadget::eq(send_index.into(), curr_index.clone(), cs);
+            let (_, new_send_term, curr_send_term) =
+                cs.multiply(send_term_index_mask.into(), send_term);
+            send_term = new_send_term.into();
+
+            // Mask the receive term
+            let receive_term_index_mask =
+                EqGadget::eq(receive_index.into(), curr_index.clone(), cs);
+            let (_, new_receive_term, curr_receive_term) =
+                cs.multiply(receive_term_index_mask.into(), receive_term);
+            receive_term = new_receive_term.into();
+
+            // Add the terms together to get the expected update
+            let expected_balance_amount =
+                pre_update_balance.amount.clone() + curr_send_term + curr_receive_term;
+            let mut expected_balances_shares = pre_update_balance;
+            expected_balances_shares.amount = expected_balance_amount;
+
+            EqVecGadget::constrain_eq_vec(
+                &Into::<Vec<LinearCombination>>::into(expected_balances_shares),
+                &Into::<Vec<LinearCombination>>::into(post_update_balance),
+                cs,
+            );
+
+            // Increment the index
+            curr_index += Variable::One();
+        }
+    }
+
+    /// Verify that order updates to a wallet are valid
+    ///
+    /// The orders should all be equal except that the amount of the matched order
+    /// should be decremented by the amount of the base token swapped
+    fn validate_order_updates<CS: RandomizableConstraintSystem>(
+        order_index: Variable,
+        base_amount_swapped: Variable,
+        pre_update_shares: &WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        post_update_shares: &WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut CS,
+    ) {
+        let mut amount_delta = -base_amount_swapped;
+
+        let mut curr_index: LinearCombination = Variable::Zero().into();
+        for (pre_update_order, post_update_order) in pre_update_shares
+            .orders
+            .clone()
+            .into_iter()
+            .zip(post_update_shares.orders.clone().into_iter())
+        {
+            // Mask with the index
+            let index_mask = EqGadget::eq(order_index.into(), curr_index.clone(), cs);
+            let (_, new_amount_delta, curr_delta_term) =
+                cs.multiply(index_mask.into(), amount_delta);
+            amount_delta = new_amount_delta.into();
+
+            // Constrain the order update to be correct
+            let expected_order_volume = pre_update_order.amount.clone() + curr_delta_term;
+            let mut expected_order_shares = pre_update_order.clone();
+            expected_order_shares.amount = expected_order_volume;
+
+            EqVecGadget::constrain_eq_vec(
+                &Into::<Vec<LinearCombination>>::into(expected_order_shares),
+                &Into::<Vec<LinearCombination>>::into(post_update_order.clone()),
+                cs,
+            );
+
+            // Increment the index
+            curr_index += Variable::One();
+        }
+    }
+
+    /// Validate that fees, keys, and blinders remain the same in the pre and post
+    /// wallet shares
+    fn validate_fees_keys_blinder_updates<CS: RandomizableConstraintSystem>(
+        mut pre_update_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        mut post_update_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut CS,
+    ) {
+        let mut pre_update_share_vec: Vec<LinearCombination> = Vec::new();
+        for fee in pre_update_shares.fees.into_iter() {
+            pre_update_share_vec.append(&mut fee.into());
+        }
+        pre_update_share_vec.append(&mut pre_update_shares.keys.pk_root.words);
+        pre_update_share_vec.push(pre_update_shares.keys.pk_match);
+        pre_update_share_vec.push(pre_update_shares.blinder);
+
+        let mut post_update_share_vec: Vec<LinearCombination> = Vec::new();
+        for fee in post_update_shares.fees.into_iter() {
+            post_update_share_vec.append(&mut fee.into());
+        }
+        post_update_share_vec.append(&mut post_update_shares.keys.pk_root.words);
+        post_update_share_vec.push(post_update_shares.keys.pk_match);
+        post_update_share_vec.push(post_update_shares.blinder);
+
+        EqVecGadget::constrain_eq_vec(&pre_update_share_vec, &post_update_share_vec, cs);
     }
 }
 
