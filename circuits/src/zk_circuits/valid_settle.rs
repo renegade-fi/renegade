@@ -2,16 +2,20 @@
 //! both party's secret shares have been updated properly with the result of the match
 
 use curve25519_dalek::scalar::Scalar;
-use mpc_bulletproof::r1cs::{Prover, RandomizableConstraintSystem, Variable, Verifier};
-use rand_core::{CryptoRng, RngCore};
+use mpc_bulletproof::{
+    r1cs::{Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
+    BulletproofGens,
+};
+use rand_core::{CryptoRng, OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    errors::{ProverError, VerifierError},
     types::{
         r#match::{CommittedMatchResult, LinkableMatchResultCommitment, MatchResultVar},
         wallet::{WalletSecretShare, WalletSecretShareCommitment, WalletSecretShareVar},
     },
-    CommitPublic, CommitVerifier, CommitWitness,
+    CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit,
 };
 
 // ----------------------
@@ -234,5 +238,61 @@ where
             party1_receive_balance_index: party1_receive_index_var,
             party1_order_index: party1_order_index_var,
         })
+    }
+}
+
+// ---------------------
+// | Prove Verify Flow |
+// ---------------------
+
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> SingleProverCircuit
+    for ValidSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
+    type Witness = ValidSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type Statement = ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type WitnessCommitment = ValidSettleWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+
+    const BP_GENS_CAPACITY: usize = 1024;
+
+    fn prove(
+        witness: Self::Witness,
+        statement: Self::Statement,
+        mut prover: Prover,
+    ) -> Result<(Self::WitnessCommitment, R1CSProof), crate::errors::ProverError> {
+        // Commit to the witness and statement
+        let mut rng = OsRng {};
+        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
+
+        // Apply the circuit constraints
+        Self::circuit(statement_var, witness_var, &mut prover);
+
+        // Prove the relation
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
+
+        Ok((witness_comm, proof))
+    }
+
+    fn verify(
+        witness_commitment: Self::WitnessCommitment,
+        statement: Self::Statement,
+        proof: R1CSProof,
+        mut verifier: Verifier,
+    ) -> Result<(), VerifierError> {
+        // Commit to the witness and statement
+        let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
+        let statement_var = statement.commit_public(&mut verifier).unwrap();
+
+        // Apply the circuit constraints
+        Self::circuit(statement_var, witness_var, &mut verifier);
+
+        // Verify the proof
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        verifier
+            .verify(&proof, &bp_gens)
+            .map_err(VerifierError::R1CS)
     }
 }
