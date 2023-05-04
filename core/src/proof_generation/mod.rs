@@ -1,11 +1,8 @@
 //! The proof generation worker handles the core of generating single-prover
 //! proofs for wallet updates
 
-<<<<<<< HEAD
-=======
 use std::sync::Arc;
 
->>>>>>> 11da90a (temp proof-generation)
 use circuits::zk_circuits::{
     valid_commitments::{ValidCommitments, ValidCommitmentsWitness},
     valid_reblind::{ValidReblind, ValidReblindWitness},
@@ -13,8 +10,11 @@ use circuits::zk_circuits::{
     valid_wallet_create::{ValidWalletCreateStatement, ValidWalletCreateWitness},
     valid_wallet_update::{ValidWalletUpdateStatement, ValidWalletUpdateWitness},
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+
+use self::jobs::{ValidCommitmentsBundle, ValidReblindBundle};
 pub mod error;
 pub mod jobs;
 pub mod proof_manager;

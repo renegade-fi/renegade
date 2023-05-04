@@ -5,7 +5,7 @@ use crate::{
     config::RelayerConfig,
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
     gossip_api::heartbeat::HeartbeatMessage,
-    proof_generation::jobs::ValidCommitmentsBundle,
+    proof_generation::OrderValidityProofBundle,
     state::orderbook::NetworkOrder,
     system_bus::SystemBus,
     types::{wallet_topic_name, SystemBusMessage, NETWORK_TOPOLOGY_TOPIC},
@@ -275,14 +275,14 @@ impl RelayerState {
     }
 
     /// Add a validity proof for an order
-    pub async fn add_order_validity_proof(
+    pub async fn add_order_validity_proofs(
         &self,
         order_id: &OrderIdentifier,
-        proof: ValidCommitmentsBundle,
+        validity_proofs: OrderValidityProofBundle,
     ) {
         self.write_order_book()
             .await
-            .update_order_validity_proof(order_id, proof)
+            .update_order_validity_proofs(order_id, validity_proofs)
             .await
     }
 
@@ -312,7 +312,7 @@ impl RelayerState {
 
         for wallet in wallets.into_iter() {
             // Index the wallet
-            let wallet_match_nullifier = wallet.get_match_nullifier();
+            let public_share_nullifier = wallet.get_public_share_nullifier();
             locked_wallet_index.add_wallet(wallet.clone());
 
             // Publish a message to the system bus indicating a wallet update
@@ -334,7 +334,7 @@ impl RelayerState {
                 locked_order_book
                     .add_order(NetworkOrder::new(
                         order_id,
-                        wallet_match_nullifier,
+                        public_share_nullifier,
                         self.local_cluster_id.clone(),
                         true, /* local */
                     ))
