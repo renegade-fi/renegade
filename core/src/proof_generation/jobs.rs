@@ -4,31 +4,24 @@
 //! See the whitepaper https://renegade.fi/whitepaper.pdf for a formal specification
 //! of the types defined here
 
-use circuits::{
-    types::{fee::Fee, keychain::PublicKeyChain},
-    zk_circuits::{
-        valid_commitments::{ValidCommitmentsStatement, ValidCommitmentsWitnessCommitment},
-        valid_match_encryption::{
-            ValidMatchEncryptionStatement, ValidMatchEncryptionWitness,
-            ValidMatchEncryptionWitnessCommitment,
-        },
-        valid_match_mpc::{ValidMatchCommitment, ValidMatchMpcStatement},
-        valid_settle::{ValidSettleStatement, ValidSettleWitnessCommitment},
-        valid_wallet_create::{ValidWalletCreateCommitment, ValidWalletCreateStatement},
-        valid_wallet_update::{ValidWalletUpdateStatement, ValidWalletUpdateWitnessCommitment},
-    },
+use circuits::zk_circuits::{
+    valid_commitments::{ValidCommitmentsStatement, ValidCommitmentsWitnessCommitment},
+    valid_match_mpc::{ValidMatchCommitment, ValidMatchMpcStatement},
+    valid_reblind::{ValidReblindStatement, ValidReblindWitnessCommitment},
+    valid_settle::{ValidSettleStatement, ValidSettleWitnessCommitment},
+    valid_wallet_create::{ValidWalletCreateStatement, ValidWalletCreateWitnessCommitment},
+    valid_wallet_update::{ValidWalletUpdateStatement, ValidWalletUpdateWitnessCommitment},
 };
-use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::r1cs::R1CSProof;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot::Sender;
 
-use crate::{
-    types::{
-        SizedValidCommitmentsWitness, SizedValidSettleStatement, SizedValidSettleWitness,
-        SizedValidWalletUpdateWitness,
-    },
-    MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+use crate::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+
+use super::{
+    SizedValidCommitmentsWitness, SizedValidReblindWitness, SizedValidSettleStatement,
+    SizedValidSettleWitness, SizedValidWalletCreateStatement, SizedValidWalletCreateWitness,
+    SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
 
 // ----------------------
@@ -37,14 +30,63 @@ use crate::{
 
 /// The response type for a request to generate a proof of `VALID WALLET CREATE`
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidWalletCreateBundle {
+pub struct GenericValidWalletCreateBundle<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+    const MAX_FEES: usize,
+> {
     /// A commitment to the witness type for `VALID WALLET CREATE`
-    pub commitment: ValidWalletCreateCommitment<MAX_FEES>,
+    pub commitment: ValidWalletCreateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The statement (public variables) used to create the proof
-    pub statement: ValidWalletCreateStatement,
+    pub statement: ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The proof itself
     pub proof: R1CSProof,
 }
+
+/// A type alias that specifies default generics for `GenericValidWalletCreateBundle`
+pub type ValidWalletCreateBundle =
+    GenericValidWalletCreateBundle<MAX_BALANCES, MAX_BALANCES, MAX_FEES>;
+
+/// The response type for a request to generate a proof of `VALID WALLET UPDATE`
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenericValidWalletUpdateBundle<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+    const MAX_FEES: usize,
+> where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
+    /// A commitment to the witness type of `VALID WALLET UPDATE`
+    pub commitment: ValidWalletUpdateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    /// The statement (public variables) used to prove `VALID WALLET UPDATE`
+    pub statement: ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    /// The proof itself
+    pub proof: R1CSProof,
+}
+
+/// A type alias that specifies the default generics for `GenericValidWalletUpdateBundle`
+pub type ValidWalletUpdateBundle =
+    GenericValidWalletUpdateBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+
+/// The response type for a request to generate a proof of `VALID REBLIND`
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenericValidReblindBundle<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+    const MAX_FEES: usize,
+> where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
+    /// A commitment to the witness type of `VALID REBLIND`
+    pub commitment: ValidReblindWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    /// The statement (public variables) used to prover `VALID REBLIND`
+    pub statement: ValidReblindStatement,
+    /// The proof itself
+    pub proof: R1CSProof,
+}
+
+/// A type alias that specifies default generics for `GenericValidReblindBundle`
+pub type ValidReblindBundle = GenericValidReblindBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 /// The response type for a request to generate a proof of `VALID COMMITMENTS`
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -77,38 +119,6 @@ pub struct ValidMatchMpcBundle {
     pub proof: R1CSProof,
 }
 
-/// The response type for a request to generate a proof of `VALID WALLET UPDATE`
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenericValidWalletUpdateBundle<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-{
-    /// A commitment to the witness type of `VALID WALLET UPDATE`
-    pub commitment: ValidWalletUpdateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The statement (public variables) used to prove `VALID WALLET UPDATE`
-    pub statement: ValidWalletUpdateStatement,
-    /// The proof itself
-    pub proof: R1CSProof,
-}
-
-/// A type alias that specifies the default generics for `GenericValidWalletUpdateBundle`
-pub type ValidWalletUpdateBundle =
-    GenericValidWalletUpdateBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-
-/// The response type for a request to generate a proof of `VALID MATCH ENCRYPTION`
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidMatchEncryptBundle {
-    /// A commitment to the witness type of `VALID MATCH ENCRYPTION`
-    pub commitment: ValidMatchEncryptionWitnessCommitment,
-    /// The statement (public variables) used to prove `VALID MATCH ENCRYPTION`
-    pub statement: ValidMatchEncryptionStatement,
-    /// The proof itself
-    pub proof: R1CSProof,
-}
-
 /// The response type for a request to generate a proof of `VALID SETTLE`
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GenericValidSettleBundle<
@@ -136,12 +146,12 @@ pub type ValidSettleBundle = GenericValidSettleBundle<MAX_BALANCES, MAX_ORDERS, 
 pub enum ProofBundle {
     /// A witness commitment, statement, and proof of `VALID WALLET CREATE`
     ValidWalletCreate(ValidWalletCreateBundle),
+    /// A witness commitment, statement, and proof of `VALID REBLIND`
+    ValidReblind(ValidReblindBundle),
     /// A witness commitment, statement, and proof of `VALID COMMITMENTS`
     ValidCommitments(ValidCommitmentsBundle),
     /// A witness commitment, statement, and proof of `VALID WALLET UPDATE`
     ValidWalletUpdate(ValidWalletUpdateBundle),
-    /// A witness commitment, statement, and proof of `VALID MATCH ENCRYPTION`
-    ValidMatchEncryption(ValidMatchEncryptBundle),
     /// A witness commitment, statement, and proof of `VALID SETTLE`
     ValidSettle(ValidSettleBundle),
 }
@@ -183,19 +193,6 @@ impl From<ProofBundle> for ValidWalletUpdateBundle {
     }
 }
 
-impl From<ProofBundle> for ValidMatchEncryptBundle {
-    fn from(bundle: ProofBundle) -> Self {
-        if let ProofBundle::ValidMatchEncryption(b) = bundle {
-            b
-        } else {
-            panic!(
-                "Proof bundle is not of type ValidMatchEncrypt: {:?}",
-                bundle
-            )
-        }
-    }
-}
-
 impl From<ProofBundle> for ValidSettleBundle {
     fn from(bundle: ProofBundle) -> Self {
         if let ProofBundle::ValidSettle(b) = bundle {
@@ -226,14 +223,20 @@ pub enum ProofJob {
     /// A request has to create a new wallet
     /// The proof generation module should generate a proof of
     /// `VALID WALLET CREATE`
-    /// TODO: Remove this lint allowance
     ValidWalletCreate {
-        /// The fees to initialize the wallet with
-        fees: Vec<Fee>,
-        /// The keychain to use in the wallet
-        keys: PublicKeyChain,
-        /// The wallet randomness to seed commitments and nullifiers with
-        randomness: Scalar,
+        /// The witness used to prove `VALID WALLET CREATE`
+        witness: SizedValidWalletCreateWitness,
+        /// The statement used to prove `VALID WALLET CREATE`
+        statement: SizedValidWalletCreateStatement,
+    },
+    /// A request to create a proof of `VALID REBLIND` for a wallet. This is used to
+    /// reblind a wallet so that it may be settled by a counterparty without leaking
+    /// identifying information
+    ValidReblind {
+        /// The witness used in the proof of `VALID REBLIND`
+        witness: SizedValidReblindWitness,
+        /// The statement (public variables) to use in the proof of `VALID REBLIND`
+        statement: ValidReblindStatement,
     },
     /// A request to create a proof of `VALID COMMITMENTS` for an order, balance, fee
     /// tuple. This will be matched against in the handshake process
@@ -250,18 +253,7 @@ pub enum ProofJob {
         /// The witness to the statement of `VALID WALLET UPDATE`
         witness: SizedValidWalletUpdateWitness,
         /// The statement (public variables) parameterizing the proof
-        statement: ValidWalletUpdateStatement,
-    },
-    /// A request to create a proof of `VALID MATCH ENCRYPTION` for a match result
-    ///
-    /// The statement and witness types are complicated enough for `VALID MATCH ENCRYPTION`
-    /// that we don't bother constructing them in the proof manager; this responsibility is
-    /// passed to the caller; so the job definition directly stores the witness and statement
-    ValidMatchEncrypt {
-        /// The witness to use in the proof of `VALID MATCH ENCRYPTION`
-        witness: ValidMatchEncryptionWitness,
-        /// The statement (public variables) to use in the proof of `VALID MATCH ENCRYPTION`
-        statement: ValidMatchEncryptionStatement,
+        statement: SizedValidWalletUpdateStatement,
     },
     /// A request to create a proof of `VALID SETTLE` for a note applied ot a wallet
     ValidSettle {

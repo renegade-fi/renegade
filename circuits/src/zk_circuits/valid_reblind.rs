@@ -310,7 +310,7 @@ pub struct ValidReblindWitnessVar<
 
 /// A commitment to the witness type for VALID REBLIND,
 /// allocated in a constraint system
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidReblindWitnessCommitment<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
