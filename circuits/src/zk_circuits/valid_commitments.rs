@@ -288,7 +288,7 @@ where
 // ---------------------------
 
 /// The witness type for `VALID COMMITMENTS`
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidCommitmentsWitness<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
