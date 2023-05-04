@@ -476,7 +476,7 @@ pub struct ValidWalletUpdateWitnessVar<
 
 /// A commitment to the witness type of `VALID WALLET UPDATE` that has been
 /// allocated in a constraint system
-#[derive(Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidWalletUpdateWitnessCommitment<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,

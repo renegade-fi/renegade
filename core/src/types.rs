@@ -1,10 +1,5 @@
 //! Groups type definitions relevant to all modules and at the top level
 
-use circuits::zk_circuits::{
-    valid_commitments::{ValidCommitments, ValidCommitmentsWitness},
-    valid_settle::{ValidSettleStatement, ValidSettleWitness},
-    valid_wallet_update::ValidWalletUpdateWitness,
-};
 use serde::Serialize;
 
 use crate::{
@@ -12,24 +7,7 @@ use crate::{
     price_reporter::reporter::PriceReport,
     state::{wallet::WalletIdentifier, OrderIdentifier},
     tasks::driver::{StateWrapper as TaskStatus, TaskIdentifier},
-    MAX_BALANCES, MAX_FEES, MAX_ORDERS,
 };
-
-// ----------------------------------
-// | Circuit Default Generics Types |
-// ----------------------------------
-
-/// `VALID COMMITMENTS` with default state element sizing
-pub type SizedValidCommitments = ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-/// A `VALID COMMITMENTS` witness with default const generic sizing parameters
-pub type SizedValidCommitmentsWitness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-/// A `VALID WALLET UPDATE` witness with default const generic sizing parameters
-pub type SizedValidWalletUpdateWitness =
-    ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-/// A `VALID SETTLE` statement with default const generic sizing parameters
-pub type SizedValidSettleStatement = ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-/// A `VALID SETTLE` witness with default const generic sizing parameters
-pub type SizedValidSettleWitness = ValidSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 // ----------------------
 // | Pubsub Topic Names |

@@ -268,7 +268,7 @@ pub struct ValidSettleWitnessVar<
 
 /// A commitment to the witness type for `VALID SETTLE`,
 /// allocated in a constraint system
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidSettleWitnessCommitment<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
