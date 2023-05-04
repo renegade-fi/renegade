@@ -2,47 +2,34 @@
 //! happen to the state. It provides an abstracted messaging interface for other
 //! workers to submit proof requests to.
 
-use std::{convert::TryInto, iter, sync::Arc, thread::JoinHandle};
+use std::{sync::Arc, thread::JoinHandle};
 
 use circuits::{
-    native_helpers::compute_wallet_commitment,
     singleprover_prove,
-    types::{balance::Balance, fee::Fee, keychain::PublicKeyChain, order::Order},
     zk_circuits::{
         valid_commitments::{ValidCommitments, ValidCommitmentsStatement},
-        valid_match_encryption::{
-            ValidMatchEncryption, ValidMatchEncryptionStatement, ValidMatchEncryptionWitness,
-        },
+        valid_reblind::{ValidReblind, ValidReblindStatement},
         valid_settle::ValidSettle,
-        valid_wallet_create::{
-            ValidWalletCreate, ValidWalletCreateStatement, ValidWalletCreateWitness,
-        },
-        valid_wallet_update::{ValidWalletUpdate, ValidWalletUpdateStatement},
+        valid_wallet_create::ValidWalletCreate,
+        valid_wallet_update::ValidWalletUpdate,
     },
     MAX_BALANCES, MAX_ORDERS,
 };
 use crossbeam::channel::Receiver;
-use crypto::fields::prime_field_to_scalar;
-use curve25519_dalek::scalar::Scalar;
-use itertools::Itertools;
 use rayon::ThreadPool;
 use tracing::log;
 
-use crate::{
-    proof_generation::jobs::ProofJob,
-    types::{
-        SizedValidCommitmentsWitness, SizedValidSettleStatement, SizedValidSettleWitness,
-        SizedValidWalletUpdateWitness,
-    },
-    CancelChannel, SizedWallet, MAX_FEES,
-};
+use crate::{proof_generation::jobs::ProofJob, CancelChannel, MAX_FEES};
 
 use super::{
     error::ProofManagerError,
     jobs::{
-        ProofBundle, ProofManagerJob, ValidCommitmentsBundle, ValidMatchEncryptBundle,
+        ProofBundle, ProofManagerJob, ValidCommitmentsBundle, ValidReblindBundle,
         ValidSettleBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
     },
+    SizedValidCommitmentsWitness, SizedValidReblindWitness, SizedValidSettleStatement,
+    SizedValidSettleWitness, SizedValidWalletCreateStatement, SizedValidWalletCreateWitness,
+    SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
 
 // -------------
@@ -109,15 +96,19 @@ impl ProofManager {
     /// The main job handler, run by a thread in the pool
     fn handle_proof_job(job: ProofManagerJob) -> Result<(), ProofManagerError> {
         match job.type_ {
-            ProofJob::ValidWalletCreate {
-                fees,
-                keys,
-                randomness,
-            } => {
+            ProofJob::ValidWalletCreate { witness, statement } => {
                 // Prove `VALID WALLET CREATE`
-                let proof_bundle = Self::prove_valid_wallet_create(fees, keys, randomness)?;
+                let proof_bundle = Self::prove_valid_wallet_create(witness, statement)?;
                 job.response_channel
                     .send(ProofBundle::ValidWalletCreate(proof_bundle))
+                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
+            }
+
+            ProofJob::ValidReblind { witness, statement } => {
+                // Prove `VALID REBLIND`
+                let proof_bundle = Self::prove_valid_reblind(witness, statement)?;
+                job.response_channel
+                    .send(ProofBundle::ValidReblind(proof_bundle))
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
             }
 
@@ -136,14 +127,6 @@ impl ProofManager {
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
             }
 
-            ProofJob::ValidMatchEncrypt { statement, witness } => {
-                // Prove `VALID MATCH ENCRYPTION`
-                let proof_bundle = Self::prove_valid_match_encrypt(statement, witness)?;
-                job.response_channel
-                    .send(ProofBundle::ValidMatchEncryption(proof_bundle))
-                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
-            }
-
             ProofJob::ValidSettle { witness, statement } => {
                 // Prove `VALID SETTLE`
                 let proof_bundle = Self::prove_valid_settle(statement, witness)?;
@@ -156,39 +139,10 @@ impl ProofManager {
 
     /// Create a proof of `VALID WALLET CREATE`
     fn prove_valid_wallet_create(
-        fees: Vec<Fee>,
-        keys: PublicKeyChain,
-        randomness: Scalar,
+        witness: SizedValidWalletCreateWitness,
+        statement: SizedValidWalletCreateStatement,
     ) -> Result<ValidWalletCreateBundle, ProofManagerError> {
-        // Build an empty wallet and compute its commitment
-        let sized_fees: [Fee; MAX_FEES] = fees
-            .into_iter()
-            .chain(iter::repeat(Fee::default()))
-            .take(MAX_FEES)
-            .collect_vec()
-            .try_into()
-            .unwrap();
-
-        let empty_wallet = SizedWallet {
-            balances: vec![Balance::default(); MAX_BALANCES].try_into().unwrap(),
-            orders: vec![Order::default(); MAX_ORDERS].try_into().unwrap(),
-            fees: sized_fees.clone(),
-            keys: keys.clone(),
-            randomness,
-        };
-
-        let wallet_commit = compute_wallet_commitment(&empty_wallet);
-
         // Build the statement and witness for the proof
-        let statement = ValidWalletCreateStatement {
-            wallet_commitment: prime_field_to_scalar(&wallet_commit),
-        };
-        let witness = ValidWalletCreateWitness::<MAX_FEES> {
-            fees: sized_fees,
-            keys,
-            wallet_randomness: randomness,
-        };
-
         let (commitment, proof) = singleprover_prove::<
             ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         >(witness, statement)
@@ -196,6 +150,24 @@ impl ProofManager {
 
         Ok(ValidWalletCreateBundle {
             commitment,
+            statement,
+            proof,
+        })
+    }
+
+    /// Create a proof of `VALID REBLIND`
+    fn prove_valid_reblind(
+        witness: SizedValidReblindWitness,
+        statement: ValidReblindStatement,
+    ) -> Result<ValidReblindBundle, ProofManagerError> {
+        // Prove the statement `VALID REBLIND`
+        let (witness_comm, proof) = singleprover_prove::<
+            ValidReblind<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        >(witness, statement.clone())
+        .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+
+        Ok(ValidReblindBundle {
+            commitment: witness_comm,
             statement,
             proof,
         })
@@ -222,7 +194,7 @@ impl ProofManager {
     /// Create a proof of `VALID WALLET UPDATE`
     fn prove_valid_wallet_update(
         witness: SizedValidWalletUpdateWitness,
-        statement: ValidWalletUpdateStatement,
+        statement: SizedValidWalletUpdateStatement,
     ) -> Result<ValidWalletUpdateBundle, ProofManagerError> {
         let statement_clone = statement.clone();
         let (witness_comm, proof) = singleprover_prove::<
@@ -231,25 +203,6 @@ impl ProofManager {
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
         Ok(ValidWalletUpdateBundle {
-            commitment: witness_comm,
-            statement,
-            proof,
-        })
-    }
-
-    /// Create a proof of `VALID MATCH ENCRYPTION`
-    fn prove_valid_match_encrypt(
-        statement: ValidMatchEncryptionStatement,
-        witness: ValidMatchEncryptionWitness,
-    ) -> Result<ValidMatchEncryptBundle, ProofManagerError> {
-        let (witness_comm, proof) =
-            singleprover_prove::<ValidMatchEncryption<252 /* SCALAR_BITS */>>(
-                witness,
-                statement.clone(),
-            )
-            .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
-
-        Ok(ValidMatchEncryptBundle {
             commitment: witness_comm,
             statement,
             proof,
