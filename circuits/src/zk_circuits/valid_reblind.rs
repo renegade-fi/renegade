@@ -263,7 +263,7 @@ where
 // ---------------------------
 
 /// The witness type for VALID REBLIND
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidReblindWitness<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,

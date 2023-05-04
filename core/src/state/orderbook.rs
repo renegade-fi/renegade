@@ -23,9 +23,9 @@ use uuid::Uuid;
 
 use crate::{
     gossip::types::ClusterId,
-    proof_generation::jobs::ValidCommitmentsBundle,
+    proof_generation::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     system_bus::SystemBus,
-    types::{SizedValidCommitmentsWitness, SystemBusMessage, ORDER_STATE_CHANGE_TOPIC},
+    types::{SystemBusMessage, ORDER_STATE_CHANGE_TOPIC},
 };
 
 use super::{new_async_shared, AsyncShared};
@@ -65,8 +65,8 @@ pub enum NetworkOrderState {
 pub struct NetworkOrder {
     /// The identifier of the order
     pub id: OrderIdentifier,
-    /// The match nullifier of the containing wallet
-    pub match_nullifier: Nullifier,
+    /// The public shares nullifier of the wallet containing this order
+    pub public_share_nullifier: Nullifier,
     /// Whether or not the order is managed locally, this does not imply that the owner
     /// field is the same as the local peer's ID. For simplicity the owner field is the
     /// relayer that originated the order. If the owner is a cluster peer, then the local
@@ -76,41 +76,49 @@ pub struct NetworkOrder {
     pub cluster: ClusterId,
     /// The state of the order via the local peer
     pub state: NetworkOrderState,
-    /// The proof of `VALID COMMITMENTS` that has been verified by the local node
-    pub valid_commit_proof: Option<ValidCommitmentsBundle>,
-    /// The witness to the proof of `VALID COMMITMENTS`, this is only stored for orders that
+    /// The proofs of `VALID COMMITMENTS` and `VALID REBLIND` that
+    /// have been verified by the local node
+    pub validity_proofs: Option<OrderValidityProofBundle>,
+    /// The witnesses to the proofs of `VALID REBLIND` and `VALID COMMITMENTS`, only stored for orders that
     /// the local node directly manages
     ///
     /// Skip serialization to avoid sending witness, the serialized type will have `None` in place
     #[serde(skip)]
-    pub valid_commit_witness: Option<SizedValidCommitmentsWitness>,
+    pub validity_proof_witnesses: Option<OrderValidityWitnessBundle>,
 }
 
 impl NetworkOrder {
     /// Create a new order in the `Received` state
     pub fn new(
         order_id: OrderIdentifier,
-        match_nullifier: Nullifier,
+        public_share_nullifier: Nullifier,
         cluster: ClusterId,
         local: bool,
     ) -> Self {
         Self {
             id: order_id,
-            match_nullifier,
+            public_share_nullifier,
             local,
             cluster,
             state: NetworkOrderState::Received,
-            valid_commit_proof: None,
-            valid_commit_witness: None,
+            validity_proofs: None,
+            validity_proof_witnesses: None,
         }
     }
 
     /// Transitions the state of an order from `Received` to `Verified` by
-    /// attaching a proof of `VALID COMMITMENTS` to the order
-    pub(self) fn attach_commitment_proof(&mut self, proof: ValidCommitmentsBundle) {
+    /// attaching two validity proofs:
+    ///   1. `VALID REBLIND`: Commits to a valid reblinding of the wallet that will
+    ///     be revealed upon successful match. Proved per-wallet.
+    ///   2. `VALID COMMITMENTS`: Proves the state elements used as input to the matching
+    ///     engine are valid (orders, balances, fees, etc). Proved per-order.
+    pub(self) fn attach_validity_proofs(&mut self, validity_proofs: OrderValidityProofBundle) {
         self.state = NetworkOrderState::Verified;
-        self.match_nullifier = proof.statement.nullifier;
-        self.valid_commit_proof = Some(proof);
+        self.public_share_nullifier = validity_proofs
+            .reblind_proof
+            .statement
+            .original_public_share_nullifier;
+        self.validity_proofs = Some(validity_proofs)
     }
 
     /// The following state transition methods are made module private because we prefer
@@ -126,13 +134,13 @@ impl NetworkOrder {
 
     /// Transitions the state of an order to the verified state
     #[allow(unused)]
-    pub(self) fn transition_verified(&mut self, proof: ValidCommitmentsBundle) {
+    pub(self) fn transition_verified(&mut self, validity_proofs: OrderValidityProofBundle) {
         assert_eq!(
             self.state,
             NetworkOrderState::Received,
             "only orders in Received state may become Verified"
         );
-        self.attach_commitment_proof(proof);
+        self.attach_validity_proofs(validity_proofs);
     }
 
     /// Transitions the state of an order from `Verified` to `Matched`
@@ -153,8 +161,8 @@ impl NetworkOrder {
 
         // We no longer need the validity proof (if it exists)
         // so it is safe to drop
-        self.valid_commit_proof = None;
-        self.valid_commit_witness = None;
+        self.validity_proofs = None;
+        self.validity_proof_witnesses = None;
     }
 }
 
@@ -175,7 +183,7 @@ impl Display for NetworkOrderState {
 pub struct NetworkOrderBook {
     /// The mapping from order identifier to order information
     order_map: HashMap<OrderIdentifier, AsyncShared<NetworkOrder>>,
-    /// A mapping from the wallet match nullifier to the order
+    /// A mapping from the wallet's public share nullifier to the set of orders in this wallet
     orders_by_nullifier: HashMap<Nullifier, AsyncShared<HashSet<OrderIdentifier>>>,
     /// A list of order IDs maintained locally
     local_orders: AsyncShared<HashSet<OrderIdentifier>>,
@@ -252,10 +260,10 @@ impl NetworkOrderBook {
     /// Acquire a write lock on an order by nullifier set
     pub async fn write_nullifier_order_set(
         &mut self,
-        match_nullifier: Nullifier,
+        public_share_nullifier: Nullifier,
     ) -> RwLockWriteGuard<HashSet<OrderIdentifier>> {
         self.orders_by_nullifier
-            .entry(match_nullifier)
+            .entry(public_share_nullifier)
             .or_insert_with(|| new_async_shared(HashSet::new()))
             .write()
             .await
@@ -279,13 +287,13 @@ impl NetworkOrderBook {
         }
     }
 
-    /// Fetch the match nullifier for an order
-    pub async fn get_match_nullifier(&self, order_id: &OrderIdentifier) -> Option<Nullifier> {
-        self.read_order(order_id)
-            .await?
-            .valid_commit_proof
-            .as_ref()
-            .map(|proof| proof.statement.nullifier)
+    /// Get the public share nullifier for a given order
+    pub async fn get_nullifier(&self, order_id: &OrderIdentifier) -> Option<Nullifier> {
+        if let Some(order_info_locked) = self.read_order(order_id).await {
+            Some(order_info_locked.public_share_nullifier)
+        } else {
+            None
+        }
     }
 
     /// Fetch all orders under a given nullifier
@@ -302,7 +310,7 @@ impl NetworkOrderBook {
     /// This amounts to validating that a copy of the validity proof and witness are stored
     /// locally
     pub async fn order_ready_for_handshake(&self, order_id: &OrderIdentifier) -> bool {
-        self.has_validity_proof(order_id).await && self.has_validity_witness(order_id).await
+        self.has_validity_proofs(order_id).await && self.has_validity_witness(order_id).await
     }
 
     /// Fetch a list of locally managed orders for which
@@ -352,43 +360,43 @@ impl NetworkOrderBook {
         pairs
     }
 
-    /// Returns whether or not the local node holds a proof of `VALID COMMITMENTS`
-    /// for the given order
-    pub async fn has_validity_proof(&self, order_id: &OrderIdentifier) -> bool {
+    /// Returns true if the local node holds validity proofs (reblind and commitment) for
+    /// the given order
+    pub async fn has_validity_proofs(&self, order_id: &OrderIdentifier) -> bool {
         if let Some(order_info) = self.read_order(order_id).await {
-            return order_info.valid_commit_proof.is_some();
+            return order_info.validity_proofs.is_some();
         }
 
         false
     }
 
-    /// Fetch a copy of the validity proof for the given order, or `None` if a proof
-    /// is not locally stored
-    pub async fn get_validity_proof(
+    /// Fetch a copy of the validity proofs for the given order, or `None` if
+    /// the proofs are not locally stored
+    pub async fn get_validity_proofs(
         &self,
         order_id: &OrderIdentifier,
-    ) -> Option<ValidCommitmentsBundle> {
-        self.read_order(order_id).await?.valid_commit_proof.clone()
+    ) -> Option<OrderValidityProofBundle> {
+        self.read_order(order_id).await?.validity_proofs.clone()
     }
 
-    /// Returns whether the local node holds a witness to a the proof of `VALID COMMITMENTS`
-    /// for the given order
+    /// Returns true if the local node holds a copy of the witnesses for `VALID REBLIND` and
+    /// `VALID COMMITMENTS` for the given order
     pub async fn has_validity_witness(&self, order_id: &OrderIdentifier) -> bool {
         if let Some(order_info) = self.read_order(order_id).await {
-            return order_info.valid_commit_witness.is_some();
+            return order_info.validity_proof_witnesses.is_some();
         }
 
         false
     }
 
-    /// Fetch a copy of the witness to the validity proof if one exists
-    pub async fn get_validity_proof_witness(
+    /// Fetch a copy of the witnesses used in the validity proofs for this order
+    pub async fn get_validity_proof_witnesses(
         &self,
         order_id: &OrderIdentifier,
-    ) -> Option<SizedValidCommitmentsWitness> {
+    ) -> Option<OrderValidityWitnessBundle> {
         self.read_order(order_id)
             .await?
-            .valid_commit_witness
+            .validity_proof_witnesses
             .clone()
     }
 
@@ -421,7 +429,7 @@ impl NetworkOrderBook {
         }
 
         // Add an entry in the orders by nullifier index
-        self.write_nullifier_order_set(order.match_nullifier)
+        self.write_nullifier_order_set(order.public_share_nullifier)
             .await
             .insert(order.id);
 
@@ -438,27 +446,32 @@ impl NetworkOrderBook {
         )
     }
 
-    /// Update the validity proof for an order
-    pub async fn update_order_validity_proof(
+    /// Update the validity proofs for an order
+    pub async fn update_order_validity_proofs(
         &mut self,
         order_id: &OrderIdentifier,
-        proof: ValidCommitmentsBundle,
+        proofs: OrderValidityProofBundle,
     ) {
-        // Index by the match nullifier seen in the proof, this is guaranteed correct
-        self.write_nullifier_order_set(proof.statement.nullifier)
-            .await
-            .insert(*order_id);
-        self.transition_verified(order_id, proof).await;
+        // Index by the public share nullifier seen in the proof, this is guaranteed correct
+        self.write_nullifier_order_set(
+            proofs
+                .reblind_proof
+                .statement
+                .original_public_share_nullifier,
+        )
+        .await
+        .insert(*order_id);
+        self.transition_verified(order_id, proofs).await;
     }
 
-    /// Attach a validity proof witness to the local order state
+    /// Attach a set of validity proof witnesses to the local order state
     pub async fn attach_validity_proof_witness(
         &self,
         order_id: &OrderIdentifier,
-        witness: SizedValidCommitmentsWitness,
+        witnesses: OrderValidityWitnessBundle,
     ) {
         if let Some(mut locked_order) = self.write_order(order_id).await {
-            locked_order.valid_commit_witness = Some(witness);
+            locked_order.validity_proof_witnesses = Some(witnesses);
         }
     }
 
@@ -485,11 +498,11 @@ impl NetworkOrderBook {
     pub async fn transition_verified(
         &mut self,
         order_id: &OrderIdentifier,
-        proof: ValidCommitmentsBundle,
+        validity_proofs: OrderValidityProofBundle,
     ) {
         if let Some(mut order) = self.write_order(order_id).await {
             let prev_state = order.state;
-            order.transition_verified(proof);
+            order.transition_verified(validity_proofs);
             self.add_verified_order(*order_id).await;
 
             self.system_bus.publish(
