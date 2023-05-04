@@ -9,22 +9,18 @@ use std::{
 
 use circuits::{
     native_helpers::{
-        compute_poseidon_hash, compute_wallet_commitment, compute_wallet_match_nullifier,
-        compute_wallet_spend_nullifier,
+        compute_poseidon_hash, compute_wallet_share_commitment, compute_wallet_share_nullifier,
     },
     types::{
         balance::Balance,
         fee::Fee,
-        keychain::{
-            PublicKeyChain, SecretEncryptionKey, SecretIdentificationKey, SecretSigningKey,
-        },
-        note::{Note, NoteType},
+        keychain::{PublicKeyChain, SecretIdentificationKey, SecretSigningKey},
         order::{Order, OrderSide},
-        wallet::{Nullifier, Wallet as CircuitWallet, WalletCommitment},
+        wallet::{Nullifier, Wallet as CircuitWallet, WalletSecretShare, WalletShareCommitment},
     },
     zk_gadgets::merkle::MerkleOpening,
 };
-use crypto::fields::{biguint_to_scalar, prime_field_to_scalar, starknet_felt_to_biguint};
+use crypto::fields::{biguint_to_scalar, starknet_felt_to_biguint};
 use curve25519_dalek::scalar::Scalar;
 use futures::{stream::iter as to_stream, StreamExt};
 use itertools::Itertools;
@@ -43,8 +39,11 @@ use crate::{
 
 use super::{new_async_shared, orderbook::OrderIdentifier, AsyncShared, MerkleTreeCoords};
 
-/// The staleness factor; the ratio of the root history that has elapsed before a new proof of
-/// `VALID COMMITMENTS` is required for an order
+/// A wallet secret share with default const generic sizing parameters attached
+pub type SizedWalletShare = WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+
+/// The staleness factor; the ratio of the root history that has elapsed before new proofs of
+/// `VALID COMMITMENTS` and `VALID REBLIND` are required for an order
 const ROOT_HISTORY_STALENESS_FACTOR: f32 = 0.75;
 
 lazy_static! {
@@ -90,10 +89,6 @@ pub struct PrivateKeyChain {
     pub sk_root: Option<SecretSigningKey>,
     /// The match private key, authorizes the relayer to match orders for the wallet
     pub sk_match: SecretIdentificationKey,
-    /// The settle private key, authorizes the relayer to settle matches for the wallet
-    pub sk_settle: SecretIdentificationKey,
-    /// The view private key, allows the relayer to decrypt wallet state on chain
-    pub sk_view: SecretEncryptionKey,
 }
 
 /// Represents the public and private keys given to the relayer managing a wallet
@@ -228,13 +223,15 @@ pub struct Wallet {
     pub fees: Vec<Fee>,
     /// The keys that the relayer has access to for this wallet
     pub key_chain: KeyChain,
-    /// The wallet randomness
-    ///
-    /// Generate randomness if not specified in a serialized blob
+    /// The wallet blinder, used to blind secret shares the wallet holds
     #[serde(default = "generate_wallet_randomness")]
-    pub randomness: BigUint,
+    pub blinder: BigUint,
     /// Wallet metadata; replicas, trusted peers, etc
     pub metadata: WalletMetadata,
+    /// The private secret shares of the wallet
+    pub private_shares: SizedWalletShare,
+    /// THe public secret shares of the wallet
+    pub public_shares: SizedWalletShare,
     /// The authentication path for the wallet
     #[serde(default)]
     pub merkle_proof: Option<MerkleAuthenticationPath>,
@@ -256,8 +253,10 @@ impl Clone for Wallet {
             balances: self.balances.clone(),
             fees: self.fees.clone(),
             key_chain: self.key_chain.clone(),
-            randomness: self.randomness.clone(),
+            blinder: self.blinder.clone(),
             metadata: self.metadata.clone(),
+            private_shares: self.private_shares.clone(),
+            public_shares: self.public_shares.clone(),
             merkle_proof: self.merkle_proof.clone(),
             proof_staleness: AtomicU32::new(staleness),
         }
@@ -333,42 +332,44 @@ impl From<Wallet> for SizedCircuitWallet {
             orders: padded_orders.try_into().unwrap(),
             fees: padded_fees.try_into().unwrap(),
             keys: wallet.key_chain.public_keys,
-            randomness: biguint_to_scalar(&wallet.randomness),
+            blinder: biguint_to_scalar(&wallet.blinder),
         }
     }
 }
 
 impl Wallet {
-    /// Computes the commitment to the wallet; this commitment is used as the state
-    /// entry for the wallet as a leaf in the Merkle tree
-    pub fn get_commitment(&self) -> WalletCommitment {
-        let circuit_wallet: SizedCircuitWallet = self.clone().into();
-        prime_field_to_scalar(&compute_wallet_commitment(&circuit_wallet))
+    /// Computes the commitment to the public shares of the wallet
+    pub fn get_public_share_commitment(&self) -> WalletShareCommitment {
+        compute_wallet_share_commitment(self.public_shares.clone())
     }
 
-    /// Computes the match nullifier of the wallet
-    pub fn get_match_nullifier(&self) -> Nullifier {
-        let circuit_wallet: SizedCircuitWallet = self.clone().into();
-        prime_field_to_scalar(&compute_wallet_match_nullifier(
-            &circuit_wallet,
-            compute_wallet_commitment(&circuit_wallet),
-        ))
+    /// Computes the commitment to the private shares of the wallet
+    pub fn get_private_share_commitment(&self) -> WalletShareCommitment {
+        compute_wallet_share_commitment(self.private_shares.clone())
     }
 
-    /// Computes the spend nullifier of the wallet
-    pub fn get_spend_nullifier(&self) -> Nullifier {
-        let circuit_wallet: SizedCircuitWallet = self.clone().into();
-        prime_field_to_scalar(&compute_wallet_spend_nullifier(
-            &circuit_wallet,
-            compute_wallet_commitment(&circuit_wallet),
-        ))
+    /// Computes the nullifier of the public shares of the wallet
+    pub fn get_public_share_nullifier(&self) -> Nullifier {
+        compute_wallet_share_nullifier(
+            self.get_public_share_commitment(),
+            biguint_to_scalar(&self.blinder),
+        )
+    }
+
+    /// Computes the nullifier of the private shares of the wallet
+    pub fn get_private_share_nullifier(&self) -> Nullifier {
+        compute_wallet_share_nullifier(
+            self.get_private_share_commitment(),
+            biguint_to_scalar(&self.blinder),
+        )
     }
 
     /// Decides whether the wallet's orders need new commitment proofs
     ///
     /// When the Merkle roots get too stale, we need to re-prove the
-    /// `VALID COMMITMENTS` entry for each order in the wallet on a fresh
-    /// root that the contract will have stored when matches occur
+    /// `VALID COMMITMENTS` entry for each order in the wallet and `VALID REBLIND`
+    /// for the wallet itself on a fresh root that the contract will have stored
+    /// when matches occur
     ///
     /// This method, although simple, is written abstractly to allow us to change
     /// the logic that decides this down the line
@@ -419,59 +420,6 @@ impl Wallet {
 
         Some((balance.clone(), fee.clone(), fee_balance.clone()))
     }
-
-    /// Apply a note to the wallet, returning an updated wallet
-    pub fn apply_note(&self, note: &Note) -> Wallet {
-        let mut new_wallet = self.clone();
-
-        // Apply the note to the balances list
-        new_wallet.apply_balance_update(note.mint1.clone(), note.volume1, note.direction1);
-        new_wallet.apply_balance_update(note.mint2.clone(), note.volume2, note.direction2);
-        new_wallet.apply_balance_update(note.fee_mint.clone(), note.fee_volume, note.fee_direction);
-
-        // Apply the note to the orders list
-        if matches!(note.type_, NoteType::Match) {
-            // Find the order that was matched
-            let (order_id, order) = self
-                .orders
-                .iter()
-                .find(|(_order_id, order)| {
-                    order.base_mint == note.mint1
-                        && order.quote_mint == note.mint2
-                        && order.side == note.direction1 // base mint direction
-                })
-                .unwrap();
-
-            // Decrement the volume of the order by the
-            let mut new_order = order.clone();
-            new_order.amount -= note.volume1;
-
-            if new_order.amount == 0 {
-                new_order = Order::default();
-            }
-
-            // Replace the order in the wallet
-            new_wallet.orders.insert(*order_id, new_order);
-        }
-
-        new_wallet
-    }
-
-    /// Helper to apply a balance update within a note to the wallet
-    fn apply_balance_update(&mut self, mint: BigUint, volume: u64, direction: OrderSide) {
-        let current_balance = self
-            .balances
-            .entry(mint.clone())
-            .or_insert(Balance { mint, amount: 0 });
-
-        match direction {
-            OrderSide::Buy => current_balance.amount += volume,
-            OrderSide::Sell => {
-                // Allow the operation to panic on underflow, we can handle this explicitly if needed down the road
-                current_balance.amount -= volume;
-            }
-        };
-    }
 }
 
 /// Metadata relevant to the wallet's network state
@@ -485,7 +433,7 @@ pub struct WalletMetadata {
 // | State Indexing |
 // ------------------
 
-/// An abstraction over a set of wallets that indexes wallet and de-normalizes
+/// An abstraction over a set of wallets that indexes wallets and de-normalizes
 /// their data
 #[derive(Clone, Debug)]
 pub struct WalletIndex {
@@ -639,51 +587,11 @@ impl WalletIndex {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::atomic::AtomicU32};
-
-    use circuits::{
-        types::{
-            balance::Balance,
-            keychain::PublicKeyChain,
-            note::{Note, NoteType},
-            order::{Order, OrderSide},
-        },
-        zk_gadgets::fixed_point::FixedPoint,
-    };
     use curve25519_dalek::scalar::Scalar;
     use num_bigint::BigUint;
     use rand_core::OsRng;
-    use uuid::Uuid;
 
-    use super::{KeyChain, PrivateKeyChain, Wallet, WalletMetadata};
-
-    /// Helper to create a dummy wallet for testing
-    fn create_dummy_wallet() -> Wallet {
-        Wallet {
-            wallet_id: Uuid::new_v4(),
-            orders: HashMap::new(),
-            balances: HashMap::new(),
-            fees: vec![],
-            key_chain: KeyChain {
-                public_keys: PublicKeyChain {
-                    pk_root: BigUint::from(0u8).into(),
-                    pk_match: Scalar::zero().into(),
-                    pk_settle: Scalar::zero().into(),
-                    pk_view: Scalar::zero().into(),
-                },
-                secret_keys: PrivateKeyChain {
-                    sk_root: None,
-                    sk_match: Scalar::zero().into(),
-                    sk_settle: Scalar::zero().into(),
-                    sk_view: Scalar::zero().into(),
-                },
-            },
-            randomness: BigUint::from(1u8),
-            merkle_proof: None,
-            metadata: WalletMetadata::default(),
-            proof_staleness: AtomicU32::default(),
-        }
-    }
+    use super::PrivateKeyChain;
 
     /// Test serialization/deserialization of a PrivateKeyChain
     #[test]
@@ -694,8 +602,6 @@ mod tests {
         let keychain = PrivateKeyChain {
             sk_root: Some(BigUint::from(0u8).into()),
             sk_match: Scalar::random(&mut rng).into(),
-            sk_settle: Scalar::random(&mut rng).into(),
-            sk_view: Scalar::random(&mut rng).into(),
         };
         let serialized = serde_json::to_string(&keychain).unwrap();
         let deserialized: PrivateKeyChain = serde_json::from_str(&serialized).unwrap();
@@ -705,126 +611,9 @@ mod tests {
         let keychain = PrivateKeyChain {
             sk_root: None,
             sk_match: Scalar::random(&mut rng).into(),
-            sk_settle: Scalar::random(&mut rng).into(),
-            sk_view: Scalar::random(&mut rng).into(),
         };
         let serialized = serde_json::to_string(&keychain).unwrap();
         let deserialized: PrivateKeyChain = serde_json::from_str(&serialized).unwrap();
         assert_eq!(keychain, deserialized);
-    }
-
-    /// Tests applying a note to a wallet
-    #[test]
-    fn test_apply_note_buy_side() {
-        let quote_mint = BigUint::from(5u8);
-        let base_mint = BigUint::from(6u8);
-        let fee_mint = BigUint::from(7u8);
-        let order_id = Uuid::new_v4();
-
-        // Create a dummy wallet with an order and a balance to update
-        let order = Order {
-            quote_mint: quote_mint.clone(),
-            base_mint: base_mint.clone(),
-            price: FixedPoint::from_integer(10),
-            side: OrderSide::Buy,
-            amount: 10,
-            timestamp: 0,
-        };
-        let balances = vec![
-            Balance {
-                mint: quote_mint.clone(),
-                amount: 200,
-            },
-            Balance {
-                mint: fee_mint.clone(),
-                amount: 500,
-            },
-        ];
-
-        let mut wallet = create_dummy_wallet();
-        wallet.orders.insert(order_id, order);
-        wallet.balances = balances
-            .into_iter()
-            .map(|balance| (balance.mint.clone(), balance))
-            .collect();
-
-        // Create a note to apply to the wallet
-        let dummy_note = Note {
-            mint1: base_mint.clone(),
-            volume1: 9,
-            direction1: OrderSide::Buy,
-            mint2: quote_mint.clone(),
-            volume2: 81, // at a price of 9 quote / base
-            direction2: OrderSide::Sell,
-            fee_mint: fee_mint.clone(),
-            fee_volume: 100,
-            fee_direction: OrderSide::Sell,
-            type_: NoteType::Match,
-            randomness: BigUint::from(1u8),
-        };
-        let new_wallet = wallet.apply_note(&dummy_note);
-
-        // Validate that the balances and orders are updated properly
-        assert_eq!(new_wallet.balances.get(&quote_mint).unwrap().amount, 119);
-        assert_eq!(new_wallet.balances.get(&base_mint).unwrap().amount, 9);
-        assert_eq!(new_wallet.balances.get(&fee_mint).unwrap().amount, 400);
-        assert_eq!(new_wallet.orders.get(&order_id).unwrap().amount, 1);
-    }
-
-    #[test]
-    fn test_apply_note_sell_side() {
-        let quote_mint = BigUint::from(5u8);
-        let base_mint = BigUint::from(6u8);
-        let fee_mint = BigUint::from(7u8);
-        let order_id = Uuid::new_v4();
-
-        // Create a dummy wallet with an order and a balance to update
-        let order = Order {
-            quote_mint: quote_mint.clone(),
-            base_mint: base_mint.clone(),
-            price: FixedPoint::from_integer(10),
-            side: OrderSide::Sell,
-            amount: 10,
-            timestamp: 0,
-        };
-        let balances = vec![
-            Balance {
-                mint: base_mint.clone(),
-                amount: 200,
-            },
-            Balance {
-                mint: fee_mint.clone(),
-                amount: 500,
-            },
-        ];
-
-        let mut wallet = create_dummy_wallet();
-        wallet.orders.insert(order_id, order);
-        wallet.balances = balances
-            .into_iter()
-            .map(|balance| (balance.mint.clone(), balance))
-            .collect();
-
-        // Create a note to apply to the wallet
-        let dummy_note = Note {
-            mint1: base_mint.clone(),
-            volume1: 9,
-            direction1: OrderSide::Sell,
-            mint2: quote_mint.clone(),
-            volume2: 81, // at a price of 9 quote / base
-            direction2: OrderSide::Buy,
-            fee_mint: fee_mint.clone(),
-            fee_volume: 100,
-            fee_direction: OrderSide::Sell,
-            type_: NoteType::Match,
-            randomness: BigUint::from(1u8),
-        };
-        let new_wallet = wallet.apply_note(&dummy_note);
-
-        // Validate that the balances and orders are updated properly
-        assert_eq!(new_wallet.balances.get(&quote_mint).unwrap().amount, 81);
-        assert_eq!(new_wallet.balances.get(&base_mint).unwrap().amount, 191);
-        assert_eq!(new_wallet.balances.get(&fee_mint).unwrap().amount, 400);
-        assert_eq!(new_wallet.orders.get(&order_id).unwrap().amount, 1);
     }
 }
