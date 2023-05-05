@@ -206,6 +206,16 @@ impl From<MerkleAuthenticationPath> for MerkleOpening {
     }
 }
 
+/// A pair of Merkle authentication paths, one for the public shares of the
+/// wallet, and another for the private shares
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WalletAuthenticationPath {
+    /// The authentication path for the public shares of the wallet
+    pub public_share_path: MerkleAuthenticationPath,
+    /// The authentication path for the private shares of the wallet
+    pub private_share_path: MerkleAuthenticationPath,
+}
+
 /// Represents a wallet managed by the local relayer
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Wallet {
@@ -232,9 +242,9 @@ pub struct Wallet {
     pub private_shares: SizedWalletShare,
     /// The public secret shares of the wallet
     pub public_shares: SizedWalletShare,
-    /// The authentication path for the wallet
+    /// The authentication paths for the public and private shares of the wallet
     #[serde(default)]
-    pub merkle_proof: Option<MerkleAuthenticationPath>,
+    pub merkle_proof: Option<WalletAuthenticationPath>,
     /// The staleness of the valid commitments proof for each order in
     /// the wallet, i.e. the number of new roots that have been seen
     /// on-chain since `VALID COMMITMENTS` was last proved for this wallet
@@ -546,7 +556,7 @@ impl WalletIndex {
     pub async fn add_wallet_merkle_proof(
         &self,
         wallet_id: &WalletIdentifier,
-        merkle_proof: MerkleAuthenticationPath,
+        merkle_proof: WalletAuthenticationPath,
     ) {
         if let Some(wallet) = self.wallet_map.get(wallet_id) {
             wallet.write().await.merkle_proof = Some(merkle_proof)

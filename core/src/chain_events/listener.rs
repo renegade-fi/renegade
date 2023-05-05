@@ -348,7 +348,19 @@ impl OnChainEventListenerExecutor {
                 .fetch_add(1u32, Ordering::Relaxed);
 
             self.update_wallet_merkle_path(
-                locked_wallet.merkle_proof.as_mut().unwrap(),
+                &mut locked_wallet
+                    .merkle_proof
+                    .as_mut()
+                    .unwrap()
+                    .public_share_path,
+                &node_change_events,
+            );
+            self.update_wallet_merkle_path(
+                &mut locked_wallet
+                    .merkle_proof
+                    .as_mut()
+                    .unwrap()
+                    .private_share_path,
                 &node_change_events,
             );
 
