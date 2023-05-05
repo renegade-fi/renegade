@@ -581,14 +581,14 @@ mod test {
     use rand_core::OsRng;
 
     use crate::{
+        native_helpers::create_wallet_shares_from_private,
         types::{
             balance::{Balance, BalanceSecretShare},
             fee::FeeSecretShare,
             order::{OrderSecretShare, OrderSide},
         },
         zk_circuits::test_helpers::{
-            create_wallet_shares, create_wallet_shares_from_private, SizedWallet, INITIAL_WALLET,
-            MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+            create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
         },
         CommitPublic, CommitWitness,
     };
