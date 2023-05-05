@@ -9,6 +9,8 @@ pub enum GossipError {
     Cancelled(String),
     /// An error occurred looking up a critical state element
     MissingState(String),
+    /// A nullifier has already been used in the contract
+    NullifierUsed(String),
     /// An error parsing a gossip message
     Parse(String),
     /// An error setting up the gossip server
@@ -21,6 +23,8 @@ pub enum GossipError {
     TimerFailed(String),
     /// An error verifying a peer's proof of `VALID COMMITMENTS`
     ValidCommitmentVerification(String),
+    /// An error verifying a peer's proof of `VALID REBLIND`
+    ValidReblindVerification(String),
 }
 
 impl fmt::Display for GossipError {
