@@ -15,7 +15,8 @@ use circuits::{
     },
     zk_gadgets::fixed_point::FixedPoint,
 };
-use crypto::fields::scalar_to_biguint;
+use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
+use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
@@ -28,6 +29,7 @@ use crate::{
         wallet::{KeyChain, Wallet as IndexedWallet, WalletMetadata},
         NetworkOrder as IndexedNetworkOrder, NetworkOrderState, OrderIdentifier,
     },
+    SizedWalletShare,
 };
 
 /// The Goerli network identifier
@@ -53,8 +55,12 @@ pub struct Wallet {
     pub fees: Vec<Fee>,
     /// The keys that authenticate wallet access
     pub key_chain: KeyChain,
-    /// The wallet randomness used to blind commitments
-    pub randomness: BigUint,
+    /// The public secret shares of the wallet
+    pub public_shares: Vec<BigUint>,
+    /// The private secret shares of the wallet
+    pub private_shares: Vec<BigUint>,
+    /// The wallet blinder, used to blind wallet secret shares
+    pub blinder: BigUint,
 }
 
 /// Conversion from a wallet that has been indexed in the global state to the
@@ -81,13 +87,25 @@ impl From<IndexedWallet> for Wallet {
 
         let fees = wallet.fees.into_iter().map(|fee| fee.into()).collect_vec();
 
+        // Serialize the shares then convert all values to BigUint
+        let public_shares = Into::<Vec<Scalar>>::into(wallet.public_shares)
+            .iter()
+            .map(scalar_to_biguint)
+            .collect_vec();
+        let private_shares = Into::<Vec<Scalar>>::into(wallet.private_shares)
+            .iter()
+            .map(scalar_to_biguint)
+            .collect_vec();
+
         Self {
             id: wallet.wallet_id,
             orders,
             balances,
             fees,
             key_chain: wallet.key_chain.clone(),
-            randomness: wallet.randomness,
+            public_shares,
+            private_shares,
+            blinder: wallet.blinder,
         }
     }
 }
@@ -106,15 +124,31 @@ impl From<Wallet> for IndexedWallet {
             .collect();
         let fees = wallet.fees.into_iter().map(|fee| fee.into()).collect();
 
+        // Deserialize the shares to scalar then re-structure into WalletSecretShare
+        let public_shares: SizedWalletShare = wallet
+            .public_shares
+            .iter()
+            .map(biguint_to_scalar)
+            .collect_vec()
+            .into();
+        let private_shares: SizedWalletShare = wallet
+            .private_shares
+            .iter()
+            .map(biguint_to_scalar)
+            .collect_vec()
+            .into();
+
         IndexedWallet {
             wallet_id: Uuid::new_v4(),
             orders,
             balances,
             fees,
             key_chain: wallet.key_chain,
-            randomness: wallet.randomness,
+            blinder: wallet.blinder,
             metadata: WalletMetadata::default(),
             proof_staleness: AtomicU32::new(0),
+            public_shares,
+            private_shares,
             merkle_proof: None,
         }
     }
@@ -285,8 +319,8 @@ pub struct OrderBook {
 pub struct NetworkOrder {
     /// Identifier
     pub id: Uuid,
-    /// The match nullifier on the wallet managing this order
-    pub match_nullifier: BigUint,
+    /// The nullifier of the containing wallet's public secret shares
+    pub public_share_nullifier: BigUint,
     /// Whether this order is managed by the local cluster
     pub local: bool,
     /// The cluster that manages this order
@@ -306,7 +340,7 @@ impl From<IndexedNetworkOrder> for NetworkOrder {
 
         NetworkOrder {
             id: order.id,
-            match_nullifier: scalar_to_biguint(&order.match_nullifier),
+            public_share_nullifier: scalar_to_biguint(&order.public_share_nullifier),
             local: order.local,
             cluster: order.cluster.to_string(),
             state: order.state,
