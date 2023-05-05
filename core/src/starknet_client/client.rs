@@ -10,10 +10,7 @@ use std::{
 };
 
 use circuits::{
-    types::{
-        keychain::PublicEncryptionKey,
-        wallet::{NoteCommitment, Nullifier, WalletCommitment},
-    },
+    types::wallet::{NoteCommitment, Nullifier, WalletShareCommitment},
     zk_gadgets::merkle::MerkleRoot,
 };
 use crypto::{
@@ -52,8 +49,8 @@ use tracing::log;
 
 use crate::{
     proof_generation::jobs::{
-        ValidCommitmentsBundle, ValidMatchEncryptBundle, ValidMatchMpcBundle, ValidSettleBundle,
-        ValidWalletCreateBundle, ValidWalletUpdateBundle,
+        ValidCommitmentsBundle, ValidMatchMpcBundle, ValidSettleBundle, ValidWalletCreateBundle,
+        ValidWalletUpdateBundle,
     },
     starknet_client::{
         GET_WALLET_LAST_UPDATED_SELECTOR, INTERNAL_NODE_CHANGED_EVENT_SELECTOR, MATCH_SELECTOR,
@@ -562,9 +559,9 @@ impl StarknetClient {
     /// Call the "get_wallet_update" view function in the contract
     pub async fn get_wallet_last_updated(
         &self,
-        pk_view: PublicEncryptionKey,
+        public_blinder_share: Scalar,
     ) -> Result<TransactionHash, StarknetClientError> {
-        let reduced_pk_view = Self::reduce_scalar_to_felt(&pk_view.into());
+        let reduced_pk_view = Self::reduce_scalar_to_felt(&public_blinder_share.into());
         let call = CallFunction {
             contract_address: self.contract_address,
             entry_point_selector: *GET_WALLET_LAST_UPDATED_SELECTOR,
@@ -585,8 +582,8 @@ impl StarknetClient {
     /// TODO: Add proof and wallet encryption under pk_view to the contract
     pub async fn new_wallet(
         &self,
-        pk_view: PublicEncryptionKey,
-        wallet_commitment: WalletCommitment,
+        public_blinder_share: Scalar,
+        wallet_commitment: WalletShareCommitment,
         wallet_ciphertext: Vec<ElGamalCiphertext>,
         valid_wallet_create: ValidWalletCreateBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
@@ -597,7 +594,7 @@ impl StarknetClient {
 
         // Reduce the wallet commitment mod the Starknet field
         let mut calldata = vec![
-            Self::reduce_scalar_to_felt(&pk_view.into()),
+            Self::reduce_scalar_to_felt(&public_blinder_share.into()),
             Self::reduce_scalar_to_felt(&wallet_commitment),
         ];
         // Pack the ciphertext into a list of felts
@@ -622,8 +619,8 @@ impl StarknetClient {
     #[allow(clippy::too_many_arguments)]
     pub async fn update_wallet(
         &self,
-        pk_view: PublicEncryptionKey,
-        new_wallet_commitment: WalletCommitment,
+        public_blinder_share: Scalar,
+        new_wallet_commitment: WalletShareCommitment,
         old_match_nullifier: Nullifier,
         old_spend_nullifier: Nullifier,
         external_transfer: Option<ExternalTransfer>,
@@ -632,7 +629,7 @@ impl StarknetClient {
         valid_wallet_update: ValidWalletUpdateBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
         let mut calldata = vec![
-            Self::reduce_scalar_to_felt(&pk_view.into()),
+            Self::reduce_scalar_to_felt(&public_blinder_share),
             Self::reduce_scalar_to_felt(&new_wallet_commitment),
             Self::reduce_scalar_to_felt(&old_match_nullifier),
             Self::reduce_scalar_to_felt(&old_spend_nullifier),
@@ -688,7 +685,6 @@ impl StarknetClient {
         party0_validity_proof: ValidCommitmentsBundle,
         party1_validity_proof: ValidCommitmentsBundle,
         valid_match_proof: ValidMatchMpcBundle,
-        valid_encryption_proof: ValidMatchEncryptBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
         // Build the calldata
         let mut calldata = vec![
@@ -715,7 +711,6 @@ impl StarknetClient {
         proof_blob.append(&mut serde_json::to_vec(&party0_validity_proof).unwrap());
         proof_blob.append(&mut serde_json::to_vec(&party1_validity_proof).unwrap());
         proof_blob.append(&mut serde_json::to_vec(&valid_match_proof).unwrap());
-        proof_blob.append(&mut serde_json::to_vec(&valid_encryption_proof).unwrap());
 
         calldata.append(&mut pack_serializable!(proof_blob));
 
@@ -734,8 +729,8 @@ impl StarknetClient {
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_settle(
         &self,
-        pk_view: PublicEncryptionKey,
-        new_wallet_commit: WalletCommitment,
+        public_blinder_share: Scalar,
+        new_wallet_commit: WalletShareCommitment,
         old_match_nullifier: Nullifier,
         old_spend_nullifier: Nullifier,
         note_redeem_nullifier: Nullifier,
@@ -743,7 +738,7 @@ impl StarknetClient {
         proof: ValidSettleBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
         let mut calldata = vec![
-            Self::reduce_scalar_to_felt(&pk_view.into()),
+            Self::reduce_scalar_to_felt(&public_blinder_share.into()),
             StarknetFieldElement::from(0u8), // from_internal_transfer
             Self::reduce_scalar_to_felt(&new_wallet_commit),
             Self::reduce_scalar_to_felt(&old_match_nullifier),
