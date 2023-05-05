@@ -11,10 +11,7 @@ use std::{
     time::Duration,
 };
 
-use circuits::{
-    types::wallet::Nullifier, zk_circuits::valid_commitments::ValidCommitmentsStatement,
-    zk_gadgets::merkle::MerkleOpening,
-};
+use circuits::types::wallet::Nullifier;
 
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::{starknet_felt_to_biguint, starknet_felt_to_scalar, starknet_felt_to_u64};
@@ -23,11 +20,7 @@ use starknet::providers::jsonrpc::{
     models::{BlockId, EmittedEvent, ErrorCode, EventFilter},
     HttpTransport, JsonRpcClient, JsonRpcClientError, RpcError,
 };
-use starknet::{
-    core::{types::FieldElement as StarknetFieldElement, utils::get_selector_from_name},
-    providers::jsonrpc::models::BlockTag,
-};
-use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
+use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tokio::time::{sleep_until, Instant};
 use tracing::log;
 
@@ -37,7 +30,7 @@ use crate::{
         orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
     },
     handshake::jobs::HandshakeExecutionJob,
-    proof_generation::jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle},
+    proof_generation::{jobs::ProofManagerJob, OrderValidityProofBundle},
     starknet_client::client::StarknetClient,
     state::{
         wallet::{MerkleAuthenticationPath, Wallet},
@@ -277,8 +270,8 @@ impl OnChainEventListenerExecutor {
         } else if key == *NULLIFIER_SPENT_EVENT_SELECTOR {
             // Parse the nullifier from the felt
             log::info!("Handling nullifier spent event");
-            let match_nullifier = starknet_felt_to_scalar(&event.data[0]);
-            self.handle_nullifier_spent(match_nullifier).await?;
+            let nullifier = starknet_felt_to_scalar(&event.data[0]);
+            self.handle_nullifier_spent(nullifier).await?;
         }
 
         Ok(())
@@ -292,9 +285,7 @@ impl OnChainEventListenerExecutor {
         // Send an MPC shootdown request to the handshake manager
         self.config
             .handshake_manager_job_queue
-            .send(HandshakeExecutionJob::MpcShootdown {
-                match_nullifier: nullifier,
-            })
+            .send(HandshakeExecutionJob::MpcShootdown { nullifier })
             .map_err(|err| OnChainEventListenerError::SendMessage(err.to_string()))?;
 
         // Nullify any orders that used this nullifier in their validity proof
@@ -414,59 +405,7 @@ impl OnChainEventListenerExecutor {
             return Ok(());
         }
 
-        // Generate new witness and statement variables from the freshly synced state
-        let merkle_proof = wallet.merkle_proof.clone().unwrap();
-        let new_root = merkle_proof.compute_root();
-        let new_opening: MerkleOpening = wallet.merkle_proof.clone().unwrap().into();
-        let wallet_match_nullifier = wallet.get_match_nullifier();
-
-        // Loop over orders and enqueue a proof generation job for each
-        let locked_order_book = self.global_state.read_order_book().await;
-        let mut proof_response_channels = HashMap::new();
-        for order_id in wallet.orders.keys() {
-            let stale_witness = locked_order_book.get_validity_proof_witness(order_id).await;
-            if stale_witness.is_none() {
-                log::error!("tried to update VALID COMMITMENTS for order without existing witness");
-                return Ok(());
-            }
-            let mut stale_witness = stale_witness.unwrap();
-
-            stale_witness.wallet_opening = new_opening.clone();
-
-            // Enqueue a job with the proof manager
-            let (response_sender, response_receiver) = oneshot::channel();
-            let job = ProofJob::ValidCommitments {
-                witness: stale_witness,
-                statement: ValidCommitmentsStatement {
-                    nullifier: wallet_match_nullifier,
-                    merkle_root: new_root,
-                    pk_settle: wallet.key_chain.public_keys.pk_settle,
-                },
-            };
-
-            self.config
-                .proof_generation_work_queue
-                .send(ProofManagerJob {
-                    type_: job,
-                    response_channel: response_sender,
-                })
-                .map_err(|err| OnChainEventListenerError::SendMessage(err.to_string()))?;
-
-            proof_response_channels.insert(order_id, response_receiver);
-        }
-        drop(locked_order_book); // release lock
-
-        // Await proof responses for all orders
-        // TODO: Gossip the new proof to all cluster peers
-        for (order_id, channel) in proof_response_channels.into_iter() {
-            let proof = channel
-                .await
-                .map_err(|err| OnChainEventListenerError::ProofGeneration(err.to_string()))?;
-
-            self.update_order_proof(*order_id, proof.into()).await?;
-        }
-
-        Ok(())
+        unimplemented!("Implement wallet commitment proof task in encryption redesign")
     }
 
     /// Update the order validity proof in the global state and gossip
@@ -474,11 +413,11 @@ impl OnChainEventListenerExecutor {
     async fn update_order_proof(
         &self,
         order_id: OrderIdentifier,
-        proof: ValidCommitmentsBundle,
+        proof_bundle: OrderValidityProofBundle,
     ) -> Result<(), OnChainEventListenerError> {
         // Update the locally stored proof
         self.global_state
-            .add_order_validity_proof(&order_id, proof.clone())
+            .add_order_validity_proofs(&order_id, proof_bundle.clone())
             .await;
 
         // Gossip the new validity proof onto the pubsub mesh
@@ -486,7 +425,7 @@ impl OnChainEventListenerExecutor {
         let message = OrderBookManagementMessage::OrderProofUpdated {
             order_id,
             cluster,
-            proof,
+            proof_bundle,
         };
 
         self.config
