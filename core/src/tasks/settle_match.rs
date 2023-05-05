@@ -49,9 +49,12 @@ use crate::{
         orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
     },
     handshake::{r#match::HandshakeResult, state::HandshakeState},
-    proof_generation::jobs::{
-        ProofJob, ProofManagerJob, ValidCommitmentsBundle, ValidMatchEncryptBundle,
-        ValidSettleBundle,
+    proof_generation::{
+        jobs::{
+            ProofJob, ProofManagerJob, ValidCommitmentsBundle, ValidMatchEncryptBundle,
+            ValidSettleBundle,
+        },
+        OrderValidityProofBundle,
     },
     starknet_client::client::StarknetClient,
     state::{wallet::Wallet, NetworkOrder, NetworkOrderState, OrderIdentifier, RelayerState},
@@ -93,10 +96,10 @@ pub struct SettleMatchTask {
     pub handshake_state: HandshakeState,
     /// The result of the match process
     pub handshake_result: Box<HandshakeResult>,
-    /// The proof of `VALID COMMITMENTS` submitted by the first party
-    pub party0_validity_proof: ValidCommitmentsBundle,
-    /// The proof of `VALID COMMITMENTS` submitted by the second party
-    pub party1_validity_proof: ValidCommitmentsBundle,
+    /// The validity proofs submitted by the first party
+    pub party0_validity_proof: OrderValidityProofBundle,
+    /// The validity proofs submitted by the second party
+    pub party1_validity_proof: OrderValidityProofBundle,
     /// The notes that result from the match
     pub match_notes: MatchNotes,
     /// The note that settles into the local wallet
@@ -261,8 +264,8 @@ impl SettleMatchTask {
     pub async fn new(
         handshake_state: HandshakeState,
         handshake_result: Box<HandshakeResult>,
-        party0_validity_proof: ValidCommitmentsBundle,
-        party1_validity_proof: ValidCommitmentsBundle,
+        party0_validity_proof: OrderValidityProofBundle,
+        party1_validity_proof: OrderValidityProofBundle,
         starknet_client: StarknetClient,
         network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
