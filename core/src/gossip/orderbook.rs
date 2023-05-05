@@ -15,9 +15,11 @@ use crate::{
         },
         orderbook_management::OrderInfoResponse,
     },
-    proof_generation::jobs::ValidCommitmentsBundle,
+    proof_generation::{
+        OrderValidityProofBundle, OrderValidityWitnessBundle, SizedValidCommitments,
+        SizedValidReblind,
+    },
     state::{NetworkOrder, OrderIdentifier},
-    types::{SizedValidCommitments, SizedValidCommitmentsWitness},
 };
 
 use super::{
@@ -26,6 +28,9 @@ use super::{
     server::GossipProtocolExecutor,
     types::{ClusterId, WrappedPeerId},
 };
+
+/// Error message emitted when an already-used nullifier is received
+const ERR_NULLIFIER_USED: &str = "invalid nullifier, already used";
 
 impl GossipProtocolExecutor {
     /// Dispatches messages from the cluster regarding order book management
@@ -52,19 +57,16 @@ impl GossipProtocolExecutor {
 
             OrderBookManagementJob::OrderReceived {
                 order_id,
-                match_nullifier,
+                nullifier,
                 cluster,
-            } => {
-                self.handle_new_order(order_id, match_nullifier, cluster)
-                    .await
-            }
+            } => self.handle_new_order(order_id, nullifier, cluster).await,
 
             OrderBookManagementJob::OrderProofUpdated {
                 order_id,
                 cluster,
-                proof,
+                proof_bundle,
             } => {
-                self.handle_new_validity_proof(order_id, cluster, proof)
+                self.handle_new_validity_proof(order_id, cluster, proof_bundle)
                     .await
             }
 
@@ -117,13 +119,13 @@ impl GossipProtocolExecutor {
     ) -> Result<(), GossipError> {
         // If there is a proof attached to the order, verify it
         let is_local = order_info.cluster == self.global_state.local_cluster_id;
-        if let Some(proof_bundle) = order_info.valid_commit_proof.clone() {
+        if let Some(proof_bundle) = order_info.validity_proofs.clone() {
             // We can trust local (i.e. originating from cluster peers) proofs
             if !is_local {
                 let self_clone = self.clone();
 
                 tokio::task::spawn_blocking(move || {
-                    block_on(self_clone.verify_valid_commitments_proof(proof_bundle))
+                    block_on(self_clone.verify_validity_proofs(proof_bundle))
                 })
                 .await
                 .unwrap()?;
@@ -147,13 +149,13 @@ impl GossipProtocolExecutor {
     async fn handle_new_order(
         &self,
         order_id: OrderIdentifier,
-        match_nullifier: Nullifier,
+        nullifier: Nullifier,
         cluster: ClusterId,
     ) -> Result<(), GossipError> {
         // Ensure that the nullifier has not been used for this order
         if !self
             .starknet_client()
-            .check_nullifier_unused(match_nullifier)
+            .check_nullifier_unused(nullifier)
             .await
             .map_err(|err| GossipError::StarknetRequest(err.to_string()))?
         {
@@ -163,12 +165,7 @@ impl GossipProtocolExecutor {
 
         let is_local = cluster == self.global_state.local_cluster_id;
         self.global_state
-            .add_order(NetworkOrder::new(
-                order_id,
-                match_nullifier,
-                cluster,
-                is_local,
-            ))
+            .add_order(NetworkOrder::new(order_id, nullifier, cluster, is_local))
             .await;
         Ok(())
     }
@@ -181,7 +178,7 @@ impl GossipProtocolExecutor {
         &self,
         order_id: OrderIdentifier,
         cluster: ClusterId,
-        proof_bundle: ValidCommitmentsBundle,
+        proof_bundle: OrderValidityProofBundle,
     ) -> Result<(), GossipError> {
         let is_local = cluster.eq(&self.global_state.local_cluster_id);
 
@@ -191,7 +188,7 @@ impl GossipProtocolExecutor {
             let self_clone = self.clone();
 
             tokio::task::spawn_blocking(move || {
-                block_on(self_clone.verify_valid_commitments_proof(bundle_clone))
+                block_on(self_clone.verify_validity_proofs(bundle_clone))
             })
             .await
             .unwrap()?;
@@ -207,7 +204,10 @@ impl GossipProtocolExecutor {
             self.global_state
                 .add_order(NetworkOrder::new(
                     order_id,
-                    proof_bundle.statement.nullifier,
+                    proof_bundle
+                        .reblind_proof
+                        .statement
+                        .original_public_share_nullifier,
                     cluster,
                     is_local,
                 ))
@@ -215,7 +215,7 @@ impl GossipProtocolExecutor {
         }
 
         self.global_state
-            .add_order_validity_proof(&order_id, proof_bundle)
+            .add_order_validity_proofs(&order_id, proof_bundle)
             .await;
 
         // If the order is locally managed, also fetch the wintess used in the proof,
@@ -280,7 +280,7 @@ impl GossipProtocolExecutor {
             .await
             .get_order_info(&order_id)
             .await
-        && let Some(witness) = order_info.valid_commit_witness
+        && let Some(witness) = order_info.validity_proof_witnesses
         {
             self.network_channel
                 .send(GossipOutbound::Request { peer_id: requesting_peer, message: GossipRequest::ValidityWitness {
@@ -296,39 +296,38 @@ impl GossipProtocolExecutor {
     async fn handle_validity_witness_response(
         &self,
         order_id: OrderIdentifier,
-        witness: SizedValidCommitmentsWitness,
+        witnesses: OrderValidityWitnessBundle,
     ) {
         self.global_state
             .read_order_book()
             .await
-            .attach_validity_proof_witness(&order_id, witness)
+            .attach_validity_proof_witness(&order_id, witnesses)
             .await;
     }
 
-    /// Verify the `VALID COMMITMENTS` proof of an incoming order
+    /// Verify the validity proofs (`VALID REBLIND` and `VALID COMMITMENTS`) of an incoming order
     ///
     /// Aside from proof verification, this involves validating the statement
     /// variables (e.g. merkle root) for the proof
-    async fn verify_valid_commitments_proof(
+    async fn verify_validity_proofs(
         &self,
-        proof_bundle: ValidCommitmentsBundle,
+        proof_bundle: OrderValidityProofBundle,
     ) -> Result<(), GossipError> {
-        // Check that the nullifier is unused
-        if !self
-            .starknet_client()
-            .check_nullifier_unused(proof_bundle.statement.nullifier)
-            .await
-            .map_err(|err| GossipError::StarknetRequest(err.to_string()))?
-        {
-            return Err(GossipError::ValidCommitmentVerification(
-                "invalid nullifier, already used".to_string(),
-            ));
-        }
+        // Clone the proof out from behind their references so that the verifier may
+        // take ownership
+        let reblind_proof = proof_bundle.copy_reblind_proof();
+        let commitment_proof = proof_bundle.copy_commitment_proof();
+
+        // Check that the proof shares' nullifiers are unused
+        self.assert_nullifier_unused(reblind_proof.statement.original_private_share_nullifier)
+            .await?;
+        self.assert_nullifier_unused(reblind_proof.statement.original_public_share_nullifier)
+            .await?;
 
         // Check that the Merkle root is a valid historical root
         if !self
             .starknet_client()
-            .check_merkle_root_valid(proof_bundle.statement.merkle_root)
+            .check_merkle_root_valid(reblind_proof.statement.merkle_root)
             .await
             .map_err(|err| GossipError::StarknetRequest(err.to_string()))?
         {
@@ -339,16 +338,42 @@ impl GossipProtocolExecutor {
             // ));
         }
 
-        // Verify the proof
+        // Verify the reblind proof
+        if let Err(e) = verify_singleprover_proof::<SizedValidReblind>(
+            reblind_proof.statement,
+            reblind_proof.commitment,
+            reblind_proof.proof,
+        ) {
+            log::error!("Invalid proof of `VALID REBLIND`");
+            return Err(GossipError::ValidReblindVerification(e.to_string()));
+        }
+
+        // Validate the commitment proof
         if let Err(e) = verify_singleprover_proof::<SizedValidCommitments>(
-            proof_bundle.statement,
-            proof_bundle.commitment,
-            proof_bundle.proof,
+            commitment_proof.statement,
+            commitment_proof.commitment,
+            commitment_proof.proof,
         ) {
             log::error!("Invalid proof of `VALID COMMITMENTS`");
             return Err(GossipError::ValidCommitmentVerification(e.to_string()));
         }
 
         Ok(())
+    }
+
+    /// Assert that a nullifier is unused in the contract, returns a GossipError if
+    /// the nullifier has been used
+    async fn assert_nullifier_unused(&self, nullifier: Nullifier) -> Result<(), GossipError> {
+        self.starknet_client()
+            .check_nullifier_unused(nullifier)
+            .await
+            .map(|res| {
+                if !res {
+                    Err(GossipError::NullifierUsed(ERR_NULLIFIER_USED.to_string()))
+                } else {
+                    Ok(())
+                }
+            })
+            .map_err(|err| GossipError::StarknetRequest(err.to_string()))?
     }
 }
