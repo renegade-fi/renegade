@@ -230,7 +230,7 @@ pub struct Wallet {
     pub metadata: WalletMetadata,
     /// The private secret shares of the wallet
     pub private_shares: SizedWalletShare,
-    /// THe public secret shares of the wallet
+    /// The public secret shares of the wallet
     pub public_shares: SizedWalletShare,
     /// The authentication path for the wallet
     #[serde(default)]
