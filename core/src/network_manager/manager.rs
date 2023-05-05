@@ -607,14 +607,15 @@ impl NetworkManagerExecutor {
                             })
                     }
 
-                    GossipRequest::ValidityProof { order_id, proof } => {
-                        // TODO: Authenticate this
-                        self.gossip_work_queue
-                            .send(GossipServerJob::Cluster(
-                                ClusterManagementJob::UpdateValidityProof(order_id, proof),
-                            ))
-                            .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))
-                    }
+                    GossipRequest::ValidityProof {
+                        order_id,
+                        proof_bundle,
+                    } => self
+                        .gossip_work_queue
+                        .send(GossipServerJob::Cluster(
+                            ClusterManagementJob::UpdateValidityProof(order_id, proof_bundle),
+                        ))
+                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
 
                     GossipRequest::ValidityWitness { order_id, witness } => {
                         self.gossip_work_queue
@@ -775,14 +776,14 @@ impl NetworkManagerExecutor {
             PubsubMessage::OrderBookManagement(msg) => match msg {
                 OrderBookManagementMessage::OrderReceived {
                     order_id,
-                    match_nullifier,
+                    nullifier,
                     cluster,
                 } => self
                     .gossip_work_queue
                     .send(GossipServerJob::OrderBookManagement(
                         OrderBookManagementJob::OrderReceived {
                             order_id,
-                            match_nullifier,
+                            nullifier,
                             cluster,
                         },
                     ))
@@ -791,14 +792,14 @@ impl NetworkManagerExecutor {
                 OrderBookManagementMessage::OrderProofUpdated {
                     order_id,
                     cluster,
-                    proof,
+                    proof_bundle,
                 } => self
                     .gossip_work_queue
                     .send(GossipServerJob::OrderBookManagement(
                         OrderBookManagementJob::OrderProofUpdated {
                             order_id,
                             cluster,
-                            proof,
+                            proof_bundle,
                         },
                     ))
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?,

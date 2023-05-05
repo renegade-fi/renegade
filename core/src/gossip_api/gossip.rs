@@ -8,9 +8,8 @@ use uuid::Uuid;
 
 use crate::{
     gossip::types::{ClusterId, WrappedPeerId},
-    proof_generation::jobs::ValidCommitmentsBundle,
+    proof_generation::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     state::OrderIdentifier,
-    types::SizedValidCommitmentsWitness,
 };
 
 use super::{
@@ -124,24 +123,25 @@ pub enum GossipRequest {
     OrderInfo(OrderInfoRequest),
     /// A request that a peer replicate a set of wallets
     Replicate(ReplicateRequestBody),
-    /// A pushed message forwarded from the sender when a proof of `VALID COMMITMENTS` is
+    /// A pushed message forwarded from the sender when a validity proof bundle is
     /// requested, updated, or constructed for the first time
     ValidityProof {
         /// The order this proof is for
         order_id: OrderIdentifier,
-        /// The proof of `VALID COMMITMENTS` for this order
-        proof: ValidCommitmentsBundle,
+        /// The bundle of validity proofs; includes `VALID REBLIND` for the order's
+        /// wallet, and `VALID COMMITMENTS` for the order itself
+        proof_bundle: OrderValidityProofBundle,
     },
-    /// A request type that pushes the witness used in `VALID COMMITMENTS` for an order to the
-    /// receiver
+    /// A request type that pushes the witness used in the validity proofs for
+    /// an order to the receiver
     ///
     /// This may be triggered when the receiver broadcasts a pubsub message indicating that it
     /// needs a copy of the witness
     ValidityWitness {
         /// The order this witness is for
         order_id: OrderIdentifier,
-        /// The witness used to prove `VALID COMMITMENTS`
-        witness: SizedValidCommitmentsWitness,
+        /// The witness used in the validity proofs
+        witness: OrderValidityWitnessBundle,
     },
 }
 
