@@ -717,13 +717,26 @@ pub(crate) mod test_helpers {
 pub mod native_helpers {
     use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use crypto::{
-        fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField},
+        fields::{
+            biguint_to_scalar, prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField,
+        },
         hash::default_poseidon_params,
     };
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
 
-    use crate::types::wallet::{Nullifier, WalletSecretShare, WalletShareCommitment};
+    use crate::{
+        types::{
+            balance::BalanceSecretShare,
+            fee::FeeSecretShare,
+            keychain::PublicKeyChainSecretShare,
+            order::OrderSecretShare,
+            wallet::{Nullifier, Wallet, WalletSecretShare, WalletShareCommitment},
+        },
+        zk_gadgets::nonnative::{
+            biguint_to_scalar_words, NonNativeElementSecretShare, TWO_TO_256_FIELD_MOD,
+        },
+    };
 
     /// Compute the hash of the randomness of a given wallet
     pub fn compute_poseidon_hash(values: &[Scalar]) -> Scalar {
@@ -752,6 +765,241 @@ pub mod native_helpers {
         wallet_blinder: Scalar,
     ) -> Nullifier {
         compute_poseidon_hash(&[share_commitment, wallet_blinder])
+    }
+
+    /// Reblind a wallet given its secret shares
+    ///
+    /// Returns the reblinded private and public shares
+    pub(crate) fn reblind_wallet<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >(
+        private_secret_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    ) -> (
+        WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
+        // Sample new wallet blinders from the `blinder` CSPRNG
+        // See the comments in `valid_reblind.rs` for an explanation of the two CSPRNGs
+        let mut blinder_samples =
+            evaluate_hash_chain(private_secret_shares.blinder, 2 /* length */);
+        let mut blinder_drain = blinder_samples.drain(..);
+        let new_blinder = blinder_drain.next().unwrap();
+        let new_blinder_private_share = blinder_drain.next().unwrap();
+
+        // Sample new secret shares for the wallet
+        let shares_serialized: Vec<Scalar> = private_secret_shares.into();
+        let serialized_len = shares_serialized.len();
+        let secret_shares =
+            evaluate_hash_chain(shares_serialized[serialized_len - 2], serialized_len - 1);
+
+        create_wallet_shares_with_randomness(
+            wallet,
+            new_blinder,
+            new_blinder_private_share,
+            secret_shares,
+        )
+    }
+
+    /// Compute a chained Poseidon hash of the given length from the given seed
+    pub(crate) fn evaluate_hash_chain(seed: Scalar, length: usize) -> Vec<Scalar> {
+        let mut seed = scalar_to_prime_field(&seed);
+        let mut res = Vec::with_capacity(length);
+
+        let poseidon_config = default_poseidon_params();
+        for _ in 0..length {
+            // New hasher every time to reset the hash state, Arkworks sponges don't natively
+            // support resets, so we pay the small re-initialization overhead
+            let mut hasher = PoseidonSponge::new(&poseidon_config);
+            hasher.absorb(&seed);
+            seed = hasher.squeeze_field_elements(1 /* num_elements */)[0];
+
+            res.push(prime_field_to_scalar(&seed));
+        }
+
+        res
+    }
+
+    /// Construct public shares of a wallet given the private shares and blinder
+    ///
+    /// The return type is a tuple containing the private and public shares. Note
+    /// that the private shares returned are exactly those passed in
+    pub(crate) fn create_wallet_shares_from_private<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >(
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        private_shares: &WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        blinder: Scalar,
+    ) -> (
+        WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
+        // Serialize the wallet's private shares and use this as the secret share stream
+        let private_shares_ser: Vec<Scalar> = private_shares.clone().into();
+        create_wallet_shares_with_randomness(
+            wallet,
+            blinder,
+            private_shares.blinder,
+            private_shares_ser,
+        )
+    }
+
+    /// Create a secret sharing of a wallet given the secret shares and blinders
+    pub(crate) fn create_wallet_shares_with_randomness<
+        T,
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >(
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        blinder: Scalar,
+        private_blinder_share: Scalar,
+        secret_shares: T,
+    ) -> (
+        WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    )
+    where
+        T: IntoIterator<Item = Scalar>,
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
+        let mut share_iter = secret_shares.into_iter();
+        /// Shorthand for creating unwrapping the next secret share
+        macro_rules! next_share {
+            () => {
+                share_iter.next().unwrap()
+            };
+        }
+
+        // Secret share the balances
+        let mut balances1 = Vec::with_capacity(MAX_BALANCES);
+        let mut balances2 = Vec::with_capacity(MAX_BALANCES);
+        for balance in wallet.balances.iter() {
+            let mint_share = next_share!();
+            let amount_share = next_share!();
+            balances1.push(BalanceSecretShare {
+                mint: mint_share,
+                amount: amount_share,
+            });
+
+            balances2.push(BalanceSecretShare {
+                mint: biguint_to_scalar(&balance.mint) - mint_share,
+                amount: Scalar::from(balance.amount) - amount_share,
+            });
+        }
+
+        // Secret share the orders
+        let mut orders1 = Vec::with_capacity(MAX_ORDERS);
+        let mut orders2 = Vec::with_capacity(MAX_ORDERS);
+        for order in wallet.orders.iter() {
+            let quote_share = next_share!();
+            let base_share = next_share!();
+            let side_share = next_share!();
+            let price_share = next_share!();
+            let amount_share = next_share!();
+            let timestamp_share = next_share!();
+
+            orders1.push(OrderSecretShare {
+                quote_mint: quote_share,
+                base_mint: base_share,
+                side: side_share,
+                price: price_share,
+                amount: amount_share,
+                timestamp: timestamp_share,
+            });
+
+            orders2.push(OrderSecretShare {
+                quote_mint: biguint_to_scalar(&order.quote_mint) - quote_share,
+                base_mint: biguint_to_scalar(&order.base_mint) - base_share,
+                side: Scalar::from(order.side) - side_share,
+                price: order.price.repr - price_share,
+                amount: Scalar::from(order.amount) - amount_share,
+                timestamp: Scalar::from(order.timestamp) - timestamp_share,
+            });
+        }
+
+        // Secret share the fees
+        let mut fees1 = Vec::with_capacity(MAX_FEES);
+        let mut fees2 = Vec::with_capacity(MAX_FEES);
+        for fee in wallet.fees.iter() {
+            let settle_key_share = next_share!();
+            let gas_addr_share = next_share!();
+            let gas_amount_share = next_share!();
+            let percentage_share = next_share!();
+
+            fees1.push(FeeSecretShare {
+                settle_key: settle_key_share,
+                gas_addr: gas_addr_share,
+                gas_token_amount: gas_amount_share,
+                percentage_fee: percentage_share,
+            });
+
+            fees2.push(FeeSecretShare {
+                settle_key: biguint_to_scalar(&fee.settle_key) - settle_key_share,
+                gas_addr: biguint_to_scalar(&fee.gas_addr) - gas_addr_share,
+                gas_token_amount: Scalar::from(fee.gas_token_amount) - gas_amount_share,
+                percentage_fee: fee.percentage_fee.repr - percentage_share,
+            })
+        }
+
+        // Secret share the keychain
+        let root_key_words = biguint_to_scalar_words(wallet.keys.pk_root.0.clone());
+        let root_shares1 = (0..root_key_words.len())
+            .map(|_| next_share!())
+            .collect_vec();
+        let root_shares2 = root_key_words
+            .iter()
+            .zip(root_shares1.iter())
+            .map(|(w1, w2)| w1 - w2)
+            .collect_vec();
+
+        let match_share = next_share!();
+
+        let keychain1 = PublicKeyChainSecretShare {
+            pk_root: NonNativeElementSecretShare {
+                words: root_shares1,
+                field_mod: TWO_TO_256_FIELD_MOD.clone(),
+            },
+            pk_match: match_share,
+        };
+        let keychain2 = PublicKeyChainSecretShare {
+            pk_root: NonNativeElementSecretShare {
+                words: root_shares2,
+                field_mod: TWO_TO_256_FIELD_MOD.clone(),
+            },
+            pk_match: wallet.keys.pk_match.0 - match_share,
+        };
+
+        // Construct the secret shares of the wallet
+        let wallet1 = WalletSecretShare {
+            balances: balances1.try_into().unwrap(),
+            orders: orders1.try_into().unwrap(),
+            fees: fees1.try_into().unwrap(),
+            keys: keychain1,
+            blinder: private_blinder_share,
+        };
+        let mut wallet2 = WalletSecretShare {
+            balances: balances2.try_into().unwrap(),
+            orders: orders2.try_into().unwrap(),
+            fees: fees2.try_into().unwrap(),
+            keys: keychain2,
+            blinder: blinder - private_blinder_share,
+        };
+
+        // Blind the public shares
+        wallet2.blind(blinder);
+
+        (wallet1, wallet2)
     }
 }
 
