@@ -8,7 +8,7 @@ use crate::{
         },
         gossip::{GossipOutbound, GossipRequest, PubsubMessage},
     },
-    proof_generation::jobs::ValidCommitmentsBundle,
+    proof_generation::OrderValidityProofBundle,
     state::{
         wallet::{Wallet, WalletIdentifier},
         OrderIdentifier,
@@ -46,8 +46,9 @@ impl GossipProtocolExecutor {
                 self.handle_share_validity_proofs_job(req).await?;
             }
 
-            ClusterManagementJob::UpdateValidityProof(order_id, proof) => {
-                self.handle_updated_validity_proof(order_id, proof).await;
+            ClusterManagementJob::UpdateValidityProof(order_id, proof_bundle) => {
+                self.handle_updated_validity_proof(order_id, proof_bundle)
+                    .await;
             }
         }
 
@@ -156,7 +157,7 @@ impl GossipProtocolExecutor {
             let locked_order_state = self.global_state.read_order_book().await;
             for wallet in req.wallets.iter() {
                 for order_id in wallet.orders.keys() {
-                    if !locked_order_state.has_validity_proof(order_id).await {
+                    if !locked_order_state.has_validity_proofs(order_id).await {
                         orders_needing_proofs.push(*order_id);
                     }
                 }
@@ -199,10 +200,10 @@ impl GossipProtocolExecutor {
         {
             let locked_order_book = self.global_state.read_order_book().await;
             for order_id in req.order_ids.iter() {
-                if let Some(proof) = locked_order_book.get_validity_proof(order_id).await {
+                if let Some(proof_bundle) = locked_order_book.get_validity_proofs(order_id).await {
                     outbound_messages.push(GossipRequest::ValidityProof {
                         order_id: *order_id,
-                        proof,
+                        proof_bundle,
                     });
                 }
             }
@@ -221,14 +222,14 @@ impl GossipProtocolExecutor {
         Ok(())
     }
 
-    /// Handle a message from a cluster peer that sends a proof of `VALID COMMITMENTS` for an order
+    /// Handle a message from a cluster peer that sends validity proofs for an order
     async fn handle_updated_validity_proof(
         &self,
         order_id: OrderIdentifier,
-        proof: ValidCommitmentsBundle,
+        proof_bundle: OrderValidityProofBundle,
     ) {
         self.global_state
-            .add_order_validity_proof(&order_id, proof)
+            .add_order_validity_proofs(&order_id, proof_bundle)
             .await
     }
 }

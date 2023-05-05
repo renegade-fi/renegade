@@ -10,9 +10,8 @@ use crate::{
         gossip::AuthenticatedGossipResponse,
         heartbeat::{BootstrapRequest, HeartbeatMessage},
     },
-    proof_generation::jobs::ValidCommitmentsBundle,
+    proof_generation::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     state::{wallet::WalletIdentifier, NetworkOrder, OrderIdentifier},
-    types::SizedValidCommitmentsWitness,
 };
 
 use super::types::{ClusterId, WrappedPeerId};
@@ -68,8 +67,8 @@ pub enum ClusterManagementJob {
     ReplicateRequest(ReplicateRequestBody),
     /// Forward any known proofs of order validity to the sending cluster peer
     ShareValidityProofs(ValidityProofRequest),
-    /// A proof has been shared by a cluster peer
-    UpdateValidityProof(OrderIdentifier, ValidCommitmentsBundle),
+    /// A proof bundle has been shared by a cluster peer
+    UpdateValidityProof(OrderIdentifier, OrderValidityProofBundle),
 }
 
 /// Defines a job type for local order book management
@@ -96,20 +95,21 @@ pub enum OrderBookManagementJob {
     OrderReceived {
         /// The identifier of the new order
         order_id: OrderIdentifier,
-        /// The match nullifier of the containing wallet
-        match_nullifier: Nullifier,
+        /// The public share nullifier of the containing wallet
+        nullifier: Nullifier,
         /// The cluster that manages this order
         cluster: ClusterId,
     },
-    /// A new validity proof has been generated for an order, it should be placed in
-    /// the `Verified` state after local peers verify the proof
+    /// A new validity proof bundle has been generated for an order, it should be placed in
+    /// the `Verified` state after the local peer verifies the proof
     OrderProofUpdated {
         /// The identifier of the now updated order
         order_id: OrderIdentifier,
         /// The cluster that manages this order
         cluster: ClusterId,
-        /// The new proof of `VALID COMMITMENTS`
-        proof: ValidCommitmentsBundle,
+        /// The new proof bundle containing a proof of `VALID COMMITMENTS`
+        /// and a proof of `VALID REBLIND`
+        proof_bundle: OrderValidityProofBundle,
     },
     /// A request for an order's witness to `VALID COMMITMENTS` has come in
     OrderWitness {
@@ -118,11 +118,12 @@ pub enum OrderBookManagementJob {
         /// The peer to return the response to
         requesting_peer: WrappedPeerId,
     },
-    /// A response for an order's witness to `VALID COMMITMENTS` has come in
+    /// A response to a request for the validity proof witnesses for a given order
     OrderWitnessResponse {
         /// The order ID that info is requested for
         order_id: OrderIdentifier,
-        /// The witness used to prove `VALID COMMITMENTS` for the order
-        witness: SizedValidCommitmentsWitness,
+        /// The witnesses used to prove `VALID REBLIND` at the wallet level
+        /// and `VALID COMMITMENTS` at the order level
+        witness: OrderValidityWitnessBundle,
     },
 }

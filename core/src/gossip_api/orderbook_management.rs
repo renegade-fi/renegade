@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     gossip::types::ClusterId,
-    proof_generation::jobs::ValidCommitmentsBundle,
+    proof_generation::OrderValidityProofBundle,
     state::{NetworkOrder, OrderIdentifier},
 };
 
@@ -39,19 +39,20 @@ pub enum OrderBookManagementMessage {
     OrderReceived {
         /// The identifier of the new order
         order_id: OrderIdentifier,
-        /// The match nullifier of the new order
-        match_nullifier: Nullifier,
+        /// The public share nullifier of the new order's wallet
+        nullifier: Nullifier,
         /// The cluster that manages this order
         cluster: ClusterId,
     },
-    /// A new validity proof has been generated for an order, it should be placed in
+    /// A new validity proof bundle has been generated for an order, it should be placed in
     /// the `Verified` state after local peers verify the proof
     OrderProofUpdated {
         /// The identifier of the now updated order
         order_id: OrderIdentifier,
         /// The cluster that manages this order
         cluster: ClusterId,
-        /// The new proof of `VALID COMMITMENTS`
-        proof: ValidCommitmentsBundle,
+        /// The new validity proof bundle for the order, containing a proof of `VALID COMMITMENTS`
+        /// for the order, and one of `VALID REBLIND` for the wallet
+        proof_bundle: OrderValidityProofBundle,
     },
 }

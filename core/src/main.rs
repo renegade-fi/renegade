@@ -30,7 +30,10 @@ use std::{io::Write, process::exit, thread, time::Duration};
 
 use chrono::Local;
 use circuits::{
-    types::{keychain::PublicIdentificationKey, wallet::Wallet},
+    types::{
+        keychain::PublicIdentificationKey,
+        wallet::{Wallet, WalletSecretShare},
+    },
     zk_gadgets::fixed_point::FixedPoint,
 };
 use crossbeam::channel;
@@ -101,6 +104,8 @@ pub(crate) const MERKLE_HEIGHT: usize = 32;
 pub(crate) const MERKLE_ROOT_HISTORY_LENGTH: usize = 30;
 /// A type wrapper around the wallet type that adds the default generics above
 pub(crate) type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+/// A type wrapper around a wallet share that adds the default generics above
+pub(crate) type SizedWalletShare = WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 /// The amount of time to wait between sending teardown signals and terminating execution
 const TERMINATION_TIMEOUT_MS: u64 = 10_000; // 10 seconds
 
