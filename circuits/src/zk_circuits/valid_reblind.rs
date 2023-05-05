@@ -580,11 +580,13 @@ mod test {
     use rand_core::OsRng;
 
     use crate::{
-        native_helpers::{compute_wallet_share_commitment, compute_wallet_share_nullifier},
+        native_helpers::{
+            compute_wallet_share_commitment, compute_wallet_share_nullifier, reblind_wallet,
+        },
         types::keychain::SecretIdentificationKey,
         zk_circuits::test_helpers::{
-            create_multi_opening, create_wallet_shares, reblind_wallet, SizedWallet,
-            SizedWalletShare, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS, PRIVATE_KEYS,
+            create_multi_opening, create_wallet_shares, SizedWallet, SizedWalletShare,
+            INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS, PRIVATE_KEYS,
         },
         CommitPublic, CommitWitness,
     };
