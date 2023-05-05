@@ -13,6 +13,9 @@ use crossbeam::channel::Sender;
 use curve25519_dalek::scalar::Scalar;
 use uuid::Uuid;
 
+/// Error message thrown when a nullifier cannot be found
+const ERR_NULLIFIER_MISSING: &str = "nullifier not found for order";
+
 /// Holds state information for all in-flight handshake correspondences
 ///
 /// Abstracts mostly over the concurrent access patterns used by the thread pool
@@ -50,23 +53,19 @@ impl HandshakeStateIndex {
         peer_order_id: OrderIdentifier,
         local_order_id: OrderIdentifier,
     ) -> Result<(), HandshakeManagerError> {
-        // Lookup the match nullifiers for the order
+        // Lookup the public share nullifiers for the order
         let locked_order_book = self.global_state.read_order_book().await;
         let local_nullifier = locked_order_book
-            .get_match_nullifier(&local_order_id)
+            .get_nullifier(&local_order_id)
             .await
             .ok_or_else(|| {
-                HandshakeManagerError::StateNotFound(
-                    "match nullifier not found for order".to_string(),
-                )
+                HandshakeManagerError::StateNotFound(ERR_NULLIFIER_MISSING.to_string())
             })?;
         let peer_nullifier = locked_order_book
-            .get_match_nullifier(&peer_order_id)
+            .get_nullifier(&peer_order_id)
             .await
             .ok_or_else(|| {
-                HandshakeManagerError::StateNotFound(
-                    "match nullifier not found for order".to_string(),
-                )
+                HandshakeManagerError::StateNotFound(ERR_NULLIFIER_MISSING.to_string())
             })?;
 
         // Index by request ID
@@ -113,12 +112,12 @@ impl HandshakeStateIndex {
         if let Some(state) = state.clone() {
             let mut locked_nullifier_map = self.nullifier_map.write().await;
 
-            if let Some(nullifier_set) = locked_nullifier_map.get_mut(&state.local_match_nullifier)
+            if let Some(nullifier_set) = locked_nullifier_map.get_mut(&state.local_share_nullifier)
             {
                 nullifier_set.remove(request_id);
             }
 
-            if let Some(nullifier_set) = locked_nullifier_map.get_mut(&state.peer_match_nullifier) {
+            if let Some(nullifier_set) = locked_nullifier_map.get_mut(&state.peer_share_nullifier) {
                 nullifier_set.remove(request_id);
             }
         } // locked_nullifier_map released
@@ -209,10 +208,10 @@ pub struct HandshakeState {
     pub peer_order_id: OrderIdentifier,
     /// The identifier of the order that the local peer has proposed for match
     pub local_order_id: OrderIdentifier,
-    /// The match nullifier of remote peer's order
-    pub peer_match_nullifier: Scalar,
-    /// The match nullifier of the local peer's order
-    pub local_match_nullifier: Scalar,
+    /// The public secret share nullifier of remote peer's order
+    pub peer_share_nullifier: Scalar,
+    /// The public secret share nullifier of the local peer's order
+    pub local_share_nullifier: Scalar,
     /// The current state information of the
     pub state: State,
     /// The cancel channel that the coordinator may use to cancel MPC execution
@@ -246,16 +245,16 @@ impl HandshakeState {
         role: ConnectionRole,
         peer_order_id: OrderIdentifier,
         local_order_id: OrderIdentifier,
-        peer_match_nullifier: Scalar,
-        local_match_nullifier: Scalar,
+        peer_share_nullifier: Scalar,
+        local_share_nullifier: Scalar,
     ) -> Self {
         Self {
             request_id,
             role,
             peer_order_id,
             local_order_id,
-            peer_match_nullifier,
-            local_match_nullifier,
+            peer_share_nullifier,
+            local_share_nullifier,
             state: State::OrderNegotiation,
             cancel_channel: None,
         }

@@ -266,9 +266,9 @@ impl HandshakeExecutor {
             }
 
             // Indicates that in-flight MPCs on the given nullifier should be terminated
-            HandshakeExecutionJob::MpcShootdown { match_nullifier } => {
+            HandshakeExecutionJob::MpcShootdown { nullifier } => {
                 self.handshake_state_index
-                    .shootdown_nullifier(match_nullifier)
+                    .shootdown_nullifier(nullifier)
                     .await
             }
         }
@@ -711,11 +711,11 @@ impl HandshakeExecutor {
         let (party0_proof, party1_proof) = {
             let locked_order_book = self.global_state.read_order_book().await;
             let local_validity_proof = locked_order_book
-                .get_validity_proof(&handshake_state.local_order_id)
+                .get_validity_proofs(&handshake_state.local_order_id)
                 .await
                 .unwrap();
             let remote_validity_proof = locked_order_book
-                .get_validity_proof(&handshake_state.peer_order_id)
+                .get_validity_proofs(&handshake_state.peer_order_id)
                 .await
                 .unwrap();
 

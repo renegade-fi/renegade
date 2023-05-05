@@ -9,8 +9,7 @@ use circuits::{
     multiprover_prove,
     types::{
         balance::LinkableBalanceCommitment,
-        fee::LinkableFeeCommitment,
-        keychain::PublicIdentificationKey,
+        fee::Fee,
         order::{LinkableOrderCommitment, Order},
         r#match::{
             AuthenticatedLinkableMatchResultCommitment, AuthenticatedMatchResult,
@@ -22,7 +21,7 @@ use circuits::{
     zk_circuits::valid_match_mpc::{
         ValidMatchCommitment, ValidMatchMpcCircuit, ValidMatchMpcStatement, ValidMatchMpcWitness,
     },
-    Allocate, LinkableCommitment, Open, SharePublic,
+    Allocate, Open, SharePublic,
 };
 use crossbeam::channel::{bounded, Receiver};
 use curve25519_dalek::scalar::Scalar;
@@ -36,38 +35,26 @@ use mpc_ristretto::{
 use tracing::log;
 use uuid::Uuid;
 
-use crate::{proof_generation::jobs::ValidMatchMpcBundle, types::SizedValidCommitmentsWitness};
+use crate::proof_generation::{jobs::ValidMatchMpcBundle, OrderValidityWitnessBundle};
 
 use super::{error::HandshakeManagerError, manager::HandshakeExecutor, state::HandshakeState};
 
-/// The type returned by the match process, including the result, the validity proof, and
-/// all witness/statement variables that must be revealed to complete the match
+/// The type returned by the match process, including the result, the validity proof bundle,
+/// and all witness/statement variables that must be revealed to complete the match
 #[derive(Clone, Debug)]
 pub struct HandshakeResult {
     /// The plaintext, opened result of the match
     pub match_: LinkableMatchResultCommitment,
-    /// The first party's match nullifier
-    pub party0_match_nullifier: Nullifier,
-    /// The second party's match nullifier,
-    pub party1_match_nullifier: Nullifier,
+    /// The first party's public wallet share nullifier
+    pub party0_share_nullifier: Nullifier,
+    /// The second party's public wallet share nullifier,
+    pub party1_share_nullifier: Nullifier,
     /// The proof of `VALID MATCH MPC` along with associated commitments
     pub match_proof: ValidMatchMpcBundle,
-    /// The first party's fee, opened to create fee notes
-    pub party0_fee: LinkableFeeCommitment,
-    /// The second party's fee, opened to create fee notes
-    pub party1_fee: LinkableFeeCommitment,
-    /// The Poseidon hash of the first party's wallet randomness
-    pub party0_randomness_hash: LinkableCommitment,
-    /// The Poseidon hash of the second party's wallet randomness
-    pub party1_randomness_hash: LinkableCommitment,
-    /// The public settle key of the first party
-    pub pk_settle0: PublicIdentificationKey,
-    /// The public settle key of the second party
-    pub pk_settle1: PublicIdentificationKey,
-    /// The public settle key of the cluster managing the first party's order
-    pub pk_settle_cluster0: PublicIdentificationKey,
-    /// The public settle key fo the cluster managing the second party's order
-    pub pk_settle_cluster1: PublicIdentificationKey,
+    /// The first party's fee
+    pub party0_fee: Fee,
+    /// The second party's fee
+    pub party1_fee: Fee,
 }
 
 impl HandshakeResult {
@@ -155,13 +142,13 @@ impl HandshakeExecutor {
 
         let shared_fabric = SharedFabric::new(fabric);
 
-        // Lookup the witness used to prove valid commitments for this order, balance, fee pair
+        // Lookup the witness bundle used in validity proofs for this order, balance, fee pair
         // Use the linkable commitments from this witness to commit to values in `VALID MATCH MPC`
-        let commitments_witness = self
+        let proof_witnesses = self
             .global_state
             .read_order_book()
             .await
-            .get_validity_proof_witness(&handshake_state.local_order_id)
+            .get_validity_proof_witnesses(&handshake_state.local_order_id)
             .await
             .ok_or_else(|| {
                 HandshakeManagerError::StateNotFound(
@@ -170,8 +157,9 @@ impl HandshakeExecutor {
             })?;
 
         // Run the mpc to get a match result
+        let commitment_witness = proof_witnesses.copy_commitment_witness();
         let match_res = Self::execute_match_mpc(
-            &commitments_witness.order.clone().into(),
+            &commitment_witness.order.clone().into(),
             shared_fabric.clone(),
         )?;
 
@@ -183,8 +171,8 @@ impl HandshakeExecutor {
         // The statement parameterization of the VALID MATCH MPC circuit is empty
         let statement = ValidMatchMpcStatement {};
         let (witness, commitment, proof) = Self::prove_valid_match(
-            commitments_witness.order.clone(),
-            commitments_witness.balance.clone(),
+            commitment_witness.order.clone(),
+            commitment_witness.balance_send.clone(),
             statement,
             match_res,
             shared_fabric.clone(),
@@ -200,7 +188,7 @@ impl HandshakeExecutor {
             witness.match_res,
             commitment,
             proof,
-            commitments_witness,
+            proof_witnesses,
             handshake_state,
             shared_fabric,
             cancel_channel,
@@ -277,17 +265,19 @@ impl HandshakeExecutor {
         shared_match_res: AuthenticatedLinkableMatchResultCommitment<N, S>,
         commitment: ValidMatchCommitment,
         proof: R1CSProof,
-        validity_proof_witness: SizedValidCommitmentsWitness,
+        validity_proof_witness: OrderValidityWitnessBundle,
         handshake_state: HandshakeState,
         fabric: SharedFabric<N, S>,
         cancel_channel: Receiver<()>,
     ) -> Result<Box<HandshakeResult>, HandshakeManagerError> {
         // Exchange fees, randomness, and keys before opening the match result
         let party0_fee = validity_proof_witness
+            .commitment_witness
             .fee
             .share_public(0 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
         let party1_fee = validity_proof_witness
+            .commitment_witness
             .fee
             .share_public(1 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
@@ -311,27 +301,6 @@ impl HandshakeExecutor {
                 })?
         }; // locked_wallet_index released
 
-        // Share the wallet randomness and keys with the counterparty
-        let party0_randomness_hash = validity_proof_witness
-            .randomness_hash
-            .share_public(0 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let party1_randomness_hash = validity_proof_witness
-            .randomness_hash
-            .share_public(1 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-
-        // Share the wallet public settle keys with the counterparty
-        let my_key = wallet.key_chain.public_keys.pk_settle;
-        let party0_key = fabric
-            .borrow_fabric()
-            .share_plaintext_scalar(0 /* owning_party */, my_key.into())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let party1_key = fabric
-            .borrow_fabric()
-            .share_plaintext_scalar(1 /* owning_party */, my_key.into())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-
         // Finally, before revealing the match, we make a check that the MPC has
         // not been terminated by the coordinator
         if !cancel_channel.is_empty() {
@@ -350,17 +319,10 @@ impl HandshakeExecutor {
                 statement: ValidMatchMpcStatement {},
                 proof,
             },
-            party0_match_nullifier: handshake_state.local_match_nullifier,
-            party1_match_nullifier: handshake_state.peer_match_nullifier,
+            party0_share_nullifier: handshake_state.local_share_nullifier,
+            party1_share_nullifier: handshake_state.peer_share_nullifier,
             party0_fee,
             party1_fee,
-            party0_randomness_hash,
-            party1_randomness_hash,
-            pk_settle0: party0_key.into(),
-            pk_settle1: party1_key.into(),
-            // Dummy values for now
-            pk_settle_cluster0: Scalar::zero().into(),
-            pk_settle_cluster1: Scalar::zero().into(),
         }))
     }
 }

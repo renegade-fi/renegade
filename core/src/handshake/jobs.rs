@@ -45,15 +45,15 @@ pub enum HandshakeExecutionJob {
         /// The net that was setup for the party
         net: QuicTwoPartyNet,
     },
-    /// Indicates that the local peer should halt any MPCs active on the given match nullifier
+    /// Indicates that the local peer should halt any MPCs active on the given nullifier
     ///
     /// This job is constructed when a nullifier is seen on chain, indicating that it is
     /// no longer valid to match on. The local party should hangup immediately to avoid
     /// leaking the order after opening
     MpcShootdown {
-        /// The match-nullifier value seen on-chain; any in-flight MPCs on this nullifier
+        /// The public share nullifier value seen on-chain; any in-flight MPCs on this nullifier
         /// are to be terminated
-        match_nullifier: Nullifier,
+        nullifier: Nullifier,
     },
     /// Indicates that a cluster replica has initiated a match on the given order pair.
     /// The local peer should not schedule this order pair for a match for some duration
