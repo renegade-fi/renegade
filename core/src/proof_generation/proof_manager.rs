@@ -145,7 +145,7 @@ impl ProofManager {
         // Build the statement and witness for the proof
         let (commitment, proof) = singleprover_prove::<
             ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        >(witness, statement)
+        >(witness, statement.clone())
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
         Ok(ValidWalletCreateBundle {
@@ -181,7 +181,7 @@ impl ProofManager {
         // Prove the statement `VALID COMMITMENTS`
         let (witness_comm, proof) = singleprover_prove::<
             ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        >(witness, statement)
+        >(witness, statement.clone())
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
         Ok(ValidCommitmentsBundle {
@@ -196,10 +196,9 @@ impl ProofManager {
         witness: SizedValidWalletUpdateWitness,
         statement: SizedValidWalletUpdateStatement,
     ) -> Result<ValidWalletUpdateBundle, ProofManagerError> {
-        let statement_clone = statement.clone();
         let (witness_comm, proof) = singleprover_prove::<
             ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        >(witness, statement_clone)
+        >(witness, statement.clone())
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
         Ok(ValidWalletUpdateBundle {

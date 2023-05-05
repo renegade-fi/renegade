@@ -86,8 +86,7 @@ impl Serialize for OrderValidityProofBundle {
     where
         S: serde::Serializer,
     {
-        self.copy_reblind_proof().serialize(serializer)?;
-        self.copy_commitment_proof().serialize(serializer)
+        (self.copy_reblind_proof(), self.copy_commitment_proof()).serialize(serializer)
     }
 }
 
@@ -96,8 +95,8 @@ impl<'de> Deserialize<'de> for OrderValidityProofBundle {
     where
         D: serde::Deserializer<'de>,
     {
-        let reblind_proof = ValidReblindBundle::deserialize(deserializer)?;
-        let commitment_proof = ValidCommitmentsBundle::deserialize(deserializer)?;
+        let (reblind_proof, commitment_proof) =
+            <(ValidReblindBundle, ValidCommitmentsBundle)>::deserialize(deserializer)?;
 
         Ok(OrderValidityProofBundle {
             reblind_proof: Arc::new(reblind_proof),
@@ -136,8 +135,7 @@ impl Serialize for OrderValidityWitnessBundle {
     where
         S: serde::Serializer,
     {
-        self.copy_reblind_witness().serialize(serializer)?;
-        self.copy_commitment_witness().serialize(serializer)
+        (self.copy_reblind_witness(), self.copy_commitment_witness()).serialize(serializer)
     }
 }
 
@@ -146,8 +144,8 @@ impl<'de> Deserialize<'de> for OrderValidityWitnessBundle {
     where
         D: serde::Deserializer<'de>,
     {
-        let reblind_witness = SizedValidReblindWitness::deserialize(deserializer)?;
-        let commitment_witness = SizedValidCommitmentsWitness::deserialize(deserializer)?;
+        let (reblind_witness, commitment_witness) =
+            <(SizedValidReblindWitness, SizedValidCommitmentsWitness)>::deserialize(deserializer)?;
 
         Ok(OrderValidityWitnessBundle {
             reblind_witness: Arc::new(reblind_witness),
