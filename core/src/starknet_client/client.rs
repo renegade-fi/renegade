@@ -588,11 +588,11 @@ impl StarknetClient {
         &self,
         public_blinder_share: Scalar,
     ) -> Result<TransactionHash, StarknetClientError> {
-        let reduced_pk_view = Self::reduce_scalar_to_felt(&public_blinder_share.into());
+        let reduced_blinder_share = Self::reduce_scalar_to_felt(&public_blinder_share.into());
         let call = CallFunction {
             contract_address: self.contract_address,
             entry_point_selector: *GET_WALLET_LAST_UPDATED_SELECTOR,
-            calldata: vec![reduced_pk_view],
+            calldata: vec![reduced_blinder_share],
         };
 
         self.call_contract(call)

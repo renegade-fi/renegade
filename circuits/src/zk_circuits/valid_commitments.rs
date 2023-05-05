@@ -22,9 +22,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     errors::{ProverError, VerifierError},
     types::{
-        balance::{Balance, BalanceVar, CommittedBalance},
+        balance::{Balance, BalanceVar, CommittedBalance, LinkableBalanceCommitment},
         fee::{CommittedFee, Fee, FeeVar},
-        order::{CommittedOrder, Order, OrderVar},
+        order::{CommittedOrder, LinkableOrderCommitment, OrderVar},
         wallet::{WalletSecretShare, WalletSecretShareCommitment, WalletSecretShareVar, WalletVar},
     },
     zk_gadgets::{
@@ -302,9 +302,9 @@ pub struct ValidCommitmentsWitness<
     /// the mint that will be received by this party upon a successful match
     pub augmented_public_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The order that the prover intends to match against with this proof
-    pub order: Order,
+    pub order: LinkableOrderCommitment,
     /// The balance that the wallet will send when the order is matched
-    pub balance_send: Balance,
+    pub balance_send: LinkableBalanceCommitment,
     /// The balance that the wallet will receive into when the order is matched
     pub balance_receive: Balance,
     /// The balance that will cover the relayer's fee when matched
@@ -672,8 +672,8 @@ mod test {
             private_secret_shares: private_shares,
             public_secret_shares: public_shares,
             augmented_public_shares,
-            order,
-            balance_send,
+            order: order.into(),
+            balance_send: balance_send.into(),
             balance_receive,
             balance_fee,
             fee,
