@@ -10,10 +10,7 @@ use std::{
 };
 
 use circuits::{
-    types::{
-        keychain::PublicEncryptionKey,
-        wallet::{NoteCommitment, Nullifier, WalletCommitment},
-    },
+    types::wallet::{NoteCommitment, Nullifier, WalletShareCommitment},
     zk_gadgets::merkle::MerkleRoot,
 };
 use crypto::{
@@ -52,8 +49,8 @@ use tracing::log;
 
 use crate::{
     proof_generation::jobs::{
-        ValidCommitmentsBundle, ValidMatchEncryptBundle, ValidMatchMpcBundle, ValidSettleBundle,
-        ValidWalletCreateBundle, ValidWalletUpdateBundle,
+        ValidCommitmentsBundle, ValidMatchMpcBundle, ValidSettleBundle, ValidWalletCreateBundle,
+        ValidWalletUpdateBundle,
     },
     starknet_client::{
         GET_WALLET_LAST_UPDATED_SELECTOR, INTERNAL_NODE_CHANGED_EVENT_SELECTOR, MATCH_SELECTOR,
@@ -263,7 +260,7 @@ impl StarknetClient {
     }
 
     /// Query the current nonce and advance it by one
-    pub fn next_account_index(&mut self) -> usize {
+    pub fn next_account_index(&self) -> usize {
         // Acquire a lock on self.account_index, copy it to a usize, and increment it
         let mut account_index = self.account_index.lock().unwrap();
         let current_account_index = *account_index;
@@ -296,7 +293,7 @@ impl StarknetClient {
 
     /// Helper to setup a contract call with the correct max fee and account nonce
     async fn execute_transaction(
-        &mut self,
+        &self,
         call: Call,
     ) -> Result<TransactionHash, StarknetClientError> {
         // Estimate the fee and add a buffer to avoid rejected transaction
@@ -608,9 +605,9 @@ impl StarknetClient {
     /// Call the "get_wallet_update" view function in the contract
     pub async fn get_wallet_last_updated(
         &self,
-        pk_view: PublicEncryptionKey,
+        public_blinder_share: Scalar,
     ) -> Result<TransactionHash, StarknetClientError> {
-        let reduced_pk_view = Self::reduce_scalar_to_felt(&pk_view.into());
+        let reduced_pk_view = Self::reduce_scalar_to_felt(&public_blinder_share.into());
         let call = CallFunction {
             contract_address: self.contract_address,
             entry_point_selector: *GET_WALLET_LAST_UPDATED_SELECTOR,
@@ -630,9 +627,9 @@ impl StarknetClient {
     ///
     /// TODO: Add proof and wallet encryption under pk_view to the contract
     pub async fn new_wallet(
-        &mut self,
-        pk_view: PublicEncryptionKey,
-        wallet_commitment: WalletCommitment,
+        &self,
+        public_blinder_share: Scalar,
+        wallet_commitment: WalletShareCommitment,
         wallet_ciphertext: Vec<ElGamalCiphertext>,
         valid_wallet_create: ValidWalletCreateBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
@@ -643,7 +640,7 @@ impl StarknetClient {
 
         // Reduce the wallet commitment mod the Starknet field
         let mut calldata = vec![
-            Self::reduce_scalar_to_felt(&pk_view.into()),
+            Self::reduce_scalar_to_felt(&public_blinder_share.into()),
             Self::reduce_scalar_to_felt(&wallet_commitment),
         ];
         // Pack the ciphertext into a list of felts
@@ -667,9 +664,9 @@ impl StarknetClient {
     /// Returns the transaction hash of the `update_wallet` call
     #[allow(clippy::too_many_arguments)]
     pub async fn update_wallet(
-        &mut self,
-        pk_view: PublicEncryptionKey,
-        new_wallet_commitment: WalletCommitment,
+        &self,
+        public_blinder_share: Scalar,
+        new_wallet_commitment: WalletShareCommitment,
         old_match_nullifier: Nullifier,
         old_spend_nullifier: Nullifier,
         external_transfer: Option<ExternalTransfer>,
@@ -678,7 +675,7 @@ impl StarknetClient {
         valid_wallet_update: ValidWalletUpdateBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
         let mut calldata = vec![
-            Self::reduce_scalar_to_felt(&pk_view.into()),
+            Self::reduce_scalar_to_felt(&public_blinder_share),
             Self::reduce_scalar_to_felt(&new_wallet_commitment),
             Self::reduce_scalar_to_felt(&old_match_nullifier),
             Self::reduce_scalar_to_felt(&old_spend_nullifier),
@@ -718,7 +715,7 @@ impl StarknetClient {
     /// Returns the transaction hash of the call
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_match(
-        &mut self,
+        &self,
         match_nullifier1: Nullifier,
         match_nullifier2: Nullifier,
         party0_note_commitment: NoteCommitment,
@@ -734,7 +731,6 @@ impl StarknetClient {
         party0_validity_proof: ValidCommitmentsBundle,
         party1_validity_proof: ValidCommitmentsBundle,
         valid_match_proof: ValidMatchMpcBundle,
-        valid_encryption_proof: ValidMatchEncryptBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
         // Build the calldata
         let mut calldata = vec![
@@ -761,7 +757,6 @@ impl StarknetClient {
         proof_blob.append(&mut serde_json::to_vec(&party0_validity_proof).unwrap());
         proof_blob.append(&mut serde_json::to_vec(&party1_validity_proof).unwrap());
         proof_blob.append(&mut serde_json::to_vec(&valid_match_proof).unwrap());
-        proof_blob.append(&mut serde_json::to_vec(&valid_encryption_proof).unwrap());
 
         calldata.append(&mut pack_serializable!(proof_blob));
 
@@ -779,9 +774,9 @@ impl StarknetClient {
     /// Returns the transaction hash of the call
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_settle(
-        &mut self,
-        pk_view: PublicEncryptionKey,
-        new_wallet_commit: WalletCommitment,
+        &self,
+        public_blinder_share: Scalar,
+        new_wallet_commit: WalletShareCommitment,
         old_match_nullifier: Nullifier,
         old_spend_nullifier: Nullifier,
         note_redeem_nullifier: Nullifier,
@@ -789,7 +784,7 @@ impl StarknetClient {
         proof: ValidSettleBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
         let mut calldata = vec![
-            Self::reduce_scalar_to_felt(&pk_view.into()),
+            Self::reduce_scalar_to_felt(&public_blinder_share.into()),
             StarknetFieldElement::from(0u8), // from_internal_transfer
             Self::reduce_scalar_to_felt(&new_wallet_commit),
             Self::reduce_scalar_to_felt(&old_match_nullifier),
