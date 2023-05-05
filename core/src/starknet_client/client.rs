@@ -624,13 +624,10 @@ impl StarknetClient {
     /// Call the `new_wallet` contract method with the given source data
     ///
     /// Returns the transaction hash corresponding to the `new_wallet` invocation
-    ///
-    /// TODO: Add proof and wallet encryption under pk_view to the contract
     pub async fn new_wallet(
         &self,
         public_blinder_share: Scalar,
-        wallet_commitment: WalletShareCommitment,
-        wallet_ciphertext: Vec<ElGamalCiphertext>,
+        private_share_commitment: WalletShareCommitment,
         valid_wallet_create: ValidWalletCreateBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
         assert!(
@@ -638,13 +635,10 @@ impl StarknetClient {
             "no private key given to sign transactions with"
         );
 
-        // Reduce the wallet commitment mod the Starknet field
         let mut calldata = vec![
             Self::reduce_scalar_to_felt(&public_blinder_share.into()),
-            Self::reduce_scalar_to_felt(&wallet_commitment),
+            Self::reduce_scalar_to_felt(&private_share_commitment),
         ];
-        // Pack the ciphertext into a list of felts
-        calldata.append(&mut pack_serializable!(wallet_ciphertext));
         // Pack the proof into a list of felts
         calldata.append(&mut pack_serializable!(valid_wallet_create));
 
