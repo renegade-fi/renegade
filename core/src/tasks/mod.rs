@@ -11,6 +11,3 @@ pub mod initialize_state;
 pub mod lookup_wallet;
 pub mod settle_match;
 pub mod update_wallet;
-
-/// The amount to increment the randomness each time a wallet is nullified
-pub(self) const RANDOMNESS_INCREMENT: u8 = 2;
