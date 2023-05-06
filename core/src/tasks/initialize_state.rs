@@ -4,19 +4,13 @@
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter, Result as FmtResult},
+    sync::Arc,
 };
 
 use async_trait::async_trait;
-use circuits::{
-    native_helpers::compute_poseidon_hash,
-    zk_circuits::valid_commitments::{ValidCommitmentsStatement, ValidCommitmentsWitness},
-    zk_gadgets::merkle::MerkleOpening,
-    LinkableCommitment,
-};
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::biguint_to_scalar;
 use serde::Serialize;
-use tokio::sync::{mpsc::UnboundedSender, oneshot};
+use tokio::sync::mpsc::UnboundedSender;
 use tracing::log;
 
 use crate::{
@@ -24,15 +18,23 @@ use crate::{
         gossip::{GossipOutbound, PubsubMessage},
         orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
     },
-    proof_generation::jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle},
+    proof_generation::{
+        jobs::{ProofManagerJob, ValidCommitmentsBundle, ValidReblindBundle},
+        OrderValidityProofBundle, OrderValidityWitnessBundle,
+    },
     starknet_client::{client::StarknetClient, error::StarknetClientError},
     state::{
-        wallet::{MerkleAuthenticationPath, WalletIdentifier},
+        wallet::{WalletAuthenticationPath, WalletIdentifier},
         NetworkOrder, RelayerState,
     },
 };
 
-use super::driver::{StateWrapper, Task};
+use super::{
+    driver::{StateWrapper, Task},
+    helpers::{
+        construct_wallet_commitment_proof, construct_wallet_reblind_proof, find_merkle_path,
+    },
+};
 
 /// The displayable name of the task
 const INITIALIZE_STATE_TASK_NAME: &str = "initialize-state";
@@ -46,7 +48,7 @@ pub struct InitializeStateTask {
     /// A copy of the relayer-global state
     pub global_state: RelayerState,
     /// The wallet openings reconstructed from contract state
-    pub wallet_openings: HashMap<WalletIdentifier, MerkleAuthenticationPath>,
+    pub wallet_openings: HashMap<WalletIdentifier, WalletAuthenticationPath>,
     /// A client to interact with Starknet
     pub starknet_client: StarknetClient,
     /// A sender to the proof manager's work queue
@@ -87,6 +89,10 @@ impl From<InitializeStateTaskState> for StateWrapper {
 pub enum InitializeStateTaskError {
     /// Error interacting with Starknet
     Starknet(String),
+    /// Error proving `VALID REBLIND` for a wallet
+    ProveValidReblind(String),
+    /// Error proving `VALID COMMITMENTS` for a wallet
+    ProveValidCommitments(String),
 }
 
 #[async_trait]
@@ -134,12 +140,15 @@ impl Task for InitializeStateTask {
 
 impl InitializeStateTask {
     /// Constructor
-    pub fn new(
+    pub async fn new(
         global_state: RelayerState,
         starknet_client: StarknetClient,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         network_sender: UnboundedSender<GossipOutbound>,
     ) -> Self {
+        // Add all orders in the initial state to the order book
+        Self::add_initial_orders_to_book(global_state.clone()).await;
+
         Self {
             global_state,
             wallet_openings: HashMap::new(),
@@ -147,6 +156,31 @@ impl InitializeStateTask {
             proof_manager_work_queue,
             network_sender,
             task_state: InitializeStateTaskState::Pending,
+        }
+    }
+
+    /// Add all the orders of the initial wallets to the book
+    async fn add_initial_orders_to_book(global_state: RelayerState) {
+        let local_cluster_id = global_state.local_cluster_id.clone();
+
+        for wallet in global_state
+            .read_wallet_index()
+            .await
+            .get_all_wallets()
+            .await
+            .into_iter()
+        {
+            let wallet_nullifier = wallet.get_public_share_nullifier();
+            for order_id in wallet.orders.into_keys() {
+                global_state
+                    .add_order(NetworkOrder::new(
+                        order_id,
+                        wallet_nullifier,
+                        local_cluster_id.clone(),
+                        true, /* local */
+                    ))
+                    .await;
+            }
         }
     }
 
@@ -159,12 +193,7 @@ impl InitializeStateTask {
             .get_all_wallets()
             .await
         {
-            let commitment = wallet.get_commitment();
-            let res = self
-                .starknet_client
-                .find_merkle_authentication_path(commitment)
-                .await;
-
+            let res = find_merkle_path(&wallet, &self.starknet_client).await;
             if let Err(StarknetClientError::NotFound(_)) = res {
                 log::error!(
                     "could not find wallet {} in contract state",
@@ -182,100 +211,86 @@ impl InitializeStateTask {
         Ok(())
     }
 
-    /// Prove `VALID COMMITMENTS` for all orders in all the initial wallets
+    /// Prove `VALID COMMITMENTS` and `VALID REBLIND` for all orders in all the initial wallets
     async fn create_validity_proofs(&self) -> Result<(), InitializeStateTaskError> {
-        // Generate a merkle proof of inclusion for this wallet in the contract state
-        let mut proof_response_channels = Vec::new();
         let locked_wallet_index = self.global_state.read_wallet_index().await;
 
+        let mut reblind_response_channels = Vec::new();
+        let mut commitment_response_channels = Vec::new();
         for (ref wallet_id, merkle_path) in self.wallet_openings.clone().into_iter() {
             let wallet = locked_wallet_index.get_wallet(wallet_id).await.unwrap();
-            let merkle_root = merkle_path.compute_root();
-            let wallet_opening: MerkleOpening = merkle_path.into();
 
-            let match_nullifier = wallet.get_match_nullifier();
-            for (order_id, order) in wallet.orders.iter() {
-                // Skip default orders
-                if order.is_default() {
-                    continue;
-                }
+            // Start a proof of `VALID REBLIND`
+            let (reblind_witness, response_channel) = construct_wallet_reblind_proof(
+                &wallet,
+                merkle_path,
+                self.proof_manager_work_queue.clone(),
+            )
+            .map_err(InitializeStateTaskError::ProveValidReblind)?;
 
-                // Add the order to the book
+            let wallet_reblind_witness = Arc::new(reblind_witness);
+            reblind_response_channels.push((*wallet_id, response_channel));
+
+            // Create a proof of `VALID COMMITMENTS` for each order
+            for (order_id, order) in wallet.orders.iter().filter(|(_id, o)| !o.is_default()) {
+                // Start a proof of `VALID COMMITMENTS`
+                let (commitments_witness, response_channel) = construct_wallet_commitment_proof(
+                    wallet.clone(),
+                    order.clone(),
+                    self.proof_manager_work_queue.clone(),
+                )
+                .map_err(InitializeStateTaskError::ProveValidCommitments)?;
+
+                let order_commitment_witness = Arc::new(commitments_witness);
+
+                // Attach a copy of the witness to the locally managed state
+                // This witness is referenced by match computations which compute linkable commitments
+                // to shared witness elements; i.e. they commit with the same randomness
                 {
                     self.global_state
-                        .add_order(NetworkOrder::new(
-                            *order_id,
-                            match_nullifier,
-                            self.global_state.local_cluster_id.clone(),
-                            true, /* local */
-                        ))
+                        .read_order_book()
+                        .await
+                        .attach_validity_proof_witness(
+                            order_id,
+                            OrderValidityWitnessBundle {
+                                reblind_witness: wallet_reblind_witness.clone(),
+                                commitment_witness: order_commitment_witness.clone(),
+                            },
+                        )
                         .await;
                 } // order_book lock released
 
-                if let Some((balance, fee, fee_balance)) =
-                    wallet.get_balance_and_fee_for_order(order)
-                {
-                    // Construct the witness and statement to generate a commitments proof from
-                    let randomness_hash =
-                        compute_poseidon_hash(&[biguint_to_scalar(&wallet.randomness)]);
-                    let witness = ValidCommitmentsWitness {
-                        wallet: wallet.clone().into(),
-                        order: order.clone().into(),
-                        balance: balance.clone().into(),
-                        fee: fee.clone().into(),
-                        fee_balance: fee_balance.clone().into(),
-                        wallet_opening: wallet_opening.clone(),
-                        randomness_hash: LinkableCommitment::new(randomness_hash),
-                        sk_match: wallet.key_chain.secret_keys.sk_match,
-                    };
-
-                    let statement = ValidCommitmentsStatement {
-                        nullifier: match_nullifier,
-                        merkle_root,
-                        pk_settle: wallet.key_chain.public_keys.pk_settle,
-                    };
-
-                    // Create a job and a response channel to get proofs back on, and forward the job
-                    let (response_sender, response_receiver) = oneshot::channel();
-                    self.proof_manager_work_queue
-                        .send(ProofManagerJob {
-                            type_: ProofJob::ValidCommitments {
-                                witness: witness.clone(),
-                                statement,
-                            },
-                            response_channel: response_sender,
-                        })
-                        .unwrap();
-
-                    // Store a handle to the response channel
-                    proof_response_channels.push((*order_id, response_receiver));
-
-                    // Attach a copy of the witness to the locally managed state
-                    // This witness is reference by match computations which compute linkable commitments
-                    // to the order and balance; i.e. they commit with the same randomness
-                    {
-                        self.global_state
-                            .read_order_book()
-                            .await
-                            .attach_validity_proof_witness(order_id, witness.clone())
-                            .await;
-                    } // order_book lock released
-                } else {
-                    log::error!("Skipping wallet validity proof; no balance and fee found");
-                    continue;
-                }
+                commitment_response_channels.push((*order_id, *wallet_id, response_channel));
             }
         }
         drop(locked_wallet_index); // release lock
 
-        // Await a proof response for each order then attach it to the order index entry
-        for (order_id, receiver) in proof_response_channels.into_iter() {
-            // Await a proof
-            let proof_bundle: ValidCommitmentsBundle = receiver.await.unwrap().into();
+        // Await all wallet level reblind proofs
+        let mut reblind_proofs = HashMap::new();
+        for (wallet_id, receiver) in reblind_response_channels.into_iter() {
+            let proof: ValidReblindBundle = receiver
+                .await
+                .map_err(|err| InitializeStateTaskError::ProveValidReblind(err.to_string()))?
+                .into();
+            reblind_proofs.insert(wallet_id, Arc::new(proof));
+        }
 
-            // Update the local orderbook state
+        // Await a proof response for each order then attach it to the order index entry
+        for (order_id, wallet_id, receiver) in commitment_response_channels.into_iter() {
+            // Await a proof
+            let proof_bundle: ValidCommitmentsBundle = receiver
+                .await
+                .map_err(|err| InitializeStateTaskError::ProveValidCommitments(err.to_string()))?
+                .into();
+
+            // Add proofs to the global state, the local node will gossip these around
+            let reblind_proof = reblind_proofs.get(&wallet_id).unwrap().clone();
+            let proof_bundle = OrderValidityProofBundle {
+                commitment_proof: Arc::new(proof_bundle),
+                reblind_proof,
+            };
             self.global_state
-                .add_order_validity_proof(&order_id, proof_bundle.clone())
+                .add_order_validity_proofs(&order_id, proof_bundle.clone())
                 .await;
 
             // Gossip about the updated proof to the network
@@ -285,12 +300,13 @@ impl InitializeStateTask {
                     OrderBookManagementMessage::OrderProofUpdated {
                         order_id,
                         cluster: self.global_state.local_cluster_id.clone(),
-                        proof: proof_bundle,
+                        proof_bundle,
                     },
                 ),
             };
             self.network_sender.send(message).unwrap()
         }
+
         Ok(())
     }
 }
