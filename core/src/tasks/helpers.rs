@@ -238,5 +238,9 @@ fn find_order(base_mint: &BigUint, quote_mint: &BigUint, wallet: &SizedWallet) -
         .iter()
         .enumerate()
         .find(|(_ind, order)| order.quote_mint.eq(quote_mint) && order.base_mint.eq(base_mint))
+<<<<<<< HEAD
         .map(|(ind, _order)| ind)
+=======
+        .map(|(ind, _balance)| ind)
+>>>>>>> 181e771 (core: tasks: initialize-state: Refactor task after encryption redesign)
 }
