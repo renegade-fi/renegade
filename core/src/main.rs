@@ -181,8 +181,8 @@ async fn main() -> Result<(), CoordinatorError> {
         contract_addr: args.contract_address.clone(),
         infura_api_key: None,
         starknet_json_rpc_addr: args.starknet_jsonrpc_node.clone(),
-        starknet_account_address: args.starknet_account_address,
-        starknet_pkey: args.starknet_private_key,
+        starknet_account_addresses: args.starknet_account_addresses,
+        starknet_pkeys: args.starknet_private_keys,
     });
 
     // Build a task driver that may be used to spawn long-lived asynchronous tasks that

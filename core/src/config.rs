@@ -114,12 +114,12 @@ struct Cli {
     /// The HTTP addressable StarkNet JSON-RPC node
     #[clap(long = "starknet-gateway", value_parser)]
     pub starknet_jsonrpc_node: Option<String>,
-    /// The StarkNet address corresponding to the given key
-    #[clap(long = "starknet-account-addr", value_parser, requires = "starknet-private-key")]
-    pub starknet_account_address: Option<String>,
-    /// The StarkNet private key used to send transactions
-    #[clap(long = "starknet-account-pkey", value_parser, requires = "starknet-account-address")]
-    pub starknet_private_key: Option<String>,
+    /// The StarkNet addresses corresponding to the given private keys
+    #[clap(long = "starknet-account-addr", value_parser, requires = "starknet-private-keys")]
+    pub starknet_account_addresses: Option<Vec<String>>,
+    /// The StarkNet private keys used to send transactions
+    #[clap(long = "starknet-account-pkey", value_parser, requires = "starknet-account-addresses")]
+    pub starknet_private_keys: Option<Vec<String>>,
     /// A file holding a json representation of the wallets the local node
     /// should manage
     #[clap(short, long, value_parser)]
@@ -186,10 +186,10 @@ pub struct RelayerConfig {
     pub coinbase_api_secret: Option<String>,
     /// The StarkNet JSON-RPC API gateway
     pub starknet_jsonrpc_node: Option<String>,
-    /// The StarkNet address corresponding to the given key
-    pub starknet_account_address: Option<String>,
-    /// The StarkNet private key used for signing transactions
-    pub starknet_private_key: Option<String>,
+    /// The StarkNet addresses corresponding to the given private keys
+    pub starknet_account_addresses: Option<Vec<String>>,
+    /// The StarkNet private keys used for signing transactions
+    pub starknet_private_keys: Option<Vec<String>>,
     /// The Ethereum RPC node websocket address to dial for on-chain data
     pub eth_websocket_addr: Option<String>,
 }
@@ -216,8 +216,8 @@ impl Clone for RelayerConfig {
             coinbase_api_key: self.coinbase_api_key.clone(),
             coinbase_api_secret: self.coinbase_api_secret.clone(),
             starknet_jsonrpc_node: self.starknet_jsonrpc_node.clone(),
-            starknet_account_address: self.starknet_account_address.clone(),
-            starknet_private_key: self.starknet_private_key.clone(),
+            starknet_account_addresses: self.starknet_account_addresses.clone(),
+            starknet_private_keys: self.starknet_private_keys.clone(),
             eth_websocket_addr: self.eth_websocket_addr.clone(),
             debug: self.debug,
         }
@@ -303,8 +303,8 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, CoordinatorError> {
         coinbase_api_key: cli_args.coinbase_api_key,
         coinbase_api_secret: cli_args.coinbase_api_secret,
         starknet_jsonrpc_node: cli_args.starknet_jsonrpc_node,
-        starknet_account_address: cli_args.starknet_account_address,
-        starknet_private_key: cli_args.starknet_private_key,
+        starknet_account_addresses: cli_args.starknet_account_addresses,
+        starknet_private_keys: cli_args.starknet_private_keys,
         eth_websocket_addr: cli_args.eth_websocket_addr,
         debug: cli_args.debug,
     };
