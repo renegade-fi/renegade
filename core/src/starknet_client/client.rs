@@ -5,7 +5,7 @@ use std::{
     collections::{HashMap, HashSet},
     iter,
     str::FromStr,
-    sync::{Mutex, Arc},
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -179,7 +179,7 @@ pub struct StarknetClient {
     /// The accounts that may be used to sign outbound transactions
     accounts: Option<Arc<Vec<SingleOwnerAccount<SequencerGatewayProvider, LocalWallet>>>>,
     /// The account index to use for the next transaction
-    account_index: Arc<Mutex<usize>>
+    account_index: Arc<Mutex<usize>>,
 }
 
 impl StarknetClient {
@@ -193,19 +193,23 @@ impl StarknetClient {
         let accounts = if config.account_enabled() {
             let account_addrs = config.starknet_account_addresses.clone().unwrap();
             let keys = config.starknet_pkeys.clone().unwrap();
-            let accounts = account_addrs.into_iter().zip(keys).map(|(account_addr, key)| {
-                // Parse the account address and key
-                let account_addr_felt = StarknetFieldElement::from_str(&account_addr).unwrap();
-                let key_felt = StarknetFieldElement::from_str(&key).unwrap();
-                // Build the account
-                let signer = LocalWallet::from(SigningKey::from_secret_scalar(key_felt));
-                SingleOwnerAccount::new(
-                    config.new_gateway_client(),
-                    signer,
-                    account_addr_felt,
-                    config.chain.into(),
-                )
-            }).collect::<Vec<_>>();
+            let accounts = account_addrs
+                .into_iter()
+                .zip(keys)
+                .map(|(account_addr, key)| {
+                    // Parse the account address and key
+                    let account_addr_felt = StarknetFieldElement::from_str(&account_addr).unwrap();
+                    let key_felt = StarknetFieldElement::from_str(&key).unwrap();
+                    // Build the account
+                    let signer = LocalWallet::from(SigningKey::from_secret_scalar(key_felt));
+                    SingleOwnerAccount::new(
+                        config.new_gateway_client(),
+                        signer,
+                        account_addr_felt,
+                        config.chain.into(),
+                    )
+                })
+                .collect::<Vec<_>>();
             Some(accounts)
         } else {
             None
@@ -250,7 +254,10 @@ impl StarknetClient {
     }
 
     /// Get the underlying account at the given index as an immutable reference
-    pub fn get_account(&self, account_index: usize) -> &SingleOwnerAccount<SequencerGatewayProvider, LocalWallet> {
+    pub fn get_account(
+        &self,
+        account_index: usize,
+    ) -> &SingleOwnerAccount<SequencerGatewayProvider, LocalWallet> {
         self.accounts.as_ref().unwrap().get(account_index).unwrap()
     }
 
@@ -294,7 +301,10 @@ impl StarknetClient {
         // Estimate the fee and add a buffer to avoid rejected transaction
         let account_index = self.new_account_index();
         let acct_nonce = self.pending_block_nonce(account_index).await?;
-        let execution = self.get_account(account_index).execute(vec![call]).nonce(acct_nonce);
+        let execution = self
+            .get_account(account_index)
+            .execute(vec![call])
+            .nonce(acct_nonce);
 
         let fee_estimate = execution
             .estimate_fee()
@@ -325,9 +335,15 @@ impl StarknetClient {
     }
 
     /// Get the nonce of the account at the provided index in the pending block
-    pub async fn pending_block_nonce(&self, account_index: usize) -> Result<StarknetFieldElement, StarknetClientError> {
+    pub async fn pending_block_nonce(
+        &self,
+        account_index: usize,
+    ) -> Result<StarknetFieldElement, StarknetClientError> {
         self.gateway_client
-            .get_nonce(self.get_account(account_index).address(), CoreBlockId::Pending)
+            .get_nonce(
+                self.get_account(account_index).address(),
+                CoreBlockId::Pending,
+            )
             .await
             .map_err(|err| StarknetClientError::Rpc(err.to_string()))
     }
