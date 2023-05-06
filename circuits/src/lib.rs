@@ -770,7 +770,7 @@ pub mod native_helpers {
     /// Reblind a wallet given its secret shares
     ///
     /// Returns the reblinded private and public shares
-    pub(crate) fn reblind_wallet<
+    pub fn reblind_wallet<
         const MAX_BALANCES: usize,
         const MAX_ORDERS: usize,
         const MAX_FEES: usize,
@@ -829,7 +829,7 @@ pub mod native_helpers {
     ///
     /// The return type is a tuple containing the private and public shares. Note
     /// that the private shares returned are exactly those passed in
-    pub(crate) fn create_wallet_shares_from_private<
+    pub fn create_wallet_shares_from_private<
         const MAX_BALANCES: usize,
         const MAX_ORDERS: usize,
         const MAX_FEES: usize,

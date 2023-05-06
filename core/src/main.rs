@@ -201,7 +201,8 @@ async fn main() -> Result<(), CoordinatorError> {
         starknet_client.clone(),
         proof_generation_worker_sender.clone(),
         network_sender.clone(),
-    );
+    )
+    .await;
     task_driver.start_task(task).await;
 
     // ----------------
