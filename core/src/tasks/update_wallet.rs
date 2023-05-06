@@ -273,7 +273,7 @@ impl UpdateWalletTask {
     }
 
     /// Submit the `update_wallet` transaction to the contract and await finality
-    async fn submit_tx(&self) -> Result<(), UpdateWalletTaskError> {
+    async fn submit_tx(&mut self) -> Result<(), UpdateWalletTaskError> {
         let proof = if let UpdateWalletTaskState::SubmittingTx { proof_bundle } = self.state() {
             proof_bundle
         } else {
@@ -322,6 +322,11 @@ impl UpdateWalletTask {
                 ERR_TRANSACTION_FAILED.to_string(),
             ));
         }
+
+        // Update the wallet in the global state
+        self.global_state
+            .update_wallet(self.new_wallet.clone())
+            .await;
 
         Ok(())
     }
@@ -401,11 +406,6 @@ impl UpdateWalletTask {
             self.update_order_state(order_id, proof.into(), witness)
                 .await?;
         }
-
-        // Update the wallet in the global state
-        self.global_state
-            .update_wallet(self.new_wallet.clone())
-            .await;
 
         Ok(())
     }

@@ -620,7 +620,7 @@ impl SettleMatchTask {
 
     /// Submit the match transaction to the contract
     async fn submit_match(
-        &self,
+        &mut self,
         proof: ValidMatchEncryptBundle,
     ) -> Result<(), SettleMatchTaskError> {
         // Build commitments to the notes
@@ -790,7 +790,10 @@ impl SettleMatchTask {
     }
 
     /// Submit the settle transaction to the contract
-    async fn submit_settle(&self, proof: ValidSettleBundle) -> Result<(), SettleMatchTaskError> {
+    async fn submit_settle(
+        &mut self,
+        proof: ValidSettleBundle,
+    ) -> Result<(), SettleMatchTaskError> {
         let note_commitment = compute_note_commitment(
             &self.my_note,
             self.old_wallet.key_chain.public_keys.pk_settle,

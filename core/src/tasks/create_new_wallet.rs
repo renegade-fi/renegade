@@ -225,7 +225,7 @@ impl NewWalletTask {
     }
 
     /// Submit the newly created wallet on-chain with proof of validity
-    async fn submit_wallet_tx(&self) -> Result<(), NewWalletTaskError> {
+    async fn submit_wallet_tx(&mut self) -> Result<(), NewWalletTaskError> {
         let proof = if let NewWalletTaskState::SubmittingTx { proof_bundle } = self.state() {
             proof_bundle
         } else {
