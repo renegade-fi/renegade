@@ -1,5 +1,10 @@
 //! Helpers for common functionality across tasks
 
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
 use circuits::{
     native_helpers::{
         compute_wallet_share_commitment, create_wallet_shares_from_private, reblind_wallet,
@@ -16,15 +21,28 @@ use circuits::{
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::biguint_to_scalar;
 use num_bigint::BigUint;
-use tokio::sync::oneshot::{self, Receiver as TokioReceiver};
+use tokio::sync::{
+    mpsc::UnboundedSender as TokioSender,
+    oneshot::{self, Receiver as TokioReceiver},
+};
 
 use crate::{
+    gossip_api::{
+        gossip::{GossipOutbound, PubsubMessage},
+        orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
+    },
     proof_generation::{
-        jobs::{ProofBundle, ProofJob, ProofManagerJob},
-        SizedValidCommitmentsWitness, SizedValidReblindWitness,
+        jobs::{
+            ProofBundle, ProofJob, ProofManagerJob, ValidCommitmentsBundle, ValidReblindBundle,
+        },
+        OrderValidityProofBundle, OrderValidityWitnessBundle, SizedValidCommitmentsWitness,
+        SizedValidReblindWitness,
     },
     starknet_client::{client::StarknetClient, error::StarknetClientError},
-    state::wallet::{Wallet, WalletAuthenticationPath},
+    state::{
+        wallet::{Wallet, WalletAuthenticationPath},
+        RelayerState,
+    },
     SizedWallet,
 };
 
@@ -38,10 +56,20 @@ const ERR_ENQUEUING_JOB: &str = "error enqueuing job with proof manager";
 const ERR_BALANCE_NOT_FOUND: &str = "cannot find balance for order";
 /// Error message emitted when an order cannot be found in a wallet
 const ERR_ORDER_NOT_FOUND: &str = "cannot find order in wallet";
+/// Error message emitted when proving VALID COMMITMENTS fails
+const ERR_PROVE_COMMITMENTS_FAILED: &str = "failed to prove valid commitments";
+/// Error message emitted when proving VALID REBLIND fails
+const ERR_PROVE_REBLIND_FAILED: &str = "failed to prove valid reblind";
 
 // -----------
 // | Helpers |
 // -----------
+
+/// Get the current timestamp in milliseconds since the epoch
+pub(super) fn get_current_timestamp() -> u64 {
+    let now = SystemTime::now();
+    now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
+}
 
 /// Find the merkle authentication path of a wallet
 pub(super) async fn find_merkle_path(
@@ -238,9 +266,105 @@ fn find_order(base_mint: &BigUint, quote_mint: &BigUint, wallet: &SizedWallet) -
         .iter()
         .enumerate()
         .find(|(_ind, order)| order.quote_mint.eq(quote_mint) && order.base_mint.eq(base_mint))
-<<<<<<< HEAD
         .map(|(ind, _order)| ind)
-=======
-        .map(|(ind, _balance)| ind)
->>>>>>> 181e771 (core: tasks: initialize-state: Refactor task after encryption redesign)
+}
+
+/// Find a wallet on-chain, and update its validity proofs. That is, a proof of `VALID REBLIND`
+/// for the wallet, and one proof of `VALID COMMITMENTS` for each order in the wallet
+pub(super) async fn update_wallet_validity_proofs(
+    wallet: &Wallet,
+    starknet_client: &StarknetClient,
+    proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    global_state: RelayerState,
+    network_sender: TokioSender<GossipOutbound>,
+) -> Result<(), String> {
+    // No validity proofs needed for an empty wallet, they will be re-proven on
+    // the next update that adds a non-empty order
+    if wallet.orders.values().all(|o| o.is_default()) {
+        return Ok(());
+    }
+
+    // Find the authentication path for the wallet
+    let authentication_path = find_merkle_path(wallet, starknet_client)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    // Dispatch a proof of `VALID REBLIND` for the wallet
+    let (reblind_witness, reblind_response_channel) = construct_wallet_reblind_proof(
+        wallet,
+        authentication_path,
+        proof_manager_work_queue.clone(),
+    )?;
+    let wallet_reblind_witness = Arc::new(reblind_witness);
+
+    // For each order, construct a proof of `VALID COMMITMENTS`
+    let mut commitments_response_channels = Vec::new();
+    for (order_id, order) in wallet.orders.iter().filter(|(_id, o)| !o.is_default()) {
+        // Start a proof of `VALID COMMITMENTS`
+        let (commitments_witness, response_channel) = construct_wallet_commitment_proof(
+            wallet.clone(),
+            order.clone(),
+            proof_manager_work_queue.clone(),
+        )?;
+
+        let order_commitment_witness = Arc::new(commitments_witness);
+
+        // Attach a copy of the witness to the locally managed state
+        // This witness is referenced by match computations which compute linkable commitments
+        // to shared witness elements; i.e. they commit with the same randomness
+        {
+            global_state
+                .read_order_book()
+                .await
+                .attach_validity_proof_witness(
+                    order_id,
+                    OrderValidityWitnessBundle {
+                        reblind_witness: wallet_reblind_witness.clone(),
+                        commitment_witness: order_commitment_witness.clone(),
+                    },
+                )
+                .await;
+        } // order_book lock released
+
+        commitments_response_channels.push((*order_id, response_channel));
+    }
+
+    // Await the proof of `VALID REBLIND`
+    let reblind_proof: ValidReblindBundle = reblind_response_channel
+        .await
+        .map_err(|_| ERR_PROVE_REBLIND_FAILED.to_string())?
+        .into();
+    let reblind_proof = Arc::new(reblind_proof);
+
+    // Await proofs for each order, store them in the state
+    for (order_id, receiver) in commitments_response_channels.into_iter() {
+        // Await a proof
+        let commitment_proof: ValidCommitmentsBundle = receiver
+            .await
+            .map_err(|_| ERR_PROVE_COMMITMENTS_FAILED.to_string())?
+            .into();
+
+        let proof_bundle = OrderValidityProofBundle {
+            reblind_proof: reblind_proof.clone(),
+            commitment_proof: Arc::new(commitment_proof),
+        };
+        global_state
+            .add_order_validity_proofs(&order_id, proof_bundle.clone())
+            .await;
+
+        // Gossip the updated proofs to the network
+        let message = GossipOutbound::Pubsub {
+            topic: ORDER_BOOK_TOPIC.to_string(),
+            message: PubsubMessage::OrderBookManagement(
+                OrderBookManagementMessage::OrderProofUpdated {
+                    order_id,
+                    cluster: global_state.local_cluster_id.clone(),
+                    proof_bundle,
+                },
+            ),
+        };
+        network_sender.send(message).unwrap()
+    }
+
+    Ok(())
 }
