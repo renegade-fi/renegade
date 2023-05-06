@@ -5,7 +5,7 @@ use std::{
     collections::{HashMap, HashSet},
     iter,
     str::FromStr,
-    sync::Arc,
+    sync::{Mutex, Arc},
     time::Duration,
 };
 
@@ -88,7 +88,7 @@ const EVENTS_PAGE_SIZE: u64 = 50;
 /// The interval at which to poll the gateway for transaction status
 const TX_STATUS_POLL_INTERVAL_MS: u64 = 10_000; // 10 seconds
 /// The fee estimate multiplier to use as `MAX_FEE` for transactions
-const MAX_FEE_MULTIPLIER: f32 = 1.5;
+const MAX_FEE_MULTIPLIER: f32 = 3.0;
 
 /// Error message thrown when the client cannot find a ciphertext blob in
 /// a transaction's trace
@@ -123,10 +123,10 @@ pub struct StarknetClientConfig {
     /// For now, we require only the API key's ID on our RPC node,
     /// so this parameter is unused
     pub infura_api_key: Option<String>,
-    /// The starknet address of the account corresponding to the given key
-    pub starknet_account_address: Option<String>,
-    /// The starknet signing key, used to submit transactions on-chain
-    pub starknet_pkey: Option<String>,
+    /// The starknet addresses of the accounts corresponding to the given keys
+    pub starknet_account_addresses: Option<Vec<String>>,
+    /// The starknet signing keys, used to submit transactions on-chain
+    pub starknet_pkeys: Option<Vec<String>>,
 }
 
 impl StarknetClientConfig {
@@ -139,7 +139,7 @@ impl StarknetClientConfig {
     ///
     /// Only when this is enabled may the client write transactions to the sequencer
     pub fn account_enabled(&self) -> bool {
-        self.starknet_pkey.is_some() && self.starknet_account_address.is_some()
+        self.starknet_pkeys.is_some() && self.starknet_account_addresses.is_some()
     }
 
     /// Build a gateway client from the config values
@@ -176,8 +176,10 @@ pub struct StarknetClient {
     gateway_client: Arc<SequencerGatewayProvider>,
     /// The client used to send starknet JSON-RPC requests
     jsonrpc_client: Option<Arc<JsonRpcClient<HttpTransport>>>,
-    /// The account that may be used to sign outbound transactions
-    account: Option<Arc<SingleOwnerAccount<SequencerGatewayProvider, LocalWallet>>>,
+    /// The accounts that may be used to sign outbound transactions
+    accounts: Option<Arc<Vec<SingleOwnerAccount<SequencerGatewayProvider, LocalWallet>>>>,
+    /// The account index to use for the next transaction
+    account_index: Arc<Mutex<usize>>
 }
 
 impl StarknetClient {
@@ -187,28 +189,30 @@ impl StarknetClient {
         let gateway_client = Arc::new(config.new_gateway_client());
         let jsonrpc_client = config.new_jsonrpc_client().map(Arc::new);
 
-        // Build an account to sign transactions with
-        let account = if config.account_enabled() {
-            let account_addr = config.starknet_account_address.clone().unwrap();
-            let key = config.starknet_pkey.clone().unwrap();
-            let account_addr_felt = StarknetFieldElement::from_str(&account_addr).unwrap();
-            let key_felt = StarknetFieldElement::from_str(&key).unwrap();
-
-            let signer = LocalWallet::from(SigningKey::from_secret_scalar(key_felt));
-            let account = SingleOwnerAccount::new(
-                config.new_gateway_client(),
-                signer,
-                account_addr_felt,
-                config.chain.into(),
-            );
-
-            Some(account)
+        // Build the accounts to sign transactions with
+        let accounts = if config.account_enabled() {
+            let account_addrs = config.starknet_account_addresses.clone().unwrap();
+            let keys = config.starknet_pkeys.clone().unwrap();
+            let accounts = account_addrs.into_iter().zip(keys).map(|(account_addr, key)| {
+                // Parse the account address and key
+                let account_addr_felt = StarknetFieldElement::from_str(&account_addr).unwrap();
+                let key_felt = StarknetFieldElement::from_str(&key).unwrap();
+                // Build the account
+                let signer = LocalWallet::from(SigningKey::from_secret_scalar(key_felt));
+                SingleOwnerAccount::new(
+                    config.new_gateway_client(),
+                    signer,
+                    account_addr_felt,
+                    config.chain.into(),
+                )
+            }).collect::<Vec<_>>();
+            Some(accounts)
         } else {
             None
         };
 
-        // Wrap in an Arc for read access across workers
-        let account = account.map(Arc::new);
+        // Wrap the accounts an Arc for read access across workers
+        let accounts = accounts.map(Arc::new);
 
         // Parse the contract address
         let contract_address: StarknetFieldElement =
@@ -221,7 +225,8 @@ impl StarknetClient {
             contract_address,
             gateway_client,
             jsonrpc_client,
-            account,
+            accounts,
+            account_index: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -244,9 +249,18 @@ impl StarknetClient {
         self.jsonrpc_client.as_ref().unwrap()
     }
 
-    /// Get the underlying account as an immutable reference
-    pub fn get_account(&self) -> &SingleOwnerAccount<SequencerGatewayProvider, LocalWallet> {
-        self.account.as_ref().unwrap()
+    /// Get the underlying account at the given index as an immutable reference
+    pub fn get_account(&self, account_index: usize) -> &SingleOwnerAccount<SequencerGatewayProvider, LocalWallet> {
+        self.accounts.as_ref().unwrap().get(account_index).unwrap()
+    }
+
+    /// Query the current nonce and advance it by one
+    pub fn new_account_index(&mut self) -> usize {
+        // Acquire a lock on self.account_index, copy it to a usize, and increment it
+        let mut account_index = self.account_index.lock().unwrap();
+        let current_account_index = *account_index;
+        *account_index = (*account_index + 1) % self.accounts.as_ref().unwrap().len();
+        current_account_index
     }
 
     /// A helper to reduce a Dalek scalar modulo the Stark field
@@ -274,12 +288,13 @@ impl StarknetClient {
 
     /// Helper to setup a contract call with the correct max fee and account nonce
     async fn execute_transaction(
-        &self,
+        &mut self,
         call: Call,
     ) -> Result<TransactionHash, StarknetClientError> {
         // Estimate the fee and add a buffer to avoid rejected transaction
-        let acct_nonce = self.pending_block_nonce().await?;
-        let execution = self.get_account().execute(vec![call]).nonce(acct_nonce);
+        let account_index = self.new_account_index();
+        let acct_nonce = self.pending_block_nonce(account_index).await?;
+        let execution = self.get_account(account_index).execute(vec![call]).nonce(acct_nonce);
 
         let fee_estimate = execution
             .estimate_fee()
@@ -309,10 +324,10 @@ impl StarknetClient {
             .map_err(|err| StarknetClientError::Rpc(err.to_string()))
     }
 
-    /// Get the nonce of the account in the pending block
-    pub async fn pending_block_nonce(&self) -> Result<StarknetFieldElement, StarknetClientError> {
+    /// Get the nonce of the account at the provided index in the pending block
+    pub async fn pending_block_nonce(&self, account_index: usize) -> Result<StarknetFieldElement, StarknetClientError> {
         self.gateway_client
-            .get_nonce(self.get_account().address(), CoreBlockId::Pending)
+            .get_nonce(self.get_account(account_index).address(), CoreBlockId::Pending)
             .await
             .map_err(|err| StarknetClientError::Rpc(err.to_string()))
     }
@@ -334,6 +349,7 @@ impl StarknetClient {
             // Break if the transaction has made it out of the received state
             match res.status {
                 TransactionStatus::Rejected
+                | TransactionStatus::Pending
                 | TransactionStatus::AcceptedOnL2
                 | TransactionStatus::AcceptedOnL1 => return Ok(res),
                 _ => {}
@@ -381,7 +397,7 @@ impl StarknetClient {
                 }
             },
             vec![*INTERNAL_NODE_CHANGED_EVENT_SELECTOR],
-            false, /* pending */
+            true, /* pending */
         )
         .await?;
 
@@ -418,7 +434,7 @@ impl StarknetClient {
                 Ok(None)
             },
             vec![*VALUE_INSERTED_EVENT_SELECTOR],
-            false, /* pending */
+            true, /* pending */
         )
         .await?
         .ok_or_else(|| {
@@ -584,7 +600,7 @@ impl StarknetClient {
     ///
     /// TODO: Add proof and wallet encryption under pk_view to the contract
     pub async fn new_wallet(
-        &self,
+        &mut self,
         pk_view: PublicEncryptionKey,
         wallet_commitment: WalletCommitment,
         wallet_ciphertext: Vec<ElGamalCiphertext>,
@@ -621,7 +637,7 @@ impl StarknetClient {
     /// Returns the transaction hash of the `update_wallet` call
     #[allow(clippy::too_many_arguments)]
     pub async fn update_wallet(
-        &self,
+        &mut self,
         pk_view: PublicEncryptionKey,
         new_wallet_commitment: WalletCommitment,
         old_match_nullifier: Nullifier,
@@ -672,7 +688,7 @@ impl StarknetClient {
     /// Returns the transaction hash of the call
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_match(
-        &self,
+        &mut self,
         match_nullifier1: Nullifier,
         match_nullifier2: Nullifier,
         party0_note_commitment: NoteCommitment,
@@ -733,7 +749,7 @@ impl StarknetClient {
     /// Returns the transaction hash of the call
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_settle(
-        &self,
+        &mut self,
         pk_view: PublicEncryptionKey,
         new_wallet_commit: WalletCommitment,
         old_match_nullifier: Nullifier,
