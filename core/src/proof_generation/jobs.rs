@@ -170,6 +170,16 @@ impl From<ProofBundle> for ValidWalletCreateBundle {
     }
 }
 
+impl From<ProofBundle> for ValidReblindBundle {
+    fn from(bundle: ProofBundle) -> Self {
+        if let ProofBundle::ValidReblind(b) = bundle {
+            b
+        } else {
+            panic!("Proof bundle is not of type ValidReblind: {:?}", bundle);
+        }
+    }
+}
+
 impl From<ProofBundle> for ValidCommitmentsBundle {
     fn from(bundle: ProofBundle) -> Self {
         if let ProofBundle::ValidCommitments(b) = bundle {
