@@ -289,11 +289,9 @@ impl NetworkOrderBook {
 
     /// Get the public share nullifier for a given order
     pub async fn get_nullifier(&self, order_id: &OrderIdentifier) -> Option<Nullifier> {
-        if let Some(order_info_locked) = self.read_order(order_id).await {
-            Some(order_info_locked.public_share_nullifier)
-        } else {
-            None
-        }
+        self.read_order(order_id)
+            .await
+            .map(|order_info_locked| order_info_locked.public_share_nullifier)
     }
 
     /// Fetch all orders under a given nullifier
