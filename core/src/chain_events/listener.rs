@@ -19,10 +19,13 @@ use circuits::{
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::{starknet_felt_to_biguint, starknet_felt_to_scalar, starknet_felt_to_u64};
 use curve25519_dalek::scalar::Scalar;
-use starknet::core::{types::FieldElement as StarknetFieldElement, utils::get_selector_from_name};
 use starknet::providers::jsonrpc::{
     models::{BlockId, EmittedEvent, ErrorCode, EventFilter},
     HttpTransport, JsonRpcClient, JsonRpcClientError, RpcError,
+};
+use starknet::{
+    core::{types::FieldElement as StarknetFieldElement, utils::get_selector_from_name},
+    providers::jsonrpc::models::BlockTag,
 };
 use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
 use tokio::time::{sleep_until, Instant};
@@ -209,7 +212,7 @@ impl OnChainEventListenerExecutor {
     ) -> Result<(Vec<EmittedEvent>, bool), OnChainEventListenerError> {
         let filter = EventFilter {
             from_block: Some(BlockId::Number(self.start_block)),
-            to_block: None,
+            to_block: Some(BlockId::Tag(BlockTag::Pending)),
             address: Some(self.contract_address()),
             keys: None,
         };
