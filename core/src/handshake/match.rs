@@ -15,7 +15,7 @@ use circuits::{
             AuthenticatedLinkableMatchResultCommitment, AuthenticatedMatchResult,
             LinkableMatchResultCommitment,
         },
-        wallet::{Nullifier, WalletSecretShare},
+        wallet::Nullifier,
     },
     verify_collaborative_proof,
     zk_circuits::valid_match_mpc::{
@@ -37,7 +37,7 @@ use uuid::Uuid;
 
 use crate::{
     proof_generation::{jobs::ValidMatchMpcBundle, OrderValidityWitnessBundle},
-    SizedWallet, SizedWalletShare,
+    SizedWalletShare,
 };
 
 use super::{error::HandshakeManagerError, manager::HandshakeExecutor, state::HandshakeState};
@@ -277,7 +277,7 @@ impl HandshakeExecutor {
         fabric: SharedFabric<N, S>,
         cancel_channel: Receiver<()>,
     ) -> Result<Box<HandshakeResult>, HandshakeManagerError> {
-        // Exchange fees, randomness, and keys before opening the match result
+        // Exchange fees and public secret shares before opening the match result
         let party0_fee = validity_proof_witness
             .commitment_witness
             .fee
@@ -289,24 +289,16 @@ impl HandshakeExecutor {
             .share_public(1 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
-        // Lookup the wallet that the matched order belongs to in the global state
-        let wallet = {
-            let locked_wallet_index = self.global_state.read_wallet_index().await;
-            let wallet_id = locked_wallet_index
-                .get_wallet_for_order(&handshake_state.local_order_id)
-                .ok_or_else(|| {
-                    HandshakeManagerError::StateNotFound(
-                        "couldn't find wallet for order".to_string(),
-                    )
-                })?;
-            locked_wallet_index
-                .read_wallet(&wallet_id)
-                .await
-                .map(|wallet| wallet.clone())
-                .ok_or_else(|| {
-                    HandshakeManagerError::StateNotFound("no wallet found for ID".to_string())
-                })?
-        }; // locked_wallet_index released
+        let party0_public_shares = validity_proof_witness
+            .commitment_witness
+            .augmented_public_shares
+            .share_public(0 /* owning_party */, fabric.clone())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let party1_public_shares = validity_proof_witness
+            .commitment_witness
+            .augmented_public_shares
+            .share_public(1 /* owning_party */, fabric.clone())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
         // Finally, before revealing the match, we make a check that the MPC has
         // not been terminated by the coordinator
@@ -328,6 +320,8 @@ impl HandshakeExecutor {
             },
             party0_share_nullifier: handshake_state.local_share_nullifier,
             party1_share_nullifier: handshake_state.peer_share_nullifier,
+            party0_reblinded_shares: party0_public_shares,
+            party1_reblinded_shares: party1_public_shares,
             party0_fee,
             party1_fee,
         }))
