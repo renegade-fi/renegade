@@ -6,15 +6,17 @@ use std::ops::Add;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::r1cs::{LinearCombination, Prover, Variable, Verifier};
+use mpc_ristretto::{beaver::SharedValueSource, error::MpcError, network::MpcNetwork};
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    mpc::SharedFabric,
     types::{
         fee::SCALARS_PER_FEE, order::SCALARS_PER_ORDER, scalar_from_hex_string,
         scalar_to_hex_string,
     },
-    CommitPublic, CommitVerifier, CommitWitness,
+    CommitPublic, CommitVerifier, CommitWitness, SharePublic,
 };
 
 use super::{
@@ -372,6 +374,29 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> 
             keys: keychain,
             blinder,
         }
+    }
+}
+
+impl<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+        N: MpcNetwork + Send,
+        S: SharedValueSource<Scalar>,
+    > SharePublic<N, S> for WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+{
+    type ErrorType = MpcError;
+
+    fn share_public(
+        &self,
+        owning_party: u64,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self, Self::ErrorType> {
+        let shares_serialized: Vec<Scalar> = self.clone().into();
+        let res = fabric
+            .borrow_fabric()
+            .batch_shared_plaintext_scalars(owning_party, &shares_serialized)?;
+        Ok(res.into())
     }
 }
 
