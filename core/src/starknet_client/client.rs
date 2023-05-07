@@ -10,7 +10,7 @@ use std::{
 };
 
 use circuits::{
-    types::wallet::{NoteCommitment, Nullifier, WalletShareCommitment},
+    types::wallet::{NoteCommitment, Nullifier, WalletSecretShare, WalletShareCommitment},
     zk_gadgets::merkle::MerkleRoot,
 };
 use crypto::{
@@ -48,9 +48,12 @@ use starknet::{
 use tracing::log;
 
 use crate::{
-    proof_generation::jobs::{
-        ValidCommitmentsBundle, ValidMatchMpcBundle, ValidSettleBundle, ValidWalletCreateBundle,
-        ValidWalletUpdateBundle,
+    proof_generation::{
+        jobs::{
+            ValidCommitmentsBundle, ValidMatchMpcBundle, ValidSettleBundle,
+            ValidWalletCreateBundle, ValidWalletUpdateBundle,
+        },
+        OrderValidityProofBundle,
     },
     starknet_client::{
         GET_WALLET_LAST_UPDATED_SELECTOR, INTERNAL_NODE_CHANGED_EVENT_SELECTOR, MATCH_SELECTOR,
@@ -701,89 +704,40 @@ impl StarknetClient {
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_match(
         &self,
-        match_nullifier1: Nullifier,
-        match_nullifier2: Nullifier,
-        party0_note_commitment: NoteCommitment,
-        party0_note_ciphertext: Vec<ElGamalCiphertext>,
-        party1_note_commitment: NoteCommitment,
-        party1_note_ciphertext: Vec<ElGamalCiphertext>,
-        relayer0_note_commitment: NoteCommitment,
-        relayer0_note_ciphertext: Vec<ElGamalCiphertext>,
-        relayer1_note_commitment: NoteCommitment,
-        relayer1_note_ciphertext: Vec<ElGamalCiphertext>,
-        protocol_note_commitment: NoteCommitment,
-        protocol_note_ciphertext: Vec<ElGamalCiphertext>,
-        party0_validity_proof: ValidCommitmentsBundle,
-        party1_validity_proof: ValidCommitmentsBundle,
+        party0_public_shares_nullifier: Nullifier,
+        party0_private_shares_nullifier: Nullifier,
+        party1_private_shares_nullifier: Nullifier,
+        party1_public_shares_nullifier: Nullifier,
+        party0_private_share_commitment: WalletShareCommitment,
+        party1_private_share_commitment: WalletShareCommitment,
+        party0_public_shares: SizedWalletShare,
+        party1_public_shares: SizedWalletShare,
+        party0_validity_proofs: OrderValidityProofBundle,
+        party1_validity_proofs: OrderValidityProofBundle,
         valid_match_proof: ValidMatchMpcBundle,
+        valid_settle_proof: ValidSettleBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
         // Build the calldata
         let mut calldata = vec![
-            Self::reduce_scalar_to_felt(&match_nullifier1),
-            Self::reduce_scalar_to_felt(&match_nullifier2),
+            Self::reduce_scalar_to_felt(&party0_public_shares_nullifier),
+            Self::reduce_scalar_to_felt(&party0_private_shares_nullifier),
+            Self::reduce_scalar_to_felt(&party1_private_shares_nullifier),
+            Self::reduce_scalar_to_felt(&party1_public_shares_nullifier),
+            Self::reduce_scalar_to_felt(&party0_private_share_commitment),
+            Self::reduce_scalar_to_felt(&party1_private_share_commitment),
         ];
-        calldata.push(Self::reduce_scalar_to_felt(&party0_note_commitment));
-        calldata.append(&mut pack_serializable!(party0_note_ciphertext));
 
-        calldata.push(Self::reduce_scalar_to_felt(&party1_note_commitment));
-        calldata.append(&mut pack_serializable!(party1_note_ciphertext));
-
-        calldata.push(Self::reduce_scalar_to_felt(&relayer0_note_commitment));
-        calldata.append(&mut pack_serializable!(relayer0_note_ciphertext));
-
-        calldata.push(Self::reduce_scalar_to_felt(&relayer1_note_commitment));
-        calldata.append(&mut pack_serializable!(relayer1_note_ciphertext));
-
-        calldata.push(Self::reduce_scalar_to_felt(&protocol_note_commitment));
-        calldata.append(&mut pack_serializable!(protocol_note_ciphertext));
-
-        // Build the proof blob that consists of all four proofs
-        let mut proof_blob = Vec::new();
-        proof_blob.append(&mut serde_json::to_vec(&party0_validity_proof).unwrap());
-        proof_blob.append(&mut serde_json::to_vec(&party1_validity_proof).unwrap());
-        proof_blob.append(&mut serde_json::to_vec(&valid_match_proof).unwrap());
-
-        calldata.append(&mut pack_serializable!(proof_blob));
+        calldata.append(&mut pack_serializable!(party0_public_shares));
+        calldata.append(&mut pack_serializable!(party1_public_shares));
+        calldata.append(&mut pack_serializable!(party0_validity_proofs));
+        calldata.append(&mut pack_serializable!(party1_validity_proofs));
+        calldata.append(&mut pack_serializable!(valid_match_proof));
+        calldata.append(&mut pack_serializable!(valid_settle_proof));
 
         // Call the contract
         self.execute_transaction(Call {
             to: self.contract_address,
             selector: *MATCH_SELECTOR,
-            calldata,
-        })
-        .await
-    }
-
-    /// Submit a `settle` transaction to the contract
-    ///
-    /// Returns the transaction hash of the call
-    #[allow(clippy::too_many_arguments)]
-    pub async fn submit_settle(
-        &self,
-        public_blinder_share: Scalar,
-        new_wallet_commit: WalletShareCommitment,
-        old_match_nullifier: Nullifier,
-        old_spend_nullifier: Nullifier,
-        note_redeem_nullifier: Nullifier,
-        wallet_ciphertext: Vec<ElGamalCiphertext>,
-        proof: ValidSettleBundle,
-    ) -> Result<TransactionHash, StarknetClientError> {
-        let mut calldata = vec![
-            Self::reduce_scalar_to_felt(&public_blinder_share.into()),
-            StarknetFieldElement::from(0u8), // from_internal_transfer
-            Self::reduce_scalar_to_felt(&new_wallet_commit),
-            Self::reduce_scalar_to_felt(&old_match_nullifier),
-            Self::reduce_scalar_to_felt(&old_spend_nullifier),
-            Self::reduce_scalar_to_felt(&note_redeem_nullifier),
-        ];
-
-        calldata.append(&mut pack_serializable!(wallet_ciphertext));
-        calldata.append(&mut pack_serializable!(proof));
-
-        // Call the `settle` contract function
-        self.execute_transaction(Call {
-            to: self.contract_address,
-            selector: *SETTLE_SELECTOR,
             calldata,
         })
         .await
