@@ -5,85 +5,51 @@
 //!     - Build a settlement proof, and submit this to the contract in a `settle` transaction
 //!     - Await finality then update the wallets into the relayer-global state
 
-use std::{
-    collections::HashMap,
-    convert::TryInto,
-    fmt::{Display, Formatter, Result as FmtResult},
-};
+use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use async_trait::async_trait;
-use circuits::{
-    native_helpers::{
-        compute_note_commitment, compute_note_redeem_nullifier, compute_poseidon_hash,
-    },
-    types::{
-        keychain::{PublicIdentificationKey, SecretIdentificationKey},
-        note::{Note, NoteType},
-        order::{Order as CircuitOrder, OrderSide},
-        wallet::NoteCommitment,
-    },
-    zk_circuits::{
-        valid_commitments::ValidCommitmentsStatement,
-        valid_match_encryption::{ValidMatchEncryptionStatement, ValidMatchEncryptionWitness},
-    },
-    zk_gadgets::{fixed_point::FixedPoint, merkle::MerkleOpening},
-};
+use circuits::types::balance::Balance;
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::{
-    elgamal::encrypt_scalar,
-    fields::{
-        biguint_to_scalar, prime_field_to_scalar, scalar_to_biguint, starknet_felt_to_biguint,
-    },
-};
+use crypto::fields::{scalar_to_biguint, starknet_felt_to_biguint};
 use curve25519_dalek::scalar::Scalar;
 use mpc_ristretto::mpc_scalar::scalar_to_u64;
-use rand_core::OsRng;
 use serde::Serialize;
 use starknet::core::types::{TransactionInfo, TransactionStatus};
 use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
 use tracing::log;
 
 use crate::{
-    gossip_api::{
-        gossip::{GossipOutbound, PubsubMessage},
-        orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
-    },
+    gossip_api::gossip::GossipOutbound,
     handshake::{r#match::HandshakeResult, state::HandshakeState},
     proof_generation::{
-        jobs::{
-            ProofJob, ProofManagerJob, ValidCommitmentsBundle, ValidMatchEncryptBundle,
-            ValidSettleBundle,
-        },
-        OrderValidityProofBundle,
+        jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle, ValidSettleBundle},
+        OrderValidityProofBundle, SizedValidSettleStatement, SizedValidSettleWitness,
     },
     starknet_client::client::StarknetClient,
-    state::{wallet::Wallet, NetworkOrder, NetworkOrderState, OrderIdentifier, RelayerState},
-    tasks::{encrypt_wallet, RANDOMNESS_INCREMENT},
-    types::{SizedValidCommitmentsWitness, SizedValidSettleStatement, SizedValidSettleWitness},
-    SizedWallet, PROTOCOL_FEE, PROTOCOL_SETTLE_KEY,
+    state::{wallet::WalletIdentifier, RelayerState},
+    SizedWalletShare,
 };
 
 use super::{
     driver::{StateWrapper, Task},
-    encrypt_note,
+    helpers::update_wallet_validity_proofs,
 };
 
 /// Error emitted when a transaction fails
 const ERR_TRANSACTION_FAILED: &str = "transaction rejected";
 /// The error message the contract emits when a nullifier has been used
 const NULLIFIER_USED_ERROR_MSG: &str = "nullifier already used";
+
+/// The party ID of the first party
+const PARTY0: u64 = 0;
+/// The party ID of the second party
+const PARTY1: u64 = 1;
+/// The match direction in which the first party buys the base
+const PARTY0_BUYS_BASE: u64 = 0;
+/// The match direction in which the second party buys the base
+const PARTY1_BUYS_BASE: u64 = 1;
 /// The displayable name for the settle match task
 const SETTLE_MATCH_TASK_NAME: &str = "settle-match";
-
-// -----------
-// | Helpers |
-// -----------
-
-/// A wrapper around the `circuits` crate's note commitment helper that handles type conversion
-fn note_commit(note: &Note, receiver_key: PublicIdentificationKey) -> NoteCommitment {
-    let commitment = compute_note_commitment(note, receiver_key);
-    prime_field_to_scalar(&commitment)
-}
 
 // -------------------
 // | Task Definition |
@@ -91,6 +57,8 @@ fn note_commit(note: &Note, receiver_key: PublicIdentificationKey) -> NoteCommit
 
 /// Describes the settle task
 pub struct SettleMatchTask {
+    /// The ID of the wallet that the local node matched an order from
+    pub wallet_id: WalletIdentifier,
     /// The state entry from the handshake manager that parameterizes the
     /// match process
     pub handshake_state: HandshakeState,
@@ -100,14 +68,6 @@ pub struct SettleMatchTask {
     pub party0_validity_proof: OrderValidityProofBundle,
     /// The validity proofs submitted by the second party
     pub party1_validity_proof: OrderValidityProofBundle,
-    /// The notes that result from the match
-    pub match_notes: MatchNotes,
-    /// The note that settles into the local wallet
-    pub my_note: Note,
-    /// The local wallet before a note is settled into it
-    pub old_wallet: Wallet,
-    /// The local wallet after settling a note into it
-    pub new_wallet: Wallet,
     /// The starknet client to use for submitting transactions
     pub starknet_client: StarknetClient,
     /// A sender to the network manager's work queue
@@ -120,42 +80,16 @@ pub struct SettleMatchTask {
     pub task_state: SettleMatchTaskState,
 }
 
-/// A structured representation for the list of notes generated by a match
-/// The structure is added to improve readability in what follows
-#[derive(Clone, Debug)]
-pub struct MatchNotes {
-    /// The first party's note
-    party0_note: Note,
-    /// The second party's note
-    party1_note: Note,
-    /// The note representing the fee payment to the first party's relayer
-    relayer0_note: Note,
-    /// The note representing the fee payment to the second party's relayer
-    relayer1_note: Note,
-    /// The note representing the fee payment to the protocol
-    protocol_note: Note,
-}
-
 /// The state of the settle match task
 #[derive(Clone, Debug, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum SettleMatchTaskState {
     /// The task is awaiting scheduling
     Pending,
-    /// The task is proving `VALID MATCH ENCRYPTION`
-    ProvingEncryption,
-    /// The task is submitting the match transaction
-    SubmittingMatch {
-        /// The proof of `VALID MATCH ENCRYPTION`
-        proof: ValidMatchEncryptBundle,
-    },
     /// The task is proving `VALID SETTLE`
     ProvingSettle,
-    /// The task is submitting the settle transaction
-    SubmittingSettle {
-        /// The proof of `VALID SETTLE`
-        proof: ValidSettleBundle,
-    },
+    /// The task is submitting the match transaction
+    SubmittingMatch { proof: ValidSettleBundle },
     /// The task is updating order proofs after the settled walled is confirmed
     UpdatingValidityProofs,
     /// The task has finished
@@ -173,7 +107,6 @@ impl Display for SettleMatchTaskState {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             SettleMatchTaskState::SubmittingMatch { .. } => write!(f, "SubmittingMatch"),
-            SettleMatchTaskState::SubmittingSettle { .. } => write!(f, "SubmittingSettle"),
             _ => write!(f, "{self:?}"),
         }
     }
@@ -188,6 +121,8 @@ pub enum SettleMatchTaskError {
     SendMessage(String),
     /// Error interacting with Starknet
     StarknetClient(String),
+    /// Error updating validity proofs for a wallet
+    UpdatingValidityProofs(String),
 }
 
 impl Display for SettleMatchTaskError {
@@ -204,28 +139,15 @@ impl Task for SettleMatchTask {
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current task state
         match self.state() {
-            SettleMatchTaskState::Pending => {
-                self.task_state = SettleMatchTaskState::ProvingEncryption
-            }
+            SettleMatchTaskState::Pending => self.task_state = SettleMatchTaskState::ProvingSettle,
 
-            SettleMatchTaskState::ProvingEncryption => {
-                let proof = self.prove_encryption().await?;
-                self.task_state = SettleMatchTaskState::SubmittingMatch { proof };
+            SettleMatchTaskState::ProvingSettle => {
+                let proof = self.prove_settle().await?;
             }
 
             SettleMatchTaskState::SubmittingMatch { proof } => {
                 self.submit_match(proof).await?;
                 self.task_state = SettleMatchTaskState::ProvingSettle;
-            }
-
-            SettleMatchTaskState::ProvingSettle => {
-                let proof = self.prove_settle().await?;
-                self.task_state = SettleMatchTaskState::SubmittingSettle { proof };
-            }
-
-            SettleMatchTaskState::SubmittingSettle { proof } => {
-                self.submit_settle(proof).await?;
-                self.task_state = SettleMatchTaskState::UpdatingValidityProofs;
             }
 
             SettleMatchTaskState::UpdatingValidityProofs => {
@@ -271,49 +193,18 @@ impl SettleMatchTask {
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     ) -> Self {
-        // Construct the notes from the match result
-        let (party0_note, party1_note, relayer0_note, relayer1_note, protocol_note) =
-            Self::create_notes(&handshake_result);
-        let match_notes = MatchNotes {
-            party0_note,
-            party1_note,
-            relayer0_note,
-            relayer1_note,
-            protocol_note,
-        };
-
-        // Get a copy of the old wallet from the global state, apply the note to it, and
-        // store both the new and old wallet
-
-        let old_wallet = {
-            let locked_wallet_index = global_state.read_wallet_index().await;
-            let wallet_id = locked_wallet_index
-                .get_wallet_for_order(&handshake_state.local_order_id)
-                .expect("wallet not found for order");
-            locked_wallet_index
-                .get_wallet(&wallet_id)
-                .await
-                .expect("wallet not found for order")
-        };
-
-        let my_note = match handshake_state.role.get_party_id() {
-            0 => match_notes.party0_note.clone(),
-            1 => match_notes.party1_note.clone(),
-            _ => unreachable!("party ID may only be 0 or 1"),
-        };
-
-        let mut new_wallet = old_wallet.apply_note(&my_note);
-        new_wallet.randomness += RANDOMNESS_INCREMENT;
+        let wallet_id = global_state
+            .read_wallet_index()
+            .await
+            .get_wallet_for_order(&handshake_state.local_order_id)
+            .expect("could not find wallet for local matched order");
 
         Self {
+            wallet_id,
             handshake_state,
             handshake_result,
             party0_validity_proof,
             party1_validity_proof,
-            match_notes,
-            my_note,
-            old_wallet,
-            new_wallet,
             starknet_client,
             network_sender,
             global_state,
@@ -322,353 +213,106 @@ impl SettleMatchTask {
         }
     }
 
-    /// Prove `VALID MATCH ENCRYPTION` on the match
-    async fn prove_encryption(&self) -> Result<ValidMatchEncryptBundle, SettleMatchTaskError> {
-        // Construct the witness and statement
-        let (statement, witness) = self.build_encrypt_statement_witness()?;
+    /// Apply the match to the wallets and prove `VALID SETTLE`
+    async fn prove_settle(&self) -> Result<ValidSettleBundle, SettleMatchTaskError> {
+        // Modify the secret shares
+        let mut party0_modified_shares = self.handshake_result.party0_reblinded_shares.clone();
+        let mut party1_modified_shares = self.handshake_result.party1_reblinded_shares.clone();
+        let party0_commit_proof = self.party0_validity_proof.commitment_proof.clone();
+        let party1_commit_proof = self.party1_validity_proof.commitment_proof.clone();
 
-        // Enqueue a job with the proof manager and await a response
-        let (response_sender, response_receiver) = oneshot::channel();
+        Self::apply_match_to_wallets(
+            &mut party0_modified_shares,
+            &mut party1_modified_shares,
+            &party0_commit_proof,
+            &party1_commit_proof,
+            &self.handshake_result,
+        );
+
+        // Construct a witness and statement
+        let witness = SizedValidSettleWitness {
+            match_res: self.handshake_result.match_.clone(),
+            party0_public_shares: self.handshake_result.party0_reblinded_shares.clone(),
+            party1_public_shares: self.handshake_result.party1_reblinded_shares.clone(),
+        };
+        let statement = SizedValidSettleStatement {
+            party0_modified_shares,
+            party1_modified_shares,
+            party0_send_balance_index: party0_commit_proof.statement.balance_send_index,
+            party0_receive_balance_index: party0_commit_proof.statement.balance_receive_index,
+            party0_order_index: party0_commit_proof.statement.order_index,
+            party1_send_balance_index: party1_commit_proof.statement.balance_send_index,
+            party1_receive_balance_index: party1_commit_proof.statement.balance_receive_index,
+            party1_order_index: party1_commit_proof.statement.order_index,
+        };
+
+        // Dispatch a job to the proof manager
+        let (proof_sender, proof_receiver) = oneshot::channel();
         self.proof_manager_work_queue
             .send(ProofManagerJob {
-                type_: ProofJob::ValidMatchEncrypt { witness, statement },
-                response_channel: response_sender,
+                response_channel: proof_sender,
+                type_: ProofJob::ValidSettle { witness, statement },
             })
             .map_err(|err| SettleMatchTaskError::SendMessage(err.to_string()))?;
 
-        response_receiver
+        // Await a response
+        proof_receiver
             .await
             .map(|bundle| bundle.into())
             .map_err(|err| SettleMatchTaskError::ProofGeneration(err.to_string()))
     }
 
-    /// Build a witness and statement to `VALID MATCH ENCRYPT`
-    fn build_encrypt_statement_witness(
-        &self,
-    ) -> Result<(ValidMatchEncryptionStatement, ValidMatchEncryptionWitness), SettleMatchTaskError>
-    {
-        // Create encryptions of all note fields not known ahead of time
-        let mut randomness_values = Vec::new();
-
-        // Encrypt the volumes of the first party's note under their key
-        let pk_settle0_bigint = scalar_to_biguint(&self.handshake_result.pk_settle0.into());
-        let (volume1_ciphertext1, randomness) = encrypt_scalar(
-            self.match_notes.party0_note.volume1.into(),
-            &pk_settle0_bigint,
-        );
-        randomness_values.push(randomness);
-
-        let (volume2_ciphertext1, randomness) = encrypt_scalar(
-            self.match_notes.party0_note.volume2.into(),
-            &pk_settle0_bigint,
-        );
-        randomness_values.push(randomness);
-
-        // Encrypt the volumes of the second party's note under their key
-        let pk_settle1_bigint = scalar_to_biguint(&self.handshake_result.pk_settle1.into());
-        let (volume1_ciphertext2, randomness) = encrypt_scalar(
-            self.match_notes.party1_note.volume1.into(),
-            &pk_settle1_bigint,
-        );
-        randomness_values.push(randomness);
-
-        let (volume2_ciphertext2, randomness) = encrypt_scalar(
-            self.match_notes.party1_note.volume2.into(),
-            &pk_settle1_bigint,
-        );
-        randomness_values.push(randomness);
-
-        // Encrypt the mints, volumes and randomness of the protocol note under the protocol key
-        let protocol_key_biguint = scalar_to_biguint(&(*PROTOCOL_SETTLE_KEY).into());
-        let (mint1_protocol_ciphertext, randomness) = encrypt_scalar(
-            biguint_to_scalar(&self.match_notes.protocol_note.mint1),
-            &protocol_key_biguint,
-        );
-        randomness_values.push(randomness);
-
-        let (mint2_protocol_ciphertext, randomness) = encrypt_scalar(
-            biguint_to_scalar(&self.match_notes.protocol_note.mint2),
-            &protocol_key_biguint,
-        );
-        randomness_values.push(randomness);
-
-        let (volume1_protocol_ciphertext, randomness) = encrypt_scalar(
-            self.match_notes.protocol_note.volume1.into(),
-            &protocol_key_biguint,
-        );
-        randomness_values.push(randomness);
-
-        let (volume2_protocol_ciphertext, randomness) = encrypt_scalar(
-            self.match_notes.protocol_note.volume2.into(),
-            &protocol_key_biguint,
-        );
-        randomness_values.push(randomness);
-
-        let (randomness_protocol_ciphertext, encryption_randomness) = encrypt_scalar(
-            biguint_to_scalar(&self.match_notes.protocol_note.randomness),
-            &protocol_key_biguint,
-        );
-        randomness_values.push(encryption_randomness);
-
-        // Construct a statement and witness for `VALID MATCH ENCRYPTION`
-        let witness = ValidMatchEncryptionWitness {
-            match_res: self.handshake_result.match_.clone(),
-            party0_fee: self.handshake_result.party0_fee.clone(),
-            party1_fee: self.handshake_result.party1_fee.clone(),
-            party0_randomness_hash: self.handshake_result.party0_randomness_hash,
-            party1_randomness_hash: self.handshake_result.party1_randomness_hash,
-            party0_note: self.match_notes.party0_note.clone(),
-            party1_note: self.match_notes.party1_note.clone(),
-            relayer0_note: self.match_notes.relayer0_note.clone(),
-            relayer1_note: self.match_notes.relayer1_note.clone(),
-            protocol_note: self.match_notes.protocol_note.clone(),
-            elgamal_randomness: randomness_values.try_into().unwrap(),
-        };
-
-        let statement = ValidMatchEncryptionStatement {
-            party0_note_commit: note_commit(
-                &self.match_notes.party0_note,
-                self.handshake_result.pk_settle0,
-            ),
-            party1_note_commit: note_commit(
-                &self.match_notes.party1_note,
-                self.handshake_result.pk_settle1,
-            ),
-            relayer0_note_commit: note_commit(
-                &self.match_notes.relayer0_note,
-                self.handshake_result.pk_settle_cluster0,
-            ),
-            relayer1_note_commit: note_commit(
-                &self.match_notes.relayer1_note,
-                self.handshake_result.pk_settle_cluster1,
-            ),
-            protocol_note_commit: note_commit(
-                &self.match_notes.protocol_note,
-                *PROTOCOL_SETTLE_KEY,
-            ),
-            pk_settle_party0: self.handshake_result.pk_settle0,
-            pk_settle_party1: self.handshake_result.pk_settle1,
-            pk_settle_relayer0: self.handshake_result.pk_settle_cluster0,
-            pk_settle_relayer1: self.handshake_result.pk_settle_cluster1,
-            pk_settle_protocol: *PROTOCOL_SETTLE_KEY,
-            protocol_fee: *PROTOCOL_FEE,
-            volume1_ciphertext1,
-            volume2_ciphertext1,
-            volume1_ciphertext2,
-            volume2_ciphertext2,
-            mint1_protocol_ciphertext,
-            volume1_protocol_ciphertext,
-            mint2_protocol_ciphertext,
-            volume2_protocol_ciphertext,
-            randomness_protocol_ciphertext,
-        };
-
-        Ok((statement, witness))
-    }
-
-    /// Create notes from a match result
-    ///
-    /// There are 5 notes in total:
-    ///     - Each of the parties receives a note for their side of the match (2)
-    ///     - Each of the managing relayers receives a note for their fees (2)
-    ///     - The protocol receives a note for its fee (1)
-    fn create_notes(handshake_result: &HandshakeResult) -> (Note, Note, Note, Note, Note) {
-        // The match direction corresponds to the direction that party 0 goes in the match
-        // i.e. the match direction is 0 (buy) if party 0 is buying the base and selling the quote
-        let match_direction: OrderSide = handshake_result.match_.direction.val.into();
-        let base_amount_scalar = Scalar::from(handshake_result.match_.base_amount);
-        let quote_amount_scalar = Scalar::from(handshake_result.match_.quote_amount);
-        let randomness_hash0_scalar = Scalar::from(handshake_result.party0_randomness_hash);
-        let randomness_hash1_scalar = Scalar::from(handshake_result.party1_randomness_hash);
-
-        // Apply fees to the match
-        let percent_fee0: FixedPoint = handshake_result.party0_fee.percentage_fee.into();
-        let percent_fee1: FixedPoint = handshake_result.party1_fee.percentage_fee.into();
-        let party0_net_percentage = Scalar::one() - percent_fee0 - *PROTOCOL_FEE;
-        let party1_net_percentage = Scalar::one() - percent_fee1 - *PROTOCOL_FEE;
-
-        let (party0_base_amount, party0_quote_amount, party1_base_amount, party1_quote_amount) =
-            match match_direction {
-                OrderSide::Buy => {
-                    let party0_base =
-                        scalar_to_u64(&(party0_net_percentage * base_amount_scalar).floor());
-                    let party1_quote =
-                        scalar_to_u64(&(party1_net_percentage * quote_amount_scalar).floor());
-
-                    (
-                        party0_base,
-                        scalar_to_u64(&handshake_result.match_.quote_amount.into()),
-                        scalar_to_u64(&handshake_result.match_.base_amount.into()),
-                        party1_quote,
-                    )
-                }
-                OrderSide::Sell => {
-                    let party0_quote =
-                        scalar_to_u64(&(party0_net_percentage * quote_amount_scalar).floor());
-                    let party1_base =
-                        scalar_to_u64(&(party1_net_percentage * base_amount_scalar).floor());
-
-                    (
-                        scalar_to_u64(&handshake_result.match_.base_amount.into()),
-                        party0_quote,
-                        party1_base,
-                        scalar_to_u64(&handshake_result.match_.quote_amount.into()),
-                    )
-                }
+    /// Apply a match to two wallet secret shares
+    fn apply_match_to_wallets(
+        wallet0_share: &mut SizedWalletShare,
+        wallet1_share: &mut SizedWalletShare,
+        party0_commit_proof: &ValidCommitmentsBundle,
+        party1_commit_proof: &ValidCommitmentsBundle,
+        handshake_res: &HandshakeResult,
+    ) {
+        // Mux between order directions to decide the amount each party receives
+        let match_res = handshake_res.match_;
+        let (party0_receive_amount, party1_receive_amount) =
+            if match_res.direction.val.eq(&Scalar::from(0u8)) {
+                (match_res.base_amount.val, match_res.quote_amount.val)
+            } else {
+                (match_res.quote_amount.val, match_res.base_amount.val)
             };
 
-        let party0_note = Note {
-            mint1: scalar_to_biguint(&handshake_result.match_.base_mint.into()),
-            volume1: party0_base_amount,
-            direction1: match_direction,
-            mint2: scalar_to_biguint(&handshake_result.match_.quote_mint.into()),
-            volume2: party0_quote_amount,
-            direction2: match_direction.opposite(),
-            fee_mint: scalar_to_biguint(&handshake_result.party0_fee.gas_addr.into()),
-            fee_volume: scalar_to_u64(&handshake_result.party0_fee.gas_token_amount.into()),
-            fee_direction: OrderSide::Sell,
-            type_: NoteType::Match,
-            randomness: scalar_to_biguint(&randomness_hash0_scalar),
-        };
+        let party0_send_ind = party0_commit_proof.statement.balance_send_index;
+        let party0_receive_ind = party0_commit_proof.statement.balance_receive_index;
+        let party0_order_ind = party0_commit_proof.statement.order_index;
 
-        let party1_note = Note {
-            mint1: scalar_to_biguint(&handshake_result.match_.base_mint.into()),
-            volume1: party1_base_amount,
-            direction1: match_direction.opposite(),
-            mint2: scalar_to_biguint(&handshake_result.match_.quote_mint.into()),
-            volume2: party1_quote_amount,
-            direction2: match_direction,
-            fee_mint: scalar_to_biguint(&handshake_result.party1_fee.gas_addr.into()),
-            fee_volume: scalar_to_u64(&handshake_result.party1_fee.gas_token_amount.into()),
-            fee_direction: OrderSide::Sell,
-            type_: NoteType::Match,
-            randomness: scalar_to_biguint(&randomness_hash1_scalar),
-        };
+        let party1_send_ind = party1_commit_proof.statement.balance_send_index;
+        let party1_receive_ind = party1_commit_proof.statement.balance_receive_index;
+        let party1_order_ind = party1_commit_proof.statement.order_index;
 
-        // Create the relayer notes
-        let (
-            relayer0_base_amount,
-            relayer0_quote_amount,
-            relayer1_base_amount,
-            relayer1_quote_amount,
-        ) = match match_direction {
-            OrderSide::Buy => {
-                let relayer0_base = scalar_to_u64(&(percent_fee0 * base_amount_scalar).floor());
-                let relayer1_quote = scalar_to_u64(&(percent_fee1 * quote_amount_scalar).floor());
+        // Apply updates to party0's wallet
+        wallet0_share.balances[party0_send_ind].amount -= party1_receive_amount;
+        wallet0_share.balances[party0_receive_ind].amount += party0_receive_amount;
+        wallet0_share.orders[party0_order_ind].amount -= match_res.base_amount.val;
 
-                (relayer0_base, 0, 0, relayer1_quote)
-            }
-            OrderSide::Sell => {
-                let relayer0_quote = scalar_to_u64(&(percent_fee0 * quote_amount_scalar).floor());
-                let relayer1_base = scalar_to_u64(&(percent_fee1 * base_amount_scalar).floor());
-
-                (0, relayer0_quote, relayer1_base, 0)
-            }
-        };
-
-        let relayer0_note = Note {
-            mint1: scalar_to_biguint(&handshake_result.match_.base_mint.into()),
-            volume1: relayer0_base_amount,
-            direction1: OrderSide::Buy,
-            mint2: scalar_to_biguint(&handshake_result.match_.quote_mint.into()),
-            volume2: relayer0_quote_amount,
-            direction2: OrderSide::Buy,
-            fee_mint: scalar_to_biguint(&handshake_result.party0_fee.gas_addr.into()),
-            fee_volume: scalar_to_u64(&handshake_result.party0_fee.gas_token_amount.into()),
-            fee_direction: OrderSide::Buy,
-            type_: NoteType::InternalTransfer,
-            randomness: scalar_to_biguint(&(randomness_hash0_scalar + Scalar::one())),
-        };
-
-        let relayer1_note = Note {
-            mint1: scalar_to_biguint(&handshake_result.match_.base_mint.into()),
-            volume1: relayer1_base_amount,
-            direction1: OrderSide::Buy,
-            mint2: scalar_to_biguint(&handshake_result.match_.quote_mint.into()),
-            volume2: relayer1_quote_amount,
-            direction2: OrderSide::Buy,
-            fee_mint: scalar_to_biguint(&handshake_result.party1_fee.gas_addr.into()),
-            fee_volume: scalar_to_u64(&handshake_result.party1_fee.gas_token_amount.into()),
-            fee_direction: OrderSide::Buy,
-            type_: NoteType::InternalTransfer,
-            randomness: scalar_to_biguint(&(randomness_hash1_scalar + Scalar::one())),
-        };
-
-        // Build the protocol note
-        let protocol_base_amount = scalar_to_u64(&(*PROTOCOL_FEE * base_amount_scalar).floor());
-        let protocol_quote_amount = scalar_to_u64(&(*PROTOCOL_FEE * quote_amount_scalar).floor());
-
-        let protocol_note = Note {
-            mint1: scalar_to_biguint(&handshake_result.match_.base_mint.into()),
-            volume1: protocol_base_amount,
-            direction1: OrderSide::Buy,
-            mint2: scalar_to_biguint(&handshake_result.match_.quote_mint.into()),
-            volume2: protocol_quote_amount,
-            direction2: OrderSide::Buy,
-            fee_mint: 0u8.into(),
-            fee_volume: 0,
-            fee_direction: OrderSide::Buy,
-            type_: NoteType::InternalTransfer,
-            randomness: scalar_to_biguint(&(randomness_hash0_scalar + randomness_hash1_scalar)),
-        };
-
-        (
-            party0_note,
-            party1_note,
-            relayer0_note,
-            relayer1_note,
-            protocol_note,
-        )
+        wallet1_share.balances[party1_send_ind].amount -= party0_receive_amount;
+        wallet1_share.balances[party1_receive_ind].amount += party1_receive_amount;
+        wallet1_share.orders[party1_order_ind].amount -= match_res.base_amount.val;
     }
 
     /// Submit the match transaction to the contract
-    async fn submit_match(
-        &mut self,
-        proof: ValidMatchEncryptBundle,
-    ) -> Result<(), SettleMatchTaskError> {
-        // Build commitments to the notes
-        let party0_note_commit = proof.statement.party0_note_commit;
-        let party1_note_commit = proof.statement.party1_note_commit;
-        let relayer0_note_commit = proof.statement.relayer0_note_commit;
-        let relayer1_note_commit = proof.statement.relayer1_note_commit;
-        let protocol_note_commit = proof.statement.protocol_note_commit;
+    async fn submit_match(&self, proof: ValidSettleBundle) -> Result<(), SettleMatchTaskError> {
+        let party0_reblind_proof = &self.party0_validity_proof.reblind_proof.statement;
+        let party1_reblind_proof = &self.party1_validity_proof.reblind_proof.statement;
 
-        // Encrypt the notes
-        let party0_note_cipher = encrypt_note(
-            self.match_notes.party0_note.clone(),
-            self.handshake_result.pk_settle0,
-        );
-        let party1_note_cipher = encrypt_note(
-            self.match_notes.party1_note.clone(),
-            self.handshake_result.pk_settle1,
-        );
-        let relayer0_note_cipher = encrypt_note(
-            self.match_notes.relayer0_note.clone(),
-            self.handshake_result.pk_settle_cluster0,
-        );
-        let relayer1_note_cipher = encrypt_note(
-            self.match_notes.relayer1_note.clone(),
-            self.handshake_result.pk_settle_cluster1,
-        );
-        let protocol_note_cipher =
-            encrypt_note(self.match_notes.protocol_note.clone(), *PROTOCOL_SETTLE_KEY);
-
-        // Submit the bundle to the contract
-        let tx_res = self
+        let tx_submit_res = self
             .starknet_client
             .submit_match(
-                self.handshake_result.party0_match_nullifier,
-                self.handshake_result.party1_match_nullifier,
-                party0_note_commit,
-                party0_note_cipher,
-                party1_note_commit,
-                party1_note_cipher,
-                relayer0_note_commit,
-                relayer0_note_cipher,
-                relayer1_note_commit,
-                relayer1_note_cipher,
-                protocol_note_commit,
-                protocol_note_cipher,
+                party0_reblind_proof.original_public_share_nullifier,
+                party0_reblind_proof.original_private_share_nullifier,
+                party1_reblind_proof.original_private_share_nullifier,
+                party1_reblind_proof.original_public_share_nullifier,
+                party0_reblind_proof.reblinded_private_share_commitment,
+                party1_reblind_proof.reblinded_private_share_commitment,
+                proof.statement.party0_modified_shares.clone(),
+                proof.statement.party1_modified_shares.clone(),
                 self.party0_validity_proof.clone(),
                 self.party1_validity_proof.clone(),
                 self.handshake_result.match_proof.clone(),
@@ -678,12 +322,12 @@ impl SettleMatchTask {
 
         // If the transaction failed because a nullifier was already used, assume that the counterparty
         // already submitted a `match` and move on to settlement
-        if let Err(ref tx_rejection) = tx_res
-        && tx_rejection.to_string().contains(NULLIFIER_USED_ERROR_MSG){
-            return Ok(())
-        }
+        if let Err(ref tx_rejection) = tx_submit_res
+            && tx_rejection.to_string().contains(NULLIFIER_USED_ERROR_MSG){
+                return Ok(())
+            }
         let tx_hash =
-            tx_res.map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
+            tx_submit_res.map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
 
         log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
         let tx_info = self
@@ -704,304 +348,97 @@ impl SettleMatchTask {
             }
         }
 
+        // After we persist the wallet updates on-chain, re-index the locally managed wallet
+        // with its updated balances and orders
+        self.update_wallet_state().await;
+
         Ok(())
     }
 
     /// Whether or not a transaction failed because the given nullifier was already spent
     fn nullifier_spent_failure(tx_info: TransactionInfo) -> bool {
         if let Some(failure_reason) = tx_info.transaction_failure_reason
-        && let Some(error_message) = failure_reason.error_message
-        {
-            return error_message.contains(NULLIFIER_USED_ERROR_MSG)
-        }
+            && let Some(error_message) = failure_reason.error_message
+            {
+                return error_message.contains(NULLIFIER_USED_ERROR_MSG)
+            }
 
         false
     }
 
-    /// Prove `VALID SETTLE` on the transaction
-    async fn prove_settle(&self) -> Result<ValidSettleBundle, SettleMatchTaskError> {
-        let my_note = match self.handshake_state.role.get_party_id() {
-            0 => &self.match_notes.party0_note,
-            1 => &self.match_notes.party1_note,
-            _ => unreachable!("party ID may only be 0 or 1"),
-        };
-
-        // TODO: Find the wallet and note commitments together to ensure they have the same root
-        // Find the wallet in the commitment tree
-        let wallet_commitment = self.old_wallet.get_commitment();
-        let wallet_opening = self
-            .starknet_client
-            .find_merkle_authentication_path(wallet_commitment)
+    /// Apply the match result to the local wallet, and update the state
+    async fn update_wallet_state(&self) {
+        // Find the wallet that was matched
+        let mut wallet = self
+            .global_state
+            .read_wallet_index()
             .await
-            .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
-
-        // Find the note in the commitment tree
-        let note_commitment =
-            compute_note_commitment(my_note, self.old_wallet.key_chain.public_keys.pk_settle);
-        let note_redeem_nullifier = compute_note_redeem_nullifier(
-            note_commitment,
-            self.old_wallet.key_chain.public_keys.pk_settle,
-        );
-        let note_opening = self
-            .starknet_client
-            .find_merkle_authentication_path(prime_field_to_scalar(&note_commitment))
+            .get_wallet(&self.wallet_id)
             .await
-            .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
+            .expect("unable to find wallet in global state");
 
-        let new_circuit_wallet: SizedWallet = self.new_wallet.clone().into();
+        // True if the local party buys the base mint in the match
+        let local_party_id = self.handshake_state.role.get_party_id();
+        let match_direction = scalar_to_u64(&self.handshake_result.match_.direction.val);
+        let local_buys_base = (local_party_id == PARTY0 && match_direction == PARTY0_BUYS_BASE)
+            || (local_party_id == PARTY1 && match_direction == PARTY1_BUYS_BASE);
 
-        // Build the statement and witness for the proof
-        let statement = SizedValidSettleStatement {
-            post_wallet_commit: self.new_wallet.get_commitment(),
-            post_wallet_ciphertext: encrypt_wallet(
-                new_circuit_wallet.clone(),
-                self.new_wallet.key_chain.public_keys.pk_view,
+        let match_res = &self.handshake_result.match_;
+        let (send_amount, send_mint, receive_amount, receive_mint) = if local_buys_base {
+            (
+                scalar_to_u64(&match_res.quote_amount.val),
+                scalar_to_biguint(&match_res.quote_mint.val),
+                scalar_to_u64(&match_res.base_amount.val),
+                scalar_to_biguint(&match_res.base_mint.val),
             )
-            .try_into()
-            .unwrap(),
-            wallet_spend_nullifier: self.old_wallet.get_spend_nullifier(),
-            wallet_match_nullifier: self.old_wallet.get_match_nullifier(),
-            note_redeem_nullifier: prime_field_to_scalar(&note_redeem_nullifier),
-            merkle_root: note_opening.compute_root(),
-            type_: NoteType::Match,
+        } else {
+            (
+                scalar_to_u64(&match_res.base_amount.val),
+                scalar_to_biguint(&match_res.base_mint.val),
+                scalar_to_u64(&match_res.quote_amount.val),
+                scalar_to_biguint(&match_res.quote_mint.val),
+            )
         };
+        let fill_size = scalar_to_u64(&self.handshake_result.match_.base_amount.val);
 
-        let sk_settle = self.old_wallet.key_chain.secret_keys.sk_settle;
-        let witness = SizedValidSettleWitness {
-            pre_wallet: self.old_wallet.clone().into(),
-            pre_wallet_opening: wallet_opening.into(),
-            post_wallet: new_circuit_wallet,
-            note: my_note.clone(),
-            note_commitment: prime_field_to_scalar(&note_commitment),
-            note_opening: note_opening.into(),
-            sk_settle,
-        };
-
-        // Enqueue a job with the proof manager to prove `VALID SETTLE`
-        let (response_sender, response_receiver) = oneshot::channel();
-        self.proof_manager_work_queue
-            .send(ProofManagerJob {
-                type_: ProofJob::ValidSettle { witness, statement },
-                response_channel: response_sender,
+        // Update the balances and orders
+        wallet.balances.get_mut(&send_mint).unwrap().amount -= send_amount;
+        wallet
+            .balances
+            .entry(receive_mint.clone())
+            .or_insert_with(|| Balance {
+                mint: receive_mint,
+                amount: 0u64,
             })
-            .map_err(|err| SettleMatchTaskError::SendMessage(err.to_string()))?;
+            .amount += receive_amount;
+        wallet
+            .orders
+            .get_mut(&self.handshake_state.local_order_id)
+            .unwrap()
+            .amount -= fill_size;
 
-        response_receiver
-            .await
-            .map(|proof_bundle| proof_bundle.into())
-            .map_err(|err| SettleMatchTaskError::ProofGeneration(err.to_string()))
-    }
-
-    /// Submit the settle transaction to the contract
-    async fn submit_settle(
-        &mut self,
-        proof: ValidSettleBundle,
-    ) -> Result<(), SettleMatchTaskError> {
-        let note_commitment = compute_note_commitment(
-            &self.my_note,
-            self.old_wallet.key_chain.public_keys.pk_settle,
-        );
-        let wallet_ciphertext = encrypt_wallet(
-            self.new_wallet.clone().into(),
-            self.new_wallet.key_chain.public_keys.pk_view,
-        );
-
-        // Submit the transaction and await success
-        let mut rng = OsRng {};
-        let tx_hash = self
-            .starknet_client
-            .submit_settle(
-                self.new_wallet.key_chain.public_keys.pk_view,
-                self.new_wallet.get_commitment(),
-                self.old_wallet.get_match_nullifier() + Scalar::random(&mut rng),
-                self.old_wallet.get_spend_nullifier() + Scalar::random(&mut rng),
-                prime_field_to_scalar(&note_commitment),
-                wallet_ciphertext,
-                proof,
-            )
-            .await
-            .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
-
-        log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
-
-        let tx_result = self
-            .starknet_client
-            .poll_transaction_completed(tx_hash)
-            .await
-            .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
-
-        if let TransactionStatus::Rejected = tx_result.status {
-            return Err(SettleMatchTaskError::StarknetClient(
-                ERR_TRANSACTION_FAILED.to_string(),
-            ));
-        }
-
-        Ok(())
+        // Index the updated wallet in global state
+        self.global_state.update_wallet(wallet).await
     }
 
     /// Update the validity proofs for all orders in the wallet after settlement
     async fn update_validity_proofs(&self) -> Result<(), SettleMatchTaskError> {
-        // Find the new wallet in the Merkle state
-        let authentication_path = self
-            .starknet_client
-            .find_merkle_authentication_path(self.new_wallet.get_commitment())
-            .await
-            .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
-        let new_root = authentication_path.compute_root();
-        log::info!("found merkle path in contract state");
-
-        // A wallet that is compatible with circuit types
-        let circuit_wallet: SizedWallet = self.new_wallet.clone().into();
-        let randomness_hash = compute_poseidon_hash(&[circuit_wallet.randomness]);
-        let wallet_opening: MerkleOpening = authentication_path.into();
-
-        // The statement in `VALID COMMITMENTS` is only parameterized by wallet-specific variables;
-        // so we construct it once and use it for all order commitment proofs
-        let new_statement = ValidCommitmentsStatement {
-            nullifier: self.new_wallet.get_match_nullifier(),
-            merkle_root: new_root,
-            pk_settle: self.new_wallet.key_chain.public_keys.pk_settle,
-        };
-
-        // Request that the proof manager prove `VALID COMMITMENTS` for each order
-        let mut proof_response_channels = HashMap::new();
-        for (order_id, order) in self.new_wallet.orders.clone().into_iter() {
-            // Skip default orders
-            if order.is_default() {
-                continue;
-            }
-
-            // Build a witness for this order's validity proof
-            let witness = if let Some(witness) = self
-                .get_witness_for_order(
-                    order,
-                    circuit_wallet.clone(),
-                    wallet_opening.clone(),
-                    randomness_hash,
-                    self.new_wallet.key_chain.secret_keys.sk_match,
-                )
-                .await
-            {
-                witness
-            } else {
-                log::error!("could not find witness for order {order_id}, skipping...");
-                continue;
-            };
-
-            // Send a job to the proof manager to prove `VALID COMMITMENTS` for this wallet
-            let (response_sender, response_receiver) = oneshot::channel();
-            self.proof_manager_work_queue
-                .send(ProofManagerJob {
-                    type_: ProofJob::ValidCommitments {
-                        witness: witness.clone(),
-                        statement: new_statement,
-                    },
-                    response_channel: response_sender,
-                })
-                .map_err(|err| SettleMatchTaskError::SendMessage(err.to_string()))?;
-
-            proof_response_channels.insert(order_id, (response_receiver, witness));
-        }
-
-        // Await proofs for all orders
-        for (order_id, (proof_channel, witness)) in proof_response_channels.into_iter() {
-            let proof = proof_channel
-                .await
-                .map_err(|err| SettleMatchTaskError::ProofGeneration(err.to_string()))?;
-            log::info!("got proof for order {order_id}");
-
-            // Update the global state of the order
-            self.update_order_state(order_id, proof.into(), witness)
-                .await?;
-        }
-
-        // Update the wallet in the global state
-        self.global_state
-            .update_wallet(self.new_wallet.clone())
-            .await;
-
-        Ok(())
-    }
-
-    /// Generate a `VALID COMMITMENTS` witness for the given order
-    ///
-    /// This will use the old witness -- modifying it appropriately -- if one exists,
-    /// otherwise, it will create a brand new witness
-    #[allow(clippy::too_many_arguments)]
-    async fn get_witness_for_order(
-        &self,
-        order: CircuitOrder,
-        wallet: SizedWallet,
-        wallet_opening: MerkleOpening,
-        randomness_hash: Scalar,
-        sk_match: SecretIdentificationKey,
-    ) -> Option<SizedValidCommitmentsWitness> {
-        // Always recreate the witness anew, even if a witness previously existed
-        // The balances used in a witness may have changes so it is easier to just
-        // recreate the witness
-        let (balance, fee, fee_balance) = self.new_wallet.get_balance_and_fee_for_order(&order)?;
-        Some(SizedValidCommitmentsWitness {
-            wallet,
-            order: order.into(),
-            balance: balance.into(),
-            fee: fee.into(),
-            fee_balance: fee_balance.into(),
-            wallet_opening,
-            randomness_hash: randomness_hash.into(),
-            sk_match,
-        })
-    }
-
-    /// Update the order in the state
-    async fn update_order_state(
-        &self,
-        order_id: OrderIdentifier,
-        proof: ValidCommitmentsBundle,
-        witness: SizedValidCommitmentsWitness,
-    ) -> Result<(), SettleMatchTaskError> {
-        // If the order does not currently exist in the book, add it
-        if !self
+        let wallet = self
             .global_state
-            .read_order_book()
+            .read_wallet_index()
             .await
-            .contains_order(&order_id)
-        {
-            self.global_state
-                .add_order(NetworkOrder {
-                    id: order_id,
-                    match_nullifier: self.new_wallet.get_match_nullifier(),
-                    local: true,
-                    cluster: self.global_state.local_cluster_id.clone(),
-                    state: NetworkOrderState::Verified,
-                    valid_commit_proof: Some(proof.clone()),
-                    valid_commit_witness: Some(witness),
-                })
-                .await;
-        } else {
-            // Otherwise, update the existing proof
-            self.global_state
-                .add_order_validity_proof(&order_id, proof.clone())
-                .await;
-            self.global_state
-                .read_order_book()
-                .await
-                .attach_validity_proof_witness(&order_id, witness)
-                .await;
-        }
+            .get_wallet(&self.wallet_id)
+            .await
+            .unwrap();
 
-        // Broadcast the new order's validity proof to the network
-        let cluster = self.global_state.local_cluster_id.clone();
-        let message = OrderBookManagementMessage::OrderProofUpdated {
-            order_id,
-            cluster,
-            proof,
-        };
-
-        self.network_sender
-            .send(GossipOutbound::Pubsub {
-                topic: ORDER_BOOK_TOPIC.to_string(),
-                message: PubsubMessage::OrderBookManagement(message),
-            })
-            .map_err(|err| SettleMatchTaskError::SendMessage(err.to_string()))
+        update_wallet_validity_proofs(
+            &wallet,
+            &self.starknet_client,
+            self.proof_manager_work_queue.clone(),
+            self.global_state.clone(),
+            self.network_sender.clone(),
+        )
+        .await
+        .map_err(|err| SettleMatchTaskError::UpdatingValidityProofs(err))
     }
 }

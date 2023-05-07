@@ -15,7 +15,7 @@ use circuits::{
             AuthenticatedLinkableMatchResultCommitment, AuthenticatedMatchResult,
             LinkableMatchResultCommitment,
         },
-        wallet::Nullifier,
+        wallet::{Nullifier, WalletSecretShare},
     },
     verify_collaborative_proof,
     zk_circuits::valid_match_mpc::{
@@ -35,7 +35,10 @@ use mpc_ristretto::{
 use tracing::log;
 use uuid::Uuid;
 
-use crate::proof_generation::{jobs::ValidMatchMpcBundle, OrderValidityWitnessBundle};
+use crate::{
+    proof_generation::{jobs::ValidMatchMpcBundle, OrderValidityWitnessBundle},
+    SizedWallet, SizedWalletShare,
+};
 
 use super::{error::HandshakeManagerError, manager::HandshakeExecutor, state::HandshakeState};
 
@@ -49,6 +52,10 @@ pub struct HandshakeResult {
     pub party0_share_nullifier: Nullifier,
     /// The second party's public wallet share nullifier,
     pub party1_share_nullifier: Nullifier,
+    /// The first party's public reblinded secret shares
+    pub party0_reblinded_shares: SizedWalletShare,
+    /// The second party's public reblinded secret shares
+    pub party1_reblinded_shares: SizedWalletShare,
     /// The proof of `VALID MATCH MPC` along with associated commitments
     pub match_proof: ValidMatchMpcBundle,
     /// The first party's fee
