@@ -124,9 +124,9 @@ pub struct StarknetClientConfig {
     /// so this parameter is unused
     pub infura_api_key: Option<String>,
     /// The starknet addresses of the accounts corresponding to the given keys
-    pub starknet_account_addresses: Option<Vec<String>>,
+    pub starknet_account_addresses: Vec<String>,
     /// The starknet signing keys, used to submit transactions on-chain
-    pub starknet_pkeys: Option<Vec<String>>,
+    pub starknet_pkeys: Vec<String>,
 }
 
 impl StarknetClientConfig {
@@ -139,7 +139,7 @@ impl StarknetClientConfig {
     ///
     /// Only when this is enabled may the client write transactions to the sequencer
     pub fn account_enabled(&self) -> bool {
-        self.starknet_pkeys.is_some() && self.starknet_account_addresses.is_some()
+        !self.starknet_pkeys.is_empty() && !self.starknet_account_addresses.is_empty()
     }
 
     /// Build a gateway client from the config values
@@ -177,7 +177,7 @@ pub struct StarknetClient {
     /// The client used to send starknet JSON-RPC requests
     jsonrpc_client: Option<Arc<JsonRpcClient<HttpTransport>>>,
     /// The accounts that may be used to sign outbound transactions
-    accounts: Option<Arc<Vec<SingleOwnerAccount<SequencerGatewayProvider, LocalWallet>>>>,
+    accounts: Arc<Vec<SingleOwnerAccount<SequencerGatewayProvider, LocalWallet>>>,
     /// The account index to use for the next transaction
     account_index: Arc<Mutex<usize>>,
 }
@@ -190,33 +190,28 @@ impl StarknetClient {
         let jsonrpc_client = config.new_jsonrpc_client().map(Arc::new);
 
         // Build the accounts to sign transactions with
-        let accounts = if config.account_enabled() {
-            let account_addrs = config.starknet_account_addresses.clone().unwrap();
-            let keys = config.starknet_pkeys.clone().unwrap();
-            let accounts = account_addrs
-                .into_iter()
-                .zip(keys)
-                .map(|(account_addr, key)| {
-                    // Parse the account address and key
-                    let account_addr_felt = StarknetFieldElement::from_str(&account_addr).unwrap();
-                    let key_felt = StarknetFieldElement::from_str(&key).unwrap();
-                    // Build the account
-                    let signer = LocalWallet::from(SigningKey::from_secret_scalar(key_felt));
-                    SingleOwnerAccount::new(
-                        config.new_gateway_client(),
-                        signer,
-                        account_addr_felt,
-                        config.chain.into(),
-                    )
-                })
-                .collect::<Vec<_>>();
-            Some(accounts)
-        } else {
-            None
-        };
+        let account_addrs = config.starknet_account_addresses.clone();
+        let keys = config.starknet_pkeys.clone();
+        let accounts = account_addrs
+            .into_iter()
+            .zip(keys)
+            .map(|(account_addr, key)| {
+                // Parse the account address and key
+                let account_addr_felt = StarknetFieldElement::from_str(&account_addr).unwrap();
+                let key_felt = StarknetFieldElement::from_str(&key).unwrap();
+                // Build the account
+                let signer = LocalWallet::from(SigningKey::from_secret_scalar(key_felt));
+                SingleOwnerAccount::new(
+                    config.new_gateway_client(),
+                    signer,
+                    account_addr_felt,
+                    config.chain.into(),
+                )
+            })
+            .collect::<Vec<_>>();
 
         // Wrap the accounts an Arc for read access across workers
-        let accounts = accounts.map(Arc::new);
+        let accounts = Arc::new(accounts);
 
         // Parse the contract address
         let contract_address: StarknetFieldElement =
@@ -258,15 +253,15 @@ impl StarknetClient {
         &self,
         account_index: usize,
     ) -> &SingleOwnerAccount<SequencerGatewayProvider, LocalWallet> {
-        self.accounts.as_ref().unwrap().get(account_index).unwrap()
+        self.accounts.as_ref().get(account_index).unwrap()
     }
 
     /// Query the current nonce and advance it by one
-    pub fn new_account_index(&mut self) -> usize {
+    pub fn next_account_index(&mut self) -> usize {
         // Acquire a lock on self.account_index, copy it to a usize, and increment it
         let mut account_index = self.account_index.lock().unwrap();
         let current_account_index = *account_index;
-        *account_index = (*account_index + 1) % self.accounts.as_ref().unwrap().len();
+        *account_index = (*account_index + 1) % self.accounts.as_ref().len();
         current_account_index
     }
 
@@ -299,7 +294,7 @@ impl StarknetClient {
         call: Call,
     ) -> Result<TransactionHash, StarknetClientError> {
         // Estimate the fee and add a buffer to avoid rejected transaction
-        let account_index = self.new_account_index();
+        let account_index = self.next_account_index();
         let acct_nonce = self.pending_block_nonce(account_index).await?;
         let execution = self
             .get_account(account_index)

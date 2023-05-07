@@ -116,10 +116,10 @@ struct Cli {
     pub starknet_jsonrpc_node: Option<String>,
     /// The StarkNet addresses corresponding to the given private keys
     #[clap(long = "starknet-account-addr", value_parser, requires = "starknet-private-keys")]
-    pub starknet_account_addresses: Option<Vec<String>>,
+    pub starknet_account_addresses: Vec<String>,
     /// The StarkNet private keys used to send transactions
     #[clap(long = "starknet-account-pkey", value_parser, requires = "starknet-account-addresses")]
-    pub starknet_private_keys: Option<Vec<String>>,
+    pub starknet_private_keys: Vec<String>,
     /// A file holding a json representation of the wallets the local node
     /// should manage
     #[clap(short, long, value_parser)]
@@ -187,9 +187,9 @@ pub struct RelayerConfig {
     /// The StarkNet JSON-RPC API gateway
     pub starknet_jsonrpc_node: Option<String>,
     /// The StarkNet addresses corresponding to the given private keys
-    pub starknet_account_addresses: Option<Vec<String>>,
+    pub starknet_account_addresses: Vec<String>,
     /// The StarkNet private keys used for signing transactions
-    pub starknet_private_keys: Option<Vec<String>>,
+    pub starknet_private_keys: Vec<String>,
     /// The Ethereum RPC node websocket address to dial for on-chain data
     pub eth_websocket_addr: Option<String>,
 }
