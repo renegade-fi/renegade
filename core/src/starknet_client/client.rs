@@ -3,22 +3,18 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    iter,
     str::FromStr,
     sync::Arc,
     time::Duration,
 };
 
 use circuits::{
-    types::wallet::{NoteCommitment, Nullifier, WalletSecretShare, WalletShareCommitment},
+    types::wallet::{Nullifier, WalletShareCommitment},
     zk_gadgets::merkle::MerkleRoot,
 };
-use crypto::{
-    elgamal::ElGamalCiphertext,
-    fields::{
-        biguint_to_starknet_felt, scalar_to_biguint, starknet_felt_to_biguint,
-        starknet_felt_to_scalar, starknet_felt_to_u64,
-    },
+use crypto::fields::{
+    biguint_to_starknet_felt, scalar_to_biguint, starknet_felt_to_biguint, starknet_felt_to_scalar,
+    starknet_felt_to_u64,
 };
 use curve25519_dalek::scalar::Scalar;
 use num_bigint::BigUint;
@@ -50,8 +46,8 @@ use tracing::log;
 use crate::{
     proof_generation::{
         jobs::{
-            ValidCommitmentsBundle, ValidMatchMpcBundle, ValidSettleBundle,
-            ValidWalletCreateBundle, ValidWalletUpdateBundle,
+            ValidMatchMpcBundle, ValidSettleBundle, ValidWalletCreateBundle,
+            ValidWalletUpdateBundle,
         },
         OrderValidityProofBundle,
     },
@@ -65,10 +61,8 @@ use crate::{
 };
 
 use super::{
-    error::StarknetClientError,
-    helpers::{pack_bytes_into_felts, parse_ciphertext_from_calldata},
-    types::ExternalTransfer,
-    ChainId, DEFAULT_AUTHENTICATION_PATH, NULLIFIER_USED_SELECTOR, SETTLE_SELECTOR,
+    error::StarknetClientError, helpers::pack_bytes_into_felts, types::ExternalTransfer, ChainId,
+    DEFAULT_AUTHENTICATION_PATH, NULLIFIER_USED_SELECTOR,
 };
 
 /// A type alias for a felt that represents a transaction hash
@@ -89,10 +83,6 @@ const EVENTS_PAGE_SIZE: u64 = 50;
 const TX_STATUS_POLL_INTERVAL_MS: u64 = 10_000; // 10 seconds
 /// The fee estimate multiplier to use as `MAX_FEE` for transactions
 const MAX_FEE_MULTIPLIER: f32 = 1.5;
-
-/// Error message thrown when the client cannot find a ciphertext blob in
-/// a transaction's trace
-const ERR_CIPHERTEXT_NOT_FOUND: &str = "ciphertext blob not found in tx trace";
 
 //r Macro helper to pack a serializable value into a vector of felts
 ///
@@ -486,40 +476,6 @@ impl StarknetClient {
         Ok(None)
     }
 
-    /// Pull the ciphertext blob from the calldata of the given transaction, return it
-    /// as a vector of ElGamal ciphertexts
-    pub async fn fetch_ciphertext_from_tx(
-        &self,
-        tx_hash: TransactionHash,
-    ) -> Result<Vec<ElGamalCiphertext>, StarknetClientError> {
-        // Lookup the calldata for the given tx
-        let invocation_details = self
-            .get_gateway_client()
-            .get_transaction_trace(tx_hash)
-            .await
-            .map_err(|err| StarknetClientError::Gateway(err.to_string()))?
-            .function_invocation
-            .unwrap();
-
-        // Check the wrapper call as well as any internal calls for the ciphertext
-        // Typically the relevant calldata will be found in an internal call that the account
-        // contract delegates to via __execute__
-        for invocation in
-            iter::once(&invocation_details).chain(invocation_details.internal_calls.iter())
-        {
-            if let Ok(ciphertext) =
-                parse_ciphertext_from_calldata(invocation.selector.unwrap(), &invocation.calldata)
-            {
-                return Ok(ciphertext);
-            }
-        }
-
-        log::error!("could not parse ciphertext blob from transaction trace");
-        Err(StarknetClientError::NotFound(
-            ERR_CIPHERTEXT_NOT_FOUND.to_string(),
-        ))
-    }
-
     // ------------------------
     // | Contract Interaction |
     // ------------------------
@@ -564,7 +520,7 @@ impl StarknetClient {
         &self,
         public_blinder_share: Scalar,
     ) -> Result<TransactionHash, StarknetClientError> {
-        let reduced_blinder_share = Self::reduce_scalar_to_felt(&public_blinder_share.into());
+        let reduced_blinder_share = Self::reduce_scalar_to_felt(&public_blinder_share);
         let call = CallFunction {
             contract_address: self.contract_address,
             entry_point_selector: *GET_WALLET_LAST_UPDATED_SELECTOR,
@@ -593,7 +549,7 @@ impl StarknetClient {
         );
 
         let mut calldata = vec![
-            Self::reduce_scalar_to_felt(&public_blinder_share.into()),
+            Self::reduce_scalar_to_felt(&public_blinder_share),
             Self::reduce_scalar_to_felt(&private_share_commitment),
         ];
         // Pack the proof into a list of felts

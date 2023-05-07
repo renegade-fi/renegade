@@ -89,7 +89,10 @@ pub enum SettleMatchTaskState {
     /// The task is proving `VALID SETTLE`
     ProvingSettle,
     /// The task is submitting the match transaction
-    SubmittingMatch { proof: ValidSettleBundle },
+    SubmittingMatch {
+        /// The proof of `VALID SETTLE` given in the last step
+        proof: ValidSettleBundle,
+    },
     /// The task is updating order proofs after the settled walled is confirmed
     UpdatingValidityProofs,
     /// The task has finished
@@ -143,11 +146,12 @@ impl Task for SettleMatchTask {
 
             SettleMatchTaskState::ProvingSettle => {
                 let proof = self.prove_settle().await?;
+                self.task_state = SettleMatchTaskState::SubmittingMatch { proof }
             }
 
             SettleMatchTaskState::SubmittingMatch { proof } => {
                 self.submit_match(proof).await?;
-                self.task_state = SettleMatchTaskState::ProvingSettle;
+                self.task_state = SettleMatchTaskState::UpdatingValidityProofs;
             }
 
             SettleMatchTaskState::UpdatingValidityProofs => {
@@ -271,7 +275,7 @@ impl SettleMatchTask {
         handshake_res: &HandshakeResult,
     ) {
         // Mux between order directions to decide the amount each party receives
-        let match_res = handshake_res.match_;
+        let match_res = &handshake_res.match_;
         let (party0_receive_amount, party1_receive_amount) =
             if match_res.direction.val.eq(&Scalar::from(0u8)) {
                 (match_res.base_amount.val, match_res.quote_amount.val)
@@ -439,6 +443,6 @@ impl SettleMatchTask {
             self.network_sender.clone(),
         )
         .await
-        .map_err(|err| SettleMatchTaskError::UpdatingValidityProofs(err))
+        .map_err(SettleMatchTaskError::UpdatingValidityProofs)
     }
 }
