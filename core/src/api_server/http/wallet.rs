@@ -6,6 +6,7 @@ use circuits::types::{
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
 use crossbeam::channel::Sender as CrossbeamSender;
+use crypto::fields::biguint_to_scalar;
 use hyper::{HeaderMap, StatusCode};
 use itertools::Itertools;
 use num_traits::ToPrimitive;
@@ -260,6 +261,8 @@ impl TypedHandler for FindWalletHandler {
         // the wallet
         let task = LookupWalletTask::new(
             req.wallet_id,
+            biguint_to_scalar(&req.blinder_seed),
+            biguint_to_scalar(&req.secret_share_seed),
             req.key_chain,
             self.starknet_client.clone(),
             self.network_sender.clone(),

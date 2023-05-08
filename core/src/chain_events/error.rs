@@ -5,8 +5,6 @@ use std::fmt::Display;
 /// The error type that the event listener emits
 #[derive(Clone, Debug)]
 pub enum OnChainEventListenerError {
-    /// An error generating a proof
-    ProofGeneration(String),
     /// An RPC error with the StarkNet provider
     Rpc(String),
     /// An error sending a message to another worker in the local node
