@@ -3,12 +3,14 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    iter,
     str::FromStr,
     sync::Arc,
     time::Duration,
 };
 
 use circuits::{
+    native_helpers::compute_wallet_share_commitment,
     types::wallet::{Nullifier, WalletShareCommitment},
     zk_gadgets::merkle::MerkleRoot,
 };
@@ -52,8 +54,9 @@ use crate::{
         OrderValidityProofBundle,
     },
     starknet_client::{
-        INTERNAL_NODE_CHANGED_EVENT_SELECTOR, MATCH_SELECTOR, MERKLE_ROOT_IN_HISTORY_SELECTOR,
-        NEW_WALLET_SELECTOR, UPDATE_WALLET_SELECTOR, VALUE_INSERTED_EVENT_SELECTOR,
+        helpers::parse_shares_from_calldata, INTERNAL_NODE_CHANGED_EVENT_SELECTOR, MATCH_SELECTOR,
+        MERKLE_ROOT_IN_HISTORY_SELECTOR, NEW_WALLET_SELECTOR, UPDATE_WALLET_SELECTOR,
+        VALUE_INSERTED_EVENT_SELECTOR,
     },
     state::{wallet::MerkleAuthenticationPath, MerkleTreeCoords},
     SizedWalletShare, MERKLE_HEIGHT,
@@ -82,6 +85,9 @@ const EVENTS_PAGE_SIZE: u64 = 50;
 const TX_STATUS_POLL_INTERVAL_MS: u64 = 10_000; // 10 seconds
 /// The fee estimate multiplier to use as `MAX_FEE` for transactions
 const MAX_FEE_MULTIPLIER: f32 = 1.5;
+
+/// Error message emitted when wallet secret shares cannot be parsed from a tx
+const ERR_WALLET_SHARES_NOT_FOUND: &str = "could not parse wallet public shares from tx calldata";
 
 //r Macro helper to pack a serializable value into a vector of felts
 ///
@@ -476,11 +482,42 @@ impl StarknetClient {
     }
 
     /// Fetch and parse the public secret shares from the calldata of the given transactions
+    ///
+    /// In the case that the referenced transaction is a `match`, we disambiguate between the
+    /// two parties by adding the public blinder of the party's shares the caller intends to fetch
     pub async fn fetch_public_shares_from_tx(
         &self,
+        public_blinder_share: Scalar,
         tx_hash: TransactionHash,
     ) -> Result<SizedWalletShare, StarknetClientError> {
-        unimplemented!("")
+        let invocation_details = self
+            .get_gateway_client()
+            .get_transaction_trace(tx_hash)
+            .await
+            .map_err(|err| StarknetClientError::Gateway(err.to_string()))?
+            .function_invocation
+            .unwrap();
+
+        // Check the wrapper call as well as any internal calls for the ciphertext
+        // Typically the relevant calldata will be found in an internal call that the account
+        // contract delegates to via __execute__
+        let reduced_blinder_share = Self::reduce_scalar_to_felt(&public_blinder_share);
+        for invocation in
+            iter::once(&invocation_details).chain(invocation_details.internal_calls.iter())
+        {
+            if let Ok(public_shares) = parse_shares_from_calldata(
+                invocation.selector.unwrap(),
+                &invocation.calldata,
+                reduced_blinder_share,
+            ) {
+                return Ok(public_shares);
+            }
+        }
+
+        log::error!("could not parse wallet public shares from transaction trace");
+        Err(StarknetClientError::NotFound(
+            ERR_WALLET_SHARES_NOT_FOUND.to_string(),
+        ))
     }
 
     // ------------------------
@@ -556,8 +593,8 @@ impl StarknetClient {
     /// Returns the transaction hash corresponding to the `new_wallet` invocation
     pub async fn new_wallet(
         &self,
-        public_blinder_share: Scalar,
         private_share_commitment: WalletShareCommitment,
+        public_shares: SizedWalletShare,
         valid_wallet_create: ValidWalletCreateBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
         assert!(
@@ -565,10 +602,17 @@ impl StarknetClient {
             "no private key given to sign transactions with"
         );
 
+        // Compute a commitment to the public shares
+        let public_share_commitment = compute_wallet_share_commitment(public_shares.clone());
         let mut calldata = vec![
-            Self::reduce_scalar_to_felt(&public_blinder_share),
+            Self::reduce_scalar_to_felt(&public_shares.blinder),
+            Self::reduce_scalar_to_felt(&public_share_commitment),
             Self::reduce_scalar_to_felt(&private_share_commitment),
         ];
+
+        // Pack the wallet's public shares into a list of felts
+        calldata.append(&mut pack_serializable!(public_shares));
+
         // Pack the proof into a list of felts
         calldata.append(&mut pack_serializable!(valid_wallet_create));
 
@@ -589,7 +633,6 @@ impl StarknetClient {
     #[allow(clippy::too_many_arguments)]
     pub async fn update_wallet(
         &self,
-        public_blinder_share: Scalar,
         new_private_shares_commitment: WalletShareCommitment,
         old_private_shares_nullifier: Nullifier,
         old_public_shares_nullifier: Nullifier,
@@ -597,11 +640,13 @@ impl StarknetClient {
         new_public_shares: SizedWalletShare,
         valid_wallet_update: ValidWalletUpdateBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
+        let public_share_commitment = compute_wallet_share_commitment(new_public_shares.clone());
         let mut calldata = vec![
-            Self::reduce_scalar_to_felt(&public_blinder_share),
-            Self::reduce_scalar_to_felt(&new_private_shares_commitment),
-            Self::reduce_scalar_to_felt(&old_private_shares_nullifier),
             Self::reduce_scalar_to_felt(&old_public_shares_nullifier),
+            Self::reduce_scalar_to_felt(&old_private_shares_nullifier),
+            Self::reduce_scalar_to_felt(&new_public_shares.blinder),
+            Self::reduce_scalar_to_felt(&public_share_commitment),
+            Self::reduce_scalar_to_felt(&new_private_shares_commitment),
         ];
 
         // Add the external transfer tuple to the calldata
@@ -644,13 +689,23 @@ impl StarknetClient {
         valid_match_proof: ValidMatchMpcBundle,
         valid_settle_proof: ValidSettleBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
+        // Compute commitments to both party's public shares
+        let party0_public_share_commitment =
+            compute_wallet_share_commitment(party0_public_shares.clone());
+        let party1_public_share_commitment =
+            compute_wallet_share_commitment(party1_public_shares.clone());
+
         // Build the calldata
         let mut calldata = vec![
             Self::reduce_scalar_to_felt(&party0_public_shares_nullifier),
             Self::reduce_scalar_to_felt(&party0_private_shares_nullifier),
-            Self::reduce_scalar_to_felt(&party1_private_shares_nullifier),
             Self::reduce_scalar_to_felt(&party1_public_shares_nullifier),
+            Self::reduce_scalar_to_felt(&party1_private_shares_nullifier),
+            Self::reduce_scalar_to_felt(&party0_public_shares.blinder),
+            Self::reduce_scalar_to_felt(&party1_public_shares.blinder),
+            Self::reduce_scalar_to_felt(&party0_public_share_commitment),
             Self::reduce_scalar_to_felt(&party0_private_share_commitment),
+            Self::reduce_scalar_to_felt(&party1_public_share_commitment),
             Self::reduce_scalar_to_felt(&party1_private_share_commitment),
         ];
 

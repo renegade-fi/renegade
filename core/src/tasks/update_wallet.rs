@@ -259,7 +259,6 @@ impl UpdateWalletTask {
         let tx_hash = self
             .starknet_client
             .update_wallet(
-                self.new_wallet.public_shares.blinder,
                 self.new_wallet.get_private_share_commitment(),
                 self.old_wallet.get_private_share_nullifier(),
                 self.old_wallet.get_public_share_nullifier(),

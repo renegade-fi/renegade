@@ -46,6 +46,10 @@ pub struct CreateWalletResponse {
 pub struct FindWalletRequest {
     /// The ID to handle the wallet by
     pub wallet_id: WalletIdentifier,
+    /// The seed for the wallet's blinder CSPRNG
+    pub blinder_seed: BigUint,
+    /// The seed for the wallet's secret share CSPRNG
+    pub secret_share_seed: BigUint,
     /// The keychain to use for management after the wallet is found
     pub key_chain: KeyChain,
 }

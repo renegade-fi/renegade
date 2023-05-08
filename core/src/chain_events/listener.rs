@@ -26,16 +26,13 @@ use tokio::time::{sleep_until, Instant};
 use tracing::log;
 
 use crate::{
-    gossip_api::{
-        gossip::{GossipOutbound, PubsubMessage},
-        orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
-    },
+    gossip_api::gossip::GossipOutbound,
     handshake::jobs::HandshakeExecutionJob,
-    proof_generation::{jobs::ProofManagerJob, OrderValidityProofBundle},
+    proof_generation::jobs::ProofManagerJob,
     starknet_client::client::StarknetClient,
     state::{
         wallet::{MerkleAuthenticationPath, Wallet},
-        MerkleTreeCoords, OrderIdentifier, RelayerState,
+        MerkleTreeCoords, RelayerState,
     },
     CancelChannel,
 };
@@ -416,34 +413,5 @@ impl OnChainEventListenerExecutor {
         }
 
         unimplemented!("Implement wallet commitment proof task in encryption redesign")
-    }
-
-    /// Update the order validity proof in the global state and gossip
-    /// the new proof to the cluster
-    async fn update_order_proof(
-        &self,
-        order_id: OrderIdentifier,
-        proof_bundle: OrderValidityProofBundle,
-    ) -> Result<(), OnChainEventListenerError> {
-        // Update the locally stored proof
-        self.global_state
-            .add_order_validity_proofs(&order_id, proof_bundle.clone())
-            .await;
-
-        // Gossip the new validity proof onto the pubsub mesh
-        let cluster = self.global_state.local_cluster_id.clone();
-        let message = OrderBookManagementMessage::OrderProofUpdated {
-            order_id,
-            cluster,
-            proof_bundle,
-        };
-
-        self.config
-            .network_manager_work_queue
-            .send(GossipOutbound::Pubsub {
-                topic: ORDER_BOOK_TOPIC.to_string(),
-                message: PubsubMessage::OrderBookManagement(message),
-            })
-            .map_err(|err| OnChainEventListenerError::SendMessage(err.to_string()))
     }
 }

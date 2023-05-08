@@ -247,8 +247,8 @@ impl NewWalletTask {
         let tx_hash = self
             .starknet_client
             .new_wallet(
-                self.wallet.public_shares.blinder,
                 private_share_commitment,
+                self.wallet.public_shares.clone(),
                 proof,
             )
             .await
