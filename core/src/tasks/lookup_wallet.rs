@@ -93,8 +93,6 @@ pub enum LookupWalletTaskError {
     NotFound(String),
     /// Error generating a proof of `VALID COMMITMENTS`
     ProofGeneration(String),
-    /// Error sending a message to another worker in the local relayer
-    SendMessage(String),
     /// Error interacting with the starknet client
     Starknet(String),
 }
@@ -128,14 +126,17 @@ impl Task for LookupWalletTask {
             LookupWalletTaskState::Pending => {
                 self.task_state = LookupWalletTaskState::FindingWallet
             }
+
             LookupWalletTaskState::FindingWallet => {
-                // self.find_wallet().await?;
+                self.find_wallet().await?;
                 self.task_state = LookupWalletTaskState::CreatingValidityProofs;
             }
+
             LookupWalletTaskState::CreatingValidityProofs => {
-                // self.create_validity_proofs().await?;
+                self.create_validity_proofs().await?;
                 self.task_state = LookupWalletTaskState::Completed;
             }
+
             LookupWalletTaskState::Completed => {
                 unreachable!("step called on task in Completed state")
             }
@@ -151,6 +152,7 @@ impl Task for LookupWalletTask {
 
 impl LookupWalletTask {
     /// Constructor
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         wallet_id: WalletIdentifier,
         blinder_stream_seed: Scalar,
@@ -186,6 +188,8 @@ impl LookupWalletTask {
         let mut curr_blinder_public = curr_blinder - curr_blinder_private_share;
         let mut updating_tx = None;
 
+        // TODO: Look for first non-nullified public blinder share, not just the first share
+        // that has been indexed
         while let Some(tx) = self
             .starknet_client
             .get_public_blinder_tx(curr_blinder_public)
@@ -204,9 +208,10 @@ impl LookupWalletTask {
             .ok_or_else(|| LookupWalletTaskError::NotFound(ERR_WALLET_NOT_FOUND.to_string()))?;
 
         // Fetch the secret shares from the tx
+        let public_blinder_share = curr_blinder - curr_blinder_private_share;
         let public_shares: SizedWalletShare = self
             .starknet_client
-            .fetch_public_shares_from_tx(latest_tx)
+            .fetch_public_shares_from_tx(public_blinder_share, latest_tx)
             .await
             .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?;
 
@@ -273,12 +278,14 @@ impl LookupWalletTask {
             self.network_sender.clone(),
         )
         .await
-        .map_err(|err| LookupWalletTaskError::ProofGeneration(err))
+        .map_err(LookupWalletTaskError::ProofGeneration)
     }
 }
 
 /// A hash chain from a seed used to compute CSPRNG values
 pub(super) struct PoseidonCSPRNG {
+    /// The seed of the CSPRNG, this is chained into a hash function
+    /// to give pseudorandom values
     seed: Scalar,
 }
 
