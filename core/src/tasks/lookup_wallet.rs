@@ -7,38 +7,30 @@ use std::{
 };
 
 use async_trait::async_trait;
-use circuits::{
-    native_helpers::compute_poseidon_hash,
-    types::{keychain::SecretIdentificationKey, order::Order as CircuitOrder, wallet::Nullifier},
-    zk_circuits::valid_commitments::ValidCommitmentsStatement,
-    zk_gadgets::merkle::MerkleOpening,
-};
+use circuits::native_helpers::compute_poseidon_hash;
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::{scalar_to_biguint, starknet_felt_to_biguint};
+use crypto::fields::scalar_to_biguint;
 use curve25519_dalek::scalar::Scalar;
+use itertools::Itertools;
 use serde::Serialize;
-use starknet::core::types::FieldElement as StarknetFieldElement;
-use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
-use tracing::log;
+use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use uuid::Uuid;
 
 use crate::{
-    gossip_api::{
-        gossip::{GossipOutbound, PubsubMessage},
-        orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
-    },
-    proof_generation::jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle},
-    starknet_client::client::{StarknetClient, TransactionHash},
+    gossip_api::gossip::GossipOutbound,
+    proof_generation::jobs::ProofManagerJob,
+    starknet_client::client::StarknetClient,
     state::{
         wallet::{KeyChain, Wallet, WalletIdentifier, WalletMetadata},
-        NetworkOrder, NetworkOrderState, OrderIdentifier, RelayerState,
+        RelayerState,
     },
-    tasks::decrypt_wallet,
-    types::SizedValidCommitmentsWitness,
-    SizedWallet,
+    SizedWalletShare,
 };
 
-use super::driver::{StateWrapper, Task};
+use super::{
+    driver::{StateWrapper, Task},
+    helpers::update_wallet_validity_proofs,
+};
 
 /// The error thrown when the wallet cannot be found in tx history
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found in wallet_last_updated map";
@@ -49,9 +41,13 @@ const LOOKUP_WALLET_TASK_NAME: &str = "lookup-wallet";
 pub struct LookupWalletTask {
     /// The ID to provision for the wallet
     pub wallet_id: WalletIdentifier,
+    /// The CSPRNG seed for the blinder stream
+    pub blinder_seed: Scalar,
+    /// The CSPRNG seed for the secret share stream
+    pub secret_share_seed: Scalar,
     /// The keychain to manage the wallet with
     pub key_chain: KeyChain,
-    /// The wallet parsed and decrypted from contract state
+    /// The wallet recovered from contract state
     pub wallet: Option<Wallet>,
     /// A starknet client for the task to submit transactions
     pub starknet_client: StarknetClient,
@@ -133,11 +129,11 @@ impl Task for LookupWalletTask {
                 self.task_state = LookupWalletTaskState::FindingWallet
             }
             LookupWalletTaskState::FindingWallet => {
-                self.find_wallet().await?;
+                // self.find_wallet().await?;
                 self.task_state = LookupWalletTaskState::CreatingValidityProofs;
             }
             LookupWalletTaskState::CreatingValidityProofs => {
-                self.create_validity_proofs().await?;
+                // self.create_validity_proofs().await?;
                 self.task_state = LookupWalletTaskState::Completed;
             }
             LookupWalletTaskState::Completed => {
@@ -157,6 +153,8 @@ impl LookupWalletTask {
     /// Constructor
     pub fn new(
         wallet_id: WalletIdentifier,
+        blinder_stream_seed: Scalar,
+        secret_share_stream_seed: Scalar,
         key_chain: KeyChain,
         starknet_client: StarknetClient,
         network_sender: TokioSender<GossipOutbound>,
@@ -165,6 +163,8 @@ impl LookupWalletTask {
     ) -> Self {
         Self {
             wallet_id,
+            blinder_seed: blinder_stream_seed,
+            secret_share_seed: secret_share_stream_seed,
             key_chain,
             wallet: None, // replaced in the first task step
             starknet_client,
@@ -177,243 +177,125 @@ impl LookupWalletTask {
 
     /// Find the wallet in the contract storage and create an opening for the wallet
     async fn find_wallet(&mut self) -> Result<(), LookupWalletTaskError> {
-        // Get the transaction that last updated the given wallet
-        let last_updated: TransactionHash = self
-            .starknet_client
-            .get_wallet_last_updated(self.key_chain.public_keys.pk_view)
-            .await
-            .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?;
+        // Find the latest transaction updating the wallet, as indexed by the public share
+        // of the blinders
+        let mut blinder_csprng = PoseidonCSPRNG::new(self.blinder_seed);
+        let mut blinder_index = 0usize;
+        let curr_blinder = blinder_csprng.next().unwrap();
+        let curr_blinder_private_share = blinder_csprng.next().unwrap();
+        let mut curr_blinder_public = curr_blinder - curr_blinder_private_share;
+        let mut updating_tx = None;
 
-        if last_updated == StarknetFieldElement::ZERO {
-            return Err(LookupWalletTaskError::NotFound(
-                ERR_WALLET_NOT_FOUND.to_string(),
-            ));
+        while let Some(tx) = self
+            .starknet_client
+            .get_public_blinder_tx(curr_blinder_public)
+            .await
+            .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?
+        {
+            updating_tx = Some(tx);
+            let curr_blinder = blinder_csprng.next().unwrap();
+            let curr_blinder_private_share = blinder_csprng.next().unwrap();
+            curr_blinder_public = curr_blinder - curr_blinder_private_share;
+
+            blinder_index += 1;
         }
 
-        log::info!(
-            "wallet last updated at: 0x{:x}",
-            starknet_felt_to_biguint(&last_updated)
-        );
+        let latest_tx = updating_tx
+            .ok_or_else(|| LookupWalletTaskError::NotFound(ERR_WALLET_NOT_FOUND.to_string()))?;
 
-        let ciphertext_blob = self
+        // Fetch the secret shares from the tx
+        let public_shares: SizedWalletShare = self
             .starknet_client
-            .fetch_ciphertext_from_tx(last_updated)
+            .fetch_public_shares_from_tx(latest_tx)
             .await
             .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?;
 
-        // Decrypt the ciphertext into an encrypted wallet
-        let decrypted_wallet = decrypt_wallet(
-            ciphertext_blob,
-            self.key_chain.secret_keys.sk_view,
-            self.key_chain.public_keys.clone(),
-        );
+        // Build an iterator over private secret shares and fast forward to the given wallet index
+        let mut private_share_csprng = PoseidonCSPRNG::new(self.secret_share_seed);
+        let shares_per_wallet = Into::<Vec<Scalar>>::into(public_shares.clone()).len();
+        private_share_csprng
+            .advance_by(blinder_index * shares_per_wallet)
+            .unwrap();
 
-        let mut wallet = Wallet {
+        // Sample private secret shares for the wallet
+        let private_shares: SizedWalletShare = private_share_csprng
+            .take(shares_per_wallet)
+            .collect_vec()
+            .into();
+
+        // Recover the wallet and index it in the global state
+        let circuit_wallet = private_shares.clone() + public_shares.clone();
+        let wallet = Wallet {
             wallet_id: self.wallet_id,
-            orders: decrypted_wallet
+            orders: circuit_wallet
                 .orders
                 .iter()
                 .cloned()
-                .map(|order| (Uuid::new_v4(), order))
+                .map(|o| (Uuid::new_v4(), o))
                 .collect(),
-            balances: decrypted_wallet
+            balances: circuit_wallet
                 .balances
                 .iter()
                 .cloned()
-                .map(|balance| (balance.mint.clone(), balance))
+                .map(|b| (b.mint.clone(), b))
                 .collect(),
-            fees: decrypted_wallet.fees.to_vec(),
+            fees: circuit_wallet.fees.to_vec(),
             key_chain: KeyChain {
-                public_keys: decrypted_wallet.keys,
+                public_keys: circuit_wallet.keys,
                 secret_keys: self.key_chain.secret_keys.clone(),
             },
-            randomness: scalar_to_biguint(&decrypted_wallet.randomness),
+            blinder: scalar_to_biguint(&circuit_wallet.blinder),
             metadata: WalletMetadata::default(),
-            merkle_proof: None, // found in next step
-            proof_staleness: AtomicU32::default(),
+            private_shares,
+            public_shares,
+            merkle_proof: None, // discovered in next step
+            proof_staleness: AtomicU32::new(0),
         };
-
-        // Find the Merkle authentication path for the wallet
-        let wallet_commitment = wallet.get_commitment();
-
-        let authentication_path = self
-            .starknet_client
-            .find_merkle_authentication_path(wallet_commitment)
-            .await
-            .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?;
-        wallet.merkle_proof = Some(authentication_path);
-
-        // Index the wallet
-        self.global_state.add_wallets(vec![wallet.clone()]).await;
-
+        self.global_state.update_wallet(wallet.clone()).await;
         self.wallet = Some(wallet);
+
         Ok(())
     }
 
-    /// Prove `VALID COMMITMENTS` for all orders in the wallet
+    /// Prove `VALID REBLIND` for the recovered wallet, and `VALID COMMITMENTS` for
+    /// each order within the wallet
     async fn create_validity_proofs(&self) -> Result<(), LookupWalletTaskError> {
         let wallet = self
             .wallet
             .clone()
             .expect("wallet should be present when CreateValidityProofs state is reached");
 
-        let merkle_proof = wallet.merkle_proof.clone().unwrap();
-        let merkle_root = merkle_proof.compute_root();
-
-        // Convert state types into circuit types
-        let circuit_wallet: SizedWallet = wallet.clone().into();
-        let wallet_opening: MerkleOpening = merkle_proof.into();
-        let randomness_hash = compute_poseidon_hash(&[circuit_wallet.randomness]);
-
-        // The statement in `VALID COMMITMENTS` is only parameterized by wallet-specific variables;
-        // so we construct it once and use it for all order commitment proofs
-        let wallet_match_nullifier = wallet.get_match_nullifier();
-        let statement = ValidCommitmentsStatement {
-            nullifier: wallet_match_nullifier,
-            merkle_root,
-            pk_settle: wallet.key_chain.public_keys.pk_settle,
-        };
-
-        let mut proof_response_channels = Vec::new();
-        for (order_id, order) in wallet.orders.clone().into_iter() {
-            // Skip default orders
-            if order.is_default() {
-                continue;
-            }
-
-            // Construct a witness for the order
-            let witness = if let Some(witness) = self.get_witness_for_order(
-                order,
-                circuit_wallet.clone(),
-                wallet_opening.clone(),
-                randomness_hash,
-                wallet.key_chain.secret_keys.sk_match,
-            ) {
-                witness
-            } else {
-                log::error!("could not construct witness for order, skipping...");
-                continue;
-            };
-
-            // Send a job to the proof manager to prove `VALID COMMITMENTS` for this order
-            let (proof_response_sender, proof_response_receiver) = oneshot::channel();
-            self.proof_manager_work_queue
-                .send(ProofManagerJob {
-                    type_: ProofJob::ValidCommitments {
-                        statement,
-                        witness: witness.clone(),
-                    },
-                    response_channel: proof_response_sender,
-                })
-                .map_err(|err| LookupWalletTaskError::SendMessage(err.to_string()))?;
-
-            proof_response_channels.push((order_id, witness, proof_response_receiver));
-        }
-
-        // Await proofs for all orders
-        for (order_id, witness, proof_channel) in proof_response_channels.into_iter() {
-            let proof = proof_channel
-                .await
-                .map_err(|err| LookupWalletTaskError::ProofGeneration(err.to_string()))?;
-            log::info!("got proof for order {order_id}");
-
-            // Update the global state of the order
-            self.update_order_state(order_id, wallet_match_nullifier, proof.into(), witness)
-                .await?;
-        }
-
-        // Update the wallet in the global state
-        self.global_state
-            .update_wallet(self.wallet.clone().unwrap())
-            .await;
-
-        Ok(())
+        update_wallet_validity_proofs(
+            &wallet,
+            &self.starknet_client,
+            self.proof_manager_work_queue.clone(),
+            self.global_state.clone(),
+            self.network_sender.clone(),
+        )
+        .await
+        .map_err(|err| LookupWalletTaskError::ProofGeneration(err))
     }
+}
 
-    /// Generate a `VALID COMMITMENTS` witness for the given order
-    ///
-    /// This will use the old witness -- modifying it appropriately -- if one exists,
-    /// otherwise, it will create a brand new witness
-    #[allow(clippy::too_many_arguments)]
-    fn get_witness_for_order(
-        &self,
-        order: CircuitOrder,
-        wallet: SizedWallet,
-        wallet_opening: MerkleOpening,
-        randomness_hash: Scalar,
-        sk_match: SecretIdentificationKey,
-    ) -> Option<SizedValidCommitmentsWitness> {
-        // Otherwise, create a brand new witness
-        // Select a balance and fee for the order
-        let (balance, fee, fee_balance) = self
-            .wallet
-            .as_ref()
-            .unwrap()
-            .get_balance_and_fee_for_order(&order)?;
+/// A hash chain from a seed used to compute CSPRNG values
+pub(super) struct PoseidonCSPRNG {
+    seed: Scalar,
+}
 
-        Some(SizedValidCommitmentsWitness {
-            wallet,
-            order: order.into(),
-            balance: balance.into(),
-            fee: fee.into(),
-            fee_balance: fee_balance.into(),
-            wallet_opening,
-            randomness_hash: randomness_hash.into(),
-            sk_match,
-        })
+impl PoseidonCSPRNG {
+    /// Constructor
+    pub(super) fn new(seed: Scalar) -> Self {
+        Self { seed }
     }
+}
 
-    /// Update the order in the state
-    async fn update_order_state(
-        &self,
-        order_id: OrderIdentifier,
-        match_nullifier: Nullifier,
-        proof: ValidCommitmentsBundle,
-        witness: SizedValidCommitmentsWitness,
-    ) -> Result<(), LookupWalletTaskError> {
-        // If the order does not currently exist in the book, add it
-        if !self
-            .global_state
-            .read_order_book()
-            .await
-            .contains_order(&order_id)
-        {
-            self.global_state
-                .add_order(NetworkOrder {
-                    id: order_id,
-                    match_nullifier,
-                    local: true,
-                    cluster: self.global_state.local_cluster_id.clone(),
-                    state: NetworkOrderState::Verified,
-                    valid_commit_proof: Some(proof.clone()),
-                    valid_commit_witness: Some(witness),
-                })
-                .await;
-        } else {
-            // Otherwise, update the existing proof
-            self.global_state
-                .add_order_validity_proof(&order_id, proof.clone())
-                .await;
-            self.global_state
-                .read_order_book()
-                .await
-                .attach_validity_proof_witness(&order_id, witness)
-                .await;
-        }
+impl Iterator for PoseidonCSPRNG {
+    type Item = Scalar;
 
-        // Broadcast the new order's validity proof to the network
-        let cluster = self.global_state.local_cluster_id.clone();
-        let message = OrderBookManagementMessage::OrderProofUpdated {
-            order_id,
-            cluster,
-            proof,
-        };
+    fn next(&mut self) -> Option<Self::Item> {
+        let hash_res = compute_poseidon_hash(&[self.seed]);
+        self.seed = hash_res;
 
-        self.network_sender
-            .send(GossipOutbound::Pubsub {
-                topic: ORDER_BOOK_TOPIC.to_string(),
-                message: PubsubMessage::OrderBookManagement(message),
-            })
-            .map_err(|err| LookupWalletTaskError::SendMessage(err.to_string()))
+        Some(hash_res)
     }
 }
