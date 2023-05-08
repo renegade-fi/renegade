@@ -31,8 +31,8 @@ lazy_static! {
     /// Contract view function selector to test whether the given nullifier is used
     static ref NULLIFIER_USED_SELECTOR: StarknetFieldElement = get_selector_from_name("is_nullifier_used")
         .unwrap();
-    /// Contract view function selector to get the most recent transaction updating a given wallet
-    static ref GET_WALLET_LAST_UPDATED_SELECTOR: StarknetFieldElement = get_selector_from_name("get_wallet_update")
+    /// Contract view function selector to fetch the hash of the transaction that indexed a given public blinder share
+    static ref GET_PUBLIC_BLINDER_TRANSACTION: StarknetFieldElement = get_selector_from_name("get_public_blinder_transaction")
         .unwrap();
 
     // -- Setters --

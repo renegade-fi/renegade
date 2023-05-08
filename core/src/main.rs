@@ -1,5 +1,6 @@
 //! The entrypoint to the relayer, starts the coordinator thread which manages all other worker threads
 #![feature(const_likely)]
+#![feature(iter_advance_by)]
 #![feature(ip)]
 #![feature(generic_const_exprs)]
 #![feature(let_chains)]

@@ -52,9 +52,8 @@ use crate::{
         OrderValidityProofBundle,
     },
     starknet_client::{
-        GET_WALLET_LAST_UPDATED_SELECTOR, INTERNAL_NODE_CHANGED_EVENT_SELECTOR, MATCH_SELECTOR,
-        MERKLE_ROOT_IN_HISTORY_SELECTOR, NEW_WALLET_SELECTOR, UPDATE_WALLET_SELECTOR,
-        VALUE_INSERTED_EVENT_SELECTOR,
+        INTERNAL_NODE_CHANGED_EVENT_SELECTOR, MATCH_SELECTOR, MERKLE_ROOT_IN_HISTORY_SELECTOR,
+        NEW_WALLET_SELECTOR, UPDATE_WALLET_SELECTOR, VALUE_INSERTED_EVENT_SELECTOR,
     },
     state::{wallet::MerkleAuthenticationPath, MerkleTreeCoords},
     SizedWalletShare, MERKLE_HEIGHT,
@@ -62,7 +61,7 @@ use crate::{
 
 use super::{
     error::StarknetClientError, helpers::pack_bytes_into_felts, types::ExternalTransfer, ChainId,
-    DEFAULT_AUTHENTICATION_PATH, NULLIFIER_USED_SELECTOR,
+    DEFAULT_AUTHENTICATION_PATH, GET_PUBLIC_BLINDER_TRANSACTION, NULLIFIER_USED_SELECTOR,
 };
 
 /// A type alias for a felt that represents a transaction hash
@@ -476,6 +475,14 @@ impl StarknetClient {
         Ok(None)
     }
 
+    /// Fetch and parse the public secret shares from the calldata of the given transactions
+    pub async fn fetch_public_shares_from_tx(
+        &self,
+        tx_hash: TransactionHash,
+    ) -> Result<SizedWalletShare, StarknetClientError> {
+        unimplemented!("")
+    }
+
     // ------------------------
     // | Contract Interaction |
     // ------------------------
@@ -515,21 +522,31 @@ impl StarknetClient {
         Ok(res.result[0].eq(&StarknetFieldElement::from(0u8)))
     }
 
-    /// Call the "get_wallet_update" view function in the contract
-    pub async fn get_wallet_last_updated(
+    /// Return the hash of the transaction that last indexed secret shares for
+    /// the given public blinder share
+    ///
+    /// Returns `None` if the public blinder share has not been used
+    pub async fn get_public_blinder_tx(
         &self,
         public_blinder_share: Scalar,
-    ) -> Result<TransactionHash, StarknetClientError> {
+    ) -> Result<Option<TransactionHash>, StarknetClientError> {
         let reduced_blinder_share = Self::reduce_scalar_to_felt(&public_blinder_share);
         let call = CallFunction {
             contract_address: self.contract_address,
-            entry_point_selector: *GET_WALLET_LAST_UPDATED_SELECTOR,
+            entry_point_selector: *GET_PUBLIC_BLINDER_TRANSACTION,
             calldata: vec![reduced_blinder_share],
         };
 
         self.call_contract(call)
             .await
             .map(|call_res| call_res.result[0])
+            .map(|ret_val| {
+                if ret_val.eq(&StarknetFieldElement::from(0u8)) {
+                    None
+                } else {
+                    Some(ret_val)
+                }
+            })
     }
 
     // --- Setters ---
