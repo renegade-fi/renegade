@@ -2,8 +2,8 @@
 
 use std::{convert::TryInto, iter};
 
-use crypto::fields::starknet_felt_to_scalar;
 use itertools::Itertools;
+use serde::de::DeserializeOwned;
 use starknet::core::types::FieldElement as StarknetFieldElement;
 
 use crate::{starknet_client::NEW_WALLET_SELECTOR, SizedWalletShare};
@@ -29,6 +29,8 @@ const UPDATE_WALLET_EXTERNAL_TRANSFER_LEN: usize = 5;
 
 /// Error message emitted when a public blinder share is not found in calldata
 const ERR_BLINDER_NOT_FOUND: &str = "public blinder share not found in calldata";
+/// Error message emitted when a blob encoding is invalidly structured
+const ERR_INVALID_BLOB_ENCODING: &str = "blob encoding incorrect";
 /// Error message emitted when an invalid selector is given in the transaction's execution trace
 const ERR_INVALID_SELECTOR: &str = "invalid selector received";
 
@@ -42,33 +44,33 @@ pub(super) fn parse_shares_from_calldata(
     calldata: &[StarknetFieldElement],
     public_blinder_share: StarknetFieldElement,
 ) -> Result<SizedWalletShare, StarknetClientError> {
-    match selector {
-        _ if selector == *NEW_WALLET_SELECTOR => Ok(parse_shares_from_new_wallet(calldata)),
-        _ if selector == *UPDATE_WALLET_SELECTOR => Ok(parse_shares_from_update_wallet(calldata)),
-        _ if selector == *MATCH_SELECTOR => parse_shares_from_match(public_blinder_share, calldata),
-        _ => Err(StarknetClientError::NotFound(
-            ERR_INVALID_SELECTOR.to_string(),
-        )),
-    }
+    let felt_blob = match selector {
+        _ if selector == *NEW_WALLET_SELECTOR => parse_shares_from_new_wallet(calldata),
+        _ if selector == *UPDATE_WALLET_SELECTOR => parse_shares_from_update_wallet(calldata),
+        _ if selector == *MATCH_SELECTOR => {
+            parse_shares_from_match(public_blinder_share, calldata)?
+        }
+        _ => {
+            return Err(StarknetClientError::NotFound(
+                ERR_INVALID_SELECTOR.to_string(),
+            ))
+        }
+    };
+
+    unpack_bytes_from_blob(felt_blob)
 }
 
 /// Parse wallet public shares from the calldata of a `new_wallet` transaction
-fn parse_shares_from_new_wallet(calldata: &[StarknetFieldElement]) -> SizedWalletShare {
+fn parse_shares_from_new_wallet(calldata: &[StarknetFieldElement]) -> Vec<StarknetFieldElement> {
     let wallet_shares_len: u64 = calldata[NEW_WALLET_SHARE_LEN_IDX].try_into().unwrap();
     let start_idx = NEW_WALLET_SHARE_LEN_IDX + 1;
     let end_idx = start_idx + (wallet_shares_len as usize);
 
-    // Slice the calldata, cast to `Scalar`, then restructure into a wallet share
-    let calldata_slice = calldata[start_idx..end_idx].to_vec();
-    calldata_slice
-        .iter()
-        .map(starknet_felt_to_scalar)
-        .collect_vec()
-        .into()
+    calldata[start_idx..end_idx].to_vec()
 }
 
 /// Parse wallet public shares from the calldata of an `update_wallet` transaction
-fn parse_shares_from_update_wallet(calldata: &[StarknetFieldElement]) -> SizedWalletShare {
+fn parse_shares_from_update_wallet(calldata: &[StarknetFieldElement]) -> Vec<StarknetFieldElement> {
     // Scan up to the `external_transfers_len` argument to determine how far to jump past the transfer
     let mut cursor = UPDATE_WALLET_EXTERNAL_TRANSFER_LEN;
     let external_transfers_len: u64 = calldata[cursor].try_into().unwrap();
@@ -79,20 +81,14 @@ fn parse_shares_from_update_wallet(calldata: &[StarknetFieldElement]) -> SizedWa
     let start_idx = cursor + 1;
     let end_idx = start_idx + (wallet_shares_len as usize);
 
-    // Slice the calldata, cast to `Scalar`, and restructure into a wallet share
-    let calldata_slice = calldata[start_idx..end_idx].to_vec();
-    calldata_slice
-        .iter()
-        .map(starknet_felt_to_scalar)
-        .collect_vec()
-        .into()
+    calldata[start_idx..end_idx].to_vec()
 }
 
 /// Parse wallet public shares from the calldata of a `match` transaction
 fn parse_shares_from_match(
     public_blinder_share: StarknetFieldElement,
     calldata: &[StarknetFieldElement],
-) -> Result<SizedWalletShare, StarknetClientError> {
+) -> Result<Vec<StarknetFieldElement>, StarknetClientError> {
     let mut cursor = MATCH_PARTY0_PUBLIC_BLINDER_SHARE_IDX;
     let party0_blinder_share = calldata[cursor];
     let party1_blinder_share = calldata[cursor];
@@ -121,13 +117,7 @@ fn parse_shares_from_match(
         (start_idx, start_idx + (party1_public_shares_len as usize))
     };
 
-    // Slice the calldata, cast to `Scalar`, and re-structure into a wallet share
-    let calldata_slice = calldata[start_idx..end_idx].to_vec();
-    Ok(calldata_slice
-        .iter()
-        .map(starknet_felt_to_scalar)
-        .collect_vec()
-        .into())
+    Ok(calldata[start_idx..end_idx].to_vec())
 }
 
 /// Pack bytes into Starknet field elements
@@ -155,4 +145,29 @@ pub(super) fn pack_bytes_into_felts(bytes: &[u8]) -> Vec<StarknetFieldElement> {
     }
 
     res
+}
+
+/// Unpack bytes that were previously packed into felts
+pub(super) fn unpack_bytes_from_blob<T: DeserializeOwned>(
+    blob: Vec<StarknetFieldElement>,
+) -> Result<T, StarknetClientError> {
+    let n_bytes: u64 = blob[0]
+        .try_into()
+        .map_err(|_| StarknetClientError::Serde(ERR_INVALID_BLOB_ENCODING.to_string()))?;
+
+    // Build a byte array from the calldata blob
+    let mut byte_array: Vec<u8> = Vec::with_capacity(BYTES_PER_FELT * blob.len());
+    for felt in blob[1..].iter() {
+        let mut bytes = felt.to_bytes_be();
+        // We pack bytes into the felts in little endian order to avoid
+        // field overflows. So reverse into little endian then truncate
+        bytes.reverse();
+
+        byte_array.append(&mut bytes[..BYTES_PER_FELT].to_vec());
+    }
+
+    // Deserialize the byte array back into a ciphertext vector
+    let truncated_bytes = &byte_array[..(n_bytes as usize)];
+    serde_json::from_slice(truncated_bytes)
+        .map_err(|err| StarknetClientError::Serde(err.to_string()))
 }

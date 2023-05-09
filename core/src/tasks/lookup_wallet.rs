@@ -182,25 +182,27 @@ impl LookupWalletTask {
         // Find the latest transaction updating the wallet, as indexed by the public share
         // of the blinders
         let mut blinder_csprng = PoseidonCSPRNG::new(self.blinder_seed);
-        let mut blinder_index = 0usize;
-        let curr_blinder = blinder_csprng.next().unwrap();
-        let curr_blinder_private_share = blinder_csprng.next().unwrap();
-        let mut curr_blinder_public = curr_blinder - curr_blinder_private_share;
+
+        let mut blinder_index = 0;
+        let mut curr_blinder = Scalar::zero();
+        let mut curr_blinder_private_share = Scalar::zero(); 
+
         let mut updating_tx = None;
 
         // TODO: Look for first non-nullified public blinder share, not just the first share
         // that has been indexed
-        while let Some(tx) = self
-            .starknet_client
-            .get_public_blinder_tx(curr_blinder_public)
-            .await
-            .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?
+        while 
+            let (blinder, private_share) = blinder_csprng.next_tuple().unwrap() &&
+            let Some(tx) = self
+                .starknet_client
+                .get_public_blinder_tx(blinder - private_share)
+                .await
+                .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?
         {
             updating_tx = Some(tx);
-            let curr_blinder = blinder_csprng.next().unwrap();
-            let curr_blinder_private_share = blinder_csprng.next().unwrap();
-            curr_blinder_public = curr_blinder - curr_blinder_private_share;
 
+            curr_blinder = blinder;
+            curr_blinder_private_share = private_share;
             blinder_index += 1;
         }
 
@@ -208,10 +210,10 @@ impl LookupWalletTask {
             .ok_or_else(|| LookupWalletTaskError::NotFound(ERR_WALLET_NOT_FOUND.to_string()))?;
 
         // Fetch the secret shares from the tx
-        let public_blinder_share = curr_blinder - curr_blinder_private_share;
-        let public_shares: SizedWalletShare = self
+        let blinder_public_share = curr_blinder - curr_blinder_private_share;
+        let mut public_shares: SizedWalletShare = self
             .starknet_client
-            .fetch_public_shares_from_tx(public_blinder_share, latest_tx)
+            .fetch_public_shares_from_tx(blinder_public_share, latest_tx)
             .await
             .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?;
 
@@ -219,17 +221,21 @@ impl LookupWalletTask {
         let mut private_share_csprng = PoseidonCSPRNG::new(self.secret_share_seed);
         let shares_per_wallet = Into::<Vec<Scalar>>::into(public_shares.clone()).len();
         private_share_csprng
-            .advance_by(blinder_index * shares_per_wallet)
+            .advance_by((blinder_index - 1) * shares_per_wallet)
             .unwrap();
 
         // Sample private secret shares for the wallet
-        let private_shares: SizedWalletShare = private_share_csprng
+        let mut private_shares: SizedWalletShare = private_share_csprng
             .take(shares_per_wallet)
             .collect_vec()
             .into();
+        private_shares.blinder = curr_blinder_private_share;
 
         // Recover the wallet and index it in the global state
+        let recovered_blinder = private_shares.blinder + public_shares.blinder;
+        public_shares.unblind(recovered_blinder);
         let circuit_wallet = private_shares.clone() + public_shares.clone();
+
         let wallet = Wallet {
             wallet_id: self.wallet_id,
             orders: circuit_wallet

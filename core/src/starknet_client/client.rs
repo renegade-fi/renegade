@@ -89,7 +89,7 @@ const MAX_FEE_MULTIPLIER: f32 = 3.0;
 /// Error message emitted when wallet secret shares cannot be parsed from a tx
 const ERR_WALLET_SHARES_NOT_FOUND: &str = "could not parse wallet public shares from tx calldata";
 
-//r Macro helper to pack a serializable value into a vector of felts
+/// Macro helper to pack a serializable value into a vector of felts
 ///
 /// Prepends a length felt for run length encoding
 macro_rules! pack_serializable {
