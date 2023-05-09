@@ -265,6 +265,13 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
         self.fees.iter_mut().for_each(|f| f.unblind(blinder));
         self.keys.unblind(blinder);
     }
+
+    /// Clone the underlying shares and unblind them
+    pub fn unblind_cloned(&self, blinder: Scalar) -> Self {
+        let mut cloned = self.clone();
+        cloned.unblind(blinder);
+        cloned
+    }
 }
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
