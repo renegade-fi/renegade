@@ -29,7 +29,7 @@ use crate::{
 
 use super::{
     driver::{StateWrapper, Task},
-    helpers::update_wallet_validity_proofs,
+    helpers::{update_wallet_validity_proofs, find_merkle_path},
 };
 
 /// The error thrown when the wallet cannot be found in tx history
@@ -211,7 +211,7 @@ impl LookupWalletTask {
 
         // Fetch the secret shares from the tx
         let blinder_public_share = curr_blinder - curr_blinder_private_share;
-        let mut public_shares: SizedWalletShare = self
+        let public_shares: SizedWalletShare = self
             .starknet_client
             .fetch_public_shares_from_tx(blinder_public_share, latest_tx)
             .await
@@ -233,10 +233,9 @@ impl LookupWalletTask {
 
         // Recover the wallet and index it in the global state
         let recovered_blinder = private_shares.blinder + public_shares.blinder;
-        public_shares.unblind(recovered_blinder);
-        let circuit_wallet = private_shares.clone() + public_shares.clone();
+        let circuit_wallet = private_shares.clone() + public_shares.unblind_cloned(recovered_blinder);
 
-        let wallet = Wallet {
+        let mut wallet = Wallet {
             wallet_id: self.wallet_id,
             orders: circuit_wallet
                 .orders
@@ -262,6 +261,13 @@ impl LookupWalletTask {
             merkle_proof: None, // discovered in next step
             proof_staleness: AtomicU32::new(0),
         };
+
+        // Find the authentication path for the wallet
+        let authentication_path = find_merkle_path(&wallet, &self.starknet_client)
+            .await
+            .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?;
+        wallet.merkle_proof = Some(authentication_path); 
+
         self.global_state.update_wallet(wallet.clone()).await;
         self.wallet = Some(wallet);
 
@@ -278,7 +284,6 @@ impl LookupWalletTask {
 
         update_wallet_validity_proofs(
             &wallet,
-            &self.starknet_client,
             self.proof_manager_work_queue.clone(),
             self.global_state.clone(),
             self.network_sender.clone(),

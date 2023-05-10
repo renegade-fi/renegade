@@ -720,7 +720,7 @@ pub mod native_helpers {
         fields::{
             biguint_to_scalar, prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField,
         },
-        hash::default_poseidon_params,
+        hash::{default_poseidon_params, evaluate_hash_chain},
     };
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
@@ -737,6 +737,23 @@ pub mod native_helpers {
             biguint_to_scalar_words, NonNativeElementSecretShare, TWO_TO_256_FIELD_MOD,
         },
     };
+
+    /// Recover a wallet from blinded secret shares
+    pub fn wallet_from_blinded_shares<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >(
+        private_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        mut public_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    ) -> Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+    where
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
+        let recovered_blinder = private_shares.blinder + public_shares.blinder;
+        public_shares.unblind(recovered_blinder);
+        private_shares + public_shares
+    }
 
     /// Compute the hash of the randomness of a given wallet
     pub fn compute_poseidon_hash(values: &[Scalar]) -> Scalar {
@@ -804,25 +821,6 @@ pub mod native_helpers {
             new_blinder_private_share,
             secret_shares,
         )
-    }
-
-    /// Compute a chained Poseidon hash of the given length from the given seed
-    pub(crate) fn evaluate_hash_chain(seed: Scalar, length: usize) -> Vec<Scalar> {
-        let mut seed = scalar_to_prime_field(&seed);
-        let mut res = Vec::with_capacity(length);
-
-        let poseidon_config = default_poseidon_params();
-        for _ in 0..length {
-            // New hasher every time to reset the hash state, Arkworks sponges don't natively
-            // support resets, so we pay the small re-initialization overhead
-            let mut hasher = PoseidonSponge::new(&poseidon_config);
-            hasher.absorb(&seed);
-            seed = hasher.squeeze_field_elements(1 /* num_elements */)[0];
-
-            res.push(prime_field_to_scalar(&seed));
-        }
-
-        res
     }
 
     /// Construct public shares of a wallet given the private shares and blinder

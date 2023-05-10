@@ -10,6 +10,7 @@ use std::{
 use circuits::{
     native_helpers::{
         compute_poseidon_hash, compute_wallet_share_commitment, compute_wallet_share_nullifier,
+        create_wallet_shares_from_private,
     },
     types::{
         balance::Balance,
@@ -20,7 +21,10 @@ use circuits::{
     },
     zk_gadgets::merkle::MerkleOpening,
 };
-use crypto::fields::{biguint_to_scalar, starknet_felt_to_biguint};
+use crypto::{
+    fields::{biguint_to_scalar, scalar_to_biguint, starknet_felt_to_biguint},
+    hash::evaluate_hash_chain,
+};
 use curve25519_dalek::scalar::Scalar;
 use futures::{stream::iter as to_stream, StreamExt};
 use itertools::Itertools;
@@ -372,6 +376,33 @@ impl Wallet {
             self.get_private_share_commitment(),
             biguint_to_scalar(&self.blinder),
         )
+    }
+
+    /// Reblind the wallet, consuming the next set of blinders and secret shares
+    pub fn reblind_wallet(&mut self) {
+        let private_shares_serialized: Vec<Scalar> = self.private_shares.clone().into();
+
+        // Sample a new blinder and private secret share
+        let n_shares = private_shares_serialized.len();
+        let blinder_and_private_share =
+            evaluate_hash_chain(private_shares_serialized[n_shares - 1], 2 /* length */);
+        let new_blinder = blinder_and_private_share[0];
+        let new_blinder_private_share = blinder_and_private_share[1];
+
+        // Sample new secret shares for the wallet
+        let mut new_private_shares =
+            evaluate_hash_chain(private_shares_serialized[n_shares - 2], n_shares - 1);
+        new_private_shares.push(new_blinder_private_share);
+
+        let (new_private_share, new_public_share) = create_wallet_shares_from_private(
+            &self.clone().into(),
+            &new_private_shares.into(),
+            new_blinder,
+        );
+
+        self.private_shares = new_private_share;
+        self.public_shares = new_public_share;
+        self.blinder = scalar_to_biguint(&new_blinder);
     }
 
     /// Decides whether the wallet's orders need new commitment proofs

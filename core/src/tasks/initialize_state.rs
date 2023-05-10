@@ -204,8 +204,13 @@ impl InitializeStateTask {
 
             let authentication_path =
                 res.map_err(|err| InitializeStateTaskError::Starknet(err.to_string()))?;
-            self.wallet_openings
-                .insert(wallet.wallet_id, authentication_path);
+
+            // Update global state with authentication path
+            self.global_state
+                .read_wallet_index()
+                .await
+                .add_wallet_merkle_proof(&wallet.wallet_id, authentication_path)
+                .await;
         }
 
         Ok(())
@@ -217,19 +222,20 @@ impl InitializeStateTask {
 
         let mut reblind_response_channels = Vec::new();
         let mut commitment_response_channels = Vec::new();
-        for (ref wallet_id, merkle_path) in self.wallet_openings.clone().into_iter() {
-            let wallet = locked_wallet_index.get_wallet(wallet_id).await.unwrap();
-
+        for wallet in self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_all_wallets()
+            .await
+        {
             // Start a proof of `VALID REBLIND`
-            let (reblind_witness, response_channel) = construct_wallet_reblind_proof(
-                &wallet,
-                merkle_path,
-                self.proof_manager_work_queue.clone(),
-            )
-            .map_err(InitializeStateTaskError::ProveValidReblind)?;
+            let (reblind_witness, response_channel) =
+                construct_wallet_reblind_proof(&wallet, self.proof_manager_work_queue.clone())
+                    .map_err(InitializeStateTaskError::ProveValidReblind)?;
 
             let wallet_reblind_witness = Arc::new(reblind_witness);
-            reblind_response_channels.push((*wallet_id, response_channel));
+            reblind_response_channels.push((wallet.wallet_id, response_channel));
 
             // Create a proof of `VALID COMMITMENTS` for each order
             for (order_id, order) in wallet.orders.iter().filter(|(_id, o)| !o.is_default()) {
@@ -260,7 +266,7 @@ impl InitializeStateTask {
                         .await;
                 } // order_book lock released
 
-                commitment_response_channels.push((*order_id, *wallet_id, response_channel));
+                commitment_response_channels.push((*order_id, wallet.wallet_id, response_channel));
             }
         }
         drop(locked_wallet_index); // release lock

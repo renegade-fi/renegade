@@ -697,7 +697,7 @@ where
     type Statement = ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type WitnessCommitment = ValidWalletUpdateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
-    const BP_GENS_CAPACITY: usize = 2048;
+    const BP_GENS_CAPACITY: usize = 65536;
 
     fn prove(
         witness: Self::Witness,

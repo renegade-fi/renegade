@@ -6,7 +6,7 @@
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use async_trait::async_trait;
-use circuits::types::transfers::ExternalTransfer;
+use circuits::{native_helpers::wallet_from_blinded_shares, types::transfers::ExternalTransfer};
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::starknet_felt_to_biguint;
 use serde::Serialize;
@@ -23,6 +23,7 @@ use crate::{
     starknet_client::client::StarknetClient,
     state::{wallet::Wallet, NetworkOrder, RelayerState},
     tasks::helpers::get_current_timestamp,
+    SizedWallet,
 };
 
 use super::{
@@ -32,6 +33,8 @@ use super::{
 
 /// The human-readable name of the the task
 const UPDATE_WALLET_TASK_NAME: &str = "update-wallet";
+/// The given wallet shares do not recover the new wallet
+const ERR_INVALID_BLINDING: &str = "invalid blinding for new wallet";
 /// The wallet does not have a known Merkle proof attached
 const ERR_NO_MERKLE_PROOF: &str = "merkle proof for wallet not found";
 /// A transaction submitted to the contract failed to execute
@@ -64,6 +67,8 @@ pub struct UpdateWalletTask {
 /// The error type for the deposit balance task
 #[derive(Clone, Debug)]
 pub enum UpdateWalletTaskError {
+    /// An invalid blinding of the new wallet was submitted
+    InvalidBlinding(String),
     /// Error generating a proof of `VALID WALLET UPDATE`
     ProofGeneration(String),
     /// An error occurred interacting with Starknet
@@ -72,6 +77,12 @@ pub enum UpdateWalletTaskError {
     StateMissing(String),
     /// An error while updating validity proofs for a wallet
     UpdatingValidityProofs(String),
+}
+
+impl Display for UpdateWalletTaskError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{self:?}")
+    }
 }
 
 /// Defines the state of the deposit balance task
@@ -186,8 +197,21 @@ impl UpdateWalletTask {
         network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, UpdateWalletTaskError> {
+        // Safety check, the new wallet's secret shares must recover the new wallet
+        let new_circuit_wallet: SizedWallet = new_wallet.clone().into();
+        let recovered_wallet = wallet_from_blinded_shares(
+            new_wallet.private_shares.clone(),
+            new_wallet.public_shares.clone(),
+        );
+
+        if recovered_wallet != new_circuit_wallet {
+            return Err(UpdateWalletTaskError::InvalidBlinding(
+                ERR_INVALID_BLINDING.to_string(),
+            ));
+        }
+
+        Ok(Self {
             external_transfer,
             old_wallet,
             new_wallet,
@@ -196,7 +220,7 @@ impl UpdateWalletTask {
             global_state,
             proof_manager_work_queue,
             task_state: UpdateWalletTaskState::Pending,
-        }
+        })
     }
 
     /// Generate a proof of `VALID WALLET UPDATE` for the wallet with added balance
@@ -324,7 +348,6 @@ impl UpdateWalletTask {
     async fn update_validity_proofs(&self) -> Result<(), UpdateWalletTaskError> {
         update_wallet_validity_proofs(
             &self.new_wallet,
-            &self.starknet_client,
             self.proof_manager_work_queue.clone(),
             self.global_state.clone(),
             self.network_sender.clone(),
