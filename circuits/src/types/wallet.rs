@@ -12,17 +12,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     mpc::SharedFabric,
-    types::{
-        fee::SCALARS_PER_FEE, order::SCALARS_PER_ORDER, scalar_from_hex_string,
-        scalar_to_hex_string,
-    },
+    types::{scalar_from_hex_string, scalar_to_hex_string},
     CommitPublic, CommitVerifier, CommitWitness, SharePublic,
 };
 
 use super::{
     balance::{
         Balance, BalanceSecretShare, BalanceSecretShareCommitment, BalanceSecretShareVar,
-        BalanceVar, CommittedBalance, SCALARS_PER_BALANCE,
+        BalanceVar, CommittedBalance,
     },
     deserialize_array,
     fee::{CommittedFee, Fee, FeeSecretShare, FeeSecretShareCommitment, FeeSecretShareVar, FeeVar},
@@ -250,6 +247,13 @@ pub struct WalletSecretShare<
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
     WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 {
+    /// The number of `Scalar` shares needed to fully represent a wallet
+    pub const SHARES_PER_WALLET: usize = MAX_BALANCES * BalanceSecretShare::SHARES_PER_BALANCE
+        + MAX_ORDERS * OrderSecretShare::SHARES_PER_ORDER
+        + MAX_FEES * FeeSecretShare::SHARES_PER_FEE
+        + PublicKeyChainSecretShare::SHARES_PER_KEYCHAIN
+        + 1; // wallet blinder share
+
     /// Apply the wallet blinder to the secret shares
     pub fn blind(&mut self, blinder: Scalar) {
         self.balances.iter_mut().for_each(|b| b.blind(blinder));
@@ -350,21 +354,27 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> 
         // Deserialized balances
         let mut balances = Vec::with_capacity(MAX_BALANCES);
         for _ in 0..MAX_BALANCES {
-            let next_vec = serialized.drain(..SCALARS_PER_BALANCE).collect_vec();
+            let next_vec = serialized
+                .drain(..BalanceSecretShare::SHARES_PER_BALANCE)
+                .collect_vec();
             balances.push(BalanceSecretShare::from(next_vec));
         }
 
         // Deserialize orders
         let mut orders = Vec::with_capacity(MAX_ORDERS);
         for _ in 0..MAX_ORDERS {
-            let next_vec = serialized.drain(..SCALARS_PER_ORDER).collect_vec();
+            let next_vec = serialized
+                .drain(..OrderSecretShare::SHARES_PER_ORDER)
+                .collect_vec();
             orders.push(OrderSecretShare::from(next_vec));
         }
 
         // Deserialize fees
         let mut fees = Vec::with_capacity(MAX_FEES);
         for _ in 0..MAX_FEES {
-            let next_vec = serialized.drain(..SCALARS_PER_FEE).collect_vec();
+            let next_vec = serialized
+                .drain(..FeeSecretShare::SHARES_PER_FEE)
+                .collect_vec();
             fees.push(FeeSecretShare::from(next_vec));
         }
 
@@ -535,19 +545,25 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
     fn from(mut serialized: Vec<LinearCombination>) -> Self {
         let mut balances = Vec::with_capacity(MAX_BALANCES);
         for _ in 0..MAX_BALANCES {
-            let next_vec = serialized.drain(..SCALARS_PER_BALANCE).collect_vec();
+            let next_vec = serialized
+                .drain(..BalanceSecretShare::SHARES_PER_BALANCE)
+                .collect_vec();
             balances.push(BalanceSecretShareVar::from(next_vec));
         }
 
         let mut orders = Vec::with_capacity(MAX_ORDERS);
         for _ in 0..MAX_ORDERS {
-            let next_vec = serialized.drain(..SCALARS_PER_ORDER).collect_vec();
+            let next_vec = serialized
+                .drain(..OrderSecretShare::SHARES_PER_ORDER)
+                .collect_vec();
             orders.push(OrderSecretShareVar::from(next_vec));
         }
 
         let mut fees = Vec::with_capacity(MAX_FEES);
         for _ in 0..MAX_FEES {
-            let next_vec = serialized.drain(..SCALARS_PER_FEE).collect_vec();
+            let next_vec = serialized
+                .drain(..FeeSecretShare::SHARES_PER_FEE)
+                .collect_vec();
             fees.push(FeeSecretShareVar::from(next_vec));
         }
 

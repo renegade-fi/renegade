@@ -204,7 +204,8 @@ impl TypedHandler for CreateWalletHandler {
             self.starknet_client.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
-        );
+        )
+        .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
         let task_id = self.task_driver.start_task(task).await;
 
         Ok(CreateWalletResponse { wallet_id, task_id })

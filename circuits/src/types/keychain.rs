@@ -25,6 +25,8 @@ use super::{biguint_from_hex_string, biguint_to_hex_string};
 
 /// The number of keys held in a wallet's keychain
 pub const NUM_KEYS: usize = 4;
+/// The number of scalar words in a nonnative root key
+pub const NUM_ROOT_KEY_WORDS: usize = 3;
 
 // -------------
 // | Key Types |
@@ -378,6 +380,12 @@ pub struct PublicKeyChainSecretShare {
 }
 
 impl PublicKeyChainSecretShare {
+    /// The number of `Scalars` it takes to represent secret shares of a keychain
+    ///
+    /// Equal to the number of `Scalar` words used to represent `pk_root` plus one
+    /// for `pk_match`
+    pub const SHARES_PER_KEYCHAIN: usize = NUM_ROOT_KEY_WORDS + 1;
+
     /// Apply a blinder to the secret shares
     pub fn blind(&mut self, blinder: Scalar) {
         self.pk_root.blind(blinder);
@@ -418,10 +426,8 @@ impl From<PublicKeyChainSecretShare> for Vec<Scalar> {
 // Keychain deserialization
 impl From<Vec<Scalar>> for PublicKeyChainSecretShare {
     fn from(mut serialized: Vec<Scalar>) -> Self {
-        let n_root_words = serialized.len() - 1;
-
-        let root_words: Vec<Scalar> = serialized.drain(..n_root_words).collect();
-        let pk_match = serialized.pop().unwrap();
+        let root_words: Vec<Scalar> = serialized.drain(..NUM_ROOT_KEY_WORDS).collect();
+        let pk_match = serialized.remove(0);
 
         PublicKeyChainSecretShare {
             pk_root: NonNativeElementSecretShare {

@@ -25,7 +25,7 @@ impl SharedValueSource<Scalar> for PartyIDBeaverSource {
     fn next_shared_bit(&mut self) -> Scalar {
         // Simply output partyID, assume partyID \in {0, 1}
         assert!(self.party_id == 0 || self.party_id == 1);
-        Scalar::from(self.party_id as u64)
+        Scalar::from(self.party_id)
     }
 
     fn next_triplet(&mut self) -> (Scalar, Scalar, Scalar) {
@@ -37,10 +37,7 @@ impl SharedValueSource<Scalar> for PartyIDBeaverSource {
     }
 
     fn next_shared_inverse_pair(&mut self) -> (Scalar, Scalar) {
-        (
-            Scalar::from(self.party_id as u64),
-            Scalar::from(self.party_id as u64),
-        )
+        (Scalar::from(self.party_id), Scalar::from(self.party_id))
     }
 
     fn next_shared_value(&mut self) -> Scalar {

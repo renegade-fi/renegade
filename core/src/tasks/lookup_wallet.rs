@@ -9,7 +9,6 @@ use std::{
 use async_trait::async_trait;
 use circuits::native_helpers::compute_poseidon_hash;
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::scalar_to_biguint;
 use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 use serde::Serialize;
@@ -183,7 +182,7 @@ impl LookupWalletTask {
         // of the blinders
         let mut blinder_csprng = PoseidonCSPRNG::new(self.blinder_seed);
 
-        let mut blinder_index = 0;
+       let mut blinder_index = 0;
         let mut curr_blinder = Scalar::zero();
         let mut curr_blinder_private_share = Scalar::zero(); 
 
@@ -218,15 +217,16 @@ impl LookupWalletTask {
             .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?;
 
         // Build an iterator over private secret shares and fast forward to the given wallet index
+        // `shares_per_wallet` does not include the private share of the wallet blinder, this comes from
+        // a separate stream of randomness, so we take the serialized length minus one
         let mut private_share_csprng = PoseidonCSPRNG::new(self.secret_share_seed);
-        let shares_per_wallet = Into::<Vec<Scalar>>::into(public_shares.clone()).len();
         private_share_csprng
-            .advance_by((blinder_index - 1) * shares_per_wallet)
+            .advance_by((blinder_index - 1) * (SizedWalletShare::SHARES_PER_WALLET - 1))
             .unwrap();
 
         // Sample private secret shares for the wallet
         let mut private_shares: SizedWalletShare = private_share_csprng
-            .take(shares_per_wallet)
+            .take(SizedWalletShare::SHARES_PER_WALLET)
             .collect_vec()
             .into();
         private_shares.blinder = curr_blinder_private_share;
@@ -254,10 +254,10 @@ impl LookupWalletTask {
                 public_keys: circuit_wallet.keys,
                 secret_keys: self.key_chain.secret_keys.clone(),
             },
-            blinder: scalar_to_biguint(&circuit_wallet.blinder),
+            blinder: circuit_wallet.blinder,
             metadata: WalletMetadata::default(),
             private_shares,
-            public_shares,
+            blinded_public_shares: public_shares,
             merkle_proof: None, // discovered in next step
             proof_staleness: AtomicU32::new(0),
         };

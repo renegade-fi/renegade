@@ -523,7 +523,7 @@ where
     type WitnessCommitment = ValidReblindWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type Statement = ValidReblindStatement;
 
-    const BP_GENS_CAPACITY: usize = 8192;
+    const BP_GENS_CAPACITY: usize = 65536;
 
     fn prove(
         witness: Self::Witness,

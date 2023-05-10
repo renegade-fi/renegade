@@ -85,7 +85,7 @@ impl RelayerState {
             .p2p_key
             .clone()
             .map(|b64_encoded| {
-                let decoded = base64::decode(&b64_encoded).expect("p2p key formatted incorrectly");
+                let decoded = base64::decode(b64_encoded).expect("p2p key formatted incorrectly");
                 identity::Keypair::from_protobuf_encoding(&decoded).expect("error parsing p2p key")
             })
             .unwrap_or_else(identity::Keypair::generate_ed25519);

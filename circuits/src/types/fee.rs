@@ -28,9 +28,6 @@ use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
-/// The number of scalars in a serialized fee
-pub(crate) const SCALARS_PER_FEE: usize = 4;
-
 // -----------------
 // | Fee Base Type |
 // -----------------
@@ -581,6 +578,9 @@ pub struct FeeSecretShare {
 }
 
 impl FeeSecretShare {
+    /// The number of `Scalar`s needed to represent a fee secret shares
+    pub const SHARES_PER_FEE: usize = 4;
+
     /// Apply a blinder to the secret shares
     pub fn blind(&mut self, blinder: Scalar) {
         self.settle_key += blinder;

@@ -67,8 +67,8 @@ pub struct UpdateWalletTask {
 /// The error type for the deposit balance task
 #[derive(Clone, Debug)]
 pub enum UpdateWalletTaskError {
-    /// An invalid blinding of the new wallet was submitted
-    InvalidBlinding(String),
+    /// A wallet was submitted with an invalid secret shares
+    InvalidShares(String),
     /// Error generating a proof of `VALID WALLET UPDATE`
     ProofGeneration(String),
     /// An error occurred interacting with Starknet
@@ -202,11 +202,11 @@ impl UpdateWalletTask {
         let new_circuit_wallet: SizedWallet = new_wallet.clone().into();
         let recovered_wallet = wallet_from_blinded_shares(
             new_wallet.private_shares.clone(),
-            new_wallet.public_shares.clone(),
+            new_wallet.blinded_public_shares.clone(),
         );
 
         if recovered_wallet != new_circuit_wallet {
-            return Err(UpdateWalletTaskError::InvalidBlinding(
+            return Err(UpdateWalletTaskError::InvalidShares(
                 ERR_INVALID_BLINDING.to_string(),
             ));
         }
@@ -241,7 +241,7 @@ impl UpdateWalletTask {
             old_private_shares_nullifier: private_share_nullifier,
             old_public_shares_nullifier: public_share_nullifier,
             new_private_shares_commitment: new_private_share_commitment,
-            new_public_shares: self.new_wallet.public_shares.clone(),
+            new_public_shares: self.new_wallet.blinded_public_shares.clone(),
             merkle_root,
             external_transfer: self.external_transfer.clone().unwrap_or_default(),
             old_pk_root: self.old_wallet.key_chain.public_keys.pk_root.clone(),
@@ -250,7 +250,7 @@ impl UpdateWalletTask {
 
         let witness = SizedValidWalletUpdateWitness {
             old_wallet_private_shares: self.old_wallet.private_shares.clone(),
-            old_wallet_public_shares: self.old_wallet.public_shares.clone(),
+            old_wallet_public_shares: self.old_wallet.blinded_public_shares.clone(),
             private_shares_opening: merkle_opening.private_share_path.into(),
             public_shares_opening: merkle_opening.public_share_path.into(),
             new_wallet_private_shares: self.new_wallet.private_shares.clone(),
@@ -289,7 +289,7 @@ impl UpdateWalletTask {
                 self.external_transfer
                     .clone()
                     .map(|transfer| transfer.into()),
-                self.new_wallet.public_shares.clone(),
+                self.new_wallet.blinded_public_shares.clone(),
                 proof,
             )
             .await

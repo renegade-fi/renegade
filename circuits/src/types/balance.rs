@@ -24,9 +24,6 @@ use crate::{
     Allocate, CommitPublic, CommitSharedProver, CommitVerifier, CommitWitness, LinkableCommitment,
 };
 
-/// The number of scalars in a serialized balance
-pub(crate) const SCALARS_PER_BALANCE: usize = 2;
-
 // ---------------------
 // | Base Balance Type |
 // ---------------------
@@ -317,6 +314,9 @@ pub struct BalanceSecretShare {
 }
 
 impl BalanceSecretShare {
+    /// The number of `Scalar`s needed to represent a balance secret share
+    pub const SHARES_PER_BALANCE: usize = 2;
+
     /// Apply a blinder to the secret shares
     pub fn blind(&mut self, blinder: Scalar) {
         self.mint += blinder;

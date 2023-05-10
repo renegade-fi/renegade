@@ -812,8 +812,10 @@ pub mod native_helpers {
         // Sample new secret shares for the wallet
         let shares_serialized: Vec<Scalar> = private_secret_shares.into();
         let serialized_len = shares_serialized.len();
-        let secret_shares =
-            evaluate_hash_chain(shares_serialized[serialized_len - 2], serialized_len - 1);
+        let secret_shares = evaluate_hash_chain(
+            shares_serialized[serialized_len - 2],
+            WalletSecretShare::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>::SHARES_PER_WALLET,
+        );
 
         create_wallet_shares_with_randomness(
             wallet,

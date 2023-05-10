@@ -5,6 +5,7 @@
 #![feature(generic_const_exprs)]
 #![feature(let_chains)]
 #![allow(incomplete_features)]
+#![allow(clippy::redundant_async_block)]
 #![deny(unsafe_code)]
 #![deny(clippy::missing_docs_in_private_items)]
 
@@ -168,7 +169,9 @@ async fn main() -> Result<(), CoordinatorError> {
             let join_handle = tui.run();
             thread::spawn(move || {
                 #[allow(unused_must_use)]
-                join_handle.join();
+                {
+                    join_handle.join();
+                }
                 exit(0);
             });
         } else {

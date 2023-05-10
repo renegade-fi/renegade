@@ -9,7 +9,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use async_trait::async_trait;
 use circuits::{
-    native_helpers::compute_wallet_share_commitment,
+    native_helpers::{compute_wallet_share_commitment, wallet_from_blinded_shares},
     zk_circuits::valid_wallet_create::{ValidWalletCreateStatement, ValidWalletCreateWitness},
 };
 use crossbeam::channel::Sender as CrossbeamSender;
@@ -27,6 +27,7 @@ use crate::{
         wallet::{Wallet as StateWallet, WalletIdentifier},
         RelayerState,
     },
+    SizedWallet,
 };
 
 use super::{
@@ -34,6 +35,9 @@ use super::{
     helpers::find_merkle_path,
 };
 
+/// Error occurs when a wallet is submitted with secret shares that do not combine
+/// to recover the wallet
+const ERR_INVALID_SHARING: &str = "invalid secret shares for wallet";
 /// Error occurs when a Starknet transaction fails
 const ERR_TRANSACTION_FAILED: &str = "transaction rejected";
 /// The task name to display when logging
@@ -56,6 +60,8 @@ pub struct NewWalletTask {
 /// The error type for the task
 #[derive(Clone, Debug)]
 pub enum NewWalletTaskError {
+    /// A wallet was submitted with an invalid secret shares
+    InvalidShares(String),
     /// Error generating a proof of `VALID WALLET CREATE`
     ProofGeneration(String),
     /// Error interacting with the Starknet client
@@ -183,19 +189,32 @@ impl NewWalletTask {
         starknet_client: StarknetClient,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
-    ) -> Self {
+    ) -> Result<Self, NewWalletTaskError> {
         // When we cast to a state wallet, the identifier is erased, add
         // it from the request explicitly
         let mut wallet: StateWallet = wallet.into();
         wallet.wallet_id = wallet_id;
 
-        Self {
+        // Safety: verify that the wallet's shares recover the wallet correctly
+        let circuit_wallet: SizedWallet = wallet.clone().into();
+        let recovered_wallet = wallet_from_blinded_shares(
+            wallet.private_shares.clone(),
+            wallet.blinded_public_shares.clone(),
+        );
+
+        if circuit_wallet != recovered_wallet {
+            return Err(NewWalletTaskError::InvalidShares(
+                ERR_INVALID_SHARING.to_string(),
+            ));
+        }
+
+        Ok(Self {
             wallet,
             starknet_client,
             global_state,
             proof_manager_work_queue,
             task_state: NewWalletTaskState::Pending,
-        }
+        })
     }
 
     /// Generate a proof of `VALID WALLET CREATE` for the new wallet
@@ -214,7 +233,7 @@ impl NewWalletTask {
             compute_wallet_share_commitment(self.wallet.private_shares.clone());
         let statement = ValidWalletCreateStatement {
             private_shares_commitment,
-            public_wallet_shares: self.wallet.public_shares.clone(),
+            public_wallet_shares: self.wallet.blinded_public_shares.clone(),
         };
 
         // Enqueue a job with the proof manager to prove `VALID NEW WALLET`
@@ -248,7 +267,7 @@ impl NewWalletTask {
             .starknet_client
             .new_wallet(
                 private_share_commitment,
-                self.wallet.public_shares.clone(),
+                self.wallet.blinded_public_shares.clone(),
                 proof,
             )
             .await

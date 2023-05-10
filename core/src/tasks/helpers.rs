@@ -19,7 +19,6 @@ use circuits::{
     },
 };
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::biguint_to_scalar;
 use num_bigint::BigUint;
 use tokio::sync::{
     mpsc::UnboundedSender as TokioSender,
@@ -123,7 +122,7 @@ pub(super) fn construct_wallet_reblind_proof(
     };
     let witness = ValidReblindWitness {
         original_wallet_private_shares: wallet.private_shares.clone(),
-        original_wallet_public_shares: wallet.public_shares.clone(),
+        original_wallet_public_shares: wallet.blinded_public_shares.clone(),
         reblinded_wallet_private_shares: reblinded_private_shares,
         reblinded_wallet_public_shares: reblinded_public_shares,
         private_share_opening: authentication_path.private_share_path.into(),
@@ -188,7 +187,7 @@ pub(super) fn construct_wallet_commitment_proof(
     let (_, augmented_public_shares) = create_wallet_shares_from_private(
         &augmented_wallet,
         &wallet.private_shares,
-        biguint_to_scalar(&wallet.blinder),
+        wallet.blinder,
     );
 
     // Build the witness and statement
@@ -199,7 +198,7 @@ pub(super) fn construct_wallet_commitment_proof(
     };
     let witness = ValidCommitmentsWitness {
         private_secret_shares: wallet.private_shares,
-        public_secret_shares: wallet.public_shares,
+        public_secret_shares: wallet.blinded_public_shares,
         augmented_public_shares,
         order: order.into(),
         balance_send: send_balance.into(),
