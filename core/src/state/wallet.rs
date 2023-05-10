@@ -21,18 +21,13 @@ use circuits::{
     },
     zk_gadgets::merkle::MerkleOpening,
 };
-use crypto::{
-    fields::{biguint_to_scalar, scalar_to_biguint, starknet_felt_to_biguint},
-    hash::evaluate_hash_chain,
-};
+use crypto::hash::evaluate_hash_chain;
 use curve25519_dalek::scalar::Scalar;
 use futures::{stream::iter as to_stream, StreamExt};
 use itertools::Itertools;
-use num_bigint::{BigUint, ToBigUint};
+use num_bigint::BigUint;
 use num_traits::Num;
-use rand::{distributions::Uniform, thread_rng, Rng};
 use serde::{de::Error as SerdeErr, Deserialize, Deserializer, Serialize, Serializer};
-use starknet::core::types::FieldElement as StarknetFieldElement;
 use tokio::sync::{RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
@@ -56,21 +51,6 @@ lazy_static! {
         let threshold_f32 = ROOT_HISTORY_STALENESS_FACTOR * (MERKLE_ROOT_HISTORY_LENGTH as f32);
         threshold_f32 as u32
     };
-}
-
-// -----------
-// | Helpers |
-// -----------
-
-/// Generate wallet randomness
-///  
-/// For now, this is simply a random BigUint in the Starknet finite field
-pub fn generate_wallet_randomness() -> BigUint {
-    let mut rng = thread_rng();
-    let starknet_modulus = starknet_felt_to_biguint(&StarknetFieldElement::MAX) + 1u8;
-
-    let dist = Uniform::from(0.to_biguint().unwrap()..starknet_modulus);
-    rng.sample(dist)
 }
 
 // --------------------------
@@ -238,14 +218,13 @@ pub struct Wallet {
     /// The keys that the relayer has access to for this wallet
     pub key_chain: KeyChain,
     /// The wallet blinder, used to blind secret shares the wallet holds
-    #[serde(default = "generate_wallet_randomness")]
-    pub blinder: BigUint,
+    pub blinder: Scalar,
     /// Wallet metadata; replicas, trusted peers, etc
     pub metadata: WalletMetadata,
     /// The private secret shares of the wallet
     pub private_shares: SizedWalletShare,
     /// The public secret shares of the wallet
-    pub public_shares: SizedWalletShare,
+    pub blinded_public_shares: SizedWalletShare,
     /// The authentication paths for the public and private shares of the wallet
     #[serde(default)]
     pub merkle_proof: Option<WalletAuthenticationPath>,
@@ -267,10 +246,10 @@ impl Clone for Wallet {
             balances: self.balances.clone(),
             fees: self.fees.clone(),
             key_chain: self.key_chain.clone(),
-            blinder: self.blinder.clone(),
+            blinder: self.blinder,
             metadata: self.metadata.clone(),
             private_shares: self.private_shares.clone(),
-            public_shares: self.public_shares.clone(),
+            blinded_public_shares: self.blinded_public_shares.clone(),
             merkle_proof: self.merkle_proof.clone(),
             proof_staleness: AtomicU32::new(staleness),
         }
@@ -346,7 +325,7 @@ impl From<Wallet> for SizedCircuitWallet {
             orders: padded_orders.try_into().unwrap(),
             fees: padded_fees.try_into().unwrap(),
             keys: wallet.key_chain.public_keys,
-            blinder: biguint_to_scalar(&wallet.blinder),
+            blinder: wallet.blinder,
         }
     }
 }
@@ -354,7 +333,7 @@ impl From<Wallet> for SizedCircuitWallet {
 impl Wallet {
     /// Computes the commitment to the public shares of the wallet
     pub fn get_public_share_commitment(&self) -> WalletShareCommitment {
-        compute_wallet_share_commitment(self.public_shares.clone())
+        compute_wallet_share_commitment(self.blinded_public_shares.clone())
     }
 
     /// Computes the commitment to the private shares of the wallet
@@ -364,18 +343,12 @@ impl Wallet {
 
     /// Computes the nullifier of the public shares of the wallet
     pub fn get_public_share_nullifier(&self) -> Nullifier {
-        compute_wallet_share_nullifier(
-            self.get_public_share_commitment(),
-            biguint_to_scalar(&self.blinder),
-        )
+        compute_wallet_share_nullifier(self.get_public_share_commitment(), self.blinder)
     }
 
     /// Computes the nullifier of the private shares of the wallet
     pub fn get_private_share_nullifier(&self) -> Nullifier {
-        compute_wallet_share_nullifier(
-            self.get_private_share_commitment(),
-            biguint_to_scalar(&self.blinder),
-        )
+        compute_wallet_share_nullifier(self.get_private_share_commitment(), self.blinder)
     }
 
     /// Reblind the wallet, consuming the next set of blinders and secret shares
@@ -401,8 +374,8 @@ impl Wallet {
         );
 
         self.private_shares = new_private_share;
-        self.public_shares = new_public_share;
-        self.blinder = scalar_to_biguint(&new_blinder);
+        self.blinded_public_shares = new_public_share;
+        self.blinder = new_blinder;
     }
 
     /// Decides whether the wallet's orders need new commitment proofs

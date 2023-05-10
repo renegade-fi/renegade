@@ -27,9 +27,6 @@ use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
-/// The number of scalars per serialized order
-pub(crate) const SCALARS_PER_ORDER: usize = 6;
-
 // --------------------
 // | Base Order Types |
 // --------------------
@@ -103,9 +100,10 @@ impl TryFrom<&[u64]> for Order {
 }
 
 /// The side of the market a given order is on
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OrderSide {
     /// Buy side
+    #[default]
     Buy = 0,
     /// Sell side
     Sell,
@@ -118,13 +116,6 @@ impl OrderSide {
             OrderSide::Buy => OrderSide::Sell,
             OrderSide::Sell => OrderSide::Buy,
         }
-    }
-}
-
-// Default for an empty order is buy
-impl Default for OrderSide {
-    fn default() -> Self {
-        OrderSide::Buy
     }
 }
 
@@ -672,6 +663,9 @@ pub struct OrderSecretShare {
 }
 
 impl OrderSecretShare {
+    /// The number of `Scalar`s needed to represent an order
+    pub const SHARES_PER_ORDER: usize = 6;
+
     /// Apply a blinder to the secret shares
     pub fn blind(&mut self, blinder: Scalar) {
         self.quote_mint += blinder;

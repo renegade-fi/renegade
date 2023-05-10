@@ -135,22 +135,12 @@ impl NetworkOrder {
     /// Transitions the state of an order to the verified state
     #[allow(unused)]
     pub(self) fn transition_verified(&mut self, validity_proofs: OrderValidityProofBundle) {
-        assert_eq!(
-            self.state,
-            NetworkOrderState::Received,
-            "only orders in Received state may become Verified"
-        );
         self.attach_validity_proofs(validity_proofs);
     }
 
     /// Transitions the state of an order from `Verified` to `Matched`
     #[allow(unused)]
     pub(self) fn transition_matched(&mut self, by_local_node: bool) {
-        assert_eq!(
-            self.state,
-            NetworkOrderState::Verified,
-            "order must be in Verified state to transition to Matched"
-        );
         self.state = NetworkOrderState::Matched { by_local_node };
     }
 
@@ -499,7 +489,6 @@ impl NetworkOrderBook {
         validity_proofs: OrderValidityProofBundle,
     ) {
         if let Some(mut order) = self.write_order(order_id).await {
-            let prev_state = order.state;
             order.transition_verified(validity_proofs);
             self.add_verified_order(*order_id).await;
 

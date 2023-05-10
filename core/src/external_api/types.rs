@@ -56,7 +56,7 @@ pub struct Wallet {
     /// The keys that authenticate wallet access
     pub key_chain: KeyChain,
     /// The public secret shares of the wallet
-    pub public_shares: Vec<BigUint>,
+    pub blinded_public_shares: Vec<BigUint>,
     /// The private secret shares of the wallet
     pub private_shares: Vec<BigUint>,
     /// The wallet blinder, used to blind wallet secret shares
@@ -81,14 +81,14 @@ impl From<IndexedWallet> for Wallet {
 
         let balances = wallet
             .balances
-            .into_iter()
-            .map(|(_, balance)| balance.into())
+            .into_values()
+            .map(|balance| balance.into())
             .collect_vec();
 
         let fees = wallet.fees.into_iter().map(|fee| fee.into()).collect_vec();
 
         // Serialize the shares then convert all values to BigUint
-        let public_shares = Into::<Vec<Scalar>>::into(wallet.public_shares)
+        let blinded_public_shares = Into::<Vec<Scalar>>::into(wallet.blinded_public_shares)
             .iter()
             .map(scalar_to_biguint)
             .collect_vec();
@@ -103,9 +103,9 @@ impl From<IndexedWallet> for Wallet {
             balances,
             fees,
             key_chain: wallet.key_chain.clone(),
-            public_shares,
+            blinded_public_shares,
             private_shares,
-            blinder: wallet.blinder,
+            blinder: scalar_to_biguint(&wallet.blinder),
         }
     }
 }
@@ -125,8 +125,8 @@ impl From<Wallet> for IndexedWallet {
         let fees = wallet.fees.into_iter().map(|fee| fee.into()).collect();
 
         // Deserialize the shares to scalar then re-structure into WalletSecretShare
-        let public_shares: SizedWalletShare = wallet
-            .public_shares
+        let blinded_public_shares: SizedWalletShare = wallet
+            .blinded_public_shares
             .iter()
             .map(biguint_to_scalar)
             .collect_vec()
@@ -144,10 +144,10 @@ impl From<Wallet> for IndexedWallet {
             balances,
             fees,
             key_chain: wallet.key_chain,
-            blinder: wallet.blinder,
+            blinder: biguint_to_scalar(&wallet.blinder),
             metadata: WalletMetadata::default(),
             proof_staleness: AtomicU32::new(0),
-            public_shares,
+            blinded_public_shares,
             private_shares,
             merkle_proof: None,
         }
@@ -213,18 +213,13 @@ impl From<Order> for IndexedOrder {
 }
 
 /// The type of order, currently limit or midpoint
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub enum OrderType {
     /// A market-midpoint pegged order
+    #[default]
     Midpoint = 0,
     /// A limit order with specified price attached
     Limit,
-}
-
-impl Default for OrderType {
-    fn default() -> Self {
-        OrderType::Midpoint
-    }
 }
 
 /// A balance that a wallet holds of some asset

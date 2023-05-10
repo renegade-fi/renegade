@@ -238,7 +238,6 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, CoordinatorError> {
     // However, the first argument from the command line is the executable name, so
     // place this before all args
     let mut command_line_args: Vec<String> = env::args_os()
-        .into_iter()
         .map(|val| val.to_str().unwrap().to_string())
         .collect();
     let config_file_args = config_file_args(&command_line_args)?;

@@ -232,7 +232,7 @@ impl UniswapV3Handler {
             base_token,
             quote_token,
             exchange: Some(Exchange::UniswapV3),
-            midpoint_price: price as f64,
+            midpoint_price: price,
             reported_timestamp: None,
             local_timestamp: Default::default(),
         })

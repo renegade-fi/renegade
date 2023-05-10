@@ -424,6 +424,11 @@ impl StarknetClient {
     ) -> Result<BigUint, StarknetClientError> {
         let commitment_starknet_felt = Self::reduce_scalar_to_felt(&commitment);
 
+        log::info!(
+            "searching for commitment: 0x{:x}",
+            starknet_felt_to_biguint(&commitment_starknet_felt)
+        );
+
         // Paginate through events in the contract, searching for the Merkle tree insertion event that
         // corresponds to the given commitment
         //

@@ -87,7 +87,7 @@ impl ProofManager {
 
             thread_pool.spawn(move || {
                 if let Err(e) = Self::handle_proof_job(job) {
-                    println!("Error handling proof manager job: {}", e)
+                    log::error!("Error handling proof manager job: {}", e)
                 }
             });
         }

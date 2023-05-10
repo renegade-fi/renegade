@@ -407,7 +407,7 @@ impl PriceReporter {
             base_token,
             quote_token,
             exchange: None,
-            midpoint_price: median_midpoint_price as f64,
+            midpoint_price: median_midpoint_price,
             local_timestamp: median_local_timestamp as u128,
             reported_timestamp: median_reported_timestamp,
         };

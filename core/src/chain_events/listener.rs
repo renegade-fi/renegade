@@ -20,6 +20,10 @@ use starknet::providers::jsonrpc::{
     models::{BlockId, EmittedEvent, ErrorCode, EventFilter},
     HttpTransport, JsonRpcClient, JsonRpcClientError, RpcError,
 };
+use starknet::{
+    core::{types::FieldElement as StarknetFieldElement, utils::get_selector_from_name},
+    providers::jsonrpc::models::BlockTag,
+};
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tokio::time::{sleep_until, Instant};
 use tracing::log;
