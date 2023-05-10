@@ -54,6 +54,8 @@ use crate::{
 const ERR_ENQUEUING_JOB: &str = "error enqueuing job with proof manager";
 /// Error message emitted when a balance cannot be found for an order
 const ERR_BALANCE_NOT_FOUND: &str = "cannot find balance for order";
+/// Error message emitted when a wallet is given missing an authentication path
+const ERR_MISSING_AUTHENTICATION_PATH: &str = "wallet missing authentication path";
 /// Error message emitted when an order cannot be found in a wallet
 const ERR_ORDER_NOT_FOUND: &str = "cannot find order in wallet";
 /// Error message emitted when proving VALID COMMITMENTS fails
@@ -95,15 +97,20 @@ pub(super) async fn find_merkle_path(
 /// Re-blind the wallet and prove `VALID REBLIND` for the wallet
 pub(super) fn construct_wallet_reblind_proof(
     wallet: &Wallet,
-    wallet_openings: WalletAuthenticationPath,
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
 ) -> Result<(SizedValidReblindWitness, TokioReceiver<ProofBundle>), String> {
+    // If the wallet doesn't have an authentication path return an error
+    let authentication_path = wallet
+        .merkle_proof
+        .clone()
+        .ok_or_else(|| ERR_MISSING_AUTHENTICATION_PATH.to_string())?;
+
     // Reblind the wallet
     let circuit_wallet: SizedWallet = wallet.clone().into();
     let (reblinded_private_shares, reblinded_public_shares) =
         reblind_wallet(wallet.private_shares.clone(), &circuit_wallet);
 
-    let merkle_root = wallet_openings.public_share_path.compute_root();
+    let merkle_root = authentication_path.public_share_path.compute_root();
     let private_reblinded_commitment =
         compute_wallet_share_commitment(reblinded_private_shares.clone());
 
@@ -119,8 +126,8 @@ pub(super) fn construct_wallet_reblind_proof(
         original_wallet_public_shares: wallet.public_shares.clone(),
         reblinded_wallet_private_shares: reblinded_private_shares,
         reblinded_wallet_public_shares: reblinded_public_shares,
-        private_share_opening: wallet_openings.private_share_path.into(),
-        public_share_opening: wallet_openings.public_share_path.into(),
+        private_share_opening: authentication_path.private_share_path.into(),
+        public_share_opening: authentication_path.public_share_path.into(),
         sk_match: wallet.key_chain.secret_keys.sk_match,
     };
 
@@ -273,7 +280,6 @@ fn find_order(base_mint: &BigUint, quote_mint: &BigUint, wallet: &SizedWallet) -
 /// for the wallet, and one proof of `VALID COMMITMENTS` for each order in the wallet
 pub(super) async fn update_wallet_validity_proofs(
     wallet: &Wallet,
-    starknet_client: &StarknetClient,
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     global_state: RelayerState,
     network_sender: TokioSender<GossipOutbound>,
@@ -284,17 +290,9 @@ pub(super) async fn update_wallet_validity_proofs(
         return Ok(());
     }
 
-    // Find the authentication path for the wallet
-    let authentication_path = find_merkle_path(wallet, starknet_client)
-        .await
-        .map_err(|err| err.to_string())?;
-
     // Dispatch a proof of `VALID REBLIND` for the wallet
-    let (reblind_witness, reblind_response_channel) = construct_wallet_reblind_proof(
-        wallet,
-        authentication_path,
-        proof_manager_work_queue.clone(),
-    )?;
+    let (reblind_witness, reblind_response_channel) =
+        construct_wallet_reblind_proof(wallet, proof_manager_work_queue.clone())?;
     let wallet_reblind_witness = Arc::new(reblind_witness);
 
     // For each order, construct a proof of `VALID COMMITMENTS`

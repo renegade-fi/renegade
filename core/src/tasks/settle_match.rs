@@ -437,7 +437,6 @@ impl SettleMatchTask {
 
         update_wallet_validity_proofs(
             &wallet,
-            &self.starknet_client,
             self.proof_manager_work_queue.clone(),
             self.global_state.clone(),
             self.network_sender.clone(),

@@ -470,6 +470,7 @@ impl TypedHandler for CreateOrderHandler {
         let mut new_wallet = old_wallet.clone();
         new_wallet.orders.insert(id, req.order.into());
         new_wallet.orders.retain(|_id, order| !order.is_default());
+        new_wallet.reblind_wallet();
 
         // Spawn a task to handle the order creation flow
         let task = UpdateWalletTask::new(
@@ -480,7 +481,8 @@ impl TypedHandler for CreateOrderHandler {
             self.network_sender.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
-        );
+        )
+        .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
         let task_id = self.task_driver.start_task(task).await;
 
         Ok(CreateOrderResponse { id, task_id })
@@ -554,6 +556,7 @@ impl TypedHandler for CancelOrderHandler {
         let order = new_wallet.orders.remove(&order_id).ok_or_else(|| {
             ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, ERR_ORDER_NOT_FOUND.to_string())
         })?;
+        new_wallet.reblind_wallet();
 
         // Spawn a task to handle the order creation flow
         let task = UpdateWalletTask::new(
@@ -564,7 +567,8 @@ impl TypedHandler for CancelOrderHandler {
             self.network_sender.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
-        );
+        )
+        .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
         let task_id = self.task_driver.start_task(task).await;
 
         Ok(CancelOrderResponse {
@@ -758,6 +762,7 @@ impl TypedHandler for DepositBalanceHandler {
                 amount: 0u64,
             })
             .amount += req.amount.to_u64().unwrap();
+        new_wallet.reblind_wallet();
 
         // Begin an update-wallet task
         let task = UpdateWalletTask::new(
@@ -773,7 +778,8 @@ impl TypedHandler for DepositBalanceHandler {
             self.network_sender.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
-        );
+        )
+        .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
         let task_id = self.task_driver.start_task(task).await;
 
         Ok(DepositBalanceResponse { task_id })
@@ -855,6 +861,7 @@ impl TypedHandler for WithdrawBalanceHandler {
                 StatusCode::BAD_REQUEST, ERR_INSUFFICIENT_BALANCE.to_string()
             ));
         }
+        new_wallet.reblind_wallet();
 
         // Begin a task
         let task = UpdateWalletTask::new(
@@ -870,7 +877,8 @@ impl TypedHandler for WithdrawBalanceHandler {
             self.network_sender.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
-        );
+        )
+        .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
         let task_id = self.task_driver.start_task(task).await;
 
         Ok(WithdrawBalanceResponse { task_id })
@@ -1013,6 +1021,7 @@ impl TypedHandler for AddFeeHandler {
         // Add the fee to the new wallet
         let mut new_wallet = old_wallet.clone();
         new_wallet.fees.push(req.fee.into());
+        new_wallet.reblind_wallet();
 
         // Create a task to submit this update to the contract
         let task = UpdateWalletTask::new(
@@ -1023,7 +1032,8 @@ impl TypedHandler for AddFeeHandler {
             self.network_sender.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
-        );
+        )
+        .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
         let task_id = self.task_driver.start_task(task).await;
 
         Ok(AddFeeResponse { task_id })
@@ -1103,6 +1113,7 @@ impl TypedHandler for RemoveFeeHandler {
         // Remove the fee from the old wallet
         let mut new_wallet = old_wallet.clone();
         let removed_fee = new_wallet.fees.remove(fee_index);
+        new_wallet.reblind_wallet();
 
         // Start a task to submit this update to the contract
         let task = UpdateWalletTask::new(
@@ -1113,7 +1124,8 @@ impl TypedHandler for RemoveFeeHandler {
             self.network_sender.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
-        );
+        )
+        .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
         let task_id = self.task_driver.start_task(task).await;
 
         Ok(RemoveFeeResponse {

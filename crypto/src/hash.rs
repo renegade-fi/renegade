@@ -4,11 +4,12 @@ use ark_crypto_primitives::sponge::{
     poseidon::{PoseidonConfig, PoseidonSponge},
     CryptographicSponge,
 };
+use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 
 use crate::{
     constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3},
-    fields::DalekRistrettoField,
+    fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField},
 };
 
 /// Hash the input using a Poseidon hash with default parameters
@@ -49,4 +50,23 @@ pub fn default_poseidon_params() -> PoseidonConfig<DalekRistrettoField> {
         2,                              /* rate */
         1,                              /* capacity */
     )
+}
+
+/// Compute a chained Poseidon hash of the given length from the given seed
+pub fn evaluate_hash_chain(seed: Scalar, length: usize) -> Vec<Scalar> {
+    let mut seed = scalar_to_prime_field(&seed);
+    let mut res = Vec::with_capacity(length);
+
+    let poseidon_config = default_poseidon_params();
+    for _ in 0..length {
+        // New hasher every time to reset the hash state, Arkworks sponges don't natively
+        // support resets, so we pay the small re-initialization overhead
+        let mut hasher = PoseidonSponge::new(&poseidon_config);
+        hasher.absorb(&seed);
+        seed = hasher.squeeze_field_elements(1 /* num_elements */)[0];
+
+        res.push(prime_field_to_scalar(&seed));
+    }
+
+    res
 }
