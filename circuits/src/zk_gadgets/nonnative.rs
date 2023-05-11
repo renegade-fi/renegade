@@ -18,7 +18,7 @@ use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
-use crate::{CommitPublic, CommitVerifier, CommitWitness};
+use crate::{CommitPublic, CommitVerifier, CommitWitness, LinkableCommitment};
 
 use super::select::CondSelectVectorGadget;
 
@@ -1065,6 +1065,54 @@ impl CommitVerifier for NonNativeElementSecretShareCommitment {
             words: word_vars,
             field_mod: self.field_mod.clone(),
         })
+    }
+}
+
+/// A non-native element secret share that may be linked across proofs
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LinkableNonNativeElementShare {
+    /// The scalar words representing the non-native element
+    pub words: Vec<LinkableCommitment>,
+    /// The field modulus of the non-native element
+    pub field_mod: FieldMod,
+}
+
+impl From<NonNativeElementSecretShare> for LinkableNonNativeElementShare {
+    fn from(value: NonNativeElementSecretShare) -> Self {
+        LinkableNonNativeElementShare {
+            words: value.words.into_iter().map(|x| x.into()).collect_vec(),
+            field_mod: value.field_mod,
+        }
+    }
+}
+
+impl CommitWitness for LinkableNonNativeElementShare {
+    type VarType = NonNativeElementSecretShareVar;
+    type CommitType = NonNativeElementSecretShareCommitment;
+    type ErrorType = (); // Does not error
+
+    fn commit_witness<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (word_vars, word_comms): (Vec<LinearCombination>, Vec<CompressedRistretto>) = self
+            .words
+            .iter()
+            .map(|word| word.commit_witness(rng, prover).unwrap())
+            .map(|(word_var, word_comm)| (word_var.into(), word_comm))
+            .unzip();
+
+        Ok((
+            NonNativeElementSecretShareVar {
+                words: word_vars,
+                field_mod: self.field_mod.clone(),
+            },
+            NonNativeElementSecretShareCommitment {
+                words: word_comms,
+                field_mod: self.field_mod.clone(),
+            },
+        ))
     }
 }
 

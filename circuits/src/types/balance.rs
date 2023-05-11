@@ -479,6 +479,50 @@ impl CommitVerifier for BalanceSecretShareCommitment {
     }
 }
 
+/// A balance secret share type that may be linked across multiple proofs
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LinkableBalanceShareCommitment {
+    /// The mint (ERC20 token addr) of the balance
+    pub mint: LinkableCommitment,
+    /// The amount of the balance held
+    pub amount: LinkableCommitment,
+}
+
+impl From<BalanceSecretShare> for LinkableBalanceShareCommitment {
+    fn from(balance: BalanceSecretShare) -> Self {
+        LinkableBalanceShareCommitment {
+            mint: balance.mint.into(),
+            amount: balance.amount.into(),
+        }
+    }
+}
+
+impl CommitWitness for LinkableBalanceShareCommitment {
+    type VarType = BalanceSecretShareVar;
+    type CommitType = BalanceSecretShareCommitment;
+    type ErrorType = (); // Does not error
+
+    fn commit_witness<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (mint_var, mint_comm) = self.mint.commit_witness(rng, prover).unwrap();
+        let (amount_var, amount_comm) = self.amount.commit_witness(rng, prover).unwrap();
+
+        Ok((
+            BalanceSecretShareVar {
+                mint: mint_var.into(),
+                amount: amount_var.into(),
+            },
+            BalanceSecretShareCommitment {
+                mint: mint_comm,
+                amount: amount_comm,
+            },
+        ))
+    }
+}
+
 #[cfg(test)]
 mod test {
     use curve25519_dalek::scalar::Scalar;

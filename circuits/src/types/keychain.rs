@@ -14,11 +14,11 @@ use serde::{Deserialize, Serialize};
 use crate::{
     types::{scalar_from_hex_string, scalar_to_hex_string},
     zk_gadgets::nonnative::{
-        NonNativeElement, NonNativeElementCommitment, NonNativeElementSecretShare,
-        NonNativeElementSecretShareCommitment, NonNativeElementSecretShareVar, NonNativeElementVar,
-        TWO_TO_256_FIELD_MOD,
+        LinkableNonNativeElementShare, NonNativeElement, NonNativeElementCommitment,
+        NonNativeElementSecretShare, NonNativeElementSecretShareCommitment,
+        NonNativeElementSecretShareVar, NonNativeElementVar, TWO_TO_256_FIELD_MOD,
     },
-    CommitPublic, CommitVerifier, CommitWitness,
+    CommitPublic, CommitVerifier, CommitWitness, LinkableCommitment,
 };
 
 use super::{biguint_from_hex_string, biguint_to_hex_string};
@@ -570,6 +570,50 @@ impl CommitVerifier for PublicKeyChainSecretShareCommitment {
             pk_root: root_var,
             pk_match: match_var.into(),
         })
+    }
+}
+
+/// A public key chain share that may be linked across proofs
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LinkablePublicKeyChainShareCommitment {
+    /// The public root key
+    pub pk_root: LinkableNonNativeElementShare,
+    /// The public match key
+    pub pk_match: LinkableCommitment,
+}
+
+impl From<PublicKeyChainSecretShare> for LinkablePublicKeyChainShareCommitment {
+    fn from(keychain: PublicKeyChainSecretShare) -> Self {
+        LinkablePublicKeyChainShareCommitment {
+            pk_root: keychain.pk_root.into(),
+            pk_match: keychain.pk_match.into(),
+        }
+    }
+}
+
+impl CommitWitness for LinkablePublicKeyChainShareCommitment {
+    type VarType = PublicKeyChainSecretShareVar;
+    type CommitType = PublicKeyChainSecretShareCommitment;
+    type ErrorType = (); // Does not error
+
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (root_var, root_comm) = self.pk_root.commit_witness(rng, prover).unwrap();
+        let (match_var, match_comm) = self.pk_match.commit_witness(rng, prover).unwrap();
+
+        Ok((
+            PublicKeyChainSecretShareVar {
+                pk_root: root_var,
+                pk_match: match_var.into(),
+            },
+            PublicKeyChainSecretShareCommitment {
+                pk_root: root_comm,
+                pk_match: match_comm,
+            },
+        ))
     }
 }
 
