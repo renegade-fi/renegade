@@ -10,7 +10,7 @@ use libp2p::{
     core::upgrade::{read_length_prefixed, write_length_prefixed},
     futures::{AsyncRead, AsyncWrite, AsyncWriteExt},
     gossipsub::{
-        Behaviour as Gossipsub, Config as GossipsubConfig, Event as GossipsubEvent,
+        Behaviour as Gossipsub, ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent,
         MessageAuthenticity,
     },
     identify::{Behaviour as IdentifyProtocol, Config as IdentifyConfig, Event as IdentifyEvent},
@@ -82,7 +82,10 @@ impl ComposedNetworkBehavior {
         // Construct the pubsub network behavior
         let pubsub = Gossipsub::new(
             MessageAuthenticity::Signed(keypair.clone()),
-            GossipsubConfig::default(),
+            GossipsubConfigBuilder::default()
+                .max_transmit_size(MAX_MESSAGE_SIZE)
+                .build()
+                .unwrap(),
         )
         .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 

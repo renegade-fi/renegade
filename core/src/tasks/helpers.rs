@@ -8,6 +8,7 @@ use std::{
 use circuits::{
     native_helpers::{
         compute_wallet_share_commitment, create_wallet_shares_from_private, reblind_wallet,
+        wallet_from_blinded_shares,
     },
     types::{
         balance::Balance,
@@ -24,6 +25,7 @@ use tokio::sync::{
     mpsc::UnboundedSender as TokioSender,
     oneshot::{self, Receiver as TokioReceiver},
 };
+use tracing::log;
 
 use crate::{
     gossip_api::{
@@ -55,6 +57,8 @@ const ERR_ENQUEUING_JOB: &str = "error enqueuing job with proof manager";
 const ERR_BALANCE_NOT_FOUND: &str = "cannot find balance for order";
 /// Error message emitted when a wallet is given missing an authentication path
 const ERR_MISSING_AUTHENTICATION_PATH: &str = "wallet missing authentication path";
+/// Error message emitted when a fee cannot be found for the wallet
+const ERR_FEE_NOT_FOUND: &str = "fee not found in wallet";
 /// Error message emitted when an order cannot be found in a wallet
 const ERR_ORDER_NOT_FOUND: &str = "cannot find order in wallet";
 /// Error message emitted when proving VALID COMMITMENTS fails
@@ -154,7 +158,12 @@ pub(super) fn construct_wallet_commitment_proof(
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
 ) -> Result<(SizedValidCommitmentsWitness, TokioReceiver<ProofBundle>), String> {
     // Choose the first fee
-    let fee = wallet.fees.get(0).unwrap().clone();
+    let fee = wallet
+        .fees
+        .iter()
+        .find(|f| !f.is_default())
+        .cloned()
+        .ok_or_else(|| ERR_FEE_NOT_FOUND.to_string())?;
 
     // Build an augmented wallet and find balances to update
     let mut augmented_wallet: SizedWallet = wallet.clone().into();

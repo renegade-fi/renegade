@@ -2,15 +2,13 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    convert::TryInto,
-    iter,
     sync::atomic::{AtomicU32, Ordering},
 };
 
 use circuits::{
     native_helpers::{
         compute_poseidon_hash, compute_wallet_share_commitment, compute_wallet_share_nullifier,
-        create_wallet_shares_from_private,
+        create_wallet_shares_from_private, wallet_from_blinded_shares,
     },
     types::{
         balance::Balance,
@@ -290,43 +288,8 @@ where
 
 impl From<Wallet> for SizedCircuitWallet {
     fn from(wallet: Wallet) -> Self {
-        // Pad the balances, orders, and fees to the size the wallet circuitry expects
-        // Sort the values so they appear in the same order every time we commit to
-        // a wallet
-        let mut padded_balances = wallet
-            .balances
-            .values()
-            .cloned()
-            .chain(iter::repeat(Balance::default()))
-            .take(MAX_BALANCES)
-            .collect_vec();
-        padded_balances.sort_by(|a, b| a.mint.cmp(&b.mint));
-
-        let mut padded_orders = wallet
-            .orders
-            .values()
-            .cloned()
-            .chain(iter::repeat(Order::default()))
-            .take(MAX_ORDERS)
-            .collect_vec();
-        padded_orders.sort_by(|a, b| a.quote_mint.cmp(&b.quote_mint));
-
-        let mut padded_fees = wallet
-            .fees
-            .iter()
-            .cloned()
-            .chain(iter::repeat(Fee::default()))
-            .take(MAX_FEES)
-            .collect_vec();
-        padded_fees.sort_by(|a, b| a.gas_addr.cmp(&b.gas_addr).reverse());
-
-        CircuitWallet {
-            balances: padded_balances.try_into().unwrap(),
-            orders: padded_orders.try_into().unwrap(),
-            fees: padded_fees.try_into().unwrap(),
-            keys: wallet.key_chain.public_keys,
-            blinder: wallet.blinder,
-        }
+        // Recover the wallet from its secret shares to maintain ordering for witnesses
+        wallet_from_blinded_shares(wallet.private_shares, wallet.blinded_public_shares)
     }
 }
 

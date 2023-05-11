@@ -343,9 +343,7 @@ impl SettleMatchTask {
         // If the transaction fails because the local party's match nullifier is already spend, then
         // the counterparty encumbered the local party, in this case, it is safe to move to settlement
         if let TransactionStatus::Rejected = tx_info.status {
-            if Self::nullifier_spent_failure(tx_info) {
-                return Ok(());
-            } else {
+            if !Self::nullifier_spent_failure(tx_info) {
                 return Err(SettleMatchTaskError::StarknetClient(
                     ERR_TRANSACTION_FAILED.to_string(),
                 ));
@@ -355,7 +353,6 @@ impl SettleMatchTask {
         // After we persist the wallet updates on-chain, re-index the locally managed wallet
         // with its updated balances and orders
         self.update_wallet_state().await;
-
         Ok(())
     }
 

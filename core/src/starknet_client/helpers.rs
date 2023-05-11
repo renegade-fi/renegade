@@ -91,7 +91,7 @@ fn parse_shares_from_match(
 ) -> Result<Vec<StarknetFieldElement>, StarknetClientError> {
     let mut cursor = MATCH_PARTY0_PUBLIC_BLINDER_SHARE_IDX;
     let party0_blinder_share = calldata[cursor];
-    let party1_blinder_share = calldata[cursor];
+    let party1_blinder_share = calldata[cursor + 1];
 
     let is_party0 = if public_blinder_share == party0_blinder_share {
         true
@@ -111,7 +111,7 @@ fn parse_shares_from_match(
         (start_idx, start_idx + (party0_public_shares_len as usize))
     } else {
         // Scan cursor past party 0 shares
-        cursor += party0_public_shares_len as usize;
+        cursor += party0_public_shares_len as usize + 1;
         let party1_public_shares_len: u64 = calldata[cursor].try_into().unwrap();
         let start_idx = cursor + 1;
         (start_idx, start_idx + (party1_public_shares_len as usize))

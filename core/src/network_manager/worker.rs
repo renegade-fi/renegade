@@ -38,6 +38,8 @@ pub struct NetworkManagerConfig {
     pub(crate) port: u16,
     /// The cluster ID of the local peer
     pub(crate) cluster_id: ClusterId,
+    /// Whether or not to allow discovery of peers on the localhost
+    pub(crate) allow_local: bool,
     /// The cluster keypair, wrapped in an option to allow the worker thread to
     /// take ownership of the keypair
     pub(crate) cluster_keypair: Option<Keypair>,
@@ -164,6 +166,7 @@ impl Worker for NetworkManager {
         let executor = NetworkManagerExecutor::new(
             self.config.port,
             self.local_peer_id,
+            self.config.allow_local,
             self.config.cluster_keypair.take().unwrap(),
             swarm,
             self.config.send_channel.take().unwrap(),
@@ -193,10 +196,6 @@ impl Worker for NetworkManager {
     }
 
     fn cleanup(&mut self) -> Result<(), Self::Error> {
-        if self.config.send_channel.is_some() {
-            self.config.send_channel.take().unwrap().close();
-        }
-
         Ok(())
     }
 }

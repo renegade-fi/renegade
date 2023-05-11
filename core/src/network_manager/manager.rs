@@ -191,6 +191,8 @@ pub(super) struct NetworkManagerExecutor {
     local_peer_id: WrappedPeerId,
     /// The local cluster's keypair, used to sign and authenticate requests
     cluster_key: SigKeypair,
+    /// Whether or not to allow peer discovery on the local node
+    allow_local: bool,
     /// Whether the network manager has discovered the local peer's public,
     /// dialable address via `Identify` already
     discovered_identity: bool,
@@ -221,6 +223,7 @@ impl NetworkManagerExecutor {
     pub(super) fn new(
         p2p_port: u16,
         local_peer_id: WrappedPeerId,
+        allow_local: bool,
         cluster_key: SigKeypair,
         swarm: Swarm<ComposedNetworkBehavior>,
         job_channel: UnboundedReceiver<GossipOutbound>,
@@ -232,6 +235,7 @@ impl NetworkManagerExecutor {
         Self {
             p2p_port,
             local_peer_id,
+            allow_local,
             cluster_key,
             discovered_identity: false,
             warmup_finished: false,
@@ -402,7 +406,7 @@ impl NetworkManagerExecutor {
         match command {
             // Register a new peer in the distributed routing tables
             ManagerControlDirective::NewAddr { peer_id, address } => {
-                if is_local_addr(&address) {
+                if !self.allow_local && is_local_addr(&address) {
                     log::info!("skipping local addr {:?}", address);
                     return Ok(());
                 }
@@ -446,7 +450,7 @@ impl NetworkManagerExecutor {
                         // Map each resolved address into a SocketAddr and remove local addresses
                         let peer_addr = all_peer_addrs
                             .into_iter()
-                            .find(|addr| !is_local_addr(addr))
+                            .find(|addr| self.allow_local || !is_local_addr(addr))
                             .map(|addr| multiaddr_to_socketaddr(&addr, peer_port))
                             .ok_or_else(|| {
                                 // Outer option from `find`

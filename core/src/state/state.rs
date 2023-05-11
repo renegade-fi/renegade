@@ -97,7 +97,7 @@ impl RelayerState {
         }
 
         // Setup the peer index
-        let peer_index = PeerIndex::new();
+        let peer_index = PeerIndex::new(args.allow_local);
 
         // Setup the order book
         let order_book = NetworkOrderBook::new(system_bus.clone());
@@ -344,7 +344,25 @@ impl RelayerState {
     }
 
     /// Update an existing wallet in the global state
-    pub async fn update_wallet(&self, wallet: Wallet) {
+    pub async fn update_wallet(&self, mut wallet: Wallet) {
+        wallet.remove_default_elements();
+
+        // Add the wallet's orders to the book
+        let mut locked_order_book = self.write_order_book().await;
+        let wallet_public_share_nullifier = wallet.get_public_share_nullifier();
+        for order_id in wallet.orders.keys() {
+            if !locked_order_book.contains_order(order_id) {
+                locked_order_book
+                    .add_order(NetworkOrder::new(
+                        *order_id,
+                        wallet_public_share_nullifier,
+                        self.local_cluster_id.clone(),
+                        true, /* local */
+                    ))
+                    .await;
+            }
+        }
+
         let mut locked_wallet_index = self.write_wallet_index().await;
         locked_wallet_index.add_wallet(wallet.clone());
 

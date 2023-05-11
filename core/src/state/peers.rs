@@ -21,6 +21,8 @@ use super::{new_async_shared, AsyncShared};
 /// An index over known peers in the network
 #[derive(Debug)]
 pub struct PeerIndex {
+    /// Whether or not to allow peers on the localhost
+    allow_local: bool,
     /// A mapping from peer ID to information about the peer
     peer_map: HashMap<WrappedPeerId, AsyncShared<PeerInfo>>,
     /// A mapping from cluster ID to a list of known peers in the cluster
@@ -29,8 +31,9 @@ pub struct PeerIndex {
 
 impl PeerIndex {
     /// Create a new peer index
-    pub fn new() -> Self {
+    pub fn new(allow_local: bool) -> Self {
         Self {
+            allow_local,
             peer_map: HashMap::new(),
             cluster_peers: HashMap::new(),
         }
@@ -156,8 +159,8 @@ impl PeerIndex {
     /// Validates that the known address for the peer is dialable, i.e. not a local address
     pub async fn add_peer(&mut self, peer_info: PeerInfo) {
         // If the peer info specifies a local addr, skip adding the peer, it is not dialable
-        if is_local_addr(&peer_info.addr) {
-            log::debug!("got peer info with un-dialable addr, skipping indexing");
+        if !self.allow_local && is_local_addr(&peer_info.addr) {
+            log::info!("got peer info with un-dialable addr, skipping indexing");
             return;
         }
 
