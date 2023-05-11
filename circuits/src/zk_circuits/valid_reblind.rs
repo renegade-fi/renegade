@@ -56,25 +56,14 @@ where
         // -- State Validity -- //
 
         // Verify the opening of the old wallet's private secret shares to the Merkle root
-        let old_private_shares_comm = WalletShareCommitGadget::compute_commitment(
-            &witness.original_wallet_private_shares,
+        let old_shares_comm = WalletShareCommitGadget::compute_wallet_share_commitment(
+            witness.original_wallet_public_shares.clone(),
+            witness.original_wallet_private_shares.clone(),
             cs,
         )?;
         PoseidonMerkleHashGadget::compute_and_constrain_root_prehashed(
-            old_private_shares_comm.clone(),
-            witness.private_share_opening,
-            statement.merkle_root.into(),
-            cs,
-        )?;
-
-        // Verify the opening of the old wallet's public secret shares to the Merkle root
-        let old_public_shares_comm = WalletShareCommitGadget::compute_commitment(
-            &witness.original_wallet_public_shares,
-            cs,
-        )?;
-        PoseidonMerkleHashGadget::compute_and_constrain_root_prehashed(
-            old_public_shares_comm.clone(),
-            witness.public_share_opening,
+            old_shares_comm.clone(),
+            witness.original_share_opening,
             statement.merkle_root.into(),
             cs,
         )?;
@@ -83,25 +72,18 @@ where
         let recovered_old_blinder = witness.original_wallet_private_shares.blinder.clone()
             + witness.original_wallet_public_shares.blinder.clone();
         let old_private_nullifier = NullifierGadget::wallet_shares_nullifier(
-            old_private_shares_comm,
+            old_shares_comm,
             recovered_old_blinder.clone(),
             cs,
         )?;
-        cs.constrain(old_private_nullifier - statement.original_private_share_nullifier);
-
-        // Verify the nullifier of the old wallet's public shares is correctly computed
-        let old_public_nullifier = NullifierGadget::wallet_shares_nullifier(
-            old_public_shares_comm,
-            recovered_old_blinder.clone(),
-            cs,
-        )?;
-        cs.constrain(old_public_nullifier - statement.original_public_share_nullifier);
+        cs.constrain(old_private_nullifier - statement.original_shares_nullifier);
 
         // Verify the commitment to the new wallet's private shares
-        let reblinded_private_shares_commitment = WalletShareCommitGadget::compute_commitment(
-            &witness.reblinded_wallet_private_shares,
-            cs,
-        )?;
+        let reblinded_private_shares_commitment =
+            WalletShareCommitGadget::compute_private_commitment(
+                witness.reblinded_wallet_private_shares.clone(),
+                cs,
+            )?;
         cs.constrain(
             statement.reblinded_private_share_commitment - reblinded_private_shares_commitment,
         );
@@ -277,10 +259,8 @@ pub struct ValidReblindWitness<
     pub reblinded_wallet_private_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The public secret shares of the reblinded wallet
     pub reblinded_wallet_public_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The merkle opening of the original wallet's private shares
-    pub private_share_opening: MerkleOpening,
-    /// The merkle opening of the original wallet's public shares
-    pub public_share_opening: MerkleOpening,
+    /// The Merkle opening from the commitment to the original wallet's shares
+    pub original_share_opening: MerkleOpening,
     /// The secret match key corresponding to the wallet's public match key
     pub sk_match: SecretIdentificationKey,
 }
@@ -300,10 +280,8 @@ pub struct ValidReblindWitnessVar<
     pub reblinded_wallet_private_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The public secret shares of the reblinded wallet
     pub reblinded_wallet_public_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The merkle opening of the original wallet's private shares
-    pub private_share_opening: MerkleOpeningVar,
-    /// The merkle opening of the original wallet's public shares
-    pub public_share_opening: MerkleOpeningVar,
+    /// The Merkle opening from the commitment to the original wallet's shares
+    pub original_share_opening: MerkleOpeningVar,
     /// The secret match key corresponding to the wallet's public match key
     pub sk_match: Variable,
 }
@@ -328,10 +306,8 @@ pub struct ValidReblindWitnessCommitment<
     /// The public secret shares of the reblinded wallet
     pub reblinded_wallet_public_shares:
         WalletSecretShareCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The merkle opening of the original wallet's private shares
-    pub private_share_opening: MerkleOpeningCommitment,
-    /// The merkle opening of the original wallet's public shares
-    pub public_share_opening: MerkleOpeningCommitment,
+    /// The Merkle opening from the commitment to the original wallet's shares
+    pub original_share_opening: MerkleOpeningCommitment,
     /// The secret match key corresponding to the wallet's public match key
     pub sk_match: CompressedRistretto,
 }
@@ -368,12 +344,8 @@ where
             .commit_witness(rng, prover)
             .unwrap();
 
-        let (private_opening_var, private_opening_comm) = self
-            .private_share_opening
-            .commit_witness(rng, prover)
-            .unwrap();
-        let (public_opening_var, public_opening_comm) = self
-            .public_share_opening
+        let (share_opening_var, share_opening_comm) = self
+            .original_share_opening
             .commit_witness(rng, prover)
             .unwrap();
 
@@ -385,8 +357,7 @@ where
                 original_wallet_public_shares: original_public_share_vars,
                 reblinded_wallet_private_shares: reblinded_private_share_vars,
                 reblinded_wallet_public_shares: reblinded_public_share_vars,
-                private_share_opening: private_opening_var,
-                public_share_opening: public_opening_var,
+                original_share_opening: share_opening_var,
                 sk_match: sk_match_var,
             },
             ValidReblindWitnessCommitment {
@@ -394,8 +365,7 @@ where
                 original_wallet_public_shares: original_public_share_comms,
                 reblinded_wallet_private_shares: reblinded_private_share_comms,
                 reblinded_wallet_public_shares: reblinded_public_share_comms,
-                private_share_opening: private_opening_comm,
-                public_share_opening: public_opening_comm,
+                original_share_opening: share_opening_comm,
                 sk_match: sk_match_comm,
             },
         ))
@@ -429,11 +399,10 @@ where
             .commit_verifier(verifier)
             .unwrap();
 
-        let private_opening_var = self
-            .private_share_opening
+        let share_opening_var = self
+            .original_share_opening
             .commit_verifier(verifier)
             .unwrap();
-        let public_opening_var = self.public_share_opening.commit_verifier(verifier).unwrap();
 
         let sk_match_var = self.sk_match.commit_verifier(verifier).unwrap();
 
@@ -442,8 +411,7 @@ where
             original_wallet_public_shares: original_public_share_vars,
             reblinded_wallet_private_shares: reblinded_private_share_vars,
             reblinded_wallet_public_shares: reblinded_public_share_vars,
-            private_share_opening: private_opening_var,
-            public_share_opening: public_opening_var,
+            original_share_opening: share_opening_var,
             sk_match: sk_match_var,
         })
     }
@@ -457,9 +425,7 @@ where
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidReblindStatement {
     /// The nullifier of the original wallet's private secret shares
-    pub original_private_share_nullifier: Nullifier,
-    /// The nullifier of the original wallet's public secret shares
-    pub original_public_share_nullifier: Nullifier,
+    pub original_shares_nullifier: Nullifier,
     /// A commitment to the private secret shares of the reblinded wallet
     pub reblinded_private_share_commitment: WalletShareCommitment,
     /// The global merkle root to prove inclusion into
@@ -470,9 +436,7 @@ pub struct ValidReblindStatement {
 #[derive(Clone, Debug)]
 pub struct ValidReblindStatementVar {
     /// The nullifier of the original wallet's private secret shares
-    pub original_private_share_nullifier: Variable,
-    /// The nullifier of the original wallet's public secret shares
-    pub original_public_share_nullifier: Variable,
+    pub original_shares_nullifier: Variable,
     /// A commitment to the private secret shares of the reblinded wallet
     pub reblinded_private_share_commitment: Variable,
     /// The global merkle root to prove inclusion into
@@ -487,14 +451,8 @@ impl CommitPublic for ValidReblindStatement {
         &self,
         cs: &mut CS,
     ) -> Result<Self::VarType, Self::ErrorType> {
-        let private_share_nullifier_var = self
-            .original_private_share_nullifier
-            .commit_public(cs)
-            .unwrap();
-        let public_share_nullifier_var = self
-            .original_public_share_nullifier
-            .commit_public(cs)
-            .unwrap();
+        let original_shares_nullifier_var =
+            self.original_shares_nullifier.commit_public(cs).unwrap();
         let private_share_commitment_var = self
             .reblinded_private_share_commitment
             .commit_public(cs)
@@ -502,8 +460,7 @@ impl CommitPublic for ValidReblindStatement {
         let merkle_root_var = self.merkle_root.commit_public(cs).unwrap();
 
         Ok(ValidReblindStatementVar {
-            original_private_share_nullifier: private_share_nullifier_var,
-            original_public_share_nullifier: public_share_nullifier_var,
+            original_shares_nullifier: original_shares_nullifier_var,
             reblinded_private_share_commitment: private_share_commitment_var,
             merkle_root: merkle_root_var,
         })
@@ -581,7 +538,8 @@ mod test {
 
     use crate::{
         native_helpers::{
-            compute_wallet_share_commitment, compute_wallet_share_nullifier, reblind_wallet,
+            compute_wallet_private_share_commitment, compute_wallet_share_commitment,
+            compute_wallet_share_nullifier, reblind_wallet,
         },
         types::keychain::SecretIdentificationKey,
         zk_circuits::test_helpers::{
@@ -631,40 +589,34 @@ mod test {
             reblind_wallet(old_wallet_private_shares.clone(), wallet);
 
         // Create Merkle openings for the old shares
-        let old_private_commitment =
-            compute_wallet_share_commitment(old_wallet_private_shares.clone());
-        let old_public_commitment =
-            compute_wallet_share_commitment(old_wallet_public_shares.clone());
-
-        let (merkle_root, mut openings) = create_multi_opening(
-            &[old_private_commitment, old_public_commitment],
-            MERKLE_HEIGHT,
-            &mut rng,
+        let original_shares_commitment = compute_wallet_share_commitment(
+            old_wallet_public_shares.clone(),
+            old_wallet_private_shares.clone(),
         );
 
+        let (merkle_root, mut opening) =
+            create_multi_opening(&[original_shares_commitment], MERKLE_HEIGHT, &mut rng);
+        let original_share_opening = opening.pop().unwrap();
+
         // Compute nullifiers for the old shares
-        let old_private_nullifier =
-            compute_wallet_share_nullifier(old_private_commitment, wallet.blinder);
-        let old_public_nullifier =
-            compute_wallet_share_nullifier(old_public_commitment, wallet.blinder);
+        let original_shares_nullifier =
+            compute_wallet_share_nullifier(original_shares_commitment, wallet.blinder);
 
         // Compute a commitment to the new private share
         let new_private_commitment =
-            compute_wallet_share_commitment(reblinded_private_shares.clone());
+            compute_wallet_private_share_commitment(reblinded_private_shares.clone());
 
         let witness = SizedWitness {
             original_wallet_private_shares: old_wallet_private_shares,
             original_wallet_public_shares: old_wallet_public_shares,
             reblinded_wallet_private_shares: reblinded_private_shares,
             reblinded_wallet_public_shares: reblinded_public_shares,
-            private_share_opening: openings.remove(0),
-            public_share_opening: openings.remove(0),
+            original_share_opening,
             sk_match: SecretIdentificationKey(PRIVATE_KEYS[1]),
         };
 
         let statement = ValidReblindStatement {
-            original_private_share_nullifier: old_private_nullifier,
-            original_public_share_nullifier: old_public_nullifier,
+            original_shares_nullifier,
             reblinded_private_share_commitment: new_private_commitment,
             merkle_root,
         };
@@ -727,8 +679,9 @@ mod test {
 
         witness.reblinded_wallet_private_shares = private_shares_serialized.into();
         witness.reblinded_wallet_public_shares = public_shares_serialized.into();
-        statement.reblinded_private_share_commitment =
-            compute_wallet_share_commitment(witness.reblinded_wallet_private_shares.clone());
+        statement.reblinded_private_share_commitment = compute_wallet_private_share_commitment(
+            witness.reblinded_wallet_private_shares.clone(),
+        );
 
         // Verify that the reblinding is a valid secret sharing
         assert_valid_reblinding(
@@ -762,8 +715,9 @@ mod test {
         witness.reblinded_wallet_public_shares.blind(new_blinder);
         witness.reblinded_wallet_public_shares.blinder = new_blinder - new_blinder_private_share;
         witness.reblinded_wallet_private_shares.blinder = new_blinder_private_share;
-        statement.reblinded_private_share_commitment =
-            compute_wallet_share_commitment(witness.reblinded_wallet_private_shares.clone());
+        statement.reblinded_private_share_commitment = compute_wallet_private_share_commitment(
+            witness.reblinded_wallet_private_shares.clone(),
+        );
 
         assert_valid_reblinding(
             witness.reblinded_wallet_private_shares.clone(),
@@ -785,8 +739,9 @@ mod test {
 
         // Prover attempt to increase the balance of one of the wallet's mints
         witness.reblinded_wallet_private_shares.balances[0].amount += Scalar::one();
-        statement.reblinded_private_share_commitment =
-            compute_wallet_share_commitment(witness.reblinded_wallet_private_shares.clone());
+        statement.reblinded_private_share_commitment = compute_wallet_private_share_commitment(
+            witness.reblinded_wallet_private_shares.clone(),
+        );
 
         assert!(!constraints_satisfied(witness, statement));
     }
@@ -801,8 +756,9 @@ mod test {
 
         // Prover attempt to increase the balance of one of the wallet's mints
         witness.reblinded_wallet_public_shares.balances[0].amount += Scalar::one();
-        statement.reblinded_private_share_commitment =
-            compute_wallet_share_commitment(witness.reblinded_wallet_private_shares.clone());
+        statement.reblinded_private_share_commitment = compute_wallet_private_share_commitment(
+            witness.reblinded_wallet_private_shares.clone(),
+        );
 
         assert!(!constraints_satisfied(witness, statement));
     }
@@ -837,21 +793,12 @@ mod test {
 
         let mut rng = thread_rng();
 
-        // Invalid private share opening
+        // Invalid opening
         let mut witness = original_witness.clone();
         let statement = original_statement.clone();
 
-        let random_index = rng.gen_range(0..witness.private_share_opening.elems.len());
-        witness.private_share_opening.elems[random_index] = Scalar::random(&mut OsRng {});
-
-        assert!(!constraints_satisfied(witness, statement));
-
-        // Invalid public share opening
-        let mut witness = original_witness.clone();
-        let statement = original_statement.clone();
-
-        let random_index = rng.gen_range(0..witness.private_share_opening.elems.len());
-        witness.public_share_opening.elems[random_index] = Scalar::random(&mut OsRng {});
+        let random_index = rng.gen_range(0..witness.original_share_opening.elems.len());
+        witness.original_share_opening.elems[random_index] = Scalar::random(&mut OsRng {});
 
         assert!(!constraints_satisfied(witness, statement));
 
@@ -873,17 +820,10 @@ mod test {
 
         let mut rng = OsRng {};
 
-        // Invalid private shares nullifier
-        let witness = original_witness.clone();
-        let mut statement = original_statement.clone();
-        statement.original_private_share_nullifier = Scalar::random(&mut rng);
-
-        assert!(!constraints_satisfied(witness, statement));
-
-        // Invalid public shares nullifier
+        // Invalid nullifier
         let witness = original_witness;
         let mut statement = original_statement;
-        statement.original_public_share_nullifier = Scalar::random(&mut rng);
+        statement.original_shares_nullifier = Scalar::random(&mut rng);
 
         assert!(!constraints_satisfied(witness, statement));
     }

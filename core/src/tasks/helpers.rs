@@ -8,7 +8,6 @@ use std::{
 use circuits::{
     native_helpers::{
         compute_wallet_share_commitment, create_wallet_shares_from_private, reblind_wallet,
-        wallet_from_blinded_shares,
     },
     types::{
         balance::Balance,
@@ -25,7 +24,6 @@ use tokio::sync::{
     mpsc::UnboundedSender as TokioSender,
     oneshot::{self, Receiver as TokioReceiver},
 };
-use tracing::log;
 
 use crate::{
     gossip_api::{

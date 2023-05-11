@@ -764,15 +764,32 @@ pub mod native_helpers {
         prime_field_to_scalar(&out)
     }
 
-    /// Compute a commitment to shares of a wallet
+    /// Compute a commitment to the shares of a wallet
     pub fn compute_wallet_share_commitment<
         const MAX_BALANCES: usize,
         const MAX_ORDERS: usize,
         const MAX_FEES: usize,
     >(
-        share: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        public_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        private_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     ) -> WalletShareCommitment {
-        let hash_input: Vec<Scalar> = share.into();
+        // Hash the private input
+        let private_input_commitment = compute_wallet_private_share_commitment(private_shares);
+        let mut hash_input = vec![private_input_commitment];
+        hash_input.append(&mut public_shares.into());
+
+        compute_poseidon_hash(&hash_input)
+    }
+
+    /// Compute a commitment to a single share of a wallet
+    pub fn compute_wallet_private_share_commitment<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >(
+        private_share: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    ) -> Scalar {
+        let hash_input: Vec<Scalar> = private_share.into();
         compute_poseidon_hash(&hash_input)
     }
 

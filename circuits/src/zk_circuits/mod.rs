@@ -29,11 +29,13 @@ mod test_helpers {
         types::{
             balance::Balance,
             fee::Fee,
-            keychain::{PublicKeyChain, NUM_KEYS},
+            keychain::{PublicKeyChain, PublicSigningKey, NUM_KEYS},
             order::{Order, OrderSide},
             wallet::{Wallet, WalletSecretShare},
         },
-        zk_gadgets::{fixed_point::FixedPoint, merkle::MerkleOpening},
+        zk_gadgets::{
+            fixed_point::FixedPoint, merkle::MerkleOpening, nonnative::TWO_TO_256_FIELD_MOD,
+        },
     };
 
     // --------------
@@ -45,7 +47,7 @@ mod test_helpers {
         // computed correctly
         pub(crate) static ref PRIVATE_KEYS: Vec<Scalar> = vec![Scalar::one(); NUM_KEYS];
         pub(crate) static ref PUBLIC_KEYS: PublicKeyChain = PublicKeyChain {
-            pk_root: BigUint::from(1u8).into(),
+            pk_root: PublicSigningKey(TWO_TO_256_FIELD_MOD.modulus.clone()),
             pk_match: compute_poseidon_hash(&[PRIVATE_KEYS[1]]).into(),
         };
         pub(crate) static ref INITIAL_BALANCES: [Balance; MAX_BALANCES] = [
