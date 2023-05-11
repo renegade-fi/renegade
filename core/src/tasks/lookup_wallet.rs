@@ -9,10 +9,12 @@ use std::{
 use async_trait::async_trait;
 use circuits::native_helpers::compute_poseidon_hash;
 use crossbeam::channel::Sender as CrossbeamSender;
+use crypto::fields::starknet_felt_to_biguint;
 use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 use serde::Serialize;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
+use tracing::log;
 use uuid::Uuid;
 
 use crate::{
@@ -207,6 +209,7 @@ impl LookupWalletTask {
 
         let latest_tx = updating_tx
             .ok_or_else(|| LookupWalletTaskError::NotFound(ERR_WALLET_NOT_FOUND.to_string()))?;
+        log::info!("latest updating tx: 0x{:x}", starknet_felt_to_biguint(&latest_tx));
 
         // Fetch the secret shares from the tx
         let blinder_public_share = curr_blinder - curr_blinder_private_share;

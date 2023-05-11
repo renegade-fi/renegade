@@ -24,6 +24,7 @@ pub enum GossipError {
     /// An error verifying a peer's proof of `VALID COMMITMENTS`
     ValidCommitmentVerification(String),
     /// An error verifying a peer's proof of `VALID REBLIND`
+    #[allow(unused)]
     ValidReblindVerification(String),
 }
 

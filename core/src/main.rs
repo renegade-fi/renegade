@@ -218,6 +218,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let network_manager_config = NetworkManagerConfig {
         port: args.p2p_port,
         known_public_addr: args.public_ip,
+        allow_local: args.allow_local,
         cluster_id: args.cluster_id.clone(),
         cluster_keypair: Some(args.cluster_keypair),
         send_channel: Some(network_receiver),

@@ -53,6 +53,10 @@ struct Cli {
     // | Networking Configuration |
     // ----------------------------
 
+    /// Allow for discovery of nodes on the localhost IP address
+    #[clap(long, value_parser, default_value="false")]
+    pub allow_local: bool,
+
     /// The known public IP address of the local peer
     #[clap(long, value_parser)] 
     pub public_ip: Option<SocketAddr>,
@@ -142,6 +146,8 @@ pub struct RelayerConfig {
     // ----------------------------
     // | Networking Configuration |
     // ----------------------------
+    /// Allow for discovery of nodes on the localhost IP address
+    pub allow_local: bool,
     /// The known public IP address of the local peer
     pub public_ip: Option<SocketAddr>,
 
@@ -207,6 +213,7 @@ impl Clone for RelayerConfig {
             http_port: self.http_port,
             websocket_port: self.websocket_port,
             p2p_key: self.p2p_key.clone(),
+            allow_local: self.allow_local,
             public_ip: self.public_ip,
             disable_api_server: self.disable_api_server,
             disable_price_reporter: self.disable_price_reporter,
@@ -292,6 +299,7 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, CoordinatorError> {
         p2p_port: cli_args.p2p_port,
         http_port: cli_args.http_port,
         websocket_port: cli_args.websocket_port,
+        allow_local: cli_args.allow_local,
         p2p_key: cli_args.p2p_key,
         public_ip: cli_args.public_ip,
         disable_api_server: cli_args.disable_api_server,
