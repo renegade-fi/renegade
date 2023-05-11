@@ -230,16 +230,13 @@ impl UpdateWalletTask {
             self.old_wallet.merkle_proof.clone().ok_or_else(|| {
                 UpdateWalletTaskError::StateMissing(ERR_NO_MERKLE_PROOF.to_string())
             })?;
-        let merkle_root = merkle_opening.public_share_path.compute_root();
+        let merkle_root = merkle_opening.compute_root();
 
         // Build a witness and statement
-        let private_share_nullifier = self.old_wallet.get_private_share_nullifier();
-        let public_share_nullifier = self.old_wallet.get_public_share_nullifier();
         let new_private_share_commitment = self.new_wallet.get_private_share_commitment();
 
         let statement = SizedValidWalletUpdateStatement {
-            old_private_shares_nullifier: private_share_nullifier,
-            old_public_shares_nullifier: public_share_nullifier,
+            old_shares_nullifier: self.old_wallet.get_wallet_nullifier(),
             new_private_shares_commitment: new_private_share_commitment,
             new_public_shares: self.new_wallet.blinded_public_shares.clone(),
             merkle_root,
@@ -251,8 +248,7 @@ impl UpdateWalletTask {
         let witness = SizedValidWalletUpdateWitness {
             old_wallet_private_shares: self.old_wallet.private_shares.clone(),
             old_wallet_public_shares: self.old_wallet.blinded_public_shares.clone(),
-            private_shares_opening: merkle_opening.private_share_path.into(),
-            public_shares_opening: merkle_opening.public_share_path.into(),
+            old_shares_opening: merkle_opening.into(),
             new_wallet_private_shares: self.new_wallet.private_shares.clone(),
         };
 
@@ -284,8 +280,7 @@ impl UpdateWalletTask {
             .starknet_client
             .update_wallet(
                 self.new_wallet.get_private_share_commitment(),
-                self.old_wallet.get_private_share_nullifier(),
-                self.old_wallet.get_public_share_nullifier(),
+                self.old_wallet.get_wallet_nullifier(),
                 self.external_transfer
                     .clone()
                     .map(|transfer| transfer.into()),
@@ -321,7 +316,7 @@ impl UpdateWalletTask {
     /// Add new orders to the network order book
     async fn add_new_orders_to_book(&self) {
         let local_cluster_id = self.global_state.local_cluster_id.clone();
-        let wallet_public_share_nullifier = self.new_wallet.get_public_share_nullifier();
+        let wallet_public_share_nullifier = self.new_wallet.get_wallet_nullifier();
 
         for order_id in self.new_wallet.orders.keys() {
             if !self

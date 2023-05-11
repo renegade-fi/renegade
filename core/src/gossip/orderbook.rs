@@ -207,7 +207,7 @@ impl GossipProtocolExecutor {
                     proof_bundle
                         .reblind_proof
                         .statement
-                        .original_public_share_nullifier,
+                        .original_shares_nullifier,
                     cluster,
                     is_local,
                 ))
@@ -319,9 +319,7 @@ impl GossipProtocolExecutor {
         let commitment_proof = proof_bundle.copy_commitment_proof();
 
         // Check that the proof shares' nullifiers are unused
-        self.assert_nullifier_unused(reblind_proof.statement.original_private_share_nullifier)
-            .await?;
-        self.assert_nullifier_unused(reblind_proof.statement.original_public_share_nullifier)
+        self.assert_nullifier_unused(reblind_proof.statement.original_shares_nullifier)
             .await?;
 
         // Check that the Merkle root is a valid historical root
@@ -339,15 +337,13 @@ impl GossipProtocolExecutor {
         }
 
         // Verify the reblind proof
-        if let Err(_e) = verify_singleprover_proof::<SizedValidReblind>(
+        if let Err(e) = verify_singleprover_proof::<SizedValidReblind>(
             reblind_proof.statement,
             reblind_proof.commitment,
             reblind_proof.proof,
         ) {
-            log::error!(
-                "Invalid proof of `VALID REBLIND`, implement non-native Merkle to validate"
-            );
-            // return Err(GossipError::ValidReblindVerification(e.to_string()));
+            log::error!("Invalid proof of `VALID REBLIND`");
+            return Err(GossipError::ValidReblindVerification(e.to_string()));
         }
 
         // Validate the commitment proof

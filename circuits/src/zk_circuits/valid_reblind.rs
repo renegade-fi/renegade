@@ -68,15 +68,15 @@ where
             cs,
         )?;
 
-        // Verify the nullifier of the old wallet's private shares is correctly computed
+        // Verify the nullifier of the old wallet's shares is correctly computed
         let recovered_old_blinder = witness.original_wallet_private_shares.blinder.clone()
             + witness.original_wallet_public_shares.blinder.clone();
-        let old_private_nullifier = NullifierGadget::wallet_shares_nullifier(
+        let old_shares_nullifier = NullifierGadget::wallet_shares_nullifier(
             old_shares_comm,
             recovered_old_blinder.clone(),
             cs,
         )?;
-        cs.constrain(old_private_nullifier - statement.original_shares_nullifier);
+        cs.constrain(old_shares_nullifier - statement.original_shares_nullifier);
 
         // Verify the commitment to the new wallet's private shares
         let reblinded_private_shares_commitment =
@@ -424,7 +424,7 @@ where
 /// The statement type for VALID REBLIND
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidReblindStatement {
-    /// The nullifier of the original wallet's private secret shares
+    /// The nullifier of the original wallet's secret shares
     pub original_shares_nullifier: Nullifier,
     /// A commitment to the private secret shares of the reblinded wallet
     pub reblinded_private_share_commitment: WalletShareCommitment,
@@ -435,7 +435,7 @@ pub struct ValidReblindStatement {
 /// The statement type for VALID REBLIND, allocated in a constraint system
 #[derive(Clone, Debug)]
 pub struct ValidReblindStatementVar {
-    /// The nullifier of the original wallet's private secret shares
+    /// The nullifier of the original wallet's secret shares
     pub original_shares_nullifier: Variable,
     /// A commitment to the private secret shares of the reblinded wallet
     pub reblinded_private_share_commitment: Variable,

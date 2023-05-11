@@ -309,10 +309,8 @@ impl SettleMatchTask {
         let tx_submit_res = self
             .starknet_client
             .submit_match(
-                party0_reblind_proof.original_public_share_nullifier,
-                party0_reblind_proof.original_private_share_nullifier,
-                party1_reblind_proof.original_private_share_nullifier,
-                party1_reblind_proof.original_public_share_nullifier,
+                party0_reblind_proof.original_shares_nullifier,
+                party1_reblind_proof.original_shares_nullifier,
                 party0_reblind_proof.reblinded_private_share_commitment,
                 party1_reblind_proof.reblinded_private_share_commitment,
                 proof.statement.party0_modified_shares.clone(),

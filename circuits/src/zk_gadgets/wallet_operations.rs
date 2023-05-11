@@ -46,7 +46,7 @@ where
     }
 
     /// Compute the commitment to the full wallet given a commitment to the private shares
-    pub fn compute_public_commitment<CS: RandomizableConstraintSystem>(
+    pub fn compute_wallet_commitment_from_private<CS: RandomizableConstraintSystem>(
         blinded_public_wallet_share: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         private_commitment: LinearCombination,
         cs: &mut CS,
@@ -71,7 +71,7 @@ where
     ) -> Result<LinearCombination, R1CSError> {
         // First compute the private half, then absorb in the public
         let private_comm = Self::compute_private_commitment(private_wallet_share, cs)?;
-        Self::compute_public_commitment(public_wallet_share, private_comm, cs)
+        Self::compute_wallet_commitment_from_private(public_wallet_share, private_comm, cs)
     }
 }
 

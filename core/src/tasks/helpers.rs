@@ -7,7 +7,7 @@ use std::{
 
 use circuits::{
     native_helpers::{
-        compute_wallet_share_commitment, create_wallet_shares_from_private, reblind_wallet,
+        compute_wallet_private_share_commitment, create_wallet_shares_from_private, reblind_wallet,
     },
     types::{
         balance::Balance,
@@ -79,20 +79,10 @@ pub(super) async fn find_merkle_path(
     wallet: &Wallet,
     starknet_client: &StarknetClient,
 ) -> Result<WalletAuthenticationPath, StarknetClientError> {
-    // Find the authentication path of the wallet's private shares
-    let private_merkle_auth_path = starknet_client
-        .find_merkle_authentication_path(wallet.get_private_share_commitment())
-        .await?;
-
-    // Find the authentication path of the wallet's public shares
-    let public_merkle_auth_path = starknet_client
-        .find_merkle_authentication_path(wallet.get_public_share_commitment())
-        .await?;
-
-    Ok(WalletAuthenticationPath {
-        public_share_path: public_merkle_auth_path,
-        private_share_path: private_merkle_auth_path,
-    })
+    // Find the authentication path of the wallet's private shares commitment
+    starknet_client
+        .find_merkle_authentication_path(wallet.get_wallet_share_commitment())
+        .await
 }
 
 /// Re-blind the wallet and prove `VALID REBLIND` for the wallet
@@ -111,14 +101,13 @@ pub(super) fn construct_wallet_reblind_proof(
     let (reblinded_private_shares, reblinded_public_shares) =
         reblind_wallet(wallet.private_shares.clone(), &circuit_wallet);
 
-    let merkle_root = authentication_path.public_share_path.compute_root();
+    let merkle_root = authentication_path.compute_root();
     let private_reblinded_commitment =
-        compute_wallet_share_commitment(reblinded_private_shares.clone());
+        compute_wallet_private_share_commitment(reblinded_private_shares.clone());
 
     // Construct the witness and statement
     let statement = ValidReblindStatement {
-        original_private_share_nullifier: wallet.get_private_share_nullifier(),
-        original_public_share_nullifier: wallet.get_public_share_nullifier(),
+        original_shares_nullifier: wallet.get_wallet_nullifier(),
         reblinded_private_share_commitment: private_reblinded_commitment,
         merkle_root,
     };
@@ -127,8 +116,7 @@ pub(super) fn construct_wallet_reblind_proof(
         original_wallet_public_shares: wallet.blinded_public_shares.clone(),
         reblinded_wallet_private_shares: reblinded_private_shares,
         reblinded_wallet_public_shares: reblinded_public_shares,
-        private_share_opening: authentication_path.private_share_path.into(),
-        public_share_opening: authentication_path.public_share_path.into(),
+        original_share_opening: authentication_path.into(),
         sk_match: wallet.key_chain.secret_keys.sk_match,
     };
 

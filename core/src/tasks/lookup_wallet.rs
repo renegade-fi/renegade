@@ -30,7 +30,7 @@ use crate::{
 
 use super::{
     driver::{StateWrapper, Task},
-    helpers::{update_wallet_validity_proofs, find_merkle_path},
+    helpers::{find_merkle_path, update_wallet_validity_proofs},
 };
 
 /// The error thrown when the wallet cannot be found in tx history
@@ -184,15 +184,15 @@ impl LookupWalletTask {
         // of the blinders
         let mut blinder_csprng = PoseidonCSPRNG::new(self.blinder_seed);
 
-       let mut blinder_index = 0;
+        let mut blinder_index = 0;
         let mut curr_blinder = Scalar::zero();
-        let mut curr_blinder_private_share = Scalar::zero(); 
+        let mut curr_blinder_private_share = Scalar::zero();
 
         let mut updating_tx = None;
 
         // TODO: Look for first non-nullified public blinder share, not just the first share
         // that has been indexed
-        while 
+        while
             let (blinder, private_share) = blinder_csprng.next_tuple().unwrap() &&
             let Some(tx) = self
                 .starknet_client
@@ -209,7 +209,10 @@ impl LookupWalletTask {
 
         let latest_tx = updating_tx
             .ok_or_else(|| LookupWalletTaskError::NotFound(ERR_WALLET_NOT_FOUND.to_string()))?;
-        log::info!("latest updating tx: 0x{:x}", starknet_felt_to_biguint(&latest_tx));
+        log::info!(
+            "latest updating tx: 0x{:x}",
+            starknet_felt_to_biguint(&latest_tx)
+        );
 
         // Fetch the secret shares from the tx
         let blinder_public_share = curr_blinder - curr_blinder_private_share;
@@ -236,7 +239,8 @@ impl LookupWalletTask {
 
         // Recover the wallet and index it in the global state
         let recovered_blinder = private_shares.blinder + public_shares.blinder;
-        let circuit_wallet = private_shares.clone() + public_shares.unblind_cloned(recovered_blinder);
+        let circuit_wallet =
+            private_shares.clone() + public_shares.unblind_cloned(recovered_blinder);
 
         let mut wallet = Wallet {
             wallet_id: self.wallet_id,
@@ -269,7 +273,7 @@ impl LookupWalletTask {
         let authentication_path = find_merkle_path(&wallet, &self.starknet_client)
             .await
             .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?;
-        wallet.merkle_proof = Some(authentication_path); 
+        wallet.merkle_proof = Some(authentication_path);
 
         self.global_state.update_wallet(wallet.clone()).await;
         self.wallet = Some(wallet);

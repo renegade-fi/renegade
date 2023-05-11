@@ -312,7 +312,7 @@ impl RelayerState {
 
         for wallet in wallets.into_iter() {
             // Index the wallet
-            let public_share_nullifier = wallet.get_public_share_nullifier();
+            let wallet_share_nullifier = wallet.get_wallet_nullifier();
             locked_wallet_index.add_wallet(wallet.clone());
 
             // Publish a message to the system bus indicating a wallet update
@@ -334,7 +334,7 @@ impl RelayerState {
                 locked_order_book
                     .add_order(NetworkOrder::new(
                         order_id,
-                        public_share_nullifier,
+                        wallet_share_nullifier,
                         self.local_cluster_id.clone(),
                         true, /* local */
                     ))
@@ -349,13 +349,13 @@ impl RelayerState {
 
         // Add the wallet's orders to the book
         let mut locked_order_book = self.write_order_book().await;
-        let wallet_public_share_nullifier = wallet.get_public_share_nullifier();
+        let wallet_share_nullifier = wallet.get_wallet_nullifier();
         for order_id in wallet.orders.keys() {
             if !locked_order_book.contains_order(order_id) {
                 locked_order_book
                     .add_order(NetworkOrder::new(
                         *order_id,
-                        wallet_public_share_nullifier,
+                        wallet_share_nullifier,
                         self.local_cluster_id.clone(),
                         true, /* local */
                     ))
