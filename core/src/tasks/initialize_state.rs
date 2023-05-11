@@ -170,7 +170,7 @@ impl InitializeStateTask {
             .await
             .into_iter()
         {
-            let wallet_nullifier = wallet.get_public_share_nullifier();
+            let wallet_nullifier = wallet.get_wallet_nullifier();
             for order_id in wallet.orders.into_keys() {
                 global_state
                     .add_order(NetworkOrder::new(

@@ -10,7 +10,7 @@ use std::{
 };
 
 use circuits::{
-    native_helpers::compute_wallet_share_commitment,
+    native_helpers::compute_wallet_commitment_from_private,
     types::wallet::{Nullifier, WalletShareCommitment},
     zk_gadgets::merkle::MerkleRoot,
 };
@@ -635,10 +635,11 @@ impl StarknetClient {
         );
 
         // Compute a commitment to the public shares
-        let public_share_commitment = compute_wallet_share_commitment(public_shares.clone());
+        let wallet_share_commitment =
+            compute_wallet_commitment_from_private(public_shares.clone(), private_share_commitment);
         let mut calldata = vec![
             Self::reduce_scalar_to_felt(&public_shares.blinder),
-            Self::reduce_scalar_to_felt(&public_share_commitment),
+            Self::reduce_scalar_to_felt(&wallet_share_commitment),
             Self::reduce_scalar_to_felt(&private_share_commitment),
         ];
 
@@ -666,18 +667,19 @@ impl StarknetClient {
     pub async fn update_wallet(
         &self,
         new_private_shares_commitment: WalletShareCommitment,
-        old_private_shares_nullifier: Nullifier,
-        old_public_shares_nullifier: Nullifier,
+        old_shares_nullifier: Nullifier,
         external_transfer: Option<ExternalTransfer>,
         new_public_shares: SizedWalletShare,
         valid_wallet_update: ValidWalletUpdateBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
-        let public_share_commitment = compute_wallet_share_commitment(new_public_shares.clone());
+        let new_wallet_share_commitment = compute_wallet_commitment_from_private(
+            new_public_shares.clone(),
+            new_private_shares_commitment,
+        );
         let mut calldata = vec![
-            Self::reduce_scalar_to_felt(&old_public_shares_nullifier),
-            Self::reduce_scalar_to_felt(&old_private_shares_nullifier),
+            Self::reduce_scalar_to_felt(&old_shares_nullifier),
             Self::reduce_scalar_to_felt(&new_public_shares.blinder),
-            Self::reduce_scalar_to_felt(&public_share_commitment),
+            Self::reduce_scalar_to_felt(&new_wallet_share_commitment),
             Self::reduce_scalar_to_felt(&new_private_shares_commitment),
         ];
 
@@ -708,10 +710,8 @@ impl StarknetClient {
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_match(
         &self,
-        party0_public_shares_nullifier: Nullifier,
-        party0_private_shares_nullifier: Nullifier,
-        party1_private_shares_nullifier: Nullifier,
-        party1_public_shares_nullifier: Nullifier,
+        party0_old_shares_nullifier: Nullifier,
+        party1_old_shares_nullifier: Nullifier,
         party0_private_share_commitment: WalletShareCommitment,
         party1_private_share_commitment: WalletShareCommitment,
         party0_public_shares: SizedWalletShare,
@@ -722,22 +722,24 @@ impl StarknetClient {
         valid_settle_proof: ValidSettleBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
         // Compute commitments to both party's public shares
-        let party0_public_share_commitment =
-            compute_wallet_share_commitment(party0_public_shares.clone());
-        let party1_public_share_commitment =
-            compute_wallet_share_commitment(party1_public_shares.clone());
+        let party0_wallet_share_commitment = compute_wallet_commitment_from_private(
+            party0_public_shares.clone(),
+            party0_private_share_commitment,
+        );
+        let party1_wallet_share_commitment = compute_wallet_commitment_from_private(
+            party1_public_shares.clone(),
+            party1_private_share_commitment,
+        );
 
         // Build the calldata
         let mut calldata = vec![
-            Self::reduce_scalar_to_felt(&party0_public_shares_nullifier),
-            Self::reduce_scalar_to_felt(&party0_private_shares_nullifier),
-            Self::reduce_scalar_to_felt(&party1_public_shares_nullifier),
-            Self::reduce_scalar_to_felt(&party1_private_shares_nullifier),
+            Self::reduce_scalar_to_felt(&party0_old_shares_nullifier),
+            Self::reduce_scalar_to_felt(&party1_old_shares_nullifier),
             Self::reduce_scalar_to_felt(&party0_public_shares.blinder),
             Self::reduce_scalar_to_felt(&party1_public_shares.blinder),
-            Self::reduce_scalar_to_felt(&party0_public_share_commitment),
+            Self::reduce_scalar_to_felt(&party0_wallet_share_commitment),
             Self::reduce_scalar_to_felt(&party0_private_share_commitment),
-            Self::reduce_scalar_to_felt(&party1_public_share_commitment),
+            Self::reduce_scalar_to_felt(&party1_wallet_share_commitment),
             Self::reduce_scalar_to_felt(&party1_private_share_commitment),
         ];
 

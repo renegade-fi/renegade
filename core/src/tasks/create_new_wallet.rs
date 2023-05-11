@@ -9,7 +9,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use async_trait::async_trait;
 use circuits::{
-    native_helpers::{compute_wallet_share_commitment, wallet_from_blinded_shares},
+    native_helpers::{compute_wallet_private_share_commitment, wallet_from_blinded_shares},
     zk_circuits::valid_wallet_create::{ValidWalletCreateStatement, ValidWalletCreateWitness},
 };
 use crossbeam::channel::Sender as CrossbeamSender;
@@ -230,7 +230,7 @@ impl NewWalletTask {
         };
 
         let private_shares_commitment =
-            compute_wallet_share_commitment(self.wallet.private_shares.clone());
+            compute_wallet_private_share_commitment(self.wallet.private_shares.clone());
         let statement = ValidWalletCreateStatement {
             private_shares_commitment,
             public_wallet_shares: self.wallet.blinded_public_shares.clone(),
