@@ -93,7 +93,7 @@ where
         )?;
         cs.constrain(old_shares_nullifier - statement.old_shares_nullifier);
 
-        // Validate the commitment to the new wallet shares
+        // Validate the commitment to the new wallet private shares
         let new_wallet_private_commitment = WalletShareCommitGadget::compute_private_commitment(
             witness.new_wallet_private_shares.clone(),
             cs,

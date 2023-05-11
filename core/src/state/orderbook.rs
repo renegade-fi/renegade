@@ -117,7 +117,7 @@ impl NetworkOrder {
         self.public_share_nullifier = validity_proofs
             .reblind_proof
             .statement
-            .original_public_share_nullifier;
+            .original_shares_nullifier;
         self.validity_proofs = Some(validity_proofs)
     }
 
@@ -441,14 +441,9 @@ impl NetworkOrderBook {
         proofs: OrderValidityProofBundle,
     ) {
         // Index by the public share nullifier seen in the proof, this is guaranteed correct
-        self.write_nullifier_order_set(
-            proofs
-                .reblind_proof
-                .statement
-                .original_public_share_nullifier,
-        )
-        .await
-        .insert(*order_id);
+        self.write_nullifier_order_set(proofs.reblind_proof.statement.original_shares_nullifier)
+            .await
+            .insert(*order_id);
         self.transition_verified(order_id, proofs).await;
     }
 

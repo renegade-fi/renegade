@@ -7,7 +7,8 @@ use std::{
 
 use circuits::{
     native_helpers::{
-        compute_poseidon_hash, compute_wallet_share_commitment, compute_wallet_share_nullifier,
+        compute_poseidon_hash, compute_wallet_private_share_commitment,
+        compute_wallet_share_commitment, compute_wallet_share_nullifier,
         create_wallet_shares_from_private, wallet_from_blinded_shares,
     },
     types::{
@@ -188,15 +189,8 @@ impl From<MerkleAuthenticationPath> for MerkleOpening {
     }
 }
 
-/// A pair of Merkle authentication paths, one for the public shares of the
-/// wallet, and another for the private shares
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WalletAuthenticationPath {
-    /// The authentication path for the public shares of the wallet
-    pub public_share_path: MerkleAuthenticationPath,
-    /// The authentication path for the private shares of the wallet
-    pub private_share_path: MerkleAuthenticationPath,
-}
+/// The Merkle opening from the wallet shares' commitment to the gloal root
+pub type WalletAuthenticationPath = MerkleAuthenticationPath;
 
 /// Represents a wallet managed by the local relayer
 #[derive(Debug, Serialize, Deserialize)]
@@ -294,24 +288,22 @@ impl From<Wallet> for SizedCircuitWallet {
 }
 
 impl Wallet {
-    /// Computes the commitment to the public shares of the wallet
-    pub fn get_public_share_commitment(&self) -> WalletShareCommitment {
-        compute_wallet_share_commitment(self.blinded_public_shares.clone())
-    }
-
     /// Computes the commitment to the private shares of the wallet
     pub fn get_private_share_commitment(&self) -> WalletShareCommitment {
-        compute_wallet_share_commitment(self.private_shares.clone())
+        compute_wallet_private_share_commitment(self.private_shares.clone())
     }
 
-    /// Computes the nullifier of the public shares of the wallet
-    pub fn get_public_share_nullifier(&self) -> Nullifier {
-        compute_wallet_share_nullifier(self.get_public_share_commitment(), self.blinder)
+    /// Compute the commitment to the full wallet shares
+    pub fn get_wallet_share_commitment(&self) -> WalletShareCommitment {
+        compute_wallet_share_commitment(
+            self.blinded_public_shares.clone(),
+            self.private_shares.clone(),
+        )
     }
 
-    /// Computes the nullifier of the private shares of the wallet
-    pub fn get_private_share_nullifier(&self) -> Nullifier {
-        compute_wallet_share_nullifier(self.get_private_share_commitment(), self.blinder)
+    /// Compute the wallet nullifier
+    pub fn get_wallet_nullifier(&self) -> Nullifier {
+        compute_wallet_share_nullifier(self.get_wallet_share_commitment(), self.blinder)
     }
 
     /// Reblind the wallet, consuming the next set of blinders and secret shares
