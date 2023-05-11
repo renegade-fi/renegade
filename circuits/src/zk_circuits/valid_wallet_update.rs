@@ -65,22 +65,15 @@ where
     ) -> Result<(), R1CSError> {
         // -- State Validity -- //
 
-        // Verify the opening of the old wallet's private secret shares
-        let old_private_shares_comm =
-            WalletShareCommitGadget::compute_commitment(&witness.old_wallet_private_shares, cs)?;
-        let computed_root = PoseidonMerkleHashGadget::compute_root_prehashed(
-            old_private_shares_comm.clone(),
-            witness.private_shares_opening,
+        // Verify the opening of the old wallet's secret shares
+        let old_shares_comm = WalletShareCommitGadget::compute_wallet_share_commitment(
+            witness.old_wallet_public_shares.clone(),
+            witness.old_wallet_private_shares.clone(),
             cs,
         )?;
-        cs.constrain(statement.merkle_root - computed_root);
-
-        // Verify the opening of the old wallet's public secret shares
-        let old_public_shares_comm =
-            WalletShareCommitGadget::compute_commitment(&witness.old_wallet_public_shares, cs)?;
         let computed_root = PoseidonMerkleHashGadget::compute_root_prehashed(
-            old_public_shares_comm.clone(),
-            witness.public_shares_opening,
+            old_shares_comm.clone(),
+            witness.old_shares_opening,
             cs,
         )?;
         cs.constrain(statement.merkle_root - computed_root);
@@ -92,24 +85,19 @@ where
 
         let old_wallet = witness.old_wallet_private_shares + witness.old_wallet_public_shares;
 
-        // Verify that the nullifiers of the two secret shares are correctly computed
-        let public_nullifier = NullifierGadget::wallet_shares_nullifier(
-            old_public_shares_comm,
+        // Verify that the nullifier of the shares is correctly computed
+        let old_shares_nullifier = NullifierGadget::wallet_shares_nullifier(
+            old_shares_comm,
             old_wallet.blinder.clone(),
             cs,
         )?;
-        cs.constrain(public_nullifier - statement.old_public_shares_nullifier);
-
-        let private_nullifier = NullifierGadget::wallet_shares_nullifier(
-            old_private_shares_comm,
-            old_wallet.blinder.clone(),
-            cs,
-        )?;
-        cs.constrain(private_nullifier - statement.old_private_shares_nullifier);
+        cs.constrain(old_shares_nullifier - statement.old_shares_nullifier);
 
         // Validate the commitment to the new wallet shares
-        let new_wallet_private_commitment =
-            WalletShareCommitGadget::compute_commitment(&witness.new_wallet_private_shares, cs)?;
+        let new_wallet_private_commitment = WalletShareCommitGadget::compute_private_commitment(
+            witness.new_wallet_private_shares.clone(),
+            cs,
+        )?;
         cs.constrain(statement.new_private_shares_commitment - new_wallet_private_commitment);
 
         // -- Authorization -- //
@@ -447,10 +435,8 @@ pub struct ValidWalletUpdateWitness<
     pub old_wallet_private_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The public secret shares of the existing wallet
     pub old_wallet_public_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The Merkle opening of the old wallet's private secret shares
-    pub private_shares_opening: MerkleOpening,
-    /// The Merkle opening of the old wallet's public secret shares
-    pub public_shares_opening: MerkleOpening,
+    /// The opening of the old wallet's shares to the global Merkle root
+    pub old_shares_opening: MerkleOpening,
     /// The new wallet's private secret shares
     pub new_wallet_private_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
 }
@@ -466,10 +452,8 @@ pub struct ValidWalletUpdateWitnessVar<
     pub old_wallet_private_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The public secret shares of the existing wallet
     pub old_wallet_public_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The Merkle opening of the old wallet's private secret shares
-    pub private_shares_opening: MerkleOpeningVar,
-    /// The Merkle opening of the old wallet's public secret shares
-    pub public_shares_opening: MerkleOpeningVar,
+    /// The opening of the old wallet's shares to the global Merkle root
+    pub old_shares_opening: MerkleOpeningVar,
     /// The new wallet's private secret shares
     pub new_wallet_private_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
 }
@@ -486,10 +470,8 @@ pub struct ValidWalletUpdateWitnessCommitment<
     pub old_wallet_private_shares: WalletSecretShareCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The public secret shares of the existing wallet
     pub old_wallet_public_shares: WalletSecretShareCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The Merkle opening of the old wallet's private secret shares
-    pub private_shares_opening: MerkleOpeningCommitment,
-    /// The Merkle opening of the old wallet's public secret shares
-    pub public_shares_opening: MerkleOpeningCommitment,
+    /// The opening of the old wallet's shares to the global Merkle root
+    pub old_shares_opening: MerkleOpeningCommitment,
     /// The new wallet's private secret shares
     pub new_wallet_private_shares: WalletSecretShareCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
 }
@@ -517,14 +499,8 @@ where
             .old_wallet_public_shares
             .commit_witness(rng, prover)
             .unwrap();
-        let (private_opening_vars, private_opening_comms) = self
-            .private_shares_opening
-            .commit_witness(rng, prover)
-            .unwrap();
-        let (public_opening_vars, public_opening_comms) = self
-            .public_shares_opening
-            .commit_witness(rng, prover)
-            .unwrap();
+        let (old_shares_opening_var, old_shares_opening_comm) =
+            self.old_shares_opening.commit_witness(rng, prover).unwrap();
 
         // New wallet state
         let (new_private_share_vars, new_private_share_comms) = self
@@ -536,15 +512,13 @@ where
             ValidWalletUpdateWitnessVar {
                 old_wallet_private_shares: old_private_share_vars,
                 old_wallet_public_shares: old_public_share_vars,
-                private_shares_opening: private_opening_vars,
-                public_shares_opening: public_opening_vars,
+                old_shares_opening: old_shares_opening_var,
                 new_wallet_private_shares: new_private_share_vars,
             },
             ValidWalletUpdateWitnessCommitment {
                 old_wallet_private_shares: old_private_share_comms,
                 old_wallet_public_shares: old_public_share_comms,
-                private_shares_opening: private_opening_comms,
-                public_shares_opening: public_opening_comms,
+                old_shares_opening: old_shares_opening_comm,
                 new_wallet_private_shares: new_private_share_comms,
             },
         ))
@@ -568,14 +542,7 @@ where
             .old_wallet_public_shares
             .commit_verifier(verifier)
             .unwrap();
-        let private_opening_vars = self
-            .private_shares_opening
-            .commit_verifier(verifier)
-            .unwrap();
-        let public_opening_vars = self
-            .public_shares_opening
-            .commit_verifier(verifier)
-            .unwrap();
+        let old_shares_opening_var = self.old_shares_opening.commit_verifier(verifier).unwrap();
         let new_private_share_vars = self
             .new_wallet_private_shares
             .commit_verifier(verifier)
@@ -584,8 +551,7 @@ where
         Ok(ValidWalletUpdateWitnessVar {
             old_wallet_private_shares: old_private_share_vars,
             old_wallet_public_shares: old_public_share_vars,
-            private_shares_opening: private_opening_vars,
-            public_shares_opening: public_opening_vars,
+            old_shares_opening: old_shares_opening_var,
             new_wallet_private_shares: new_private_share_vars,
         })
     }
@@ -602,10 +568,8 @@ pub struct ValidWalletUpdateStatement<
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
 > {
-    /// The nullifier of the old wallet's private secret shares
-    pub old_private_shares_nullifier: Nullifier,
-    /// The nullifier of the old wallet's public secret shares
-    pub old_public_shares_nullifier: Nullifier,
+    /// The nullifier of the old wallet's secret shares
+    pub old_shares_nullifier: Nullifier,
     /// A commitment to the new wallet's private secret shares
     pub new_private_shares_commitment: WalletShareCommitment,
     /// The public secret shares of the new wallet
@@ -627,10 +591,8 @@ pub struct ValidWalletUpdateStatementVar<
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
 > {
-    /// The nullifier of the old wallet's private secret shares
-    pub old_private_shares_nullifier: Variable,
-    /// The nullifier of the old wallet's public secret shares
-    pub old_public_shares_nullifier: Variable,
+    /// The nullifier of the old wallet's secret shares
+    pub old_shares_nullifier: Variable,
     /// A commitment to the new wallet's private secret shares
     pub new_private_shares_commitment: Variable,
     /// The public secret shares of the new wallet
@@ -657,9 +619,7 @@ where
         &self,
         cs: &mut CS,
     ) -> Result<Self::VarType, Self::ErrorType> {
-        let old_private_nullifier_var =
-            self.old_private_shares_nullifier.commit_public(cs).unwrap();
-        let old_public_nullifier_var = self.old_public_shares_nullifier.commit_public(cs).unwrap();
+        let old_nullifier_var = self.old_shares_nullifier.commit_public(cs).unwrap();
         let new_private_commitment_var = self
             .new_private_shares_commitment
             .commit_public(cs)
@@ -672,8 +632,7 @@ where
         let timestamp_var = Scalar::from(self.timestamp).commit_public(cs).unwrap();
 
         Ok(ValidWalletUpdateStatementVar {
-            old_private_shares_nullifier: old_private_nullifier_var,
-            old_public_shares_nullifier: old_public_nullifier_var,
+            old_shares_nullifier: old_nullifier_var,
             new_private_shares_commitment: new_private_commitment_var,
             new_public_shares: new_public_share_vars,
             merkle_root: merkle_root_var,
@@ -754,7 +713,10 @@ mod test {
     use rand_core::{OsRng, RngCore};
 
     use crate::{
-        native_helpers::{compute_wallet_share_commitment, compute_wallet_share_nullifier},
+        native_helpers::{
+            compute_wallet_private_share_commitment, compute_wallet_share_commitment,
+            compute_wallet_share_nullifier,
+        },
         types::{
             balance::Balance,
             order::Order,
@@ -809,36 +771,30 @@ mod test {
             create_wallet_shares(&new_wallet);
 
         // Create dummy openings for the old shares
-        let old_private_commitment =
-            compute_wallet_share_commitment(old_wallet_private_shares.clone());
-        let old_public_commitment =
-            compute_wallet_share_commitment(old_wallet_public_shares.clone());
-        let (merkle_root, mut openings) = create_multi_opening(
-            &[old_private_commitment, old_public_commitment],
-            MERKLE_HEIGHT,
-            &mut rng,
+        let old_shares_commitment = compute_wallet_share_commitment(
+            old_wallet_public_shares.clone(),
+            old_wallet_private_shares.clone(),
         );
+        let (merkle_root, mut opening) =
+            create_multi_opening(&[old_shares_commitment], MERKLE_HEIGHT, &mut rng);
+        let old_shares_opening = opening.pop().unwrap();
 
         // Compute nullifiers for the old state
-        let old_private_nullifier =
-            compute_wallet_share_nullifier(old_private_commitment, old_wallet.blinder);
-        let old_public_nullifier =
-            compute_wallet_share_nullifier(old_public_commitment, old_wallet.blinder);
+        let old_shares_nullifier =
+            compute_wallet_share_nullifier(old_shares_commitment, old_wallet.blinder);
 
         // Commit to the new private shares
         let new_private_shares_commitment =
-            compute_wallet_share_commitment(new_wallet_private_shares.clone());
+            compute_wallet_private_share_commitment(new_wallet_private_shares.clone());
 
         let witness = SizedWitness {
             old_wallet_private_shares,
             old_wallet_public_shares,
             new_wallet_private_shares,
-            private_shares_opening: openings.remove(0),
-            public_shares_opening: openings.remove(0),
+            old_shares_opening,
         };
         let statement = SizedStatement {
-            old_private_shares_nullifier: old_private_nullifier,
-            old_public_shares_nullifier: old_public_nullifier,
+            old_shares_nullifier,
             old_pk_root: old_wallet.keys.pk_root,
             new_private_shares_commitment,
             new_public_shares: new_wallet_public_shares,
