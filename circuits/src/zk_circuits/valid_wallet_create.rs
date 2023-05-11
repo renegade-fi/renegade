@@ -60,8 +60,10 @@ where
         CS: RandomizableConstraintSystem,
     {
         // Validate the commitment given in the statement is a valid commitment to the private secret shares
-        let commitment =
-            WalletShareCommitGadget::compute_commitment(&witness.private_wallet_share, cs)?;
+        let commitment = WalletShareCommitGadget::compute_private_commitment(
+            witness.private_wallet_share.clone(),
+            cs,
+        )?;
         cs.constrain(commitment - statement.private_shares_commitment);
 
         // Unblind the public shares then reconstruct the wallet
@@ -294,7 +296,7 @@ mod test {
     use rand_core::OsRng;
 
     use crate::{
-        native_helpers::compute_wallet_share_commitment,
+        native_helpers::compute_wallet_private_share_commitment,
         test_helpers::bulletproof_prove_and_verify,
         types::{balance::Balance, order::Order},
         zk_circuits::{
@@ -345,7 +347,7 @@ mod test {
         let (private_shares, public_shares) = create_wallet_shares(wallet);
 
         // Build a commitment to the private secret shares
-        let commitment = compute_wallet_share_commitment(private_shares.clone());
+        let commitment = compute_wallet_private_share_commitment(private_shares.clone());
 
         // Prove and verify
         let witness = ValidWalletCreateWitness {

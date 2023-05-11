@@ -28,9 +28,9 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
-    /// Compute the commitment to a wallet share
-    pub fn compute_commitment<CS: RandomizableConstraintSystem>(
-        wallet_share: &WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    /// Compute the commitment to the private wallet shares
+    pub fn compute_private_commitment<CS: RandomizableConstraintSystem>(
+        private_wallet_share: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError> {
         // Create a new hash gadget
@@ -38,11 +38,40 @@ where
         let mut hasher = PoseidonHashGadget::new(hash_params);
 
         // Serialize the wallet and hash it into the hasher's state
-        let serialized_wallet: Vec<LinearCombination> = wallet_share.clone().into();
+        let serialized_wallet: Vec<LinearCombination> = private_wallet_share.into();
         hasher.batch_absorb(&serialized_wallet, cs)?;
 
         // Squeeze an element out of the state
         hasher.squeeze(cs)
+    }
+
+    /// Compute the commitment to the full wallet given a commitment to the private shares
+    pub fn compute_public_commitment<CS: RandomizableConstraintSystem>(
+        blinded_public_wallet_share: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        private_commitment: LinearCombination,
+        cs: &mut CS,
+    ) -> Result<LinearCombination, R1CSError> {
+        // Create a new hash gadget
+        let hash_params = PoseidonSpongeParameters::default();
+        let mut hasher = PoseidonHashGadget::new(hash_params);
+
+        // The public shares are added directly to a sponge H(private_commit || public shares)
+        let mut hash_input = vec![private_commitment];
+        hash_input.append(&mut blinded_public_wallet_share.into());
+
+        hasher.batch_absorb(&hash_input, cs)?;
+        hasher.squeeze(cs)
+    }
+
+    /// Compute the full commitment of a wallet's shares given both the public and private shares
+    pub fn compute_wallet_share_commitment<CS: RandomizableConstraintSystem>(
+        public_wallet_share: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        private_wallet_share: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut CS,
+    ) -> Result<LinearCombination, R1CSError> {
+        // First compute the private half, then absorb in the public
+        let private_comm = Self::compute_private_commitment(private_wallet_share, cs)?;
+        Self::compute_public_commitment(public_wallet_share, private_comm, cs)
     }
 }
 
