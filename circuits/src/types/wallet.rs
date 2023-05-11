@@ -13,23 +13,27 @@ use serde::{Deserialize, Serialize};
 use crate::{
     mpc::SharedFabric,
     types::{scalar_from_hex_string, scalar_to_hex_string},
-    CommitPublic, CommitVerifier, CommitWitness, SharePublic,
+    CommitPublic, CommitVerifier, CommitWitness, LinkableCommitment, SharePublic,
 };
 
 use super::{
     balance::{
         Balance, BalanceSecretShare, BalanceSecretShareCommitment, BalanceSecretShareVar,
-        BalanceVar, CommittedBalance,
+        BalanceVar, CommittedBalance, LinkableBalanceShareCommitment,
     },
     deserialize_array,
-    fee::{CommittedFee, Fee, FeeSecretShare, FeeSecretShareCommitment, FeeSecretShareVar, FeeVar},
+    fee::{
+        CommittedFee, Fee, FeeSecretShare, FeeSecretShareCommitment, FeeSecretShareVar, FeeVar,
+        LinkableFeeShareCommitment,
+    },
     keychain::{
-        CommittedPublicKeyChain, PublicKeyChain, PublicKeyChainSecretShare,
-        PublicKeyChainSecretShareCommitment, PublicKeyChainSecretShareVar, PublicKeyChainVar,
+        CommittedPublicKeyChain, LinkablePublicKeyChainShareCommitment, PublicKeyChain,
+        PublicKeyChainSecretShare, PublicKeyChainSecretShareCommitment,
+        PublicKeyChainSecretShareVar, PublicKeyChainVar,
     },
     order::{
-        CommittedOrder, Order, OrderSecretShare, OrderSecretShareCommitment, OrderSecretShareVar,
-        OrderVar,
+        CommittedOrder, LinkableOrderShareCommitment, Order, OrderSecretShare,
+        OrderSecretShareCommitment, OrderSecretShareVar, OrderVar,
     },
     serialize_array,
 };
@@ -734,5 +738,112 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> 
             keys: key_var,
             blinder: blinder_var.into(),
         })
+    }
+}
+
+/// A wallet secret share that may be linked across proofs
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LinkableWalletSecretShareCommitment<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+    const MAX_FEES: usize,
+> {
+    /// The list of balances in the wallet
+    #[serde(with = "serde_arrays")]
+    pub balances: [LinkableBalanceShareCommitment; MAX_BALANCES],
+    /// The list of open orders in the wallet
+    #[serde(with = "serde_arrays")]
+    pub orders: [LinkableOrderShareCommitment; MAX_ORDERS],
+    /// The list of payable fees in the wallet
+    #[serde(with = "serde_arrays")]
+    pub fees: [LinkableFeeShareCommitment; MAX_FEES],
+    /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle, pk_view)
+    pub keys: LinkablePublicKeyChainShareCommitment,
+    /// The wallet randomness used to blind secret shares
+    pub blinder: LinkableCommitment,
+}
+
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
+    From<WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>
+    for LinkableWalletSecretShareCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+{
+    fn from(wallet: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>) -> Self {
+        LinkableWalletSecretShareCommitment {
+            balances: wallet
+                .balances
+                .into_iter()
+                .map(|b| b.into())
+                .collect_vec()
+                .try_into()
+                .unwrap(),
+            orders: wallet
+                .orders
+                .into_iter()
+                .map(|o| o.into())
+                .collect_vec()
+                .try_into()
+                .unwrap(),
+            fees: wallet
+                .fees
+                .into_iter()
+                .map(|f| f.into())
+                .collect_vec()
+                .try_into()
+                .unwrap(),
+            keys: wallet.keys.into(),
+            blinder: wallet.blinder.into(),
+        }
+    }
+}
+
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitWitness
+    for LinkableWalletSecretShareCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+{
+    type VarType = WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type CommitType = WalletSecretShareCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type ErrorType = (); // Does not error
+
+    fn commit_witness<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (balance_vars, balance_comms): (
+            Vec<BalanceSecretShareVar>,
+            Vec<BalanceSecretShareCommitment>,
+        ) = self
+            .balances
+            .iter()
+            .map(|b| b.commit_witness(rng, prover).unwrap())
+            .unzip();
+        let (order_vars, order_comms): (Vec<OrderSecretShareVar>, Vec<OrderSecretShareCommitment>) =
+            self.orders
+                .iter()
+                .map(|o| o.commit_witness(rng, prover).unwrap())
+                .unzip();
+        let (fee_vars, fee_comms): (Vec<FeeSecretShareVar>, Vec<FeeSecretShareCommitment>) = self
+            .fees
+            .iter()
+            .map(|f| f.commit_witness(rng, prover).unwrap())
+            .unzip();
+        let (keychain_var, keychain_comm) = self.keys.commit_witness(rng, prover).unwrap();
+        let (blinder_var, blinder_comm) = self.blinder.commit_witness(rng, prover).unwrap();
+
+        Ok((
+            WalletSecretShareVar {
+                balances: balance_vars.try_into().unwrap(),
+                orders: order_vars.try_into().unwrap(),
+                fees: fee_vars.try_into().unwrap(),
+                keys: keychain_var,
+                blinder: blinder_var.into(),
+            },
+            WalletSecretShareCommitment {
+                balances: balance_comms.try_into().unwrap(),
+                orders: order_comms.try_into().unwrap(),
+                fees: fee_comms.try_into().unwrap(),
+                keys: keychain_comm,
+                blinder: blinder_comm,
+            },
+        ))
     }
 }

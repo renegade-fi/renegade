@@ -932,6 +932,74 @@ impl CommitVerifier for OrderSecretShareCommitment {
     }
 }
 
+/// An order secret share type that may be linked between proofs
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LinkableOrderShareCommitment {
+    /// The mint (ERC-20 contract address) of the quote token
+    pub quote_mint: LinkableCommitment,
+    /// The mint (ERC-20 contract address) of the base token
+    pub base_mint: LinkableCommitment,
+    /// The side this order is for (0 = buy, 1 = sell)
+    pub side: LinkableCommitment,
+    /// The limit price to be executed at, in units of quote per base
+    pub price: LinkableCommitment,
+    /// The amount of base currency to buy or sell
+    pub amount: LinkableCommitment,
+    /// A timestamp indicating when the order was placed, set by the user
+    pub timestamp: LinkableCommitment,
+}
+
+impl From<OrderSecretShare> for LinkableOrderShareCommitment {
+    fn from(order: OrderSecretShare) -> Self {
+        LinkableOrderShareCommitment {
+            quote_mint: order.quote_mint.into(),
+            base_mint: order.base_mint.into(),
+            side: order.side.into(),
+            price: order.price.into(),
+            amount: order.amount.into(),
+            timestamp: order.timestamp.into(),
+        }
+    }
+}
+
+impl CommitWitness for LinkableOrderShareCommitment {
+    type VarType = OrderSecretShareVar;
+    type CommitType = OrderSecretShareCommitment;
+    type ErrorType = (); // Does not error
+
+    fn commit_witness<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (quote_var, quote_comm) = self.quote_mint.commit_witness(rng, prover).unwrap();
+        let (base_var, base_comm) = self.base_mint.commit_witness(rng, prover).unwrap();
+        let (side_var, side_comm) = self.side.commit_witness(rng, prover).unwrap();
+        let (price_var, price_comm) = self.price.commit_witness(rng, prover).unwrap();
+        let (amount_var, amount_comm) = self.amount.commit_witness(rng, prover).unwrap();
+        let (timestamp_var, timestamp_comm) = self.timestamp.commit_witness(rng, prover).unwrap();
+
+        Ok((
+            OrderSecretShareVar {
+                quote_mint: quote_var.into(),
+                base_mint: base_var.into(),
+                side: side_var.into(),
+                price: price_var.into(),
+                amount: amount_var.into(),
+                timestamp: timestamp_var.into(),
+            },
+            OrderSecretShareCommitment {
+                quote_mint: quote_comm,
+                base_mint: base_comm,
+                side: side_comm,
+                price: price_comm,
+                amount: amount_comm,
+                timestamp: timestamp_comm,
+            },
+        ))
+    }
+}
+
 // ---------
 // | Tests |
 // ---------

@@ -805,6 +805,64 @@ impl CommitVerifier for FeeSecretShareCommitment {
     }
 }
 
+/// A fee secret share that may be linked across proofs
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LinkableFeeShareCommitment {
+    /// The public settle key of the cluster collecting fees
+    pub settle_key: LinkableCommitment,
+    /// The mint (ERC-20 Address) of the token used to pay gas
+    pub gas_addr: LinkableCommitment,
+    /// The amount of the mint token to use for gas
+    pub gas_token_amount: LinkableCommitment,
+    /// The percentage fee that the cluster may take upon match
+    pub percentage_fee: LinkableCommitment,
+}
+
+impl From<FeeSecretShare> for LinkableFeeShareCommitment {
+    fn from(fee: FeeSecretShare) -> Self {
+        LinkableFeeShareCommitment {
+            settle_key: fee.settle_key.into(),
+            gas_addr: fee.gas_addr.into(),
+            gas_token_amount: fee.gas_token_amount.into(),
+            percentage_fee: fee.percentage_fee.into(),
+        }
+    }
+}
+
+impl CommitWitness for LinkableFeeShareCommitment {
+    type VarType = FeeSecretShareVar;
+    type CommitType = FeeSecretShareCommitment;
+    type ErrorType = (); // Does not error
+
+    fn commit_witness<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (settle_var, settle_comm) = self.settle_key.commit_witness(rng, prover).unwrap();
+        let (gas_addr_var, gas_addr_comm) = self.gas_addr.commit_witness(rng, prover).unwrap();
+        let (gas_amount_var, gas_amount_comm) =
+            self.gas_token_amount.commit_witness(rng, prover).unwrap();
+        let (percent_fee_var, percent_fee_comm) =
+            self.percentage_fee.commit_witness(rng, prover).unwrap();
+
+        Ok((
+            FeeSecretShareVar {
+                settle_key: settle_var.into(),
+                gas_addr: gas_addr_var.into(),
+                gas_token_amount: gas_amount_var.into(),
+                percentage_fee: percent_fee_var.into(),
+            },
+            FeeSecretShareCommitment {
+                settle_key: settle_comm,
+                gas_addr: gas_addr_comm,
+                gas_token_amount: gas_amount_comm,
+                percentage_fee: percent_fee_comm,
+            },
+        ))
+    }
+}
+
 // ---------
 // | Tests |
 // ---------
