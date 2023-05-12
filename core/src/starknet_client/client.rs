@@ -81,8 +81,13 @@ pub type TransactionHash = StarknetFieldElement;
 /// `BLOCK_PAGINATION_WINDOW` blocks; scan them, then search the next
 /// `BLOCK_PAGINATION_WINDOW` blocks
 const BLOCK_PAGINATION_WINDOW: u64 = 1000;
-/// The earliest block to search events for, i.e. the contract deployment block
-const EARLIEST_BLOCK: u64 = 780361;
+/// The deployment block for the Mainnet contract
+/// TODO: Update this once the contract is deployed
+const MAINNET_CONTRACT_DEPLOYMENT_BLOCK: u64 = 780361;
+/// The deployment block for the Goerli contract
+const GOERLI_CONTRACT_DEPLOYMENT_BLOCK: u64 = 780361;
+/// The deployment block for the devnet contract
+const DEVNET_CONTRACT_DEPLOYMENT_BLOCK: u64 = 0;
 /// The page size to request when querying events
 const EVENTS_PAGE_SIZE: u64 = 50;
 /// The interval at which to poll the gateway for transaction status
@@ -147,6 +152,7 @@ impl StarknetClientConfig {
         match self.chain {
             ChainId::AlphaGoerli => SequencerGatewayProvider::starknet_alpha_goerli(),
             ChainId::Mainnet => SequencerGatewayProvider::starknet_alpha_mainnet(),
+            ChainId::Devnet => SequencerGatewayProvider::starknet_nile_localhost(),
         }
     }
 
@@ -464,7 +470,10 @@ impl StarknetClient {
         pending: bool,
     ) -> Result<Option<T>, StarknetClientError> {
         // Paginate backwards in block history
-        let mut start_block = self.get_block_number().await? - BLOCK_PAGINATION_WINDOW;
+        let mut start_block = self
+            .get_block_number()
+            .await?
+            .saturating_sub(BLOCK_PAGINATION_WINDOW);
         let mut end_block = if pending {
             BlockId::Tag(BlockTag::Pending)
         } else {
@@ -477,7 +486,12 @@ impl StarknetClient {
             Some(event_keys)
         };
 
-        while start_block > EARLIEST_BLOCK - BLOCK_PAGINATION_WINDOW {
+        let earliest_block = match self.config.chain {
+            ChainId::AlphaGoerli => GOERLI_CONTRACT_DEPLOYMENT_BLOCK,
+            ChainId::Mainnet => MAINNET_CONTRACT_DEPLOYMENT_BLOCK,
+            ChainId::Devnet => DEVNET_CONTRACT_DEPLOYMENT_BLOCK,
+        };
+        while start_block >= earliest_block.saturating_sub(BLOCK_PAGINATION_WINDOW) {
             // Exhaust events from the start block to the end block
             let mut pagination_token = Some(String::from("0"));
             let filter = EventFilter {
@@ -505,9 +519,14 @@ impl StarknetClient {
                 pagination_token = res.continuation_token;
             }
 
+            // If we are already at the genesis block, break
+            if start_block == 0 {
+                break;
+            }
+
             // If no return value is found decrement the start and end block
-            end_block = BlockId::Number(start_block - 1);
-            start_block -= BLOCK_PAGINATION_WINDOW;
+            end_block = BlockId::Number(start_block.saturating_sub(BLOCK_PAGINATION_WINDOW));
+            start_block = start_block.saturating_sub(BLOCK_PAGINATION_WINDOW);
         }
 
         Ok(None)

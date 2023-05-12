@@ -214,7 +214,11 @@ impl OnChainEventListenerExecutor {
             from_block: Some(BlockId::Number(self.start_block)),
             to_block: Some(BlockId::Tag(BlockTag::Pending)),
             address: Some(self.contract_address()),
-            keys: None,
+            keys: Some(vec![
+                *MERKLE_ROOT_CHANGED_EVENT_SELECTOR,
+                *MERKLE_NODE_CHANGED_EVENT_SELECTOR,
+                *NULLIFIER_SPENT_EVENT_SELECTOR,
+            ]),
         };
 
         let pagination_token = self.pagination_token.load(Ordering::Relaxed).to_string();
@@ -265,8 +269,7 @@ impl OnChainEventListenerExecutor {
                 return Ok(());
             }
 
-            let block_number = BlockId::Number(event_block);
-            self.handle_root_changed(block_number).await?;
+            self.handle_root_changed(event_block).await?;
 
             // Update the last consistent block
             self.merkle_last_consistent_block
@@ -303,12 +306,12 @@ impl OnChainEventListenerExecutor {
     /// Handle a root change event
     async fn handle_root_changed(
         &self,
-        block_number: BlockId,
+        block_number: u64,
     ) -> Result<(), OnChainEventListenerError> {
         // Fetch all the internal node changed events in this block
         let filter = EventFilter {
-            from_block: Some(block_number.clone()),
-            to_block: None,
+            from_block: Some(BlockId::Number(block_number)),
+            to_block: Some(BlockId::Number(block_number + 1)),
             address: Some(self.contract_address()),
             keys: Some(vec![*MERKLE_NODE_CHANGED_EVENT_SELECTOR]),
         };

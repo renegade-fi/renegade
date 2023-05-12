@@ -102,6 +102,9 @@ pub const STARKNET_TESTNET_ID: StarknetFieldElement = StarknetFieldElement::from
     398700013197595345,
 ]);
 
+/// Starknet devnet chain-id
+pub const STARKNET_DEVNET_ID: StarknetFieldElement = STARKNET_TESTNET_ID;
+
 /// A chain identifier used to decide chain-specific behaviors
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum ChainId {
@@ -111,6 +114,9 @@ pub enum ChainId {
     /// Starknet mainnet
     #[serde(rename = "mainnet")]
     Mainnet,
+    /// Devnet at localhost:5050
+    #[serde(rename = "devnet")]
+    Devnet,
 }
 
 impl From<ChainId> for StarknetFieldElement {
@@ -118,6 +124,7 @@ impl From<ChainId> for StarknetFieldElement {
         match chain_id {
             ChainId::AlphaGoerli => STARKNET_TESTNET_ID,
             ChainId::Mainnet => STARKNET_MAINNET_ID,
+            ChainId::Devnet => STARKNET_DEVNET_ID,
         }
     }
 }
@@ -130,6 +137,8 @@ impl FromStr for ChainId {
             Ok(Self::AlphaGoerli)
         } else if s == "mainnet" {
             Ok(Self::Mainnet)
+        } else if s == "devnet" {
+            Ok(Self::Devnet)
         } else {
             Err(format!("unknown chain ID {s}"))
         }
