@@ -18,8 +18,12 @@ use circuits::{
         wallet::{LinkableWalletSecretShare, Nullifier},
     },
     verify_collaborative_proof,
-    zk_circuits::valid_match_mpc::{
-        ValidMatchCommitment, ValidMatchMpcCircuit, ValidMatchMpcStatement, ValidMatchMpcWitness,
+    zk_circuits::{
+        commitment_links::{verify_augmented_shares_commitments, verify_commitment_match_link},
+        valid_match_mpc::{
+            ValidMatchCommitment, ValidMatchMpcCircuit, ValidMatchMpcStatement,
+            ValidMatchMpcWitness,
+        },
     },
     Allocate, Open, SharePublic,
 };
@@ -36,7 +40,9 @@ use tracing::log;
 use uuid::Uuid;
 
 use crate::{
-    proof_generation::{jobs::ValidMatchMpcBundle, OrderValidityWitnessBundle},
+    proof_generation::{
+        jobs::ValidMatchMpcBundle, OrderValidityProofBundle, OrderValidityWitnessBundle,
+    },
     MAX_BALANCES, MAX_FEES, MAX_ORDERS,
 };
 
@@ -44,6 +50,11 @@ use super::{error::HandshakeManagerError, manager::HandshakeExecutor, state::Han
 
 /// A type alias for a linkable wallet share with default sizing parameters
 pub type SizedLinkableWalletShare = LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+
+/// Error message emitted when the opened VALID MATCH proof does not properly link to
+/// both parties' proofs of VALID COMMITMENTS
+const ERR_INVALID_PROOF_LINK: &str =
+    "invalid commitment link between VALID COMMITMENTS and VALID MATCH MPC";
 
 /// The type returned by the match process, including the result, the validity proof bundle,
 /// and all witness/statement variables that must be revealed to complete the match
@@ -88,6 +99,8 @@ impl HandshakeExecutor {
         &self,
         request_id: Uuid,
         party_id: u64,
+        party0_validity_proof: OrderValidityProofBundle,
+        party1_validity_proof: OrderValidityProofBundle,
         mpc_net: QuicTwoPartyNet,
     ) -> Result<Box<HandshakeResult>, HandshakeManagerError> {
         // Fetch the handshake state from the state index
@@ -115,6 +128,8 @@ impl HandshakeExecutor {
             .execute_match_impl(
                 party_id,
                 handshake_state.to_owned(),
+                party0_validity_proof,
+                party1_validity_proof,
                 mpc_net,
                 cancel_receiver,
             )
@@ -131,6 +146,8 @@ impl HandshakeExecutor {
         &self,
         party_id: u64,
         handshake_state: HandshakeState,
+        party0_validity_proof: OrderValidityProofBundle,
+        party1_validity_proof: OrderValidityProofBundle,
         mut mpc_net: QuicTwoPartyNet,
         cancel_channel: Receiver<()>,
     ) -> Result<Box<HandshakeResult>, HandshakeManagerError> {
@@ -189,6 +206,18 @@ impl HandshakeExecutor {
         )
         .await?;
 
+        // Verify the commitment links between the match proof and the two parties'
+        // proofs of VALID COMMITMENTS
+        if !verify_commitment_match_link(
+            &party0_validity_proof.commitment_proof.commitment,
+            &party1_validity_proof.commitment_proof.commitment,
+            &commitment,
+        ) {
+            return Err(HandshakeManagerError::VerificationError(
+                ERR_INVALID_PROOF_LINK.to_string(),
+            ));
+        };
+
         // Check if a cancel has come in after the collaborative proof
         if !cancel_channel.is_empty() {
             return Err(HandshakeManagerError::MpcShootdown);
@@ -199,6 +228,8 @@ impl HandshakeExecutor {
             commitment,
             proof,
             proof_witnesses,
+            party0_validity_proof,
+            party1_validity_proof,
             handshake_state,
             shared_fabric,
             cancel_channel,
@@ -276,6 +307,8 @@ impl HandshakeExecutor {
         commitment: ValidMatchCommitment,
         proof: R1CSProof,
         validity_proof_witness: OrderValidityWitnessBundle,
+        party0_validity_proof: OrderValidityProofBundle,
+        party1_validity_proof: OrderValidityProofBundle,
         handshake_state: HandshakeState,
         fabric: SharedFabric<N, S>,
         cancel_channel: Receiver<()>,
@@ -302,6 +335,18 @@ impl HandshakeExecutor {
             .augmented_public_shares
             .share_public(1 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+
+        // Verify that the opened augmented shares are the same used in the validity proofs
+        if !verify_augmented_shares_commitments(
+            &party0_public_shares,
+            &party1_public_shares,
+            &party0_validity_proof.commitment_proof.commitment,
+            &party1_validity_proof.commitment_proof.commitment,
+        ) {
+            return Err(HandshakeManagerError::VerificationError(
+                ERR_INVALID_PROOF_LINK.to_string(),
+            ));
+        }
 
         // Finally, before revealing the match, we make a check that the MPC has
         // not been terminated by the coordinator

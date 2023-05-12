@@ -506,7 +506,7 @@ impl<L: Into<LinearCombination>> From<Vec<L>> for PublicKeyChainSecretShareVar {
 
 /// Represents a commitment to an additive secret share of a wallet's public keychain
 /// that has been allocated in a constraint system
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PublicKeyChainSecretShareCommitment {
     /// The public root key
     pub pk_root: NonNativeElementSecretShareCommitment,

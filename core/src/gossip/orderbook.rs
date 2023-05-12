@@ -1,7 +1,10 @@
 //! Groups handlers for updating and managing order book state in response to
 //! events elsewhere in the local node or the network
 
-use circuits::{types::wallet::Nullifier, verify_singleprover_proof};
+use circuits::{
+    types::wallet::Nullifier, verify_singleprover_proof,
+    zk_circuits::commitment_links::verify_reblind_commitments_link,
+};
 use futures::executor::block_on;
 use libp2p::request_response::ResponseChannel;
 use tracing::log;
@@ -31,6 +34,9 @@ use super::{
 
 /// Error message emitted when an already-used nullifier is received
 const ERR_NULLIFIER_USED: &str = "invalid nullifier, already used";
+/// Error message emitted when two validity proofs are improperly commitment linked
+const ERR_INVALID_PROOF_LINK: &str =
+    "invalid proof link between VALID REBLIND and VALID COMMITMENTS";
 
 impl GossipProtocolExecutor {
     /// Dispatches messages from the cluster regarding order book management
@@ -317,6 +323,15 @@ impl GossipProtocolExecutor {
         // take ownership
         let reblind_proof = proof_bundle.copy_reblind_proof();
         let commitment_proof = proof_bundle.copy_commitment_proof();
+
+        // Verify the two proofs are correctly commitment linked
+        if !verify_reblind_commitments_link(&reblind_proof.commitment, &commitment_proof.commitment)
+        {
+            log::error!("received validity proof bundle with invalid proof linking");
+            return Err(GossipError::ValidCommitmentVerification(
+                ERR_INVALID_PROOF_LINK.to_string(),
+            ));
+        }
 
         // Check that the proof shares' nullifiers are unused
         self.assert_nullifier_unused(reblind_proof.statement.original_shares_nullifier)

@@ -94,7 +94,7 @@ impl CommitWitness for Balance {
 }
 
 /// Represents the committed type of the balance tuple
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CommittedBalance {
     /// the mint (erc-20 token address) of the token in the balance
     pub mint: CompressedRistretto,
@@ -412,7 +412,7 @@ impl<L: Into<LinearCombination>> From<Vec<L>> for BalanceSecretShareVar {
 }
 
 /// A commitment to a balance allocate within a constraint system
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BalanceSecretShareCommitment {
     /// The mint (ERC20 token addr) of the balance
     pub mint: CompressedRistretto,

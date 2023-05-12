@@ -220,7 +220,7 @@ impl CommitWitness for Order {
 }
 
 /// An order that has been committed to by a prover
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CommittedOrder {
     /// The mint (ERC-20 contract address) of the quote token
     pub quote_mint: CompressedRistretto,
@@ -829,7 +829,7 @@ impl<L: Into<LinearCombination>> From<Vec<L>> for OrderSecretShareVar {
 }
 
 /// Represents a commitment to an additive secret share of an order committed into a constraint system
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OrderSecretShareCommitment {
     /// The mint (ERC-20 contract address) of the quote token
     pub quote_mint: CompressedRistretto,

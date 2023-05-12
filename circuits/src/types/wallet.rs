@@ -586,7 +586,7 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
 
 /// Represents a commitment to an additive secret share of a wallet that
 /// has been allocated in a constraint system
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WalletSecretShareCommitment<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
