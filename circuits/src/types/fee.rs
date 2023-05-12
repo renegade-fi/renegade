@@ -715,7 +715,7 @@ impl<L: Into<LinearCombination>> From<Vec<L>> for FeeSecretShareVar {
 }
 
 /// Represents a commitment to a fee secret share that has been allocated in a constraint system
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FeeSecretShareCommitment {
     /// The public settle key of the cluster collecting fees
     pub settle_key: CompressedRistretto,

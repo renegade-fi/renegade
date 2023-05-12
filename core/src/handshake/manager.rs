@@ -25,7 +25,7 @@ use crate::{
         },
         handshake::{HandshakeMessage, MatchRejectionReason},
     },
-    proof_generation::jobs::ProofManagerJob,
+    proof_generation::{jobs::ProofManagerJob, OrderValidityProofBundle},
     starknet_client::client::StarknetClient,
     state::{new_async_shared, NetworkOrderState, OrderIdentifier, RelayerState},
     system_bus::SystemBus,
@@ -248,10 +248,36 @@ impl HandshakeExecutor {
                     },
                 );
 
+                // Fetch the validity proofs of the party
+                let (party0_proof, party1_proof) = {
+                    let locked_order_book = self.global_state.read_order_book().await;
+                    let local_validity_proof = locked_order_book
+                        .get_validity_proofs(&order_state.local_order_id)
+                        .await
+                        .unwrap();
+                    let remote_validity_proof = locked_order_book
+                        .get_validity_proofs(&order_state.peer_order_id)
+                        .await
+                        .unwrap();
+
+                    match order_state.role {
+                        ConnectionRole::Dialer => (local_validity_proof, remote_validity_proof),
+                        ConnectionRole::Listener => (remote_validity_proof, local_validity_proof),
+                    }
+                }; // locked_order_book released
+
                 // Run the MPC match process
                 let self_clone = self.clone();
+                let proof0_clone = party0_proof.clone();
+                let proof1_clone = party1_proof.clone();
                 let res = tokio::task::spawn_blocking(move || {
-                    block_on(self_clone.execute_match(request_id, party_id, net))
+                    block_on(self_clone.execute_match(
+                        request_id,
+                        party_id,
+                        proof0_clone,
+                        proof1_clone,
+                        net,
+                    ))
                 })
                 .await
                 .unwrap()?;
@@ -260,7 +286,8 @@ impl HandshakeExecutor {
                 self.record_completed_match(request_id).await?;
 
                 if res.is_nontrivial() {
-                    self.submit_match(order_state, res).await;
+                    self.submit_match(party0_proof, party1_proof, order_state, res)
+                        .await;
                 }
                 Ok(())
             }
@@ -692,36 +719,11 @@ impl HandshakeExecutor {
     /// Helper to spawn a task in the task driver that submits a match and settles its result
     async fn submit_match(
         &self,
+        party0_proof: OrderValidityProofBundle,
+        party1_proof: OrderValidityProofBundle,
         handshake_state: HandshakeState,
         match_res: Box<HandshakeResult>,
     ) -> TaskIdentifier {
-        /// Macro helper to re-order two state elements (one for the local party
-        /// and another for the remote) by party ID in the MPC.
-        /// The proofs require that the witness variables be ordered properly
-        macro_rules! order_by_party_id {
-            ($local:expr, $remote:expr) => {
-                match handshake_state.role {
-                    ConnectionRole::Dialer => ($local, $remote),
-                    ConnectionRole::Listener => ($remote, $local),
-                }
-            };
-        }
-
-        // Re-order the validity proofs by party
-        let (party0_proof, party1_proof) = {
-            let locked_order_book = self.global_state.read_order_book().await;
-            let local_validity_proof = locked_order_book
-                .get_validity_proofs(&handshake_state.local_order_id)
-                .await
-                .unwrap();
-            let remote_validity_proof = locked_order_book
-                .get_validity_proofs(&handshake_state.peer_order_id)
-                .await
-                .unwrap();
-
-            order_by_party_id!(local_validity_proof, remote_validity_proof)
-        }; // locked_order_book released
-
         // Submit the match to the contract
         let task = SettleMatchTask::new(
             handshake_state,

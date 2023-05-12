@@ -990,7 +990,7 @@ impl NonNativeElementSecretShareVar {
 
 /// Represents a commitment to an additive secret share of a non-native element that has been
 /// allocated in a constraint system
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NonNativeElementSecretShareCommitment {
     /// The scalar words underlying the value
     pub(crate) words: Vec<CompressedRistretto>,
