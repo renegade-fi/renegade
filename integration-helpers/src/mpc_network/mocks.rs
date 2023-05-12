@@ -88,6 +88,14 @@ impl MpcNetwork for MockMpcNet {
         0
     }
 
+    async fn send_bytes(&mut self, _bytes: &[u8]) -> Result<(), MpcNetworkError> {
+        Ok(())
+    }
+
+    async fn receive_bytes(&mut self, _num_expected: usize) -> Result<Vec<u8>, MpcNetworkError> {
+        Err(MpcNetworkError::RecvError)
+    }
+
     async fn send_scalars(&mut self, _: &[Scalar]) -> Result<(), MpcNetworkError> {
         Ok(())
     }

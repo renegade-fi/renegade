@@ -220,8 +220,10 @@ impl SettleMatchTask {
     /// Apply the match to the wallets and prove `VALID SETTLE`
     async fn prove_settle(&self) -> Result<ValidSettleBundle, SettleMatchTaskError> {
         // Modify the secret shares
-        let mut party0_modified_shares = self.handshake_result.party0_reblinded_shares.clone();
-        let mut party1_modified_shares = self.handshake_result.party1_reblinded_shares.clone();
+        let mut party0_modified_shares: SizedWalletShare =
+            self.handshake_result.party0_reblinded_shares.clone().into();
+        let mut party1_modified_shares: SizedWalletShare =
+            self.handshake_result.party1_reblinded_shares.clone().into();
         let party0_commit_proof = self.party0_validity_proof.commitment_proof.clone();
         let party1_commit_proof = self.party1_validity_proof.commitment_proof.clone();
 

@@ -243,6 +243,7 @@ impl InitializeStateTask {
                 let (commitments_witness, response_channel) = construct_wallet_commitment_proof(
                     wallet.clone(),
                     order.clone(),
+                    &wallet_reblind_witness,
                     self.proof_manager_work_queue.clone(),
                 )
                 .map_err(InitializeStateTaskError::ProveValidCommitments)?;
