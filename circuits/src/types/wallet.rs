@@ -19,21 +19,21 @@ use crate::{
 use super::{
     balance::{
         Balance, BalanceSecretShare, BalanceSecretShareCommitment, BalanceSecretShareVar,
-        BalanceVar, CommittedBalance, LinkableBalanceShareCommitment,
+        BalanceVar, CommittedBalance, LinkableBalanceShare,
     },
     deserialize_array,
     fee::{
         CommittedFee, Fee, FeeSecretShare, FeeSecretShareCommitment, FeeSecretShareVar, FeeVar,
-        LinkableFeeShareCommitment,
+        LinkableFeeShare,
     },
     keychain::{
-        CommittedPublicKeyChain, LinkablePublicKeyChainShareCommitment, PublicKeyChain,
+        CommittedPublicKeyChain, LinkablePublicKeyChainShare, PublicKeyChain,
         PublicKeyChainSecretShare, PublicKeyChainSecretShareCommitment,
         PublicKeyChainSecretShareVar, PublicKeyChainVar,
     },
     order::{
-        CommittedOrder, LinkableOrderShareCommitment, Order, OrderSecretShare,
-        OrderSecretShareCommitment, OrderSecretShareVar, OrderVar,
+        CommittedOrder, LinkableOrderShare, Order, OrderSecretShare, OrderSecretShareCommitment,
+        OrderSecretShareVar, OrderVar,
     },
     serialize_array,
 };
@@ -416,7 +416,7 @@ impl<
         let shares_serialized: Vec<Scalar> = self.clone().into();
         let res = fabric
             .borrow_fabric()
-            .batch_shared_plaintext_scalars(owning_party, &shares_serialized)?;
+            .batch_share_plaintext_scalars(owning_party, &shares_serialized)?;
         Ok(res.into())
     }
 }
@@ -741,34 +741,71 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> 
     }
 }
 
+// -----------------------------------
+// | Commitment Linked Secret Shares |
+// -----------------------------------
+
 /// A wallet secret share that may be linked across proofs
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LinkableWalletSecretShareCommitment<
+pub struct LinkableWalletSecretShare<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
 > {
     /// The list of balances in the wallet
     #[serde(with = "serde_arrays")]
-    pub balances: [LinkableBalanceShareCommitment; MAX_BALANCES],
+    pub balances: [LinkableBalanceShare; MAX_BALANCES],
     /// The list of open orders in the wallet
     #[serde(with = "serde_arrays")]
-    pub orders: [LinkableOrderShareCommitment; MAX_ORDERS],
+    pub orders: [LinkableOrderShare; MAX_ORDERS],
     /// The list of payable fees in the wallet
     #[serde(with = "serde_arrays")]
-    pub fees: [LinkableFeeShareCommitment; MAX_FEES],
+    pub fees: [LinkableFeeShare; MAX_FEES],
     /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle, pk_view)
-    pub keys: LinkablePublicKeyChainShareCommitment,
+    pub keys: LinkablePublicKeyChainShare,
     /// The wallet randomness used to blind secret shares
     pub blinder: LinkableCommitment,
 }
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
     From<WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>
-    for LinkableWalletSecretShareCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+    for LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 {
     fn from(wallet: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>) -> Self {
-        LinkableWalletSecretShareCommitment {
+        LinkableWalletSecretShare {
+            balances: wallet
+                .balances
+                .into_iter()
+                .map(|b| b.into())
+                .collect_vec()
+                .try_into()
+                .unwrap(),
+            orders: wallet
+                .orders
+                .into_iter()
+                .map(|o| o.into())
+                .collect_vec()
+                .try_into()
+                .unwrap(),
+            fees: wallet
+                .fees
+                .into_iter()
+                .map(|f| f.into())
+                .collect_vec()
+                .try_into()
+                .unwrap(),
+            keys: wallet.keys.into(),
+            blinder: wallet.blinder.into(),
+        }
+    }
+}
+
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
+    From<LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>
+    for WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+{
+    fn from(wallet: LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>) -> Self {
+        WalletSecretShare {
             balances: wallet
                 .balances
                 .into_iter()
@@ -797,7 +834,7 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
 }
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitWitness
-    for LinkableWalletSecretShareCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+    for LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 {
     type VarType = WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type CommitType = WalletSecretShareCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
@@ -845,5 +882,30 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> 
                 blinder: blinder_comm,
             },
         ))
+    }
+}
+
+impl<
+        N: MpcNetwork + Send,
+        S: SharedValueSource<Scalar>,
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    > SharePublic<N, S> for LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+{
+    type ErrorType = MpcError;
+
+    fn share_public(
+        &self,
+        owning_party: u64,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self, Self::ErrorType> {
+        // Share bytes directly
+        let serialized = serde_json::to_vec(self).unwrap();
+        let res = fabric
+            .borrow_fabric()
+            .share_bytes(owning_party, &serialized)?;
+
+        Ok(serde_json::from_slice(&res).unwrap())
     }
 }

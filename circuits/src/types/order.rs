@@ -934,7 +934,7 @@ impl CommitVerifier for OrderSecretShareCommitment {
 
 /// An order secret share type that may be linked between proofs
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LinkableOrderShareCommitment {
+pub struct LinkableOrderShare {
     /// The mint (ERC-20 contract address) of the quote token
     pub quote_mint: LinkableCommitment,
     /// The mint (ERC-20 contract address) of the base token
@@ -949,9 +949,9 @@ pub struct LinkableOrderShareCommitment {
     pub timestamp: LinkableCommitment,
 }
 
-impl From<OrderSecretShare> for LinkableOrderShareCommitment {
+impl From<OrderSecretShare> for LinkableOrderShare {
     fn from(order: OrderSecretShare) -> Self {
-        LinkableOrderShareCommitment {
+        LinkableOrderShare {
             quote_mint: order.quote_mint.into(),
             base_mint: order.base_mint.into(),
             side: order.side.into(),
@@ -962,7 +962,20 @@ impl From<OrderSecretShare> for LinkableOrderShareCommitment {
     }
 }
 
-impl CommitWitness for LinkableOrderShareCommitment {
+impl From<LinkableOrderShare> for OrderSecretShare {
+    fn from(order: LinkableOrderShare) -> Self {
+        OrderSecretShare {
+            quote_mint: order.quote_mint.val,
+            base_mint: order.base_mint.val,
+            side: order.side.val,
+            price: order.price.val,
+            amount: order.amount.val,
+            timestamp: order.timestamp.val,
+        }
+    }
+}
+
+impl CommitWitness for LinkableOrderShare {
     type VarType = OrderSecretShareVar;
     type CommitType = OrderSecretShareCommitment;
     type ErrorType = (); // Does not error

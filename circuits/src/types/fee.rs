@@ -277,7 +277,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> SharePublic<N, S>
         ];
         let shared_values = fabric
             .borrow_fabric()
-            .batch_shared_plaintext_scalars(owning_party, values)
+            .batch_share_plaintext_scalars(owning_party, values)
             .map_err(|err| MpcError::SharingError(err.to_string()))?;
 
         Ok(Self {
@@ -391,7 +391,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> SharePublic<N, S> for F
     ) -> Result<Self, Self::ErrorType> {
         let shared_values = fabric
             .borrow_fabric()
-            .batch_shared_plaintext_scalars(
+            .batch_share_plaintext_scalars(
                 owning_party,
                 &[
                     biguint_to_scalar(&self.settle_key),
@@ -807,7 +807,7 @@ impl CommitVerifier for FeeSecretShareCommitment {
 
 /// A fee secret share that may be linked across proofs
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LinkableFeeShareCommitment {
+pub struct LinkableFeeShare {
     /// The public settle key of the cluster collecting fees
     pub settle_key: LinkableCommitment,
     /// The mint (ERC-20 Address) of the token used to pay gas
@@ -818,9 +818,9 @@ pub struct LinkableFeeShareCommitment {
     pub percentage_fee: LinkableCommitment,
 }
 
-impl From<FeeSecretShare> for LinkableFeeShareCommitment {
+impl From<FeeSecretShare> for LinkableFeeShare {
     fn from(fee: FeeSecretShare) -> Self {
-        LinkableFeeShareCommitment {
+        LinkableFeeShare {
             settle_key: fee.settle_key.into(),
             gas_addr: fee.gas_addr.into(),
             gas_token_amount: fee.gas_token_amount.into(),
@@ -829,7 +829,18 @@ impl From<FeeSecretShare> for LinkableFeeShareCommitment {
     }
 }
 
-impl CommitWitness for LinkableFeeShareCommitment {
+impl From<LinkableFeeShare> for FeeSecretShare {
+    fn from(fee: LinkableFeeShare) -> Self {
+        FeeSecretShare {
+            settle_key: fee.settle_key.val,
+            gas_addr: fee.gas_addr.val,
+            gas_token_amount: fee.gas_token_amount.val,
+            percentage_fee: fee.percentage_fee.val,
+        }
+    }
+}
+
+impl CommitWitness for LinkableFeeShare {
     type VarType = FeeSecretShareVar;
     type CommitType = FeeSecretShareCommitment;
     type ErrorType = (); // Does not error

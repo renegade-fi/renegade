@@ -21,8 +21,8 @@ use crate::{
     types::{
         keychain::SecretIdentificationKey,
         wallet::{
-            Nullifier, WalletSecretShare, WalletSecretShareCommitment, WalletSecretShareVar,
-            WalletShareCommitment,
+            LinkableWalletSecretShare, Nullifier, WalletSecretShare, WalletSecretShareCommitment,
+            WalletSecretShareVar, WalletShareCommitment,
         },
     },
     zk_gadgets::{
@@ -256,9 +256,11 @@ pub struct ValidReblindWitness<
     /// The public secret shares of the original wallet
     pub original_wallet_public_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The private secret shares of the reblinded wallet
-    pub reblinded_wallet_private_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub reblinded_wallet_private_shares:
+        LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The public secret shares of the reblinded wallet
-    pub reblinded_wallet_public_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub reblinded_wallet_public_shares:
+        LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The Merkle opening from the commitment to the original wallet's shares
     pub original_share_opening: MerkleOpening,
     /// The secret match key corresponding to the wallet's public match key
@@ -609,8 +611,8 @@ mod test {
         let witness = SizedWitness {
             original_wallet_private_shares: old_wallet_private_shares,
             original_wallet_public_shares: old_wallet_public_shares,
-            reblinded_wallet_private_shares: reblinded_private_shares,
-            reblinded_wallet_public_shares: reblinded_public_shares,
+            reblinded_wallet_private_shares: reblinded_private_shares.into(),
+            reblinded_wallet_public_shares: reblinded_public_shares.into(),
             original_share_opening,
             sk_match: SecretIdentificationKey(PRIVATE_KEYS[1]),
         };
@@ -669,24 +671,26 @@ mod test {
         // remains a valid blinding, but an incorrectly sampled one
         let mut rng = thread_rng();
         let mut private_shares_serialized: Vec<Scalar> =
-            witness.reblinded_wallet_private_shares.into();
+            Into::<SizedWalletShare>::into(witness.reblinded_wallet_private_shares).into();
         let mut public_shares_serialized: Vec<Scalar> =
-            witness.reblinded_wallet_public_shares.into();
+            Into::<SizedWalletShare>::into(witness.reblinded_wallet_public_shares).into();
 
         let random_index = rng.gen_range(0..private_shares_serialized.len());
         private_shares_serialized[random_index] += Scalar::one();
         public_shares_serialized[random_index] -= Scalar::one();
 
-        witness.reblinded_wallet_private_shares = private_shares_serialized.into();
-        witness.reblinded_wallet_public_shares = public_shares_serialized.into();
+        witness.reblinded_wallet_private_shares =
+            Into::<SizedWalletShare>::into(private_shares_serialized).into();
+        witness.reblinded_wallet_public_shares =
+            Into::<SizedWalletShare>::into(public_shares_serialized).into();
         statement.reblinded_private_share_commitment = compute_wallet_private_share_commitment(
-            witness.reblinded_wallet_private_shares.clone(),
+            witness.reblinded_wallet_private_shares.clone().into(),
         );
 
         // Verify that the reblinding is a valid secret sharing
         assert_valid_reblinding(
-            witness.reblinded_wallet_private_shares.clone(),
-            witness.reblinded_wallet_public_shares.clone(),
+            witness.reblinded_wallet_private_shares.clone().into(),
+            witness.reblinded_wallet_public_shares.clone().into(),
             &wallet,
         );
 
@@ -702,26 +706,27 @@ mod test {
         let (mut witness, mut statement) = construct_witness_statement(&wallet);
 
         // Reblind the wallet with a new, incorrect blinder
-        let recovered_blinder = witness.reblinded_wallet_private_shares.blinder
-            + witness.reblinded_wallet_public_shares.blinder;
+        let recovered_blinder = witness.reblinded_wallet_private_shares.blinder.val
+            + witness.reblinded_wallet_public_shares.blinder.val;
 
         let mut rng = OsRng {};
         let new_blinder = Scalar::random(&mut rng);
         let new_blinder_private_share = Scalar::random(&mut rng);
 
-        witness
-            .reblinded_wallet_public_shares
-            .unblind(recovered_blinder);
-        witness.reblinded_wallet_public_shares.blind(new_blinder);
-        witness.reblinded_wallet_public_shares.blinder = new_blinder - new_blinder_private_share;
-        witness.reblinded_wallet_private_shares.blinder = new_blinder_private_share;
+        let mut wallet_public_shares: SizedWalletShare =
+            witness.reblinded_wallet_public_shares.clone().into();
+        wallet_public_shares.unblind(recovered_blinder);
+        wallet_public_shares.blind(new_blinder);
+        wallet_public_shares.blinder = new_blinder - new_blinder_private_share;
+        witness.reblinded_wallet_public_shares = wallet_public_shares.into();
+        witness.reblinded_wallet_private_shares.blinder = new_blinder_private_share.into();
         statement.reblinded_private_share_commitment = compute_wallet_private_share_commitment(
-            witness.reblinded_wallet_private_shares.clone(),
+            witness.reblinded_wallet_private_shares.clone().into(),
         );
 
         assert_valid_reblinding(
-            witness.reblinded_wallet_private_shares.clone(),
-            witness.reblinded_wallet_public_shares.clone(),
+            witness.reblinded_wallet_private_shares.clone().into(),
+            witness.reblinded_wallet_public_shares.clone().into(),
             &wallet,
         );
 
@@ -738,9 +743,11 @@ mod test {
         let (mut witness, mut statement) = construct_witness_statement(&wallet);
 
         // Prover attempt to increase the balance of one of the wallet's mints
-        witness.reblinded_wallet_private_shares.balances[0].amount += Scalar::one();
+        witness.reblinded_wallet_private_shares.balances[0]
+            .amount
+            .val += Scalar::one();
         statement.reblinded_private_share_commitment = compute_wallet_private_share_commitment(
-            witness.reblinded_wallet_private_shares.clone(),
+            witness.reblinded_wallet_private_shares.clone().into(),
         );
 
         assert!(!constraints_satisfied(witness, statement));
@@ -755,9 +762,11 @@ mod test {
         let (mut witness, mut statement) = construct_witness_statement(&wallet);
 
         // Prover attempt to increase the balance of one of the wallet's mints
-        witness.reblinded_wallet_public_shares.balances[0].amount += Scalar::one();
+        witness.reblinded_wallet_public_shares.balances[0]
+            .amount
+            .val += Scalar::one();
         statement.reblinded_private_share_commitment = compute_wallet_private_share_commitment(
-            witness.reblinded_wallet_private_shares.clone(),
+            witness.reblinded_wallet_private_shares.clone().into(),
         );
 
         assert!(!constraints_satisfied(witness, statement));

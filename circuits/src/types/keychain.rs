@@ -575,23 +575,40 @@ impl CommitVerifier for PublicKeyChainSecretShareCommitment {
 
 /// A public key chain share that may be linked across proofs
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LinkablePublicKeyChainShareCommitment {
+pub struct LinkablePublicKeyChainShare {
     /// The public root key
     pub pk_root: LinkableNonNativeElementShare,
     /// The public match key
     pub pk_match: LinkableCommitment,
 }
 
-impl From<PublicKeyChainSecretShare> for LinkablePublicKeyChainShareCommitment {
+impl From<PublicKeyChainSecretShare> for LinkablePublicKeyChainShare {
     fn from(keychain: PublicKeyChainSecretShare) -> Self {
-        LinkablePublicKeyChainShareCommitment {
+        LinkablePublicKeyChainShare {
             pk_root: keychain.pk_root.into(),
             pk_match: keychain.pk_match.into(),
         }
     }
 }
 
-impl CommitWitness for LinkablePublicKeyChainShareCommitment {
+impl From<LinkablePublicKeyChainShare> for PublicKeyChainSecretShare {
+    fn from(keychain: LinkablePublicKeyChainShare) -> Self {
+        PublicKeyChainSecretShare {
+            pk_root: NonNativeElementSecretShare {
+                words: keychain
+                    .pk_root
+                    .words
+                    .into_iter()
+                    .map(|word| word.val)
+                    .collect_vec(),
+                field_mod: keychain.pk_root.field_mod,
+            },
+            pk_match: keychain.pk_match.val,
+        }
+    }
+}
+
+impl CommitWitness for LinkablePublicKeyChainShare {
     type VarType = PublicKeyChainSecretShareVar;
     type CommitType = PublicKeyChainSecretShareCommitment;
     type ErrorType = (); // Does not error

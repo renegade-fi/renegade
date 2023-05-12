@@ -22,10 +22,12 @@ use serde::{Deserialize, Serialize};
 use crate::{
     errors::{ProverError, VerifierError},
     types::{
-        balance::{Balance, BalanceVar, CommittedBalance, LinkableBalanceCommitment},
-        fee::{CommittedFee, Fee, FeeVar},
+        balance::{BalanceVar, CommittedBalance, LinkableBalanceCommitment},
+        fee::{CommittedFee, FeeVar, LinkableFeeCommitment},
         order::{CommittedOrder, LinkableOrderCommitment, OrderVar},
-        wallet::{WalletSecretShare, WalletSecretShareCommitment, WalletSecretShareVar, WalletVar},
+        wallet::{
+            LinkableWalletSecretShare, WalletSecretShareCommitment, WalletSecretShareVar, WalletVar,
+        },
     },
     zk_gadgets::{
         comparators::EqGadget,
@@ -295,22 +297,22 @@ pub struct ValidCommitmentsWitness<
     const MAX_FEES: usize,
 > {
     /// The private secret shares of the wallet that have been reblinded for match
-    pub private_secret_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub private_secret_shares: LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The public secret shares of the wallet that have been reblinded for match
-    pub public_secret_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub public_secret_shares: LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The modified public secret shares, possibly with a zero'd balance added for
     /// the mint that will be received by this party upon a successful match
-    pub augmented_public_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub augmented_public_shares: LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The order that the prover intends to match against with this proof
     pub order: LinkableOrderCommitment,
     /// The balance that the wallet will send when the order is matched
     pub balance_send: LinkableBalanceCommitment,
     /// The balance that the wallet will receive into when the order is matched
-    pub balance_receive: Balance,
+    pub balance_receive: LinkableBalanceCommitment,
     /// The balance that will cover the relayer's fee when matched
-    pub balance_fee: Balance,
+    pub balance_fee: LinkableBalanceCommitment,
     /// The fee that the relayer will take upon a successful match
-    pub fee: Fee,
+    pub fee: LinkableFeeCommitment,
 }
 
 /// The witness type for `VALID COMMITMENTS`, allocated in a constraint system
@@ -669,14 +671,14 @@ mod test {
             create_wallet_shares_from_private(&augmented_wallet, &private_shares, wallet.blinder);
 
         let witness = SizedWitness {
-            private_secret_shares: private_shares,
-            public_secret_shares: public_shares,
-            augmented_public_shares,
+            private_secret_shares: private_shares.into(),
+            public_secret_shares: public_shares.into(),
+            augmented_public_shares: augmented_public_shares.into(),
             order: order.into(),
             balance_send: balance_send.into(),
-            balance_receive,
-            balance_fee,
-            fee,
+            balance_receive: balance_receive.into(),
+            balance_fee: balance_fee.into(),
+            fee: fee.into(),
         };
 
         let statement = ValidCommitmentsStatement {
@@ -773,8 +775,10 @@ mod test {
 
         // Prover attempt to augment the wallet with a non-zero balance
         let augmented_balance_index = statement.balance_receive_index;
-        witness.augmented_public_shares.balances[augmented_balance_index].amount += Scalar::one();
-        witness.balance_receive.amount += 1u64;
+        witness.augmented_public_shares.balances[augmented_balance_index]
+            .amount
+            .val += Scalar::one();
+        witness.balance_receive.amount.val += Scalar::one();
 
         assert!(!constraints_satisfied(witness, statement));
     }
@@ -790,7 +794,8 @@ mod test {
         witness.public_secret_shares.balances[augmentation_index] = BalanceSecretShare {
             amount: Scalar::one(),
             mint: Scalar::one(),
-        };
+        }
+        .into();
 
         assert!(!constraints_satisfied(witness, statement))
     }
@@ -802,7 +807,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify an order in the augmented wallet
-        witness.augmented_public_shares.orders[1].amount += Scalar::one();
+        witness.augmented_public_shares.orders[1].amount.val += Scalar::one();
 
         assert!(!constraints_satisfied(witness, statement));
     }
@@ -814,7 +819,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify a fee in the wallet
-        witness.augmented_public_shares.fees[0].gas_token_amount += Scalar::one();
+        witness.augmented_public_shares.fees[0].gas_token_amount.val += Scalar::one();
         assert!(!constraints_satisfied(witness, statement));
     }
 
@@ -825,7 +830,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify a key in the wallet
-        witness.augmented_public_shares.keys.pk_match += Scalar::one();
+        witness.augmented_public_shares.keys.pk_match.val += Scalar::one();
         assert!(!constraints_satisfied(witness, statement));
     }
 
@@ -836,7 +841,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the wallet blinder
-        witness.augmented_public_shares.blinder += Scalar::one();
+        witness.augmented_public_shares.blinder.val += Scalar::one();
         assert!(!constraints_satisfied(witness, statement))
     }
 
@@ -887,7 +892,8 @@ mod test {
             BalanceSecretShare {
                 mint: Scalar::zero(),
                 amount: Scalar::zero(),
-            };
+            }
+            .into();
         assert!(!constraints_satisfied(witness, statement));
     }
 
@@ -902,7 +908,8 @@ mod test {
             BalanceSecretShare {
                 mint: Scalar::zero(),
                 amount: Scalar::zero(),
-            };
+            }
+            .into();
         assert!(!constraints_satisfied(witness, statement));
     }
 
@@ -923,6 +930,7 @@ mod test {
                     mint: Scalar::zero(),
                     amount: Scalar::zero(),
                 }
+                .into()
             });
 
         assert!(!constraints_satisfied(witness, statement));
@@ -942,7 +950,8 @@ mod test {
             price: Scalar::zero(),
             amount: Scalar::zero(),
             timestamp: Scalar::zero(),
-        };
+        }
+        .into();
         assert!(!constraints_satisfied(witness, statement));
     }
 
@@ -964,6 +973,7 @@ mod test {
                     gas_token_amount: Scalar::zero(),
                     percentage_fee: Scalar::zero(),
                 }
+                .into()
             });
         assert!(!constraints_satisfied(witness, statement));
     }

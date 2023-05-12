@@ -612,7 +612,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> SharePublic<N, S> for L
     ) -> Result<Self, Self::ErrorType> {
         let shared_values = fabric
             .borrow_fabric()
-            .batch_shared_plaintext_scalars(owning_party, &[self.val, self.randomness])
+            .batch_share_plaintext_scalars(owning_party, &[self.val, self.randomness])
             .map_err(|err| MpcError::SharingError(err.to_string()))?;
 
         Ok(Self {

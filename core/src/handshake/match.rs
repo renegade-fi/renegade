@@ -9,13 +9,13 @@ use circuits::{
     multiprover_prove,
     types::{
         balance::LinkableBalanceCommitment,
-        fee::Fee,
+        fee::LinkableFeeCommitment,
         order::{LinkableOrderCommitment, Order},
         r#match::{
             AuthenticatedLinkableMatchResultCommitment, AuthenticatedMatchResult,
             LinkableMatchResultCommitment,
         },
-        wallet::Nullifier,
+        wallet::{LinkableWalletSecretShare, Nullifier},
     },
     verify_collaborative_proof,
     zk_circuits::valid_match_mpc::{
@@ -37,10 +37,13 @@ use uuid::Uuid;
 
 use crate::{
     proof_generation::{jobs::ValidMatchMpcBundle, OrderValidityWitnessBundle},
-    SizedWalletShare,
+    MAX_BALANCES, MAX_FEES, MAX_ORDERS,
 };
 
 use super::{error::HandshakeManagerError, manager::HandshakeExecutor, state::HandshakeState};
+
+/// A type alias for a linkable wallet share with default sizing parameters
+pub type SizedLinkableWalletShare = LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 /// The type returned by the match process, including the result, the validity proof bundle,
 /// and all witness/statement variables that must be revealed to complete the match
@@ -53,15 +56,15 @@ pub struct HandshakeResult {
     /// The second party's public wallet share nullifier,
     pub party1_share_nullifier: Nullifier,
     /// The first party's public reblinded secret shares
-    pub party0_reblinded_shares: SizedWalletShare,
+    pub party0_reblinded_shares: SizedLinkableWalletShare,
     /// The second party's public reblinded secret shares
-    pub party1_reblinded_shares: SizedWalletShare,
+    pub party1_reblinded_shares: SizedLinkableWalletShare,
     /// The proof of `VALID MATCH MPC` along with associated commitments
     pub match_proof: ValidMatchMpcBundle,
     /// The first party's fee
-    pub party0_fee: Fee,
+    pub party0_fee: LinkableFeeCommitment,
     /// The second party's fee
-    pub party1_fee: Fee,
+    pub party1_fee: LinkableFeeCommitment,
 }
 
 impl HandshakeResult {

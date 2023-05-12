@@ -479,25 +479,38 @@ impl CommitVerifier for BalanceSecretShareCommitment {
     }
 }
 
+// -----------------------------------
+// | Commitment Linked Secret Shares |
+// -----------------------------------
+
 /// A balance secret share type that may be linked across multiple proofs
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LinkableBalanceShareCommitment {
+pub struct LinkableBalanceShare {
     /// The mint (ERC20 token addr) of the balance
     pub mint: LinkableCommitment,
     /// The amount of the balance held
     pub amount: LinkableCommitment,
 }
 
-impl From<BalanceSecretShare> for LinkableBalanceShareCommitment {
+impl From<BalanceSecretShare> for LinkableBalanceShare {
     fn from(balance: BalanceSecretShare) -> Self {
-        LinkableBalanceShareCommitment {
+        LinkableBalanceShare {
             mint: balance.mint.into(),
             amount: balance.amount.into(),
         }
     }
 }
 
-impl CommitWitness for LinkableBalanceShareCommitment {
+impl From<LinkableBalanceShare> for BalanceSecretShare {
+    fn from(balance: LinkableBalanceShare) -> Self {
+        BalanceSecretShare {
+            mint: balance.mint.val,
+            amount: balance.amount.val,
+        }
+    }
+}
+
+impl CommitWitness for LinkableBalanceShare {
     type VarType = BalanceSecretShareVar;
     type CommitType = BalanceSecretShareCommitment;
     type ErrorType = (); // Does not error

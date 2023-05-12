@@ -15,7 +15,10 @@ use crate::{
     errors::{ProverError, VerifierError},
     types::{
         r#match::{CommittedMatchResult, LinkableMatchResultCommitment, MatchResultVar},
-        wallet::{WalletSecretShare, WalletSecretShareCommitment, WalletSecretShareVar},
+        wallet::{
+            LinkableWalletSecretShare, WalletSecretShare, WalletSecretShareCommitment,
+            WalletSecretShareVar,
+        },
     },
     zk_gadgets::{
         comparators::{EqGadget, EqVecGadget},
@@ -246,9 +249,9 @@ pub struct ValidSettleWitness<
     /// The match result to be applied to the wallet shares
     pub match_res: LinkableMatchResultCommitment,
     /// The public secret shares of the first party before the match is applied
-    pub party0_public_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub party0_public_shares: LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The public secret shares of the second party before the match is applied
-    pub party1_public_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub party1_public_shares: LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
 }
 
 /// The witness type for `VALID SETTLE`, allocated in a constraint system
@@ -650,8 +653,8 @@ mod test {
 
         let witness = ValidSettleWitness {
             match_res: match_res.into(),
-            party0_public_shares,
-            party1_public_shares,
+            party0_public_shares: party0_public_shares.into(),
+            party1_public_shares: party1_public_shares.into(),
         };
         let statement = ValidSettleStatement {
             party0_modified_shares,

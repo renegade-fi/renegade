@@ -114,8 +114,8 @@ pub(super) fn construct_wallet_reblind_proof(
     let witness = ValidReblindWitness {
         original_wallet_private_shares: wallet.private_shares.clone(),
         original_wallet_public_shares: wallet.blinded_public_shares.clone(),
-        reblinded_wallet_private_shares: reblinded_private_shares,
-        reblinded_wallet_public_shares: reblinded_public_shares,
+        reblinded_wallet_private_shares: reblinded_private_shares.into(),
+        reblinded_wallet_public_shares: reblinded_public_shares.into(),
         original_share_opening: authentication_path.into(),
         sk_match: wallet.key_chain.secret_keys.sk_match,
     };
@@ -141,6 +141,7 @@ pub(super) fn construct_wallet_reblind_proof(
 pub(super) fn construct_wallet_commitment_proof(
     wallet: Wallet,
     order: Order,
+    valid_reblind_witness: &SizedValidReblindWitness,
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
 ) -> Result<(SizedValidCommitmentsWitness, TokioReceiver<ProofBundle>), String> {
     // Choose the first fee
@@ -192,14 +193,17 @@ pub(super) fn construct_wallet_commitment_proof(
         order_index,
     };
     let witness = ValidCommitmentsWitness {
-        private_secret_shares: wallet.private_shares,
-        public_secret_shares: wallet.blinded_public_shares,
-        augmented_public_shares,
+        // Use the linkable commitments from `VALID REBLIND` to link the two proofs together
+        private_secret_shares: valid_reblind_witness
+            .reblinded_wallet_private_shares
+            .clone(),
+        public_secret_shares: valid_reblind_witness.reblinded_wallet_public_shares.clone(),
+        augmented_public_shares: augmented_public_shares.into(),
         order: order.into(),
         balance_send: send_balance.into(),
-        balance_receive: receive_balance,
-        balance_fee: fee_balance,
-        fee,
+        balance_receive: receive_balance.into(),
+        balance_fee: fee_balance.into(),
+        fee: fee.into(),
     };
 
     // Dispatch a job to the proof manager to prove `VALID COMMITMENTS`
@@ -296,6 +300,7 @@ pub(super) async fn update_wallet_validity_proofs(
         let (commitments_witness, response_channel) = construct_wallet_commitment_proof(
             wallet.clone(),
             order.clone(),
+            &wallet_reblind_witness,
             proof_manager_work_queue.clone(),
         )?;
 
