@@ -19,13 +19,13 @@ const BYTES_PER_FELT: usize = 31;
 /// The number of field elements used to represent an external transfer struct
 const EXTERNAL_TRANSFER_N_FELTS: usize = 5;
 /// The index of the `party0_public_blinder_share` argument in `match` calldata
-const MATCH_PARTY0_PUBLIC_BLINDER_SHARE_IDX: usize = 4;
+const MATCH_PARTY0_PUBLIC_BLINDER_SHARE_IDX: usize = 2;
 /// The index of the `party0_public_share_len` argument in `match` calldata
-const MATCH_PARTY0_PUBLIC_SHARES_IDX: usize = 10;
+const MATCH_PARTY0_PUBLIC_SHARES_IDX: usize = 8;
 /// The index of the `public_wallet_share_len` argument in `new_wallet` calldata
 const NEW_WALLET_SHARE_LEN_IDX: usize = 3;
 /// The index of the `external_transfers_len` argument in `update_wallet` calldata
-const UPDATE_WALLET_EXTERNAL_TRANSFER_LEN: usize = 5;
+const UPDATE_WALLET_EXTERNAL_TRANSFER_LEN: usize = 4;
 
 /// Error message emitted when a public blinder share is not found in calldata
 const ERR_BLINDER_NOT_FOUND: &str = "public blinder share not found in calldata";

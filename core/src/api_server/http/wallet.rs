@@ -1,8 +1,11 @@
 //! Groups wallet API handlers and definitions
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use async_trait::async_trait;
 use circuits::types::{
     balance::Balance as StateBalance,
+    order::Order,
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
 use crossbeam::channel::Sender as CrossbeamSender;
@@ -42,6 +45,16 @@ use crate::{
 };
 
 use super::{parse_mint_from_params, parse_order_id_from_params, parse_wallet_id_from_params};
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Get the current timestamp in milliseconds since the epoch
+pub(super) fn get_current_timestamp() -> u64 {
+    let now = SystemTime::now();
+    now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
+}
 
 // ---------------
 // | HTTP Routes |
@@ -468,13 +481,18 @@ impl TypedHandler for CreateOrderHandler {
         }
 
         // Add the order to the new wallet
+        let timestamp = get_current_timestamp();
         let mut new_wallet = old_wallet.clone();
-        new_wallet.orders.insert(id, req.order.into());
+        let mut new_order: Order = req.order.into();
+        new_order.timestamp = timestamp;
+
+        new_wallet.orders.insert(id, new_order);
         new_wallet.orders.retain(|_id, order| !order.is_default());
         new_wallet.reblind_wallet();
 
         // Spawn a task to handle the order creation flow
         let task = UpdateWalletTask::new(
+            timestamp,
             None, /* external_transfer */
             old_wallet,
             new_wallet,
@@ -561,6 +579,7 @@ impl TypedHandler for CancelOrderHandler {
 
         // Spawn a task to handle the order creation flow
         let task = UpdateWalletTask::new(
+            get_current_timestamp(),
             None, /* external_transfer */
             old_wallet,
             new_wallet,
@@ -767,6 +786,7 @@ impl TypedHandler for DepositBalanceHandler {
 
         // Begin an update-wallet task
         let task = UpdateWalletTask::new(
+            get_current_timestamp(),
             Some(ExternalTransfer {
                 account_addr: req.from_addr,
                 mint: req.mint,
@@ -866,6 +886,7 @@ impl TypedHandler for WithdrawBalanceHandler {
 
         // Begin a task
         let task = UpdateWalletTask::new(
+            get_current_timestamp(),
             Some(ExternalTransfer {
                 account_addr: req.destination_addr,
                 mint,
@@ -1026,6 +1047,7 @@ impl TypedHandler for AddFeeHandler {
 
         // Create a task to submit this update to the contract
         let task = UpdateWalletTask::new(
+            get_current_timestamp(),
             None, /* external_transfer */
             old_wallet,
             new_wallet,
@@ -1118,6 +1140,7 @@ impl TypedHandler for RemoveFeeHandler {
 
         // Start a task to submit this update to the contract
         let task = UpdateWalletTask::new(
+            get_current_timestamp(),
             None, /* external_transfer */
             old_wallet,
             new_wallet,

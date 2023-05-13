@@ -146,7 +146,7 @@ impl From<SecretIdentificationKey> for Scalar {
 /// The type is committed to as a NonNativeVar to support keys larger than the
 /// proof system's field size
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PublicSigningKey(pub(crate) BigUint);
+pub struct PublicSigningKey(pub BigUint);
 impl Serialize for PublicSigningKey {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
