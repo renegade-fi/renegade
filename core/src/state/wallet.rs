@@ -2,6 +2,8 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    convert::TryInto,
+    iter,
     sync::atomic::{AtomicU32, Ordering},
 };
 
@@ -9,7 +11,7 @@ use circuits::{
     native_helpers::{
         compute_poseidon_hash, compute_wallet_private_share_commitment,
         compute_wallet_share_commitment, compute_wallet_share_nullifier,
-        create_wallet_shares_from_private, wallet_from_blinded_shares,
+        create_wallet_shares_from_private,
     },
     types::{
         balance::Balance,
@@ -189,7 +191,7 @@ impl From<MerkleAuthenticationPath> for MerkleOpening {
     }
 }
 
-/// The Merkle opening from the wallet shares' commitment to the gloal root
+/// The Merkle opening from the wallet shares' commitment to the global root
 pub type WalletAuthenticationPath = MerkleAuthenticationPath;
 
 /// Represents a wallet managed by the local relayer
@@ -282,8 +284,34 @@ where
 
 impl From<Wallet> for SizedCircuitWallet {
     fn from(wallet: Wallet) -> Self {
-        // Recover the wallet from its secret shares to maintain ordering for witnesses
-        wallet_from_blinded_shares(wallet.private_shares, wallet.blinded_public_shares)
+        SizedCircuitWallet {
+            balances: wallet
+                .balances
+                .into_values()
+                .chain(iter::repeat(Balance::default()))
+                .take(MAX_BALANCES)
+                .collect_vec()
+                .try_into()
+                .unwrap(),
+            orders: wallet
+                .orders
+                .into_values()
+                .chain(iter::repeat(Order::default()))
+                .take(MAX_ORDERS)
+                .collect_vec()
+                .try_into()
+                .unwrap(),
+            fees: wallet
+                .fees
+                .into_iter()
+                .chain(iter::repeat(Fee::default()))
+                .take(MAX_FEES)
+                .collect_vec()
+                .try_into()
+                .unwrap(),
+            keys: wallet.key_chain.public_keys,
+            blinder: wallet.blinder,
+        }
     }
 }
 

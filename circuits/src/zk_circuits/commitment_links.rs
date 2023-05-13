@@ -88,7 +88,7 @@ where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
     // Create a dummy prover for simplicity
-    // We can work around this an implement a more direct commitment if this
+    // We can work around this and implement a more direct commitment if this
     // path becomes a bottleneck
     let pc_gens = PedersenGens::default();
     let mut transcript = Transcript::new(b"");

@@ -1,13 +1,11 @@
 //! Helpers for common functionality across tasks
 
-use std::{
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::sync::Arc;
 
 use circuits::{
     native_helpers::{
         compute_wallet_private_share_commitment, create_wallet_shares_from_private, reblind_wallet,
+        wallet_from_blinded_shares,
     },
     types::{
         balance::Balance,
@@ -68,12 +66,6 @@ const ERR_PROVE_REBLIND_FAILED: &str = "failed to prove valid reblind";
 // | Helpers |
 // -----------
 
-/// Get the current timestamp in milliseconds since the epoch
-pub(super) fn get_current_timestamp() -> u64 {
-    let now = SystemTime::now();
-    now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
-}
-
 /// Find the merkle authentication path of a wallet
 pub(super) async fn find_merkle_path(
     wallet: &Wallet,
@@ -97,7 +89,10 @@ pub(super) fn construct_wallet_reblind_proof(
         .ok_or_else(|| ERR_MISSING_AUTHENTICATION_PATH.to_string())?;
 
     // Reblind the wallet
-    let circuit_wallet: SizedWallet = wallet.clone().into();
+    let circuit_wallet: SizedWallet = wallet_from_blinded_shares(
+        wallet.private_shares.clone(),
+        wallet.blinded_public_shares.clone(),
+    );
     let (reblinded_private_shares, reblinded_public_shares) =
         reblind_wallet(wallet.private_shares.clone(), &circuit_wallet);
 
@@ -153,7 +148,16 @@ pub(super) fn construct_wallet_commitment_proof(
         .ok_or_else(|| ERR_FEE_NOT_FOUND.to_string())?;
 
     // Build an augmented wallet and find balances to update
-    let mut augmented_wallet: SizedWallet = wallet.clone().into();
+    let mut augmented_wallet: SizedWallet = wallet_from_blinded_shares(
+        valid_reblind_witness
+            .reblinded_wallet_private_shares
+            .clone()
+            .into(),
+        valid_reblind_witness
+            .reblinded_wallet_public_shares
+            .clone()
+            .into(),
+    );
 
     let (send_mint, receive_mint) = match order.side {
         OrderSide::Buy => (order.quote_mint.clone(), order.base_mint.clone()),
@@ -180,10 +184,22 @@ pub(super) fn construct_wallet_commitment_proof(
         .ok_or_else(|| ERR_ORDER_NOT_FOUND.to_string())?;
 
     // Create new augmented public secret shares
+    let reblinded_private_blinder = valid_reblind_witness
+        .reblinded_wallet_private_shares
+        .blinder
+        .val;
+    let reblinded_public_blinder = valid_reblind_witness
+        .reblinded_wallet_public_shares
+        .blinder
+        .val;
+    let augmented_blinder = reblinded_private_blinder + reblinded_public_blinder;
     let (_, augmented_public_shares) = create_wallet_shares_from_private(
         &augmented_wallet,
-        &wallet.private_shares,
-        wallet.blinder,
+        &valid_reblind_witness
+            .reblinded_wallet_private_shares
+            .clone()
+            .into(),
+        augmented_blinder,
     );
 
     // Build the witness and statement

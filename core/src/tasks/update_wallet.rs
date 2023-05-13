@@ -22,7 +22,6 @@ use crate::{
     },
     starknet_client::client::StarknetClient,
     state::{wallet::Wallet, NetworkOrder, RelayerState},
-    tasks::helpers::get_current_timestamp,
     SizedWallet,
 };
 
@@ -46,6 +45,8 @@ const ERR_TRANSACTION_FAILED: &str = "transaction failed";
 
 /// Defines the long running flow for adding a balance to a wallet
 pub struct UpdateWalletTask {
+    /// The timestamp at which the task was initiated, used to timestamp orders
+    pub timestamp_received: u64,
     /// The external transfer, if one exists
     pub external_transfer: Option<ExternalTransfer>,
     /// The old wallet before update
@@ -190,6 +191,7 @@ impl UpdateWalletTask {
     /// the caller
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        timestamp_received: u64,
         external_transfer: Option<ExternalTransfer>,
         old_wallet: Wallet,
         new_wallet: Wallet,
@@ -212,6 +214,7 @@ impl UpdateWalletTask {
         }
 
         Ok(Self {
+            timestamp_received,
             external_transfer,
             old_wallet,
             new_wallet,
@@ -225,7 +228,6 @@ impl UpdateWalletTask {
 
     /// Generate a proof of `VALID WALLET UPDATE` for the wallet with added balance
     async fn generate_proof(&self) -> Result<ValidWalletUpdateBundle, UpdateWalletTaskError> {
-        let timestamp = get_current_timestamp();
         let merkle_opening =
             self.old_wallet.merkle_proof.clone().ok_or_else(|| {
                 UpdateWalletTaskError::StateMissing(ERR_NO_MERKLE_PROOF.to_string())
@@ -242,7 +244,7 @@ impl UpdateWalletTask {
             merkle_root,
             external_transfer: self.external_transfer.clone().unwrap_or_default(),
             old_pk_root: self.old_wallet.key_chain.public_keys.pk_root.clone(),
-            timestamp,
+            timestamp: self.timestamp_received,
         };
 
         let witness = SizedValidWalletUpdateWitness {
