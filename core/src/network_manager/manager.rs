@@ -14,10 +14,11 @@ use libp2p::{
 };
 use libp2p_core::Endpoint;
 use libp2p_swarm::{ConnectionId, NetworkBehaviour};
-use mpc_ristretto::network::QuicTwoPartyNet;
+use mpc_ristretto::network::{MpcNetwork, QuicTwoPartyNet};
 use portpicker::Port;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
+use uuid::Uuid;
 
 use std::{net::SocketAddr, thread::JoinHandle};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -48,13 +49,13 @@ use super::{
     worker::NetworkManagerConfig,
 };
 
-/// Error converting between multiaddr and socketaddr
-const ERR_ADDR_CONVERSION: &str = "error parsing socketaddr from multiaddr";
 /// Occurs when a peer cannot be dialed because their address is not indexed in
 /// the network behavior
 const ERR_NO_KNOWN_ADDR: &str = "no known address for peer";
 /// Emitted when signature verification for an authenticated request fails
 const ERR_SIG_VERIFY: &str = "signature verification failed";
+/// Error emitted when brokering an MPC network with a peer fails
+const ERR_BROKER_MPC_NET: &str = "failed to broker MPC network";
 
 /// The TCP protocol name in libp2p
 const TCP_PROTOCOL_NAME: &str = "tcp";
@@ -97,13 +98,29 @@ pub fn replace_port(multiaddr: &mut Multiaddr, port: u16) {
     }
 }
 
-/// Returns true if the given address refers to a local address
-pub fn is_local_addr(addr: &Multiaddr) -> bool {
-    if let Some(addr) = multiaddr_to_socketaddr(addr, 0 /* port */) {
-        return !addr.ip().is_global();
+/// A wrapper around `is_dialable_addr` that first converts a `Multiaddr` into
+/// a `SocketAddr`
+pub fn is_dialable_multiaddr(addr: &Multiaddr, allow_local: bool) -> bool {
+    match multiaddr_to_socketaddr(addr, 0 /* port */) {
+        None => false,
+        Some(socketaddr) => is_dialable_addr(&socketaddr, allow_local),
     }
+}
 
-    false
+/// Returns true if the given address is a dialable remote address
+///
+/// The `allow_local` flag allows the local node to dial peers on a local network
+/// interface. This should be set to true if it is expected that more than one node
+/// is running on a given interface.
+pub fn is_dialable_addr(addr: &SocketAddr, allow_local: bool) -> bool {
+    !addr.ip().is_unspecified() && // 0.0.0.0
+    !addr.ip().is_benchmarking() &&
+    (allow_local || !is_local_addr(addr)) // only allow local if configured
+}
+
+/// Returns true if the given address refers to a local address
+pub fn is_local_addr(addr: &SocketAddr) -> bool {
+    !addr.ip().is_global()
 }
 
 // -----------
@@ -406,7 +423,8 @@ impl NetworkManagerExecutor {
         match command {
             // Register a new peer in the distributed routing tables
             ManagerControlDirective::NewAddr { peer_id, address } => {
-                if !self.allow_local && is_local_addr(&address) {
+                // If we cannot parse the address or it is not dialable, skip indexing
+                if !is_dialable_multiaddr(&address, self.allow_local) {
                     log::info!("skipping local addr {:?}", address);
                     return Ok(());
                 }
@@ -427,61 +445,38 @@ impl NetworkManagerExecutor {
                 local_port,
                 local_role,
             } => {
-                let party_id = local_role.get_party_id();
-                let local_addr: SocketAddr = format!("127.0.0.1:{:?}", local_port).parse().unwrap();
+                // Lookup known remote addresses for the peer
+                let known_peer_addrs = self
+                    .swarm
+                    .behaviour_mut()
+                    .handle_pending_outbound_connection(
+                        ConnectionId::new_unchecked(0),
+                        Some(peer_id.0),
+                        &[],
+                        Endpoint::Dialer,
+                    )
+                    .map_err(|_| NetworkManagerError::Network(ERR_NO_KNOWN_ADDR.to_string()))?;
 
-                // Connect on a side-channel to the peer
-                let mpc_net = match local_role {
-                    ConnectionRole::Dialer => {
-                        // Retrieve known dialable addresses for the peer from the network behavior
-                        let all_peer_addrs = self
-                            .swarm
-                            .behaviour_mut()
-                            .handle_pending_outbound_connection(
-                                ConnectionId::new_unchecked(0),
-                                Some(peer_id.0),
-                                &[],
-                                Endpoint::Dialer,
-                            )
-                            .map_err(|_| {
-                                NetworkManagerError::Network(ERR_NO_KNOWN_ADDR.to_string())
-                            })?;
-
-                        // Map each resolved address into a SocketAddr and remove local addresses
-                        let peer_addr = all_peer_addrs
-                            .into_iter()
-                            .find(|addr| self.allow_local || !is_local_addr(addr))
-                            .map(|addr| multiaddr_to_socketaddr(&addr, peer_port))
-                            .ok_or_else(|| {
-                                // Outer option from `find`
-                                NetworkManagerError::Network(ERR_NO_KNOWN_ADDR.to_string())
-                            })?
-                            .ok_or_else(|| {
-                                // Inner option from `multiaddr_to_socketaddr`
-                                NetworkManagerError::AddressConversion(
-                                    ERR_ADDR_CONVERSION.to_string(),
-                                )
-                            })?;
-
-                        // Build an MPC net and dial the connection as the king party
-                        QuicTwoPartyNet::new(party_id, local_addr, peer_addr)
-                    }
-                    ConnectionRole::Listener => {
-                        // As the listener, the peer address is inconsequential, and can be a dummy value
-                        let peer_addr: SocketAddr = "0.0.0.0:0".parse().unwrap();
-                        QuicTwoPartyNet::new(party_id, local_addr, peer_addr)
-                    }
-                };
-
-                // After the dependencies are injected into the network; forward it to the handshake manager to
-                // dial the peer and begin the MPC
-                self.handshake_work_queue
-                    .send(HandshakeExecutionJob::MpcNetSetup {
+                // Spawn a separate task to asynchronously dial the peer and respond to
+                // the handshake manager's brokerage request
+                let allow_local = self.allow_local;
+                let handshake_queue_clone = self.handshake_work_queue.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = Self::broker_mpc_net(
+                        allow_local,
                         request_id,
-                        party_id,
-                        net: mpc_net,
-                    })
-                    .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
+                        peer_port,
+                        local_port,
+                        local_role,
+                        known_peer_addrs,
+                        handshake_queue_clone,
+                    )
+                    .await
+                    {
+                        log::error!("error brokering MPC network: {e}");
+                    }
+                });
+
                 Ok(())
             }
 
@@ -501,6 +496,86 @@ impl NetworkManagerExecutor {
                 Ok(())
             }
         }
+    }
+
+    /// Broker an MPC net between the local and remote peer using the given known addresses
+    async fn broker_mpc_net(
+        allow_local: bool,
+        request_id: Uuid,
+        peer_port: u16,
+        mut local_port: u16,
+        local_role: ConnectionRole,
+        known_peer_addrs: Vec<Multiaddr>,
+        handshake_work_queue: TokioSender<HandshakeExecutionJob>,
+    ) -> Result<(), NetworkManagerError> {
+        // Connect on a side-channel to the peer
+        let party_id = local_role.get_party_id();
+
+        let mpc_net = match local_role {
+            ConnectionRole::Dialer => {
+                // Attempt to dial the peer on all known addresses
+                let mut brokered_net = None;
+                for peer_addr in known_peer_addrs
+                    .into_iter()
+                    .filter_map(|addr| multiaddr_to_socketaddr(&addr, peer_port))
+                    .filter(|addr| is_dialable_addr(addr, allow_local))
+                {
+                    let local_addr: SocketAddr =
+                        format!("127.0.0.1:{:?}", local_port).parse().unwrap();
+                    let mut net = QuicTwoPartyNet::new(party_id, local_addr, peer_addr);
+
+                    if let Err(e) = net.connect().await {
+                        log::warn!(
+                            "failed to broker MPC network on address {peer_addr:?}, error: {e}"
+                        )
+                    } else {
+                        log::info!("successfully connected to peer at addr: {peer_addr:?}");
+                        // Send a wakeup over the brokered bi-stream, this is not automatically done
+                        net.send_bytes(&[0u8])
+                            .await
+                            .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
+
+                        // Forward the net to the handshake manager
+                        brokered_net = Some(net);
+                        break;
+                    }
+
+                    // During the connection attempt, the selected port was bound to, and dropping the `net`
+                    // may not immediately free up the port; so we increment the outbound port and continue
+                    local_port += 1;
+                }
+
+                brokered_net
+                    .ok_or_else(|| NetworkManagerError::Network(ERR_BROKER_MPC_NET.to_string()))?
+            }
+
+            ConnectionRole::Listener => {
+                // As the listener, the peer address is inconsequential, and can be a dummy value
+                let local_addr: SocketAddr = format!("0.0.0.0:{local_port}").parse().unwrap();
+                let peer_addr: SocketAddr = "0.0.0.0:0".parse().unwrap();
+                let mut net = QuicTwoPartyNet::new(party_id, local_addr, peer_addr);
+                net.connect()
+                    .await
+                    .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
+
+                // Clear the wakeup buffer
+                net.receive_bytes()
+                    .await
+                    .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
+                net
+            }
+        };
+
+        // After the dependencies are injected into the network; forward it to the handshake manager to
+        // dial the peer and begin the MPC
+        handshake_work_queue
+            .send(HandshakeExecutionJob::MpcNetSetup {
+                request_id,
+                party_id,
+                net: mpc_net,
+            })
+            .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
+        Ok(())
     }
 
     // ------------------------------
@@ -526,6 +601,17 @@ impl NetworkManagerExecutor {
                 log::info!("discovered local peer's public IP: {:?}", local_addr);
                 self.global_state.update_local_peer_addr(local_addr).await;
                 self.discovered_identity = true;
+
+                // Optimistically broadcast the discovered identity to the network via
+                // the heartbeat sub-protocol
+                for peer in self.global_state.read_peer_index().await.get_all_peer_ids() {
+                    if let Err(e) = self
+                        .gossip_work_queue
+                        .send(GossipServerJob::ExecuteHeartbeat(peer))
+                    {
+                        log::error!("error forwarding heartbeat to gossip server: {e}")
+                    }
+                }
             }
         }
 
@@ -818,7 +904,7 @@ impl NetworkManagerExecutor {
 mod test {
     use libp2p::Multiaddr;
 
-    use crate::network_manager::manager::is_local_addr;
+    use crate::network_manager::manager::{is_local_addr, multiaddr_to_socketaddr};
 
     /// Tests the helper that determines whether a multiaddr is a local addr
     #[test]
@@ -827,6 +913,8 @@ mod test {
             "/ip4/35.183.229.42/tcp/8000/p2p/12D3KooWS9m8drb9NFtZB6t3S8hnUeikyG96DupQ6EvMJ6c1ARWn";
         let addr_parsed: Multiaddr = addr_str.parse().unwrap();
 
-        assert!(!is_local_addr(&addr_parsed))
+        assert!(!is_local_addr(
+            &multiaddr_to_socketaddr(&addr_parsed, 0 /* port */).unwrap()
+        ))
     }
 }

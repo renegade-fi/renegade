@@ -13,7 +13,7 @@ use tracing::log;
 
 use crate::{
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
-    network_manager::manager::is_local_addr,
+    network_manager::manager::is_dialable_multiaddr,
 };
 
 use super::{new_async_shared, AsyncShared};
@@ -159,8 +159,11 @@ impl PeerIndex {
     /// Validates that the known address for the peer is dialable, i.e. not a local address
     pub async fn add_peer(&mut self, peer_info: PeerInfo) {
         // If the peer info specifies a local addr, skip adding the peer, it is not dialable
-        if !self.allow_local && is_local_addr(&peer_info.addr) {
-            log::info!("got peer info with un-dialable addr, skipping indexing");
+        if !is_dialable_multiaddr(&peer_info.addr, self.allow_local) {
+            log::info!(
+                "got peer info with un-dialable addr {:?}, skipping indexing",
+                peer_info.addr
+            );
             return;
         }
 
