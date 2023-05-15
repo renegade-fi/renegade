@@ -148,15 +148,10 @@ impl HandshakeExecutor {
         handshake_state: HandshakeState,
         party0_validity_proof: OrderValidityProofBundle,
         party1_validity_proof: OrderValidityProofBundle,
-        mut mpc_net: QuicTwoPartyNet,
+        mpc_net: QuicTwoPartyNet,
         cancel_channel: Receiver<()>,
     ) -> Result<Box<HandshakeResult>, HandshakeManagerError> {
         log::info!("Matching order...");
-        // Connect the network
-        mpc_net
-            .connect()
-            .await
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
         // Build a fabric
         // TODO: Replace the dummy beaver source

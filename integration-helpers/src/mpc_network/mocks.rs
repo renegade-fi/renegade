@@ -92,7 +92,7 @@ impl MpcNetwork for MockMpcNet {
         Ok(())
     }
 
-    async fn receive_bytes(&mut self, _num_expected: usize) -> Result<Vec<u8>, MpcNetworkError> {
+    async fn receive_bytes(&mut self) -> Result<Vec<u8>, MpcNetworkError> {
         Err(MpcNetworkError::RecvError)
     }
 

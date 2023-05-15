@@ -21,7 +21,6 @@ macro_rules! integration_test_main {
 
         use colored::Colorize;
         use dns_lookup::lookup_host;
-        use inventory::ctor;
         use std::io::{stdout, Write};
         use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 

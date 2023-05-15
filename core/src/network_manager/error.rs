@@ -5,8 +5,6 @@ use std::fmt::Display;
 /// The generic error type for the network manager
 #[derive(Clone, Debug)]
 pub enum NetworkManagerError {
-    /// Error translating address formats, e.g. between socketaddr and multiaddr
-    AddressConversion(String),
     /// Authentication error, e.g. failed signature verification
     Authentication(String),
     /// An error originating from a cancel signal
