@@ -38,7 +38,7 @@ pub(crate) fn scalar_from_bits_le<N: MpcNetwork + Send, S: SharedValueSource<Sca
     result
 }
 
-/// Returns a list of `Scalar`s representing the `m` least signficant bits of `a`
+/// Returns a list of `Scalar`s representing the `m` least significant bits of `a`
 pub(crate) fn scalar_to_bits_le(a: &Scalar) -> Vec<Scalar> {
     // The byte (8 bit) boundary we must iterate through to fetch `M` bits
     let bits = BitSlice::<_, Lsb0>::from_slice(a.as_bytes())
@@ -140,7 +140,7 @@ pub fn carry_out<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
 /// Decomposes the input into its `m` least significant bits
 ///
 /// Here, we use the pre-processing functionality to blind and open a value
-/// that can then be used to compute bitwise decompmositions of the input
+/// that can then be used to compute bitwise decompositions of the input
 pub fn to_bits_le<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     x: &AuthenticatedScalar<N, S>,
     fabric: SharedFabric<N, S>,
@@ -200,7 +200,7 @@ pub fn to_bits_le<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Sca
 
 /// Given two bitwise representations, computes whether the first is less than the second
 ///
-/// Intuitively, we consider that a and b are in two's comlement representation. We flip all
+/// Intuitively, we consider that a and b are in two's complement representation. We flip all
 /// the bits of `b`; which gives us a representation of -b - 1. In two's complement, the negation
 /// of a value represents the distance of that value to the group order. If b > a; the distance
 /// from b to the group order is smaller than that of a to the group order. Adding `b`'s "distance"

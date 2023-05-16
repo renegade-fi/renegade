@@ -31,7 +31,7 @@ use crate::{
     },
     zk_gadgets::{
         comparators::EqGadget,
-        gates::{AndGate, OrGate},
+        gates::{AndGate, ConstrainBinaryGadget, OrGate},
         nonnative::NonNativeElementVar,
         select::CondSelectVectorGadget,
         wallet_operations::{BalanceComparatorGadget, FeeComparatorGadget, OrderComparatorGadget},
@@ -118,10 +118,20 @@ where
         cs.constrain(witness.balance_fee.mint - witness.fee.gas_addr);
 
         // Verify that the order is at the correct index
+        Self::constrain_valid_order(&witness.order, cs);
         Self::contains_order_at_index(statement.order_index, witness.order, &augmented_wallet, cs);
 
         // Verify that the fee is contained in the wallet
         Self::contains_fee(witness.fee, &augmented_wallet, cs);
+    }
+
+    /// Constrains the order input to the matching engine is valid
+    fn constrain_valid_order<CS: RandomizableConstraintSystem>(
+        order: &OrderVar<Variable>,
+        cs: &mut CS,
+    ) {
+        // The order side should be binary
+        ConstrainBinaryGadget::constrain_binary(order.side, cs);
     }
 
     /// Verify that two wallets are equal except possibly with a balance augmentation
