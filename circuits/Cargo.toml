@@ -3,6 +3,9 @@ name = "circuits"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+bench = []
+
 [dependencies]
 ark-crypto-primitives = { version = "0.4", features = ["crh", "merkle_tree", "sponge"] }
 ark-ff = "0.4"
@@ -47,3 +50,4 @@ tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
 name = "integration"
 path = "integration/main.rs"
 harness = false
+features = ["bench"]
