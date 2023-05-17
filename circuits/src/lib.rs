@@ -24,9 +24,11 @@ use serde::{Deserialize, Serialize};
 use rand_core::{CryptoRng, OsRng, RngCore};
 
 pub mod errors;
+mod macro_tests;
 pub mod mpc;
 pub mod mpc_circuits;
 pub mod mpc_gadgets;
+mod tracing;
 pub mod types;
 pub mod zk_circuits;
 pub mod zk_gadgets;
@@ -278,9 +280,83 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
     }
 }
 
-// ----------
-// | Traits |
-// ----------
+// --------------
+// | Traits 2.0 |
+// --------------
+
+/// Implementing types are base (application level) types that define serialization to/from `Scalars`
+///
+/// Commitment, variable, MPC, etc types are implemented automatically from serialization and deserialization
+pub trait BaseType: Clone {
+    /// Convert the base type to its serialized scalar representation in the circuit
+    fn to_scalars(self) -> Vec<Scalar>;
+    /// Convert from a serialized scalar representation to the base type
+    fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self;
+}
+
+/// The base type that may be allocated in a single-prover circuit
+pub trait CircuitBaseType: BaseType {
+    /// The variable type for this base type
+    type VarType: CircuitVarType;
+    /// The commitment type for this base type
+    type CommitmentType: CircuitCommitmentType;
+}
+
+/// Implementing types are variable types that may appear in constraints in
+/// a constraint system
+pub trait CircuitVarType {
+    /// Convert from an iterable of variables representing the serialized type
+    fn from_vars<I: Iterator<Item = Variable>>(i: &mut I) -> Self;
+}
+
+/// Implementing types are commitments to base types that have an analogous variable
+/// type allocated with them
+pub trait CircuitCommitmentType: Clone {
+    /// The variable type that this type is a commitment to
+    type VarType: CircuitVarType;
+    /// Convert from an iterable of compressed ristretto points, each representing
+    /// a commitment to an underlying variable
+    fn from_commitments<I: Iterator<Item = CompressedRistretto>>(i: &mut I) -> Self;
+    /// Convert to a vector of compressed ristretto points
+    fn to_commitments(self) -> Vec<CompressedRistretto>;
+}
+
+impl BaseType for Scalar {
+    fn to_scalars(self) -> Vec<Scalar> {
+        vec![self]
+    }
+
+    fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
+        i.next().unwrap()
+    }
+}
+
+impl CircuitBaseType for Scalar {
+    type VarType = Variable;
+    type CommitmentType = CompressedRistretto;
+}
+
+impl CircuitVarType for Variable {
+    fn from_vars<I: Iterator<Item = Variable>>(i: &mut I) -> Self {
+        i.next().unwrap()
+    }
+}
+
+impl CircuitCommitmentType for CompressedRistretto {
+    type VarType = Variable;
+
+    fn from_commitments<I: Iterator<Item = CompressedRistretto>>(i: &mut I) -> Self {
+        i.next().unwrap()
+    }
+
+    fn to_commitments(self) -> Vec<CompressedRistretto> {
+        vec![self]
+    }
+}
+
+// --------------
+// | Traits 1.0 |
+// --------------
 
 /// Defines functionality to allocate a witness value within a single-prover constraint system
 pub trait CommitWitness {
@@ -303,6 +379,29 @@ pub trait CommitWitness {
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType>;
 }
 
+impl<T: CircuitBaseType> CommitWitness for T {
+    type VarType = <Self as CircuitBaseType>::VarType;
+    type CommitType = <Self as CircuitBaseType>::CommitmentType;
+    type ErrorType = (); // Single prover does not error
+
+    fn commit_witness<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let scalars: Vec<Scalar> = self.clone().to_scalars();
+        let (comms, vars): (Vec<CompressedRistretto>, Vec<Variable>) = scalars
+            .into_iter()
+            .map(|s| prover.commit(s, Scalar::random(rng)))
+            .unzip();
+
+        Ok((
+            Self::VarType::from_vars(&mut vars.into_iter()),
+            Self::CommitType::from_commitments(&mut comms.into_iter()),
+        ))
+    }
+}
+
 /// Defines functionality to allocate a public variable within a single-prover constraint system
 pub trait CommitPublic {
     /// The type that results from committing to the base type
@@ -317,6 +416,24 @@ pub trait CommitPublic {
     ) -> Result<Self::VarType, Self::ErrorType>;
 }
 
+impl<T: CircuitBaseType> CommitPublic for T {
+    type VarType = <Self as CircuitBaseType>::VarType;
+    type ErrorType = (); // Does not error in single-prover context
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        let self_scalars = self.clone().to_scalars();
+        let vars = self_scalars
+            .into_iter()
+            .map(|s| cs.commit_public(s))
+            .collect_vec();
+
+        Ok(Self::VarType::from_vars(&mut vars.into_iter()))
+    }
+}
+
 /// Defines functionality to commit to a value in a verifier's constraint system
 pub trait CommitVerifier {
     /// The type that results from committing to the implementation types
@@ -326,6 +443,18 @@ pub trait CommitVerifier {
 
     /// Commit to a hidden value in the Verifier
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType>;
+}
+
+impl<T: CircuitCommitmentType> CommitVerifier for T {
+    type VarType = T::VarType;
+    type ErrorType = (); // Does not error
+
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
+        let comms = self.clone().to_commitments();
+        let vars = comms.into_iter().map(|c| verifier.commit(c)).collect_vec();
+
+        Ok(Self::VarType::from_vars(&mut vars.into_iter()))
+    }
 }
 
 /// Defines functionality to allocate a value within an MPC network
@@ -551,33 +680,6 @@ pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueS
 // | Default Trait Impls |
 // -----------------------
 
-impl CommitWitness for Scalar {
-    type VarType = Variable;
-    type CommitType = CompressedRistretto;
-    type ErrorType = (); // Does not error
-
-    fn commit_witness<R: RngCore + CryptoRng>(
-        &self,
-        rng: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (comm, var) = prover.commit(*self, Scalar::random(rng));
-        Ok((var, comm))
-    }
-}
-
-impl CommitPublic for Scalar {
-    type VarType = Variable;
-    type ErrorType = (); // Does not error
-
-    fn commit_public<CS: RandomizableConstraintSystem>(
-        &self,
-        cs: &mut CS,
-    ) -> Result<Self::VarType, Self::ErrorType> {
-        Ok(cs.commit_public(*self))
-    }
-}
-
 impl CommitWitness for LinkableCommitment {
     type VarType = Variable;
     type CommitType = CompressedRistretto;
@@ -590,15 +692,6 @@ impl CommitWitness for LinkableCommitment {
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
         let (comm, var) = prover.commit(self.val, self.randomness);
         Ok((var, comm))
-    }
-}
-
-impl CommitVerifier for CompressedRistretto {
-    type VarType = Variable;
-    type ErrorType = (); // Does not error
-
-    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        Ok(verifier.commit(*self))
     }
 }
 

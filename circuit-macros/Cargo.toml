@@ -11,9 +11,12 @@ bench = []
 
 [dependencies]
 mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
+
 proc-macro2 = "1.0.50"
 quote = "1.0.23"
 syn = { version = "1.0", features = ["full"] }
+
+itertools = "0.10"
 
 [dev-dependencies]
 curve25519-dalek = "2"
