@@ -1,5 +1,6 @@
 //! Groups circuits for MPC and zero knowledge execution
 #![feature(generic_const_exprs)]
+#![feature(negative_impls)]
 #![allow(incomplete_features)]
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
@@ -26,12 +27,12 @@ use rand_core::{CryptoRng, OsRng, RngCore};
 pub mod errors;
 mod macro_tests;
 pub mod mpc;
-pub mod mpc_circuits;
-pub mod mpc_gadgets;
+// pub mod mpc_circuits;
+// pub mod mpc_gadgets;
 mod tracing;
-pub mod types;
-pub mod zk_circuits;
-pub mod zk_gadgets;
+// pub mod types;
+// pub mod zk_circuits;
+// pub mod zk_gadgets;
 
 /// The maximum number of balances allowed in a wallet
 pub const MAX_BALANCES: usize = 5;
@@ -280,9 +281,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
     }
 }
 
-// --------------
-// | Traits 2.0 |
-// --------------
+// ---------------
+// | Type Traits |
+// ---------------
 
 /// Implementing types are base (application level) types that define serialization to/from `Scalars`
 ///
@@ -321,6 +322,67 @@ pub trait CircuitCommitmentType: Clone {
     fn to_commitments(self) -> Vec<CompressedRistretto>;
 }
 
+/// A base type for allocating into an MPC network
+pub trait MpcBaseType<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>:
+    BaseType
+{
+    /// The type that results from allocating the base type into an MPC network
+    type AllocatedType: MpcType<N, S>;
+}
+
+/// An implementing type is the representation of a `BaseType` in an MPC circuit
+/// *outside* of a multiprover constraint system
+pub trait MpcType<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>:
+    Clone
+{
+    /// The native type when the value is opened out of a circuit
+    type NativeType: BaseType;
+    /// Convert from an iterable of authenticated scalars: scalars that have been
+    /// allocated in an MPC fabric
+    fn from_authenticated_scalars<I: Iterator<Item = AuthenticatedScalar<N, S>>>(i: &mut I)
+        -> Self;
+    /// Convert to a vector of authenticated scalars
+    fn to_authenticated_scalars(self) -> Vec<AuthenticatedScalar<N, S>>;
+}
+
+/// A base type for allocating within a multiprover constraint system
+pub trait MultiproverCircuitBaseType<
+    N: MpcNetwork + Send + Clone,
+    S: SharedValueSource<Scalar> + Clone,
+>: BaseType
+{
+    /// The multiprover constraint system variable type that results when committing
+    /// to the base type in a multiprover constraint system
+    type MultiproverVarType;
+    /// The shared commitment type that results when committing to the base type in a multiprover
+    /// constraint system
+    type MultiproverCommType;
+}
+
+/// A multiprover circuit variable type
+pub trait MultiproverCircuitVariableType<
+    N: MpcNetwork + Send + Clone,
+    S: SharedValueSource<Scalar> + Clone,
+>
+{
+    /// The base type that generates this variable type when allocated in a multiprover constraint system
+    type BaseType: MultiproverCircuitBaseType<N, S>;
+}
+
+/// A multiprover circuit commitment type
+pub trait MultiproverCircuitCommitmentType<
+    N: MpcNetwork + Send + Clone,
+    S: SharedValueSource<Scalar> + Clone,
+>
+{
+    /// The multi-prover variable type that this type is a commitment to
+    type VariableType: MultiproverCircuitVariableType<N, S>;
+}
+
+// -----------------------------
+// | Type Traits Default Impls |
+// -----------------------------
+
 impl BaseType for Scalar {
     fn to_scalars(self) -> Vec<Scalar> {
         vec![self]
@@ -354,9 +416,31 @@ impl CircuitCommitmentType for CompressedRistretto {
     }
 }
 
-// --------------
-// | Traits 1.0 |
-// --------------
+impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone> MpcBaseType<N, S>
+    for Scalar
+{
+    type AllocatedType = AuthenticatedScalar<N, S>;
+}
+
+impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone> MpcType<N, S>
+    for AuthenticatedScalar<N, S>
+{
+    type NativeType = Scalar;
+
+    fn from_authenticated_scalars<I: Iterator<Item = AuthenticatedScalar<N, S>>>(
+        i: &mut I,
+    ) -> Self {
+        i.next().unwrap()
+    }
+
+    fn to_authenticated_scalars(self) -> Vec<AuthenticatedScalar<N, S>> {
+        vec![self]
+    }
+}
+
+// ------------------
+// | Circuit Traits |
+// ------------------
 
 /// Defines functionality to allocate a witness value within a single-prover constraint system
 pub trait CommitWitness {
@@ -379,29 +463,6 @@ pub trait CommitWitness {
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType>;
 }
 
-impl<T: CircuitBaseType> CommitWitness for T {
-    type VarType = <Self as CircuitBaseType>::VarType;
-    type CommitType = <Self as CircuitBaseType>::CommitmentType;
-    type ErrorType = (); // Single prover does not error
-
-    fn commit_witness<R: RngCore + CryptoRng>(
-        &self,
-        rng: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let scalars: Vec<Scalar> = self.clone().to_scalars();
-        let (comms, vars): (Vec<CompressedRistretto>, Vec<Variable>) = scalars
-            .into_iter()
-            .map(|s| prover.commit(s, Scalar::random(rng)))
-            .unzip();
-
-        Ok((
-            Self::VarType::from_vars(&mut vars.into_iter()),
-            Self::CommitType::from_commitments(&mut comms.into_iter()),
-        ))
-    }
-}
-
 /// Defines functionality to allocate a public variable within a single-prover constraint system
 pub trait CommitPublic {
     /// The type that results from committing to the base type
@@ -416,24 +477,6 @@ pub trait CommitPublic {
     ) -> Result<Self::VarType, Self::ErrorType>;
 }
 
-impl<T: CircuitBaseType> CommitPublic for T {
-    type VarType = <Self as CircuitBaseType>::VarType;
-    type ErrorType = (); // Does not error in single-prover context
-
-    fn commit_public<CS: RandomizableConstraintSystem>(
-        &self,
-        cs: &mut CS,
-    ) -> Result<Self::VarType, Self::ErrorType> {
-        let self_scalars = self.clone().to_scalars();
-        let vars = self_scalars
-            .into_iter()
-            .map(|s| cs.commit_public(s))
-            .collect_vec();
-
-        Ok(Self::VarType::from_vars(&mut vars.into_iter()))
-    }
-}
-
 /// Defines functionality to commit to a value in a verifier's constraint system
 pub trait CommitVerifier {
     /// The type that results from committing to the implementation types
@@ -443,18 +486,6 @@ pub trait CommitVerifier {
 
     /// Commit to a hidden value in the Verifier
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType>;
-}
-
-impl<T: CircuitCommitmentType> CommitVerifier for T {
-    type VarType = T::VarType;
-    type ErrorType = (); // Does not error
-
-    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        let comms = self.clone().to_commitments();
-        let vars = comms.into_iter().map(|c| verifier.commit(c)).collect_vec();
-
-        Ok(Self::VarType::from_vars(&mut vars.into_iter()))
-    }
 }
 
 /// Defines functionality to allocate a value within an MPC network
@@ -520,53 +551,6 @@ pub trait Open<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
         self,
         fabric: SharedFabric<N, S>,
     ) -> Result<Self::OpenOutput, Self::Error>;
-}
-
-#[allow(clippy::needless_borrow)]
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open<N, S>
-    for AuthenticatedCompressedRistretto<N, S>
-{
-    type OpenOutput = CompressedRistretto;
-    type Error = MpcError;
-
-    fn open(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
-        Ok((&self)
-            .open()
-            .map_err(|err| MpcError::OpeningError(err.to_string()))?
-            .value())
-    }
-
-    fn open_and_authenticate(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
-        Ok((&self)
-            .open_and_authenticate()
-            .map_err(|err| MpcError::OpeningError(err.to_string()))?
-            .value())
-    }
-}
-
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open<N, S>
-    for Vec<AuthenticatedCompressedRistretto<N, S>>
-{
-    type OpenOutput = Vec<CompressedRistretto>;
-    type Error = MpcError;
-
-    fn open(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
-        Ok(AuthenticatedCompressedRistretto::batch_open(&self)
-            .map_err(|err| MpcError::OpeningError(err.to_string()))?
-            .iter()
-            .map(|comm| comm.value())
-            .collect_vec())
-    }
-
-    fn open_and_authenticate(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
-        Ok(
-            AuthenticatedCompressedRistretto::batch_open_and_authenticate(&self)
-                .map_err(|err| MpcError::OpeningError(err.to_string()))?
-                .iter()
-                .map(|comm| comm.value())
-                .collect_vec(),
-        )
-    }
 }
 
 /// Defines the abstraction of a Circuit.
@@ -676,22 +660,60 @@ pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueS
     ) -> Result<(), VerifierError>;
 }
 
-// -----------------------
-// | Default Trait Impls |
-// -----------------------
+// -------------------------------
+// | Circuit Trait Default Impls |
+// -------------------------------
 
-impl CommitWitness for LinkableCommitment {
-    type VarType = Variable;
-    type CommitType = CompressedRistretto;
-    type ErrorType = ();
+impl<T: CircuitBaseType> CommitWitness for T {
+    type VarType = <Self as CircuitBaseType>::VarType;
+    type CommitType = <Self as CircuitBaseType>::CommitmentType;
+    type ErrorType = (); // Single prover does not error
 
     fn commit_witness<R: RngCore + CryptoRng>(
         &self,
-        _rng: &mut R, // rng is unused, use the randomness in `self`
+        rng: &mut R,
         prover: &mut Prover,
     ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (comm, var) = prover.commit(self.val, self.randomness);
-        Ok((var, comm))
+        let scalars: Vec<Scalar> = self.clone().to_scalars();
+        let (comms, vars): (Vec<CompressedRistretto>, Vec<Variable>) = scalars
+            .into_iter()
+            .map(|s| prover.commit(s, Scalar::random(rng)))
+            .unzip();
+
+        Ok((
+            Self::VarType::from_vars(&mut vars.into_iter()),
+            Self::CommitType::from_commitments(&mut comms.into_iter()),
+        ))
+    }
+}
+
+impl<T: CircuitBaseType> CommitPublic for T {
+    type VarType = <Self as CircuitBaseType>::VarType;
+    type ErrorType = (); // Does not error in single-prover context
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        let self_scalars = self.clone().to_scalars();
+        let vars = self_scalars
+            .into_iter()
+            .map(|s| cs.commit_public(s))
+            .collect_vec();
+
+        Ok(Self::VarType::from_vars(&mut vars.into_iter()))
+    }
+}
+
+impl<T: CircuitCommitmentType> CommitVerifier for T {
+    type VarType = T::VarType;
+    type ErrorType = (); // Does not error
+
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
+        let comms = self.clone().to_commitments();
+        let vars = comms.into_iter().map(|c| verifier.commit(c)).collect_vec();
+
+        Ok(Self::VarType::from_vars(&mut vars.into_iter()))
     }
 }
 
@@ -715,10 +737,63 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> SharePublic<N, S> for L
     }
 }
 
+impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone, T: MpcBaseType<N, S>>
+    Allocate<N, S> for T
+{
+    type SharedType = T::AllocatedType;
+    type ErrorType = MpcError;
+
+    fn allocate(
+        &self,
+        owning_party: u64,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self::SharedType, Self::ErrorType> {
+        // Convert to scalars and share
+        let self_scalars = self.clone().to_scalars();
+        let shared_scalars = fabric
+            .borrow_fabric()
+            .batch_allocate_private_scalars(owning_party, &self_scalars)
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+
+        Ok(Self::SharedType::from_authenticated_scalars(
+            &mut shared_scalars.into_iter(),
+        ))
+    }
+}
+
+impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone, T: MpcType<N, S>>
+    Open<N, S> for T
+{
+    type OpenOutput = T::NativeType;
+    type Error = MpcError;
+
+    fn open(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
+        let self_authenticated_scalars = self.to_authenticated_scalars();
+        let opened_scalars = AuthenticatedScalar::batch_open(&self_authenticated_scalars)
+            .map_err(|err| MpcError::OpeningError(err.to_string()))?
+            .into_iter()
+            .map(|auth_scalar| auth_scalar.to_scalar())
+            .collect_vec();
+
+        Ok(T::NativeType::from_scalars(&mut opened_scalars.into_iter()))
+    }
+
+    fn open_and_authenticate(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
+        let self_authenticated_scalars = self.to_authenticated_scalars();
+        let opened_scalars =
+            AuthenticatedScalar::batch_open_and_authenticate(&self_authenticated_scalars)
+                .map_err(|err| MpcError::OpeningError(err.to_string()))?
+                .into_iter()
+                .map(|auth_scalar| auth_scalar.to_scalar())
+                .collect_vec();
+
+        Ok(T::NativeType::from_scalars(&mut opened_scalars.into_iter()))
+    }
+}
+
 // ----------------
 // | Test Helpers |
 // ----------------
-
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use crypto::fields::{prime_field_to_bigint, scalar_to_bigint, DalekRistrettoField};
@@ -818,314 +893,314 @@ pub mod native_helpers {
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
 
-    use crate::{
-        types::{
-            balance::BalanceSecretShare,
-            fee::FeeSecretShare,
-            keychain::PublicKeyChainSecretShare,
-            order::OrderSecretShare,
-            wallet::{Nullifier, Wallet, WalletSecretShare, WalletShareCommitment},
-        },
-        zk_gadgets::nonnative::{
-            biguint_to_scalar_words, NonNativeElementSecretShare, TWO_TO_256_FIELD_MOD,
-        },
-    };
+    // use crate::{
+    //     types::{
+    //         balance::BalanceSecretShare,
+    //         fee::FeeSecretShare,
+    //         keychain::PublicKeyChainSecretShare,
+    //         order::OrderSecretShare,
+    //         wallet::{Nullifier, Wallet, WalletSecretShare, WalletShareCommitment},
+    //     },
+    //     zk_gadgets::nonnative::{
+    //         biguint_to_scalar_words, NonNativeElementSecretShare, TWO_TO_256_FIELD_MOD,
+    //     },
+    // };
 
-    /// Recover a wallet from blinded secret shares
-    pub fn wallet_from_blinded_shares<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        private_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        mut public_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    ) -> Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
-    where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    {
-        let recovered_blinder = private_shares.blinder + public_shares.blinder;
-        public_shares.unblind(recovered_blinder);
-        private_shares + public_shares
-    }
+    // /// Recover a wallet from blinded secret shares
+    // pub fn wallet_from_blinded_shares<
+    //     const MAX_BALANCES: usize,
+    //     const MAX_ORDERS: usize,
+    //     const MAX_FEES: usize,
+    // >(
+    //     private_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    //     mut public_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    // ) -> Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+    // where
+    //     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    // {
+    //     let recovered_blinder = private_shares.blinder + public_shares.blinder;
+    //     public_shares.unblind(recovered_blinder);
+    //     private_shares + public_shares
+    // }
 
-    /// Compute the hash of the randomness of a given wallet
-    pub fn compute_poseidon_hash(values: &[Scalar]) -> Scalar {
-        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
-        hasher.absorb(&values.iter().map(scalar_to_prime_field).collect_vec());
+    // /// Compute the hash of the randomness of a given wallet
+    // pub fn compute_poseidon_hash(values: &[Scalar]) -> Scalar {
+    //     let mut hasher = PoseidonSponge::new(&default_poseidon_params());
+    //     hasher.absorb(&values.iter().map(scalar_to_prime_field).collect_vec());
 
-        let out: DalekRistrettoField = hasher.squeeze_field_elements(1 /* num_elements */)[0];
-        prime_field_to_scalar(&out)
-    }
+    //     let out: DalekRistrettoField = hasher.squeeze_field_elements(1 /* num_elements */)[0];
+    //     prime_field_to_scalar(&out)
+    // }
 
-    /// Compute a commitment to the shares of a wallet
-    pub fn compute_wallet_share_commitment<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        public_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        private_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    ) -> WalletShareCommitment {
-        // Hash the private input, then append the public input and re-hash
-        let private_input_commitment = compute_wallet_private_share_commitment(private_shares);
-        let mut hash_input = vec![private_input_commitment];
-        hash_input.append(&mut public_shares.into());
+    // /// Compute a commitment to the shares of a wallet
+    // pub fn compute_wallet_share_commitment<
+    //     const MAX_BALANCES: usize,
+    //     const MAX_ORDERS: usize,
+    //     const MAX_FEES: usize,
+    // >(
+    //     public_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    //     private_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    // ) -> WalletShareCommitment {
+    //     // Hash the private input, then append the public input and re-hash
+    //     let private_input_commitment = compute_wallet_private_share_commitment(private_shares);
+    //     let mut hash_input = vec![private_input_commitment];
+    //     hash_input.append(&mut public_shares.into());
 
-        compute_poseidon_hash(&hash_input)
-    }
+    //     compute_poseidon_hash(&hash_input)
+    // }
 
-    /// Compute a commitment to a single share of a wallet
-    pub fn compute_wallet_private_share_commitment<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        private_share: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    ) -> Scalar {
-        let hash_input: Vec<Scalar> = private_share.into();
-        compute_poseidon_hash(&hash_input)
-    }
+    // /// Compute a commitment to a single share of a wallet
+    // pub fn compute_wallet_private_share_commitment<
+    //     const MAX_BALANCES: usize,
+    //     const MAX_ORDERS: usize,
+    //     const MAX_FEES: usize,
+    // >(
+    //     private_share: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    // ) -> Scalar {
+    //     let hash_input: Vec<Scalar> = private_share.into();
+    //     compute_poseidon_hash(&hash_input)
+    // }
 
-    /// Compute a commitment to the full shares of a wallet, given a commitment
-    /// to only the private shares
-    pub fn compute_wallet_commitment_from_private<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        public_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        private_share_comm: WalletShareCommitment,
-    ) -> WalletShareCommitment {
-        let mut hash_input = vec![private_share_comm];
-        hash_input.append(&mut public_shares.into());
-        compute_poseidon_hash(&hash_input)
-    }
+    // /// Compute a commitment to the full shares of a wallet, given a commitment
+    // /// to only the private shares
+    // pub fn compute_wallet_commitment_from_private<
+    //     const MAX_BALANCES: usize,
+    //     const MAX_ORDERS: usize,
+    //     const MAX_FEES: usize,
+    // >(
+    //     public_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    //     private_share_comm: WalletShareCommitment,
+    // ) -> WalletShareCommitment {
+    //     let mut hash_input = vec![private_share_comm];
+    //     hash_input.append(&mut public_shares.into());
+    //     compute_poseidon_hash(&hash_input)
+    // }
 
-    /// Compute the nullifier of a set of wallet shares
-    pub fn compute_wallet_share_nullifier(
-        share_commitment: WalletShareCommitment,
-        wallet_blinder: Scalar,
-    ) -> Nullifier {
-        compute_poseidon_hash(&[share_commitment, wallet_blinder])
-    }
+    // /// Compute the nullifier of a set of wallet shares
+    // pub fn compute_wallet_share_nullifier(
+    //     share_commitment: WalletShareCommitment,
+    //     wallet_blinder: Scalar,
+    // ) -> Nullifier {
+    //     compute_poseidon_hash(&[share_commitment, wallet_blinder])
+    // }
 
-    /// Reblind a wallet given its secret shares
-    ///
-    /// Returns the reblinded private and public shares
-    pub fn reblind_wallet<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        private_secret_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    ) -> (
-        WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    {
-        // Sample new wallet blinders from the `blinder` CSPRNG
-        // See the comments in `valid_reblind.rs` for an explanation of the two CSPRNGs
-        let mut blinder_samples =
-            evaluate_hash_chain(private_secret_shares.blinder, 2 /* length */);
-        let mut blinder_drain = blinder_samples.drain(..);
-        let new_blinder = blinder_drain.next().unwrap();
-        let new_blinder_private_share = blinder_drain.next().unwrap();
+    // /// Reblind a wallet given its secret shares
+    // ///
+    // /// Returns the reblinded private and public shares
+    // pub fn reblind_wallet<
+    //     const MAX_BALANCES: usize,
+    //     const MAX_ORDERS: usize,
+    //     const MAX_FEES: usize,
+    // >(
+    //     private_secret_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    //     wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    // ) -> (
+    //     WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    //     WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    // )
+    // where
+    //     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    // {
+    //     // Sample new wallet blinders from the `blinder` CSPRNG
+    //     // See the comments in `valid_reblind.rs` for an explanation of the two CSPRNGs
+    //     let mut blinder_samples =
+    //         evaluate_hash_chain(private_secret_shares.blinder, 2 /* length */);
+    //     let mut blinder_drain = blinder_samples.drain(..);
+    //     let new_blinder = blinder_drain.next().unwrap();
+    //     let new_blinder_private_share = blinder_drain.next().unwrap();
 
-        // Sample new secret shares for the wallet
-        let shares_serialized: Vec<Scalar> = private_secret_shares.into();
-        let serialized_len = shares_serialized.len();
-        let secret_shares = evaluate_hash_chain(
-            shares_serialized[serialized_len - 2],
-            WalletSecretShare::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>::SHARES_PER_WALLET,
-        );
+    //     // Sample new secret shares for the wallet
+    //     let shares_serialized: Vec<Scalar> = private_secret_shares.into();
+    //     let serialized_len = shares_serialized.len();
+    //     let secret_shares = evaluate_hash_chain(
+    //         shares_serialized[serialized_len - 2],
+    //         WalletSecretShare::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>::SHARES_PER_WALLET,
+    //     );
 
-        create_wallet_shares_with_randomness(
-            wallet,
-            new_blinder,
-            new_blinder_private_share,
-            secret_shares,
-        )
-    }
+    //     create_wallet_shares_with_randomness(
+    //         wallet,
+    //         new_blinder,
+    //         new_blinder_private_share,
+    //         secret_shares,
+    //     )
+    // }
 
-    /// Construct public shares of a wallet given the private shares and blinder
-    ///
-    /// The return type is a tuple containing the private and public shares. Note
-    /// that the private shares returned are exactly those passed in
-    pub fn create_wallet_shares_from_private<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        private_shares: &WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        blinder: Scalar,
-    ) -> (
-        WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    {
-        // Serialize the wallet's private shares and use this as the secret share stream
-        let private_shares_ser: Vec<Scalar> = private_shares.clone().into();
-        create_wallet_shares_with_randomness(
-            wallet,
-            blinder,
-            private_shares.blinder,
-            private_shares_ser,
-        )
-    }
+    // /// Construct public shares of a wallet given the private shares and blinder
+    // ///
+    // /// The return type is a tuple containing the private and public shares. Note
+    // /// that the private shares returned are exactly those passed in
+    // pub fn create_wallet_shares_from_private<
+    //     const MAX_BALANCES: usize,
+    //     const MAX_ORDERS: usize,
+    //     const MAX_FEES: usize,
+    // >(
+    //     wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    //     private_shares: &WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    //     blinder: Scalar,
+    // ) -> (
+    //     WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    //     WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    // )
+    // where
+    //     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    // {
+    //     // Serialize the wallet's private shares and use this as the secret share stream
+    //     let private_shares_ser: Vec<Scalar> = private_shares.clone().into();
+    //     create_wallet_shares_with_randomness(
+    //         wallet,
+    //         blinder,
+    //         private_shares.blinder,
+    //         private_shares_ser,
+    //     )
+    // }
 
-    /// Create a secret sharing of a wallet given the secret shares and blinders
-    pub(crate) fn create_wallet_shares_with_randomness<
-        T,
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        blinder: Scalar,
-        private_blinder_share: Scalar,
-        secret_shares: T,
-    ) -> (
-        WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    )
-    where
-        T: IntoIterator<Item = Scalar>,
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    {
-        let mut share_iter = secret_shares.into_iter();
-        /// Shorthand for creating unwrapping the next secret share
-        macro_rules! next_share {
-            () => {
-                share_iter.next().unwrap()
-            };
-        }
+    // /// Create a secret sharing of a wallet given the secret shares and blinders
+    // pub(crate) fn create_wallet_shares_with_randomness<
+    //     T,
+    //     const MAX_BALANCES: usize,
+    //     const MAX_ORDERS: usize,
+    //     const MAX_FEES: usize,
+    // >(
+    //     wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    //     blinder: Scalar,
+    //     private_blinder_share: Scalar,
+    //     secret_shares: T,
+    // ) -> (
+    //     WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    //     WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    // )
+    // where
+    //     T: IntoIterator<Item = Scalar>,
+    //     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    // {
+    //     let mut share_iter = secret_shares.into_iter();
+    //     /// Shorthand for creating unwrapping the next secret share
+    //     macro_rules! next_share {
+    //         () => {
+    //             share_iter.next().unwrap()
+    //         };
+    //     }
 
-        // Secret share the balances
-        let mut balances1 = Vec::with_capacity(MAX_BALANCES);
-        let mut balances2 = Vec::with_capacity(MAX_BALANCES);
-        for balance in wallet.balances.iter() {
-            let mint_share = next_share!();
-            let amount_share = next_share!();
-            balances1.push(BalanceSecretShare {
-                mint: mint_share,
-                amount: amount_share,
-            });
+    //     // Secret share the balances
+    //     let mut balances1 = Vec::with_capacity(MAX_BALANCES);
+    //     let mut balances2 = Vec::with_capacity(MAX_BALANCES);
+    //     for balance in wallet.balances.iter() {
+    //         let mint_share = next_share!();
+    //         let amount_share = next_share!();
+    //         balances1.push(BalanceSecretShare {
+    //             mint: mint_share,
+    //             amount: amount_share,
+    //         });
 
-            balances2.push(BalanceSecretShare {
-                mint: biguint_to_scalar(&balance.mint) - mint_share,
-                amount: Scalar::from(balance.amount) - amount_share,
-            });
-        }
+    //         balances2.push(BalanceSecretShare {
+    //             mint: biguint_to_scalar(&balance.mint) - mint_share,
+    //             amount: Scalar::from(balance.amount) - amount_share,
+    //         });
+    //     }
 
-        // Secret share the orders
-        let mut orders1 = Vec::with_capacity(MAX_ORDERS);
-        let mut orders2 = Vec::with_capacity(MAX_ORDERS);
-        for order in wallet.orders.iter() {
-            let quote_share = next_share!();
-            let base_share = next_share!();
-            let side_share = next_share!();
-            let price_share = next_share!();
-            let amount_share = next_share!();
-            let timestamp_share = next_share!();
+    //     // Secret share the orders
+    //     let mut orders1 = Vec::with_capacity(MAX_ORDERS);
+    //     let mut orders2 = Vec::with_capacity(MAX_ORDERS);
+    //     for order in wallet.orders.iter() {
+    //         let quote_share = next_share!();
+    //         let base_share = next_share!();
+    //         let side_share = next_share!();
+    //         let price_share = next_share!();
+    //         let amount_share = next_share!();
+    //         let timestamp_share = next_share!();
 
-            orders1.push(OrderSecretShare {
-                quote_mint: quote_share,
-                base_mint: base_share,
-                side: side_share,
-                price: price_share,
-                amount: amount_share,
-                timestamp: timestamp_share,
-            });
+    //         orders1.push(OrderSecretShare {
+    //             quote_mint: quote_share,
+    //             base_mint: base_share,
+    //             side: side_share,
+    //             price: price_share,
+    //             amount: amount_share,
+    //             timestamp: timestamp_share,
+    //         });
 
-            orders2.push(OrderSecretShare {
-                quote_mint: biguint_to_scalar(&order.quote_mint) - quote_share,
-                base_mint: biguint_to_scalar(&order.base_mint) - base_share,
-                side: Scalar::from(order.side) - side_share,
-                price: order.price.repr - price_share,
-                amount: Scalar::from(order.amount) - amount_share,
-                timestamp: Scalar::from(order.timestamp) - timestamp_share,
-            });
-        }
+    //         orders2.push(OrderSecretShare {
+    //             quote_mint: biguint_to_scalar(&order.quote_mint) - quote_share,
+    //             base_mint: biguint_to_scalar(&order.base_mint) - base_share,
+    //             side: Scalar::from(order.side) - side_share,
+    //             price: order.price.repr - price_share,
+    //             amount: Scalar::from(order.amount) - amount_share,
+    //             timestamp: Scalar::from(order.timestamp) - timestamp_share,
+    //         });
+    //     }
 
-        // Secret share the fees
-        let mut fees1 = Vec::with_capacity(MAX_FEES);
-        let mut fees2 = Vec::with_capacity(MAX_FEES);
-        for fee in wallet.fees.iter() {
-            let settle_key_share = next_share!();
-            let gas_addr_share = next_share!();
-            let gas_amount_share = next_share!();
-            let percentage_share = next_share!();
+    //     // Secret share the fees
+    //     let mut fees1 = Vec::with_capacity(MAX_FEES);
+    //     let mut fees2 = Vec::with_capacity(MAX_FEES);
+    //     for fee in wallet.fees.iter() {
+    //         let settle_key_share = next_share!();
+    //         let gas_addr_share = next_share!();
+    //         let gas_amount_share = next_share!();
+    //         let percentage_share = next_share!();
 
-            fees1.push(FeeSecretShare {
-                settle_key: settle_key_share,
-                gas_addr: gas_addr_share,
-                gas_token_amount: gas_amount_share,
-                percentage_fee: percentage_share,
-            });
+    //         fees1.push(FeeSecretShare {
+    //             settle_key: settle_key_share,
+    //             gas_addr: gas_addr_share,
+    //             gas_token_amount: gas_amount_share,
+    //             percentage_fee: percentage_share,
+    //         });
 
-            fees2.push(FeeSecretShare {
-                settle_key: biguint_to_scalar(&fee.settle_key) - settle_key_share,
-                gas_addr: biguint_to_scalar(&fee.gas_addr) - gas_addr_share,
-                gas_token_amount: Scalar::from(fee.gas_token_amount) - gas_amount_share,
-                percentage_fee: fee.percentage_fee.repr - percentage_share,
-            })
-        }
+    //         fees2.push(FeeSecretShare {
+    //             settle_key: biguint_to_scalar(&fee.settle_key) - settle_key_share,
+    //             gas_addr: biguint_to_scalar(&fee.gas_addr) - gas_addr_share,
+    //             gas_token_amount: Scalar::from(fee.gas_token_amount) - gas_amount_share,
+    //             percentage_fee: fee.percentage_fee.repr - percentage_share,
+    //         })
+    //     }
 
-        // Secret share the keychain
-        let root_key_words = biguint_to_scalar_words(wallet.keys.pk_root.0.clone());
-        let root_shares1 = (0..root_key_words.len())
-            .map(|_| next_share!())
-            .collect_vec();
-        let root_shares2 = root_key_words
-            .iter()
-            .zip(root_shares1.iter())
-            .map(|(w1, w2)| w1 - w2)
-            .collect_vec();
+    //     // Secret share the keychain
+    //     let root_key_words = biguint_to_scalar_words(wallet.keys.pk_root.0.clone());
+    //     let root_shares1 = (0..root_key_words.len())
+    //         .map(|_| next_share!())
+    //         .collect_vec();
+    //     let root_shares2 = root_key_words
+    //         .iter()
+    //         .zip(root_shares1.iter())
+    //         .map(|(w1, w2)| w1 - w2)
+    //         .collect_vec();
 
-        let match_share = next_share!();
+    //     let match_share = next_share!();
 
-        let keychain1 = PublicKeyChainSecretShare {
-            pk_root: NonNativeElementSecretShare {
-                words: root_shares1,
-                field_mod: TWO_TO_256_FIELD_MOD.clone(),
-            },
-            pk_match: match_share,
-        };
-        let keychain2 = PublicKeyChainSecretShare {
-            pk_root: NonNativeElementSecretShare {
-                words: root_shares2,
-                field_mod: TWO_TO_256_FIELD_MOD.clone(),
-            },
-            pk_match: wallet.keys.pk_match.0 - match_share,
-        };
+    //     let keychain1 = PublicKeyChainSecretShare {
+    //         pk_root: NonNativeElementSecretShare {
+    //             words: root_shares1,
+    //             field_mod: TWO_TO_256_FIELD_MOD.clone(),
+    //         },
+    //         pk_match: match_share,
+    //     };
+    //     let keychain2 = PublicKeyChainSecretShare {
+    //         pk_root: NonNativeElementSecretShare {
+    //             words: root_shares2,
+    //             field_mod: TWO_TO_256_FIELD_MOD.clone(),
+    //         },
+    //         pk_match: wallet.keys.pk_match.0 - match_share,
+    //     };
 
-        // Construct the secret shares of the wallet
-        let wallet1 = WalletSecretShare {
-            balances: balances1.try_into().unwrap(),
-            orders: orders1.try_into().unwrap(),
-            fees: fees1.try_into().unwrap(),
-            keys: keychain1,
-            blinder: private_blinder_share,
-        };
-        let mut wallet2 = WalletSecretShare {
-            balances: balances2.try_into().unwrap(),
-            orders: orders2.try_into().unwrap(),
-            fees: fees2.try_into().unwrap(),
-            keys: keychain2,
-            blinder: blinder - private_blinder_share,
-        };
+    //     // Construct the secret shares of the wallet
+    //     let wallet1 = WalletSecretShare {
+    //         balances: balances1.try_into().unwrap(),
+    //         orders: orders1.try_into().unwrap(),
+    //         fees: fees1.try_into().unwrap(),
+    //         keys: keychain1,
+    //         blinder: private_blinder_share,
+    //     };
+    //     let mut wallet2 = WalletSecretShare {
+    //         balances: balances2.try_into().unwrap(),
+    //         orders: orders2.try_into().unwrap(),
+    //         fees: fees2.try_into().unwrap(),
+    //         keys: keychain2,
+    //         blinder: blinder - private_blinder_share,
+    //     };
 
-        // Blind the public shares
-        wallet2.blind(blinder);
+    //     // Blind the public shares
+    //     wallet2.blind(blinder);
 
-        (wallet1, wallet2)
-    }
+    //     (wallet1, wallet2)
+    // }
 }
 
 #[cfg(test)]

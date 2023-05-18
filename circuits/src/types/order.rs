@@ -366,41 +366,41 @@ pub struct AuthenticatedOrder<N: MpcNetwork + Send, S: SharedValueSource<Scalar>
     pub timestamp: AuthenticatedScalar<N, S>,
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Order {
-    type SharedType = AuthenticatedOrder<N, S>;
-    type ErrorType = MpcError;
+// impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Order {
+//     type SharedType = AuthenticatedOrder<N, S>;
+//     type ErrorType = MpcError;
 
-    fn allocate(
-        &self,
-        owning_party: u64,
-        fabric: SharedFabric<N, S>,
-    ) -> Result<Self::SharedType, Self::ErrorType> {
-        // Convert all elements of the order to a scalar, then share
-        let field_scalars = vec![
-            biguint_to_scalar(&self.quote_mint),
-            biguint_to_scalar(&self.base_mint),
-            self.side.into(),
-            self.price.repr,
-            self.amount.into(),
-            self.timestamp.into(),
-        ];
-        let shared_values = fabric
-            .borrow_fabric()
-            .batch_allocate_private_scalars(owning_party, &field_scalars)
-            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+//     fn allocate(
+//         &self,
+//         owning_party: u64,
+//         fabric: SharedFabric<N, S>,
+//     ) -> Result<Self::SharedType, Self::ErrorType> {
+//         // Convert all elements of the order to a scalar, then share
+//         let field_scalars = vec![
+//             biguint_to_scalar(&self.quote_mint),
+//             biguint_to_scalar(&self.base_mint),
+//             self.side.into(),
+//             self.price.repr,
+//             self.amount.into(),
+//             self.timestamp.into(),
+//         ];
+//         let shared_values = fabric
+//             .borrow_fabric()
+//             .batch_allocate_private_scalars(owning_party, &field_scalars)
+//             .map_err(|err| MpcError::SharingError(err.to_string()))?;
 
-        Ok(Self::SharedType {
-            quote_mint: shared_values[0].to_owned(),
-            base_mint: shared_values[1].to_owned(),
-            side: shared_values[2].to_owned(),
-            price: AuthenticatedFixedPoint {
-                repr: shared_values[3].to_owned(),
-            },
-            amount: shared_values[4].to_owned(),
-            timestamp: shared_values[5].to_owned(),
-        })
-    }
-}
+//         Ok(Self::SharedType {
+//             quote_mint: shared_values[0].to_owned(),
+//             base_mint: shared_values[1].to_owned(),
+//             side: shared_values[2].to_owned(),
+//             price: AuthenticatedFixedPoint {
+//                 repr: shared_values[3].to_owned(),
+//             },
+//             amount: shared_values[4].to_owned(),
+//             timestamp: shared_values[5].to_owned(),
+//         })
+//     }
+// }
 
 /// Represents an order that has been allocated in an MPC network and committed to
 /// in a multi-prover constraint system
