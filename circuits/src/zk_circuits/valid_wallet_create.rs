@@ -241,8 +241,19 @@ where
     type Statement = ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type Witness = ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type WitnessCommitment = ValidWalletCreateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type WitnessVar = ValidWalletCreateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type StatementVar = ValidWalletCreateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     const BP_GENS_CAPACITY: usize = 10000;
+
+    fn apply_constraints<CS: RandomizableConstraintSystem>(
+        witness_var: Self::WitnessVar,
+        statement_var: Self::StatementVar,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        // Apply the constraints over the allocated witness & statement
+        Self::circuit(statement_var, witness_var, cs)
+    }
 
     fn prove(
         witness: Self::Witness,
@@ -255,7 +266,8 @@ where
         let statement_var = statement.commit_public(&mut prover).unwrap();
 
         // Apply the constraints
-        Self::circuit(statement_var, witness_var, &mut prover).map_err(ProverError::R1CS)?;
+        Self::apply_constraints(witness_var, statement_var, &mut prover)
+            .map_err(ProverError::R1CS)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -275,7 +287,8 @@ where
         let statement_var = statement.commit_public(&mut verifier).unwrap();
 
         // Apply the constraints
-        Self::circuit(statement_var, witness_var, &mut verifier).map_err(VerifierError::R1CS)?;
+        Self::apply_constraints(witness_var, statement_var, &mut verifier)
+            .map_err(VerifierError::R1CS)?;
 
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         verifier

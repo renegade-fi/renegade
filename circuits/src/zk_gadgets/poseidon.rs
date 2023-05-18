@@ -278,6 +278,13 @@ pub struct PoseidonGadgetWitness {
     pub preimage: Vec<Scalar>,
 }
 
+/// A [`PoseidonHashGadget`] witness that has been allocated in a constraint system
+#[derive(Clone, Debug)]
+pub struct PoseidonGadgetWitnessVar {
+    /// Preimage
+    pub preimage: Vec<Variable>,
+}
+
 /// The statement variable (public variable) for the argument, consisting
 /// of the expected hash output and the hash parameters
 #[derive(Clone, Debug)]
@@ -288,12 +295,36 @@ pub struct PoseidonGadgetStatement {
     pub params: PoseidonSpongeParameters,
 }
 
+/// A [`PoseidonHashGadget`] statement that has been allocated in a constraint system
+#[derive(Clone, Debug)]
+pub struct PoseidonGadgetStatementVar {
+    /// Expected output of applying the Poseidon hash to the preimage
+    pub expected_out: Variable,
+    /// The hash parameters that parameterize the Poseidon permutation
+    /// These don't actually get allocated as variables
+    pub params: PoseidonSpongeParameters,
+}
+
 impl SingleProverCircuit for PoseidonHashGadget {
     type Witness = PoseidonGadgetWitness;
     type WitnessCommitment = Vec<CompressedRistretto>;
     type Statement = PoseidonGadgetStatement;
+    type WitnessVar = PoseidonGadgetWitnessVar;
+    type StatementVar = PoseidonGadgetStatementVar;
 
     const BP_GENS_CAPACITY: usize = 2048;
+
+    fn apply_constraints<CS: RandomizableConstraintSystem>(
+        witness_var: Self::WitnessVar,
+        statement_var: Self::StatementVar,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        // Apply the constraints over the allocated witness & statement
+
+        // Build a hasher and apply the constraints
+        let mut hasher = PoseidonHashGadget::new(statement_var.params);
+        hasher.hash(&witness_var.preimage, statement_var.expected_out, cs)
+    }
 
     fn prove(
         witness: Self::Witness,
@@ -311,10 +342,16 @@ impl SingleProverCircuit for PoseidonHashGadget {
         // Commit publicly to the expected result
         let out_var = prover.commit_public(statement.expected_out);
 
-        // Apply the constraints to the proof system
-        let mut hasher = PoseidonHashGadget::new(statement.params);
-        hasher
-            .hash(&preimage_vars, out_var, &mut prover)
+        let witness_var = PoseidonGadgetWitnessVar {
+            preimage: preimage_vars,
+        };
+
+        let statement_var = PoseidonGadgetStatementVar {
+            expected_out: out_var,
+            params: statement.params,
+        };
+
+        Self::apply_constraints(witness_var, statement_var, &mut prover)
             .map_err(ProverError::R1CS)?;
 
         // Prove the statement
@@ -339,10 +376,16 @@ impl SingleProverCircuit for PoseidonHashGadget {
         // Commit to the public expected output
         let output_var = verifier.commit_public(statement.expected_out);
 
-        // Build a hasher and apply the constraints
-        let mut hasher = PoseidonHashGadget::new(statement.params);
-        hasher
-            .hash(&witness_vars, output_var, &mut verifier)
+        let witness_var = PoseidonGadgetWitnessVar {
+            preimage: witness_vars,
+        };
+
+        let statement_var = PoseidonGadgetStatementVar {
+            expected_out: output_var,
+            params: statement.params,
+        };
+
+        Self::apply_constraints(witness_var, statement_var, &mut verifier)
             .map_err(VerifierError::R1CS)?;
 
         // Verify the proof

@@ -6,8 +6,8 @@ use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{
-        ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
-        Variable, Verifier,
+        ConstraintSystem, LinearCombination, Prover, R1CSError, R1CSProof,
+        RandomizableConstraintSystem, Variable, Verifier,
     },
     r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem},
     BulletproofGens,
@@ -72,8 +72,23 @@ impl SingleProverCircuit for EqZeroGadget {
     type Statement = bool;
     type Witness = Scalar;
     type WitnessCommitment = CompressedRistretto;
+    type WitnessVar = Variable;
+    type StatementVar = Variable;
 
     const BP_GENS_CAPACITY: usize = 32;
+
+    fn apply_constraints<CS: RandomizableConstraintSystem>(
+        witness_var: Self::WitnessVar,
+        statement_var: Self::StatementVar,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        // Apply the constraints over the allocated witness & statement
+
+        // Test equality to zero and constrain this to be expected
+        let eq_zero = EqZeroGadget::eq_zero(witness_var, cs);
+        cs.constrain(eq_zero - statement_var);
+        Ok(())
+    }
 
     fn prove(
         witness: Self::Witness,
@@ -87,9 +102,8 @@ impl SingleProverCircuit for EqZeroGadget {
         // Commit to the statement
         let expected_var = prover.commit_public(Scalar::from(statement as u8));
 
-        // Test equality to zero and constrain this to be expected
-        let eq_zero = EqZeroGadget::eq_zero(witness_var, &mut prover);
-        prover.constrain(eq_zero - expected_var);
+        Self::apply_constraints(witness_var, expected_var, &mut prover)
+            .map_err(ProverError::R1CS)?;
 
         // Prover the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -110,9 +124,8 @@ impl SingleProverCircuit for EqZeroGadget {
         // Commit to the statement
         let expected_var = verifier.commit_public(Scalar::from(statement as u8));
 
-        // Test equality to zero and constrain this to be expected
-        let eq_zero = EqZeroGadget::eq_zero(witness_var, &mut verifier);
-        verifier.constrain(eq_zero - expected_var);
+        Self::apply_constraints(witness_var, expected_var, &mut verifier)
+            .map_err(VerifierError::R1CS)?;
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -269,8 +282,21 @@ impl<const D: usize> SingleProverCircuit for GreaterThanEqZeroGadget<D> {
     type Statement = ();
     type Witness = GreaterThanEqZeroWitness;
     type WitnessCommitment = CompressedRistretto;
+    type WitnessVar = Variable;
+    // No statement for this gadget
+    type StatementVar = ();
 
     const BP_GENS_CAPACITY: usize = 256;
+
+    fn apply_constraints<CS: RandomizableConstraintSystem>(
+        witness_var: Self::WitnessVar,
+        _: Self::StatementVar,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        // Apply the constraints over the allocated witness & statement
+        Self::constrain_greater_than_zero(witness_var, cs);
+        Ok(())
+    }
 
     fn prove(
         witness: Self::Witness,
@@ -281,8 +307,7 @@ impl<const D: usize> SingleProverCircuit for GreaterThanEqZeroGadget<D> {
         let mut rng = OsRng {};
         let (witness_commit, witness_var) = prover.commit(witness.val, Scalar::random(&mut rng));
 
-        // Apply the constraints
-        Self::constrain_greater_than_zero(witness_var, &mut prover);
+        Self::apply_constraints(witness_var, (), &mut prover).map_err(ProverError::R1CS)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -300,8 +325,7 @@ impl<const D: usize> SingleProverCircuit for GreaterThanEqZeroGadget<D> {
         // Commit to the witness
         let witness_var = verifier.commit(witness_commitment);
 
-        // Apply the constraints
-        Self::constrain_greater_than_zero(witness_var, &mut verifier);
+        Self::apply_constraints(witness_var, (), &mut verifier).map_err(VerifierError::R1CS)?;
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -415,8 +439,21 @@ impl<const D: usize> SingleProverCircuit for GreaterThanEqGadget<D> {
     type Statement = ();
     type Witness = GreaterThanEqWitness;
     type WitnessCommitment = Vec<CompressedRistretto>;
+    type WitnessVar = (Variable, Variable);
+    // No statement for this gadget
+    type StatementVar = ();
 
     const BP_GENS_CAPACITY: usize = 64;
+
+    fn apply_constraints<CS: RandomizableConstraintSystem>(
+        witness_var: Self::WitnessVar,
+        _: Self::StatementVar,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        // Apply the constraints over the allocated witness & statement
+        Self::constrain_greater_than_eq(witness_var.0, witness_var.1, cs);
+        Ok(())
+    }
 
     fn prove(
         witness: Self::Witness,
@@ -428,8 +465,7 @@ impl<const D: usize> SingleProverCircuit for GreaterThanEqGadget<D> {
         let (a_comm, a_var) = prover.commit(witness.a, Scalar::random(&mut rng));
         let (b_comm, b_var) = prover.commit(witness.b, Scalar::random(&mut rng));
 
-        // Apply the constraints
-        Self::constrain_greater_than_eq(a_var, b_var, &mut prover);
+        Self::apply_constraints((a_var, b_var), (), &mut prover).map_err(ProverError::R1CS)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -448,8 +484,7 @@ impl<const D: usize> SingleProverCircuit for GreaterThanEqGadget<D> {
         let a_var = verifier.commit(witness_commitment[0]);
         let b_var = verifier.commit(witness_commitment[1]);
 
-        // Apply the constraints
-        Self::constrain_greater_than_eq(a_var, b_var, &mut verifier);
+        Self::apply_constraints((a_var, b_var), (), &mut verifier).map_err(VerifierError::R1CS)?;
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);

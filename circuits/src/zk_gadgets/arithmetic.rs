@@ -151,8 +151,20 @@ impl SingleProverCircuit for ExpGadget {
     type Witness = ExpGadgetWitness;
     type Statement = ExpGadgetStatement;
     type WitnessCommitment = CompressedRistretto;
+    type WitnessVar = Variable;
+    type StatementVar = (Variable, u64);
 
     const BP_GENS_CAPACITY: usize = 64;
+
+    fn apply_constraints<CS: RandomizableConstraintSystem>(
+        witness_var: Self::WitnessVar,
+        statement_var: Self::StatementVar,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        // Apply the constraints over the allocated witness & statement
+        Self::generate_exp_constraints(witness_var, statement_var.0, statement_var.1, cs);
+        Ok(())
+    }
 
     fn prove(
         witness: Self::Witness,
@@ -166,8 +178,8 @@ impl SingleProverCircuit for ExpGadget {
         let (x_commit, x_var) = prover.commit(witness.x, blinding_factor);
         let out_var = prover.commit_public(statement.expected_out);
 
-        // Generate the constraints for the circuit
-        Self::generate_exp_constraints(x_var, out_var, statement.alpha, &mut prover);
+        Self::apply_constraints(x_var, (out_var, statement.alpha), &mut prover)
+            .map_err(ProverError::R1CS)?;
 
         let bp_gens = BulletproofGens::new(
             Self::BP_GENS_CAPACITY, /* gens_capacity */
@@ -189,8 +201,8 @@ impl SingleProverCircuit for ExpGadget {
         let x_var = verifier.commit(witness_commitment); // The input `x`
         let out_var = verifier.commit_public(statement.expected_out);
 
-        // Generate the constraints for the circuit
-        Self::generate_exp_constraints(x_var, out_var, statement.alpha, &mut verifier);
+        Self::apply_constraints(x_var, (out_var, statement.alpha), &mut verifier)
+            .map_err(VerifierError::R1CS)?;
 
         let bp_gens = BulletproofGens::new(
             Self::BP_GENS_CAPACITY, /* gens_capacity */
@@ -350,8 +362,21 @@ impl<const ALPHA_SIZE: usize> SingleProverCircuit for PrivateExpGadget<ALPHA_SIZ
     /// (x, \alpha)
     type Witness = (Scalar, Scalar);
     type WitnessCommitment = (CompressedRistretto, CompressedRistretto);
+    type WitnessVar = (Variable, Variable);
+    type StatementVar = Variable;
 
     const BP_GENS_CAPACITY: usize = 4096;
+
+    fn apply_constraints<CS: RandomizableConstraintSystem>(
+        witness_var: Self::WitnessVar,
+        statement_var: Self::StatementVar,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        // Apply the constraints over the allocated witness & statement
+        let res = Self::exp_private(witness_var.0, witness_var.1, cs)?;
+        cs.constrain(res - statement_var);
+        Ok(())
+    }
 
     fn prove(
         witness: Self::Witness,
@@ -366,9 +391,8 @@ impl<const ALPHA_SIZE: usize> SingleProverCircuit for PrivateExpGadget<ALPHA_SIZ
         // Commit to the expected output
         let expected_out = prover.commit_public(statement);
 
-        // Apply the constraints
-        let res = Self::exp_private(x_var, alpha_var, &mut prover).map_err(ProverError::R1CS)?;
-        prover.constrain(res - expected_out);
+        Self::apply_constraints((x_var, alpha_var), expected_out, &mut prover)
+            .map_err(ProverError::R1CS)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -390,10 +414,8 @@ impl<const ALPHA_SIZE: usize> SingleProverCircuit for PrivateExpGadget<ALPHA_SIZ
         // Commit to the expected output
         let expected_out = verifier.commit_public(statement);
 
-        // Apply the constraints
-        let res =
-            Self::exp_private(x_var, alpha_var, &mut verifier).map_err(VerifierError::R1CS)?;
-        verifier.constrain(res - expected_out);
+        Self::apply_constraints((x_var, alpha_var), expected_out, &mut verifier)
+            .map_err(VerifierError::R1CS)?;
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
