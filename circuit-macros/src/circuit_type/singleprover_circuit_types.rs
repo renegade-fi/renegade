@@ -114,7 +114,7 @@ fn build_var_type_impl(var_struct: &ItemStruct) -> TokenStream2 {
     let deserialize_method_expr = build_deserialize_method(
         Ident::new(FROM_VARS_METHOD_NAME, Span::call_site()),
         path_from_ident(Ident::new(FROM_VARS_ITER_TYPE, Span::call_site())),
-        trait_ident.clone(),
+        path_from_ident(trait_ident.clone()),
         var_struct,
     );
 
@@ -165,7 +165,7 @@ fn build_comm_type_impl(comm_struct: &ItemStruct) -> TokenStream2 {
     let deserialize_expr = build_deserialize_method(
         Ident::new(FROM_COMMS_METHOD_NAME, Span::call_site()),
         path_from_ident(Ident::new(FROM_COMMS_ITER_TYPE, Span::call_site())),
-        trait_ident.clone(),
+        path_from_ident(trait_ident.clone()),
         comm_struct,
     );
 

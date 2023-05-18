@@ -5,21 +5,28 @@
 #[allow(clippy::missing_docs_in_private_items)]
 #[cfg(test)]
 mod test {
+    use std::{cell::RefCell, rc::Rc};
+
     use circuit_macros::circuit_type;
     use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
+    use integration_helpers::mpc_network::mocks::{MockMpcNet, PartyIDBeaverSource};
     use merlin::Transcript;
     use mpc_bulletproof::{
         r1cs::{Prover, Variable, Verifier},
         PedersenGens,
     };
+    use mpc_ristretto::{
+        authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+    };
     use rand_core::OsRng;
 
     use crate::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, CommitPublic,
-        CommitVerifier, CommitWitness,
+        mpc::{MpcFabric, SharedFabric},
+        Allocate, BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, CommitPublic,
+        CommitVerifier, CommitWitness, MpcBaseType, MpcType, Open,
     };
 
-    #[circuit_type(singleprover_circuit)]
+    #[circuit_type(singleprover_circuit, mpc)]
     #[derive(Clone, Debug, PartialEq, Eq)]
     struct TestType {
         val: Scalar,
@@ -82,5 +89,42 @@ mod test {
         // Commit to the type and verify that the callback typechecks
         let (_, comm) = a.commit_witness(&mut rng, &mut prover).unwrap();
         callback(comm);
+    }
+
+    #[tokio::test]
+    async fn test_mpc_derived_type() {
+        let handle = tokio::task::spawn_blocking(|| {
+            // Setup a dummy value to allocate then open
+            let dummy = TestType {
+                val: Scalar::from(2u8),
+            };
+
+            // Mock an MPC network
+            let dummy_network = Rc::new(RefCell::new(MockMpcNet::new()));
+            let dummy_network_data = vec![Scalar::one(); 100];
+            dummy_network
+                .borrow_mut()
+                .add_mock_scalars(dummy_network_data);
+            let dummy_beaver_source = Rc::new(RefCell::new(PartyIDBeaverSource::new(
+                0, /* party_id */
+            )));
+
+            let dummy_fabric = MpcFabric::new_with_network(
+                0, /* party_id */
+                dummy_network,
+                dummy_beaver_source,
+            );
+            let shared_fabric = SharedFabric::new(dummy_fabric);
+
+            // Allocate the dummy value in the network
+            let allocated = dummy
+                .allocate(1 /* owning_party */, shared_fabric.clone())
+                .unwrap();
+
+            // Open the allocated value back to its original
+            allocated.open(shared_fabric).unwrap();
+        });
+
+        handle.await.unwrap();
     }
 }
