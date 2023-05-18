@@ -6,7 +6,7 @@ use mpc_ristretto::{beaver::SharedValueSource, error::MpcNetworkError, network::
 
 /// An implementation of a beaver value source that returns
 /// beaver triples (0, 0, 0) for party 0 and (1, 1, 1) for party 1
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PartyIDBeaverSource {
     /// The ID of the local party
     party_id: u64,
