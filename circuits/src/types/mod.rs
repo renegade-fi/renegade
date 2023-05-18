@@ -6,14 +6,14 @@ use curve25519_dalek::scalar::Scalar;
 use num_bigint::BigUint;
 use serde::{de::Error as SerdeErr, Deserialize, Deserializer, Serialize, Serializer};
 pub mod balance;
-pub mod fee;
-pub mod handshake_tuple;
-pub mod keychain;
-pub mod r#match;
-pub mod note;
-pub mod order;
-pub mod transfers;
-pub mod wallet;
+// pub mod fee;
+// pub mod handshake_tuple;
+// pub mod keychain;
+// pub mod r#match;
+// pub mod note;
+// pub mod order;
+// pub mod transfers;
+// pub mod wallet;
 
 // -----------------------------------------
 // | Serialization Deserialization Helpers |

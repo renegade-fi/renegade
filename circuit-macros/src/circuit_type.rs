@@ -1,7 +1,9 @@
 //! Macro implementation of the `circuit_type` macro that defines associated types and conversions
 //! between them for an application level base type
 
-mod singleprover_circuit;
+mod mpc_types;
+mod multiprover_circuit_types;
+mod singleprover_circuit_types;
 
 use itertools::Itertools;
 use proc_macro::TokenStream;
@@ -13,10 +15,10 @@ use syn::{
     punctuated::Punctuated,
     token::{Brace, Colon, Comma},
     Attribute, Expr, Field, FieldValue, Fields, FieldsNamed, Generics, ItemImpl, ItemStruct,
-    Member, Result, Token, Type, TypePath,
+    Member, Path, Result, Token, Type, TypePath,
 };
 
-use self::singleprover_circuit::build_circuit_types;
+use self::{mpc_types::build_mpc_types, singleprover_circuit_types::build_circuit_types};
 
 /// The trait name for the base type that all other types are derived from
 const BASE_TYPE_TRAIT_NAME: &str = "BaseType";
@@ -31,12 +33,17 @@ const SCALAR_TYPE_IDENT: &str = "Scalar";
 /// The flag indicating the expansion should include a single prover circuit type definition
 /// for the base type
 const ARG_CIRCUIT_TYPE: &str = "singleprover_circuit";
+/// The flag indicating the expansion should include types for an MPC circuit
+const ARG_MPC_TYPE: &str = "mpc";
+/// The flag indicating th
 
 /// The arguments to the `circuit_trace` macro
 #[derive(Default)]
 pub(crate) struct MacroArgs {
     /// Whether or not to allocate a circuit type for the struct
     pub build_circuit_types: bool,
+    /// Whether or not to allocate MPC circuit types for the struct
+    pub build_mpc_types: bool,
 }
 
 pub(crate) fn parse_macro_args(args: TokenStream) -> Result<MacroArgs> {
@@ -47,6 +54,7 @@ pub(crate) fn parse_macro_args(args: TokenStream) -> Result<MacroArgs> {
     for arg in parsed_args.iter() {
         match arg.to_string().as_str() {
             ARG_CIRCUIT_TYPE => macro_args.build_circuit_types = true,
+            ARG_MPC_TYPE => macro_args.build_mpc_types = true,
             unknown => panic!("received unexpected argument {unknown}"),
         }
     }
@@ -67,10 +75,16 @@ pub(crate) fn circuit_type_impl(target_struct: ItemStruct, macro_args: MacroArgs
     // Build the implementation of the `BaseType` trait
     out_tokens.extend(build_base_type_impl(&target_struct));
 
-    // Parse info out of the base struct
+    // Build singleprover circuit types
     if macro_args.build_circuit_types {
         let circuit_type_tokens = build_circuit_types(&target_struct);
         out_tokens.extend(circuit_type_tokens);
+    }
+
+    // Build MPC types
+    if macro_args.build_mpc_types {
+        let mpc_type_tokens = build_mpc_types(&target_struct);
+        out_tokens.extend(mpc_type_tokens);
     }
 
     out_tokens.into()
@@ -86,14 +100,14 @@ fn build_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
 
     let from_scalars_impl = build_deserialize_method(
         Ident::new(FROM_SCALARS_METHOD_NAME, Span::call_site()),
-        Ident::new(SCALAR_TYPE_IDENT, Span::call_site()),
-        trait_ident.clone(),
+        path_from_ident(Ident::new(SCALAR_TYPE_IDENT, Span::call_site())),
+        path_from_ident(trait_ident.clone()),
         base_type,
     );
 
     let to_scalars_impl = build_serialize_method(
         Ident::new(TO_SCALARS_METHOD_NAME, Span::call_site()),
-        Ident::new(SCALAR_TYPE_IDENT, Span::call_site()),
+        path_from_ident(Ident::new(SCALAR_TYPE_IDENT, Span::call_site())),
         base_type,
     );
 
@@ -110,13 +124,18 @@ fn build_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
 // | Helpers |
 // -----------
 
+/// Convert an `Ident` directly into a `Path`
+fn path_from_ident(identifier: Ident) -> Path {
+    parse_quote!(#identifier)
+}
+
 /// Implements a serialization function that looks like
-///     fn #method_name(self) -> Vec<#type> {
+///     fn #method_name(self) -> Vec<#target_type> {
 ///         vec![self.field1, self.field2, ...]
 ///     }
 fn build_serialize_method(
     method_name: Ident,
-    target_type: Ident,
+    target_type: Path,
     self_struct: &ItemStruct,
 ) -> TokenStream2 {
     let mut serialize_expr = Punctuated::<Expr, Comma>::new();
@@ -139,8 +158,8 @@ fn build_serialize_method(
 ///     }
 fn build_deserialize_method(
     method_name: Ident,
-    from_type: Ident,
-    trait_ident: Ident,
+    from_type: Path,
+    trait_ident: Path,
     self_struct: &ItemStruct,
 ) -> TokenStream2 {
     let mut fields_expr: Punctuated<FieldValue, Comma> = Punctuated::new();
@@ -176,7 +195,8 @@ fn build_modified_struct_from_associated_types(
     base_type: &ItemStruct,
     new_name: Ident,
     attributes: Vec<Attribute>,
-    type_derivation_trait_ident: Ident,
+    generics: Generics,
+    type_derivation_trait_ident: Path,
     associated_type_ident: Ident,
 ) -> ItemStruct {
     // Build the fields fo the var struct
@@ -219,7 +239,7 @@ fn build_modified_struct_from_associated_types(
         vis: base_type.vis.clone(),
         struct_token: Token![struct](Span::call_site()),
         ident: new_name,
-        generics: Generics::default(),
+        generics,
         fields: Fields::Named(named_fields),
         semi_token: None,
     }
