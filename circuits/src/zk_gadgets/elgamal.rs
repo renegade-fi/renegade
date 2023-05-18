@@ -184,6 +184,18 @@ pub struct ElGamalWitnessCommitment {
     pub plaintext: CompressedRistretto,
 }
 
+/// An ElGamal statement that has been allocated within a constraint system
+#[derive(Clone, Debug)]
+pub struct ElGamalStatementVar {
+    /// The public key that the value is encrypted under
+    pub pub_key: Variable,
+    /// The generator of the group that the circuit is defined over
+    /// Expected to remain in [`Scalar`] form
+    pub generator: Scalar,
+    /// The expected result of encrypting the secret under the pubkey
+    pub expected_ciphertext: (Variable, Variable),
+}
+
 impl CommitWitness for ElGamalWitness {
     type CommitType = ElGamalWitnessCommitment;
     type VarType = ElGamalWitnessVar;
@@ -229,8 +241,29 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ElGamalGadget<SCALAR_BITS
     type Witness = ElGamalWitness;
     type WitnessCommitment = ElGamalWitnessCommitment;
     type Statement = ElGamalStatement;
+    type WitnessVar = ElGamalWitnessVar;
+    type StatementVar = ElGamalStatementVar;
 
     const BP_GENS_CAPACITY: usize = 1024;
+
+    fn apply_constraints<CS: RandomizableConstraintSystem>(
+        witness_var: Self::WitnessVar,
+        statement_var: Self::StatementVar,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        // Apply the constraints over the allocated witness & statement
+        let res = Self::encrypt(
+            statement_var.generator,
+            witness_var.randomness,
+            witness_var.plaintext,
+            statement_var.pub_key,
+            cs,
+        )?;
+
+        cs.constrain(res.0 - statement_var.expected_ciphertext.0);
+        cs.constrain(res.1 - statement_var.expected_ciphertext.1);
+        Ok(())
+    }
 
     fn prove(
         witness: Self::Witness,
@@ -248,18 +281,14 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ElGamalGadget<SCALAR_BITS
             prover.commit_public(statement.expected_ciphertext.1),
         );
 
-        // Apply the constraints
-        let res = Self::encrypt(
-            statement.generator,
-            witness_var.randomness,
-            witness_var.plaintext,
-            pub_key_var,
-            &mut prover,
-        )
-        .map_err(ProverError::R1CS)?;
+        let statement_var = ElGamalStatementVar {
+            pub_key: pub_key_var,
+            generator: statement.generator,
+            expected_ciphertext: expected_ciphertext_var,
+        };
 
-        prover.constrain(res.0 - expected_ciphertext_var.0);
-        prover.constrain(res.1 - expected_ciphertext_var.1);
+        Self::apply_constraints(witness_var, statement_var, &mut prover)
+            .map_err(ProverError::R1CS)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -284,18 +313,14 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ElGamalGadget<SCALAR_BITS
             verifier.commit_public(statement.expected_ciphertext.1),
         );
 
-        // Apply the constraints
-        let res = Self::encrypt(
-            statement.generator,
-            witness_var.randomness,
-            witness_var.plaintext,
-            pub_key_var,
-            &mut verifier,
-        )
-        .map_err(VerifierError::R1CS)?;
+        let statement_var = ElGamalStatementVar {
+            pub_key: pub_key_var,
+            generator: statement.generator,
+            expected_ciphertext: expected_ciphertext_var,
+        };
 
-        verifier.constrain(res.0 - expected_ciphertext_var.0);
-        verifier.constrain(res.1 - expected_ciphertext_var.1);
+        Self::apply_constraints(witness_var, statement_var, &mut verifier)
+            .map_err(VerifierError::R1CS)?;
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);

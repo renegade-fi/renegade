@@ -72,8 +72,26 @@ impl<const D: usize> SingleProverCircuit for ToBitsGadget<D> {
     type Statement = ToBitsStatement;
     type Witness = Scalar;
     type WitnessCommitment = CompressedRistretto;
+    type WitnessVar = Variable;
+    type StatementVar = Vec<Variable>;
 
     const BP_GENS_CAPACITY: usize = 256;
+
+    fn apply_constraints<CS: RandomizableConstraintSystem>(
+        witness_var: Self::WitnessVar,
+        statement_var: Self::StatementVar,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        // Apply the constraints over the allocated witness & statement
+
+        // Get the bits result and constrain the output
+        let res_bits = Self::to_bits(witness_var, cs)?;
+
+        for (statement_bit, res_bit) in statement_var.into_iter().zip(res_bits.into_iter()) {
+            cs.constrain(statement_bit - res_bit)
+        }
+        Ok(())
+    }
 
     fn prove(
         witness: Self::Witness,
@@ -91,12 +109,8 @@ impl<const D: usize> SingleProverCircuit for ToBitsGadget<D> {
             .map(|bit| prover.commit_public(*bit))
             .collect_vec();
 
-        // Get the bits result and constrain the output
-        let res_bits = Self::to_bits(witness_var, &mut prover).map_err(ProverError::R1CS)?;
-
-        for (statement_bit, res_bit) in statement_vars.into_iter().zip(res_bits.into_iter()) {
-            prover.constrain(statement_bit - res_bit)
-        }
+        Self::apply_constraints(witness_var, statement_vars, &mut prover)
+            .map_err(ProverError::R1CS)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -119,12 +133,8 @@ impl<const D: usize> SingleProverCircuit for ToBitsGadget<D> {
             .map(|bit| verifier.commit_public(bit))
             .collect_vec();
 
-        // Apply the constraints using the single-prover gadget
-        let computed_bits =
-            ToBitsGadget::<D>::to_bits(witness_var, &mut verifier).map_err(VerifierError::R1CS)?;
-        for (statement_bit, computed_bit) in bit_vars.into_iter().zip(computed_bits.into_iter()) {
-            verifier.constrain(statement_bit - computed_bit);
-        }
+        Self::apply_constraints(witness_var, bit_vars, &mut verifier)
+            .map_err(VerifierError::R1CS)?;
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);

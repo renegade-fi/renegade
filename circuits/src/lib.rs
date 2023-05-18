@@ -11,7 +11,7 @@ use itertools::Itertools;
 use merlin::Transcript;
 use mpc::SharedFabric;
 use mpc_bulletproof::{
-    r1cs::{Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
+    r1cs::{Prover, R1CSError, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
     r1cs_mpc::{MpcProver, MpcVariable, SharedR1CSProof},
     PedersenGens,
 };
@@ -461,6 +461,16 @@ pub trait SingleProverCircuit {
     /// The prover commits to the witness and sends this commitment to the verifier, this type
     /// is the structure in which that commitment is sent
     type WitnessCommitment;
+    /// The type of a witness that has been allocated into a constraint system
+    ///
+    /// This is created by both the prover and the verifier in preparation for
+    /// applying constraints
+    type WitnessVar;
+    /// The type of a statement that has been allocated into a constraint system
+    ///
+    /// This is created by both the prover and the verifier in preparation for
+    /// applying constraints
+    type StatementVar;
 
     /// The size of the bulletproof generators that must be allocated
     /// to fully compute a proof or verification of the statement
@@ -468,6 +478,14 @@ pub trait SingleProverCircuit {
     /// This is a function of circuit depth, one generator is needed per
     /// multiplication gate (roughly)
     const BP_GENS_CAPACITY: usize;
+
+    /// Applies all the constraints embodied by the circuit over the allocated witness & statement,
+    /// building them into the given constraint system
+    fn apply_constraints<CS: RandomizableConstraintSystem>(
+        witness_var: Self::WitnessVar,
+        statement_var: Self::StatementVar,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError>;
 
     /// Generate a proof of the statement represented by the circuit
     ///
@@ -499,6 +517,7 @@ pub trait SingleProverCircuit {
 /// The witness type represents the secret witness that the prover has access to but
 /// that the verifier does not. The statement is the set of public inputs and any
 /// other circuit meta-parameters that both prover and verifier have access to.
+// TODO(andrew): ADD `apply_constraints` HERE AS WELL (?)
 pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> {
     /// The witness type, given only to the prover, which generates a blinding commitment
     /// that can be given to the verifier

@@ -359,8 +359,25 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
     type Statement = MerkleStatement;
     type Witness = MerkleWitness;
     type WitnessCommitment = MerkleWitnessCommitment;
+    type WitnessVar = MerkleWitnessVar;
+    // The only statement variable that gets allocated is the Merkle root
+    type StatementVar = Variable;
 
     const BP_GENS_CAPACITY: usize = 8192;
+
+    fn apply_constraints<CS: RandomizableConstraintSystem>(
+        witness_var: Self::WitnessVar,
+        statement_var: Self::StatementVar,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        // Apply the constraints over the allocated witness & statement
+        PoseidonMerkleHashGadget::compute_and_constrain_root(
+            witness_var.leaf_data,
+            witness_var.opening,
+            statement_var,
+            cs,
+        )
+    }
 
     fn prove(
         witness: Self::Witness,
@@ -374,14 +391,7 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
         // Commit to the expected root
         let root_var = prover.commit_public(statement.expected_root);
 
-        // Apply the constraints
-        PoseidonMerkleHashGadget::compute_and_constrain_root(
-            witness_var.leaf_data,
-            witness_var.opening,
-            root_var,
-            &mut prover,
-        )
-        .map_err(ProverError::R1CS)?;
+        Self::apply_constraints(witness_var, root_var, &mut prover).map_err(ProverError::R1CS)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -400,14 +410,8 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
         let witness_vars = witness_commitments.commit_verifier(&mut verifier).unwrap();
         let root_var = verifier.commit_public(statement.expected_root);
 
-        // Apply constraints
-        PoseidonMerkleHashGadget::compute_and_constrain_root(
-            witness_vars.leaf_data,
-            witness_vars.opening,
-            root_var,
-            &mut verifier,
-        )
-        .map_err(VerifierError::R1CS)?;
+        Self::apply_constraints(witness_vars, root_var, &mut verifier)
+            .map_err(VerifierError::R1CS)?;
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);

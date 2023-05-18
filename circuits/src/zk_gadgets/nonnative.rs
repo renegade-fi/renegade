@@ -1126,7 +1126,10 @@ mod nonnative_tests {
     use itertools::Itertools;
     use merlin::Transcript;
     use mpc_bulletproof::{
-        r1cs::{ConstraintSystem, LinearCombination, Prover, R1CSProof, Variable, Verifier},
+        r1cs::{
+            ConstraintSystem, LinearCombination, Prover, R1CSError, R1CSProof,
+            RandomizableConstraintSystem, Variable, Verifier,
+        },
         BulletproofGens, PedersenGens,
     };
     use mpc_ristretto::mpc_scalar::scalar_to_u64;
@@ -1293,8 +1296,24 @@ mod nonnative_tests {
         type Witness = FanIn2Witness;
         type Statement = BigUint;
         type WitnessCommitment = FanIn2WitnessCommitment;
+        type WitnessVar = FanIn2WitnessVar;
+        type StatementVar = NonNativeElementVar;
 
         const BP_GENS_CAPACITY: usize = 64;
+
+        fn apply_constraints<CS: RandomizableConstraintSystem>(
+            witness_var: Self::WitnessVar,
+            statement_var: Self::StatementVar,
+            cs: &mut CS,
+        ) -> Result<(), R1CSError> {
+            // Apply the constraints over the allocated witness & statement
+
+            // Add the two witness values
+            let addition_result = NonNativeElementVar::add(&witness_var.lhs, &witness_var.rhs, cs);
+            NonNativeElementVar::constrain_equal(&addition_result, &statement_var, cs);
+
+            Ok(())
+        }
 
         fn prove(
             witness: Self::Witness,
@@ -1320,15 +1339,8 @@ mod nonnative_tests {
             let expected_nonnative =
                 NonNativeElementVar::new(statement_word_lcs, witness.field_mod);
 
-            // Add the two witness values
-            let addition_result =
-                NonNativeElementVar::add(&witness_var.lhs, &witness_var.rhs, &mut prover);
-
-            NonNativeElementVar::constrain_equal(
-                &addition_result,
-                &expected_nonnative,
-                &mut prover,
-            );
+            Self::apply_constraints(witness_var, expected_nonnative, &mut prover)
+                .map_err(ProverError::R1CS)?;
 
             // Prove the statement
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -1360,15 +1372,8 @@ mod nonnative_tests {
             let expected_nonnative =
                 NonNativeElementVar::new(statement_word_lcs, witness_commitment.field_mod);
 
-            // Add the two witness values
-            let addition_result =
-                NonNativeElementVar::add(&witness_var.lhs, &witness_var.rhs, &mut verifier);
-
-            NonNativeElementVar::constrain_equal(
-                &addition_result,
-                &expected_nonnative,
-                &mut verifier,
-            );
+            Self::apply_constraints(witness_var, expected_nonnative, &mut verifier)
+                .map_err(VerifierError::R1CS)?;
 
             // Verify the proof
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -1384,8 +1389,24 @@ mod nonnative_tests {
         type Statement = BigUint;
         type Witness = FanIn2Witness;
         type WitnessCommitment = FanIn2WitnessCommitment;
+        type WitnessVar = FanIn2WitnessVar;
+        type StatementVar = NonNativeElementVar;
 
         const BP_GENS_CAPACITY: usize = 128;
+
+        fn apply_constraints<CS: RandomizableConstraintSystem>(
+            witness_var: Self::WitnessVar,
+            statement_var: Self::StatementVar,
+            cs: &mut CS,
+        ) -> Result<(), R1CSError> {
+            // Apply the constraints over the allocated witness & statement
+
+            // Multiply the two witness values
+            let mul_result = NonNativeElementVar::mul(&witness_var.lhs, &witness_var.rhs, cs);
+            NonNativeElementVar::constrain_equal(&mul_result, &statement_var, cs);
+
+            Ok(())
+        }
 
         fn prove(
             witness: Self::Witness,
@@ -1411,10 +1432,8 @@ mod nonnative_tests {
             let expected_nonnative =
                 NonNativeElementVar::new(statement_word_lcs, witness.field_mod);
 
-            // Add the two witness values
-            let mul_result =
-                NonNativeElementVar::mul(&witness_var.lhs, &witness_var.rhs, &mut prover);
-            NonNativeElementVar::constrain_equal(&mul_result, &expected_nonnative, &mut prover);
+            Self::apply_constraints(witness_var, expected_nonnative, &mut prover)
+                .map_err(ProverError::R1CS)?;
 
             // Prove the statement
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -1446,10 +1465,8 @@ mod nonnative_tests {
             let expected_nonnative =
                 NonNativeElementVar::new(statement_word_lcs, witness_commitment.field_mod);
 
-            // Add the two witness values
-            let mul_result =
-                NonNativeElementVar::mul(&witness_var.lhs, &witness_var.rhs, &mut verifier);
-            NonNativeElementVar::constrain_equal(&mul_result, &expected_nonnative, &mut verifier);
+            Self::apply_constraints(witness_var, expected_nonnative, &mut verifier)
+                .map_err(VerifierError::R1CS)?;
 
             // Verify the proof
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -1464,8 +1481,24 @@ mod nonnative_tests {
         type Statement = BigUint;
         type Witness = FanIn2Witness;
         type WitnessCommitment = FanIn2WitnessCommitment;
+        type WitnessVar = FanIn2WitnessVar;
+        type StatementVar = NonNativeElementVar;
 
         const BP_GENS_CAPACITY: usize = 64;
+
+        fn apply_constraints<CS: RandomizableConstraintSystem>(
+            witness_var: Self::WitnessVar,
+            statement_var: Self::StatementVar,
+            cs: &mut CS,
+        ) -> Result<(), R1CSError> {
+            // Apply the constraints over the allocated witness & statement
+
+            // Subtract the two witness values
+            let sub_result = NonNativeElementVar::subtract(&witness_var.lhs, &witness_var.rhs, cs);
+            NonNativeElementVar::constrain_equal(&sub_result, &statement_var, cs);
+
+            Ok(())
+        }
 
         fn prove(
             witness: Self::Witness,
@@ -1491,10 +1524,8 @@ mod nonnative_tests {
             let expected_nonnative =
                 NonNativeElementVar::new(statement_word_lcs, witness.field_mod);
 
-            // Add the two witness values
-            let sub_result =
-                NonNativeElementVar::subtract(&witness_var.lhs, &witness_var.rhs, &mut prover);
-            NonNativeElementVar::constrain_equal(&sub_result, &expected_nonnative, &mut prover);
+            Self::apply_constraints(witness_var, expected_nonnative, &mut prover)
+                .map_err(ProverError::R1CS)?;
 
             // Prove the statement
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -1526,10 +1557,8 @@ mod nonnative_tests {
             let expected_nonnative =
                 NonNativeElementVar::new(statement_word_lcs, witness_commitment.field_mod);
 
-            // Add the two witness values
-            let sub_result =
-                NonNativeElementVar::subtract(&witness_var.lhs, &witness_var.rhs, &mut verifier);
-            NonNativeElementVar::constrain_equal(&sub_result, &expected_nonnative, &mut verifier);
+            Self::apply_constraints(witness_var, expected_nonnative, &mut verifier)
+                .map_err(VerifierError::R1CS)?;
 
             // Verify the proof
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -1546,8 +1575,26 @@ mod nonnative_tests {
         type Witness = FanIn2Witness;
         type WitnessCommitment = FanIn2WitnessCommitment;
         type Statement = ();
+        type WitnessVar = FanIn2WitnessVar;
+        type StatementVar = ();
 
         const BP_GENS_CAPACITY: usize = 256;
+
+        fn apply_constraints<CS: RandomizableConstraintSystem>(
+            witness_var: Self::WitnessVar,
+            _: Self::StatementVar,
+            cs: &mut CS,
+        ) -> Result<(), R1CSError> {
+            // Apply the constraints over the allocated witness & statement
+
+            // Invert the witness, the constraint below is technically already added in the gadget itself,
+            // we duplicate it here for completeness
+            let inv_result = NonNativeElementVar::invert(&witness_var.lhs, cs);
+            let lhs_times_inv = NonNativeElementVar::mul(&inv_result, &witness_var.lhs, cs);
+            NonNativeElementVar::constrain_equal_biguint(&lhs_times_inv, &BigUint::from(1u8), cs);
+
+            Ok(())
+        }
 
         fn prove(
             witness: Self::Witness,
@@ -1559,16 +1606,7 @@ mod nonnative_tests {
             let (witness_var, wintess_comm) =
                 witness.commit_witness(&mut rng, &mut prover).unwrap();
 
-            // Invert the witness, the constraint below is technically already added in the gadget itself,
-            // we duplicate it here for completeness
-            let inv_result = NonNativeElementVar::invert(&witness_var.lhs, &mut prover);
-            let lhs_times_inv =
-                NonNativeElementVar::mul(&inv_result, &witness_var.lhs, &mut prover);
-            NonNativeElementVar::constrain_equal_biguint(
-                &lhs_times_inv,
-                &BigUint::from(1u8),
-                &mut prover,
-            );
+            Self::apply_constraints(witness_var, (), &mut prover).map_err(ProverError::R1CS)?;
 
             // Prove the statement
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -1586,16 +1624,7 @@ mod nonnative_tests {
             // Commit to the witness
             let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
 
-            // Invert the witness, the constraint below is technically already added in the gadget itself,
-            // we duplicate it here for completeness
-            let inv_result = NonNativeElementVar::invert(&witness_var.lhs, &mut verifier);
-            let lhs_times_inv =
-                NonNativeElementVar::mul(&inv_result, &witness_var.lhs, &mut verifier);
-            NonNativeElementVar::constrain_equal_biguint(
-                &lhs_times_inv,
-                &BigUint::from(1u8),
-                &mut verifier,
-            );
+            Self::apply_constraints(witness_var, (), &mut verifier).map_err(VerifierError::R1CS)?;
 
             // Verify the proof
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
