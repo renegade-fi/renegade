@@ -14,11 +14,14 @@ use syn::{
     parse_quote,
     punctuated::Punctuated,
     token::{Brace, Colon, Comma},
-    Attribute, Expr, Field, FieldValue, Fields, FieldsNamed, Generics, ItemImpl, ItemStruct,
-    Member, Path, Result, Token, Type, TypePath,
+    Attribute, Expr, Field, FieldValue, Fields, FieldsNamed, Generics, ItemFn, ItemImpl,
+    ItemStruct, Member, Path, Result, Stmt, Token, Type, TypePath,
 };
 
-use self::{mpc_types::build_mpc_types, singleprover_circuit_types::build_circuit_types};
+use self::{
+    mpc_types::build_mpc_types, multiprover_circuit_types::build_multiprover_circuit_types,
+    singleprover_circuit_types::build_circuit_types,
+};
 
 /// The trait name for the base type that all other types are derived from
 const BASE_TYPE_TRAIT_NAME: &str = "BaseType";
@@ -35,7 +38,8 @@ const SCALAR_TYPE_IDENT: &str = "Scalar";
 const ARG_CIRCUIT_TYPE: &str = "singleprover_circuit";
 /// The flag indicating the expansion should include types for an MPC circuit
 const ARG_MPC_TYPE: &str = "mpc";
-/// The flag indicating th
+/// The flag indicating the expansion should include types for a multiprover circuit
+const ARG_MULTIPROVER_TYPE: &str = "multiprover_circuit";
 
 /// The arguments to the `circuit_trace` macro
 #[derive(Default)]
@@ -44,8 +48,24 @@ pub(crate) struct MacroArgs {
     pub build_circuit_types: bool,
     /// Whether or not to allocate MPC circuit types for the struct
     pub build_mpc_types: bool,
+    /// Whether or not to allocate multiprover circuit types for the struct
+    pub build_mulitprover_types: bool,
 }
 
+impl MacroArgs {
+    /// Validate the argument combinations
+    pub fn validate(&self) {
+        // A multiprover type must also be a base circuit type
+        if self.build_mulitprover_types {
+            assert!(
+                self.build_circuit_types,
+                "multiprover circuit type requires singleprover circuit type"
+            );
+        }
+    }
+}
+
+/// Parse macro args from the invocation details
 pub(crate) fn parse_macro_args(args: TokenStream) -> Result<MacroArgs> {
     let mut macro_args = MacroArgs::default();
     let parsed_args =
@@ -55,10 +75,12 @@ pub(crate) fn parse_macro_args(args: TokenStream) -> Result<MacroArgs> {
         match arg.to_string().as_str() {
             ARG_CIRCUIT_TYPE => macro_args.build_circuit_types = true,
             ARG_MPC_TYPE => macro_args.build_mpc_types = true,
+            ARG_MULTIPROVER_TYPE => macro_args.build_mulitprover_types = true,
             unknown => panic!("received unexpected argument {unknown}"),
         }
     }
 
+    macro_args.validate();
     Ok(macro_args)
 }
 
@@ -66,7 +88,7 @@ pub(crate) fn parse_macro_args(args: TokenStream) -> Result<MacroArgs> {
 // | Core Macro Impl |
 // -------------------
 
-// Implementation of the type derivation macro
+/// Implementation of the type derivation macro
 pub(crate) fn circuit_type_impl(target_struct: ItemStruct, macro_args: MacroArgs) -> TokenStream {
     // Copy the existing struct into the result
     let mut out_tokens = TokenStream2::default();
@@ -87,6 +109,12 @@ pub(crate) fn circuit_type_impl(target_struct: ItemStruct, macro_args: MacroArgs
         out_tokens.extend(mpc_type_tokens);
     }
 
+    // Build Multiprover circuit types
+    if macro_args.build_mulitprover_types {
+        let multiprover_type_tokens = build_multiprover_circuit_types(&target_struct);
+        out_tokens.extend(multiprover_type_tokens)
+    }
+
     out_tokens.into()
 }
 
@@ -94,6 +122,7 @@ pub(crate) fn circuit_type_impl(target_struct: ItemStruct, macro_args: MacroArgs
 // | BaseType Implementation |
 // ---------------------------
 
+/// Build the `impl BaseType` block
 fn build_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
     let trait_ident = new_ident(BASE_TYPE_TRAIT_NAME);
     let base_type_ident = base_type.ident.clone();
@@ -165,18 +194,23 @@ fn build_serialize_method(
     target_type: Path,
     self_struct: &ItemStruct,
 ) -> TokenStream2 {
-    let mut serialize_expr = Punctuated::<Expr, Comma>::new();
+    let mut field_exprs: Vec<Stmt> = Vec::with_capacity(self_struct.fields.len());
     for field in self_struct.fields.iter().cloned() {
         let field_ident = field.ident;
-        serialize_expr.push(parse_quote!(self.#field_ident));
+        field_exprs.push(parse_quote! {
+            res.extend(self.#field_ident.#method_name());
+        });
     }
 
-    let body: Expr = parse_quote!(vec![#serialize_expr]);
-    parse_quote! {
+    let fn_impl: ItemFn = parse_quote! {
         fn #method_name(self) -> Vec<#target_type> {
-            #body
+            let mut res = Vec::new();
+            #(#field_exprs)*
+
+            res
         }
-    }
+    };
+    fn_impl.to_token_stream()
 }
 
 /// Implements a deserialization function for a trait that looks like the following

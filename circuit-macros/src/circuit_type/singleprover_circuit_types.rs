@@ -3,7 +3,7 @@
 
 use proc_macro2::TokenStream as TokenStream2;
 use quote::ToTokens;
-use syn::{parse_quote, Attribute, Generics, ItemImpl, ItemStruct};
+use syn::{parse_quote, parse_quote_spanned, Attribute, Generics, ItemImpl, ItemStruct, Stmt};
 
 use crate::circuit_type::{ident_with_suffix, new_ident};
 
@@ -38,6 +38,8 @@ const FROM_COMMS_ITER_TYPE: &str = "CompressedRistretto";
 const FROM_VARS_METHOD_NAME: &str = "from_vars";
 /// The type that a `from_vars` method implementation converts from
 const FROM_VARS_ITER_TYPE: &str = "Variable";
+/// The method name for creating commitment randomness to a base type
+const COMMITMENT_RANDOMNESS_METHOD_NAME: &str = "commitment_randomness";
 
 /// The suffix appended to a variable type of a base type
 const VAR_TYPE_SUFFIX: &str = "Var";
@@ -77,12 +79,30 @@ fn build_circuit_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
     let comm_type_associated = new_ident(COMM_TYPE_ASSOCIATED_NAME);
     let comm_type_name = ident_with_suffix(&base_name.to_string(), COMM_TYPE_SUFFIX);
 
-    parse_quote! {
+    // Build the body of the `commitment_randomness` method
+    let commitment_randomness_ident = new_ident(COMMITMENT_RANDOMNESS_METHOD_NAME);
+    let mut field_stmts: Vec<Stmt> = Vec::new();
+    for field in base_type.fields.iter() {
+        let field_ident = field.ident.clone();
+        field_stmts.push(parse_quote! {
+            res.extend(self.#field_ident.#commitment_randomness_ident(r));
+        });
+    }
+
+    let impl_block: ItemImpl = parse_quote! {
         impl #trait_ident for #base_name {
             type #var_type_associated = #var_type_name;
             type #comm_type_associated = #comm_type_name;
+
+            fn #commitment_randomness_ident <R: RngCore + CryptoRng>(&self, r: &mut R) -> Vec<Scalar> {
+                let mut res = Vec::new();
+                #(#field_stmts)*
+
+                res
+            }
         }
-    }
+    };
+    impl_block.to_token_stream()
 }
 
 /// Build a variable type; the type of the base allocated in a constraint system

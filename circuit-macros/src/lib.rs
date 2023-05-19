@@ -1,4 +1,5 @@
 //! Defines macros used in the `circuits` crate; macros must be defined in a separate crate
+#![deny(clippy::missing_docs_in_private_items)]
 
 use proc_macro::TokenStream;
 use syn::{ItemFn, ItemStruct};
