@@ -5,8 +5,7 @@ use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use lazy_static::lazy_static;
 use mpc_bulletproof::{
     r1cs::{
-        ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
-        Variable, Verifier,
+        LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
     },
     r1cs_mpc::R1CSError,
     BulletproofGens,
@@ -237,18 +236,35 @@ impl CommitVerifier for ElGamalWitnessCommitment {
     }
 }
 
+impl CommitPublic for ElGamalStatement {
+    type ErrorType = ();
+    type VarType = ElGamalStatementVar;
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        Ok(ElGamalStatementVar {
+            pub_key: cs.commit_public(self.pub_key),
+            generator: self.generator,
+            expected_ciphertext: (
+                cs.commit_public(self.expected_ciphertext.0),
+                cs.commit_public(self.expected_ciphertext.1),
+            ),
+        })
+    }
+}
+
 impl<const SCALAR_BITS: usize> SingleProverCircuit for ElGamalGadget<SCALAR_BITS> {
     type Witness = ElGamalWitness;
     type WitnessCommitment = ElGamalWitnessCommitment;
     type Statement = ElGamalStatement;
-    type WitnessVar = ElGamalWitnessVar;
-    type StatementVar = ElGamalStatementVar;
 
     const BP_GENS_CAPACITY: usize = 1024;
 
     fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: Self::WitnessVar,
-        statement_var: Self::StatementVar,
+        witness_var: <Self::Witness as CommitWitness>::VarType,
+        statement_var: <Self::Statement as CommitPublic>::VarType,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
         // Apply the constraints over the allocated witness & statement
@@ -275,17 +291,7 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ElGamalGadget<SCALAR_BITS
         let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Commit to the statement
-        let pub_key_var = prover.commit_public(statement.pub_key);
-        let expected_ciphertext_var = (
-            prover.commit_public(statement.expected_ciphertext.0),
-            prover.commit_public(statement.expected_ciphertext.1),
-        );
-
-        let statement_var = ElGamalStatementVar {
-            pub_key: pub_key_var,
-            generator: statement.generator,
-            expected_ciphertext: expected_ciphertext_var,
-        };
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
         Self::apply_constraints(witness_var, statement_var, &mut prover)
             .map_err(ProverError::R1CS)?;
@@ -307,17 +313,7 @@ impl<const SCALAR_BITS: usize> SingleProverCircuit for ElGamalGadget<SCALAR_BITS
         let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
 
         // Commit to the statement
-        let pub_key_var = verifier.commit_public(statement.pub_key);
-        let expected_ciphertext_var = (
-            verifier.commit_public(statement.expected_ciphertext.0),
-            verifier.commit_public(statement.expected_ciphertext.1),
-        );
-
-        let statement_var = ElGamalStatementVar {
-            pub_key: pub_key_var,
-            generator: statement.generator,
-            expected_ciphertext: expected_ciphertext_var,
-        };
+        let statement_var = statement.commit_public(&mut verifier).unwrap();
 
         Self::apply_constraints(witness_var, statement_var, &mut verifier)
             .map_err(VerifierError::R1CS)?;

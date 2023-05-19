@@ -1141,7 +1141,7 @@ mod nonnative_tests {
     use crate::{
         errors::{ProverError, VerifierError},
         test_helpers::bulletproof_prove_and_verify,
-        CommitVerifier, CommitWitness, SingleProverCircuit,
+        CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit,
     };
 
     use super::{biguint_to_scalar_words, FieldMod, NonNativeElementVar};
@@ -1291,19 +1291,40 @@ mod nonnative_tests {
         }
     }
 
+    impl CommitPublic for (BigUint, FieldMod) {
+        type VarType = NonNativeElementVar;
+        type ErrorType = ();
+
+        fn commit_public<CS: RandomizableConstraintSystem>(
+            &self,
+            cs: &mut CS,
+        ) -> Result<Self::VarType, Self::ErrorType> {
+            let expected_words = biguint_to_scalar_words(self.0.clone());
+            let statement_word_vars = expected_words
+                .iter()
+                .map(|word| cs.commit_public(*word))
+                .collect_vec();
+
+            let statement_word_lcs: Vec<LinearCombination> = statement_word_vars
+                .into_iter()
+                .map(Into::into)
+                .collect_vec();
+
+            Ok(NonNativeElementVar::new(statement_word_lcs, self.1.clone()))
+        }
+    }
+
     pub struct AdderCircuit {}
     impl SingleProverCircuit for AdderCircuit {
         type Witness = FanIn2Witness;
-        type Statement = BigUint;
+        type Statement = (BigUint, FieldMod);
         type WitnessCommitment = FanIn2WitnessCommitment;
-        type WitnessVar = FanIn2WitnessVar;
-        type StatementVar = NonNativeElementVar;
 
         const BP_GENS_CAPACITY: usize = 64;
 
         fn apply_constraints<CS: RandomizableConstraintSystem>(
-            witness_var: Self::WitnessVar,
-            statement_var: Self::StatementVar,
+            witness_var: <Self::Witness as CommitWitness>::VarType,
+            statement_var: <Self::Statement as CommitPublic>::VarType,
             cs: &mut CS,
         ) -> Result<(), R1CSError> {
             // Apply the constraints over the allocated witness & statement
@@ -1326,21 +1347,9 @@ mod nonnative_tests {
                 witness.commit_witness(&mut rng, &mut prover).unwrap();
 
             // Commit to the statement variable
-            let expected_words = biguint_to_scalar_words(statement);
-            let statement_word_vars = expected_words
-                .iter()
-                .map(|word| prover.commit_public(*word))
-                .collect_vec();
+            let statement_var = statement.commit_public(&mut prover).unwrap();
 
-            let statement_word_lcs: Vec<LinearCombination> = statement_word_vars
-                .into_iter()
-                .map(Into::into)
-                .collect_vec();
-            let expected_nonnative =
-                NonNativeElementVar::new(statement_word_lcs, witness.field_mod);
-
-            Self::apply_constraints(witness_var, expected_nonnative, &mut prover)
-                .map_err(ProverError::R1CS)?;
+            Self::apply_constraints(witness_var, statement_var, &mut prover).unwrap();
 
             // Prove the statement
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -1359,21 +1368,9 @@ mod nonnative_tests {
             let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
 
             // Commit to the statement variable
-            let expected_words = biguint_to_scalar_words(statement);
-            let statement_word_vars = expected_words
-                .iter()
-                .map(|word| verifier.commit_public(*word))
-                .collect_vec();
+            let statement_var = statement.commit_public(&mut verifier).unwrap();
 
-            let statement_word_lcs: Vec<LinearCombination> = statement_word_vars
-                .into_iter()
-                .map(Into::into)
-                .collect_vec();
-            let expected_nonnative =
-                NonNativeElementVar::new(statement_word_lcs, witness_commitment.field_mod);
-
-            Self::apply_constraints(witness_var, expected_nonnative, &mut verifier)
-                .map_err(VerifierError::R1CS)?;
+            Self::apply_constraints(witness_var, statement_var, &mut verifier).unwrap();
 
             // Verify the proof
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -1386,17 +1383,15 @@ mod nonnative_tests {
     #[derive(Clone, Debug)]
     pub struct MulCircuit {}
     impl SingleProverCircuit for MulCircuit {
-        type Statement = BigUint;
+        type Statement = (BigUint, FieldMod);
         type Witness = FanIn2Witness;
         type WitnessCommitment = FanIn2WitnessCommitment;
-        type WitnessVar = FanIn2WitnessVar;
-        type StatementVar = NonNativeElementVar;
 
         const BP_GENS_CAPACITY: usize = 128;
 
         fn apply_constraints<CS: RandomizableConstraintSystem>(
-            witness_var: Self::WitnessVar,
-            statement_var: Self::StatementVar,
+            witness_var: <Self::Witness as CommitWitness>::VarType,
+            statement_var: <Self::Statement as CommitPublic>::VarType,
             cs: &mut CS,
         ) -> Result<(), R1CSError> {
             // Apply the constraints over the allocated witness & statement
@@ -1419,21 +1414,9 @@ mod nonnative_tests {
                 witness.commit_witness(&mut rng, &mut prover).unwrap();
 
             // Commit to the statement variable
-            let expected_words = biguint_to_scalar_words(statement);
-            let statement_word_vars = expected_words
-                .iter()
-                .map(|word| prover.commit_public(*word))
-                .collect_vec();
+            let statement_var = statement.commit_public(&mut prover).unwrap();
 
-            let statement_word_lcs: Vec<LinearCombination> = statement_word_vars
-                .into_iter()
-                .map(Into::into)
-                .collect_vec();
-            let expected_nonnative =
-                NonNativeElementVar::new(statement_word_lcs, witness.field_mod);
-
-            Self::apply_constraints(witness_var, expected_nonnative, &mut prover)
-                .map_err(ProverError::R1CS)?;
+            Self::apply_constraints(witness_var, statement_var, &mut prover).unwrap();
 
             // Prove the statement
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -1452,21 +1435,9 @@ mod nonnative_tests {
             let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
 
             // Commit to the statement variable
-            let expected_words = biguint_to_scalar_words(statement);
-            let statement_word_vars = expected_words
-                .iter()
-                .map(|word| verifier.commit_public(*word))
-                .collect_vec();
+            let statement_var = statement.commit_public(&mut verifier).unwrap();
 
-            let statement_word_lcs: Vec<LinearCombination> = statement_word_vars
-                .into_iter()
-                .map(Into::into)
-                .collect_vec();
-            let expected_nonnative =
-                NonNativeElementVar::new(statement_word_lcs, witness_commitment.field_mod);
-
-            Self::apply_constraints(witness_var, expected_nonnative, &mut verifier)
-                .map_err(VerifierError::R1CS)?;
+            Self::apply_constraints(witness_var, statement_var, &mut verifier).unwrap();
 
             // Verify the proof
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -1478,17 +1449,15 @@ mod nonnative_tests {
 
     pub struct SubCircuit {}
     impl SingleProverCircuit for SubCircuit {
-        type Statement = BigUint;
+        type Statement = (BigUint, FieldMod);
         type Witness = FanIn2Witness;
         type WitnessCommitment = FanIn2WitnessCommitment;
-        type WitnessVar = FanIn2WitnessVar;
-        type StatementVar = NonNativeElementVar;
 
         const BP_GENS_CAPACITY: usize = 64;
 
         fn apply_constraints<CS: RandomizableConstraintSystem>(
-            witness_var: Self::WitnessVar,
-            statement_var: Self::StatementVar,
+            witness_var: <Self::Witness as CommitWitness>::VarType,
+            statement_var: <Self::Statement as CommitPublic>::VarType,
             cs: &mut CS,
         ) -> Result<(), R1CSError> {
             // Apply the constraints over the allocated witness & statement
@@ -1511,21 +1480,9 @@ mod nonnative_tests {
                 witness.commit_witness(&mut rng, &mut prover).unwrap();
 
             // Commit to the statement variable
-            let expected_words = biguint_to_scalar_words(statement);
-            let statement_word_vars = expected_words
-                .iter()
-                .map(|word| prover.commit_public(*word))
-                .collect_vec();
+            let statement_var = statement.commit_public(&mut prover).unwrap();
 
-            let statement_word_lcs: Vec<LinearCombination> = statement_word_vars
-                .into_iter()
-                .map(Into::into)
-                .collect_vec();
-            let expected_nonnative =
-                NonNativeElementVar::new(statement_word_lcs, witness.field_mod);
-
-            Self::apply_constraints(witness_var, expected_nonnative, &mut prover)
-                .map_err(ProverError::R1CS)?;
+            Self::apply_constraints(witness_var, statement_var, &mut prover).unwrap();
 
             // Prove the statement
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -1544,21 +1501,9 @@ mod nonnative_tests {
             let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
 
             // Commit to the statement variable
-            let expected_words = biguint_to_scalar_words(statement);
-            let statement_word_vars = expected_words
-                .iter()
-                .map(|word| verifier.commit_public(*word))
-                .collect_vec();
+            let statement_var = statement.commit_public(&mut verifier).unwrap();
 
-            let statement_word_lcs: Vec<LinearCombination> = statement_word_vars
-                .into_iter()
-                .map(Into::into)
-                .collect_vec();
-            let expected_nonnative =
-                NonNativeElementVar::new(statement_word_lcs, witness_commitment.field_mod);
-
-            Self::apply_constraints(witness_var, expected_nonnative, &mut verifier)
-                .map_err(VerifierError::R1CS)?;
+            Self::apply_constraints(witness_var, statement_var, &mut verifier).unwrap();
 
             // Verify the proof
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -1575,14 +1520,12 @@ mod nonnative_tests {
         type Witness = FanIn2Witness;
         type WitnessCommitment = FanIn2WitnessCommitment;
         type Statement = ();
-        type WitnessVar = FanIn2WitnessVar;
-        type StatementVar = ();
 
         const BP_GENS_CAPACITY: usize = 256;
 
         fn apply_constraints<CS: RandomizableConstraintSystem>(
-            witness_var: Self::WitnessVar,
-            _: Self::StatementVar,
+            witness_var: <Self::Witness as CommitWitness>::VarType,
+            _: <Self::Statement as CommitPublic>::VarType,
             cs: &mut CS,
         ) -> Result<(), R1CSError> {
             // Apply the constraints over the allocated witness & statement
@@ -1606,7 +1549,7 @@ mod nonnative_tests {
             let (witness_var, wintess_comm) =
                 witness.commit_witness(&mut rng, &mut prover).unwrap();
 
-            Self::apply_constraints(witness_var, (), &mut prover).map_err(ProverError::R1CS)?;
+            Self::apply_constraints(witness_var, (), &mut prover).unwrap();
 
             // Prove the statement
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -1624,7 +1567,7 @@ mod nonnative_tests {
             // Commit to the witness
             let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
 
-            Self::apply_constraints(witness_var, (), &mut verifier).map_err(VerifierError::R1CS)?;
+            Self::apply_constraints(witness_var, (), &mut verifier).unwrap();
 
             // Verify the proof
             let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -1789,13 +1732,15 @@ mod nonnative_tests {
             let random_mod = random_biguint(&mut rng);
             let expected_bigint = (&random_elem1 + &random_elem2) % &random_mod;
 
+            let field_mod = FieldMod::from_modulus(random_mod);
+
             let witness = FanIn2Witness {
                 lhs: random_elem1,
                 rhs: random_elem2,
-                field_mod: FieldMod::from_modulus(random_mod),
+                field_mod: field_mod.clone(),
             };
 
-            let statement = expected_bigint;
+            let statement = (expected_bigint, field_mod);
 
             // Prove and verify a valid member of the relation
             let res = bulletproof_prove_and_verify::<AdderCircuit>(witness, statement);
@@ -1847,13 +1792,15 @@ mod nonnative_tests {
             let random_mod = random_biguint(&mut rng);
             let expected_bigint = (&random_elem1 * &random_elem2) % &random_mod;
 
+            let field_mod = FieldMod::from_modulus(random_mod);
+
             let witness = FanIn2Witness {
                 lhs: random_elem1,
                 rhs: random_elem2,
-                field_mod: FieldMod::from_modulus(random_mod),
+                field_mod: field_mod.clone(),
             };
 
-            let statement = expected_bigint;
+            let statement = (expected_bigint, field_mod);
 
             // Prove and verify a valid member of the relation
             let res = bulletproof_prove_and_verify::<MulCircuit>(witness, statement);
@@ -1910,13 +1857,15 @@ mod nonnative_tests {
             };
             expected_bigint %= &random_mod;
 
+            let field_mod = FieldMod::from_modulus(random_mod.to_biguint().unwrap());
+
             let witness = FanIn2Witness {
                 lhs: random_elem1.to_biguint().unwrap(),
                 rhs: random_elem2.to_biguint().unwrap(),
-                field_mod: FieldMod::from_modulus(random_mod.to_biguint().unwrap()),
+                field_mod: field_mod.clone(),
             };
 
-            let statement = expected_bigint.to_biguint().unwrap();
+            let statement = (expected_bigint.to_biguint().unwrap(), field_mod);
 
             // Prove and verify a valid member of the relation
             let res = bulletproof_prove_and_verify::<SubCircuit>(witness, statement);

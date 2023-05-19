@@ -6,8 +6,7 @@ use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{
-        ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
-        Variable, Verifier,
+        LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
     },
     r1cs_mpc::{
         MpcConstraintSystem, MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem,
@@ -26,7 +25,7 @@ use crate::{
     errors::{MpcError, ProverError, VerifierError},
     mpc::SharedFabric,
     mpc_gadgets::bits::{scalar_to_bits_le, to_bits_le},
-    MultiProverCircuit, Open, SingleProverCircuit,
+    CommitPublic, CommitWitness, MultiProverCircuit, Open, SingleProverCircuit,
 };
 
 /**
@@ -68,18 +67,32 @@ pub struct ToBitsStatement {
     pub bits: Vec<Scalar>,
 }
 
+impl CommitPublic for ToBitsStatement {
+    type VarType = Vec<Variable>;
+    type ErrorType = ();
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        Ok(self
+            .bits
+            .iter()
+            .map(|bit| cs.commit_public(*bit))
+            .collect_vec())
+    }
+}
+
 impl<const D: usize> SingleProverCircuit for ToBitsGadget<D> {
     type Statement = ToBitsStatement;
     type Witness = Scalar;
     type WitnessCommitment = CompressedRistretto;
-    type WitnessVar = Variable;
-    type StatementVar = Vec<Variable>;
 
     const BP_GENS_CAPACITY: usize = 256;
 
     fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: Self::WitnessVar,
-        statement_var: Self::StatementVar,
+        witness_var: <Self::Witness as CommitWitness>::VarType,
+        statement_var: <Self::Statement as CommitPublic>::VarType,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
         // Apply the constraints over the allocated witness & statement
@@ -103,13 +116,9 @@ impl<const D: usize> SingleProverCircuit for ToBitsGadget<D> {
         let (witness_comm, witness_var) = prover.commit(witness, Scalar::random(&mut rng));
 
         // Commit to the statement
-        let statement_vars = statement
-            .bits
-            .iter()
-            .map(|bit| prover.commit_public(*bit))
-            .collect_vec();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
-        Self::apply_constraints(witness_var, statement_vars, &mut prover)
+        Self::apply_constraints(witness_var, statement_var, &mut prover)
             .map_err(ProverError::R1CS)?;
 
         // Prove the statement
@@ -127,13 +136,9 @@ impl<const D: usize> SingleProverCircuit for ToBitsGadget<D> {
     ) -> Result<(), VerifierError> {
         // Commit to the witness and statement
         let witness_var = verifier.commit(witness_commitment);
-        let bit_vars = statement
-            .bits
-            .into_iter()
-            .map(|bit| verifier.commit_public(bit))
-            .collect_vec();
+        let statement_var = statement.commit_public(&mut verifier).unwrap();
 
-        Self::apply_constraints(witness_var, bit_vars, &mut verifier)
+        Self::apply_constraints(witness_var, statement_var, &mut verifier)
             .map_err(VerifierError::R1CS)?;
 
         // Verify the proof

@@ -4,8 +4,7 @@ use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{
-        ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
-        Variable, Verifier,
+        LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
     },
     r1cs_mpc::R1CSError,
     BulletproofGens,
@@ -18,7 +17,7 @@ use std::ops::Neg;
 use crate::{
     errors::{ProverError, VerifierError},
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    CommitVerifier, CommitWitness, SingleProverCircuit,
+    CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit,
 };
 
 use super::poseidon::PoseidonHashGadget;
@@ -355,19 +354,30 @@ pub struct MerkleStatement {
     pub tree_height: usize,
 }
 
+impl CommitPublic for MerkleStatement {
+    type VarType = Variable;
+    type ErrorType = ();
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        Ok(cs.commit_public(self.expected_root))
+    }
+}
+
 impl SingleProverCircuit for PoseidonMerkleHashGadget {
     type Statement = MerkleStatement;
     type Witness = MerkleWitness;
     type WitnessCommitment = MerkleWitnessCommitment;
-    type WitnessVar = MerkleWitnessVar;
+
     // The only statement variable that gets allocated is the Merkle root
-    type StatementVar = Variable;
 
     const BP_GENS_CAPACITY: usize = 8192;
 
     fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: Self::WitnessVar,
-        statement_var: Self::StatementVar,
+        witness_var: <Self::Witness as CommitWitness>::VarType,
+        statement_var: <Self::Statement as CommitPublic>::VarType,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
         // Apply the constraints over the allocated witness & statement
@@ -389,9 +399,10 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
         let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Commit to the expected root
-        let root_var = prover.commit_public(statement.expected_root);
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
-        Self::apply_constraints(witness_var, root_var, &mut prover).map_err(ProverError::R1CS)?;
+        Self::apply_constraints(witness_var, statement_var, &mut prover)
+            .map_err(ProverError::R1CS)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -408,9 +419,9 @@ impl SingleProverCircuit for PoseidonMerkleHashGadget {
     ) -> Result<(), VerifierError> {
         // Commit to the witness and statement
         let witness_vars = witness_commitments.commit_verifier(&mut verifier).unwrap();
-        let root_var = verifier.commit_public(statement.expected_root);
+        let statement_var = statement.commit_public(&mut verifier).unwrap();
 
-        Self::apply_constraints(witness_vars, root_var, &mut verifier)
+        Self::apply_constraints(witness_vars, statement_var, &mut verifier)
             .map_err(VerifierError::R1CS)?;
 
         // Verify the proof

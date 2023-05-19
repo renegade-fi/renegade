@@ -450,14 +450,12 @@ where
     type Witness = ValidSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type Statement = ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type WitnessCommitment = ValidSettleWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type WitnessVar = ValidSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type StatementVar = ValidSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     const BP_GENS_CAPACITY: usize = 1024;
 
     fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: Self::WitnessVar,
-        statement_var: Self::StatementVar,
+        witness_var: <Self::Witness as CommitWitness>::VarType,
+        statement_var: <Self::Statement as CommitPublic>::VarType,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
         // Apply the constraints over the allocated witness & statement
@@ -475,8 +473,7 @@ where
         let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
         let statement_var = statement.commit_public(&mut prover).unwrap();
 
-        Self::apply_constraints(witness_var, statement_var, &mut prover)
-            .map_err(ProverError::R1CS)?;
+        Self::apply_constraints(witness_var, statement_var, &mut prover).unwrap();
 
         // Prove the relation
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -495,8 +492,7 @@ where
         let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
         let statement_var = statement.commit_public(&mut verifier).unwrap();
 
-        Self::apply_constraints(witness_var, statement_var, &mut verifier)
-            .map_err(VerifierError::R1CS)?;
+        Self::apply_constraints(witness_var, statement_var, &mut verifier).unwrap();
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);

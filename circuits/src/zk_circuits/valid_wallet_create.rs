@@ -241,14 +241,12 @@ where
     type Statement = ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type Witness = ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type WitnessCommitment = ValidWalletCreateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type WitnessVar = ValidWalletCreateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type StatementVar = ValidWalletCreateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     const BP_GENS_CAPACITY: usize = 10000;
 
     fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: Self::WitnessVar,
-        statement_var: Self::StatementVar,
+        witness_var: <Self::Witness as CommitWitness>::VarType,
+        statement_var: <Self::Statement as CommitPublic>::VarType,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
         // Apply the constraints over the allocated witness & statement

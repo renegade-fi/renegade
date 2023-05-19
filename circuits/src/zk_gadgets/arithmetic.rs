@@ -25,7 +25,7 @@ use rand_core::OsRng;
 
 use crate::errors::{MpcError, ProverError, VerifierError};
 use crate::mpc::SharedFabric;
-use crate::{MultiProverCircuit, SingleProverCircuit};
+use crate::{CommitPublic, CommitWitness, MultiProverCircuit, SingleProverCircuit};
 
 use super::bits::ToBitsGadget;
 use super::comparators::{EqZeroGadget, LessThanGadget};
@@ -135,6 +135,21 @@ pub struct ExpGadgetWitness {
     pub x: Scalar,
 }
 
+impl CommitWitness for ExpGadgetWitness {
+    type CommitType = CompressedRistretto;
+    type VarType = Variable;
+    type ErrorType = ();
+
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (witness_comm, witness_var) = prover.commit(self.x, Scalar::random(rng));
+        Ok((witness_var, witness_comm))
+    }
+}
+
 /// The statement type for the ExpGadget circuit implementation
 ///
 /// Both the exponent and the expected output are considered public inputs
@@ -147,18 +162,28 @@ pub struct ExpGadgetStatement {
     pub expected_out: Scalar,
 }
 
+impl CommitPublic for ExpGadgetStatement {
+    type VarType = (Variable, u64);
+    type ErrorType = ();
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        Ok((cs.commit_public(self.expected_out), self.alpha))
+    }
+}
+
 impl SingleProverCircuit for ExpGadget {
     type Witness = ExpGadgetWitness;
     type Statement = ExpGadgetStatement;
     type WitnessCommitment = CompressedRistretto;
-    type WitnessVar = Variable;
-    type StatementVar = (Variable, u64);
 
     const BP_GENS_CAPACITY: usize = 64;
 
     fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: Self::WitnessVar,
-        statement_var: Self::StatementVar,
+        witness_var: <Self::Witness as CommitWitness>::VarType,
+        statement_var: <Self::Statement as CommitPublic>::VarType,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
         // Apply the constraints over the allocated witness & statement
@@ -173,13 +198,11 @@ impl SingleProverCircuit for ExpGadget {
     ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
         // Commit to the input and expected output
         let mut rng = OsRng {};
-        let blinding_factor = Scalar::random(&mut rng);
 
-        let (x_commit, x_var) = prover.commit(witness.x, blinding_factor);
-        let out_var = prover.commit_public(statement.expected_out);
+        let (witness_var, witness_commit) = witness.commit_witness(&mut rng, &mut prover).unwrap();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
-        Self::apply_constraints(x_var, (out_var, statement.alpha), &mut prover)
-            .map_err(ProverError::R1CS)?;
+        Self::apply_constraints(witness_var, statement_var, &mut prover).unwrap();
 
         let bp_gens = BulletproofGens::new(
             Self::BP_GENS_CAPACITY, /* gens_capacity */
@@ -188,7 +211,7 @@ impl SingleProverCircuit for ExpGadget {
         let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
 
         // Only return the commitment to the witness, the verifier will separately commit to the statement input
-        Ok((x_commit, proof))
+        Ok((witness_commit, proof))
     }
 
     fn verify(
@@ -199,10 +222,9 @@ impl SingleProverCircuit for ExpGadget {
     ) -> Result<(), VerifierError> {
         // Commit to the result in the verifier
         let x_var = verifier.commit(witness_commitment); // The input `x`
-        let out_var = verifier.commit_public(statement.expected_out);
+        let statement_var = statement.commit_public(&mut verifier).unwrap();
 
-        Self::apply_constraints(x_var, (out_var, statement.alpha), &mut verifier)
-            .map_err(VerifierError::R1CS)?;
+        Self::apply_constraints(x_var, statement_var, &mut verifier).unwrap();
 
         let bp_gens = BulletproofGens::new(
             Self::BP_GENS_CAPACITY, /* gens_capacity */
@@ -356,20 +378,44 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
     }
 }
 
+/// The witness type for the [`PrivateExpGadget`] circuit implementation
+///
+/// Both the base and the exponent are private inputs
+pub struct PrivateExpGadgetWitness {
+    /// Base
+    x: Scalar,
+    /// Exponent
+    alpha: Scalar,
+}
+
+impl CommitWitness for PrivateExpGadgetWitness {
+    type CommitType = (CompressedRistretto, CompressedRistretto);
+    type VarType = (Variable, Variable);
+    type ErrorType = ();
+
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (x_comm, x_var) = prover.commit(self.x, Scalar::random(rng));
+        let (alpha_comm, alpha_var) = prover.commit(self.alpha, Scalar::random(rng));
+        Ok(((x_var, alpha_var), (x_comm, alpha_comm)))
+    }
+}
+
 impl<const ALPHA_SIZE: usize> SingleProverCircuit for PrivateExpGadget<ALPHA_SIZE> {
     /// Expected output
     type Statement = Scalar;
     /// (x, \alpha)
-    type Witness = (Scalar, Scalar);
+    type Witness = PrivateExpGadgetWitness;
     type WitnessCommitment = (CompressedRistretto, CompressedRistretto);
-    type WitnessVar = (Variable, Variable);
-    type StatementVar = Variable;
 
     const BP_GENS_CAPACITY: usize = 4096;
 
     fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: Self::WitnessVar,
-        statement_var: Self::StatementVar,
+        witness_var: <Self::Witness as CommitWitness>::VarType,
+        statement_var: <Self::Statement as CommitPublic>::VarType,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
         // Apply the constraints over the allocated witness & statement
@@ -385,20 +431,19 @@ impl<const ALPHA_SIZE: usize> SingleProverCircuit for PrivateExpGadget<ALPHA_SIZ
     ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
         // Commit to `x` and `\alpha`
         let mut rng = OsRng {};
-        let (x_comm, x_var) = prover.commit(witness.0, Scalar::random(&mut rng));
-        let (alpha_comm, alpha_var) = prover.commit(witness.1, Scalar::random(&mut rng));
+        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Commit to the expected output
         let expected_out = prover.commit_public(statement);
 
-        Self::apply_constraints((x_var, alpha_var), expected_out, &mut prover)
+        Self::apply_constraints(witness_var, expected_out, &mut prover)
             .map_err(ProverError::R1CS)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
 
-        Ok(((x_comm, alpha_comm), proof))
+        Ok((witness_comm, proof))
     }
 
     fn verify(
@@ -558,7 +603,10 @@ mod arithmetic_tests {
 
     use crate::test_helpers::bulletproof_prove_and_verify;
 
-    use super::{DivRemGadget, ExpGadget, ExpGadgetStatement, ExpGadgetWitness, PrivateExpGadget};
+    use super::{
+        DivRemGadget, ExpGadget, ExpGadgetStatement, ExpGadgetWitness, PrivateExpGadget,
+        PrivateExpGadgetWitness,
+    };
 
     /// Tests the single prover exponentiation gadget
     #[test]
@@ -622,7 +670,7 @@ mod arithmetic_tests {
         let expected = x_bigint.modpow(&alpha_bigint, &get_ristretto_group_modulus());
 
         let res = bulletproof_prove_and_verify::<PrivateExpGadget<64>>(
-            (x, alpha),
+            PrivateExpGadgetWitness { x, alpha },
             biguint_to_scalar(&expected),
         );
         assert!(res.is_ok())

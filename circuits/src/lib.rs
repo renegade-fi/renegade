@@ -452,25 +452,15 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open<N, S>
 pub trait SingleProverCircuit {
     /// The witness type, given only to the prover, which generates a blinding commitment
     /// that can be given to the verifier
-    type Witness;
+    type Witness: CommitWitness;
     /// The statement type, given to both the prover and verifier, parameterizes the underlying
     /// NP statement being proven
-    type Statement: Clone;
+    type Statement: Clone + CommitPublic;
     /// The data type of the output commitment from the prover.
     ///
     /// The prover commits to the witness and sends this commitment to the verifier, this type
     /// is the structure in which that commitment is sent
     type WitnessCommitment;
-    /// The type of a witness that has been allocated into a constraint system
-    ///
-    /// This is created by both the prover and the verifier in preparation for
-    /// applying constraints
-    type WitnessVar;
-    /// The type of a statement that has been allocated into a constraint system
-    ///
-    /// This is created by both the prover and the verifier in preparation for
-    /// applying constraints
-    type StatementVar;
 
     /// The size of the bulletproof generators that must be allocated
     /// to fully compute a proof or verification of the statement
@@ -482,8 +472,8 @@ pub trait SingleProverCircuit {
     /// Applies all the constraints embodied by the circuit over the allocated witness & statement,
     /// building them into the given constraint system
     fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: Self::WitnessVar,
-        statement_var: Self::StatementVar,
+        witness_var: <Self::Witness as CommitWitness>::VarType,
+        statement_var: <Self::Statement as CommitPublic>::VarType,
         cs: &mut CS,
     ) -> Result<(), R1CSError>;
 
@@ -517,7 +507,6 @@ pub trait SingleProverCircuit {
 /// The witness type represents the secret witness that the prover has access to but
 /// that the verifier does not. The statement is the set of public inputs and any
 /// other circuit meta-parameters that both prover and verifier have access to.
-// TODO(andrew): ADD `apply_constraints` HERE AS WELL (?)
 pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> {
     /// The witness type, given only to the prover, which generates a blinding commitment
     /// that can be given to the verifier
@@ -594,6 +583,30 @@ impl CommitPublic for Scalar {
         cs: &mut CS,
     ) -> Result<Self::VarType, Self::ErrorType> {
         Ok(cs.commit_public(*self))
+    }
+}
+
+impl CommitPublic for bool {
+    type VarType = Variable;
+    type ErrorType = ();
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        Ok(cs.commit_public(Scalar::from(*self as u8)))
+    }
+}
+
+impl CommitPublic for () {
+    type VarType = ();
+    type ErrorType = ();
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        _cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        Ok(())
     }
 }
 

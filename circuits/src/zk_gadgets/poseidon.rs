@@ -7,8 +7,7 @@ use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{
-        ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
-        Variable, Verifier,
+        LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
     },
     r1cs_mpc::{
         MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MpcVariable, R1CSError,
@@ -26,7 +25,7 @@ use crate::{
     errors::{MpcError, ProverError, VerifierError},
     mpc::SharedFabric,
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    MultiProverCircuit, SingleProverCircuit,
+    CommitPublic, CommitWitness, MultiProverCircuit, SingleProverCircuit,
 };
 
 use super::arithmetic::{ExpGadget, MultiproverExpGadget};
@@ -278,11 +277,24 @@ pub struct PoseidonGadgetWitness {
     pub preimage: Vec<Scalar>,
 }
 
-/// A [`PoseidonHashGadget`] witness that has been allocated in a constraint system
-#[derive(Clone, Debug)]
-pub struct PoseidonGadgetWitnessVar {
-    /// Preimage
-    pub preimage: Vec<Variable>,
+impl CommitWitness for PoseidonGadgetWitness {
+    type CommitType = Vec<CompressedRistretto>;
+    type VarType = Vec<Variable>;
+    type ErrorType = ();
+
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (witness_comm, witness_var): (Vec<CompressedRistretto>, Vec<Variable>) = self
+            .preimage
+            .iter()
+            .map(|&val| prover.commit(val, Scalar::random(rng)))
+            .unzip();
+
+        Ok((witness_var, witness_comm))
+    }
 }
 
 /// The statement variable (public variable) for the argument, consisting
@@ -305,25 +317,38 @@ pub struct PoseidonGadgetStatementVar {
     pub params: PoseidonSpongeParameters,
 }
 
+impl CommitPublic for PoseidonGadgetStatement {
+    type VarType = PoseidonGadgetStatementVar;
+    type ErrorType = ();
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        Ok(PoseidonGadgetStatementVar {
+            expected_out: cs.commit_public(self.expected_out),
+            params: self.params.clone(),
+        })
+    }
+}
+
 impl SingleProverCircuit for PoseidonHashGadget {
     type Witness = PoseidonGadgetWitness;
     type WitnessCommitment = Vec<CompressedRistretto>;
     type Statement = PoseidonGadgetStatement;
-    type WitnessVar = PoseidonGadgetWitnessVar;
-    type StatementVar = PoseidonGadgetStatementVar;
 
     const BP_GENS_CAPACITY: usize = 2048;
 
     fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: Self::WitnessVar,
-        statement_var: Self::StatementVar,
+        witness_var: <Self::Witness as CommitWitness>::VarType,
+        statement_var: <Self::Statement as CommitPublic>::VarType,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
         // Apply the constraints over the allocated witness & statement
 
         // Build a hasher and apply the constraints
         let mut hasher = PoseidonHashGadget::new(statement_var.params);
-        hasher.hash(&witness_var.preimage, statement_var.expected_out, cs)
+        hasher.hash(&witness_var, statement_var.expected_out, cs)
     }
 
     fn prove(
@@ -333,23 +358,10 @@ impl SingleProverCircuit for PoseidonHashGadget {
     ) -> Result<(Vec<CompressedRistretto>, R1CSProof), ProverError> {
         // Commit to the preimage
         let mut rng = OsRng {};
-        let (preimage_commits, preimage_vars): (Vec<CompressedRistretto>, Vec<Variable>) = witness
-            .preimage
-            .into_iter()
-            .map(|val| prover.commit(val, Scalar::random(&mut rng)))
-            .unzip();
+        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Commit publicly to the expected result
-        let out_var = prover.commit_public(statement.expected_out);
-
-        let witness_var = PoseidonGadgetWitnessVar {
-            preimage: preimage_vars,
-        };
-
-        let statement_var = PoseidonGadgetStatementVar {
-            expected_out: out_var,
-            params: statement.params,
-        };
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
         Self::apply_constraints(witness_var, statement_var, &mut prover)
             .map_err(ProverError::R1CS)?;
@@ -358,7 +370,7 @@ impl SingleProverCircuit for PoseidonHashGadget {
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
 
-        Ok((preimage_commits, proof))
+        Ok((witness_comm, proof))
     }
 
     fn verify(
@@ -368,22 +380,13 @@ impl SingleProverCircuit for PoseidonHashGadget {
         mut verifier: Verifier,
     ) -> Result<(), VerifierError> {
         // Commit to the preimage from the existing witness commitments
-        let witness_vars = witness_commitments
+        let witness_var = witness_commitments
             .iter()
             .map(|comm| verifier.commit(*comm))
             .collect_vec();
 
         // Commit to the public expected output
-        let output_var = verifier.commit_public(statement.expected_out);
-
-        let witness_var = PoseidonGadgetWitnessVar {
-            preimage: witness_vars,
-        };
-
-        let statement_var = PoseidonGadgetStatementVar {
-            expected_out: output_var,
-            params: statement.params,
-        };
+        let statement_var = statement.commit_public(&mut verifier).unwrap();
 
         Self::apply_constraints(witness_var, statement_var, &mut verifier)
             .map_err(VerifierError::R1CS)?;
