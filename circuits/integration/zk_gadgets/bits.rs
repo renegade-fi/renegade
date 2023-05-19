@@ -1,7 +1,9 @@
 //! Groups integration tests for the circuitry that converts between scalars and their
 //! bit representations
 
-use circuits::zk_gadgets::bits::{MultiproverToBitsGadget, ToBitsStatement};
+use circuits::zk_gadgets::bits::{
+    MultiProverToBitsWitness, MultiproverToBitsGadget, ToBitsStatement,
+};
 use crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
 use curve25519_dalek::scalar::Scalar;
 use integration_helpers::{mpc_network::batch_share_plaintext_scalar, types::IntegrationTest};
@@ -36,7 +38,7 @@ fn test_to_bits(test_args: &IntegrationTestArgs) -> Result<(), String> {
     };
 
     multiprover_prove_and_verify::<'_, _, _, MultiproverToBitsGadget<'_, 64 /* bits */, _, _>>(
-        shared_scalar,
+        MultiProverToBitsWitness { a: shared_scalar },
         statement,
         test_args.mpc_fabric.clone(),
     )

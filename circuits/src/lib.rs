@@ -510,7 +510,7 @@ pub trait SingleProverCircuit {
 pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> {
     /// The witness type, given only to the prover, which generates a blinding commitment
     /// that can be given to the verifier
-    type Witness;
+    type Witness: CommitSharedProver<N, S>;
     /// The statement type, given to both the prover and verifier, parameterizes the underlying
     /// NP statement being proven
     type Statement: Clone;
@@ -526,6 +526,24 @@ pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueS
     /// This is a function of circuit depth, one generator is needed per
     /// multiplication gate (roughly)
     const BP_GENS_CAPACITY: usize;
+
+    /// Applies all the prover-side constraints embodied by the circuit over
+    /// the allocated witness, secret shares of the counterparty's witness, & statement,
+    /// building them into the given constraint system
+    // fn apply_constraints_multi_prover<CS: RandomizableConstraintSystem>(
+    //     witness_var: <Self::Witness as CommitWitness>::VarType,
+    //     statement_var: Self::Statement,
+    //     cs: &mut CS,
+    // ) -> Result<(), R1CSError>;
+
+    /// Applies all the verifier-side constraints embodied by the circuit over
+    /// the entire committed witness & statement,
+    /// building them into the given constraint system
+    // fn apply_constraints_single_prover<CS: RandomizableConstraintSystem>(
+    //     witness_var: <Self::Witness as CommitWitness>::VarType,
+    //     statement_var: <Self::Statement as CommitPublic>::VarType,
+    //     cs: &mut CS,
+    // ) -> Result<(), R1CSError>;
 
     /// Generate a proof of the statement represented by the circuit
     ///

@@ -25,7 +25,7 @@ use crate::{
     errors::{MpcError, ProverError, VerifierError},
     mpc::SharedFabric,
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    CommitPublic, CommitWitness, MultiProverCircuit, SingleProverCircuit,
+    CommitPublic, CommitSharedProver, CommitWitness, MultiProverCircuit, SingleProverCircuit,
 };
 
 use super::arithmetic::{ExpGadget, MultiproverExpGadget};
@@ -661,6 +661,30 @@ pub struct MultiproverPoseidonWitness<N: MpcNetwork + Send, S: SharedValueSource
     pub preimage: Vec<AuthenticatedScalar<N, S>>,
 }
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S>
+    for MultiproverPoseidonWitness<N, S>
+{
+    type CommitType = Vec<AuthenticatedCompressedRistretto<N, S>>;
+    type SharedVarType = Vec<MpcVariable<N, S>>;
+    type ErrorType = mpc_ristretto::error::MpcError;
+
+    fn commit<R: rand_core::RngCore + rand_core::CryptoRng>(
+        &self,
+        _owning_party: u64,
+        rng: &mut R,
+        prover: &mut MpcProver<N, S>,
+    ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType> {
+        let blinders = (0..self.preimage.len())
+            .map(|_| Scalar::random(rng))
+            .collect_vec();
+
+        let (witness_commits, witness_vars) =
+            prover.batch_commit_preshared(&self.preimage, &blinders)?;
+
+        Ok((witness_vars, witness_commits))
+    }
+}
+
 impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProverCircuit<'a, N, S>
     for MultiproverPoseidonHashGadget<'a, N, S>
 {
@@ -688,12 +712,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProv
     > {
         // Commit to the hash input and expected output
         let mut rng = OsRng {};
-        let blinders = (0..witness.preimage.len())
-            .map(|_| Scalar::random(&mut rng))
-            .collect_vec();
-
-        let (witness_commits, witness_vars) = prover
-            .batch_commit_preshared(&witness.preimage, &blinders)
+        let (witness_vars, witness_commits) = witness
+            .commit(u64::MAX /* unused */, &mut rng, &mut prover)
             .map_err(|err| ProverError::Mpc(MpcError::SharingError(err.to_string())))?;
 
         let (_, out_var) = prover.commit_public(statement.expected_out);

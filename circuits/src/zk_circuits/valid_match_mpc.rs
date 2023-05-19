@@ -98,28 +98,33 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         hasher.hash(input, expected_out, cs)
     }
 
-    /// The order crossing check, verifies that the matches result is valid given the orders
+    /// The order crossing check, verifies that the match result is valid given the orders
     /// and balances of the two parties
     pub fn matching_engine_check<CS>(
         cs: &mut CS,
-        order1: AuthenticatedOrderVar<N, S>,
-        order2: AuthenticatedOrderVar<N, S>,
-        balance1: AuthenticatedBalanceVar<N, S>,
-        balance2: AuthenticatedBalanceVar<N, S>,
-        matches: AuthenticatedMatchResultVar<N, S>,
+        witness_var: ValidMatchMpcWitnessSharedVar<N, S>,
         fabric: SharedFabric<N, S>,
     ) -> Result<(), ProverError>
     where
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
+        // Destructure witness
+        let ValidMatchMpcWitnessSharedVar {
+            order1,
+            order2,
+            balance1,
+            balance2,
+            match_result,
+        } = witness_var;
+
         // Check that both orders are for the matched asset pair
-        cs.constrain(&order1.quote_mint - &matches.quote_mint);
-        cs.constrain(&order1.base_mint - &matches.base_mint);
-        cs.constrain(&order2.quote_mint - &matches.quote_mint);
-        cs.constrain(&order2.base_mint - &matches.base_mint);
+        cs.constrain(&order1.quote_mint - &match_result.quote_mint);
+        cs.constrain(&order1.base_mint - &match_result.base_mint);
+        cs.constrain(&order2.quote_mint - &match_result.quote_mint);
+        cs.constrain(&order2.base_mint - &match_result.base_mint);
 
         // Check that the direction of the match is the same as the first party's direction
-        cs.constrain(&matches.direction - &order1.side);
+        cs.constrain(&match_result.direction - &order1.side);
 
         // Check that the orders are on opposite sides of the market. It is assumed that order
         // sides are already constrained to be binary when they are submitted. More broadly it
@@ -133,7 +138,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
             cs,
             &[order2.price.repr.clone(), order1.price.repr.clone()],
             &[order1.price.repr.clone(), order2.price.repr.clone()],
-            matches.direction.clone().into(),
+            match_result.direction.clone().into(),
             fabric.clone(),
         )?;
         let buy_side_price = AuthenticatedFixedPointVar {
@@ -153,7 +158,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
         // Check that price is correctly computed to be the midpoint
         // i.e. price1 + price2 = 2 * execution_price
-        let double_execution_price: AuthenticatedFixedPointVar<_, _> = matches
+        let double_execution_price: AuthenticatedFixedPointVar<_, _> = match_result
             .execution_price
             .mul_integer(
                 MpcLinearCombination::from_scalar(Scalar::from(2u64), fabric.0.clone()),
@@ -166,9 +171,9 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // i.e. 0 === min_amount_order_index * (1 - min_amount_order_index)
         let (_, _, mul_out) = cs
             .multiply(
-                &matches.min_amount_order_index.clone().into(),
+                &match_result.min_amount_order_index.clone().into(),
                 &(MpcLinearCombination::from_scalar(Scalar::one(), fabric.0.clone())
-                    - &matches.min_amount_order_index),
+                    - &match_result.min_amount_order_index),
             )
             .map_err(ProverError::Collaborative)?;
         cs.constrain(mul_out.into());
@@ -183,11 +188,11 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         let max_minus_min_expected = MultiproverCondSelectGadget::select(
             max_minus_min1,
             max_minus_min2,
-            matches.min_amount_order_index.into(),
+            match_result.min_amount_order_index.into(),
             fabric.clone(),
             cs,
         )?;
-        cs.constrain(&max_minus_min_expected - &matches.max_minus_min_amount);
+        cs.constrain(&max_minus_min_expected - &match_result.max_minus_min_amount);
 
         // 2. Constrain the max_minus_min_amount value to be positive
         // This, along with the previous check, constrain `max_minus_min_amount` to be computed correctly.
@@ -195,7 +200,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // or min(amounts) - max(amounts).
         // Constraining the value to be positive forces it to be equal to max(amounts) - min(amounts)
         MultiproverGreaterThanEqZeroGadget::<'_, 32 /* bitlength */, _, _>::constrain_greater_than_zero(
-            matches.max_minus_min_amount.clone(),
+            match_result.max_minus_min_amount.clone(),
             fabric.clone(),
             cs,
         )?;
@@ -205,16 +210,16 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         //      min(a, b) = 1/2 * (a + b - [max(a, b) - min(a, b)])
         // Above we are given max(a, b) - min(a, b), so we can enforce the constraint
         //      2 * executed_amount = amount1 + amount2 - max_minus_min_amount
-        let lhs = Scalar::from(2u64) * &matches.base_amount;
-        let rhs = &order1.amount + &order2.amount - &matches.max_minus_min_amount;
+        let lhs = Scalar::from(2u64) * &match_result.base_amount;
+        let rhs = &order1.amount + &order2.amount - &match_result.max_minus_min_amount;
         cs.constrain(lhs - rhs);
 
         // The quote amount should then equal the price multiplied by the base amount
-        let expected_quote_amount = matches
+        let expected_quote_amount = match_result
             .execution_price
-            .mul_integer(&matches.base_amount, cs)
+            .mul_integer(&match_result.base_amount, cs)
             .map_err(ProverError::Collaborative)?;
-        expected_quote_amount.constrain_equal_integer(&matches.quote_amount, cs);
+        expected_quote_amount.constrain_equal_integer(&match_result.quote_amount, cs);
 
         // Ensure the balances cover the orders
         // 1. Mux between the (mint, amount) pairs that the parties are expected to cover by the
@@ -222,24 +227,24 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
         // The selections in the case that party 0 is on the buy side of the match
         let party0_buy_side_selection = vec![
-            matches.base_mint.clone(),
-            matches.base_amount.clone(),
-            matches.quote_mint.clone(),
-            matches.quote_amount.clone(),
+            match_result.base_mint.clone(),
+            match_result.base_amount.clone(),
+            match_result.quote_mint.clone(),
+            match_result.quote_amount.clone(),
         ];
 
         let party1_buy_side_selection = vec![
-            matches.quote_mint.clone(),
-            matches.quote_amount.clone(),
-            matches.base_mint.clone(),
-            matches.base_amount.clone(),
+            match_result.quote_mint.clone(),
+            match_result.quote_amount.clone(),
+            match_result.base_mint.clone(),
+            match_result.base_amount.clone(),
         ];
 
         let selected_values = MultiproverCondSelectVectorGadget::select(
             cs,
             &party0_buy_side_selection,
             &party1_buy_side_selection,
-            matches.direction,
+            match_result.direction,
             fabric.clone(),
         )?;
 
@@ -457,6 +462,67 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for ValidMatchMpc
     }
 }
 
+/// Represents a shared [`ValidMatchMpcCircuit`] witness that has been allocated
+/// into a constraint system
+pub struct ValidMatchMpcWitnessSharedVar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The first party's order
+    pub order1: AuthenticatedOrderVar<N, S>,
+    /// The first party's balance
+    pub balance1: AuthenticatedBalanceVar<N, S>,
+    /// The second party's order
+    pub order2: AuthenticatedOrderVar<N, S>,
+    /// The second party's balance
+    pub balance2: AuthenticatedBalanceVar<N, S>,
+    /// The match result from the MPC
+    pub match_result: AuthenticatedMatchResultVar<N, S>,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S>
+    for ValidMatchMpcWitness<N, S>
+{
+    type CommitType = ValidMatchCommitmentShared<N, S>;
+    type SharedVarType = ValidMatchMpcWitnessSharedVar<N, S>;
+    type ErrorType = MpcError;
+
+    fn commit<R: rand_core::RngCore + rand_core::CryptoRng>(
+        &self,
+        _owning_party: u64,
+        rng: &mut R,
+        prover: &mut MpcProver<N, S>,
+    ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType> {
+        let (party0_vars, party0_comm) = (self.my_order.clone(), self.my_balance.clone())
+            .commit(0 /* owning_party */, rng, prover)?;
+        let (party1_vars, party1_comm) =
+            (self.my_order.clone(), self.my_balance.clone()).commit(1 /* owning_party */, rng, prover)?;
+
+        let (match_var, match_commit) =
+            self.match_res.commit(0 /* owning_party */, rng, prover)?;
+
+        // Destructure the committed values
+        let party0_order = party0_vars.0;
+        let party0_balance = party0_vars.1;
+        let party1_order = party1_vars.0;
+        let party1_balance = party1_vars.1;
+
+        Ok((
+            ValidMatchMpcWitnessSharedVar {
+                order1: party0_order,
+                balance1: party0_balance,
+                order2: party1_order,
+                balance2: party1_balance,
+                match_result: match_var,
+            },
+            ValidMatchCommitmentShared {
+                order1: party0_comm.0,
+                balance1: party0_comm.1,
+                order2: party1_comm.0,
+                balance2: party1_comm.1,
+                match_result: match_commit,
+            },
+        ))
+    }
+}
+
 /// Represents a commitment to the VALID MATCH MPC witness
 #[derive(Clone, Debug)]
 pub struct ValidMatchCommitmentShared<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
@@ -618,48 +684,17 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         // Commit to party 0's inputs first, then party 1's inputs
         let mut rng = OsRng {};
 
-        let (party0_vars, party0_comm) = (witness.my_order.clone(), witness.my_balance.clone())
-            .commit(0 /* owning_party */, &mut rng, &mut prover)
-            .map_err(ProverError::Mpc)?;
-        let (party1_vars, party1_comm) = (witness.my_order, witness.my_balance)
-            .commit(1 /* owning_party */, &mut rng, &mut prover)
+        let (witness_var, witness_comm) = witness
+            .commit(u64::MAX /* unused */, &mut rng, &mut prover)
             .map_err(ProverError::Mpc)?;
 
-        let (match_var, match_commit) = witness
-            .match_res
-            .commit(0 /* owning_party */, &mut rng, &mut prover)
-            .map_err(ProverError::Mpc)?;
-
-        // Destructure the committed values
-        let party0_order = party0_vars.0;
-        let party0_balance = party0_vars.1;
-        let party1_order = party1_vars.0;
-        let party1_balance = party1_vars.1;
-
-        Self::matching_engine_check(
-            &mut prover,
-            party0_order,
-            party1_order,
-            party0_balance,
-            party1_balance,
-            match_var,
-            fabric,
-        )?;
+        Self::matching_engine_check(&mut prover, witness_var, fabric)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         let proof = prover.prove(&bp_gens).map_err(ProverError::Collaborative)?;
 
-        Ok((
-            ValidMatchCommitmentShared {
-                order1: party0_comm.0,
-                balance1: party0_comm.1,
-                order2: party1_comm.0,
-                balance2: party1_comm.1,
-                match_result: match_commit,
-            },
-            proof,
-        ))
+        Ok((witness_comm, proof))
     }
 
     fn verify(

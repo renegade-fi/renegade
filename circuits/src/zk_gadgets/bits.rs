@@ -10,7 +10,7 @@ use mpc_bulletproof::{
     },
     r1cs_mpc::{
         MpcConstraintSystem, MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem,
-        R1CSError, SharedR1CSProof,
+        MpcVariable, R1CSError, SharedR1CSProof,
     },
     BulletproofGens,
 };
@@ -25,7 +25,7 @@ use crate::{
     errors::{MpcError, ProverError, VerifierError},
     mpc::SharedFabric,
     mpc_gadgets::bits::{scalar_to_bits_le, to_bits_le},
-    CommitPublic, CommitWitness, MultiProverCircuit, Open, SingleProverCircuit,
+    CommitPublic, CommitSharedProver, CommitWitness, MultiProverCircuit, Open, SingleProverCircuit,
 };
 
 /**
@@ -201,11 +201,36 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
     }
 }
 
+/// The witness type for the [`MultiproverToBitsGadget`], using an
+/// authenticated, secret-shared version of the value to bitify
+pub struct MultiProverToBitsWitness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The value to bitify
+    pub a: AuthenticatedScalar<N, S>,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S>
+    for MultiProverToBitsWitness<N, S>
+{
+    type CommitType = AuthenticatedCompressedRistretto<N, S>;
+    type SharedVarType = MpcVariable<N, S>;
+    type ErrorType = mpc_ristretto::error::MpcError;
+
+    fn commit<R: rand_core::RngCore + rand_core::CryptoRng>(
+        &self,
+        _owning_party: u64,
+        rng: &mut R,
+        prover: &mut MpcProver<N, S>,
+    ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType> {
+        let (witness_comm, witness_var) = prover.commit_preshared(&self.a, Scalar::random(rng))?;
+        Ok((witness_var, witness_comm))
+    }
+}
+
 impl<'a, const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
     MultiProverCircuit<'a, N, S> for MultiproverToBitsGadget<'a, D, N, S>
 {
     type Statement = ToBitsStatement;
-    type Witness = AuthenticatedScalar<N, S>;
+    type Witness = MultiProverToBitsWitness<N, S>;
     type WitnessCommitment = AuthenticatedCompressedRistretto<N, S>;
 
     const BP_GENS_CAPACITY: usize = 512;
@@ -218,8 +243,8 @@ impl<'a, const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
     ) -> Result<(Self::WitnessCommitment, SharedR1CSProof<N, S>), ProverError> {
         // Commit to the witness
         let mut rng = OsRng {};
-        let (witness_comm, witness_var) = prover
-            .commit_preshared(&witness, Scalar::random(&mut rng))
+        let (witness_var, witness_comm) = witness
+            .commit(u64::MAX /* unused */, &mut rng, &mut prover)
             .map_err(|err| ProverError::Mpc(MpcError::SharingError(err.to_string())))?;
 
         let (_, bit_vars) = prover.batch_commit_public(&statement.bits);

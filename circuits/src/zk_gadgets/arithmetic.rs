@@ -13,7 +13,7 @@ use mpc_bulletproof::r1cs::{
 };
 use mpc_bulletproof::r1cs_mpc::{
     MpcConstraintSystem, MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem,
-    R1CSError, SharedR1CSProof,
+    MpcVariable, R1CSError, SharedR1CSProof,
 };
 use mpc_bulletproof::BulletproofGens;
 use mpc_ristretto::authenticated_ristretto::AuthenticatedCompressedRistretto;
@@ -25,7 +25,9 @@ use rand_core::OsRng;
 
 use crate::errors::{MpcError, ProverError, VerifierError};
 use crate::mpc::SharedFabric;
-use crate::{CommitPublic, CommitWitness, MultiProverCircuit, SingleProverCircuit};
+use crate::{
+    CommitPublic, CommitSharedProver, CommitWitness, MultiProverCircuit, SingleProverCircuit,
+};
 
 use super::bits::ToBitsGadget;
 use super::comparators::{EqZeroGadget, LessThanGadget};
@@ -532,6 +534,24 @@ pub struct MultiproverExpWitness<N: MpcNetwork + Send, S: SharedValueSource<Scal
     pub x: AuthenticatedScalar<N, S>,
 }
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S>
+    for MultiproverExpWitness<N, S>
+{
+    type CommitType = AuthenticatedCompressedRistretto<N, S>;
+    type SharedVarType = MpcVariable<N, S>;
+    type ErrorType = mpc_ristretto::error::MpcError;
+
+    fn commit<R: rand_core::RngCore + rand_core::CryptoRng>(
+        &self,
+        _owning_party: u64,
+        rng: &mut R,
+        prover: &mut MpcProver<N, S>,
+    ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType> {
+        let (witness_comm, witness_var) = prover.commit_preshared(&self.x, Scalar::random(rng))?;
+        Ok((witness_var, witness_comm))
+    }
+}
+
 impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<'a, N, S>
     for MultiproverExpGadget<'a, N, S>
 {
@@ -557,9 +577,8 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
     > {
         // Commit to the input
         let mut rng = OsRng {};
-        let blinder = Scalar::random(&mut rng);
-        let (witness_commit, witness_var) = prover
-            .commit_preshared(&witness.x, blinder)
+        let (witness_var, witness_commit) = witness
+            .commit(u64::MAX /* unused */, &mut rng, &mut prover)
             .map_err(|err| ProverError::Mpc(MpcError::SharingError(err.to_string())))?;
 
         // Commit to the public expected hash output
