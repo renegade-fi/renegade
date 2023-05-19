@@ -698,6 +698,22 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProv
 
     const BP_GENS_CAPACITY: usize = 2048;
 
+    fn apply_constraints_multi_prover(
+        witness_var: <Self::Witness as CommitSharedProver<N, S>>::SharedVarType,
+        statement: Self::Statement,
+        prover: &mut MpcProver<'a, '_, '_, N, S>,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<(), ProverError> {
+        // Commit to the expected hash output
+        let (_, out_var) = prover.commit_public(statement.expected_out);
+
+        // Create a hasher and apply the constraints
+        let mut hasher = MultiproverPoseidonHashGadget::new(statement.params, fabric);
+        hasher.hash(&witness_var, &out_var, prover)?;
+
+        Ok(())
+    }
+
     fn prove(
         witness: Self::Witness,
         statement: Self::Statement,
@@ -710,17 +726,13 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProv
         ),
         ProverError,
     > {
-        // Commit to the hash input and expected output
+        // Commit to the hash input
         let mut rng = OsRng {};
         let (witness_vars, witness_commits) = witness
             .commit(u64::MAX /* unused */, &mut rng, &mut prover)
             .map_err(|err| ProverError::Mpc(MpcError::SharingError(err.to_string())))?;
 
-        let (_, out_var) = prover.commit_public(statement.expected_out);
-
-        // Create a hasher and apply the constraints
-        let mut hasher = MultiproverPoseidonHashGadget::new(statement.params, fabric);
-        hasher.hash(&witness_vars, &out_var, &mut prover)?;
+        Self::apply_constraints_multi_prover(witness_vars, statement, &mut prover, fabric)?;
 
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         let proof = prover.prove(&bp_gens).map_err(ProverError::Collaborative)?;

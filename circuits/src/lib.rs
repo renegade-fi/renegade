@@ -530,11 +530,12 @@ pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueS
     /// Applies all the prover-side constraints embodied by the circuit over
     /// the allocated witness, secret shares of the counterparty's witness, & statement,
     /// building them into the given constraint system
-    // fn apply_constraints_multi_prover<CS: RandomizableConstraintSystem>(
-    //     witness_var: <Self::Witness as CommitWitness>::VarType,
-    //     statement_var: Self::Statement,
-    //     cs: &mut CS,
-    // ) -> Result<(), R1CSError>;
+    fn apply_constraints_multi_prover(
+        witness_var: <Self::Witness as CommitSharedProver<N, S>>::SharedVarType,
+        statement: Self::Statement,
+        prover: &mut MpcProver<'a, '_, '_, N, S>,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<(), ProverError>;
 
     /// Applies all the verifier-side constraints embodied by the circuit over
     /// the entire committed witness & statement,

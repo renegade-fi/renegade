@@ -235,6 +235,23 @@ impl<'a, const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
 
     const BP_GENS_CAPACITY: usize = 512;
 
+    fn apply_constraints_multi_prover(
+        witness_var: <Self::Witness as CommitSharedProver<N, S>>::SharedVarType,
+        statement: Self::Statement,
+        prover: &mut MpcProver<'a, '_, '_, N, S>,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<(), ProverError> {
+        let (_, bit_vars) = prover.batch_commit_public(&statement.bits);
+
+        // Apply the constraints
+        let bits = Self::to_bits(witness_var, fabric, prover)?;
+        for (statement_bit, computed_bit) in bit_vars.into_iter().zip(bits.into_iter()) {
+            prover.constrain(statement_bit - computed_bit);
+        }
+
+        Ok(())
+    }
+
     fn prove(
         witness: Self::Witness,
         statement: Self::Statement,
@@ -247,13 +264,7 @@ impl<'a, const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
             .commit(u64::MAX /* unused */, &mut rng, &mut prover)
             .map_err(|err| ProverError::Mpc(MpcError::SharingError(err.to_string())))?;
 
-        let (_, bit_vars) = prover.batch_commit_public(&statement.bits);
-
-        // Apply the constraints
-        let bits = Self::to_bits(witness_var, fabric, &mut prover)?;
-        for (statement_bit, computed_bit) in bit_vars.into_iter().zip(bits.into_iter()) {
-            prover.constrain(statement_bit - computed_bit);
-        }
+        Self::apply_constraints_multi_prover(witness_var, statement, &mut prover, fabric)?;
 
         // Generate a proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);

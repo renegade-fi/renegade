@@ -563,6 +563,23 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
 
     const BP_GENS_CAPACITY: usize = 2048;
 
+    fn apply_constraints_multi_prover(
+        witness_var: <Self::Witness as CommitSharedProver<N, S>>::SharedVarType,
+        statement: Self::Statement,
+        prover: &mut MpcProver<'a, '_, '_, N, S>,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<(), ProverError> {
+        // Commit to the public expected hash output
+        // TODO: update this with a correct commit_public impl
+        let (_, output_var) = prover.commit_public(statement.expected_out);
+
+        // Apply the constraints to the prover
+        let res = Self::exp(witness_var, statement.alpha, fabric, prover)?;
+        prover.constrain(res - output_var);
+
+        Ok(())
+    }
+
     fn prove(
         witness: Self::Witness,
         statement: Self::Statement,
@@ -581,13 +598,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
             .commit(u64::MAX /* unused */, &mut rng, &mut prover)
             .map_err(|err| ProverError::Mpc(MpcError::SharingError(err.to_string())))?;
 
-        // Commit to the public expected hash output
-        // TODO: update this with a correct commit_public impl
-        let (_, output_var) = prover.commit_public(statement.expected_out);
-
-        // Apply the constraints to the prover
-        let res = Self::exp(witness_var, statement.alpha, fabric, &mut prover)?;
-        prover.constrain(res - output_var);
+        Self::apply_constraints_multi_prover(witness_var, statement, &mut prover, fabric)?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);

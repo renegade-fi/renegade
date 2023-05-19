@@ -675,6 +675,15 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
 
     const BP_GENS_CAPACITY: usize = 256;
 
+    fn apply_constraints_multi_prover(
+        witness_var: <Self::Witness as CommitSharedProver<N, S>>::SharedVarType,
+        _statement: Self::Statement,
+        prover: &mut MpcProver<'a, '_, '_, N, S>,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<(), ProverError> {
+        Self::matching_engine_check(prover, witness_var, fabric)
+    }
+
     fn prove(
         witness: Self::Witness,
         _statement: Self::Statement,
@@ -688,7 +697,12 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
             .commit(u64::MAX /* unused */, &mut rng, &mut prover)
             .map_err(ProverError::Mpc)?;
 
-        Self::matching_engine_check(&mut prover, witness_var, fabric)?;
+        Self::apply_constraints_multi_prover(
+            witness_var,
+            ValidMatchMpcStatement {},
+            &mut prover,
+            fabric,
+        )?;
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
