@@ -40,14 +40,14 @@ pub(crate) fn build_mpc_types(base_struct: &ItemStruct) -> TokenStream2 {
 }
 
 /// Build the generics used in MPC types
-fn build_mpc_generics() -> Generics {
+pub(crate) fn build_mpc_generics() -> Generics {
     parse_quote! {
         <N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
     }
 }
 
 /// Append <N, S> to an identifier
-fn with_mpc_generics(ident: Ident) -> Path {
+pub(crate) fn with_mpc_generics(ident: Ident) -> Path {
     parse_quote!(#ident<N, S>)
 }
 

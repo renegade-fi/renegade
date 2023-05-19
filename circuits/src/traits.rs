@@ -20,9 +20,10 @@ use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
-    r1cs_mpc::{MpcProver, SharedR1CSProof},
+    r1cs_mpc::{MpcProver, MpcVariable, SharedR1CSProof},
 };
 use mpc_ristretto::{
+    authenticated_ristretto::AuthenticatedCompressedRistretto,
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
 use rand_core::{CryptoRng, RngCore};
@@ -55,6 +56,43 @@ pub trait CircuitBaseType: BaseType {
     type VarType: CircuitVarType;
     /// The commitment type for this base type
     type CommitmentType: CircuitCommitmentType;
+
+    /// Commit to the base type as a witness variable
+    fn commit_witness<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> (Self::VarType, Self::CommitmentType) {
+        let scalars: Vec<Scalar> = self.clone().to_scalars();
+        let randomness = self.commitment_randomness(rng);
+        let (comms, vars): (Vec<CompressedRistretto>, Vec<Variable>) = scalars
+            .into_iter()
+            .zip(randomness.into_iter())
+            .map(|(s, r)| prover.commit(s, r))
+            .unzip();
+
+        (
+            Self::VarType::from_vars(&mut vars.into_iter()),
+            Self::CommitmentType::from_commitments(&mut comms.into_iter()),
+        )
+    }
+
+    /// Commit to the base type as a public variable
+    fn commit_public<CS: RandomizableConstraintSystem>(&self, cs: &mut CS) -> Self::VarType {
+        let scalars: Vec<Scalar> = self.clone().to_scalars();
+        let vars = scalars
+            .into_iter()
+            .map(|s| cs.commit_public(s))
+            .collect_vec();
+
+        Self::VarType::from_vars(&mut vars.into_iter())
+    }
+
+    /// Get the randomness used to commit to this value
+    ///
+    /// We make this method generically defined so that linkable types may store and
+    /// re-use their commitment randomness between proofs
+    fn commitment_randomness<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Vec<Scalar>;
 }
 
 /// Implementing types are variable types that may appear in constraints in
@@ -74,6 +112,18 @@ pub trait CircuitCommitmentType: Clone {
     fn from_commitments<I: Iterator<Item = CompressedRistretto>>(i: &mut I) -> Self;
     /// Convert to a vector of compressed ristretto points
     fn to_commitments(self) -> Vec<CompressedRistretto>;
+
+    /// Commit to a hidden value in the Verifier
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Self::VarType {
+        let vars = self
+            .clone()
+            .to_commitments()
+            .into_iter()
+            .map(|c| verifier.commit(c))
+            .collect_vec();
+
+        Self::VarType::from_vars(&mut vars.into_iter())
+    }
 }
 
 // --- MPC Circuit Traits --- //
@@ -84,6 +134,38 @@ pub trait MpcBaseType<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar>
 {
     /// The type that results from allocating the base type into an MPC network
     type AllocatedType: MpcType<N, S>;
+
+    /// Allocates the base type in the network as a shared value
+    fn allocate(
+        &self,
+        owning_party: u64,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self::AllocatedType, MpcError> {
+        let self_scalars = self.clone().to_scalars();
+        let values = fabric
+            .borrow_fabric()
+            .batch_allocate_private_scalars(owning_party, &self_scalars)
+            .map_err(|err| MpcError::SetupError(err.to_string()))?;
+
+        Ok(Self::AllocatedType::from_authenticated_scalars(
+            &mut values.into_iter(),
+        ))
+    }
+
+    /// Share the plaintext value with the counterparty
+    fn share_public(
+        &self,
+        owning_party: u64,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self, MpcError> {
+        let self_scalars = self.clone().to_scalars();
+        let res_scalars = fabric
+            .borrow_fabric()
+            .batch_share_plaintext_scalars(owning_party, &self_scalars)
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+
+        Ok(Self::from_scalars(&mut res_scalars.into_iter()))
+    }
 }
 
 /// An implementing type is the representation of a `BaseType` in an MPC circuit
@@ -99,6 +181,34 @@ pub trait MpcType<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + C
         -> Self;
     /// Convert to a vector of authenticated scalars
     fn to_authenticated_scalars(self) -> Vec<AuthenticatedScalar<N, S>>;
+
+    /// Opens the shared type without authenticating
+    fn open(self, _: SharedFabric<N, S>) -> Result<Self::NativeType, MpcError> {
+        let self_scalars = self.to_authenticated_scalars();
+        let opened_scalars = AuthenticatedScalar::batch_open(&self_scalars)
+            .map_err(|err| MpcError::OpeningError(err.to_string()))?
+            .into_iter()
+            .map(|x| x.to_scalar())
+            .collect_vec();
+
+        Ok(Self::NativeType::from_scalars(
+            &mut opened_scalars.into_iter(),
+        ))
+    }
+
+    /// Opens the shared type and authenticates the result
+    fn open_and_authenticate(self, _: SharedFabric<N, S>) -> Result<Self::NativeType, MpcError> {
+        let self_scalars = self.to_authenticated_scalars();
+        let opened_scalars = AuthenticatedScalar::batch_open_and_authenticate(&self_scalars)
+            .map_err(|err| MpcError::OpeningError(err.to_string()))?
+            .into_iter()
+            .map(|x| x.to_scalar())
+            .collect_vec();
+
+        Ok(Self::NativeType::from_scalars(
+            &mut opened_scalars.into_iter(),
+        ))
+    }
 }
 
 // --- Multiprover Circuit Traits --- //
@@ -111,10 +221,32 @@ pub trait MultiproverCircuitBaseType<
 {
     /// The multiprover constraint system variable type that results when committing
     /// to the base type in a multiprover constraint system
-    type MultiproverVarType;
+    type MultiproverVarType: MultiproverCircuitVariableType<N, S>;
     /// The shared commitment type that results when committing to the base type in a multiprover
     /// constraint system
-    type MultiproverCommType;
+    type MultiproverCommType: MultiproverCircuitCommitmentType<N, S>;
+
+    /// Commit to the value in a multiprover constraint system
+    fn commit_shared<R: RngCore + CryptoRng>(
+        &self,
+        owning_party: u64,
+        rng: &mut R,
+        prover: &mut MpcProver<N, S>,
+    ) -> Result<(Self::MultiproverVarType, Self::MultiproverCommType), MpcError> {
+        let self_scalars = self.clone().to_scalars();
+        let randomness = (0..self_scalars.len())
+            .map(|_| Scalar::random(rng))
+            .collect_vec();
+
+        let (comms, vars) = prover
+            .batch_commit(owning_party, &self_scalars, &randomness)
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+
+        Ok((
+            Self::MultiproverVarType::from_mpc_vars(&mut vars.into_iter()),
+            Self::MultiproverCommType::from_mpc_commitments(&mut comms.into_iter()),
+        ))
+    }
 }
 
 /// A multiprover circuit variable type
@@ -123,18 +255,71 @@ pub trait MultiproverCircuitVariableType<
     S: SharedValueSource<Scalar> + Clone,
 >
 {
-    /// The base type that generates this variable type when allocated in a multiprover constraint system
-    type BaseType: MultiproverCircuitBaseType<N, S>;
+    /// Deserialization from an iterator over MPC allocated variables
+    fn from_mpc_vars<I: Iterator<Item = MpcVariable<N, S>>>(i: &mut I) -> Self;
 }
 
 /// A multiprover circuit commitment type
 pub trait MultiproverCircuitCommitmentType<
     N: MpcNetwork + Send + Clone,
     S: SharedValueSource<Scalar> + Clone,
->
+>: Clone
 {
-    /// The multi-prover variable type that this type is a commitment to
-    type VariableType: MultiproverCircuitVariableType<N, S>;
+    /// The base commitment type that this commitment opens to
+    type BaseCommitType: CircuitCommitmentType;
+    /// Deserialization form an iterator over MPC allocated commitments
+    fn from_mpc_commitments<I: Iterator<Item = AuthenticatedCompressedRistretto<N, S>>>(
+        i: &mut I,
+    ) -> Self;
+    /// Serialization to a vector of MPC allocated commitments
+    fn to_mpc_commitments(self) -> Vec<AuthenticatedCompressedRistretto<N, S>>;
+
+    /// Opens the shared type without authenticating
+    fn open(self, _: SharedFabric<N, S>) -> Result<Self::BaseCommitType, MpcError> {
+        let self_comms = self.to_mpc_commitments();
+        let opened_commitments = AuthenticatedCompressedRistretto::batch_open(&self_comms)
+            .map_err(|err| MpcError::OpeningError(err.to_string()))?
+            .into_iter()
+            .map(|x| x.value())
+            .collect_vec();
+
+        Ok(Self::BaseCommitType::from_commitments(
+            &mut opened_commitments.into_iter(),
+        ))
+    }
+
+    /// Opens the shared type and authenticates the result
+    fn open_and_authenticate(
+        self,
+        _: SharedFabric<N, S>,
+    ) -> Result<Self::BaseCommitType, MpcError> {
+        let self_comms = self.to_mpc_commitments();
+        let opened_commitments =
+            AuthenticatedCompressedRistretto::batch_open_and_authenticate(&self_comms)
+                .map_err(|err| MpcError::OpeningError(err.to_string()))?
+                .into_iter()
+                .map(|x| x.value())
+                .collect_vec();
+
+        Ok(Self::BaseCommitType::from_commitments(
+            &mut opened_commitments.into_iter(),
+        ))
+    }
+}
+
+// --- Proof Linkable Types --- //
+
+/// Implementing types have an analogous linkable type that may be shared between proofs
+pub trait LinkableBaseType: BaseType {
+    /// The linkable type that re-uses commitment randomness between commitments
+    type Linkable: LinkableType;
+}
+
+/// Implementing types are proof-linkable analogs of a base type, which hold onto their commitment
+/// randomness and re-use it between proofs
+pub trait LinkableType: Clone {
+    /// The base type this type is a linkable commitment for
+    type BaseType: LinkableBaseType;
 }
 
 // -----------------------------
@@ -154,6 +339,30 @@ impl BaseType for Scalar {
 impl CircuitBaseType for Scalar {
     type VarType = Variable;
     type CommitmentType = CompressedRistretto;
+
+    fn commitment_randomness<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Vec<Scalar> {
+        vec![Scalar::random(rng)]
+    }
+}
+
+impl BaseType for LinkableCommitment {
+    fn to_scalars(self) -> Vec<Scalar> {
+        vec![self.val]
+    }
+
+    fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
+        // Choose a random commitment
+        i.next().unwrap().into()
+    }
+}
+
+impl CircuitBaseType for LinkableCommitment {
+    type VarType = Variable;
+    type CommitmentType = CompressedRistretto;
+
+    fn commitment_randomness<R: RngCore + CryptoRng>(&self, _rng: &mut R) -> Vec<Scalar> {
+        vec![self.randomness]
+    }
 }
 
 impl CircuitVarType for Variable {
@@ -196,120 +405,58 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone> MpcType
     }
 }
 
+impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
+    MultiproverCircuitBaseType<N, S> for Scalar
+{
+    type MultiproverVarType = MpcVariable<N, S>;
+    type MultiproverCommType = AuthenticatedCompressedRistretto<N, S>;
+}
+
+impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
+    MultiproverCircuitBaseType<N, S> for LinkableCommitment
+{
+    type MultiproverVarType = MpcVariable<N, S>;
+    type MultiproverCommType = AuthenticatedCompressedRistretto<N, S>;
+
+    fn commit_shared<R: RngCore + CryptoRng>(
+        &self,
+        owning_party: u64,
+        _rng: &mut R,
+        prover: &mut MpcProver<N, S>,
+    ) -> Result<(Self::MultiproverVarType, Self::MultiproverCommType), MpcError> {
+        let (comm, var) = prover
+            .commit(owning_party, self.val, self.randomness)
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+        Ok((var, comm))
+    }
+}
+
+impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
+    MultiproverCircuitVariableType<N, S> for MpcVariable<N, S>
+{
+    fn from_mpc_vars<I: Iterator<Item = MpcVariable<N, S>>>(i: &mut I) -> Self {
+        i.next().unwrap()
+    }
+}
+
+impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
+    MultiproverCircuitCommitmentType<N, S> for AuthenticatedCompressedRistretto<N, S>
+{
+    type BaseCommitType = CompressedRistretto;
+    fn from_mpc_commitments<I: Iterator<Item = AuthenticatedCompressedRistretto<N, S>>>(
+        i: &mut I,
+    ) -> Self {
+        i.next().unwrap()
+    }
+
+    fn to_mpc_commitments(self) -> Vec<AuthenticatedCompressedRistretto<N, S>> {
+        vec![self]
+    }
+}
+
 // ------------------
 // | Circuit Traits |
 // ------------------
-
-/// Defines functionality to allocate a witness value within a single-prover constraint system
-pub trait CommitWitness {
-    /// The type that results from committing to the base type
-    type VarType;
-    /// The type that consists of Pedersen commitments to the base type
-    type CommitType;
-    /// The error thrown by the commit method
-    type ErrorType;
-
-    /// Commit to the base type in the constraint system
-    ///
-    /// Returns a tuple holding both the var type (used for operations)
-    /// within the constraint system, and the commit type; which is passed
-    /// to the verifier to use as hidden values
-    fn commit_witness<R: RngCore + CryptoRng>(
-        &self,
-        rng: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType>;
-}
-
-/// Defines functionality to allocate a public variable within a single-prover constraint system
-pub trait CommitPublic {
-    /// The type that results from committing to the base type
-    type VarType;
-    /// The error thrown by the commit method
-    type ErrorType;
-
-    /// Commit to the base type in the constraint system
-    fn commit_public<CS: RandomizableConstraintSystem>(
-        &self,
-        cs: &mut CS,
-    ) -> Result<Self::VarType, Self::ErrorType>;
-}
-
-/// Defines functionality to commit to a value in a verifier's constraint system
-pub trait CommitVerifier {
-    /// The type that results from committing to the implementation types
-    type VarType;
-    /// The type of error thrown when committing fails
-    type ErrorType;
-
-    /// Commit to a hidden value in the Verifier
-    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType>;
-}
-
-/// Defines functionality to allocate a value within an MPC network
-pub trait Allocate<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
-    /// The output type that results from allocating the value in the network
-    type SharedType;
-    /// The type of error thrown when allocation fails
-    type ErrorType;
-
-    /// Allocates the raw type in the network as a shared value
-    fn allocate(
-        &self,
-        owning_party: u64,
-        fabric: SharedFabric<N, S>,
-    ) -> Result<Self::SharedType, Self::ErrorType>;
-}
-
-/// Defines functionality to allocate a value as a public, shared value in an MPC network
-pub trait SharePublic<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>: Sized {
-    /// The type of error thrown when sharing fails
-    type ErrorType;
-
-    /// Share the value with the counterparty
-    fn share_public(
-        &self,
-        owning_party: u64,
-        fabric: SharedFabric<N, S>,
-    ) -> Result<Self, Self::ErrorType>;
-}
-
-/// Defines functionality to allocate a base type as a shared commitment in a multi-prover
-/// constraint system
-pub trait CommitSharedProver<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
-    /// The type that results from committing to the base type
-    type SharedVarType;
-    /// The type consisting of Pedersen commitments to the base type
-    type CommitType;
-    /// The type of error that is thrown when committing fails
-    type ErrorType;
-
-    /// Commit to the base type in the constraint system
-    fn commit<R: RngCore + CryptoRng>(
-        &self,
-        owning_party: u64,
-        rng: &mut R,
-        prover: &mut MpcProver<N, S>,
-    ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType>;
-}
-
-/// Defines functionality for a shared, allocated type to be opened to another type
-///
-/// The type this is implemented for is assumed to be a secret sharing of some MPC
-/// network allocated value.
-pub trait Open<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
-    /// The output type that results from opening this value
-    type OpenOutput;
-    /// The error type that results if opening fails
-    type Error;
-    /// Opens the shared type without authenticating
-    fn open(self, fabric: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error>;
-    /// Opens the shared type and authenticates the result
-    fn open_and_authenticate(
-        self,
-        fabric: SharedFabric<N, S>,
-    ) -> Result<Self::OpenOutput, Self::Error>;
-}
 
 /// Defines the abstraction of a Circuit.
 ///
@@ -323,15 +470,15 @@ pub trait Open<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
 pub trait SingleProverCircuit {
     /// The witness type, given only to the prover, which generates a blinding commitment
     /// that can be given to the verifier
-    type Witness;
+    type Witness: CircuitBaseType;
     /// The statement type, given to both the prover and verifier, parameterizes the underlying
     /// NP statement being proven
-    type Statement: Clone;
+    type Statement: CircuitBaseType;
     /// The data type of the output commitment from the prover.
     ///
     /// The prover commits to the witness and sends this commitment to the verifier, this type
     /// is the structure in which that commitment is sent
-    type WitnessCommitment;
+    type WitnessCommitment: CircuitCommitmentType;
 
     /// The size of the bulletproof generators that must be allocated
     /// to fully compute a proof or verification of the statement
@@ -370,18 +517,23 @@ pub trait SingleProverCircuit {
 /// The witness type represents the secret witness that the prover has access to but
 /// that the verifier does not. The statement is the set of public inputs and any
 /// other circuit meta-parameters that both prover and verifier have access to.
-pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> {
+pub trait MultiProverCircuit<
+    'a,
+    N: 'a + MpcNetwork + Send + Clone,
+    S: 'a + SharedValueSource<Scalar> + Clone,
+>
+{
     /// The witness type, given only to the prover, which generates a blinding commitment
     /// that can be given to the verifier
-    type Witness;
+    type Witness: MultiproverCircuitBaseType<N, S>;
     /// The statement type, given to both the prover and verifier, parameterizes the underlying
     /// NP statement being proven
-    type Statement: Clone;
+    type Statement: Clone + MultiproverCircuitBaseType<N, S>;
     /// The data type of the output commitment from the prover.
     ///
     /// The prover commits to the witness and sends this commitment to the verifier, this type
     /// is the structure in which that commitment is sent
-    type WitnessCommitment: Open<N, S>;
+    type WitnessCommitment: MultiproverCircuitCommitmentType<N, S>;
 
     /// The size of the bulletproof generators that must be allocated
     /// to fully compute a proof or verification of the statement
@@ -411,140 +563,9 @@ pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueS
     /// parties reconstruct the underlying secret from their shares. Then the opened
     /// proof and commitments can be passed to the verifier.
     fn verify(
-        witness_commitments: <Self::WitnessCommitment as Open<N, S>>::OpenOutput,
+        witness_commitments: <Self::WitnessCommitment as MultiproverCircuitCommitmentType<N, S>>::BaseCommitType,
         statement: Self::Statement,
         proof: R1CSProof,
         verifier: Verifier,
     ) -> Result<(), VerifierError>;
-}
-
-// -------------------------------
-// | Circuit Trait Default Impls |
-// -------------------------------
-
-impl<T: CircuitBaseType> CommitWitness for T {
-    type VarType = <Self as CircuitBaseType>::VarType;
-    type CommitType = <Self as CircuitBaseType>::CommitmentType;
-    type ErrorType = (); // Single prover does not error
-
-    fn commit_witness<R: RngCore + CryptoRng>(
-        &self,
-        rng: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let scalars: Vec<Scalar> = self.clone().to_scalars();
-        let (comms, vars): (Vec<CompressedRistretto>, Vec<Variable>) = scalars
-            .into_iter()
-            .map(|s| prover.commit(s, Scalar::random(rng)))
-            .unzip();
-
-        Ok((
-            Self::VarType::from_vars(&mut vars.into_iter()),
-            Self::CommitType::from_commitments(&mut comms.into_iter()),
-        ))
-    }
-}
-
-impl<T: CircuitBaseType> CommitPublic for T {
-    type VarType = <Self as CircuitBaseType>::VarType;
-    type ErrorType = (); // Does not error in single-prover context
-
-    fn commit_public<CS: RandomizableConstraintSystem>(
-        &self,
-        cs: &mut CS,
-    ) -> Result<Self::VarType, Self::ErrorType> {
-        let self_scalars = self.clone().to_scalars();
-        let vars = self_scalars
-            .into_iter()
-            .map(|s| cs.commit_public(s))
-            .collect_vec();
-
-        Ok(Self::VarType::from_vars(&mut vars.into_iter()))
-    }
-}
-
-impl<T: CircuitCommitmentType> CommitVerifier for T {
-    type VarType = T::VarType;
-    type ErrorType = (); // Does not error
-
-    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        let comms = self.clone().to_commitments();
-        let vars = comms.into_iter().map(|c| verifier.commit(c)).collect_vec();
-
-        Ok(Self::VarType::from_vars(&mut vars.into_iter()))
-    }
-}
-
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> SharePublic<N, S> for LinkableCommitment {
-    type ErrorType = MpcError;
-
-    fn share_public(
-        &self,
-        owning_party: u64,
-        fabric: SharedFabric<N, S>,
-    ) -> Result<Self, Self::ErrorType> {
-        let shared_values = fabric
-            .borrow_fabric()
-            .batch_share_plaintext_scalars(owning_party, &[self.val, self.randomness])
-            .map_err(|err| MpcError::SharingError(err.to_string()))?;
-
-        Ok(Self {
-            val: shared_values[0],
-            randomness: shared_values[1],
-        })
-    }
-}
-
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone, T: MpcBaseType<N, S>>
-    Allocate<N, S> for T
-{
-    type SharedType = T::AllocatedType;
-    type ErrorType = MpcError;
-
-    fn allocate(
-        &self,
-        owning_party: u64,
-        fabric: SharedFabric<N, S>,
-    ) -> Result<Self::SharedType, Self::ErrorType> {
-        // Convert to scalars and share
-        let self_scalars = self.clone().to_scalars();
-        let shared_scalars = fabric
-            .borrow_fabric()
-            .batch_allocate_private_scalars(owning_party, &self_scalars)
-            .map_err(|err| MpcError::SharingError(err.to_string()))?;
-
-        Ok(Self::SharedType::from_authenticated_scalars(
-            &mut shared_scalars.into_iter(),
-        ))
-    }
-}
-
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone, T: MpcType<N, S>>
-    Open<N, S> for T
-{
-    type OpenOutput = T::NativeType;
-    type Error = MpcError;
-
-    fn open(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
-        let self_authenticated_scalars = self.to_authenticated_scalars();
-        let opened_scalars = AuthenticatedScalar::batch_open(&self_authenticated_scalars)
-            .map_err(|err| MpcError::OpeningError(err.to_string()))?
-            .into_iter()
-            .map(|auth_scalar| auth_scalar.to_scalar())
-            .collect_vec();
-
-        Ok(T::NativeType::from_scalars(&mut opened_scalars.into_iter()))
-    }
-
-    fn open_and_authenticate(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
-        let self_authenticated_scalars = self.to_authenticated_scalars();
-        let opened_scalars =
-            AuthenticatedScalar::batch_open_and_authenticate(&self_authenticated_scalars)
-                .map_err(|err| MpcError::OpeningError(err.to_string()))?
-                .into_iter()
-                .map(|auth_scalar| auth_scalar.to_scalar())
-                .collect_vec();
-
-        Ok(T::NativeType::from_scalars(&mut opened_scalars.into_iter()))
-    }
 }
