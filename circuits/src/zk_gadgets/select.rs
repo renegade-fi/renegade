@@ -6,8 +6,8 @@ use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{
-        ConstraintSystem, LinearCombination, Prover, R1CSError, R1CSProof,
-        RandomizableConstraintSystem, Variable, Verifier,
+        LinearCombination, Prover, R1CSError, R1CSProof, RandomizableConstraintSystem, Variable,
+        Verifier,
     },
     r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem},
     BulletproofGens,
@@ -18,7 +18,7 @@ use rand_core::OsRng;
 use crate::{
     errors::{ProverError, VerifierError},
     mpc::SharedFabric,
-    SingleProverCircuit,
+    CommitPublic, CommitWitness, SingleProverCircuit,
 };
 
 /// Implements the control flow gate if selector { a } else { b }
@@ -50,15 +50,22 @@ pub struct CondSelectWitness {
     selector: Scalar,
 }
 
-/// A [`CondSelectGadget`] witness that has been allocated in a constraint system
-#[derive(Clone, Debug)]
-pub struct CondSelectWitnessVar {
-    /// The first option in the selection
-    a: Variable,
-    /// The second option in the selection
-    b: Variable,
-    /// The selector; decides between the two options
-    selector: Variable,
+impl CommitWitness for CondSelectWitness {
+    type CommitType = Vec<CompressedRistretto>;
+    type VarType = (Variable, Variable, Variable);
+    type ErrorType = ();
+
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (a_comm, a_var) = prover.commit(self.a, Scalar::random(rng));
+        let (b_comm, b_var) = prover.commit(self.b, Scalar::random(rng));
+        let (sel_comm, sel_var) = prover.commit(self.selector, Scalar::random(rng));
+
+        Ok(((a_var, b_var, sel_var), vec![a_comm, b_comm, sel_comm]))
+    }
 }
 
 /// The statement of the expected result from a CondSelectGadget
@@ -68,30 +75,33 @@ pub struct CondSelectStatement {
     expected: Scalar,
 }
 
-/// A [`CondSelectGadget`] statement that has been allocated in a constraint system
-#[derive(Clone, Debug)]
-pub struct CondSelectStatementVar {
-    /// The expected selection from the gadget
-    expected: Variable,
+impl CommitPublic for CondSelectStatement {
+    type VarType = Variable;
+    type ErrorType = ();
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        Ok(cs.commit_public(self.expected))
+    }
 }
 
 impl SingleProverCircuit for CondSelectGadget {
     type Statement = CondSelectStatement;
     type Witness = CondSelectWitness;
     type WitnessCommitment = Vec<CompressedRistretto>;
-    type WitnessVar = CondSelectWitnessVar;
-    type StatementVar = CondSelectStatementVar;
 
     const BP_GENS_CAPACITY: usize = 8;
 
     fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: Self::WitnessVar,
-        statement_var: Self::StatementVar,
+        witness_var: <Self::Witness as CommitWitness>::VarType,
+        statement_var: <Self::Statement as CommitPublic>::VarType,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
         // Apply the constraints over the allocated witness & statement
-        let res = Self::select(witness_var.a, witness_var.b, witness_var.selector, cs);
-        cs.constrain(res - statement_var.expected);
+        let res = Self::select(witness_var.0, witness_var.1, witness_var.2, cs);
+        cs.constrain(res - statement_var);
         Ok(())
     }
 
@@ -102,30 +112,17 @@ impl SingleProverCircuit for CondSelectGadget {
     ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
         // Commit to the witness
         let mut rng = OsRng {};
-        let (a_comm, a_var) = prover.commit(witness.a, Scalar::random(&mut rng));
-        let (b_comm, b_var) = prover.commit(witness.b, Scalar::random(&mut rng));
-        let (sel_comm, sel_var) = prover.commit(witness.selector, Scalar::random(&mut rng));
+        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
 
-        let expected_var = prover.commit_public(statement.expected);
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
-        let witness_var = CondSelectWitnessVar {
-            a: a_var,
-            b: b_var,
-            selector: sel_var,
-        };
-
-        let statement_var = CondSelectStatementVar {
-            expected: expected_var,
-        };
-
-        Self::apply_constraints(witness_var, statement_var, &mut prover)
-            .map_err(ProverError::R1CS)?;
+        Self::apply_constraints(witness_var, statement_var, &mut prover).unwrap();
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
 
-        Ok((vec![a_comm, b_comm, sel_comm], proof))
+        Ok((witness_comm, proof))
     }
 
     fn verify(
@@ -139,20 +136,11 @@ impl SingleProverCircuit for CondSelectGadget {
         let b_var = verifier.commit(witness_commitment[1]);
         let sel_var = verifier.commit(witness_commitment[2]);
 
-        let expected_var = verifier.commit_public(statement.expected);
+        let statement_var = statement.commit_public(&mut verifier).unwrap();
 
-        let witness_var = CondSelectWitnessVar {
-            a: a_var,
-            b: b_var,
-            selector: sel_var,
-        };
+        let witness_var = (a_var, b_var, sel_var);
 
-        let statement_var = CondSelectStatementVar {
-            expected: expected_var,
-        };
-
-        Self::apply_constraints(witness_var, statement_var, &mut verifier)
-            .map_err(VerifierError::R1CS)?;
+        Self::apply_constraints(witness_var, statement_var, &mut verifier).unwrap();
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
@@ -240,15 +228,36 @@ pub struct CondSelectVectorWitness {
     selector: Scalar,
 }
 
-/// A [`CondSelectVectorGadget`] witness that has been allocated in a constraint system
-#[derive(Clone, Debug)]
-pub struct CondSelectVectorWitnessVar {
-    /// The first option in the selection
-    a: Vec<Variable>,
-    /// The second option in the selection
-    b: Vec<Variable>,
-    /// The selector; decides between the two options
-    selector: Variable,
+impl CommitWitness for CondSelectVectorWitness {
+    type CommitType = Vec<CompressedRistretto>;
+    type VarType = (Vec<Variable>, Vec<Variable>, Variable);
+    type ErrorType = ();
+
+    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
+        &self,
+        rng: &mut R,
+        prover: &mut Prover,
+    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
+        let (a_comms, a_vars): (Vec<_>, Vec<_>) = self
+            .a
+            .iter()
+            .map(|&a_val| prover.commit(a_val, Scalar::random(rng)))
+            .unzip();
+
+        let (mut b_comms, b_vars): (Vec<_>, Vec<_>) = self
+            .b
+            .iter()
+            .map(|&b_val| prover.commit(b_val, Scalar::random(rng)))
+            .unzip();
+
+        let (sel_comm, sel_var) = prover.commit(self.selector, Scalar::random(rng));
+
+        let mut witness_comm = a_comms;
+        witness_comm.append(&mut b_comms);
+        witness_comm.push(sel_comm);
+
+        Ok(((a_vars, b_vars, sel_var), witness_comm))
+    }
 }
 
 /// The statement parameterization as described in the struct above
@@ -258,30 +267,37 @@ pub struct CondSelectVectorStatement {
     expected: Vec<Scalar>,
 }
 
-/// A [`CondSelectVectorGadget`] statement that has been allocated in a constraint system
-#[derive(Clone, Debug)]
-pub struct CondSelectVectorStatementVar {
-    /// The expected selection from the gadget
-    expected: Vec<Variable>,
+impl CommitPublic for CondSelectVectorStatement {
+    type VarType = Vec<Variable>;
+    type ErrorType = ();
+
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Self::VarType, Self::ErrorType> {
+        Ok(self
+            .expected
+            .iter()
+            .map(|&expected_val| cs.commit_public(expected_val))
+            .collect_vec())
+    }
 }
 
 impl SingleProverCircuit for CondSelectVectorGadget {
     type Statement = CondSelectVectorStatement;
     type Witness = CondSelectVectorWitness;
     type WitnessCommitment = Vec<CompressedRistretto>;
-    type WitnessVar = CondSelectVectorWitnessVar;
-    type StatementVar = CondSelectVectorStatementVar;
 
     const BP_GENS_CAPACITY: usize = 64;
 
     fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: Self::WitnessVar,
-        statement_var: Self::StatementVar,
+        witness_var: <Self::Witness as CommitWitness>::VarType,
+        statement_var: <Self::Statement as CommitPublic>::VarType,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
         // Apply the constraints over the allocated witness & statement
-        let res = Self::select(&witness_var.a, &witness_var.b, witness_var.selector, cs);
-        for (res_var, expected_var) in res.into_iter().zip(statement_var.expected.into_iter()) {
+        let res = Self::select(&witness_var.0, &witness_var.1, witness_var.2, cs);
+        for (res_var, expected_var) in res.into_iter().zip(statement_var.into_iter()) {
             cs.constrain(res_var - expected_var);
         }
         Ok(())
@@ -294,48 +310,18 @@ impl SingleProverCircuit for CondSelectVectorGadget {
     ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
         // Commit to the witness
         let mut rng = OsRng {};
-        let (a_comms, a_vars): (Vec<_>, Vec<_>) = witness
-            .a
-            .into_iter()
-            .map(|a_val| prover.commit(a_val, Scalar::random(&mut rng)))
-            .unzip();
-
-        let (mut b_comms, b_vars): (Vec<_>, Vec<_>) = witness
-            .b
-            .into_iter()
-            .map(|b_val| prover.commit(b_val, Scalar::random(&mut rng)))
-            .unzip();
-
-        let (sel_comm, sel_var) = prover.commit(witness.selector, Scalar::random(&mut rng));
+        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
 
         // Commit to the statement
-        let expected_vars = statement
-            .expected
-            .into_iter()
-            .map(|expected_val| prover.commit_public(expected_val))
-            .collect_vec();
+        let statement_var = statement.commit_public(&mut prover).unwrap();
 
-        let witness_var = CondSelectVectorWitnessVar {
-            a: a_vars,
-            b: b_vars,
-            selector: sel_var,
-        };
-
-        let statement_var = CondSelectVectorStatementVar {
-            expected: expected_vars,
-        };
-
-        Self::apply_constraints(witness_var, statement_var, &mut prover)
-            .map_err(ProverError::R1CS)?;
+        Self::apply_constraints(witness_var, statement_var, &mut prover).unwrap();
 
         // Prove the statement
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
 
-        let mut commitments = a_comms;
-        commitments.append(&mut b_comms);
-        commitments.push(sel_comm);
-        Ok((commitments, proof))
+        Ok((witness_comm, proof))
     }
 
     fn verify(
@@ -364,24 +350,11 @@ impl SingleProverCircuit for CondSelectVectorGadget {
         let sel_var = verifier.commit(sel_comm);
 
         // Commit to the statement
-        let expected_vars = statement
-            .expected
-            .into_iter()
-            .map(|expected_val| verifier.commit_public(expected_val))
-            .collect_vec();
+        let statement_var = statement.commit_public(&mut verifier).unwrap();
 
-        let witness_var = CondSelectVectorWitnessVar {
-            a: a_vars,
-            b: b_vars,
-            selector: sel_var,
-        };
+        let witness_var = (a_vars, b_vars, sel_var);
 
-        let statement_var = CondSelectVectorStatementVar {
-            expected: expected_vars,
-        };
-
-        Self::apply_constraints(witness_var, statement_var, &mut verifier)
-            .map_err(VerifierError::R1CS)?;
+        Self::apply_constraints(witness_var, statement_var, &mut verifier).unwrap();
 
         // Verify the proof
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);

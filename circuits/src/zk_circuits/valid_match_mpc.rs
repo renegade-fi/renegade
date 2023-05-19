@@ -692,7 +692,6 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
             .unwrap();
 
         // Check that the matches value is properly formed
-        // TODO(andrew): This seems like the place to look at re: apply_constraints
         Self::matching_engine_check_single_prover(
             &mut verifier,
             party0_order,
