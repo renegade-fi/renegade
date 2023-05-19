@@ -1,12 +1,14 @@
 //! Builds MPC-related types from a base type and implements relevant traits
 
-use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
+use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::ToTokens;
 use syn::{parse_quote, Attribute, Generics, ItemImpl, ItemStruct, Path};
 
-use crate::circuit_type::{build_deserialize_method, build_serialize_method};
+use crate::circuit_type::{
+    build_deserialize_method, build_serialize_method, ident_with_prefix, new_ident,
+};
 
-use super::build_modified_struct_from_associated_types;
+use super::{build_modified_struct_from_associated_types, ident_strip_prefix};
 
 /// The prefix used in an MPC type of a given base type
 const MPC_TYPE_PREFIX: &str = "Authenticated";
@@ -44,13 +46,15 @@ fn build_mpc_generics() -> Generics {
     }
 }
 
+/// Append <N, S> to an identifier
+fn with_mpc_generics(ident: Ident) -> Path {
+    parse_quote!(#ident<N, S>)
+}
+
 /// Build an MPC type path from a given base type
 fn build_mpc_type_path(base_struct: &ItemStruct) -> Path {
     let base_struct_ident = base_struct.ident.clone();
-    let mpc_type_name = Ident::new(
-        &format!("{MPC_TYPE_PREFIX}{base_struct_ident}"),
-        Span::call_site(),
-    );
+    let mpc_type_name = ident_with_prefix(&base_struct_ident.to_string(), MPC_TYPE_PREFIX);
 
     parse_quote!(#mpc_type_name<N, S>)
 }
@@ -61,9 +65,8 @@ fn build_mpc_base_type_impl(base_struct: &ItemStruct) -> TokenStream2 {
     let mpc_type_name = build_mpc_type_path(base_struct);
 
     let generics = build_mpc_generics();
-    let mpc_base_type_trait = Ident::new(MPC_BASE_TYPE_TRAIT_NAME, Span::call_site());
-    let mpc_base_type_trait: Path = parse_quote!(#mpc_base_type_trait<N, S>);
-    let mpc_allocated_type = Ident::new(MPC_ALLOCATED_TYPE_ASSOCIATED_NAME, Span::call_site());
+    let mpc_base_type_trait = with_mpc_generics(new_ident(MPC_BASE_TYPE_TRAIT_NAME));
+    let mpc_allocated_type = new_ident(MPC_ALLOCATED_TYPE_ASSOCIATED_NAME);
 
     parse_quote! {
         impl #generics #mpc_base_type_trait for #base_struct_ident {
@@ -75,16 +78,12 @@ fn build_mpc_base_type_impl(base_struct: &ItemStruct) -> TokenStream2 {
 /// Build the core `Authenticated` type that implements `MpcType`
 fn build_mpc_type(base_struct: &ItemStruct) -> TokenStream2 {
     let base_type_name = base_struct.ident.clone();
-    let new_name_ident = Ident::new(
-        &format!("{MPC_TYPE_PREFIX}{base_type_name}"),
-        Span::call_site(),
-    );
+    let new_name_ident = ident_with_prefix(&base_type_name.to_string(), MPC_TYPE_PREFIX);
 
-    let mpc_base_trait_ident = Ident::new(MPC_BASE_TYPE_TRAIT_NAME, Span::call_site());
-    let mpc_base_trait_ident: Path = parse_quote!(#mpc_base_trait_ident<N, S>);
-    let mpc_type_associated_ident =
-        Ident::new(MPC_ALLOCATED_TYPE_ASSOCIATED_NAME, Span::call_site());
+    let mpc_base_trait_ident = with_mpc_generics(new_ident(MPC_BASE_TYPE_TRAIT_NAME));
+    let mpc_type_associated_ident = new_ident(MPC_ALLOCATED_TYPE_ASSOCIATED_NAME);
     let derive_clone_attr: Attribute = parse_quote!(#[derive(Clone)]);
+
     let mpc_type = build_modified_struct_from_associated_types(
         base_struct,
         new_name_ident,
@@ -105,38 +104,31 @@ fn build_mpc_type(base_struct: &ItemStruct) -> TokenStream2 {
 /// Build an `impl MpcType` block for a given type
 fn build_mpc_type_impl(mpc_type: &ItemStruct) -> TokenStream2 {
     let mpc_generics = build_mpc_generics();
-    let mpc_type_trait_name = Ident::new(MPC_ALLOC_TYPE_TRAIT_NAME, Span::call_site());
-    let mpc_trait_path: Path = parse_quote! { #mpc_type_trait_name<N, S> };
-    let mpc_type_ident = mpc_type.ident.clone();
-    let mpc_type_path: Path = parse_quote! { #mpc_type_ident<N, S> };
+    let mpc_type_trait_name = with_mpc_generics(new_ident(MPC_ALLOC_TYPE_TRAIT_NAME));
+    let mpc_type_ident = with_mpc_generics(mpc_type.ident.clone());
 
     // This ident is used for the `type NativeType` associated type
-    let native_type_ident = Ident::new(MPC_NATIVE_TYPE_ASSOCIATED_NAME, Span::call_site());
-    let base_type_ident = mpc_type.ident.to_string();
-    let base_type_ident = base_type_ident
-        .strip_prefix(MPC_TYPE_PREFIX)
-        .unwrap_or(&base_type_ident);
-    let base_type_ident = Ident::new(base_type_ident, Span::call_site());
+    let native_type_ident = new_ident(MPC_NATIVE_TYPE_ASSOCIATED_NAME);
+    let base_type_ident = ident_strip_prefix(&mpc_type.ident.to_string(), MPC_TYPE_PREFIX);
 
-    let serialized_type_ident: Ident = Ident::new(MPC_TYPE_SERIALIZED_IDENT, Span::call_site());
-    let authenticated_scalar_type: Path = parse_quote!(#serialized_type_ident<N, S>);
+    let authenticated_scalar_type = with_mpc_generics(new_ident(MPC_TYPE_SERIALIZED_IDENT));
 
     let from_auth_scalars_method = build_deserialize_method(
-        Ident::new(FROM_AUTHENTICATED_SCALARS_METHOD_NAME, Span::call_site()),
+        new_ident(FROM_AUTHENTICATED_SCALARS_METHOD_NAME),
         authenticated_scalar_type.clone(),
-        mpc_trait_path.clone(),
+        mpc_type_trait_name.clone(),
         mpc_type,
     );
 
     // Build a `to_authenticated_scalars` method
     let to_auth_scalars_method = build_serialize_method(
-        Ident::new(TO_AUTHENTICATED_SCALARS_METHOD_NAME, Span::call_site()),
+        new_ident(TO_AUTHENTICATED_SCALARS_METHOD_NAME),
         authenticated_scalar_type,
         mpc_type,
     );
 
     let impl_block: ItemImpl = parse_quote! {
-        impl #mpc_generics #mpc_trait_path for #mpc_type_path {
+        impl #mpc_generics #mpc_type_trait_name for #mpc_type_ident {
             type #native_type_ident = #base_type_ident;
 
             #from_auth_scalars_method
