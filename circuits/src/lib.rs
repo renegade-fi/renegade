@@ -91,7 +91,7 @@ pub(crate) use print_mpc_wire;
 pub(crate) use print_multiprover_wire;
 #[allow(unused)]
 pub(crate) use print_wire;
-use traits::{CommitSharedProver, MultiProverCircuit, Open, SingleProverCircuit};
+use traits::{MultiProverCircuit, MultiproverCircuitCommitmentType, SingleProverCircuit};
 
 // ------------------
 // | Helper Methods |
@@ -128,8 +128,8 @@ pub fn multiprover_prove<'a, N, S, C>(
     fabric: SharedFabric<N, S>,
 ) -> Result<(C::WitnessCommitment, SharedR1CSProof<N, S>), ProverError>
 where
-    N: MpcNetwork + Send,
-    S: SharedValueSource<Scalar>,
+    N: MpcNetwork + Send + Clone,
+    S: SharedValueSource<Scalar> + Clone,
     C: MultiProverCircuit<'a, N, S>,
 {
     let mut transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
@@ -157,13 +157,13 @@ pub fn verify_singleprover_proof<C: SingleProverCircuit>(
 /// Abstracts over the flow of verifying a proof for a collaboratively proved circuit
 pub fn verify_collaborative_proof<'a, N, S, C>(
     statement: C::Statement,
-    witness_commitment: <C::WitnessCommitment as Open<N, S>>::OpenOutput,
+    witness_commitment: <C::WitnessCommitment as MultiproverCircuitCommitmentType<N, S>>::BaseCommitType,
     proof: R1CSProof,
 ) -> Result<(), VerifierError>
 where
     C: MultiProverCircuit<'a, N, S>,
-    N: MpcNetwork + Send,
-    S: SharedValueSource<Scalar>,
+    N: MpcNetwork + Send + Clone,
+    S: SharedValueSource<Scalar> + Clone,
 {
     // Verify the statement with a fresh transcript
     let mut verifier_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
@@ -250,8 +250,6 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone
     }
 }
 
-/// Flattening operation for serialization to share over an MPC fabric
-
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedLinkableCommitment<N, S> {
     /// Create a linkable commitment from a shared scalar by sampling a shared
     /// blinder
@@ -259,27 +257,6 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedLinkableCo
         let mut rng = OsRng {};
         let randomness = Scalar::random(&mut rng);
         Self { val, randomness }
-    }
-}
-
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S>
-    for AuthenticatedLinkableCommitment<N, S>
-{
-    type SharedVarType = MpcVariable<N, S>;
-    type CommitType = AuthenticatedCompressedRistretto<N, S>;
-    type ErrorType = MpcError;
-
-    fn commit<R: RngCore + CryptoRng>(
-        &self,
-        _owning_party: u64,
-        _rng: &mut R,
-        prover: &mut MpcProver<N, S>,
-    ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType> {
-        let (comm, var) = prover
-            .commit_preshared(&self.val, self.randomness)
-            .map_err(|err| MpcError::SharingError(err.to_string()))?;
-
-        Ok((var, comm))
     }
 }
 
