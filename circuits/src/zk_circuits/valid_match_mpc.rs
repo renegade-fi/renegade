@@ -492,8 +492,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> CommitSharedProver<N, S
     ) -> Result<(Self::SharedVarType, Self::CommitType), Self::ErrorType> {
         let (party0_vars, party0_comm) = (self.my_order.clone(), self.my_balance.clone())
             .commit(0 /* owning_party */, rng, prover)?;
-        let (party1_vars, party1_comm) =
-            (self.my_order.clone(), self.my_balance.clone()).commit(1 /* owning_party */, rng, prover)?;
+        let (party1_vars, party1_comm) = (self.my_order.clone(), self.my_balance.clone())
+            .commit(1 /* owning_party */, rng, prover)?;
 
         let (match_var, match_commit) =
             self.match_res.commit(0 /* owning_party */, rng, prover)?;
