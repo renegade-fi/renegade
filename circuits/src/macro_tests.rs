@@ -22,8 +22,10 @@ mod test {
 
     use crate::{
         mpc::{MpcFabric, SharedFabric},
-        Allocate, BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, CommitPublic,
-        CommitVerifier, CommitWitness, MpcBaseType, MpcType, Open,
+        traits::{
+            Allocate, BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType,
+            CommitPublic, CommitVerifier, CommitWitness, MpcBaseType, MpcType, Open,
+        },
     };
 
     #[circuit_type(singleprover_circuit, mpc)]
