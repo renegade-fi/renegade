@@ -1,13 +1,15 @@
 //! Groups type and trait definitions built when the `singleprover_circuit`
 //! argument is given to the macro
 
-use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
+use proc_macro2::TokenStream as TokenStream2;
 use quote::ToTokens;
 use syn::{parse_quote, Attribute, Generics, ItemImpl, ItemStruct};
 
+use crate::circuit_type::{ident_with_suffix, new_ident};
+
 use super::{
     build_deserialize_method, build_modified_struct_from_associated_types, build_serialize_method,
-    path_from_ident,
+    path_from_ident, str_to_path,
 };
 
 // -------------
@@ -68,12 +70,12 @@ pub(crate) fn build_circuit_types(base_type: &ItemStruct) -> TokenStream2 {
 /// Build an `impl CircuitBaseType` block for the base type
 fn build_circuit_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
     let base_name = base_type.ident.clone();
-    let trait_ident = Ident::new(BASE_TYPE_TRAIT_NAME, Span::call_site());
+    let trait_ident = new_ident(BASE_TYPE_TRAIT_NAME);
 
-    let var_type_associated = Ident::new(VAR_TYPE_ASSOCIATED_NAME, Span::call_site());
-    let var_type_name = Ident::new(&format!("{base_name}{VAR_TYPE_SUFFIX}"), Span::call_site());
-    let comm_type_associated = Ident::new(COMM_TYPE_ASSOCIATED_NAME, Span::call_site());
-    let comm_type_name = Ident::new(&format!("{base_name}{COMM_TYPE_SUFFIX}"), Span::call_site());
+    let var_type_associated = new_ident(VAR_TYPE_ASSOCIATED_NAME);
+    let var_type_name = ident_with_suffix(&base_name.to_string(), VAR_TYPE_SUFFIX);
+    let comm_type_associated = new_ident(COMM_TYPE_ASSOCIATED_NAME);
+    let comm_type_name = ident_with_suffix(&base_name.to_string(), COMM_TYPE_SUFFIX);
 
     parse_quote! {
         impl #trait_ident for #base_name {
@@ -86,7 +88,7 @@ fn build_circuit_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
 /// Build a variable type; the type of the base allocated in a constraint system
 fn build_var_type(base_type: &ItemStruct) -> TokenStream2 {
     let base_name = base_type.ident.clone();
-    let var_name: Ident = Ident::new(&format!("{base_name}{VAR_TYPE_SUFFIX}"), Span::call_site());
+    let var_name = ident_with_suffix(&base_name.to_string(), VAR_TYPE_SUFFIX);
     let derive_clone: Attribute = parse_quote!(#[derive(Clone)]);
 
     let var_struct = build_modified_struct_from_associated_types(
@@ -94,8 +96,8 @@ fn build_var_type(base_type: &ItemStruct) -> TokenStream2 {
         var_name,
         vec![derive_clone],
         Generics::default(),
-        path_from_ident(Ident::new(BASE_TYPE_TRAIT_NAME, Span::call_site())),
-        Ident::new(VAR_TYPE_ASSOCIATED_NAME, Span::call_site()),
+        str_to_path(BASE_TYPE_TRAIT_NAME),
+        new_ident(VAR_TYPE_ASSOCIATED_NAME),
     );
 
     // Implement `CircuitVarType` for this struct and append to the result
@@ -108,12 +110,12 @@ fn build_var_type(base_type: &ItemStruct) -> TokenStream2 {
 
 /// Build an implementation of the `CircuitVarType` trait for the new var type
 fn build_var_type_impl(var_struct: &ItemStruct) -> TokenStream2 {
-    let trait_ident = Ident::new(VAR_TYPE_TRAIT_NAME, Span::call_site());
     let var_struct_ident = var_struct.ident.clone();
+    let trait_ident = new_ident(VAR_TYPE_TRAIT_NAME);
 
     let deserialize_method_expr = build_deserialize_method(
-        Ident::new(FROM_VARS_METHOD_NAME, Span::call_site()),
-        path_from_ident(Ident::new(FROM_VARS_ITER_TYPE, Span::call_site())),
+        new_ident(FROM_VARS_METHOD_NAME),
+        str_to_path(FROM_VARS_ITER_TYPE),
         path_from_ident(trait_ident.clone()),
         var_struct,
     );
@@ -130,7 +132,7 @@ fn build_var_type_impl(var_struct: &ItemStruct) -> TokenStream2 {
 /// Build a commitment type; the type of a commitment to the base type that has been allocated
 fn build_commitment_type(base_type: &ItemStruct) -> TokenStream2 {
     let base_name = base_type.ident.clone();
-    let comm_name = Ident::new(&format!("{base_name}{COMM_TYPE_SUFFIX}"), Span::call_site());
+    let comm_name = ident_with_suffix(&base_name.to_string(), COMM_TYPE_SUFFIX);
     let derive_clone: Attribute = parse_quote!(#[derive(Clone)]);
 
     let comm_struct = build_modified_struct_from_associated_types(
@@ -138,8 +140,8 @@ fn build_commitment_type(base_type: &ItemStruct) -> TokenStream2 {
         comm_name,
         vec![derive_clone],
         Generics::default(),
-        path_from_ident(Ident::new(BASE_TYPE_TRAIT_NAME, Span::call_site())),
-        Ident::new(COMM_TYPE_ASSOCIATED_NAME, Span::call_site()),
+        str_to_path(BASE_TYPE_TRAIT_NAME),
+        new_ident(COMM_TYPE_ASSOCIATED_NAME),
     );
 
     let mut res = comm_struct.to_token_stream();
@@ -149,7 +151,7 @@ fn build_commitment_type(base_type: &ItemStruct) -> TokenStream2 {
 
 /// Build the `impl CircuitCommitmentType for ...` block fo the commitment struct
 fn build_comm_type_impl(comm_struct: &ItemStruct) -> TokenStream2 {
-    let trait_ident = Ident::new(COMM_TYPE_TRAIT_NAME, Span::call_site());
+    let trait_ident = new_ident(COMM_TYPE_TRAIT_NAME);
     let comm_struct_ident = comm_struct.ident.clone();
 
     // Strip the commitment suffix and add in the var suffix
@@ -158,21 +160,21 @@ fn build_comm_type_impl(comm_struct: &ItemStruct) -> TokenStream2 {
         .strip_suffix(COMM_TYPE_SUFFIX)
         .unwrap_or(&base_struct_name);
 
-    let var_type_ident = Ident::new(&format!("{stripped}{VAR_TYPE_SUFFIX}"), Span::call_site());
-    let associated_type_ident = Ident::new(VAR_TYPE_ASSOCIATED_NAME, Span::call_site());
+    let var_type_ident = ident_with_suffix(stripped, VAR_TYPE_SUFFIX);
+    let associated_type_ident = new_ident(VAR_TYPE_ASSOCIATED_NAME);
 
     // Implement `from_commitments`
     let deserialize_expr = build_deserialize_method(
-        Ident::new(FROM_COMMS_METHOD_NAME, Span::call_site()),
-        path_from_ident(Ident::new(FROM_COMMS_ITER_TYPE, Span::call_site())),
+        new_ident(FROM_COMMS_METHOD_NAME),
+        str_to_path(FROM_COMMS_ITER_TYPE),
         path_from_ident(trait_ident.clone()),
         comm_struct,
     );
 
     // Implement `to_commitments`
     let serialize_expr = build_serialize_method(
-        Ident::new(TO_COMMS_METHOD_NAME, Span::call_site()),
-        path_from_ident(Ident::new(FROM_COMMS_ITER_TYPE, Span::call_site())),
+        new_ident(TO_COMMS_METHOD_NAME),
+        str_to_path(FROM_COMMS_ITER_TYPE),
         comm_struct,
     );
 

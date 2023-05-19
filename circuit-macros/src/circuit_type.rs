@@ -95,19 +95,20 @@ pub(crate) fn circuit_type_impl(target_struct: ItemStruct, macro_args: MacroArgs
 // ---------------------------
 
 fn build_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
-    let trait_ident = Ident::new(BASE_TYPE_TRAIT_NAME, Span::call_site());
+    let trait_ident = new_ident(BASE_TYPE_TRAIT_NAME);
     let base_type_ident = base_type.ident.clone();
+    let scalar_type_path = path_from_ident(new_ident(SCALAR_TYPE_IDENT));
 
     let from_scalars_impl = build_deserialize_method(
         Ident::new(FROM_SCALARS_METHOD_NAME, Span::call_site()),
-        path_from_ident(Ident::new(SCALAR_TYPE_IDENT, Span::call_site())),
+        scalar_type_path.clone(),
         path_from_ident(trait_ident.clone()),
         base_type,
     );
 
     let to_scalars_impl = build_serialize_method(
         Ident::new(TO_SCALARS_METHOD_NAME, Span::call_site()),
-        path_from_ident(Ident::new(SCALAR_TYPE_IDENT, Span::call_site())),
+        scalar_type_path,
         base_type,
     );
 
@@ -123,6 +124,32 @@ fn build_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
 // -----------
 // | Helpers |
 // -----------
+
+/// A helper that specifies the default call site span for an Identifier
+fn new_ident(name: &str) -> Ident {
+    Ident::new(name, Span::call_site())
+}
+
+/// A helper that creates an identifier with the given prefix
+fn ident_with_prefix(original: &str, prefix: &str) -> Ident {
+    new_ident(&format!("{prefix}{original}"))
+}
+
+/// A helper to strip a prefix from an identifier and return a new identifier
+fn ident_strip_prefix(original: &str, prefix: &str) -> Ident {
+    let stripped = original.strip_prefix(prefix).unwrap_or(original);
+    new_ident(stripped)
+}
+
+/// A helper that creates an identifier with the given suffix
+fn ident_with_suffix(original: &str, suffix: &str) -> Ident {
+    new_ident(&format!("{original}{suffix}"))
+}
+
+/// Convert a string to a `Path` syntax tree object representing a type path
+fn str_to_path(s: &str) -> Path {
+    path_from_ident(new_ident(s))
+}
 
 /// Convert an `Ident` directly into a `Path`
 fn path_from_ident(identifier: Ident) -> Path {
