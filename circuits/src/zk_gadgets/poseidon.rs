@@ -714,6 +714,16 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProv
         Ok(())
     }
 
+    fn apply_constraints_single_prover<CS: RandomizableConstraintSystem>(
+        witness_var: <<Self::WitnessCommitment as crate::Open<N, S>>::OpenOutput as crate::CommitVerifier>::VarType,
+        statement: Self::Statement,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        // Commit to the public expected output
+        let statement_var = statement.commit_public(cs).unwrap();
+        PoseidonHashGadget::apply_constraints(witness_var, statement_var, cs)
+    }
+
     fn prove(
         witness: Self::Witness,
         statement: Self::Statement,
@@ -744,10 +754,22 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProv
         witness_commitments: Vec<CompressedRistretto>,
         statement: Self::Statement,
         proof: R1CSProof,
-        verifier: Verifier,
+        mut verifier: Verifier,
     ) -> Result<(), VerifierError> {
-        // Forward to the single prover gadget
-        PoseidonHashGadget::verify(witness_commitments, statement, proof, verifier)
+        // Commit to the preimage from the existing witness commitments
+        let witness_var = witness_commitments
+            .iter()
+            .map(|comm| verifier.commit(*comm))
+            .collect_vec();
+
+        Self::apply_constraints_single_prover(witness_var, statement, &mut verifier)
+            .map_err(VerifierError::R1CS)?;
+
+        // Verify the proof
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        verifier
+            .verify(&proof, &bp_gens)
+            .map_err(VerifierError::R1CS)
     }
 }
 

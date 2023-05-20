@@ -548,11 +548,11 @@ where
     /// Applies all the verifier-side constraints embodied by the circuit over
     /// the entire committed witness & statement,
     /// building them into the given constraint system
-    // fn apply_constraints_single_prover<CS: RandomizableConstraintSystem>(
-    //     witness_var: <Self::Witness as CommitWitness>::VarType,
-    //     statement_var: <Self::Statement as CommitPublic>::VarType,
-    //     cs: &mut CS,
-    // ) -> Result<(), R1CSError>;
+    fn apply_constraints_single_prover<CS: RandomizableConstraintSystem>(
+        witness_var: <<Self::WitnessCommitment as Open<N, S>>::OpenOutput as CommitVerifier>::VarType,
+        statement: Self::Statement,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError>;
 
     /// Generate a proof of the statement represented by the circuit
     ///

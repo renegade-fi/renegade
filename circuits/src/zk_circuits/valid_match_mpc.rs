@@ -726,6 +726,15 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         Self::matching_engine_check(prover, witness_var, fabric)
     }
 
+    fn apply_constraints_single_prover<CS: RandomizableConstraintSystem>(
+        witness_var: <<Self::WitnessCommitment as Open<N, S>>::OpenOutput as CommitVerifier>::VarType,
+        _statement: Self::Statement,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        // Check that the matches value is properly formed
+        Self::matching_engine_check_single_prover(cs, witness_var)
+    }
+
     fn prove(
         witness: Self::Witness,
         _statement: Self::Statement,
@@ -762,9 +771,12 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
         // Commit to the input variables from the provers
         let witness_comm_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
 
-        // Check that the matches value is properly formed
-        Self::matching_engine_check_single_prover(&mut verifier, witness_comm_var)
-            .map_err(VerifierError::R1CS)?;
+        Self::apply_constraints_single_prover(
+            witness_comm_var,
+            ValidMatchMpcStatement {},
+            &mut verifier,
+        )
+        .map_err(VerifierError::R1CS)?;
 
         let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         verifier

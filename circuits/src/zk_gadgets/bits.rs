@@ -252,6 +252,16 @@ impl<'a, const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
         Ok(())
     }
 
+    fn apply_constraints_single_prover<CS: RandomizableConstraintSystem>(
+        witness_var: <<Self::WitnessCommitment as Open<N, S>>::OpenOutput as crate::CommitVerifier>::VarType,
+        statement: Self::Statement,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        // Commit to the statement
+        let statement_var = statement.commit_public(cs).unwrap();
+        ToBitsGadget::<D>::apply_constraints(witness_var, statement_var, cs)
+    }
+
     fn prove(
         witness: Self::Witness,
         statement: Self::Statement,
@@ -277,9 +287,19 @@ impl<'a, const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
         witness_commitments: <Self::WitnessCommitment as Open<N, S>>::OpenOutput,
         statement: Self::Statement,
         proof: R1CSProof,
-        verifier: Verifier,
+        mut verifier: Verifier,
     ) -> Result<(), VerifierError> {
-        ToBitsGadget::<D>::verify(witness_commitments, statement, proof, verifier)
+        // Commit to the witness
+        let witness_var = verifier.commit(witness_commitments);
+
+        Self::apply_constraints_single_prover(witness_var, statement, &mut verifier)
+            .map_err(VerifierError::R1CS)?;
+
+        // Verify the proof
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        verifier
+            .verify(&proof, &bp_gens)
+            .map_err(VerifierError::R1CS)
     }
 }
 

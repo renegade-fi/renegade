@@ -580,6 +580,16 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
         Ok(())
     }
 
+    fn apply_constraints_single_prover<CS: RandomizableConstraintSystem>(
+        witness_var: <<Self::WitnessCommitment as crate::Open<N, S>>::OpenOutput as crate::CommitVerifier>::VarType,
+        statement: Self::Statement,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        let statement_var = statement.commit_public(cs).unwrap();
+        ExpGadget::apply_constraints(witness_var, statement_var, cs).unwrap();
+        Ok(())
+    }
+
     fn prove(
         witness: Self::Witness,
         statement: Self::Statement,
@@ -611,9 +621,20 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<
         witness_commitments: CompressedRistretto,
         statement: Self::Statement,
         proof: R1CSProof,
-        verifier: Verifier,
+        mut verifier: Verifier,
     ) -> Result<(), VerifierError> {
-        ExpGadget::verify(witness_commitments, statement, proof, verifier)
+        // Commit to the result in the verifier
+        let x_var = verifier.commit(witness_commitments); // The input `x`
+
+        Self::apply_constraints_single_prover(x_var, statement, &mut verifier).unwrap();
+
+        let bp_gens = BulletproofGens::new(
+            Self::BP_GENS_CAPACITY, /* gens_capacity */
+            1,                      /* party_capacity */
+        );
+        verifier
+            .verify(&proof, &bp_gens)
+            .map_err(VerifierError::R1CS)
     }
 }
 
