@@ -4,7 +4,7 @@ pub mod bits;
 mod comparators;
 mod poseidon;
 
-use circuits::{mpc::SharedFabric, MultiProverCircuit, Open};
+use circuits::{mpc::SharedFabric, CommitVerifier, MultiProverCircuit, Open};
 use curve25519_dalek::scalar::Scalar;
 use merlin::Transcript;
 use mpc_bulletproof::{
@@ -31,6 +31,8 @@ where
     N: MpcNetwork + Send,
     S: SharedValueSource<Scalar>,
     C: MultiProverCircuit<'a, N, S>,
+    <<C as MultiProverCircuit<'a, N, S>>::WitnessCommitment as Open<N, S>>::OpenOutput:
+        CommitVerifier,
 {
     let mut transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
     let pc_gens = PedersenGens::default();

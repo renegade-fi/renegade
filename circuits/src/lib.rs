@@ -126,6 +126,8 @@ where
     N: MpcNetwork + Send,
     S: SharedValueSource<Scalar>,
     C: MultiProverCircuit<'a, N, S>,
+    <<C as MultiProverCircuit<'a, N, S>>::WitnessCommitment as Open<N, S>>::OpenOutput:
+        CommitVerifier,
 {
     let mut transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
     let pc_gens = PedersenGens::default();
@@ -159,6 +161,8 @@ where
     C: MultiProverCircuit<'a, N, S>,
     N: MpcNetwork + Send,
     S: SharedValueSource<Scalar>,
+    <<C as MultiProverCircuit<'a, N, S>>::WitnessCommitment as Open<N, S>>::OpenOutput:
+        CommitVerifier,
 {
     // Verify the statement with a fresh transcript
     let mut verifier_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
@@ -507,7 +511,11 @@ pub trait SingleProverCircuit {
 /// The witness type represents the secret witness that the prover has access to but
 /// that the verifier does not. The statement is the set of public inputs and any
 /// other circuit meta-parameters that both prover and verifier have access to.
-pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> {
+pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
+where
+    <<Self as MultiProverCircuit<'a, N, S>>::WitnessCommitment as Open<N, S>>::OpenOutput:
+        CommitVerifier,
+{
     /// The witness type, given only to the prover, which generates a blinding commitment
     /// that can be given to the verifier
     type Witness: CommitSharedProver<N, S>;
@@ -650,6 +658,18 @@ impl CommitVerifier for CompressedRistretto {
 
     fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
         Ok(verifier.commit(*self))
+    }
+}
+
+impl CommitVerifier for Vec<CompressedRistretto> {
+    type VarType = Vec<Variable>;
+    type ErrorType = (); // Does not error
+
+    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
+        Ok(self
+            .iter()
+            .map(|&cr| cr.commit_verifier(verifier).unwrap())
+            .collect())
     }
 }
 
