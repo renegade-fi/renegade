@@ -44,6 +44,8 @@ const ARG_MPC_TYPE: &str = "mpc";
 const ARG_MULTIPROVER_TYPE: &str = "multiprover_circuit";
 /// The flag indicating the expansion should include a proof-linkable type
 const ARG_LINKABLE_TYPE: &str = "linkable";
+/// The flag indicating the expansion should include multiprover linkable types
+const ARG_MULTIPROVER_LINKABLE_TYPES: &str = "multiprover_linkable";
 
 /// The arguments to the `circuit_trace` macro
 #[derive(Default)]
@@ -56,6 +58,8 @@ pub(crate) struct MacroArgs {
     pub build_mpc_types: bool,
     /// Whether or not to allocate multiprover circuit types for the struct
     pub build_mulitprover_types: bool,
+    /// Whether or not to allocate multiprover linkable circuit types for the struct
+    pub build_multiprover_linkable_types: bool,
 }
 
 impl MacroArgs {
@@ -76,6 +80,14 @@ impl MacroArgs {
                 "linkable types require a circuit base type to implement"
             )
         }
+
+        // A multiprover linkable type must also be linkable and a circuit base type
+        if self.build_multiprover_linkable_types {
+            assert!(
+                self.build_circuit_types && self.build_linkable_types,
+                "multiprover linkable types require both circuit base type and base linkable types"
+            )
+        }
     }
 }
 
@@ -91,6 +103,7 @@ pub(crate) fn parse_macro_args(args: TokenStream) -> Result<MacroArgs> {
             ARG_LINKABLE_TYPE => macro_args.build_linkable_types = true,
             ARG_MPC_TYPE => macro_args.build_mpc_types = true,
             ARG_MULTIPROVER_TYPE => macro_args.build_mulitprover_types = true,
+            ARG_MULTIPROVER_LINKABLE_TYPES => macro_args.build_multiprover_linkable_types = true,
             unknown => panic!("received unexpected argument {unknown}"),
         }
     }
@@ -132,7 +145,8 @@ pub(crate) fn circuit_type_impl(target_struct: ItemStruct, macro_args: MacroArgs
 
     // Build the commitment-linkable type
     if macro_args.build_linkable_types {
-        let linkable_type_tokens = build_linkable_types(&target_struct);
+        let linkable_type_tokens =
+            build_linkable_types(&target_struct, macro_args.build_multiprover_linkable_types);
         out_tokens.extend(linkable_type_tokens);
     }
 

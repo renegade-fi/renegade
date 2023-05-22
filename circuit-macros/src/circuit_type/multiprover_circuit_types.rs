@@ -14,13 +14,13 @@ use crate::circuit_type::{
 use super::build_serialize_method;
 
 /// The name of the trait that multiprover circuit base types implement
-const MULTIPROVER_BASE_TRAIT_NAME: &str = "MultiproverCircuitBaseType";
+pub(crate) const MULTIPROVER_BASE_TRAIT_NAME: &str = "MultiproverCircuitBaseType";
 /// The name of the associated variable type on the base trait
-const MULTIPROVER_BASE_VAR_ASSOCIATED_NAME: &str = "MultiproverVarType";
+pub(crate) const MULTIPROVER_BASE_VAR_ASSOCIATED_NAME: &str = "MultiproverVarType";
 /// The name of the trait that multiprover circuit variable types implement
 const MULTIPROVER_VAR_TRAIT_NAME: &str = "MultiproverCircuitVariableType";
 /// The name of the associated variable type on the base trait
-const MULTIPROVER_BASE_COMM_ASSOCIATED_NAME: &str = "MultiproverCommType";
+pub(crate) const MULTIPROVER_BASE_COMM_ASSOCIATED_NAME: &str = "MultiproverCommType";
 /// The name of the trait that multiprover circuit commitment types implement
 const MULTIPROVER_COMM_TRAIT_NAME: &str = "MultiproverCircuitCommitmentType";
 /// The name of the associated base commitment type for a shared commitment type
@@ -39,11 +39,11 @@ const MPC_VAR_TYPE_NAME: &str = "MpcVariable";
 const MPC_COMM_TYPE_NAME: &str = "AuthenticatedCompressedRistretto";
 
 /// The prefix that is prepended to all authenticated MPC types
-const AUTHENTICATED_PREFIX: &str = "Authenticated";
+pub(crate) const AUTHENTICATED_PREFIX: &str = "Authenticated";
 /// The suffix that is appended to variable types
-const VAR_SUFFIX: &str = "Var";
+pub(crate) const VAR_SUFFIX: &str = "Var";
 /// The suffix that is appended to commitment types
-const COMM_SUFFIX: &str = "Commitment";
+pub(crate) const COMM_SUFFIX: &str = "Commitment";
 
 /// Build the multiprover circuit types from a base type
 pub(crate) fn build_multiprover_circuit_types(base_struct: &ItemStruct) -> TokenStream2 {
