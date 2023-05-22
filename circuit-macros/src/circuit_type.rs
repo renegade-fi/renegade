@@ -1,6 +1,7 @@
 //! Macro implementation of the `circuit_type` macro that defines associated types and conversions
 //! between them for an application level base type
 
+mod linkable_types;
 mod mpc_types;
 mod multiprover_circuit_types;
 mod singleprover_circuit_types;
@@ -19,7 +20,8 @@ use syn::{
 };
 
 use self::{
-    mpc_types::build_mpc_types, multiprover_circuit_types::build_multiprover_circuit_types,
+    linkable_types::build_linkable_types, mpc_types::build_mpc_types,
+    multiprover_circuit_types::build_multiprover_circuit_types,
     singleprover_circuit_types::build_circuit_types,
 };
 
@@ -40,12 +42,16 @@ const ARG_CIRCUIT_TYPE: &str = "singleprover_circuit";
 const ARG_MPC_TYPE: &str = "mpc";
 /// The flag indicating the expansion should include types for a multiprover circuit
 const ARG_MULTIPROVER_TYPE: &str = "multiprover_circuit";
+/// The flag indicating the expansion should include a proof-linkable type
+const ARG_LINKABLE_TYPE: &str = "linkable";
 
 /// The arguments to the `circuit_trace` macro
 #[derive(Default)]
 pub(crate) struct MacroArgs {
     /// Whether or not to allocate a circuit type for the struct
     pub build_circuit_types: bool,
+    /// Whether or not to allocate linkable commitment types for the struct
+    pub build_linkable_types: bool,
     /// Whether or not to allocate MPC circuit types for the struct
     pub build_mpc_types: bool,
     /// Whether or not to allocate multiprover circuit types for the struct
@@ -62,6 +68,14 @@ impl MacroArgs {
                 "multiprover circuit type requires singleprover circuit type"
             );
         }
+
+        // A linkable type also requires a circuit base type to be defined
+        if self.build_linkable_types {
+            assert!(
+                self.build_circuit_types,
+                "linkable types require a circuit base type to implement"
+            )
+        }
     }
 }
 
@@ -74,6 +88,7 @@ pub(crate) fn parse_macro_args(args: TokenStream) -> Result<MacroArgs> {
     for arg in parsed_args.iter() {
         match arg.to_string().as_str() {
             ARG_CIRCUIT_TYPE => macro_args.build_circuit_types = true,
+            ARG_LINKABLE_TYPE => macro_args.build_linkable_types = true,
             ARG_MPC_TYPE => macro_args.build_mpc_types = true,
             ARG_MULTIPROVER_TYPE => macro_args.build_mulitprover_types = true,
             unknown => panic!("received unexpected argument {unknown}"),
@@ -113,6 +128,12 @@ pub(crate) fn circuit_type_impl(target_struct: ItemStruct, macro_args: MacroArgs
     if macro_args.build_mulitprover_types {
         let multiprover_type_tokens = build_multiprover_circuit_types(&target_struct);
         out_tokens.extend(multiprover_type_tokens)
+    }
+
+    // Build the commitment-linkable type
+    if macro_args.build_linkable_types {
+        let linkable_type_tokens = build_linkable_types(&target_struct);
+        out_tokens.extend(linkable_type_tokens);
     }
 
     out_tokens.into()

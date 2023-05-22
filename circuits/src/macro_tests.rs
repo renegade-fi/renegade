@@ -26,13 +26,14 @@ mod test {
     use crate::{
         mpc::{MpcFabric, SharedFabric},
         traits::{
-            BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, MpcBaseType, MpcType,
-            MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
-            MultiproverCircuitVariableType,
+            BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinkableBaseType,
+            LinkableType, MpcBaseType, MpcType, MultiproverCircuitBaseType,
+            MultiproverCircuitCommitmentType, MultiproverCircuitVariableType,
         },
+        LinkableCommitment,
     };
 
-    #[circuit_type(singleprover_circuit, mpc, multiprover_circuit)]
+    #[circuit_type(singleprover_circuit, mpc, multiprover_circuit, linkable)]
     #[derive(Clone, Debug, PartialEq, Eq)]
     struct TestType {
         val: Scalar,
@@ -181,5 +182,24 @@ mod test {
         // commitments. This is okay for testing the macros all that matters is that the types check
         #[allow(unused_must_use)]
         handle.await.unwrap_err();
+    }
+
+    #[test]
+    fn test_linkable_commitments() {
+        // Allocate a linkable type twice in the constraint system, verify that
+        // its commitment stays the same
+        let linkable_type = LinkableTestType {
+            val: LinkableCommitment::from(Scalar::one()),
+        };
+
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        let mut rng = OsRng {};
+        let (_, comm1) = linkable_type.commit_witness(&mut rng, &mut prover);
+        let (_, comm2) = linkable_type.commit_witness(&mut rng, &mut prover);
+
+        assert_eq!(comm1.val, comm2.val);
     }
 }
