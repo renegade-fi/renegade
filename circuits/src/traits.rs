@@ -454,6 +454,14 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
     }
 }
 
+impl LinkableBaseType for Scalar {
+    type Linkable = LinkableCommitment;
+}
+
+impl LinkableType for LinkableCommitment {
+    type BaseType = Scalar;
+}
+
 // ------------------
 // | Circuit Traits |
 // ------------------
