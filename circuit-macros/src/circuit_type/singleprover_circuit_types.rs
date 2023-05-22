@@ -1,9 +1,9 @@
 //! Groups type and trait definitions built when the `singleprover_circuit`
 //! argument is given to the macro
 
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::ToTokens;
-use syn::{parse_quote, Attribute, Generics, ItemFn, ItemImpl, ItemStruct, Stmt};
+use syn::{parse_quote, Attribute, Generics, ItemFn, ItemImpl, ItemStruct, Path, Stmt};
 
 use crate::circuit_type::{ident_with_suffix, new_ident};
 
@@ -36,8 +36,6 @@ const TO_COMMS_METHOD_NAME: &str = "to_commitments";
 const FROM_COMMS_ITER_TYPE: &str = "CompressedRistretto";
 /// The method name for converting from serialized variables to a variable type
 const FROM_VARS_METHOD_NAME: &str = "from_vars";
-/// The type that a `from_vars` method implementation converts from
-const FROM_VARS_ITER_TYPE: &str = "Variable";
 /// The method name for creating commitment randomness to a base type
 const COMMITMENT_RANDOMNESS_METHOD_NAME: &str = "commitment_randomness";
 
@@ -45,6 +43,24 @@ const COMMITMENT_RANDOMNESS_METHOD_NAME: &str = "commitment_randomness";
 pub(crate) const VAR_TYPE_SUFFIX: &str = "Var";
 /// The suffix appended to a commitment type of a base type
 pub(crate) const COMM_TYPE_SUFFIX: &str = "Commitment";
+
+/// The generic type used to represent a `LinearCombinationLike` type
+const LINEAR_COMBINATION_LIKE_GENERIC: &str = "L";
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Build generic bounds for variable types which abstract over the functional differences
+/// of `Variable`s and `LinearCombination`s
+pub(crate) fn build_var_type_generics() -> Generics {
+    parse_quote!(<L: LinearCombinationLike>)
+}
+
+/// Attach variable type generics to the given identifier
+pub(crate) fn with_var_type_generics(ident: Ident) -> Path {
+    parse_quote!(#ident <L>)
+}
 
 // ------------------
 // | Implementation |
@@ -75,7 +91,9 @@ fn build_circuit_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
     let trait_ident = new_ident(CIRCUIT_BASE_TYPE_TRAIT_NAME);
 
     let var_type_associated = new_ident(VAR_TYPE_ASSOCIATED_NAME);
-    let var_type_name = ident_with_suffix(&base_name.to_string(), VAR_TYPE_SUFFIX);
+    let var_type_generics = build_var_type_generics();
+    let var_type_name =
+        with_var_type_generics(ident_with_suffix(&base_name.to_string(), VAR_TYPE_SUFFIX));
     let comm_type_associated = new_ident(COMM_TYPE_ASSOCIATED_NAME);
     let comm_type_name = ident_with_suffix(&base_name.to_string(), COMM_TYPE_SUFFIX);
 
@@ -83,7 +101,7 @@ fn build_circuit_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
     let commitment_randomness_impl = build_commitment_randomness_method(base_type);
     let impl_block: ItemImpl = parse_quote! {
         impl #trait_ident for #base_name {
-            type #var_type_associated = #var_type_name;
+            type #var_type_associated #var_type_generics = #var_type_name;
             type #comm_type_associated = #comm_type_name;
 
             #commitment_randomness_impl
@@ -122,13 +140,14 @@ pub(crate) fn build_var_type(base_type: &ItemStruct) -> TokenStream2 {
     let var_name = ident_with_suffix(&base_name.to_string(), VAR_TYPE_SUFFIX);
     let derive_clone: Attribute = parse_quote!(#[derive(Clone)]);
 
+    let generics = build_var_type_generics();
     let var_struct = build_modified_struct_from_associated_types(
         base_type,
         var_name,
         vec![derive_clone],
-        Generics::default(),
+        generics,
         str_to_path(CIRCUIT_BASE_TYPE_TRAIT_NAME),
-        new_ident(VAR_TYPE_ASSOCIATED_NAME),
+        with_var_type_generics(new_ident(VAR_TYPE_ASSOCIATED_NAME)),
     );
 
     // Implement `CircuitVarType` for this struct and append to the result
@@ -141,18 +160,19 @@ pub(crate) fn build_var_type(base_type: &ItemStruct) -> TokenStream2 {
 
 /// Build an implementation of the `CircuitVarType` trait for the new var type
 fn build_var_type_impl(var_struct: &ItemStruct) -> TokenStream2 {
-    let var_struct_ident = var_struct.ident.clone();
-    let trait_ident = new_ident(VAR_TYPE_TRAIT_NAME);
+    let var_struct_ident = with_var_type_generics(var_struct.ident.clone());
+    let trait_ident = with_var_type_generics(new_ident(VAR_TYPE_TRAIT_NAME));
+    let generics = build_var_type_generics();
 
     let deserialize_method_expr = build_deserialize_method(
         new_ident(FROM_VARS_METHOD_NAME),
-        str_to_path(FROM_VARS_ITER_TYPE),
-        path_from_ident(trait_ident.clone()),
+        str_to_path(LINEAR_COMBINATION_LIKE_GENERIC),
+        trait_ident.clone(),
         var_struct,
     );
 
     let impl_block: ItemImpl = parse_quote! {
-        impl #trait_ident for #var_struct_ident {
+        impl #generics #trait_ident for #var_struct_ident {
             #deserialize_method_expr
         }
     };
@@ -172,7 +192,7 @@ pub(crate) fn build_commitment_type(base_type: &ItemStruct) -> TokenStream2 {
         vec![derive_clone],
         Generics::default(),
         str_to_path(CIRCUIT_BASE_TYPE_TRAIT_NAME),
-        new_ident(COMM_TYPE_ASSOCIATED_NAME),
+        path_from_ident(new_ident(COMM_TYPE_ASSOCIATED_NAME)),
     );
 
     let mut res = comm_struct.to_token_stream();
@@ -211,7 +231,7 @@ fn build_comm_type_impl(comm_struct: &ItemStruct) -> TokenStream2 {
 
     let impl_block: ItemImpl = parse_quote! {
         impl #trait_ident for #comm_struct_ident {
-            type #associated_type_ident = #var_type_ident;
+            type #associated_type_ident = #var_type_ident<Variable>;
             #deserialize_expr
             #serialize_expr
         }

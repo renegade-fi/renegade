@@ -4,6 +4,7 @@
 mod linkable_types;
 mod mpc_types;
 mod multiprover_circuit_types;
+mod secret_share_types;
 mod singleprover_circuit_types;
 
 use itertools::Itertools;
@@ -22,7 +23,7 @@ use syn::{
 use self::{
     linkable_types::build_linkable_types, mpc_types::build_mpc_types,
     multiprover_circuit_types::build_multiprover_circuit_types,
-    singleprover_circuit_types::build_circuit_types,
+    secret_share_types::build_secret_share_types, singleprover_circuit_types::build_circuit_types,
 };
 
 /// The trait name for the base type that all other types are derived from
@@ -46,6 +47,8 @@ const ARG_MULTIPROVER_TYPE: &str = "multiprover_circuit";
 const ARG_LINKABLE_TYPE: &str = "linkable";
 /// The flag indicating the expansion should include multiprover linkable types
 const ARG_MULTIPROVER_LINKABLE_TYPES: &str = "multiprover_linkable";
+/// The flag indicating the expansion should include secret share types
+const ARG_SHARE_TYPE: &str = "secret_share";
 
 /// The arguments to the `circuit_trace` macro
 #[derive(Default)]
@@ -60,6 +63,8 @@ pub(crate) struct MacroArgs {
     pub build_mulitprover_types: bool,
     /// Whether or not to allocate multiprover linkable circuit types for the struct
     pub build_multiprover_linkable_types: bool,
+    /// Whether or not to allocate secret share types for the struct
+    pub build_secret_share_types: bool,
 }
 
 impl MacroArgs {
@@ -88,6 +93,14 @@ impl MacroArgs {
                 "multiprover linkable types require both circuit base type and base linkable types"
             )
         }
+
+        // A secret share type requires the base type be a single-prover circuit type
+        if self.build_secret_share_types {
+            assert!(
+                self.build_circuit_types,
+                "secret share types require single-prover circuit types"
+            )
+        }
     }
 }
 
@@ -104,6 +117,7 @@ pub(crate) fn parse_macro_args(args: TokenStream) -> Result<MacroArgs> {
             ARG_MPC_TYPE => macro_args.build_mpc_types = true,
             ARG_MULTIPROVER_TYPE => macro_args.build_mulitprover_types = true,
             ARG_MULTIPROVER_LINKABLE_TYPES => macro_args.build_multiprover_linkable_types = true,
+            ARG_SHARE_TYPE => macro_args.build_secret_share_types = true,
             unknown => panic!("received unexpected argument {unknown}"),
         }
     }
@@ -148,6 +162,12 @@ pub(crate) fn circuit_type_impl(target_struct: ItemStruct, macro_args: MacroArgs
         let linkable_type_tokens =
             build_linkable_types(&target_struct, macro_args.build_multiprover_linkable_types);
         out_tokens.extend(linkable_type_tokens);
+    }
+
+    // Build secret share types
+    if macro_args.build_secret_share_types {
+        let secret_share_type_tokens = build_secret_share_types(&target_struct);
+        out_tokens.extend(secret_share_type_tokens);
     }
 
     out_tokens.into()
@@ -208,6 +228,12 @@ fn ident_strip_prefix(original: &str, prefix: &str) -> Ident {
 /// A helper that creates an identifier with the given suffix
 fn ident_with_suffix(original: &str, suffix: &str) -> Ident {
     new_ident(&format!("{original}{suffix}"))
+}
+
+/// A helper to strip a suffix from an identifier and return a new identifier
+fn ident_strip_suffix(original: &str, suffix: &str) -> Ident {
+    let stripped = original.strip_suffix(suffix).unwrap_or(original);
+    new_ident(stripped)
 }
 
 /// Convert a string to a `Path` syntax tree object representing a type path
@@ -293,7 +319,7 @@ fn build_modified_struct_from_associated_types(
     attributes: Vec<Attribute>,
     generics: Generics,
     type_derivation_trait_ident: Path,
-    associated_type_ident: Ident,
+    associated_type_ident: Path,
 ) -> ItemStruct {
     // Build the fields fo the var struct
     let new_fields = base_type
