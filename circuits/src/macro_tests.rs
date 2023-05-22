@@ -33,7 +33,13 @@ mod test {
         LinkableCommitment,
     };
 
-    #[circuit_type(singleprover_circuit, mpc, multiprover_circuit, linkable)]
+    #[circuit_type(
+        singleprover_circuit,
+        mpc,
+        multiprover_circuit,
+        linkable,
+        multiprover_linkable
+    )]
     #[derive(Clone, Debug, PartialEq, Eq)]
     struct TestType {
         val: Scalar,

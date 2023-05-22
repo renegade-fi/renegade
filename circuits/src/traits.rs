@@ -217,7 +217,7 @@ pub trait MpcType<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + C
 pub trait MultiproverCircuitBaseType<
     N: MpcNetwork + Send + Clone,
     S: SharedValueSource<Scalar> + Clone,
->: BaseType
+>: BaseType + CircuitBaseType
 {
     /// The multiprover constraint system variable type that results when committing
     /// to the base type in a multiprover constraint system
@@ -234,9 +234,7 @@ pub trait MultiproverCircuitBaseType<
         prover: &mut MpcProver<N, S>,
     ) -> Result<(Self::MultiproverVarType, Self::MultiproverCommType), MpcError> {
         let self_scalars = self.clone().to_scalars();
-        let randomness = (0..self_scalars.len())
-            .map(|_| Scalar::random(rng))
-            .collect_vec();
+        let randomness = self.commitment_randomness(rng);
 
         let (comms, vars) = prover
             .batch_commit(owning_party, &self_scalars, &randomness)
