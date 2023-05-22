@@ -8,7 +8,7 @@ use crate::circuit_type::{
     build_deserialize_method, build_serialize_method, ident_with_prefix, new_ident,
 };
 
-use super::{build_modified_struct_from_associated_types, ident_strip_prefix};
+use super::{build_modified_struct_from_associated_types, ident_strip_prefix, path_from_ident};
 
 /// The prefix used in an MPC type of a given base type
 const MPC_TYPE_PREFIX: &str = "Authenticated";
@@ -90,7 +90,7 @@ fn build_mpc_type(base_struct: &ItemStruct) -> TokenStream2 {
         vec![derive_clone_attr],
         build_mpc_generics(),
         mpc_base_trait_ident,
-        mpc_type_associated_ident,
+        path_from_ident(mpc_type_associated_ident),
     );
 
     // Impl `MpcType` for the newly constructed type
