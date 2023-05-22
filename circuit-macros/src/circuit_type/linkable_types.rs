@@ -6,13 +6,21 @@ use syn::{parse_quote, Attribute, Generics, ItemImpl, ItemStruct};
 
 use crate::circuit_type::{
     build_deserialize_method, build_serialize_method, ident_strip_prefix, ident_with_prefix,
-    ident_with_suffix, new_ident,
+    ident_with_suffix,
+    multiprover_circuit_types::{
+        AUTHENTICATED_PREFIX, MULTIPROVER_BASE_COMM_ASSOCIATED_NAME,
+        MULTIPROVER_BASE_VAR_ASSOCIATED_NAME,
+    },
+    new_ident,
     singleprover_circuit_types::{COMM_TYPE_SUFFIX, VAR_TYPE_SUFFIX},
     FROM_SCALARS_METHOD_NAME, SCALAR_TYPE_IDENT, TO_SCALARS_METHOD_NAME,
 };
 
 use super::{
-    build_modified_struct_from_associated_types, path_from_ident,
+    build_modified_struct_from_associated_types,
+    mpc_types::{build_mpc_generics, with_mpc_generics},
+    multiprover_circuit_types::MULTIPROVER_BASE_TRAIT_NAME,
+    path_from_ident,
     singleprover_circuit_types::{
         build_commitment_randomness_method, CIRCUIT_BASE_TYPE_TRAIT_NAME,
         COMM_TYPE_ASSOCIATED_NAME, VAR_TYPE_ASSOCIATED_NAME,
@@ -33,9 +41,17 @@ const BASE_TYPE_ASSOCIATED_NAME: &str = "BaseType";
 const LINKABLE_PREFIX: &str = "Linkable";
 
 /// Build commitment linkable type definitions for the given struct
-pub(crate) fn build_linkable_types(base_type: &ItemStruct) -> TokenStream2 {
+pub(crate) fn build_linkable_types(
+    base_type: &ItemStruct,
+    include_multiprover: bool,
+) -> TokenStream2 {
     let mut res = build_linkable_base_type_impl(base_type);
     res.extend(build_linkable_struct(base_type));
+
+    // Implement `MultiproverCircuitBaseType` for the linkable type
+    if include_multiprover {
+        res.extend(build_multiprover_circuit_base_type_impl(base_type))
+    }
 
     res
 }
@@ -163,6 +179,39 @@ fn build_circuit_base_type_impl(linkable_type: &ItemStruct) -> TokenStream2 {
             type #comm_type_associated = #comm_type_ident;
 
             #commitment_randomness_fn
+        }
+    };
+    impl_block.to_token_stream()
+}
+
+/// Build an implementation of `MultiproverCircuitBaseType` for the derived linkable
+///
+/// Assumed the existence of a base struct that also implements `MultiproverCircuitBaseType`
+fn build_multiprover_circuit_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
+    // The trait name and base linkable type name
+    let trait_name = with_mpc_generics(new_ident(MULTIPROVER_BASE_TRAIT_NAME));
+    let linkable_type = ident_with_prefix(&base_type.ident.to_string(), LINKABLE_PREFIX);
+    let generics = build_mpc_generics();
+
+    // Build the associated type names
+    let var_associated_name = new_ident(MULTIPROVER_BASE_VAR_ASSOCIATED_NAME);
+    let comm_associated_name = new_ident(MULTIPROVER_BASE_COMM_ASSOCIATED_NAME);
+
+    // Build the associated types
+    let shared_prefix_ident = ident_with_prefix(&base_type.ident.to_string(), AUTHENTICATED_PREFIX);
+    let shared_var_type = with_mpc_generics(ident_with_suffix(
+        &shared_prefix_ident.to_string(),
+        VAR_TYPE_SUFFIX,
+    ));
+    let shared_comm_type = with_mpc_generics(ident_with_suffix(
+        &shared_prefix_ident.to_string(),
+        COMM_TYPE_SUFFIX,
+    ));
+
+    let impl_block: ItemImpl = parse_quote! {
+        impl #generics #trait_name for #linkable_type {
+            type #var_associated_name = #shared_var_type;
+            type #comm_associated_name = #shared_comm_type;
         }
     };
     impl_block.to_token_stream()
