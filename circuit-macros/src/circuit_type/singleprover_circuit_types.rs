@@ -3,7 +3,7 @@
 
 use proc_macro2::TokenStream as TokenStream2;
 use quote::ToTokens;
-use syn::{parse_quote, parse_quote_spanned, Attribute, Generics, ItemImpl, ItemStruct, Stmt};
+use syn::{parse_quote, Attribute, Generics, ItemFn, ItemImpl, ItemStruct, Stmt};
 
 use crate::circuit_type::{ident_with_suffix, new_ident};
 
@@ -17,16 +17,16 @@ use super::{
 // -------------
 
 /// The name of the trait that base types implement
-const BASE_TYPE_TRAIT_NAME: &str = "CircuitBaseType";
+pub(crate) const CIRCUIT_BASE_TYPE_TRAIT_NAME: &str = "CircuitBaseType";
 /// The name of the trait that the var type implements
 const VAR_TYPE_TRAIT_NAME: &str = "CircuitVarType";
 /// The name of the trait that the commitment type implements
 const COMM_TYPE_TRAIT_NAME: &str = "CircuitCommitmentType";
 
 /// The name of the associated type for variables
-const VAR_TYPE_ASSOCIATED_NAME: &str = "VarType";
+pub(crate) const VAR_TYPE_ASSOCIATED_NAME: &str = "VarType";
 /// The name of the associated type for commitments
-const COMM_TYPE_ASSOCIATED_NAME: &str = "CommitmentType";
+pub(crate) const COMM_TYPE_ASSOCIATED_NAME: &str = "CommitmentType";
 
 /// The method name for converting from serialized commitments to a commitment type
 const FROM_COMMS_METHOD_NAME: &str = "from_commitments";
@@ -42,9 +42,9 @@ const FROM_VARS_ITER_TYPE: &str = "Variable";
 const COMMITMENT_RANDOMNESS_METHOD_NAME: &str = "commitment_randomness";
 
 /// The suffix appended to a variable type of a base type
-const VAR_TYPE_SUFFIX: &str = "Var";
+pub(crate) const VAR_TYPE_SUFFIX: &str = "Var";
 /// The suffix appended to a commitment type of a base type
-const COMM_TYPE_SUFFIX: &str = "Commitment";
+pub(crate) const COMM_TYPE_SUFFIX: &str = "Commitment";
 
 // ------------------
 // | Implementation |
@@ -72,13 +72,29 @@ pub(crate) fn build_circuit_types(base_type: &ItemStruct) -> TokenStream2 {
 /// Build an `impl CircuitBaseType` block for the base type
 fn build_circuit_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
     let base_name = base_type.ident.clone();
-    let trait_ident = new_ident(BASE_TYPE_TRAIT_NAME);
+    let trait_ident = new_ident(CIRCUIT_BASE_TYPE_TRAIT_NAME);
 
     let var_type_associated = new_ident(VAR_TYPE_ASSOCIATED_NAME);
     let var_type_name = ident_with_suffix(&base_name.to_string(), VAR_TYPE_SUFFIX);
     let comm_type_associated = new_ident(COMM_TYPE_ASSOCIATED_NAME);
     let comm_type_name = ident_with_suffix(&base_name.to_string(), COMM_TYPE_SUFFIX);
 
+    // Build the body of the `commitment_randomness` method
+    let commitment_randomness_impl = build_commitment_randomness_method(base_type);
+    let impl_block: ItemImpl = parse_quote! {
+        impl #trait_ident for #base_name {
+            type #var_type_associated = #var_type_name;
+            type #comm_type_associated = #comm_type_name;
+
+            #commitment_randomness_impl
+        }
+    };
+    impl_block.to_token_stream()
+}
+
+/// Build an implementation of the `commitment_randomness` method that calls out to each
+/// field's implementation
+pub(crate) fn build_commitment_randomness_method(base_type: &ItemStruct) -> TokenStream2 {
     // Build the body of the `commitment_randomness` method
     let commitment_randomness_ident = new_ident(COMMITMENT_RANDOMNESS_METHOD_NAME);
     let mut field_stmts: Vec<Stmt> = Vec::new();
@@ -89,24 +105,19 @@ fn build_circuit_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
         });
     }
 
-    let impl_block: ItemImpl = parse_quote! {
-        impl #trait_ident for #base_name {
-            type #var_type_associated = #var_type_name;
-            type #comm_type_associated = #comm_type_name;
+    let fn_def: ItemFn = parse_quote! {
+        fn #commitment_randomness_ident <R: RngCore + CryptoRng>(&self, r: &mut R) -> Vec<Scalar> {
+            let mut res = Vec::new();
+            #(#field_stmts)*
 
-            fn #commitment_randomness_ident <R: RngCore + CryptoRng>(&self, r: &mut R) -> Vec<Scalar> {
-                let mut res = Vec::new();
-                #(#field_stmts)*
-
-                res
-            }
+            res
         }
     };
-    impl_block.to_token_stream()
+    fn_def.to_token_stream()
 }
 
 /// Build a variable type; the type of the base allocated in a constraint system
-fn build_var_type(base_type: &ItemStruct) -> TokenStream2 {
+pub(crate) fn build_var_type(base_type: &ItemStruct) -> TokenStream2 {
     let base_name = base_type.ident.clone();
     let var_name = ident_with_suffix(&base_name.to_string(), VAR_TYPE_SUFFIX);
     let derive_clone: Attribute = parse_quote!(#[derive(Clone)]);
@@ -116,7 +127,7 @@ fn build_var_type(base_type: &ItemStruct) -> TokenStream2 {
         var_name,
         vec![derive_clone],
         Generics::default(),
-        str_to_path(BASE_TYPE_TRAIT_NAME),
+        str_to_path(CIRCUIT_BASE_TYPE_TRAIT_NAME),
         new_ident(VAR_TYPE_ASSOCIATED_NAME),
     );
 
@@ -150,7 +161,7 @@ fn build_var_type_impl(var_struct: &ItemStruct) -> TokenStream2 {
 }
 
 /// Build a commitment type; the type of a commitment to the base type that has been allocated
-fn build_commitment_type(base_type: &ItemStruct) -> TokenStream2 {
+pub(crate) fn build_commitment_type(base_type: &ItemStruct) -> TokenStream2 {
     let base_name = base_type.ident.clone();
     let comm_name = ident_with_suffix(&base_name.to_string(), COMM_TYPE_SUFFIX);
     let derive_clone: Attribute = parse_quote!(#[derive(Clone)]);
@@ -160,7 +171,7 @@ fn build_commitment_type(base_type: &ItemStruct) -> TokenStream2 {
         comm_name,
         vec![derive_clone],
         Generics::default(),
-        str_to_path(BASE_TYPE_TRAIT_NAME),
+        str_to_path(CIRCUIT_BASE_TYPE_TRAIT_NAME),
         new_ident(COMM_TYPE_ASSOCIATED_NAME),
     );
 
