@@ -22,8 +22,8 @@ use super::{
     multiprover_circuit_types::MULTIPROVER_BASE_TRAIT_NAME,
     path_from_ident,
     singleprover_circuit_types::{
-        build_commitment_randomness_method, CIRCUIT_BASE_TYPE_TRAIT_NAME,
-        COMM_TYPE_ASSOCIATED_NAME, VAR_TYPE_ASSOCIATED_NAME,
+        build_commitment_randomness_method, build_var_type_generics, with_var_type_generics,
+        CIRCUIT_BASE_TYPE_TRAIT_NAME, COMM_TYPE_ASSOCIATED_NAME, VAR_TYPE_ASSOCIATED_NAME,
     },
     BASE_TYPE_TRAIT_NAME,
 };
@@ -88,7 +88,7 @@ fn build_linkable_struct(base_type: &ItemStruct) -> TokenStream2 {
         vec![derive_clone],
         Generics::default(),
         path_from_ident(trait_name),
-        associated_name,
+        path_from_ident(associated_name),
     );
     let mut res = linkable_type.to_token_stream();
 
@@ -163,11 +163,15 @@ fn build_circuit_base_type_impl(linkable_type: &ItemStruct) -> TokenStream2 {
 
     // Build the associated `VarType` and `CommitmentType` fields
     let var_type_associated = new_ident(VAR_TYPE_ASSOCIATED_NAME);
+    let var_type_generics = build_var_type_generics();
     let comm_type_associated = new_ident(COMM_TYPE_ASSOCIATED_NAME);
 
     // Build the associated types
     let base_type_ident = ident_strip_prefix(&linkable_type.ident.to_string(), LINKABLE_PREFIX);
-    let var_type_ident = ident_with_suffix(&base_type_ident.to_string(), VAR_TYPE_SUFFIX);
+    let var_type_ident = with_var_type_generics(ident_with_suffix(
+        &base_type_ident.to_string(),
+        VAR_TYPE_SUFFIX,
+    ));
     let comm_type_ident = ident_with_suffix(&base_type_ident.to_string(), COMM_TYPE_SUFFIX);
 
     // Build the implementation of `commitment_randomness`
@@ -175,7 +179,7 @@ fn build_circuit_base_type_impl(linkable_type: &ItemStruct) -> TokenStream2 {
 
     let impl_block: ItemImpl = parse_quote! {
         impl #trait_name for #type_name {
-            type #var_type_associated = #var_type_ident;
+            type #var_type_associated #var_type_generics = #var_type_ident;
             type #comm_type_associated = #comm_type_ident;
 
             #commitment_randomness_fn
