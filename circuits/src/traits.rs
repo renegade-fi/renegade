@@ -16,10 +16,14 @@
 //!     - Multi-prover variable types: base types allocated in a multi-prover constraint system
 //!     - Multi-prover commitment types: commitments to base types in a multi-prover system
 
+use std::ops::Add;
+
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::{
-    r1cs::{Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
+    r1cs::{
+        LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
+    },
     r1cs_mpc::{MpcProver, MpcVariable, SharedR1CSProof},
 };
 use mpc_ristretto::{
@@ -50,10 +54,16 @@ pub trait BaseType: Clone {
 
 // --- Singleprover Circuit Traits --- //
 
+/// A marker trait used to generalize over the atomic `Variable`
+/// and `LinearCombination` types
+pub trait LinearCombinationLike: Into<LinearCombination> + CircuitVarType<Self> {}
+impl LinearCombinationLike for Variable {}
+impl LinearCombinationLike for LinearCombination {}
+
 /// The base type that may be allocated in a single-prover circuit
 pub trait CircuitBaseType: BaseType {
     /// The variable type for this base type
-    type VarType: CircuitVarType;
+    type VarType<L: LinearCombinationLike>: CircuitVarType<L>;
     /// The commitment type for this base type
     type CommitmentType: CircuitCommitmentType;
 
@@ -62,7 +72,7 @@ pub trait CircuitBaseType: BaseType {
         &self,
         rng: &mut R,
         prover: &mut Prover,
-    ) -> (Self::VarType, Self::CommitmentType) {
+    ) -> (Self::VarType<Variable>, Self::CommitmentType) {
         let scalars: Vec<Scalar> = self.clone().to_scalars();
         let randomness = self.commitment_randomness(rng);
         let (comms, vars): (Vec<CompressedRistretto>, Vec<Variable>) = scalars
@@ -78,7 +88,10 @@ pub trait CircuitBaseType: BaseType {
     }
 
     /// Commit to the base type as a public variable
-    fn commit_public<CS: RandomizableConstraintSystem>(&self, cs: &mut CS) -> Self::VarType {
+    fn commit_public<CS: RandomizableConstraintSystem>(
+        &self,
+        cs: &mut CS,
+    ) -> Self::VarType<Variable> {
         let scalars: Vec<Scalar> = self.clone().to_scalars();
         let vars = scalars
             .into_iter()
@@ -97,16 +110,16 @@ pub trait CircuitBaseType: BaseType {
 
 /// Implementing types are variable types that may appear in constraints in
 /// a constraint system
-pub trait CircuitVarType {
+pub trait CircuitVarType<L: LinearCombinationLike> {
     /// Convert from an iterable of variables representing the serialized type
-    fn from_vars<I: Iterator<Item = Variable>>(i: &mut I) -> Self;
+    fn from_vars<I: Iterator<Item = L>>(i: &mut I) -> Self;
 }
 
 /// Implementing types are commitments to base types that have an analogous variable
 /// type allocated with them
 pub trait CircuitCommitmentType: Clone {
     /// The variable type that this type is a commitment to
-    type VarType: CircuitVarType;
+    type VarType: CircuitVarType<Variable>;
     /// Convert from an iterable of compressed ristretto points, each representing
     /// a commitment to an underlying variable
     fn from_commitments<I: Iterator<Item = CompressedRistretto>>(i: &mut I) -> Self;
@@ -320,9 +333,32 @@ pub trait LinkableType: Clone {
     type BaseType: LinkableBaseType;
 }
 
+// --- Secret Share Types --- //
+
+/// Implementing types may be secret shared via the `SecretShareType` trait below
+pub trait SecretShareBaseType: BaseType {
+    /// The secret share type for this base type
+    type ShareType: SecretShareType;
+}
+
+/// Implementing types represent secret shares of a base type
+pub trait SecretShareType: Sized + BaseType
+where
+    Self: Add<Output = Self::Base>,
+{
+    /// The base type that this secret share is a representation of
+    type Base: BaseType;
+    /// Apply an additive blinder to each element of the secret shares
+    fn blind(&mut self, blinder: Scalar);
+    /// Remove an additive blind from each element of the secret shares
+    fn unblind(&mut self, blinder: Scalar);
+}
+
 // -----------------------------
 // | Type Traits Default Impls |
 // -----------------------------
+
+// --- Base Types --- //
 
 impl BaseType for Scalar {
     fn to_scalars(self) -> Vec<Scalar> {
@@ -331,15 +367,6 @@ impl BaseType for Scalar {
 
     fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
         i.next().unwrap()
-    }
-}
-
-impl CircuitBaseType for Scalar {
-    type VarType = Variable;
-    type CommitmentType = CompressedRistretto;
-
-    fn commitment_randomness<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Vec<Scalar> {
-        vec![Scalar::random(rng)]
     }
 }
 
@@ -354,8 +381,19 @@ impl BaseType for LinkableCommitment {
     }
 }
 
+// --- Singleprover Circuit Trait Impls --- //
+
+impl CircuitBaseType for Scalar {
+    type VarType<L: LinearCombinationLike> = L;
+    type CommitmentType = CompressedRistretto;
+
+    fn commitment_randomness<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Vec<Scalar> {
+        vec![Scalar::random(rng)]
+    }
+}
+
 impl CircuitBaseType for LinkableCommitment {
-    type VarType = Variable;
+    type VarType<L: LinearCombinationLike> = L;
     type CommitmentType = CompressedRistretto;
 
     fn commitment_randomness<R: RngCore + CryptoRng>(&self, _rng: &mut R) -> Vec<Scalar> {
@@ -363,8 +401,14 @@ impl CircuitBaseType for LinkableCommitment {
     }
 }
 
-impl CircuitVarType for Variable {
+impl CircuitVarType<Variable> for Variable {
     fn from_vars<I: Iterator<Item = Variable>>(i: &mut I) -> Self {
+        i.next().unwrap()
+    }
+}
+
+impl CircuitVarType<LinearCombination> for LinearCombination {
+    fn from_vars<I: Iterator<Item = LinearCombination>>(i: &mut I) -> Self {
         i.next().unwrap()
     }
 }
@@ -380,6 +424,8 @@ impl CircuitCommitmentType for CompressedRistretto {
         vec![self]
     }
 }
+
+// --- MPC Circuit Trait Impls --- //
 
 impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone> MpcBaseType<N, S>
     for Scalar
@@ -402,6 +448,8 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone> MpcType
         vec![self]
     }
 }
+
+// --- Multiprover Circuit Trait Impls --- //
 
 impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
     MultiproverCircuitBaseType<N, S> for Scalar
@@ -452,12 +500,32 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
     }
 }
 
+// --- Linkable Type Trait Impls --- //
+
 impl LinkableBaseType for Scalar {
     type Linkable = LinkableCommitment;
 }
 
 impl LinkableType for LinkableCommitment {
     type BaseType = Scalar;
+}
+
+// --- Secret Share Impls --- //
+
+impl SecretShareBaseType for Scalar {
+    type ShareType = Scalar;
+}
+
+impl SecretShareType for Scalar {
+    type Base = Scalar;
+
+    fn blind(&mut self, blinder: Scalar) {
+        *self += blinder
+    }
+
+    fn unblind(&mut self, blinder: Scalar) {
+        *self -= blinder
+    }
 }
 
 // ------------------

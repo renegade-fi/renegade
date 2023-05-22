@@ -11,7 +11,7 @@ use crate::circuit_type::{
     new_ident,
 };
 
-use super::build_serialize_method;
+use super::{build_serialize_method, path_from_ident};
 
 /// The name of the trait that multiprover circuit base types implement
 pub(crate) const MULTIPROVER_BASE_TRAIT_NAME: &str = "MultiproverCircuitBaseType";
@@ -100,7 +100,7 @@ fn build_authenticated_var_type(base_struct: &ItemStruct) -> TokenStream2 {
         vec![parse_quote!(#[derive(Clone)])],
         build_mpc_generics(),
         multiprover_base_trait_name,
-        base_type_var_associated_name,
+        path_from_ident(base_type_var_associated_name),
     );
 
     // Impl `MultiproverCircuitVariableType` for the newly constructed type
@@ -149,7 +149,7 @@ fn build_authenticated_comm_type(base_struct: &ItemStruct) -> TokenStream2 {
         vec![parse_quote!(#[derive(Clone)])],
         build_mpc_generics(),
         multiprover_base_trait_name,
-        base_type_comm_associated_name,
+        path_from_ident(base_type_comm_associated_name),
     );
 
     // Impl `MultiproverCircuitVariableType` for the newly constructed type

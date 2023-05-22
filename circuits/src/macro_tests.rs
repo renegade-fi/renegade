@@ -21,14 +21,16 @@ mod test {
         authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
     };
     use rand_core::{CryptoRng, OsRng, RngCore};
+    use std::ops::Add;
     use std::{cell::RefCell, rc::Rc};
 
     use crate::{
         mpc::{MpcFabric, SharedFabric},
         traits::{
-            BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinkableBaseType,
-            LinkableType, MpcBaseType, MpcType, MultiproverCircuitBaseType,
-            MultiproverCircuitCommitmentType, MultiproverCircuitVariableType,
+            BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType,
+            LinearCombinationLike, LinkableBaseType, LinkableType, MpcBaseType, MpcType,
+            MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
+            MultiproverCircuitVariableType, SecretShareBaseType, SecretShareType,
         },
         LinkableCommitment,
     };
@@ -38,7 +40,8 @@ mod test {
         mpc,
         multiprover_circuit,
         linkable,
-        multiprover_linkable
+        multiprover_linkable,
+        secret_share
     )]
     #[derive(Clone, Debug, PartialEq, Eq)]
     struct TestType {
@@ -207,5 +210,23 @@ mod test {
         let (_, comm2) = linkable_type.commit_witness(&mut rng, &mut prover);
 
         assert_eq!(comm1.val, comm2.val);
+    }
+
+    #[test]
+    fn test_secret_share_types() {
+        // Build two secret shares
+        let mut share1 = TestTypeShare { val: Scalar::one() };
+        let share2 = TestTypeShare { val: Scalar::one() };
+
+        let recovered = share1.clone() + share2;
+        assert_eq!(recovered.val, Scalar::from(2u8));
+
+        // Blind a secret share
+        share1.blind(Scalar::one());
+        assert_eq!(share1.val, Scalar::from(2u8));
+
+        // Unblind a secret share
+        share1.unblind(Scalar::one());
+        assert_eq!(share1.val, Scalar::one());
     }
 }
