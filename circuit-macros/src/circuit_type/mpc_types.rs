@@ -11,7 +11,7 @@ use crate::circuit_type::{
 use super::{build_modified_struct_from_associated_types, ident_strip_prefix, path_from_ident};
 
 /// The prefix used in an MPC type of a given base type
-const MPC_TYPE_PREFIX: &str = "Authenticated";
+pub(crate) const MPC_TYPE_PREFIX: &str = "Authenticated";
 
 /// The name of the trait that specifies an MPC base type name
 const MPC_BASE_TYPE_TRAIT_NAME: &str = "MpcBaseType";
@@ -56,7 +56,7 @@ fn build_mpc_type_path(base_struct: &ItemStruct) -> Path {
     let base_struct_ident = base_struct.ident.clone();
     let mpc_type_name = ident_with_prefix(&base_struct_ident.to_string(), MPC_TYPE_PREFIX);
 
-    parse_quote!(#mpc_type_name<N, S>)
+    with_mpc_generics(mpc_type_name)
 }
 
 /// Build an `impl MpcBaseType` struct for the base type

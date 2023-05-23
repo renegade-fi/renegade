@@ -238,7 +238,7 @@ impl<'a, const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
     }
 
     fn verify(
-        witness_commitments: CompressedRistretto,
+        witness_commitments: <Self::WitnessCommitment as Open<N, S>>::OpenOutput,
         statement: Self::Statement,
         proof: R1CSProof,
         verifier: Verifier,

@@ -10,9 +10,13 @@ use syn::{
 };
 
 use crate::circuit_type::{
-    build_deserialize_method, build_modified_struct_from_associated_types, build_serialize_method,
-    ident_strip_suffix, ident_with_suffix, new_ident, path_from_ident, BASE_TYPE_TRAIT_NAME,
-    FROM_SCALARS_METHOD_NAME, SCALAR_TYPE_IDENT, TO_SCALARS_METHOD_NAME,
+    build_modified_struct_from_associated_types, ident_strip_suffix, ident_with_suffix, new_ident,
+    path_from_ident,
+};
+
+use super::{
+    build_base_type_impl, linkable_types::build_linkable_types,
+    singleprover_circuit_types::build_circuit_types,
 };
 
 /// The trait name of the base type
@@ -78,12 +82,24 @@ fn build_secret_share_type(base_type: &ItemStruct) -> TokenStream2 {
 
     // Implement `SecretShareType` for the new type
     res.extend(build_secret_share_type_impl(&secret_share_type));
+
+    // Build singleprover circuit types for the secret shares
+    res.extend(build_circuit_types(&secret_share_type));
+
+    // Build linkable commitment types for the secret shares
+    res.extend(build_linkable_types(
+        &secret_share_type,
+        false, /* include_multiprover */
+    ));
     res.extend(secret_share_type.to_token_stream());
 
     res
 }
 
 /// Build an addition implementation between secret share types
+///
+/// This is equivalent to recovering the plaintext by adding two secret shares, hence the
+/// addition target is the base type
 fn build_addition_impl(base_type: &ItemStruct) -> TokenStream2 {
     let secret_share_type_name = ident_with_suffix(&base_type.ident.to_string(), SHARE_SUFFIX);
     let base_type_name = base_type.ident.clone();
@@ -106,35 +122,6 @@ fn build_addition_impl(base_type: &ItemStruct) -> TokenStream2 {
                     #field_exprs
                 }
             }
-        }
-    };
-    impl_block.to_token_stream()
-}
-
-/// Build an `impl BaseType` block for the secret share type
-fn build_base_type_impl(secret_share_type: &ItemStruct) -> TokenStream2 {
-    let base_type_trait_name = path_from_ident(new_ident(BASE_TYPE_TRAIT_NAME));
-    let secret_share_type_name = secret_share_type.ident.clone();
-
-    // Build a serialization method
-    let to_scalars_name = new_ident(TO_SCALARS_METHOD_NAME);
-    let scalar_type = path_from_ident(new_ident(SCALAR_TYPE_IDENT));
-    let to_scalars =
-        build_serialize_method(to_scalars_name, scalar_type.clone(), secret_share_type);
-
-    // Build a deserialization method
-    let from_scalars_name = new_ident(FROM_SCALARS_METHOD_NAME);
-    let from_scalars = build_deserialize_method(
-        from_scalars_name,
-        scalar_type,
-        base_type_trait_name.clone(),
-        secret_share_type,
-    );
-
-    let impl_block: ItemImpl = parse_quote! {
-        impl #base_type_trait_name for #secret_share_type_name {
-            #to_scalars
-            #from_scalars
         }
     };
     impl_block.to_token_stream()

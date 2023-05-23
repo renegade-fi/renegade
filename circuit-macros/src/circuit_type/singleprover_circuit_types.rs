@@ -9,7 +9,7 @@ use crate::circuit_type::{ident_with_suffix, new_ident};
 
 use super::{
     build_deserialize_method, build_modified_struct_from_associated_types, build_serialize_method,
-    path_from_ident, str_to_path,
+    ident_strip_suffix, path_from_ident, str_to_path,
 };
 
 // -------------
@@ -54,12 +54,14 @@ const LINEAR_COMBINATION_LIKE_GENERIC: &str = "L";
 /// Build generic bounds for variable types which abstract over the functional differences
 /// of `Variable`s and `LinearCombination`s
 pub(crate) fn build_var_type_generics() -> Generics {
-    parse_quote!(<L: LinearCombinationLike>)
+    let l_ident = new_ident(LINEAR_COMBINATION_LIKE_GENERIC);
+    parse_quote!(<#l_ident: LinearCombinationLike>)
 }
 
 /// Attach variable type generics to the given identifier
 pub(crate) fn with_var_type_generics(ident: Ident) -> Path {
-    parse_quote!(#ident <L>)
+    let l_ident = new_ident(LINEAR_COMBINATION_LIKE_GENERIC);
+    parse_quote!(#ident <#l_ident>)
 }
 
 // ------------------
@@ -70,7 +72,7 @@ pub(crate) fn with_var_type_generics(ident: Ident) -> Path {
 pub(crate) fn build_circuit_types(base_type: &ItemStruct) -> TokenStream2 {
     let mut res_stream = TokenStream2::default();
 
-    // Build an implementation of `CircuitBaseType` for the
+    // Build an implementation of `CircuitBaseType` for the base type
     let circuit_base_type_stream = build_circuit_base_type_impl(base_type);
     res_stream.extend(circuit_base_type_stream);
 
@@ -206,12 +208,8 @@ fn build_comm_type_impl(comm_struct: &ItemStruct) -> TokenStream2 {
     let comm_struct_ident = comm_struct.ident.clone();
 
     // Strip the commitment suffix and add in the var suffix
-    let base_struct_name = comm_struct_ident.to_string();
-    let stripped = base_struct_name
-        .strip_suffix(COMM_TYPE_SUFFIX)
-        .unwrap_or(&base_struct_name);
-
-    let var_type_ident = ident_with_suffix(stripped, VAR_TYPE_SUFFIX);
+    let stripped = ident_strip_suffix(&comm_struct_ident.to_string(), COMM_TYPE_SUFFIX);
+    let var_type_ident = ident_with_suffix(&stripped.to_string(), VAR_TYPE_SUFFIX);
     let associated_type_ident = new_ident(VAR_TYPE_ASSOCIATED_NAME);
 
     // Implement `from_commitments`
