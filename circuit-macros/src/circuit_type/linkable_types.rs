@@ -5,27 +5,25 @@ use quote::ToTokens;
 use syn::{parse_quote, Attribute, Generics, ItemImpl, ItemStruct};
 
 use crate::circuit_type::{
-    build_deserialize_method, build_serialize_method, ident_strip_prefix, ident_with_prefix,
-    ident_with_suffix,
+    ident_strip_prefix, ident_with_prefix, ident_with_suffix,
     multiprover_circuit_types::{
-        AUTHENTICATED_PREFIX, MULTIPROVER_BASE_COMM_ASSOCIATED_NAME,
-        MULTIPROVER_BASE_VAR_ASSOCIATED_NAME,
+        MULTIPROVER_BASE_COMM_ASSOCIATED_NAME, MULTIPROVER_BASE_VAR_ASSOCIATED_NAME,
     },
     new_ident,
     singleprover_circuit_types::{COMM_TYPE_SUFFIX, VAR_TYPE_SUFFIX},
-    FROM_SCALARS_METHOD_NAME, SCALAR_TYPE_IDENT, TO_SCALARS_METHOD_NAME,
 };
 
 use super::{
-    build_modified_struct_from_associated_types,
-    mpc_types::{build_mpc_generics, with_mpc_generics},
-    multiprover_circuit_types::MULTIPROVER_BASE_TRAIT_NAME,
+    build_base_type_impl, build_modified_struct_from_associated_types,
+    mpc_types::{build_mpc_generics, with_mpc_generics, MPC_TYPE_PREFIX},
+    multiprover_circuit_types::{
+        build_multiprover_var_generics, with_multiprover_generics, MULTIPROVER_BASE_TRAIT_NAME,
+    },
     path_from_ident,
     singleprover_circuit_types::{
         build_commitment_randomness_method, build_var_type_generics, with_var_type_generics,
         CIRCUIT_BASE_TYPE_TRAIT_NAME, COMM_TYPE_ASSOCIATED_NAME, VAR_TYPE_ASSOCIATED_NAME,
     },
-    BASE_TYPE_TRAIT_NAME,
 };
 
 /// The name of the trait that linkable base types implement
@@ -120,38 +118,6 @@ fn build_linkable_type_impl(linkable_type: &ItemStruct) -> TokenStream2 {
     impl_block.to_token_stream()
 }
 
-/// Build the `BaseType` implementation for the linkable type so that it may be committed to in a
-/// constraint system
-fn build_base_type_impl(linkable_type: &ItemStruct) -> TokenStream2 {
-    // Build the serialize method
-    let linkable_type_name = linkable_type.ident.clone();
-    let base_type_trait_name = path_from_ident(new_ident(BASE_TYPE_TRAIT_NAME));
-
-    // Build the `to_scalars` serialization method
-    let to_scalars_method_name = new_ident(TO_SCALARS_METHOD_NAME);
-    let scalar_type = path_from_ident(new_ident(SCALAR_TYPE_IDENT));
-    let to_scalars_method =
-        build_serialize_method(to_scalars_method_name, scalar_type.clone(), linkable_type);
-
-    // Build the `from_scalars` deserialization method
-    let from_scalars_method_name = new_ident(FROM_SCALARS_METHOD_NAME);
-    let from_scalars_method = build_deserialize_method(
-        from_scalars_method_name,
-        scalar_type,
-        base_type_trait_name.clone(),
-        linkable_type,
-    );
-
-    // Build the impl block
-    let impl_block: ItemImpl = parse_quote! {
-        impl #base_type_trait_name for #linkable_type_name {
-            #to_scalars_method
-            #from_scalars_method
-        }
-    };
-    impl_block.to_token_stream()
-}
-
 /// Build the `CircuitBaseType` implementation of the linkable type so that it may be committed
 /// to within a constraint system
 ///
@@ -202,8 +168,8 @@ fn build_multiprover_circuit_base_type_impl(base_type: &ItemStruct) -> TokenStre
     let comm_associated_name = new_ident(MULTIPROVER_BASE_COMM_ASSOCIATED_NAME);
 
     // Build the associated types
-    let shared_prefix_ident = ident_with_prefix(&base_type.ident.to_string(), AUTHENTICATED_PREFIX);
-    let shared_var_type = with_mpc_generics(ident_with_suffix(
+    let shared_prefix_ident = ident_with_prefix(&base_type.ident.to_string(), MPC_TYPE_PREFIX);
+    let shared_var_type = with_multiprover_generics(ident_with_suffix(
         &shared_prefix_ident.to_string(),
         VAR_TYPE_SUFFIX,
     ));

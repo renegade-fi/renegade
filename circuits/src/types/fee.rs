@@ -348,38 +348,38 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<&[AuthenticatedSca
     }
 }
 
-// impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Fee {
-//     type SharedType = AuthenticatedFee<N, S>;
-//     type ErrorType = MpcError;
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Fee {
+    type SharedType = AuthenticatedFee<N, S>;
+    type ErrorType = MpcError;
 
-//     fn allocate(
-//         &self,
-//         owning_party: u64,
-//         fabric: SharedFabric<N, S>,
-//     ) -> Result<Self::SharedType, Self::ErrorType> {
-//         let shared_values = fabric
-//             .borrow_fabric()
-//             .batch_allocate_private_scalars(
-//                 owning_party,
-//                 &[
-//                     biguint_to_scalar(&self.settle_key),
-//                     biguint_to_scalar(&self.gas_addr),
-//                     Scalar::from(self.gas_token_amount),
-//                     Scalar::from(self.percentage_fee),
-//                 ],
-//             )
-//             .map_err(|err| MpcError::SharingError(err.to_string()))?;
+    fn allocate(
+        &self,
+        owning_party: u64,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self::SharedType, Self::ErrorType> {
+        let shared_values = fabric
+            .borrow_fabric()
+            .batch_allocate_private_scalars(
+                owning_party,
+                &[
+                    biguint_to_scalar(&self.settle_key),
+                    biguint_to_scalar(&self.gas_addr),
+                    Scalar::from(self.gas_token_amount),
+                    Scalar::from(self.percentage_fee),
+                ],
+            )
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
 
-//         Ok(AuthenticatedFee {
-//             settle_key: shared_values[0].to_owned(),
-//             gas_addr: shared_values[1].to_owned(),
-//             gas_token_amount: shared_values[2].to_owned(),
-//             percentage_fee: AuthenticatedFixedPoint {
-//                 repr: shared_values[3].to_owned(),
-//             },
-//         })
-//     }
-// }
+        Ok(AuthenticatedFee {
+            settle_key: shared_values[0].to_owned(),
+            gas_addr: shared_values[1].to_owned(),
+            gas_token_amount: shared_values[2].to_owned(),
+            percentage_fee: AuthenticatedFixedPoint {
+                repr: shared_values[3].to_owned(),
+            },
+        })
+    }
+}
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> SharePublic<N, S> for Fee {
     type ErrorType = MpcError;
