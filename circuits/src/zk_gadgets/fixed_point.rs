@@ -290,7 +290,7 @@ pub struct FixedPointVar {
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CommittedFixedPoint {
     /// The underlying scalar representing the fixed point variable
-    pub(crate) repr: CompressedRistretto,
+    pub repr: CompressedRistretto,
 }
 
 impl CommitWitness for FixedPoint {
