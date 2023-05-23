@@ -229,4 +229,38 @@ mod test {
         share1.unblind(Scalar::one());
         assert_eq!(share1.val, Scalar::one());
     }
+
+    #[test]
+    fn test_secret_share_vars() {
+        // Build a secret share and allocate it
+        let share = TestTypeShare { val: Scalar::one() };
+
+        // Build a mock constraint system
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        // Allocate the secret share in the constraint system
+        let mut rng = OsRng {};
+        let _ = share.commit_witness(&mut rng, &mut prover);
+    }
+
+    #[test]
+    fn test_secret_share_linkable_commitments() {
+        // Build a secret share, commit to it twice, and verify the commitments are equal
+        let share = LinkableTestTypeShare {
+            val: Scalar::one().into(),
+        };
+
+        // Build a mock constraint system
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        let mut rng = OsRng {};
+        let (_, comm1) = share.commit_witness(&mut rng, &mut prover);
+        let (_, comm2) = share.commit_witness(&mut rng, &mut prover);
+
+        assert_eq!(comm1.val, comm2.val);
+    }
 }

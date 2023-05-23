@@ -623,22 +623,22 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedFixedPoint
     }
 }
 
-// impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for FixedPoint {
-//     type SharedType = AuthenticatedFixedPoint<N, S>;
-//     type ErrorType = MpcError;
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for FixedPoint {
+    type SharedType = AuthenticatedFixedPoint<N, S>;
+    type ErrorType = MpcError;
 
-//     fn allocate(
-//         &self,
-//         owning_party: u64,
-//         fabric: SharedFabric<N, S>,
-//     ) -> Result<Self::SharedType, Self::ErrorType> {
-//         let shared_value = fabric
-//             .borrow_fabric()
-//             .allocate_private_scalar(owning_party, self.repr)
-//             .map_err(|err| MpcError::SharingError(err.to_string()))?;
-//         Ok(AuthenticatedFixedPoint { repr: shared_value })
-//     }
-// }
+    fn allocate(
+        &self,
+        owning_party: u64,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self::SharedType, Self::ErrorType> {
+        let shared_value = fabric
+            .borrow_fabric()
+            .allocate_private_scalar(owning_party, self.repr)
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+        Ok(AuthenticatedFixedPoint { repr: shared_value })
+    }
+}
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&AuthenticatedFixedPoint<N, S>>
     for &AuthenticatedFixedPoint<N, S>

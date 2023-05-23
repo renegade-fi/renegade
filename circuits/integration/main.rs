@@ -1,8 +1,8 @@
 #![cfg(test)]
-// mod mpc_circuits;
-// mod mpc_gadgets;
-// mod zk_circuits;
-// mod zk_gadgets;
+mod mpc_circuits;
+mod mpc_gadgets;
+mod zk_circuits;
+mod zk_gadgets;
 
 use std::cell::Ref;
 

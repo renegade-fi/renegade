@@ -11,7 +11,9 @@ use crate::circuit_type::{
     new_ident,
 };
 
-use super::{build_serialize_method, path_from_ident};
+use super::{
+    build_serialize_method, ident_strip_prefix, mpc_types::MPC_TYPE_PREFIX, path_from_ident,
+};
 
 /// The name of the trait that multiprover circuit base types implement
 pub(crate) const MULTIPROVER_BASE_TRAIT_NAME: &str = "MultiproverCircuitBaseType";
@@ -38,8 +40,6 @@ const MPC_VAR_TYPE_NAME: &str = "MpcVariable";
 /// The `AuthenticatedCompressedRistretto` type
 const MPC_COMM_TYPE_NAME: &str = "AuthenticatedCompressedRistretto";
 
-/// The prefix that is prepended to all authenticated MPC types
-pub(crate) const AUTHENTICATED_PREFIX: &str = "Authenticated";
 /// The suffix that is appended to variable types
 pub(crate) const VAR_SUFFIX: &str = "Var";
 /// The suffix that is appended to commitment types
@@ -65,9 +65,8 @@ fn build_base_type_impl(base_struct: &ItemStruct) -> TokenStream2 {
     let var_type_associated_name = new_ident(MULTIPROVER_BASE_VAR_ASSOCIATED_NAME);
     let comm_type_associated_name = new_ident(MULTIPROVER_BASE_COMM_ASSOCIATED_NAME);
 
-    let auth_prefixed_type =
-        ident_with_prefix(&base_struct.ident.to_string(), AUTHENTICATED_PREFIX);
-    let derived_var_type_ident = with_mpc_generics(ident_with_suffix(
+    let auth_prefixed_type = ident_with_prefix(&base_struct.ident.to_string(), MPC_TYPE_PREFIX);
+    let derived_var_type_ident = with_multiprover_generics(ident_with_suffix(
         &auth_prefixed_type.to_string(),
         VAR_SUFFIX,
     ));
@@ -88,7 +87,7 @@ fn build_base_type_impl(base_struct: &ItemStruct) -> TokenStream2 {
 /// Build the multiprover circuit variable type
 fn build_authenticated_var_type(base_struct: &ItemStruct) -> TokenStream2 {
     let base_struct_name = base_struct.ident.clone();
-    let new_name = ident_with_prefix(&base_struct_name.to_string(), AUTHENTICATED_PREFIX);
+    let new_name = ident_with_prefix(&base_struct_name.to_string(), MPC_TYPE_PREFIX);
     let new_name = ident_with_suffix(&new_name.to_string(), VAR_SUFFIX);
 
     let multiprover_base_trait_name = with_mpc_generics(new_ident(MULTIPROVER_BASE_TRAIT_NAME));
@@ -137,7 +136,7 @@ fn build_multiprover_var_type_impl(var_type: &ItemStruct) -> TokenStream2 {
 /// Build the multiprover circuit commitment type
 fn build_authenticated_comm_type(base_struct: &ItemStruct) -> TokenStream2 {
     let base_struct_name = base_struct.ident.clone();
-    let new_name = ident_with_prefix(&base_struct_name.to_string(), AUTHENTICATED_PREFIX);
+    let new_name = ident_with_prefix(&base_struct_name.to_string(), MPC_TYPE_PREFIX);
     let new_name = ident_with_suffix(&new_name.to_string(), COMM_SUFFIX);
 
     let multiprover_base_trait_name = with_mpc_generics(new_ident(MULTIPROVER_BASE_TRAIT_NAME));
@@ -166,12 +165,7 @@ fn build_multiprover_comm_type_impl(comm_type: &ItemStruct) -> TokenStream2 {
     let trait_name = with_mpc_generics(new_ident(MULTIPROVER_COMM_TRAIT_NAME));
     let comm_type_name = with_mpc_generics(comm_type.ident.clone());
 
-    let base_commitment_type = &comm_type.ident.to_string();
-    let base_commitment_type = base_commitment_type
-        .strip_prefix(AUTHENTICATED_PREFIX)
-        .unwrap_or(base_commitment_type);
-
-    let base_commitment_type = new_ident(base_commitment_type);
+    let base_commitment_type = ident_strip_prefix(&comm_type.ident.to_string(), MPC_TYPE_PREFIX);
     let associated_comm_type_name = new_ident(BASE_COMM_TYPE_ASSOCIATED_NAME);
 
     // Build a deserialization method from a list of shared commitments

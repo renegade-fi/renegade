@@ -38,7 +38,7 @@ const SCALAR_TYPE_IDENT: &str = "Scalar";
 
 /// The flag indicating the expansion should include a single prover circuit type definition
 /// for the base type
-const ARG_CIRCUIT_TYPE: &str = "singleprover_circuit";
+const ARG_SINGLEPROVER_TYPE: &str = "singleprover_circuit";
 /// The flag indicating the expansion should include types for an MPC circuit
 const ARG_MPC_TYPE: &str = "mpc";
 /// The flag indicating the expansion should include types for a multiprover circuit
@@ -54,13 +54,13 @@ const ARG_SHARE_TYPE: &str = "secret_share";
 #[derive(Default)]
 pub(crate) struct MacroArgs {
     /// Whether or not to allocate a circuit type for the struct
-    pub build_circuit_types: bool,
+    pub build_singleprover_types: bool,
     /// Whether or not to allocate linkable commitment types for the struct
     pub build_linkable_types: bool,
     /// Whether or not to allocate MPC circuit types for the struct
     pub build_mpc_types: bool,
     /// Whether or not to allocate multiprover circuit types for the struct
-    pub build_mulitprover_types: bool,
+    pub build_multiprover_types: bool,
     /// Whether or not to allocate multiprover linkable circuit types for the struct
     pub build_multiprover_linkable_types: bool,
     /// Whether or not to allocate secret share types for the struct
@@ -71,9 +71,9 @@ impl MacroArgs {
     /// Validate the argument combinations
     pub fn validate(&self) {
         // A multiprover type must also be a base circuit type
-        if self.build_mulitprover_types {
+        if self.build_multiprover_types {
             assert!(
-                self.build_circuit_types,
+                self.build_singleprover_types,
                 "multiprover circuit type requires singleprover circuit type"
             );
         }
@@ -81,7 +81,7 @@ impl MacroArgs {
         // A linkable type also requires a circuit base type to be defined
         if self.build_linkable_types {
             assert!(
-                self.build_circuit_types,
+                self.build_singleprover_types,
                 "linkable types require a circuit base type to implement"
             )
         }
@@ -89,7 +89,7 @@ impl MacroArgs {
         // A multiprover linkable type must also be linkable and a circuit base type
         if self.build_multiprover_linkable_types {
             assert!(
-                self.build_circuit_types && self.build_linkable_types,
+                self.build_singleprover_types && self.build_linkable_types,
                 "multiprover linkable types require both circuit base type and base linkable types"
             )
         }
@@ -97,7 +97,7 @@ impl MacroArgs {
         // A secret share type requires the base type be a single-prover circuit type
         if self.build_secret_share_types {
             assert!(
-                self.build_circuit_types,
+                self.build_singleprover_types,
                 "secret share types require single-prover circuit types"
             )
         }
@@ -112,10 +112,10 @@ pub(crate) fn parse_macro_args(args: TokenStream) -> Result<MacroArgs> {
 
     for arg in parsed_args.iter() {
         match arg.to_string().as_str() {
-            ARG_CIRCUIT_TYPE => macro_args.build_circuit_types = true,
+            ARG_SINGLEPROVER_TYPE => macro_args.build_singleprover_types = true,
             ARG_LINKABLE_TYPE => macro_args.build_linkable_types = true,
             ARG_MPC_TYPE => macro_args.build_mpc_types = true,
-            ARG_MULTIPROVER_TYPE => macro_args.build_mulitprover_types = true,
+            ARG_MULTIPROVER_TYPE => macro_args.build_multiprover_types = true,
             ARG_MULTIPROVER_LINKABLE_TYPES => macro_args.build_multiprover_linkable_types = true,
             ARG_SHARE_TYPE => macro_args.build_secret_share_types = true,
             unknown => panic!("received unexpected argument {unknown}"),
@@ -140,7 +140,7 @@ pub(crate) fn circuit_type_impl(target_struct: ItemStruct, macro_args: MacroArgs
     out_tokens.extend(build_base_type_impl(&target_struct));
 
     // Build singleprover circuit types
-    if macro_args.build_circuit_types {
+    if macro_args.build_singleprover_types {
         let circuit_type_tokens = build_circuit_types(&target_struct);
         out_tokens.extend(circuit_type_tokens);
     }
@@ -152,7 +152,7 @@ pub(crate) fn circuit_type_impl(target_struct: ItemStruct, macro_args: MacroArgs
     }
 
     // Build Multiprover circuit types
-    if macro_args.build_mulitprover_types {
+    if macro_args.build_multiprover_types {
         let multiprover_type_tokens = build_multiprover_circuit_types(&target_struct);
         out_tokens.extend(multiprover_type_tokens)
     }
@@ -184,14 +184,14 @@ fn build_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
     let scalar_type_path = path_from_ident(new_ident(SCALAR_TYPE_IDENT));
 
     let from_scalars_impl = build_deserialize_method(
-        Ident::new(FROM_SCALARS_METHOD_NAME, Span::call_site()),
+        new_ident(FROM_SCALARS_METHOD_NAME),
         scalar_type_path.clone(),
         path_from_ident(trait_ident.clone()),
         base_type,
     );
 
     let to_scalars_impl = build_serialize_method(
-        Ident::new(TO_SCALARS_METHOD_NAME, Span::call_site()),
+        new_ident(TO_SCALARS_METHOD_NAME),
         scalar_type_path,
         base_type,
     );
@@ -346,7 +346,7 @@ fn build_modified_struct_from_associated_types(
         })
         .collect_vec();
 
-    let mut named = Punctuated::<Field, Token![,]>::new();
+    let mut named = Punctuated::<Field, Comma>::new();
     for field in new_fields.into_iter() {
         named.push(field);
     }
