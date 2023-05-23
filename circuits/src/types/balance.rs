@@ -2,7 +2,6 @@
 
 use std::ops::Add;
 
-use circuit_macros::circuit_type;
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use mpc_bulletproof::{
@@ -31,7 +30,6 @@ use crate::{
 
 /// Represents the base type of a balance in tuple holding a reference to the
 /// ERC-20 token and its amount
-#[circuit_type(singleprover_circuit, mpc)]
 #[derive(Clone, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Balance {
     /// The mint (ERC-20 token address) of the token in the balance
@@ -177,29 +175,29 @@ pub struct AuthenticatedBalance<N: MpcNetwork + Send, S: SharedValueSource<Scala
     pub amount: AuthenticatedScalar<N, S>,
 }
 
-// impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Balance {
-//     type SharedType = AuthenticatedBalance<N, S>;
-//     type ErrorType = MpcError;
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Allocate<N, S> for Balance {
+    type SharedType = AuthenticatedBalance<N, S>;
+    type ErrorType = MpcError;
 
-//     fn allocate(
-//         &self,
-//         owning_party: u64,
-//         fabric: SharedFabric<N, S>,
-//     ) -> Result<Self::SharedType, Self::ErrorType> {
-//         let mint_scalar = biguint_to_scalar(&self.mint);
-//         let amount_scalar = Scalar::from(self.amount);
+    fn allocate(
+        &self,
+        owning_party: u64,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self::SharedType, Self::ErrorType> {
+        let mint_scalar = biguint_to_scalar(&self.mint);
+        let amount_scalar = Scalar::from(self.amount);
 
-//         let shared_values = fabric
-//             .borrow_fabric()
-//             .batch_allocate_private_scalars(owning_party, &[mint_scalar, amount_scalar])
-//             .map_err(|err| MpcError::SharingError(err.to_string()))?;
+        let shared_values = fabric
+            .borrow_fabric()
+            .batch_allocate_private_scalars(owning_party, &[mint_scalar, amount_scalar])
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
 
-//         Ok(Self::SharedType {
-//             mint: shared_values[0].to_owned(),
-//             amount: shared_values[1].to_owned(),
-//         })
-//     }
-// }
+        Ok(Self::SharedType {
+            mint: shared_values[0].to_owned(),
+            amount: shared_values[1].to_owned(),
+        })
+    }
+}
 
 /// Represents a balance that has been allocated in an MPC network
 /// and committed to in a multi-prover constraint system
@@ -554,11 +552,6 @@ mod test {
     };
 
     use super::BalanceSecretShare;
-
-    #[test]
-    fn test_fails() {
-        assert_eq!(1, 2);  
-    }
 
     /// Tests serialization of balance secret share types    
     #[test]

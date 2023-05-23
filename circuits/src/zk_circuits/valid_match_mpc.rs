@@ -17,8 +17,8 @@ use mpc_bulletproof::{
     BulletproofGens,
 };
 use mpc_ristretto::{
-    authenticated_ristretto::AuthenticatedCompressedRistretto,
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+    authenticated_ristretto::AuthenticatedCompressedRistretto, beaver::SharedValueSource,
+    network::MpcNetwork,
 };
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
@@ -459,7 +459,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for ValidMatchMpc
 
 /// Represents a commitment to the VALID MATCH MPC witness
 #[derive(Clone, Debug)]
-struct ValidMatchCommitmentShared<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+pub struct ValidMatchCommitmentShared<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// A commitment to the first party's order
     pub order1: AuthenticatedCommittedOrder<N, S>,
     /// A commitment to the first party's balance
@@ -554,36 +554,36 @@ impl From<&[CompressedRistretto]> for ValidMatchCommitment {
     }
 }
 
-// impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open<N, S>
-//     for ValidMatchCommitmentShared<N, S>
-// {
-//     type OpenOutput = ValidMatchCommitment;
-//     type Error = MpcError;
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Open<N, S>
+    for ValidMatchCommitmentShared<N, S>
+{
+    type OpenOutput = ValidMatchCommitment;
+    type Error = MpcError;
 
-//     fn open(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
-//         let all_commitments: Vec<AuthenticatedCompressedRistretto<N, S>> = self.into();
-//         let opened_values: Vec<CompressedRistretto> =
-//             AuthenticatedCompressedRistretto::batch_open(&all_commitments)
-//                 .map_err(|err| MpcError::SharingError(err.to_string()))?
-//                 .into_iter()
-//                 .map(|val| val.value())
-//                 .collect();
+    fn open(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
+        let all_commitments: Vec<AuthenticatedCompressedRistretto<N, S>> = self.into();
+        let opened_values: Vec<CompressedRistretto> =
+            AuthenticatedCompressedRistretto::batch_open(&all_commitments)
+                .map_err(|err| MpcError::SharingError(err.to_string()))?
+                .into_iter()
+                .map(|val| val.value())
+                .collect();
 
-//         Ok(Into::<ValidMatchCommitment>::into(opened_values.borrow()))
-//     }
+        Ok(Into::<ValidMatchCommitment>::into(opened_values.borrow()))
+    }
 
-//     fn open_and_authenticate(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
-//         let all_commitments: Vec<AuthenticatedCompressedRistretto<_, _>> = self.into();
-//         let opened_values: Vec<CompressedRistretto> =
-//             AuthenticatedCompressedRistretto::batch_open_and_authenticate(&all_commitments)
-//                 .map_err(|err| MpcError::SharingError(err.to_string()))?
-//                 .into_iter()
-//                 .map(|val| val.value())
-//                 .collect();
+    fn open_and_authenticate(self, _: SharedFabric<N, S>) -> Result<Self::OpenOutput, Self::Error> {
+        let all_commitments: Vec<AuthenticatedCompressedRistretto<_, _>> = self.into();
+        let opened_values: Vec<CompressedRistretto> =
+            AuthenticatedCompressedRistretto::batch_open_and_authenticate(&all_commitments)
+                .map_err(|err| MpcError::SharingError(err.to_string()))?
+                .into_iter()
+                .map(|val| val.value())
+                .collect();
 
-//         Ok(Into::<ValidMatchCommitment>::into(opened_values.borrow()))
-//     }
-// }
+        Ok(Into::<ValidMatchCommitment>::into(opened_values.borrow()))
+    }
+}
 
 // -----------------------------
 // | Statement Type Definition |
@@ -600,12 +600,12 @@ pub struct ValidMatchMpcStatement {}
 // ---------------------
 
 /// Prover implementation of the Valid Match circuit
-impl<'a, N: 'a + MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    MultiProverCircuit<'a, N, S> for ValidMatchMpcCircuit<'a, N, S>
+impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<'a, N, S>
+    for ValidMatchMpcCircuit<'a, N, S>
 {
     type Statement = ValidMatchMpcStatement;
     type Witness = ValidMatchMpcWitness<N, S>;
-    type WitnessCommitment = AuthenticatedScalar<N, S>;
+    type WitnessCommitment = ValidMatchCommitmentShared<N, S>;
 
     const BP_GENS_CAPACITY: usize = 256;
 
@@ -614,8 +614,7 @@ impl<'a, N: 'a + MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone
         _statement: Self::Statement,
         mut prover: MpcProver<'a, '_, '_, N, S>,
         fabric: SharedFabric<N, S>,
-    ) -> Result<(AuthenticatedScalar<N, S>, SharedR1CSProof<N, S>), ProverError> {
-        unimplemented!("");
+    ) -> Result<(ValidMatchCommitmentShared<N, S>, SharedR1CSProof<N, S>), ProverError> {
         // Commit to party 0's inputs first, then party 1's inputs
         let mut rng = OsRng {};
 

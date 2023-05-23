@@ -47,6 +47,7 @@ pub fn circuit_trace(args: TokenStream, item: TokenStream) -> TokenStream {
 
 /// A macro that defines associated circuit types, and conversions between them for
 /// a base type satisfying the appropriate structure
+/// Check [`circuit_type::MacroArgs`] for details on how this macro is configured
 #[proc_macro_attribute]
 pub fn circuit_type(args: TokenStream, item: TokenStream) -> TokenStream {
     let ast: ItemStruct = syn::parse(item).unwrap();
