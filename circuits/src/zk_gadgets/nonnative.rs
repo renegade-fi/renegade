@@ -1144,7 +1144,7 @@ mod nonnative_tests {
         CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit,
     };
 
-    use super::{biguint_to_scalar_words, FieldMod, NonNativeElementVar};
+    use super::{biguint_to_scalar_words, FieldMod, NonNativeElement, NonNativeElementVar};
 
     // -------------
     // | Constants |
@@ -1291,33 +1291,10 @@ mod nonnative_tests {
         }
     }
 
-    impl CommitPublic for (BigUint, FieldMod) {
-        type VarType = NonNativeElementVar;
-        type ErrorType = ();
-
-        fn commit_public<CS: RandomizableConstraintSystem>(
-            &self,
-            cs: &mut CS,
-        ) -> Result<Self::VarType, Self::ErrorType> {
-            let expected_words = biguint_to_scalar_words(self.0.clone());
-            let statement_word_vars = expected_words
-                .iter()
-                .map(|word| cs.commit_public(*word))
-                .collect_vec();
-
-            let statement_word_lcs: Vec<LinearCombination> = statement_word_vars
-                .into_iter()
-                .map(Into::into)
-                .collect_vec();
-
-            Ok(NonNativeElementVar::new(statement_word_lcs, self.1.clone()))
-        }
-    }
-
     pub struct AdderCircuit {}
     impl SingleProverCircuit for AdderCircuit {
         type Witness = FanIn2Witness;
-        type Statement = (BigUint, FieldMod);
+        type Statement = NonNativeElement;
         type WitnessCommitment = FanIn2WitnessCommitment;
 
         const BP_GENS_CAPACITY: usize = 64;
@@ -1383,7 +1360,7 @@ mod nonnative_tests {
     #[derive(Clone, Debug)]
     pub struct MulCircuit {}
     impl SingleProverCircuit for MulCircuit {
-        type Statement = (BigUint, FieldMod);
+        type Statement = NonNativeElement;
         type Witness = FanIn2Witness;
         type WitnessCommitment = FanIn2WitnessCommitment;
 
@@ -1449,7 +1426,7 @@ mod nonnative_tests {
 
     pub struct SubCircuit {}
     impl SingleProverCircuit for SubCircuit {
-        type Statement = (BigUint, FieldMod);
+        type Statement = NonNativeElement;
         type Witness = FanIn2Witness;
         type WitnessCommitment = FanIn2WitnessCommitment;
 
@@ -1740,7 +1717,10 @@ mod nonnative_tests {
                 field_mod: field_mod.clone(),
             };
 
-            let statement = (expected_bigint, field_mod);
+            let statement = NonNativeElement {
+                val: expected_bigint,
+                field_mod,
+            };
 
             // Prove and verify a valid member of the relation
             let res = bulletproof_prove_and_verify::<AdderCircuit>(witness, statement);
@@ -1800,7 +1780,10 @@ mod nonnative_tests {
                 field_mod: field_mod.clone(),
             };
 
-            let statement = (expected_bigint, field_mod);
+            let statement = NonNativeElement {
+                val: expected_bigint,
+                field_mod,
+            };
 
             // Prove and verify a valid member of the relation
             let res = bulletproof_prove_and_verify::<MulCircuit>(witness, statement);
@@ -1865,7 +1848,10 @@ mod nonnative_tests {
                 field_mod: field_mod.clone(),
             };
 
-            let statement = (expected_bigint.to_biguint().unwrap(), field_mod);
+            let statement = NonNativeElement {
+                val: expected_bigint.to_biguint().unwrap(),
+                field_mod,
+            };
 
             // Prove and verify a valid member of the relation
             let res = bulletproof_prove_and_verify::<SubCircuit>(witness, statement);
