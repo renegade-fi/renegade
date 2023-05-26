@@ -1,20 +1,25 @@
 //! Defines native and circuit types for internal/external transfers
+#![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
 // ----------------------
 // | External Transfers |
 // ----------------------
 
-use crypto::fields::biguint_to_scalar;
+use circuit_macros::circuit_type;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
-use mpc_bulletproof::r1cs::{Prover, RandomizableConstraintSystem, Variable, Verifier};
+use mpc_bulletproof::r1cs::Variable;
+use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
-use crate::{CommitPublic, CommitVerifier, CommitWitness};
+use crate::traits::{
+    BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
+};
 
 /// The base external transfer type, not allocated in a constraint system
 /// or an MPC circuit
+#[circuit_type(singleprover_circuit)]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ExternalTransfer {
     /// The address of the account contract to transfer to/from
@@ -27,28 +32,6 @@ pub struct ExternalTransfer {
     pub direction: ExternalTransferDirection,
 }
 
-impl CommitPublic for ExternalTransfer {
-    type VarType = ExternalTransferVar;
-    type ErrorType = (); // Does not error
-
-    fn commit_public<CS: RandomizableConstraintSystem>(
-        &self,
-        cs: &mut CS,
-    ) -> Result<Self::VarType, Self::ErrorType> {
-        let addr_var = cs.commit_public(biguint_to_scalar(&self.amount));
-        let mint_var = cs.commit_public(biguint_to_scalar(&self.mint));
-        let amount_var = cs.commit_public(biguint_to_scalar(&self.amount));
-        let dir_var = cs.commit_public(self.direction.into());
-
-        Ok(ExternalTransferVar {
-            account_addr: addr_var,
-            mint: mint_var,
-            amount: amount_var,
-            direction: dir_var,
-        })
-    }
-}
-
 /// Represents the direction (deposit/withdraw) of a transfer
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum ExternalTransferDirection {
@@ -56,6 +39,29 @@ pub enum ExternalTransferDirection {
     Deposit = 0,
     /// Withdraw an ERC20 from the darkpool to an external address
     Withdrawal,
+}
+
+impl BaseType for ExternalTransferDirection {
+    fn to_scalars(self) -> Vec<Scalar> {
+        vec![Scalar::from(self as u8)]
+    }
+
+    fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
+        match scalar_to_u64(&i.next().unwrap()) {
+            0 => ExternalTransferDirection::Deposit,
+            1 => ExternalTransferDirection::Withdrawal,
+            _ => panic!("invalid value for ExternalTransferDirection"),
+        }
+    }
+}
+
+impl CircuitBaseType for ExternalTransferDirection {
+    type VarType<L: LinearCombinationLike> = L;
+    type CommitmentType = CompressedRistretto;
+
+    fn commitment_randomness<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Vec<Scalar> {
+        vec![Scalar::random(rng)]
+    }
 }
 
 impl Default for ExternalTransferDirection {
@@ -67,166 +73,5 @@ impl Default for ExternalTransferDirection {
 impl From<ExternalTransferDirection> for Scalar {
     fn from(dir: ExternalTransferDirection) -> Self {
         Scalar::from(dir as u8)
-    }
-}
-
-/// Represents an external transfer that has been allocated in a constraint system
-#[derive(Copy, Clone, Debug)]
-pub struct ExternalTransferVar {
-    /// The address of the account contract to transfer to/from
-    pub account_addr: Variable,
-    /// The mint (ERC20 address) of the token to transfer
-    pub mint: Variable,
-    /// The amount of the token transferred
-    pub amount: Variable,
-    /// The direction of transfer
-    pub direction: Variable,
-}
-
-/// Represents a commitment to a witness variable of type `ExternalTransfer`
-#[derive(Copy, Clone, Debug)]
-pub struct ExternalTransferCommitment {
-    /// The address of the account contract to transfer to/from
-    pub account_addr: CompressedRistretto,
-    /// The mint (ERC20 address) of the token to transfer
-    pub mint: CompressedRistretto,
-    /// The amount of the token transferred
-    pub amount: CompressedRistretto,
-    /// The direction of transfer
-    pub direction: CompressedRistretto,
-}
-
-impl CommitWitness for ExternalTransfer {
-    type VarType = ExternalTransferVar;
-    type CommitType = ExternalTransferCommitment;
-    type ErrorType = (); // Does not error
-
-    fn commit_witness<R: RngCore + CryptoRng>(
-        &self,
-        rng: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        // Commit to the witness vars
-        let (account_addr_comm, account_addr_var) =
-            prover.commit(biguint_to_scalar(&self.account_addr), Scalar::random(rng));
-        let (mint_comm, mint_var) =
-            prover.commit(biguint_to_scalar(&self.mint), Scalar::random(rng));
-        let (amount_comm, amount_var) =
-            prover.commit(biguint_to_scalar(&self.amount), Scalar::random(rng));
-        let (direction_comm, direction_var) =
-            prover.commit(self.direction.into(), Scalar::random(rng));
-
-        Ok((
-            ExternalTransferVar {
-                account_addr: account_addr_var,
-                mint: mint_var,
-                amount: amount_var,
-                direction: direction_var,
-            },
-            ExternalTransferCommitment {
-                account_addr: account_addr_comm,
-                mint: mint_comm,
-                amount: amount_comm,
-                direction: direction_comm,
-            },
-        ))
-    }
-}
-
-impl CommitVerifier for ExternalTransferCommitment {
-    type VarType = ExternalTransferVar;
-    type ErrorType = (); // Does not error
-
-    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        let account_addr_var = verifier.commit(self.account_addr);
-        let mint_var = verifier.commit(self.mint);
-        let amount_var = verifier.commit(self.amount);
-        let direction_var = verifier.commit(self.direction);
-
-        Ok(ExternalTransferVar {
-            account_addr: account_addr_var,
-            mint: mint_var,
-            amount: amount_var,
-            direction: direction_var,
-        })
-    }
-}
-
-// ---------------------
-// | Internal Transfer |
-// ---------------------
-
-/// Represents an internal transfer tuple, not allocated in any constraint system
-#[derive(Clone, Debug, Default)]
-pub struct InternalTransfer {
-    /// The public settle key of the recipient
-    ///
-    /// This is not used in the circuits, so it is not present in the
-    /// allocated structures below
-    pub recipient_key: BigUint,
-    /// The mint to transfer
-    pub mint: BigUint,
-    /// The amount to transfer
-    pub amount: BigUint,
-}
-
-/// Represents an internal transfer that has been allocated in a constraint system
-#[derive(Copy, Clone, Debug)]
-pub struct InternalTransferVar {
-    /// The mint to transfer
-    pub mint: Variable,
-    /// The amount to transfer
-    pub amount: Variable,
-}
-
-/// Represents a commitment to an allocated internal transfer
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub struct InternalTransferCommitment {
-    /// The mint to transfer
-    pub mint: CompressedRistretto,
-    /// The amount to transfer
-    pub amount: CompressedRistretto,
-}
-
-impl CommitWitness for InternalTransfer {
-    type VarType = InternalTransferVar;
-    type CommitType = InternalTransferCommitment;
-    type ErrorType = (); // Does not error
-
-    fn commit_witness<R: RngCore + CryptoRng>(
-        &self,
-        rng: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (mint_comm, mint_var) =
-            prover.commit(biguint_to_scalar(&self.mint), Scalar::random(rng));
-        let (amount_comm, amount_var) =
-            prover.commit(biguint_to_scalar(&self.amount), Scalar::random(rng));
-
-        Ok((
-            InternalTransferVar {
-                mint: mint_var,
-                amount: amount_var,
-            },
-            InternalTransferCommitment {
-                mint: mint_comm,
-                amount: amount_comm,
-            },
-        ))
-    }
-}
-
-impl CommitVerifier for InternalTransferCommitment {
-    type VarType = InternalTransferVar;
-    type ErrorType = (); // Does not error
-
-    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        let mint_var = verifier.commit(self.mint);
-        let amount_var = verifier.commit(self.amount);
-
-        Ok(InternalTransferVar {
-            mint: mint_var,
-            amount: amount_var,
-        })
     }
 }
