@@ -9,11 +9,11 @@ use merlin::Transcript;
 use mpc_bulletproof::{r1cs::Prover, PedersenGens};
 use rand_core::OsRng;
 
-use crate::{types::wallet::LinkableWalletSecretShare, CommitWitness};
+use crate::{traits::CircuitBaseType, types::wallet::LinkableWalletShare};
 
 use super::{
-    valid_commitments::ValidCommitmentsWitnessCommitment, valid_match_mpc::ValidMatchCommitment,
-    valid_reblind::ValidReblindWitnessCommitment,
+    valid_commitments::ValidCommitmentsWitnessCommitment,
+    valid_match_mpc::ValidMatchMpcWitnessCommitment, valid_reblind::ValidReblindWitnessCommitment,
 };
 
 /// Verify that a proof of `VALID REBLIND` and a proof of `VALID COMMITMENTS` are linked properly
@@ -24,8 +24,9 @@ pub fn verify_reblind_commitments_link<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
+    const MERKLE_HEIGHT: usize,
 >(
-    reblind_commitment: &ValidReblindWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    reblind_commitment: &ValidReblindWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
     commitments_commitment: &ValidCommitmentsWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
 ) -> bool
 where
@@ -53,7 +54,7 @@ pub fn verify_commitment_match_link<
         MAX_ORDERS,
         MAX_FEES,
     >,
-    match_commitment: &ValidMatchCommitment,
+    match_commitment: &ValidMatchMpcWitnessCommitment,
 ) -> bool
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
@@ -71,8 +72,8 @@ pub fn verify_augmented_shares_commitments<
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
 >(
-    party0_augmented_shares: &LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    party1_augmented_shares: &LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    party0_augmented_shares: &LinkableWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    party1_augmented_shares: &LinkableWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     party0_validity_commitments: &ValidCommitmentsWitnessCommitment<
         MAX_BALANCES,
         MAX_ORDERS,
@@ -97,12 +98,8 @@ where
     // Commit to the linked augmented shares and verify that the commitments are the same
     // as the commitments in the validity proofs
     let mut rng = OsRng {};
-    let (_, party0_shares_comm) = party0_augmented_shares
-        .commit_witness(&mut rng, &mut prover)
-        .unwrap();
-    let (_, party1_shares_comm) = party1_augmented_shares
-        .commit_witness(&mut rng, &mut prover)
-        .unwrap();
+    let (_, party0_shares_comm) = party0_augmented_shares.commit_witness(&mut rng, &mut prover);
+    let (_, party1_shares_comm) = party1_augmented_shares.commit_witness(&mut rng, &mut prover);
 
     party0_shares_comm == party0_validity_commitments.augmented_public_shares
         && party1_shares_comm == party1_validity_commitments.augmented_public_shares

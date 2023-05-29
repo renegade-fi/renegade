@@ -1,6 +1,8 @@
 //! Defines the VALID SETTLE circuit, which is proven after a match, validating that
 //! both party's secret shares have been updated properly with the result of the match
 
+use circuit_macros::circuit_type;
+use curve25519_dalek::ristretto::CompressedRistretto;
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
     r1cs::{
@@ -9,22 +11,18 @@ use mpc_bulletproof::{
     BulletproofGens,
 };
 use rand_core::{CryptoRng, OsRng, RngCore};
-use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::{ProverError, VerifierError},
+    traits::{
+        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
+    },
     types::{
-        r#match::{CommittedMatchResult, LinkableMatchResultCommitment, MatchResultVar},
-        wallet::{
-            LinkableWalletSecretShare, WalletSecretShare, WalletSecretShareCommitment,
-            WalletSecretShareVar,
-        },
+        r#match::LinkableMatchResult,
+        wallet::{LinkableWalletShare, WalletShare, WalletShareVar},
     },
-    zk_gadgets::{
-        comparators::{EqGadget, EqVecGadget},
-        select::CondSelectVectorGadget,
-    },
-    CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit,
+    zk_gadgets::{comparators::EqGadget, select::CondSelectVectorGadget},
+    SingleProverCircuit,
 };
 
 // ----------------------
@@ -40,8 +38,8 @@ where
 {
     /// The circuit representing `VALID SETTLE`
     pub fn circuit<CS: RandomizableConstraintSystem>(
-        statement: ValidSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        witness: ValidSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        statement: ValidSettleStatementVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        witness: ValidSettleWitnessVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) {
         // Select the balances received by each party
@@ -122,8 +120,8 @@ where
         send_amount: LinearCombination,
         receive_index: Variable,
         received_amount: LinearCombination,
-        pre_update_shares: &WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        post_update_shares: &WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        pre_update_shares: &WalletShareVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        post_update_shares: &WalletShareVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) {
         let mut send_term = -send_amount;
@@ -137,29 +135,24 @@ where
             .zip(post_update_shares.balances.clone().into_iter())
         {
             // Mask the send term
-            let send_term_index_mask = EqGadget::eq(send_index.into(), curr_index.clone(), cs);
+            let send_term_index_mask = EqGadget::eq(send_index, curr_index.clone(), cs);
             let (_, new_send_term, curr_send_term) =
                 cs.multiply(send_term_index_mask.into(), send_term);
             send_term = new_send_term.into();
 
             // Mask the receive term
-            let receive_term_index_mask =
-                EqGadget::eq(receive_index.into(), curr_index.clone(), cs);
+            let receive_term_index_mask = EqGadget::eq(receive_index, curr_index.clone(), cs);
             let (_, new_receive_term, curr_receive_term) =
                 cs.multiply(receive_term_index_mask.into(), receive_term);
             receive_term = new_receive_term.into();
 
             // Add the terms together to get the expected update
             let expected_balance_amount =
-                pre_update_balance.amount.clone() + curr_send_term + curr_receive_term;
-            let mut expected_balances_shares = pre_update_balance;
+                pre_update_balance.amount + curr_send_term + curr_receive_term;
+            let mut expected_balances_shares = pre_update_balance.to_lc();
             expected_balances_shares.amount = expected_balance_amount.clone();
 
-            EqVecGadget::constrain_eq_vec(
-                &Into::<Vec<LinearCombination>>::into(expected_balances_shares),
-                &Into::<Vec<LinearCombination>>::into(post_update_balance),
-                cs,
-            );
+            EqGadget::constrain_eq(expected_balances_shares, post_update_balance, cs);
 
             // Increment the index
             curr_index += Variable::One();
@@ -173,8 +166,8 @@ where
     fn validate_order_updates<CS: RandomizableConstraintSystem>(
         order_index: Variable,
         base_amount_swapped: Variable,
-        pre_update_shares: &WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        post_update_shares: &WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        pre_update_shares: &WalletShareVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        post_update_shares: &WalletShareVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) {
         let mut amount_delta = -base_amount_swapped;
@@ -187,21 +180,17 @@ where
             .zip(post_update_shares.orders.clone().into_iter())
         {
             // Mask with the index
-            let index_mask = EqGadget::eq(order_index.into(), curr_index.clone(), cs);
+            let index_mask = EqGadget::eq(order_index, curr_index.clone(), cs);
             let (_, new_amount_delta, curr_delta_term) =
                 cs.multiply(index_mask.into(), amount_delta);
             amount_delta = new_amount_delta.into();
 
             // Constrain the order update to be correct
-            let expected_order_volume = pre_update_order.amount.clone() + curr_delta_term;
-            let mut expected_order_shares = pre_update_order.clone();
+            let expected_order_volume = pre_update_order.amount + curr_delta_term;
+            let mut expected_order_shares = pre_update_order.clone().to_lc();
             expected_order_shares.amount = expected_order_volume;
 
-            EqVecGadget::constrain_eq_vec(
-                &Into::<Vec<LinearCombination>>::into(expected_order_shares),
-                &Into::<Vec<LinearCombination>>::into(post_update_order.clone()),
-                cs,
-            );
+            EqGadget::constrain_eq(expected_order_shares, post_update_order, cs);
 
             // Increment the index
             curr_index += Variable::One();
@@ -211,27 +200,13 @@ where
     /// Validate that fees, keys, and blinders remain the same in the pre and post
     /// wallet shares
     fn validate_fees_keys_blinder_updates<CS: RandomizableConstraintSystem>(
-        mut pre_update_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        mut post_update_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        pre_update_shares: WalletShareVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        post_update_shares: WalletShareVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) {
-        let mut pre_update_share_vec: Vec<LinearCombination> = Vec::new();
-        for fee in pre_update_shares.fees.into_iter() {
-            pre_update_share_vec.append(&mut fee.into());
-        }
-        pre_update_share_vec.append(&mut pre_update_shares.keys.pk_root.words);
-        pre_update_share_vec.push(pre_update_shares.keys.pk_match);
-        pre_update_share_vec.push(pre_update_shares.blinder);
-
-        let mut post_update_share_vec: Vec<LinearCombination> = Vec::new();
-        for fee in post_update_shares.fees.into_iter() {
-            post_update_share_vec.append(&mut fee.into());
-        }
-        post_update_share_vec.append(&mut post_update_shares.keys.pk_root.words);
-        post_update_share_vec.push(post_update_shares.keys.pk_match);
-        post_update_share_vec.push(post_update_shares.blinder);
-
-        EqVecGadget::constrain_eq_vec(&pre_update_share_vec, &post_update_share_vec, cs);
+        EqGadget::constrain_eq(pre_update_shares.fees, post_update_shares.fees, cs);
+        EqGadget::constrain_eq(pre_update_shares.keys, post_update_shares.keys, cs);
+        EqGadget::constrain_eq(pre_update_shares.blinder, post_update_shares.blinder, cs);
     }
 }
 
@@ -240,109 +215,21 @@ where
 // ---------------------------
 
 /// The witness type for `VALID SETTLE`
+#[circuit_type(singleprover_circuit)]
 #[derive(Clone, Debug)]
 pub struct ValidSettleWitness<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
-> {
-    /// The match result to be applied to the wallet shares
-    pub match_res: LinkableMatchResultCommitment,
-    /// The public secret shares of the first party before the match is applied
-    pub party0_public_shares: LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The public secret shares of the second party before the match is applied
-    pub party1_public_shares: LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-}
-
-/// The witness type for `VALID SETTLE`, allocated in a constraint system
-#[derive(Clone, Debug)]
-pub struct ValidSettleWitnessVar<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
-> {
-    /// The match result to be applied to the wallet shares
-    pub match_res: MatchResultVar,
-    /// The public secret shares of the first party before the match is applied
-    pub party0_public_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The public secret shares of the second party before the match is applied
-    pub party1_public_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-}
-
-/// A commitment to the witness type for `VALID SETTLE`,
-/// allocated in a constraint system
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidSettleWitnessCommitment<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
-> {
-    /// The match result to be applied to the wallet shares
-    pub match_res: CommittedMatchResult,
-    /// The public secret shares of the first party before the match is applied
-    pub party0_public_shares: WalletSecretShareCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The public secret shares of the second party before the match is applied
-    pub party1_public_shares: WalletSecretShareCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-}
-
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitWitness
-    for ValidSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
-where
+> where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
-    type VarType = ValidSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type CommitType = ValidSettleWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type ErrorType = (); // Does not error
-
-    fn commit_witness<R: RngCore + CryptoRng>(
-        &self,
-        rng: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (match_res_var, match_res_comm) = self.match_res.commit_witness(rng, prover).unwrap();
-        let (party0_shares_var, party0_shares_comm) = self
-            .party0_public_shares
-            .commit_witness(rng, prover)
-            .unwrap();
-        let (party1_shares_var, party1_shares_comm) = self
-            .party1_public_shares
-            .commit_witness(rng, prover)
-            .unwrap();
-
-        Ok((
-            ValidSettleWitnessVar {
-                match_res: match_res_var,
-                party0_public_shares: party0_shares_var,
-                party1_public_shares: party1_shares_var,
-            },
-            ValidSettleWitnessCommitment {
-                match_res: match_res_comm,
-                party0_public_shares: party0_shares_comm,
-                party1_public_shares: party1_shares_comm,
-            },
-        ))
-    }
-}
-
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitVerifier
-    for ValidSettleWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
-where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-{
-    type VarType = ValidSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type ErrorType = (); // Does not error
-
-    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        let match_res_var = self.match_res.commit_verifier(verifier).unwrap();
-        let party0_share_vars = self.party0_public_shares.commit_verifier(verifier).unwrap();
-        let party1_share_vars = self.party1_public_shares.commit_verifier(verifier).unwrap();
-
-        Ok(ValidSettleWitnessVar {
-            match_res: match_res_var,
-            party0_public_shares: party0_share_vars,
-            party1_public_shares: party1_share_vars,
-        })
-    }
+    /// The match result to be applied to the wallet shares
+    pub match_res: LinkableMatchResult,
+    /// The public secret shares of the first party before the match is applied
+    pub party0_public_shares: LinkableWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    /// The public secret shares of the second party before the match is applied
+    pub party1_public_shares: LinkableWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
 }
 
 // -----------------------------
@@ -350,91 +237,31 @@ where
 // -----------------------------
 
 /// The statement type for `VALID SETTLE`
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[circuit_type(singleprover_circuit)]
+#[derive(Clone, Debug)]
 pub struct ValidSettleStatement<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
-> {
-    /// The modified public secret shares of the first party
-    pub party0_modified_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The modified public secret shares of the second party
-    pub party1_modified_shares: WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The index of the balance that the first party sent in the settlement
-    pub party0_send_balance_index: usize,
-    /// The index of teh balance that the first party received in the settlement
-    pub party0_receive_balance_index: usize,
-    /// The index of the first party's order that was matched
-    pub party0_order_index: usize,
-    /// The index of the balance that the second party sent in the settlement
-    pub party1_send_balance_index: usize,
-    /// The index of teh balance that the second party received in the settlement
-    pub party1_receive_balance_index: usize,
-    /// The index of the second party's order that was matched
-    pub party1_order_index: usize,
-}
-
-/// The statement type for `VALID SETTLE`, allocated in a constraint system
-#[derive(Clone, Debug)]
-pub struct ValidSettleStatementVar<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
-> {
-    /// The modified public secret shares of the first party
-    pub party0_modified_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The modified public secret shares of the second party
-    pub party1_modified_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The index of the balance that the first party sent in the settlement
-    pub party0_send_balance_index: Variable,
-    /// The index of teh balance that the first party received in the settlement
-    pub party0_receive_balance_index: Variable,
-    /// The index of the first party's order that was matched
-    pub party0_order_index: Variable,
-    /// The index of the balance that the second party sent in the settlement
-    pub party1_send_balance_index: Variable,
-    /// The index of teh balance that the second party received in the settlement
-    pub party1_receive_balance_index: Variable,
-    /// The index of the second party's order that was matched
-    pub party1_order_index: Variable,
-}
-
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitPublic
-    for ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
-where
+> where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
-    type VarType = ValidSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type ErrorType = (); // Does nto error
-
-    fn commit_public<CS: RandomizableConstraintSystem>(
-        &self,
-        cs: &mut CS,
-    ) -> Result<Self::VarType, Self::ErrorType> {
-        let party0_share_vars = self.party0_modified_shares.commit_public(cs).unwrap();
-        let party1_share_vars = self.party1_modified_shares.commit_public(cs).unwrap();
-        let party0_send_index_var =
-            cs.commit_public(Scalar::from(self.party0_send_balance_index as u64));
-        let party0_receive_index_var =
-            cs.commit_public(Scalar::from(self.party0_receive_balance_index as u64));
-        let party0_order_index_var = cs.commit_public(Scalar::from(self.party0_order_index as u64));
-        let party1_send_index_var =
-            cs.commit_public(Scalar::from(self.party1_send_balance_index as u64));
-        let party1_receive_index_var =
-            cs.commit_public(Scalar::from(self.party1_receive_balance_index as u64));
-        let party1_order_index_var = cs.commit_public(Scalar::from(self.party1_order_index as u64));
-
-        Ok(ValidSettleStatementVar {
-            party0_modified_shares: party0_share_vars,
-            party1_modified_shares: party1_share_vars,
-            party0_send_balance_index: party0_send_index_var,
-            party0_receive_balance_index: party0_receive_index_var,
-            party0_order_index: party0_order_index_var,
-            party1_send_balance_index: party1_send_index_var,
-            party1_receive_balance_index: party1_receive_index_var,
-            party1_order_index: party1_order_index_var,
-        })
-    }
+    /// The modified public secret shares of the first party
+    pub party0_modified_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    /// The modified public secret shares of the second party
+    pub party1_modified_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    /// The index of the balance that the first party sent in the settlement
+    pub party0_send_balance_index: u64,
+    /// The index of teh balance that the first party received in the settlement
+    pub party0_receive_balance_index: u64,
+    /// The index of the first party's order that was matched
+    pub party0_order_index: u64,
+    /// The index of the balance that the second party sent in the settlement
+    pub party1_send_balance_index: u64,
+    /// The index of teh balance that the second party received in the settlement
+    pub party1_receive_balance_index: u64,
+    /// The index of the second party's order that was matched
+    pub party1_order_index: u64,
 }
 
 // ---------------------
@@ -448,7 +275,6 @@ where
 {
     type Witness = ValidSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type Statement = ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type WitnessCommitment = ValidSettleWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     const BP_GENS_CAPACITY: usize = 1024;
 
@@ -456,11 +282,17 @@ where
         witness: Self::Witness,
         statement: Self::Statement,
         mut prover: Prover,
-    ) -> Result<(Self::WitnessCommitment, R1CSProof), crate::errors::ProverError> {
+    ) -> Result<
+        (
+            ValidSettleWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+            R1CSProof,
+        ),
+        crate::errors::ProverError,
+    > {
         // Commit to the witness and statement
         let mut rng = OsRng {};
-        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-        let statement_var = statement.commit_public(&mut prover).unwrap();
+        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover);
+        let statement_var = statement.commit_public(&mut prover);
 
         // Apply the circuit constraints
         Self::circuit(statement_var, witness_var, &mut prover);
@@ -473,14 +305,14 @@ where
     }
 
     fn verify(
-        witness_commitment: Self::WitnessCommitment,
+        witness_commitment: ValidSettleWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         statement: Self::Statement,
         proof: R1CSProof,
         mut verifier: Verifier,
     ) -> Result<(), VerifierError> {
         // Commit to the witness and statement
-        let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
-        let statement_var = statement.commit_public(&mut verifier).unwrap();
+        let witness_var = witness_commitment.commit_verifier(&mut verifier);
+        let statement_var = statement.commit_public(&mut verifier);
 
         // Apply the circuit constraints
         Self::circuit(statement_var, witness_var, &mut verifier);
@@ -509,6 +341,7 @@ mod test {
     use rand_core::OsRng;
 
     use crate::{
+        traits::{CircuitBaseType, LinkableBaseType},
         types::{
             order::{Order, OrderSide},
             r#match::MatchResult,
@@ -518,7 +351,6 @@ mod test {
             MAX_FEES, MAX_ORDERS, PUBLIC_KEYS, TIMESTAMP,
         },
         zk_gadgets::fixed_point::FixedPoint,
-        CommitPublic, CommitWitness,
     };
 
     use super::{ValidSettle, ValidSettleStatement, ValidSettleWitness};
@@ -630,8 +462,8 @@ mod test {
                 .unwrap();
 
         // Split the wallets into secret shares
-        let (_, party0_public_shares) = create_wallet_shares(&party0_wallet);
-        let (_, party1_public_shares) = create_wallet_shares(&party1_wallet);
+        let (_, party0_public_shares) = create_wallet_shares(party0_wallet);
+        let (_, party1_public_shares) = create_wallet_shares(party1_wallet);
 
         // Update party0's public shares with the match
         let mut party0_modified_shares = party0_public_shares.clone();
@@ -652,19 +484,19 @@ mod test {
             Scalar::from(match_res.base_amount);
 
         let witness = ValidSettleWitness {
-            match_res: match_res.into(),
-            party0_public_shares: party0_public_shares.into(),
-            party1_public_shares: party1_public_shares.into(),
+            match_res: match_res.to_linkable(),
+            party0_public_shares: party0_public_shares.to_linkable(),
+            party1_public_shares: party1_public_shares.to_linkable(),
         };
         let statement = ValidSettleStatement {
             party0_modified_shares,
             party1_modified_shares,
-            party0_send_balance_index: party0_send_index,
-            party0_receive_balance_index: party0_receive_index,
-            party0_order_index,
-            party1_send_balance_index: party1_send_index,
-            party1_receive_balance_index: party1_receive_index,
-            party1_order_index,
+            party0_send_balance_index: party0_send_index as u64,
+            party0_receive_balance_index: party0_receive_index as u64,
+            party0_order_index: party0_order_index as u64,
+            party1_send_balance_index: party1_send_index as u64,
+            party1_receive_balance_index: party1_receive_index as u64,
+            party1_order_index: party1_order_index as u64,
         };
 
         (witness, statement)
@@ -706,8 +538,8 @@ mod test {
 
         // Allocate the witness and statement in the constraint system
         let mut rng = OsRng {};
-        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-        let statement_var = statement.commit_public(&mut prover).unwrap();
+        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover);
+        let statement_var = statement.commit_public(&mut prover);
 
         // Apply the constraints
         ValidSettle::circuit(statement_var, witness_var, &mut prover);
@@ -802,8 +634,8 @@ mod test {
             create_witness_statement(party0_wallet, party1_wallet, match_res);
 
         // Modify the send balance of party 0
-        statement.party0_modified_shares.balances[statement.party0_send_balance_index].amount +=
-            Scalar::one();
+        statement.party0_modified_shares.balances[statement.party0_send_balance_index as usize]
+            .amount += Scalar::one();
 
         assert!(!constraints_satisfied(witness, statement));
     }
@@ -818,8 +650,9 @@ mod test {
             create_witness_statement(party0_wallet, party1_wallet, match_res);
 
         // Modify the receive balance of party 1
-        statement.party1_modified_shares.balances[statement.party1_receive_balance_index].amount +=
-            Scalar::one();
+        statement.party1_modified_shares.balances
+            [statement.party1_receive_balance_index as usize]
+            .amount += Scalar::one();
 
         assert!(!constraints_satisfied(witness, statement));
     }
@@ -834,7 +667,7 @@ mod test {
             create_witness_statement(party0_wallet, party1_wallet, match_res);
 
         // Modify the order of party 0
-        statement.party0_modified_shares.orders[statement.party0_order_index].amount -=
+        statement.party0_modified_shares.orders[statement.party0_order_index as usize].amount -=
             Scalar::one();
 
         assert!(!constraints_satisfied(witness, statement));
@@ -851,15 +684,16 @@ mod test {
 
         // Modify a balance that should not be modified
         let mut statement = original_statement.clone();
-        statement.party0_modified_shares.balances[statement.party0_send_balance_index].mint +=
-            Scalar::one();
+        statement.party0_modified_shares.balances[statement.party0_send_balance_index as usize]
+            .mint += Scalar::one();
 
         assert!(!constraints_satisfied(witness.clone(), statement));
 
         // Modify an order that should not be modified
         let mut statement = original_statement.clone();
-        statement.party1_modified_shares.orders[statement.party1_order_index].price -=
-            Scalar::one();
+        statement.party1_modified_shares.orders[statement.party1_order_index as usize]
+            .price
+            .repr -= Scalar::one();
 
         assert!(!constraints_satisfied(witness.clone(), statement));
 
@@ -871,7 +705,7 @@ mod test {
 
         // Modify a key
         let mut statement = original_statement.clone();
-        statement.party1_modified_shares.keys.pk_match += Scalar::one();
+        statement.party1_modified_shares.keys.pk_match.key += Scalar::one();
 
         assert!(!constraints_satisfied(witness.clone(), statement));
 

@@ -251,11 +251,7 @@ pub(crate) mod merkle_test {
     {
         let mut res = Vec::with_capacity(HEIGHT);
         for _ in 0..HEIGHT {
-            res.push(match leaf_index % 2 {
-                val @ 0..=1 => Scalar::from(val as u64),
-                _ => unreachable!("impossible evaluation mod 2"),
-            });
-
+            res.push(Scalar::from((leaf_index % 2) as u64));
             leaf_index >>= 1;
         }
 
