@@ -95,15 +95,6 @@ impl FixedPoint {
         }
     }
 
-    /// Commit to the fixed point variable as a public input in a given constraint system
-    pub fn commit_public<CS: RandomizableConstraintSystem>(
-        &self,
-        cs: &mut CS,
-    ) -> FixedPointVar<Variable> {
-        let repr = cs.commit_public(self.repr);
-        FixedPointVar { repr }
-    }
-
     /// Return the represented value as an f64
     pub fn to_f64(&self) -> f64 {
         let mut dec = BigDecimal::from(scalar_to_bigint(&self.repr));
