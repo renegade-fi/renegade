@@ -1,24 +1,20 @@
 //! Groups gadgets around computing Merkle entries and proving Merkle openings
+#![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
+use circuit_macros::circuit_type;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
-use itertools::Itertools;
 use mpc_bulletproof::{
-    r1cs::{
-        ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
-        Variable, Verifier,
-    },
+    r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
     r1cs_mpc::R1CSError,
-    BulletproofGens,
 };
-
-use rand_core::OsRng;
-use serde::{Deserialize, Serialize};
+use rand_core::{CryptoRng, RngCore};
 use std::ops::Neg;
 
 use crate::{
-    errors::{ProverError, VerifierError},
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    CommitVerifier, CommitWitness, SingleProverCircuit,
+    traits::{
+        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
+    },
 };
 
 use super::poseidon::PoseidonHashGadget;
@@ -28,18 +24,18 @@ pub type MerkleRoot = Scalar;
 
 /// The single-prover hash gadget, computes the Merkle root of a leaf given a path
 /// of sister nodes
-pub struct PoseidonMerkleHashGadget {}
-
-impl PoseidonMerkleHashGadget {
+pub struct PoseidonMerkleHashGadget<const HEIGHT: usize> {}
+impl<const HEIGHT: usize> PoseidonMerkleHashGadget<HEIGHT> {
     /// Compute the root of the tree given the leaf node and the path of
     /// sister nodes leading to the root
-    pub fn compute_root<L, CS>(
-        leaf_node: Vec<L>,
-        opening: MerkleOpeningVar,
+    pub fn compute_root<L1, L2, CS>(
+        leaf_node: Vec<L1>,
+        opening: MerkleOpeningVar<L2, HEIGHT>,
         cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError>
     where
-        L: Into<LinearCombination> + Clone,
+        L1: LinearCombinationLike,
+        L2: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         // Hash the leaf_node into a field element
@@ -48,13 +44,14 @@ impl PoseidonMerkleHashGadget {
     }
 
     /// Compute the root given an already hashed leaf, i.e. do not hash a leaf buffer first
-    pub fn compute_root_prehashed<S, CS>(
-        leaf_node: S,
-        opening: MerkleOpeningVar,
+    pub fn compute_root_prehashed<L1, L2, CS>(
+        leaf_node: L1,
+        opening: MerkleOpeningVar<L2, HEIGHT>,
         cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError>
     where
-        S: Into<LinearCombination> + Clone,
+        L1: LinearCombinationLike,
+        L2: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         // Hash the leaf_node into a field element
@@ -75,15 +72,16 @@ impl PoseidonMerkleHashGadget {
     }
 
     /// Compute the root and constrain it to an expected value
-    pub fn compute_and_constrain_root<L, CS>(
-        leaf_node: Vec<L>,
-        opening: MerkleOpeningVar,
-        expected_root: L,
+    pub fn compute_and_constrain_root<L1, L2, CS>(
+        leaf_node: Vec<L1>,
+        opening: MerkleOpeningVar<L2, HEIGHT>,
+        expected_root: L1,
         cs: &mut CS,
     ) -> Result<(), R1CSError>
     where
+        L1: LinearCombinationLike,
+        L2: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
-        L: Into<LinearCombination> + Clone,
     {
         let root = Self::compute_root(leaf_node, opening, cs)?;
         cs.constrain(expected_root.into() - root);
@@ -92,15 +90,16 @@ impl PoseidonMerkleHashGadget {
     }
 
     /// Compute the root from a prehashed leaf and constrain it to an expected value
-    pub fn compute_and_constrain_root_prehashed<L, CS>(
-        leaf_node: L,
-        opening: MerkleOpeningVar,
-        expected_root: L,
+    pub fn compute_and_constrain_root_prehashed<L1, L2, CS>(
+        leaf_node: L1,
+        opening: MerkleOpeningVar<L2, HEIGHT>,
+        expected_root: L1,
         cs: &mut CS,
     ) -> Result<(), R1CSError>
     where
+        L1: LinearCombinationLike,
+        L2: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
-        L: Into<LinearCombination> + Clone,
     {
         let root = Self::compute_root_prehashed(leaf_node, opening, cs)?;
         cs.constrain(expected_root.into() - root);
@@ -120,7 +119,7 @@ impl PoseidonMerkleHashGadget {
         cs: &mut CS,
     ) -> (LinearCombination, LinearCombination)
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         let current_hash_lc = current_hash.into();
@@ -175,245 +174,24 @@ impl PoseidonMerkleHashGadget {
 }
 
 /// A fully specified merkle opening from hashed leaf to root
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MerkleOpening {
+#[circuit_type(singleprover_circuit)]
+#[derive(Clone, Debug)]
+pub struct MerkleOpening<const HEIGHT: usize> {
     /// The opening from the leaf node to the root, i.e. the set of sister nodes
     /// that hash together with the input from the leaf to the root
-    pub elems: Vec<Scalar>,
+    pub elems: [Scalar; HEIGHT],
     /// The opening indices from the leaf node to the root, each value is zero or
     /// one: 0 indicating that the node in the opening at index i is a left hand
     /// child of its parent, 1 indicating it's a right hand child
-    pub indices: Vec<Scalar>,
+    pub indices: [Scalar; HEIGHT],
 }
 
-/// A Merkle opening that has been allocated in a constraint system
-#[derive(Clone, Debug)]
-pub struct MerkleOpeningVar {
-    /// The opening from the leaf node to the root, i.e. the set of sister nodes
-    /// that hash together with the input from the leaf to the root
-    pub elems: Vec<Variable>,
-    /// The opening indices from the leaf node to the root, each value is zero or
-    /// one: 0 indicating that the node in the opening at index i is a left hand
-    /// child of its parent, 1 indicating it's a right hand child
-    pub indices: Vec<Variable>,
-}
-
-/// A commitment to a Merkle opening in a constraint system
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MerkleOpeningCommitment {
-    /// The opening from the leaf node to the root, i.e. the set of sister nodes
-    /// that hash together with the input from the leaf to the root
-    pub elems: Vec<CompressedRistretto>,
-    /// The opening indices from the leaf node to the root, each value is zero or
-    /// one: 0 indicating that the node in the opening at index i is a left hand
-    /// child of its parent, 1 indicating it's a right hand child
-    pub indices: Vec<CompressedRistretto>,
-}
-
-impl CommitWitness for MerkleOpening {
-    type VarType = MerkleOpeningVar;
-    type CommitType = MerkleOpeningCommitment;
-    type ErrorType = ();
-
-    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
-        &self,
-        rng: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (opening_comms, opening_vars): (Vec<CompressedRistretto>, Vec<Variable>) = self
-            .elems
-            .iter()
-            .map(|opening| prover.commit(*opening, Scalar::random(rng)))
-            .unzip();
-
-        let (index_comms, index_vars): (Vec<CompressedRistretto>, Vec<Variable>) = self
-            .indices
-            .iter()
-            .map(|index| prover.commit(*index, Scalar::random(rng)))
-            .unzip();
-
-        Ok((
-            MerkleOpeningVar {
-                elems: opening_vars,
-                indices: index_vars,
-            },
-            MerkleOpeningCommitment {
-                elems: opening_comms,
-                indices: index_comms,
-            },
-        ))
-    }
-}
-
-impl CommitVerifier for MerkleOpeningCommitment {
-    type VarType = MerkleOpeningVar;
-    type ErrorType = ();
-
-    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        let elem_vars = self
-            .elems
-            .iter()
-            .map(|elem| verifier.commit(*elem))
-            .collect_vec();
-        let index_vars = self
-            .indices
-            .iter()
-            .map(|index| verifier.commit(*index))
-            .collect_vec();
-
-        Ok(MerkleOpeningVar {
-            elems: elem_vars,
-            indices: index_vars,
-        })
-    }
-}
-
-/// The witness to the statement defined by the Merkle gadget; that is one of
-/// Merkle inclusion
-#[derive(Clone, Debug)]
-pub struct MerkleWitness {
-    /// The opening of the leaf into the root
-    opening: MerkleOpening,
-    /// The preimage for the leaf i.e. the value that is sponge hashed into the leaf
-    leaf_data: Vec<Scalar>,
-}
-
-/// A Merkle opening witness that has been allocated in a constraint system
-#[derive(Clone, Debug)]
-pub struct MerkleWitnessVar {
-    /// The opening of the leaf into the root
-    opening: MerkleOpeningVar,
-    /// The preimage for the leaf i.e. the value that is sponge hashed into the leaf
-    leaf_data: Vec<Variable>,
-}
-
-/// A commitment to the witness type for a Merkle opening proof
-#[derive(Clone, Debug)]
-pub struct MerkleWitnessCommitment {
-    /// The opening of the leaf into the root
-    opening: MerkleOpeningCommitment,
-    /// The preimage for the leaf i.e. the value that is sponge hashed into the leaf
-    leaf_data: Vec<CompressedRistretto>,
-}
-
-impl CommitWitness for MerkleWitness {
-    type VarType = MerkleWitnessVar;
-    type CommitType = MerkleWitnessCommitment;
-    type ErrorType = ();
-
-    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
-        &self,
-        rng: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (opening_var, opening_comm) = self.opening.commit_witness(rng, prover).unwrap();
-        let (leaf_comms, leaf_vars): (Vec<CompressedRistretto>, Vec<Variable>) = self
-            .leaf_data
-            .iter()
-            .map(|leaf| prover.commit(*leaf, Scalar::random(rng)))
-            .unzip();
-
-        Ok((
-            MerkleWitnessVar {
-                opening: opening_var,
-                leaf_data: leaf_vars,
-            },
-            MerkleWitnessCommitment {
-                opening: opening_comm,
-                leaf_data: leaf_comms,
-            },
-        ))
-    }
-}
-
-impl CommitVerifier for MerkleWitnessCommitment {
-    type VarType = MerkleWitnessVar;
-    type ErrorType = ();
-
-    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        let opening_var = self.opening.commit_verifier(verifier).unwrap();
-        let leaf_vars = self
-            .leaf_data
-            .iter()
-            .map(|leaf| verifier.commit(*leaf))
-            .collect_vec();
-
-        Ok(MerkleWitnessVar {
-            opening: opening_var,
-            leaf_data: leaf_vars,
-        })
-    }
-}
-
-/// The statement parameterization of the Merkle inclusion proof of knowledge
-#[derive(Clone, Debug)]
-pub struct MerkleStatement {
-    /// The expected value of the root after hashing from the leaf
-    pub expected_root: MerkleRoot,
-    /// The tree height, used to partition the commitments when given
-    /// to the verifier as a vector
-    pub tree_height: usize,
-}
-
-impl SingleProverCircuit for PoseidonMerkleHashGadget {
-    type Statement = MerkleStatement;
-    type Witness = MerkleWitness;
-    type WitnessCommitment = MerkleWitnessCommitment;
-
-    const BP_GENS_CAPACITY: usize = 8192;
-
-    fn prove(
-        witness: Self::Witness,
-        statement: Self::Statement,
-        mut prover: Prover,
-    ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
-        // Commit to the witness
-        let mut rng = OsRng {};
-        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-
-        // Commit to the expected root
-        let root_var = prover.commit_public(statement.expected_root);
-
-        // Apply the constraints
-        PoseidonMerkleHashGadget::compute_and_constrain_root(
-            witness_var.leaf_data,
-            witness_var.opening,
-            root_var,
-            &mut prover,
-        )
-        .map_err(ProverError::R1CS)?;
-
-        // Prove the statement
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
-
-        Ok((witness_comm, proof))
-    }
-
-    fn verify(
-        witness_commitments: Self::WitnessCommitment,
-        statement: Self::Statement,
-        proof: R1CSProof,
-        mut verifier: Verifier,
-    ) -> Result<(), VerifierError> {
-        // Commit to the witness and statement
-        let witness_vars = witness_commitments.commit_verifier(&mut verifier).unwrap();
-        let root_var = verifier.commit_public(statement.expected_root);
-
-        // Apply constraints
-        PoseidonMerkleHashGadget::compute_and_constrain_root(
-            witness_vars.leaf_data,
-            witness_vars.opening,
-            root_var,
-            &mut verifier,
-        )
-        .map_err(VerifierError::R1CS)?;
-
-        // Verify the proof
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        verifier
-            .verify(&proof, &bp_gens)
-            .map_err(VerifierError::R1CS)
+impl<const HEIGHT: usize> Default for MerkleOpening<HEIGHT> {
+    fn default() -> Self {
+        Self {
+            elems: [Scalar::zero(); HEIGHT],
+            indices: [Scalar::zero(); HEIGHT],
+        }
     }
 }
 
@@ -432,17 +210,15 @@ pub(crate) mod merkle_test {
     };
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
-    use mpc_bulletproof::r1cs_mpc::R1CSError;
+    use merlin::Transcript;
+    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
     use rand::{thread_rng, Rng};
     use rand_core::OsRng;
 
     use crate::{
-        errors::VerifierError,
-        test_helpers::bulletproof_prove_and_verify,
+        traits::CircuitBaseType,
         zk_gadgets::merkle::{MerkleOpening, PoseidonMerkleHashGadget},
     };
-
-    use super::{MerkleStatement, MerkleWitness};
 
     struct MerkleConfig {}
     impl Config for MerkleConfig {
@@ -467,14 +243,23 @@ pub(crate) mod merkle_test {
     /// determine incrementally which subtree a given index should be a part of.
     ///
     /// The tree indices from leaf to root are exactly the LSB decomposition of the scalar
-    pub(crate) fn get_opening_indices(leaf_index: usize, tree_height: usize) -> Vec<Scalar> {
-        if tree_height == 0 {
-            vec![]
-        } else {
-            let mut recursive_result = get_opening_indices(leaf_index >> 1, tree_height - 1);
-            recursive_result.insert(0, Scalar::from((leaf_index % 2) as u64));
-            recursive_result
+    pub(crate) fn get_opening_indices<const HEIGHT: usize>(
+        mut leaf_index: usize,
+    ) -> [Scalar; HEIGHT]
+    where
+        [(); HEIGHT]: Sized,
+    {
+        let mut res = Vec::with_capacity(HEIGHT);
+        for _ in 0..HEIGHT {
+            res.push(match leaf_index % 2 {
+                val @ 0..=1 => Scalar::from(val as u64),
+                _ => unreachable!("impossible evaluation mod 2"),
+            });
+
+            leaf_index >>= 1;
         }
+
+        res.try_into().unwrap()
     }
 
     #[test]
@@ -483,13 +268,13 @@ pub(crate) mod merkle_test {
         // A random input at the leaf
         const leaf_size: usize = 6;
         let num_leaves = 32;
-        let tree_height = 10;
+        const TREE_HEIGHT: usize = 10;
 
         // Build a random Merkle tree via arkworks
         let arkworks_params = default_poseidon_params();
 
         let mut merkle_tree =
-            MerkleTree::<MerkleConfig>::blank(&arkworks_params, &arkworks_params, tree_height)
+            MerkleTree::<MerkleConfig>::blank(&arkworks_params, &arkworks_params, TREE_HEIGHT)
                 .unwrap();
 
         let mut ark_leaf_data = Vec::with_capacity(num_leaves);
@@ -528,21 +313,32 @@ pub(crate) mod merkle_test {
             .map(prime_field_to_scalar)
             .collect_vec();
 
-        // Prove and verify the statement
-        let witness = MerkleWitness {
-            leaf_data,
-            opening: MerkleOpening {
-                elems: opening_scalars,
-                indices: get_opening_indices(random_index, opening.auth_path.len() + 1),
-            },
-        };
+        // Build a constraint system
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
 
-        let statement = MerkleStatement {
-            expected_root,
-            tree_height,
-        };
+        // Apply the constraints
+        let leaf_vars = leaf_data
+            .into_iter()
+            .map(|x| x.commit_public(&mut prover))
+            .collect_vec();
 
-        bulletproof_prove_and_verify::<PoseidonMerkleHashGadget>(witness, statement).unwrap();
+        let opening_var = MerkleOpening {
+            elems: opening_scalars.try_into().unwrap(),
+            indices: get_opening_indices::<{ TREE_HEIGHT - 1 }>(random_index),
+        }
+        .commit_public(&mut prover);
+        let expected_root_var = expected_root.commit_public(&mut prover);
+
+        PoseidonMerkleHashGadget::compute_and_constrain_root(
+            leaf_vars,
+            opening_var,
+            expected_root_var,
+            &mut prover,
+        )
+        .unwrap();
+        assert!(prover.constraints_satisfied());
     }
 
     #[test]
@@ -550,7 +346,7 @@ pub(crate) mod merkle_test {
         // A random input at the leaf
         let mut rng = OsRng {};
         let n = 6;
-        let tree_height = 10;
+        const TREE_HEIGHT: usize = 10;
         let leaf_data = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
 
         // Compute the correct root via Arkworks
@@ -559,7 +355,7 @@ pub(crate) mod merkle_test {
         let arkworks_leaf_data = leaf_data.iter().map(scalar_to_prime_field).collect_vec();
 
         let mut merkle_tree =
-            MerkleTree::<MerkleConfig>::blank(&arkworks_params, &arkworks_params, tree_height)
+            MerkleTree::<MerkleConfig>::blank(&arkworks_params, &arkworks_params, TREE_HEIGHT)
                 .unwrap();
 
         merkle_tree
@@ -579,23 +375,30 @@ pub(crate) mod merkle_test {
         // Add a zero to the opening scalar for the next leaf
         opening_scalars.insert(0, Scalar::zero());
 
-        // Prove and verify the statement
-        let witness = MerkleWitness {
-            leaf_data,
-            opening: MerkleOpening {
-                elems: opening_scalars,
-                indices: (0..opening.auth_path.len() + 1)
-                    .map(|_| Scalar::zero())
-                    .collect_vec(),
-            },
-        };
+        // Build a constraint system
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
 
-        let statement = MerkleStatement {
-            expected_root,
-            tree_height,
-        };
+        // Apply the constraints
+        let leaf_vars = leaf_data
+            .into_iter()
+            .map(|x| x.commit_public(&mut prover))
+            .collect_vec();
+        let opening_var = MerkleOpening {
+            elems: opening_scalars.try_into().unwrap(),
+            indices: get_opening_indices::<{ TREE_HEIGHT - 1 }>(0 /* leaf_index */),
+        }
+        .commit_public(&mut prover);
+        let expected_root_var = expected_root.commit_public(&mut prover);
 
-        let res = bulletproof_prove_and_verify::<PoseidonMerkleHashGadget>(witness, statement);
-        assert_eq!(res, Err(VerifierError::R1CS(R1CSError::VerificationError)));
+        PoseidonMerkleHashGadget::compute_and_constrain_root(
+            leaf_vars,
+            opening_var,
+            expected_root_var,
+            &mut prover,
+        )
+        .unwrap();
+        assert!(!prover.constraints_satisfied());
     }
 }

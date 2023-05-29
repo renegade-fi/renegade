@@ -2,23 +2,17 @@
 
 use std::marker::PhantomData;
 
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
-use itertools::Itertools;
+use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
-    r1cs::{
-        ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
-        Variable, Verifier,
-    },
+    r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
     r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem},
-    BulletproofGens,
 };
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
-use rand_core::OsRng;
 
 use crate::{
-    errors::{ProverError, VerifierError},
+    errors::ProverError,
     mpc::SharedFabric,
-    SingleProverCircuit,
+    traits::{LinearCombinationLike, MpcLinearCombinationLike},
 };
 
 /// Implements the control flow gate if selector { a } else { b }
@@ -26,9 +20,10 @@ pub struct CondSelectGadget {}
 
 impl CondSelectGadget {
     /// Computes the control flow statement if selector { a } else { b }
-    pub fn select<L, CS>(a: L, b: L, selector: L, cs: &mut CS) -> LinearCombination
+    pub fn select<L1, L2, CS>(a: L1, b: L1, selector: L2, cs: &mut CS) -> LinearCombination
     where
-        L: Into<LinearCombination> + Clone,
+        L1: LinearCombinationLike,
+        L2: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         // Computes selector * a + (1 - selector) * b
@@ -36,80 +31,6 @@ impl CondSelectGadget {
         let (_, _, mul2_out) = cs.multiply(b.into(), Variable::One() - selector);
 
         mul1_out + mul2_out
-    }
-}
-
-/// The witness for the testing statement in which a, b, and selector are private
-#[derive(Clone, Debug)]
-pub struct CondSelectWitness {
-    /// The first option in the selection
-    a: Scalar,
-    /// The second option in the selection
-    b: Scalar,
-    /// The selector; decides between the two options
-    selector: Scalar,
-}
-
-/// The statement of the expected result from a CondSelectGadget
-#[derive(Clone, Debug)]
-pub struct CondSelectStatement {
-    /// The expected selection from the gadget
-    expected: Scalar,
-}
-
-impl SingleProverCircuit for CondSelectGadget {
-    type Statement = CondSelectStatement;
-    type Witness = CondSelectWitness;
-    type WitnessCommitment = Vec<CompressedRistretto>;
-
-    const BP_GENS_CAPACITY: usize = 8;
-
-    fn prove(
-        witness: Self::Witness,
-        statement: Self::Statement,
-        mut prover: Prover,
-    ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
-        // Commit to the witness
-        let mut rng = OsRng {};
-        let (a_comm, a_var) = prover.commit(witness.a, Scalar::random(&mut rng));
-        let (b_comm, b_var) = prover.commit(witness.b, Scalar::random(&mut rng));
-        let (sel_comm, sel_var) = prover.commit(witness.selector, Scalar::random(&mut rng));
-
-        let expected_var = prover.commit_public(statement.expected);
-
-        // Apply the constraints
-        let res = Self::select(a_var, b_var, sel_var, &mut prover);
-        prover.constrain(res - expected_var);
-
-        // Prove the statement
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
-
-        Ok((vec![a_comm, b_comm, sel_comm], proof))
-    }
-
-    fn verify(
-        witness_commitment: Self::WitnessCommitment,
-        statement: Self::Statement,
-        proof: R1CSProof,
-        mut verifier: Verifier,
-    ) -> Result<(), VerifierError> {
-        // Commit to the witness and statement
-        let a_var = verifier.commit(witness_commitment[0]);
-        let b_var = verifier.commit(witness_commitment[1]);
-        let sel_var = verifier.commit(witness_commitment[2]);
-
-        let expected_var = verifier.commit_public(statement.expected);
-
-        // Apply the constraints
-        let res = Self::select(a_var, b_var, sel_var, &mut verifier);
-        verifier.constrain(res - expected_var);
-
-        // Verify the proof
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        verifier
-            .verify(&proof, &bp_gens)
-            .map_err(VerifierError::R1CS)
     }
 }
 
@@ -123,7 +44,7 @@ pub struct MultiproverCondSelectGadget<
     _phantom: &'a PhantomData<(N, S)>,
 }
 
-impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
+impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + Clone>
     MultiproverCondSelectGadget<'a, N, S>
 {
     /// Computes the control flow statement if selector { a } else { b }
@@ -135,7 +56,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         cs: &mut CS,
     ) -> Result<MpcLinearCombination<N, S>, ProverError>
     where
-        L: Into<MpcLinearCombination<N, S>> + Clone,
+        L: MpcLinearCombinationLike<N, S>,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
         // Computes selector * a + (1 - selector) * b
@@ -156,13 +77,18 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 /// Implements the control flow gate if selector { a } else { b }
 /// where `a` and `b` are vectors of values
 pub struct CondSelectVectorGadget {}
-
 impl CondSelectVectorGadget {
     /// Implements the control flow statement if selector { a } else { b }
-    pub fn select<L, CS>(a: &[L], b: &[L], selector: L, cs: &mut CS) -> Vec<LinearCombination>
+    pub fn select<L1, L2, CS>(
+        a: &[L1],
+        b: &[L1],
+        selector: L2,
+        cs: &mut CS,
+    ) -> Vec<LinearCombination>
     where
         CS: RandomizableConstraintSystem,
-        L: Into<LinearCombination> + Clone,
+        L1: LinearCombinationLike,
+        L2: LinearCombinationLike,
     {
         assert_eq!(a.len(), b.len(), "a and b must be of equal length");
         let mut selected = Vec::with_capacity(a.len());
@@ -179,125 +105,7 @@ impl CondSelectVectorGadget {
     }
 }
 
-/// The witness for the vector cond select in which we constrain the conditional selection to be
-/// equal to an expected value
-#[derive(Clone, Debug)]
-pub struct CondSelectVectorWitness {
-    /// The first vector option in the selection
-    a: Vec<Scalar>,
-    /// The second vector option in the selection
-    b: Vec<Scalar>,
-    /// The selector bit; decides which vector to select
-    selector: Scalar,
-}
-
-/// The statement parameterization as described in the struct above
-#[derive(Clone, Debug)]
-pub struct CondSelectVectorStatement {
-    /// The expected output from the selection
-    expected: Vec<Scalar>,
-}
-
-impl SingleProverCircuit for CondSelectVectorGadget {
-    type Statement = CondSelectVectorStatement;
-    type Witness = CondSelectVectorWitness;
-    type WitnessCommitment = Vec<CompressedRistretto>;
-
-    const BP_GENS_CAPACITY: usize = 64;
-
-    fn prove(
-        witness: Self::Witness,
-        statement: Self::Statement,
-        mut prover: Prover,
-    ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
-        // Commit to the witness
-        let mut rng = OsRng {};
-        let (a_comms, a_vars): (Vec<_>, Vec<_>) = witness
-            .a
-            .into_iter()
-            .map(|a_val| prover.commit(a_val, Scalar::random(&mut rng)))
-            .unzip();
-
-        let (mut b_comms, b_vars): (Vec<_>, Vec<_>) = witness
-            .b
-            .into_iter()
-            .map(|b_val| prover.commit(b_val, Scalar::random(&mut rng)))
-            .unzip();
-
-        let (sel_comm, sel_var) = prover.commit(witness.selector, Scalar::random(&mut rng));
-
-        // Commit to the statement
-        let expected_vars = statement
-            .expected
-            .into_iter()
-            .map(|expected_val| prover.commit_public(expected_val))
-            .collect_vec();
-
-        // Apply the constraints
-        let res = Self::select(&a_vars, &b_vars, sel_var, &mut prover);
-        for (res_var, expected_var) in res.into_iter().zip(expected_vars.into_iter()) {
-            prover.constrain(res_var - expected_var);
-        }
-
-        // Prove the statement
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
-
-        let mut commitments = a_comms;
-        commitments.append(&mut b_comms);
-        commitments.push(sel_comm);
-        Ok((commitments, proof))
-    }
-
-    fn verify(
-        witness_commitment: Self::WitnessCommitment,
-        statement: Self::Statement,
-        proof: R1CSProof,
-        mut verifier: Verifier,
-    ) -> Result<(), VerifierError> {
-        // Destructure the commitments
-        let n = statement.expected.len();
-        let a_comms = witness_commitment[..n].to_vec();
-        let b_comms = witness_commitment[n..2 * n].to_vec();
-        let sel_comm = witness_commitment[2 * n];
-
-        // Commit to the witness
-        let a_vars = a_comms
-            .into_iter()
-            .map(|a_comm| verifier.commit(a_comm))
-            .collect_vec();
-
-        let b_vars = b_comms
-            .into_iter()
-            .map(|b_comm| verifier.commit(b_comm))
-            .collect_vec();
-
-        let sel_var = verifier.commit(sel_comm);
-
-        // Commit to the statement
-        let expected_vars = statement
-            .expected
-            .into_iter()
-            .map(|expected_val| verifier.commit_public(expected_val))
-            .collect_vec();
-
-        // Apply the constraints
-        let res = Self::select(&a_vars, &b_vars, sel_var, &mut verifier);
-        for (res_val, expected_val) in res.into_iter().zip(expected_vars.into_iter()) {
-            verifier.constrain(res_val - expected_val);
-        }
-
-        // Verify the proof
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        verifier
-            .verify(&proof, &bp_gens)
-            .map_err(VerifierError::R1CS)
-    }
-}
-
 /// A multiprover variant of the CondSelectVectorGadget
-///
-/// TODO: Optimize this by batching
 pub struct MultiproverCondSelectVectorGadget<
     'a,
     N: 'a + MpcNetwork + Send,
@@ -307,7 +115,7 @@ pub struct MultiproverCondSelectVectorGadget<
     _phantom: &'a PhantomData<(N, S)>,
 }
 
-impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
+impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + Clone>
     MultiproverCondSelectVectorGadget<'a, N, S>
 {
     /// Implements the control flow block if selector { a } else { b }
@@ -321,7 +129,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     ) -> Result<Vec<MpcLinearCombination<N, S>>, ProverError>
     where
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
-        L: Into<MpcLinearCombination<N, S>> + Clone,
+        L: MpcLinearCombinationLike<N, S>,
     {
         assert_eq!(a.len(), b.len(), "a and b must be of equal length");
         let mut selected = Vec::with_capacity(a.len());
@@ -343,14 +151,16 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 mod cond_select_test {
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
+    use merlin::Transcript;
+    use mpc_bulletproof::{
+        r1cs::{ConstraintSystem, Prover},
+        PedersenGens,
+    };
     use rand_core::OsRng;
 
-    use crate::{errors::VerifierError, test_helpers::bulletproof_prove_and_verify};
+    use crate::traits::CircuitBaseType;
 
-    use super::{
-        CondSelectGadget, CondSelectStatement, CondSelectVectorGadget, CondSelectVectorStatement,
-        CondSelectVectorWitness, CondSelectWitness,
-    };
+    use super::{CondSelectGadget, CondSelectVectorGadget};
 
     /// Test the cond select gadget
     #[test]
@@ -359,29 +169,25 @@ mod cond_select_test {
         let a = Scalar::random(&mut rng);
         let b = Scalar::random(&mut rng);
 
-        // Prove with selector = 1
-        let mut witness = CondSelectWitness {
-            a,
-            b,
-            selector: Scalar::one(),
-        };
-        let statement = CondSelectStatement { expected: a };
-        bulletproof_prove_and_verify::<CondSelectGadget>(witness.clone(), statement).unwrap();
+        // Build a constraint system
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
 
-        // Prove with selector = 0
-        witness.selector = Scalar::zero();
-        let statement = CondSelectStatement { expected: b };
-        bulletproof_prove_and_verify::<CondSelectGadget>(witness.clone(), statement).unwrap();
+        let a_var = a.commit_public(&mut prover);
+        let b_var = b.commit_public(&mut prover);
 
-        // Invalid proof
-        let statement = CondSelectStatement {
-            expected: Scalar::random(&mut rng),
-        };
+        // Selector = 1
+        let selector = Scalar::one().commit_public(&mut prover);
+        let res = CondSelectGadget::select(a_var, b_var, selector, &mut prover);
 
-        assert!(matches!(
-            bulletproof_prove_and_verify::<CondSelectGadget>(witness, statement),
-            Err(VerifierError::R1CS(_))
-        ));
+        assert_eq!(a, prover.eval(&res));
+
+        // Selector = 0
+        let selector = Scalar::zero().commit_public(&mut prover);
+        let res = CondSelectGadget::select(a_var, b_var, selector, &mut prover);
+
+        assert_eq!(b, prover.eval(&res));
     }
 
     /// Test the cond select vector gadget
@@ -392,27 +198,24 @@ mod cond_select_test {
         let a = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
         let b = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
 
+        // Build a constraint system
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        let a_var = a.iter().map(|a| a.commit_public(&mut prover)).collect_vec();
+        let b_var = b.iter().map(|b| b.commit_public(&mut prover)).collect_vec();
+
         // Prove with selector = 1
-        let mut witness = CondSelectVectorWitness {
-            a: a.clone(),
-            b: b.clone(),
-            selector: Scalar::one(),
-        };
-        let statement = CondSelectVectorStatement { expected: a };
-        bulletproof_prove_and_verify::<CondSelectVectorGadget>(witness.clone(), statement).unwrap();
+        let selector = Scalar::one().commit_public(&mut prover);
+        let res = CondSelectVectorGadget::select(&a_var, &b_var, selector, &mut prover);
+
+        assert_eq!(a, res.into_iter().map(|lc| prover.eval(&lc)).collect_vec());
 
         // Prove with selector = 0
-        witness.selector = Scalar::zero();
-        let statement = CondSelectVectorStatement { expected: b };
-        bulletproof_prove_and_verify::<CondSelectVectorGadget>(witness.clone(), statement).unwrap();
+        let selector = Scalar::zero().commit_public(&mut prover);
+        let res = CondSelectVectorGadget::select(&a_var, &b_var, selector, &mut prover);
 
-        // Invalid proof
-        let statement = CondSelectVectorStatement {
-            expected: (0..n).map(|_| Scalar::random(&mut rng)).collect_vec(),
-        };
-        assert!(matches!(
-            bulletproof_prove_and_verify::<CondSelectVectorGadget>(witness, statement),
-            Err(VerifierError::R1CS(_))
-        ));
+        assert_eq!(b, res.into_iter().map(|lc| prover.eval(&lc)).collect_vec());
     }
 }
