@@ -9,6 +9,26 @@
 //!
 //! VALID COMMITMENTS is proven once per order in the wallet
 
+use crate::{
+    errors::{ProverError, VerifierError},
+    traits::{
+        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
+    },
+    types::{
+        balance::{BalanceVar, LinkableBalance},
+        fee::{FeeVar, LinkableFee},
+        order::{LinkableOrder, OrderVar},
+        wallet::{LinkableWalletShare, WalletVar},
+    },
+    zk_gadgets::{
+        comparators::EqGadget,
+        gates::{AndGate, ConstrainBinaryGadget, OrGate},
+        select::CondSelectVectorGadget,
+    },
+    SingleProverCircuit,
+};
+use circuit_macros::circuit_type;
+use curve25519_dalek::ristretto::CompressedRistretto;
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
     r1cs::{
@@ -18,26 +38,6 @@ use mpc_bulletproof::{
 };
 use rand_core::{CryptoRng, OsRng, RngCore};
 use serde::{Deserialize, Serialize};
-
-use crate::{
-    errors::{ProverError, VerifierError},
-    types::{
-        balance::{BalanceVar, CommittedBalance, LinkableBalanceCommitment},
-        fee::{CommittedFee, FeeVar, LinkableFeeCommitment},
-        order::{CommittedOrder, LinkableOrderCommitment, OrderVar},
-        wallet::{
-            LinkableWalletSecretShare, WalletSecretShareCommitment, WalletSecretShareVar, WalletVar,
-        },
-    },
-    zk_gadgets::{
-        comparators::EqGadget,
-        gates::{AndGate, ConstrainBinaryGadget, OrGate},
-        nonnative::NonNativeElementVar,
-        select::CondSelectVectorGadget,
-        wallet_operations::{BalanceComparatorGadget, FeeComparatorGadget, OrderComparatorGadget},
-    },
-    CommitPublic, CommitVerifier, CommitWitness, SingleProverCircuit,
-};
 
 // ----------------------
 // | Circuit Definition |
@@ -56,22 +56,22 @@ where
 {
     /// The circuit constraints for VALID COMMITMENTS
     pub fn circuit<CS: RandomizableConstraintSystem>(
-        statement: ValidCommitmentsStatementVar,
-        mut witness: ValidCommitmentsWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        statement: ValidCommitmentsStatementVar<Variable>,
+        witness: ValidCommitmentsWitnessVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) {
         // Reconstruct the base and augmented wallets
-        let recovered_blinder = witness.private_secret_shares.blinder.clone()
-            + witness.public_secret_shares.blinder.clone();
-        witness
+        let recovered_blinder =
+            witness.private_secret_shares.blinder + witness.public_secret_shares.blinder;
+        let unblinded_public_shares = witness
             .public_secret_shares
-            .unblind(recovered_blinder.clone());
-        witness.augmented_public_shares.unblind(recovered_blinder);
+            .unblind_shares(recovered_blinder.clone());
+        let unblinded_augmented_shares = witness
+            .augmented_public_shares
+            .unblind_shares(recovered_blinder);
 
-        let base_wallet =
-            witness.private_secret_shares.clone() + witness.public_secret_shares.clone();
-        let augmented_wallet =
-            witness.private_secret_shares.clone() + witness.augmented_public_shares.clone();
+        let base_wallet = witness.private_secret_shares.clone() + unblinded_public_shares;
+        let augmented_wallet = witness.private_secret_shares.clone() + unblinded_augmented_shares;
 
         // The mint that the wallet will receive if the order is matched
         let mut receive_send_mint = CondSelectVectorGadget::select(
@@ -97,7 +97,7 @@ where
         // Verify that the send balance is at the correct index
         Self::contains_balance_at_index(
             statement.balance_send_index,
-            witness.balance_send,
+            witness.balance_send.clone(),
             &augmented_wallet,
             cs,
         );
@@ -106,7 +106,7 @@ where
         // Verify that the receive balance is at the correct index
         Self::contains_balance_at_index(
             statement.balance_receive_index,
-            witness.balance_receive,
+            witness.balance_receive.clone(),
             &augmented_wallet,
             cs,
         );
@@ -114,7 +114,7 @@ where
 
         // Verify that the fee balance is in the wallet
         // TODO: Implement fees properly
-        Self::contains_balance(witness.balance_fee, &augmented_wallet, cs);
+        Self::contains_balance(witness.balance_fee.clone(), &augmented_wallet, cs);
         cs.constrain(witness.balance_fee.mint - witness.fee.gas_addr);
 
         // Verify that the order is at the correct index
@@ -138,8 +138,8 @@ where
     fn verify_wallets_equal_with_augmentation<CS: RandomizableConstraintSystem>(
         receive_index: Variable,
         received_mint: LinearCombination,
-        base_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, LinearCombination>,
-        augmented_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, LinearCombination>,
+        base_wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        augmented_wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) {
         // All balances should be the same except possibly the balance at the receive index. We allow
@@ -152,14 +152,10 @@ where
             .zip(augmented_wallet.balances.iter())
         {
             // Non-augmented case, balances are equal
-            let balances_eq = BalanceComparatorGadget::compare_eq(
-                base_balance.clone(),
-                augmented_balance.clone(),
-                cs,
-            );
+            let balances_eq = EqGadget::eq(base_balance.clone(), augmented_balance.clone(), cs);
 
             // Validate a potential augmentation
-            let prev_balance_zero = BalanceComparatorGadget::compare_eq(
+            let prev_balance_zero = EqGadget::eq(
                 base_balance.clone(),
                 BalanceVar {
                     mint: Variable::Zero(),
@@ -167,7 +163,7 @@ where
                 },
                 cs,
             );
-            let augmented_balance = BalanceComparatorGadget::compare_eq(
+            let augmented_balance = EqGadget::eq(
                 augmented_balance.clone(),
                 BalanceVar {
                     mint: received_mint.clone(),
@@ -175,8 +171,11 @@ where
                 },
                 cs,
             );
-            let augmentation_index_mask =
-                EqGadget::eq(curr_index.clone(), receive_index.into(), cs);
+            let augmentation_index_mask = EqGadget::eq::<LinearCombination, Variable, _, _, _>(
+                curr_index.clone(),
+                receive_index,
+                cs,
+            );
 
             // Validate that the balance is either unmodified or augmented from (0, 0) to (receive_mint, 0)
             let augmented_from_zero = AndGate::multi_and(
@@ -199,39 +198,38 @@ where
             .iter()
             .zip(augmented_wallet.orders.iter())
         {
-            OrderComparatorGadget::constrain_eq(base_order.clone(), augmented_order.clone(), cs);
+            EqGadget::constrain_eq(base_order.clone(), augmented_order.clone(), cs);
         }
 
         // All fees should be the same
         for (base_fee, augmented_fee) in base_wallet.fees.iter().zip(augmented_wallet.fees.iter()) {
-            FeeComparatorGadget::constrain_eq(base_fee.clone(), augmented_fee.clone(), cs);
+            EqGadget::constrain_eq(base_fee.clone(), augmented_fee.clone(), cs);
         }
 
         // Keys should be equal
-        NonNativeElementVar::constrain_equal(
-            &base_wallet.keys.pk_root,
-            &augmented_wallet.keys.pk_root,
-            cs,
-        );
-        cs.constrain(base_wallet.keys.pk_match.clone() - augmented_wallet.keys.pk_match.clone());
+        EqGadget::constrain_eq(base_wallet.keys.clone(), augmented_wallet.keys.clone(), cs);
 
         // Blinders should be equal
-        cs.constrain(base_wallet.blinder.clone() - augmented_wallet.blinder.clone());
+        EqGadget::constrain_eq(
+            base_wallet.blinder.clone(),
+            augmented_wallet.blinder.clone(),
+            cs,
+        );
     }
 
     /// Verify that the wallet has the given balance at the specified index
     fn contains_balance_at_index<CS: RandomizableConstraintSystem>(
         index: Variable,
         target_balance: BalanceVar<Variable>,
-        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, LinearCombination>,
+        wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) {
         let mut curr_index: LinearCombination = Variable::Zero().into();
         let mut balance_found: LinearCombination = Variable::Zero().into();
         for balance in wallet.balances.iter() {
-            let index_mask = EqGadget::eq(curr_index.clone(), index.into(), cs);
-            let balances_eq =
-                BalanceComparatorGadget::compare_eq(balance.clone(), target_balance, cs);
+            let index_mask =
+                EqGadget::eq::<LinearCombination, Variable, _, _, _>(curr_index.clone(), index, cs);
+            let balances_eq = EqGadget::eq(balance.clone(), target_balance.clone(), cs);
 
             let found = AndGate::and(index_mask, balances_eq, cs);
             balance_found += found;
@@ -245,15 +243,15 @@ where
     fn contains_order_at_index<CS: RandomizableConstraintSystem>(
         index: Variable,
         target_order: OrderVar<Variable>,
-        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, LinearCombination>,
+        wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) {
         let mut curr_index: LinearCombination = Variable::Zero().into();
         let mut order_found: LinearCombination = Variable::Zero().into();
         for order in wallet.orders.iter() {
-            let index_mask = EqGadget::eq(curr_index.clone(), index.into(), cs);
-            let orders_eq =
-                OrderComparatorGadget::compare_eq(order.clone(), target_order.clone(), cs);
+            let index_mask =
+                EqGadget::eq::<LinearCombination, Variable, _, _, _>(curr_index.clone(), index, cs);
+            let orders_eq = EqGadget::eq(order.clone(), target_order.clone(), cs);
 
             let found = AndGate::and(index_mask, orders_eq, cs);
             order_found += found;
@@ -266,13 +264,12 @@ where
     /// Verify that the wallet contains the given balance at an unspecified index
     fn contains_balance<CS: RandomizableConstraintSystem>(
         target_balance: BalanceVar<Variable>,
-        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, LinearCombination>,
+        wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) {
         let mut balance_found: LinearCombination = Variable::Zero().into();
         for balance in wallet.balances.iter() {
-            let balances_eq =
-                BalanceComparatorGadget::compare_eq(balance.clone(), target_balance, cs);
+            let balances_eq = EqGadget::eq(balance.clone(), target_balance.clone(), cs);
             balance_found += balances_eq;
         }
 
@@ -282,12 +279,12 @@ where
     /// Verify that the wallet contains the given fee at an unspecified index
     fn contains_fee<CS: RandomizableConstraintSystem>(
         target_fee: FeeVar<Variable>,
-        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, LinearCombination>,
+        wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) {
         let mut fee_found: LinearCombination = Variable::Zero().into();
         for fee in wallet.fees.iter() {
-            let fees_eq = FeeComparatorGadget::compare_eq(fee.clone(), target_fee.clone(), cs);
+            let fees_eq = EqGadget::eq(fee.clone(), target_fee.clone(), cs);
             fee_found += fees_eq;
         }
 
@@ -300,224 +297,46 @@ where
 // ---------------------------
 
 /// The witness type for `VALID COMMITMENTS`
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[circuit_type(singleprover_circuit)]
+#[derive(Clone, Debug)]
 pub struct ValidCommitmentsWitness<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
-> {
-    /// The private secret shares of the wallet that have been reblinded for match
-    pub private_secret_shares: LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The public secret shares of the wallet that have been reblinded for match
-    pub public_secret_shares: LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The modified public secret shares, possibly with a zero'd balance added for
-    /// the mint that will be received by this party upon a successful match
-    pub augmented_public_shares: LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The order that the prover intends to match against with this proof
-    pub order: LinkableOrderCommitment,
-    /// The balance that the wallet will send when the order is matched
-    pub balance_send: LinkableBalanceCommitment,
-    /// The balance that the wallet will receive into when the order is matched
-    pub balance_receive: LinkableBalanceCommitment,
-    /// The balance that will cover the relayer's fee when matched
-    pub balance_fee: LinkableBalanceCommitment,
-    /// The fee that the relayer will take upon a successful match
-    pub fee: LinkableFeeCommitment,
-}
-
-/// The witness type for `VALID COMMITMENTS`, allocated in a constraint system
-#[derive(Clone, Debug)]
-pub struct ValidCommitmentsWitnessVar<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
-> {
-    /// The private secret shares of the wallet that have been reblinded for match
-    pub private_secret_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The public secret shares of the wallet that have been reblinded for match
-    pub public_secret_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The modified public secret shares, possibly with a zero'd balance added for
-    /// the mint that will be received by this party upon a successful match
-    pub augmented_public_shares: WalletSecretShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The order that the prover intends to match against with this proof
-    pub order: OrderVar<Variable>,
-    /// The balance that the wallet will send when the order is matched
-    pub balance_send: BalanceVar<Variable>,
-    /// The balance that the wallet will receive into when the order is matched
-    pub balance_receive: BalanceVar<Variable>,
-    /// The balance that will cover the relayer's fee when matched
-    pub balance_fee: BalanceVar<Variable>,
-    /// The fee that the relayer will take upon a successful match
-    pub fee: FeeVar<Variable>,
-}
-
-/// The witness type for `VALID COMMITMENTS`, allocated in a constraint system
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidCommitmentsWitnessCommitment<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
-> {
-    /// The private secret shares of the wallet that have been reblinded for match
-    pub private_secret_shares: WalletSecretShareCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The public secret shares of the wallet that have been reblinded for match
-    pub public_secret_shares: WalletSecretShareCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The modified public secret shares, possibly with a zero'd balance added for
-    /// the mint that will be received by this party upon a successful match
-    pub augmented_public_shares: WalletSecretShareCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The order that the prover intends to match against with this proof
-    pub order: CommittedOrder,
-    /// The balance that the wallet will send when the order is matched
-    pub balance_send: CommittedBalance,
-    /// The balance that the wallet will receive into when the order is matched
-    pub balance_receive: CommittedBalance,
-    /// The balance that will cover the relayer's fee when matched
-    pub balance_fee: CommittedBalance,
-    /// The fee that the relayer will take upon a successful match
-    pub fee: CommittedFee,
-}
-
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitWitness
-    for ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
-where
+> where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
-    type VarType = ValidCommitmentsWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type CommitType = ValidCommitmentsWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type ErrorType = (); // Does not error
-
-    fn commit_witness<R: RngCore + CryptoRng>(
-        &self,
-        rng: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (private_share_vars, private_share_comms) = self
-            .private_secret_shares
-            .commit_witness(rng, prover)
-            .unwrap();
-        let (public_share_vars, public_share_comms) = self
-            .public_secret_shares
-            .commit_witness(rng, prover)
-            .unwrap();
-        let (augmented_share_vars, augmented_share_comms) = self
-            .augmented_public_shares
-            .commit_witness(rng, prover)
-            .unwrap();
-        let (order_var, order_comm) = self.order.commit_witness(rng, prover).unwrap();
-        let (balance_send_var, balance_send_comm) =
-            self.balance_send.commit_witness(rng, prover).unwrap();
-        let (balance_receive_var, balance_receive_comm) =
-            self.balance_receive.commit_witness(rng, prover).unwrap();
-        let (balance_fee_var, balance_fee_comm) =
-            self.balance_fee.commit_witness(rng, prover).unwrap();
-        let (fee_var, fee_comm) = self.fee.commit_witness(rng, prover).unwrap();
-
-        Ok((
-            ValidCommitmentsWitnessVar {
-                private_secret_shares: private_share_vars,
-                public_secret_shares: public_share_vars,
-                augmented_public_shares: augmented_share_vars,
-                order: order_var,
-                balance_send: balance_send_var,
-                balance_receive: balance_receive_var,
-                balance_fee: balance_fee_var,
-                fee: fee_var,
-            },
-            ValidCommitmentsWitnessCommitment {
-                private_secret_shares: private_share_comms,
-                public_secret_shares: public_share_comms,
-                augmented_public_shares: augmented_share_comms,
-                order: order_comm,
-                balance_send: balance_send_comm,
-                balance_receive: balance_receive_comm,
-                balance_fee: balance_fee_comm,
-                fee: fee_comm,
-            },
-        ))
-    }
-}
-
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> CommitVerifier
-    for ValidCommitmentsWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
-where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-{
-    type VarType = ValidCommitmentsWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type ErrorType = (); // Does not error
-
-    fn commit_verifier(&self, verifier: &mut Verifier) -> Result<Self::VarType, Self::ErrorType> {
-        let private_share_vars = self
-            .private_secret_shares
-            .commit_verifier(verifier)
-            .unwrap();
-        let public_share_vars = self.public_secret_shares.commit_verifier(verifier).unwrap();
-        let augmented_share_vars = self
-            .augmented_public_shares
-            .commit_verifier(verifier)
-            .unwrap();
-        let order_var = self.order.commit_verifier(verifier).unwrap();
-        let balance_send_var = self.balance_send.commit_verifier(verifier).unwrap();
-        let balance_receive_var = self.balance_receive.commit_verifier(verifier).unwrap();
-        let balance_fee_var = self.balance_fee.commit_verifier(verifier).unwrap();
-        let fee_var = self.fee.commit_verifier(verifier).unwrap();
-
-        Ok(ValidCommitmentsWitnessVar {
-            private_secret_shares: private_share_vars,
-            public_secret_shares: public_share_vars,
-            augmented_public_shares: augmented_share_vars,
-            order: order_var,
-            balance_send: balance_send_var,
-            balance_receive: balance_receive_var,
-            balance_fee: balance_fee_var,
-            fee: fee_var,
-        })
-    }
+    /// The private secret shares of the wallet that have been reblinded for match
+    pub private_secret_shares: LinkableWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    /// The public secret shares of the wallet that have been reblinded for match
+    pub public_secret_shares: LinkableWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    /// The modified public secret shares, possibly with a zero'd balance added for
+    /// the mint that will be received by this party upon a successful match
+    pub augmented_public_shares: LinkableWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    /// The order that the prover intends to match against with this proof
+    pub order: LinkableOrder,
+    /// The balance that the wallet will send when the order is matched
+    pub balance_send: LinkableBalance,
+    /// The balance that the wallet will receive into when the order is matched
+    pub balance_receive: LinkableBalance,
+    /// The balance that will cover the relayer's fee when matched
+    pub balance_fee: LinkableBalance,
+    /// The fee that the relayer will take upon a successful match
+    pub fee: LinkableFee,
 }
 
 /// The statement type for `VALID COMMITMENTS`
+#[circuit_type(singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidCommitmentsStatement {
     /// The index of the balance that holds the mint that the wallet will
     /// send if a successful match occurs
-    pub balance_send_index: usize,
+    pub balance_send_index: u64,
     /// The index of the balance that holds the mint that the wallet will
     /// receive if a successful match occurs
-    pub balance_receive_index: usize,
+    pub balance_receive_index: u64,
     /// The index of the order that is to be matched
-    pub order_index: usize,
-}
-
-/// The statement type for `VALID COMMITMENTS`, allocated in a constraint system
-#[derive(Clone, Debug)]
-pub struct ValidCommitmentsStatementVar {
-    /// The index of the balance that holds the mint that the wallet will
-    /// send if a successful match occurs
-    pub balance_send_index: Variable,
-    /// The index of the balance that holds the mint that the wallet will
-    /// receive if a successful match occurs
-    pub balance_receive_index: Variable,
-    /// The index of the order that is to be matched
-    pub order_index: Variable,
-}
-
-impl CommitPublic for ValidCommitmentsStatement {
-    type VarType = ValidCommitmentsStatementVar;
-    type ErrorType = (); // Does not error
-
-    fn commit_public<CS: RandomizableConstraintSystem>(
-        &self,
-        cs: &mut CS,
-    ) -> Result<Self::VarType, Self::ErrorType> {
-        let send_index_var = cs.commit_public(Scalar::from(self.balance_send_index as u32));
-        let receive_index_var = cs.commit_public(Scalar::from(self.balance_receive_index as u32));
-        let order_index_var = cs.commit_public(Scalar::from(self.order_index as u32));
-
-        Ok(ValidCommitmentsStatementVar {
-            balance_send_index: send_index_var,
-            balance_receive_index: receive_index_var,
-            order_index: order_index_var,
-        })
-    }
+    pub order_index: u64,
 }
 
 // ---------------------
@@ -531,7 +350,6 @@ where
 {
     type Statement = ValidCommitmentsStatement;
     type Witness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type WitnessCommitment = ValidCommitmentsWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     const BP_GENS_CAPACITY: usize = 1024;
 
@@ -539,11 +357,17 @@ where
         witness: Self::Witness,
         statement: Self::Statement,
         mut prover: Prover,
-    ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
+    ) -> Result<
+        (
+            ValidCommitmentsWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+            R1CSProof,
+        ),
+        ProverError,
+    > {
         // Commit to the witness and statement
         let mut rng = OsRng {};
-        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-        let statement_var = statement.commit_public(&mut prover).unwrap();
+        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover);
+        let statement_var = statement.commit_public(&mut prover);
 
         // Apply the constraints
         Self::circuit(statement_var, witness_var, &mut prover);
@@ -556,14 +380,14 @@ where
     }
 
     fn verify(
-        witness_commitment: Self::WitnessCommitment,
+        witness_commitment: ValidCommitmentsWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         statement: Self::Statement,
         proof: R1CSProof,
         mut verifier: Verifier,
     ) -> Result<(), VerifierError> {
         // Commit to the witness and statement
-        let witness_var = witness_commitment.commit_verifier(&mut verifier).unwrap();
-        let statement_var = statement.commit_public(&mut verifier).unwrap();
+        let witness_var = witness_commitment.commit_verifier(&mut verifier);
+        let statement_var = statement.commit_public(&mut verifier);
 
         // Apply the constrains
         Self::circuit(statement_var, witness_var, &mut verifier);
@@ -594,15 +418,16 @@ mod test {
 
     use crate::{
         native_helpers::create_wallet_shares_from_private,
+        traits::{CircuitBaseType, LinkableBaseType},
         types::{
-            balance::{Balance, BalanceSecretShare},
-            fee::FeeSecretShare,
-            order::{OrderSecretShare, OrderSide},
+            balance::{Balance, BalanceShare},
+            fee::FeeShare,
+            order::{OrderShare, OrderSide},
         },
         zk_circuits::test_helpers::{
             create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
         },
-        CommitPublic, CommitWitness,
+        zk_gadgets::fixed_point::FixedPointShare,
     };
 
     use super::{ValidCommitments, ValidCommitmentsStatement, ValidCommitmentsWitness};
@@ -644,7 +469,7 @@ mod test {
         let mut rng = thread_rng();
 
         // Split the wallet into secret shares
-        let (private_shares, public_shares) = create_wallet_shares(wallet);
+        let (private_shares, public_shares) = create_wallet_shares(wallet.clone());
 
         // Choose an order and fee to match on
         let ind_order = 0;
@@ -677,24 +502,27 @@ mod test {
 
         // After augmenting, split the augmented wallet into shares, using the same private secret shares
         // as the original (un-augmented) wallet
-        let (_, augmented_public_shares) =
-            create_wallet_shares_from_private(&augmented_wallet, &private_shares, wallet.blinder);
+        let (_, augmented_public_shares) = create_wallet_shares_from_private(
+            augmented_wallet.clone(),
+            &private_shares,
+            wallet.blinder,
+        );
 
         let witness = SizedWitness {
-            private_secret_shares: private_shares.into(),
-            public_secret_shares: public_shares.into(),
-            augmented_public_shares: augmented_public_shares.into(),
-            order: order.into(),
-            balance_send: balance_send.into(),
-            balance_receive: balance_receive.into(),
-            balance_fee: balance_fee.into(),
-            fee: fee.into(),
+            private_secret_shares: private_shares.to_linkable(),
+            public_secret_shares: public_shares.to_linkable(),
+            augmented_public_shares: augmented_public_shares.to_linkable(),
+            order: order.to_linkable(),
+            balance_send: balance_send.to_linkable(),
+            balance_receive: balance_receive.to_linkable(),
+            balance_fee: balance_fee.to_linkable(),
+            fee: fee.to_linkable(),
         };
 
         let statement = ValidCommitmentsStatement {
-            balance_send_index: ind_send,
-            balance_receive_index: ind_receive,
-            order_index: ind_order,
+            balance_send_index: ind_send as u64,
+            balance_receive_index: ind_receive as u64,
+            order_index: ind_order as u64,
         };
 
         (witness, statement)
@@ -746,8 +574,8 @@ mod test {
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
         // Commit to the witness and statement
-        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-        let statement_var = statement.commit_public(&mut prover).unwrap();
+        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover);
+        let statement_var = statement.commit_public(&mut prover);
 
         // Apply the constraints
         ValidCommitments::circuit(statement_var, witness_var, &mut prover);
@@ -785,7 +613,7 @@ mod test {
 
         // Prover attempt to augment the wallet with a non-zero balance
         let augmented_balance_index = statement.balance_receive_index;
-        witness.augmented_public_shares.balances[augmented_balance_index]
+        witness.augmented_public_shares.balances[augmented_balance_index as usize]
             .amount
             .val += Scalar::one();
         witness.balance_receive.amount.val += Scalar::one();
@@ -801,11 +629,11 @@ mod test {
 
         // Reset the original wallet such that the augmented balance was non-zero
         let augmentation_index = statement.balance_receive_index;
-        witness.public_secret_shares.balances[augmentation_index] = BalanceSecretShare {
+        witness.public_secret_shares.balances[augmentation_index as usize] = BalanceShare {
             amount: Scalar::one(),
             mint: Scalar::one(),
         }
-        .into();
+        .to_linkable();
 
         assert!(!constraints_satisfied(witness, statement))
     }
@@ -840,7 +668,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify a key in the wallet
-        witness.augmented_public_shares.keys.pk_match.val += Scalar::one();
+        witness.augmented_public_shares.keys.pk_match.key.val += Scalar::one();
         assert!(!constraints_satisfied(witness, statement));
     }
 
@@ -898,12 +726,12 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the send balance from the order
-        witness.augmented_public_shares.balances[statement.balance_send_index] =
-            BalanceSecretShare {
+        witness.augmented_public_shares.balances[statement.balance_send_index as usize] =
+            BalanceShare {
                 mint: Scalar::zero(),
                 amount: Scalar::zero(),
             }
-            .into();
+            .to_linkable();
         assert!(!constraints_satisfied(witness, statement));
     }
 
@@ -914,12 +742,12 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the receive balance from the order
-        witness.augmented_public_shares.balances[statement.balance_receive_index] =
-            BalanceSecretShare {
+        witness.augmented_public_shares.balances[statement.balance_receive_index as usize] =
+            BalanceShare {
                 mint: Scalar::zero(),
                 amount: Scalar::zero(),
             }
-            .into();
+            .to_linkable();
         assert!(!constraints_satisfied(witness, statement));
     }
 
@@ -936,11 +764,11 @@ mod test {
             .balances
             .iter_mut()
             .for_each(|balance| {
-                *balance = BalanceSecretShare {
+                *balance = BalanceShare {
                     mint: Scalar::zero(),
                     amount: Scalar::zero(),
                 }
-                .into()
+                .to_linkable()
             });
 
         assert!(!constraints_satisfied(witness, statement));
@@ -953,15 +781,17 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the order being proved on
-        witness.augmented_public_shares.orders[statement.order_index] = OrderSecretShare {
+        witness.augmented_public_shares.orders[statement.order_index as usize] = OrderShare {
             quote_mint: Scalar::zero(),
             base_mint: Scalar::zero(),
             side: Scalar::zero(),
-            price: Scalar::zero(),
+            price: FixedPointShare {
+                repr: Scalar::zero(),
+            },
             amount: Scalar::zero(),
             timestamp: Scalar::zero(),
         }
-        .into();
+        .to_linkable();
         assert!(!constraints_satisfied(witness, statement));
     }
 
@@ -977,13 +807,15 @@ mod test {
             .fees
             .iter_mut()
             .for_each(|fee| {
-                *fee = FeeSecretShare {
+                *fee = FeeShare {
                     settle_key: Scalar::zero(),
                     gas_addr: Scalar::zero(),
                     gas_token_amount: Scalar::zero(),
-                    percentage_fee: Scalar::zero(),
+                    percentage_fee: FixedPointShare {
+                        repr: Scalar::zero(),
+                    },
                 }
-                .into()
+                .to_linkable()
             });
         assert!(!constraints_satisfied(witness, statement));
     }

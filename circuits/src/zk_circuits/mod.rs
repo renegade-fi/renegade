@@ -1,5 +1,7 @@
 //! Groups circuitry for full zero knowledge circuits that we are interested
 //! in proving knowledge of witness for throughout the network
+#![allow(missing_docs, clippy::missing_docs_in_private_items)]
+
 pub mod commitment_links;
 pub mod valid_commitments;
 pub mod valid_match_mpc;
@@ -32,11 +34,9 @@ mod test_helpers {
             fee::Fee,
             keychain::{PublicKeyChain, PublicSigningKey, NUM_KEYS},
             order::{Order, OrderSide},
-            wallet::{Wallet, WalletSecretShare},
+            wallet::{Wallet, WalletShare},
         },
-        zk_gadgets::{
-            fixed_point::FixedPoint, merkle::MerkleOpening, nonnative::TWO_TO_256_FIELD_MOD,
-        },
+        zk_gadgets::{fixed_point::FixedPoint, merkle::MerkleOpening},
     };
 
     // --------------
@@ -48,7 +48,7 @@ mod test_helpers {
         // computed correctly
         pub(crate) static ref PRIVATE_KEYS: Vec<Scalar> = vec![Scalar::one(); NUM_KEYS];
         pub(crate) static ref PUBLIC_KEYS: PublicKeyChain = PublicKeyChain {
-            pk_root: PublicSigningKey(TWO_TO_256_FIELD_MOD.modulus.clone()),
+            pk_root: PublicSigningKey::from(&BigUint::from(2u8).pow(256)),
             pk_match: compute_poseidon_hash(&[PRIVATE_KEYS[1]]).into(),
         };
         pub(crate) static ref INITIAL_BALANCES: [Balance; MAX_BALANCES] = [
@@ -105,7 +105,7 @@ mod test_helpers {
     pub(crate) const TIMESTAMP: u64 = 3; // dummy value
 
     pub type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    pub type SizedWalletShare = WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    pub type SizedWalletShare = WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     // -----------
     // | Helpers |
@@ -117,10 +117,10 @@ mod test_helpers {
         const MAX_ORDERS: usize,
         const MAX_FEES: usize,
     >(
-        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        wallet: Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     ) -> (
-        WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     )
     where
         [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
@@ -129,9 +129,10 @@ mod test_helpers {
         let mut rng = OsRng {};
         let blinder_share = Scalar::random(&mut rng);
 
+        let blinder = wallet.blinder;
         create_wallet_shares_with_randomness(
             wallet,
-            wallet.blinder,
+            blinder,
             blinder_share,
             from_fn(|| Some(Scalar::random(&mut rng))),
         )
@@ -144,12 +145,11 @@ mod test_helpers {
     ///     - root: The root of the Merkle tree
     ///     - openings: A vector of opening vectors; the sister nodes hashed with the Merkle path
     ///     - opening_indices: A vector of opening index vectors; the left/right booleans for the path
-    pub(crate) fn create_multi_opening<R: RngCore + CryptoRng>(
+    pub(crate) fn create_multi_opening<R: RngCore + CryptoRng, const HEIGHT: usize>(
         items: &[Scalar],
-        height: usize,
         rng: &mut R,
-    ) -> (Scalar, Vec<MerkleOpening>) {
-        let tree_capacity = 2usize.pow(height as u32);
+    ) -> (Scalar, Vec<MerkleOpening<HEIGHT>>) {
+        let tree_capacity = 2usize.pow(HEIGHT as u32);
         assert!(
             items.len() < tree_capacity,
             "tree capacity exceeded by seed items"
@@ -209,7 +209,10 @@ mod test_helpers {
         let merkle_openings = openings
             .into_iter()
             .zip(opening_indices.into_iter())
-            .map(|(elems, indices)| MerkleOpening { elems, indices })
+            .map(|(elems, indices)| MerkleOpening {
+                elems: elems.try_into().unwrap(),
+                indices: indices.try_into().unwrap(),
+            })
             .collect_vec();
         (merkle_root, merkle_openings)
     }
@@ -223,11 +226,12 @@ mod test_helpers {
     fn test_split_wallet_into_shares() {
         // Split into secret shares
         let wallet = INITIAL_WALLET.clone();
-        let (private_share, mut public_share) = create_wallet_shares(&wallet);
+        let wallet_blinder = wallet.blinder;
+        let (private_share, public_share) = create_wallet_shares(wallet.clone());
 
         // Unblind the public shares, recover from shares
-        public_share.unblind(wallet.blinder);
-        let recovered_wallet = private_share + public_share;
+        let unblinded_public_shares = public_share.unblind_shares(wallet_blinder);
+        let recovered_wallet = private_share + unblinded_public_shares;
 
         assert_eq!(wallet, recovered_wallet);
     }
@@ -236,16 +240,16 @@ mod test_helpers {
     #[test]
     fn test_reblind_wallet() {
         let mut wallet = INITIAL_WALLET.clone();
-        let (private_share, _) = create_wallet_shares(&wallet);
+        let (private_share, _) = create_wallet_shares(wallet.clone());
 
         // Reblind the shares
-        let (reblinded_private_shares, mut reblinded_public_shares) =
-            reblind_wallet(private_share, &wallet);
+        let (reblinded_private_shares, reblinded_public_shares) =
+            reblind_wallet(private_share, wallet.clone());
 
         // Unblind the public shares, recover from shares
         let recovered_blinder = reblinded_public_shares.blinder + reblinded_private_shares.blinder;
-        reblinded_public_shares.unblind(recovered_blinder);
-        let recovered_wallet = reblinded_private_shares + reblinded_public_shares;
+        let unblinded_public_shares = reblinded_public_shares.unblind_shares(recovered_blinder);
+        let recovered_wallet = reblinded_private_shares + unblinded_public_shares;
 
         wallet.blinder = recovered_blinder;
         assert_eq!(wallet, recovered_wallet);
