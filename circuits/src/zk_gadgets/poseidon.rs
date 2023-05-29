@@ -3,37 +3,23 @@
 
 use std::marker::PhantomData;
 
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
+use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 use mpc_bulletproof::{
-    r1cs::{
-        ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem,
-        Variable, Verifier,
-    },
-    r1cs_mpc::{
-        MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MpcVariable, R1CSError,
-        SharedR1CSProof,
-    },
-    BulletproofGens,
+    r1cs::{LinearCombination, RandomizableConstraintSystem},
+    r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, MpcVariable, R1CSError},
 };
-use mpc_ristretto::{
-    authenticated_ristretto::AuthenticatedCompressedRistretto,
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
-};
-use rand_core::OsRng;
+use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 
 use crate::{
-    errors::{MpcError, ProverError, VerifierError},
-    mpc::SharedFabric,
-    mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    MultiProverCircuit, SingleProverCircuit,
+    errors::ProverError, mpc::SharedFabric, mpc_gadgets::poseidon::PoseidonSpongeParameters,
 };
 
 use super::arithmetic::{ExpGadget, MultiproverExpGadget};
 
-/**
- * Single prover gadget
- */
+// -----------------------
+// | Singleprover Gadget |
+// -----------------------
 
 /// A hash gadget that applies a Poseidon hash function to the given constraint system
 ///
@@ -268,94 +254,9 @@ impl PoseidonHashGadget {
     }
 }
 
-/// The witness input to a Poseidon pre-image argument of knowledge
-///
-/// This circuit encodes the statement that the prover knows a correct
-/// Poseidon pre-image to the given hash output
-#[derive(Clone, Debug)]
-pub struct PoseidonGadgetWitness {
-    /// Preimage
-    pub preimage: Vec<Scalar>,
-}
-
-/// The statement variable (public variable) for the argument, consisting
-/// of the expected hash output and the hash parameters
-#[derive(Clone, Debug)]
-pub struct PoseidonGadgetStatement {
-    /// Expected output of applying the Poseidon hash to the preimage
-    pub expected_out: Scalar,
-    /// The hash parameters that parameterize the Poseidon permutation
-    pub params: PoseidonSpongeParameters,
-}
-
-impl SingleProverCircuit for PoseidonHashGadget {
-    type Witness = PoseidonGadgetWitness;
-    type WitnessCommitment = Vec<CompressedRistretto>;
-    type Statement = PoseidonGadgetStatement;
-
-    const BP_GENS_CAPACITY: usize = 2048;
-
-    fn prove(
-        witness: Self::Witness,
-        statement: Self::Statement,
-        mut prover: Prover,
-    ) -> Result<(Vec<CompressedRistretto>, R1CSProof), ProverError> {
-        // Commit to the preimage
-        let mut rng = OsRng {};
-        let (preimage_commits, preimage_vars): (Vec<CompressedRistretto>, Vec<Variable>) = witness
-            .preimage
-            .into_iter()
-            .map(|val| prover.commit(val, Scalar::random(&mut rng)))
-            .unzip();
-
-        // Commit publicly to the expected result
-        let out_var = prover.commit_public(statement.expected_out);
-
-        // Apply the constraints to the proof system
-        let mut hasher = PoseidonHashGadget::new(statement.params);
-        hasher
-            .hash(&preimage_vars, out_var, &mut prover)
-            .map_err(ProverError::R1CS)?;
-
-        // Prove the statement
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
-
-        Ok((preimage_commits, proof))
-    }
-
-    fn verify(
-        witness_commitments: Vec<CompressedRistretto>,
-        statement: Self::Statement,
-        proof: R1CSProof,
-        mut verifier: Verifier,
-    ) -> Result<(), VerifierError> {
-        // Commit to the preimage from the existing witness commitments
-        let witness_vars = witness_commitments
-            .iter()
-            .map(|comm| verifier.commit(*comm))
-            .collect_vec();
-
-        // Commit to the public expected output
-        let output_var = verifier.commit_public(statement.expected_out);
-
-        // Build a hasher and apply the constraints
-        let mut hasher = PoseidonHashGadget::new(statement.params);
-        hasher
-            .hash(&witness_vars, output_var, &mut verifier)
-            .map_err(VerifierError::R1CS)?;
-
-        // Verify the proof
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        verifier
-            .verify(&proof, &bp_gens)
-            .map_err(VerifierError::R1CS)
-    }
-}
-
-/**
- * Multiprover Gadget
- */
+// ----------------------
+// | Multiprover Gadget |
+// ----------------------
 
 /// A hash gadget that applies a Poseidon hash function to the given constraint system
 ///
@@ -381,7 +282,7 @@ pub struct MultiproverPoseidonHashGadget<
     _phantom: PhantomData<&'a ()>,
 }
 
-impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
+impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + Clone>
     MultiproverPoseidonHashGadget<'a, N, S>
 {
     /// Construct a new hash gadget with the given parameterization
@@ -608,71 +509,6 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     }
 }
 
-/// The witness type for the multiprover Poseidon gadget
-#[derive(Clone, Debug)]
-pub struct MultiproverPoseidonWitness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
-    /// The preimage (input) to the hash function
-    pub preimage: Vec<AuthenticatedScalar<N, S>>,
-}
-
-impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiProverCircuit<'a, N, S>
-    for MultiproverPoseidonHashGadget<'a, N, S>
-{
-    /// Witness is as the witness in the single prover case, except for the facts that hte underlying scalar
-    /// field is the authenticated and shared Ristretto scalar field.
-    ///
-    /// The Statement, on the other hand, is entirely public; and therefore the same type as the single prover.
-    type Witness = MultiproverPoseidonWitness<N, S>;
-    type WitnessCommitment = Vec<AuthenticatedCompressedRistretto<N, S>>;
-    type Statement = PoseidonGadgetStatement;
-
-    const BP_GENS_CAPACITY: usize = 2048;
-
-    fn prove(
-        witness: Self::Witness,
-        statement: Self::Statement,
-        mut prover: MpcProver<'a, '_, '_, N, S>,
-        fabric: SharedFabric<N, S>,
-    ) -> Result<
-        (
-            Vec<AuthenticatedCompressedRistretto<N, S>>,
-            SharedR1CSProof<N, S>,
-        ),
-        ProverError,
-    > {
-        // Commit to the hash input and expected output
-        let mut rng = OsRng {};
-        let blinders = (0..witness.preimage.len())
-            .map(|_| Scalar::random(&mut rng))
-            .collect_vec();
-
-        let (witness_commits, witness_vars) = prover
-            .batch_commit_preshared(&witness.preimage, &blinders)
-            .map_err(|err| ProverError::Mpc(MpcError::SharingError(err.to_string())))?;
-
-        let (_, out_var) = prover.commit_public(statement.expected_out);
-
-        // Create a hasher and apply the constraints
-        let mut hasher = MultiproverPoseidonHashGadget::new(statement.params, fabric);
-        hasher.hash(&witness_vars, &out_var, &mut prover)?;
-
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens).map_err(ProverError::Collaborative)?;
-
-        Ok((witness_commits, proof))
-    }
-
-    fn verify(
-        witness_commitments: Vec<CompressedRistretto>,
-        statement: Self::Statement,
-        proof: R1CSProof,
-        verifier: Verifier,
-    ) -> Result<(), VerifierError> {
-        // Forward to the single prover gadget
-        PoseidonHashGadget::verify(witness_commitments, statement, proof, verifier)
-    }
-}
-
 #[cfg(test)]
 mod single_prover_test {
     use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
@@ -682,13 +518,13 @@ mod single_prover_test {
     };
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
+    use merlin::Transcript;
+    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
     use rand_core::{OsRng, RngCore};
 
-    use crate::{
-        mpc_gadgets::poseidon::PoseidonSpongeParameters, test_helpers::bulletproof_prove_and_verify,
-    };
+    use crate::{mpc_gadgets::poseidon::PoseidonSpongeParameters, traits::CircuitBaseType};
 
-    use super::{PoseidonGadgetStatement, PoseidonGadgetWitness, PoseidonHashGadget};
+    use super::PoseidonHashGadget;
 
     #[test]
     fn test_single_prover_hash() {
@@ -707,19 +543,25 @@ mod single_prover_test {
 
         let expected_result: DalekRistrettoField =
             arkworks_hasher.squeeze_field_elements(1 /* num_elements */)[0];
-
         let expected_scalar = prime_field_to_scalar(&expected_result);
 
-        bulletproof_prove_and_verify::<PoseidonHashGadget>(
-            PoseidonGadgetWitness {
-                preimage: random_elems.into_iter().map(Scalar::from).collect_vec(),
-            },
-            PoseidonGadgetStatement {
-                expected_out: expected_scalar,
-                params: PoseidonSpongeParameters::default(),
-            },
-        )
-        .unwrap();
+        // Build a constraint system
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        let preimage_vars = random_elems
+            .into_iter()
+            .map(|elem| elem.commit_public(&mut prover))
+            .collect_vec();
+        let expected_out_var = expected_scalar.commit_public(&mut prover);
+
+        let mut hasher = PoseidonHashGadget::new(PoseidonSpongeParameters::default());
+        hasher
+            .hash(&preimage_vars, expected_out_var, &mut prover)
+            .unwrap();
+
+        assert!(prover.constraints_satisfied());
     }
 
     /// Tests the case in which the pre-image is not correct
@@ -730,16 +572,22 @@ mod single_prover_test {
         let random_elems = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
         let random_expected = Scalar::random(&mut rng);
 
-        let res = bulletproof_prove_and_verify::<PoseidonHashGadget>(
-            PoseidonGadgetWitness {
-                preimage: random_elems,
-            },
-            PoseidonGadgetStatement {
-                expected_out: random_expected,
-                params: PoseidonSpongeParameters::default(),
-            },
-        );
+        // Build a constraint system
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
 
-        assert!(res.is_err());
+        let preimage_vars = random_elems
+            .into_iter()
+            .map(|elem| elem.commit_public(&mut prover))
+            .collect_vec();
+        let expected_out_var = random_expected.commit_public(&mut prover);
+
+        let mut hasher = PoseidonHashGadget::new(PoseidonSpongeParameters::default());
+        hasher
+            .hash(&preimage_vars, expected_out_var, &mut prover)
+            .unwrap();
+
+        assert!(!prover.constraints_satisfied());
     }
 }
