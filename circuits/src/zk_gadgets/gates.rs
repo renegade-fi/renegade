@@ -9,7 +9,11 @@ use mpc_bulletproof::{
 };
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 
-use crate::{errors::ProverError, zk_gadgets::comparators::EqGadget};
+use crate::{
+    errors::ProverError,
+    traits::{LinearCombinationLike, MpcLinearCombinationLike},
+    zk_gadgets::comparators::EqGadget,
+};
 
 /// Represents an OR gate in a single-prover constraint system
 pub struct OrGate;
@@ -20,7 +24,7 @@ impl OrGate {
     /// constrained elsewhere in the calling circuit
     pub fn or<L, CS>(a: L, b: L, cs: &mut CS) -> LinearCombination
     where
-        L: Into<LinearCombination>,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         let (a, b, a_times_b) = cs.multiply(a.into(), b.into());
@@ -33,7 +37,7 @@ impl OrGate {
     /// constrained elsewhere in the calling circuit
     pub fn multi_or<L, CS>(a: &[L], cs: &mut CS) -> LinearCombination
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         // Dispatch to the single OR gate
@@ -49,14 +53,16 @@ pub struct MultiproverOrGate<'a, N: MpcNetwork + Send, S: SharedValueSource<Scal
     _phantom: &'a PhantomData<(N, S)>,
 }
 
-impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiproverOrGate<'a, N, S> {
+impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + Clone>
+    MultiproverOrGate<'a, N, S>
+{
     /// Return the logical OR of the two arguments
     ///
     /// The arguments are assumed to be binary (0 or 1), but this assumption should be
     /// constrained elsewhere in the calling circuit
     pub fn or<L, CS>(a: L, b: L, cs: &mut CS) -> Result<MpcLinearCombination<N, S>, ProverError>
     where
-        L: Into<MpcLinearCombination<N, S>> + Clone,
+        L: MpcLinearCombinationLike<N, S>,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
         let (a, b, a_times_b) = cs
@@ -76,7 +82,7 @@ impl AndGate {
     /// constrained elsewhere in the calling circuit
     pub fn and<L, CS>(a: L, b: L, cs: &mut CS) -> Variable
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         // For binary values, and is reduced to multiplication
@@ -90,14 +96,18 @@ impl AndGate {
     /// constrained elsewhere in the calling circuit
     pub fn multi_and<L, CS>(a: &[L], cs: &mut CS) -> Variable
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         let sum: LinearCombination = a
             .iter()
             .cloned()
             .fold(Variable::Zero().into(), |acc, val| acc + val);
-        EqGadget::eq(sum, Scalar::from(a.len() as u32).into(), cs)
+        EqGadget::eq::<LinearCombination, LinearCombination, LinearCombination, LinearCombination, _>(
+            sum,
+            Scalar::from(a.len() as u32).into(),
+            cs,
+        )
     }
 }
 
@@ -111,7 +121,7 @@ impl NotGate {
     /// constrained elsewhere in the calling circuit
     pub fn not<L, CS>(a: L, _cs: &mut CS) -> LinearCombination
     where
-        L: Into<LinearCombination>,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         Variable::One() - a.into()
@@ -126,7 +136,7 @@ impl ConstrainBinaryGadget {
     /// the polynomial x * (1 - x) which is only satisfied when x \in {0, 1}
     pub fn constrain_binary<L, CS>(x: L, cs: &mut CS)
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         let x_lc: LinearCombination = x.into();

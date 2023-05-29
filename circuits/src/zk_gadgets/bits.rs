@@ -2,44 +2,29 @@
 use std::marker::PhantomData;
 
 use crypto::fields::bigint_to_scalar;
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
-use itertools::Itertools;
+use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
-    r1cs::{
-        LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
-    },
-    r1cs_mpc::{
-        MpcConstraintSystem, MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem,
-        R1CSError, SharedR1CSProof,
-    },
-    BulletproofGens,
+    r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
+    r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, R1CSError},
 };
-use mpc_ristretto::{
-    authenticated_ristretto::AuthenticatedCompressedRistretto,
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
-};
+use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 use num_bigint::BigInt;
-use rand_core::OsRng;
 
 use crate::{
-    errors::{MpcError, ProverError, VerifierError},
+    errors::ProverError,
     mpc::SharedFabric,
     mpc_gadgets::bits::{scalar_to_bits_le, to_bits_le},
-    CommitPublic, CommitWitness, MultiProverCircuit, Open, SingleProverCircuit,
+    traits::{LinearCombinationLike, MpcLinearCombinationLike},
 };
 
-/**
- * Single prover implementation
- */
-
+/// Singleprover implementation of the `ToBits` gadget
 pub struct ToBitsGadget<const D: usize> {}
-
 impl<const D: usize> ToBitsGadget<D> {
     /// Converts a value to its bitwise representation in a single-prover constraint system
     pub fn to_bits<L, CS>(a: L, cs: &mut CS) -> Result<Vec<Variable>, R1CSError>
     where
         CS: RandomizableConstraintSystem,
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
     {
         let a_scalar = cs.eval(&a.clone().into());
         let bits = &scalar_to_bits_le(&a_scalar)[..D];
@@ -59,96 +44,6 @@ impl<const D: usize> ToBitsGadget<D> {
     }
 }
 
-/// The statement proved here is trivial, we prove the bit-decomposition of a given witness
-/// scalar. This is, of course, not useful in practice, but is used for testing.
-#[derive(Clone, Debug)]
-pub struct ToBitsStatement {
-    /// The expected bits from the decomposition
-    pub bits: Vec<Scalar>,
-}
-
-impl CommitPublic for ToBitsStatement {
-    type VarType = Vec<Variable>;
-    type ErrorType = ();
-
-    fn commit_public<CS: RandomizableConstraintSystem>(
-        &self,
-        cs: &mut CS,
-    ) -> Result<Self::VarType, Self::ErrorType> {
-        Ok(self
-            .bits
-            .iter()
-            .map(|bit| cs.commit_public(*bit))
-            .collect_vec())
-    }
-}
-
-impl<const D: usize> SingleProverCircuit for ToBitsGadget<D> {
-    type Statement = ToBitsStatement;
-    type Witness = Scalar;
-    type WitnessCommitment = CompressedRistretto;
-
-    const BP_GENS_CAPACITY: usize = 256;
-
-    fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: <Self::Witness as CommitWitness>::VarType,
-        statement_var: <Self::Statement as CommitPublic>::VarType,
-        cs: &mut CS,
-    ) -> Result<(), R1CSError> {
-        // Apply the constraints over the allocated witness & statement
-
-        // Get the bits result and constrain the output
-        let res_bits = Self::to_bits(witness_var, cs)?;
-
-        for (statement_bit, res_bit) in statement_var.into_iter().zip(res_bits.into_iter()) {
-            cs.constrain(statement_bit - res_bit)
-        }
-        Ok(())
-    }
-
-    fn prove(
-        witness: Self::Witness,
-        statement: Self::Statement,
-        mut prover: Prover,
-    ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
-        // Commit to the witness
-        let mut rng = OsRng {};
-        let (witness_comm, witness_var) = prover.commit(witness, Scalar::random(&mut rng));
-
-        // Commit to the statement
-        let statement_var = statement.commit_public(&mut prover).unwrap();
-
-        Self::apply_constraints(witness_var, statement_var, &mut prover)
-            .map_err(ProverError::R1CS)?;
-
-        // Prove the statement
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
-
-        Ok((witness_comm, proof))
-    }
-
-    fn verify(
-        witness_commitment: Self::WitnessCommitment,
-        statement: Self::Statement,
-        proof: R1CSProof,
-        mut verifier: Verifier,
-    ) -> Result<(), VerifierError> {
-        // Commit to the witness and statement
-        let witness_var = verifier.commit(witness_commitment);
-        let statement_var = statement.commit_public(&mut verifier).unwrap();
-
-        Self::apply_constraints(witness_var, statement_var, &mut verifier)
-            .map_err(VerifierError::R1CS)?;
-
-        // Verify the proof
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        verifier
-            .verify(&proof, &bp_gens)
-            .map_err(VerifierError::R1CS)
-    }
-}
-
 /// Takes a scalar and returns its bit representation, constrained to be correct
 ///
 /// D is the bitlength of the input vector to bitify
@@ -162,8 +57,12 @@ pub struct MultiproverToBitsGadget<
     _phantom: &'a PhantomData<(N, S)>,
 }
 
-impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
-    MultiproverToBitsGadget<'a, D, N, S>
+impl<
+        'a,
+        const D: usize,
+        N: 'a + MpcNetwork + Send + Clone,
+        S: 'a + SharedValueSource<Scalar> + Clone,
+    > MultiproverToBitsGadget<'a, D, N, S>
 {
     /// Converts a value into its bitwise representation
     pub fn to_bits<L, CS>(
@@ -173,7 +72,7 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
     ) -> Result<Vec<MpcLinearCombination<N, S>>, ProverError>
     where
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
-        L: Into<MpcLinearCombination<N, S>> + Clone,
+        L: MpcLinearCombinationLike<N, S>,
     {
         // Evaluate the linear combination so that we can use a raw MPC to get the bits
         let a_scalar = cs
@@ -201,61 +100,20 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
     }
 }
 
-impl<'a, const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
-    MultiProverCircuit<'a, N, S> for MultiproverToBitsGadget<'a, D, N, S>
-{
-    type Statement = ToBitsStatement;
-    type Witness = AuthenticatedScalar<N, S>;
-    type WitnessCommitment = AuthenticatedCompressedRistretto<N, S>;
-
-    const BP_GENS_CAPACITY: usize = 512;
-
-    fn prove(
-        witness: Self::Witness,
-        statement: Self::Statement,
-        mut prover: MpcProver<'a, '_, '_, N, S>,
-        fabric: SharedFabric<N, S>,
-    ) -> Result<(Self::WitnessCommitment, SharedR1CSProof<N, S>), ProverError> {
-        // Commit to the witness
-        let mut rng = OsRng {};
-        let (witness_comm, witness_var) = prover
-            .commit_preshared(&witness, Scalar::random(&mut rng))
-            .map_err(|err| ProverError::Mpc(MpcError::SharingError(err.to_string())))?;
-
-        let (_, bit_vars) = prover.batch_commit_public(&statement.bits);
-
-        // Apply the constraints
-        let bits = Self::to_bits(witness_var, fabric, &mut prover)?;
-        for (statement_bit, computed_bit) in bit_vars.into_iter().zip(bits.into_iter()) {
-            prover.constrain(statement_bit - computed_bit);
-        }
-
-        // Generate a proof
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens).map_err(ProverError::Collaborative)?;
-
-        Ok((witness_comm, proof))
-    }
-
-    fn verify(
-        witness_commitments: <Self::WitnessCommitment as Open<N, S>>::OpenOutput,
-        statement: Self::Statement,
-        proof: R1CSProof,
-        verifier: Verifier,
-    ) -> Result<(), VerifierError> {
-        ToBitsGadget::<D>::verify(witness_commitments, statement, proof, verifier)
-    }
-}
-
 #[cfg(test)]
 mod bits_test {
     use crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
     use curve25519_dalek::scalar::Scalar;
+    use merlin::Transcript;
+    use mpc_bulletproof::{
+        r1cs::{ConstraintSystem, Prover},
+        PedersenGens,
+    };
     use rand_core::{OsRng, RngCore};
 
-    use crate::test_helpers::bulletproof_prove_and_verify;
+    use crate::traits::CircuitBaseType;
 
-    use super::{ToBitsGadget, ToBitsStatement};
+    use super::ToBitsGadget;
 
     /// Test that the to_bits single-prover gadget functions correctly
     #[test]
@@ -264,14 +122,21 @@ mod bits_test {
         let mut rng = OsRng {};
         let random_value = rng.next_u64();
 
-        let witness = Scalar::from(random_value);
-
         // Create the statement by bitifying the input
-        let bits = bigint_to_scalar_bits::<64 /* bits */>(&scalar_to_bigint(&witness));
-        let statement = ToBitsStatement { bits };
+        let witness = Scalar::from(random_value);
+        let mut bits = bigint_to_scalar_bits::<64 /* bits */>(&scalar_to_bigint(&witness));
 
-        assert!(
-            bulletproof_prove_and_verify::<ToBitsGadget<64 /* bits */>>(witness, statement).is_ok()
-        );
+        // Create a constraint system
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        // Bitify the input
+        let input_var = witness.commit_public(&mut prover);
+        let res = ToBitsGadget::<64 /* bits */>::to_bits(input_var, &mut prover).unwrap();
+
+        for bit in res.into_iter().rev().map(|v| prover.eval(&v.into())) {
+            assert_eq!(bit, bits.pop().unwrap());
+        }
     }
 }
