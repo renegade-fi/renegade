@@ -5,27 +5,17 @@ use std::marker::PhantomData;
 use ark_ff::Zero;
 use circuit_macros::circuit_trace;
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
-use curve25519_dalek::ristretto::CompressedRistretto;
+
 use curve25519_dalek::scalar::Scalar;
-use mpc_bulletproof::r1cs::{
-    ConstraintSystem, LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable,
-    Verifier,
-};
-use mpc_bulletproof::r1cs_mpc::{
-    MpcConstraintSystem, MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem,
-    R1CSError, SharedR1CSProof,
-};
-use mpc_bulletproof::BulletproofGens;
-use mpc_ristretto::authenticated_ristretto::AuthenticatedCompressedRistretto;
-use mpc_ristretto::authenticated_scalar::AuthenticatedScalar;
+use mpc_bulletproof::r1cs::{LinearCombination, RandomizableConstraintSystem, Variable};
+use mpc_bulletproof::r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, R1CSError};
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 use num_bigint::BigUint;
 use num_integer::Integer;
-use rand_core::OsRng;
 
-use crate::errors::{MpcError, ProverError, VerifierError};
+use crate::errors::ProverError;
 use crate::mpc::SharedFabric;
-use crate::{CommitPublic, CommitWitness, MultiProverCircuit, SingleProverCircuit};
+use crate::traits::{LinearCombinationLike, MpcLinearCombinationLike};
 
 use super::bits::ToBitsGadget;
 use super::comparators::{EqZeroGadget, LessThanGadget};
@@ -45,7 +35,7 @@ impl<const D: usize> DivRemGadget<D> {
     /// Return (q, r) such that a = bq + r and r < b
     pub fn div_rem<L, CS>(a: L, b: L, cs: &mut CS) -> (Variable, Variable)
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         let a_lc: LinearCombination = a.into();
@@ -88,7 +78,7 @@ impl ExpGadget {
     #[circuit_trace(latency)]
     pub fn exp<L, CS>(x: L, alpha: u64, cs: &mut CS) -> LinearCombination
     where
-        L: Into<LinearCombination>,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         if alpha == 0 {
@@ -107,139 +97,11 @@ impl ExpGadget {
             out_var2.into()
         }
     }
-
-    /// Generate the constraints for the ExpGadget statement
-    #[circuit_trace(latency)]
-    fn generate_exp_constraints<CS: RandomizableConstraintSystem>(
-        x_var: Variable,
-        y_var: Variable,
-        alpha: u64,
-        cs: &mut CS,
-    ) {
-        // Commit to the inputs and output
-        let res = Self::exp(x_var, alpha, cs);
-        cs.constrain(res - y_var);
-    }
-}
-
-/// The witness type to the ExpGadget Circuit implementation
-///
-/// This circuit represents a proof of knowledge of some base that when raised to the
-/// statement's exponent yields the statement's result.
-///
-/// This statement is not particularly useful and is moreso useful for testing the
-/// gadget itself
-#[derive(Clone, Debug)]
-pub struct ExpGadgetWitness {
-    /// Exponentiation base
-    pub x: Scalar,
-}
-
-impl CommitWitness for ExpGadgetWitness {
-    type CommitType = CompressedRistretto;
-    type VarType = Variable;
-    type ErrorType = ();
-
-    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
-        &self,
-        rng: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (witness_comm, witness_var) = prover.commit(self.x, Scalar::random(rng));
-        Ok((witness_var, witness_comm))
-    }
-}
-
-/// The statement type for the ExpGadget circuit implementation
-///
-/// Both the exponent and the expected output are considered public inputs
-/// to the proof.
-#[derive(Copy, Clone, Debug)]
-pub struct ExpGadgetStatement {
-    /// Exponent
-    pub alpha: u64,
-    /// Expected result
-    pub expected_out: Scalar,
-}
-
-impl CommitPublic for ExpGadgetStatement {
-    type VarType = (Variable, u64);
-    type ErrorType = ();
-
-    fn commit_public<CS: RandomizableConstraintSystem>(
-        &self,
-        cs: &mut CS,
-    ) -> Result<Self::VarType, Self::ErrorType> {
-        Ok((cs.commit_public(self.expected_out), self.alpha))
-    }
-}
-
-impl SingleProverCircuit for ExpGadget {
-    type Witness = ExpGadgetWitness;
-    type Statement = ExpGadgetStatement;
-    type WitnessCommitment = CompressedRistretto;
-
-    const BP_GENS_CAPACITY: usize = 64;
-
-    fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: <Self::Witness as CommitWitness>::VarType,
-        statement_var: <Self::Statement as CommitPublic>::VarType,
-        cs: &mut CS,
-    ) -> Result<(), R1CSError> {
-        // Apply the constraints over the allocated witness & statement
-        Self::generate_exp_constraints(witness_var, statement_var.0, statement_var.1, cs);
-        Ok(())
-    }
-
-    fn prove(
-        witness: Self::Witness,
-        statement: Self::Statement,
-        mut prover: Prover,
-    ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
-        // Commit to the input and expected output
-        let mut rng = OsRng {};
-
-        let (witness_var, witness_commit) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-        let statement_var = statement.commit_public(&mut prover).unwrap();
-
-        Self::apply_constraints(witness_var, statement_var, &mut prover).unwrap();
-
-        let bp_gens = BulletproofGens::new(
-            Self::BP_GENS_CAPACITY, /* gens_capacity */
-            1,                      /* party_capacity */
-        );
-        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
-
-        // Only return the commitment to the witness, the verifier will separately commit to the statement input
-        Ok((witness_commit, proof))
-    }
-
-    fn verify(
-        witness_commitment: CompressedRistretto,
-        statement: Self::Statement,
-        proof: R1CSProof,
-        mut verifier: Verifier,
-    ) -> Result<(), VerifierError> {
-        // Commit to the result in the verifier
-        let x_var = verifier.commit(witness_commitment); // The input `x`
-        let statement_var = statement.commit_public(&mut verifier).unwrap();
-
-        Self::apply_constraints(x_var, statement_var, &mut verifier).unwrap();
-
-        let bp_gens = BulletproofGens::new(
-            Self::BP_GENS_CAPACITY, /* gens_capacity */
-            1,                      /* party_capacity */
-        );
-        verifier
-            .verify(&proof, &bp_gens)
-            .map_err(VerifierError::R1CS)
-    }
 }
 
 /// An exponentiation gadget on a private exponent; compute x^\alpha
 #[derive(Clone, Debug)]
 pub struct PrivateExpGadget<const ALPHA_BITS: usize> {}
-
 impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
     /// Compute x^\alpha where `x` is public and alpha is private
     pub fn exp_private_fixed_base<L, CS>(
@@ -248,7 +110,7 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
         cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError>
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         // Bit decompose the exponent, this removes the need to check `is_odd` at every
@@ -260,7 +122,7 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
     /// Compute x^\alpha where both x and alpha are private values
     pub fn exp_private<L, CS>(x: L, alpha: L, cs: &mut CS) -> Result<LinearCombination, R1CSError>
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         // Bit decompose the exponent, this removes the need to check `is_odd` at every
@@ -279,7 +141,7 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
         cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError>
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         if alpha_bits.is_empty() {
@@ -298,20 +160,12 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
         let recursive_plus_one = x * recursive_doubled;
 
         // Mux between the two results depending on whether the current exponent is odd or even
-        let odd_bit_selection = CondSelectGadget::select(
-            recursive_plus_one,
-            recursive_doubled.into(),
-            is_odd.into(),
-            cs,
-        );
+        let odd_bit_selection =
+            CondSelectGadget::select(recursive_plus_one, recursive_doubled.into(), is_odd, cs);
 
         // Mask the value of the output if alpha is already zero
-        let zero_mask = CondSelectGadget::select(
-            Variable::One().into(),
-            odd_bit_selection,
-            alpha_zero.into(),
-            cs,
-        );
+        let zero_mask =
+            CondSelectGadget::select(Variable::One().into(), odd_bit_selection, alpha_zero, cs);
 
         Ok(zero_mask)
     }
@@ -323,7 +177,7 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
         cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError>
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         if alpha_bits.is_empty() {
@@ -348,12 +202,8 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
             CondSelectGadget::select(recursive_plus_one, recursive_doubled, is_odd, cs);
 
         // Mask the value of the output if alpha is already zero
-        let zero_mask = CondSelectGadget::select(
-            Variable::One().into(),
-            odd_bit_selection,
-            alpha_zero.into(),
-            cs,
-        );
+        let zero_mask =
+            CondSelectGadget::select(Variable::One().into(), odd_bit_selection, alpha_zero, cs);
 
         Ok(zero_mask)
     }
@@ -362,7 +212,7 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
     /// are constrained to be binary elsewhere in the circuit
     fn all_bits_zero<L, CS>(bits: &[L], cs: &mut CS) -> Variable
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         // Add all the bits
@@ -378,111 +228,17 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
     }
 }
 
-/// The witness type for the [`PrivateExpGadget`] circuit implementation
-///
-/// Both the base and the exponent are private inputs
-pub struct PrivateExpGadgetWitness {
-    /// Base
-    x: Scalar,
-    /// Exponent
-    alpha: Scalar,
-}
-
-impl CommitWitness for PrivateExpGadgetWitness {
-    type CommitType = (CompressedRistretto, CompressedRistretto);
-    type VarType = (Variable, Variable);
-    type ErrorType = ();
-
-    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
-        &self,
-        rng: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (x_comm, x_var) = prover.commit(self.x, Scalar::random(rng));
-        let (alpha_comm, alpha_var) = prover.commit(self.alpha, Scalar::random(rng));
-        Ok(((x_var, alpha_var), (x_comm, alpha_comm)))
-    }
-}
-
-impl<const ALPHA_SIZE: usize> SingleProverCircuit for PrivateExpGadget<ALPHA_SIZE> {
-    /// Expected output
-    type Statement = Scalar;
-    /// (x, \alpha)
-    type Witness = PrivateExpGadgetWitness;
-    type WitnessCommitment = (CompressedRistretto, CompressedRistretto);
-
-    const BP_GENS_CAPACITY: usize = 4096;
-
-    fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: <Self::Witness as CommitWitness>::VarType,
-        statement_var: <Self::Statement as CommitPublic>::VarType,
-        cs: &mut CS,
-    ) -> Result<(), R1CSError> {
-        // Apply the constraints over the allocated witness & statement
-        let res = Self::exp_private(witness_var.0, witness_var.1, cs)?;
-        cs.constrain(res - statement_var);
-        Ok(())
-    }
-
-    fn prove(
-        witness: Self::Witness,
-        statement: Self::Statement,
-        mut prover: Prover,
-    ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
-        // Commit to `x` and `\alpha`
-        let mut rng = OsRng {};
-        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-
-        // Commit to the expected output
-        let expected_out = prover.commit_public(statement);
-
-        Self::apply_constraints(witness_var, expected_out, &mut prover)
-            .map_err(ProverError::R1CS)?;
-
-        // Prove the statement
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
-
-        Ok((witness_comm, proof))
-    }
-
-    fn verify(
-        witness_commitment: Self::WitnessCommitment,
-        statement: Self::Statement,
-        proof: R1CSProof,
-        mut verifier: Verifier,
-    ) -> Result<(), VerifierError> {
-        // Commit to `x` and `\alpha`
-        let x_var = verifier.commit(witness_commitment.0);
-        let alpha_var = verifier.commit(witness_commitment.1);
-
-        // Commit to the expected output
-        let expected_out = verifier.commit_public(statement);
-
-        Self::apply_constraints((x_var, alpha_var), expected_out, &mut verifier)
-            .map_err(VerifierError::R1CS)?;
-
-        // Verify the proof
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        verifier
-            .verify(&proof, &bp_gens)
-            .map_err(VerifierError::R1CS)
-    }
-}
-
 // -----------------------
 // | Multiprover Gadgets |
 // -----------------------
 
 /// A multiprover implementation of the exp gadget
-///
-/// TODO: Implementation
 pub struct MultiproverExpGadget<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> {
     /// Phantom
     _phantom: PhantomData<&'a (N, S)>,
 }
 
-impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
+impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + Clone>
     MultiproverExpGadget<'a, N, S>
 {
     /// Apply the gadget to the input
@@ -494,7 +250,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     ) -> Result<MpcLinearCombination<N, S>, ProverError>
     where
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
-        L: Into<MpcLinearCombination<N, S>>,
+        L: MpcLinearCombinationLike<N, S>,
     {
         if alpha == 0 {
             Ok(MpcLinearCombination::from_scalar(Scalar::one(), fabric.0))
@@ -521,72 +277,6 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     }
 }
 
-/// The witness type for the ExpGadget in the multiprover setting
-///
-/// This type is essentially the same witness type as the witness for
-/// the single prover setting, but using the authenticated, secret shared
-/// field
-#[derive(Clone, Debug)]
-pub struct MultiproverExpWitness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
-    /// Exponentiation base
-    pub x: AuthenticatedScalar<N, S>,
-}
-
-impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<'a, N, S>
-    for MultiproverExpGadget<'a, N, S>
-{
-    /// Witness is the secret shared version of the single-prover witness, and the
-    /// statement is the same as the single-prover case
-    type Witness = MultiproverExpWitness<N, S>;
-    type WitnessCommitment = AuthenticatedCompressedRistretto<N, S>;
-    type Statement = ExpGadgetStatement;
-
-    const BP_GENS_CAPACITY: usize = 2048;
-
-    fn prove(
-        witness: Self::Witness,
-        statement: Self::Statement,
-        mut prover: MpcProver<'a, '_, '_, N, S>,
-        fabric: SharedFabric<N, S>,
-    ) -> Result<
-        (
-            AuthenticatedCompressedRistretto<N, S>,
-            SharedR1CSProof<N, S>,
-        ),
-        ProverError,
-    > {
-        // Commit to the input
-        let mut rng = OsRng {};
-        let blinder = Scalar::random(&mut rng);
-        let (witness_commit, witness_var) = prover
-            .commit_preshared(&witness.x, blinder)
-            .map_err(|err| ProverError::Mpc(MpcError::SharingError(err.to_string())))?;
-
-        // Commit to the public expected hash output
-        // TODO: update this with a correct commit_public impl
-        let (_, output_var) = prover.commit_public(statement.expected_out);
-
-        // Apply the constraints to the prover
-        let res = Self::exp(witness_var, statement.alpha, fabric, &mut prover)?;
-        prover.constrain(res - output_var);
-
-        // Prove the statement
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens).map_err(ProverError::Collaborative)?;
-
-        Ok((witness_commit, proof))
-    }
-
-    fn verify(
-        witness_commitments: CompressedRistretto,
-        statement: Self::Statement,
-        proof: R1CSProof,
-        verifier: Verifier,
-    ) -> Result<(), VerifierError> {
-        ExpGadget::verify(witness_commitments, statement, proof, verifier)
-    }
-}
-
 #[cfg(test)]
 mod arithmetic_tests {
     use crypto::fields::{bigint_to_scalar, biguint_to_scalar, scalar_to_biguint};
@@ -601,12 +291,9 @@ mod arithmetic_tests {
     use num_integer::Integer;
     use rand_core::{OsRng, RngCore};
 
-    use crate::test_helpers::bulletproof_prove_and_verify;
+    use crate::traits::CircuitBaseType;
 
-    use super::{
-        DivRemGadget, ExpGadget, ExpGadgetStatement, ExpGadgetWitness, PrivateExpGadget,
-        PrivateExpGadgetWitness,
-    };
+    use super::{DivRemGadget, ExpGadget, PrivateExpGadget};
 
     /// Tests the single prover exponentiation gadget
     #[test]
@@ -621,35 +308,17 @@ mod arithmetic_tests {
             random_bigint.modpow(&BigUint::from(alpha), &get_ristretto_group_modulus());
         let expected_scalar = bigint_to_scalar(&expected_res.into());
 
+        // Build a constraint system
+        let mut prover_transcript = Transcript::new("test".as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
         // Create the circuit
-        bulletproof_prove_and_verify::<ExpGadget>(
-            ExpGadgetWitness { x: random_value },
-            ExpGadgetStatement {
-                alpha: alpha as u64,
-                expected_out: expected_scalar,
-            },
-        )
-        .unwrap();
-    }
+        let base_var = random_bigint.commit_public(&mut prover);
+        let res = ExpGadget::exp(base_var, alpha as u64, &mut prover);
 
-    /// Tests that a single prover exp does not verify for incorrect values
-    #[test]
-    fn test_single_prover_exp_failure() {
-        // Generate a random input
-        let mut rng = OsRng {};
-        let alpha = rng.next_u32();
-        let random_value = Scalar::random(&mut rng);
-        let random_out = Scalar::random(&mut rng);
-
-        let res = bulletproof_prove_and_verify::<ExpGadget>(
-            ExpGadgetWitness { x: random_value },
-            ExpGadgetStatement {
-                alpha: alpha as u64,
-                expected_out: random_out,
-            },
-        );
-
-        assert!(res.is_err());
+        // Check the result
+        assert_eq!(expected_scalar, prover.eval(&res));
     }
 
     /// Tests the single prover exponent gadget on a private exponent
@@ -666,14 +335,21 @@ mod arithmetic_tests {
         // Compute the expected exponentiation result
         let x_bigint = scalar_to_biguint(&x);
         let alpha_bigint = scalar_to_biguint(&alpha);
-
         let expected = x_bigint.modpow(&alpha_bigint, &get_ristretto_group_modulus());
 
-        let res = bulletproof_prove_and_verify::<PrivateExpGadget<64>>(
-            PrivateExpGadgetWitness { x, alpha },
-            biguint_to_scalar(&expected),
-        );
-        assert!(res.is_ok())
+        // Build a constraint system
+        let mut prover_transcript = Transcript::new("test".as_bytes());
+        let pc_gens = PedersenGens::default();
+        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+        let x_var = x_bigint.commit_public(&mut prover);
+        let alpha_var = alpha_bigint.commit_public(&mut prover);
+        let res =
+            PrivateExpGadget::<64 /* ALPHA_BITS */>::exp_private(x_var, alpha_var, &mut prover)
+                .unwrap();
+
+        // Check the result
+        assert_eq!(biguint_to_scalar(&expected), prover.eval(&res));
     }
 
     /// Tests the div_rem gadget

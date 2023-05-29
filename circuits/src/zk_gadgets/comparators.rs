@@ -2,24 +2,20 @@
 
 use std::marker::PhantomData;
 
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
+use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 use mpc_bulletproof::{
-    r1cs::{
-        LinearCombination, Prover, R1CSError, R1CSProof, RandomizableConstraintSystem, Variable,
-        Verifier,
-    },
+    r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
     r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem},
-    BulletproofGens,
 };
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
-use rand_core::OsRng;
 
 use crate::{
-    errors::{ProverError, VerifierError},
+    errors::ProverError,
     mpc::SharedFabric,
     mpc_gadgets::bits::{scalar_to_bits_le, to_bits_le},
-    CommitPublic, CommitWitness, SingleProverCircuit, POSITIVE_SCALAR_MAX_BITS,
+    traits::{CircuitVarType, LinearCombinationLike, MpcLinearCombinationLike},
+    POSITIVE_SCALAR_MAX_BITS,
 };
 
 /// A gadget that returns whether a value is equal to zero
@@ -35,7 +31,7 @@ impl EqZeroGadget {
     /// have a valid multiplicative inverse
     pub fn eq_zero<L, CS>(val: L, cs: &mut CS) -> Variable
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         // Compute the inverse of the value outside the constraint
@@ -68,80 +64,42 @@ impl EqZeroGadget {
     }
 }
 
-impl SingleProverCircuit for EqZeroGadget {
-    type Statement = bool;
-    type Witness = Scalar;
-    type WitnessCommitment = CompressedRistretto;
-
-    const BP_GENS_CAPACITY: usize = 32;
-
-    fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: <Self::Witness as CommitWitness>::VarType,
-        statement_var: <Self::Statement as CommitPublic>::VarType,
-        cs: &mut CS,
-    ) -> Result<(), R1CSError> {
-        // Apply the constraints over the allocated witness & statement
-
-        // Test equality to zero and constrain this to be expected
-        let eq_zero = EqZeroGadget::eq_zero(witness_var, cs);
-        cs.constrain(eq_zero - statement_var);
-        Ok(())
-    }
-
-    fn prove(
-        witness: Self::Witness,
-        statement: Self::Statement,
-        mut prover: Prover,
-    ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
-        // Commit to the witness
-        let mut rng = OsRng {};
-        let (witness_comm, witness_var) = prover.commit(witness, Scalar::random(&mut rng));
-
-        // Commit to the statement
-        let statement_var = statement.commit_public(&mut prover).unwrap();
-
-        Self::apply_constraints(witness_var, statement_var, &mut prover).unwrap();
-
-        // Prover the statement
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
-
-        Ok((witness_comm, proof))
-    }
-
-    fn verify(
-        witness_commitment: Self::WitnessCommitment,
-        statement: Self::Statement,
-        proof: R1CSProof,
-        mut verifier: Verifier,
-    ) -> Result<(), VerifierError> {
-        // Commit to the witness
-        let witness_var = verifier.commit(witness_commitment);
-
-        // Commit to the statement
-        let statement_var = statement.commit_public(&mut verifier).unwrap();
-
-        Self::apply_constraints(witness_var, statement_var, &mut verifier).unwrap();
-
-        // Verify the proof
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        verifier
-            .verify(&proof, &bp_gens)
-            .map_err(VerifierError::R1CS)
-    }
-}
-
 /// Returns 1 if a == b otherwise 0
 #[derive(Clone, Debug)]
 pub struct EqGadget {}
 impl EqGadget {
     /// Computes a == b
-    pub fn eq<L, CS>(a: L, b: L, cs: &mut CS) -> Variable
+    pub fn eq<L1, L2, V1, V2, CS>(a: V1, b: V2, cs: &mut CS) -> Variable
     where
-        L: Into<LinearCombination> + Clone,
+        L1: LinearCombinationLike,
+        L2: LinearCombinationLike,
+        V1: CircuitVarType<L1>,
+        V2: CircuitVarType<L2>,
         CS: RandomizableConstraintSystem,
     {
-        EqZeroGadget::eq_zero(a.into() - b.into(), cs)
+        let a_vars = a.to_vars();
+        let b_vars = b.to_vars();
+
+        EqVecGadget::eq_vec(&a_vars, &b_vars, cs)
+    }
+
+    /// Constraints a == b
+    pub fn constrain_eq<L1, L2, V1, V2, CS>(a: V1, b: V2, cs: &mut CS)
+    where
+        L1: LinearCombinationLike,
+        L2: LinearCombinationLike,
+        V1: CircuitVarType<L1>,
+        V2: CircuitVarType<L2>,
+        CS: RandomizableConstraintSystem,
+    {
+        let a_vars = a.to_vars();
+        let b_vars = b.to_vars();
+        assert!(
+            a_vars.len() == b_vars.len(),
+            "a and b must have the same length"
+        );
+
+        EqVecGadget::constrain_eq_vec(&a_vars, &b_vars, cs)
     }
 }
 
@@ -150,16 +108,29 @@ impl EqGadget {
 pub struct EqVecGadget {}
 impl EqVecGadget {
     /// Returns 1 if \vec{a} = \vec{b}, otherwise 0
-    pub fn eq_vec<L, CS>(a: &[L], b: &[L], cs: &mut CS) -> Variable
+    pub fn eq_vec<L1, L2, V1, V2, CS>(a: &[V1], b: &[V2], cs: &mut CS) -> Variable
     where
-        L: Into<LinearCombination> + Clone,
+        L1: LinearCombinationLike,
+        L2: LinearCombinationLike,
+        V1: CircuitVarType<L1>,
+        V2: CircuitVarType<L2>,
         CS: RandomizableConstraintSystem,
     {
         assert_eq!(a.len(), b.len(), "eq_vec expects equal length vectors");
+        let a_vals = a
+            .iter()
+            .cloned()
+            .flat_map(|a_val| a_val.to_vars())
+            .collect_vec();
+        let b_vals = b
+            .iter()
+            .cloned()
+            .flat_map(|b_val| b_val.to_vars())
+            .collect_vec();
 
         // Compare each vector element
         let mut not_equal_values = Vec::with_capacity(a.len());
-        for (a_val, b_val) in a.iter().zip(b.iter()) {
+        for (a_val, b_val) in a_vals.into_iter().zip(b_vals.into_iter()) {
             not_equal_values.push(NotEqualGadget::not_equal(a_val.clone(), b_val.clone(), cs));
         }
 
@@ -173,16 +144,27 @@ impl EqVecGadget {
     }
 
     /// Constraints the two vectors to be equal
-    ///
-    /// TODO: This may be optimized with a randomized constraint
-    pub fn constrain_eq_vec<L, CS>(a: &[L], b: &[L], cs: &mut CS)
+    pub fn constrain_eq_vec<L1, L2, V1, V2, CS>(a: &[V1], b: &[V2], cs: &mut CS)
     where
-        L: Into<LinearCombination> + Clone,
+        L1: LinearCombinationLike,
+        L2: LinearCombinationLike,
+        V1: CircuitVarType<L1>,
+        V2: CircuitVarType<L2>,
         CS: RandomizableConstraintSystem,
     {
         assert_eq!(a.len(), b.len(), "eq_vec expects equal length vectors");
+        let a_vars = a
+            .iter()
+            .cloned()
+            .flat_map(|a_val| a_val.to_vars())
+            .collect_vec();
+        let b_vars = b
+            .iter()
+            .cloned()
+            .flat_map(|b_val| b_val.to_vars())
+            .collect_vec();
 
-        for (a_val, b_val) in a.iter().cloned().zip(b.iter().cloned()) {
+        for (a_val, b_val) in a_vars.into_iter().zip(b_vars) {
             let a_lc: LinearCombination = a_val.into();
             let b_lc: LinearCombination = b_val.into();
             cs.constrain(a_lc - b_lc);
@@ -193,12 +175,12 @@ impl EqVecGadget {
 /// Returns a boolean representing a != b where 1 is true and 0 is false
 #[derive(Debug)]
 pub struct NotEqualGadget {}
-
 impl NotEqualGadget {
     /// Computes a != b
-    pub fn not_equal<L, CS>(a: L, b: L, cs: &mut CS) -> LinearCombination
+    pub fn not_equal<L1, L2, CS>(a: L1, b: L2, cs: &mut CS) -> LinearCombination
     where
-        L: Into<LinearCombination> + Clone,
+        L1: LinearCombinationLike,
+        L2: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         let eq_zero = EqZeroGadget::eq_zero(a.into() - b.into(), cs);
@@ -213,7 +195,7 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
     /// Evaluate the condition x >= 0; returns 1 if true, otherwise 0
     pub fn greater_than_zero<L, CS>(x: L, cs: &mut CS) -> Variable
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         // If we can reconstruct the value without the highest bit, the value is non-negative
@@ -224,7 +206,7 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
     /// Constrain the value to be greater than zero
     pub fn constrain_greater_than_zero<L, CS>(x: L, cs: &mut CS)
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         // If we can reconstruct the value without the highest bit, the value is non-negative
@@ -240,7 +222,7 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
     /// non-negative
     fn bit_decompose_reconstruct<L, CS>(x: L, cs: &mut CS) -> LinearCombination
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         assert!(
@@ -268,82 +250,6 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
     }
 }
 
-/// The witness for the statement that a hidden value is greater than zero
-#[derive(Clone, Debug)]
-pub struct GreaterThanEqZeroWitness {
-    /// The value attested to that must be greater than zero
-    val: Scalar,
-}
-
-impl CommitWitness for GreaterThanEqZeroWitness {
-    type CommitType = CompressedRistretto;
-    type VarType = Variable;
-    type ErrorType = ();
-
-    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
-        &self,
-        rng: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (witness_comm, witness_var) = prover.commit(self.val, Scalar::random(rng));
-        Ok((witness_var, witness_comm))
-    }
-}
-
-impl<const D: usize> SingleProverCircuit for GreaterThanEqZeroGadget<D> {
-    type Statement = ();
-    type Witness = GreaterThanEqZeroWitness;
-    type WitnessCommitment = CompressedRistretto;
-
-    const BP_GENS_CAPACITY: usize = 256;
-
-    fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: <Self::Witness as CommitWitness>::VarType,
-        _: <Self::Statement as CommitPublic>::VarType,
-        cs: &mut CS,
-    ) -> Result<(), R1CSError> {
-        // Apply the constraints over the allocated witness & statement
-        Self::constrain_greater_than_zero(witness_var, cs);
-        Ok(())
-    }
-
-    fn prove(
-        witness: Self::Witness,
-        _: Self::Statement,
-        mut prover: Prover,
-    ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
-        // Commit to the witness
-        let mut rng = OsRng {};
-        let (witness_var, witness_commit) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-
-        Self::apply_constraints(witness_var, (), &mut prover).unwrap();
-
-        // Prove the statement
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
-
-        Ok((witness_commit, proof))
-    }
-
-    fn verify(
-        witness_commitment: Self::WitnessCommitment,
-        _: Self::Statement,
-        proof: R1CSProof,
-        mut verifier: Verifier,
-    ) -> Result<(), VerifierError> {
-        // Commit to the witness
-        let witness_var = verifier.commit(witness_commitment);
-
-        Self::apply_constraints(witness_var, (), &mut verifier).unwrap();
-
-        // Verify the proof
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        verifier
-            .verify(&proof, &bp_gens)
-            .map_err(VerifierError::R1CS)
-    }
-}
-
 /// A multiprover version of the greater than or equal to zero gadget
 pub struct MultiproverGreaterThanEqZeroGadget<
     'a,
@@ -355,8 +261,12 @@ pub struct MultiproverGreaterThanEqZeroGadget<
     _phantom: &'a PhantomData<(N, S)>,
 }
 
-impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
-    MultiproverGreaterThanEqZeroGadget<'a, D, N, S>
+impl<
+        'a,
+        const D: usize,
+        N: 'a + MpcNetwork + Send + Clone,
+        S: 'a + SharedValueSource<Scalar> + Clone,
+    > MultiproverGreaterThanEqZeroGadget<'a, D, N, S>
 {
     /// Constrains the input value to be greater than or equal to zero implicitly
     /// by bit-decomposing the value and re-composing it thereafter
@@ -366,7 +276,7 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where
-        L: Into<MpcLinearCombination<N, S>> + Clone,
+        L: MpcLinearCombinationLike<N, S>,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
         let reconstructed_res = Self::bit_decompose_reconstruct(x.clone(), fabric, cs)?;
@@ -386,7 +296,7 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
         cs: &mut CS,
     ) -> Result<MpcLinearCombination<N, S>, ProverError>
     where
-        L: Into<MpcLinearCombination<N, S>> + Clone,
+        L: MpcLinearCombinationLike<N, S>,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
         // Evaluate the assignment of the value in the underlying constraint system
@@ -418,7 +328,7 @@ impl<const D: usize> GreaterThanEqGadget<D> {
     /// Evaluates the comparator a >= b; returns 1 if true, otherwise 0
     pub fn greater_than_eq<L, CS>(a: L, b: L, cs: &mut CS) -> Variable
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         GreaterThanEqZeroGadget::<D>::greater_than_zero(a.into() - b.into(), cs)
@@ -427,96 +337,10 @@ impl<const D: usize> GreaterThanEqGadget<D> {
     /// Constrains the values to satisfy a >= b
     pub fn constrain_greater_than_eq<L, CS>(a: L, b: L, cs: &mut CS)
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         GreaterThanEqZeroGadget::<D>::constrain_greater_than_zero(a.into() - b.into(), cs);
-    }
-}
-
-/// The witness for the statement a >= b; used for testing
-///
-/// Here, both `a` and `b` are private variables
-#[allow(missing_docs, clippy::missing_docs_in_private_items)]
-#[derive(Clone, Debug)]
-pub struct GreaterThanEqWitness {
-    pub a: Scalar,
-    pub b: Scalar,
-}
-
-impl CommitWitness for GreaterThanEqWitness {
-    type CommitType = Vec<CompressedRistretto>;
-    type VarType = (Variable, Variable);
-    type ErrorType = ();
-
-    fn commit_witness<R: rand_core::RngCore + rand_core::CryptoRng>(
-        &self,
-        rng: &mut R,
-        prover: &mut Prover,
-    ) -> Result<(Self::VarType, Self::CommitType), Self::ErrorType> {
-        let (a_comm, a_var) = prover.commit(self.a, Scalar::random(rng));
-        let (b_comm, b_var) = prover.commit(self.b, Scalar::random(rng));
-
-        Ok(((a_var, b_var), vec![a_comm, b_comm]))
-    }
-}
-
-impl<const D: usize> SingleProverCircuit for GreaterThanEqGadget<D> {
-    type Statement = ();
-    type Witness = GreaterThanEqWitness;
-    type WitnessCommitment = Vec<CompressedRistretto>;
-
-    // No statement for this gadget
-
-    const BP_GENS_CAPACITY: usize = 64;
-
-    fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: <Self::Witness as CommitWitness>::VarType,
-        _: <Self::Statement as CommitPublic>::VarType,
-        cs: &mut CS,
-    ) -> Result<(), R1CSError> {
-        // Apply the constraints over the allocated witness & statement
-        Self::constrain_greater_than_eq(witness_var.0, witness_var.1, cs);
-        Ok(())
-    }
-
-    fn prove(
-        witness: Self::Witness,
-        _: Self::Statement,
-        mut prover: Prover,
-    ) -> Result<(Self::WitnessCommitment, R1CSProof), ProverError> {
-        // Commit to the witness
-        let mut rng = OsRng {};
-        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover).unwrap();
-
-        Self::apply_constraints(witness_var, (), &mut prover).unwrap();
-
-        // Prove the statement
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
-
-        Ok((witness_comm, proof))
-    }
-
-    fn verify(
-        witness_commitment: Self::WitnessCommitment,
-        _: Self::Statement,
-        proof: R1CSProof,
-        mut verifier: Verifier,
-    ) -> Result<(), VerifierError> {
-        // Commit to the witness
-        let a_var = verifier.commit(witness_commitment[0]);
-        let b_var = verifier.commit(witness_commitment[1]);
-
-        let witness_var = (a_var, b_var);
-
-        Self::apply_constraints(witness_var, (), &mut verifier).unwrap();
-
-        // Verify the proof
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        verifier
-            .verify(&proof, &bp_gens)
-            .map_err(VerifierError::R1CS)
     }
 }
 
@@ -529,7 +353,7 @@ impl<const D: usize> LessThanGadget<D> {
     /// Compute the boolean a < b; returns 1 if true, otherwise 0
     pub fn less_than<L, CS>(a: L, b: L, cs: &mut CS) -> LinearCombination
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         let a_geq_b = GreaterThanEqGadget::<D>::greater_than_eq(a, b, cs);
@@ -539,14 +363,13 @@ impl<const D: usize> LessThanGadget<D> {
     /// Constrain a to be less than b
     pub fn constrain_less_than<L, CS>(a: L, b: L, cs: &mut CS)
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         let lt_result = Self::less_than(a, b, cs);
         cs.constrain(Variable::One() - lt_result);
     }
 }
-
 /// A multiprover variant of the GreaterThanEqGadget
 ///
 /// `D` is the bitlength of the input values
@@ -560,8 +383,12 @@ pub struct MultiproverGreaterThanEqGadget<
     _phantom: &'a PhantomData<(N, S)>,
 }
 
-impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
-    MultiproverGreaterThanEqGadget<'a, D, N, S>
+impl<
+        'a,
+        const D: usize,
+        N: 'a + MpcNetwork + Send + Clone,
+        S: 'a + SharedValueSource<Scalar> + Clone,
+    > MultiproverGreaterThanEqGadget<'a, D, N, S>
 {
     /// Constrain the relation a >= b
     pub fn constrain_greater_than_eq<L, CS>(
@@ -571,7 +398,7 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where
-        L: Into<MpcLinearCombination<N, S>> + Clone,
+        L: MpcLinearCombinationLike<N, S>,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
         MultiproverGreaterThanEqZeroGadget::<'a, D, N, S>::constrain_greater_than_zero(
@@ -587,83 +414,84 @@ mod comparators_test {
     use std::{cmp, ops::Neg};
 
     use curve25519_dalek::scalar::Scalar;
+    use merlin::Transcript;
+    use mpc_bulletproof::{
+        r1cs::{ConstraintSystem, Prover},
+        PedersenGens,
+    };
     use rand_core::{OsRng, RngCore};
 
-    use crate::{errors::VerifierError, test_helpers::bulletproof_prove_and_verify};
+    use crate::traits::CircuitBaseType;
 
-    use super::{
-        EqZeroGadget, GreaterThanEqGadget, GreaterThanEqWitness, GreaterThanEqZeroGadget,
-        GreaterThanEqZeroWitness,
-    };
+    use super::{EqZeroGadget, GreaterThanEqGadget, GreaterThanEqZeroGadget};
 
     /// Test the equal zero gadget
     #[test]
     fn test_eq_zero() {
+        // Build a constraint system
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
         // First tests with a non-zero value
         let mut rng = OsRng {};
-        let mut witness = Scalar::random(&mut rng);
-        let mut statement = false; /* non-zero */
+        let val = Scalar::random(&mut rng).commit_public(&mut prover);
 
-        let res = bulletproof_prove_and_verify::<EqZeroGadget>(witness, statement);
-        assert!(res.is_ok());
+        let res = EqZeroGadget::eq_zero(val, &mut prover);
+        assert_eq!(Scalar::zero(), prover.eval(&res.into()));
 
         // Now test with the zero value
-        witness = Scalar::zero();
-        statement = true; /* zero */
+        let val = Scalar::zero().commit_public(&mut prover);
+        let res = EqZeroGadget::eq_zero(val, &mut prover);
 
-        let res = bulletproof_prove_and_verify::<EqZeroGadget>(witness, statement);
-        assert!(res.is_ok());
+        assert_eq!(Scalar::one(), prover.eval(&res.into()));
     }
 
     /// Test the greater than zero constraint
     #[test]
     fn test_greater_than_zero() {
         let mut rng = OsRng {};
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
 
         // Test first with a positive value
-        let value1 = Scalar::from(rng.next_u64());
-        let witness = GreaterThanEqZeroWitness { val: value1 };
-
-        bulletproof_prove_and_verify::<GreaterThanEqZeroGadget<64 /* bitlength */>>(witness, ())
-            .unwrap();
+        let value1 = Scalar::from(rng.next_u64()).commit_public(&mut prover);
+        let res = GreaterThanEqZeroGadget::<64 /* bits */>::greater_than_zero(value1, &mut prover);
+        assert_eq!(Scalar::one(), prover.eval(&res.into()));
 
         // Test with a negative value
-        let value2 = value1.neg();
-        let witness = GreaterThanEqZeroWitness { val: value2 };
-        assert!(matches!(
-            bulletproof_prove_and_verify::<GreaterThanEqZeroGadget<64 /* bitlength */>>(
-                witness,
-                ()
-            ),
-            Err(VerifierError::R1CS(_))
-        ));
+        let value2 = Scalar::from(rng.next_u64())
+            .neg()
+            .commit_public(&mut prover);
+        let res = GreaterThanEqZeroGadget::<64 /* bits */>::greater_than_zero(value2, &mut prover);
+        assert_eq!(Scalar::zero(), prover.eval(&res.into()));
     }
 
     /// Test the greater than or equal to constraint
     #[test]
     fn test_greater_than_eq() {
         let mut rng = OsRng {};
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
         let a = rng.next_u64();
         let b = rng.next_u64();
 
-        let max = Scalar::from(cmp::max(a, b));
-        let min = Scalar::from(cmp::min(a, b));
+        let max = Scalar::from(cmp::max(a, b)).commit_public(&mut prover);
+        let min = Scalar::from(cmp::min(a, b)).commit_public(&mut prover);
 
-        // Test first with a valid witness
-        let witness = GreaterThanEqWitness { a: max, b: min };
-        bulletproof_prove_and_verify::<GreaterThanEqGadget<64 /* bitlength */>>(witness, ())
-            .unwrap();
+        // Test with a > b = false
+        let res = GreaterThanEqGadget::<64 /* bits */>::greater_than_eq(min, max, &mut prover);
+        assert_eq!(Scalar::zero(), prover.eval(&res.into()));
 
         // Test with equal values
-        let witness = GreaterThanEqWitness { a: max, b: max };
-        bulletproof_prove_and_verify::<GreaterThanEqGadget<64 /* bitlength */>>(witness, ())
-            .unwrap();
+        let res = GreaterThanEqGadget::<64 /* bits */>::greater_than_eq(min, min, &mut prover);
+        assert_eq!(Scalar::one(), prover.eval(&res.into()));
 
-        // Test with an invalid witness
-        let witness = GreaterThanEqWitness { a: min, b: max };
-        assert!(matches!(
-            bulletproof_prove_and_verify::<GreaterThanEqGadget<64 /* bitlength */>>(witness, ()),
-            Err(VerifierError::R1CS(_))
-        ));
+        // Test with a > b = true
+        let res = GreaterThanEqGadget::<64 /* bits */>::greater_than_eq(max, min, &mut prover);
+        assert_eq!(Scalar::one(), prover.eval(&res.into()));
     }
 }
