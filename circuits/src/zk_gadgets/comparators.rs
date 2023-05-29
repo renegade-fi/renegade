@@ -177,10 +177,12 @@ impl EqVecGadget {
 pub struct NotEqualGadget {}
 impl NotEqualGadget {
     /// Computes a != b
-    pub fn not_equal<L1, L2, CS>(a: L1, b: L2, cs: &mut CS) -> LinearCombination
+    pub fn not_equal<L1, L2, V1, V2, CS>(a: V1, b: V2, cs: &mut CS) -> LinearCombination
     where
         L1: LinearCombinationLike,
         L2: LinearCombinationLike,
+        V1: CircuitVarType<L1>,
+        V2: CircuitVarType<L2>,
         CS: RandomizableConstraintSystem,
     {
         let eq_zero = EqZeroGadget::eq_zero(a.into() - b.into(), cs);
