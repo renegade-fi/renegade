@@ -5,8 +5,16 @@ use std::thread::{Builder, JoinHandle};
 
 use ed25519_dalek::Keypair;
 use futures::executor::block_on;
-use libp2p::multiaddr::Protocol;
-use libp2p::Multiaddr;
+use futures_util::future::Either;
+use libp2p::multiaddr::{Multiaddr, Protocol};
+use libp2p::noise::Config as NoiseConfig;
+use libp2p::quic::{tokio::Transport as QuicTransport, Config as QuicConfig};
+use libp2p::tcp::{tokio::Transport as TcpTransport, Config as TcpConfig};
+use libp2p::yamux::Config as YamuxConfig;
+use libp2p_core::muxing::StreamMuxerBox;
+use libp2p_core::transport::OrTransport;
+use libp2p_core::upgrade::Version;
+use libp2p_core::Transport;
 use libp2p_swarm::SwarmBuilder;
 use tokio::runtime::Builder as TokioRuntimeBuilder;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -113,12 +121,33 @@ impl Worker for NetworkManager {
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
-        // Build a transport and connect it to the P2P swarm
-        // TODO: Migrate this to QUIC
-        let transport = block_on(libp2p::development_transport(self.local_keypair.clone()))
-            .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
+        // Build a quic transport with tcp fallback
+        let hostport = format!("/ip4/0.0.0.0/tcp/{}", self.config.port);
+        let addr: Multiaddr = hostport.parse().unwrap();
 
-        // Behavior is a composed behavior of RequestResponse with Kademlia
+        // Build the quic transport
+        let config = QuicConfig::new(&self.local_keypair);
+        let quic_transport = QuicTransport::new(config);
+
+        // Build the TCP fallback
+        let tcp_transport = TcpTransport::new(TcpConfig::default())
+            .upgrade(Version::V1Lazy)
+            .authenticate(
+                NoiseConfig::new(&self.local_keypair).expect("failed to build noise config"),
+            )
+            .multiplex(YamuxConfig::default())
+            .boxed();
+
+        // Connect the two transports in a failover configuration
+        let fallback_transport = OrTransport::new(quic_transport, tcp_transport)
+            .map(|muxed_transport, _| match muxed_transport {
+                Either::Left((peer_id, quic_conn)) => (peer_id, StreamMuxerBox::new(quic_conn)),
+                Either::Right((peer_id, tcp_conn)) => (peer_id, StreamMuxerBox::new(tcp_conn)),
+            })
+            .boxed();
+
+        // Defines the behaviors of the underlying networking stack: including gossip,
+        // pubsub, address discovery, etc
         let mut behavior = ComposedNetworkBehavior::new(
             *self.local_peer_id,
             ProtocolVersion::Version0,
@@ -134,6 +163,7 @@ impl Worker for NetworkManager {
                 .get_info_map()
                 .await
         });
+
         for (peer_id, peer_info) in peer_index.iter() {
             log::info!(
                 "Adding {:?}: {} to routing table...",
@@ -145,20 +175,16 @@ impl Worker for NetworkManager {
                 .add_address(peer_id, peer_info.get_addr());
         }
 
-        // Connect the behavior and the transport via swarm
-        // and begin listening for requests
+        // Connect the behavior and the transport via swarm and enter the network
         let mut swarm =
-            SwarmBuilder::with_tokio_executor(transport, behavior, *self.local_peer_id).build();
-        let hostport = format!("/ip4/0.0.0.0/tcp/{}", self.config.port);
-        let addr: Multiaddr = hostport.parse().unwrap();
-
+            SwarmBuilder::with_tokio_executor(fallback_transport, behavior, *self.local_peer_id)
+                .build();
         swarm
             .listen_on(addr)
             .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
         // After assigning address and peer ID, update the global state
         block_on(self.update_global_state_after_startup());
-
         // Subscribe to all relevant topics
         self.setup_pubsub_subscriptions(&mut swarm)?;
 

@@ -30,9 +30,9 @@ use super::{
     types::{ClusterId, PeerInfo, WrappedPeerId},
 };
 
-/**
- * Constants
- */
+// -------------
+// | Constants |
+// -------------
 
 /// Nanoseconds in a millisecond, as an unsigned 64bit integer
 pub(super) const NANOS_PER_MILLI: u64 = 1_000_000;

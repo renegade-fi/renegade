@@ -7,7 +7,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use circuits::native_helpers::compute_poseidon_hash;
+use circuits::{native_helpers::compute_poseidon_hash, traits::BaseType};
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::starknet_felt_to_biguint;
 use curve25519_dalek::scalar::Scalar;
@@ -225,22 +225,21 @@ impl LookupWalletTask {
         // Build an iterator over private secret shares and fast forward to the given wallet index
         // `shares_per_wallet` does not include the private share of the wallet blinder, this comes from
         // a separate stream of randomness, so we take the serialized length minus one
+        let shares_per_wallet = public_shares.to_scalars().len();
         let mut private_share_csprng = PoseidonCSPRNG::new(self.secret_share_seed);
         private_share_csprng
-            .advance_by((blinder_index - 1) * (SizedWalletShare::SHARES_PER_WALLET - 1))
+            .advance_by((blinder_index - 1) * (shares_per_wallet - 1))
             .unwrap();
 
         // Sample private secret shares for the wallet
-        let mut private_shares: SizedWalletShare = private_share_csprng
-            .take(SizedWalletShare::SHARES_PER_WALLET)
-            .collect_vec()
-            .into();
+        let mut new_private_shares = private_share_csprng.take(shares_per_wallet);
+        let mut private_shares = SizedWalletShare::from_scalars(&mut new_private_shares);
         private_shares.blinder = curr_blinder_private_share;
 
         // Recover the wallet and index it in the global state
         let recovered_blinder = private_shares.blinder + public_shares.blinder;
-        let circuit_wallet =
-            private_shares.clone() + public_shares.unblind_cloned(recovered_blinder);
+        let unblinded_public_share = public_shares.clone().unblind_shares(recovered_blinder);
+        let circuit_wallet = private_shares.clone() + unblinded_public_share;
 
         let mut wallet = Wallet {
             wallet_id: self.wallet_id,

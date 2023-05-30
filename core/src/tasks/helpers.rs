@@ -7,6 +7,7 @@ use circuits::{
         compute_wallet_private_share_commitment, create_wallet_shares_from_private, reblind_wallet,
         wallet_from_blinded_shares,
     },
+    traits::{LinkableBaseType, LinkableType},
     types::{
         balance::Balance,
         order::{Order, OrderSide},
@@ -79,7 +80,7 @@ pub(super) async fn find_merkle_path(
 
 /// Re-blind the wallet and prove `VALID REBLIND` for the wallet
 pub(super) fn construct_wallet_reblind_proof(
-    wallet: &Wallet,
+    wallet: Wallet,
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
 ) -> Result<(SizedValidReblindWitness, TokioReceiver<ProofBundle>), String> {
     // If the wallet doesn't have an authentication path return an error
@@ -94,7 +95,7 @@ pub(super) fn construct_wallet_reblind_proof(
         wallet.blinded_public_shares.clone(),
     );
     let (reblinded_private_shares, reblinded_public_shares) =
-        reblind_wallet(wallet.private_shares.clone(), &circuit_wallet);
+        reblind_wallet(wallet.private_shares.clone(), circuit_wallet);
 
     let merkle_root = authentication_path.compute_root();
     let private_reblinded_commitment =
@@ -109,8 +110,8 @@ pub(super) fn construct_wallet_reblind_proof(
     let witness = ValidReblindWitness {
         original_wallet_private_shares: wallet.private_shares.clone(),
         original_wallet_public_shares: wallet.blinded_public_shares.clone(),
-        reblinded_wallet_private_shares: reblinded_private_shares.into(),
-        reblinded_wallet_public_shares: reblinded_public_shares.into(),
+        reblinded_wallet_private_shares: reblinded_private_shares.to_linkable(),
+        reblinded_wallet_public_shares: reblinded_public_shares.to_linkable(),
         original_share_opening: authentication_path.into(),
         sk_match: wallet.key_chain.secret_keys.sk_match,
     };
@@ -152,11 +153,11 @@ pub(super) fn construct_wallet_commitment_proof(
         valid_reblind_witness
             .reblinded_wallet_private_shares
             .clone()
-            .into(),
+            .to_base_type(),
         valid_reblind_witness
             .reblinded_wallet_public_shares
             .clone()
-            .into(),
+            .to_base_type(),
     );
 
     let (send_mint, receive_mint) = match order.side {
@@ -194,19 +195,19 @@ pub(super) fn construct_wallet_commitment_proof(
         .val;
     let augmented_blinder = reblinded_private_blinder + reblinded_public_blinder;
     let (_, augmented_public_shares) = create_wallet_shares_from_private(
-        &augmented_wallet,
+        augmented_wallet,
         &valid_reblind_witness
             .reblinded_wallet_private_shares
             .clone()
-            .into(),
+            .to_base_type(),
         augmented_blinder,
     );
 
     // Build the witness and statement
     let statement = ValidCommitmentsStatement {
-        balance_send_index: send_index,
-        balance_receive_index: receive_index,
-        order_index,
+        balance_send_index: send_index as u64,
+        balance_receive_index: receive_index as u64,
+        order_index: order_index as u64,
     };
     let witness = ValidCommitmentsWitness {
         // Use the linkable commitments from `VALID REBLIND` to link the two proofs together
@@ -214,12 +215,12 @@ pub(super) fn construct_wallet_commitment_proof(
             .reblinded_wallet_private_shares
             .clone(),
         public_secret_shares: valid_reblind_witness.reblinded_wallet_public_shares.clone(),
-        augmented_public_shares: augmented_public_shares.into(),
-        order: order.into(),
-        balance_send: send_balance.into(),
-        balance_receive: receive_balance.into(),
-        balance_fee: fee_balance.into(),
-        fee: fee.into(),
+        augmented_public_shares: augmented_public_shares.to_linkable(),
+        order: order.to_linkable(),
+        balance_send: send_balance.to_linkable(),
+        balance_receive: receive_balance.to_linkable(),
+        balance_fee: fee_balance.to_linkable(),
+        fee: fee.to_linkable(),
     };
 
     // Dispatch a job to the proof manager to prove `VALID COMMITMENTS`
@@ -306,7 +307,7 @@ pub(super) async fn update_wallet_validity_proofs(
 
     // Dispatch a proof of `VALID REBLIND` for the wallet
     let (reblind_witness, reblind_response_channel) =
-        construct_wallet_reblind_proof(wallet, proof_manager_work_queue.clone())?;
+        construct_wallet_reblind_proof(wallet.clone(), proof_manager_work_queue.clone())?;
     let wallet_reblind_witness = Arc::new(reblind_witness);
 
     // For each order, construct a proof of `VALID COMMITMENTS`

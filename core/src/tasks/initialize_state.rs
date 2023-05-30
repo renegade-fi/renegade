@@ -230,9 +230,11 @@ impl InitializeStateTask {
             .await
         {
             // Start a proof of `VALID REBLIND`
-            let (reblind_witness, response_channel) =
-                construct_wallet_reblind_proof(&wallet, self.proof_manager_work_queue.clone())
-                    .map_err(InitializeStateTaskError::ProveValidReblind)?;
+            let (reblind_witness, response_channel) = construct_wallet_reblind_proof(
+                wallet.clone(),
+                self.proof_manager_work_queue.clone(),
+            )
+            .map_err(InitializeStateTaskError::ProveValidReblind)?;
 
             let wallet_reblind_witness = Arc::new(reblind_witness);
             reblind_response_channels.push((wallet.wallet_id, response_channel));
