@@ -11,7 +11,7 @@ use std::{
 
 use circuits::{
     native_helpers::compute_wallet_commitment_from_private,
-    types::wallet::{Nullifier, WalletShareCommitment},
+    types::wallet::{Nullifier, WalletShareStateCommitment},
     zk_gadgets::merkle::MerkleRoot,
 };
 use crypto::fields::{
@@ -644,7 +644,7 @@ impl StarknetClient {
     /// Returns the transaction hash corresponding to the `new_wallet` invocation
     pub async fn new_wallet(
         &self,
-        private_share_commitment: WalletShareCommitment,
+        private_share_commitment: WalletShareStateCommitment,
         public_shares: SizedWalletShare,
         valid_wallet_create: ValidWalletCreateBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
@@ -685,7 +685,7 @@ impl StarknetClient {
     #[allow(clippy::too_many_arguments)]
     pub async fn update_wallet(
         &self,
-        new_private_shares_commitment: WalletShareCommitment,
+        new_private_shares_commitment: WalletShareStateCommitment,
         old_shares_nullifier: Nullifier,
         external_transfer: Option<ExternalTransfer>,
         new_public_shares: SizedWalletShare,
@@ -731,8 +731,8 @@ impl StarknetClient {
         &self,
         party0_old_shares_nullifier: Nullifier,
         party1_old_shares_nullifier: Nullifier,
-        party0_private_share_commitment: WalletShareCommitment,
-        party1_private_share_commitment: WalletShareCommitment,
+        party0_private_share_commitment: WalletShareStateCommitment,
+        party1_private_share_commitment: WalletShareStateCommitment,
         party0_public_shares: SizedWalletShare,
         party1_public_shares: SizedWalletShare,
         party0_validity_proofs: OrderValidityProofBundle,

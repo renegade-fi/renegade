@@ -8,7 +8,7 @@
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use async_trait::async_trait;
-use circuits::types::balance::Balance;
+use circuits::{traits::LinkableType, types::balance::Balance};
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::{scalar_to_biguint, starknet_felt_to_biguint};
 use curve25519_dalek::scalar::Scalar;
@@ -220,10 +220,16 @@ impl SettleMatchTask {
     /// Apply the match to the wallets and prove `VALID SETTLE`
     async fn prove_settle(&self) -> Result<ValidSettleBundle, SettleMatchTaskError> {
         // Modify the secret shares
-        let mut party0_modified_shares: SizedWalletShare =
-            self.handshake_result.party0_reblinded_shares.clone().into();
-        let mut party1_modified_shares: SizedWalletShare =
-            self.handshake_result.party1_reblinded_shares.clone().into();
+        let mut party0_modified_shares: SizedWalletShare = self
+            .handshake_result
+            .party0_reblinded_shares
+            .clone()
+            .to_base_type();
+        let mut party1_modified_shares: SizedWalletShare = self
+            .handshake_result
+            .party1_reblinded_shares
+            .clone()
+            .to_base_type();
         let party0_commit_proof = self.party0_validity_proof.commitment_proof.clone();
         let party1_commit_proof = self.party1_validity_proof.commitment_proof.clone();
 
@@ -285,13 +291,13 @@ impl SettleMatchTask {
                 (match_res.quote_amount.val, match_res.base_amount.val)
             };
 
-        let party0_send_ind = party0_commit_proof.statement.balance_send_index;
-        let party0_receive_ind = party0_commit_proof.statement.balance_receive_index;
-        let party0_order_ind = party0_commit_proof.statement.order_index;
+        let party0_send_ind = party0_commit_proof.statement.balance_send_index as usize;
+        let party0_receive_ind = party0_commit_proof.statement.balance_receive_index as usize;
+        let party0_order_ind = party0_commit_proof.statement.order_index as usize;
 
-        let party1_send_ind = party1_commit_proof.statement.balance_send_index;
-        let party1_receive_ind = party1_commit_proof.statement.balance_receive_index;
-        let party1_order_ind = party1_commit_proof.statement.order_index;
+        let party1_send_ind = party1_commit_proof.statement.balance_send_index as usize;
+        let party1_receive_ind = party1_commit_proof.statement.balance_receive_index as usize;
+        let party1_order_ind = party1_commit_proof.statement.order_index as usize;
 
         // Apply updates to party0's wallet
         wallet0_share.balances[party0_send_ind].amount -= party1_receive_amount;
