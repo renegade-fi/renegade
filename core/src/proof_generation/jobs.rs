@@ -34,8 +34,8 @@ pub struct GenericValidWalletCreateBundle<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
-> 
-    where [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+> where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
     /// A commitment to the witness type for `VALID WALLET CREATE`
     pub commitment: ValidWalletCreateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
