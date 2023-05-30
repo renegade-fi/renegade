@@ -19,7 +19,7 @@ use crossbeam::channel::Receiver;
 use rayon::ThreadPool;
 use tracing::log;
 
-use crate::{proof_generation::jobs::ProofJob, CancelChannel, MAX_FEES};
+use crate::{proof_generation::jobs::ProofJob, CancelChannel, MAX_FEES, MERKLE_HEIGHT};
 
 use super::{
     error::ProofManagerError,
@@ -49,8 +49,6 @@ pub(crate) const PROOF_GENERATION_N_THREADS: usize = 3;
 #[derive(Debug)]
 pub struct ProofManager {
     /// The queue on which the proof manager receives new jobs
-    /// TODO: Remove this lint allowance
-    #[allow(dead_code)]
     pub(crate) job_queue: Option<Receiver<ProofManagerJob>>,
     /// The handle of the main driver thread in the proof generation module
     pub(crate) join_handle: Option<JoinHandle<ProofManagerError>>,
@@ -162,7 +160,7 @@ impl ProofManager {
     ) -> Result<ValidReblindBundle, ProofManagerError> {
         // Prove the statement `VALID REBLIND`
         let (witness_comm, proof) = singleprover_prove::<
-            ValidReblind<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+            ValidReblind<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
         >(witness, statement.clone())
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
@@ -197,7 +195,7 @@ impl ProofManager {
         statement: SizedValidWalletUpdateStatement,
     ) -> Result<ValidWalletUpdateBundle, ProofManagerError> {
         let (witness_comm, proof) = singleprover_prove::<
-            ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+            ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
         >(witness, statement.clone())
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 

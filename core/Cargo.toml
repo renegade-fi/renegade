@@ -33,12 +33,12 @@ itertools = "0.10"
 lazy_static = "1.4.0"
 libp2p = { version = "0.51", features = [
     "async-std",
-    "dns",
     "gossipsub", 
     "identify",
     "kad",
     "mplex",
     "noise", 
+    "quic",
     "request-response", 
     "tcp",
     "tokio",

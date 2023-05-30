@@ -12,7 +12,7 @@ use circuits::zk_circuits::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use crate::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
 
 use self::jobs::{ValidCommitmentsBundle, ValidReblindBundle};
 pub mod error;
@@ -33,7 +33,7 @@ pub type SizedValidWalletCreateStatement =
 
 /// A `VALID WALLET UPDATE` witness with default const generic sizing parameters
 pub type SizedValidWalletUpdateWitness =
-    ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
 /// A `VALID WALLET UPDATE` statement with default const generic sizing parameters
 pub type SizedValidWalletUpdateStatement =
     ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
@@ -44,9 +44,10 @@ pub type SizedValidCommitmentsWitness = ValidCommitmentsWitness<MAX_BALANCES, MA
 pub type SizedValidCommitments = ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 /// A `VALID REBLIND` circuit with default const generic sizing parameters
-pub type SizedValidReblind = ValidReblind<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedValidReblind = ValidReblind<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
 /// A `VALID REBLIND` witness with default const generic sizing parameters
-pub type SizedValidReblindWitness = ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedValidReblindWitness =
+    ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
 
 /// A `VALID SETTLE` witness with default const generic sizing parameters
 pub type SizedValidSettleWitness = ValidSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;

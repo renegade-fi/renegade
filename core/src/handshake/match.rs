@@ -7,25 +7,23 @@ use circuits::{
     mpc::SharedFabric,
     mpc_circuits::r#match::compute_match,
     multiprover_prove,
+    traits::{BaseType, LinkableType, MpcBaseType, MpcType, MultiproverCircuitCommitmentType},
     types::{
-        balance::LinkableBalanceCommitment,
-        fee::LinkableFeeCommitment,
-        order::{LinkableOrderCommitment, Order},
+        balance::LinkableBalance,
+        fee::LinkableFee,
+        order::{LinkableOrder, Order},
         r#match::{
-            AuthenticatedLinkableMatchResultCommitment, AuthenticatedMatchResult,
-            LinkableMatchResultCommitment,
+            AuthenticatedLinkableMatchResult, AuthenticatedMatchResult, LinkableMatchResult,
         },
-        wallet::{LinkableWalletSecretShare, Nullifier},
+        wallet::{LinkableWalletShare, Nullifier},
     },
     verify_collaborative_proof,
     zk_circuits::{
         commitment_links::{verify_augmented_shares_commitments, verify_commitment_match_link},
         valid_match_mpc::{
-            ValidMatchCommitment, ValidMatchMpcCircuit, ValidMatchMpcStatement,
-            ValidMatchMpcWitness,
+            AuthenticatedValidMatchMpcWitness, ValidMatchMpcCircuit, ValidMatchMpcWitnessCommitment,
         },
     },
-    Allocate, Open, SharePublic,
 };
 use crossbeam::channel::{bounded, Receiver};
 use curve25519_dalek::scalar::Scalar;
@@ -49,7 +47,7 @@ use crate::{
 use super::{error::HandshakeManagerError, manager::HandshakeExecutor, state::HandshakeState};
 
 /// A type alias for a linkable wallet share with default sizing parameters
-pub type SizedLinkableWalletShare = LinkableWalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedLinkableWalletShare = LinkableWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 /// Error message emitted when the opened VALID MATCH proof does not properly link to
 /// both parties' proofs of VALID COMMITMENTS
@@ -61,7 +59,7 @@ const ERR_INVALID_PROOF_LINK: &str =
 #[derive(Clone, Debug)]
 pub struct HandshakeResult {
     /// The plaintext, opened result of the match
-    pub match_: LinkableMatchResultCommitment,
+    pub match_: LinkableMatchResult,
     /// The first party's public wallet share nullifier
     pub party0_share_nullifier: Nullifier,
     /// The second party's public wallet share nullifier,
@@ -73,9 +71,9 @@ pub struct HandshakeResult {
     /// The proof of `VALID MATCH MPC` along with associated commitments
     pub match_proof: ValidMatchMpcBundle,
     /// The first party's fee
-    pub party0_fee: LinkableFeeCommitment,
+    pub party0_fee: LinkableFee,
     /// The second party's fee
-    pub party1_fee: LinkableFeeCommitment,
+    pub party1_fee: LinkableFee,
 }
 
 impl HandshakeResult {
@@ -181,7 +179,7 @@ impl HandshakeExecutor {
         // Run the mpc to get a match result
         let commitment_witness = proof_witnesses.copy_commitment_witness();
         let match_res = Self::execute_match_mpc(
-            &commitment_witness.order.clone().into(),
+            &commitment_witness.order.clone().to_base_type(),
             shared_fabric.clone(),
         )?;
 
@@ -190,12 +188,10 @@ impl HandshakeExecutor {
             return Err(HandshakeManagerError::MpcShootdown);
         }
 
-        // The statement parameterization of the VALID MATCH MPC circuit is empty
-        let statement = ValidMatchMpcStatement {};
-        let (witness, commitment, proof) = Self::prove_valid_match(
+        // Prove `VALID MATCH MPC` with the counterparty
+        let (match_res, commitment, proof) = Self::prove_valid_match(
             commitment_witness.order.clone(),
             commitment_witness.balance_send.clone(),
-            statement,
             match_res,
             shared_fabric.clone(),
         )
@@ -219,7 +215,7 @@ impl HandshakeExecutor {
         }
 
         self.build_handshake_result(
-            witness.match_res,
+            match_res,
             commitment,
             proof,
             proof_witnesses,
@@ -251,55 +247,78 @@ impl HandshakeExecutor {
     }
 
     /// Generates a collaborative proof of the validity of a given match result
+    ///
+    /// The implementation *does not* open the match result. This leaks information and should
+    /// be done last, after all other openings, validity checks, etc are performed
     async fn prove_valid_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-        my_order: LinkableOrderCommitment,
-        my_balance: LinkableBalanceCommitment,
-        statement: ValidMatchMpcStatement,
+        my_order: LinkableOrder,
+        my_balance: LinkableBalance,
         match_res: AuthenticatedMatchResult<N, S>,
         fabric: SharedFabric<N, S>,
-    ) -> Result<(ValidMatchMpcWitness<N, S>, ValidMatchCommitment, R1CSProof), HandshakeManagerError>
-    {
+    ) -> Result<
+        (
+            AuthenticatedLinkableMatchResult<N, S>,
+            ValidMatchMpcWitnessCommitment,
+            R1CSProof,
+        ),
+        HandshakeManagerError,
+    > {
+        // Allocate orders and balances in the network
+        let order1 = my_order
+            .allocate(0 /* owning_party */, fabric.clone())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let order2 = my_order
+            .allocate(1 /* owning_party */, fabric.clone())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let balance1 = my_balance
+            .allocate(0 /* owning_party */, fabric.clone())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let balance2 = my_balance
+            .allocate(1 /* owning_party */, fabric.clone())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+
         // Build a witness to the VALID MATCH MPC statement
-        // TODO: Use proof-linked witness vars
-        let witness = ValidMatchMpcWitness {
-            my_order,
-            my_balance,
-            match_res: match_res.into(),
+        let witness = AuthenticatedValidMatchMpcWitness {
+            order1,
+            order2,
+            balance1,
+            balance2,
+            match_res: match_res.to_linkable(),
         };
 
         // Prove the statement
-        let (witness_commitment, proof) =
-            multiprover_prove::<'_, N, S, ValidMatchMpcCircuit<'_, N, S>>(
-                witness.clone(),
-                statement.clone(),
-                fabric.clone(),
-            )
-            .map_err(|err| HandshakeManagerError::Multiprover(err.to_string()))?;
+        let (witness_commitment, proof) = multiprover_prove::<
+            '_,
+            N,
+            S,
+            ValidMatchMpcCircuit<'_, N, S>,
+        >(witness.clone(), () /* statement */, fabric)
+        .map_err(|err| HandshakeManagerError::Multiprover(err.to_string()))?;
 
         // Open the proof and verify it
         let opened_commit = witness_commitment
-            .open_and_authenticate(fabric)
+            .open_and_authenticate()
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
         let opened_proof = proof
             .open()
             .map_err(|_| HandshakeManagerError::MpcNetwork("error opening proof".to_string()))?;
 
         verify_collaborative_proof::<'_, N, S, ValidMatchMpcCircuit<'_, N, S>>(
-            statement,
+            (), /* statement */
             opened_commit.clone(),
             opened_proof.clone(),
         )
         .map_err(|err| HandshakeManagerError::VerificationError(err.to_string()))?;
 
-        Ok((witness, opened_commit, opened_proof))
+        Ok((witness.match_res, opened_commit, opened_proof))
     }
 
     /// Build the handshake result from a match and proof
     #[allow(clippy::too_many_arguments)]
     async fn build_handshake_result<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         &self,
-        shared_match_res: AuthenticatedLinkableMatchResultCommitment<N, S>,
-        commitment: ValidMatchCommitment,
+        shared_match_res: AuthenticatedLinkableMatchResult<N, S>,
+        commitment: ValidMatchMpcWitnessCommitment,
         proof: R1CSProof,
         validity_proof_witness: OrderValidityWitnessBundle,
         party0_validity_proof: OrderValidityProofBundle,
@@ -358,7 +377,7 @@ impl HandshakeExecutor {
             match_: match_res_open,
             match_proof: ValidMatchMpcBundle {
                 commitment,
-                statement: ValidMatchMpcStatement {},
+                statement: (),
                 proof,
             },
             party0_share_nullifier: handshake_state.local_share_nullifier,

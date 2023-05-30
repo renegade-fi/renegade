@@ -8,6 +8,7 @@ use std::{
 };
 
 use circuits::{
+    traits::BaseType,
     types::{
         balance::Balance as IndexedBalance,
         fee::Fee as IndexedFee,
@@ -16,7 +17,6 @@ use circuits::{
     zk_gadgets::fixed_point::FixedPoint,
 };
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
-use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
@@ -88,11 +88,15 @@ impl From<IndexedWallet> for Wallet {
         let fees = wallet.fees.into_iter().map(|fee| fee.into()).collect_vec();
 
         // Serialize the shares then convert all values to BigUint
-        let blinded_public_shares = Into::<Vec<Scalar>>::into(wallet.blinded_public_shares)
+        let blinded_public_shares = wallet
+            .blinded_public_shares
+            .to_scalars()
             .iter()
             .map(scalar_to_biguint)
             .collect_vec();
-        let private_shares = Into::<Vec<Scalar>>::into(wallet.private_shares)
+        let private_shares = wallet
+            .private_shares
+            .to_scalars()
             .iter()
             .map(scalar_to_biguint)
             .collect_vec();
@@ -125,18 +129,12 @@ impl From<Wallet> for IndexedWallet {
         let fees = wallet.fees.into_iter().map(|fee| fee.into()).collect();
 
         // Deserialize the shares to scalar then re-structure into WalletSecretShare
-        let blinded_public_shares: SizedWalletShare = wallet
-            .blinded_public_shares
-            .iter()
-            .map(biguint_to_scalar)
-            .collect_vec()
-            .into();
-        let private_shares: SizedWalletShare = wallet
-            .private_shares
-            .iter()
-            .map(biguint_to_scalar)
-            .collect_vec()
-            .into();
+        let blinded_public_shares = SizedWalletShare::from_scalars(
+            &mut wallet.blinded_public_shares.iter().map(biguint_to_scalar),
+        );
+        let private_shares = SizedWalletShare::from_scalars(
+            &mut wallet.private_shares.iter().map(biguint_to_scalar),
+        );
 
         IndexedWallet {
             wallet_id: Uuid::new_v4(),

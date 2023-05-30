@@ -6,7 +6,7 @@
 
 use circuits::zk_circuits::{
     valid_commitments::{ValidCommitmentsStatement, ValidCommitmentsWitnessCommitment},
-    valid_match_mpc::{ValidMatchCommitment, ValidMatchMpcStatement},
+    valid_match_mpc::ValidMatchMpcWitnessCommitment,
     valid_reblind::{ValidReblindStatement, ValidReblindWitnessCommitment},
     valid_settle::{ValidSettleStatement, ValidSettleWitnessCommitment},
     valid_wallet_create::{ValidWalletCreateStatement, ValidWalletCreateWitnessCommitment},
@@ -16,7 +16,7 @@ use mpc_bulletproof::r1cs::R1CSProof;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot::Sender;
 
-use crate::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use crate::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
 
 use super::{
     SizedValidCommitmentsWitness, SizedValidReblindWitness, SizedValidSettleStatement,
@@ -34,7 +34,9 @@ pub struct GenericValidWalletCreateBundle<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
-> {
+> 
+    where [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
     /// A commitment to the witness type for `VALID WALLET CREATE`
     pub commitment: ValidWalletCreateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The statement (public variables) used to create the proof
@@ -53,11 +55,13 @@ pub struct GenericValidWalletUpdateBundle<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
+    const MERKLE_HEIGHT: usize,
 > where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
     /// A commitment to the witness type of `VALID WALLET UPDATE`
-    pub commitment: ValidWalletUpdateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub commitment:
+        ValidWalletUpdateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
     /// The statement (public variables) used to prove `VALID WALLET UPDATE`
     pub statement: ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The proof itself
@@ -66,7 +70,7 @@ pub struct GenericValidWalletUpdateBundle<
 
 /// A type alias that specifies the default generics for `GenericValidWalletUpdateBundle`
 pub type ValidWalletUpdateBundle =
-    GenericValidWalletUpdateBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    GenericValidWalletUpdateBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
 
 /// The response type for a request to generate a proof of `VALID REBLIND`
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -74,11 +78,13 @@ pub struct GenericValidReblindBundle<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
+    const MERKLE_HEIGHT: usize,
 > where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
     /// A commitment to the witness type of `VALID REBLIND`
-    pub commitment: ValidReblindWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub commitment:
+        ValidReblindWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
     /// The statement (public variables) used to prover `VALID REBLIND`
     pub statement: ValidReblindStatement,
     /// The proof itself
@@ -86,7 +92,8 @@ pub struct GenericValidReblindBundle<
 }
 
 /// A type alias that specifies default generics for `GenericValidReblindBundle`
-pub type ValidReblindBundle = GenericValidReblindBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type ValidReblindBundle =
+    GenericValidReblindBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
 
 /// The response type for a request to generate a proof of `VALID COMMITMENTS`
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -112,9 +119,9 @@ pub type ValidCommitmentsBundle = GenericValidCommitmentsBundle<MAX_BALANCES, MA
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidMatchMpcBundle {
     /// A commitment to the witness type of `VALID COMMITMENTS`
-    pub commitment: ValidMatchCommitment,
+    pub commitment: ValidMatchMpcWitnessCommitment,
     /// The statement (public variables) used to prove `VALID COMMITMENTS`
-    pub statement: ValidMatchMpcStatement,
+    pub statement: (),
     /// The proof itself
     pub proof: R1CSProof,
 }

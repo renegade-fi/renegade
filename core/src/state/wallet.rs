@@ -13,12 +13,13 @@ use circuits::{
         compute_wallet_share_commitment, compute_wallet_share_nullifier,
         create_wallet_shares_from_private,
     },
+    traits::BaseType,
     types::{
         balance::Balance,
         fee::Fee,
         keychain::{PublicKeyChain, SecretIdentificationKey, SecretSigningKey},
         order::{Order, OrderSide},
-        wallet::{Nullifier, Wallet as CircuitWallet, WalletSecretShare, WalletShareCommitment},
+        wallet::{Nullifier, Wallet as CircuitWallet, WalletShare, WalletShareStateCommitment},
     },
     zk_gadgets::merkle::MerkleOpening,
 };
@@ -33,14 +34,11 @@ use tokio::sync::{RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
 use crate::{
-    gossip::types::WrappedPeerId, MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT,
-    MERKLE_ROOT_HISTORY_LENGTH,
+    gossip::types::WrappedPeerId, SizedMerkleOpening, SizedWalletShare, MAX_BALANCES, MAX_FEES,
+    MAX_ORDERS, MERKLE_HEIGHT, MERKLE_ROOT_HISTORY_LENGTH,
 };
 
 use super::{new_async_shared, orderbook::OrderIdentifier, AsyncShared, MerkleTreeCoords};
-
-/// A wallet secret share with default const generic sizing parameters attached
-pub type SizedWalletShare = WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 /// The staleness factor; the ratio of the root history that has elapsed before new proofs of
 /// `VALID COMMITMENTS` and `VALID REBLIND` are required for an order
@@ -175,7 +173,7 @@ impl MerkleAuthenticationPath {
 }
 
 /// Conversion to circuit type
-impl From<MerkleAuthenticationPath> for MerkleOpening {
+impl From<MerkleAuthenticationPath> for SizedMerkleOpening {
     fn from(native_path: MerkleAuthenticationPath) -> Self {
         // The path conversion is simply the first `MERKLE_HEIGHT` bits of
         // the leaf index
@@ -185,8 +183,8 @@ impl From<MerkleAuthenticationPath> for MerkleOpening {
             .collect_vec();
 
         MerkleOpening {
-            elems: native_path.path_siblings.to_vec(),
-            indices: path_indices,
+            elems: native_path.path_siblings.to_vec().try_into().unwrap(),
+            indices: path_indices.try_into().unwrap(),
         }
     }
 }
@@ -317,12 +315,12 @@ impl From<Wallet> for SizedCircuitWallet {
 
 impl Wallet {
     /// Computes the commitment to the private shares of the wallet
-    pub fn get_private_share_commitment(&self) -> WalletShareCommitment {
+    pub fn get_private_share_commitment(&self) -> WalletShareStateCommitment {
         compute_wallet_private_share_commitment(self.private_shares.clone())
     }
 
     /// Compute the commitment to the full wallet shares
-    pub fn get_wallet_share_commitment(&self) -> WalletShareCommitment {
+    pub fn get_wallet_share_commitment(&self) -> WalletShareStateCommitment {
         compute_wallet_share_commitment(
             self.blinded_public_shares.clone(),
             self.private_shares.clone(),
@@ -336,7 +334,7 @@ impl Wallet {
 
     /// Reblind the wallet, consuming the next set of blinders and secret shares
     pub fn reblind_wallet(&mut self) {
-        let private_shares_serialized: Vec<Scalar> = self.private_shares.clone().into();
+        let private_shares_serialized: Vec<Scalar> = self.private_shares.to_scalars();
 
         // Sample a new blinder and private secret share
         let n_shares = private_shares_serialized.len();
@@ -351,8 +349,8 @@ impl Wallet {
         new_private_shares.push(new_blinder_private_share);
 
         let (new_private_share, new_public_share) = create_wallet_shares_from_private(
-            &self.clone().into(),
-            &new_private_shares.into(),
+            self.clone().into(),
+            &WalletShare::from_scalars(&mut new_private_shares.into_iter()),
             new_blinder,
         );
 
@@ -597,7 +595,7 @@ mod tests {
 
         // Test with root specified
         let keychain = PrivateKeyChain {
-            sk_root: Some(BigUint::from(0u8).into()),
+            sk_root: Some((&BigUint::from(0u8)).into()),
             sk_match: Scalar::random(&mut rng).into(),
         };
         let serialized = serde_json::to_string(&keychain).unwrap();

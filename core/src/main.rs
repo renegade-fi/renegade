@@ -34,9 +34,9 @@ use chrono::Local;
 use circuits::{
     types::{
         keychain::PublicIdentificationKey,
-        wallet::{Wallet, WalletSecretShare},
+        wallet::{Wallet, WalletShare},
     },
-    zk_gadgets::fixed_point::FixedPoint,
+    zk_gadgets::{fixed_point::FixedPoint, merkle::MerkleOpening},
 };
 use crossbeam::channel;
 use curve25519_dalek::scalar::Scalar;
@@ -107,7 +107,9 @@ pub(crate) const MERKLE_ROOT_HISTORY_LENGTH: usize = 30;
 /// A type wrapper around the wallet type that adds the default generics above
 pub(crate) type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 /// A type wrapper around a wallet share that adds the default generics above
-pub(crate) type SizedWalletShare = WalletSecretShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub(crate) type SizedWalletShare = WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+/// A type wrapper around a Merkle opening that adds the default height
+pub(crate) type SizedMerkleOpening = MerkleOpening<MERKLE_HEIGHT>;
 /// The amount of time to wait between sending teardown signals and terminating execution
 const TERMINATION_TIMEOUT_MS: u64 = 10_000; // 10 seconds
 
