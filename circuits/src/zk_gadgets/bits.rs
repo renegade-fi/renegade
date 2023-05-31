@@ -57,12 +57,8 @@ pub struct MultiproverToBitsGadget<
     _phantom: &'a PhantomData<(N, S)>,
 }
 
-impl<
-        'a,
-        const D: usize,
-        N: 'a + MpcNetwork + Send + Clone,
-        S: 'a + SharedValueSource<Scalar> + Clone,
-    > MultiproverToBitsGadget<'a, D, N, S>
+impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
+    MultiproverToBitsGadget<'a, D, N, S>
 {
     /// Converts a value into its bitwise representation
     pub fn to_bits<L, CS>(

@@ -11,7 +11,7 @@ pub mod valid_wallet_create;
 pub mod valid_wallet_update;
 
 #[cfg(test)]
-mod test_helpers {
+pub(crate) mod test_helpers {
     use std::iter::from_fn;
 
     use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};

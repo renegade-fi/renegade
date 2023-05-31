@@ -12,7 +12,10 @@ use mpc_bulletproof::{
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 
 use crate::{
-    errors::ProverError, mpc::SharedFabric, mpc_gadgets::poseidon::PoseidonSpongeParameters,
+    errors::ProverError,
+    mpc::SharedFabric,
+    mpc_gadgets::poseidon::PoseidonSpongeParameters,
+    traits::{LinearCombinationLike, MpcLinearCombinationLike},
 };
 
 use super::arithmetic::{ExpGadget, MultiproverExpGadget};
@@ -68,7 +71,7 @@ impl PoseidonHashGadget {
         cs: &mut CS,
     ) -> Result<(), R1CSError>
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         self.batch_absorb(hash_input, cs)?;
@@ -101,7 +104,7 @@ impl PoseidonHashGadget {
     /// Absorb a batch of inputs into the hasher state
     pub fn batch_absorb<L, CS>(&mut self, a: &[L], cs: &mut CS) -> Result<(), R1CSError>
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         a.iter()
@@ -159,7 +162,7 @@ impl PoseidonHashGadget {
         cs: &mut CS,
     ) -> Result<(), R1CSError>
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         expected
@@ -282,7 +285,7 @@ pub struct MultiproverPoseidonHashGadget<
     _phantom: PhantomData<&'a ()>,
 }
 
-impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + Clone>
+impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     MultiproverPoseidonHashGadget<'a, N, S>
 {
     /// Construct a new hash gadget with the given parameterization
@@ -310,7 +313,7 @@ impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + 
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where
-        L: Into<MpcLinearCombination<N, S>> + Clone,
+        L: MpcLinearCombinationLike<N, S>,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
         self.batch_absorb(hash_input, cs)?;
@@ -320,7 +323,7 @@ impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + 
     /// Absorb an input into the hasher state
     pub fn absorb<'b, L, CS>(&mut self, a: L, cs: &mut CS) -> Result<(), ProverError>
     where
-        L: Into<MpcLinearCombination<N, S>> + Clone,
+        L: MpcLinearCombinationLike<N, S>,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
         assert!(
@@ -343,7 +346,7 @@ impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + 
     /// Absorb a batch of inputs into the hasher state
     pub fn batch_absorb<L, CS>(&mut self, a: &[L], cs: &mut CS) -> Result<(), ProverError>
     where
-        L: Into<MpcLinearCombination<N, S>> + Clone,
+        L: MpcLinearCombinationLike<N, S>,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
         a.iter().try_for_each(|val| self.absorb(val.clone(), cs))
@@ -372,11 +375,11 @@ impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + 
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where
-        L: Into<MpcLinearCombination<N, S>> + Clone,
+        L: MpcLinearCombinationLike<N, S>,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
         let squeezed = self.squeeze(cs)?;
-        cs.constrain(squeezed - expected);
+        cs.constrain(squeezed - expected.into());
         Ok(())
     }
 
@@ -402,7 +405,7 @@ impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + 
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where
-        L: Into<MpcLinearCombination<N, S>> + Clone,
+        L: MpcLinearCombinationLike<N, S>,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
         expected

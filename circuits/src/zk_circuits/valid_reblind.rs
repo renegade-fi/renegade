@@ -270,8 +270,8 @@ where
 // ---------------------------
 
 /// The witness type for VALID REBLIND
-#[circuit_type(singleprover_circuit)]
-#[derive(Clone, Debug)]
+#[circuit_type(serde, singleprover_circuit)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidReblindWitness<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
@@ -552,10 +552,8 @@ mod test {
         let reblinded_wallet_public_share =
             SizedWalletShare::from_scalars(&mut public_shares_serialized.into_iter());
 
-        witness.reblinded_wallet_private_shares =
-            reblinded_wallet_private_share.clone().to_linkable();
-        witness.reblinded_wallet_public_shares =
-            reblinded_wallet_public_share.clone().to_linkable();
+        witness.reblinded_wallet_private_shares = reblinded_wallet_private_share.to_linkable();
+        witness.reblinded_wallet_public_shares = reblinded_wallet_public_share.to_linkable();
         statement.reblinded_private_share_commitment =
             compute_wallet_private_share_commitment(reblinded_wallet_private_share.clone());
 
@@ -585,10 +583,8 @@ mod test {
         let new_blinder = Scalar::random(&mut rng);
         let new_blinder_private_share = Scalar::random(&mut rng);
 
-        let wallet_public_shares: SizedWalletShare = witness
-            .reblinded_wallet_public_shares
-            .clone()
-            .to_base_type();
+        let wallet_public_shares: SizedWalletShare =
+            witness.reblinded_wallet_public_shares.to_base_type();
 
         let unblinded = wallet_public_shares.unblind_shares(recovered_blinder);
         let mut reblinded = unblinded.blind(new_blinder);
@@ -598,21 +594,12 @@ mod test {
         witness.reblinded_wallet_public_shares = reblinded.to_linkable();
         witness.reblinded_wallet_private_shares.blinder = new_blinder_private_share.to_linkable();
         statement.reblinded_private_share_commitment = compute_wallet_private_share_commitment(
-            witness
-                .reblinded_wallet_private_shares
-                .clone()
-                .to_base_type(),
+            witness.reblinded_wallet_private_shares.to_base_type(),
         );
 
         assert_valid_reblinding(
-            witness
-                .reblinded_wallet_private_shares
-                .clone()
-                .to_base_type(),
-            witness
-                .reblinded_wallet_public_shares
-                .clone()
-                .to_base_type(),
+            witness.reblinded_wallet_private_shares.to_base_type(),
+            witness.reblinded_wallet_public_shares.to_base_type(),
             &wallet,
         );
 

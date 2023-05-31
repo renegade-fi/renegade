@@ -238,7 +238,7 @@ pub struct MultiproverExpGadget<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedVal
     _phantom: PhantomData<&'a (N, S)>,
 }
 
-impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + Clone>
+impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     MultiproverExpGadget<'a, N, S>
 {
     /// Apply the gadget to the input

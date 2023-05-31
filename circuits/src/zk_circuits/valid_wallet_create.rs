@@ -19,6 +19,7 @@ use mpc_bulletproof::{
 };
 use rand_core::OsRng;
 use rand_core::{CryptoRng, RngCore};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::{ProverError, VerifierError},
@@ -106,7 +107,7 @@ where
 // ---------------------------
 
 /// The witness for the VALID WALLET CREATE statement
-#[circuit_type(singleprover_circuit)]
+#[circuit_type(serde, singleprover_circuit)]
 #[derive(Clone, Debug)]
 pub struct ValidWalletCreateWitness<
     const MAX_BALANCES: usize,
@@ -124,8 +125,8 @@ pub struct ValidWalletCreateWitness<
 // -----------------------------
 
 /// The statement type for the `VALID WALLET CREATE` circuit
-#[circuit_type(singleprover_circuit)]
-#[derive(Clone, Debug)]
+#[circuit_type(serde, singleprover_circuit)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidWalletCreateStatement<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,

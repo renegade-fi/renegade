@@ -51,7 +51,7 @@ pub struct MultiproverCondSelectGadget<
     _phantom: &'a PhantomData<(N, S)>,
 }
 
-impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + Clone>
+impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     MultiproverCondSelectGadget<'a, N, S>
 {
     /// Computes the control flow statement if selector { a } else { b }
@@ -122,7 +122,7 @@ pub struct MultiproverCondSelectVectorGadget<
     _phantom: &'a PhantomData<(N, S)>,
 }
 
-impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + Clone>
+impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     MultiproverCondSelectVectorGadget<'a, N, S>
 {
     /// Implements the control flow block if selector { a } else { b }

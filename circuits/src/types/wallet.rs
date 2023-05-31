@@ -6,8 +6,8 @@ use std::ops::Add;
 
 use circuit_macros::circuit_type;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
+use itertools::Itertools;
 use mpc_bulletproof::r1cs::{LinearCombination, Variable};
-
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
@@ -37,8 +37,8 @@ pub type Nullifier = Scalar;
 
 /// Represents the base type of a wallet holding orders, balances, fees, keys
 /// and cryptographic randomness
-#[circuit_type(singleprover_circuit, secret_share)]
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[circuit_type(serde, singleprover_circuit, secret_share)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Wallet<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
@@ -69,4 +69,99 @@ where
         deserialize_with = "scalar_from_hex_string"
     )]
     pub blinder: Scalar,
+}
+
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> Default
+    for Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
+    fn default() -> Self {
+        Self {
+            balances: (0..MAX_BALANCES)
+                .map(|_| Balance::default())
+                .collect_vec()
+                .try_into()
+                .unwrap(),
+            orders: (0..MAX_ORDERS)
+                .map(|_| Order::default())
+                .collect_vec()
+                .try_into()
+                .unwrap(),
+            fees: (0..MAX_FEES)
+                .map(|_| Fee::default())
+                .collect_vec()
+                .try_into()
+                .unwrap(),
+            keys: PublicKeyChain::default(),
+            blinder: Scalar::zero(),
+        }
+    }
+}
+
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
+    WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
+    /// Blinds the wallet, but does not blind the blinder itself
+    ///
+    /// This is necessary because the default implementation of `blind` that is derived
+    /// by the macro will blind the blinder as well as the shares, which is undesirable
+    pub fn blind_shares(self, blinder: Scalar) -> WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
+        let prev_blinder = self.blinder;
+        let mut blinded = self.blind(blinder);
+        blinded.blinder = prev_blinder;
+
+        blinded
+    }
+
+    /// Unblinds the wallet, but does not unblind the blinder itself
+    pub fn unblind_shares(
+        self,
+        blinder: Scalar,
+    ) -> WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
+        let prev_blinder = self.blinder;
+        let mut unblinded = self.unblind(blinder);
+        unblinded.blinder = prev_blinder;
+
+        unblinded
+    }
+}
+
+impl<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+        L: LinearCombinationLike,
+    > WalletShareVar<L, MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
+    /// Blinds the wallet, but does not blind the blinder itself
+    ///
+    /// This is necessary because the default implementation of `blind` that is derived
+    /// by the macro will blind the blinder as well as the shares, which is undesirable
+    pub fn blind_shares<L1: LinearCombinationLike>(
+        self,
+        blinder: L1,
+    ) -> WalletShareVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
+        let prev_blinder = self.blinder.clone();
+        let mut blinded = self.blind(blinder);
+        blinded.blinder = prev_blinder.into();
+
+        blinded
+    }
+
+    /// Unblinds the wallet, but does not unblind the blinder itself
+    pub fn unblind_shares<L1: LinearCombinationLike>(
+        self,
+        blinder: L1,
+    ) -> WalletShareVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
+        let prev_blinder = self.blinder.clone();
+        let mut unblinded = self.unblind(blinder);
+        unblinded.blinder = prev_blinder.into();
+
+        unblinded
+    }
 }

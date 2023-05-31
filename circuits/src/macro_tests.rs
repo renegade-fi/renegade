@@ -12,8 +12,8 @@ mod test {
     use integration_helpers::mpc_network::mocks::{MockMpcNet, PartyIDBeaverSource};
     use merlin::Transcript;
     use mpc_bulletproof::{
-        r1cs::{Prover, Variable, Verifier},
-        r1cs_mpc::{MpcProver, MpcVariable},
+        r1cs::{ConstraintSystem, LinearCombination, Prover, Variable, Verifier},
+        r1cs_mpc::MpcProver,
         PedersenGens,
     };
     use mpc_ristretto::{
@@ -28,9 +28,10 @@ mod test {
         mpc::{MpcFabric, SharedFabric},
         traits::{
             BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType,
-            LinearCombinationLike, LinkableBaseType, LinkableType, MpcBaseType, MpcType,
-            MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
-            MultiproverCircuitVariableType, SecretShareBaseType, SecretShareType,
+            LinearCombinationLike, LinkableBaseType, LinkableType, MpcBaseType,
+            MpcLinearCombinationLike, MpcType, MultiproverCircuitBaseType,
+            MultiproverCircuitCommitmentType, MultiproverCircuitVariableType, SecretShareBaseType,
+            SecretShareType, SecretShareVarType,
         },
         LinkableCommitment,
     };
@@ -43,7 +44,7 @@ mod test {
         multiprover_linkable,
         secret_share
     )]
-    #[derive(Clone, Debug, PartialEq, Eq)]
+    #[derive(Clone, Debug, Default, PartialEq, Eq)]
     struct TestType {
         val: Scalar,
     }
@@ -66,7 +67,7 @@ mod test {
         let a = TestType {
             val: Scalar::from(2u8),
         };
-        let serialized = a.clone().to_scalars();
+        let serialized = a.to_scalars();
         let deserialized = TestType::from_scalars(&mut serialized.into_iter());
 
         assert_eq!(a, deserialized)
@@ -170,21 +171,23 @@ mod test {
                 dummy_network,
                 dummy_beaver_source,
             );
-            let shared_fabric = Rc::new(RefCell::new(dummy_fabric));
+            let dummy_fabric = Rc::new(RefCell::new(dummy_fabric));
+            let shared_fabric = SharedFabric(dummy_fabric.clone());
 
             // Mock a shared prover
             let pc_gens = PedersenGens::default();
             let mut transcript = Transcript::new(b"test");
-            let mut prover =
-                MpcProver::new_with_fabric(shared_fabric.clone(), &mut transcript, &pc_gens);
+            let mut prover = MpcProver::new_with_fabric(dummy_fabric, &mut transcript, &pc_gens);
 
             // Make a commitment into the shared constraint system
             let mut rng = OsRng {};
-            let (_, shared_comm) = dummy.commit_shared(0, &mut rng, &mut prover).unwrap();
+            let dummy_allocated = dummy.allocate(0, shared_fabric).unwrap();
+            let (_, shared_comm) = dummy_allocated
+                .commit_shared(&mut rng, &mut prover)
+                .unwrap();
 
             // Open the commitment to its base type
-            let shared_fabric = SharedFabric(shared_fabric);
-            shared_comm.open(shared_fabric).unwrap();
+            shared_comm.open().unwrap();
         });
 
         // The test will fail because the dummy data does not represent actual valid secret shares or
@@ -215,19 +218,19 @@ mod test {
     #[test]
     fn test_secret_share_types() {
         // Build two secret shares
-        let mut share1 = TestTypeShare { val: Scalar::one() };
+        let share1 = TestTypeShare { val: Scalar::one() };
         let share2 = TestTypeShare { val: Scalar::one() };
 
         let recovered = share1.clone() + share2;
         assert_eq!(recovered.val, Scalar::from(2u8));
 
         // Blind a secret share
-        share1.blind(Scalar::one());
-        assert_eq!(share1.val, Scalar::from(2u8));
+        let blinded = share1.blind(Scalar::one());
+        assert_eq!(blinded.val, Scalar::from(2u8));
 
         // Unblind a secret share
-        share1.unblind(Scalar::one());
-        assert_eq!(share1.val, Scalar::one());
+        let unblinded = blinded.unblind(Scalar::one());
+        assert_eq!(unblinded.val, Scalar::one());
     }
 
     #[test]
@@ -262,5 +265,31 @@ mod test {
         let (_, comm2) = share.commit_witness(&mut rng, &mut prover);
 
         assert_eq!(comm1.val, comm2.val);
+    }
+
+    #[test]
+    fn test_secret_share_var_arithmetic() {
+        // Build two secret shares, allocate them in the constraint system, then evaluate their sum
+        let share1 = TestTypeShare { val: Scalar::one() };
+        let share2 = TestTypeShare { val: Scalar::one() };
+
+        // Build a mock prover
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        let mut rng = OsRng {};
+        let (var1, _) = share1.commit_witness(&mut rng, &mut prover);
+        let (var2, _) = share2.commit_witness(&mut rng, &mut prover);
+
+        let sum = var1.clone() + var2;
+        assert_eq!(Scalar::from(2u8), prover.eval(&sum.val));
+
+        // Test blind and unblind
+        let blinded = var1.blind(Variable::One());
+        assert_eq!(Scalar::from(2u8), prover.eval(&blinded.val));
+
+        let unblinded = blinded.unblind(Variable::One());
+        assert_eq!(Scalar::one(), prover.eval(&unblinded.val));
     }
 }

@@ -15,6 +15,8 @@
 //!     - MPC types: base types that have been allocated in an MPC fabric
 //!     - Multi-prover variable types: base types allocated in a multi-prover constraint system
 //!     - Multi-prover commitment types: commitments to base types in a multi-prover system
+//!     - Linkable types: Types that may be commitment linked across proofs
+//!     - Secret share types: Additive sharings of a base type
 
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
@@ -36,7 +38,7 @@ use rand_core::{CryptoRng, RngCore};
 use crate::{
     errors::{MpcError, ProverError, VerifierError},
     mpc::SharedFabric,
-    LinkableCommitment,
+    AuthenticatedLinkableCommitment, LinkableCommitment,
 };
 
 /// The error message emitted when too few scalars are given
@@ -53,11 +55,38 @@ const ERR_TOO_FEW_COMMITMENTS: &str = "from_commitments: Invalid number of commi
 /// Implementing types are base (application level) types that define serialization to/from `Scalars`
 ///
 /// Commitment, variable, MPC, etc types are implemented automatically from serialization and deserialization
-pub trait BaseType: Clone + Default {
+pub trait BaseType: Clone {
     /// Convert the base type to its serialized scalar representation in the circuit
-    fn to_scalars(self) -> Vec<Scalar>;
+    fn to_scalars(&self) -> Vec<Scalar>;
+    /// Convert the base type to its serialized scalar representation including commitment
+    /// linking information
+    ///
+    /// The default implementation does nothing beyond what `to_scalars` does, but commitment
+    /// linked types should override this method
+    fn to_scalars_with_linking(&self) -> Vec<Scalar> {
+        self.to_scalars()
+    }
     /// Convert from a serialized scalar representation to the base type
     fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self;
+
+    /// Share the plaintext value with the counterparty over an MPC fabric
+    /// 
+    /// This method is added to the `BaseType` trait for maximum flexibility, so that
+    /// types may be shared without requiring them to implement the full `MpcBaseType`
+    /// trait
+    fn share_public<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+        &self,
+        owning_party: u64,
+        fabric: SharedFabric<N, S>,
+    ) -> Result<Self, MpcError> {
+        let self_scalars = self.clone().to_scalars_with_linking();
+        let res_scalars = fabric
+            .borrow_fabric()
+            .batch_share_plaintext_scalars(owning_party, &self_scalars)
+            .map_err(|err| MpcError::SharingError(err.to_string()))?;
+
+        Ok(Self::from_scalars(&mut res_scalars.into_iter()))
+    }
 }
 
 // --- Singleprover Circuit Traits --- //
@@ -105,7 +134,6 @@ pub trait CircuitBaseType: BaseType {
     ) -> Self::VarType<Variable> {
         let scalars: Vec<Scalar> = self.clone().to_scalars();
         let mut vars = scalars.into_iter().map(|s| cs.commit_public(s));
-
         Self::VarType::from_vars(&mut vars)
     }
 
@@ -119,10 +147,20 @@ pub trait CircuitBaseType: BaseType {
 /// Implementing types are variable types that may appear in constraints in
 /// a constraint system
 pub trait CircuitVarType<L: LinearCombinationLike>: Clone {
-    /// Convert to an iterable of serialized variables for the type
-    fn to_vars(self) -> Vec<L>;
+    /// The type created by converting all base types to `LinearCombination`
+    type LinearCombinationType: CircuitVarType<LinearCombination>;
+    /// Convert to a collection of serialized variables for the type
+    fn to_vars(&self) -> Vec<L>;
     /// Convert from an iterable of variables representing the serialized type
     fn from_vars<I: Iterator<Item = L>>(i: &mut I) -> Self;
+    /// Convert the base type to a `LinearCombination` type
+    fn to_lc(&self) -> Self::LinearCombinationType {
+        let mut vars = self
+            .to_vars()
+            .into_iter()
+            .map(|v| Into::<LinearCombination>::into(v));
+        Self::LinearCombinationType::from_vars(&mut vars)
+    }
 }
 
 /// Implementing types are commitments to base types that have an analogous variable
@@ -134,7 +172,7 @@ pub trait CircuitCommitmentType: Clone {
     /// a commitment to an underlying variable
     fn from_commitments<I: Iterator<Item = CompressedRistretto>>(i: &mut I) -> Self;
     /// Convert to a vector of compressed ristretto points
-    fn to_commitments(self) -> Vec<CompressedRistretto>;
+    fn to_commitments(&self) -> Vec<CompressedRistretto>;
 
     /// Commit to a hidden value in the Verifier
     fn commit_verifier(&self, verifier: &mut Verifier) -> Self::VarType {
@@ -152,7 +190,7 @@ pub trait CircuitCommitmentType: Clone {
 // --- MPC Circuit Traits --- //
 
 /// A base type for allocating into an MPC network
-pub trait MpcBaseType<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>:
+pub trait MpcBaseType<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>:
     BaseType
 {
     /// The type that results from allocating the base type into an MPC network
@@ -164,7 +202,7 @@ pub trait MpcBaseType<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar>
         owning_party: u64,
         fabric: SharedFabric<N, S>,
     ) -> Result<Self::AllocatedType, MpcError> {
-        let self_scalars = self.clone().to_scalars();
+        let self_scalars = self.clone().to_scalars_with_linking();
         let values = fabric
             .borrow_fabric()
             .batch_allocate_private_scalars(owning_party, &self_scalars)
@@ -175,25 +213,11 @@ pub trait MpcBaseType<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar>
         ))
     }
 
-    /// Share the plaintext value with the counterparty
-    fn share_public(
-        &self,
-        owning_party: u64,
-        fabric: SharedFabric<N, S>,
-    ) -> Result<Self, MpcError> {
-        let self_scalars = self.clone().to_scalars();
-        let res_scalars = fabric
-            .borrow_fabric()
-            .batch_share_plaintext_scalars(owning_party, &self_scalars)
-            .map_err(|err| MpcError::SharingError(err.to_string()))?;
-
-        Ok(Self::from_scalars(&mut res_scalars.into_iter()))
-    }
 }
 
 /// An implementing type is the representation of a `BaseType` in an MPC circuit
 /// *outside* of a multiprover constraint system
-pub trait MpcType<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>:
+pub trait MpcType<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>:
     Clone
 {
     /// The native type when the value is opened out of a circuit
@@ -203,11 +227,18 @@ pub trait MpcType<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + C
     fn from_authenticated_scalars<I: Iterator<Item = AuthenticatedScalar<N, S>>>(i: &mut I)
         -> Self;
     /// Convert to a vector of authenticated scalars
-    fn to_authenticated_scalars(self) -> Vec<AuthenticatedScalar<N, S>>;
+    fn to_authenticated_scalars(&self) -> Vec<AuthenticatedScalar<N, S>>;
+    /// Convert to a vector of authenticated scalars with proof linking information included
+    ///
+    /// By default this method does nothing beyond what `to_authenticated_scalars` does, but
+    /// commitment linked types should override this method to include commitment randomness
+    fn to_authenticated_scalars_with_linking(&self) -> Vec<AuthenticatedScalar<N, S>> {
+        self.to_authenticated_scalars()
+    }
 
     /// Opens the shared type without authenticating
     fn open(self, _: SharedFabric<N, S>) -> Result<Self::NativeType, MpcError> {
-        let self_scalars = self.to_authenticated_scalars();
+        let self_scalars = self.to_authenticated_scalars_with_linking();
         let opened_scalars = AuthenticatedScalar::batch_open(&self_scalars)
             .map_err(|err| MpcError::OpeningError(err.to_string()))?
             .into_iter()
@@ -221,7 +252,7 @@ pub trait MpcType<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + C
 
     /// Opens the shared type and authenticates the result
     fn open_and_authenticate(self, _: SharedFabric<N, S>) -> Result<Self::NativeType, MpcError> {
-        let self_scalars = self.to_authenticated_scalars();
+        let self_scalars = self.to_authenticated_scalars_with_linking();
         let opened_scalars = AuthenticatedScalar::batch_open_and_authenticate(&self_scalars)
             .map_err(|err| MpcError::OpeningError(err.to_string()))?
             .into_iter()
@@ -236,29 +267,29 @@ pub trait MpcType<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + C
 
 // --- Multiprover Circuit Traits --- //
 
-/// A marker trait used to generalize over the atomic `Variable`
-/// and `LinearCombination` types
+/// A marker trait used to generalize over the atomic `MpcVariable`
+/// and `MpcLinearCombination` types
 pub trait MpcLinearCombinationLike<
-    N: MpcNetwork + Send + Clone,
-    S: SharedValueSource<Scalar> + Clone,
+    N: MpcNetwork + Send,
+    S: SharedValueSource<Scalar>,
 >:
     MultiproverCircuitVariableType<N, S, Self> + Sized + Into<MpcLinearCombination<N, S>> + Clone
 {
 }
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
     MpcLinearCombinationLike<N, S> for MpcVariable<N, S>
 {
 }
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
     MpcLinearCombinationLike<N, S> for MpcLinearCombination<N, S>
 {
 }
 
 /// A base type for allocating within a multiprover constraint system
 pub trait MultiproverCircuitBaseType<
-    N: MpcNetwork + Send + Clone,
-    S: SharedValueSource<Scalar> + Clone,
->: BaseType + CircuitBaseType
+    N: MpcNetwork + Send,
+    S: SharedValueSource<Scalar>,
+>: MpcType<N, S>
 {
     /// The multiprover constraint system variable type that results when committing
     /// to the base type in a multiprover constraint system
@@ -275,7 +306,6 @@ pub trait MultiproverCircuitBaseType<
     #[allow(clippy::type_complexity)]
     fn commit_shared<R: RngCore + CryptoRng>(
         &self,
-        owning_party: u64,
         rng: &mut R,
         prover: &mut MpcProver<N, S>,
     ) -> Result<
@@ -285,11 +315,11 @@ pub trait MultiproverCircuitBaseType<
         ),
         MpcError,
     > {
-        let self_scalars = self.clone().to_scalars();
+        let self_scalars = self.clone().to_authenticated_scalars();
         let randomness = self.commitment_randomness(rng);
 
         let (comms, vars) = prover
-            .batch_commit(owning_party, &self_scalars, &randomness)
+            .batch_commit_preshared(&self_scalars, &randomness)
             .map_err(|err| MpcError::SharingError(err.to_string()))?;
 
         Ok((
@@ -297,12 +327,15 @@ pub trait MultiproverCircuitBaseType<
             Self::MultiproverCommType::from_mpc_commitments(&mut comms.into_iter()),
         ))
     }
+
+    /// Get the randomness needed to commit to a given value
+    fn commitment_randomness<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Vec<Scalar>;
 }
 
 /// A multiprover circuit variable type
 pub trait MultiproverCircuitVariableType<
-    N: MpcNetwork + Send + Clone,
-    S: SharedValueSource<Scalar> + Clone,
+    N: MpcNetwork + Send,
+    S: SharedValueSource<Scalar>,
     L: MpcLinearCombinationLike<N, S>,
 >
 {
@@ -312,8 +345,8 @@ pub trait MultiproverCircuitVariableType<
 
 /// A multiprover circuit commitment type
 pub trait MultiproverCircuitCommitmentType<
-    N: MpcNetwork + Send + Clone,
-    S: SharedValueSource<Scalar> + Clone,
+    N: MpcNetwork + Send,
+    S: SharedValueSource<Scalar>,
 >: Clone
 {
     /// The base commitment type that this commitment opens to
@@ -323,10 +356,10 @@ pub trait MultiproverCircuitCommitmentType<
         i: &mut I,
     ) -> Self;
     /// Serialization to a vector of MPC allocated commitments
-    fn to_mpc_commitments(self) -> Vec<AuthenticatedCompressedRistretto<N, S>>;
+    fn to_mpc_commitments(&self) -> Vec<AuthenticatedCompressedRistretto<N, S>>;
 
     /// Opens the shared type without authenticating
-    fn open(self, _: SharedFabric<N, S>) -> Result<Self::BaseCommitType, MpcError> {
+    fn open(self) -> Result<Self::BaseCommitType, MpcError> {
         let self_comms = self.to_mpc_commitments();
         let opened_commitments = AuthenticatedCompressedRistretto::batch_open(&self_comms)
             .map_err(|err| MpcError::OpeningError(err.to_string()))?
@@ -342,7 +375,6 @@ pub trait MultiproverCircuitCommitmentType<
     /// Opens the shared type and authenticates the result
     fn open_and_authenticate(
         self,
-        _: SharedFabric<N, S>,
     ) -> Result<Self::BaseCommitType, MpcError> {
         let self_comms = self.to_mpc_commitments();
         let opened_commitments =
@@ -364,13 +396,20 @@ pub trait MultiproverCircuitCommitmentType<
 pub trait LinkableBaseType: BaseType {
     /// The linkable type that re-uses commitment randomness between commitments
     type Linkable: LinkableType;
+    /// Convert from the base type to the linkable type
+    fn to_linkable(&self) -> Self::Linkable;
 }
 
 /// Implementing types are proof-linkable analogs of a base type, which hold onto their commitment
 /// randomness and re-use it between proofs
-pub trait LinkableType: Clone {
+pub trait LinkableType: Clone + BaseType {
     /// The base type this type is a linkable commitment for
     type BaseType: LinkableBaseType;
+    /// Convert to the base type, removing the proof-linkable information
+    fn to_base_type(&self) -> Self::BaseType {
+        let self_scalars = self.to_scalars();
+        Self::BaseType::from_scalars(&mut self_scalars.into_iter())
+    }
 }
 
 // --- Secret Share Types --- //
@@ -467,8 +506,8 @@ pub trait SecretShareVarType<L: LinearCombinationLike>: Sized + CircuitVarType<L
 // --- Base Types --- //
 
 impl BaseType for Scalar {
-    fn to_scalars(self) -> Vec<Scalar> {
-        vec![self]
+    fn to_scalars(&self) -> Vec<Scalar> {
+        vec![*self]
     }
 
     fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
@@ -477,19 +516,26 @@ impl BaseType for Scalar {
 }
 
 impl BaseType for LinkableCommitment {
-    fn to_scalars(self) -> Vec<Scalar> {
+    fn to_scalars(&self) -> Vec<Scalar> {
         vec![self.val]
+    }
+
+    fn to_scalars_with_linking(&self) -> Vec<Scalar> {
+        vec![self.val, self.randomness]
     }
 
     fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
         // Choose a random commitment
-        i.next().unwrap().into()
+        Self {
+            val: i.next().unwrap(),
+            randomness: i.next().unwrap(),
+        }
     }
 }
 
 impl BaseType for u64 {
-    fn to_scalars(self) -> Vec<Scalar> {
-        vec![Scalar::from(self)]
+    fn to_scalars(&self) -> Vec<Scalar> {
+        vec![Scalar::from(*self)]
     }
 
     fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
@@ -498,8 +544,8 @@ impl BaseType for u64 {
 }
 
 impl BaseType for BigUint {
-    fn to_scalars(self) -> Vec<Scalar> {
-        vec![biguint_to_scalar(&self)]
+    fn to_scalars(&self) -> Vec<Scalar> {
+        vec![biguint_to_scalar(self)]
     }
 
     fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
@@ -507,9 +553,23 @@ impl BaseType for BigUint {
     }
 }
 
+impl BaseType for () {
+    fn to_scalars(&self) -> Vec<Scalar> {
+        vec![]
+    }
+
+    fn from_scalars<I: Iterator<Item = Scalar>>(_: &mut I) -> Self {}
+}
+
 impl<const N: usize, T: BaseType> BaseType for [T; N] {
-    fn to_scalars(self) -> Vec<Scalar> {
-        self.into_iter().flat_map(|x| x.to_scalars()).collect()
+    fn to_scalars(&self) -> Vec<Scalar> {
+        self.iter().flat_map(|x| x.to_scalars()).collect()
+    }
+
+    fn to_scalars_with_linking(&self) -> Vec<Scalar> {
+        self.iter()
+            .flat_map(|x| x.to_scalars_with_linking())
+            .collect()
     }
 
     fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
@@ -519,22 +579,6 @@ impl<const N: usize, T: BaseType> BaseType for [T; N] {
             .try_into()
             .map_err(|_| ERR_TOO_FEW_SCALARS)
             .unwrap()
-    }
-}
-
-impl<T: BaseType> BaseType for Vec<T> {
-    fn to_scalars(self) -> Vec<Scalar> {
-        self.into_iter().flat_map(|x| x.to_scalars()).collect()
-    }
-
-    fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
-        let mut peekable = i.peekable();
-        let mut res = Vec::new();
-        while peekable.peek().is_some() {
-            res.push(T::from_scalars(&mut peekable));
-        }
-
-        res
     }
 }
 
@@ -576,6 +620,15 @@ impl CircuitBaseType for BigUint {
     }
 }
 
+impl CircuitBaseType for () {
+    type VarType<L: LinearCombinationLike> = ();
+    type CommitmentType = ();
+
+    fn commitment_randomness<R: RngCore + CryptoRng>(&self, _rng: &mut R) -> Vec<Scalar> {
+        vec![]
+    }
+}
+
 impl<const N: usize, T: CircuitBaseType> CircuitBaseType for [T; N] {
     type VarType<L: LinearCombinationLike> = [T::VarType<L>; N];
     type CommitmentType = [T::CommitmentType; N];
@@ -587,20 +640,11 @@ impl<const N: usize, T: CircuitBaseType> CircuitBaseType for [T; N] {
     }
 }
 
-impl<T: CircuitBaseType> CircuitBaseType for Vec<T> {
-    type VarType<L: LinearCombinationLike> = Vec<T::VarType<L>>;
-    type CommitmentType = Vec<T::CommitmentType>;
-
-    fn commitment_randomness<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Vec<Scalar> {
-        self.iter()
-            .flat_map(|x| x.commitment_randomness(rng))
-            .collect()
-    }
-}
-
 impl CircuitVarType<Variable> for Variable {
-    fn to_vars(self) -> Vec<Variable> {
-        vec![self]
+    type LinearCombinationType = LinearCombination;
+
+    fn to_vars(&self) -> Vec<Variable> {
+        vec![*self]
     }
 
     fn from_vars<I: Iterator<Item = Variable>>(i: &mut I) -> Self {
@@ -609,8 +653,10 @@ impl CircuitVarType<Variable> for Variable {
 }
 
 impl CircuitVarType<LinearCombination> for LinearCombination {
-    fn to_vars(self) -> Vec<LinearCombination> {
-        vec![self]
+    type LinearCombinationType = LinearCombination;
+
+    fn to_vars(&self) -> Vec<LinearCombination> {
+        vec![self.clone()]
     }
 
     fn from_vars<I: Iterator<Item = LinearCombination>>(i: &mut I) -> Self {
@@ -618,9 +664,21 @@ impl CircuitVarType<LinearCombination> for LinearCombination {
     }
 }
 
+impl<L: LinearCombinationLike> CircuitVarType<L> for () {
+    type LinearCombinationType = ();
+
+    fn from_vars<I: Iterator<Item = L>>(_: &mut I) -> Self {}
+
+    fn to_vars(&self) -> Vec<L> {
+        vec![]
+    }
+}
+
 impl<const N: usize, L: LinearCombinationLike, T: CircuitVarType<L>> CircuitVarType<L> for [T; N] {
-    fn to_vars(self) -> Vec<L> {
-        self.into_iter().flat_map(|x| x.to_vars()).collect()
+    type LinearCombinationType = [T::LinearCombinationType; N];
+
+    fn to_vars(&self) -> Vec<L> {
+        self.iter().flat_map(|x| x.to_vars()).collect()
     }
 
     fn from_vars<I: Iterator<Item = L>>(i: &mut I) -> Self {
@@ -633,22 +691,6 @@ impl<const N: usize, L: LinearCombinationLike, T: CircuitVarType<L>> CircuitVarT
     }
 }
 
-impl<L: LinearCombinationLike, T: CircuitVarType<L>> CircuitVarType<L> for Vec<T> {
-    fn to_vars(self) -> Vec<L> {
-        self.into_iter().flat_map(|x| x.to_vars()).collect()
-    }
-
-    fn from_vars<I: Iterator<Item = L>>(i: &mut I) -> Self {
-        let mut peekable = i.peekable();
-        let mut res = Vec::new();
-        while peekable.peek().is_some() {
-            res.push(T::from_vars(&mut peekable));
-        }
-
-        res
-    }
-}
-
 impl CircuitCommitmentType for CompressedRistretto {
     type VarType = Variable;
 
@@ -656,8 +698,17 @@ impl CircuitCommitmentType for CompressedRistretto {
         i.next().unwrap()
     }
 
-    fn to_commitments(self) -> Vec<CompressedRistretto> {
-        vec![self]
+    fn to_commitments(&self) -> Vec<CompressedRistretto> {
+        vec![*self]
+    }
+}
+
+impl CircuitCommitmentType for () {
+    type VarType = ();
+    fn from_commitments<I: Iterator<Item = CompressedRistretto>>(_: &mut I) -> Self {}
+
+    fn to_commitments(&self) -> Vec<CompressedRistretto> {
+        vec![]
     }
 }
 
@@ -673,28 +724,8 @@ impl<const N: usize, T: CircuitCommitmentType> CircuitCommitmentType for [T; N] 
             .unwrap()
     }
 
-    fn to_commitments(self) -> Vec<CompressedRistretto> {
-        self.into_iter()
-            .flat_map(|x| x.to_commitments())
-            .collect_vec()
-    }
-}
-
-impl<T: CircuitCommitmentType> CircuitCommitmentType for Vec<T> {
-    type VarType = Vec<T::VarType>;
-
-    fn from_commitments<I: Iterator<Item = CompressedRistretto>>(i: &mut I) -> Self {
-        let mut peekable = i.peekable();
-        let mut res = Vec::new();
-        while peekable.peek().is_some() {
-            res.push(T::from_commitments(&mut peekable));
-        }
-
-        res
-    }
-
-    fn to_commitments(self) -> Vec<CompressedRistretto> {
-        self.into_iter()
+    fn to_commitments(&self) -> Vec<CompressedRistretto> {
+        self.iter()
             .flat_map(|x| x.to_commitments())
             .collect_vec()
     }
@@ -702,39 +733,43 @@ impl<T: CircuitCommitmentType> CircuitCommitmentType for Vec<T> {
 
 // --- MPC Circuit Trait Impls --- //
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone> MpcBaseType<N, S>
+impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcBaseType<N, S>
     for Scalar
 {
     type AllocatedType = AuthenticatedScalar<N, S>;
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone> MpcBaseType<N, S> for u64 {
+impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcBaseType<N, S> for u64 {
     type AllocatedType = AuthenticatedScalar<N, S>;
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone> MpcBaseType<N, S>
+impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcBaseType<N, S>
     for BigUint
 {
     type AllocatedType = AuthenticatedScalar<N, S>;
 }
 
+impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcBaseType<N, S>
+    for LinkableCommitment
+{
+    type AllocatedType = AuthenticatedLinkableCommitment<N, S>;
+}
+
+impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcBaseType<N, S> for () {
+    type AllocatedType = ();
+}
+
 impl<
         const L: usize,
-        N: MpcNetwork + Send + Clone,
-        S: SharedValueSource<Scalar> + Clone,
+        N: MpcNetwork + Send ,
+        S: SharedValueSource<Scalar> ,
         T: MpcBaseType<N, S>,
     > MpcBaseType<N, S> for [T; L]
 {
     type AllocatedType = [T::AllocatedType; L];
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone, T: MpcBaseType<N, S>>
-    MpcBaseType<N, S> for Vec<T>
-{
-    type AllocatedType = Vec<T::AllocatedType>;
-}
-
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone> MpcType<N, S>
+impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcType<N, S>
     for AuthenticatedScalar<N, S>
 {
     type NativeType = Scalar;
@@ -745,15 +780,50 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone> MpcType
         i.next().unwrap()
     }
 
-    fn to_authenticated_scalars(self) -> Vec<AuthenticatedScalar<N, S>> {
-        vec![self]
+    fn to_authenticated_scalars(&self) -> Vec<AuthenticatedScalar<N, S>> {
+        vec![self.clone()]
+    }
+}
+
+impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcType<N, S>
+    for AuthenticatedLinkableCommitment<N, S>
+{
+    type NativeType = LinkableCommitment;
+
+    fn from_authenticated_scalars<I: Iterator<Item = AuthenticatedScalar<N, S>>>(
+        i: &mut I,
+    ) -> Self {
+        let val = i.next().unwrap();
+        let randomness = i.next().unwrap();
+        AuthenticatedLinkableCommitment { val, randomness }
+    }
+
+    fn to_authenticated_scalars(&self) -> Vec<AuthenticatedScalar<N, S>> {
+        vec![self.val.clone()]
+    }
+
+    fn to_authenticated_scalars_with_linking(&self) -> Vec<AuthenticatedScalar<N, S>> {
+        vec![self.val.clone(), self.randomness.clone()]
+    }
+}
+
+impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcType<N, S> for () {
+    type NativeType = ();
+
+    fn from_authenticated_scalars<I: Iterator<Item = AuthenticatedScalar<N, S>>>(
+        _: &mut I,
+    ) -> Self {
+    }
+
+    fn to_authenticated_scalars(&self) -> Vec<AuthenticatedScalar<N, S>> {
+        vec![]
     }
 }
 
 impl<
         const L: usize,
-        N: MpcNetwork + Send + Clone,
-        S: SharedValueSource<Scalar> + Clone,
+        N: MpcNetwork + Send ,
+        S: SharedValueSource<Scalar> ,
         T: MpcType<N, S>,
     > MpcType<N, S> for [T; L]
 {
@@ -770,109 +840,72 @@ impl<
             .unwrap()
     }
 
-    fn to_authenticated_scalars(self) -> Vec<AuthenticatedScalar<N, S>> {
-        self.into_iter()
+    fn to_authenticated_scalars(&self) -> Vec<AuthenticatedScalar<N, S>> {
+        self.iter()
             .flat_map(|x| x.to_authenticated_scalars())
             .collect_vec()
     }
-}
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone, T: MpcType<N, S>>
-    MpcType<N, S> for Vec<T>
-{
-    type NativeType = Vec<T::NativeType>;
-
-    fn from_authenticated_scalars<I: Iterator<Item = AuthenticatedScalar<N, S>>>(
-        i: &mut I,
-    ) -> Self {
-        let mut peekable = i.peekable();
-        let mut res = Vec::new();
-        while peekable.peek().is_some() {
-            res.push(T::from_authenticated_scalars(&mut peekable));
-        }
-
-        res
-    }
-
-    fn to_authenticated_scalars(self) -> Vec<AuthenticatedScalar<N, S>> {
-        self.into_iter()
-            .flat_map(|x| x.to_authenticated_scalars())
+    fn to_authenticated_scalars_with_linking(&self) -> Vec<AuthenticatedScalar<N, S>> {
+        self.iter()
+            .flat_map(|x| x.to_authenticated_scalars_with_linking())
             .collect_vec()
     }
 }
 
 // --- Multiprover Circuit Trait Impls --- //
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    MultiproverCircuitBaseType<N, S> for Scalar
+impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
+    MultiproverCircuitBaseType<N, S> for AuthenticatedScalar<N, S>
 {
     type MultiproverVarType<L: MpcLinearCombinationLike<N, S>> = L;
     type MultiproverCommType = AuthenticatedCompressedRistretto<N, S>;
+
+    fn commitment_randomness<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Vec<Scalar> {
+        vec![Scalar::random(rng)]
+    }
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    MultiproverCircuitBaseType<N, S> for u64
+impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
+    MultiproverCircuitBaseType<N, S> for AuthenticatedLinkableCommitment<N, S>
 {
     type MultiproverVarType<L: MpcLinearCombinationLike<N, S>> = L;
     type MultiproverCommType = AuthenticatedCompressedRistretto<N, S>;
+
+    fn commitment_randomness<R: RngCore + CryptoRng>(&self, _rng: &mut R) -> Vec<Scalar> {
+        vec![self.randomness.to_scalar()]
+    }
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    MultiproverCircuitBaseType<N, S> for BigUint
+impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
+    MultiproverCircuitBaseType<N, S> for ()
 {
-    type MultiproverVarType<L: MpcLinearCombinationLike<N, S>> = L;
-    type MultiproverCommType = AuthenticatedCompressedRistretto<N, S>;
-}
+    type MultiproverVarType<L: MpcLinearCombinationLike<N, S>> = ();
+    type MultiproverCommType = ();
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    MultiproverCircuitBaseType<N, S> for LinkableCommitment
-{
-    type MultiproverVarType<L: MpcLinearCombinationLike<N, S>> = L;
-    type MultiproverCommType = AuthenticatedCompressedRistretto<N, S>;
-
-    /// Linkable commitments store their randomness to be re-used across proofs,
-    /// so they must override this method to use custom randomness
-    fn commit_shared<R: RngCore + CryptoRng>(
-        &self,
-        owning_party: u64,
-        _rng: &mut R,
-        prover: &mut MpcProver<N, S>,
-    ) -> Result<
-        (
-            Self::MultiproverVarType<MpcVariable<N, S>>,
-            Self::MultiproverCommType,
-        ),
-        MpcError,
-    > {
-        let (comm, var) = prover
-            .commit(owning_party, self.val, self.randomness)
-            .map_err(|err| MpcError::SharingError(err.to_string()))?;
-        Ok((var, comm))
+    fn commitment_randomness<R: RngCore + CryptoRng>(&self, _rng: &mut R) -> Vec<Scalar> {
+        vec![]
     }
 }
 
 impl<
         const L: usize,
-        N: MpcNetwork + Send + Clone,
-        S: SharedValueSource<Scalar> + Clone,
+        N: MpcNetwork + Send ,
+        S: SharedValueSource<Scalar> ,
         T: MultiproverCircuitBaseType<N, S>,
     > MultiproverCircuitBaseType<N, S> for [T; L]
 {
     type MultiproverVarType<M: MpcLinearCombinationLike<N, S>> = [T::MultiproverVarType<M>; L];
     type MultiproverCommType = [T::MultiproverCommType; L];
+
+    fn commitment_randomness<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Vec<Scalar> {
+        self.iter()
+            .flat_map(|x| x.commitment_randomness(rng))
+            .collect_vec()
+    }
 }
 
-impl<
-        N: MpcNetwork + Send + Clone,
-        S: SharedValueSource<Scalar> + Clone,
-        T: MultiproverCircuitBaseType<N, S>,
-    > MultiproverCircuitBaseType<N, S> for Vec<T>
-{
-    type MultiproverVarType<M: MpcLinearCombinationLike<N, S>> = Vec<T::MultiproverVarType<M>>;
-    type MultiproverCommType = Vec<T::MultiproverCommType>;
-}
-
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
+impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
     MultiproverCircuitVariableType<N, S, MpcVariable<N, S>> for MpcVariable<N, S>
 {
     fn from_mpc_vars<I: Iterator<Item = MpcVariable<N, S>>>(i: &mut I) -> Self {
@@ -880,7 +913,7 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
     }
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
+impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
     MultiproverCircuitVariableType<N, S, MpcLinearCombination<N, S>>
     for MpcLinearCombination<N, S>
 {
@@ -890,9 +923,18 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
 }
 
 impl<
+        N: MpcNetwork + Send ,
+        S: SharedValueSource<Scalar> ,
+        L: MpcLinearCombinationLike<N, S>,
+    > MultiproverCircuitVariableType<N, S, L> for ()
+{
+    fn from_mpc_vars<I: Iterator<Item = L>>(_: &mut I) -> Self {}
+}
+
+impl<
         const U: usize,
-        N: MpcNetwork + Send + Clone,
-        S: SharedValueSource<Scalar> + Clone,
+        N: MpcNetwork + Send ,
+        S: SharedValueSource<Scalar> ,
         L: MpcLinearCombinationLike<N, S>,
         T: MultiproverCircuitVariableType<N, S, L>,
     > MultiproverCircuitVariableType<N, S, L> for [T; U]
@@ -902,30 +944,12 @@ impl<
             .map(|_| T::from_mpc_vars(i))
             .collect_vec()
             .try_into()
-            .map_err(|_| "from_mpc_vars: Invalid number of variables")
+            .map_err(|_| ERR_TOO_FEW_VARS)
             .unwrap()
     }
 }
 
-impl<
-        N: MpcNetwork + Send + Clone,
-        S: SharedValueSource<Scalar> + Clone,
-        L: MpcLinearCombinationLike<N, S>,
-        T: MultiproverCircuitVariableType<N, S, L>,
-    > MultiproverCircuitVariableType<N, S, L> for Vec<T>
-{
-    fn from_mpc_vars<I: Iterator<Item = L>>(i: &mut I) -> Self {
-        let mut peekable = i.peekable();
-        let mut res = Vec::new();
-        while peekable.peek().is_some() {
-            res.push(T::from_mpc_vars(&mut peekable));
-        }
-
-        res
-    }
-}
-
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
+impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
     MultiproverCircuitCommitmentType<N, S> for AuthenticatedCompressedRistretto<N, S>
 {
     type BaseCommitType = CompressedRistretto;
@@ -935,15 +959,29 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
         i.next().unwrap()
     }
 
-    fn to_mpc_commitments(self) -> Vec<AuthenticatedCompressedRistretto<N, S>> {
-        vec![self]
+    fn to_mpc_commitments(&self) -> Vec<AuthenticatedCompressedRistretto<N, S>> {
+        vec![self.clone()]
+    }
+}
+
+impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
+    MultiproverCircuitCommitmentType<N, S> for ()
+{
+    type BaseCommitType = ();
+    fn from_mpc_commitments<I: Iterator<Item = AuthenticatedCompressedRistretto<N, S>>>(
+        _: &mut I,
+    ) -> Self {
+    }
+
+    fn to_mpc_commitments(&self) -> Vec<AuthenticatedCompressedRistretto<N, S>> {
+        vec![]
     }
 }
 
 impl<
         const U: usize,
-        N: MpcNetwork + Send + Clone,
-        S: SharedValueSource<Scalar> + Clone,
+        N: MpcNetwork + Send ,
+        S: SharedValueSource<Scalar> ,
         T: MultiproverCircuitCommitmentType<N, S>,
     > MultiproverCircuitCommitmentType<N, S> for [T; U]
 {
@@ -959,34 +997,8 @@ impl<
             .unwrap()
     }
 
-    fn to_mpc_commitments(self) -> Vec<AuthenticatedCompressedRistretto<N, S>> {
-        self.into_iter()
-            .flat_map(|x| x.to_mpc_commitments())
-            .collect()
-    }
-}
-
-impl<
-        N: MpcNetwork + Send + Clone,
-        S: SharedValueSource<Scalar> + Clone,
-        T: MultiproverCircuitCommitmentType<N, S>,
-    > MultiproverCircuitCommitmentType<N, S> for Vec<T>
-{
-    type BaseCommitType = Vec<T::BaseCommitType>;
-    fn from_mpc_commitments<I: Iterator<Item = AuthenticatedCompressedRistretto<N, S>>>(
-        i: &mut I,
-    ) -> Self {
-        let mut peekable = i.peekable();
-        let mut res = Vec::new();
-        while peekable.peek().is_some() {
-            res.push(T::from_mpc_commitments(&mut peekable));
-        }
-
-        res
-    }
-
-    fn to_mpc_commitments(self) -> Vec<AuthenticatedCompressedRistretto<N, S>> {
-        self.into_iter()
+    fn to_mpc_commitments(&self) -> Vec<AuthenticatedCompressedRistretto<N, S>> {
+        self.iter()
             .flat_map(|x| x.to_mpc_commitments())
             .collect()
     }
@@ -996,22 +1008,39 @@ impl<
 
 impl LinkableBaseType for Scalar {
     type Linkable = LinkableCommitment;
+
+    fn to_linkable(&self) -> Self::Linkable {
+        LinkableCommitment::from(*self)
+    }
 }
 
 impl LinkableBaseType for u64 {
     type Linkable = LinkableCommitment;
+
+    fn to_linkable(&self) -> Self::Linkable {
+        LinkableCommitment::from(Scalar::from(*self))
+    }
 }
 
 impl LinkableBaseType for BigUint {
     type Linkable = LinkableCommitment;
+
+    fn to_linkable(&self) -> Self::Linkable {
+        LinkableCommitment::from(biguint_to_scalar(self))
+    }
 }
 
 impl<const N: usize, T: LinkableBaseType> LinkableBaseType for [T; N] {
     type Linkable = [T::Linkable; N];
-}
 
-impl<T: LinkableBaseType> LinkableBaseType for Vec<T> {
-    type Linkable = Vec<T::Linkable>;
+    fn to_linkable(&self) -> Self::Linkable {
+        self.iter()
+            .map(|x| x.to_linkable())
+            .collect_vec()
+            .try_into()
+            .map_err(|_| ERR_TOO_FEW_SCALARS)
+            .unwrap()
+    }
 }
 
 impl LinkableType for LinkableCommitment {
@@ -1020,10 +1049,6 @@ impl LinkableType for LinkableCommitment {
 
 impl<const N: usize, T: LinkableType> LinkableType for [T; N] {
     type BaseType = [T::BaseType; N];
-}
-
-impl<T: LinkableType> LinkableType for Vec<T> {
-    type BaseType = Vec<T::BaseType>;
 }
 
 // --- Secret Share Impls --- //
@@ -1044,20 +1069,12 @@ impl<const N: usize, T: SecretShareBaseType> SecretShareBaseType for [T; N] {
     type ShareType = [T::ShareType; N];
 }
 
-impl<T: SecretShareBaseType> SecretShareBaseType for Vec<T> {
-    type ShareType = Vec<T::ShareType>;
-}
-
 impl SecretShareType for Scalar {
     type Base = Scalar;
 }
 
 impl<const N: usize, T: SecretShareType> SecretShareType for [T; N] {
     type Base = [T::Base; N];
-}
-
-impl<T: SecretShareType> SecretShareType for Vec<T> {
-    type Base = Vec<T::Base>;
 }
 
 impl SecretShareVarType<Variable> for Variable {
@@ -1075,11 +1092,6 @@ impl<const N: usize, L: LinearCombinationLike, T: SecretShareVarType<L>> SecretS
 {
     type Base = [T::Base; N];
     type BlindType = [T::BlindType; N];
-}
-
-impl<L: LinearCombinationLike, T: SecretShareVarType<L>> SecretShareVarType<L> for Vec<T> {
-    type Base = Vec<T::Base>;
-    type BlindType = Vec<T::BlindType>;
 }
 
 // ------------------
@@ -1130,7 +1142,7 @@ pub trait SingleProverCircuit {
     /// The verifier has access to the statement variables, but only hiding (and binding)
     /// commitments to the witness variables
     fn verify(
-        witness_commitment: <Self::Witness as WitnessCommitment>::CommitmentType,
+        witness_commitment: <Self::Witness as CircuitBaseType>::CommitmentType,
         statement: Self::Statement,
         proof: R1CSProof,
         verifier: Verifier,
@@ -1148,8 +1160,8 @@ pub trait SingleProverCircuit {
 /// other circuit meta-parameters that both prover and verifier have access to.
 pub trait MultiProverCircuit<
     'a,
-    N: 'a + MpcNetwork + Send + Clone,
-    S: 'a + SharedValueSource<Scalar> + Clone,
+    N: 'a + MpcNetwork + Send,
+    S: 'a + SharedValueSource<Scalar>,
 >
 {
     /// The witness type, given only to the prover, which generates a blinding commitment
@@ -1177,7 +1189,7 @@ pub trait MultiProverCircuit<
         fabric: SharedFabric<N, S>,
     ) -> Result<
         (
-            <Self::WitnessCommitment as MultiproverCircuitBaseType<'a, N, S>>::CommitmentType,
+            <Self::Witness as MultiproverCircuitBaseType<N, S>>::MultiproverCommType,
             SharedR1CSProof<N, S>,
         ),
         ProverError,
@@ -1194,7 +1206,7 @@ pub trait MultiProverCircuit<
     /// proof and commitments can be passed to the verifier.
     fn verify(
         witness_commitments:
-            <<Self::Witness as MultiproverCircuitBaseType<'a, N, S>>::MultiproverCommType 
+            <<Self::Witness as MultiproverCircuitBaseType<N, S>>::MultiproverCommType 
                 as MultiproverCircuitCommitmentType<N, S,>>::BaseCommitType,
         statement: Self::Statement,
         proof: R1CSProof,

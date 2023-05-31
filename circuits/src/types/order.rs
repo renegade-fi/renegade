@@ -28,7 +28,15 @@ use serde::{Deserialize, Serialize};
 
 /// Represents the base type of an open order, including the asset pair, the amount, price,
 /// and direction
-#[circuit_type(singleprover_circuit, mpc, multiprover_circuit, linkable, secret_share)]
+#[circuit_type(
+    serde,
+    singleprover_circuit,
+    mpc,
+    multiprover_circuit,
+    multiprover_linkable,
+    linkable,
+    secret_share
+)]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Order {
     /// The mint (ERC-20 contract address) of the quote token
@@ -81,8 +89,8 @@ impl OrderSide {
 }
 
 impl BaseType for OrderSide {
-    fn to_scalars(self) -> Vec<Scalar> {
-        vec![Scalar::from(self as u8)]
+    fn to_scalars(&self) -> Vec<Scalar> {
+        vec![Scalar::from(*self as u8)]
     }
 
     fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
@@ -102,21 +110,16 @@ impl CircuitBaseType for OrderSide {
     }
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone> MpcBaseType<N, S>
-    for OrderSide
-{
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcBaseType<N, S> for OrderSide {
     type AllocatedType = AuthenticatedScalar<N, S>;
-}
-
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    MultiproverCircuitBaseType<N, S> for OrderSide
-{
-    type MultiproverVarType<L: MpcLinearCombinationLike<N, S>> = L;
-    type MultiproverCommType = AuthenticatedCompressedRistretto<N, S>;
 }
 
 impl LinkableBaseType for OrderSide {
     type Linkable = LinkableCommitment;
+
+    fn to_linkable(&self) -> Self::Linkable {
+        LinkableCommitment::from(self.to_scalars()[0])
+    }
 }
 
 impl SecretShareBaseType for OrderSide {

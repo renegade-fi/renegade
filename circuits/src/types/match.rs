@@ -2,6 +2,7 @@
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
 use crate::{
+    mpc::SharedFabric,
     traits::{
         BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
         LinkableBaseType, LinkableType, MpcBaseType, MpcLinearCombinationLike, MpcType,
@@ -9,23 +10,26 @@ use crate::{
         MultiproverCircuitVariableType,
     },
     zk_gadgets::fixed_point::FixedPoint,
+    AuthenticatedLinkableCommitment,
 };
 
 use circuit_macros::circuit_type;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
-use mpc_bulletproof::r1cs::Variable;
+use itertools::Itertools;
+use mpc_bulletproof::r1cs::{LinearCombination, Variable};
 use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto,
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
 use num_bigint::BigUint;
-use rand_core::{CryptoRng, RngCore};
+use rand_core::{CryptoRng, OsRng, RngCore};
 
 /// Represents the match result of a matching MPC in the cleartext
 /// in which two tokens are exchanged
 /// TODO: When we convert these values to fixed point rationals, we will need to sacrifice one
 /// bit of precision to ensure that the difference in prices is divisible by two
 #[circuit_type(
+    serde,
     singleprover_circuit,
     mpc,
     multiprover_circuit,
@@ -60,4 +64,32 @@ pub struct MatchResult {
     /// The index of the order (0 or 1) that has the minimum amount, i.e. the order that is
     /// completely filled by this match
     pub min_amount_order_index: u64,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMatchResult<N, S> {
+    /// Construct a linkable type from the base, shared type
+    pub fn link_commitments(
+        self,
+        fabric: SharedFabric<N, S>,
+    ) -> AuthenticatedLinkableMatchResult<N, S> {
+        let mut rng = OsRng {};
+        let self_serialized = self.to_authenticated_scalars();
+        let randomness = (0..self_serialized.len())
+            .map(|_| Scalar::random(&mut rng))
+            .collect_vec();
+
+        let authenticated_randomness = fabric
+            .borrow_fabric()
+            .batch_allocate_preshared_scalar(&randomness);
+
+        let mut authenticated_linkable_scalars = self_serialized
+            .into_iter()
+            .zip(authenticated_randomness.into_iter())
+            .map(|(scalar, randomness)| AuthenticatedLinkableCommitment::new(scalar, randomness))
+            .flat_map(|linked_scalar| linked_scalar.to_authenticated_scalars_with_linking());
+
+        AuthenticatedLinkableMatchResult::from_authenticated_scalars(
+            &mut authenticated_linkable_scalars,
+        )
+    }
 }

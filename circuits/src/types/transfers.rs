@@ -7,7 +7,7 @@
 
 use circuit_macros::circuit_type;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
-use mpc_bulletproof::r1cs::Variable;
+use mpc_bulletproof::r1cs::{LinearCombination, Variable};
 use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use num_bigint::BigUint;
 use rand_core::{CryptoRng, RngCore};
@@ -19,7 +19,7 @@ use crate::traits::{
 
 /// The base external transfer type, not allocated in a constraint system
 /// or an MPC circuit
-#[circuit_type(singleprover_circuit)]
+#[circuit_type(serde, singleprover_circuit)]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ExternalTransfer {
     /// The address of the account contract to transfer to/from
@@ -42,8 +42,8 @@ pub enum ExternalTransferDirection {
 }
 
 impl BaseType for ExternalTransferDirection {
-    fn to_scalars(self) -> Vec<Scalar> {
-        vec![Scalar::from(self as u8)]
+    fn to_scalars(&self) -> Vec<Scalar> {
+        vec![Scalar::from(*self as u8)]
     }
 
     fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
