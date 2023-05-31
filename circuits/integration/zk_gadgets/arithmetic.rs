@@ -1,18 +1,19 @@
-//! Groups gadgets around arithemtic integration tests
-use circuits::zk_gadgets::arithmetic::{
-    ExpGadgetStatement, MultiproverExpGadget, MultiproverExpWitness,
-};
+//! Groups gadgets around arithmetic integration tests
+use circuits::{traits::MultiproverCircuitBaseType, zk_gadgets::arithmetic::MultiproverExpGadget};
 use crypto::fields::{bigint_to_scalar, scalar_to_bigint};
 use curve25519_dalek::scalar::Scalar;
 use integration_helpers::{
     mpc_network::field::get_ristretto_group_modulus, types::IntegrationTest,
 };
-use mpc_bulletproof::r1cs_mpc::{MultiproverError, R1CSError};
+use merlin::Transcript;
+use mpc_bulletproof::{
+    r1cs::Variable,
+    r1cs_mpc::{MpcConstraintSystem, MpcLinearCombination, MpcProver, MpcVariable},
+    PedersenGens,
+};
 use rand_core::{OsRng, RngCore};
 
 use crate::{IntegrationTestArgs, TestWrapper};
-
-use super::multiprover_prove_and_verify;
 
 /// Tests that the exponentiation gadget works properly on valid inputs
 fn test_exp_multiprover(test_args: &IntegrationTestArgs) -> Result<(), String> {
@@ -35,20 +36,27 @@ fn test_exp_multiprover(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let expected_scalar = bigint_to_scalar(&expected_res);
 
     // Prove and verify the exp statement
-    let witness = MultiproverExpWitness { x: shared_base };
-    let statement = ExpGadgetStatement {
-        alpha: exp_open.try_into().unwrap(),
-        expected_out: expected_scalar,
-    };
-
-    multiprover_prove_and_verify::<'_, _, _, MultiproverExpGadget<'_, _, _>>(
-        witness,
-        statement,
+    let pc_gens = PedersenGens::default();
+    let mut transcript = Transcript::new(b"test");
+    let mut prover =
+        MpcProver::new_with_fabric(test_args.mpc_fabric.clone().0, &mut transcript, &pc_gens);
+    let (shared_base_var, _) = shared_base.commit_shared(&mut rng, &mut prover).unwrap();
+    let res = MultiproverExpGadget::exp(
+        shared_base_var,
+        exp_open.try_into().unwrap(),
         test_args.mpc_fabric.clone(),
+        &mut prover,
     )
-    .map_err(|err| format!("Error proving and verifying: {:?}", err))?;
+    .map_err(|err| format!("Error computing exp circuit: {:?}", err))?;
+    prover.constrain(
+        res - MpcLinearCombination::from_scalar(expected_scalar, test_args.mpc_fabric.clone().0),
+    );
 
-    Ok(())
+    if prover.constraints_satisfied().unwrap() {
+        Ok(())
+    } else {
+        Err("Constraints not satisfied".to_string())
+    }
 }
 
 /// Tests the exp gadget on an invalid witness
@@ -67,22 +75,27 @@ fn test_exp_multiprover_invalid(test_args: &IntegrationTestArgs) -> Result<(), S
     // Compute the expected result
     let exp_open = scalar_to_bigint(&shared_exp.open_and_authenticate().unwrap().to_scalar());
 
-    let witness = MultiproverExpWitness { x: shared_base };
-    let statement = ExpGadgetStatement {
-        expected_out: Scalar::from(5u64), // Incorrect output
-        alpha: exp_open.try_into().unwrap(),
-    };
+    let pc_gens = PedersenGens::default();
+    let mut transcript = Transcript::new(b"test");
+    let mut prover =
+        MpcProver::new_with_fabric(test_args.mpc_fabric.clone().0, &mut transcript, &pc_gens);
+    let (shared_base_var, _) = shared_base.commit_shared(&mut rng, &mut prover).unwrap();
 
-    let res = multiprover_prove_and_verify::<'_, _, _, MultiproverExpGadget<'_, _, _>>(
-        witness,
-        statement,
+    let res = MultiproverExpGadget::exp(
+        shared_base_var,
+        exp_open.try_into().unwrap(),
         test_args.mpc_fabric.clone(),
+        &mut prover,
+    )
+    .map_err(|err| format!("Error computing exp circuit: {:?}", err))?;
+    prover.constrain(
+        res - MpcVariable::new_with_type(Variable::One(), test_args.mpc_fabric.clone().0),
     );
 
-    if let Err(MultiproverError::ProverError(R1CSError::VerificationError)) = res {
-        Ok(())
+    if prover.constraints_satisfied().unwrap() {
+        Err("Constraints satisfied".to_string())
     } else {
-        Err(format!("Expected verification error, got {:?}", res))
+        Ok(())
     }
 }
 

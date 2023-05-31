@@ -1,10 +1,12 @@
 //! Groups tests for zero knowledge proof gadgets
 mod arithmetic;
 pub mod bits;
-mod comparators;
 mod poseidon;
 
-use circuits::{mpc::SharedFabric, MultiProverCircuit, Open};
+use circuits::{
+    mpc::SharedFabric,
+    traits::{MultiProverCircuit, MultiproverCircuitCommitmentType},
+};
 use curve25519_dalek::scalar::Scalar;
 use merlin::Transcript;
 use mpc_bulletproof::{
@@ -16,9 +18,9 @@ use mpc_ristretto::{beaver::SharedValueSource, error::MpcError, network::MpcNetw
 
 const TRANSCRIPT_SEED: &str = "test";
 
-/**
- * Helpers
- */
+// -----------
+// | Helpers |
+// -----------
 
 /// Abstracts over the flow of collaboratively proving and locally verifying
 /// the statement specified by a given circuit
@@ -37,18 +39,15 @@ where
     let prover = MpcProver::new_with_fabric(fabric.0.clone(), &mut transcript, &pc_gens);
 
     // Prove the statement
-    let (witness_commitment, proof) =
-        C::prove(witness, statement.clone(), prover, fabric.clone()).unwrap();
+    let (witness_commitment, proof) = C::prove(witness, statement.clone(), prover, fabric).unwrap();
 
     // Open the proof and commitments
     let opened_proof = proof.open()?;
-    let opened_commit = witness_commitment
-        .open_and_authenticate(fabric)
-        .map_err(|_| {
-            MultiproverError::Mpc(MpcError::ArithmeticError(
-                "error opening commitments".to_string(),
-            ))
-        })?;
+    let opened_commit = witness_commitment.open_and_authenticate().map_err(|_| {
+        MultiproverError::Mpc(MpcError::ArithmeticError(
+            "error opening commitments".to_string(),
+        ))
+    })?;
 
     // Verify the statement with a fresh transcript
     let mut verifier_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());

@@ -1,4 +1,4 @@
-//! Groups integration tests for arithmetic gadets used in the MPC circuits
+//! Groups integration tests for arithmetic gadgets used in the MPC circuits
 
 use circuits::mpc_gadgets::arithmetic::{pow, prefix_mul, product};
 use crypto::fields::scalar_to_biguint;
@@ -133,7 +133,7 @@ inventory::submit!(TestWrapper(IntegrationTest {
 }));
 
 inventory::submit!(TestWrapper(IntegrationTest {
-    name: "mpc_gadgets::arithmetic::test_previx_mul",
+    name: "mpc_gadgets::arithmetic::test_prefix_mul",
     test_fn: test_prefix_mul
 }));
 

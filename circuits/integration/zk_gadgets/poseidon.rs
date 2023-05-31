@@ -2,23 +2,23 @@
 
 use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
 use circuits::{
-    mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    zk_gadgets::poseidon::{
-        MultiproverPoseidonHashGadget, MultiproverPoseidonWitness, PoseidonGadgetStatement,
-    },
+    mpc_gadgets::poseidon::PoseidonSpongeParameters, traits::MultiproverCircuitBaseType,
+    zk_gadgets::poseidon::MultiproverPoseidonHashGadget,
 };
 
 use crypto::fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField};
 use curve25519_dalek::scalar::Scalar;
 use integration_helpers::types::IntegrationTest;
 use itertools::Itertools;
-use mpc_bulletproof::r1cs_mpc::{MultiproverError, R1CSError};
+use merlin::Transcript;
+use mpc_bulletproof::{
+    r1cs_mpc::{MpcLinearCombination, MpcProver},
+    PedersenGens,
+};
 use mpc_ristretto::authenticated_scalar::AuthenticatedScalar;
 use rand_core::{OsRng, RngCore};
 
 use crate::{mpc_gadgets::poseidon::convert_params, IntegrationTestArgs, TestWrapper};
-
-use super::multiprover_prove_and_verify;
 
 /// Tests the poseidon hash gadget
 fn test_poseidon_multiprover(test_args: &IntegrationTestArgs) -> Result<(), String> {
@@ -66,24 +66,32 @@ fn test_poseidon_multiprover(test_args: &IntegrationTestArgs) -> Result<(), Stri
     );
 
     // Prove the statement
-    let witness = MultiproverPoseidonWitness {
-        preimage: party0_values
-            .into_iter()
-            .chain(party1_values.into_iter())
-            .collect_vec(),
-    };
-    let statement = PoseidonGadgetStatement {
-        expected_out: expected_scalar,
-        params: hasher_params,
-    };
-    multiprover_prove_and_verify::<'_, _, _, MultiproverPoseidonHashGadget<'_, _, _>>(
-        witness,
-        statement,
-        test_args.mpc_fabric.clone(),
-    )
-    .map_err(|err| format!("Error proving and verifying statement: {:?}", err))?;
+    let pc_gens = PedersenGens::default();
+    let mut transcript = Transcript::new(b"test");
+    let mut prover =
+        MpcProver::new_with_fabric(test_args.mpc_fabric.clone().0, &mut transcript, &pc_gens);
+    let hash_input: Vec<MpcLinearCombination<_, _>> = party0_values
+        .into_iter()
+        .chain(party1_values.into_iter())
+        .map(|v| v.commit_shared(&mut rng, &mut prover).unwrap())
+        .map(|(var, _)| var.into())
+        .collect_vec();
 
-    Ok(())
+    let mut hasher =
+        MultiproverPoseidonHashGadget::new(hasher_params, test_args.mpc_fabric.clone());
+    hasher
+        .hash(
+            &hash_input,
+            &MpcLinearCombination::from_scalar(expected_scalar, test_args.mpc_fabric.clone().0),
+            &mut prover,
+        )
+        .map_err(|err| format!("Error computing poseidon hash circuit: {:?}", err))?;
+
+    if prover.constraints_satisfied().unwrap() {
+        Ok(())
+    } else {
+        Err("Constraints not satisfied".to_string())
+    }
 }
 
 /// Tests the case in which the witness is invalid; i.e. not the correct pre-image
@@ -107,26 +115,31 @@ fn test_poseidon_multiprover_invalid(test_args: &IntegrationTestArgs) -> Result<
 
     // Prove the statement
     let hasher_params = PoseidonSpongeParameters::default();
-    let witness = MultiproverPoseidonWitness {
-        preimage: party0_values
-            .into_iter()
-            .chain(party1_values.into_iter())
-            .collect_vec(),
-    };
-    let statement = PoseidonGadgetStatement {
-        expected_out: Scalar::from(1u64),
-        params: hasher_params,
-    };
-    let res = multiprover_prove_and_verify::<'_, _, _, MultiproverPoseidonHashGadget<'_, _, _>>(
-        witness,
-        statement,
-        test_args.mpc_fabric.clone(),
+    let pc_gens = PedersenGens::default();
+    let mut transcript = Transcript::new(b"test");
+    let mut prover =
+        MpcProver::new_with_fabric(test_args.mpc_fabric.clone().0, &mut transcript, &pc_gens);
+    let hash_input: Vec<MpcLinearCombination<_, _>> = party0_values
+        .iter()
+        .chain(party1_values.iter())
+        .map(|v| v.commit_shared(&mut rng, &mut prover).unwrap())
+        .map(|(var, _)| var.into())
+        .collect_vec();
+    let expected_out = MpcLinearCombination::from_scalar(
+        Scalar::from(rng.next_u64()),
+        test_args.mpc_fabric.clone().0,
     );
 
-    if let Err(MultiproverError::ProverError(R1CSError::VerificationError)) = res {
-        Ok(())
+    let mut hasher =
+        MultiproverPoseidonHashGadget::new(hasher_params, test_args.mpc_fabric.clone());
+    hasher
+        .hash(&hash_input, &expected_out, &mut prover)
+        .map_err(|err| format!("Error computing poseidon hash circuit: {:?}", err))?;
+
+    if prover.constraints_satisfied().unwrap() {
+        Err("Constraints satisfied".to_string())
     } else {
-        Err(format!("Expected verification error, got {:?}", res))
+        Ok(())
     }
 }
 
