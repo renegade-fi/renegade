@@ -1,6 +1,10 @@
 #![cfg(test)]
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
+
 mod mpc_circuits;
 mod mpc_gadgets;
+mod types;
 mod zk_circuits;
 mod zk_gadgets;
 

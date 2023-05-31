@@ -4,20 +4,18 @@ use std::{cmp, time::SystemTime};
 
 use circuits::{
     mpc::SharedFabric,
+    traits::{BaseType, LinkableBaseType, MpcBaseType},
     types::{
         balance::Balance,
         order::{Order, OrderSide},
-        r#match::AuthenticatedMatchResult,
+        r#match::{AuthenticatedLinkableMatchResult, LinkableMatchResult, MatchResult},
     },
-    zk_circuits::valid_match_mpc::{
-        ValidMatchMpcCircuit, ValidMatchMpcStatement, ValidMatchMpcWitness,
-    },
-    zk_gadgets::fixed_point::{AuthenticatedFixedPoint, FixedPoint},
+    zk_circuits::valid_match_mpc::{AuthenticatedValidMatchMpcWitness, ValidMatchMpcCircuit},
+    zk_gadgets::fixed_point::FixedPoint,
 };
-use crypto::fields::biguint_to_scalar;
 use curve25519_dalek::scalar::Scalar;
-use integration_helpers::{mpc_network::batch_share_plaintext_u64, types::IntegrationTest};
-use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
+use integration_helpers::types::IntegrationTest;
+use mpc_ristretto::{beaver::SharedValueSource, mpc_scalar::scalar_to_u64, network::MpcNetwork};
 
 use crate::{zk_gadgets::multiprover_prove_and_verify, IntegrationTestArgs, TestWrapper};
 
@@ -25,71 +23,78 @@ use crate::{zk_gadgets::multiprover_prove_and_verify, IntegrationTestArgs, TestW
 fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     my_order: &Order,
     fabric: SharedFabric<N, S>,
-) -> Result<AuthenticatedMatchResult<N, S>, String> {
-    let my_values = [my_order.side as u64, my_order.price.into(), my_order.amount];
-    let party0_values =
-        batch_share_plaintext_u64(&my_values, 0 /* owning_party */, fabric.0.clone());
-    let party1_values =
-        batch_share_plaintext_u64(&my_values, 1 /* owning_party */, fabric.0.clone());
+) -> Result<AuthenticatedLinkableMatchResult<N, S>, String> {
+    // Share orders
+    let party0_order = my_order
+        .share_public(0 /* owning_party */, fabric.clone())
+        .map_err(|err| format!("Error sharing order: {:?}", err))?;
+    let party1_order = my_order
+        .share_public(1 /* owning_party */, fabric.clone())
+        .map_err(|err| format!("Error sharing order: {:?}", err))?;
 
     // Match the values
-    let min_amount = cmp::min(party0_values[2], party1_values[2]);
+    let min_amount = cmp::min(party0_order.amount, party1_order.amount);
 
     // The price is represented as a fixed-point variable; convert it to its true value
     // by shifting right by the fixed-point precision (32). Add an additional shift right
     // by 1 to emulate division by 2 for the midpoint
-    let price = (party0_values[1] + party1_values[1]) >> 33;
-    let private_scalars = vec![
-        biguint_to_scalar(&my_order.quote_mint),
-        biguint_to_scalar(&my_order.base_mint),
-        (price * min_amount).into(),
-        min_amount.into(),
-        my_order.side.into(),
-        price.into(),
-        (cmp::max(party0_values[2], party1_values[2]) - min_amount).into(),
-        (if party0_values[2] == min_amount {
-            0u8
+    let one_half_fixed_point = FixedPoint::from_f32_round_down(0.5);
+    let price = (party0_order.price + party1_order.price).mul_fixed_point(one_half_fixed_point);
+    let quote_amount = scalar_to_u64(&(price * Scalar::from(min_amount)).floor());
+
+    let match_res: LinkableMatchResult = MatchResult {
+        base_mint: party0_order.base_mint,
+        quote_mint: party0_order.quote_mint,
+        base_amount: party0_order.amount,
+        quote_amount,
+        direction: party0_order.side.into(),
+        execution_price: price,
+        max_minus_min_amount: cmp::max(party0_order.amount, party1_order.amount) - min_amount,
+        min_amount_order_index: if party0_order.amount == min_amount {
+            0
         } else {
-            1u8
-        })
-        .into(),
-    ];
+            1
+        },
+    }
+    .to_linkable();
 
-    let shared_values = fabric
-        .borrow_fabric()
-        .batch_allocate_private_scalars(0 /* owning_party */, &private_scalars)
-        .map_err(|err| format!("Error sharing authenticated match result: {:?}", err))?;
-
-    Ok(AuthenticatedMatchResult {
-        quote_mint: shared_values[0].to_owned(),
-        base_mint: shared_values[1].to_owned(),
-        quote_amount: shared_values[2].to_owned(),
-        base_amount: shared_values[3].to_owned(),
-        direction: shared_values[4].to_owned(),
-        // Shift the price into its raw fixed point representation
-        execution_price: AuthenticatedFixedPoint::from_integer(Scalar::from(price), fabric),
-        max_minus_min_amount: shared_values[6].to_owned(),
-        min_amount_order_index: shared_values[7].to_owned(),
-    })
+    match_res
+        .allocate(0 /* owning_partY */, fabric)
+        .map_err(|err| format!("Error allocating match result in the network: {:?}", err))
 }
 
 /// Both parties call this value to setup their witness and statement from a given
 /// balance, order tuple
-fn setup_witness_and_statement<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+fn setup_witness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     order: Order,
     balance: Balance,
     fabric: SharedFabric<N, S>,
-) -> Result<(ValidMatchMpcWitness<N, S>, ValidMatchMpcStatement), String> {
+) -> Result<AuthenticatedValidMatchMpcWitness<N, S>, String> {
     // Generate hashes used for input consistency
-    let match_res = match_orders(&order, fabric)?;
-    Ok((
-        ValidMatchMpcWitness {
-            my_order: order.into(),
-            my_balance: balance.into(),
-            match_res: match_res.into(),
-        },
-        ValidMatchMpcStatement {},
-    ))
+    let match_res = match_orders(&order, fabric.clone())?;
+    let linkable_order = order.to_linkable();
+    let linkable_balance = balance.to_linkable();
+
+    let allocated_order1 = linkable_order
+        .allocate(0 /* owning_party */, fabric.clone())
+        .map_err(|err| format!("Error allocating order in the network: {:?}", err))?;
+    let allocated_order2 = linkable_order
+        .allocate(1 /* owning_party */, fabric.clone())
+        .map_err(|err| format!("Error allocating order in the network: {:?}", err))?;
+    let allocated_balance1 = linkable_balance
+        .allocate(0 /* owning_party */, fabric.clone())
+        .map_err(|err| format!("Error allocating balance in the network: {:?}", err))?;
+    let allocated_balance2 = linkable_balance
+        .allocate(1 /* owning_party */, fabric)
+        .map_err(|err| format!("Error allocating balance in the network: {:?}", err))?;
+
+    Ok(AuthenticatedValidMatchMpcWitness {
+        order1: allocated_order1,
+        order2: allocated_order2,
+        balance1: allocated_balance1,
+        balance2: allocated_balance2,
+        match_res,
+    })
 }
 
 /// Tests that the valid match MPC circuit proves and verifies given a correct witness
@@ -123,7 +128,7 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
         .try_into()
         .unwrap();
 
-    let (witness, statement) = setup_witness_and_statement(
+    let witness = setup_witness(
         Order {
             quote_mint: my_order[0].into(),
             base_mint: my_order[1].into(),
@@ -145,7 +150,7 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
 
     multiprover_prove_and_verify::<'_, _, _, ValidMatchMpcCircuit<'_, _, _>>(
         witness,
-        statement,
+        (),
         test_args.mpc_fabric.clone(),
     )
     .map_err(|err| format!("Error proving and verifying: {:?}", err))
