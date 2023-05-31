@@ -9,22 +9,17 @@ use std::marker::PhantomData;
 use circuit_macros::circuit_type;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use mpc_bulletproof::{
-    r1cs::{LinearCombination, R1CSProof, RandomizableConstraintSystem, Variable, Verifier},
-    r1cs_mpc::{
-        MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MpcVariable, R1CSError,
-        SharedR1CSProof,
-    },
-    BulletproofGens,
+    r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
+    r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, MpcVariable, R1CSError},
 };
 use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto,
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
-use rand_core::OsRng;
 use rand_core::{CryptoRng, RngCore};
 
 use crate::{
-    errors::{ProverError, VerifierError},
+    errors::ProverError,
     mpc::SharedFabric,
     traits::{
         BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
@@ -444,49 +439,29 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
 
     const BP_GENS_CAPACITY: usize = 256;
 
-    fn prove(
-        witness: Self::Witness,
-        _statement: Self::Statement,
-        mut prover: MpcProver<'a, '_, '_, N, S>,
+    fn apply_constraints_multiprover<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
+        witness: <Self::Witness as MultiproverCircuitBaseType<N, S>>::MultiproverVarType<
+            MpcVariable<N, S>,
+        >,
+        _statement: <Self::Statement as MultiproverCircuitBaseType<N, S>>::MultiproverVarType<
+            MpcVariable<N, S>,
+        >,
         fabric: SharedFabric<N, S>,
-    ) -> Result<
-        (
-            AuthenticatedValidMatchMpcWitnessCommitment<N, S>,
-            SharedR1CSProof<N, S>,
-        ),
-        ProverError,
-    > {
-        // Commit to party 0's inputs first, then party 1's inputs
-        let mut rng = OsRng {};
-        let (witness_var, witness_comm) = witness
-            .commit_shared(&mut rng, &mut prover)
-            .map_err(ProverError::Mpc)?;
-
-        Self::matching_engine_check(witness_var, fabric, &mut prover)?;
-
-        // Prove the statement
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens).map_err(ProverError::Collaborative)?;
-
-        Ok((witness_comm, proof))
+        cs: &mut CS,
+    ) -> Result<(), ProverError> {
+        Self::matching_engine_check(witness, fabric, cs)
     }
 
-    fn verify(
-        witness_commitment: ValidMatchMpcWitnessCommitment,
-        _statement: Self::Statement,
-        proof: R1CSProof,
-        mut verifier: Verifier,
-    ) -> Result<(), VerifierError> {
-        // Allocate the witness in the constraint system
-        let witness_vars = witness_commitment.commit_verifier(&mut verifier);
-
-        // Check that the matches value is properly formed
-        Self::matching_engine_check_single_prover(witness_vars, &mut verifier)
-            .map_err(VerifierError::R1CS)?;
-
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        verifier
-            .verify(&proof, &bp_gens)
-            .map_err(VerifierError::R1CS)
+    fn apply_constraints_singleprover<CS: RandomizableConstraintSystem>(
+        witness:
+                <<<Self::Witness as MultiproverCircuitBaseType<N, S>>::MultiproverCommType
+                    as MultiproverCircuitCommitmentType<N, S>>::BaseCommitType
+                    as CircuitCommitmentType>::VarType,
+        _statement:
+                <<Self::Statement as MultiproverCircuitBaseType<N, S>>::BaseType
+                    as CircuitBaseType>::VarType<Variable>,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        Self::matching_engine_check_single_prover(witness, cs)
     }
 }

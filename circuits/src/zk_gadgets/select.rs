@@ -4,14 +4,7 @@ use std::marker::PhantomData;
 
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
-<<<<<<< HEAD
-    r1cs::{
-        LinearCombination, Prover, R1CSError, R1CSProof, RandomizableConstraintSystem, Variable,
-        Verifier,
-    },
-=======
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
->>>>>>> 70c275b (circuits: zk-gadgets: Refactor gadgets with new types)
     r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem},
 };
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};

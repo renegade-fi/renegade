@@ -4,20 +4,26 @@ use std::{cmp, time::SystemTime};
 
 use circuits::{
     mpc::SharedFabric,
-    traits::{BaseType, LinkableBaseType, MpcBaseType},
+    multiprover_prove,
+    traits::{BaseType, LinkableBaseType, MpcBaseType, MultiproverCircuitCommitmentType},
     types::{
         balance::Balance,
         order::{Order, OrderSide},
         r#match::{AuthenticatedLinkableMatchResult, LinkableMatchResult, MatchResult},
     },
+    verify_collaborative_proof,
     zk_circuits::valid_match_mpc::{AuthenticatedValidMatchMpcWitness, ValidMatchMpcCircuit},
     zk_gadgets::fixed_point::FixedPoint,
 };
 use curve25519_dalek::scalar::Scalar;
-use integration_helpers::types::IntegrationTest;
-use mpc_ristretto::{beaver::SharedValueSource, mpc_scalar::scalar_to_u64, network::MpcNetwork};
+use integration_helpers::{mpc_network::mocks::PartyIDBeaverSource, types::IntegrationTest};
+use mpc_ristretto::{
+    beaver::SharedValueSource,
+    mpc_scalar::scalar_to_u64,
+    network::{MpcNetwork, QuicTwoPartyNet},
+};
 
-use crate::{zk_gadgets::multiprover_prove_and_verify, IntegrationTestArgs, TestWrapper};
+use crate::{IntegrationTestArgs, TestWrapper};
 
 /// Creates an authenticated match from an order in each relayer
 fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
@@ -148,12 +154,31 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
         test_args.mpc_fabric.clone(),
     )?;
 
-    multiprover_prove_and_verify::<'_, _, _, ValidMatchMpcCircuit<'_, _, _>>(
-        witness,
-        (),
-        test_args.mpc_fabric.clone(),
-    )
-    .map_err(|err| format!("Error proving and verifying: {:?}", err))
+    // Prove
+    let (witness_comm, proof) = multiprover_prove::<
+        '_,
+        QuicTwoPartyNet,
+        PartyIDBeaverSource,
+        ValidMatchMpcCircuit<'_, _, _>,
+    >(witness, (), test_args.mpc_fabric.clone())
+    .map_err(|err| format!("Error proving: {:?}", err))?;
+
+    // Open
+    let opened_proof = proof
+        .open()
+        .map_err(|err| format!("Error opening proof: {:?}", err))?;
+    let opened_comm = witness_comm
+        .open_and_authenticate()
+        .map_err(|err| format!("Error opening witness commitment: {:?}", err))?;
+
+    // Verify
+    verify_collaborative_proof::<
+        '_,
+        QuicTwoPartyNet,
+        PartyIDBeaverSource,
+        ValidMatchMpcCircuit<'_, _, _>,
+    >((), opened_comm, opened_proof)
+    .map_err(|err| format!("Error verifying: {:?}", err))
 }
 
 // Take inventory

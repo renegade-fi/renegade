@@ -25,7 +25,11 @@ use mpc_bulletproof::{
     r1cs::{
         LinearCombination, Prover, R1CSProof, RandomizableConstraintSystem, Variable, Verifier,
     },
-    r1cs_mpc::{MpcLinearCombination, MpcProver, MpcVariable, SharedR1CSProof},
+    r1cs_mpc::{
+        MpcLinearCombination, MpcProver, MpcRandomizableConstraintSystem, MpcVariable, R1CSError,
+        SharedR1CSProof,
+    },
+    BulletproofGens,
 };
 use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedCompressedRistretto,
@@ -33,7 +37,7 @@ use mpc_ristretto::{
     mpc_scalar::scalar_to_u64, network::MpcNetwork,
 };
 use num_bigint::BigUint;
-use rand_core::{CryptoRng, RngCore};
+use rand_core::{CryptoRng, OsRng, RngCore};
 
 use crate::{
     errors::{MpcError, ProverError, VerifierError},
@@ -70,7 +74,7 @@ pub trait BaseType: Clone {
     fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self;
 
     /// Share the plaintext value with the counterparty over an MPC fabric
-    /// 
+    ///
     /// This method is added to the `BaseType` trait for maximum flexibility, so that
     /// types may be shared without requiring them to implement the full `MpcBaseType`
     /// trait
@@ -105,7 +109,7 @@ pub trait CircuitBaseType: BaseType {
     /// The variable type for this base type
     type VarType<L: LinearCombinationLike>: CircuitVarType<L>;
     /// The commitment type for this base type
-    type CommitmentType: CircuitCommitmentType;
+    type CommitmentType: CircuitCommitmentType<VarType = Self::VarType<Variable>>;
 
     /// Commit to the base type as a witness variable
     fn commit_witness<R: RngCore + CryptoRng>(
@@ -190,9 +194,7 @@ pub trait CircuitCommitmentType: Clone {
 // --- MPC Circuit Traits --- //
 
 /// A base type for allocating into an MPC network
-pub trait MpcBaseType<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>:
-    BaseType
-{
+pub trait MpcBaseType<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>: BaseType {
     /// The type that results from allocating the base type into an MPC network
     type AllocatedType: MpcType<N, S>;
 
@@ -212,14 +214,11 @@ pub trait MpcBaseType<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>:
             &mut values.into_iter(),
         ))
     }
-
 }
 
 /// An implementing type is the representation of a `BaseType` in an MPC circuit
 /// *outside* of a multiprover constraint system
-pub trait MpcType<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>:
-    Clone
-{
+pub trait MpcType<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>: Clone {
     /// The native type when the value is opened out of a circuit
     type NativeType: BaseType;
     /// Convert from an iterable of authenticated scalars: scalars that have been
@@ -269,28 +268,25 @@ pub trait MpcType<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>:
 
 /// A marker trait used to generalize over the atomic `MpcVariable`
 /// and `MpcLinearCombination` types
-pub trait MpcLinearCombinationLike<
-    N: MpcNetwork + Send,
-    S: SharedValueSource<Scalar>,
->:
+pub trait MpcLinearCombinationLike<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>:
     MultiproverCircuitVariableType<N, S, Self> + Sized + Into<MpcLinearCombination<N, S>> + Clone
 {
 }
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
-    MpcLinearCombinationLike<N, S> for MpcVariable<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcLinearCombinationLike<N, S>
+    for MpcVariable<N, S>
 {
 }
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
-    MpcLinearCombinationLike<N, S> for MpcLinearCombination<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcLinearCombinationLike<N, S>
+    for MpcLinearCombination<N, S>
 {
 }
 
 /// A base type for allocating within a multiprover constraint system
-pub trait MultiproverCircuitBaseType<
-    N: MpcNetwork + Send,
-    S: SharedValueSource<Scalar>,
->: MpcType<N, S>
+pub trait MultiproverCircuitBaseType<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>:
+    MpcType<N, S>
 {
+    /// The base type of the multiprover circuit type
+    type BaseType: CircuitBaseType;
     /// The multiprover constraint system variable type that results when committing
     /// to the base type in a multiprover constraint system
     type MultiproverVarType<L: MpcLinearCombinationLike<N, S>>: MultiproverCircuitVariableType<
@@ -344,10 +340,8 @@ pub trait MultiproverCircuitVariableType<
 }
 
 /// A multiprover circuit commitment type
-pub trait MultiproverCircuitCommitmentType<
-    N: MpcNetwork + Send,
-    S: SharedValueSource<Scalar>,
->: Clone
+pub trait MultiproverCircuitCommitmentType<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>:
+    Clone
 {
     /// The base commitment type that this commitment opens to
     type BaseCommitType: CircuitCommitmentType;
@@ -373,9 +367,7 @@ pub trait MultiproverCircuitCommitmentType<
     }
 
     /// Opens the shared type and authenticates the result
-    fn open_and_authenticate(
-        self,
-    ) -> Result<Self::BaseCommitType, MpcError> {
+    fn open_and_authenticate(self) -> Result<Self::BaseCommitType, MpcError> {
         let self_comms = self.to_mpc_commitments();
         let opened_commitments =
             AuthenticatedCompressedRistretto::batch_open_and_authenticate(&self_comms)
@@ -725,51 +717,39 @@ impl<const N: usize, T: CircuitCommitmentType> CircuitCommitmentType for [T; N] 
     }
 
     fn to_commitments(&self) -> Vec<CompressedRistretto> {
-        self.iter()
-            .flat_map(|x| x.to_commitments())
-            .collect_vec()
+        self.iter().flat_map(|x| x.to_commitments()).collect_vec()
     }
 }
 
 // --- MPC Circuit Trait Impls --- //
 
-impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcBaseType<N, S>
-    for Scalar
-{
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcBaseType<N, S> for Scalar {
     type AllocatedType = AuthenticatedScalar<N, S>;
 }
 
-impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcBaseType<N, S> for u64 {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcBaseType<N, S> for u64 {
     type AllocatedType = AuthenticatedScalar<N, S>;
 }
 
-impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcBaseType<N, S>
-    for BigUint
-{
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcBaseType<N, S> for BigUint {
     type AllocatedType = AuthenticatedScalar<N, S>;
 }
 
-impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcBaseType<N, S>
-    for LinkableCommitment
-{
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcBaseType<N, S> for LinkableCommitment {
     type AllocatedType = AuthenticatedLinkableCommitment<N, S>;
 }
 
-impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcBaseType<N, S> for () {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcBaseType<N, S> for () {
     type AllocatedType = ();
 }
 
-impl<
-        const L: usize,
-        N: MpcNetwork + Send ,
-        S: SharedValueSource<Scalar> ,
-        T: MpcBaseType<N, S>,
-    > MpcBaseType<N, S> for [T; L]
+impl<const L: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>, T: MpcBaseType<N, S>>
+    MpcBaseType<N, S> for [T; L]
 {
     type AllocatedType = [T::AllocatedType; L];
 }
 
-impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcType<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcType<N, S>
     for AuthenticatedScalar<N, S>
 {
     type NativeType = Scalar;
@@ -785,7 +765,7 @@ impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcType<N, S>
     }
 }
 
-impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcType<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcType<N, S>
     for AuthenticatedLinkableCommitment<N, S>
 {
     type NativeType = LinkableCommitment;
@@ -807,7 +787,7 @@ impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcType<N, S>
     }
 }
 
-impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcType<N, S> for () {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcType<N, S> for () {
     type NativeType = ();
 
     fn from_authenticated_scalars<I: Iterator<Item = AuthenticatedScalar<N, S>>>(
@@ -820,12 +800,8 @@ impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> > MpcType<N, S> for () 
     }
 }
 
-impl<
-        const L: usize,
-        N: MpcNetwork + Send ,
-        S: SharedValueSource<Scalar> ,
-        T: MpcType<N, S>,
-    > MpcType<N, S> for [T; L]
+impl<const L: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>, T: MpcType<N, S>>
+    MpcType<N, S> for [T; L]
 {
     type NativeType = [T::NativeType; L];
 
@@ -855,9 +831,10 @@ impl<
 
 // --- Multiprover Circuit Trait Impls --- //
 
-impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
-    MultiproverCircuitBaseType<N, S> for AuthenticatedScalar<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiproverCircuitBaseType<N, S>
+    for AuthenticatedScalar<N, S>
 {
+    type BaseType = Scalar;
     type MultiproverVarType<L: MpcLinearCombinationLike<N, S>> = L;
     type MultiproverCommType = AuthenticatedCompressedRistretto<N, S>;
 
@@ -866,9 +843,10 @@ impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
     }
 }
 
-impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
-    MultiproverCircuitBaseType<N, S> for AuthenticatedLinkableCommitment<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiproverCircuitBaseType<N, S>
+    for AuthenticatedLinkableCommitment<N, S>
 {
+    type BaseType = LinkableCommitment;
     type MultiproverVarType<L: MpcLinearCombinationLike<N, S>> = L;
     type MultiproverCommType = AuthenticatedCompressedRistretto<N, S>;
 
@@ -877,9 +855,8 @@ impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
     }
 }
 
-impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
-    MultiproverCircuitBaseType<N, S> for ()
-{
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiproverCircuitBaseType<N, S> for () {
+    type BaseType = ();
     type MultiproverVarType<L: MpcLinearCombinationLike<N, S>> = ();
     type MultiproverCommType = ();
 
@@ -890,11 +867,12 @@ impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
 
 impl<
         const L: usize,
-        N: MpcNetwork + Send ,
-        S: SharedValueSource<Scalar> ,
+        N: MpcNetwork + Send,
+        S: SharedValueSource<Scalar>,
         T: MultiproverCircuitBaseType<N, S>,
     > MultiproverCircuitBaseType<N, S> for [T; L]
 {
+    type BaseType = [T::BaseType; L];
     type MultiproverVarType<M: MpcLinearCombinationLike<N, S>> = [T::MultiproverVarType<M>; L];
     type MultiproverCommType = [T::MultiproverCommType; L];
 
@@ -905,7 +883,7 @@ impl<
     }
 }
 
-impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
     MultiproverCircuitVariableType<N, S, MpcVariable<N, S>> for MpcVariable<N, S>
 {
     fn from_mpc_vars<I: Iterator<Item = MpcVariable<N, S>>>(i: &mut I) -> Self {
@@ -913,7 +891,7 @@ impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
     }
 }
 
-impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
     MultiproverCircuitVariableType<N, S, MpcLinearCombination<N, S>>
     for MpcLinearCombination<N, S>
 {
@@ -922,19 +900,16 @@ impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
     }
 }
 
-impl<
-        N: MpcNetwork + Send ,
-        S: SharedValueSource<Scalar> ,
-        L: MpcLinearCombinationLike<N, S>,
-    > MultiproverCircuitVariableType<N, S, L> for ()
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombinationLike<N, S>>
+    MultiproverCircuitVariableType<N, S, L> for ()
 {
     fn from_mpc_vars<I: Iterator<Item = L>>(_: &mut I) -> Self {}
 }
 
 impl<
         const U: usize,
-        N: MpcNetwork + Send ,
-        S: SharedValueSource<Scalar> ,
+        N: MpcNetwork + Send,
+        S: SharedValueSource<Scalar>,
         L: MpcLinearCombinationLike<N, S>,
         T: MultiproverCircuitVariableType<N, S, L>,
     > MultiproverCircuitVariableType<N, S, L> for [T; U]
@@ -949,8 +924,8 @@ impl<
     }
 }
 
-impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
-    MultiproverCircuitCommitmentType<N, S> for AuthenticatedCompressedRistretto<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiproverCircuitCommitmentType<N, S>
+    for AuthenticatedCompressedRistretto<N, S>
 {
     type BaseCommitType = CompressedRistretto;
     fn from_mpc_commitments<I: Iterator<Item = AuthenticatedCompressedRistretto<N, S>>>(
@@ -964,8 +939,8 @@ impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
     }
 }
 
-impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
-    MultiproverCircuitCommitmentType<N, S> for ()
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiproverCircuitCommitmentType<N, S>
+    for ()
 {
     type BaseCommitType = ();
     fn from_mpc_commitments<I: Iterator<Item = AuthenticatedCompressedRistretto<N, S>>>(
@@ -980,8 +955,8 @@ impl<N: MpcNetwork + Send , S: SharedValueSource<Scalar> >
 
 impl<
         const U: usize,
-        N: MpcNetwork + Send ,
-        S: SharedValueSource<Scalar> ,
+        N: MpcNetwork + Send,
+        S: SharedValueSource<Scalar>,
         T: MultiproverCircuitCommitmentType<N, S>,
     > MultiproverCircuitCommitmentType<N, S> for [T; U]
 {
@@ -998,9 +973,7 @@ impl<
     }
 
     fn to_mpc_commitments(&self) -> Vec<AuthenticatedCompressedRistretto<N, S>> {
-        self.iter()
-            .flat_map(|x| x.to_mpc_commitments())
-            .collect()
+        self.iter().flat_map(|x| x.to_mpc_commitments()).collect()
     }
 }
 
@@ -1122,20 +1095,42 @@ pub trait SingleProverCircuit {
     /// multiplication gate (roughly)
     const BP_GENS_CAPACITY: usize;
 
+    /// Apply the constraints of the circuit to a given constraint system
+    fn apply_constraints<CS: RandomizableConstraintSystem>(
+        witness_var: <Self::Witness as CircuitBaseType>::VarType<Variable>,
+        statement_var: <Self::Statement as CircuitBaseType>::VarType<Variable>,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError>;
+
     /// Generate a proof of the statement represented by the circuit
     ///
     /// Returns both the commitment to the inputs, as well as the proof itself
     fn prove(
         witness: Self::Witness,
         statement: Self::Statement,
-        prover: Prover,
+        mut prover: Prover,
     ) -> Result<
         (
             <Self::Witness as CircuitBaseType>::CommitmentType,
             R1CSProof,
         ),
         ProverError,
-    >;
+    > {
+        // Commit to the witness and statement
+        let mut rng = OsRng {};
+        let (witness_var, witness_comm) = witness.commit_witness(&mut rng, &mut prover);
+        let statement_var = statement.commit_public(&mut prover);
+
+        // Apply the constraints
+        Self::apply_constraints(witness_var, statement_var, &mut prover)
+            .map_err(ProverError::R1CS)?;
+
+        // Generate the proof
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
+
+        Ok((witness_comm, proof))
+    }
 
     /// Verify a proof of the statement represented by the circuit
     ///
@@ -1145,8 +1140,22 @@ pub trait SingleProverCircuit {
         witness_commitment: <Self::Witness as CircuitBaseType>::CommitmentType,
         statement: Self::Statement,
         proof: R1CSProof,
-        verifier: Verifier,
-    ) -> Result<(), VerifierError>;
+        mut verifier: Verifier,
+    ) -> Result<(), VerifierError> {
+        // Commit to the witness and statement
+        let witness_var = witness_commitment.commit_verifier(&mut verifier);
+        let statement_var = statement.commit_public(&mut verifier);
+
+        // Apply the constraints
+        Self::apply_constraints(witness_var, statement_var, &mut verifier)
+            .map_err(VerifierError::R1CS)?;
+
+        // Verify the proof
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        verifier
+            .verify(&proof, &bp_gens)
+            .map_err(VerifierError::R1CS)
+    }
 }
 
 /// Defines the abstraction of a Circuit that is evaluated in a multiprover setting
@@ -1158,18 +1167,13 @@ pub trait SingleProverCircuit {
 /// The witness type represents the secret witness that the prover has access to but
 /// that the verifier does not. The statement is the set of public inputs and any
 /// other circuit meta-parameters that both prover and verifier have access to.
-pub trait MultiProverCircuit<
-    'a,
-    N: 'a + MpcNetwork + Send,
-    S: 'a + SharedValueSource<Scalar>,
->
-{
+pub trait MultiProverCircuit<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> {
     /// The witness type, given only to the prover, which generates a blinding commitment
     /// that can be given to the verifier
     type Witness: MultiproverCircuitBaseType<N, S>;
     /// The statement type, given to both the prover and verifier, parameterizes the underlying
     /// NP statement being proven
-    type Statement: Clone + MultiproverCircuitBaseType<N, S>;
+    type Statement: Clone + MultiproverCircuitBaseType<N, S> + MpcType<N, S>;
 
     /// The size of the bulletproof generators that must be allocated
     /// to fully compute a proof or verification of the statement
@@ -1178,6 +1182,31 @@ pub trait MultiProverCircuit<
     /// multiplication gate (roughly)
     const BP_GENS_CAPACITY: usize;
 
+    /// Apply the constraints of the circuit to a multiprover constraint system
+    fn apply_constraints_multiprover<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
+        witness: <Self::Witness as MultiproverCircuitBaseType<N, S>>::MultiproverVarType<
+            MpcVariable<N, S>,
+        >,
+        statement: <Self::Statement as MultiproverCircuitBaseType<N, S>>::MultiproverVarType<
+            MpcVariable<N, S>,
+        >,
+        fabric: SharedFabric<N, S>,
+        cs: &mut CS,
+    ) -> Result<(), ProverError>;
+
+    /// Apply the constraints of the circuit to a singleprover constraint system
+    #[allow(clippy::type_complexity)]
+    fn apply_constraints_singleprover<CS: RandomizableConstraintSystem>(
+        witness:
+            <<<Self::Witness as MultiproverCircuitBaseType<N, S>>::MultiproverCommType
+                as MultiproverCircuitCommitmentType<N, S>>::BaseCommitType
+                as CircuitCommitmentType>::VarType,
+        statement:
+            <<Self::Statement as MultiproverCircuitBaseType<N, S>>::BaseType
+                as CircuitBaseType>::VarType<Variable>,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError>;
+
     /// Generate a proof of the statement represented by the circuit
     ///
     /// Returns both the commitment to the inputs, as well as the proof itself
@@ -1185,15 +1214,33 @@ pub trait MultiProverCircuit<
     fn prove(
         witness: Self::Witness,
         statement: Self::Statement,
-        prover: MpcProver<'a, '_, '_, N, S>,
         fabric: SharedFabric<N, S>,
+        mut prover: MpcProver<'a, '_, '_, N, S>,
     ) -> Result<
         (
             <Self::Witness as MultiproverCircuitBaseType<N, S>>::MultiproverCommType,
             SharedR1CSProof<N, S>,
         ),
         ProverError,
-    >;
+    > {
+        // Commit to the witness and statement
+        let mut rng = OsRng {};
+        let (witness_var, witness_comm) = witness
+            .commit_shared(&mut rng, &mut prover)
+            .map_err(ProverError::Mpc)?;
+        let (statement_var, _) = statement
+            .commit_shared(&mut rng, &mut prover)
+            .map_err(ProverError::Mpc)?;
+
+        // Apply the constraints
+        Self::apply_constraints_multiprover(witness_var, statement_var, fabric, &mut prover)?;
+
+        // Generate the proof
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        let proof = prover.prove(&bp_gens).map_err(ProverError::Collaborative)?;
+
+        Ok((witness_comm, proof))
+    }
 
     /// Verify a proof of the statement represented by the circuit
     ///
@@ -1206,10 +1253,25 @@ pub trait MultiProverCircuit<
     /// proof and commitments can be passed to the verifier.
     fn verify(
         witness_commitments:
-            <<Self::Witness as MultiproverCircuitBaseType<N, S>>::MultiproverCommType 
+            <<Self::Witness as MultiproverCircuitBaseType<N, S>>::MultiproverCommType
                 as MultiproverCircuitCommitmentType<N, S,>>::BaseCommitType,
-        statement: Self::Statement,
+        statement: <Self::Statement as MultiproverCircuitBaseType<N, S>>::BaseType,
         proof: R1CSProof,
-        verifier: Verifier,
-    ) -> Result<(), VerifierError>;
+        mut verifier: Verifier,
+    ) -> Result<(), VerifierError>
+where {
+        // Commit to the witness and statement
+        let witness_var = witness_commitments.commit_verifier(&mut verifier);
+        let statement_var = statement.commit_public(&mut verifier);
+
+        // Apply the circuit constraints
+        Self::apply_constraints_singleprover(witness_var, statement_var, &mut verifier)
+            .map_err(VerifierError::R1CS)?;
+
+        // Verify the proof
+        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
+        verifier
+            .verify(&proof, &bp_gens)
+            .map_err(VerifierError::R1CS)
+    }
 }
