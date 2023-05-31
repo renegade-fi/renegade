@@ -20,6 +20,8 @@ use super::{
 pub(crate) const MULTIPROVER_BASE_TRAIT_NAME: &str = "MultiproverCircuitBaseType";
 /// The name of the associated variable type on the base trait
 pub(crate) const MULTIPROVER_BASE_VAR_ASSOCIATED_NAME: &str = "MultiproverVarType";
+/// The name of the associated base type on the multiprover base trait
+pub(crate) const MULTIPROVER_BASE_TYPE_ASSOCIATED_NAME: &str = "BaseType";
 /// The name of the trait that multiprover circuit variable types implement
 const MULTIPROVER_VAR_TRAIT_NAME: &str = "MultiproverCircuitVariableType";
 /// The name of the associated variable type on the base trait
@@ -93,6 +95,7 @@ pub(crate) fn build_multiprover_circuit_types(
 /// Build an `impl MultiproverCircuitBaseType` block
 fn build_base_type_impl(mpc_type: &ItemStruct) -> TokenStream2 {
     let base_generics = mpc_type.generics.clone();
+    let base_type_generics = filter_generics(base_generics.clone(), build_mpc_generics());
     let var_associated_generics = build_multiprover_var_generics();
     let var_type_generics = merge_generics(build_mpc_generics(), build_multiprover_var_generics());
     let where_clause = mpc_type.generics.where_clause.clone();
@@ -100,8 +103,14 @@ fn build_base_type_impl(mpc_type: &ItemStruct) -> TokenStream2 {
     let trait_name = with_mpc_generics(new_ident(MULTIPROVER_BASE_TRAIT_NAME));
     let mpc_type_name = ident_with_generics(mpc_type.ident.clone(), base_generics.clone());
 
+    let base_type_associated_name = new_ident(MULTIPROVER_BASE_TYPE_ASSOCIATED_NAME);
     let var_type_associated_name = new_ident(MULTIPROVER_BASE_VAR_ASSOCIATED_NAME);
     let comm_type_associated_name = new_ident(MULTIPROVER_BASE_COMM_ASSOCIATED_NAME);
+
+    let derived_base_type_ident = ident_with_generics(
+        ident_strip_prefix(&mpc_type.ident.to_string(), MPC_TYPE_PREFIX),
+        base_type_generics,
+    );
 
     let derived_var_type_ident = ident_with_generics(
         ident_with_suffix(&mpc_type.ident.to_string(), VAR_SUFFIX),
@@ -120,6 +129,7 @@ fn build_base_type_impl(mpc_type: &ItemStruct) -> TokenStream2 {
         impl #base_generics #trait_name for #mpc_type_name
             #where_clause
         {
+            type #base_type_associated_name = #derived_base_type_ident;
             type #var_type_associated_name #var_associated_generics = #derived_var_type_ident;
             type #comm_type_associated_name = #derived_comm_type_ident;
 

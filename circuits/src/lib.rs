@@ -1,6 +1,5 @@
 //! Groups circuits for MPC and zero knowledge execution
 #![feature(generic_const_exprs)]
-#![feature(negative_impls)]
 #![allow(incomplete_features)]
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
@@ -145,7 +144,7 @@ where
     let prover = MpcProver::new_with_fabric(fabric.0.clone(), &mut transcript, &pc_gens);
 
     // Prove the statement
-    C::prove(witness, statement.clone(), prover, fabric)
+    C::prove(witness, statement.clone(), fabric, prover)
 }
 
 /// Abstracts over the flow of verifying a proof for a single-prover proved circuit
@@ -164,7 +163,7 @@ pub fn verify_singleprover_proof<C: SingleProverCircuit>(
 
 /// Abstracts over the flow of verifying a proof for a collaboratively proved circuit
 pub fn verify_collaborative_proof<'a, N, S, C>(
-    statement: C::Statement,
+    statement: <C::Statement as MultiproverCircuitBaseType<N, S>>::BaseType,
     witness_commitment: <
         <C::Witness as MultiproverCircuitBaseType<N, S>>::MultiproverCommType as MultiproverCircuitCommitmentType<N, S>
         >::BaseCommitType,

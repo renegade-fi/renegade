@@ -3,7 +3,6 @@
 use std::marker::PhantomData;
 
 use ark_ff::Zero;
-use circuit_macros::circuit_trace;
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 
 use curve25519_dalek::scalar::Scalar;
@@ -75,7 +74,6 @@ impl ExpGadget {
     ///
     /// Provides a functional interface for composing this gadget into a larger
     /// circuit.
-    #[circuit_trace(latency)]
     pub fn exp<L, CS>(x: L, alpha: u64, cs: &mut CS) -> LinearCombination
     where
         L: LinearCombinationLike,
