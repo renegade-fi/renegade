@@ -53,9 +53,7 @@ pub struct MultiproverOrGate<'a, N: MpcNetwork + Send, S: SharedValueSource<Scal
     _phantom: &'a PhantomData<(N, S)>,
 }
 
-impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + Clone>
-    MultiproverOrGate<'a, N, S>
-{
+impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiproverOrGate<'a, N, S> {
     /// Return the logical OR of the two arguments
     ///
     /// The arguments are assumed to be binary (0 or 1), but this assumption should be

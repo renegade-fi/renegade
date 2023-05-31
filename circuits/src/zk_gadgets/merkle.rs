@@ -8,6 +8,7 @@ use mpc_bulletproof::{
     r1cs_mpc::R1CSError,
 };
 use rand_core::{CryptoRng, RngCore};
+use serde::{Deserialize, Serialize};
 use std::ops::Neg;
 
 use crate::{
@@ -15,6 +16,7 @@ use crate::{
     traits::{
         BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
     },
+    types::{deserialize_array, serialize_array},
 };
 
 use super::poseidon::PoseidonHashGadget;
@@ -147,7 +149,7 @@ impl<const HEIGHT: usize> PoseidonMerkleHashGadget<HEIGHT> {
     /// Hash the value at the leaf into a bulletproof constraint value
     fn leaf_hash<L, CS>(values: &[L], cs: &mut CS) -> Result<LinearCombination, R1CSError>
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         // Build a sponge hasher
@@ -174,15 +176,23 @@ impl<const HEIGHT: usize> PoseidonMerkleHashGadget<HEIGHT> {
 }
 
 /// A fully specified merkle opening from hashed leaf to root
-#[circuit_type(singleprover_circuit)]
-#[derive(Clone, Debug)]
+#[circuit_type(serde, singleprover_circuit)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MerkleOpening<const HEIGHT: usize> {
     /// The opening from the leaf node to the root, i.e. the set of sister nodes
     /// that hash together with the input from the leaf to the root
+    #[serde(
+        serialize_with = "serialize_array",
+        deserialize_with = "deserialize_array"
+    )]
     pub elems: [Scalar; HEIGHT],
     /// The opening indices from the leaf node to the root, each value is zero or
     /// one: 0 indicating that the node in the opening at index i is a left hand
     /// child of its parent, 1 indicating it's a right hand child
+    #[serde(
+        serialize_with = "serialize_array",
+        deserialize_with = "deserialize_array"
+    )]
     pub indices: [Scalar; HEIGHT],
 }
 
@@ -251,7 +261,11 @@ pub(crate) mod merkle_test {
     {
         let mut res = Vec::with_capacity(HEIGHT);
         for _ in 0..HEIGHT {
-            res.push(Scalar::from((leaf_index % 2) as u64));
+            res.push(match leaf_index % 2 {
+                val @ 0..=1 => Scalar::from(val as u64),
+                _ => unreachable!("impossible evaluation mod 2"),
+            });
+
             leaf_index >>= 1;
         }
 

@@ -22,7 +22,6 @@ use mpc_ristretto::{
 };
 use rand_core::OsRng;
 use rand_core::{CryptoRng, RngCore};
-use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::{ProverError, VerifierError},
@@ -65,7 +64,7 @@ pub struct ValidMatchMpcCircuit<'a, N: MpcNetwork + Send, S: SharedValueSource<S
     _phantom: &'a PhantomData<(N, S)>,
 }
 
-impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + Clone>
+impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     ValidMatchMpcCircuit<'a, N, S>
 {
     /// The order crossing check, verifies that the matches result is valid given the orders
@@ -301,7 +300,9 @@ impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + 
             .match_res
             .execution_price
             .mul_integer::<LinearCombination, _>(Scalar::from(2u8).into(), cs);
-        cs.constrain(double_execution_price - (witness.order1.price + witness.order2.price));
+        cs.constrain(
+            double_execution_price.repr - (witness.order1.price.repr + witness.order2.price.repr),
+        );
 
         // Constrain the min_amount_order_index to be binary
         // i.e. 0 === min_amount_order_index * (1 - min_amount_order_index)
@@ -412,7 +413,7 @@ impl<'a, N: 'a + MpcNetwork + Send + Clone, S: 'a + SharedValueSource<Scalar> + 
 
 /// The full witness, recovered by opening the witness commitment, but never realized in
 /// the plaintext by either party
-#[circuit_type(singleprover_circuit, mpc, multiprover_circuit)]
+#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
 #[derive(Clone, Debug)]
 pub struct ValidMatchMpcWitness {
     /// The first party's order
@@ -430,21 +431,13 @@ pub struct ValidMatchMpcWitness {
     pub match_res: LinkableMatchResult,
 }
 
-// -----------------------------
-// | Statement Type Definition |
-// -----------------------------
-
-/// The parameterization for the VALID MATCH MPC statement
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ValidMatchMpcStatement {}
-
 // ---------------------
 // | Prove Verify Flow |
 // ---------------------
 
 /// Prover implementation of the Valid Match circuit
-impl<'a, N: 'a + MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    MultiProverCircuit<'a, N, S> for ValidMatchMpcCircuit<'a, N, S>
+impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<'a, N, S>
+    for ValidMatchMpcCircuit<'a, N, S>
 {
     type Statement = ();
     type Witness = AuthenticatedValidMatchMpcWitness<N, S>;

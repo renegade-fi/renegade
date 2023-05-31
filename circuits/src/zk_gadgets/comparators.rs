@@ -177,12 +177,10 @@ impl EqVecGadget {
 pub struct NotEqualGadget {}
 impl NotEqualGadget {
     /// Computes a != b
-    pub fn not_equal<L1, L2, V1, V2, CS>(a: V1, b: V2, cs: &mut CS) -> LinearCombination
+    pub fn not_equal<L1, L2, CS>(a: L1, b: L2, cs: &mut CS) -> LinearCombination
     where
         L1: LinearCombinationLike,
         L2: LinearCombinationLike,
-        V1: CircuitVarType<L1>,
-        V2: CircuitVarType<L2>,
         CS: RandomizableConstraintSystem,
     {
         let eq_zero = EqZeroGadget::eq_zero(a.into() - b.into(), cs);
@@ -263,12 +261,8 @@ pub struct MultiproverGreaterThanEqZeroGadget<
     _phantom: &'a PhantomData<(N, S)>,
 }
 
-impl<
-        'a,
-        const D: usize,
-        N: 'a + MpcNetwork + Send + Clone,
-        S: 'a + SharedValueSource<Scalar> + Clone,
-    > MultiproverGreaterThanEqZeroGadget<'a, D, N, S>
+impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
+    MultiproverGreaterThanEqZeroGadget<'a, D, N, S>
 {
     /// Constrains the input value to be greater than or equal to zero implicitly
     /// by bit-decomposing the value and re-composing it thereafter
@@ -385,12 +379,8 @@ pub struct MultiproverGreaterThanEqGadget<
     _phantom: &'a PhantomData<(N, S)>,
 }
 
-impl<
-        'a,
-        const D: usize,
-        N: 'a + MpcNetwork + Send + Clone,
-        S: 'a + SharedValueSource<Scalar> + Clone,
-    > MultiproverGreaterThanEqGadget<'a, D, N, S>
+impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
+    MultiproverGreaterThanEqGadget<'a, D, N, S>
 {
     /// Constrain the relation a >= b
     pub fn constrain_greater_than_eq<L, CS>(

@@ -102,6 +102,14 @@ impl FixedPoint {
         dec.to_f64().unwrap()
     }
 
+    /// Multiply one fixed point value by another
+    pub fn mul_fixed_point(&self, rhs: FixedPoint) -> Self {
+        let direct_mul = self.repr * rhs.repr;
+        Self {
+            repr: *TWO_TO_NEG_M * direct_mul,
+        }
+    }
+
     /// Rounds down the given value to an integer and returns the integer representation
     pub fn floor(&self) -> Scalar {
         // Clear the bottom `DEFAULT_PRECISION` bits
@@ -437,9 +445,7 @@ impl<L: LinearCombinationLike> Sub<Variable> for FixedPointVar<L> {
     }
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    AuthenticatedFixedPoint<N, S>
-{
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedFixedPoint<N, S> {
     /// Create an authenticated fixed-point variable from a given scalar integer
     pub fn from_integer(val: Scalar, fabric: SharedFabric<N, S>) -> Self {
         // Shift the scalar before allocating
@@ -450,17 +456,15 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
     }
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    From<AuthenticatedScalar<N, S>> for AuthenticatedFixedPoint<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedScalar<N, S>>
+    for AuthenticatedFixedPoint<N, S>
 {
     fn from(val: AuthenticatedScalar<N, S>) -> Self {
         Self { repr: val }
     }
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    AuthenticatedFixedPoint<N, S>
-{
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedFixedPoint<N, S> {
     /// Create an authenticated fixed point variable from a public floating point
     pub fn from_public_f32(val: f32, fabric: SharedFabric<N, S>) -> Self {
         // Shift the floating point into its scalar representation
@@ -486,8 +490,8 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
     }
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    Mul<&AuthenticatedFixedPoint<N, S>> for &AuthenticatedFixedPoint<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&AuthenticatedFixedPoint<N, S>>
+    for &AuthenticatedFixedPoint<N, S>
 {
     type Output = AuthenticatedFixedPoint<N, S>;
 
@@ -500,8 +504,8 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
     }
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    Mul<&AuthenticatedScalar<N, S>> for &AuthenticatedFixedPoint<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&AuthenticatedScalar<N, S>>
+    for &AuthenticatedFixedPoint<N, S>
 {
     type Output = AuthenticatedFixedPoint<N, S>;
 
@@ -512,8 +516,8 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
     }
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    Mul<&AuthenticatedFixedPoint<N, S>> for AuthenticatedScalar<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&AuthenticatedFixedPoint<N, S>>
+    for AuthenticatedScalar<N, S>
 {
     type Output = AuthenticatedFixedPoint<N, S>;
 
@@ -524,8 +528,8 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
     }
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    Add<&AuthenticatedFixedPoint<N, S>> for &AuthenticatedFixedPoint<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&AuthenticatedFixedPoint<N, S>>
+    for &AuthenticatedFixedPoint<N, S>
 {
     type Output = AuthenticatedFixedPoint<N, S>;
 
@@ -537,8 +541,8 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
 }
 
 /// Add a scalar to a fixed-point
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    Add<&AuthenticatedScalar<N, S>> for &AuthenticatedFixedPoint<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&AuthenticatedScalar<N, S>>
+    for &AuthenticatedFixedPoint<N, S>
 {
     type Output = AuthenticatedFixedPoint<N, S>;
 
@@ -551,8 +555,8 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
     }
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    Add<&AuthenticatedFixedPoint<N, S>> for &AuthenticatedScalar<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&AuthenticatedFixedPoint<N, S>>
+    for &AuthenticatedScalar<N, S>
 {
     type Output = AuthenticatedFixedPoint<N, S>;
 
@@ -561,9 +565,7 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
     }
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone> Neg
-    for &AuthenticatedFixedPoint<N, S>
-{
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for &AuthenticatedFixedPoint<N, S> {
     type Output = AuthenticatedFixedPoint<N, S>;
 
     fn neg(self) -> Self::Output {
@@ -573,8 +575,8 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone> Neg
     }
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    Sub<&AuthenticatedFixedPoint<N, S>> for &AuthenticatedFixedPoint<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&AuthenticatedFixedPoint<N, S>>
+    for &AuthenticatedFixedPoint<N, S>
 {
     type Output = AuthenticatedFixedPoint<N, S>;
 
@@ -584,8 +586,8 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
     }
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    Sub<&AuthenticatedScalar<N, S>> for &AuthenticatedFixedPoint<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&AuthenticatedScalar<N, S>>
+    for &AuthenticatedFixedPoint<N, S>
 {
     type Output = AuthenticatedFixedPoint<N, S>;
 
@@ -595,8 +597,8 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
     }
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
-    Sub<&AuthenticatedFixedPoint<N, S>> for &AuthenticatedScalar<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&AuthenticatedFixedPoint<N, S>>
+    for &AuthenticatedScalar<N, S>
 {
     type Output = AuthenticatedFixedPoint<N, S>;
 
@@ -612,8 +614,8 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
 
 impl<
         'a,
-        N: 'a + MpcNetwork + Send + Clone,
-        S: 'a + SharedValueSource<Scalar> + Clone,
+        N: 'a + MpcNetwork + Send,
+        S: 'a + SharedValueSource<Scalar>,
         L: MpcLinearCombinationLike<N, S>,
     > AuthenticatedFixedPointVar<N, S, L>
 {
@@ -645,7 +647,7 @@ impl<
     }
 }
 
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
     From<AuthenticatedFixedPointVar<N, S, MpcVariable<N, S>>>
     for AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>
 {
@@ -658,8 +660,8 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
 
 impl<
         'a,
-        N: 'a + MpcNetwork + Send + Clone,
-        S: 'a + SharedValueSource<Scalar> + Clone,
+        N: 'a + MpcNetwork + Send,
+        S: 'a + SharedValueSource<Scalar>,
         L: MpcLinearCombinationLike<N, S>,
     > AuthenticatedFixedPointVar<N, S, L>
 {
@@ -694,11 +696,8 @@ impl<
     }
 }
 
-impl<
-        N: MpcNetwork + Send + Clone,
-        S: SharedValueSource<Scalar> + Clone,
-        L: MpcLinearCombinationLike<N, S>,
-    > Add<AuthenticatedFixedPointVar<N, S, L>> for AuthenticatedFixedPointVar<N, S, L>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombinationLike<N, S>>
+    Add<AuthenticatedFixedPointVar<N, S, L>> for AuthenticatedFixedPointVar<N, S, L>
 {
     type Output = AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>;
 
@@ -710,11 +709,8 @@ impl<
 }
 
 /// Addition with field elements (integer representation)
-impl<
-        N: MpcNetwork + Send + Clone,
-        S: SharedValueSource<Scalar> + Clone,
-        L: MpcLinearCombinationLike<N, S>,
-    > Add<L> for AuthenticatedFixedPointVar<N, S, L>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombinationLike<N, S>> Add<L>
+    for AuthenticatedFixedPointVar<N, S, L>
 {
     type Output = AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>;
 
@@ -728,7 +724,7 @@ impl<
 }
 
 /// Addition with field elements, fixed-point on the rhs
-impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
     Add<AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>>
     for MpcLinearCombination<N, S>
 {
@@ -742,11 +738,8 @@ impl<N: MpcNetwork + Send + Clone, S: SharedValueSource<Scalar> + Clone>
     }
 }
 
-impl<
-        N: MpcNetwork + Send + Clone,
-        S: SharedValueSource<Scalar> + Clone,
-        L: MpcLinearCombinationLike<N, S>,
-    > Neg for AuthenticatedFixedPointVar<N, S, L>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombinationLike<N, S>> Neg
+    for AuthenticatedFixedPointVar<N, S, L>
 {
     type Output = AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>;
 
@@ -757,11 +750,8 @@ impl<
     }
 }
 
-impl<
-        N: MpcNetwork + Send + Clone,
-        S: SharedValueSource<Scalar> + Clone,
-        L: MpcLinearCombinationLike<N, S>,
-    > Sub<AuthenticatedFixedPointVar<N, S, L>> for AuthenticatedFixedPointVar<N, S, L>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombinationLike<N, S>>
+    Sub<AuthenticatedFixedPointVar<N, S, L>> for AuthenticatedFixedPointVar<N, S, L>
 {
     type Output = AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>;
 
@@ -771,11 +761,8 @@ impl<
     }
 }
 
-impl<
-        N: MpcNetwork + Send + Clone,
-        S: SharedValueSource<Scalar> + Clone,
-        L: MpcLinearCombinationLike<N, S>,
-    > Sub<L> for AuthenticatedFixedPointVar<N, S, L>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombinationLike<N, S>> Sub<L>
+    for AuthenticatedFixedPointVar<N, S, L>
 {
     type Output = AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>;
 
@@ -785,11 +772,8 @@ impl<
     }
 }
 
-impl<
-        N: MpcNetwork + Send + Clone,
-        S: SharedValueSource<Scalar> + Clone,
-        L: MpcLinearCombinationLike<N, S>,
-    > Sub<AuthenticatedFixedPointVar<N, S, L>> for MpcLinearCombination<N, S>
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombinationLike<N, S>>
+    Sub<AuthenticatedFixedPointVar<N, S, L>> for MpcLinearCombination<N, S>
 {
     type Output = AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>;
 
@@ -817,7 +801,10 @@ mod fixed_point_tests {
     use num_bigint::{BigInt, ToBigInt};
     use rand::{thread_rng, Rng, RngCore};
 
-    use crate::zk_gadgets::fixed_point::{FixedPoint, DEFAULT_PRECISION};
+    use crate::{
+        traits::CircuitBaseType,
+        zk_gadgets::fixed_point::{FixedPoint, DEFAULT_PRECISION},
+    };
 
     /// Tests that converting to and from f32 works properly
     #[test]

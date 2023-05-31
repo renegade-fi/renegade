@@ -103,7 +103,7 @@ impl NullifierGadget {
         cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError>
     where
-        L: Into<LinearCombination> + Clone,
+        L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
         // The nullifier is computed as H(C(w)||r)

@@ -298,8 +298,8 @@ where
 // ---------------------------
 
 /// The witness type for `VALID COMMITMENTS`
-#[circuit_type(singleprover_circuit)]
-#[derive(Clone, Debug)]
+#[circuit_type(serde, singleprover_circuit)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidCommitmentsWitness<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,

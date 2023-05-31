@@ -33,6 +33,8 @@ use super::{biguint_from_hex_string, biguint_to_hex_string};
 pub const NUM_KEYS: usize = 4;
 /// The number of bytes used in a single scalar to represent a key
 pub const SCALAR_MAX_BYTES: usize = 31;
+/// The number of words needed to represent a non-native root key
+pub const ROOT_KEY_WORDS: usize = 2;
 
 // -------------
 // | Key Types |
@@ -41,7 +43,7 @@ pub const SCALAR_MAX_BYTES: usize = 31;
 /// A public identification key is the image-under-hash of the secret identification key
 /// knowledge of which is proved in a circuit
 #[circuit_type(singleprover_circuit, mpc, multiprover_circuit, linkable, secret_share)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct PublicIdentificationKey {
     pub(crate) key: Scalar,
 }
@@ -78,7 +80,8 @@ impl From<PublicIdentificationKey> for Scalar {
 }
 
 /// A secret identification key is the hash preimage of the public identification key
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[circuit_type(serde, singleprover_circuit)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct SecretIdentificationKey {
     pub key: Scalar,
 }
@@ -116,23 +119,38 @@ impl From<SecretIdentificationKey> for Scalar {
 
 /// A non-native key is a key that exists over a non-native field
 /// (i.e. not Ristretto255 Scalar)
-#[circuit_type(singleprover_circuit, mpc, multiprover_circuit, linkable, secret_share)]
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct NonNativeKey {
-    /// The `Scalar` words used to represent hte key
+#[circuit_type(
+    serde,
+    singleprover_circuit,
+    mpc,
+    multiprover_circuit,
+    linkable,
+    secret_share
+)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NonNativeKey<const KEY_WORDS: usize> {
+    /// The `Scalar` words used to represent the key
     ///
     /// Because the key is a point on a non-native curve, its representation requires
     /// a bigint like approach
-    key_words: Vec<Scalar>,
+    pub key_words: [Scalar; KEY_WORDS],
 }
 
-impl NonNativeKey {
+impl<const KEY_WORDS: usize> Default for NonNativeKey<KEY_WORDS> {
+    fn default() -> Self {
+        Self {
+            key_words: [Scalar::zero(); KEY_WORDS],
+        }
+    }
+}
+
+impl<const KEY_WORDS: usize> NonNativeKey<KEY_WORDS> {
     /// Split a biguint into scalar words
-    fn split_biguint_into_words(val: &BigUint) -> Vec<Scalar> {
+    fn split_biguint_into_words(val: &BigUint) -> [Scalar; KEY_WORDS] {
         let mut words = Vec::new();
         let val_bytes_le = val.to_bytes_le();
 
-        for bytes_chunk in val_bytes_le.chunks_exact(SCALAR_MAX_BYTES) {
+        for bytes_chunk in val_bytes_le.chunks(SCALAR_MAX_BYTES) {
             // Pad to 32 bytes to fill a `Scalar`'s buffer, though the `Scalar`'s capacity is
             // 31 bytes as enforced by the Ristretto group modulus
             let bytes = bytes_chunk
@@ -148,13 +166,19 @@ impl NonNativeKey {
         }
 
         words
+            .into_iter()
+            .chain(iter::repeat(Scalar::zero()))
+            .take(KEY_WORDS)
+            .collect_vec()
+            .try_into()
+            .unwrap()
     }
 
     /// Re-collect the key words into a biguint
     fn combine_words_into_biguint(&self) -> BigUint {
         let mut bytes = Vec::new();
         for word in &self.key_words {
-            let word_bytes = word.to_bytes();
+            let word_bytes = word.to_bytes()[..SCALAR_MAX_BYTES].to_vec();
             bytes.extend(word_bytes);
         }
 
@@ -162,7 +186,7 @@ impl NonNativeKey {
     }
 }
 
-impl From<&BigUint> for NonNativeKey {
+impl<const KEY_WORDS: usize> From<&BigUint> for NonNativeKey<KEY_WORDS> {
     fn from(val: &BigUint) -> Self {
         Self {
             key_words: Self::split_biguint_into_words(val),
@@ -170,13 +194,13 @@ impl From<&BigUint> for NonNativeKey {
     }
 }
 
-impl From<&NonNativeKey> for BigUint {
-    fn from(value: &NonNativeKey) -> Self {
+impl<const KEY_WORDS: usize> From<&NonNativeKey<KEY_WORDS>> for BigUint {
+    fn from(value: &NonNativeKey<KEY_WORDS>) -> Self {
         value.combine_words_into_biguint()
     }
 }
 
-impl Serialize for NonNativeKey {
+impl<const KEY_WORDS: usize> Serialize for NonNativeKey<KEY_WORDS> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -186,7 +210,7 @@ impl Serialize for NonNativeKey {
     }
 }
 
-impl<'de> Deserialize<'de> for NonNativeKey {
+impl<'de, const KEY_WORDS: usize> Deserialize<'de> for NonNativeKey<KEY_WORDS> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -196,14 +220,14 @@ impl<'de> Deserialize<'de> for NonNativeKey {
     }
 }
 
-impl From<&NonNativeKey> for DalekKey {
-    fn from(val: &NonNativeKey) -> Self {
+impl<const KEY_WORDS: usize> From<&NonNativeKey<KEY_WORDS>> for DalekKey {
+    fn from(val: &NonNativeKey<KEY_WORDS>) -> Self {
         let key_bytes = BigUint::from(val).to_bytes_le();
         DalekKey::from_bytes(&key_bytes).unwrap()
     }
 }
 
-impl From<DalekKey> for NonNativeKey {
+impl<const KEY_WORDS: usize> From<DalekKey> for NonNativeKey<KEY_WORDS> {
     fn from(key: DalekKey) -> Self {
         let key_bytes = key.as_bytes();
         Self::from(&BigUint::from_bytes_le(key_bytes))
@@ -215,9 +239,9 @@ impl From<DalekKey> for NonNativeKey {
 // -----------------
 
 /// A type alias for readability
-pub type PublicSigningKey = NonNativeKey;
+pub type PublicSigningKey = NonNativeKey<ROOT_KEY_WORDS>;
 /// A type alias for readability
-pub type SecretSigningKey = NonNativeKey;
+pub type SecretSigningKey = NonNativeKey<ROOT_KEY_WORDS>;
 
 /// Represents the base type, defining two keys with different access levels
 ///
@@ -230,7 +254,14 @@ pub type SecretSigningKey = NonNativeKey;
 /// identification scheme (not necessarily a signature scheme). Concretely, this currently
 /// is setup as `pk_identity` = Hash(`sk_identity`), and the prover proves knowledge of
 /// pre-image in a related circuit
-#[circuit_type(singleprover_circuit, mpc, multiprover_circuit, linkable, secret_share)]
+#[circuit_type(
+    serde,
+    singleprover_circuit,
+    mpc,
+    multiprover_circuit,
+    linkable,
+    secret_share
+)]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicKeyChain {
     /// The public root key

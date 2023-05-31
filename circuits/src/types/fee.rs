@@ -30,7 +30,14 @@ use serde::{Deserialize, Serialize};
 
 /// Represents a fee-tuple in the state, i.e. a commitment to pay a relayer for a given
 /// match
-#[circuit_type(singleprover_circuit, mpc, multiprover_circuit, linkable, secret_share)]
+#[circuit_type(
+    serde,
+    singleprover_circuit,
+    mpc,
+    multiprover_circuit,
+    linkable,
+    secret_share
+)]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Fee {
     /// The public settle key of the cluster collecting fees
