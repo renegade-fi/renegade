@@ -66,15 +66,15 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     MultiproverCondSelectGadget<'a, N, S>
 {
     /// Computes the control flow statement if selector { a } else { b }
-    pub fn select<L1, V, CS>(
+    pub fn select<L, V, CS>(
         a: V,
         b: V,
-        selector: L1,
+        selector: L,
         fabric: SharedFabric<N, S>,
         cs: &mut CS,
     ) -> Result<V, ProverError>
     where
-        L1: MpcLinearCombinationLike<N, S>,
+        L: MpcLinearCombinationLike<N, S>,
         V: MultiproverCircuitVariableType<N, S, MpcLinearCombination<N, S>>,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {

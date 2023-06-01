@@ -309,7 +309,6 @@ mod test {
             create_wallet_shares, SizedWallet, INITIAL_BALANCES, INITIAL_FEES, MAX_BALANCES,
             MAX_FEES, MAX_ORDERS, PUBLIC_KEYS, TIMESTAMP,
         },
-        zk_gadgets::fixed_point::FixedPoint,
     };
 
     use super::{ValidSettle, ValidSettleStatement, ValidSettleWitness};
@@ -326,7 +325,6 @@ mod test {
                     quote_mint: 1u8.into(),
                     base_mint: 2u8.into(),
                     side: OrderSide::Buy,
-                    price: FixedPoint::from(5.),
                     amount: 1,
                     timestamp: TIMESTAMP,
                 },
@@ -649,9 +647,8 @@ mod test {
 
         // Modify an order that should not be modified
         let mut statement = original_statement.clone();
-        statement.party1_modified_shares.orders[statement.party1_order_index as usize]
-            .price
-            .repr -= Scalar::one();
+        statement.party1_modified_shares.orders[statement.party1_order_index as usize].amount -=
+            Scalar::one();
 
         assert!(!constraints_satisfied(witness.clone(), statement));
 

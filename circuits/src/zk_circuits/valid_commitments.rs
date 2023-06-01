@@ -743,9 +743,6 @@ mod test {
             quote_mint: Scalar::zero(),
             base_mint: Scalar::zero(),
             side: Scalar::zero(),
-            price: FixedPointShare {
-                repr: Scalar::zero(),
-            },
             amount: Scalar::zero(),
             timestamp: Scalar::zero(),
         }
