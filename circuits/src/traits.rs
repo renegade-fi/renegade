@@ -333,8 +333,10 @@ pub trait MultiproverCircuitVariableType<
     N: MpcNetwork + Send,
     S: SharedValueSource<Scalar>,
     L: MpcLinearCombinationLike<N, S>,
->
+>: Clone
 {
+    /// Serialization to a vector of MPC allocated variables
+    fn to_mpc_vars(&self) -> Vec<L>;
     /// Deserialization from an iterator over MPC allocated variables
     fn from_mpc_vars<I: Iterator<Item = L>>(i: &mut I) -> Self;
 }
@@ -886,6 +888,10 @@ impl<
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
     MultiproverCircuitVariableType<N, S, MpcVariable<N, S>> for MpcVariable<N, S>
 {
+    fn to_mpc_vars(&self) -> Vec<MpcVariable<N, S>> {
+        vec![self.clone()]
+    }
+
     fn from_mpc_vars<I: Iterator<Item = MpcVariable<N, S>>>(i: &mut I) -> Self {
         i.next().unwrap()
     }
@@ -895,6 +901,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
     MultiproverCircuitVariableType<N, S, MpcLinearCombination<N, S>>
     for MpcLinearCombination<N, S>
 {
+    fn to_mpc_vars(&self) -> Vec<MpcLinearCombination<N, S>> {
+        vec![self.clone()]
+    }
+
     fn from_mpc_vars<I: Iterator<Item = MpcLinearCombination<N, S>>>(i: &mut I) -> Self {
         i.next().unwrap()
     }
@@ -903,6 +913,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombinationLike<N, S>>
     MultiproverCircuitVariableType<N, S, L> for ()
 {
+    fn to_mpc_vars(&self) -> Vec<L> {
+        vec![]
+    }
+
     fn from_mpc_vars<I: Iterator<Item = L>>(_: &mut I) -> Self {}
 }
 
@@ -914,6 +928,10 @@ impl<
         T: MultiproverCircuitVariableType<N, S, L>,
     > MultiproverCircuitVariableType<N, S, L> for [T; U]
 {
+    fn to_mpc_vars(&self) -> Vec<L> {
+        self.iter().flat_map(|x| x.to_mpc_vars()).collect()
+    }
+
     fn from_mpc_vars<I: Iterator<Item = L>>(i: &mut I) -> Self {
         (0..U)
             .map(|_| T::from_mpc_vars(i))

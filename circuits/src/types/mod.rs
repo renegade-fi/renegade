@@ -13,6 +13,13 @@ pub mod order;
 pub mod transfers;
 pub mod wallet;
 
+// -------------
+// | Constants |
+// -------------
+
+/// The number of bits allowed in a balance or transaction "amount"
+pub(crate) const AMOUNT_BITS: usize = 64;
+
 // -----------------------------------------
 // | Serialization Deserialization Helpers |
 // -----------------------------------------

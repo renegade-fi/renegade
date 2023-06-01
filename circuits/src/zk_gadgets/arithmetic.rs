@@ -158,7 +158,7 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
         let recursive_plus_one = x * recursive_doubled;
 
         // Mux between the two results depending on whether the current exponent is odd or even
-        let odd_bit_selection =
+        let odd_bit_selection: LinearCombination =
             CondSelectGadget::select(recursive_plus_one, recursive_doubled.into(), is_odd, cs);
 
         // Mask the value of the output if alpha is already zero
@@ -196,7 +196,7 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
         let (_, _, recursive_plus_one) = cs.multiply(x_lc, recursive_doubled.into());
 
         // Mux between the two results depending on whether the current exponent is odd or even
-        let odd_bit_selection =
+        let odd_bit_selection: LinearCombination =
             CondSelectGadget::select(recursive_plus_one, recursive_doubled, is_odd, cs);
 
         // Mask the value of the output if alpha is already zero

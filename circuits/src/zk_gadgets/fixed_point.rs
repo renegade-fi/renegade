@@ -25,7 +25,7 @@ use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
-    errors::MpcError,
+    errors::{MpcError, ProverError},
     mpc::SharedFabric,
     mpc_gadgets::modulo::shift_right,
     traits::{
@@ -37,7 +37,10 @@ use crate::{
     LinkableCommitment,
 };
 
-use super::{arithmetic::DivRemGadget, comparators::EqGadget};
+use super::{
+    arithmetic::DivRemGadget,
+    comparators::{EqGadget, MultiproverGreaterThanEqGadget},
+};
 
 /// The default fixed point decimal precision in bits
 /// i.e. the number of bits allocated to a fixed point's decimal
@@ -303,7 +306,7 @@ impl<L: LinearCombinationLike> FixedPointVar<L> {
     }
 
     /// Constrain a fixed point variable to equal an integer
-    pub fn constraint_equal_integer<CS: RandomizableConstraintSystem>(
+    pub fn constrain_equal_integer<CS: RandomizableConstraintSystem>(
         &self,
         rhs: Variable,
         cs: &mut CS,
@@ -619,6 +622,19 @@ impl<
         L: MpcLinearCombinationLike<N, S>,
     > AuthenticatedFixedPointVar<N, S, L>
 {
+    /// Create a new authenticated fixed point variable from an integer representation
+    pub fn from_integer<L1, CS>(
+        val: L1,
+    ) -> AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>
+    where
+        L1: MpcLinearCombinationLike<N, S>,
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+    {
+        // Shift the scalar before allocating
+        let val_shifted = val.into() * *TWO_TO_M_SCALAR;
+        AuthenticatedFixedPointVar { repr: val_shifted }
+    }
+
     /// Constrain two authenticated fixed point variables to equal one another
     pub fn constrain_equal<L1, CS>(&self, rhs: &AuthenticatedFixedPointVar<N, S, L1>, cs: &mut CS)
     where
@@ -637,6 +653,27 @@ impl<
         // Shift the integer
         let shifted_rhs = *TWO_TO_M_SCALAR * rhs;
         cs.constrain(self.repr.clone().into() - shifted_rhs);
+    }
+
+    /// Constrain a fixed point variable to be less than or equal to a given integer value
+    pub fn constrain_less_than_eq_integer<const D: usize, L1, CS>(
+        &self,
+        rhs: L1,
+        fabric: SharedFabric<N, S>,
+        cs: &mut CS,
+    ) -> Result<(), ProverError>
+    where
+        L1: MpcLinearCombinationLike<N, S>,
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+    {
+        // Shift the integer
+        let shifted_rhs = *TWO_TO_M_SCALAR * Into::<MpcLinearCombination<N, S>>::into(rhs);
+        MultiproverGreaterThanEqGadget::<'_, D, N, S>::constrain_greater_than_eq(
+            shifted_rhs,
+            self.repr.clone().into(),
+            fabric,
+            cs,
+        )
     }
 
     /// Convert the underlying type to an `MpcLinearCombination`
