@@ -63,7 +63,6 @@ pub(crate) mod test_helpers {
                 quote_mint: 1u8.into(),
                 base_mint: 2u8.into(),
                 side: OrderSide::Buy,
-                price: FixedPoint::from(5.),
                 amount: 1,
                 timestamp: TIMESTAMP,
             },
@@ -71,7 +70,6 @@ pub(crate) mod test_helpers {
                 quote_mint: 1u8.into(),
                 base_mint: 3u8.into(),
                 side: OrderSide::Sell,
-                price: FixedPoint::from(2.),
                 amount: 10,
                 timestamp: TIMESTAMP,
             }
