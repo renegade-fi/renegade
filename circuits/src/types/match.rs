@@ -9,7 +9,6 @@ use crate::{
         MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
         MultiproverCircuitVariableType,
     },
-    zk_gadgets::fixed_point::FixedPoint,
     AuthenticatedLinkableCommitment,
 };
 
@@ -54,8 +53,6 @@ pub struct MatchResult {
     /// shrinking the size of the zero knowledge circuit. As well, they are computed during
     /// the course of the MPC, so it incurs no extra cost to include them in the witness
 
-    /// The execution price; the midpoint between two limit prices if they cross
-    pub execution_price: FixedPoint,
     /// The minimum amount of the two orders minus the maximum amount of the two orders.
     /// We include it here to tame some of the non-linearity of the zk circuit, i.e. we
     /// can shortcut some of the computation and implicitly constrain the match result

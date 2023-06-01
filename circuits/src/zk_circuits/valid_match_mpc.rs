@@ -17,6 +17,7 @@ use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
 use rand_core::{CryptoRng, RngCore};
+use tracing::log;
 
 use crate::{
     errors::ProverError,
@@ -26,11 +27,22 @@ use crate::{
         MpcBaseType, MpcLinearCombinationLike, MpcType, MultiproverCircuitBaseType,
         MultiproverCircuitCommitmentType, MultiproverCircuitVariableType,
     },
-    types::r#match::LinkableMatchResult,
-    zk_gadgets::fixed_point::AuthenticatedFixedPointVar,
-    zk_gadgets::select::{
-        CondSelectGadget, CondSelectVectorGadget, MultiproverCondSelectGadget,
-        MultiproverCondSelectVectorGadget,
+    types::{
+        balance::{AuthenticatedBalanceVar, BalanceVar},
+        order::{AuthenticatedOrderVar, OrderVar},
+        r#match::{AuthenticatedMatchResultVar, LinkableMatchResult, MatchResultVar},
+        AMOUNT_BITS,
+    },
+    zk_gadgets::{
+        comparators::EqGadget,
+        fixed_point::{AuthenticatedFixedPointVar, FixedPoint, DEFAULT_PRECISION},
+    },
+    zk_gadgets::{
+        comparators::MultiproverEqGadget,
+        select::{
+            CondSelectGadget, CondSelectVectorGadget, MultiproverCondSelectGadget,
+            MultiproverCondSelectVectorGadget,
+        },
     },
     MultiProverCircuit,
 };
@@ -72,12 +84,56 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     where
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
+        // --- Match Engine Input Validity --- //
         // Check that both orders are for the matched asset pair
-        cs.constrain(witness.order1.quote_mint - witness.match_res.quote_mint.clone());
-        cs.constrain(witness.order1.base_mint - witness.match_res.base_mint.clone());
-        cs.constrain(witness.order2.quote_mint - witness.match_res.quote_mint.clone());
-        cs.constrain(witness.order2.base_mint - witness.match_res.base_mint.clone());
+        cs.constrain(witness.order1.quote_mint.clone() - witness.match_res.quote_mint.clone());
+        cs.constrain(witness.order1.base_mint.clone() - witness.match_res.base_mint.clone());
+        cs.constrain(witness.order2.quote_mint.clone() - witness.match_res.quote_mint.clone());
+        cs.constrain(witness.order2.base_mint.clone() - witness.match_res.base_mint.clone());
 
+        // Check that the prices supplied by the parties are equal, these should be
+        // agreed upon outside of the circuit
+        MultiproverEqGadget::constrain_eq(witness.price1.clone(), witness.price2.clone(), cs);
+
+        // Check that the balances supplied are for the correct mints; i.e. for the mint
+        // that each party sells in the settlement
+        let mut selected_mints =
+            MultiproverCondSelectVectorGadget::select::<_, MpcLinearCombination<N, S>, _>(
+                &[
+                    witness.match_res.base_mint.clone().into(),
+                    witness.match_res.quote_mint.clone().into(),
+                ],
+                &[
+                    witness.match_res.quote_mint.clone().into(),
+                    witness.match_res.base_mint.clone().into(),
+                ],
+                witness.match_res.direction.clone(),
+                fabric.clone(),
+                cs,
+            )?;
+
+        cs.constrain(witness.balance1.mint.clone() - selected_mints.remove(0));
+        cs.constrain(witness.balance2.mint.clone() - selected_mints.remove(0));
+
+        // Check that the max amount match supplied by both parties is covered by the
+        // balance no greater than the amount specified in the order
+        Self::validate_volume_constraints(
+            &witness.match_res,
+            &witness.balance1,
+            &witness.order1,
+            fabric.clone(),
+            cs,
+        )?;
+
+        Self::validate_volume_constraints(
+            &witness.match_res,
+            &witness.balance2,
+            &witness.order2,
+            fabric.clone(),
+            cs,
+        )?;
+
+        // --- Match Engine Execution Validity --- //
         // Check that the direction of the match is the same as the first party's direction
         cs.constrain(witness.match_res.direction.clone() - witness.order1.side.clone());
 
@@ -86,50 +142,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // is assumed that orders are well formed, checking this amounts to checking their inclusion
         // in the state tree, which is done in `input_consistency_check`
         cs.constrain(
-            witness.order1.side + witness.order2.side - MpcVariable::one(fabric.0.clone()),
+            &witness.order1.side + &witness.order2.side - MpcVariable::one(fabric.0.clone()),
         );
-
-        // Check that the prices of the orders overlap
-        // 1. Mux buy/sell side based on the direction of the match
-        let prices = MultiproverCondSelectVectorGadget::select(
-            cs,
-            &[
-                witness.order2.price.repr.clone(),
-                witness.order1.price.repr.clone(),
-            ],
-            &[
-                witness.order1.price.repr.clone(),
-                witness.order2.price.repr.clone(),
-            ],
-            witness.match_res.direction.clone(),
-            fabric.clone(),
-        )?;
-        let buy_side_price = AuthenticatedFixedPointVar {
-            repr: prices[0].to_owned(),
-        };
-        let sell_side_price = AuthenticatedFixedPointVar {
-            repr: prices[1].to_owned(),
-        };
-
-        // 2. Enforce that the buy side price is greater than or equal to the sell side price
-        MultiproverGreaterThanEqGadget::<'_, 64 /* bitlength */, N, S>::constrain_greater_than_eq(
-            buy_side_price.repr,
-            sell_side_price.repr,
-            fabric.clone(),
-            cs,
-        )?;
-
-        // Check that price is correctly computed to be the midpoint
-        // i.e. price1 + price2 = 2 * execution_price
-        let double_execution_price = witness
-            .match_res
-            .execution_price
-            .mul_integer(
-                MpcLinearCombination::from_scalar(Scalar::from(2u64), fabric.0.clone()),
-                cs,
-            )
-            .map_err(ProverError::Collaborative)?;
-        double_execution_price.constrain_equal(&(witness.order1.price + witness.order2.price), cs);
 
         // Constrain the min_amount_order_index to be binary
         // i.e. 0 === min_amount_order_index * (1 - min_amount_order_index)
@@ -145,17 +159,18 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // Check that the amount of base currency exchanged is equal to the minimum of the two
         // order's amounts
 
-        // 1. Constraint he max_minus_min_amount to be correctly computed with respect to the argmin
+        // 1. Constrain the max_minus_min_amount to be correctly computed with respect to the argmin
         // witness variable min_amount_order_index
-        let max_minus_min1 = &witness.order1.amount - &witness.order2.amount;
-        let max_minus_min2 = &witness.order2.amount - &witness.order1.amount;
-        let max_minus_min_expected = MultiproverCondSelectGadget::select(
-            max_minus_min1,
-            max_minus_min2,
-            witness.match_res.min_amount_order_index.into(),
-            fabric.clone(),
-            cs,
-        )?;
+        let max_minus_min1 = &witness.amount1 - &witness.amount2;
+        let max_minus_min2 = &witness.amount2 - &witness.amount1;
+        let max_minus_min_expected =
+            MultiproverCondSelectGadget::select::<_, MpcLinearCombination<N, S>, _>(
+                max_minus_min1,
+                max_minus_min2,
+                witness.match_res.min_amount_order_index,
+                fabric.clone(),
+                cs,
+            )?;
         cs.constrain(&max_minus_min_expected - &witness.match_res.max_minus_min_amount);
 
         // 2. Constrain the max_minus_min_amount value to be positive
@@ -163,9 +178,9 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // I.e. the above constraint forces `max_minus_min_amount` to be either max(amounts) - min(amounts)
         // or min(amounts) - max(amounts).
         // Constraining the value to be positive forces it to be equal to max(amounts) - min(amounts)
-        MultiproverGreaterThanEqZeroGadget::<'_, 32 /* bitlength */, _, _>::constrain_greater_than_zero(
+        MultiproverGreaterThanEqZeroGadget::<'_, AMOUNT_BITS, _, _>::constrain_greater_than_zero(
             witness.match_res.max_minus_min_amount.clone(),
-            fabric.clone(),
+            fabric,
             cs,
         )?;
 
@@ -175,71 +190,73 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // Above we are given max(a, b) - min(a, b), so we can enforce the constraint
         //      2 * executed_amount = amount1 + amount2 - max_minus_min_amount
         let lhs = Scalar::from(2u64) * &witness.match_res.base_amount;
-        let rhs = &witness.order1.amount + &witness.order2.amount
-            - &witness.match_res.max_minus_min_amount;
+        let rhs = &witness.amount1 + &witness.amount2 - &witness.match_res.max_minus_min_amount;
         cs.constrain(lhs - rhs);
 
         // The quote amount should then equal the price multiplied by the base amount
         let expected_quote_amount = witness
-            .match_res
-            .execution_price
+            .price1
             .mul_integer(witness.match_res.base_amount.clone(), cs)
             .map_err(ProverError::Collaborative)?;
         expected_quote_amount.constrain_equal_integer(&witness.match_res.quote_amount, cs);
 
-        // Ensure the balances cover the orders
-        // 1. Mux between the (mint, amount) pairs that the parties are expected to cover by the
-        // direction of the order
-
-        // The selections in the case that party 0 is on the buy side of the match
-        let party0_buy_side_selection = vec![
-            witness.match_res.base_mint.clone(),
-            witness.match_res.base_amount.clone(),
-            witness.match_res.quote_mint.clone(),
-            witness.match_res.quote_amount.clone(),
-        ];
-
-        let party1_buy_side_selection = vec![
-            witness.match_res.quote_mint.clone(),
-            witness.match_res.quote_amount.clone(),
-            witness.match_res.base_mint.clone(),
-            witness.match_res.base_amount.clone(),
-        ];
-
-        let selected_values = MultiproverCondSelectVectorGadget::select(
-            cs,
-            &party0_buy_side_selection,
-            &party1_buy_side_selection,
-            witness.match_res.direction,
-            fabric.clone(),
-        )?;
-
-        // Destructure the conditional selection
-        let party0_buy_mint = selected_values[0].to_owned();
-        let party0_buy_amount = selected_values[1].to_owned();
-        let party1_buy_mint = selected_values[2].to_owned();
-        let party1_buy_amount = selected_values[3].to_owned();
-
-        // Constrain the mints on the balances to be correct
-        cs.constrain(&party0_buy_mint - &witness.balance1.mint);
-        cs.constrain(&party1_buy_mint - &witness.balance2.mint);
-
-        // Constrain the amounts of the balances to subsume the obligations from the match
-        MultiproverGreaterThanEqGadget::<'_, 64 /* bitlength */, N, S>::constrain_greater_than_eq(
-            witness.balance1.amount.into(),
-            party0_buy_amount,
-            fabric.clone(),
-            cs,
-        )?;
-
-        MultiproverGreaterThanEqGadget::<'_, 64 /* bitlength */, N, S>::constrain_greater_than_eq(
-            witness.balance2.amount.into(),
-            party1_buy_amount,
-            fabric,
-            cs,
-        )?;
+        // --- Price Protection --- //
+        Self::verify_price_protection(&witness.price1, &witness.order1, cs);
+        Self::verify_price_protection(&witness.price2, &witness.order2, cs);
 
         Ok(())
+    }
+
+    /// Check that a balance covers the advertised amount at a given price, and
+    /// that the amount is less than the maximum amount allowed by the order
+    pub fn validate_volume_constraints<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
+        match_res: &AuthenticatedMatchResultVar<N, S, MpcVariable<N, S>>,
+        balance: &AuthenticatedBalanceVar<N, S, MpcVariable<N, S>>,
+        order: &AuthenticatedOrderVar<N, S, MpcVariable<N, S>>,
+        fabric: SharedFabric<N, S>,
+        cs: &mut CS,
+    ) -> Result<(), ProverError>
+    where
+        [(); AMOUNT_BITS + DEFAULT_PRECISION]: Sized,
+    {
+        // Validate that the amount is less than the maximum amount given in the order
+        MultiproverGreaterThanEqGadget::<'_, AMOUNT_BITS /* bitlength */, _, _>::constrain_greater_than_eq(
+            order.amount.clone(),
+            match_res.base_amount.clone(),
+            fabric.clone(),
+            cs,
+        )?;
+
+        // Validate that the amount matched is covered by the balance
+        // If the direction of the order is 0 (buy the base) then the balance must
+        // cover the amount of the quote token sold in the swap
+        // If the direction of the order is 1 (sell the base) then the balance must
+        // cover the amount of the base token sold in the swap
+        let amount_sold = MultiproverCondSelectGadget::select::<_, MpcLinearCombination<N, S>, _>(
+            match_res.base_amount.clone().into(),
+            match_res.quote_amount.clone().into(),
+            order.side.clone(),
+            fabric.clone(),
+            cs,
+        )?;
+        MultiproverGreaterThanEqGadget::<'_, AMOUNT_BITS, _, _>::constrain_greater_than_eq(
+            balance.amount.clone().into(),
+            amount_sold,
+            fabric,
+            cs,
+        )
+    }
+
+    /// Verify the price protection on the orders; i.e. that the executed price is not
+    /// worse than some user-defined limit
+    #[allow(unused)]
+    pub fn verify_price_protection<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
+        price: &AuthenticatedFixedPointVar<N, S, MpcVariable<N, S>>,
+        order: &AuthenticatedOrderVar<N, S, MpcVariable<N, S>>,
+        cs: &mut CS,
+    ) {
+        // TODO: Implement price protection
+        log::warn!("Price protection not implemented");
     }
 
     /// The order crossing check, for a single prover
@@ -252,12 +269,47 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     where
         CS: RandomizableConstraintSystem,
     {
+        // --- Match Engine Input Validity --- //
         // Check that both orders are for the matched asset pair
         cs.constrain(witness.order1.quote_mint - witness.match_res.quote_mint);
         cs.constrain(witness.order1.base_mint - witness.match_res.base_mint);
         cs.constrain(witness.order2.quote_mint - witness.match_res.quote_mint);
         cs.constrain(witness.order2.base_mint - witness.match_res.base_mint);
 
+        // Check that the prices supplied by the parties are equal, these should be
+        // agreed upon outside of the circuit
+        EqGadget::constrain_eq(witness.price1.clone(), witness.price2.clone(), cs);
+
+        // Check that the balances supplied are for the correct mints; i.e. for the mint
+        // that each party sells in the settlement
+        let mut selected_mints =
+            CondSelectVectorGadget::select::<_, _, Variable, LinearCombination, _>(
+                &[witness.match_res.base_mint, witness.match_res.quote_mint],
+                &[witness.match_res.quote_mint, witness.match_res.base_mint],
+                witness.match_res.direction,
+                cs,
+            );
+
+        cs.constrain(witness.balance1.mint - selected_mints.remove(0));
+        cs.constrain(witness.balance2.mint - selected_mints.remove(0));
+
+        // Check that the max amount match supplied by both parties is covered by the
+        // balance no greater than the amount specified in the order
+        Self::validate_volume_constraints_single_prover(
+            &witness.match_res,
+            &witness.balance1,
+            &witness.order1,
+            cs,
+        );
+
+        Self::validate_volume_constraints_single_prover(
+            &witness.match_res,
+            &witness.balance2,
+            &witness.order2,
+            cs,
+        );
+
+        // --- Match Engine Execution Validity --- //
         // Check that the direction of the match is the same as the first party's direction
         cs.constrain(witness.match_res.direction - witness.order1.side);
 
@@ -267,54 +319,22 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // in the state tree, which is done in `input_consistency_check`
         cs.constrain(witness.order1.side + witness.order2.side - Variable::One());
 
-        // Check that the prices of the orders overlap
-        // 1. Mux buy/sell side based on the direction of the match
-        let prices = CondSelectVectorGadget::select::<Variable, Variable, _>(
-            &[witness.order2.price.repr, witness.order1.price.repr],
-            &[witness.order1.price.repr, witness.order2.price.repr],
-            witness.match_res.direction,
-            cs,
-        );
-        let buy_side_price = FixedPointVar {
-            repr: prices[0].to_owned(),
-        };
-        let sell_side_price = FixedPointVar {
-            repr: prices[1].to_owned(),
-        };
-
-        // 2. Enforce that the buy side price is greater than or equal to the sell side price
-        GreaterThanEqGadget::<64 /* bitlength */>::constrain_greater_than_eq(
-            buy_side_price.repr,
-            sell_side_price.repr,
-            cs,
-        );
-
-        // Check that price is correctly computed to be the midpoint
-        // i.e. price1 + price2 = 2 * execution_price
-        let double_execution_price = witness
-            .match_res
-            .execution_price
-            .mul_integer::<LinearCombination, _>(Scalar::from(2u8).into(), cs);
-        cs.constrain(
-            double_execution_price.repr - (witness.order1.price.repr + witness.order2.price.repr),
-        );
-
         // Constrain the min_amount_order_index to be binary
         // i.e. 0 === min_amount_order_index * (1 - min_amount_order_index)
         let (_, _, mul_out) = cs.multiply(
             witness.match_res.min_amount_order_index.into(),
-            LinearCombination::from(Scalar::one()) - witness.match_res.min_amount_order_index,
+            Variable::One() - witness.match_res.min_amount_order_index,
         );
         cs.constrain(mul_out.into());
 
         // Check that the amount of base currency exchanged is equal to the minimum of the two
         // order's amounts
 
-        // 1. Constraint he max_minus_min_amount to be correctly computed with respect to the argmin
+        // 1. Constrain the max_minus_min_amount to be correctly computed with respect to the argmin
         // witness variable min_amount_order_index
-        let max_minus_min1 = witness.order1.amount - witness.order2.amount;
-        let max_minus_min2 = witness.order2.amount - witness.order1.amount;
-        let max_minus_min_expected = CondSelectGadget::select::<LinearCombination, Variable, _>(
+        let max_minus_min1 = witness.amount1 - witness.amount2;
+        let max_minus_min2 = witness.amount2 - witness.amount1;
+        let max_minus_min_expected: LinearCombination = CondSelectGadget::select(
             max_minus_min1,
             max_minus_min2,
             witness.match_res.min_amount_order_index,
@@ -327,7 +347,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // I.e. the above constraint forces `max_minus_min_amount` to be either max(amounts) - min(amounts)
         // or min(amounts) - max(amounts).
         // Constraining the value to be positive forces it to be equal to max(amounts) - min(amounts)
-        GreaterThanEqZeroGadget::<32 /* bitlength */>::constrain_greater_than_zero(
+        GreaterThanEqZeroGadget::<AMOUNT_BITS>::constrain_greater_than_zero(
             witness.match_res.max_minus_min_amount,
             cs,
         );
@@ -338,67 +358,67 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // Above we are given max(a, b) - min(a, b), so we can enforce the constraint
         //      2 * executed_amount = amount1 + amount2 - max_minus_min_amount
         let lhs = Scalar::from(2u64) * witness.match_res.base_amount;
-        let rhs =
-            witness.order1.amount + witness.order2.amount - witness.match_res.max_minus_min_amount;
+        let rhs = witness.amount1 + witness.amount2 - witness.match_res.max_minus_min_amount;
         cs.constrain(lhs - rhs);
 
         // The quote amount should then equal the price multiplied by the base amount
         let expected_quote_amount = witness
-            .match_res
-            .execution_price
+            .price1
             .mul_integer(witness.match_res.base_amount, cs);
-        expected_quote_amount.constraint_equal_integer(witness.match_res.quote_amount, cs);
+        expected_quote_amount.constrain_equal_integer(witness.match_res.quote_amount, cs);
 
-        // Ensure the balances cover the orders
-        // 1. Mux between the (mint, amount) pairs that the parties are expected to cover by the
-        // direction of the order
-
-        // The selections in the case that party 0 is on the buy side of the match
-        let party0_buy_side_selection = vec![
-            witness.match_res.base_mint,
-            witness.match_res.base_amount,
-            witness.match_res.quote_mint,
-            witness.match_res.quote_amount,
-        ];
-
-        let party1_buy_side_selection = vec![
-            witness.match_res.quote_mint,
-            witness.match_res.quote_amount,
-            witness.match_res.base_mint,
-            witness.match_res.base_amount,
-        ];
-
-        let selected_values = CondSelectVectorGadget::select(
-            &party0_buy_side_selection,
-            &party1_buy_side_selection,
-            witness.match_res.direction,
-            cs,
-        );
-
-        // Destructure the conditional selection
-        let party0_buy_mint = selected_values[0].to_owned();
-        let party0_buy_amount = selected_values[1].to_owned();
-        let party1_buy_mint = selected_values[2].to_owned();
-        let party1_buy_amount = selected_values[3].to_owned();
-
-        // Constrain the mints on the balances to be correct
-        cs.constrain(party0_buy_mint - witness.balance1.mint);
-        cs.constrain(party1_buy_mint - witness.balance2.mint);
-
-        // Constrain the amounts of the balances to subsume the obligations from the match
-        GreaterThanEqGadget::<64 /* bitlength */>::constrain_greater_than_eq(
-            witness.balance1.amount.into(),
-            party0_buy_amount,
-            cs,
-        );
-
-        GreaterThanEqGadget::<64 /* bitlength */>::constrain_greater_than_eq(
-            witness.balance2.amount.into(),
-            party1_buy_amount,
-            cs,
-        );
+        // --- Price Protection --- //
+        Self::verify_price_protection_single_prover(&witness.price1, &witness.order1, cs);
+        Self::verify_price_protection_single_prover(&witness.price2, &witness.order2, cs);
 
         Ok(())
+    }
+
+    /// Check that a balance covers the advertised amount at a given price, and
+    /// that the amount is less than the maximum amount allowed by the order
+    pub fn validate_volume_constraints_single_prover<CS: RandomizableConstraintSystem>(
+        match_res: &MatchResultVar<Variable>,
+        balance: &BalanceVar<Variable>,
+        order: &OrderVar<Variable>,
+        cs: &mut CS,
+    ) where
+        [(); AMOUNT_BITS + DEFAULT_PRECISION]: Sized,
+    {
+        // Validate that the amount is less than the maximum amount given in the order
+        GreaterThanEqGadget::<AMOUNT_BITS>::constrain_greater_than_eq(
+            order.amount,
+            match_res.base_amount,
+            cs,
+        );
+
+        // Validate that the amount matched is covered by the balance
+        // If the direction of the order is 0 (buy the base) then the balance must
+        // cover the amount of the quote token sold in the swap
+        // If the direction of the order is 1 (sell the base) then the balance must
+        // cover the amount of the base token sold in the swap
+        let amount_sold: LinearCombination = CondSelectGadget::select(
+            match_res.base_amount,
+            match_res.quote_amount,
+            order.side,
+            cs,
+        );
+        GreaterThanEqGadget::<AMOUNT_BITS>::constrain_greater_than_eq(
+            balance.amount.into(),
+            amount_sold,
+            cs,
+        );
+    }
+
+    /// Verify the price protection on the orders; i.e. that the executed price is not
+    /// worse than some user-defined limit
+    #[allow(unused)]
+    pub fn verify_price_protection_single_prover<CS: RandomizableConstraintSystem>(
+        price: &FixedPointVar<Variable>,
+        order: &OrderVar<Variable>,
+        cs: &mut CS,
+    ) {
+        // TODO: Implement price protection
+        log::warn!("Price protection not implemented");
     }
 }
 
@@ -415,10 +435,18 @@ pub struct ValidMatchMpcWitness {
     pub order1: LinkableOrder,
     /// The first party's balance
     pub balance1: LinkableBalance,
+    /// The price that the first party agreed to execute at for their asset
+    pub price1: FixedPoint,
+    /// The maximum amount that the first party may match
+    pub amount1: Scalar,
     /// The second party's order
     pub order2: LinkableOrder,
     /// The second party's balance
     pub balance2: LinkableBalance,
+    /// The price that the second party agreed to execute at for their asset
+    pub price2: FixedPoint,
+    /// The maximum amount that the second party may match
+    pub amount2: Scalar,
     /// The result of running a match MPC on the given orders
     ///
     /// We do not open this value before proving so that we can avoid leaking information

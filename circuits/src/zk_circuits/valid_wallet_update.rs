@@ -182,7 +182,7 @@ where
             cs.multiply(external_transfer.amount.into(), external_transfer_not_zero);
 
         // The term added to the balance matching the external transfer mint
-        let external_transfer_term = CondSelectGadget::select::<LinearCombination, _, _>(
+        let external_transfer_term: LinearCombination = CondSelectGadget::select(
             -transfer_amount,
             transfer_amount.into(),
             external_transfer.direction,

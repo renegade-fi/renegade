@@ -33,6 +33,8 @@ const BASE_COMM_TYPE_ASSOCIATED_NAME: &str = "BaseCommitType";
 
 /// The `from_mpc_vars` method on the `MultiproverCircuitVariableType` trait
 const FROM_MPC_VARS_METHOD: &str = "from_mpc_vars";
+/// The `to_mpc_vars` method on the `MultiproverCircuitVariableType` trait
+const TO_MPC_VARS_METHOD: &str = "to_mpc_vars";
 /// The `from_mpc_commitments` method on the `MultiproverCircuitCommitmentType` trait
 const FROM_MPC_COMMS_METHOD: &str = "from_mpc_commitments";
 /// The `to_mpc_commitments` method on the `MultiproverCircuitCommitmentType` trait
@@ -175,6 +177,12 @@ fn build_multiprover_var_type_impl(var_type: &ItemStruct) -> TokenStream2 {
     let var_type_name = ident_with_generics(var_type.ident.clone(), impl_generics.clone());
 
     let mpc_variable_type: Path = parse_quote!(L);
+    let to_mpc_vars_method = build_serialize_method(
+        new_ident(TO_MPC_VARS_METHOD),
+        mpc_variable_type.clone(),
+        var_type,
+    );
+
     let from_mpc_vars_method = build_deserialize_method(
         new_ident(FROM_MPC_VARS_METHOD),
         mpc_variable_type,
@@ -186,6 +194,7 @@ fn build_multiprover_var_type_impl(var_type: &ItemStruct) -> TokenStream2 {
         impl #impl_generics #trait_name for #var_type_name
             #where_clause
         {
+            #to_mpc_vars_method
             #from_mpc_vars_method
         }
     };
