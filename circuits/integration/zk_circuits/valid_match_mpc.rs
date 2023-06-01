@@ -28,6 +28,7 @@ use crate::{IntegrationTestArgs, TestWrapper};
 /// Creates an authenticated match from an order in each relayer
 fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     my_order: &Order,
+    price: FixedPoint,
     fabric: SharedFabric<N, S>,
 ) -> Result<AuthenticatedLinkableMatchResult<N, S>, String> {
     // Share orders
@@ -39,24 +40,17 @@ fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         .map_err(|err| format!("Error sharing order: {:?}", err))?;
 
     // Match the values
-    let min_amount = cmp::min(party0_order.amount, party1_order.amount);
-
-    // The price is represented as a fixed-point variable; convert it to its true value
-    // by shifting right by the fixed-point precision (32). Add an additional shift right
-    // by 1 to emulate division by 2 for the midpoint
-    let one_half_fixed_point = FixedPoint::from_f32_round_down(0.5);
-    let price = (party0_order.price + party1_order.price).mul_fixed_point(one_half_fixed_point);
-    let quote_amount = scalar_to_u64(&(price * Scalar::from(min_amount)).floor());
+    let min_base_amount = cmp::min(party0_order.amount, party1_order.amount);
+    let quote_amount = scalar_to_u64(&(price * Scalar::from(min_base_amount)).floor());
 
     let match_res: LinkableMatchResult = MatchResult {
         base_mint: party0_order.base_mint,
         quote_mint: party0_order.quote_mint,
-        base_amount: party0_order.amount,
+        base_amount: min_base_amount,
         quote_amount,
         direction: party0_order.side.into(),
-        execution_price: price,
-        max_minus_min_amount: cmp::max(party0_order.amount, party1_order.amount) - min_amount,
-        min_amount_order_index: if party0_order.amount == min_amount {
+        max_minus_min_amount: cmp::max(party0_order.amount, party1_order.amount) - min_base_amount,
+        min_amount_order_index: if party0_order.amount == min_base_amount {
             0
         } else {
             1
@@ -71,15 +65,33 @@ fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
 
 /// Both parties call this value to setup their witness and statement from a given
 /// balance, order tuple
+///
+/// TODO: Add in variable amounts matched
 fn setup_witness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    price: FixedPoint,
+    amount: Scalar,
     order: Order,
     balance: Balance,
     fabric: SharedFabric<N, S>,
 ) -> Result<AuthenticatedValidMatchMpcWitness<N, S>, String> {
     // Generate hashes used for input consistency
-    let match_res = match_orders(&order, fabric.clone())?;
+    let match_res = match_orders(&order, price, fabric.clone())?;
     let linkable_order = order.to_linkable();
     let linkable_balance = balance.to_linkable();
+
+    let allocated_price1 = price
+        .allocate(0 /* owning_party */, fabric.clone())
+        .map_err(|err| format!("Error allocating price in the network: {:?}", err))?;
+    let allocated_price2 = price
+        .allocate(1 /* owning_party */, fabric.clone())
+        .map_err(|err| format!("Error allocating price in the network: {:?}", err))?;
+
+    let allocated_amount1 = amount
+        .allocate(0 /* owning_party */, fabric.clone())
+        .map_err(|err| format!("Error allocating amount in the network: {:?}", err))?;
+    let allocated_amount2 = amount
+        .allocate(1 /* owning_party */, fabric.clone())
+        .map_err(|err| format!("Error allocating amount in the network: {:?}", err))?;
 
     let allocated_order1 = linkable_order
         .allocate(0 /* owning_party */, fabric.clone())
@@ -87,6 +99,7 @@ fn setup_witness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     let allocated_order2 = linkable_order
         .allocate(1 /* owning_party */, fabric.clone())
         .map_err(|err| format!("Error allocating order in the network: {:?}", err))?;
+
     let allocated_balance1 = linkable_balance
         .allocate(0 /* owning_party */, fabric.clone())
         .map_err(|err| format!("Error allocating balance in the network: {:?}", err))?;
@@ -96,9 +109,13 @@ fn setup_witness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
 
     Ok(AuthenticatedValidMatchMpcWitness {
         order1: allocated_order1,
-        order2: allocated_order2,
         balance1: allocated_balance1,
+        amount1: allocated_amount1,
+        price1: allocated_price1,
+        order2: allocated_order2,
+        amount2: allocated_amount2,
         balance2: allocated_balance2,
+        price2: allocated_price2,
         match_res,
     })
 }
@@ -117,40 +134,34 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
         };
     }
 
-    let my_order = vec![
-        1,            // quote mint
-        2,            // base mint
-        sel!(0, 1),   // market side
-        sel!(10, 6),  // price
-        sel!(20, 30), // amount
-    ];
-    let my_balance_mint = sel!(1u8.into(), 2u8.into());
-    let my_balance_amount = 200;
-
+    let price = FixedPoint::from_integer(10);
     let timestamp: u64 = SystemTime::now()
         .elapsed()
         .unwrap()
         .as_millis()
         .try_into()
         .unwrap();
+    let my_order = Order {
+        quote_mint: 1u8.into(),
+        base_mint: 2u8.into(),
+        side: if party_id == 0 {
+            OrderSide::Buy
+        } else {
+            OrderSide::Sell
+        },
+        amount: sel!(20, 30),
+        timestamp,
+    };
+    let my_balance = Balance {
+        mint: sel!(1u8.into(), 2u8.into()),
+        amount: 200,
+    };
 
     let witness = setup_witness(
-        Order {
-            quote_mint: my_order[0].into(),
-            base_mint: my_order[1].into(),
-            side: if my_order[2] == 0 {
-                OrderSide::Buy
-            } else {
-                OrderSide::Sell
-            },
-            price: FixedPoint::from_integer(my_order[3]),
-            amount: my_order[4],
-            timestamp,
-        },
-        Balance {
-            mint: my_balance_mint,
-            amount: my_balance_amount,
-        },
+        price,
+        my_order.amount.into(),
+        my_order,
+        my_balance,
         test_args.mpc_fabric.clone(),
     )?;
 
