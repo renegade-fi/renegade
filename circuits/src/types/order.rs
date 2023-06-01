@@ -11,7 +11,6 @@ use crate::{
         MultiproverCircuitVariableType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
     types::{biguint_from_hex_string, biguint_to_hex_string},
-    zk_gadgets::fixed_point::FixedPoint,
     LinkableCommitment,
 };
 use circuit_macros::circuit_type;
@@ -53,8 +52,6 @@ pub struct Order {
     pub base_mint: BigUint,
     /// The side this order is for (0 = buy, 1 = sell)
     pub side: OrderSide,
-    /// The limit price to be executed at, in units of quote per base
-    pub price: FixedPoint,
     /// The amount of base currency to buy or sell
     pub amount: u64,
     /// A timestamp indicating when the order was placed, set by the user

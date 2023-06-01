@@ -30,7 +30,6 @@ use crate::{
         comparators::{
             EqGadget, EqVecGadget, EqZeroGadget, GreaterThanEqZeroGadget, NotEqualGadget,
         },
-        fixed_point::FixedPointVar,
         gates::{AndGate, ConstrainBinaryGadget, NotGate, OrGate},
         merkle::{MerkleOpening, MerkleRoot, PoseidonMerkleHashGadget},
         select::CondSelectGadget,
@@ -392,9 +391,6 @@ where
                 base_mint: Variable::Zero().into(),
                 side: Variable::Zero().into(),
                 amount: Variable::Zero().into(),
-                price: FixedPointVar {
-                    repr: Variable::Zero().into(),
-                },
                 timestamp: Variable::Zero().into(),
             },
             cs,
@@ -407,23 +403,11 @@ where
         order2: &OrderVar<LinearCombination>,
         cs: &mut CS,
     ) -> Variable {
-        EqVecGadget::eq_vec(
-            &[
-                order1.quote_mint.clone(),
-                order1.base_mint.clone(),
-                order1.side.clone(),
-                order1.amount.clone(),
-                order1.price.repr.clone(),
-            ],
-            &[
-                order2.quote_mint.clone(),
-                order2.base_mint.clone(),
-                order2.side.clone(),
-                order2.amount.clone(),
-                order2.price.repr.clone(),
-            ],
-            cs,
-        )
+        // Mutate the orders to have the same timestamp
+        let mut order2 = order2.clone();
+        order2.timestamp = order1.timestamp.clone();
+
+        EqGadget::eq(order1.clone(), order2, cs)
     }
 }
 
@@ -537,7 +521,6 @@ mod test {
             create_multi_opening, create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES,
             MAX_FEES, MAX_ORDERS, TIMESTAMP,
         },
-        zk_gadgets::fixed_point::FixedPoint,
     };
 
     use super::{ValidWalletUpdate, ValidWalletUpdateStatement, ValidWalletUpdateWitness};
@@ -710,7 +693,7 @@ mod test {
 
         // Create the wallet's second order as a duplicate of the first
         new_wallet.orders[1] = new_wallet.orders[0].clone();
-        new_wallet.orders[1].price = new_wallet.orders[1].price + FixedPoint::from_integer(10u64);
+        new_wallet.orders[1].amount += 10;
         new_wallet.orders[1].timestamp = NEW_TIMESTAMP;
 
         // Remove the order from the original wallet to simulate order placement

@@ -80,19 +80,13 @@ where
         cs: &mut CS,
     ) {
         // Constrain balances to be zero
-        for balance in wallet.balances.into_iter() {
-            cs.constrain(balance.mint);
-            cs.constrain(balance.amount);
+        for balance_var in wallet.balances.into_iter().flat_map(|b| b.to_vars()) {
+            cs.constrain(balance_var);
         }
 
         // Constrain orders to be zero
-        for order in wallet.orders.into_iter() {
-            cs.constrain(order.base_mint);
-            cs.constrain(order.quote_mint);
-            cs.constrain(order.side);
-            cs.constrain(order.price.repr);
-            cs.constrain(order.amount);
-            cs.constrain(order.timestamp);
+        for order_var in wallet.orders.into_iter().flat_map(|o| o.to_vars()) {
+            cs.constrain(order_var);
         }
     }
 }
