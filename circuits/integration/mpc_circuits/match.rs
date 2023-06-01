@@ -66,39 +66,42 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
             sel!(0, 1),   /* quote_mint */
             2,            /* base_mint */
             sel!(0, 1),   /* side */
-            sel!(10, 5),  /* price */
             sel!(20, 30), /* amount */
+            10,           /* price */
         ],
         // Base mints different
         vec![
             1,            /* quote_mint */
             sel!(1, 2),   /* base_mint */
             sel!(0, 1),   /* side */
-            sel!(10, 5),  /* price */
             sel!(20, 30), /* amount */
+            10,           /* price */
         ],
         // Both orders on the same side (buy)
         vec![
             1,            /* quote_mint */
             2,            /* base_mint */
             0,            /* side (both buy) */
-            sel!(10, 5),  /* price */
             sel!(20, 30), /* amount */
+            10,           /* price */
         ],
-        // Prices don't overlap between buy and sell side
+        // Prices differ between orders
         vec![
             1,            /* quote_mint */
             2,            /* base_mint */
             sel!(0, 1),   /* side */
-            sel!(5, 10),  /* price */
             sel!(20, 30), /* amount */
+            sel!(5, 10),  /* price */
         ],
     ];
 
     let timestamp = 0;
     for case in test_cases.iter_mut() {
-        // Marshal into an order
+        // The price is the last field in the test case
+        let my_price = case.pop().unwrap();
         case.push(timestamp);
+
+        // Marshal into an order
         let my_order =
             Order::from_scalars(&mut case.iter().map(|x| Scalar::from(*x))).to_linkable();
 
@@ -109,6 +112,14 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
         let linkable_order2 = my_order
             .allocate(1 /* owning_party */, test_args.mpc_fabric.clone())
             .map_err(|err| format!("Error allocating order2 in the network: {:?}", err))?;
+
+        // Allocate the price in the network
+        let price1 = FixedPoint::from_integer(my_price)
+            .allocate(0 /* owning_party */, test_args.mpc_fabric.clone())
+            .map_err(|err| format!("Error allocating price in the network: {:?}", err))?;
+        let price2 = FixedPoint::from_integer(my_price)
+            .allocate(1 /* owning_party */, test_args.mpc_fabric.clone())
+            .map_err(|err| format!("Error allocating price in the network: {:?}", err))?;
 
         let order1: AuthenticatedOrder<_, _> = AuthenticatedOrder::from_authenticated_scalars(
             &mut linkable_order1
@@ -124,8 +135,15 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
         );
 
         // Compute matches
-        let res = compute_match(&order1, &order2, test_args.mpc_fabric.clone())
-            .map_err(|err| format!("Error computing order match: {:?}", err))?;
+        let res = compute_match(
+            &order1,
+            &order2,
+            &order1.amount,
+            &order2.amount,
+            &price1, // Use the first party's price
+            test_args.mpc_fabric.clone(),
+        )
+        .map_err(|err| format!("Error computing order match: {:?}", err))?;
 
         // Assert that match verification fails
         let pc_gens = PedersenGens::default();
@@ -135,7 +153,11 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
         let witness = AuthenticatedValidMatchMpcWitness {
             order1: linkable_order1,
+            amount1: order1.amount,
+            price1: price1.clone(),
             order2: linkable_order2,
+            amount2: order2.amount,
+            price2: price2.clone(),
             balance1: balance1.clone(),
             balance2: balance2.clone(),
             match_res: res.link_commitments(test_args.mpc_fabric.clone()),
@@ -173,29 +195,21 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
     }
 
     let mut test_cases: Vec<Vec<u64>> = vec![
-        // Different prices and amounts
+        // Different amounts
         vec![
             1,            /* quote_mint */
             2,            /* base_mint */
             sel!(0, 1),   /* side */
-            sel!(10, 5),  /* price */
             sel!(20, 30), /* amount */
-        ],
-        // Same price
-        vec![
-            1,            /* quote_mint */
-            2,            /* base_mint */
-            sel!(1, 0),   /* side */
             10,           /* price */
-            sel!(10, 20), /* amount */
         ],
         // Same amount
         vec![
             1,          /* quote_mint */
             2,          /* base_mint */
             sel!(1, 0), /* side */
+            15,         /* amount */
             10,         /* price */
-            20,         /* amount */
         ],
     ];
 
@@ -205,30 +219,18 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
         MatchResult {
             quote_mint: BigUint::from(1u8),
             base_mint: BigUint::from(2u8),
-            quote_amount: 150,
-            base_amount: 20,
-            direction: 0,
-            execution_price: FixedPoint::from(7.5),
-            max_minus_min_amount: 10,
-            min_amount_order_index: 0,
-        },
-        MatchResult {
-            quote_mint: BigUint::from(1u8),
-            base_mint: BigUint::from(2u8),
-            quote_amount: 100,
-            base_amount: 10,
-            direction: 1,
-            execution_price: FixedPoint::from(10.),
-            max_minus_min_amount: 10,
-            min_amount_order_index: 0,
-        },
-        MatchResult {
-            quote_mint: BigUint::from(1u8),
-            base_mint: BigUint::from(2u8),
             quote_amount: 200,
             base_amount: 20,
+            direction: 0,
+            max_minus_min_amount: 10,
+            min_amount_order_index: 0,
+        },
+        MatchResult {
+            quote_mint: BigUint::from(1u8),
+            base_mint: BigUint::from(2u8),
+            quote_amount: 150,
+            base_amount: 15,
             direction: 1,
-            execution_price: FixedPoint::from(10.),
             max_minus_min_amount: 0,
             min_amount_order_index: 1,
         },
@@ -236,11 +238,17 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
 
     let timestamp = 0; // dummy value
     for (case, expected_res) in test_cases.iter_mut().zip(expected_results.iter()) {
-        // Marshal into an order
-        // Explicitly re-represent the price as a fixed point var
+        // Price is the last field in the test case
+        let my_price = case.pop().unwrap();
         case.push(timestamp);
-        let mut my_order = Order::from_scalars(&mut case.iter().map(|x| Scalar::from(*x)));
-        my_order.price = FixedPoint::from_integer(case[3].to_owned());
+
+        // Marshal into an order
+        let my_order = Order::from_scalars(&mut case.iter().map(|x| Scalar::from(*x)));
+
+        // Allocate the prices in the network
+        let price1 = FixedPoint::from_integer(my_price)
+            .allocate(0 /* owning_party */, test_args.mpc_fabric.clone())
+            .map_err(|err| format!("Error allocating price1 in the network: {:?}", err))?;
 
         // Allocate the orders in the network
         let order1 = my_order
@@ -251,13 +259,25 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
             .map_err(|err| format!("Error allocating order2 in the network: {:?}", err))?;
 
         // Compute matches
-        let res = compute_match(&order1, &order2, test_args.mpc_fabric.clone())
-            .map_err(|err| format!("Error computing order match: {:?}", err))?
-            .open_and_authenticate(test_args.mpc_fabric.clone())
-            .map_err(|err| format!("Error opening match result: {:?}", err))?;
+        let res = compute_match(
+            &order1,
+            &order2,
+            &order1.amount,
+            &order2.amount,
+            &price1,
+            test_args.mpc_fabric.clone(),
+        )
+        .map_err(|err| format!("Error computing order match: {:?}", err))?
+        .open_and_authenticate(test_args.mpc_fabric.clone())
+        .map_err(|err| format!("Error opening match result: {:?}", err))?;
 
         // Assert that no match occurred
-        assert_eq!(res, expected_res.clone());
+        if res != expected_res.clone() {
+            return Err(format!(
+                "Match result {:?} does not match expected result {:?}",
+                res, expected_res
+            ));
+        }
     }
 
     Ok(())
