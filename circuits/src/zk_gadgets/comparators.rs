@@ -14,7 +14,10 @@ use crate::{
     errors::ProverError,
     mpc::SharedFabric,
     mpc_gadgets::bits::{scalar_to_bits_le, to_bits_le},
-    traits::{CircuitVarType, LinearCombinationLike, MpcLinearCombinationLike},
+    traits::{
+        CircuitVarType, LinearCombinationLike, MpcLinearCombinationLike,
+        MultiproverCircuitVariableType,
+    },
     POSITIVE_SCALAR_MAX_BITS,
 };
 
@@ -366,6 +369,39 @@ impl<const D: usize> LessThanGadget<D> {
         cs.constrain(Variable::One() - lt_result);
     }
 }
+
+/// A multiprover variant of the EqGadget
+pub struct MultiproverEqGadget<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> {
+    /// Phantom
+    _phantom: &'a PhantomData<(N, S)>,
+}
+
+impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
+    MultiproverEqGadget<'a, N, S>
+{
+    /// Constraint two values to be equal
+    pub fn constrain_eq<L1, L2, V1, V2, CS>(a: V1, b: V2, cs: &mut CS)
+    where
+        L1: MpcLinearCombinationLike<N, S>,
+        L2: MpcLinearCombinationLike<N, S>,
+        V1: MultiproverCircuitVariableType<N, S, L1>,
+        V2: MultiproverCircuitVariableType<N, S, L2>,
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+    {
+        let a_vars = a.to_mpc_vars();
+        let b_vars = b.to_mpc_vars();
+        assert_eq!(
+            a_vars.len(),
+            b_vars.len(),
+            "a and b must have the same length"
+        );
+
+        for (a_var, b_var) in a_vars.into_iter().zip(b_vars.into_iter()) {
+            cs.constrain(a_var.into() - b_var.into());
+        }
+    }
+}
+
 /// A multiprover variant of the GreaterThanEqGadget
 ///
 /// `D` is the bitlength of the input values

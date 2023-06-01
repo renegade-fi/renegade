@@ -21,10 +21,7 @@ use super::{
 pub fn less_than_zero<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     a: &AuthenticatedScalar<N, S>,
     fabric: SharedFabric<N, S>,
-) -> Result<AuthenticatedScalar<N, S>, MpcError>
-where
-    [(); D - 1]: Sized,
-{
+) -> Result<AuthenticatedScalar<N, S>, MpcError> {
     // Truncate the first 250 bits of the input
     let truncated = truncate::<250, _, _>(a, fabric.clone())?;
 
@@ -78,10 +75,7 @@ pub fn less_than<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scal
     a: &AuthenticatedScalar<N, S>,
     b: &AuthenticatedScalar<N, S>,
     fabric: SharedFabric<N, S>,
-) -> Result<AuthenticatedScalar<N, S>, MpcError>
-where
-    [(); D - 1]: Sized,
-{
+) -> Result<AuthenticatedScalar<N, S>, MpcError> {
     less_than_zero::<D, _, _>(&(a - b), fabric)
 }
 
@@ -92,10 +86,7 @@ pub fn less_than_equal<const D: usize, N: MpcNetwork + Send, S: SharedValueSourc
     a: &AuthenticatedScalar<N, S>,
     b: &AuthenticatedScalar<N, S>,
     fabric: SharedFabric<N, S>,
-) -> Result<AuthenticatedScalar<N, S>, MpcError>
-where
-    [(); D - 1]: Sized,
-{
+) -> Result<AuthenticatedScalar<N, S>, MpcError> {
     Ok(Scalar::one() - greater_than::<D, _, _>(a, b, fabric)?)
 }
 
@@ -106,10 +97,7 @@ pub fn greater_than<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<S
     a: &AuthenticatedScalar<N, S>,
     b: &AuthenticatedScalar<N, S>,
     fabric: SharedFabric<N, S>,
-) -> Result<AuthenticatedScalar<N, S>, MpcError>
-where
-    [(); D - 1]: Sized,
-{
+) -> Result<AuthenticatedScalar<N, S>, MpcError> {
     less_than_zero::<D, _, _>(&(b - a), fabric)
 }
 
@@ -120,10 +108,7 @@ pub fn greater_than_equal<const D: usize, N: MpcNetwork + Send, S: SharedValueSo
     a: &AuthenticatedScalar<N, S>,
     b: &AuthenticatedScalar<N, S>,
     fabric: SharedFabric<N, S>,
-) -> Result<AuthenticatedScalar<N, S>, MpcError>
-where
-    [(); D - 1]: Sized,
-{
+) -> Result<AuthenticatedScalar<N, S>, MpcError> {
     Ok(Scalar::one() - less_than::<D, _, _>(a, b, fabric)?)
 }
 
@@ -213,10 +198,7 @@ pub fn min<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     a: &AuthenticatedScalar<N, S>,
     b: &AuthenticatedScalar<N, S>,
     fabric: SharedFabric<N, S>,
-) -> Result<(AuthenticatedScalar<N, S>, AuthenticatedScalar<N, S>), MpcError>
-where
-    [(); D - 1]: Sized,
-{
+) -> Result<(AuthenticatedScalar<N, S>, AuthenticatedScalar<N, S>), MpcError> {
     let a_lt_b = less_than::<D, _, _>(a, b, fabric)?;
     Ok((
         Scalar::from(1u64) - a_lt_b.clone(),

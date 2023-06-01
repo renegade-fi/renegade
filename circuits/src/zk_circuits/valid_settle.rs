@@ -38,18 +38,19 @@ where
         cs: &mut CS,
     ) {
         // Select the balances received by each party
-        let mut party0_party1_received = CondSelectVectorGadget::select(
-            &[
-                witness.match_res.quote_amount,
-                witness.match_res.base_amount,
-            ],
-            &[
-                witness.match_res.base_amount,
-                witness.match_res.quote_amount,
-            ],
-            witness.match_res.direction,
-            cs,
-        );
+        let mut party0_party1_received =
+            CondSelectVectorGadget::select::<_, _, Variable, LinearCombination, _>(
+                &[
+                    witness.match_res.quote_amount,
+                    witness.match_res.base_amount,
+                ],
+                &[
+                    witness.match_res.base_amount,
+                    witness.match_res.quote_amount,
+                ],
+                witness.match_res.direction,
+                cs,
+            );
 
         let party0_received_amount = party0_party1_received.remove(0);
         let party1_received_amount = party0_party1_received.remove(0);
@@ -356,7 +357,6 @@ mod test {
             quote_amount: 5,
             base_amount: 1,
             direction: 0, /* party0 buys base */
-            execution_price: FixedPoint::from(5.),
             max_minus_min_amount: 0,
             min_amount_order_index: 0,
         };

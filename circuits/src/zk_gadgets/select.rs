@@ -12,7 +12,10 @@ use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 use crate::{
     errors::ProverError,
     mpc::SharedFabric,
-    traits::{LinearCombinationLike, MpcLinearCombinationLike},
+    traits::{
+        CircuitVarType, LinearCombinationLike, MpcLinearCombinationLike,
+        MultiproverCircuitVariableType,
+    },
 };
 
 /// Implements the control flow gate if selector { a } else { b }
@@ -20,17 +23,32 @@ pub struct CondSelectGadget {}
 
 impl CondSelectGadget {
     /// Computes the control flow statement if selector { a } else { b }
-    pub fn select<L1, L2, CS>(a: L1, b: L1, selector: L2, cs: &mut CS) -> LinearCombination
+    pub fn select<L1, L2, V1, V2, CS>(a: V1, b: V1, selector: L1, cs: &mut CS) -> V2
     where
         L1: LinearCombinationLike,
         L2: LinearCombinationLike,
+        V1: CircuitVarType<L2>,
+        V2: CircuitVarType<LinearCombination>,
         CS: RandomizableConstraintSystem,
     {
-        // Computes selector * a + (1 - selector) * b
-        let (_, _, mul1_out) = cs.multiply(a.into(), selector.clone().into());
-        let (_, _, mul2_out) = cs.multiply(b.into(), Variable::One() - selector);
+        let a_vars = a.to_vars();
+        let b_vars = b.to_vars();
+        assert_eq!(
+            a_vars.len(),
+            b_vars.len(),
+            "a and b must be of equal length"
+        );
 
-        mul1_out + mul2_out
+        // Computes selector * a + (1 - selector) * b
+        let mut res = Vec::with_capacity(a_vars.len());
+        for (a_var, b_var) in a_vars.into_iter().zip(b_vars.into_iter()) {
+            let (_, _, mul1_out) = cs.multiply(a_var.into(), selector.clone().into());
+            let (_, _, mul2_out) = cs.multiply(b_var.into(), Variable::One() - selector.clone());
+
+            res.push(mul1_out + mul2_out)
+        }
+
+        V2::from_vars(&mut res.into_iter())
     }
 }
 
@@ -48,29 +66,44 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     MultiproverCondSelectGadget<'a, N, S>
 {
     /// Computes the control flow statement if selector { a } else { b }
-    pub fn select<L, CS>(
-        a: L,
-        b: L,
-        selector: L,
+    pub fn select<L1, V, CS>(
+        a: V,
+        b: V,
+        selector: L1,
         fabric: SharedFabric<N, S>,
         cs: &mut CS,
-    ) -> Result<MpcLinearCombination<N, S>, ProverError>
+    ) -> Result<V, ProverError>
     where
-        L: MpcLinearCombinationLike<N, S>,
+        L1: MpcLinearCombinationLike<N, S>,
+        V: MultiproverCircuitVariableType<N, S, MpcLinearCombination<N, S>>,
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
     {
-        // Computes selector * a + (1 - selector) * b
-        let (_, _, mul1_out) = cs
-            .multiply(&a.into(), &selector.clone().into())
-            .map_err(ProverError::Collaborative)?;
-        let (_, _, mul2_out) = cs
-            .multiply(
-                &b.into(),
-                &(MpcLinearCombination::from_scalar(Scalar::one(), fabric.0) - selector.into()),
-            )
-            .map_err(ProverError::Collaborative)?;
+        let a_vars = a.to_mpc_vars();
+        let b_vars = b.to_mpc_vars();
+        assert_eq!(
+            a_vars.len(),
+            b_vars.len(),
+            "a and b must be of equal length"
+        );
 
-        Ok(mul1_out + mul2_out)
+        let mut res_vals = Vec::with_capacity(a_vars.len());
+        for (a_var, b_var) in a_vars.into_iter().zip(b_vars.into_iter()) {
+            // Computes selector * a + (1 - selector) * b for each variable
+            let (_, _, mul1_out) = cs
+                .multiply(&a_var, &selector.clone().into())
+                .map_err(ProverError::Collaborative)?;
+            let (_, _, mul2_out) = cs
+                .multiply(
+                    &b_var,
+                    &(MpcLinearCombination::from_scalar(Scalar::one(), fabric.0.clone())
+                        - selector.clone().into()),
+                )
+                .map_err(ProverError::Collaborative)?;
+
+            res_vals.push(mul1_out + mul2_out);
+        }
+
+        Ok(V::from_mpc_vars(&mut res_vals.into_iter()))
     }
 }
 
@@ -79,18 +112,21 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 pub struct CondSelectVectorGadget {}
 impl CondSelectVectorGadget {
     /// Implements the control flow statement if selector { a } else { b }
-    pub fn select<L1, L2, CS>(
-        a: &[L1],
-        b: &[L1],
-        selector: L2,
+    pub fn select<L1, L2, V1, V2, CS>(
+        a: &[V1],
+        b: &[V1],
+        selector: L1,
         cs: &mut CS,
     ) -> Vec<LinearCombination>
     where
-        CS: RandomizableConstraintSystem,
         L1: LinearCombinationLike,
         L2: LinearCombinationLike,
+        V1: CircuitVarType<L2>,
+        V2: CircuitVarType<LinearCombination>,
+        CS: RandomizableConstraintSystem,
     {
         assert_eq!(a.len(), b.len(), "a and b must be of equal length");
+
         let mut selected = Vec::with_capacity(a.len());
         for (a_val, b_val) in a.iter().zip(b.iter()) {
             selected.push(CondSelectGadget::select(
@@ -120,20 +156,22 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 {
     /// Implements the control flow block if selector { a } else { b }
     /// where `a` and `b` are vectors
-    pub fn select<L, CS>(
-        cs: &mut CS,
-        a: &[L],
-        b: &[L],
+    pub fn select<L, V, CS>(
+        a: &[V],
+        b: &[V],
         selector: L,
         fabric: SharedFabric<N, S>,
-    ) -> Result<Vec<MpcLinearCombination<N, S>>, ProverError>
+        cs: &mut CS,
+    ) -> Result<Vec<V>, ProverError>
     where
         CS: MpcRandomizableConstraintSystem<'a, N, S>,
         L: MpcLinearCombinationLike<N, S>,
+        V: MultiproverCircuitVariableType<N, S, MpcLinearCombination<N, S>>,
     {
         assert_eq!(a.len(), b.len(), "a and b must be of equal length");
+
         let mut selected = Vec::with_capacity(a.len());
-        for (a_val, b_val) in a.iter().zip(b.iter()) {
+        for (a_val, b_val) in a.iter().cloned().zip(b.iter()) {
             selected.push(MultiproverCondSelectGadget::select(
                 a_val.clone(),
                 b_val.clone(),
@@ -153,7 +191,7 @@ mod cond_select_test {
     use itertools::Itertools;
     use merlin::Transcript;
     use mpc_bulletproof::{
-        r1cs::{ConstraintSystem, Prover},
+        r1cs::{ConstraintSystem, LinearCombination, Prover, Variable},
         PedersenGens,
     };
     use rand_core::OsRng;
@@ -208,13 +246,23 @@ mod cond_select_test {
 
         // Prove with selector = 1
         let selector = Scalar::one().commit_public(&mut prover);
-        let res = CondSelectVectorGadget::select(&a_var, &b_var, selector, &mut prover);
+        let res = CondSelectVectorGadget::select::<_, _, Variable, LinearCombination, _>(
+            &a_var,
+            &b_var,
+            selector,
+            &mut prover,
+        );
 
         assert_eq!(a, res.into_iter().map(|lc| prover.eval(&lc)).collect_vec());
 
         // Prove with selector = 0
         let selector = Scalar::zero().commit_public(&mut prover);
-        let res = CondSelectVectorGadget::select(&a_var, &b_var, selector, &mut prover);
+        let res = CondSelectVectorGadget::select::<_, _, Variable, LinearCombination, _>(
+            &a_var,
+            &b_var,
+            selector,
+            &mut prover,
+        );
 
         assert_eq!(b, res.into_iter().map(|lc| prover.eval(&lc)).collect_vec());
     }

@@ -68,12 +68,13 @@ where
         let augmented_wallet = witness.private_secret_shares.clone() + unblinded_augmented_shares;
 
         // The mint that the wallet will receive if the order is matched
-        let mut receive_send_mint = CondSelectVectorGadget::select(
-            &[witness.order.quote_mint, witness.order.base_mint],
-            &[witness.order.base_mint, witness.order.quote_mint],
-            witness.order.side,
-            cs,
-        );
+        let mut receive_send_mint =
+            CondSelectVectorGadget::select::<_, _, Variable, LinearCombination, _>(
+                &[witness.order.quote_mint, witness.order.base_mint],
+                &[witness.order.base_mint, witness.order.quote_mint],
+                witness.order.side,
+                cs,
+            );
         let receive_mint = receive_send_mint.remove(0);
         let send_mint = receive_send_mint.remove(0);
 
