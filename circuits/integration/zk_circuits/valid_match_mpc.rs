@@ -51,6 +51,10 @@ macro_rules! sel {
 lazy_static! {
     /// The default price used for testing
     static ref DUMMY_PRICE: FixedPoint = FixedPoint::from_integer(10);
+    /// The default worse case buy side price
+    static ref DUMMY_BUY_SIDE_WORST_PRICE: FixedPoint = FixedPoint::from_integer(15);
+    /// The default worse case sell side price
+    static ref DUMMY_SELL_SIDE_WORST_PRICE: FixedPoint = FixedPoint::from_integer(5);
 }
 
 /// Construct a test order based on party ID
@@ -67,6 +71,11 @@ fn create_test_order(party_id: u64) -> Order {
         base_mint: 2u8.into(),
         side: sel!(party_id, OrderSide::Buy, OrderSide::Sell),
         amount: sel!(party_id, 20, 30),
+        worst_case_price: sel!(
+            party_id,
+            *DUMMY_BUY_SIDE_WORST_PRICE,
+            *DUMMY_SELL_SIDE_WORST_PRICE
+        ),
         timestamp,
     }
 }
@@ -617,6 +626,64 @@ fn test_valid_match__incorrect_min_amount_order_index(
     Ok(())
 }
 
+/// Test the case in which the execution price exceeds the buy side price
+/// protection
+fn test_valid_match__price_protection_violated_buy_side(
+    test_args: &IntegrationTestArgs,
+) -> Result<(), String> {
+    let party_id = test_args.party_id;
+    let my_order = create_test_order(party_id);
+    let my_balance = create_test_balance(party_id);
+
+    // Execution price exceeds the buy side maximum price
+    let price = *DUMMY_BUY_SIDE_WORST_PRICE + FixedPoint::from_integer(1);
+    let amount = compute_max_amount(price, &my_order, &my_balance);
+
+    // Validate that the constraints are not satisfied
+    let witness = setup_witness(
+        price,
+        amount,
+        my_order,
+        my_balance,
+        test_args.mpc_fabric.clone(),
+    )?;
+
+    if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
+        return Err("Constraints satisfied on invalid witness".to_string());
+    }
+
+    Ok(())
+}
+
+/// Test the case in which the execution price falls sort of the sell
+/// side price protection
+fn test_valid_match__price_protection_violated_sell_side(
+    test_args: &IntegrationTestArgs,
+) -> Result<(), String> {
+    let party_id = test_args.party_id;
+    let my_order = create_test_order(party_id);
+    let my_balance = create_test_balance(party_id);
+
+    // Execution price falls short of the sell side minimum price
+    let price = *DUMMY_SELL_SIDE_WORST_PRICE - FixedPoint::from_integer(1);
+    let amount = compute_max_amount(price, &my_order, &my_balance);
+
+    // Validate that the constraints are not satisfied
+    let witness = setup_witness(
+        price,
+        amount,
+        my_order,
+        my_balance,
+        test_args.mpc_fabric.clone(),
+    )?;
+
+    if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
+        return Err("Constraints satisfied on invalid witness".to_string());
+    }
+
+    Ok(())
+}
+
 // Take inventory
 inventory::submit!(TestWrapper(IntegrationTest {
     name: "zk_circuits::valid_match_mpc::test_valid_match_mpc_valid",
@@ -671,4 +738,14 @@ inventory::submit!(TestWrapper(IntegrationTest {
 inventory::submit!(TestWrapper(IntegrationTest {
     name: "zk_circuits::valid_match_mpc::test_valid_match__incorrect_min_amount_order_index",
     test_fn: test_valid_match__incorrect_min_amount_order_index,
+}));
+
+inventory::submit!(TestWrapper(IntegrationTest {
+    name: "zk_circuits::valid_match_mpc::test_valid_match__price_protection_violated_buy_side",
+    test_fn: test_valid_match__price_protection_violated_buy_side,
+}));
+
+inventory::submit!(TestWrapper(IntegrationTest {
+    name: "zk_circuits::valid_match_mpc::test_valid_match__price_protection_violated_sell_side",
+    test_fn: test_valid_match__price_protection_violated_sell_side,
 }));

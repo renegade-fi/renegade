@@ -2,16 +2,15 @@
 
 use circuits::{
     mpc_circuits::r#match::compute_match,
-    traits::{BaseType, LinkableBaseType, MpcBaseType, MpcType, MultiproverCircuitBaseType},
+    traits::{LinkableBaseType, MpcBaseType, MpcType, MultiproverCircuitBaseType},
     types::{
         balance::Balance,
-        order::{AuthenticatedOrder, Order},
+        order::{AuthenticatedOrder, Order, OrderSide},
         r#match::MatchResult,
     },
     zk_circuits::valid_match_mpc::{AuthenticatedValidMatchMpcWitness, ValidMatchMpcCircuit},
     zk_gadgets::fixed_point::FixedPoint,
 };
-use curve25519_dalek::scalar::Scalar;
 use integration_helpers::types::IntegrationTest;
 use merlin::Transcript;
 use mpc_bulletproof::{r1cs_mpc::MpcProver, PedersenGens};
@@ -60,56 +59,65 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .map_err(|err| format!("Error allocating balance2 in the network: {:?}", err))?;
 
     // Build the test cases for different invalid match pairs
-    let mut test_cases: Vec<Vec<u64>> = vec![
+    let test_cases: Vec<(Order, u64)> = vec![
         // Quote mints different
-        vec![
-            sel!(0, 1),   /* quote_mint */
-            2,            /* base_mint */
-            sel!(0, 1),   /* side */
-            sel!(20, 30), /* amount */
-            10,           /* price */
-        ],
+        (
+            Order {
+                quote_mint: sel!(0u8, 1u8).into(),
+                base_mint: 2u8.into(),
+                side: sel!(OrderSide::Buy, OrderSide::Sell),
+                worst_case_price: FixedPoint::from_integer(sel!(15, 5)),
+                amount: sel!(20, 30),
+                timestamp: 0, // unused
+            },
+            10, /* execution_price */
+        ),
         // Base mints different
-        vec![
-            1,            /* quote_mint */
-            sel!(1, 2),   /* base_mint */
-            sel!(0, 1),   /* side */
-            sel!(20, 30), /* amount */
-            10,           /* price */
-        ],
-        // Both orders on the same side (buy)
-        vec![
-            1,            /* quote_mint */
-            2,            /* base_mint */
-            0,            /* side (both buy) */
-            sel!(20, 30), /* amount */
-            10,           /* price */
-        ],
+        (
+            Order {
+                quote_mint: 1u8.into(),
+                base_mint: sel!(0u8, 1u8).into(),
+                side: sel!(OrderSide::Buy, OrderSide::Sell),
+                worst_case_price: FixedPoint::from_integer(sel!(15, 5)),
+                amount: sel!(20, 30),
+                timestamp: 0, // unused
+            },
+            10, /* execution_price */
+        ),
+        // Orders on the same side (buy side)
+        (
+            Order {
+                quote_mint: 1u8.into(),
+                base_mint: 2u8.into(),
+                side: OrderSide::Buy,
+                worst_case_price: FixedPoint::from_integer(15),
+                amount: 20,
+                timestamp: 0, // unused
+            },
+            10, /* execution_price */
+        ),
         // Prices differ between orders
-        vec![
-            1,            /* quote_mint */
-            2,            /* base_mint */
-            sel!(0, 1),   /* side */
-            sel!(20, 30), /* amount */
-            sel!(5, 10),  /* price */
-        ],
+        (
+            Order {
+                quote_mint: 1u8.into(),
+                base_mint: 2u8.into(),
+                side: sel!(OrderSide::Buy, OrderSide::Sell),
+                worst_case_price: FixedPoint::from_integer(sel!(15, 5)),
+                amount: 30,
+                timestamp: 0, // unused
+            },
+            sel!(10, 11), /* execution_price */
+        ),
     ];
 
-    let timestamp = 0;
-    for case in test_cases.iter_mut() {
-        // The price is the last field in the test case
-        let my_price = case.pop().unwrap();
-        case.push(timestamp);
-
-        // Marshal into an order
-        let my_order =
-            Order::from_scalars(&mut case.iter().map(|x| Scalar::from(*x))).to_linkable();
-
+    for (my_order, my_price) in test_cases.into_iter() {
         // Allocate the orders in the network
         let linkable_order1 = my_order
+            .to_linkable()
             .allocate(0 /* owning_party */, test_args.mpc_fabric.clone())
             .map_err(|err| format!("Error allocating order1 in the network: {:?}", err))?;
         let linkable_order2 = my_order
+            .to_linkable()
             .allocate(1 /* owning_party */, test_args.mpc_fabric.clone())
             .map_err(|err| format!("Error allocating order2 in the network: {:?}", err))?;
 
@@ -194,23 +202,31 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
         };
     }
 
-    let mut test_cases: Vec<Vec<u64>> = vec![
+    let test_cases: Vec<(Order, u64)> = vec![
         // Different amounts
-        vec![
-            1,            /* quote_mint */
-            2,            /* base_mint */
-            sel!(0, 1),   /* side */
-            sel!(20, 30), /* amount */
-            10,           /* price */
-        ],
+        (
+            Order {
+                quote_mint: 1u8.into(),
+                base_mint: 2u8.into(),
+                side: sel!(OrderSide::Buy, OrderSide::Sell),
+                worst_case_price: FixedPoint::from_integer(sel!(15, 5)),
+                amount: sel!(20, 30),
+                timestamp: 0, // unused
+            },
+            10, /* execution_price */
+        ),
         // Same amount
-        vec![
-            1,          /* quote_mint */
-            2,          /* base_mint */
-            sel!(1, 0), /* side */
-            15,         /* amount */
-            10,         /* price */
-        ],
+        (
+            Order {
+                quote_mint: 1u8.into(),
+                base_mint: 2u8.into(),
+                side: sel!(OrderSide::Sell, OrderSide::Buy),
+                worst_case_price: FixedPoint::from_integer(sel!(5, 15)),
+                amount: 15,
+                timestamp: 0, // unused
+            },
+            10, /* execution_price */
+        ),
     ];
 
     // Stores the expected result for each test case as a vector
@@ -236,15 +252,9 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
         },
     ];
 
-    let timestamp = 0; // dummy value
-    for (case, expected_res) in test_cases.iter_mut().zip(expected_results.iter()) {
-        // Price is the last field in the test case
-        let my_price = case.pop().unwrap();
-        case.push(timestamp);
-
-        // Marshal into an order
-        let my_order = Order::from_scalars(&mut case.iter().map(|x| Scalar::from(*x)));
-
+    for ((my_order, my_price), expected_res) in
+        test_cases.into_iter().zip(expected_results.into_iter())
+    {
         // Allocate the prices in the network
         let price1 = FixedPoint::from_integer(my_price)
             .allocate(0 /* owning_party */, test_args.mpc_fabric.clone())
