@@ -30,6 +30,7 @@ use crate::{
         comparators::{
             EqGadget, EqVecGadget, EqZeroGadget, GreaterThanEqZeroGadget, NotEqualGadget,
         },
+        fixed_point::FixedPointVar,
         gates::{AndGate, ConstrainBinaryGadget, NotGate, OrGate},
         merkle::{MerkleOpening, MerkleRoot, PoseidonMerkleHashGadget},
         select::CondSelectGadget,
@@ -391,6 +392,9 @@ where
                 base_mint: Variable::Zero().into(),
                 side: Variable::Zero().into(),
                 amount: Variable::Zero().into(),
+                worst_case_price: FixedPointVar {
+                    repr: Variable::Zero().into(),
+                },
                 timestamp: Variable::Zero().into(),
             },
             cs,

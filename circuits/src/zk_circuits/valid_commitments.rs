@@ -744,6 +744,9 @@ mod test {
             base_mint: Scalar::zero(),
             side: Scalar::zero(),
             amount: Scalar::zero(),
+            worst_case_price: FixedPointShare {
+                repr: Scalar::zero(),
+            },
             timestamp: Scalar::zero(),
         }
         .to_linkable();

@@ -326,6 +326,8 @@ mod test {
                     base_mint: 2u8.into(),
                     side: OrderSide::Buy,
                     amount: 1,
+                    // No price limit by default
+                    worst_case_price: 100000u64.into(),
                     timestamp: TIMESTAMP,
                 },
                 Order::default()

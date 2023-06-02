@@ -17,7 +17,6 @@ use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
 use rand_core::{CryptoRng, RngCore};
-use tracing::log;
 
 use crate::{
     errors::ProverError,
@@ -31,7 +30,7 @@ use crate::{
         balance::{AuthenticatedBalanceVar, BalanceVar},
         order::{AuthenticatedOrderVar, OrderVar},
         r#match::{AuthenticatedMatchResultVar, LinkableMatchResult, MatchResultVar},
-        AMOUNT_BITS,
+        AMOUNT_BITS, PRICE_BITS,
     },
     zk_gadgets::{
         comparators::EqGadget,
@@ -180,7 +179,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // Constraining the value to be positive forces it to be equal to max(amounts) - min(amounts)
         MultiproverGreaterThanEqZeroGadget::<'_, AMOUNT_BITS, _, _>::constrain_greater_than_zero(
             witness.match_res.max_minus_min_amount.clone(),
-            fabric,
+            fabric.clone(),
             cs,
         )?;
 
@@ -201,8 +200,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         expected_quote_amount.constrain_equal_integer(&witness.match_res.quote_amount, cs);
 
         // --- Price Protection --- //
-        Self::verify_price_protection(&witness.price1, &witness.order1, cs);
-        Self::verify_price_protection(&witness.price2, &witness.order2, cs);
+        Self::verify_price_protection(&witness.price1, &witness.order1, fabric.clone(), cs)?;
+        Self::verify_price_protection(&witness.price2, &witness.order2, fabric, cs)?;
 
         Ok(())
     }
@@ -253,10 +252,34 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     pub fn verify_price_protection<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
         price: &AuthenticatedFixedPointVar<N, S, MpcVariable<N, S>>,
         order: &AuthenticatedOrderVar<N, S, MpcVariable<N, S>>,
+        fabric: SharedFabric<N, S>,
         cs: &mut CS,
-    ) {
-        // TODO: Implement price protection
-        log::warn!("Price protection not implemented");
+    ) -> Result<(), ProverError> {
+        // If the order is buy side, verify that the execution price is less
+        // than the limit price. If the order is sell side, verify that the
+        // execution price is greater than the limit price
+        let mut gte_terms = MultiproverCondSelectVectorGadget::select(
+            &[
+                price.clone().to_lc(),
+                order.worst_case_price.clone().to_lc(),
+            ],
+            &[
+                order.worst_case_price.clone().to_lc(),
+                price.clone().to_lc(),
+            ],
+            order.side.clone(),
+            fabric.clone(),
+            cs,
+        )?;
+
+        MultiproverGreaterThanEqGadget::<'_, PRICE_BITS, _, _>::constrain_greater_than_eq(
+            gte_terms.remove(0).repr,
+            gte_terms.remove(0).repr,
+            fabric,
+            cs,
+        );
+
+        Ok(())
     }
 
     /// The order crossing check, for a single prover
@@ -417,8 +440,27 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         order: &OrderVar<Variable>,
         cs: &mut CS,
     ) {
-        // TODO: Implement price protection
-        log::warn!("Price protection not implemented");
+        // If the order is buy side, verify that the execution price is less
+        // than the limit price. If the order is sell side, verify that the
+        // execution price is greater than the limit price
+        let mut gte_terms: Vec<FixedPointVar<LinearCombination>> = CondSelectVectorGadget::select(
+            &[
+                price.clone().to_lc(),
+                order.worst_case_price.clone().to_lc(),
+            ],
+            &[
+                order.worst_case_price.clone().to_lc(),
+                price.clone().to_lc(),
+            ],
+            order.side,
+            cs,
+        );
+
+        GreaterThanEqGadget::<PRICE_BITS>::constrain_greater_than_eq(
+            gte_terms.remove(0).repr,
+            gte_terms.remove(0).repr,
+            cs,
+        );
     }
 }
 

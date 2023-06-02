@@ -5,6 +5,8 @@ use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use curve25519_dalek::scalar::Scalar;
 use num_bigint::BigUint;
 use serde::{de::Error as SerdeErr, Deserialize, Deserializer, Serialize, Serializer};
+
+use crate::zk_gadgets::fixed_point::DEFAULT_PRECISION;
 pub mod balance;
 pub mod fee;
 pub mod keychain;
@@ -19,6 +21,10 @@ pub mod wallet;
 
 /// The number of bits allowed in a balance or transaction "amount"
 pub(crate) const AMOUNT_BITS: usize = 64;
+/// The number of bits allowed in a price
+///
+/// This is the default fixed point precision plus 32 bits for the integer part
+pub(crate) const PRICE_BITS: usize = DEFAULT_PRECISION + 32;
 
 // -----------------------------------------
 // | Serialization Deserialization Helpers |

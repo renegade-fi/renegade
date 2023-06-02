@@ -11,6 +11,7 @@ use crate::{
         MultiproverCircuitVariableType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
     types::{biguint_from_hex_string, biguint_to_hex_string},
+    zk_gadgets::fixed_point::FixedPoint,
     LinkableCommitment,
 };
 use circuit_macros::circuit_type;
@@ -54,6 +55,11 @@ pub struct Order {
     pub side: OrderSide,
     /// The amount of base currency to buy or sell
     pub amount: u64,
+    /// The worse case price the user is willing to accept on this order
+    ///
+    /// If the order is a buy, this is the maximum price the user is willing to pay
+    /// If the order is a sell, this is the minimum price the user is willing to accept
+    pub worst_case_price: FixedPoint,
     /// A timestamp indicating when the order was placed, set by the user
     pub timestamp: u64,
 }
