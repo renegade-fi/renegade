@@ -23,7 +23,7 @@ pub mod wallet;
 pub(crate) const AMOUNT_BITS: usize = 64;
 /// The number of bits allowed in a price
 ///
-/// This is the default fixed point precision plus 32 bits for the integer part
+/// This is the default fixed point precision plus 32 bits for the integral part
 pub(crate) const PRICE_BITS: usize = DEFAULT_PRECISION + 32;
 
 // -----------------------------------------
