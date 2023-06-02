@@ -33,6 +33,7 @@ tracing = { version = "0.1", features = ["log"] }
 [dev-dependencies]
 ark-ec = "0.4"
 ark-ed25519 = "0.4"
+chrono = "0.4"
 clap = { version = "4.0", features = ["derive"] }
 colored = "2"
 ctor = "0.1"
