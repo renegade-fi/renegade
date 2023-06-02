@@ -76,8 +76,12 @@ macro_rules! print_mpc_wire {
 macro_rules! print_multiprover_wire {
     ($x:expr, $cs:ident) => {{
         use crypto::fields::scalar_to_biguint;
+        use mpc_ristretto::authenticated_scalar::AuthenticatedScalar;
         use tracing::log;
-        let x_eval = $cs.eval(&$x.into()).unwrap().open().unwrap().to_scalar();
+
+        let x_eval = AuthenticatedScalar::open(&$cs.eval(&$x.into()).unwrap())
+            .unwrap()
+            .to_scalar();
         log::info!("eval({}): {:?}", stringify!($x), scalar_to_biguint(&x_eval));
     }};
 }

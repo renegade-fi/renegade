@@ -10,13 +10,16 @@ mod zk_gadgets;
 
 use std::cell::Ref;
 
+use chrono::Local;
 use circuits::mpc::{MpcFabric, SharedFabric};
 use clap::Parser;
+use env_logger::Builder;
 use integration_helpers::{
     integration_test_main,
     mpc_network::{mocks::PartyIDBeaverSource, setup_mpc_fabric},
 };
 use mpc_ristretto::network::QuicTwoPartyNet;
+use tracing::log::LevelFilter;
 
 /// A type alias for a shared mutability wrapper around the MPC fabric
 type SharedMpcFabric = SharedFabric<QuicTwoPartyNet, PartyIDBeaverSource>;
@@ -76,4 +79,20 @@ impl From<CliArgs> for IntegrationTestArgs {
     }
 }
 
-integration_test_main!(CliArgs, IntegrationTestArgs);
+fn setup_integration_tests(_test_args: &CliArgs) {
+    // Configure logging
+    Builder::new()
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "{} [{}] - {}",
+                Local::now().format("%Y-%m-%dT%H:%M:%S"),
+                record.level(),
+                record.args()
+            )
+        })
+        .filter(None, LevelFilter::Info)
+        .init();
+}
+
+integration_test_main!(CliArgs, IntegrationTestArgs, setup_integration_tests);
