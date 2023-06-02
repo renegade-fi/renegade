@@ -242,8 +242,17 @@ impl HandshakeExecutor {
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
         // Run the circuit
-        compute_match(&shared_order1, &shared_order2, fabric)
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))
+        // Use the first party's price, the second party's price will be constrained to equal the
+        // first party's in the subsequent proof of `VALID MATCH MPC`
+        compute_match(
+            &shared_order1,
+            &shared_order2,
+            &shared_order1.amount,
+            &shared_order2.amount,
+            &shared_order1.worst_case_price,
+            fabric,
+        )
+        .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))
     }
 
     /// Generates a collaborative proof of the validity of a given match result
@@ -270,6 +279,7 @@ impl HandshakeExecutor {
         let order2 = my_order
             .allocate(1 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+
         let balance1 = my_balance
             .allocate(0 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
@@ -277,12 +287,38 @@ impl HandshakeExecutor {
             .allocate(1 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
+        let price1 = my_order
+            .worst_case_price
+            .to_base_type()
+            .allocate(0 /* owning_party */, fabric.clone())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let price2 = my_order
+            .worst_case_price
+            .to_base_type()
+            .allocate(1 /* owning_party */, fabric.clone())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+
+        let amount1 = my_order
+            .amount
+            .to_base_type()
+            .allocate(0 /* owning_party */, fabric.clone())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let amount2 = my_order
+            .amount
+            .to_base_type()
+            .allocate(1 /* owning_party */, fabric.clone())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+
         // Build a witness to the VALID MATCH MPC statement
         let witness = AuthenticatedValidMatchMpcWitness {
             order1,
-            order2,
             balance1,
+            amount1,
+            price1,
+            order2,
             balance2,
+            amount2,
+            price2,
             match_res: match_res.link_commitments(fabric.clone()),
         };
 
