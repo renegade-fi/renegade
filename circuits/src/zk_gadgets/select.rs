@@ -112,12 +112,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 pub struct CondSelectVectorGadget {}
 impl CondSelectVectorGadget {
     /// Implements the control flow statement if selector { a } else { b }
-    pub fn select<L1, L2, V1, V2, CS>(
-        a: &[V1],
-        b: &[V1],
-        selector: L1,
-        cs: &mut CS,
-    ) -> Vec<LinearCombination>
+    pub fn select<L1, L2, V1, V2, CS>(a: &[V1], b: &[V1], selector: L1, cs: &mut CS) -> Vec<V2>
     where
         L1: LinearCombinationLike,
         L2: LinearCombinationLike,
