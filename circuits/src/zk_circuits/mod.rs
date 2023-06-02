@@ -64,6 +64,8 @@ pub(crate) mod test_helpers {
                 base_mint: 2u8.into(),
                 side: OrderSide::Buy,
                 amount: 1,
+                // No price limit by default
+                worst_case_price: FixedPoint::from_integer(100000),
                 timestamp: TIMESTAMP,
             },
             Order {
@@ -71,6 +73,8 @@ pub(crate) mod test_helpers {
                 base_mint: 3u8.into(),
                 side: OrderSide::Sell,
                 amount: 10,
+                // No price limit by default
+                worst_case_price: FixedPoint::from_integer(0),
                 timestamp: TIMESTAMP,
             }
         ];
