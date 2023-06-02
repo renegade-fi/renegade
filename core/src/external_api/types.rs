@@ -174,11 +174,14 @@ pub struct Order {
     /// The type of order
     #[serde(rename = "type")]
     pub type_: OrderType,
-    /// The limit price in the case that this is a limit order
-    pub price: FixedPoint,
+    /// The worse case price that the order may be executed at
+    ///
+    /// For buy side orders this is a maximum price, for sell side orders
+    /// this is a minimum price
+    pub worst_case_price: FixedPoint,
     /// The order size
     pub amount: BigUint,
-    /// The timestamp this order was placed at
+    /// The timestamp this ord placed at
     pub timestamp: u64,
 }
 
@@ -190,7 +193,7 @@ impl From<(OrderIdentifier, IndexedOrder)> for Order {
             base_mint: order.base_mint,
             side: order.side,
             type_: OrderType::Limit,
-            price: order.price,
+            worst_case_price: order.worst_case_price,
             amount: BigUint::from(order.amount),
             timestamp: order.timestamp,
         }
@@ -203,7 +206,7 @@ impl From<Order> for IndexedOrder {
             quote_mint: order.quote_mint,
             base_mint: order.base_mint,
             side: order.side,
-            price: order.price,
+            worst_case_price: order.worst_case_price,
             amount: order.amount.try_into().unwrap(),
             timestamp: order.timestamp,
         }
