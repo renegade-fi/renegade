@@ -1,7 +1,7 @@
 //! Groups the handshake manager definitions necessary to run the MPC match computation
 //! and collaboratively generate a proof of `VALID MATCH MPC`
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, cmp, rc::Rc};
 
 use circuits::{
     mpc::SharedFabric,
@@ -9,9 +9,9 @@ use circuits::{
     multiprover_prove,
     traits::{BaseType, LinkableType, MpcBaseType, MpcType, MultiproverCircuitCommitmentType},
     types::{
-        balance::LinkableBalance,
+        balance::{Balance, LinkableBalance},
         fee::LinkableFee,
-        order::{LinkableOrder, Order},
+        order::{LinkableOrder, Order, OrderSide},
         r#match::{
             AuthenticatedLinkableMatchResult, AuthenticatedMatchResult, LinkableMatchResult,
         },
@@ -24,6 +24,7 @@ use circuits::{
             AuthenticatedValidMatchMpcWitness, ValidMatchMpcCircuit, ValidMatchMpcWitnessCommitment,
         },
     },
+    zk_gadgets::fixed_point::FixedPoint,
 };
 use crossbeam::channel::{bounded, Receiver};
 use curve25519_dalek::scalar::Scalar;
@@ -53,6 +54,30 @@ pub type SizedLinkableWalletShare = LinkableWalletShare<MAX_BALANCES, MAX_ORDERS
 /// both parties' proofs of VALID COMMITMENTS
 const ERR_INVALID_PROOF_LINK: &str =
     "invalid commitment link between VALID COMMITMENTS and VALID MATCH MPC";
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Compute the maximum matchable amount for an order and balance
+fn compute_max_amount(price: &FixedPoint, order: &Order, balance: &Balance) -> u64 {
+    match order.side {
+        // Buy the base, the max amount is possibly limited by the quote
+        // balance
+        OrderSide::Buy => {
+            let price_f64 = price.to_f64();
+            let balance_limit = (balance.amount as f64 / price_f64).floor() as u64;
+            cmp::min(order.amount, balance_limit)
+        }
+        // Buy the quote, sell the base, the maximum amount is directly limited
+        // by the balance
+        OrderSide::Sell => cmp::min(order.amount, balance.amount),
+    }
+}
+
+// ----------------------
+// | Handshake Executor |
+// ----------------------
 
 /// The type returned by the match process, including the result, the validity proof bundle,
 /// and all witness/statement variables that must be revealed to complete the match
@@ -180,6 +205,8 @@ impl HandshakeExecutor {
         let commitment_witness = proof_witnesses.copy_commitment_witness();
         let match_res = Self::execute_match_mpc(
             &commitment_witness.order.clone().to_base_type(),
+            &commitment_witness.balance_send.clone().to_base_type(),
+            &handshake_state.execution_price,
             shared_fabric.clone(),
         )?;
 
@@ -192,6 +219,7 @@ impl HandshakeExecutor {
         let (match_res, commitment, proof) = Self::prove_valid_match(
             commitment_witness.order.clone(),
             commitment_witness.balance_send.clone(),
+            handshake_state.execution_price,
             match_res,
             shared_fabric.clone(),
         )
@@ -230,26 +258,40 @@ impl HandshakeExecutor {
 
     /// Execute the match MPC over the provisioned QUIC stream
     fn execute_match_mpc<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-        local_order: &Order,
+        my_order: &Order,
+        my_balance: &Balance,
+        my_price: &FixedPoint,
         fabric: SharedFabric<N, S>,
     ) -> Result<AuthenticatedMatchResult<N, S>, HandshakeManagerError> {
         // Allocate the orders in the MPC fabric
-        let shared_order1 = local_order
+        let shared_order1 = my_order
             .allocate(0 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let shared_order2 = local_order
+        let shared_order2 = my_order
+            .allocate(1 /* owning_party */, fabric.clone())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+
+        // Use the first party's price, the second party's price will be constrained to equal the
+        // first party's in the subsequent proof of `VALID MATCH MPC`
+        let price = my_price
+            .allocate(0 /* owning_party */, fabric.clone())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+
+        let my_amount = compute_max_amount(my_price, my_order, my_balance);
+        let amount1 = my_amount
+            .allocate(0 /* owning_party */, fabric.clone())
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let amount2 = my_amount
             .allocate(1 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
         // Run the circuit
-        // Use the first party's price, the second party's price will be constrained to equal the
-        // first party's in the subsequent proof of `VALID MATCH MPC`
         compute_match(
             &shared_order1,
             &shared_order2,
-            &shared_order1.amount,
-            &shared_order2.amount,
-            &shared_order1.worst_case_price,
+            &amount1,
+            &amount2,
+            &price,
             fabric,
         )
         .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))
@@ -262,6 +304,7 @@ impl HandshakeExecutor {
     async fn prove_valid_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         my_order: LinkableOrder,
         my_balance: LinkableBalance,
+        my_price: FixedPoint,
         match_res: AuthenticatedMatchResult<N, S>,
         fabric: SharedFabric<N, S>,
     ) -> Result<
@@ -287,25 +330,22 @@ impl HandshakeExecutor {
             .allocate(1 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
-        let price1 = my_order
-            .worst_case_price
-            .to_base_type()
+        let price1 = my_price
             .allocate(0 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let price2 = my_order
-            .worst_case_price
-            .to_base_type()
+        let price2 = my_price
             .allocate(1 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
-        let amount1 = my_order
-            .amount
-            .to_base_type()
+        let my_amount = compute_max_amount(
+            &my_price,
+            &my_order.to_base_type(),
+            &my_balance.to_base_type(),
+        );
+        let amount1 = my_amount
             .allocate(0 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let amount2 = my_order
-            .amount
-            .to_base_type()
+        let amount2 = my_amount
             .allocate(1 /* owning_party */, fabric.clone())
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
