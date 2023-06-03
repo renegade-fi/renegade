@@ -24,9 +24,10 @@ use crate::{
             AuthenticatedGossipResponse, ConnectionRole, GossipOutbound, GossipRequest,
             GossipResponse, ManagerControlDirective, PubsubMessage,
         },
-        handshake::{HandshakeMessage, MatchRejectionReason},
+        handshake::{HandshakeMessage, MatchRejectionReason, MidpointPrice, PriceVector},
     },
     lazy_static::lazy_static,
+    price_reporter::tokens::Token,
     proof_generation::{jobs::ProofManagerJob, OrderValidityProofBundle},
     starknet_client::client::StarknetClient,
     state::{new_async_shared, NetworkOrderState, OrderIdentifier, RelayerState},
@@ -60,12 +61,34 @@ const NANOS_PER_MILLI: u64 = 1_000_000;
 /// The number of threads executing handshakes
 pub(super) const HANDSHAKE_EXECUTOR_N_THREADS: usize = 8;
 
+/// Addresses used for dummy tokens, on starknet testnet
+/// TODO: Remove these and use real prices
+/// The starknet contract address for ETH ERC-20
+pub const WETH_STARKNET_ERC_ADDR: &str =
+    "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7";
+/// The starknet contract address for USDC ERC-20
+pub const USDC_STARKNET_ERC_ADDR: &str =
+    "0x5a643907b9a4bc6a55e9069c4fd5fd1f5c79a22470690f75556c4736e34426";
+/// A dummy starknet contract address for WBTC ERC-20
+pub const WBTC_STARKNET_ERC_ADDR: &str = "0x283751a21eafbfcd52297820d27c1f1963d9b5b4";
+
 lazy_static! {
-    /// A dummy price to fill in as a midpoint execution price while development
+    /// A dummy price vector to fill in as a midpoint while development
     /// is underway
     ///
     /// TODO: Remove this and consume prices from the `price_reporter`
-    static ref DUMMY_PRICE: FixedPoint = FixedPoint::from_integer(10);
+    static ref DUMMY_PRICE_VECTOR: PriceVector = vec![
+        (
+            Token { addr: WETH_STARKNET_ERC_ADDR.to_string() },
+            Token { addr: USDC_STARKNET_ERC_ADDR.to_string() },
+            10.
+        ),
+        (
+            Token { addr: WBTC_STARKNET_ERC_ADDR.to_string() },
+            Token { addr: USDC_STARKNET_ERC_ADDR.to_string() },
+            20.
+        )
+    ];
 }
 
 /// Get the current unix timestamp in milliseconds since the epoch
@@ -339,10 +362,17 @@ impl HandshakeExecutor {
                             peer_id: self.global_state.local_peer_id(),
                             sender_order: local_order_id,
                             peer_order: peer_order_id,
+                            price_vector: DUMMY_PRICE_VECTOR.clone(),
                         },
                     },
                 })
                 .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
+
+            // Determine the execution price for the new order
+            let (_, _, execution_price) = self
+                .choose_price_or_reject(DUMMY_PRICE_VECTOR.clone(), local_order_id)
+                .await
+                .expect("dummy price vector should always have a valid price");
 
             self.handshake_state_index
                 .new_handshake(
@@ -350,7 +380,7 @@ impl HandshakeExecutor {
                     ConnectionRole::Dialer,
                     peer_order_id,
                     local_order_id,
-                    *DUMMY_PRICE,
+                    FixedPoint::from_f64_round_down(execution_price),
                 )
                 .await?;
         }
@@ -375,12 +405,14 @@ impl HandshakeExecutor {
                 peer_id,
                 peer_order: my_order,
                 sender_order,
+                price_vector,
             } => {
                 self.handle_propose_match_candidate(
                     request_id,
                     peer_id,
                     my_order,
                     sender_order,
+                    price_vector,
                     response_channel.unwrap(),
                 )
                 .await
@@ -434,6 +466,7 @@ impl HandshakeExecutor {
         peer_id: WrappedPeerId,
         my_order: OrderIdentifier,
         sender_order: OrderIdentifier,
+        price_vector: PriceVector,
         response_channel: ResponseChannel<AuthenticatedGossipResponse>,
     ) -> Result<(), HandshakeManagerError> {
         // Only accept the proposed order pair if the peer's order has already been verified by
@@ -474,6 +507,19 @@ impl HandshakeExecutor {
             );
         }
 
+        // Verify that the proposed prices are valid by the price agreement logic
+        let execution_price = self.choose_price_or_reject(price_vector, my_order).await;
+        if execution_price.is_none() {
+            return self.reject_match_proposal(
+                request_id,
+                sender_order,
+                my_order,
+                MatchRejectionReason::PriceAgreement,
+                response_channel,
+            );
+        }
+        let (_, _, execution_price) = execution_price.unwrap();
+
         // Add an entry to the handshake state index
         self.handshake_state_index
             .new_handshake(
@@ -481,7 +527,7 @@ impl HandshakeExecutor {
                 ConnectionRole::Listener,
                 sender_order,
                 my_order,
-                *DUMMY_PRICE,
+                FixedPoint::from_f64_round_down(execution_price),
             )
             .await?;
 
@@ -543,6 +589,32 @@ impl HandshakeExecutor {
         self.send_request_response(request_id, peer_id, resp, Some(response_channel))?;
 
         Ok(())
+    }
+
+    /// Chooses a price from the price vector corresponding to the asset pair traded by
+    /// the given order. If none of the prices are suitable by the price agreement logic
+    /// then `None` is returned
+    async fn choose_price_or_reject(
+        &self,
+        proposed_prices: PriceVector,
+        my_order: OrderIdentifier,
+    ) -> Option<MidpointPrice> {
+        // Lookup the order in the book
+        let order_info = {
+            let locked_wallet_index = self.global_state.read_wallet_index().await;
+            let wallet_id = locked_wallet_index.get_wallet_for_order(&my_order)?;
+
+            let mut wallet = locked_wallet_index.get_wallet(&wallet_id).await?;
+            wallet.orders.remove(&my_order)
+        }?;
+
+        // Find the midpoint price for the order
+        // TODO: Verify the price is acceptable
+        let base_token = Token::from_addr_biguint(&order_info.base_mint);
+        let quote_token = Token::from_addr_biguint(&order_info.quote_mint);
+        proposed_prices
+            .into_iter()
+            .find(|(base, quote, _)| base == &base_token && quote == &quote_token)
     }
 
     /// Reject a proposed match candidate for the specified reason
