@@ -2,7 +2,14 @@
 use portpicker::Port;
 use serde::{Deserialize, Serialize};
 
-use crate::{gossip::types::WrappedPeerId, state::OrderIdentifier};
+use crate::{gossip::types::WrappedPeerId, price_reporter::tokens::Token, state::OrderIdentifier};
+
+/// A type alias for the representation of an ERC20's price
+pub type Price = f64;
+/// A type representing the midpoint price of a given token pair
+pub type MidpointPrice = (Token, Token, Price);
+/// A price vector that a peer proposes to its counterparty during a handshake
+pub type PriceVector = Vec<MidpointPrice>;
 
 /// Enumerates the different operations possible via handshake
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,6 +30,8 @@ pub enum HandshakeMessage {
         /// Set to `None` by the sender if all locally held orders are cached
         /// as already matched with the `peer_order`
         sender_order: OrderIdentifier,
+        /// The vector of prices that the sender is proposing to the receiver
+        price_vector: PriceVector,
     },
     /// Reject a proposed match candidate, this can happen for a number of reasons;
     /// e.g. the local peer has already cached the proposed order pair as matched,
@@ -70,4 +79,6 @@ pub enum MatchRejectionReason {
     LocalOrderNotReady,
     /// The rejecting peer has not yet verified the proposer's proof of `VALID COMMITMENTS`
     NoValidityProof,
+    /// The prices proposed by the peer are not accepted by the rejecting peer
+    NoPriceAgreement,
 }

@@ -11,6 +11,7 @@
 //! In general, Named Tokens use all exchanges where they are listed, whereas Unnamed Tokens only
 //! use Uniswap V3 for the price feed.
 use bimap::BiMap;
+use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -599,7 +600,7 @@ lazy_static! {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Token {
     /// The ERC-20 address of the Token.
-    addr: String,
+    pub addr: String,
 }
 
 impl Display for Token {
@@ -613,6 +614,13 @@ impl Token {
     pub fn from_addr(addr: &str) -> Self {
         Self {
             addr: String::from(addr).to_lowercase(),
+        }
+    }
+
+    /// Given an ERC-20 contract address represented as a `BigUint`, returns a Token
+    pub fn from_addr_biguint(addr: &BigUint) -> Self {
+        Self {
+            addr: format!("0x{}", addr.to_str_radix(16 /* radix */)),
         }
     }
 
