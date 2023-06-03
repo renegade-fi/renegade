@@ -181,7 +181,7 @@ pub struct Order {
     pub worst_case_price: FixedPoint,
     /// The order size
     pub amount: BigUint,
-    /// The timestamp this ord placed at
+    /// The timestamp this order was placed at
     pub timestamp: u64,
 }
 

@@ -89,7 +89,12 @@ impl FixedPoint {
 
     /// Create a new fixed point representation, rounding down to the nearest representable float
     pub fn from_f32_round_down(val: f32) -> Self {
-        let shifted_val = val * (2u64.pow(DEFAULT_PRECISION as u32) as f32);
+        Self::from_f64_round_down(val as f64)
+    }
+
+    /// Create a new fixed point representation, rounding up to the nearest representable float
+    pub fn from_f64_round_down(val: f64) -> Self {
+        let shifted_val = val * (2u64.pow(DEFAULT_PRECISION as u32) as f64);
         Self {
             repr: Scalar::from(shifted_val.floor() as u64),
         }
