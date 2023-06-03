@@ -1,6 +1,7 @@
 //! The handshake module handles the execution of handshakes from negotiating
 //! a pair of orders to match, all the way through settling any resulting match
 
+use circuits::zk_gadgets::fixed_point::FixedPoint;
 use crossbeam::channel::Sender as CrossbeamSender;
 use futures::executor::block_on;
 use libp2p::request_response::ResponseChannel;
@@ -25,6 +26,7 @@ use crate::{
         },
         handshake::{HandshakeMessage, MatchRejectionReason},
     },
+    lazy_static::lazy_static,
     proof_generation::{jobs::ProofManagerJob, OrderValidityProofBundle},
     starknet_client::client::StarknetClient,
     state::{new_async_shared, NetworkOrderState, OrderIdentifier, RelayerState},
@@ -57,6 +59,14 @@ pub(super) const HANDSHAKE_INTERVAL_MS: u64 = 2_000; // 2 seconds
 const NANOS_PER_MILLI: u64 = 1_000_000;
 /// The number of threads executing handshakes
 pub(super) const HANDSHAKE_EXECUTOR_N_THREADS: usize = 8;
+
+lazy_static! {
+    /// A dummy price to fill in as a midpoint execution price while development
+    /// is underway
+    ///
+    /// TODO: Remove this and consume prices from the `price_reporter`
+    static ref DUMMY_PRICE: FixedPoint = FixedPoint::from_integer(10);
+}
 
 /// Get the current unix timestamp in milliseconds since the epoch
 fn get_timestamp_millis() -> u64 {
@@ -340,6 +350,7 @@ impl HandshakeExecutor {
                     ConnectionRole::Dialer,
                     peer_order_id,
                     local_order_id,
+                    *DUMMY_PRICE,
                 )
                 .await?;
         }
@@ -465,7 +476,13 @@ impl HandshakeExecutor {
 
         // Add an entry to the handshake state index
         self.handshake_state_index
-            .new_handshake(request_id, ConnectionRole::Listener, sender_order, my_order)
+            .new_handshake(
+                request_id,
+                ConnectionRole::Listener,
+                sender_order,
+                my_order,
+                *DUMMY_PRICE,
+            )
             .await?;
 
         // Check if the order pair has previously been matched, if so notify the peer and
