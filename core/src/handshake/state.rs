@@ -9,6 +9,7 @@ use crate::{
 use std::collections::{HashMap, HashSet};
 
 use super::error::HandshakeManagerError;
+use circuits::zk_gadgets::fixed_point::FixedPoint;
 use crossbeam::channel::Sender;
 use curve25519_dalek::scalar::Scalar;
 use uuid::Uuid;
@@ -52,6 +53,7 @@ impl HandshakeStateIndex {
         role: ConnectionRole,
         peer_order_id: OrderIdentifier,
         local_order_id: OrderIdentifier,
+        execution_price: FixedPoint,
     ) -> Result<(), HandshakeManagerError> {
         // Lookup the public share nullifiers for the order
         let locked_order_book = self.global_state.read_order_book().await;
@@ -80,6 +82,7 @@ impl HandshakeStateIndex {
                     local_order_id,
                     peer_nullifier,
                     local_nullifier,
+                    execution_price,
                 ),
             );
         } // locked_state released
@@ -212,6 +215,8 @@ pub struct HandshakeState {
     pub peer_share_nullifier: Scalar,
     /// The public secret share nullifier of the local peer's order
     pub local_share_nullifier: Scalar,
+    /// The agreed upon price of the asset the local party intends to match on
+    pub execution_price: FixedPoint,
     /// The current state information of the
     pub state: State,
     /// The cancel channel that the coordinator may use to cancel MPC execution
@@ -247,6 +252,7 @@ impl HandshakeState {
         local_order_id: OrderIdentifier,
         peer_share_nullifier: Scalar,
         local_share_nullifier: Scalar,
+        execution_price: FixedPoint,
     ) -> Self {
         Self {
             request_id,
@@ -255,6 +261,7 @@ impl HandshakeState {
             local_order_id,
             peer_share_nullifier,
             local_share_nullifier,
+            execution_price,
             state: State::OrderNegotiation,
             cancel_channel: None,
         }
