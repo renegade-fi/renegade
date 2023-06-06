@@ -6,8 +6,6 @@ use serde::{Deserialize, Serialize};
 use stats::median;
 use std::{
     collections::{HashMap, HashSet},
-    fmt::{self, Display},
-    iter::FromIterator,
     num::NonZeroUsize,
     sync::{Arc, RwLock},
 };
@@ -73,23 +71,6 @@ pub enum PriceReporterState {
     /// There has been too much deviation in the prices between the exchanges; holding off until
     /// prices stabilize. Includes the current deviation as a fraction.
     TooMuchDeviation(PriceReport, f64),
-}
-impl Display for PriceReporterState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let fmt_str = match self {
-            PriceReporterState::Nominal(price_report) => {
-                format!("Nominal({:?})", price_report)
-            }
-            PriceReporterState::NotEnoughDataReported(_) => String::from("NotEnoughDataReported"),
-            PriceReporterState::DataTooStale(price_report, _) => {
-                format!("DataTooStale({:?})", price_report)
-            }
-            PriceReporterState::TooMuchDeviation(price_report, _) => {
-                format!("TooMuchDeviation({:?})", price_report)
-            }
-        };
-        write!(f, "{}", fmt_str)
-    }
 }
 
 /// The PriceReporter is responsible for opening websocket connection(s) to the specified
@@ -246,6 +227,7 @@ impl PriceReporter {
                 // Receive a new (Exchange, PriceReport) from the aggregate stream.
                 let mut price_report = all_price_reports_receiver.next().await.unwrap();
                 let exchange = price_report.exchange.unwrap();
+
                 // If the exchange is UniswapV3 and the token pair is Named, adjust the reported price
                 // for the decimals.
                 if exchange == Exchange::UniswapV3 && is_named {
@@ -254,6 +236,7 @@ impl PriceReporter {
                             - f64::from(quote_token_decimals.unwrap()),
                     );
                 }
+
                 // Send this PriceReport to every RingSender<PriceReport> in
                 // price_report_exchanges_senders.
                 for sender in price_report_exchanges_senders_clone
@@ -496,18 +479,5 @@ impl PriceReporter {
     /// Get all Exchanges that this Token pair supports.
     pub fn get_supported_exchanges(&self) -> HashSet<Exchange> {
         self.supported_exchanges.clone()
-    }
-
-    /// Get all Exchanges that are currently in a healthy state.
-    pub fn get_healthy_exchanges(&self) -> HashSet<Exchange> {
-        HashSet::from_iter(
-            self.peek_all_exchanges()
-                .iter()
-                .filter_map(|(exchange, state)| match state {
-                    ExchangeConnectionState::Nominal(_) => Some(exchange),
-                    _ => None,
-                })
-                .copied(),
-        )
     }
 }

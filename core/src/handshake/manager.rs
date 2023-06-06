@@ -514,7 +514,7 @@ impl HandshakeExecutor {
                 request_id,
                 sender_order,
                 my_order,
-                MatchRejectionReason::PriceAgreement,
+                MatchRejectionReason::NoPriceAgreement,
                 response_channel,
             );
         }

@@ -112,7 +112,6 @@ impl WebsocketTopicHandler for PriceReporterHandler {
             .send(PriceReporterManagerJob::StartPriceReporter {
                 base_token: base.clone(),
                 quote_token: quote.clone(),
-                id: None,
                 channel, /* unused here */
             })
             .map_err(|_| ApiServerError::WebsocketServerFailure(ERR_SENDING_MESSAGE.to_string()))?;
