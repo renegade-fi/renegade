@@ -1,15 +1,10 @@
 //! Defines the PriceReporterManagerExecutor, the handler that is responsible for executing
 //! individual PriceReporterManagerJobs.
 use futures::StreamExt;
-use ring_channel::RingReceiver;
-use std::{
-    collections::{HashMap, HashSet},
-    thread::JoinHandle,
-};
+use std::{collections::HashMap, thread::JoinHandle};
 use tokio::sync::oneshot::{channel, Sender as TokioSender};
 use tokio::{runtime::Runtime, sync::mpsc::UnboundedReceiver as TokioReceiver};
 use tracing::log;
-use uuid::Uuid;
 
 use crate::{system_bus::SystemBus, types::SystemBusMessage, CancelChannel};
 
@@ -22,9 +17,6 @@ use super::{
     tokens::Token,
     worker::PriceReporterManagerConfig,
 };
-
-/// A listener ID on a PriceReporter is just a UUID.
-pub type PriceReporterListenerID = Uuid;
 
 /// The price report source name for the median
 const MEDIAN_SOURCE_NAME: &str = "median";
@@ -51,11 +43,10 @@ pub struct PriceReporterManagerExecutor {
     pub(super) system_bus: SystemBus<SystemBusMessage>,
     /// The map between base/quote token pairs and the instantiated PriceReporter
     pub(super) spawned_price_reporters: HashMap<(Token, Token), PriceReporter>,
-    /// The map between base/quote token pairs and the set of registered listeners
-    pub(super) registered_listeners: HashMap<(Token, Token), HashSet<PriceReporterListenerID>>,
     /// The manager config
     config: PriceReporterManagerConfig,
 }
+
 impl PriceReporterManagerExecutor {
     /// Creates the executor for the PriceReporterManager worker.
     pub(super) fn new(
@@ -63,17 +54,14 @@ impl PriceReporterManagerExecutor {
         config: PriceReporterManagerConfig,
         cancel_channel: CancelChannel,
         system_bus: SystemBus<SystemBusMessage>,
-    ) -> Result<Self, PriceReporterManagerError> {
-        let spawned_price_reporters = HashMap::new();
-        let registered_listeners = HashMap::new();
-        Ok(Self {
+    ) -> Self {
+        Self {
             job_receiver,
             cancel_channel,
             system_bus,
-            spawned_price_reporters,
-            registered_listeners,
+            spawned_price_reporters: HashMap::new(),
             config,
-        })
+        }
     }
 
     /// The execution loop for the price reporter
@@ -105,15 +93,8 @@ impl PriceReporterManagerExecutor {
             PriceReporterManagerJob::StartPriceReporter {
                 base_token,
                 quote_token,
-                id,
                 channel,
-            } => self.start_price_reporter(base_token, quote_token, id, channel),
-            PriceReporterManagerJob::DropListenerID {
-                base_token,
-                quote_token,
-                id,
-                channel,
-            } => self.drop_listener_id(base_token, quote_token, id, channel),
+            } => self.start_price_reporter(base_token, quote_token, channel),
             PriceReporterManagerJob::PeekMedian {
                 base_token,
                 quote_token,
@@ -124,21 +105,6 @@ impl PriceReporterManagerExecutor {
                 quote_token,
                 channel,
             } => self.peek_all_exchanges(base_token, quote_token, channel),
-            PriceReporterManagerJob::CreateNewMedianReceiver {
-                base_token,
-                quote_token,
-                channel,
-            } => self.create_new_median_receiver(base_token, quote_token, channel),
-            PriceReporterManagerJob::GetSupportedExchanges {
-                base_token,
-                quote_token,
-                channel,
-            } => self.get_supported_exchanges(base_token, quote_token, channel),
-            PriceReporterManagerJob::GetHealthyExchanges {
-                base_token,
-                quote_token,
-                channel,
-            } => self.get_healthy_exchanges(base_token, quote_token, channel),
         }
     }
 
@@ -171,13 +137,9 @@ impl PriceReporterManagerExecutor {
             .is_none()
         {
             let (channel_sender, _channel_receiver) = channel();
-            self.start_price_reporter(
-                base_token.clone(),
-                quote_token.clone(),
-                None,
-                channel_sender,
-            )?;
+            self.start_price_reporter(base_token.clone(), quote_token.clone(), channel_sender)?;
         }
+
         self.get_price_reporter(base_token, quote_token)
     }
 
@@ -186,7 +148,6 @@ impl PriceReporterManagerExecutor {
         &mut self,
         base_token: Token,
         quote_token: Token,
-        id: Option<PriceReporterListenerID>,
         channel: TokioSender<()>,
     ) -> Result<(), PriceReporterManagerError> {
         // If the PriceReporter does not already exist, create it
@@ -201,6 +162,7 @@ impl PriceReporterManagerExecutor {
                 // Create the PriceReporter
                 let price_reporter =
                     PriceReporter::new(base_token.clone(), quote_token.clone(), config_clone);
+
                 // Stream all median PriceReports to the system bus, only if the midpoint price
                 // changes
                 let mut median_receiver = price_reporter.create_new_median_receiver();
@@ -220,11 +182,13 @@ impl PriceReporterManagerExecutor {
                         }
                     }
                 });
+
                 // Stream all individual Exchange PriceReports to the system bus, only if the
                 // midpoint price changes
                 for exchange in price_reporter.supported_exchanges.iter() {
                     let mut exchange_receiver =
                         price_reporter.create_new_exchange_receiver(*exchange);
+
                     let exchange_price_report_topic = price_report_topic_name(
                         &exchange.to_string(),
                         base_token.clone(),
@@ -246,63 +210,14 @@ impl PriceReporterManagerExecutor {
                         }
                     });
                 }
+
                 price_reporter
             });
-
-        // If there is no specified listener ID, we do not register any new IDs
-        if id.is_none() {
-            if !channel.is_closed() {
-                channel.send(()).unwrap();
-            }
-            return Ok(());
-        }
-
-        // If the registered_listeners set does not already exist, create it
-        self.registered_listeners
-            .entry((base_token.clone(), quote_token.clone()))
-            .or_insert_with(HashSet::new);
-
-        // Register the new listener ID, asserting that it does not already exist
-        let newly_inserted = self
-            .registered_listeners
-            .get_mut(&(base_token, quote_token))
-            .unwrap()
-            .insert(id.unwrap());
-        if !newly_inserted {
-            return Err(PriceReporterManagerError::AlreadyListening(
-                id.unwrap().to_string(),
-            ));
-        }
 
         // Send a response that we have handled the job
         if !channel.is_closed() {
             channel.send(()).unwrap()
         };
-
-        Ok(())
-    }
-
-    /// Handler for DropListenerID job.
-    fn drop_listener_id(
-        &mut self,
-        base_token: Token,
-        quote_token: Token,
-        id: PriceReporterListenerID,
-        channel: TokioSender<()>,
-    ) -> Result<(), PriceReporterManagerError> {
-        let was_present = self
-            .registered_listeners
-            .get_mut(&(base_token, quote_token))
-            .ok_or_else(|| PriceReporterManagerError::ListenerNotFound(id.to_string()))?
-            .remove(&id);
-
-        // If the listener ID was not present, throw an error
-        if !was_present {
-            return Err(PriceReporterManagerError::ListenerNotFound(id.to_string()));
-        }
-
-        // Send a response that we have handled the job
-        channel.send(()).unwrap();
 
         Ok(())
     }
@@ -328,48 +243,6 @@ impl PriceReporterManagerExecutor {
     ) -> Result<(), PriceReporterManagerError> {
         let price_reporter = self.get_price_reporter_or_create(base_token, quote_token)?;
         channel.send(price_reporter.peek_all_exchanges()).unwrap();
-        Ok(())
-    }
-
-    /// Handler for CreateNewMedianReceiver job.
-    fn create_new_median_receiver(
-        &mut self,
-        base_token: Token,
-        quote_token: Token,
-        channel: TokioSender<RingReceiver<PriceReport>>,
-    ) -> Result<(), PriceReporterManagerError> {
-        let price_reporter = self.get_price_reporter_or_create(base_token, quote_token)?;
-        channel
-            .send(price_reporter.create_new_median_receiver())
-            .unwrap();
-        Ok(())
-    }
-
-    /// Handler for GetSupportedExchanges job.
-    fn get_supported_exchanges(
-        &mut self,
-        base_token: Token,
-        quote_token: Token,
-        channel: TokioSender<HashSet<Exchange>>,
-    ) -> Result<(), PriceReporterManagerError> {
-        let price_reporter = self.get_price_reporter_or_create(base_token, quote_token)?;
-        channel
-            .send(price_reporter.get_supported_exchanges())
-            .unwrap();
-        Ok(())
-    }
-
-    /// Handler for GetHealthyExchanges job.
-    fn get_healthy_exchanges(
-        &mut self,
-        base_token: Token,
-        quote_token: Token,
-        channel: TokioSender<HashSet<Exchange>>,
-    ) -> Result<(), PriceReporterManagerError> {
-        let price_reporter = self.get_price_reporter_or_create(base_token, quote_token)?;
-        channel
-            .send(price_reporter.get_healthy_exchanges())
-            .unwrap();
         Ok(())
     }
 }

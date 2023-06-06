@@ -1,13 +1,10 @@
 //! Defines all possible jobs for the PriceReporterManager.
-#![allow(dead_code)]
-use ring_channel::RingReceiver;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use tokio::sync::oneshot::Sender as TokioSender;
 
 use super::{
     exchanges::{Exchange, ExchangeConnectionState},
-    manager::PriceReporterListenerID,
-    reporter::{PriceReport, PriceReporterState},
+    reporter::PriceReporterState,
     tokens::Token,
 };
 
@@ -28,19 +25,6 @@ pub enum PriceReporterManagerJob {
         base_token: Token,
         /// The quote Token
         quote_token: Token,
-        /// The ID of the listener
-        id: Option<PriceReporterListenerID>,
-        /// The channel to send a response after completion
-        channel: TokioSender<()>,
-    },
-    /// Drop the specified id from the listeners
-    DropListenerID {
-        /// The base Token
-        base_token: Token,
-        /// The quote Token
-        quote_token: Token,
-        /// The ID of the listener to drop
-        id: PriceReporterListenerID,
         /// The channel to send a response after completion
         channel: TokioSender<()>,
     },
@@ -61,32 +45,5 @@ pub enum PriceReporterManagerJob {
         quote_token: Token,
         /// The return channel for the ExchangeConnectionStates
         channel: TokioSender<HashMap<Exchange, ExchangeConnectionState>>,
-    },
-    /// Create a forked median receiver
-    CreateNewMedianReceiver {
-        /// The base Token
-        base_token: Token,
-        /// The quote Token
-        quote_token: Token,
-        /// The return channel for the new receiver
-        channel: TokioSender<RingReceiver<PriceReport>>,
-    },
-    /// Get all the exchanges that this price reporter supports
-    GetSupportedExchanges {
-        /// The base Token
-        base_token: Token,
-        /// The quote Token
-        quote_token: Token,
-        /// The return channel for the supported exchanges
-        channel: TokioSender<HashSet<Exchange>>,
-    },
-    /// Get all the supported exchanges that are in a healthy state
-    GetHealthyExchanges {
-        /// The base Token
-        base_token: Token,
-        /// The quote Token
-        quote_token: Token,
-        /// The return channel for the healthy exchanges
-        channel: TokioSender<HashSet<Exchange>>,
     },
 }
