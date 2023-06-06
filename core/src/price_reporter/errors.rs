@@ -2,9 +2,9 @@
 use std::error::Error;
 use std::fmt::{self, Display};
 
-#[derive(Clone, Debug)]
 /// The core error type used by the ExchangeConnection. All thrown errors are handled by the
 /// PriceReporter, either for restarts or panics upon too many consecutive errors.
+#[derive(Clone, Debug)]
 pub enum ExchangeConnectionError {
     /// An initial websocket subscription to a remote server failed.
     HandshakeFailure(String),
@@ -17,26 +17,17 @@ pub enum ExchangeConnectionError {
 impl Error for ExchangeConnectionError {}
 impl Display for ExchangeConnectionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let display_string = match self {
-            ExchangeConnectionError::HandshakeFailure(err) => format!("HandshakeFailure({})", err),
-            ExchangeConnectionError::ConnectionHangup(err) => format!("ConnectionHangup({})", err),
-            ExchangeConnectionError::InvalidMessage(err) => format!("InvalidMessage({})", err),
-        };
-        write!(f, "{}", display_string)
+        write!(f, "{self:?}")
     }
 }
 
-#[derive(Clone, Debug)]
 /// The core error type thrown by the PriceReporterManager worker.
+#[derive(Clone, Debug)]
 pub enum PriceReporterManagerError {
     /// An external cancel was requested by the worker manager
     Cancelled(String),
     /// The spawning of the initial PriceReporterManager execution thread failed
     ManagerSetup(String),
-    /// Tried to register a listener ID that is already registered
-    AlreadyListening(String),
-    /// Tried to drop a listener ID that was not listening
-    ListenerNotFound(String),
     /// Tried to query information from a PriceReporter that does not exist. Callers should send a
     /// StartPriceReporter job first
     PriceReporterNotCreated(String),
@@ -48,26 +39,6 @@ pub enum PriceReporterManagerError {
 impl Error for PriceReporterManagerError {}
 impl Display for PriceReporterManagerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let display_string = match self {
-            PriceReporterManagerError::Cancelled(err) => {
-                format!("Cancelled({})", err)
-            }
-            PriceReporterManagerError::ManagerSetup(err) => {
-                format!("ManagerSetup({})", err)
-            }
-            PriceReporterManagerError::AlreadyListening(err) => {
-                format!("AlreadyListening({})", err)
-            }
-            PriceReporterManagerError::ListenerNotFound(err) => {
-                format!("ListenerNotFound({})", err)
-            }
-            PriceReporterManagerError::PriceReporterNotCreated(err) => {
-                format!("PriceReporterNotCreated({})", err)
-            }
-            PriceReporterManagerError::_TooManyFailures(exchange_connection_error) => {
-                format!("TooManyFailures({})", exchange_connection_error)
-            }
-        };
-        write!(f, "{}", display_string)
+        write!(f, "{self:?}")
     }
 }
