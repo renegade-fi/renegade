@@ -10,7 +10,7 @@ use crate::{system_bus::SystemBus, types::SystemBusMessage, CancelChannel};
 
 use super::{
     errors::PriceReporterManagerError,
-    exchanges::{Exchange, ExchangeConnectionState},
+    exchange::{Exchange, ExchangeConnectionState},
     jobs::PriceReporterManagerJob,
     price_report_topic_name,
     reporter::{PriceReport, PriceReporter, PriceReporterState},

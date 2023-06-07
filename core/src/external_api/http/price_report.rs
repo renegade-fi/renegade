@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::price_reporter::{
-    exchanges::{Exchange, ExchangeConnectionState},
+    exchange::{Exchange, ExchangeConnectionState},
     reporter::PriceReporterState,
     tokens::Token,
 };
