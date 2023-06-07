@@ -5,6 +5,7 @@ mod coinbase;
 mod connection;
 mod handlers_centralized;
 mod handlers_decentralized;
+mod kraken;
 
 use std::{
     fmt::{self, Display},

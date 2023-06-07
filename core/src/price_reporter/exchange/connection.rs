@@ -1,6 +1,7 @@
 //! Defines abstract connection interfaces that can be streamed from
 
 use async_trait::async_trait;
+use core::panic;
 use futures::{stream::StreamExt, SinkExt};
 use futures_util::{
     stream::{SplitSink, SplitStream},
@@ -28,7 +29,7 @@ use crate::price_reporter::{reporter::Price, worker::PriceReporterManagerConfig}
 use super::{
     super::{
         errors::ExchangeConnectionError,
-        exchange::handlers_centralized::{CentralizedExchangeHandler, KrakenHandler, OkxHandler},
+        exchange::handlers_centralized::{CentralizedExchangeHandler, OkxHandler},
         exchange::handlers_decentralized::UniswapV3Handler,
         reporter::PriceReport,
         tokens::Token,
@@ -66,12 +67,27 @@ pub(super) async fn ws_connect(
     Ok((ws_sink, ws_stream))
 }
 
-/// Helper to parse a value from an HTTP response
+/// Helper to parse a value from a JSON response
 pub(super) fn parse_json_field<T: FromStr>(
     field_name: &str,
     response: &Value,
 ) -> Result<T, ExchangeConnectionError> {
     match response[field_name].as_str() {
+        None => Err(ExchangeConnectionError::InvalidMessage(
+            response.to_string(),
+        )),
+        Some(best_bid_str) => best_bid_str
+            .parse()
+            .map_err(|_| ExchangeConnectionError::InvalidMessage(response.to_string())),
+    }
+}
+
+/// Helper to parse a value from a JSON response by index
+pub(super) fn parse_json_field_array<T: FromStr>(
+    field_index: usize,
+    response: &Value,
+) -> Result<T, ExchangeConnectionError> {
+    match response[field_index].as_str() {
         None => Err(ExchangeConnectionError::InvalidMessage(
             response.to_string(),
         )),
@@ -168,8 +184,6 @@ pub trait ExchangeConnection: Stream<Item = Price> {
 /// ExchangeConnection is never directly accessed, and all data is reported only via this receiver.
 #[derive(Clone, Debug)]
 pub struct ExchangeConnectionOld {
-    /// The CentralizedExchangeHandler for Kraken.
-    kraken_handler: Option<KrakenHandler>,
     /// The CentralizedExchangeHandler for Okx.
     okx_handler: Option<OkxHandler>,
 }
@@ -206,20 +220,10 @@ impl ExchangeConnectionOld {
 
         // Get initial ExchangeHandler state and include in a new ExchangeConnection.
         let mut exchange_connection = match exchange {
-            Exchange::Binance => ExchangeConnectionOld {
-                kraken_handler: None,
-                okx_handler: None,
-            },
-            Exchange::Coinbase => ExchangeConnectionOld {
-                kraken_handler: None,
-                okx_handler: None,
-            },
-            Exchange::Kraken => ExchangeConnectionOld {
-                kraken_handler: Some(KrakenHandler::new(base_token, quote_token, config)),
-                okx_handler: None,
-            },
+            Exchange::Binance => ExchangeConnectionOld { okx_handler: None },
+            Exchange::Coinbase => ExchangeConnectionOld { okx_handler: None },
+            Exchange::Kraken => ExchangeConnectionOld { okx_handler: None },
             Exchange::Okx => ExchangeConnectionOld {
-                kraken_handler: None,
                 okx_handler: Some(OkxHandler::new(base_token, quote_token, config)),
             },
             _ => unreachable!(),
@@ -229,11 +233,7 @@ impl ExchangeConnectionOld {
         let pre_stream_price_report = match exchange {
             Exchange::Binance => panic!(""),
             Exchange::Coinbase => panic!(""),
-            Exchange::Kraken => exchange_connection
-                .kraken_handler
-                .as_mut()
-                .unwrap()
-                .pre_stream_price_report(),
+            Exchange::Kraken => panic!(""),
             Exchange::Okx => exchange_connection
                 .okx_handler
                 .as_mut()
@@ -259,11 +259,7 @@ impl ExchangeConnectionOld {
         let wss_url = match exchange {
             Exchange::Binance => panic!(""),
             Exchange::Coinbase => panic!(""),
-            Exchange::Kraken => exchange_connection
-                .kraken_handler
-                .as_ref()
-                .unwrap()
-                .websocket_url(),
+            Exchange::Kraken => panic!(""),
             Exchange::Okx => exchange_connection
                 .okx_handler
                 .as_ref()
@@ -294,11 +290,7 @@ impl ExchangeConnectionOld {
         match exchange {
             Exchange::Binance => panic!(""),
             Exchange::Coinbase => panic!(""),
-            Exchange::Kraken => exchange_connection
-                .kraken_handler
-                .as_ref()
-                .unwrap()
-                .websocket_subscribe(&mut socket),
+            Exchange::Kraken => panic!(""),
             Exchange::Okx => exchange_connection
                 .okx_handler
                 .as_ref()
@@ -364,9 +356,7 @@ impl ExchangeConnectionOld {
         })?;
 
         let price_report = {
-            if let Some(kraken_handler) = &mut self.kraken_handler {
-                kraken_handler.handle_exchange_message(message_json)
-            } else if let Some(okx_handler) = &mut self.okx_handler {
+            if let Some(okx_handler) = &mut self.okx_handler {
                 okx_handler.handle_exchange_message(message_json)
             } else {
                 unreachable!();
