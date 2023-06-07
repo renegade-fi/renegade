@@ -8,7 +8,6 @@ use std::{
 use async_trait::async_trait;
 use futures_util::{Sink, Stream, StreamExt};
 use serde_json::Value;
-use tokio_tungstenite::connect_async;
 use tracing::log;
 use tungstenite::{Error as WsError, Message};
 use url::Url;
@@ -22,7 +21,7 @@ use crate::price_reporter::{
 };
 
 use super::{
-    connection::{parse_json_field, parse_json_from_message, ExchangeConnection},
+    connection::{parse_json_field, parse_json_from_message, ws_connect, ExchangeConnection},
     get_current_time,
 };
 
@@ -41,10 +40,6 @@ const BINANCE_OFFER_PRICE: &str = "askPrice";
 
 /// The connection handle for Binance price data
 pub struct BinanceConnection {
-    /// The base Token (e.g. WETH)
-    base_token: Token,
-    /// The quote Token (e.g. USDC)
-    quote_token: Token,
     /// The underlying price stream
     ///
     /// TODO: Unbox this if performance becomes a concern
@@ -149,19 +144,7 @@ impl ExchangeConnection for BinanceConnection {
 
         // Connect to the websocket
         let url = Self::websocket_url(&base_token, &quote_token);
-        let ws_conn = match connect_async(url.clone()).await {
-            Ok((conn, _resp)) => conn,
-            Err(e) => {
-                log::warn!(
-                    "You are likely attempting to connect from an IP address \
-                    blacklisted by Binance (e.g., anything US-based)"
-                );
-                log::error!("Cannot connect to the remote URL: {}", url);
-
-                return Err(ExchangeConnectionError::HandshakeFailure(e.to_string()));
-            }
-        };
-        let (write, read) = ws_conn.split();
+        let (write, read) = ws_connect(url).await?;
 
         // Map the stream to process midpoint prices
         let mapped_stream = read.filter_map(|message| async {
@@ -186,8 +169,6 @@ impl ExchangeConnection for BinanceConnection {
         );
 
         Ok(Self {
-            base_token,
-            quote_token,
             price_stream: Box::new(price_stream),
             write_stream: Box::new(write),
         })

@@ -1,21 +1,15 @@
 //! Defines logic for streaming from centralized exchanges
 
 use async_trait::async_trait;
-use chrono::DateTime;
 use futures::SinkExt;
-use hmac_sha256::HMAC;
 use serde_json::{self, json, Value};
-use std::{collections::HashMap, convert::TryInto};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{tungstenite::Message, MaybeTlsStream, WebSocketStream};
 
 use crate::price_reporter::worker::PriceReporterManagerConfig;
 
 use super::super::{
-    errors::ExchangeConnectionError,
-    exchange::{connection::get_current_time, Exchange},
-    reporter::PriceReport,
-    tokens::Token,
+    errors::ExchangeConnectionError, exchange::Exchange, reporter::PriceReport, tokens::Token,
 };
 
 /// WebSocket type for streams from all centralized exchanges.
@@ -47,165 +41,6 @@ pub trait CentralizedExchangeHandler {
         &mut self,
         message_json: Value,
     ) -> Result<Option<PriceReport>, ExchangeConnectionError>;
-}
-
-/// The message handler for Exchange::Coinbase.
-#[derive(Clone, Debug)]
-pub struct CoinbaseHandler {
-    /// The base Token (e.g., WETH).
-    base_token: Token,
-    /// The quote Token (e.g., USDC).
-    quote_token: Token,
-    // Note: The reason we use String's for price_level is because using f32 as a key produces
-    // collision issues.
-    /// A HashMap representing the local mirroring of Coinbase's order book bids.
-    order_book_bids: HashMap<String, f32>,
-    /// A HashMap representing the local mirroring of Coinbase's order book offers.
-    order_book_offers: HashMap<String, f32>,
-    /// The Coinbase API key
-    api_key: String,
-    /// The Coinbase API secret
-    api_secret: String,
-}
-#[async_trait]
-impl CentralizedExchangeHandler for CoinbaseHandler {
-    fn new(base_token: Token, quote_token: Token, config: PriceReporterManagerConfig) -> Self {
-        let api_key = config
-            .coinbase_api_key
-            .expect("Coinbase API key expected in config, found None");
-        let api_secret = config
-            .coinbase_api_secret
-            .expect("Coinbase API secret expected in config, found None");
-
-        Self {
-            base_token,
-            quote_token,
-            order_book_bids: HashMap::new(),
-            order_book_offers: HashMap::new(),
-            api_key,
-            api_secret,
-        }
-    }
-
-    fn websocket_url(&self) -> String {
-        String::from("wss://advanced-trade-ws.coinbase.com")
-    }
-
-    async fn pre_stream_price_report(
-        &mut self,
-    ) -> Result<Option<PriceReport>, ExchangeConnectionError> {
-        Ok(None)
-    }
-
-    async fn websocket_subscribe(
-        &self,
-        socket: &mut WebSocket,
-    ) -> Result<(), ExchangeConnectionError> {
-        let base_ticker = self.base_token.get_exchange_ticker(Exchange::Coinbase);
-        let quote_ticker = self.quote_token.get_exchange_ticker(Exchange::Coinbase);
-        let product_ids = format!("{}-{}", base_ticker, quote_ticker);
-        let channel = "level2";
-        let timestamp = (get_current_time() / 1000).to_string();
-        let signature_bytes = HMAC::mac(
-            format!("{}{}{}", timestamp, channel, product_ids),
-            self.api_secret.clone(),
-        );
-        let signature = hex::encode(signature_bytes);
-        let subscribe_str = json!({
-            "type": "subscribe",
-            "product_ids": [ product_ids ],
-            "channel": channel,
-            "api_key": self.api_key.clone(),
-            "timestamp": timestamp,
-            "signature": signature,
-        })
-        .to_string();
-        socket
-            .send(Message::Text(subscribe_str))
-            .await
-            .map_err(|err| ExchangeConnectionError::ConnectionHangup(err.to_string()))?;
-        Ok(())
-    }
-
-    fn handle_exchange_message(
-        &mut self,
-        message_json: Value,
-    ) -> Result<Option<PriceReport>, ExchangeConnectionError> {
-        // Extract the list of events and update the order book.
-        let coinbase_events = match &message_json["events"] {
-            Value::Array(coinbase_events) => match &coinbase_events[0]["updates"] {
-                Value::Array(coinbase_events) => coinbase_events,
-                _ => {
-                    return Ok(None);
-                }
-            },
-            _ => {
-                return Ok(None);
-            }
-        };
-        for coinbase_event in coinbase_events {
-            let (price_level, new_quantity, side) = match (
-                &coinbase_event["price_level"],
-                &coinbase_event["new_quantity"],
-                &coinbase_event["side"],
-            ) {
-                (Value::String(price_level), Value::String(new_quantity), Value::String(side)) => (
-                    price_level.to_string(),
-                    new_quantity.parse::<f32>().unwrap(),
-                    side,
-                ),
-                _ => {
-                    return Err(ExchangeConnectionError::InvalidMessage(
-                        coinbase_event.to_string(),
-                    ));
-                }
-            };
-            match &side[..] {
-                "bid" => {
-                    self.order_book_bids
-                        .insert(price_level.clone(), new_quantity);
-                    if new_quantity == 0.0 {
-                        self.order_book_bids.remove(&price_level);
-                    }
-                }
-                "offer" => {
-                    self.order_book_offers
-                        .insert(price_level.clone(), new_quantity);
-                    if new_quantity == 0.0 {
-                        self.order_book_offers.remove(&price_level);
-                    }
-                }
-                _ => {
-                    return Err(ExchangeConnectionError::InvalidMessage(side.to_string()));
-                }
-            }
-        }
-
-        // Given the new order book, compute the best bid and offer.
-        let mut best_bid: f64 = 0.0;
-        let mut best_offer: f64 = f64::INFINITY;
-        for price_level in self.order_book_bids.keys() {
-            best_bid = f64::max(best_bid, price_level.parse::<f64>().unwrap());
-        }
-        for price_level in self.order_book_offers.keys() {
-            best_offer = f64::min(best_offer, price_level.parse::<f64>().unwrap());
-        }
-
-        let timestamp_str = message_json["timestamp"]
-            .as_str()
-            .ok_or_else(|| ExchangeConnectionError::InvalidMessage(message_json.to_string()))?;
-        let reported_timestamp = DateTime::parse_from_rfc3339(timestamp_str)
-            .map_err(|err| ExchangeConnectionError::InvalidMessage(err.to_string()))?
-            .timestamp_millis();
-        Ok(Some(PriceReport {
-            base_token: self.base_token.clone(),
-            quote_token: self.quote_token.clone(),
-            exchange: Some(Exchange::Coinbase),
-            midpoint_price: (best_bid + best_offer) / 2.0,
-            reported_timestamp: Some(reported_timestamp.try_into().unwrap()),
-            local_timestamp: Default::default(),
-        }))
-    }
 }
 
 /// The message handler for Exchange::Kraken.

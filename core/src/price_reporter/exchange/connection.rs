@@ -2,7 +2,10 @@
 
 use async_trait::async_trait;
 use futures::{stream::StreamExt, SinkExt};
-use futures_util::Stream;
+use futures_util::{
+    stream::{SplitSink, SplitStream},
+    Stream,
+};
 use ring_channel::{ring_channel, RingReceiver, RingSender};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -12,8 +15,12 @@ use std::{
     str::FromStr,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::time::{sleep, Duration};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio::{
+    net::TcpStream,
+    time::{sleep, Duration},
+};
+use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
+use tracing::log;
 use url::Url;
 
 use crate::price_reporter::{reporter::Price, worker::PriceReporterManagerConfig};
@@ -21,9 +28,7 @@ use crate::price_reporter::{reporter::Price, worker::PriceReporterManagerConfig}
 use super::{
     super::{
         errors::ExchangeConnectionError,
-        exchange::handlers_centralized::{
-            CentralizedExchangeHandler, CoinbaseHandler, KrakenHandler, OkxHandler,
-        },
+        exchange::handlers_centralized::{CentralizedExchangeHandler, KrakenHandler, OkxHandler},
         exchange::handlers_decentralized::UniswapV3Handler,
         reporter::PriceReport,
         tokens::Token,
@@ -38,6 +43,28 @@ pub type WorkerHandles = Vec<tokio::task::JoinHandle<Result<(), ExchangeConnecti
 // -----------
 // | Helpers |
 // -----------
+
+/// Build a websocket connection to the given endpoint
+pub(super) async fn ws_connect(
+    url: Url,
+) -> Result<
+    (
+        SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
+        SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+    ),
+    ExchangeConnectionError,
+> {
+    let ws_conn = match connect_async(url.clone()).await {
+        Ok((conn, _resp)) => conn,
+        Err(e) => {
+            log::error!("Cannot connect to the remote URL: {}", url);
+            return Err(ExchangeConnectionError::HandshakeFailure(e.to_string()));
+        }
+    };
+
+    let (ws_sink, ws_stream) = ws_conn.split();
+    Ok((ws_sink, ws_stream))
+}
 
 /// Helper to parse a value from an HTTP response
 pub(super) fn parse_json_field<T: FromStr>(
@@ -141,8 +168,6 @@ pub trait ExchangeConnection: Stream<Item = Price> {
 /// ExchangeConnection is never directly accessed, and all data is reported only via this receiver.
 #[derive(Clone, Debug)]
 pub struct ExchangeConnectionOld {
-    /// The CentralizedExchangeHandler for Coinbase.
-    coinbase_handler: Option<CoinbaseHandler>,
     /// The CentralizedExchangeHandler for Kraken.
     kraken_handler: Option<KrakenHandler>,
     /// The CentralizedExchangeHandler for Okx.
@@ -182,22 +207,18 @@ impl ExchangeConnectionOld {
         // Get initial ExchangeHandler state and include in a new ExchangeConnection.
         let mut exchange_connection = match exchange {
             Exchange::Binance => ExchangeConnectionOld {
-                coinbase_handler: None,
                 kraken_handler: None,
                 okx_handler: None,
             },
             Exchange::Coinbase => ExchangeConnectionOld {
-                coinbase_handler: Some(CoinbaseHandler::new(base_token, quote_token, config)),
                 kraken_handler: None,
                 okx_handler: None,
             },
             Exchange::Kraken => ExchangeConnectionOld {
-                coinbase_handler: None,
                 kraken_handler: Some(KrakenHandler::new(base_token, quote_token, config)),
                 okx_handler: None,
             },
             Exchange::Okx => ExchangeConnectionOld {
-                coinbase_handler: None,
                 kraken_handler: None,
                 okx_handler: Some(OkxHandler::new(base_token, quote_token, config)),
             },
@@ -206,16 +227,8 @@ impl ExchangeConnectionOld {
 
         // Retrieve the optional pre-stream PriceReport.
         let pre_stream_price_report = match exchange {
-            Exchange::Binance => exchange_connection
-                .coinbase_handler
-                .as_mut()
-                .unwrap()
-                .pre_stream_price_report(),
-            Exchange::Coinbase => exchange_connection
-                .coinbase_handler
-                .as_mut()
-                .unwrap()
-                .pre_stream_price_report(),
+            Exchange::Binance => panic!(""),
+            Exchange::Coinbase => panic!(""),
             Exchange::Kraken => exchange_connection
                 .kraken_handler
                 .as_mut()
@@ -244,16 +257,8 @@ impl ExchangeConnectionOld {
 
         // Retrieve the websocket URL and connect to it.
         let wss_url = match exchange {
-            Exchange::Binance => exchange_connection
-                .coinbase_handler
-                .as_ref()
-                .unwrap()
-                .websocket_url(),
-            Exchange::Coinbase => exchange_connection
-                .coinbase_handler
-                .as_ref()
-                .unwrap()
-                .websocket_url(),
+            Exchange::Binance => panic!(""),
+            Exchange::Coinbase => panic!(""),
             Exchange::Kraken => exchange_connection
                 .kraken_handler
                 .as_ref()
@@ -287,16 +292,8 @@ impl ExchangeConnectionOld {
 
         // Send initial subscription message(s).
         match exchange {
-            Exchange::Binance => exchange_connection
-                .coinbase_handler
-                .as_ref()
-                .unwrap()
-                .websocket_subscribe(&mut socket),
-            Exchange::Coinbase => exchange_connection
-                .coinbase_handler
-                .as_ref()
-                .unwrap()
-                .websocket_subscribe(&mut socket),
+            Exchange::Binance => panic!(""),
+            Exchange::Coinbase => panic!(""),
             Exchange::Kraken => exchange_connection
                 .kraken_handler
                 .as_ref()
@@ -367,9 +364,7 @@ impl ExchangeConnectionOld {
         })?;
 
         let price_report = {
-            if let Some(coinbase_handler) = &mut self.coinbase_handler {
-                coinbase_handler.handle_exchange_message(message_json)
-            } else if let Some(kraken_handler) = &mut self.kraken_handler {
+            if let Some(kraken_handler) = &mut self.kraken_handler {
                 kraken_handler.handle_exchange_message(message_json)
             } else if let Some(okx_handler) = &mut self.okx_handler {
                 okx_handler.handle_exchange_message(message_json)
