@@ -1,6 +1,7 @@
 //! The exchanges module defines individual ExchangeConnection logic, including all parsing logic
 //! for price messages from both centralized and decentralized exchanges.
 mod binance;
+mod coinbase;
 mod connection;
 mod handlers_centralized;
 mod handlers_decentralized;
@@ -90,6 +91,15 @@ impl<T: Stream<Item = Price> + Unpin> Stream for InitializablePriceStream<T> {
 }
 
 impl<T: Stream<Item = Price> + Unpin> InitializablePriceStream<T> {
+    /// Construct a new stream without an initial value
+    pub fn new(stream: T) -> Self {
+        Self {
+            stream,
+            buffered_value: AtomicF64::new(0.0),
+            buffered_value_consumed: AtomicBool::new(true),
+        }
+    }
+
     /// Construct a new stream with an initial value
     pub fn new_with_initial(stream: T, initial_value: Price) -> Self {
         Self {
