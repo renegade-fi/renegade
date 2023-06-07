@@ -178,7 +178,7 @@ impl CoinbaseConnection {
             .fold(f64::INFINITY, f64::min);
 
         let timestamp_str: String = parse_json_field(COINBASE_TIMESTAMP, &json_blob)?;
-        let reported_timestamp = DateTime::parse_from_rfc3339(&timestamp_str)
+        let _reported_timestamp = DateTime::parse_from_rfc3339(&timestamp_str)
             .map_err(|err| ExchangeConnectionError::InvalidMessage(err.to_string()))?
             .timestamp_millis();
 
