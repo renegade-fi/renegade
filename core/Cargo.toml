@@ -10,6 +10,7 @@ debug-tui = ["dep:tui", "dep:tui-logger", "dep:crossterm"]
 [dependencies]
 ark-serialize = "0.4"
 async-trait = "0.1.60"
+atomic_float = "0.1"
 base64 = { version = "0.13" }
 bimap = "0.6.2"
 bus = { version = "2.3" }

@@ -1,3 +1,5 @@
+//! Defines logic for streaming from centralized exchanges
+
 use async_trait::async_trait;
 use chrono::DateTime;
 use futures::SinkExt;
@@ -11,7 +13,7 @@ use crate::price_reporter::worker::PriceReporterManagerConfig;
 
 use super::super::{
     errors::ExchangeConnectionError,
-    exchanges::{connection::get_current_time, Exchange},
+    exchange::{connection::get_current_time, Exchange},
     reporter::PriceReport,
     tokens::Token,
 };
@@ -45,118 +47,6 @@ pub trait CentralizedExchangeHandler {
         &mut self,
         message_json: Value,
     ) -> Result<Option<PriceReport>, ExchangeConnectionError>;
-}
-
-#[derive(Clone, Debug)]
-/// The message handler for Exchange::Binance.
-pub struct BinanceHandler {
-    /// The base Token (e.g., WETH).
-    base_token: Token,
-    /// The quote Token (e.g., USDC).
-    quote_token: Token,
-}
-#[async_trait]
-impl CentralizedExchangeHandler for BinanceHandler {
-    fn new(base_token: Token, quote_token: Token, _: PriceReporterManagerConfig) -> Self {
-        Self {
-            base_token,
-            quote_token,
-        }
-    }
-
-    fn websocket_url(&self) -> String {
-        let base_ticker = self.base_token.get_exchange_ticker(Exchange::Binance);
-        let quote_ticker = self.quote_token.get_exchange_ticker(Exchange::Binance);
-        format!(
-            "wss://stream.binance.com:443/ws/{}{}@bookTicker",
-            base_ticker.to_lowercase(),
-            quote_ticker.to_lowercase()
-        )
-    }
-
-    async fn pre_stream_price_report(
-        &mut self,
-    ) -> Result<Option<PriceReport>, ExchangeConnectionError> {
-        // TODO: This is duplicate code, condense it.
-        let base_ticker = self.base_token.get_exchange_ticker(Exchange::Binance);
-        let quote_ticker = self.quote_token.get_exchange_ticker(Exchange::Binance);
-        let request_url = format!(
-            "https://api.binance.com/api/v3/ticker/bookTicker?symbol={}{}",
-            base_ticker, quote_ticker
-        );
-        let message_resp = reqwest::get(request_url)
-            .await
-            .map_err(|err| ExchangeConnectionError::ConnectionHangup(err.to_string()))?;
-        let message_json: Value = message_resp
-            .json()
-            .await
-            .map_err(|err| ExchangeConnectionError::ConnectionHangup(err.to_string()))?;
-        let best_bid: f64 = match message_json["bidPrice"].as_str() {
-            None => {
-                return Err(ExchangeConnectionError::InvalidMessage(
-                    message_json.to_string(),
-                ));
-            }
-            Some(best_bid_str) => best_bid_str.parse().unwrap(),
-        };
-        let best_offer: f64 = match message_json["askPrice"].as_str() {
-            None => {
-                return Err(ExchangeConnectionError::InvalidMessage(
-                    message_json.to_string(),
-                ));
-            }
-            Some(best_offer_str) => best_offer_str.parse().unwrap(),
-        };
-        Ok(Some(PriceReport {
-            base_token: self.base_token.clone(),
-            quote_token: self.quote_token.clone(),
-            exchange: Some(Exchange::Binance),
-            midpoint_price: (best_bid + best_offer) / 2.0,
-            reported_timestamp: None,
-            local_timestamp: get_current_time(),
-        }))
-    }
-
-    async fn websocket_subscribe(
-        &self,
-        _socket: &mut WebSocket,
-    ) -> Result<(), ExchangeConnectionError> {
-        // Binance begins streaming prices immediately; no initial subscribe message needed.
-        Ok(())
-    }
-
-    fn handle_exchange_message(
-        &mut self,
-        message_json: Value,
-    ) -> Result<Option<PriceReport>, ExchangeConnectionError> {
-        if let Value::Number(_) = message_json {
-            return Ok(None);
-        }
-        let best_bid: f64 = match message_json["b"].as_str() {
-            None => {
-                return Err(ExchangeConnectionError::InvalidMessage(
-                    message_json.to_string(),
-                ));
-            }
-            Some(best_bid_str) => best_bid_str.parse().unwrap(),
-        };
-        let best_offer: f64 = match message_json["a"].as_str() {
-            None => {
-                return Err(ExchangeConnectionError::InvalidMessage(
-                    message_json.to_string(),
-                ));
-            }
-            Some(best_offer_str) => best_offer_str.parse().unwrap(),
-        };
-        Ok(Some(PriceReport {
-            base_token: self.base_token.clone(),
-            quote_token: self.quote_token.clone(),
-            exchange: Some(Exchange::Binance),
-            midpoint_price: (best_bid + best_offer) / 2.0,
-            reported_timestamp: None,
-            local_timestamp: Default::default(),
-        }))
-    }
 }
 
 /// The message handler for Exchange::Coinbase.

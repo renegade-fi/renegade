@@ -18,7 +18,7 @@ use std::{
     fmt::{self, Display},
 };
 
-use super::exchanges::{Exchange, ALL_EXCHANGES};
+use super::exchange::{Exchange, ALL_EXCHANGES};
 
 /// A helper enum to describe the state of each ticker on each Exchange. Same means that the ERC-20
 /// and Exchange tickers are the same, Renamed means that the Exchange ticker is different from the

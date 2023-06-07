@@ -1,30 +1,85 @@
+//! Defines abstract connection interfaces that can be streamed from
+
+use async_trait::async_trait;
 use futures::{stream::StreamExt, SinkExt};
+use futures_util::Stream;
 use ring_channel::{ring_channel, RingReceiver, RingSender};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{
     fmt::{self, Display},
     num::NonZeroUsize,
+    str::FromStr,
     time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::time::{sleep, Duration};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use url::Url;
 
-use crate::price_reporter::worker::PriceReporterManagerConfig;
+use crate::price_reporter::{reporter::Price, worker::PriceReporterManagerConfig};
 
-use super::super::{
-    errors::ExchangeConnectionError,
-    exchanges::handlers_centralized::{
-        BinanceHandler, CentralizedExchangeHandler, CoinbaseHandler, KrakenHandler, OkxHandler,
+use super::{
+    super::{
+        errors::ExchangeConnectionError,
+        exchange::handlers_centralized::{
+            CentralizedExchangeHandler, CoinbaseHandler, KrakenHandler, OkxHandler,
+        },
+        exchange::handlers_decentralized::UniswapV3Handler,
+        reporter::PriceReport,
+        tokens::Token,
     },
-    exchanges::handlers_decentralized::UniswapV3Handler,
-    reporter::PriceReport,
-    tokens::Token,
+    Exchange,
 };
 
 /// Each sub-thread spawned by an ExchangeConnection must return a vector WorkerHandles: These are
 /// used for error propagation back to the PriceReporter.
 pub type WorkerHandles = Vec<tokio::task::JoinHandle<Result<(), ExchangeConnectionError>>>;
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Helper to parse a value from an HTTP response
+pub(super) fn parse_json_field<T: FromStr>(
+    field_name: &str,
+    response: &Value,
+) -> Result<T, ExchangeConnectionError> {
+    match response[field_name].as_str() {
+        None => Err(ExchangeConnectionError::InvalidMessage(
+            response.to_string(),
+        )),
+        Some(best_bid_str) => best_bid_str
+            .parse()
+            .map_err(|_| ExchangeConnectionError::InvalidMessage(response.to_string())),
+    }
+}
+
+/// Parse an json structure from a websocket message
+pub fn parse_json_from_message(message: Message) -> Result<Option<Value>, ExchangeConnectionError> {
+    if let Message::Text(message_str) = message {
+        // Okx sends some undocumented messages: Empty strings and "Protocol violation" messages.
+        if message_str == "Protocol violation" || message_str.is_empty() {
+            return Ok(None);
+        }
+
+        // Okx sends "pong" messages from our "ping" messages.
+        if message_str == "pong" {
+            return Ok(None);
+        }
+
+        // Okx and Kraken send "CloudFlare WebSocket proxy restarting" messages.
+        if message_str == "CloudFlare WebSocket proxy restarting" {
+            return Ok(None);
+        }
+
+        // Parse into a json blob
+        serde_json::from_str(&message_str).map_err(|err| {
+            ExchangeConnectionError::InvalidMessage(format!("{} for message: {}", err, message_str))
+        })
+    } else {
+        Ok(None)
+    }
+}
 
 /// Helper function to get the current UNIX epoch time in milliseconds.
 pub fn get_current_time() -> u128 {
@@ -34,43 +89,9 @@ pub fn get_current_time() -> u128 {
         .as_millis()
 }
 
-/// The type of exchange. Note that `Exchange` is the abstract enum for all exchanges that are
-/// supported, whereas the `ExchangeConnection` is the actual instantiation of a websocket price
-/// stream from an `Exchange`.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
-pub enum Exchange {
-    /// Binance.
-    Binance,
-    /// Coinbase.
-    Coinbase,
-    /// Kraken.
-    Kraken,
-    /// Okx.
-    Okx,
-    /// UniswapV3.
-    UniswapV3,
-}
-impl Display for Exchange {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let fmt_str = match self {
-            Exchange::Binance => String::from("binance"),
-            Exchange::Coinbase => String::from("coinbase"),
-            Exchange::Kraken => String::from("kraken"),
-            Exchange::Okx => String::from("okx"),
-            Exchange::UniswapV3 => String::from("uniswapv3"),
-        };
-        write!(f, "{}", fmt_str)
-    }
-}
-
-/// Every Exchange.
-pub static ALL_EXCHANGES: &[Exchange] = &[
-    Exchange::Binance,
-    Exchange::Coinbase,
-    Exchange::Kraken,
-    Exchange::Okx,
-    Exchange::UniswapV3,
-];
+// --------------------------
+// | Connection Abstraction |
+// --------------------------
 
 /// The state of an ExchangeConnection. Note that the ExchangeConnection itself simply streams news
 /// PriceReports, and the task of determining if the PriceReports have yet to arrive is the job of
@@ -84,6 +105,7 @@ pub enum ExchangeConnectionState {
     /// This Exchange is unsupported for the given Token pair
     Unsupported,
 }
+
 impl Display for ExchangeConnectionState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let fmt_str = match self {
@@ -97,13 +119,28 @@ impl Display for ExchangeConnectionState {
     }
 }
 
+/// A trait representing a connection to an exchange
+#[async_trait]
+pub trait ExchangeConnection: Stream<Item = Price> {
+    /// Create a new connection to the exchange on a given asset pair
+    async fn connect(
+        base_token: Token,
+        quote_token: Token,
+        config: PriceReporterManagerConfig,
+    ) -> Result<Self, ExchangeConnectionError>
+    where
+        Self: Sized;
+    /// Send a keepalive signal on the connection if necessary
+    async fn send_keepalive(&mut self) -> Result<(), ExchangeConnectionError> {
+        Ok(())
+    }
+}
+
 /// A connection to an `Exchange`. Note that creating an `ExchangeConnection` via
 /// `ExchangeConnection::new(exchange: Exchange)` only returns a ring buffer channel receiver; the
 /// ExchangeConnection is never directly accessed, and all data is reported only via this receiver.
 #[derive(Clone, Debug)]
-pub struct ExchangeConnection {
-    /// The CentralizedExchangeHandler for Binance.
-    binance_handler: Option<BinanceHandler>,
+pub struct ExchangeConnectionOld {
     /// The CentralizedExchangeHandler for Coinbase.
     coinbase_handler: Option<CoinbaseHandler>,
     /// The CentralizedExchangeHandler for Kraken.
@@ -111,7 +148,8 @@ pub struct ExchangeConnection {
     /// The CentralizedExchangeHandler for Okx.
     okx_handler: Option<OkxHandler>,
 }
-impl ExchangeConnection {
+
+impl ExchangeConnectionOld {
     /// Create a new ExchangeConnection, returning the RingReceiver of PriceReports. Note that the
     /// role of the ExchangeConnection is to simply stream PriceReports as they come, and does not
     /// do any staleness testing or cross-Exchange deviation checks.
@@ -143,26 +181,22 @@ impl ExchangeConnection {
 
         // Get initial ExchangeHandler state and include in a new ExchangeConnection.
         let mut exchange_connection = match exchange {
-            Exchange::Binance => ExchangeConnection {
-                binance_handler: Some(BinanceHandler::new(base_token, quote_token, config)),
+            Exchange::Binance => ExchangeConnectionOld {
                 coinbase_handler: None,
                 kraken_handler: None,
                 okx_handler: None,
             },
-            Exchange::Coinbase => ExchangeConnection {
-                binance_handler: None,
+            Exchange::Coinbase => ExchangeConnectionOld {
                 coinbase_handler: Some(CoinbaseHandler::new(base_token, quote_token, config)),
                 kraken_handler: None,
                 okx_handler: None,
             },
-            Exchange::Kraken => ExchangeConnection {
-                binance_handler: None,
+            Exchange::Kraken => ExchangeConnectionOld {
                 coinbase_handler: None,
                 kraken_handler: Some(KrakenHandler::new(base_token, quote_token, config)),
                 okx_handler: None,
             },
-            Exchange::Okx => ExchangeConnection {
-                binance_handler: None,
+            Exchange::Okx => ExchangeConnectionOld {
                 coinbase_handler: None,
                 kraken_handler: None,
                 okx_handler: Some(OkxHandler::new(base_token, quote_token, config)),
@@ -173,7 +207,7 @@ impl ExchangeConnection {
         // Retrieve the optional pre-stream PriceReport.
         let pre_stream_price_report = match exchange {
             Exchange::Binance => exchange_connection
-                .binance_handler
+                .coinbase_handler
                 .as_mut()
                 .unwrap()
                 .pre_stream_price_report(),
@@ -211,7 +245,7 @@ impl ExchangeConnection {
         // Retrieve the websocket URL and connect to it.
         let wss_url = match exchange {
             Exchange::Binance => exchange_connection
-                .binance_handler
+                .coinbase_handler
                 .as_ref()
                 .unwrap()
                 .websocket_url(),
@@ -254,7 +288,7 @@ impl ExchangeConnection {
         // Send initial subscription message(s).
         match exchange {
             Exchange::Binance => exchange_connection
-                .binance_handler
+                .coinbase_handler
                 .as_ref()
                 .unwrap()
                 .websocket_subscribe(&mut socket),
@@ -333,9 +367,7 @@ impl ExchangeConnection {
         })?;
 
         let price_report = {
-            if let Some(binance_handler) = &mut self.binance_handler {
-                binance_handler.handle_exchange_message(message_json)
-            } else if let Some(coinbase_handler) = &mut self.coinbase_handler {
+            if let Some(coinbase_handler) = &mut self.coinbase_handler {
                 coinbase_handler.handle_exchange_message(message_json)
             } else if let Some(kraken_handler) = &mut self.kraken_handler {
                 kraken_handler.handle_exchange_message(message_json)
