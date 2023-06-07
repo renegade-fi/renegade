@@ -1,3 +1,5 @@
+//! Defines logic for streaming from decentralized exchanges
+
 use core::time::Duration;
 use futures::StreamExt;
 use ring_channel::RingSender;
@@ -13,7 +15,7 @@ use crate::price_reporter::worker::PriceReporterManagerConfig;
 
 use super::super::{
     errors::ExchangeConnectionError,
-    exchanges::{
+    exchange::{
         connection::{get_current_time, WorkerHandles},
         Exchange,
     },

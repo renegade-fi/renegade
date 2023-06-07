@@ -408,8 +408,6 @@ impl WebsocketServer {
         write_stream
             .send(message)
             .await
-            .map_err(|err| ApiServerError::WebsocketServerFailure(err.to_string()))?;
-
-        Ok(())
+            .map_err(|err| ApiServerError::WebsocketServerFailure(err.to_string()))
     }
 }

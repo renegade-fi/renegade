@@ -10,7 +10,7 @@ use crate::{
 
 use super::{
     errors::PriceReporterManagerError,
-    exchanges::Exchange,
+    exchange::Exchange,
     jobs::PriceReporterManagerJob,
     manager::{PriceReporterManager, PriceReporterManagerExecutor},
 };

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use tokio::sync::oneshot::Sender as TokioSender;
 
 use super::{
-    exchanges::{Exchange, ExchangeConnectionState},
+    exchange::{Exchange, ExchangeConnectionState},
     reporter::PriceReporterState,
     tokens::Token,
 };

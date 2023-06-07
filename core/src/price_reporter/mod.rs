@@ -4,7 +4,7 @@
 
 use self::tokens::Token;
 pub mod errors;
-pub mod exchanges;
+pub mod exchange;
 pub mod jobs;
 pub mod manager;
 pub mod reporter;
