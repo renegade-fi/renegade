@@ -133,11 +133,11 @@ impl ExchangeConnection for KrakenConnection {
                 Ok(Ok(Some(midpoint))) => Some(midpoint),
                 Ok(Ok(None)) => None,
                 Ok(Err(e)) => {
-                    log::error!("Error parsing message from Binance: {}", e);
+                    log::error!("Error parsing message from Kraken: {}", e);
                     None
                 }
                 Err(e) => {
-                    log::error!("Error reading message from ws: {}", e);
+                    log::error!("Error reading message from Kraken ws: {}", e);
                     None
                 }
             }

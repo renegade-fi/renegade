@@ -156,7 +156,7 @@ impl ExchangeConnection for BinanceConnection {
                     None
                 }
                 Err(e) => {
-                    log::error!("Error reading message from ws: {}", e);
+                    log::error!("Error reading message from Binance ws: {}", e);
                     None
                 }
             }

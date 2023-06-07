@@ -6,6 +6,7 @@ mod connection;
 mod handlers_centralized;
 mod handlers_decentralized;
 mod kraken;
+mod okx;
 
 use std::{
     fmt::{self, Display},
@@ -15,7 +16,7 @@ use std::{
 };
 
 use atomic_float::AtomicF64;
-pub use connection::{get_current_time, ExchangeConnectionOld, ExchangeConnectionState};
+pub use connection::{get_current_time, ExchangeConnection, ExchangeConnectionState};
 
 use futures_util::Stream;
 use serde::{Deserialize, Serialize};

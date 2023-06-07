@@ -12,7 +12,7 @@ use std::{
 
 use super::{
     errors::ExchangeConnectionError,
-    exchange::{get_current_time, Exchange, ExchangeConnectionOld, ExchangeConnectionState},
+    exchange::{get_current_time, Exchange, ExchangeConnection, ExchangeConnectionState},
     tokens::Token,
     worker::PriceReporterManagerConfig,
 };
