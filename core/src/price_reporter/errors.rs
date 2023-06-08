@@ -30,6 +30,8 @@ pub enum PriceReporterManagerError {
     Cancelled(String),
     /// The spawning of the initial PriceReporterManager execution thread failed
     ManagerSetup(String),
+    /// Error creating a PriceReporter
+    PriceReporterCreation(String),
     /// Tried to query information from a PriceReporter that does not exist. Callers should send a
     /// StartPriceReporter job first
     PriceReporterNotCreated(String),

@@ -60,9 +60,9 @@ lazy_static! {
 /// The message handler for Exchange::Kraken.
 pub struct KrakenConnection {
     /// The underlying price stream
-    price_stream: Box<dyn Stream<Item = Price> + Unpin>,
+    price_stream: Box<dyn Stream<Item = Price> + Unpin + Send>,
     /// The underlying write stream of the websocket
-    write_stream: Box<dyn Sink<Message, Error = WsError>>,
+    write_stream: Box<dyn Sink<Message, Error = WsError> + Send>,
 }
 
 impl KrakenConnection {
@@ -118,7 +118,7 @@ impl ExchangeConnection for KrakenConnection {
     async fn connect(
         base_token: Token,
         quote_token: Token,
-        _config: PriceReporterManagerConfig,
+        _config: &PriceReporterManagerConfig,
     ) -> Result<Self, ExchangeConnectionError>
     where
         Self: Sized,

@@ -93,7 +93,7 @@ lazy_static! {
 /// and parsing as PriceReports.
 pub struct UniswapV3Connection {
     /// The underlying price stream
-    price_stream: Box<dyn Stream<Item = Price> + Unpin>,
+    price_stream: Box<dyn Stream<Item = Price> + Unpin + Send>,
 }
 
 impl UniswapV3Connection {
@@ -108,9 +108,13 @@ impl UniswapV3Connection {
     const ERC20_ABI: &str = r#"[{"constant":true,"inputs":[],"name":"name","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_spender","type":"address"},{"name":"_value","type":"uint256"}],"name":"approve","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"totalSupply","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_from","type":"address"},{"name":"_to","type":"address"},{"name":"_value","type":"uint256"}],"name":"transferFrom","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"symbol","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_to","type":"address"},{"name":"_value","type":"uint256"}],"name":"transfer","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"_owner","type":"address"},{"name":"_spender","type":"address"}],"name":"allowance","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"payable":true,"stateMutability":"payable","type":"fallback"},{"anonymous":false,"inputs":[{"indexed":true,"name":"owner","type":"address"},{"indexed":true,"name":"spender","type":"address"},{"indexed":false,"name":"value","type":"uint256"}],"name":"Approval","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"value","type":"uint256"}],"name":"Transfer","type":"event"}]"#;
 
     /// Handles a Swap event log streamed from the web3 connection.
+    ///
+    /// `decimal_correction` is a multiplicative factor applied to the price to
+    /// correct for ratio mismatch in ERC20 decimals
     fn midpoint_from_swap_event(
         swap: ContractLog,
         is_flipped: bool,
+        decimal_correction: f64,
         swap_event_abi: &Event,
     ) -> Price {
         let swap = swap_event_abi
@@ -140,9 +144,8 @@ impl UniswapV3Connection {
         let price_numerator: f64 = price_numerator.to_string().parse().unwrap();
         let price_denominator: f64 = price_denominator.to_string().parse().unwrap();
 
-        // Note that this price does not adjust for ERC-20 decimals yet.
-        let price = price_numerator / price_denominator;
-        price
+        // Note that this price does not adjust for ERC-20 decimals yet
+        (price_numerator / price_denominator) * decimal_correction
     }
 
     /// Fetch an ad-hoc price report from the UniswapV3 pool, used for
@@ -150,6 +153,7 @@ impl UniswapV3Connection {
     async fn fetch_price_report(
         base_token: &Token,
         quote_token: &Token,
+        decimal_correction: f64,
         web3_connection: &Web3<Web3Socket>,
     ) -> Result<Price, ExchangeConnectionError> {
         // Build a filter to fetch events from the last `BLOCK_OFFSET` blocks
@@ -174,7 +178,14 @@ impl UniswapV3Connection {
         swap_filter_recent_events
             .pop()
             .ok_or_else(|| ExchangeConnectionError::NoLogs(ERR_NO_LOGS.to_string()))
-            .map(|swap| Self::midpoint_from_swap_event(swap, is_flipped, &SWAP_EVENT_ABI))
+            .map(|swap| {
+                Self::midpoint_from_swap_event(
+                    swap,
+                    is_flipped,
+                    decimal_correction,
+                    &SWAP_EVENT_ABI,
+                )
+            })
     }
 
     /// Create an event filter for UniV3 swaps
@@ -318,21 +329,37 @@ impl ExchangeConnection for UniswapV3Connection {
     async fn connect(
         base_token: Token,
         quote_token: Token,
-        config: PriceReporterManagerConfig,
+        config: &PriceReporterManagerConfig,
     ) -> Result<Self, ExchangeConnectionError>
     where
         Self: Sized,
     {
         // Create the Web3 connection.
-        let ethereum_wss_url = config.eth_websocket_addr.unwrap();
+        let ethereum_wss_url = config.eth_websocket_addr.clone().unwrap();
         let transport = web3::transports::WebSocket::new(&ethereum_wss_url)
             .await
             .map_err(|err| ExchangeConnectionError::HandshakeFailure(err.to_string()))?;
         let web3_connection = Web3::new(transport);
 
+        // If the tokens are named in UniswapV3, adjust the price by the ERC20
+        // decimal ratio
+        let decimal_adjustment = if base_token.is_named() && quote_token.is_named() {
+            10f64.powi(
+                base_token.get_decimals().unwrap() as i32
+                    - quote_token.get_decimals().unwrap() as i32,
+            )
+        } else {
+            1.
+        };
+
         // Fetch an inital price report to setup the stream
-        let initial_price_report =
-            Self::fetch_price_report(&base_token, &quote_token, &web3_connection).await?;
+        let initial_price_report = Self::fetch_price_report(
+            &base_token,
+            &quote_token,
+            decimal_adjustment,
+            &web3_connection,
+        )
+        .await?;
 
         // Create a filter for UniV3 swaps
         let (base_filter, is_flipped) = Self::create_swap_filter(
@@ -345,19 +372,15 @@ impl ExchangeConnection for UniswapV3Connection {
         .await?;
 
         // Start streaming events from the swap_filter.
-        let base_token_clone = base_token.clone();
-        let quote_token_clone = quote_token.clone();
-        let mapped_stream = base_filter
-            .stream(Duration::new(1, 0))
-            .filter_map(move |swap| {
-                let base_token_clone = base_token_clone.clone();
-                let quote_token_clone = quote_token_clone.clone();
-
-                async move {
+        let mapped_stream =
+            base_filter
+                .stream(Duration::new(1, 0))
+                .filter_map(move |swap| async move {
                     match swap {
                         Ok(swap_event) => Some(Self::midpoint_from_swap_event(
                             swap_event,
                             is_flipped,
+                            decimal_adjustment,
                             &SWAP_EVENT_ABI,
                         )),
                         Err(e) => {
@@ -365,8 +388,7 @@ impl ExchangeConnection for UniswapV3Connection {
                             None
                         }
                     }
-                }
-            });
+                });
 
         // Build a price stream
         let price_stream = InitializablePriceStream::new_with_initial(

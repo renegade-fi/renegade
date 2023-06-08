@@ -56,9 +56,9 @@ const OKX_PRICE: usize = 0;
 /// The message handler for Exchange::Okx.
 pub struct OkxConnection {
     /// The underlying price stream
-    price_stream: Box<dyn Stream<Item = Price> + Unpin>,
+    price_stream: Box<dyn Stream<Item = Price> + Unpin + Send>,
     /// The underlying write stream of the websocket
-    write_stream: Box<dyn Sink<Message, Error = WsError>>,
+    write_stream: Box<dyn Sink<Message, Error = WsError> + Send>,
 }
 
 impl OkxConnection {
@@ -110,7 +110,7 @@ impl ExchangeConnection for OkxConnection {
     async fn connect(
         base_token: Token,
         quote_token: Token,
-        _config: PriceReporterManagerConfig,
+        _config: &PriceReporterManagerConfig,
     ) -> Result<Self, ExchangeConnectionError>
     where
         Self: Sized,
