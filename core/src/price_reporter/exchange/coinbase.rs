@@ -65,7 +65,7 @@ pub struct CoinbaseConnection {
 #[derive(Clone, Debug, Default)]
 pub struct CoinbaseOrderBookData {
     // Note: The reason we use String's for price_level is because using f32 as a key produces
-    // collision issues.
+    // collision issues
     /// A HashMap representing the local mirroring of Coinbase's order book bids.
     order_book_bids: HashMap<String, f32>,
     /// A HashMap representing the local mirroring of Coinbase's order book offers.
@@ -169,7 +169,7 @@ impl CoinbaseConnection {
             }
         }
 
-        // Given the new order book, compute the best bid and offer.
+        // Given the new order book, compute the best bid and offer
         let best_bid = locked_bids.keys()
             .map(|key| key.parse::<f64>().unwrap())
             .fold(0.0, f64::max);
@@ -206,7 +206,6 @@ impl ExchangeConnection for CoinbaseConnection {
             .coinbase_api_secret
             .expect("Coinbase API secret expected in config, found None");
 
-        // Construct the route
         let authenticated_subscribe_msg = Self::construct_subscribe_message(
             &base_token, &quote_token, &api_key, &api_secret);
 
@@ -216,7 +215,7 @@ impl ExchangeConnection for CoinbaseConnection {
             .await
             .map_err(|err| ExchangeConnectionError::ConnectionHangup(err.to_string()))?;
 
-        // Map the stream to process midpoint prices
+        // Map the stream of Coinbase messages to one of midpoint prices
         let order_book_data = new_async_shared(CoinbaseOrderBookData::default());
         let order_book_clone = order_book_data.clone();
         let mapped_stream = read.filter_map(move |message| {

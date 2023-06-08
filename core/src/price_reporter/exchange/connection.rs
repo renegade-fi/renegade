@@ -22,9 +22,16 @@ use crate::price_reporter::{reporter::Price, worker::PriceReporterManagerConfig}
 
 use super::super::{errors::ExchangeConnectionError, reporter::PriceReport, tokens::Token};
 
-/// Each sub-thread spawned by an ExchangeConnection must return a vector WorkerHandles: These are
-/// used for error propagation back to the PriceReporter.
-pub type WorkerHandles = Vec<tokio::task::JoinHandle<Result<(), ExchangeConnectionError>>>;
+// -------------
+// | Constants |
+// -------------
+
+/// The message passed when Okx observes a protocol violation
+const PROTOCOL_VIOLATION_MSG: &str = "Protocol violation";
+/// The message Okx passes in response to a keepalive ping
+const PONG_MESSAGE: &str = "pong";
+/// The message passed when a ws proxy resets
+const CLOUDFLARE_RESET_MESSAGE: &str = "CloudFlare WebSocket proxy restarting";
 
 // -----------
 // | Helpers |
@@ -61,7 +68,7 @@ pub(super) fn parse_json_field<T: FromStr>(
         None => Err(ExchangeConnectionError::InvalidMessage(
             response.to_string(),
         )),
-        Some(best_bid_str) => best_bid_str
+        Some(field_value) => field_value
             .parse()
             .map_err(|_| ExchangeConnectionError::InvalidMessage(response.to_string())),
     }
@@ -76,7 +83,7 @@ pub(super) fn parse_json_field_array<T: FromStr>(
         None => Err(ExchangeConnectionError::InvalidMessage(
             response.to_string(),
         )),
-        Some(best_bid_str) => best_bid_str
+        Some(field_value) => field_value
             .parse()
             .map_err(|_| ExchangeConnectionError::InvalidMessage(response.to_string())),
     }
@@ -85,18 +92,18 @@ pub(super) fn parse_json_field_array<T: FromStr>(
 /// Parse an json structure from a websocket message
 pub fn parse_json_from_message(message: Message) -> Result<Option<Value>, ExchangeConnectionError> {
     if let Message::Text(message_str) = message {
-        // Okx sends some undocumented messages: Empty strings and "Protocol violation" messages.
-        if message_str == "Protocol violation" || message_str.is_empty() {
+        // Okx sends some undocumented messages: Empty strings and "Protocol violation" messages
+        if message_str == PROTOCOL_VIOLATION_MSG || message_str.is_empty() {
             return Ok(None);
         }
 
-        // Okx sends "pong" messages from our "ping" messages.
-        if message_str == "pong" {
+        // Okx sends "pong" messages from our "ping" messages
+        if message_str == PONG_MESSAGE {
             return Ok(None);
         }
 
-        // Okx and Kraken send "CloudFlare WebSocket proxy restarting" messages.
-        if message_str == "CloudFlare WebSocket proxy restarting" {
+        // Okx and Kraken send "CloudFlare WebSocket proxy restarting" messages
+        if message_str == CLOUDFLARE_RESET_MESSAGE {
             return Ok(None);
         }
 
@@ -109,7 +116,7 @@ pub fn parse_json_from_message(message: Message) -> Result<Option<Value>, Exchan
     }
 }
 
-/// Helper function to get the current UNIX epoch time in milliseconds.
+/// Helper function to get the current UNIX epoch time in milliseconds
 pub fn get_current_time() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -123,7 +130,7 @@ pub fn get_current_time() -> u128 {
 
 /// The state of an ExchangeConnection. Note that the ExchangeConnection itself simply streams news
 /// PriceReports, and the task of determining if the PriceReports have yet to arrive is the job of
-/// the PriceReporter.
+/// the PriceReporter
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ExchangeConnectionState {
     /// The ExchangeConnection is reporting as normal.
