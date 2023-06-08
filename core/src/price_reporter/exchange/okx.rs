@@ -35,6 +35,8 @@ const OKX_EVENT: &str = "event";
 const OKX_SUBSCRIBE_EVENT: &str = "subscribe";
 
 /// The field name for response data on an Okx websocket message
+///
+/// TODO: Possibly refactor into a serde-compatible struct
 const OKX_DATA: &str = "data";
 /// The field name for bids on an Okx bbo websocket message
 const OKX_BIDS: &str = "bids";
@@ -108,7 +110,7 @@ impl ExchangeConnection for OkxConnection {
     async fn connect(
         base_token: Token,
         quote_token: Token,
-        config: PriceReporterManagerConfig,
+        _config: PriceReporterManagerConfig,
     ) -> Result<Self, ExchangeConnectionError>
     where
         Self: Sized,

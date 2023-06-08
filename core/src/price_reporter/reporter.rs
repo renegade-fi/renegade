@@ -12,7 +12,7 @@ use std::{
 
 use super::{
     errors::ExchangeConnectionError,
-    exchange::{get_current_time, Exchange, ExchangeConnection, ExchangeConnectionState},
+    exchange::{get_current_time, Exchange, ExchangeConnectionState},
     tokens::Token,
     worker::PriceReporterManagerConfig,
 };
@@ -134,23 +134,24 @@ impl PriceReporter {
             mut all_price_reports_sender: RingSender<PriceReport>,
             config: PriceReporterManagerConfig,
         ) -> Result<(), ExchangeConnectionError> {
-            let (mut price_report_receiver, mut worker_handles) =
-                ExchangeConnectionOld::create_receiver(base_token, quote_token, exchange, config)
-                    .await?;
-            let worker_handle = tokio::spawn(async move {
-                loop {
-                    let price_report = price_report_receiver.next().await.ok_or_else(|| {
-                        ExchangeConnectionError::ConnectionHangup(
-                            "ExchangeConnection sender was dropped".to_string(),
-                        )
-                    })?;
-                    all_price_reports_sender.send(price_report).unwrap();
-                }
-            });
-            worker_handles.push(worker_handle);
-            for joined_handle in futures::future::join_all(worker_handles).await.into_iter() {
-                joined_handle.unwrap()?;
-            }
+            todo!();
+            // let (mut price_report_receiver, mut worker_handles) =
+            //     ExchangeConnectionOld::create_receiver(base_token, quote_token, exchange, config)
+            //         .await?;
+            // let worker_handle = tokio::spawn(async move {
+            //     loop {
+            //         let price_report = price_report_receiver.next().await.ok_or_else(|| {
+            //             ExchangeConnectionError::ConnectionHangup(
+            //                 "ExchangeConnection sender was dropped".to_string(),
+            //             )
+            //         })?;
+            //         all_price_reports_sender.send(price_report).unwrap();
+            //     }
+            // });
+            // worker_handles.push(worker_handle);
+            // for joined_handle in futures::future::join_all(worker_handles).await.into_iter() {
+            //     joined_handle.unwrap()?;
+            // }
             // Either the worker threads never stop running, or they error.
             unreachable!();
         }
