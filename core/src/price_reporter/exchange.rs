@@ -3,10 +3,9 @@
 mod binance;
 mod coinbase;
 mod connection;
-mod handlers_centralized;
-mod handlers_decentralized;
 mod kraken;
 mod okx;
+mod uni_v3;
 
 use std::{
     fmt::{self, Display},
@@ -33,17 +32,13 @@ pub static ALL_EXCHANGES: &[Exchange] = &[
 ];
 
 /// The identifier of an exchange
+#[allow(clippy::missing_docs_in_private_items, missing_docs)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub enum Exchange {
-    /// Binance.
     Binance,
-    /// Coinbase.
     Coinbase,
-    /// Kraken.
     Kraken,
-    /// Okx.
     Okx,
-    /// UniswapV3.
     UniswapV3,
 }
 
@@ -79,12 +74,16 @@ impl<T: Stream<Item = Price> + Unpin> Stream for InitializablePriceStream<T> {
         let this = self.get_mut();
 
         // Attempt to consume the buffered value
-        if let Ok(_old_val) = this.buffered_value_consumed.compare_exchange(
-            false, /* current */
-            true,  /* new */
-            Ordering::Release,
-            Ordering::Relaxed,
-        ) {
+        if this
+            .buffered_value_consumed
+            .compare_exchange(
+                false, /* current */
+                true,  /* new */
+                Ordering::Release,
+                Ordering::Relaxed,
+            )
+            .is_ok()
+        {
             return Poll::Ready(Some(this.buffered_value.load(Ordering::Relaxed)));
         }
 

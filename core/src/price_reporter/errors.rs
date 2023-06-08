@@ -6,12 +6,14 @@ use std::fmt::{self, Display};
 /// PriceReporter, either for restarts or panics upon too many consecutive errors.
 #[derive(Clone, Debug)]
 pub enum ExchangeConnectionError {
-    /// An initial websocket subscription to a remote server failed.
-    HandshakeFailure(String),
     /// A websocket remote connection hangup.
     ConnectionHangup(String),
+    /// An initial websocket subscription to a remote server failed.
+    HandshakeFailure(String),
     /// Could not parse a remote server message.
     InvalidMessage(String),
+    /// No swap logs found for a given pool
+    NoLogs(String),
 }
 
 impl Error for ExchangeConnectionError {}

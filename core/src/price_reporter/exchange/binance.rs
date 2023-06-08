@@ -34,6 +34,11 @@ const BINANCE_BID_PRICE: &str = "bidPrice";
 /// The name of the midpoint offer price on an HTTP response
 const BINANCE_OFFER_PRICE: &str = "askPrice";
 
+/// The name of the best bid field in a websocket message
+const BINANCE_BID_PRICE_WS: &str = "b";
+/// The name of the best offer field in a websocket message
+const BINANCE_OFFER_PRICE_WS: &str = "a";
+
 // --------------
 // | Connection |
 // --------------
@@ -109,8 +114,8 @@ impl BinanceConnection {
                 return Ok(None);
             }
 
-            let best_bid: f64 = parse_json_field(BINANCE_BID_PRICE, &json_blob)?;
-            let best_offer: f64 = parse_json_field(BINANCE_OFFER_PRICE, &json_blob)?;
+            let best_bid: f64 = parse_json_field(BINANCE_BID_PRICE_WS, &json_blob)?;
+            let best_offer: f64 = parse_json_field(BINANCE_OFFER_PRICE_WS, &json_blob)?;
 
             Ok(Some((best_bid + best_offer) / 2.0))
         } else {
