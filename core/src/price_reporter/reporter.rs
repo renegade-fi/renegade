@@ -6,8 +6,11 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use stats::median;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
+use tokio::time::Instant;
 use tokio_stream::{StreamExt, StreamMap};
+use tracing::log;
 
 use super::exchange::ALL_EXCHANGES;
 use super::{
@@ -17,6 +20,10 @@ use super::{
     worker::PriceReporterManagerConfig,
 };
 
+// -------------
+// | Constants |
+// -------------
+
 /// An alias for the price of an asset pair that abstracts away its representation
 pub type Price = f64;
 
@@ -24,13 +31,15 @@ pub type Price = f64;
 /// milliseconds), we pause matches until we receive a more recent price. Note that this threshold
 /// cannot be too aggressive, as certain long-tail asset pairs legitimately do not update that
 /// often.
-static MAX_REPORT_AGE_MS: u128 = 5000;
+const MAX_REPORT_AGE_MS: u128 = 5000;
 /// If we do not have at least MIN_CONNECTIONS reports, we pause matches until we have enough
 /// reports. This only applies to Named tokens, as Unnamed tokens simply use UniswapV3.
-static MIN_CONNECTIONS: usize = 1; // TODO: Refactor
+const MIN_CONNECTIONS: usize = 1; // TODO: Refactor
 /// If a single PriceReport is more than MAX_DEVIATION (as a fraction) away from the midpoint, then
 /// we pause matches until the prices stabilize.
-static MAX_DEVIATION: f64 = 0.02; // TODO: Refactor
+const MAX_DEVIATION: f64 = 0.02; // TODO: Refactor
+/// The number of milliseconds to wait in between sending keepalive messages to the connections
+const KEEPALIVE_INTERVAL_MS: u64 = 15_000;
 
 /// The PriceReport is the universal format for price feeds from all external exchanges.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -278,16 +287,37 @@ impl ConnectionMuxer {
         exchange_connections: Vec<Box<dyn ExchangeConnection>>,
         shared_price_map: HashMap<Exchange, Arc<AtomicF64>>,
     ) {
+        // Build a shared, mapped stream from the individual exchange streams
         let mut stream_map = exchanges
             .into_iter()
             .zip(exchange_connections.into_iter())
             .collect::<StreamMap<_, _>>();
 
-        while let Some((exchange, price)) = stream_map.next().await {
-            shared_price_map
-                .get(&exchange)
-                .unwrap()
-                .store(price, Ordering::Relaxed);
+        // Start a keepalive timer
+        let delay = tokio::time::sleep(Duration::from_millis(KEEPALIVE_INTERVAL_MS));
+        tokio::pin!(delay);
+
+        loop {
+            tokio::select! {
+                _ = &mut delay => {
+                    log::info!("Sending keepalive to exchanges");
+                    for exchange in stream_map.values_mut() {
+                        if let Err(e) = exchange.send_keepalive().await {
+                            log::error!("Error sending keepalive to exchange: {e}");
+                        }
+                    }
+
+                    delay.as_mut().reset(Instant::now() + Duration::from_millis(KEEPALIVE_INTERVAL_MS));
+                }
+                stream_elem = stream_map.next() => {
+                    if let Some((exchange, price)) = stream_elem {
+                        shared_price_map
+                            .get(&exchange)
+                            .unwrap()
+                            .store(price, Ordering::Relaxed);
+                    }
+                }
+            }
         }
     }
 }
