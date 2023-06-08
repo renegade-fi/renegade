@@ -21,7 +21,9 @@ use crate::price_reporter::{
 };
 
 use super::{
-    connection::{parse_json_field, parse_json_from_message, ws_connect, ExchangeConnection},
+    connection::{
+        parse_json_field, parse_json_from_message, ws_connect, ws_ping, ExchangeConnection,
+    },
     get_current_time,
 };
 
@@ -50,7 +52,7 @@ pub struct BinanceConnection {
     /// TODO: Unbox this if performance becomes a concern
     price_stream: Box<dyn Stream<Item = Price> + Unpin + Send>,
     /// The underlying write stream of the websocket
-    write_stream: Box<dyn Sink<Message, Error = WsError> + Send>,
+    write_stream: Box<dyn Sink<Message, Error = WsError> + Unpin + Send>,
 }
 
 impl BinanceConnection {
@@ -177,5 +179,9 @@ impl ExchangeConnection for BinanceConnection {
             price_stream: Box::new(price_stream),
             write_stream: Box::new(write),
         })
+    }
+
+    async fn send_keepalive(&mut self) -> Result<(), ExchangeConnectionError> {
+        ws_ping(&mut self.write_stream).await
     }
 }

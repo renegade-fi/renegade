@@ -33,6 +33,8 @@ use super::{
 const OKX_EVENT: &str = "event";
 /// The subscribe event in an Okx websocket message
 const OKX_SUBSCRIBE_EVENT: &str = "subscribe";
+/// The ping message body used to keep the connection alive
+const OKX_PING_MESSAGE: &str = "ping";
 
 /// The field name for response data on an Okx websocket message
 ///
@@ -58,7 +60,7 @@ pub struct OkxConnection {
     /// The underlying price stream
     price_stream: Box<dyn Stream<Item = Price> + Unpin + Send>,
     /// The underlying write stream of the websocket
-    write_stream: Box<dyn Sink<Message, Error = WsError> + Send>,
+    write_stream: Box<dyn Sink<Message, Error = WsError> + Unpin + Send>,
 }
 
 impl OkxConnection {
@@ -159,5 +161,13 @@ impl ExchangeConnection for OkxConnection {
             price_stream: Box::new(price_stream),
             write_stream: Box::new(write),
         })
+    }
+
+    async fn send_keepalive(&mut self) -> Result<(), ExchangeConnectionError> {
+        // Okx in specific uses a text representation of the ping message
+        self.write_stream
+            .send(Message::Text(String::from(OKX_PING_MESSAGE)))
+            .await
+            .map_err(|err| ExchangeConnectionError::ConnectionHangup(err.to_string()))
     }
 }

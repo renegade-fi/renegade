@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use futures::stream::StreamExt;
 use futures_util::{
     stream::{SplitSink, SplitStream},
-    Stream,
+    Sink, SinkExt, Stream,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -16,6 +16,7 @@ use std::{
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 use tracing::log;
+use tungstenite::Error as WsError;
 use url::Url;
 
 use crate::price_reporter::{reporter::Price, worker::PriceReporterManagerConfig};
@@ -57,6 +58,16 @@ pub(super) async fn ws_connect(
 
     let (ws_sink, ws_stream) = ws_conn.split();
     Ok((ws_sink, ws_stream))
+}
+
+/// Send a default ping message on the websocket
+pub(super) async fn ws_ping<S: Sink<Message, Error = WsError> + Unpin>(
+    ws_sink: &mut S,
+) -> Result<(), ExchangeConnectionError> {
+    ws_sink
+        .send(Message::Ping(vec![]))
+        .await
+        .map_err(|e| ExchangeConnectionError::SendError(e.to_string()))
 }
 
 /// Helper to parse a value from a JSON response

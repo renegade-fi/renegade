@@ -23,7 +23,7 @@ use crate::price_reporter::{
 };
 
 use super::{
-    connection::{parse_json_field_array, parse_json_from_message, ExchangeConnection},
+    connection::{parse_json_field_array, parse_json_from_message, ws_ping, ExchangeConnection},
     InitializablePriceStream,
 };
 
@@ -62,7 +62,7 @@ pub struct KrakenConnection {
     /// The underlying price stream
     price_stream: Box<dyn Stream<Item = Price> + Unpin + Send>,
     /// The underlying write stream of the websocket
-    write_stream: Box<dyn Sink<Message, Error = WsError> + Send>,
+    write_stream: Box<dyn Sink<Message, Error = WsError> + Unpin + Send>,
 }
 
 impl KrakenConnection {
@@ -167,5 +167,9 @@ impl ExchangeConnection for KrakenConnection {
             price_stream: Box::new(price_stream),
             write_stream: Box::new(write),
         })
+    }
+
+    async fn send_keepalive(&mut self) -> Result<(), ExchangeConnectionError> {
+        ws_ping(&mut self.write_stream).await
     }
 }

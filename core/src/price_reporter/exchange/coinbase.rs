@@ -23,7 +23,7 @@ use crate::{price_reporter::{
     worker::PriceReporterManagerConfig,
 }, state::{AsyncShared, new_async_shared}};
 
-use super::{connection::{ExchangeConnection, parse_json_from_message, parse_json_field}, Exchange};
+use super::{connection::{ExchangeConnection, parse_json_from_message, parse_json_field, ws_ping}, Exchange};
 
 // -------------
 // | Constants |
@@ -58,7 +58,7 @@ pub struct CoinbaseConnection {
     /// The underlying stream of prices from the websocket
     price_stream: Box<dyn Stream<Item = Price> + Unpin + Send>,
     /// The underlying write stream of the websocket
-    write_stream: Box<dyn Sink<Message, Error = WsError> + Send>,
+    write_stream: Box<dyn Sink<Message, Error = WsError> + Unpin + Send>,
 }
 
 /// The order book data stored locally by the connection
@@ -246,5 +246,10 @@ impl ExchangeConnection for CoinbaseConnection {
             price_stream: Box::new(price_stream),
             write_stream: Box::new(writer),
         })
+    }
+
+    async fn send_keepalive(&mut self) -> Result<(), ExchangeConnectionError> {
+        // Send a ping message
+        ws_ping(&mut self.write_stream).await
     }
 }
