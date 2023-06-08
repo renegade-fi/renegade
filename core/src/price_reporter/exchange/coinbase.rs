@@ -56,9 +56,9 @@ pub struct CoinbaseConnection {
     /// The order book information for the asset pair
     order_book: AsyncShared<CoinbaseOrderBookData>,
     /// The underlying stream of prices from the websocket
-    price_stream: Box<dyn Stream<Item = Price> + Unpin>,
+    price_stream: Box<dyn Stream<Item = Price> + Unpin + Send>,
     /// The underlying write stream of the websocket
-    write_stream: Box<dyn Sink<Message, Error = WsError>>,
+    write_stream: Box<dyn Sink<Message, Error = WsError> + Send>,
 }
 
 /// The order book data stored locally by the connection
@@ -192,7 +192,7 @@ impl ExchangeConnection for CoinbaseConnection {
     async fn connect(
         base_token: Token,
         quote_token: Token,
-        config: PriceReporterManagerConfig,
+        config: &PriceReporterManagerConfig,
     ) -> Result<Self, ExchangeConnectionError> {
         // Build the base websocket connection
         let url = Self::websocket_url();
@@ -201,9 +201,11 @@ impl ExchangeConnection for CoinbaseConnection {
         // Subscribe to the order book
         let api_key = config
             .coinbase_api_key
+            .clone()
             .expect("Coinbase API key expected in config, found None");
         let api_secret = config
             .coinbase_api_secret
+            .clone()
             .expect("Coinbase API secret expected in config, found None");
 
         let authenticated_subscribe_msg = Self::construct_subscribe_message(

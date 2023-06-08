@@ -48,9 +48,9 @@ pub struct BinanceConnection {
     /// The underlying price stream
     ///
     /// TODO: Unbox this if performance becomes a concern
-    price_stream: Box<dyn Stream<Item = Price> + Unpin>,
+    price_stream: Box<dyn Stream<Item = Price> + Unpin + Send>,
     /// The underlying write stream of the websocket
-    write_stream: Box<dyn Sink<Message, Error = WsError>>,
+    write_stream: Box<dyn Sink<Message, Error = WsError> + Send>,
 }
 
 impl BinanceConnection {
@@ -138,7 +138,7 @@ impl ExchangeConnection for BinanceConnection {
     async fn connect(
         base_token: Token,
         quote_token: Token,
-        _config: PriceReporterManagerConfig,
+        _config: &PriceReporterManagerConfig,
     ) -> Result<Self, ExchangeConnectionError>
     where
         Self: Sized,
