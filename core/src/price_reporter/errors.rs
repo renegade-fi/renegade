@@ -14,6 +14,8 @@ pub enum ExchangeConnectionError {
     InvalidMessage(String),
     /// No swap logs found for a given pool
     NoLogs(String),
+    /// Error sending on the `write` end of the websocket
+    SendError(String),
 }
 
 impl Error for ExchangeConnectionError {}
