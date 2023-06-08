@@ -20,7 +20,15 @@ pub use connection::{get_current_time, ExchangeConnection, ExchangeConnectionSta
 use futures_util::Stream;
 use serde::{Deserialize, Serialize};
 
-use super::reporter::Price;
+use self::{
+    binance::BinanceConnection, coinbase::CoinbaseConnection, kraken::KrakenConnection,
+    okx::OkxConnection, uni_v3::UniswapV3Connection,
+};
+
+use super::{
+    errors::ExchangeConnectionError, reporter::Price, tokens::Token,
+    worker::PriceReporterManagerConfig,
+};
 
 /// List of all supported exchanges
 pub static ALL_EXCHANGES: &[Exchange] = &[
@@ -40,6 +48,37 @@ pub enum Exchange {
     Kraken,
     Okx,
     UniswapV3,
+}
+
+impl Exchange {
+    /// Construct a new websocket connection for the given exchange
+    pub async fn connect(
+        &self,
+        base_token: &Token,
+        quote_token: &Token,
+        config: &PriceReporterManagerConfig,
+    ) -> Result<Box<dyn ExchangeConnection>, ExchangeConnectionError> {
+        let base_token = base_token.clone();
+        let quote_token = quote_token.clone();
+
+        Ok(match self {
+            Exchange::Binance => {
+                Box::new(BinanceConnection::connect(base_token, quote_token, config).await?)
+            }
+            Exchange::Coinbase => {
+                Box::new(CoinbaseConnection::connect(base_token, quote_token, config).await?)
+            }
+            Exchange::Kraken => {
+                Box::new(KrakenConnection::connect(base_token, quote_token, config).await?)
+            }
+            Exchange::Okx => {
+                Box::new(OkxConnection::connect(base_token, quote_token, config).await?)
+            }
+            Exchange::UniswapV3 => {
+                Box::new(UniswapV3Connection::connect(base_token, quote_token, config).await?)
+            }
+        })
+    }
 }
 
 impl Display for Exchange {
