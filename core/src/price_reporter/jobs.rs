@@ -25,8 +25,6 @@ pub enum PriceReporterManagerJob {
         base_token: Token,
         /// The quote Token
         quote_token: Token,
-        /// The channel to send a response after completion
-        channel: TokioSender<()>,
     },
     /// Peek at the median price report
     PeekMedian {

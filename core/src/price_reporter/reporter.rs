@@ -1,7 +1,7 @@
 //! Defines the PriceReporter, which is responsible for computing median PriceReports by managing
 //! individual ExchangeConnections in a fault-tolerant manner.
 use atomic_float::AtomicF64;
-use futures_util::stream;
+use futures_util::future::try_join_all;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use stats::median;
@@ -104,16 +104,16 @@ impl PriceReporter {
             Self::compute_supported_exchanges_for_pair(&base_token, &quote_token, &config);
 
         // Connect to each of the supported exchanges
-        let conns = stream::iter(supported_exchanges.clone())
-            .then(|exchange| {
-                let base_token = base_token.clone();
-                let quote_token = quote_token.clone();
-                let config = config.clone();
-
-                async move { exchange.connect(&base_token, &quote_token, &config).await }
-            })
-            .collect::<Result<Vec<_>, ExchangeConnectionError>>()
-            .await?;
+        //
+        // We do not use the convenient `stream::iter` here because of the following issue:
+        //    https://github.com/rust-lang/rust/issues/102211
+        // In which Auto traits (notably `Send`) cannot be inferred from an async block
+        // that manipulates streams
+        let futures: Vec<_> = supported_exchanges
+            .iter()
+            .map(|exchange| exchange.connect(&base_token, &quote_token, &config))
+            .collect();
+        let conns = try_join_all(futures).await?;
 
         // Create shared memory that the `ConnectionMuxer` will use to communicate with the
         // `PriceReporter`
