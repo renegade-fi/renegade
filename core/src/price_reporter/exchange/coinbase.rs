@@ -8,22 +8,28 @@ use std::{
 
 use async_trait::async_trait;
 use chrono::DateTime;
-use futures_util::{SinkExt, Stream, StreamExt, Sink};
+use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use hmac_sha256::HMAC;
-use serde_json::{json};
+use serde_json::json;
 use tracing::log;
-use tungstenite::{Message, Error as WsError};
+use tungstenite::{Error as WsError, Message};
 use url::Url;
 
-use crate::{price_reporter::{
-    errors::{ExchangeConnectionError},
-    exchange::{get_current_time, connection::ws_connect, InitializablePriceStream},
-    reporter::{Price},
-    tokens::Token,
-    worker::PriceReporterManagerConfig,
-}, state::{AsyncShared, new_async_shared}};
+use crate::{
+    price_reporter::{
+        errors::ExchangeConnectionError,
+        exchange::{connection::ws_connect, get_current_time, InitializablePriceStream},
+        reporter::Price,
+        tokens::Token,
+        worker::PriceReporterManagerConfig,
+    },
+    state::{new_async_shared, AsyncShared},
+};
 
-use super::{connection::{ExchangeConnection, parse_json_from_message, parse_json_field, ws_ping}, Exchange, PriceStreamType};
+use super::{
+    connection::{parse_json_field, parse_json_from_message, ws_ping, ExchangeConnection},
+    Exchange, PriceStreamType,
+};
 
 // -------------
 // | Constants |
@@ -82,9 +88,11 @@ impl Stream for CoinbaseConnection {
 impl CoinbaseConnection {
     /// Get the URL of the Coinbase websocket endpoint
     fn websocket_url() -> Url {
-        String::from("wss://advanced-trade-ws.coinbase.com").parse().unwrap()
+        String::from("wss://advanced-trade-ws.coinbase.com")
+            .parse()
+            .unwrap()
     }
-    
+
     /// Construct the websocket subscription message with HMAC authentication
     fn construct_subscribe_message(
         base_token: &Token,
@@ -124,14 +132,14 @@ impl CoinbaseConnection {
         // The json body of the message
         let json_blob = parse_json_from_message(message)?;
         if json_blob.is_none() {
-            return Ok(None)
+            return Ok(None);
         }
         let json_blob = json_blob.unwrap();
 
         // Extract the list of events and update the order book
-        let update_events = 
-            if let Some(coinbase_events) = json_blob[COINBASE_EVENTS].as_array() 
-            && let Some(update_events) = coinbase_events[0][COINBASE_EVENT_UPDATE].as_array() 
+        let update_events =
+            if let Some(coinbase_events) = json_blob[COINBASE_EVENTS].as_array()
+            && let Some(update_events) = coinbase_events[0][COINBASE_EVENT_UPDATE].as_array()
         {
             update_events
         } else {
@@ -142,7 +150,7 @@ impl CoinbaseConnection {
         let locked_bids = &mut order_book_data.write().await.order_book_bids;
         let locked_offers = &mut order_book_data.write().await.order_book_offers;
         for coinbase_event in update_events {
-            let price_level: String = parse_json_field( COINBASE_PRICE_LEVEL, coinbase_event)?;
+            let price_level: String = parse_json_field(COINBASE_PRICE_LEVEL, coinbase_event)?;
             let new_quantity: f32 = parse_json_field(COINBASE_NEW_QUANTITY, coinbase_event)?;
             let side: String = parse_json_field(COINBASE_SIDE, coinbase_event)?;
 
@@ -151,7 +159,7 @@ impl CoinbaseConnection {
                     if new_quantity == 0.0 {
                         locked_bids.remove(&price_level);
                     } else {
-                        locked_bids .insert(price_level.clone(), new_quantity);
+                        locked_bids.insert(price_level.clone(), new_quantity);
                     }
                 }
                 COINBASE_OFFER => {
@@ -168,10 +176,12 @@ impl CoinbaseConnection {
         }
 
         // Given the new order book, compute the best bid and offer
-        let best_bid = locked_bids.keys()
+        let best_bid = locked_bids
+            .keys()
             .map(|key| key.parse::<f64>().unwrap())
             .fold(0.0, f64::max);
-        let best_offer = locked_offers.keys()
+        let best_offer = locked_offers
+            .keys()
             .map(|key| key.parse::<f64>().unwrap())
             .fold(f64::INFINITY, f64::min);
 
@@ -182,7 +192,6 @@ impl CoinbaseConnection {
 
         Ok(Some((best_bid + best_offer) / 2.))
     }
-
 }
 
 #[async_trait]
@@ -206,8 +215,8 @@ impl ExchangeConnection for CoinbaseConnection {
             .clone()
             .expect("Coinbase API secret expected in config, found None");
 
-        let authenticated_subscribe_msg = Self::construct_subscribe_message(
-            &base_token, &quote_token, &api_key, &api_secret);
+        let authenticated_subscribe_msg =
+            Self::construct_subscribe_message(&base_token, &quote_token, &api_key, &api_secret);
 
         // Setup the topic subscription
         writer
@@ -223,7 +232,7 @@ impl ExchangeConnection for CoinbaseConnection {
                 match message {
                     // The outer `Result` comes from reading from the ws stream, the inner `Result`
                     // comes from parsing the message
-                    Ok(val) => { 
+                    Ok(val) => {
                         let res = Self::midpoint_from_ws_message(order_book_clone, val).await;
                         res.transpose()
                     }
@@ -237,9 +246,7 @@ impl ExchangeConnection for CoinbaseConnection {
         });
 
         // Construct an initialized price stream from the initial price and the mapped stream
-        let price_stream = InitializablePriceStream::new(
-            Box::pin(mapped_stream),
-        );
+        let price_stream = InitializablePriceStream::new(Box::pin(mapped_stream));
 
         Ok(Self {
             price_stream: Box::new(price_stream),

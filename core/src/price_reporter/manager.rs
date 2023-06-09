@@ -7,7 +7,7 @@ use tracing::log;
 
 use crate::default_wrapper::{DefaultOption, DefaultWrapper};
 use crate::state::{new_async_shared, AsyncShared};
-use crate::{system_bus::SystemBus, types::SystemBusMessage, CancelChannel};
+use crate::CancelChannel;
 
 use super::{
     errors::PriceReporterManagerError,
@@ -41,8 +41,6 @@ pub struct PriceReporterManagerExecutor {
     job_receiver: DefaultOption<TokioReceiver<PriceReporterManagerJob>>,
     /// The channel on which the coordinator may cancel execution
     cancel_channel: DefaultOption<CancelChannel>,
-    /// The global system bus
-    system_bus: SystemBus<SystemBusMessage>,
 }
 
 impl PriceReporterManagerExecutor {
@@ -51,12 +49,10 @@ impl PriceReporterManagerExecutor {
         job_receiver: TokioReceiver<PriceReporterManagerJob>,
         config: PriceReporterManagerConfig,
         cancel_channel: CancelChannel,
-        system_bus: SystemBus<SystemBusMessage>,
     ) -> Self {
         Self {
             job_receiver: DefaultWrapper::new(Some(job_receiver)),
             cancel_channel: DefaultWrapper::new(Some(cancel_channel)),
-            system_bus,
             active_price_reporters: new_async_shared(HashMap::new()),
             config,
         }
