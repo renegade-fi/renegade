@@ -115,7 +115,7 @@ impl WebsocketTopicHandler for PriceReporterHandler {
 
         Ok(self
             .system_bus
-            .subscribe(price_report_topic_name(&source, base, quote)))
+            .subscribe(price_report_topic_name(&source, &base, &quote)))
     }
 
     /// Handle an unsubscribe message from the price reporter
