@@ -94,10 +94,13 @@ impl Display for Exchange {
     }
 }
 
+/// The type that a price stream should return
+type PriceStreamType = Result<Price, ExchangeConnectionError>;
+
 /// A helper struct that represents a stream of midpoint prices that may
 /// be initialized at construction
 #[derive(Debug)]
-struct InitializablePriceStream<T: Stream<Item = Price> + Unpin> {
+struct InitializablePriceStream<T: Stream<Item = PriceStreamType> + Unpin> {
     /// The underlying stream
     stream: T,
     /// A buffered stream value, possibly used for initialization
@@ -106,8 +109,8 @@ struct InitializablePriceStream<T: Stream<Item = Price> + Unpin> {
     buffered_value_consumed: AtomicBool,
 }
 
-impl<T: Stream<Item = Price> + Unpin> Stream for InitializablePriceStream<T> {
-    type Item = Price;
+impl<T: Stream<Item = PriceStreamType> + Unpin> Stream for InitializablePriceStream<T> {
+    type Item = PriceStreamType;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
@@ -123,14 +126,14 @@ impl<T: Stream<Item = Price> + Unpin> Stream for InitializablePriceStream<T> {
             )
             .is_ok()
         {
-            return Poll::Ready(Some(this.buffered_value.load(Ordering::Relaxed)));
+            return Poll::Ready(Some(Ok(this.buffered_value.load(Ordering::Relaxed))));
         }
 
         T::poll_next(Pin::new(&mut this.stream), cx)
     }
 }
 
-impl<T: Stream<Item = Price> + Unpin> InitializablePriceStream<T> {
+impl<T: Stream<Item = PriceStreamType> + Unpin> InitializablePriceStream<T> {
     /// Construct a new stream without an initial value
     pub fn new(stream: T) -> Self {
         Self {
