@@ -93,7 +93,6 @@ impl Worker for PriceReporterManager {
             self.config.job_receiver.take().unwrap(),
             self.config.clone(),
             self.config.cancel_channel.clone(),
-            self.config.system_bus.clone(),
         );
 
         let manager_executor_handle = {

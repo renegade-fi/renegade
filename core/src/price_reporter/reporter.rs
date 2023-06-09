@@ -12,6 +12,9 @@ use tokio::time::Instant;
 use tokio_stream::{StreamExt, StreamMap};
 use tracing::log;
 
+use crate::system_bus::SystemBus;
+use crate::types::SystemBusMessage;
+
 use super::exchange::ALL_EXCHANGES;
 use super::{
     errors::ExchangeConnectionError,
@@ -19,6 +22,7 @@ use super::{
     tokens::Token,
     worker::PriceReporterManagerConfig,
 };
+use super::{price_report_topic_name, MEDIAN_SOURCE_NAME};
 
 // -------------
 // | Constants |
@@ -45,6 +49,9 @@ const KEEPALIVE_INTERVAL_MS: u64 = 15_000; // 15 seconds
 const CONN_RETRY_DELAY_MS: u64 = 2_000; // 2 seconds
 /// The maximum number of retries to attempt before giving up on a connection
 const MAX_CONN_RETRIES: usize = 5;
+
+/// The number of milliseconds to wait in between sending median price report updates
+const MEDIAN_PRICE_REPORT_INTERVAL_MS: u64 = 1_000; // 1 second
 
 /// The PriceReport is the universal format for price feeds from all external exchanges.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -169,7 +176,7 @@ impl PriceReporter {
         let connection_muxer = ConnectionMuxer::new(
             base_token.clone(),
             quote_token.clone(),
-            config,
+            config.clone(),
             supported_exchanges,
             shared_exchange_state.clone(),
         );
@@ -177,11 +184,17 @@ impl PriceReporter {
         // TODO: This thread can panic, we may want to handle that at the manager level and restart
         tokio::spawn(connection_muxer.execution_loop());
 
-        Ok(Self {
+        // Spawn a thread to stream median price reports
+        let self_ = Self {
             base_token,
             quote_token,
             exchange_info: shared_exchange_state,
-        })
+        };
+
+        let self_clone = self_.clone();
+        tokio::spawn(async move { self_clone.median_streamer_loop(config.system_bus).await });
+
+        Ok(self_)
     }
 
     /// Non-blocking report of the latest PriceReporterState for the median
@@ -206,13 +219,31 @@ impl PriceReporter {
 
             exchange_connection_states.insert(*exchange, state);
         }
-
         exchange_connection_states
     }
 
     // -----------
     // | Helpers |
     // -----------
+
+    /// An execution loop that streams median price reports to the system bus
+    async fn median_streamer_loop(&self, system_bus: SystemBus<SystemBusMessage>) {
+        let topic_name =
+            price_report_topic_name(MEDIAN_SOURCE_NAME, &self.base_token, &self.quote_token);
+
+        loop {
+            if system_bus.has_listeners(&topic_name) {
+                if let PriceReporterState::Nominal(report) = self.get_state() {
+                    system_bus.publish(
+                        topic_name.clone(),
+                        SystemBusMessage::PriceReportMedian(report),
+                    );
+                }
+            }
+
+            tokio::time::sleep(Duration::from_millis(MEDIAN_PRICE_REPORT_INTERVAL_MS)).await;
+        }
+    }
 
     /// Returns if this PriceReport is of a "Named" token pair (as opposed to an "Unnamed" pair)
     /// If the PriceReport is Named, then the prices are denominated in USD and largely derived
@@ -270,15 +301,11 @@ impl PriceReporter {
         // Collect all non-zero PriceReports and ensure that we have enough.
         let (non_zero_prices, timestamps): (Vec<Price>, Vec<u64>) = ALL_EXCHANGES
             .iter()
-            .filter_map(|exchange| {
-                self.exchange_info
-                    .read_price(exchange)
-                    .map(|(price, timestamp)| (price, timestamp))
-            })
+            .filter_map(|exchange| self.exchange_info.read_price(exchange))
             .filter(|(price, _)| *price != Price::default())
             .unzip();
 
-        // Ensure that we have enough connections to create a median
+        // Ensure that we have enough data to create a median
         if non_zero_prices.len() < MIN_CONNECTIONS {
             return PriceReporterState::NotEnoughDataReported(non_zero_prices.len());
         }
@@ -363,7 +390,7 @@ impl ConnectionMuxer {
         let delay = tokio::time::sleep(Duration::from_millis(KEEPALIVE_INTERVAL_MS));
         tokio::pin!(delay);
 
-        // Build a map of connection to multiplex from
+        // Build a map of connections to multiplex from
         let mut stream_map = self.initialize_connections().await.unwrap();
 
         loop {
@@ -384,8 +411,24 @@ impl ConnectionMuxer {
                 stream_elem = stream_map.next() => {
                     if let Some((exchange, res)) = stream_elem {
                         match res {
-                            Ok(price) => self.exchange_state
-                                .new_price(exchange, price, get_current_time()),
+                            Ok(price) => {
+                                let ts = get_current_time();
+                                self.exchange_state
+                                    .new_price(exchange, price, ts);
+
+                                // Stream a price update to the bus
+                                self.config.system_bus.publish(
+                                    price_report_topic_name(&exchange.to_string(), &self.base_token, &self.quote_token),
+                                    SystemBusMessage::PriceReportExchange(PriceReport {
+                                        base_token: self.base_token.clone(),
+                                        quote_token: self.quote_token.clone(),
+                                        exchange: Some(exchange),
+                                        midpoint_price: price,
+                                        local_timestamp: ts,
+                                        reported_timestamp: None
+                                    }),
+                                );
+                            },
 
                             Err(e) => {
                                 // Restart the connection
@@ -406,7 +449,10 @@ impl ConnectionMuxer {
     async fn initialize_connections<'a>(
         &mut self,
     ) -> Result<StreamMap<Exchange, Box<dyn ExchangeConnection>>, ExchangeConnectionError> {
-        // Clone the metadata out of `self` so that the local scope takes ownership
+        // We do not use a more convenient stream here for concurrent init because of:
+        //   https://github.com/rust-lang/rust/issues/102211
+        // In specific, streams in async blocks sometimes have lifetimes erased which makes
+        // it impossible for the compiler to infer auto-traits like `Send`
         let futures = self
             .exchanges
             .iter()

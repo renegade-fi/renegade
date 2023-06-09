@@ -19,9 +19,12 @@ use tracing::log;
 use tungstenite::Error as WsError;
 use url::Url;
 
-use crate::price_reporter::{reporter::Price, worker::PriceReporterManagerConfig};
+use crate::price_reporter::worker::PriceReporterManagerConfig;
 
-use super::super::{errors::ExchangeConnectionError, reporter::PriceReport, tokens::Token};
+use super::{
+    super::{errors::ExchangeConnectionError, reporter::PriceReport, tokens::Token},
+    PriceStreamType,
+};
 
 // -------------
 // | Constants |
@@ -167,9 +170,7 @@ impl Display for ExchangeConnectionState {
 
 /// A trait representing a connection to an exchange
 #[async_trait]
-pub trait ExchangeConnection:
-    Stream<Item = Result<Price, ExchangeConnectionError>> + Unpin + Send
-{
+pub trait ExchangeConnection: Stream<Item = PriceStreamType> + Unpin + Send {
     /// Create a new connection to the exchange on a given asset pair
     async fn connect(
         base_token: Token,

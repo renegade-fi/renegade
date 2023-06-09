@@ -11,8 +11,11 @@ pub mod reporter;
 pub mod tokens;
 pub mod worker;
 
+/// The pubsub topic source name for median price reports
+pub const MEDIAN_SOURCE_NAME: &str = "median";
+
 /// Get the topic name for a price report
-pub fn price_report_topic_name(source: &str, base: Token, quote: Token) -> String {
+pub fn price_report_topic_name(source: &str, base: &Token, quote: &Token) -> String {
     format!(
         "{}-price-report-{}-{}",
         source,

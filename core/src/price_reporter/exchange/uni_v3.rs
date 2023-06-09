@@ -143,7 +143,6 @@ impl UniswapV3Connection {
         let price_numerator: f64 = price_numerator.to_string().parse().unwrap();
         let price_denominator: f64 = price_denominator.to_string().parse().unwrap();
 
-        // Note that this price does not adjust for ERC-20 decimals yet
         (price_numerator / price_denominator) * decimal_correction
     }
 
