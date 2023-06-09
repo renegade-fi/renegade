@@ -128,11 +128,11 @@ pub fn parse_json_from_message(message: Message) -> Result<Option<Value>, Exchan
 }
 
 /// Helper function to get the current UNIX epoch time in milliseconds
-pub fn get_current_time() -> u128 {
+pub fn get_current_time() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
-        .as_millis()
+        .as_millis() as u64
 }
 
 // --------------------------
