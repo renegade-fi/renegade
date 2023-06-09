@@ -53,8 +53,6 @@ const COINBASE_OFFER: &str = "offer";
 
 /// The message handler for Exchange::Coinbase.
 pub struct CoinbaseConnection {
-    /// The order book information for the asset pair
-    order_book: AsyncShared<CoinbaseOrderBookData>,
     /// The underlying stream of prices from the websocket
     price_stream: Box<dyn Stream<Item = Price> + Unpin + Send>,
     /// The underlying write stream of the websocket
@@ -219,9 +217,8 @@ impl ExchangeConnection for CoinbaseConnection {
 
         // Map the stream of Coinbase messages to one of midpoint prices
         let order_book_data = new_async_shared(CoinbaseOrderBookData::default());
-        let order_book_clone = order_book_data.clone();
         let mapped_stream = read.filter_map(move |message| {
-            let order_book_clone = order_book_clone.clone();
+            let order_book_clone = order_book_data.clone();
             async move {
                 match message {
                     Ok(msg) => match Self::midpoint_from_ws_message(order_book_clone, msg).await {
@@ -242,7 +239,6 @@ impl ExchangeConnection for CoinbaseConnection {
         );
 
         Ok(Self {
-            order_book: order_book_data,
             price_stream: Box::new(price_stream),
             write_stream: Box::new(writer),
         })

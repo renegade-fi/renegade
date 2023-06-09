@@ -3,7 +3,6 @@
 use async_trait::async_trait;
 use hyper::StatusCode;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
-use tokio::sync::oneshot::channel;
 
 use crate::{
     api_server::{error::ApiServerError, router::UrlParams},
@@ -107,12 +106,10 @@ impl WebsocketTopicHandler for PriceReporterHandler {
         let quote = Token::from_addr(&parse_quote_mint_from_url_params(route_params)?);
 
         // Start a price reporting stream in the manager
-        let (channel, _) = channel();
         self.price_reporter_work_queue
             .send(PriceReporterManagerJob::StartPriceReporter {
                 base_token: base.clone(),
                 quote_token: quote.clone(),
-                channel, /* unused here */
             })
             .map_err(|_| ApiServerError::WebsocketServerFailure(ERR_SENDING_MESSAGE.to_string()))?;
 

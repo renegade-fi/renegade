@@ -1,10 +1,12 @@
 //! Defines the PriceReporterManagerExecutor, the handler that is responsible for executing
 //! individual PriceReporterManagerJobs.
 use std::{collections::HashMap, thread::JoinHandle};
-use tokio::sync::oneshot::{channel, Sender as TokioSender};
+use tokio::sync::oneshot::Sender as TokioSender;
 use tokio::{runtime::Runtime, sync::mpsc::UnboundedReceiver as TokioReceiver};
 use tracing::log;
 
+use crate::default_wrapper::{DefaultOption, DefaultWrapper};
+use crate::state::{new_async_shared, AsyncShared};
 use crate::{system_bus::SystemBus, types::SystemBusMessage, CancelChannel};
 
 use super::{
@@ -29,15 +31,16 @@ pub struct PriceReporterManager {
 
 /// The actual executor that handles incoming jobs, to create and destroy PriceReporters, and peek
 /// at PriceReports.
+#[derive(Clone)]
 pub struct PriceReporterManagerExecutor {
     /// The map between base/quote token pairs and the instantiated PriceReporter
-    active_price_reporters: HashMap<(Token, Token), PriceReporter>,
+    active_price_reporters: AsyncShared<HashMap<(Token, Token), PriceReporter>>,
     /// The manager config
     config: PriceReporterManagerConfig,
     /// The channel along which jobs are passed to the price reporter
-    job_receiver: TokioReceiver<PriceReporterManagerJob>,
+    job_receiver: DefaultOption<TokioReceiver<PriceReporterManagerJob>>,
     /// The channel on which the coordinator may cancel execution
-    cancel_channel: CancelChannel,
+    cancel_channel: DefaultOption<CancelChannel>,
     /// The global system bus
     system_bus: SystemBus<SystemBusMessage>,
 }
@@ -51,27 +54,35 @@ impl PriceReporterManagerExecutor {
         system_bus: SystemBus<SystemBusMessage>,
     ) -> Self {
         Self {
-            job_receiver,
-            cancel_channel,
+            job_receiver: DefaultWrapper::new(Some(job_receiver)),
+            cancel_channel: DefaultWrapper::new(Some(cancel_channel)),
             system_bus,
-            active_price_reporters: HashMap::new(),
+            active_price_reporters: new_async_shared(HashMap::new()),
             config,
         }
     }
 
     /// The execution loop for the price reporter
     pub(super) async fn execution_loop(mut self) -> Result<(), PriceReporterManagerError> {
+        let mut job_receiver = self.job_receiver.take().unwrap();
+        let mut cancel_channel = self.cancel_channel.take().unwrap();
+
         loop {
             tokio::select! {
                 // Dequeue the next job from elsewhere in the local node
-                Some(job) = self.job_receiver.recv() => {
-                    if let Err(e) = self.handle_job(job).await {
-                        log::error!("Error in PriceReporterManager execution loop: {e}");
-                    }
+                Some(job) = job_receiver.recv() => {
+                    tokio::spawn({
+                        let mut self_clone = self.clone();
+                        async move {
+                            if let Err(e) = self_clone.handle_job(job).await {
+                                log::error!("Error in PriceReporterManager execution loop: {e}");
+                            }
+                        }
+                    });
                 },
 
                 // Await cancellation by the coordinator
-                _ = self.cancel_channel.changed() => {
+                _ = cancel_channel.changed() => {
                     log::info!("PriceReporterManager cancelled, shutting down...");
                     return Err(PriceReporterManagerError::Cancelled("received cancel signal".to_string()));
                 }
@@ -88,11 +99,7 @@ impl PriceReporterManagerExecutor {
             PriceReporterManagerJob::StartPriceReporter {
                 base_token,
                 quote_token,
-                channel,
-            } => {
-                self.start_price_reporter(base_token, quote_token, channel)
-                    .await
-            }
+            } => self.start_price_reporter(base_token, quote_token).await,
 
             PriceReporterManagerJob::PeekMedian {
                 base_token,
@@ -120,17 +127,9 @@ impl PriceReporterManagerExecutor {
         &mut self,
         base_token: Token,
         quote_token: Token,
-        channel: TokioSender<()>,
     ) -> Result<(), PriceReporterManagerError> {
-        if self
-            .active_price_reporters
-            .contains_key(&(base_token.clone(), quote_token.clone()))
-        {
-            // Send an ack indicating the reporter is created
-            if channel.send(()).is_err() {
-                log::error!("Error sending ACK for PriceReporterManager job",);
-            }
-
+        let mut locked_reporters = self.active_price_reporters.write().await;
+        if locked_reporters.contains_key(&(base_token.clone(), quote_token.clone())) {
             return Ok(());
         }
 
@@ -139,8 +138,7 @@ impl PriceReporterManagerExecutor {
             PriceReporter::new(base_token.clone(), quote_token.clone(), self.config.clone())
                 .await
                 .map_err(|err| PriceReporterManagerError::PriceReporterCreation(err.to_string()))?;
-        self.active_price_reporters
-            .insert((base_token.clone(), quote_token.clone()), reporter);
+        locked_reporters.insert((base_token.clone(), quote_token.clone()), reporter);
 
         Ok(())
     }
@@ -178,13 +176,15 @@ impl PriceReporterManagerExecutor {
     // -----------
 
     /// Internal helper function to get a (base_token, quote_token) PriceReporter
-    fn get_price_reporter(
+    async fn get_price_reporter(
         &self,
         base_token: Token,
         quote_token: Token,
-    ) -> Result<&PriceReporter, PriceReporterManagerError> {
-        self.active_price_reporters
+    ) -> Result<PriceReporter, PriceReporterManagerError> {
+        let locked_reporters = self.active_price_reporters.read().await;
+        locked_reporters
             .get(&(base_token.clone(), quote_token.clone()))
+            .cloned()
             .ok_or_else(|| {
                 PriceReporterManagerError::PriceReporterNotCreated(format!(
                     "{:?}",
@@ -199,17 +199,18 @@ impl PriceReporterManagerExecutor {
         &mut self,
         base_token: Token,
         quote_token: Token,
-    ) -> Result<&PriceReporter, PriceReporterManagerError> {
-        if self
-            .active_price_reporters
-            .get(&(base_token.clone(), quote_token.clone()))
-            .is_none()
-        {
-            let (channel_sender, _channel_receiver) = channel();
-            self.start_price_reporter(base_token.clone(), quote_token.clone(), channel_sender)
+    ) -> Result<PriceReporter, PriceReporterManagerError> {
+        let reporter_exists = {
+            self.active_price_reporters
+                .read()
+                .await
+                .contains_key(&(base_token.clone(), quote_token.clone()))
+        };
+
+        if !reporter_exists {
+            self.start_price_reporter(base_token.clone(), quote_token.clone())
                 .await?;
         }
-
-        self.get_price_reporter(base_token, quote_token)
+        self.get_price_reporter(base_token, quote_token).await
     }
 }
