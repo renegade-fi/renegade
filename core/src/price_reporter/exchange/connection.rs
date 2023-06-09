@@ -167,7 +167,9 @@ impl Display for ExchangeConnectionState {
 
 /// A trait representing a connection to an exchange
 #[async_trait]
-pub trait ExchangeConnection: Stream<Item = Price> + Unpin + Send {
+pub trait ExchangeConnection:
+    Stream<Item = Result<Price, ExchangeConnectionError>> + Unpin + Send
+{
     /// Create a new connection to the exchange on a given asset pair
     async fn connect(
         base_token: Token,
