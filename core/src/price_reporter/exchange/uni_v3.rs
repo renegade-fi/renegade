@@ -2,7 +2,6 @@
 
 use async_trait::async_trait;
 use core::time::Duration;
-use curve25519_dalek::digest::generic_array::typenum::Ord;
 use futures::StreamExt;
 use futures_util::Stream;
 use std::{

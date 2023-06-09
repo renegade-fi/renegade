@@ -17,6 +17,8 @@ use std::{
 /// The default wrapper structure, wraps a default capable value in a cell that may
 /// be taken or cloned once.
 pub struct DefaultWrapper<D: Default>(D);
+/// A default wrapper for an option
+pub type DefaultOption<D> = DefaultWrapper<Option<D>>;
 
 impl<D: Default> From<D> for DefaultWrapper<D> {
     fn from(d: D) -> Self {
