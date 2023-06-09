@@ -22,7 +22,7 @@ use super::{
         parse_json_field, parse_json_field_array, parse_json_from_message, ws_connect,
         ExchangeConnection,
     },
-    Exchange, InitializablePriceStream,
+    Exchange, InitializablePriceStream, PriceStreamType,
 };
 
 // -------------
@@ -58,7 +58,7 @@ const OKX_PRICE: usize = 0;
 /// The message handler for Exchange::Okx.
 pub struct OkxConnection {
     /// The underlying price stream
-    price_stream: Box<dyn Stream<Item = Price> + Unpin + Send>,
+    price_stream: Box<dyn Stream<Item = PriceStreamType> + Unpin + Send>,
     /// The underlying write stream of the websocket
     write_stream: Box<dyn Sink<Message, Error = WsError> + Unpin + Send>,
 }
@@ -99,7 +99,7 @@ impl OkxConnection {
 }
 
 impl Stream for OkxConnection {
-    type Item = Price;
+    type Item = PriceStreamType;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
@@ -121,22 +121,6 @@ impl ExchangeConnection for OkxConnection {
         let url = Self::websocket_url();
         let (mut write, read) = ws_connect(url).await?;
 
-        // Map the stream to process midpoint prices
-        let mapped_stream = read.filter_map(|message| async {
-            match message.map(Self::midpoint_from_ws_message) {
-                Ok(Ok(Some(midpoint))) => Some(midpoint),
-                Ok(Ok(None)) => None,
-                Ok(Err(e)) => {
-                    log::error!("Error parsing message from Okx: {}", e);
-                    None
-                }
-                Err(e) => {
-                    log::error!("Error reading message from Okx ws: {}", e);
-                    None
-                }
-            }
-        });
-
         // Subscribe to the asset pair's bbo tick-by-tick stream
         let base_ticker = base_token.get_exchange_ticker(Exchange::Okx);
         let quote_ticker = quote_token.get_exchange_ticker(Exchange::Okx);
@@ -154,6 +138,22 @@ impl ExchangeConnection for OkxConnection {
             .send(Message::Text(subscribe_str))
             .await
             .map_err(|err| ExchangeConnectionError::ConnectionHangup(err.to_string()))?;
+
+        // Map the stream to process midpoint prices
+        let mapped_stream = read.filter_map(|message| async {
+            match message.map(Self::midpoint_from_ws_message) {
+                // The outer `Result` comes from reading the message from the websocket
+                // Processing the message returns a `Result<Option<..>>` which we
+                // flip to match the stream type
+                Ok(mapped_res) => mapped_res.transpose(),
+
+                // Error reading from the websocket
+                Err(e) => {
+                    log::error!("Error reading message from Okx ws: {}", e);
+                    None
+                }
+            }
+        });
 
         // Build a price stream
         let price_stream = InitializablePriceStream::new(Box::pin(mapped_stream));

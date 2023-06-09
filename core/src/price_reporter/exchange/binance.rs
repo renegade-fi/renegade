@@ -24,7 +24,7 @@ use super::{
     connection::{
         parse_json_field, parse_json_from_message, ws_connect, ws_ping, ExchangeConnection,
     },
-    get_current_time,
+    get_current_time, PriceStreamType,
 };
 
 // -------------
@@ -50,7 +50,7 @@ pub struct BinanceConnection {
     /// The underlying price stream
     ///
     /// TODO: Unbox this if performance becomes a concern
-    price_stream: Box<dyn Stream<Item = Price> + Unpin + Send>,
+    price_stream: Box<dyn Stream<Item = PriceStreamType> + Unpin + Send>,
     /// The underlying write stream of the websocket
     write_stream: Box<dyn Sink<Message, Error = WsError> + Unpin + Send>,
 }
@@ -127,7 +127,7 @@ impl BinanceConnection {
 }
 
 impl Stream for BinanceConnection {
-    type Item = Price;
+    type Item = PriceStreamType;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
@@ -156,15 +156,16 @@ impl ExchangeConnection for BinanceConnection {
         // Map the stream to process midpoint prices
         let mapped_stream = read.filter_map(|message| async {
             match message.map(Self::midpoint_from_ws_message) {
-                Ok(Ok(Some(midpoint))) => Some(midpoint),
-                Ok(Ok(None)) => None,
-                Ok(Err(e)) => {
-                    log::error!("Error parsing message from Binance: {}", e);
-                    None
-                }
+                // The result is for reading a message from the websocket, the inner result is for
+                // processing that message and returns an option. Flip the order of the option and the result
+                // in the processed message
+                Ok(mapped_stream) => mapped_stream.transpose(),
+                // Error on the incoming (filtered) stream
                 Err(e) => {
                     log::error!("Error reading message from Binance ws: {}", e);
-                    None
+                    Some(Err(ExchangeConnectionError::ConnectionHangup(
+                        e.to_string(),
+                    )))
                 }
             }
         });

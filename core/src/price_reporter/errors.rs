@@ -2,6 +2,8 @@
 use std::error::Error;
 use std::fmt::{self, Display};
 
+use super::exchange::Exchange;
+
 /// The core error type used by the ExchangeConnection. All thrown errors are handled by the
 /// PriceReporter, either for restarts or panics upon too many consecutive errors.
 #[derive(Clone, Debug)]
@@ -14,6 +16,9 @@ pub enum ExchangeConnectionError {
     InvalidMessage(String),
     /// No swap logs found for a given pool
     NoLogs(String),
+    /// The maximum retry count was exceeded while trying to re-establish
+    /// an exchange connection
+    MaxRetries(Exchange),
     /// Error sending on the `write` end of the websocket
     SendError(String),
 }

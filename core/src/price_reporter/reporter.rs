@@ -34,12 +34,17 @@ pub type Price = f64;
 const MAX_REPORT_AGE_MS: u128 = 5000;
 /// If we do not have at least MIN_CONNECTIONS reports, we pause matches until we have enough
 /// reports. This only applies to Named tokens, as Unnamed tokens simply use UniswapV3.
-const MIN_CONNECTIONS: usize = 1; // TODO: Refactor
+const MIN_CONNECTIONS: usize = 1;
 /// If a single PriceReport is more than MAX_DEVIATION (as a fraction) away from the midpoint, then
 /// we pause matches until the prices stabilize.
-const MAX_DEVIATION: f64 = 0.02; // TODO: Refactor
+const MAX_DEVIATION: f64 = 0.02;
+
 /// The number of milliseconds to wait in between sending keepalive messages to the connections
 const KEEPALIVE_INTERVAL_MS: u64 = 15_000;
+/// The number of milliseconds to wait in between retrying connections
+const CONN_RETRY_DELAY_MS: u64 = 2_000;
+/// The maximum number of retries to attempt before giving up on a connection
+const MAX_CONN_RETRIES: usize = 5;
 
 /// The PriceReport is the universal format for price feeds from all external exchanges.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -103,32 +108,24 @@ impl PriceReporter {
         let supported_exchanges =
             Self::compute_supported_exchanges_for_pair(&base_token, &quote_token, &config);
 
-        // Connect to each of the supported exchanges
-        //
-        // We do not use the convenient `stream::iter` here because of the following issue:
-        //    https://github.com/rust-lang/rust/issues/102211
-        // In which Auto traits (notably `Send`) cannot be inferred from an async block
-        // that manipulates streams
-        let futures: Vec<_> = supported_exchanges
-            .iter()
-            .map(|exchange| exchange.connect(&base_token, &quote_token, &config))
-            .collect();
-        let conns = try_join_all(futures).await?;
-
         // Create shared memory that the `ConnectionMuxer` will use to communicate with the
         // `PriceReporter`
         let shared_price_map: HashMap<Exchange, Arc<AtomicF64>> = supported_exchanges
             .iter()
             .map(|exchange| (*exchange, Arc::new(AtomicF64::new(0.))))
             .collect();
-        let share_map_clone = shared_price_map.clone();
 
         // Spawn a thread to manage the connections
-        tokio::spawn(ConnectionMuxer::execution_loop(
-            supported_exchanges.clone(),
-            conns,
-            share_map_clone,
-        ));
+        let connection_muxer = ConnectionMuxer::new(
+            base_token.clone(),
+            quote_token.clone(),
+            config,
+            supported_exchanges,
+            shared_price_map.clone(),
+        );
+
+        // TODO: This thread can panic, we may want to handle that at the manager level and restart
+        tokio::spawn(connection_muxer.execution_loop());
 
         Ok(Self {
             base_token,
@@ -279,26 +276,52 @@ impl PriceReporter {
 /// `ExchangeConnection`s. It is responsible for restarting connections that fail, and
 /// communicating the latest price reports to the `PriceReporter` via an atomic shared
 /// memory primitive
-struct ConnectionMuxer;
-impl ConnectionMuxer {
-    /// Start the connection muxer
-    pub async fn execution_loop(
-        exchanges: Vec<Exchange>,
-        exchange_connections: Vec<Box<dyn ExchangeConnection>>,
-        shared_price_map: HashMap<Exchange, Arc<AtomicF64>>,
-    ) {
-        // Build a shared, mapped stream from the individual exchange streams
-        let mut stream_map = exchanges
-            .into_iter()
-            .zip(exchange_connections.into_iter())
-            .collect::<StreamMap<_, _>>();
+struct ConnectionMuxer {
+    /// The base token that the managed connections are reporting on
+    base_token: Token,
+    /// The quote token that the managed connections are reporting on
+    quote_token: Token,
+    /// The config for the price reporter
+    config: PriceReporterManagerConfig,
+    /// The set of exchanges connected
+    exchanges: Vec<Exchange>,
+    /// The shared memory map from exchange to most recent price
+    shared_price_map: HashMap<Exchange, Arc<AtomicF64>>,
+    /// Tracks the number of failures in connecting to an exchange
+    exchange_retries: HashMap<Exchange, usize>,
+}
 
+impl ConnectionMuxer {
+    /// Create a new `ConnectionMuxer`
+    pub fn new(
+        base_token: Token,
+        quote_token: Token,
+        config: PriceReporterManagerConfig,
+        exchanges: Vec<Exchange>,
+        shared_price_map: HashMap<Exchange, Arc<AtomicF64>>,
+    ) -> Self {
+        Self {
+            base_token,
+            quote_token,
+            config,
+            exchanges,
+            shared_price_map,
+            exchange_retries: HashMap::new(),
+        }
+    }
+
+    /// Start the connection muxer
+    pub async fn execution_loop(mut self) {
         // Start a keepalive timer
         let delay = tokio::time::sleep(Duration::from_millis(KEEPALIVE_INTERVAL_MS));
         tokio::pin!(delay);
 
+        // Build a map of connection to multiplex from
+        let mut stream_map = self.initialize_connections().await.unwrap();
+
         loop {
             tokio::select! {
+                // Keepalive timer
                 _ = &mut delay => {
                     log::info!("Sending keepalive to exchanges");
                     for exchange in stream_map.values_mut() {
@@ -308,16 +331,78 @@ impl ConnectionMuxer {
                     }
 
                     delay.as_mut().reset(Instant::now() + Duration::from_millis(KEEPALIVE_INTERVAL_MS));
-                }
+                },
+
+                // New price streamed from an exchange
                 stream_elem = stream_map.next() => {
-                    if let Some((exchange, price)) = stream_elem {
-                        shared_price_map
-                            .get(&exchange)
-                            .unwrap()
-                            .store(price, Ordering::Relaxed);
+                    if let Some((exchange, res)) = stream_elem {
+                        match res {
+                            Ok(price) => self.shared_price_map
+                                .get(&exchange)
+                                .unwrap()
+                                .store(price, Ordering::Relaxed),
+
+                            Err(e) => {
+                                // Restart the connection
+                                log::error!("Error streaming from {exchange}: {e}, restarting connection...");
+                                let new_conn = self.retry_connection(exchange).await.unwrap();
+                                stream_map.insert(exchange, new_conn);
+                            }
+
+                        }
                     }
                 }
             }
         }
+    }
+
+    /// Sets up the initial connections to each exchange and places them in a
+    /// `StreamMap` for multiplexing
+    async fn initialize_connections<'a>(
+        &mut self,
+    ) -> Result<StreamMap<Exchange, Box<dyn ExchangeConnection>>, ExchangeConnectionError> {
+        // Clone the metadata out of `self` so that the local scope takes ownership
+        let futures = self
+            .exchanges
+            .iter()
+            .map(|exchange| {
+                let base_token = self.base_token.clone();
+                let quote_token = self.quote_token.clone();
+                let config = self.config.clone();
+
+                async move { exchange.connect(&base_token, &quote_token, &config).await }
+            })
+            .collect::<Vec<_>>();
+        let conns = try_join_all(futures.into_iter()).await?;
+
+        // Build a shared, mapped stream from the individual exchange streams
+        Ok(self
+            .exchanges
+            .clone()
+            .into_iter()
+            .zip(conns.into_iter())
+            .collect::<StreamMap<_, _>>())
+    }
+
+    /// Retries an exchange connection after it has failed
+    async fn retry_connection(
+        &mut self,
+        exchange: Exchange,
+    ) -> Result<Box<dyn ExchangeConnection>, ExchangeConnectionError> {
+        // Increment the retry count
+        let retry_count = self.exchange_retries.entry(exchange).or_insert(0);
+        *retry_count += 1;
+
+        if *retry_count >= MAX_CONN_RETRIES {
+            return Err(ExchangeConnectionError::MaxRetries(exchange));
+        }
+
+        // Add delay before retrying
+        tokio::time::sleep(Duration::from_secs(CONN_RETRY_DELAY_MS)).await;
+
+        // Reconnect
+        exchange
+            .connect(&self.base_token, &self.quote_token, &self.config)
+            .await
     }
 }

@@ -16,14 +16,14 @@ use tungstenite::{Message, Error as WsError};
 use url::Url;
 
 use crate::{price_reporter::{
-    errors::ExchangeConnectionError,
+    errors::{ExchangeConnectionError},
     exchange::{get_current_time, connection::ws_connect, InitializablePriceStream},
     reporter::{Price},
     tokens::Token,
     worker::PriceReporterManagerConfig,
 }, state::{AsyncShared, new_async_shared}};
 
-use super::{connection::{ExchangeConnection, parse_json_from_message, parse_json_field, ws_ping}, Exchange};
+use super::{connection::{ExchangeConnection, parse_json_from_message, parse_json_field, ws_ping}, Exchange, PriceStreamType};
 
 // -------------
 // | Constants |
@@ -54,7 +54,7 @@ const COINBASE_OFFER: &str = "offer";
 /// The message handler for Exchange::Coinbase.
 pub struct CoinbaseConnection {
     /// The underlying stream of prices from the websocket
-    price_stream: Box<dyn Stream<Item = Price> + Unpin + Send>,
+    price_stream: Box<dyn Stream<Item = PriceStreamType> + Unpin + Send>,
     /// The underlying write stream of the websocket
     write_stream: Box<dyn Sink<Message, Error = WsError> + Unpin + Send>,
 }
@@ -71,7 +71,7 @@ pub struct CoinbaseOrderBookData {
 }
 
 impl Stream for CoinbaseConnection {
-    type Item = Price;
+    type Item = PriceStreamType;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
@@ -221,14 +221,17 @@ impl ExchangeConnection for CoinbaseConnection {
             let order_book_clone = order_book_data.clone();
             async move {
                 match message {
-                    Ok(msg) => match Self::midpoint_from_ws_message(order_book_clone, msg).await {
-                        Ok(val) => val,
-                        Err(e) => {
-                            log::error!("Error parsing message from Coinbase: {e}");
-                            None
-                        }
-                    },
-                    Err(e) => { log::error!("Error reading message from Coinbase websocket: {e}"); None },
+                    // The outer `Result` comes from reading from the ws stream, the inner `Result`
+                    // comes from parsing the message
+                    Ok(val) => { 
+                        let res = Self::midpoint_from_ws_message(order_book_clone, val).await;
+                        res.transpose()
+                    }
+
+                    Err(e) => {
+                        log::error!("Error reading message from Coinbase websocket: {e}");
+                        None
+                    }
                 }
             }
         });

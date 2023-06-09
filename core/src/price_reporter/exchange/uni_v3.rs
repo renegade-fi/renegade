@@ -26,7 +26,7 @@ use crate::price_reporter::{reporter::Price, worker::PriceReporterManagerConfig}
 
 use super::{
     super::{errors::ExchangeConnectionError, tokens::Token},
-    ExchangeConnection, InitializablePriceStream,
+    ExchangeConnection, InitializablePriceStream, PriceStreamType,
 };
 
 // -------------
@@ -92,7 +92,7 @@ lazy_static! {
 /// and parsing as PriceReports.
 pub struct UniswapV3Connection {
     /// The underlying price stream
-    price_stream: Box<dyn Stream<Item = Price> + Unpin + Send>,
+    price_stream: Box<dyn Stream<Item = PriceStreamType> + Unpin + Send>,
 }
 
 impl UniswapV3Connection {
@@ -314,7 +314,7 @@ impl UniswapV3Connection {
 }
 
 impl Stream for UniswapV3Connection {
-    type Item = Price;
+    type Item = PriceStreamType;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
@@ -376,12 +376,13 @@ impl ExchangeConnection for UniswapV3Connection {
                 .stream(Duration::new(1, 0))
                 .filter_map(move |swap| async move {
                     match swap {
-                        Ok(swap_event) => Some(Self::midpoint_from_swap_event(
+                        Ok(swap_event) => Some(Ok(Self::midpoint_from_swap_event(
                             swap_event,
                             is_flipped,
                             decimal_adjustment,
                             &SWAP_EVENT_ABI,
-                        )),
+                        ))),
+
                         Err(e) => {
                             log::error!("Error parsing Swap event from UniswapV3: {}", e);
                             None
