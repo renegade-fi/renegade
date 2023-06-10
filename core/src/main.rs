@@ -292,6 +292,7 @@ async fn main() -> Result<(), CoordinatorError> {
         coinbase_api_key: args.coinbase_api_key,
         coinbase_api_secret: args.coinbase_api_secret,
         eth_websocket_addr: args.eth_websocket_addr,
+        disable_binance: args.disable_binance,
     })
     .expect("failed to build price reporter manager");
     price_reporter_manager
