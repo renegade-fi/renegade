@@ -39,13 +39,14 @@ use tracing::log;
 use uuid::Uuid;
 
 use crate::{
+    handshake::{error::HandshakeManagerError, state::HandshakeState},
     proof_generation::{
         jobs::ValidMatchMpcBundle, OrderValidityProofBundle, OrderValidityWitnessBundle,
     },
     MAX_BALANCES, MAX_FEES, MAX_ORDERS,
 };
 
-use super::{error::HandshakeManagerError, manager::HandshakeExecutor, state::HandshakeState};
+use super::HandshakeExecutor;
 
 /// A type alias for a linkable wallet share with default sizing parameters
 pub type SizedLinkableWalletShare = LinkableWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;

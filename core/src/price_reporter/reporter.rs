@@ -397,7 +397,6 @@ impl ConnectionMuxer {
             tokio::select! {
                 // Keepalive timer
                 _ = &mut delay => {
-                    log::info!("Sending keepalive to exchanges");
                     for exchange in stream_map.values_mut() {
                         if let Err(e) = exchange.send_keepalive().await {
                             log::error!("Error sending keepalive to exchange: {e}");

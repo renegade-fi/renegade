@@ -38,9 +38,6 @@ const FEE_START_BYTE: usize = 32 - 4;
 /// The historical offset to query blocks in for the first swap
 const BLOCK_OFFSET: u64 = 10_000;
 
-/// The error message emitted when swap logs cannot be found for a UniV3 pool
-const ERR_NO_LOGS: &str = "no swap logs found for asset pair";
-
 lazy_static! {
     // The ABI for a UniswapV3 Swap event
     static ref SWAP_EVENT_ABI: ethabi::Event = {
@@ -173,9 +170,8 @@ impl UniswapV3Connection {
             ordering => ordering,
         });
 
-        swap_filter_recent_events
+        Ok(swap_filter_recent_events
             .pop()
-            .ok_or_else(|| ExchangeConnectionError::NoLogs(ERR_NO_LOGS.to_string()))
             .map(|swap| {
                 Self::midpoint_from_swap_event(
                     swap,
@@ -184,6 +180,7 @@ impl UniswapV3Connection {
                     &SWAP_EVENT_ABI,
                 )
             })
+            .unwrap_or_default())
     }
 
     /// Create an event filter for UniV3 swaps

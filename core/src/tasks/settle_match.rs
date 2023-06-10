@@ -20,7 +20,7 @@ use tracing::log;
 
 use crate::{
     gossip_api::gossip::GossipOutbound,
-    handshake::{r#match::HandshakeResult, state::HandshakeState},
+    handshake::{manager::HandshakeResult, state::HandshakeState},
     proof_generation::{
         jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle, ValidSettleBundle},
         OrderValidityProofBundle, SizedValidSettleStatement, SizedValidSettleWitness,
