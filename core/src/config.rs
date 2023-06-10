@@ -96,6 +96,11 @@ struct Cli {
     /// Flag to disable the price reporter
     #[clap(long, value_parser)]
     pub disable_price_reporter: bool,
+    /// Flat to disable streaming price from Binance
+    /// 
+    /// This is useful for testing in a region that Binance has IP blocked
+    #[clap(long, value_parser)]
+    pub disable_binance: bool,
     /// Whether or not to run the relayer in debug mode
     #[clap(short, long, value_parser)]
     pub debug: bool,
@@ -176,6 +181,8 @@ pub struct RelayerConfig {
     /// Whether to disable the price reporter if e.g. we are streaming from a dedicated
     /// external API gateway node in the cluster
     pub disable_price_reporter: bool,
+    /// Whether to disable price streaming from Binance for location blocks
+    pub disable_binance: bool,
     /// Whether or not the relayer is in debug mode
     pub debug: bool,
 
@@ -217,6 +224,7 @@ impl Clone for RelayerConfig {
             public_ip: self.public_ip,
             disable_api_server: self.disable_api_server,
             disable_price_reporter: self.disable_price_reporter,
+            disable_binance: self.disable_binance,
             wallets: self.wallets.clone(),
             cluster_keypair: Keypair::from_bytes(&self.cluster_keypair.to_bytes()).unwrap(),
             cluster_id: self.cluster_id.clone(),
@@ -304,6 +312,7 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, CoordinatorError> {
         public_ip: cli_args.public_ip,
         disable_api_server: cli_args.disable_api_server,
         disable_price_reporter: cli_args.disable_price_reporter,
+        disable_binance: cli_args.disable_binance,
         wallets: parse_wallet_file(cli_args.wallet_file)?,
         cluster_keypair: keypair,
         cluster_id,

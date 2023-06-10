@@ -31,6 +31,10 @@ pub struct PriceReporterManagerConfig {
     pub(crate) coinbase_api_secret: Option<String>,
     /// The ethereum RPC node websocket addresses for on-chain data
     pub(crate) eth_websocket_addr: Option<String>,
+    /// Whether or not to disable binance streaming
+    ///
+    /// Used in locations that Binance has IP blocked
+    pub(crate) disable_binance: bool,
     /// The channel on which the coordinator may mandate that the price reporter manager cancel its
     /// execution
     pub(crate) cancel_channel: CancelChannel,
