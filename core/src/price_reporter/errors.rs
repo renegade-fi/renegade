@@ -14,8 +14,6 @@ pub enum ExchangeConnectionError {
     HandshakeFailure(String),
     /// Could not parse a remote server message.
     InvalidMessage(String),
-    /// No swap logs found for a given pool
-    NoLogs(String),
     /// The maximum retry count was exceeded while trying to re-establish
     /// an exchange connection
     MaxRetries(Exchange),

@@ -2,10 +2,12 @@
 use portpicker::Port;
 use serde::{Deserialize, Serialize};
 
-use crate::{gossip::types::WrappedPeerId, price_reporter::tokens::Token, state::OrderIdentifier};
+use crate::{
+    gossip::types::WrappedPeerId,
+    price_reporter::{reporter::Price, tokens::Token},
+    state::OrderIdentifier,
+};
 
-/// A type alias for the representation of an ERC20's price
-pub type Price = f64;
 /// A type representing the midpoint price of a given token pair
 pub type MidpointPrice = (Token, Token, Price);
 /// A price vector that a peer proposes to its counterparty during a handshake

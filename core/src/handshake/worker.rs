@@ -5,13 +5,16 @@ use std::thread::{Builder, JoinHandle};
 use crossbeam::channel::Sender as CrossbeamSender;
 use tokio::{
     runtime::Builder as RuntimeBuilder,
-    sync::mpsc::{UnboundedReceiver, UnboundedSender},
+    sync::mpsc::{UnboundedReceiver, UnboundedSender as TokioSender},
 };
 use tracing::log;
 
 use crate::{
     gossip_api::gossip::GossipOutbound,
-    handshake::manager::{HandshakeExecutor, HandshakeScheduler, HANDSHAKE_EXECUTOR_N_THREADS},
+    handshake::manager::{
+        init_price_streams, HandshakeExecutor, HandshakeScheduler, HANDSHAKE_EXECUTOR_N_THREADS,
+    },
+    price_reporter::jobs::PriceReporterManagerJob,
     proof_generation::jobs::ProofManagerJob,
     starknet_client::client::StarknetClient,
     state::RelayerState,
@@ -29,12 +32,14 @@ pub struct HandshakeManagerConfig {
     /// The relayer-global state
     pub global_state: RelayerState,
     /// The channel on which to send outbound network requests
-    pub network_channel: UnboundedSender<GossipOutbound>,
+    pub network_channel: TokioSender<GossipOutbound>,
+    /// The price reporter's job queue
+    pub price_reporter_job_queue: TokioSender<PriceReporterManagerJob>,
     /// A starknet client for interacting with the contract
     pub starknet_client: StarknetClient,
     /// A sender on the handshake manager's job queue, used by the timer
     /// thread to enqueue outbound handshakes
-    pub job_sender: UnboundedSender<HandshakeExecutionJob>,
+    pub job_sender: TokioSender<HandshakeExecutionJob>,
     /// The job queue on which to receive handshake requests
     pub job_receiver: Option<UnboundedReceiver<HandshakeExecutionJob>>,
     /// A sender to forward jobs to the proof manager on
@@ -96,6 +101,9 @@ impl Worker for HandshakeManager {
 
     fn start(&mut self) -> Result<(), Self::Error> {
         log::info!("Starting executor loop for handshake protocol executor...");
+
+        // Instruct the price reporter to being streaming prices for the default pairs
+        init_price_streams(self.config.price_reporter_job_queue.clone())?;
 
         // Spawn both the executor and the scheduler in a thread
         let executor = self.executor.take().unwrap();

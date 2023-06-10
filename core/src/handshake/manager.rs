@@ -1,5 +1,7 @@
 //! The handshake module handles the execution of handshakes from negotiating
 //! a pair of orders to match, all the way through settling any resulting match
+pub mod r#match;
+mod price_agreement;
 
 use circuits::zk_gadgets::fixed_point::FixedPoint;
 use crossbeam::channel::Sender as CrossbeamSender;
@@ -40,11 +42,13 @@ use crate::{
     CancelChannel,
 };
 
+pub use self::r#match::HandshakeResult;
+pub(super) use price_agreement::init_price_streams;
+
 use super::{
     error::HandshakeManagerError,
     handshake_cache::{HandshakeCache, SharedHandshakeCache},
     jobs::HandshakeExecutionJob,
-    r#match::HandshakeResult,
     state::{HandshakeState, HandshakeStateIndex},
     worker::HandshakeManagerConfig,
 };

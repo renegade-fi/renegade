@@ -266,6 +266,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let mut handshake_manager = HandshakeManager::new(HandshakeManagerConfig {
         global_state: global_state.clone(),
         network_channel: network_sender.clone(),
+        price_reporter_job_queue: price_reporter_worker_sender.clone(),
         starknet_client: starknet_client.clone(),
         job_receiver: Some(handshake_worker_receiver),
         job_sender: handshake_worker_sender.clone(),
