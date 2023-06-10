@@ -67,6 +67,7 @@ impl Worker for HandshakeManager {
         let executor = HandshakeExecutor::new(
             config.job_receiver.take().unwrap(),
             config.network_channel.clone(),
+            config.price_reporter_job_queue.clone(),
             config.starknet_client.clone(),
             config.proof_manager_sender.clone(),
             config.global_state.clone(),

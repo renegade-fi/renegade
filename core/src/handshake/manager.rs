@@ -13,12 +13,12 @@ use std::{
     thread::JoinHandle,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};
 use tracing::log;
 use uuid::Uuid;
 
 use crate::{
-    default_wrapper::DefaultWrapper,
+    default_wrapper::{DefaultOption, DefaultWrapper},
     gossip::types::WrappedPeerId,
     gossip_api::{
         cluster_management::ClusterManagementMessage,
@@ -26,10 +26,9 @@ use crate::{
             AuthenticatedGossipResponse, ConnectionRole, GossipOutbound, GossipRequest,
             GossipResponse, ManagerControlDirective, PubsubMessage,
         },
-        handshake::{HandshakeMessage, MatchRejectionReason, MidpointPrice, PriceVector},
+        handshake::{HandshakeMessage, MatchRejectionReason, PriceVector},
     },
-    lazy_static::lazy_static,
-    price_reporter::tokens::Token,
+    price_reporter::{jobs::PriceReporterManagerJob, tokens::Token},
     proof_generation::{jobs::ProofManagerJob, OrderValidityProofBundle},
     starknet_client::client::StarknetClient,
     state::{new_async_shared, NetworkOrderState, OrderIdentifier, RelayerState},
@@ -53,6 +52,10 @@ use super::{
     worker::HandshakeManagerConfig,
 };
 
+// -------------
+// | Constants |
+// -------------
+
 /// The amount of time to mark an order pair as invisible for; giving the peer
 /// time to complete a match on this pair
 pub(super) const HANDSHAKE_INVISIBILITY_WINDOW_MS: u64 = 120_000; // 2 minutes
@@ -65,35 +68,12 @@ const NANOS_PER_MILLI: u64 = 1_000_000;
 /// The number of threads executing handshakes
 pub(super) const HANDSHAKE_EXECUTOR_N_THREADS: usize = 8;
 
-/// Addresses used for dummy tokens, on starknet testnet
-/// TODO: Remove these and use real prices
-/// The starknet contract address for ETH ERC-20
-pub const WETH_STARKNET_ERC_ADDR: &str =
-    "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7";
-/// The starknet contract address for USDC ERC-20
-pub const USDC_STARKNET_ERC_ADDR: &str =
-    "0x5a643907b9a4bc6a55e9069c4fd5fd1f5c79a22470690f75556c4736e34426";
-/// A dummy starknet contract address for WBTC ERC-20
-pub const WBTC_STARKNET_ERC_ADDR: &str = "0x283751a21eafbfcd52297820d27c1f1963d9b5b4";
+/// Error message emitted when a wallet cannot be looked up in the global state
+pub(super) const ERR_NO_WALLET: &str = "wallet not found in state";
 
-lazy_static! {
-    /// A dummy price vector to fill in as a midpoint while development
-    /// is underway
-    ///
-    /// TODO: Remove this and consume prices from the `price_reporter`
-    static ref DUMMY_PRICE_VECTOR: PriceVector = vec![
-        (
-            Token { addr: WETH_STARKNET_ERC_ADDR.to_string() },
-            Token { addr: USDC_STARKNET_ERC_ADDR.to_string() },
-            10.
-        ),
-        (
-            Token { addr: WBTC_STARKNET_ERC_ADDR.to_string() },
-            Token { addr: USDC_STARKNET_ERC_ADDR.to_string() },
-            20.
-        )
-    ];
-}
+// -----------
+// | Helpers |
+// -----------
 
 /// Get the current unix timestamp in milliseconds since the epoch
 fn get_timestamp_millis() -> u64 {
@@ -104,6 +84,10 @@ fn get_timestamp_millis() -> u64 {
         .try_into()
         .unwrap()
 }
+
+// ------------------------
+// | Manager and Executor |
+// ------------------------
 
 /// Manages requests to handshake from a peer and sends outbound requests to initiate
 /// a handshake
@@ -128,9 +112,11 @@ pub struct HandshakeExecutor {
     /// Stores the state of existing handshake executions
     pub(super) handshake_state_index: HandshakeStateIndex,
     /// The channel on which other workers enqueue jobs for the protocol executor
-    pub(super) job_channel: DefaultWrapper<Option<UnboundedReceiver<HandshakeExecutionJob>>>,
+    pub(super) job_channel: DefaultOption<TokioReceiver<HandshakeExecutionJob>>,
     /// The channel on which the handshake executor may forward requests to the network
-    pub(super) network_channel: UnboundedSender<GossipOutbound>,
+    pub(super) network_channel: TokioSender<GossipOutbound>,
+    /// The pricer reporter's work queue, used for fetching price reports
+    pub(super) price_reporter_job_queue: TokioSender<PriceReporterManagerJob>,
     /// A Starknet client used for interacting with the contract
     pub(super) starknet_client: StarknetClient,
     /// The channel on which to send proof manager jobs
@@ -149,8 +135,9 @@ impl HandshakeExecutor {
     /// Create a new protocol executor
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        job_channel: UnboundedReceiver<HandshakeExecutionJob>,
-        network_channel: UnboundedSender<GossipOutbound>,
+        job_channel: TokioReceiver<HandshakeExecutionJob>,
+        network_channel: TokioSender<GossipOutbound>,
+        price_reporter_job_queue: TokioSender<PriceReporterManagerJob>,
         starknet_client: StarknetClient,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         global_state: RelayerState,
@@ -167,6 +154,7 @@ impl HandshakeExecutor {
             handshake_state_index,
             job_channel: DefaultWrapper::new(Some(job_channel)),
             network_channel,
+            price_reporter_job_queue,
             starknet_client,
             proof_manager_work_queue,
             global_state,
@@ -357,6 +345,7 @@ impl HandshakeExecutor {
             // Send a handshake message to the given peer_id
             // Panic if channel closed, no way to recover
             let request_id = Uuid::new_v4();
+            let price_vector = self.fetch_price_vector().await?;
             self.network_channel
                 .send(GossipOutbound::Request {
                     peer_id: managing_peer.unwrap(),
@@ -366,17 +355,25 @@ impl HandshakeExecutor {
                             peer_id: self.global_state.local_peer_id(),
                             sender_order: local_order_id,
                             peer_order: peer_order_id,
-                            price_vector: DUMMY_PRICE_VECTOR.clone(),
+                            price_vector: price_vector.clone(),
                         },
                     },
                 })
                 .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
             // Determine the execution price for the new order
-            let (_, _, execution_price) = self
-                .choose_price_or_reject(DUMMY_PRICE_VECTOR.clone(), local_order_id)
+            let order = self
+                .global_state
+                .get_order(&local_order_id)
                 .await
-                .expect("dummy price vector should always have a valid price");
+                .ok_or_else(|| HandshakeManagerError::StateNotFound(ERR_NO_WALLET.to_string()))?;
+            let execution_price = price_vector
+                .find_pair(
+                    &Token::from_addr_biguint(&order.base_mint),
+                    &Token::from_addr_biguint(&order.quote_mint),
+                )
+                .unwrap() /* (base, quote, price) */
+                .2;
 
             self.handshake_state_index
                 .new_handshake(
@@ -512,7 +509,7 @@ impl HandshakeExecutor {
         }
 
         // Verify that the proposed prices are valid by the price agreement logic
-        let execution_price = self.choose_price_or_reject(price_vector, my_order).await;
+        let execution_price = self.validate_price_vector(&price_vector, &my_order).await?;
         if execution_price.is_none() {
             return self.reject_match_proposal(
                 request_id,
@@ -522,7 +519,9 @@ impl HandshakeExecutor {
                 response_channel,
             );
         }
-        let (_, _, execution_price) = execution_price.unwrap();
+        let execution_price = execution_price
+            .unwrap() /* (base, quote, price) */
+            .2;
 
         // Add an entry to the handshake state index
         self.handshake_state_index
@@ -593,32 +592,6 @@ impl HandshakeExecutor {
         self.send_request_response(request_id, peer_id, resp, Some(response_channel))?;
 
         Ok(())
-    }
-
-    /// Chooses a price from the price vector corresponding to the asset pair traded by
-    /// the given order. If none of the prices are suitable by the price agreement logic
-    /// then `None` is returned
-    async fn choose_price_or_reject(
-        &self,
-        proposed_prices: PriceVector,
-        my_order: OrderIdentifier,
-    ) -> Option<MidpointPrice> {
-        // Lookup the order in the book
-        let order_info = {
-            let locked_wallet_index = self.global_state.read_wallet_index().await;
-            let wallet_id = locked_wallet_index.get_wallet_for_order(&my_order)?;
-
-            let mut wallet = locked_wallet_index.get_wallet(&wallet_id).await?;
-            wallet.orders.remove(&my_order)
-        }?;
-
-        // Find the midpoint price for the order
-        // TODO: Verify the price is acceptable
-        let base_token = Token::from_addr_biguint(&order_info.base_mint);
-        let quote_token = Token::from_addr_biguint(&order_info.quote_mint);
-        proposed_prices
-            .into_iter()
-            .find(|(base, quote, _)| base == &base_token && quote == &quote_token)
     }
 
     /// Reject a proposed match candidate for the specified reason
@@ -838,7 +811,7 @@ impl HandshakeExecutor {
 #[derive(Clone)]
 pub struct HandshakeScheduler {
     /// The UnboundedSender to enqueue jobs on
-    job_sender: UnboundedSender<HandshakeExecutionJob>,
+    job_sender: TokioSender<HandshakeExecutionJob>,
     /// A copy of the relayer-global state
     global_state: RelayerState,
     /// The cancel channel to receive cancel signals on
@@ -848,7 +821,7 @@ pub struct HandshakeScheduler {
 impl HandshakeScheduler {
     /// Construct a new timer
     pub fn new(
-        job_sender: UnboundedSender<HandshakeExecutionJob>,
+        job_sender: TokioSender<HandshakeExecutionJob>,
         global_state: RelayerState,
         cancel: CancelChannel,
     ) -> Self {
