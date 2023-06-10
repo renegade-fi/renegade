@@ -96,7 +96,7 @@ struct Cli {
     /// Flag to disable the price reporter
     #[clap(long, value_parser)]
     pub disable_price_reporter: bool,
-    /// Flat to disable streaming price from Binance
+    /// Flag to disable streaming price from Binance
     /// 
     /// This is useful for testing in a region that Binance has IP blocked
     #[clap(long, value_parser)]

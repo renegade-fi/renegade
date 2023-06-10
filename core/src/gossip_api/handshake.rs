@@ -1,4 +1,6 @@
 //! Groups API definitions for handshake request response
+use std::collections::HashMap;
+
 use portpicker::Port;
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +13,27 @@ use crate::{
 /// A type representing the midpoint price of a given token pair
 pub type MidpointPrice = (Token, Token, Price);
 /// A price vector that a peer proposes to its counterparty during a handshake
-pub type PriceVector = Vec<MidpointPrice>;
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PriceVector(pub Vec<MidpointPrice>);
+impl PriceVector {
+    /// Returns the price of a given token pair, if it exists in the price vector
+    pub fn find_pair(&self, base: &Token, quote: &Token) -> Option<MidpointPrice> {
+        self.0
+            .iter()
+            .find(|(b, q, _)| b == base && q == quote)
+            .cloned()
+    }
+}
+
+impl From<PriceVector> for HashMap<(Token, Token), Price> {
+    fn from(price_vector: PriceVector) -> Self {
+        price_vector
+            .0
+            .into_iter()
+            .map(|(base, quote, price)| ((base, quote), price))
+            .collect()
+    }
+}
 
 /// Enumerates the different operations possible via handshake
 #[derive(Debug, Clone, Serialize, Deserialize)]

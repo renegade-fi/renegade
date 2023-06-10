@@ -5,8 +5,8 @@ use std::fmt::Display;
 /// The core error type for the handshake manager
 #[derive(Clone, Debug)]
 pub enum HandshakeManagerError {
-    /// An error while collaboratively proving a statement
-    Multiprover(String),
+    /// Error resulting from a cancellation signal
+    Cancelled(String),
     /// An invalid request ID was passed in a message; i.e. the request ID is not known
     /// to the local state machine
     InvalidRequest(String),
@@ -14,8 +14,10 @@ pub enum HandshakeManagerError {
     MpcNetwork(String),
     /// An MpcShootdown request has stopped the handshake
     MpcShootdown,
-    /// Error verifying a proof
-    VerificationError(String),
+    /// An error while collaboratively proving a statement
+    Multiprover(String),
+    /// Necessary price data was not available for a token pair
+    NoPriceData(String),
     /// Error sending a message to the network
     SendMessage(String),
     /// Error while setting up the handshake manager
@@ -25,8 +27,8 @@ pub enum HandshakeManagerError {
     /// This may happen if, for example, an order is cancelled during the course
     /// of a match
     StateNotFound(String),
-    /// Error resulting from a cancellation signal
-    Cancelled(String),
+    /// Error verifying a proof
+    VerificationError(String),
 }
 
 impl Display for HandshakeManagerError {

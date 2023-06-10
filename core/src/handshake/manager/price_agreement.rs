@@ -1,12 +1,29 @@
 //! Groups logic for sampling and agreeing upon price vectors during a handshake
 
+use std::collections::HashMap;
+
 use lazy_static::lazy_static;
-use tokio::sync::mpsc::UnboundedSender as TokioSender;
+use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
+use tracing::log;
 
 use crate::{
-    handshake::error::HandshakeManagerError,
-    price_reporter::{jobs::PriceReporterManagerJob, tokens::Token},
+    gossip_api::handshake::{MidpointPrice, PriceVector},
+    handshake::{error::HandshakeManagerError, manager::ERR_NO_WALLET},
+    price_reporter::{
+        jobs::PriceReporterManagerJob,
+        reporter::{Price, PriceReporterState},
+        tokens::Token,
+    },
+    state::OrderIdentifier,
 };
+
+use super::HandshakeExecutor;
+
+/// The maximum percentage deviation that is allowed between a peer's proposed price
+/// and a locally observed price before the proposed price is rejected
+const MAX_PRICE_DEVIATION: f64 = 0.01;
+/// Error message emitted when price data could not be found for a given token pair
+const ERR_NO_PRICE_STREAM: &str = "price report not available for token pair";
 
 // ----------------
 // | Quote Tokens |
@@ -114,4 +131,104 @@ pub fn init_price_streams(
     }
 
     Ok(())
+}
+
+impl HandshakeExecutor {
+    /// Fetch a price vector from the price reporter
+    pub(super) async fn fetch_price_vector(&self) -> Result<PriceVector, HandshakeManagerError> {
+        // Enqueue jobs in the price manager to snapshot the midpoint for each pair
+        let mut channels = Vec::with_capacity(DEFAULT_PAIRS.len());
+        for (base, quote) in DEFAULT_PAIRS.iter().cloned() {
+            let (sender, receiver) = oneshot::channel();
+            self.price_reporter_job_queue
+                .send(PriceReporterManagerJob::PeekMedian {
+                    base_token: base,
+                    quote_token: quote,
+                    channel: sender,
+                })
+                .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
+            channels.push(receiver);
+        }
+
+        // Wait for the price reporter to respond with the midpoint prices for each pair
+        let mut midpoint_prices = Vec::new();
+        for response_channel in channels.into_iter() {
+            let res = response_channel.await;
+            if res.is_err() {
+                log::error!("Error fetching price vector: {res:?}");
+                continue;
+            }
+            let midpoint_state = res.unwrap();
+
+            match midpoint_state {
+                PriceReporterState::Nominal(report) => {
+                    midpoint_prices.push((
+                        report.base_token,
+                        report.quote_token,
+                        report.midpoint_price,
+                    ));
+                }
+
+                err_state => {
+                    log::error!("Price report invalid: {err_state:?}");
+                }
+            }
+        }
+
+        Ok(PriceVector(midpoint_prices))
+    }
+
+    /// Validate a price vector against an order we intend to match
+    ///
+    /// The input prices are those proposed by a peer that has initiated a match
+    /// against a locally managed order
+    ///
+    /// The result is `None` if the prices are rejected. If the prices are accepted the result
+    /// is the midpoint price of the asset pair that the local party's order is on
+    pub(super) async fn validate_price_vector(
+        &self,
+        proposed_prices: &PriceVector,
+        my_order_id: &OrderIdentifier,
+    ) -> Result<Option<MidpointPrice>, HandshakeManagerError> {
+        // Find the price of the asset pair that the local party's order is on in the
+        // peer's proposed prices list
+        let my_order = self
+            .global_state
+            .get_order(my_order_id)
+            .await
+            .ok_or_else(|| HandshakeManagerError::StateNotFound(ERR_NO_WALLET.to_string()))?;
+        let base = Token::from_addr_biguint(&my_order.base_mint);
+        let quote = Token::from_addr_biguint(&my_order.quote_mint);
+
+        let proposed_price = proposed_prices.find_pair(&base, &quote);
+        if proposed_price.is_none() {
+            return Ok(None);
+        }
+        let (_, _, proposed_price) = proposed_price.unwrap(); /* (base, quote, price) */
+
+        // Validate that the maximum deviation between the proposed prices and the locally
+        // observed prices is within the acceptable range
+        let my_prices: HashMap<(Token, Token), Price> = self.fetch_price_vector().await?.into();
+        let peer_prices: HashMap<(Token, Token), Price> = proposed_prices.clone().into();
+        if !my_prices.contains_key(&(base.clone(), quote.clone())) {
+            return Err(HandshakeManagerError::NoPriceData(format!(
+                "{ERR_NO_PRICE_STREAM}: {base}-{quote}"
+            )));
+        }
+
+        // We cannot simply validate that the peer's proposed price for *our asset pair*
+        // is within the acceptable range. This behavior would allow the peer to probe price
+        // rejections with different assets to determine the asset pair an order is on
+        // So instead we validate all of the peer's proposed prices that we have local prices for
+        for ((base, quote), peer_price) in peer_prices.into_iter() {
+            if let Some(my_price) = my_prices.get(&(base, quote)) {
+                let price_deviation = (peer_price - my_price) / my_price;
+                if price_deviation.abs() > MAX_PRICE_DEVIATION {
+                    return Ok(None);
+                }
+            }
+        }
+
+        Ok(Some((base, quote, proposed_price)))
+    }
 }
