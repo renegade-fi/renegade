@@ -267,6 +267,7 @@ impl PriceReporter {
             .intersection(&quote_token_supported_exchanges)
             .copied()
             .filter(|exchange| config.exchange_configured(*exchange))
+            .filter(|exchange| !config.disable_binance || *exchange != Exchange::Binance)
             .collect_vec()
     }
 
