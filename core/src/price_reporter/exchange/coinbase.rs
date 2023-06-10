@@ -7,7 +7,6 @@ use std::{
 };
 
 use async_trait::async_trait;
-use chrono::DateTime;
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use hmac_sha256::HMAC;
 use serde_json::json;
@@ -15,15 +14,12 @@ use tracing::log;
 use tungstenite::{Error as WsError, Message};
 use url::Url;
 
-use crate::{
-    price_reporter::{
-        errors::ExchangeConnectionError,
-        exchange::{connection::ws_connect, get_current_time, InitializablePriceStream},
-        reporter::Price,
-        tokens::Token,
-        worker::PriceReporterManagerConfig,
-    },
-    state::{new_async_shared, AsyncShared},
+use crate::price_reporter::{
+    errors::ExchangeConnectionError,
+    exchange::{connection::ws_connect, get_current_time, InitializablePriceStream},
+    reporter::Price,
+    tokens::Token,
+    worker::PriceReporterManagerConfig,
 };
 
 use super::{
@@ -45,8 +41,6 @@ const COINBASE_PRICE_LEVEL: &str = "price_level";
 const COINBASE_NEW_QUANTITY: &str = "new_quantity";
 /// The name of the side field on a coinbase event
 const COINBASE_SIDE: &str = "side";
-/// The name of the timestamp field on a coinbase event
-const COINBASE_TIMESTAMP: &str = "timestamp";
 
 /// The bid side field value
 const COINBASE_BID: &str = "bid";
@@ -71,9 +65,9 @@ pub struct CoinbaseOrderBookData {
     // Note: The reason we use String's for price_level is because using f32 as a key produces
     // collision issues
     /// A HashMap representing the local mirroring of Coinbase's order book bids.
-    order_book_bids: HashMap<String, f32>,
+    bids: HashMap<String, f32>,
     /// A HashMap representing the local mirroring of Coinbase's order book offers.
-    order_book_offers: HashMap<String, f32>,
+    offers: HashMap<String, f32>,
 }
 
 impl Stream for CoinbaseConnection {
@@ -126,7 +120,7 @@ impl CoinbaseConnection {
 
     /// Parse a midpoint price from a websocket message
     async fn midpoint_from_ws_message(
-        order_book_data: AsyncShared<CoinbaseOrderBookData>,
+        order_book: &mut CoinbaseOrderBookData,
         message: Message,
     ) -> Result<Option<Price>, ExchangeConnectionError> {
         // The json body of the message
@@ -147,8 +141,7 @@ impl CoinbaseConnection {
         };
 
         // Make updates to the locally replicated book given the price level updates
-        let locked_bids = &mut order_book_data.write().await.order_book_bids;
-        let locked_offers = &mut order_book_data.write().await.order_book_offers;
+        // let mut locked_book = order_book_data.write().await;
         for coinbase_event in update_events {
             let price_level: String = parse_json_field(COINBASE_PRICE_LEVEL, coinbase_event)?;
             let new_quantity: f32 = parse_json_field(COINBASE_NEW_QUANTITY, coinbase_event)?;
@@ -157,16 +150,16 @@ impl CoinbaseConnection {
             match &side[..] {
                 COINBASE_BID => {
                     if new_quantity == 0.0 {
-                        locked_bids.remove(&price_level);
+                        order_book.bids.remove(&price_level);
                     } else {
-                        locked_bids.insert(price_level.clone(), new_quantity);
+                        order_book.bids.insert(price_level.clone(), new_quantity);
                     }
                 }
                 COINBASE_OFFER => {
                     if new_quantity == 0.0 {
-                        locked_offers.remove(&price_level);
+                        order_book.offers.remove(&price_level);
                     } else {
-                        locked_offers.insert(price_level.clone(), new_quantity);
+                        order_book.offers.insert(price_level.clone(), new_quantity);
                     }
                 }
                 _ => {
@@ -176,19 +169,16 @@ impl CoinbaseConnection {
         }
 
         // Given the new order book, compute the best bid and offer
-        let best_bid = locked_bids
+        let best_bid = order_book
+            .bids
             .keys()
             .map(|key| key.parse::<f64>().unwrap())
             .fold(0.0, f64::max);
-        let best_offer = locked_offers
+        let best_offer = order_book
+            .offers
             .keys()
             .map(|key| key.parse::<f64>().unwrap())
             .fold(f64::INFINITY, f64::min);
-
-        let timestamp_str: String = parse_json_field(COINBASE_TIMESTAMP, &json_blob)?;
-        let _reported_timestamp = DateTime::parse_from_rfc3339(&timestamp_str)
-            .map_err(|err| ExchangeConnectionError::InvalidMessage(err.to_string()))?
-            .timestamp_millis();
 
         Ok(Some((best_bid + best_offer) / 2.))
     }
@@ -225,15 +215,14 @@ impl ExchangeConnection for CoinbaseConnection {
             .map_err(|err| ExchangeConnectionError::ConnectionHangup(err.to_string()))?;
 
         // Map the stream of Coinbase messages to one of midpoint prices
-        let order_book_data = new_async_shared(CoinbaseOrderBookData::default());
         let mapped_stream = read.filter_map(move |message| {
-            let order_book_clone = order_book_data.clone();
+            let mut order_book = CoinbaseOrderBookData::default();
             async move {
                 match message {
                     // The outer `Result` comes from reading from the ws stream, the inner `Result`
                     // comes from parsing the message
                     Ok(val) => {
-                        let res = Self::midpoint_from_ws_message(order_book_clone, val).await;
+                        let res = Self::midpoint_from_ws_message(&mut order_book, val).await;
                         res.transpose()
                     }
 
