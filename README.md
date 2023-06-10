@@ -1,12 +1,12 @@
 <div align="center">
   <img
     alt="Renegade Logo"
-    width="60%"
+    width="69%"
     src="./img/logo_light_relayer.svg#gh-light-mode-only"
   />
   <img
     alt="Renegade Logo"
-    width="60%"
+    width="69%"
     src="./img/logo_dark_relayer.svg#gh-dark-mode-only"
   />
 </div>
