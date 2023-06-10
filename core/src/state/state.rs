@@ -10,7 +10,7 @@ use crate::{
     system_bus::SystemBus,
     types::{wallet_topic_name, SystemBusMessage, NETWORK_TOPOLOGY_TOPIC},
 };
-use circuits::types::wallet::Nullifier;
+use circuits::types::{order::Order, wallet::Nullifier};
 use libp2p::{
     identity::{self, Keypair},
     Multiaddr,
@@ -132,6 +132,15 @@ impl RelayerState {
             .get_peer_info(&self.local_peer_id)
             .await
             .unwrap()
+    }
+
+    /// Get the info for a locally managed order
+    pub async fn get_order(&self, order_id: &OrderIdentifier) -> Option<Order> {
+        let locked_wallet_index = self.read_wallet_index().await;
+        let managing_wallet_id = locked_wallet_index.get_wallet_for_order(order_id)?;
+        let wallet = locked_wallet_index.get_wallet(&managing_wallet_id).await?;
+
+        wallet.orders.get(order_id).cloned()
     }
 
     /// Sample an order for handshake
