@@ -150,7 +150,9 @@ impl ExchangeConnection for OkxConnection {
                 // Error reading from the websocket
                 Err(e) => {
                     log::error!("Error reading message from Okx ws: {}", e);
-                    None
+                    Some(Err(ExchangeConnectionError::ConnectionHangup(
+                        e.to_string(),
+                    )))
                 }
             }
         });

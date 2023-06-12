@@ -22,6 +22,7 @@ use crate::{
     },
     starknet_client::client::StarknetClient,
     state::{wallet::Wallet, NetworkOrder, RelayerState},
+    tasks::helpers::find_merkle_path,
     SizedWallet,
 };
 
@@ -101,6 +102,8 @@ pub enum UpdateWalletTaskState {
         /// The proof of VALID WALLET UPDATE created in the previous step
         proof_bundle: ValidWalletUpdateBundle,
     },
+    /// The task is finding a new Merkle opening for the wallet
+    FindingOpening,
     /// The task is updating the validity proofs for all orders in the
     /// now nullified wallet
     UpdatingValidityProofs,
@@ -152,6 +155,11 @@ impl Task for UpdateWalletTask {
                 // Submit the proof and transaction info to the contract and await
                 // transaction finality
                 self.submit_tx().await?;
+                self.task_state = UpdateWalletTaskState::FindingOpening;
+            }
+            UpdateWalletTaskState::FindingOpening => {
+                // Find a new Merkle opening for the wallet
+                self.find_opening().await?;
                 self.task_state = UpdateWalletTaskState::UpdatingValidityProofs;
             }
             UpdateWalletTaskState::UpdatingValidityProofs => {
@@ -306,12 +314,24 @@ impl UpdateWalletTask {
             ));
         }
 
+        Ok(())
+    }
+
+    /// Find the wallet opening for the new wallet and re-index the wallet in the global state
+    async fn find_opening(&mut self) -> Result<(), UpdateWalletTaskError> {
+        // Attach the opening to the new wallet, and index the wallet in the global state
+        let merkle_opening = find_merkle_path(&self.new_wallet, &self.starknet_client)
+            .await
+            .map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))?;
+        self.new_wallet.merkle_proof = Some(merkle_opening);
+
         // After the state is finalized on-chain, add new orders to the book and
         // re-index the wallet in the global state
         self.add_new_orders_to_book().await;
         self.global_state
             .update_wallet(self.new_wallet.clone())
             .await;
+
         Ok(())
     }
 
@@ -338,7 +358,6 @@ impl UpdateWalletTask {
             }
         }
     }
-
     /// After a wallet update has been submitted on-chain, find its authentication
     /// path, and re-prove `VALID REBLIND` for the wallet and `VALID COMMITMENTS`
     /// for all orders in the wallet
