@@ -381,7 +381,9 @@ impl ExchangeConnection for UniswapV3Connection {
 
                         Err(e) => {
                             log::error!("Error parsing Swap event from UniswapV3: {}", e);
-                            None
+                            Some(Err(ExchangeConnectionError::ConnectionHangup(
+                                e.to_string(),
+                            )))
                         }
                     }
                 });
