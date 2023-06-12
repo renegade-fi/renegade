@@ -22,7 +22,7 @@ use crate::{
         OrderValidityProofBundle, OrderValidityWitnessBundle, SizedValidCommitments,
         SizedValidReblind,
     },
-    state::{NetworkOrder, OrderIdentifier},
+    state::{NetworkOrder, NetworkOrderState, OrderIdentifier},
 };
 
 use super::{
@@ -123,15 +123,25 @@ impl GossipProtocolExecutor {
         &self,
         mut order_info: NetworkOrder,
     ) -> Result<(), GossipError> {
-        // If there is a proof attached to the order, verify it
+        // Move fields out of `order_info` before transferring ownership
+        let order_id = order_info.id;
+        let proof = order_info.validity_proofs.take();
+
+        // Index the order in the `Received` state
         let is_local = order_info.cluster == self.global_state.local_cluster_id;
-        if let Some(proof_bundle) = order_info.validity_proofs.clone() {
+        order_info.state = NetworkOrderState::Received;
+        order_info.local = is_local;
+        self.global_state.add_order(order_info).await;
+
+        // If there is a proof attached to the order, verify it and transition to `Verified`
+        if let Some(proof_bundle) = proof {
             // We can trust local (i.e. originating from cluster peers) proofs
             if !is_local {
                 let self_clone = self.clone();
+                let bundle_clone = proof_bundle.clone();
 
                 tokio::task::spawn_blocking(move || {
-                    block_on(self_clone.verify_validity_proofs(proof_bundle))
+                    block_on(self_clone.verify_validity_proofs(&bundle_clone))
                 })
                 .await
                 .unwrap()?;
@@ -141,12 +151,14 @@ impl GossipProtocolExecutor {
             // so that it may link commitments between the validity proof and subsequent match/encryption
             // proofs
             if is_local {
-                self.request_order_witness(order_info.id)?;
+                self.request_order_witness(order_id)?;
             }
-        }
 
-        order_info.local = is_local;
-        self.global_state.add_order(order_info).await;
+            // Update the state of the order to `Verified` by attaching the verified validity proof
+            self.global_state
+                .add_order_validity_proofs(&order_id, proof_bundle)
+                .await;
+        }
 
         Ok(())
     }
@@ -194,7 +206,7 @@ impl GossipProtocolExecutor {
             let self_clone = self.clone();
 
             tokio::task::spawn_blocking(move || {
-                block_on(self_clone.verify_validity_proofs(bundle_clone))
+                block_on(self_clone.verify_validity_proofs(&bundle_clone))
             })
             .await
             .unwrap()?;
@@ -317,7 +329,7 @@ impl GossipProtocolExecutor {
     /// variables (e.g. merkle root) for the proof
     async fn verify_validity_proofs(
         &self,
-        proof_bundle: OrderValidityProofBundle,
+        proof_bundle: &OrderValidityProofBundle,
     ) -> Result<(), GossipError> {
         // Clone the proof out from behind their references so that the verifier may
         // take ownership
