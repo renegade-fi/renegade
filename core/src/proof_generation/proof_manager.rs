@@ -38,7 +38,7 @@ use super::{
 /// Error message when sending a proof response fails
 const ERR_SENDING_RESPONSE: &str = "error sending proof response, channel closed";
 /// The number of threads to allocate towards the proof generation worker pool
-pub(crate) const PROOF_GENERATION_N_THREADS: usize = 3;
+pub(crate) const PROOF_GENERATION_N_THREADS: usize = 10;
 
 // --------------------
 // | Proof Generation |

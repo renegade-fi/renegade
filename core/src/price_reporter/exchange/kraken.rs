@@ -156,7 +156,9 @@ impl ExchangeConnection for KrakenConnection {
                 // Error reading from the websocket
                 Err(e) => {
                     log::error!("Error reading message from Kraken ws: {}", e);
-                    None
+                    Some(Err(ExchangeConnectionError::ConnectionHangup(
+                        e.to_string(),
+                    )))
                 }
             }
         });
