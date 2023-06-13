@@ -3,7 +3,7 @@
 pub mod r#match;
 mod price_agreement;
 
-use circuits::zk_gadgets::fixed_point::FixedPoint;
+use circuits::{types::order::Order, zk_gadgets::fixed_point::FixedPoint};
 use crossbeam::channel::Sender as CrossbeamSender;
 use futures::executor::block_on;
 use libp2p::request_response::ResponseChannel;
@@ -30,7 +30,7 @@ use crate::{
     },
     price_reporter::{jobs::PriceReporterManagerJob, tokens::Token},
     proof_generation::{jobs::ProofManagerJob, OrderValidityProofBundle},
-    starknet_client::client::StarknetClient,
+    starknet_client::{client::StarknetClient, ChainId},
     state::{new_async_shared, NetworkOrderState, OrderIdentifier, RelayerState},
     system_bus::SystemBus,
     tasks::{
@@ -70,6 +70,8 @@ pub(super) const HANDSHAKE_EXECUTOR_N_THREADS: usize = 8;
 
 /// Error message emitted when a wallet cannot be looked up in the global state
 pub(super) const ERR_NO_WALLET: &str = "wallet not found in state";
+/// Error message emitted when price data cannot be found for a token pair
+const ERR_NO_PRICE_DATA: &str = "no price data found for token pair";
 
 // -----------
 // | Helpers |
@@ -107,6 +109,8 @@ pub struct HandshakeManager {
 /// Manages the threaded execution of the handshake protocol
 #[derive(Clone)]
 pub struct HandshakeExecutor {
+    /// The chain that the local node targets
+    chain_id: ChainId,
     /// The cache used to mark order pairs as already matched
     pub(super) handshake_cache: SharedHandshakeCache<OrderIdentifier>,
     /// Stores the state of existing handshake executions
@@ -135,6 +139,7 @@ impl HandshakeExecutor {
     /// Create a new protocol executor
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        chain_id: ChainId,
         job_channel: TokioReceiver<HandshakeExecutionJob>,
         network_channel: TokioSender<GossipOutbound>,
         price_reporter_job_queue: TokioSender<PriceReporterManagerJob>,
@@ -150,6 +155,7 @@ impl HandshakeExecutor {
         let handshake_state_index = HandshakeStateIndex::new(global_state.clone());
 
         Ok(Self {
+            chain_id,
             handshake_cache,
             handshake_state_index,
             job_channel: DefaultWrapper::new(Some(job_channel)),
@@ -326,6 +332,10 @@ impl HandshakeExecutor {
         }
     }
 
+    // ----------------
+    // | Job Handlers |
+    // ----------------
+
     /// Perform a handshake with a peer
     pub async fn perform_handshake(
         &self,
@@ -367,13 +377,15 @@ impl HandshakeExecutor {
                 .get_order(&local_order_id)
                 .await
                 .ok_or_else(|| HandshakeManagerError::StateNotFound(ERR_NO_WALLET.to_string()))?;
-            let execution_price = price_vector
-                .find_pair(
-                    &Token::from_addr_biguint(&order.base_mint),
-                    &Token::from_addr_biguint(&order.quote_mint),
-                )
-                .unwrap() /* (base, quote, price) */
-                .2;
+            let (base, quote) = self.token_pair_for_order(&order);
+
+            let execution_price =
+                price_vector
+                    .find_pair(&base, &quote)
+                    .ok_or_else(|| {
+                        HandshakeManagerError::NoPriceData(ERR_NO_PRICE_DATA.to_string())
+                    })? /* (base, quote, price) */
+                    .2;
 
             self.handshake_state_index
                 .new_handshake(
@@ -670,6 +682,25 @@ impl HandshakeExecutor {
 
         // Send back an ack
         self.send_request_response(request_id, peer_id, HandshakeMessage::Ack, response_channel)
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Converts the token pair of the given order to one that price
+    /// data can be found for
+    ///
+    /// This involves both converting the address into an Eth mainnet analog
+    /// and casting this to a `Token`
+    fn token_pair_for_order(&self, order: &Order) -> (Token, Token) {
+        match self.chain_id {
+            ChainId::AlphaGoerli | ChainId::Devnet => (
+                Token::from_starknet_goerli_addr_biguint(&order.base_mint),
+                Token::from_starknet_goerli_addr_biguint(&order.quote_mint),
+            ),
+            _ => todo!("Implement price remapping for {:?}", self.chain_id),
+        }
     }
 
     /// Sends a request or response depending on whether the response channel is None

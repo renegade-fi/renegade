@@ -303,7 +303,7 @@ impl PriceReporter {
         let (non_zero_prices, timestamps): (Vec<Price>, Vec<u64>) = ALL_EXCHANGES
             .iter()
             .filter_map(|exchange| self.exchange_info.read_price(exchange))
-            .filter(|(price, _)| *price != Price::default())
+            .filter(|(price, _)| *price != Price::default() && price.is_finite())
             .unzip();
 
         // Ensure that we have enough data to create a median
@@ -334,8 +334,8 @@ impl PriceReporter {
         let max_deviation = non_zero_prices
             .iter()
             .map(|price| (price - median_midpoint_price).abs() / median_midpoint_price)
-            .fold(f64::MIN, |a, b| a.max(b));
-        if max_deviation > MAX_DEVIATION {
+            .fold(0f64, |a, b| a.max(b));
+        if non_zero_prices.len() > 1 && max_deviation > MAX_DEVIATION {
             return PriceReporterState::TooMuchDeviation(median_price_report, max_deviation);
         }
 
