@@ -29,6 +29,7 @@ use mpc_ristretto::{
     mpc_scalar::scalar_to_u64,
     network::{MpcNetwork, QuicTwoPartyNet},
 };
+use rand::{thread_rng, Rng};
 use rand_core::OsRng;
 
 use crate::{IntegrationTestArgs, TestWrapper};
@@ -328,6 +329,36 @@ fn test_valid_match_undercapitalized__quote_side(
     }
 
     // Prove `VALID MATCH MPC`
+    let witness = setup_witness(
+        price,
+        compute_max_amount(price, &my_order, &my_balance),
+        my_order,
+        my_balance,
+        test_args.mpc_fabric.clone(),
+    )?;
+
+    if !prove_and_verify_match(witness, test_args.mpc_fabric.clone())? {
+        return Err("Failed to prove and verify match".to_string());
+    }
+
+    Ok(())
+}
+
+/// Test the case in which the price is a non-integral value
+fn test_valid_match__non_integral_price(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let mut rng = thread_rng();
+    let party_id = test_args.party_id;
+    let my_order = create_test_order(party_id);
+    let my_balance = create_test_balance(party_id);
+
+    // Party 0 chooses a random price and shares it with party 1
+    let price_range = DUMMY_SELL_SIDE_WORST_PRICE.to_f64()..DUMMY_BUY_SIDE_WORST_PRICE.to_f64();
+    let price = FixedPoint::from_f64_round_down(rng.gen_range(price_range));
+    let price = price
+        .share_public(0 /* owning_party */, test_args.mpc_fabric.clone())
+        .map_err(|err| format!("Error sharing price: {:?}", err))?;
+
+    // Prove `VALID MATCH MPC
     let witness = setup_witness(
         price,
         compute_max_amount(price, &my_order, &my_balance),
@@ -698,6 +729,11 @@ inventory::submit!(TestWrapper(IntegrationTest {
 inventory::submit!(TestWrapper(IntegrationTest {
     name: "zk_circuits::valid_match_mpc::test_valid_match_undercapitalized__quote_side",
     test_fn: test_valid_match_undercapitalized__quote_side
+}));
+
+inventory::submit!(TestWrapper(IntegrationTest {
+    name: "zk_circuits::valid_match_mpc::test_valid_match__non_integral_price",
+    test_fn: test_valid_match__non_integral_price
 }));
 
 inventory::submit!(TestWrapper(IntegrationTest {
