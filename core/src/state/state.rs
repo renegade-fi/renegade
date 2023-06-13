@@ -359,7 +359,12 @@ impl RelayerState {
         // Add the wallet's orders to the book
         let mut locked_order_book = self.write_order_book().await;
         let wallet_share_nullifier = wallet.get_wallet_nullifier();
-        for order_id in wallet.orders.keys() {
+        for order_id in wallet
+            .orders
+            .iter()
+            .filter(|(_, order)| !order.is_zero())
+            .map(|(id, _)| id)
+        {
             if !locked_order_book.contains_order(order_id) {
                 locked_order_book
                     .add_order(NetworkOrder::new(

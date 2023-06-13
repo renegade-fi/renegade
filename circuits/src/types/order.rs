@@ -69,6 +69,14 @@ impl Order {
     pub fn is_default(&self) -> bool {
         self.eq(&Self::default())
     }
+
+    /// Whether or not this order is for zero volume
+    ///
+    /// This is a superset of the class of orders that `is_default` returns
+    /// true for
+    pub fn is_zero(&self) -> bool {
+        self.amount == 0
+    }
 }
 
 /// The side of the market a given order is on
