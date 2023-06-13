@@ -21,7 +21,7 @@ use crate::{
         SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
     },
     starknet_client::client::StarknetClient,
-    state::{wallet::Wallet, NetworkOrder, RelayerState},
+    state::{wallet::Wallet, RelayerState},
     tasks::helpers::find_merkle_path,
     SizedWallet,
 };
@@ -325,9 +325,7 @@ impl UpdateWalletTask {
             .map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))?;
         self.new_wallet.merkle_proof = Some(merkle_opening);
 
-        // After the state is finalized on-chain, add new orders to the book and
-        // re-index the wallet in the global state
-        self.add_new_orders_to_book().await;
+        // After the state is finalized on-chain, re-index the wallet in the global state
         self.global_state
             .update_wallet(self.new_wallet.clone())
             .await;
@@ -335,32 +333,8 @@ impl UpdateWalletTask {
         Ok(())
     }
 
-    /// Add new orders to the network order book
-    async fn add_new_orders_to_book(&self) {
-        let local_cluster_id = self.global_state.local_cluster_id.clone();
-        let wallet_public_share_nullifier = self.new_wallet.get_wallet_nullifier();
-
-        for order_id in self.new_wallet.orders.keys() {
-            if !self
-                .global_state
-                .read_order_book()
-                .await
-                .contains_order(order_id)
-            {
-                self.global_state
-                    .add_order(NetworkOrder::new(
-                        *order_id,
-                        wallet_public_share_nullifier,
-                        local_cluster_id.clone(),
-                        true, /* local */
-                    ))
-                    .await
-            }
-        }
-    }
-    /// After a wallet update has been submitted on-chain, find its authentication
-    /// path, and re-prove `VALID REBLIND` for the wallet and `VALID COMMITMENTS`
-    /// for all orders in the wallet
+    /// After a wallet update has been submitted on-chain, re-prove `VALID REBLIND`
+    /// for the wallet and `VALID COMMITMENTS` for all orders in the wallet
     async fn update_validity_proofs(&self) -> Result<(), UpdateWalletTaskError> {
         update_wallet_validity_proofs(
             &self.new_wallet,
