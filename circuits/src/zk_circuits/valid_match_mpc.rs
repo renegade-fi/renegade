@@ -6,18 +6,6 @@
 
 use std::marker::PhantomData;
 
-use circuit_macros::circuit_type;
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
-use mpc_bulletproof::{
-    r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
-    r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, MpcVariable, R1CSError},
-};
-use mpc_ristretto::{
-    authenticated_ristretto::AuthenticatedCompressedRistretto,
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
-};
-use rand_core::{CryptoRng, RngCore};
-
 use crate::{
     errors::ProverError,
     mpc::SharedFabric,
@@ -55,6 +43,17 @@ use crate::{
         fixed_point::FixedPointVar,
     },
 };
+use circuit_macros::circuit_type;
+use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
+use mpc_bulletproof::{
+    r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
+    r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, MpcVariable, R1CSError},
+};
+use mpc_ristretto::{
+    authenticated_ristretto::AuthenticatedCompressedRistretto,
+    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+};
+use rand_core::{CryptoRng, RngCore};
 
 // ----------------------
 // | Circuit Definition |
@@ -197,7 +196,11 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
             .price1
             .mul_integer(witness.match_res.base_amount.clone(), cs)
             .map_err(ProverError::Collaborative)?;
-        expected_quote_amount.constrain_equal_integer(&witness.match_res.quote_amount, cs);
+        expected_quote_amount.constrain_equal_integer_ignore_fraction(
+            &witness.match_res.quote_amount,
+            fabric.clone(),
+            cs,
+        )?;
 
         // --- Price Protection --- //
         Self::verify_price_protection(&witness.price1, &witness.order1, fabric.clone(), cs)?;
@@ -388,7 +391,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         let expected_quote_amount = witness
             .price1
             .mul_integer(witness.match_res.base_amount, cs);
-        expected_quote_amount.constrain_equal_integer(witness.match_res.quote_amount, cs);
+        expected_quote_amount
+            .constrain_equal_integer_ignore_fraction(witness.match_res.quote_amount, cs);
 
         // --- Price Protection --- //
         Self::verify_price_protection_single_prover(&witness.price1, &witness.order1, cs);
@@ -507,7 +511,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
     type Statement = ();
     type Witness = AuthenticatedValidMatchMpcWitness<N, S>;
 
-    const BP_GENS_CAPACITY: usize = 256;
+    const BP_GENS_CAPACITY: usize = 512;
 
     fn apply_constraints_multiprover<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
         witness: <Self::Witness as MultiproverCircuitBaseType<N, S>>::MultiproverVarType<

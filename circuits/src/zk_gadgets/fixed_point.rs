@@ -25,7 +25,7 @@ use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
-    errors::MpcError,
+    errors::{MpcError, ProverError},
     mpc::SharedFabric,
     mpc_gadgets::modulo::shift_right,
     traits::{
@@ -37,7 +37,10 @@ use crate::{
     LinkableCommitment,
 };
 
-use super::{arithmetic::DivRemGadget, comparators::EqGadget};
+use super::{
+    arithmetic::DivRemGadget,
+    comparators::{EqGadget, GreaterThanEqGadget, MultiproverGreaterThanEqGadget},
+};
 
 /// The default fixed point decimal precision in bits
 /// i.e. the number of bits allocated to a fixed point's decimal
@@ -315,6 +318,27 @@ impl<L: LinearCombinationLike> FixedPointVar<L> {
     ) {
         let fixed_point_repr = Self::shift_integer(rhs);
         EqGadget::constrain_eq(self.clone(), fixed_point_repr, cs);
+    }
+
+    /// Constrain a fixed point variable to be equal to the given integer
+    /// when ignoring the fractional part
+    pub fn constrain_equal_integer_ignore_fraction<CS: RandomizableConstraintSystem>(
+        &self,
+        rhs: Variable,
+        cs: &mut CS,
+    ) {
+        // Shift the integer and take the difference
+        let shifted_rhs = *TWO_TO_M_SCALAR * rhs;
+        let diff = self.repr.clone().into() - shifted_rhs;
+
+        // Constrain the difference to be less than the precision on the fixed point,
+        // This is effectively the same as constraining the difference to have an integral
+        // component of zero
+        GreaterThanEqGadget::<DEFAULT_PRECISION>::constrain_greater_than_eq(
+            LinearCombination::from(*TWO_TO_M_SCALAR - Scalar::one()),
+            diff,
+            cs,
+        );
     }
 
     /// Return a boolean indicating whether a fixed point and integer are equal
@@ -642,6 +666,33 @@ impl<
         // Shift the integer
         let shifted_rhs = *TWO_TO_M_SCALAR * rhs;
         cs.constrain(self.repr.clone().into() - shifted_rhs);
+    }
+
+    /// Constrain a fixed point variable to be equal to the given integer
+    /// when ignoring the fractional part
+    pub fn constrain_equal_integer_ignore_fraction<
+        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+    >(
+        &self,
+        rhs: &MpcVariable<N, S>,
+        fabric: SharedFabric<N, S>,
+        cs: &mut CS,
+    ) -> Result<(), ProverError> {
+        // Shift the integer and take the difference
+        let shifted_rhs = *TWO_TO_M_SCALAR * rhs;
+        let diff = self.repr.clone().into() - shifted_rhs;
+
+        // Constrain the difference to be less than the precision on the fixed point,
+        // This is effectively the same as constraining the difference to have an integral
+        // component of zero
+        let shifted_precision =
+            MpcLinearCombination::from_scalar(*TWO_TO_M_SCALAR - Scalar::one(), fabric.clone().0);
+        MultiproverGreaterThanEqGadget::<'_, DEFAULT_PRECISION, _, _>::constrain_greater_than_eq(
+            shifted_precision,
+            diff,
+            fabric,
+            cs,
+        )
     }
 
     /// Convert the underlying type to an `MpcLinearCombination`
