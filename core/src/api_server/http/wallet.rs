@@ -28,7 +28,8 @@ use crate::{
             DepositBalanceResponse, FindWalletRequest, FindWalletResponse,
             GetBalanceByMintResponse, GetBalancesResponse, GetFeesResponse, GetOrderByIdResponse,
             GetOrdersResponse, GetWalletResponse, RemoveFeeRequest, RemoveFeeResponse,
-            WithdrawBalanceRequest, WithdrawBalanceResponse,
+            UpdateOrderRequest, UpdateOrderResponse, WithdrawBalanceRequest,
+            WithdrawBalanceResponse,
         },
         types::{Balance as ApiBalance, Fee as ApiFee, Order as ApiOrder},
         EmptyRequestResponse,
@@ -70,6 +71,8 @@ pub(super) const GET_WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
 pub(super) const WALLET_ORDERS_ROUTE: &str = "/v0/wallet/:wallet_id/orders";
 /// Returns a single order by the given identifier
 pub(super) const GET_ORDER_BY_ID_ROUTE: &str = "/v0/wallet/:wallet_id/orders/:order_id";
+/// Updates a given order
+pub(super) const UPDATE_ORDER_ROUTE: &str = "/v0/wallet/:wallet_id/orders/:order_id/update";
 /// Cancels a given order
 pub(super) const CANCEL_ORDER_ROUTE: &str = "/v0/wallet/:wallet_id/orders/:order_id/cancel";
 /// Returns the balances within a given wallet
@@ -505,6 +508,93 @@ impl TypedHandler for CreateOrderHandler {
         let task_id = self.task_driver.start_task(task).await;
 
         Ok(CreateOrderResponse { id, task_id })
+    }
+}
+
+/// Handler for the POST /wallet/:id/orders/:id/update route
+pub struct UpdateOrderHandler {
+    /// A starknet client
+    starknet_client: StarknetClient,
+    /// A sender to the network manager's work queue
+    network_sender: TokioSender<GossipOutbound>,
+    /// A copy of the relayer-global state
+    global_state: RelayerState,
+    /// A sender to the proof manager's work queue, used to enqueue
+    /// proofs of `VALID NEW WALLET` and await their completion
+    proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    /// A copy of the task driver used for long-lived async workflows
+    task_driver: TaskDriver,
+}
+
+impl UpdateOrderHandler {
+    /// Constructor
+    pub fn new(
+        starknet_client: StarknetClient,
+        network_sender: TokioSender<GossipOutbound>,
+        global_state: RelayerState,
+        proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+        task_driver: TaskDriver,
+    ) -> Self {
+        Self {
+            starknet_client,
+            network_sender,
+            global_state,
+            proof_manager_work_queue,
+            task_driver,
+        }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for UpdateOrderHandler {
+    type Request = UpdateOrderRequest;
+    type Response = UpdateOrderResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        req: Self::Request,
+        params: UrlParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+        let order_id = parse_order_id_from_params(&params)?;
+
+        // Lookup the wallet in the global state
+        let old_wallet = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&wallet_id)
+            .await
+            .ok_or_else(|| {
+                ApiServerError::HttpStatusCode(
+                    StatusCode::NOT_FOUND,
+                    ERR_WALLET_NOT_FOUND.to_string(),
+                )
+            })?;
+
+        // Update the order from the new wallet
+        let mut new_wallet = old_wallet.clone();
+        *new_wallet.orders.get_mut(&order_id).ok_or_else(|| {
+            ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, ERR_ORDER_NOT_FOUND.to_string())
+        })? = req.order.into();
+        new_wallet.reblind_wallet();
+
+        // Spawn a task to handle the order creation flow
+        let task = UpdateWalletTask::new(
+            get_current_timestamp(),
+            None, /* external_transfer */
+            old_wallet,
+            new_wallet,
+            self.starknet_client.clone(),
+            self.network_sender.clone(),
+            self.global_state.clone(),
+            self.proof_manager_work_queue.clone(),
+        )
+        .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
+        let task_id = self.task_driver.start_task(task).await;
+
+        Ok(UpdateOrderResponse { task_id })
     }
 }
 

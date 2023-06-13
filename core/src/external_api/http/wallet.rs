@@ -103,6 +103,24 @@ pub struct CreateOrderResponse {
     pub task_id: TaskIdentifier,
 }
 
+/// The request type to update an order
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateOrderRequest {
+    /// The order to be updated
+    pub order: Order,
+    /// A signature of the public variables used in the proof of
+    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
+    /// to guarantee that the wallet updates are properly authorized
+    pub public_var_sig: Vec<u8>,
+}
+
+/// The response type to update an order
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateOrderResponse {
+    /// The ID of the task allocated for this request
+    pub task_id: TaskIdentifier,
+}
+
 /// The response type to a request to cancel a given order
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CancelOrderResponse {

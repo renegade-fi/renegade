@@ -181,8 +181,8 @@ pub(super) fn construct_wallet_commitment_proof(
     .ok_or_else(|| ERR_BALANCE_NOT_FOUND.to_string())?;
 
     // Find the order in the wallet
-    let order_index = find_order(&order.base_mint, &order.quote_mint, &augmented_wallet)
-        .ok_or_else(|| ERR_ORDER_NOT_FOUND.to_string())?;
+    let order_index =
+        find_order(&order, &augmented_wallet).ok_or_else(|| ERR_ORDER_NOT_FOUND.to_string())?;
 
     // Create new augmented public secret shares
     let reblinded_private_blinder = valid_reblind_witness
@@ -282,13 +282,13 @@ fn find_or_augment_balance(
 }
 
 /// Find an order in the wallet, returns the index at which the order was found
-fn find_order(base_mint: &BigUint, quote_mint: &BigUint, wallet: &SizedWallet) -> Option<usize> {
+fn find_order(order: &Order, wallet: &SizedWallet) -> Option<usize> {
     wallet
         .orders
         .iter()
         .enumerate()
-        .find(|(_ind, order)| order.quote_mint.eq(quote_mint) && order.base_mint.eq(base_mint))
-        .map(|(ind, _order)| ind)
+        .find(|(_ind, o)| (*o).eq(order))
+        .map(|(ind, _o)| ind)
 }
 
 /// Find a wallet on-chain, and update its validity proofs. That is, a proof of `VALID REBLIND`
