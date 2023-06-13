@@ -169,8 +169,19 @@ impl HandshakeExecutor {
                     ));
                 }
 
+                // TODO: We may want to re-evaluate whether we want to accept price reports
+                // with large deviation. This largely happens because of Uniswap, and we could
+                // implement a more complex deviation calculation that ignores DEXs
+                PriceReporterState::TooMuchDeviation(report, _) => {
+                    midpoint_prices.push((
+                        report.base_token,
+                        report.quote_token,
+                        report.midpoint_price,
+                    ));
+                }
+
                 err_state => {
-                    log::error!("Price report invalid: {err_state:?}");
+                    log::warn!("Price report invalid during price agreement: {err_state:?}");
                 }
             }
         }
@@ -197,8 +208,7 @@ impl HandshakeExecutor {
             .get_order(my_order_id)
             .await
             .ok_or_else(|| HandshakeManagerError::StateNotFound(ERR_NO_WALLET.to_string()))?;
-        let base = Token::from_addr_biguint(&my_order.base_mint);
-        let quote = Token::from_addr_biguint(&my_order.quote_mint);
+        let (base, quote) = self.token_pair_for_order(&my_order);
 
         let proposed_price = proposed_prices.find_pair(&base, &quote);
         if proposed_price.is_none() {

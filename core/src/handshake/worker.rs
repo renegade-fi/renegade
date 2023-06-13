@@ -16,7 +16,7 @@ use crate::{
     },
     price_reporter::jobs::PriceReporterManagerJob,
     proof_generation::jobs::ProofManagerJob,
-    starknet_client::client::StarknetClient,
+    starknet_client::{client::StarknetClient, ChainId},
     state::RelayerState,
     system_bus::SystemBus,
     tasks::driver::TaskDriver,
@@ -29,6 +29,8 @@ use super::{error::HandshakeManagerError, jobs::HandshakeExecutionJob, manager::
 
 /// The config type for the handshake manager
 pub struct HandshakeManagerConfig {
+    /// The chain that the local node targets
+    pub chain_id: ChainId,
     /// The relayer-global state
     pub global_state: RelayerState,
     /// The channel on which to send outbound network requests
@@ -65,6 +67,7 @@ impl Worker for HandshakeManager {
             config.cancel_channel.clone(),
         );
         let executor = HandshakeExecutor::new(
+            config.chain_id,
             config.job_receiver.take().unwrap(),
             config.network_channel.clone(),
             config.price_reporter_job_queue.clone(),

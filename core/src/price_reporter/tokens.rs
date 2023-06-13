@@ -594,6 +594,37 @@ lazy_static! {
         }
         exchange_tickers
     };
+
+    /// Remaps Starknet Goerli ERC20 addresses to their Ethereum mainnet counterparts
+    /// so that a price can be determined
+    ///
+    /// https://github.com/starknet-io/starknet-addresses/blob/master/bridged_tokens/goerli.json
+    ///
+    /// TODO: This will be removed when we implement our custom bridging solution
+    static ref STARKNET_GOERLI_TOKEN_REMAP: HashMap<String, String> = {
+        vec![
+            // WBTC
+            (
+                "0x12d537dc323c439dc65c976fad242d5610d27cfb5f31689a0a319b8be7f3d56".to_string(),
+                Token::from_ticker("WBTC").get_addr().to_string(),
+            ),
+            // USDC
+            (
+                "0x5a643907b9a4bc6a55e9069c4fd5fd1f5c79a22470690f75556c4736e34426".to_string(),
+                Token::from_ticker("USDC").get_addr().to_string(),
+            ),
+            // USDT
+            (
+                "0x386e8d061177f19b3b485c20e31137e6f6bc497cc635ccdfcab96fadf5add6a".to_string(),
+                Token::from_ticker("USDT").get_addr().to_string(),
+            ),
+            // ETH
+            (
+                "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7".to_string(),
+                Token::from_ticker("WETH").get_addr().to_string(),
+            ),
+        ].into_iter().collect()
+    };
 }
 
 /// The core Token abstraction, used for unambiguous definition of an ERC-20 asset.
@@ -610,10 +641,17 @@ impl Display for Token {
 }
 
 impl Token {
-    /// Given an ERC-20 contract address, returns a new Token.
+    /// Given an ERC-20 contract address, returns a new Token
     pub fn from_addr(addr: &str) -> Self {
         Self {
             addr: String::from(addr).to_lowercase(),
+        }
+    }
+
+    /// Given an ERC-20 address on Starknet-Goerli, return a new Token
+    pub fn from_starknet_goerli_addr(addr: &str) -> Self {
+        Self {
+            addr: STARKNET_GOERLI_TOKEN_REMAP.get(addr).unwrap().to_string(),
         }
     }
 
@@ -622,6 +660,11 @@ impl Token {
         Self {
             addr: format!("0x{}", addr.to_str_radix(16 /* radix */)),
         }
+    }
+
+    /// Given an ERC-20 contract address on Starknet-Goerli (represented as a `BigUint`) returns a Token
+    pub fn from_starknet_goerli_addr_biguint(addr: &BigUint) -> Self {
+        Self::from_starknet_goerli_addr(&format!("0x{}", addr.to_str_radix(16 /* radix */)))
     }
 
     /// Given an ERC-20 ticker, returns a new Token.
