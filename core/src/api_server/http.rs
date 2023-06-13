@@ -38,10 +38,10 @@ use self::{
         AddFeeHandler, CancelOrderHandler, CreateOrderHandler, CreateWalletHandler,
         DepositBalanceHandler, FindWalletHandler, GetBalanceByMintHandler, GetBalancesHandler,
         GetFeesHandler, GetOrderByIdHandler, GetOrdersHandler, GetWalletHandler, RemoveFeeHandler,
-        WithdrawBalanceHandler, CANCEL_ORDER_ROUTE, CREATE_WALLET_ROUTE, DEPOSIT_BALANCE_ROUTE,
-        FEES_ROUTE, FIND_WALLET_ROUTE, GET_BALANCES_ROUTE, GET_BALANCE_BY_MINT_ROUTE,
-        GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE, REMOVE_FEE_ROUTE, WALLET_ORDERS_ROUTE,
-        WITHDRAW_BALANCE_ROUTE,
+        UpdateOrderHandler, WithdrawBalanceHandler, CANCEL_ORDER_ROUTE, CREATE_WALLET_ROUTE,
+        DEPOSIT_BALANCE_ROUTE, FEES_ROUTE, FIND_WALLET_ROUTE, GET_BALANCES_ROUTE,
+        GET_BALANCE_BY_MINT_ROUTE, GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE, REMOVE_FEE_ROUTE,
+        UPDATE_ORDER_ROUTE, WALLET_ORDERS_ROUTE, WITHDRAW_BALANCE_ROUTE,
     },
 };
 
@@ -318,6 +318,20 @@ impl HttpServer {
             GET_ORDER_BY_ID_ROUTE.to_string(),
             true, /* auth_required */
             GetOrderByIdHandler::new(global_state.clone()),
+        );
+
+        // The "/wallet/:id/orders/:id/update" route
+        router.add_route(
+            Method::POST,
+            UPDATE_ORDER_ROUTE.to_string(),
+            true, /* auth_required */
+            UpdateOrderHandler::new(
+                config.starknet_client.clone(),
+                config.network_sender.clone(),
+                config.global_state.clone(),
+                config.proof_generation_work_queue.clone(),
+                config.task_driver.clone(),
+            ),
         );
 
         // The "/wallet/:id/orders/:id/cancel" route
