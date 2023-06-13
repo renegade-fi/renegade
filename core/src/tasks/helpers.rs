@@ -301,7 +301,7 @@ pub(super) async fn update_wallet_validity_proofs(
 ) -> Result<(), String> {
     // No validity proofs needed for an empty wallet, they will be re-proven on
     // the next update that adds a non-empty order
-    if wallet.orders.values().all(|o| o.is_default()) {
+    if wallet.orders.values().all(|o| o.is_zero()) {
         return Ok(());
     }
 
@@ -312,7 +312,7 @@ pub(super) async fn update_wallet_validity_proofs(
 
     // For each order, construct a proof of `VALID COMMITMENTS`
     let mut commitments_response_channels = Vec::new();
-    for (order_id, order) in wallet.orders.iter().filter(|(_id, o)| !o.is_default()) {
+    for (order_id, order) in wallet.orders.iter().filter(|(_id, o)| !o.is_zero()) {
         // Start a proof of `VALID COMMITMENTS`
         let (commitments_witness, response_channel) = construct_wallet_commitment_proof(
             wallet.clone(),

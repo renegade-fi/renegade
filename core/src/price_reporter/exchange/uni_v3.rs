@@ -163,7 +163,10 @@ impl UniswapV3Connection {
         .await?;
 
         // Process the most recent Swap
-        let mut swap_filter_recent_events = swap_filter.logs().await.unwrap();
+        let mut swap_filter_recent_events = swap_filter
+            .logs()
+            .await
+            .map_err(|err| ExchangeConnectionError::ConnectionHangup(err.to_string()))?;
         swap_filter_recent_events.sort_by(|a, b| match a.block_number.cmp(&b.block_number) {
             // Same block resolves by transaction index
             Ordering::Equal => a.transaction_index.cmp(&b.transaction_index),
