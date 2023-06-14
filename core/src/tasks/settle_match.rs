@@ -32,7 +32,7 @@ use crate::{
 
 use super::{
     driver::{StateWrapper, Task},
-    helpers::update_wallet_validity_proofs,
+    helpers::{find_merkle_path, update_wallet_validity_proofs},
 };
 
 /// Error emitted when a transaction fails
@@ -93,6 +93,8 @@ pub enum SettleMatchTaskState {
         /// The proof of `VALID SETTLE` given in the last step
         proof: ValidSettleBundle,
     },
+    /// The task is updating the wallet's state and Merkle proof
+    UpdatingState,
     /// The task is updating order proofs after the settled walled is confirmed
     UpdatingValidityProofs,
     /// The task has finished
@@ -151,6 +153,11 @@ impl Task for SettleMatchTask {
 
             SettleMatchTaskState::SubmittingMatch { proof } => {
                 self.submit_match(proof).await?;
+                self.task_state = SettleMatchTaskState::UpdatingState;
+            }
+
+            SettleMatchTaskState::UpdatingState => {
+                self.update_wallet_state().await?;
                 self.task_state = SettleMatchTaskState::UpdatingValidityProofs;
             }
 
@@ -356,9 +363,6 @@ impl SettleMatchTask {
             }
         }
 
-        // After we persist the wallet updates on-chain, re-index the locally managed wallet
-        // with its updated balances and orders
-        self.update_wallet_state().await;
         Ok(())
     }
 
@@ -373,8 +377,9 @@ impl SettleMatchTask {
         false
     }
 
-    /// Apply the match result to the local wallet, and update the state
-    async fn update_wallet_state(&self) {
+    /// Apply the match result to the local wallet, find the wallet's new
+    /// Merkle opening, and update the global state
+    async fn update_wallet_state(&self) -> Result<(), SettleMatchTaskError> {
         // Find the wallet that was matched
         let mut wallet = self
             .global_state
@@ -424,8 +429,19 @@ impl SettleMatchTask {
             .unwrap()
             .amount -= fill_size;
 
+        // Reblind the wallet
+        wallet.reblind_wallet();
+
+        // Find the wallet's new Merkle opening
+        let opening = find_merkle_path(&wallet, &self.starknet_client)
+            .await
+            .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
+        wallet.merkle_proof = Some(opening);
+
         // Index the updated wallet in global state
-        self.global_state.update_wallet(wallet).await
+        self.global_state.update_wallet(wallet).await;
+
+        Ok(())
     }
 
     /// Update the validity proofs for all orders in the wallet after settlement
