@@ -25,6 +25,7 @@ use crate::{
         order::OrderVar,
         transfers::{ExternalTransfer, ExternalTransferVar},
         wallet::{Nullifier, WalletShare, WalletShareStateCommitment, WalletVar},
+        AMOUNT_BITS,
     },
     zk_gadgets::{
         comparators::{
@@ -219,7 +220,7 @@ where
 
             // Constrain the updated balance to be non-negative and correctly updated
             cs.constrain(new_balance.amount.clone() - expected_balance);
-            GreaterThanEqZeroGadget::<64 /* bitwidth */>::constrain_greater_than_zero(
+            GreaterThanEqZeroGadget::<AMOUNT_BITS /* bitwidth */>::constrain_greater_than_zero(
                 new_balance.amount.clone(),
                 cs,
             );
