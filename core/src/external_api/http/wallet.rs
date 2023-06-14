@@ -119,6 +119,14 @@ pub struct UpdateOrderRequest {
 pub struct UpdateOrderResponse {
     /// The ID of the task allocated for this request
     pub task_id: TaskIdentifier,
+    /// The new ID assigned to the updated order
+    ///
+    /// We cannot use the previously assigned ID because the order
+    /// may be cached as "already matched" elsewhere in the network
+    ///
+    /// The effectual state update is as if the caller had cancelled
+    /// the target order and created a new order
+    pub new_order_id: Uuid,
 }
 
 /// The response type to a request to cancel a given order
