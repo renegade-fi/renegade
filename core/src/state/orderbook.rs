@@ -440,6 +440,13 @@ impl NetworkOrderBook {
         order_id: &OrderIdentifier,
         proofs: OrderValidityProofBundle,
     ) {
+        // If the order was previously indexed, remove its old nullifier
+        if let Some(locked_order) = self.get_order_info(order_id).await {
+            self.write_nullifier_order_set(locked_order.public_share_nullifier)
+                .await
+                .remove(order_id);
+        }
+
         // Index by the public share nullifier seen in the proof, this is guaranteed correct
         self.write_nullifier_order_set(proofs.reblind_proof.statement.original_shares_nullifier)
             .await
