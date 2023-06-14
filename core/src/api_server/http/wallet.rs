@@ -576,17 +576,33 @@ impl TypedHandler for UpdateOrderHandler {
 
         // Pop the old order and replace it with a new one
         let mut new_wallet = old_wallet.clone();
+
         let new_id = Uuid::new_v4();
-        new_wallet.orders.remove(&order_id).ok_or_else(|| {
+        let timestamp = get_current_timestamp();
+        let mut new_order: Order = req.order.into();
+        new_order.timestamp = timestamp;
+
+        // We edit the key and value of the underlying map in-place (as opposed to `pop` and `insert`)
+        // to maintain ordering of the orders. This is important for the circuit, which relies on
+        // the order of the orders to be consistent between the old and new wallets
+        let index = new_wallet.orders.get_index_of(&order_id).ok_or_else(|| {
             ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, ERR_ORDER_NOT_FOUND.to_string())
         })?;
-        new_wallet.orders.insert(new_id, req.order.into());
+        new_wallet
+            .orders
+            .get_index_mut(index)
+            .map(|(order_id, order)| {
+                *order_id = new_id;
+                *order = new_order;
+            })
+            // Unwrap is safe as the index is necessarily valid
+            .unwrap();
 
         new_wallet.reblind_wallet();
 
         // Spawn a task to handle the order creation flow
         let task = UpdateWalletTask::new(
-            get_current_timestamp(),
+            timestamp,
             None, /* external_transfer */
             old_wallet,
             new_wallet,

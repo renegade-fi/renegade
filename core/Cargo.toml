@@ -30,6 +30,7 @@ hex = "0.3.1"
 hmac-sha256 = "1.1.6"
 hyper = { version = "0.14", features = ["http1", "http2", "server", "tcp"] }
 integration-helpers = { path = "../integration-helpers" }
+indexmap = "1.9"
 itertools = "0.10"
 lazy_static = "1.4.0"
 libp2p = { version = "0.51", features = [

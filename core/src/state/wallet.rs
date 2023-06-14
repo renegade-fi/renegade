@@ -3,6 +3,7 @@
 use std::{
     collections::{HashMap, HashSet},
     convert::TryInto,
+    hash::Hash,
     iter,
     sync::atomic::{AtomicU32, Ordering},
 };
@@ -26,10 +27,10 @@ use circuits::{
 use crypto::hash::evaluate_hash_chain;
 use curve25519_dalek::scalar::Scalar;
 use futures::{stream::iter as to_stream, StreamExt};
+use indexmap::IndexMap;
 use itertools::Itertools;
 use num_bigint::BigUint;
-use num_traits::Num;
-use serde::{de::Error as SerdeErr, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tokio::sync::{RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
@@ -198,13 +199,21 @@ pub struct Wallet {
     /// The identifier used to index the wallet
     pub wallet_id: WalletIdentifier,
     /// A list of orders in this wallet
-    pub orders: HashMap<OrderIdentifier, Order>,
+    ///
+    /// We use an `IndexMap` here to preserve the order of insertion
+    /// on the orders. This is necessary because we must have
+    /// order parity with the secret shared wallet stored on-chain
+    #[serde(
+        serialize_with = "serialize_indexmap",
+        deserialize_with = "deserialize_indexmap"
+    )]
+    pub orders: IndexMap<OrderIdentifier, Order>,
     /// A mapping of mint to Balance information
     #[serde(
-        serialize_with = "serialize_balances",
-        deserialize_with = "deserialize_balances"
+        serialize_with = "serialize_indexmap",
+        deserialize_with = "deserialize_indexmap"
     )]
-    pub balances: HashMap<BigUint, Balance>,
+    pub balances: IndexMap<BigUint, Balance>,
     /// A list of the fees in this wallet
     pub fees: Vec<Fee>,
     /// The keys that the relayer has access to for this wallet
@@ -248,36 +257,27 @@ impl Clone for Wallet {
     }
 }
 
-/// Custom serialization logic for the balance map that re-keys the map via String
-fn serialize_balances<S>(balances: &HashMap<BigUint, Balance>, s: S) -> Result<S::Ok, S::Error>
+/// Custom serialization for an `IndexMap` type that preserves insertion ordering
+fn serialize_indexmap<S, K, V>(map: &IndexMap<K, V>, s: S) -> Result<S::Ok, S::Error>
 where
+    K: Serialize + Clone,
+    V: Serialize + Clone,
     S: Serializer,
 {
-    // Convert to a hashmap keyed by strings
-    let string_keyed_map: HashMap<String, Balance> = balances
-        .clone()
-        .into_iter()
-        .map(|(mint, balance)| (mint.to_string(), balance))
-        .collect();
-    string_keyed_map.serialize(s)
+    // Convert to a vector of key-value pairs to preserve ordering
+    let vec: Vec<(K, V)> = map.clone().into_iter().collect();
+    vec.serialize(s)
 }
 
-/// Custom deserialization logic for the balance map that re-keys from String to BigUint
-fn deserialize_balances<'de, D>(d: D) -> Result<HashMap<BigUint, Balance>, D::Error>
+/// Custom deserialization for an `IndexMap` type that preserves insertion ordering
+fn deserialize_indexmap<'de, D, K, V>(d: D) -> Result<IndexMap<K, V>, D::Error>
 where
     D: Deserializer<'de>,
+    K: Deserialize<'de> + Eq + Hash,
+    V: Deserialize<'de>,
 {
-    let string_keyed_map: HashMap<String, Balance> = HashMap::deserialize(d)?;
-    let mut bigint_keyed_map = HashMap::new();
-
-    for (k, balance) in string_keyed_map.into_iter() {
-        let key_stripped = k.strip_prefix("0x").unwrap_or(&k);
-        let bigint_key = BigUint::from_str_radix(key_stripped, 16 /* radix */)
-            .map_err(|err| SerdeErr::custom(err.to_string()))?;
-        bigint_keyed_map.insert(bigint_key, balance);
-    }
-
-    Ok(bigint_keyed_map)
+    let vec: Vec<(K, V)> = Vec::deserialize(d)?;
+    Ok(vec.into_iter().collect())
 }
 
 impl From<Wallet> for SizedCircuitWallet {
