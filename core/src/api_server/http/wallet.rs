@@ -14,6 +14,7 @@ use hyper::{HeaderMap, StatusCode};
 use itertools::Itertools;
 use num_traits::ToPrimitive;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
+use uuid::Uuid;
 
 use crate::{
     api_server::{
@@ -573,11 +574,14 @@ impl TypedHandler for UpdateOrderHandler {
                 )
             })?;
 
-        // Update the order from the new wallet
+        // Pop the old order and replace it with a new one
         let mut new_wallet = old_wallet.clone();
-        *new_wallet.orders.get_mut(&order_id).ok_or_else(|| {
+        let new_id = Uuid::new_v4();
+        new_wallet.orders.remove(&order_id).ok_or_else(|| {
             ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, ERR_ORDER_NOT_FOUND.to_string())
-        })? = req.order.into();
+        })?;
+        new_wallet.orders.insert(new_id, req.order.into());
+
         new_wallet.reblind_wallet();
 
         // Spawn a task to handle the order creation flow
@@ -594,7 +598,10 @@ impl TypedHandler for UpdateOrderHandler {
         .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
         let task_id = self.task_driver.start_task(task).await;
 
-        Ok(UpdateOrderResponse { task_id })
+        Ok(UpdateOrderResponse {
+            task_id,
+            new_order_id: new_id,
+        })
     }
 }
 
