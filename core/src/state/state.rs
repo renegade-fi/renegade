@@ -57,6 +57,8 @@ pub fn new_async_shared<T>(wrapped: T) -> AsyncShared<T> {
 pub struct RelayerState {
     /// Whether or not the relayer is in debug mode
     pub debug: bool,
+    /// Whether or not the relayer is in demo mode
+    pub demo: bool,
     /// The libp2p peerID assigned to the localhost
     pub local_peer_id: WrappedPeerId,
     /// The local libp2p keypair generated at startup
@@ -112,6 +114,7 @@ impl RelayerState {
 
         Self {
             debug: args.debug,
+            demo: args.demo,
             local_peer_id,
             local_keypair,
             local_cluster_id: args.cluster_id.clone(),

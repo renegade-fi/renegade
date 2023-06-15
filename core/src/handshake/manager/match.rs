@@ -223,6 +223,7 @@ impl HandshakeExecutor {
             handshake_state.execution_price,
             match_res,
             shared_fabric.clone(),
+            self.global_state.demo,
         )
         .await?;
 
@@ -308,6 +309,7 @@ impl HandshakeExecutor {
         my_price: FixedPoint,
         match_res: AuthenticatedMatchResult<N, S>,
         fabric: SharedFabric<N, S>,
+        demo: bool,
     ) -> Result<
         (
             AuthenticatedLinkableMatchResult<N, S>,
@@ -380,12 +382,15 @@ impl HandshakeExecutor {
             .open()
             .map_err(|_| HandshakeManagerError::MpcNetwork("error opening proof".to_string()))?;
 
-        verify_collaborative_proof::<'_, N, S, ValidMatchMpcCircuit<'_, N, S>>(
-            (), /* statement */
-            opened_commit.clone(),
-            opened_proof.clone(),
-        )
-        .map_err(|err| HandshakeManagerError::VerificationError(err.to_string()))?;
+        // In demo mode, we don't verify the proof
+        if !demo {
+            verify_collaborative_proof::<'_, N, S, ValidMatchMpcCircuit<'_, N, S>>(
+                (), /* statement */
+                opened_commit.clone(),
+                opened_proof.clone(),
+            )
+            .map_err(|err| HandshakeManagerError::VerificationError(err.to_string()))?;
+        }
 
         Ok((witness.match_res, opened_commit, opened_proof))
     }
