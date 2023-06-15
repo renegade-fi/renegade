@@ -102,6 +102,9 @@ struct Cli {
     /// This is useful for testing in a region that Binance has IP blocked
     #[clap(long, value_parser)]
     pub disable_binance: bool,
+    /// Flag to disable fee validation
+    #[clap(long, value_parser)]
+    pub disable_fee_validation: bool,
     /// Whether or not to run the relayer in debug mode
     #[clap(short, long, value_parser)]
     pub debug: bool,
@@ -183,6 +186,8 @@ pub struct RelayerConfig {
     pub disable_price_reporter: bool,
     /// Whether to disable price streaming from Binance for location blocks
     pub disable_binance: bool,
+    /// Whether to disable fee validation, allowing for zero fees
+    pub disable_fee_validation: bool,
     /// Whether or not the relayer is in debug mode
     pub debug: bool,
 
@@ -225,6 +230,7 @@ impl Clone for RelayerConfig {
             public_ip: self.public_ip,
             disable_price_reporter: self.disable_price_reporter,
             disable_binance: self.disable_binance,
+            disable_fee_validation: self.disable_fee_validation,
             wallets: self.wallets.clone(),
             cluster_keypair: Keypair::from_bytes(&self.cluster_keypair.to_bytes()).unwrap(),
             cluster_id: self.cluster_id.clone(),
@@ -313,6 +319,7 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, CoordinatorError> {
         public_ip: cli_args.public_ip,
         disable_price_reporter: cli_args.disable_price_reporter,
         disable_binance: cli_args.disable_binance,
+        disable_fee_validation: cli_args.disable_fee_validation,
         wallets: parse_wallet_file(cli_args.wallet_file)?,
         cluster_keypair: keypair,
         cluster_id,
