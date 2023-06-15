@@ -10,6 +10,7 @@ use circuits::{
     traits::{LinkableBaseType, LinkableType},
     types::{
         balance::Balance,
+        fee::Fee,
         order::{Order, OrderSide},
         r#match::LinkableMatchResult,
     },
@@ -141,14 +142,15 @@ pub(super) fn construct_wallet_commitment_proof(
     order: Order,
     valid_reblind_witness: &SizedValidReblindWitness,
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    disable_fee_validation: bool,
 ) -> Result<(SizedValidCommitmentsWitness, TokioReceiver<ProofBundle>), String> {
-    // Choose the first fee
-    let fee = wallet
-        .fees
-        .iter()
-        .find(|f| !f.is_default())
-        .cloned()
-        .ok_or_else(|| ERR_FEE_NOT_FOUND.to_string())?;
+    // Choose the first fee. If no fee is found and fee validation is disabled, use a zero fee
+    let first_fee = wallet.fees.iter().find(|f| !f.is_default()).cloned();
+    let fee = if disable_fee_validation {
+        first_fee.unwrap_or(Fee::default())
+    } else {
+        first_fee.ok_or_else(|| ERR_FEE_NOT_FOUND.to_string())?
+    };
 
     // Build an augmented wallet and find balances to update
     let mut augmented_wallet: SizedWallet = wallet_from_blinded_shares(
@@ -321,6 +323,7 @@ pub(super) async fn update_wallet_validity_proofs(
             order.clone(),
             &wallet_reblind_witness,
             proof_manager_work_queue.clone(),
+            global_state.disable_fee_validation,
         )?;
 
         let order_commitment_witness = Arc::new(commitments_witness);

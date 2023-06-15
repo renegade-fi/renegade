@@ -247,6 +247,7 @@ impl InitializeStateTask {
                     order.clone(),
                     &wallet_reblind_witness,
                     self.proof_manager_work_queue.clone(),
+                    self.global_state.disable_fee_validation,
                 )
                 .map_err(InitializeStateTaskError::ProveValidCommitments)?;
 
