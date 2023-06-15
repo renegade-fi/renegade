@@ -5,15 +5,9 @@ use std::thread::{Builder, JoinHandle};
 
 use ed25519_dalek::Keypair;
 use futures::executor::block_on;
-use futures_util::future::Either;
 use libp2p::multiaddr::{Multiaddr, Protocol};
-use libp2p::noise::Config as NoiseConfig;
 use libp2p::quic::{tokio::Transport as QuicTransport, Config as QuicConfig};
-use libp2p::tcp::{tokio::Transport as TcpTransport, Config as TcpConfig};
-use libp2p::yamux::Config as YamuxConfig;
 use libp2p_core::muxing::StreamMuxerBox;
-use libp2p_core::transport::OrTransport;
-use libp2p_core::upgrade::Version;
 use libp2p_core::Transport;
 use libp2p_swarm::SwarmBuilder;
 use tokio::runtime::Builder as TokioRuntimeBuilder;
@@ -121,29 +115,14 @@ impl Worker for NetworkManager {
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
-        // Build a quic transport with tcp fallback
-        let hostport = format!("/ip4/0.0.0.0/tcp/{}", self.config.port);
+        // Build a quic transport
+        let hostport = format!("/ip4/0.0.0.0/udp/{}/quic-v1", self.config.port);
         let addr: Multiaddr = hostport.parse().unwrap();
 
         // Build the quic transport
         let config = QuicConfig::new(&self.local_keypair);
-        let quic_transport = QuicTransport::new(config);
-
-        // Build the TCP fallback
-        let tcp_transport = TcpTransport::new(TcpConfig::default())
-            .upgrade(Version::V1Lazy)
-            .authenticate(
-                NoiseConfig::new(&self.local_keypair).expect("failed to build noise config"),
-            )
-            .multiplex(YamuxConfig::default())
-            .boxed();
-
-        // Connect the two transports in a failover configuration
-        let fallback_transport = OrTransport::new(quic_transport, tcp_transport)
-            .map(|muxed_transport, _| match muxed_transport {
-                Either::Left((peer_id, quic_conn)) => (peer_id, StreamMuxerBox::new(quic_conn)),
-                Either::Right((peer_id, tcp_conn)) => (peer_id, StreamMuxerBox::new(tcp_conn)),
-            })
+        let quic_transport = QuicTransport::new(config)
+            .map(|(peer_id, quic_conn), _| (peer_id, StreamMuxerBox::new(quic_conn)))
             .boxed();
 
         // Defines the behaviors of the underlying networking stack: including gossip,
@@ -177,7 +156,7 @@ impl Worker for NetworkManager {
 
         // Connect the behavior and the transport via swarm and enter the network
         let mut swarm =
-            SwarmBuilder::with_tokio_executor(fallback_transport, behavior, *self.local_peer_id)
+            SwarmBuilder::with_tokio_executor(quic_transport, behavior, *self.local_peer_id)
                 .build();
         swarm
             .listen_on(addr)

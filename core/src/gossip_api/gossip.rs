@@ -106,7 +106,6 @@ impl AuthenticatedGossipRequest {
 /// Represents a request delivered point-to-point through the libp2p
 /// request-response protocol
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(clippy::large_enum_variant)]
 pub enum GossipRequest {
     /// A request from a peer to bootstrap the network state from the recipient
     Bootstrap(BootstrapRequest),
@@ -226,7 +225,6 @@ impl AuthenticatedGossipResponse {
 
 /// Represents the possible response types for a request-response message
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(clippy::large_enum_variant)]
 pub enum GossipResponse {
     /// A simple Ack response, libp2p sometimes closes connections if no response is
     /// sent, so we can send an empty ack in place for requests that need no response
@@ -332,7 +330,6 @@ impl From<Vec<u8>> for AuthenticatedPubsubMessage {
 /// a unique topic per variant; i.e. this is the granularity at which we
 /// specify a topic.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[allow(clippy::large_enum_variant)]
 pub enum PubsubMessage {
     /// A message broadcast to indicate an even relevant to cluster management
     ClusterManagement {
