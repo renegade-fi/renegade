@@ -1,9 +1,10 @@
 //! Abstracts routing logic from the HTTP server
 
-use std::collections::HashMap;
+use std::{collections::HashMap, iter};
 
 use async_trait::async_trait;
 use hyper::{body::to_bytes, Body, HeaderMap, Method, Request, Response, StatusCode};
+use itertools::Itertools;
 use matchit::Router as MatchRouter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tracing::log;
@@ -17,6 +18,9 @@ use super::{
 /// A type alias for URL generic params maps, i.e. /path/to/resource/:id
 pub(super) type UrlParams = HashMap<String, String>;
 
+/// The maximum time an OPTIONS request to our HTTP API may be cached, we go above
+/// the default of 5 seconds to avoid unnecessary pre-flights
+const PREFLIGHT_CACHE_TIME: &str = "7200"; // 2 hours, Chromium max
 /// Error message displayed when a wallet cannot be found in the global state
 pub(super) const ERR_WALLET_NOT_FOUND: &str = "wallet not found";
 
@@ -202,6 +206,11 @@ impl Router {
         route: String,
         mut req: Request<Body>,
     ) -> Response<Body> {
+        // If the request is an options request, handle it directly
+        if method == Method::OPTIONS {
+            return self.handle_options_req(route);
+        }
+
         // Get the full routable path
         let full_route = Self::create_full_route(method.clone(), route.clone());
 
@@ -226,6 +235,36 @@ impl Router {
         } else {
             build_404_response(format!("Route {route} for method {method} not found"))
         }
+    }
+
+    /// Handle an options request
+    fn handle_options_req(&self, route: String) -> Response<Body> {
+        // Get the set of allowed methods for this route
+        let allowed_methods = vec![Method::GET, Method::POST]
+            .into_iter()
+            .filter_map(|method: Method| {
+                let full_route = Self::create_full_route(method.clone(), route.clone());
+                self.router.at(&full_route).ok()?;
+                Some(method)
+            })
+            // All routes allow OPTIONS
+            .chain(iter::once(Method::OPTIONS))
+            .collect_vec();
+
+        // Combine the allowed methods into a comma separated string
+        let allowed_methods_str = allowed_methods
+            .iter()
+            .map(|method| method.as_str())
+            .join(",");
+
+        Response::builder()
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Access-Control-Allow-Headers", "*")
+            .header("Access-Control-Allow-Methods", allowed_methods_str)
+            .header("Access-Control-Allow-Credentials", "true")
+            .header("Access-Control-Max-Age", PREFLIGHT_CACHE_TIME)
+            .body(Body::from(""))
+            .unwrap()
     }
 
     /// Validate a signature of the request's body by sk_root of the wallet
