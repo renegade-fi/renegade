@@ -67,6 +67,11 @@ impl PriceReporterManagerExecutor {
             tokio::select! {
                 // Dequeue the next job from elsewhere in the local node
                 Some(job) = job_receiver.recv() => {
+                    if self.config.disabled {
+                        log::warn!("PriceReporterManager received job while disabled, ignoring...");
+                        continue;
+                    }
+
                     tokio::spawn({
                         let mut self_clone = self.clone();
                         async move {

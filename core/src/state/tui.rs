@@ -340,11 +340,6 @@ impl StateTuiApp {
                 .get_addr()
         });
         let full_addr = format!("{local_addr}/p2p/{peer_id}");
-        let api_server_enabled = if self.config.disable_api_server {
-            STR_DISABLED
-        } else {
-            STR_ENABLED
-        };
         let price_reporter_enabled = if self.config.disable_price_reporter {
             STR_DISABLED
         } else {
@@ -382,14 +377,10 @@ impl StateTuiApp {
             Span::styled(self.config.websocket_port.to_string(), *YELLOW_TEXT),
         ]);
         let line7 = Spans::from(vec![
-            Span::styled("API Server: ", *GREEN_TEXT),
-            Span::styled(api_server_enabled, *YELLOW_TEXT),
-        ]);
-        let line8 = Spans::from(vec![
             Span::styled("Price reporter: ", *GREEN_TEXT),
             Span::styled(price_reporter_enabled, *YELLOW_TEXT),
         ]);
-        let line9 = Spans::from(vec![
+        let line8 = Spans::from(vec![
             Span::styled("StarkNet Events Listener: ", *GREEN_TEXT),
             Span::styled(chain_events_enabled, *YELLOW_TEXT),
         ]);
@@ -403,7 +394,6 @@ impl StateTuiApp {
             ListItem::new(line6),
             ListItem::new(line7),
             ListItem::new(line8),
-            ListItem::new(line9),
         ];
 
         List::new(items).block(Self::create_block_with_title("Local Node Metadata"))

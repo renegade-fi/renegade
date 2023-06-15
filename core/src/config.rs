@@ -90,9 +90,6 @@ struct Cli {
     /// A fresh key is generated at startup if this is not present
     #[clap(long, value_parser)]
     pub p2p_key: Option<String>,
-    /// Flag to disable the API server
-    #[clap(long, value_parser)]
-    pub disable_api_server: bool,
     /// Flag to disable the price reporter
     #[clap(long, value_parser)]
     pub disable_price_reporter: bool,
@@ -175,9 +172,6 @@ pub struct RelayerConfig {
     pub websocket_port: u16,
     /// The local peer's base64 encoded p2p key
     pub p2p_key: Option<String>,
-    /// Whether to disable the API server on the local node if, for example,
-    /// the local node is an MPC-only node
-    pub disable_api_server: bool,
     /// Whether to disable the price reporter if e.g. we are streaming from a dedicated
     /// external API gateway node in the cluster
     pub disable_price_reporter: bool,
@@ -222,7 +216,6 @@ impl Clone for RelayerConfig {
             p2p_key: self.p2p_key.clone(),
             allow_local: self.allow_local,
             public_ip: self.public_ip,
-            disable_api_server: self.disable_api_server,
             disable_price_reporter: self.disable_price_reporter,
             disable_binance: self.disable_binance,
             wallets: self.wallets.clone(),
@@ -310,7 +303,6 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, CoordinatorError> {
         allow_local: cli_args.allow_local,
         p2p_key: cli_args.p2p_key,
         public_ip: cli_args.public_ip,
-        disable_api_server: cli_args.disable_api_server,
         disable_price_reporter: cli_args.disable_price_reporter,
         disable_binance: cli_args.disable_binance,
         wallets: parse_wallet_file(cli_args.wallet_file)?,
