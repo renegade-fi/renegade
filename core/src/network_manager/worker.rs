@@ -38,6 +38,8 @@ const NETWORK_MANAGER_N_THREADS: usize = 3;
 pub struct NetworkManagerConfig {
     /// The port to listen for inbound traffic on
     pub(crate) port: u16,
+    /// The address to bind to for inbound traffic
+    pub(crate) bind_addr: IpAddr,
     /// The cluster ID of the local peer
     pub(crate) cluster_id: ClusterId,
     /// Whether or not to allow discovery of peers on the localhost
@@ -116,7 +118,10 @@ impl Worker for NetworkManager {
 
     fn start(&mut self) -> Result<(), Self::Error> {
         // Build a quic transport
-        let hostport = format!("/ip4/0.0.0.0/udp/{}/quic-v1", self.config.port);
+        let hostport = format!(
+            "/ip4/{}/udp/{}/quic-v1",
+            self.config.bind_addr, self.config.port
+        );
         let addr: Multiaddr = hostport.parse().unwrap();
 
         // Build the quic transport
