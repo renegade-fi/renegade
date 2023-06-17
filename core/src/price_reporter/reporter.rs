@@ -47,6 +47,9 @@ const MAX_DEVIATION: f64 = 0.02;
 const KEEPALIVE_INTERVAL_MS: u64 = 15_000; // 15 seconds
 /// The number of milliseconds to wait in between retrying connections
 const CONN_RETRY_DELAY_MS: u64 = 2_000; // 2 seconds
+/// The number of milliseconds in which `MAX_CONN_RETRIES` failures will cause a
+/// failure of the price reporter
+const MAX_CONN_RETRY_WINDOW_MS: u64 = 60_000; // 1 minute
 /// The maximum number of retries to attempt before giving up on a connection
 const MAX_CONN_RETRIES: usize = 5;
 
@@ -363,7 +366,10 @@ struct ConnectionMuxer {
     /// The shared memory map from exchange to most recent price
     exchange_state: AtomicPriceStreamState,
     /// Tracks the number of failures in connecting to an exchange
-    exchange_retries: HashMap<Exchange, usize>,
+    ///
+    /// Maps from a given exchange to a vector of timestamps representing
+    /// past failures within the last `MAX_CONN_RETRY_WINDOW_MS` milliseconds
+    exchange_retries: HashMap<Exchange, Vec<Instant>>,
 }
 
 impl ConnectionMuxer {
@@ -392,7 +398,10 @@ impl ConnectionMuxer {
         tokio::pin!(delay);
 
         // Build a map of connections to multiplex from
-        let mut stream_map = self.initialize_connections().await.unwrap();
+        let mut stream_map = self
+            .initialize_connections()
+            .await
+            .expect("error initializing exchange connections for price reporter");
 
         loop {
             tokio::select! {
@@ -480,11 +489,16 @@ impl ConnectionMuxer {
         &mut self,
         exchange: Exchange,
     ) -> Result<Box<dyn ExchangeConnection>, ExchangeConnectionError> {
-        // Increment the retry count
-        let retry_count = self.exchange_retries.entry(exchange).or_insert(0);
-        *retry_count += 1;
+        // Increment the retry count and filter out old requests
+        let now = Instant::now();
+        let retry_timestamps = self.exchange_retries.entry(exchange).or_insert(vec![]);
+        retry_timestamps
+            .retain(|ts| now.duration_since(*ts) < Duration::from_millis(MAX_CONN_RETRY_WINDOW_MS));
 
-        if *retry_count >= MAX_CONN_RETRIES {
+        // Add the current timestamp to the set of retries
+        retry_timestamps.push(now);
+
+        if retry_timestamps.len() >= MAX_CONN_RETRIES {
             return Err(ExchangeConnectionError::MaxRetries(exchange));
         }
 
