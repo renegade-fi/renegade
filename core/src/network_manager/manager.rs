@@ -57,8 +57,8 @@ const ERR_SIG_VERIFY: &str = "signature verification failed";
 /// Error emitted when brokering an MPC network with a peer fails
 const ERR_BROKER_MPC_NET: &str = "failed to broker MPC network";
 
-/// The TCP protocol name in libp2p
-const TCP_PROTOCOL_NAME: &str = "tcp";
+/// The multiaddr protocol of the transport in libp2p
+const TRANSPORT_PROTOCOL_NAME: &str = "udp";
 
 // -----------
 // | Helpers |
@@ -79,22 +79,22 @@ pub fn multiaddr_to_socketaddr(addr: &Multiaddr, port: Port) -> Option<SocketAdd
 
 /// Replace the tcp port in a multiaddr with the given port
 pub fn replace_port(multiaddr: &mut Multiaddr, port: u16) {
-    // Find the port index
+    // Find the index of the transport in the multiaddr
     let mut index = None;
     for (i, protocol) in multiaddr.protocol_stack().enumerate() {
-        if protocol == TCP_PROTOCOL_NAME {
+        if protocol == TRANSPORT_PROTOCOL_NAME {
             index = Some(i);
             break;
         }
     }
 
     match index {
-        Some(tcp_index) => {
+        Some(transport_index) => {
             *multiaddr = multiaddr
-                .replace(tcp_index, |_| Some(Protocol::Tcp(port)))
+                .replace(transport_index, |_| Some(Protocol::Udp(port)))
                 .unwrap();
         }
-        None => *multiaddr = multiaddr.clone().with(Protocol::Tcp(port)),
+        None => *multiaddr = multiaddr.clone().with(Protocol::Udp(port)),
     }
 }
 
@@ -906,6 +906,8 @@ mod test {
 
     use crate::network_manager::manager::{is_local_addr, multiaddr_to_socketaddr};
 
+    use super::replace_port;
+
     /// Tests the helper that determines whether a multiaddr is a local addr
     #[test]
     fn test_local_addr() {
@@ -916,5 +918,18 @@ mod test {
         assert!(!is_local_addr(
             &multiaddr_to_socketaddr(&addr_parsed, 0 /* port */).unwrap()
         ))
+    }
+
+    /// Tests the helper that replaces the transport port in a multiaddr
+    #[test]
+    fn test_replace_port() {
+        let mut addr: Multiaddr =
+            "/ip4/127.0.0.1/udp/8000/quic-v1/p2p/12D3KooWKKahCLvwJnN4V7aCuzxcrtir58bSqre6qCB6Tjp9WVRu".parse().unwrap();
+        replace_port(&mut addr, 9000);
+
+        assert_eq!(
+            addr.to_string(),
+            "/ip4/127.0.0.1/udp/9000/quic-v1/p2p/12D3KooWKKahCLvwJnN4V7aCuzxcrtir58bSqre6qCB6Tjp9WVRu"
+        );
     }
 }
