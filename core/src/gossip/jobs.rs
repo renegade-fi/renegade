@@ -11,7 +11,10 @@ use crate::{
         heartbeat::{BootstrapRequest, HeartbeatMessage},
     },
     proof_generation::{OrderValidityProofBundle, OrderValidityWitnessBundle},
-    state::{wallet::WalletIdentifier, NetworkOrder, OrderIdentifier},
+    state::{
+        wallet::{Wallet, WalletIdentifier},
+        NetworkOrder, OrderIdentifier,
+    },
 };
 
 use super::types::{ClusterId, WrappedPeerId};
@@ -47,6 +50,11 @@ pub enum GossipServerJob {
     },
     /// Handle an orderbook management message from a gossip peer
     OrderBookManagement(OrderBookManagementJob),
+    /// Handle a wallet update message for the wallet
+    WalletUpdate {
+        /// The wallet that has been updated
+        wallet: Wallet,
+    },
 }
 
 /// Defines a job type for a cluster management tasks

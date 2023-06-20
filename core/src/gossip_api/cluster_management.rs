@@ -122,7 +122,7 @@ pub struct ValidityProofRequest {
     pub sender: WrappedPeerId,
 }
 
-/// The boyd of a witness request published to a cluster
+/// The body of a witness request published to a cluster
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidityWitnessRequest {
     /// The order for which a witness is requested

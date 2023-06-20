@@ -308,6 +308,10 @@ impl GossipProtocolExecutor {
                 self.handle_order_book_management_job(management_message)
                     .await
             }
+            GossipServerJob::WalletUpdate { wallet } => {
+                self.global_state.update_wallet(wallet).await;
+                Ok(())
+            }
         };
 
         if let Err(err) = res {

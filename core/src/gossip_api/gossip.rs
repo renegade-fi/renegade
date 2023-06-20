@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::{
     gossip::types::{ClusterId, WrappedPeerId},
     proof_generation::{OrderValidityProofBundle, OrderValidityWitnessBundle},
-    state::OrderIdentifier,
+    state::{wallet::Wallet, OrderIdentifier},
 };
 
 use super::{
@@ -142,6 +142,11 @@ pub enum GossipRequest {
         /// The witness used in the validity proofs
         witness: OrderValidityWitnessBundle,
     },
+    /// A pushed wallet update from a peer
+    WalletUpdate {
+        /// The updated wallet
+        wallet: Wallet,
+    },
 }
 
 impl GossipRequest {
@@ -158,6 +163,7 @@ impl GossipRequest {
             GossipRequest::Replicate(..) => false,
             GossipRequest::ValidityProof { .. } => true,
             GossipRequest::ValidityWitness { .. } => true,
+            GossipRequest::WalletUpdate { .. } => true,
         }
     }
 }
