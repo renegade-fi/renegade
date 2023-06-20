@@ -21,7 +21,6 @@ use super::types::{ClusterId, WrappedPeerId};
 
 /// Defines a heartbeat job that can be enqueued by other workers in a relayer
 #[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
 pub enum GossipServerJob {
     /// Handle a job to bootstrap a newly added peer
     Bootstrap(
@@ -53,7 +52,7 @@ pub enum GossipServerJob {
     /// Handle a wallet update message for the wallet
     WalletUpdate {
         /// The wallet that has been updated
-        wallet: Wallet,
+        wallet: Box<Wallet>,
     },
 }
 

@@ -309,7 +309,7 @@ impl GossipProtocolExecutor {
                     .await
             }
             GossipServerJob::WalletUpdate { wallet } => {
-                self.global_state.update_wallet(wallet).await;
+                self.global_state.update_wallet(*wallet).await;
                 Ok(())
             }
         };

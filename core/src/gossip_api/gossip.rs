@@ -145,7 +145,7 @@ pub enum GossipRequest {
     /// A pushed wallet update from a peer
     WalletUpdate {
         /// The updated wallet
-        wallet: Wallet,
+        wallet: Box<Wallet>,
     },
 }
 
