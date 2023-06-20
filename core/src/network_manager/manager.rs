@@ -720,6 +720,18 @@ impl NetworkManagerExecutor {
                             message: GossipResponse::Ack,
                         })
                     }
+
+                    GossipRequest::WalletUpdate { wallet } => {
+                        self.gossip_work_queue
+                            .send(GossipServerJob::WalletUpdate { wallet })
+                            .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
+
+                        // Send back an ack
+                        self.handle_outbound_message(GossipOutbound::Response {
+                            channel,
+                            message: GossipResponse::Ack,
+                        })
+                    }
                 }
             }
 
