@@ -1,6 +1,7 @@
 //! The network manager handles lower level interaction with the p2p network
 mod control_directives;
 mod identify;
+mod internal_events;
 mod pubsub;
 mod request_response;
 
@@ -36,6 +37,8 @@ use crate::{
     },
     handshake::jobs::HandshakeExecutionJob,
     state::RelayerState,
+    system_bus::SystemBus,
+    types::{SystemBusMessage, ALL_WALLET_UPDATES_TOPIC},
     CancelChannel,
 };
 
@@ -226,6 +229,8 @@ pub(super) struct NetworkManagerExecutor {
     handshake_work_queue: TokioSender<HandshakeExecutionJob>,
     /// A reference to the relayer-global state
     global_state: RelayerState,
+    /// A reference to the system bus for consuming internal pubsub events
+    system_bus: SystemBus<SystemBusMessage>,
     /// The cancel channel that the coordinator thread may use to cancel this worker
     cancel: DefaultWrapper<Option<CancelChannel>>,
 }
@@ -243,6 +248,7 @@ impl NetworkManagerExecutor {
         gossip_work_queue: TokioSender<GossipServerJob>,
         handshake_work_queue: TokioSender<HandshakeExecutionJob>,
         global_state: RelayerState,
+        system_bus: SystemBus<SystemBusMessage>,
         cancel: CancelChannel,
     ) -> Self {
         Self {
@@ -258,6 +264,7 @@ impl NetworkManagerExecutor {
             gossip_work_queue,
             handshake_work_queue,
             global_state,
+            system_bus,
             cancel: DefaultWrapper::new(Some(cancel)),
         }
     }
@@ -271,6 +278,11 @@ impl NetworkManagerExecutor {
         log::info!("Starting executor loop for network manager...");
         let mut cancel_channel = self.cancel.take().unwrap();
         let mut job_channel = self.job_channel.take().unwrap();
+
+        // Subscribe to internal system bus topics
+        let mut wallet_update_reader = self
+            .system_bus
+            .subscribe(ALL_WALLET_UPDATES_TOPIC.to_string());
 
         loop {
             tokio::select! {
@@ -297,6 +309,17 @@ impl NetworkManagerExecutor {
                         },
                         // This catchall may be enabled for fine-grained libp2p introspection
                         _ => {  }
+                    }
+                }
+
+                // Handle wallet update messages from the system bus
+                wallet_update = wallet_update_reader.next_message() => {
+                    if let SystemBusMessage::InternalWalletUpdate { wallet } = wallet_update {
+                        if let Err(e) = self.handle_wallet_update(wallet).await {
+                            log::error!("error handling wallet update: {}", e);
+                        }
+                    } else {
+                        log::error!("received unexpected message on wallet update channel");
                     }
                 }
 

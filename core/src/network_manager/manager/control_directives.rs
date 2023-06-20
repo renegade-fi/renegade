@@ -133,7 +133,7 @@ impl NetworkManagerExecutor {
                     .filter(|addr| is_dialable_addr(addr, allow_local))
                 {
                     let local_addr: SocketAddr =
-                        format!("127.0.0.1:{:?}", local_port).parse().unwrap();
+                        format!("0.0.0.0:{:?}", local_port).parse().unwrap();
                     let mut net = QuicTwoPartyNet::new(party_id, local_addr, peer_addr);
 
                     if let Err(e) = net.connect().await {

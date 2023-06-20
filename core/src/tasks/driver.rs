@@ -176,7 +176,7 @@ impl TaskDriver {
                 task_topic_name(&task_id),
                 SystemBusMessage::TaskStatusUpdate {
                     task_id,
-                    state: task.state().into(),
+                    state: Box::new(task.state().into()),
                 },
             );
         }

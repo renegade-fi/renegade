@@ -8,7 +8,9 @@ use crate::{
     proof_generation::OrderValidityProofBundle,
     state::orderbook::NetworkOrder,
     system_bus::SystemBus,
-    types::{wallet_topic_name, SystemBusMessage, NETWORK_TOPOLOGY_TOPIC},
+    types::{
+        wallet_topic_name, SystemBusMessage, ALL_WALLET_UPDATES_TOPIC, NETWORK_TOPOLOGY_TOPIC,
+    },
 };
 use circuits::types::{order::Order, wallet::Nullifier};
 use libp2p::{
@@ -132,6 +134,21 @@ impl RelayerState {
             .get_peer_info(&self.local_peer_id)
             .await
             .unwrap()
+    }
+
+    /// Get the list of peers in the local peer's cluster
+    pub async fn get_local_cluster_peers(&self, include_self: bool) -> Vec<WrappedPeerId> {
+        let local_cluster_id = self.local_cluster_id.clone();
+        let mut peers = self
+            .read_peer_index()
+            .await
+            .get_all_cluster_peers(&local_cluster_id)
+            .await;
+
+        if !include_self {
+            peers.retain(|peer| *peer != self.local_peer_id);
+        }
+        peers
     }
 
     /// Get the info for a locally managed order
@@ -329,7 +346,13 @@ impl RelayerState {
             self.system_bus.publish(
                 wallet_topic,
                 SystemBusMessage::WalletUpdate {
-                    wallet: wallet.clone().into(),
+                    wallet: Box::new(wallet.clone().into()),
+                },
+            );
+            self.system_bus.publish(
+                ALL_WALLET_UPDATES_TOPIC.to_string(),
+                SystemBusMessage::InternalWalletUpdate {
+                    wallet: Box::new(wallet.clone()),
                 },
             );
 
@@ -385,7 +408,13 @@ impl RelayerState {
         self.system_bus.publish(
             wallet_topic,
             SystemBusMessage::WalletUpdate {
-                wallet: wallet.clone().into(),
+                wallet: Box::new(wallet.clone().into()),
+            },
+        );
+        self.system_bus.publish(
+            ALL_WALLET_UPDATES_TOPIC.to_string(),
+            SystemBusMessage::InternalWalletUpdate {
+                wallet: Box::new(wallet.clone()),
             },
         );
     }
