@@ -403,13 +403,10 @@ impl StateTuiApp {
     fn create_cluster_metadata_pane(&self) -> List {
         // Read the relevant state
         let cluster_id = self.global_state.local_cluster_id.clone();
-        let cluster_peers = block_on(async {
+        let cluster_peers = block_on(
             self.global_state
-                .read_peer_index()
-                .await
-                .get_all_cluster_peers(&cluster_id)
-                .await
-        });
+                .get_local_cluster_peers(true /* include_self */),
+        );
 
         // Style and collect into a list
         let line1 = Spans::from(vec![

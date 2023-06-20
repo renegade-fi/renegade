@@ -5,7 +5,7 @@ use serde::Serialize;
 use crate::{
     external_api::types::{NetworkOrder, Peer, Wallet},
     price_reporter::reporter::PriceReport,
-    state::{wallet::WalletIdentifier, OrderIdentifier},
+    state::{wallet::Wallet as StateWallet, wallet::WalletIdentifier, OrderIdentifier},
     tasks::driver::{StateWrapper as TaskStatus, TaskIdentifier},
 };
 
@@ -25,6 +25,8 @@ pub const ORDER_STATE_CHANGE_TOPIC: &str = "order-state";
 
 /// The system bus topic published to when a network topology change occurs
 pub const NETWORK_TOPOLOGY_TOPIC: &str = "network-topology";
+/// The system bus topic published to for all wallet updates, not those given by Id
+pub const ALL_WALLET_UPDATES_TOPIC: &str = "wallet-updates";
 
 /// Get the topic name for a given wallet
 pub fn wallet_topic_name(wallet_id: &WalletIdentifier) -> String {
@@ -39,7 +41,6 @@ pub fn task_topic_name(task_id: &TaskIdentifier) -> String {
 /// A message type for generic system bus messages, broadcast to all modules
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type")]
-#[allow(clippy::large_enum_variant)]
 pub enum SystemBusMessage {
     // -- Handshake -- //
     /// A message indicating that a handshake with a peer has started
@@ -98,14 +99,21 @@ pub enum SystemBusMessage {
         /// The ID of the task
         task_id: TaskIdentifier,
         /// The new state of the task
-        state: TaskStatus,
+        state: Box<TaskStatus>,
     },
 
     // -- Wallet Updates -- //
     /// A message indicating that a wallet has been updated
     WalletUpdate {
         /// The new wallet after update
-        wallet: Wallet,
+        wallet: Box<Wallet>,
+    },
+
+    /// A message indicating an internal (gossip metadata) update has been
+    /// made to a wallet
+    InternalWalletUpdate {
+        /// The new wallet after update
+        wallet: Box<StateWallet>,
     },
 }
 

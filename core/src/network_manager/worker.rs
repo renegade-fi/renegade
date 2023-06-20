@@ -14,6 +14,8 @@ use tokio::runtime::Builder as TokioRuntimeBuilder;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::log;
 
+use crate::system_bus::SystemBus;
+use crate::types::SystemBusMessage;
 use crate::{
     gossip::{jobs::GossipServerJob, types::ClusterId},
     gossip_api::gossip::GossipOutbound,
@@ -59,6 +61,8 @@ pub struct NetworkManagerConfig {
     pub(crate) gossip_work_queue: UnboundedSender<GossipServerJob>,
     /// The work queue to forward inbound handshake requests to
     pub(crate) handshake_work_queue: UnboundedSender<HandshakeExecutionJob>,
+    /// The system bus, used to stream internal pubsub messages
+    pub(crate) system_bus: SystemBus<SystemBusMessage>,
     /// The global shared state of the local relayer
     pub(crate) global_state: RelayerState,
     /// The channel on which the coordinator can send a cancel signal to
@@ -183,6 +187,7 @@ impl Worker for NetworkManager {
             self.config.gossip_work_queue.clone(),
             self.config.handshake_work_queue.clone(),
             self.config.global_state.clone(),
+            self.config.system_bus.clone(),
             self.config.cancel_channel.clone(),
         );
 

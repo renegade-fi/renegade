@@ -228,6 +228,7 @@ async fn main() -> Result<(), CoordinatorError> {
         gossip_work_queue: gossip_worker_sender.clone(),
         handshake_work_queue: handshake_worker_sender.clone(),
         global_state: global_state.clone(),
+        system_bus: system_bus.clone(),
         cancel_channel: network_cancel_receiver,
     };
     let mut network_manager =
