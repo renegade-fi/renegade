@@ -35,7 +35,7 @@ pub type Price = f64;
 /// milliseconds), we pause matches until we receive a more recent price. Note that this threshold
 /// cannot be too aggressive, as certain long-tail asset pairs legitimately do not update that
 /// often.
-const MAX_REPORT_AGE_MS: u64 = 5_000; // 5 seconds
+const MAX_REPORT_AGE_MS: u64 = 20_000; // 20 seconds
 /// If we do not have at least MIN_CONNECTIONS reports, we pause matches until we have enough
 /// reports. This only applies to Named tokens, as Unnamed tokens simply use UniswapV3.
 const MIN_CONNECTIONS: usize = 1;
