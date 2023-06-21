@@ -421,6 +421,11 @@ impl ConnectionMuxer {
                     if let Some((exchange, res)) = stream_elem {
                         match res {
                             Ok(price) => {
+                                // Do not update if the price is default, simply let the price age
+                                if price == Price::default() {
+                                    continue;
+                                }
+
                                 let ts = get_current_time();
                                 self.exchange_state
                                     .new_price(exchange, price, ts);
