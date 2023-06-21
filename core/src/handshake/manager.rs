@@ -1,5 +1,6 @@
 //! The handshake module handles the execution of handshakes from negotiating
 //! a pair of orders to match, all the way through settling any resulting match
+mod internal_engine;
 pub mod r#match;
 mod price_agreement;
 
@@ -207,6 +208,18 @@ impl HandshakeExecutor {
             // The timer thread has scheduled an outbound handshake
             HandshakeExecutionJob::PerformHandshake { order } => {
                 self.perform_handshake(order).await
+            }
+
+            // An order has been updated, the executor should run the internal engine on the
+            // new order to check for matches
+            HandshakeExecutionJob::InternalMatchingEngine { order } => {
+                // Spawn a blocking thread to handle matches
+                let self_clone = self.clone();
+                tokio::task::spawn_blocking(move || {
+                    block_on(self_clone.run_internal_matching_engine(order))
+                })
+                .await
+                .unwrap() /* JoinError */
             }
 
             // Indicates that a peer has sent a message during the course of a handshake
