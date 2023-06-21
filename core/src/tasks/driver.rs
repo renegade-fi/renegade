@@ -6,7 +6,10 @@ use std::{collections::HashMap, fmt::Display, time::Duration};
 use async_trait::async_trait;
 use serde::Serialize;
 use std::fmt::Debug;
-use tokio::runtime::{Builder as TokioRuntimeBuilder, Runtime as TokioRuntime};
+use tokio::{
+    runtime::{Builder as TokioRuntimeBuilder, Runtime as TokioRuntime},
+    task::JoinHandle,
+};
 use tracing::log;
 use uuid::Uuid;
 
@@ -19,7 +22,7 @@ use crate::{
 use super::{
     create_new_wallet::NewWalletTaskState, initialize_state::InitializeStateTaskState,
     lookup_wallet::LookupWalletTaskState, settle_match::SettleMatchTaskState,
-    update_wallet::UpdateWalletTaskState,
+    settle_match_internal::SettleMatchInternalTaskState, update_wallet::UpdateWalletTaskState,
 };
 
 /// A type alias for the identifier underlying a task
@@ -74,6 +77,8 @@ pub enum StateWrapper {
     NewWallet(NewWalletTaskState),
     /// The state object for the settle match task
     SettleMatch(SettleMatchTaskState),
+    /// The state object for the settle match internal task
+    SettleMatchInternal(SettleMatchInternalTaskState),
 }
 
 /// Drives tasks to completion
@@ -118,7 +123,7 @@ impl TaskDriver {
     /// Spawn a new task in the driver
     ///
     /// Returns the ID of the task being spawned
-    pub async fn start_task<T: Task + 'static>(&self, task: T) -> Uuid {
+    pub async fn start_task<T: Task + 'static>(&self, task: T) -> (Uuid, JoinHandle<bool>) {
         // Add the task to the bookkeeping structure
         let task_id = Uuid::new_v4();
         {
@@ -130,15 +135,17 @@ impl TaskDriver {
 
         // Drive the task
         let self_clone = self.clone();
-        self.runtime.read().await.spawn(async move {
-            self_clone.run_task_to_completion(task_id, task).await;
-        });
+        let join_handle = self
+            .runtime
+            .read()
+            .await
+            .spawn(async move { self_clone.run_task_to_completion(task_id, task).await });
 
-        task_id
+        (task_id, join_handle)
     }
 
     /// Run a task to completion
-    async fn run_task_to_completion<T: Task>(&self, task_id: Uuid, mut task: T) {
+    async fn run_task_to_completion<T: Task>(&self, task_id: Uuid, mut task: T) -> bool {
         let task_name = task.name();
 
         // Run each step individually and update the state after each step
@@ -180,5 +187,7 @@ impl TaskDriver {
                 },
             );
         }
+
+        task.completed()
     }
 }

@@ -223,7 +223,7 @@ impl TypedHandler for CreateWalletHandler {
             self.proof_manager_work_queue.clone(),
         )
         .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
-        let task_id = self.task_driver.start_task(task).await;
+        let (task_id, _) = self.task_driver.start_task(task).await;
 
         Ok(CreateWalletResponse { wallet_id, task_id })
     }
@@ -287,7 +287,7 @@ impl TypedHandler for FindWalletHandler {
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
         );
-        let task_id = self.task_driver.start_task(task).await;
+        let (task_id, _) = self.task_driver.start_task(task).await;
 
         Ok(FindWalletResponse {
             wallet_id: req.wallet_id,
@@ -506,7 +506,7 @@ impl TypedHandler for CreateOrderHandler {
             self.proof_manager_work_queue.clone(),
         )
         .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
-        let task_id = self.task_driver.start_task(task).await;
+        let (task_id, _) = self.task_driver.start_task(task).await;
 
         Ok(CreateOrderResponse { id, task_id })
     }
@@ -612,7 +612,7 @@ impl TypedHandler for UpdateOrderHandler {
             self.proof_manager_work_queue.clone(),
         )
         .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
-        let task_id = self.task_driver.start_task(task).await;
+        let (task_id, _) = self.task_driver.start_task(task).await;
 
         Ok(UpdateOrderResponse {
             task_id,
@@ -702,7 +702,7 @@ impl TypedHandler for CancelOrderHandler {
             self.proof_manager_work_queue.clone(),
         )
         .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
-        let task_id = self.task_driver.start_task(task).await;
+        let (task_id, _) = self.task_driver.start_task(task).await;
 
         Ok(CancelOrderResponse {
             task_id,
@@ -914,7 +914,7 @@ impl TypedHandler for DepositBalanceHandler {
             self.proof_manager_work_queue.clone(),
         )
         .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
-        let task_id = self.task_driver.start_task(task).await;
+        let (task_id, _) = self.task_driver.start_task(task).await;
 
         Ok(DepositBalanceResponse { task_id })
     }
@@ -1014,7 +1014,7 @@ impl TypedHandler for WithdrawBalanceHandler {
             self.proof_manager_work_queue.clone(),
         )
         .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
-        let task_id = self.task_driver.start_task(task).await;
+        let (task_id, _) = self.task_driver.start_task(task).await;
 
         Ok(WithdrawBalanceResponse { task_id })
     }
@@ -1170,7 +1170,7 @@ impl TypedHandler for AddFeeHandler {
             self.proof_manager_work_queue.clone(),
         )
         .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
-        let task_id = self.task_driver.start_task(task).await;
+        let (task_id, _) = self.task_driver.start_task(task).await;
 
         Ok(AddFeeResponse { task_id })
     }
@@ -1263,7 +1263,7 @@ impl TypedHandler for RemoveFeeHandler {
             self.proof_manager_work_queue.clone(),
         )
         .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
-        let task_id = self.task_driver.start_task(task).await;
+        let (task_id, _) = self.task_driver.start_task(task).await;
 
         Ok(RemoveFeeResponse {
             task_id,

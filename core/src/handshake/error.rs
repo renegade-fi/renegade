@@ -22,6 +22,8 @@ pub enum HandshakeManagerError {
     SendMessage(String),
     /// Error while setting up the handshake manager
     SetupError(String),
+    /// An error executing a settlement task
+    TaskError(String),
     /// A state element was referenced, but cannot be found locally
     ///
     /// This may happen if, for example, an order is cancelled during the course

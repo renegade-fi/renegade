@@ -11,9 +11,13 @@ use crate::{
         manager::{ERR_NO_PRICE_DATA, ERR_NO_WALLET},
     },
     state::{wallet::Wallet, NetworkOrder, OrderIdentifier},
+    tasks::{driver::TaskDriver, settle_match_internal::SettleMatchInternalTask},
 };
 
 use super::{HandshakeExecutor, ERR_NO_ORDER};
+
+/// Error emitted when joining to a task execution fails
+const ERR_TASK_EXECUTION: &str = "settle-match-internal task failed";
 
 // ------------------------
 // | Matching Engine Impl |
@@ -86,7 +90,25 @@ impl HandshakeExecutor {
             // Settle the match if the two orders cross
             if let Some(handshake_result) = res {
                 // TODO: Implement settlement
-                log::info!("match found: {handshake_result:?}, settling...");
+                log::info!("internal match found for {order_id:?}, settling...");
+                let (_, join_handle) = self
+                    .task_driver
+                    .start_task(SettleMatchInternalTask::new(
+                        self.starknet_client.clone(),
+                        self.network_channel.clone(),
+                        self.global_state.clone(),
+                        self.proof_manager_work_queue.clone(),
+                    ))
+                    .await;
+
+                // If the task errors, log the error and continue
+                if !join_handle
+                    .await
+                    .map_err(|_| HandshakeManagerError::TaskError(ERR_TASK_EXECUTION.to_string()))?
+                {
+                    log::error!("internal match settlement failed for {order_id:?}");
+                    continue;
+                }
             }
         }
 
