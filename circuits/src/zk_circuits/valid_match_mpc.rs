@@ -12,7 +12,7 @@ use crate::{
     traits::{
         BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
         MpcBaseType, MpcLinearCombinationLike, MpcType, MultiproverCircuitBaseType,
-        MultiproverCircuitCommitmentType, MultiproverCircuitVariableType,
+        MultiproverCircuitCommitmentType, MultiproverCircuitVariableType, SingleProverCircuit,
     },
     types::{
         balance::{AuthenticatedBalanceVar, BalanceVar},
@@ -284,7 +284,10 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
         Ok(())
     }
+}
 
+pub struct ValidMatchMpcSingleProver;
+impl ValidMatchMpcSingleProver {
     /// The order crossing check, for a single prover
     ///
     /// Used to apply constraints to the verifier
@@ -536,6 +539,21 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
                     as CircuitBaseType>::VarType<Variable>,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
-        Self::matching_engine_check_single_prover(witness, cs)
+        ValidMatchMpcSingleProver::matching_engine_check_single_prover(witness, cs)
+    }
+}
+
+impl SingleProverCircuit for ValidMatchMpcSingleProver {
+    type Witness = ValidMatchMpcWitness;
+    type Statement = ();
+
+    const BP_GENS_CAPACITY: usize = 512;
+
+    fn apply_constraints<CS: RandomizableConstraintSystem>(
+        witness_var: <Self::Witness as CircuitBaseType>::VarType<Variable>,
+        _statement_var: <Self::Statement as CircuitBaseType>::VarType<Variable>,
+        cs: &mut CS,
+    ) -> Result<(), R1CSError> {
+        Self::matching_engine_check_single_prover(witness_var, cs)
     }
 }
