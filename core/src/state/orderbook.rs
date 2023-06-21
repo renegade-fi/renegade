@@ -18,17 +18,21 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::{Display, Formatter, Result as FmtResult},
 };
-use tokio::sync::{RwLockReadGuard, RwLockWriteGuard};
+use tokio::sync::{mpsc::UnboundedSender as TokioSender, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
 use crate::{
     gossip::types::ClusterId,
+    handshake::jobs::HandshakeExecutionJob,
     proof_generation::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     system_bus::SystemBus,
     types::{SystemBusMessage, ORDER_STATE_CHANGE_TOPIC},
 };
 
 use super::{new_async_shared, AsyncShared};
+
+/// The error emitted when enqueueing a job to the handshake manager fails
+const ERR_MATCH_JOB_ENQUEUE: &str = "error enqueuing internal matching engine job";
 
 /// An identifier of an order used for caching
 pub type OrderIdentifier = Uuid;
@@ -106,6 +110,13 @@ impl NetworkOrder {
         }
     }
 
+    /// Returns whether the order is ready for matching
+    ///
+    /// This amounts to whether the order has validity proofs and witnesses attached to it
+    pub(self) fn ready_for_match(&self) -> bool {
+        self.validity_proofs.is_some() && self.validity_proof_witnesses.is_some()
+    }
+
     /// Transitions the state of an order from `Received` to `Verified` by
     /// attaching two validity proofs:
     ///   1. `VALID REBLIND`: Commits to a valid reblinding of the wallet that will
@@ -179,18 +190,25 @@ pub struct NetworkOrderBook {
     local_orders: AsyncShared<HashSet<OrderIdentifier>>,
     /// The set of orders in the `Verified` state; i.e. ready to match
     verified_orders: AsyncShared<HashSet<OrderIdentifier>>,
+    /// A producer to the handshake work queue, so that the orderbook may schedule internal
+    /// matching engine jobs on newly verified orders
+    handshake_job_queue: TokioSender<HandshakeExecutionJob>,
     /// A handle referencing the system bus to publish state transition events onto
     system_bus: SystemBus<SystemBusMessage>,
 }
 
 impl NetworkOrderBook {
     /// Construct the order book state primitive
-    pub fn new(system_bus: SystemBus<SystemBusMessage>) -> Self {
+    pub fn new(
+        handshake_job_queue: TokioSender<HandshakeExecutionJob>,
+        system_bus: SystemBus<SystemBusMessage>,
+    ) -> Self {
         Self {
             order_map: HashMap::new(),
             orders_by_nullifier: HashMap::new(),
             local_orders: new_async_shared(HashSet::new()),
             verified_orders: new_async_shared(HashSet::new()),
+            handshake_job_queue,
             system_bus,
         }
     }
@@ -298,7 +316,9 @@ impl NetworkOrderBook {
     /// This amounts to validating that a copy of the validity proof and witness are stored
     /// locally
     pub async fn order_ready_for_handshake(&self, order_id: &OrderIdentifier) -> bool {
-        self.has_validity_proofs(order_id).await && self.has_validity_witness(order_id).await
+        self.read_order(order_id)
+            .await
+            .map_or(false, |order_info| order_info.ready_for_match())
     }
 
     /// Fetch a list of locally managed orders for which
@@ -463,6 +483,14 @@ impl NetworkOrderBook {
         if let Some(mut locked_order) = self.write_order(order_id).await {
             locked_order.validity_proof_witnesses = Some(witnesses);
         }
+
+        // Enqueue a job with the handshake manager to run the internal matching engine on
+        // the newly verified order
+        if self.order_ready_for_handshake(order_id).await {
+            self.handshake_job_queue
+                .send(HandshakeExecutionJob::InternalMatchingEngine { order: *order_id })
+                .expect(ERR_MATCH_JOB_ENQUEUE);
+        }
     }
 
     /// Add an order to the verified orders list
@@ -493,6 +521,13 @@ impl NetworkOrderBook {
         if let Some(mut order) = self.write_order(order_id).await {
             order.transition_verified(validity_proofs);
             self.add_verified_order(*order_id).await;
+
+            // Enqueue a job with the handshake manager to run the internal matching engine on
+            if order.ready_for_match() {
+                self.handshake_job_queue
+                    .send(HandshakeExecutionJob::InternalMatchingEngine { order: order.id })
+                    .expect(ERR_MATCH_JOB_ENQUEUE);
+            }
 
             self.system_bus.publish(
                 ORDER_STATE_CHANGE_TOPIC.to_string(),

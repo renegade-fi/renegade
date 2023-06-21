@@ -5,6 +5,7 @@ use crate::{
     config::RelayerConfig,
     gossip::types::{ClusterId, PeerInfo, WrappedPeerId},
     gossip_api::heartbeat::HeartbeatMessage,
+    handshake::jobs::HandshakeExecutionJob,
     proof_generation::OrderValidityProofBundle,
     state::orderbook::NetworkOrder,
     system_bus::SystemBus,
@@ -22,7 +23,9 @@ use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
 };
-use tokio::sync::{RwLock as AsyncRwLock, RwLockReadGuard, RwLockWriteGuard};
+use tokio::sync::{
+    mpsc::UnboundedSender as TokioSender, RwLock as AsyncRwLock, RwLockReadGuard, RwLockWriteGuard,
+};
 
 use super::{
     orderbook::{NetworkOrderBook, OrderIdentifier},
@@ -80,6 +83,7 @@ impl RelayerState {
     /// Initialize the global state at startup
     pub fn initialize_global_state(
         args: &RelayerConfig,
+        handshake_job_queue: TokioSender<HandshakeExecutionJob>,
         system_bus: SystemBus<SystemBusMessage>,
     ) -> Self {
         // Generate an keypair on curve 25519 for the local peer or fetch from config
@@ -102,7 +106,7 @@ impl RelayerState {
         let peer_index = PeerIndex::new(args.allow_local);
 
         // Setup the order book
-        let order_book = NetworkOrderBook::new(system_bus.clone());
+        let order_book = NetworkOrderBook::new(handshake_job_queue, system_bus.clone());
 
         Self {
             debug: args.debug,

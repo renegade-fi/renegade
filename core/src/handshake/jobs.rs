@@ -15,25 +15,22 @@ use crate::{
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum HandshakeExecutionJob {
-    /// A request to initiate a handshake with a scheduled peer
-    PerformHandshake {
-        /// The order to attempt a handshake on
-        order: OrderIdentifier,
+    /// Update the handshake cache with an entry from an order pair that a cluster
+    /// peer has executed
+    CacheEntry {
+        /// The first of the orders matched
+        order1: OrderIdentifier,
+        /// The second of the orders matched
+        order2: OrderIdentifier,
     },
-    /// Process a handshake request
-    ProcessHandshakeMessage {
-        /// The request identifier that will be used to track and index handshake
-        /// communications
-        request_id: Uuid,
-        /// The peer requesting to handshake
-        peer_id: WrappedPeerId,
-        /// The handshake request message contents
-        message: HandshakeMessage,
-        /// The channel on which to send the response
-        ///
-        /// If the channel is `None`, the response should be forwarded
-        /// as a new gossip request to the network manager directly
-        response_channel: Option<ResponseChannel<AuthenticatedGossipResponse>>,
+    /// Run the internal matching engine on the given order
+    ///
+    /// That is, check it against all other locally managed orders for a match. This is the simplest
+    /// match path as it does not require a handshake with a remote peer. Both orders matched
+    /// are known in the clear to the local peer
+    InternalMatchingEngine {
+        /// The order to match
+        order: OrderIdentifier,
     },
     /// Indicates that the network manager has setup an MPC net and the receiving thread
     /// may begin executing a match over this network
@@ -63,12 +60,24 @@ pub enum HandshakeExecutionJob {
         /// The second of the orders in the pair
         order2: OrderIdentifier,
     },
-    /// Update the handshake cache with an entry from an order pair that a cluster
-    /// peer has executed
-    CacheEntry {
-        /// The first of the orders matched
-        order1: OrderIdentifier,
-        /// The second of the orders matched
-        order2: OrderIdentifier,
+    /// Process a handshake request
+    ProcessHandshakeMessage {
+        /// The request identifier that will be used to track and index handshake
+        /// communications
+        request_id: Uuid,
+        /// The peer requesting to handshake
+        peer_id: WrappedPeerId,
+        /// The handshake request message contents
+        message: HandshakeMessage,
+        /// The channel on which to send the response
+        ///
+        /// If the channel is `None`, the response should be forwarded
+        /// as a new gossip request to the network manager directly
+        response_channel: Option<ResponseChannel<AuthenticatedGossipResponse>>,
+    },
+    /// A request to initiate a handshake with a scheduled peer
+    PerformHandshake {
+        /// The order to attempt a handshake on
+        order: OrderIdentifier,
     },
 }

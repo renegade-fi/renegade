@@ -158,7 +158,11 @@ async fn main() -> Result<(), CoordinatorError> {
     let (proof_generation_worker_sender, proof_generation_worker_receiver) = channel::unbounded();
 
     // Construct the global state and warm up the config orders by generating proofs of `VALID COMMITMENTS`
-    let global_state = RelayerState::initialize_global_state(&args, system_bus.clone());
+    let global_state = RelayerState::initialize_global_state(
+        &args,
+        handshake_worker_sender.clone(),
+        system_bus.clone(),
+    );
 
     // Configure logging and TUI
     #[cfg(feature = "debug-tui")]
