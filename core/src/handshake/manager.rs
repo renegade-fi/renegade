@@ -848,7 +848,7 @@ impl HandshakeExecutor {
             self.proof_manager_work_queue.clone(),
         )
         .await;
-        self.task_driver.start_task(task).await
+        self.task_driver.start_task(task).await.0
     }
 }
 
