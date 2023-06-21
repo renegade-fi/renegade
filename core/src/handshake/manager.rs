@@ -71,6 +71,8 @@ pub(super) const HANDSHAKE_EXECUTOR_N_THREADS: usize = 8;
 
 /// Error message emitted when a wallet cannot be looked up in the global state
 pub(super) const ERR_NO_WALLET: &str = "wallet not found in state";
+/// Error message emitted when an order cannot be found in the global state
+pub(super) const ERR_NO_ORDER: &str = "order not found in state";
 /// Error message emitted when price data cannot be found for a token pair
 const ERR_NO_PRICE_DATA: &str = "no price data found for token pair";
 
