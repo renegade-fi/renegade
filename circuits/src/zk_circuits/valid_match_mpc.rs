@@ -534,12 +534,12 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
                 <<<Self::Witness as MultiproverCircuitBaseType<N, S>>::MultiproverCommType
                     as MultiproverCircuitCommitmentType<N, S>>::BaseCommitType
                     as CircuitCommitmentType>::VarType,
-        _statement:
+        statement:
                 <<Self::Statement as MultiproverCircuitBaseType<N, S>>::BaseType
                     as CircuitBaseType>::VarType<Variable>,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {
-        ValidMatchMpcSingleProver::matching_engine_check_single_prover(witness, cs)
+        ValidMatchMpcSingleProver::apply_constraints(witness, statement, cs)
     }
 }
 
