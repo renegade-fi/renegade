@@ -77,6 +77,15 @@ impl Order {
     pub fn is_zero(&self) -> bool {
         self.amount == 0
     }
+
+    /// Determines whether the given price is within the allowable range for the order
+    pub fn price_in_range(&self, price: f64) -> bool {
+        let worst_case_f64 = self.worst_case_price.to_f64();
+        match self.side {
+            OrderSide::Buy => price <= worst_case_f64,
+            OrderSide::Sell => price >= worst_case_f64,
+        }
+    }
 }
 
 /// The side of the market a given order is on
