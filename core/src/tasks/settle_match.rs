@@ -32,7 +32,7 @@ use crate::{
 
 use super::{
     driver::{StateWrapper, Task},
-    helpers::{find_merkle_path, update_wallet_validity_proofs},
+    helpers::{apply_match_to_wallets, find_merkle_path, update_wallet_validity_proofs},
 };
 
 /// Error emitted when a transaction fails
@@ -240,12 +240,12 @@ impl SettleMatchTask {
         let party0_commit_proof = self.party0_validity_proof.commitment_proof.clone();
         let party1_commit_proof = self.party1_validity_proof.commitment_proof.clone();
 
-        Self::apply_match_to_wallets(
+        apply_match_to_wallets(
             &mut party0_modified_shares,
             &mut party1_modified_shares,
             &party0_commit_proof,
             &party1_commit_proof,
-            &self.handshake_result,
+            &self.handshake_result.match_,
         );
 
         // Construct a witness and statement
@@ -279,41 +279,6 @@ impl SettleMatchTask {
             .await
             .map(|bundle| bundle.into())
             .map_err(|err| SettleMatchTaskError::ProofGeneration(err.to_string()))
-    }
-
-    /// Apply a match to two wallet secret shares
-    fn apply_match_to_wallets(
-        wallet0_share: &mut SizedWalletShare,
-        wallet1_share: &mut SizedWalletShare,
-        party0_commit_proof: &ValidCommitmentsBundle,
-        party1_commit_proof: &ValidCommitmentsBundle,
-        handshake_res: &HandshakeResult,
-    ) {
-        // Mux between order directions to decide the amount each party receives
-        let match_res = &handshake_res.match_;
-        let (party0_receive_amount, party1_receive_amount) =
-            if match_res.direction.val.eq(&Scalar::from(0u8)) {
-                (match_res.base_amount.val, match_res.quote_amount.val)
-            } else {
-                (match_res.quote_amount.val, match_res.base_amount.val)
-            };
-
-        let party0_send_ind = party0_commit_proof.statement.balance_send_index as usize;
-        let party0_receive_ind = party0_commit_proof.statement.balance_receive_index as usize;
-        let party0_order_ind = party0_commit_proof.statement.order_index as usize;
-
-        let party1_send_ind = party1_commit_proof.statement.balance_send_index as usize;
-        let party1_receive_ind = party1_commit_proof.statement.balance_receive_index as usize;
-        let party1_order_ind = party1_commit_proof.statement.order_index as usize;
-
-        // Apply updates to party0's wallet
-        wallet0_share.balances[party0_send_ind].amount -= party1_receive_amount;
-        wallet0_share.balances[party0_receive_ind].amount += party0_receive_amount;
-        wallet0_share.orders[party0_order_ind].amount -= match_res.base_amount.val;
-
-        wallet1_share.balances[party1_send_ind].amount -= party0_receive_amount;
-        wallet1_share.balances[party1_receive_ind].amount += party1_receive_amount;
-        wallet1_share.orders[party1_order_ind].amount -= match_res.base_amount.val;
     }
 
     /// Submit the match transaction to the contract
