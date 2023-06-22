@@ -1,7 +1,12 @@
 //! Defines logic for running the internal matching engine on a given order
 
-use circuits::types::{order::Order, r#match::MatchResult};
+use circuits::{
+    types::{order::Order, r#match::MatchResult},
+    zk_gadgets::fixed_point::FixedPoint,
+};
+use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
+use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use rand::{seq::SliceRandom, thread_rng};
 use tracing::log;
 
@@ -11,7 +16,7 @@ use crate::{
         manager::{ERR_NO_PRICE_DATA, ERR_NO_WALLET},
     },
     state::{wallet::Wallet, NetworkOrder, OrderIdentifier},
-    tasks::{driver::TaskDriver, settle_match_internal::SettleMatchInternalTask},
+    tasks::settle_match_internal::SettleMatchInternalTask,
 };
 
 use super::{HandshakeExecutor, ERR_NO_ORDER};
@@ -57,6 +62,7 @@ impl HandshakeExecutor {
             .find_pair(&base, &quote)
             .ok_or_else(|| HandshakeManagerError::NoPriceData(ERR_NO_PRICE_DATA.to_string()))?
             .2; /* (base, quote, price) */
+        let price = FixedPoint::from_f64_round_down(price);
 
         // Shuffle the ordering of the other orders for fairness
         let mut rng = thread_rng();
@@ -89,17 +95,21 @@ impl HandshakeExecutor {
 
             // Settle the match if the two orders cross
             if let Some(handshake_result) = res {
-                // TODO: Implement settlement
+                // Spawn a task to settle the locally discovered match
                 log::info!("internal match found for {order_id:?}, settling...");
-                let (_, join_handle) = self
-                    .task_driver
-                    .start_task(SettleMatchInternalTask::new(
-                        self.starknet_client.clone(),
-                        self.network_channel.clone(),
-                        self.global_state.clone(),
-                        self.proof_manager_work_queue.clone(),
-                    ))
-                    .await;
+                let task = SettleMatchInternalTask::new(
+                    price,
+                    network_order.id,
+                    *order_id,
+                    handshake_result,
+                    self.starknet_client.clone(),
+                    self.network_channel.clone(),
+                    self.global_state.clone(),
+                    self.proof_manager_work_queue.clone(),
+                )
+                .await
+                .map_err(|err| HandshakeManagerError::TaskError(err.to_string()))?;
+                let (_, join_handle) = self.task_driver.start_task(task).await;
 
                 // If the task errors, log the error and continue
                 if !join_handle
@@ -145,7 +155,7 @@ impl HandshakeExecutor {
 
 /// Match a given order against all other orders in the wallet
 fn match_orders(
-    midpoint_price: f64,
+    midpoint_price: FixedPoint,
     order1: &Order,
     order2: &Order,
 ) -> Result<Option<MatchResult>, HandshakeManagerError> {
@@ -165,7 +175,8 @@ fn match_orders(
 
     // Match the orders
     let min_base_amount = u64::min(order1.amount, order2.amount);
-    let quote_amount: u64 = (min_base_amount as f64 * midpoint_price) as u64;
+    let quote_amount = midpoint_price * Scalar::from(min_base_amount);
+    let quote_amount = scalar_to_u64(&quote_amount.floor());
     let max_minus_min_amount = u64::max(order1.amount, order2.amount) - min_base_amount;
 
     Ok(Some(MatchResult {
@@ -226,7 +237,7 @@ mod tests {
         let order1 = ORDER1.clone();
         let order2 = ORDER2.clone();
         let midpoint_price = 7.;
-        let res = super::match_orders(midpoint_price, &order1, &order2).unwrap();
+        let res = super::match_orders(midpoint_price.into(), &order1, &order2).unwrap();
 
         assert!(res.is_some());
         let res = res.unwrap();
@@ -250,7 +261,7 @@ mod tests {
         let mut order2 = ORDER2.clone();
         order2.base_mint = 3u64.into();
         let midpoint_price = 7.;
-        let res = super::match_orders(midpoint_price, &order1, &order2).unwrap();
+        let res = super::match_orders(midpoint_price.into(), &order1, &order2).unwrap();
 
         assert!(res.is_none());
     }
@@ -262,7 +273,7 @@ mod tests {
         let mut order2 = ORDER2.clone();
         order2.quote_mint = 3u64.into();
         let midpoint_price = 7.;
-        let res = super::match_orders(midpoint_price, &order1, &order2).unwrap();
+        let res = super::match_orders(midpoint_price.into(), &order1, &order2).unwrap();
 
         assert!(res.is_none());
     }
@@ -274,7 +285,7 @@ mod tests {
         let mut order2 = ORDER2.clone();
         order2.side = order1.side;
         let midpoint_price = 7.;
-        let res = super::match_orders(midpoint_price, &order1, &order2).unwrap();
+        let res = super::match_orders(midpoint_price.into(), &order1, &order2).unwrap();
 
         assert!(res.is_none());
     }
@@ -285,7 +296,7 @@ mod tests {
         let order1 = ORDER1.clone();
         let order2 = ORDER2.clone();
         let midpoint_price = BUY_SIDE_WORST_CASE_PRICE + 1.;
-        let res = super::match_orders(midpoint_price as f64, &order1, &order2).unwrap();
+        let res = super::match_orders(midpoint_price.into(), &order1, &order2).unwrap();
 
         assert!(res.is_none());
     }
@@ -296,7 +307,7 @@ mod tests {
         let order1 = ORDER1.clone();
         let order2 = ORDER2.clone();
         let midpoint_price = SELL_SIDE_WORST_CASE_PRICE - 1.;
-        let res = super::match_orders(midpoint_price as f64, &order1, &order2).unwrap();
+        let res = super::match_orders(midpoint_price.into(), &order1, &order2).unwrap();
 
         assert!(res.is_none());
     }

@@ -79,11 +79,10 @@ impl Order {
     }
 
     /// Determines whether the given price is within the allowable range for the order
-    pub fn price_in_range(&self, price: f64) -> bool {
-        let worst_case_f64 = self.worst_case_price.to_f64();
+    pub fn price_in_range(&self, price: FixedPoint) -> bool {
         match self.side {
-            OrderSide::Buy => price <= worst_case_f64,
-            OrderSide::Sell => price >= worst_case_f64,
+            OrderSide::Buy => price.to_f64() <= self.worst_case_price.to_f64(),
+            OrderSide::Sell => price.to_f64() >= self.worst_case_price.to_f64(),
         }
     }
 }
