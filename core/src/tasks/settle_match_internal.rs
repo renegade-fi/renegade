@@ -27,6 +27,7 @@ use circuits::{
 };
 use crossbeam::channel::Sender as CrossbeamSender;
 use serde::Serialize;
+use starknet::core::types::{TransactionFailureReason, TransactionStatus};
 use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
 
 // -------------
@@ -42,6 +43,8 @@ const ERR_ENQUEUING_JOB: &str = "error enqueuing job with proof generation modul
 const ERR_AWAITING_PROOF: &str = "error awaiting proof";
 /// Error message emitted when a wallet cannot be found
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found in global state";
+/// Error message emitted when a transaction fails with no reason given
+const ERR_UNKNOWN_TX_FAILURE: &str = "transaction failed with no reason given";
 
 // -------------------
 // | Task Definition |
@@ -123,6 +126,8 @@ pub enum SettleMatchInternalTaskError {
     EnqueuingJob(String),
     /// State necessary for execution cannot be found
     MissingState(String),
+    /// Error interacting with the Starknet API
+    Starknet(String),
 }
 
 impl Display for SettleMatchInternalTaskError {
@@ -356,8 +361,50 @@ impl SettleMatchInternalTask {
     }
 
     /// Submit the match transaction
-    async fn submit_match(&self) -> Result<(), SettleMatchInternalTaskError> {
-        todo!()
+    async fn submit_match(&mut self) -> Result<(), SettleMatchInternalTaskError> {
+        // Submit a `match` transaction
+        let party0_reblind_proof = &self.order1_proof.reblind_proof.statement;
+        let party1_reblind_proof = &self.order2_proof.reblind_proof.statement;
+        let valid_match_proof = self.valid_match_mpc.take().unwrap();
+        let valid_settle_proof = self.valid_settle.take().unwrap();
+
+        let tx_hash = self
+            .starknet_client
+            .submit_match(
+                party0_reblind_proof.original_shares_nullifier,
+                party1_reblind_proof.original_shares_nullifier,
+                party0_reblind_proof.reblinded_private_share_commitment,
+                party1_reblind_proof.reblinded_private_share_commitment,
+                valid_settle_proof.statement.party0_modified_shares.clone(),
+                valid_settle_proof.statement.party1_modified_shares.clone(),
+                self.order1_proof.clone(),
+                self.order2_proof.clone(),
+                valid_match_proof,
+                valid_settle_proof,
+            )
+            .await
+            .map_err(|err| SettleMatchInternalTaskError::Starknet(err.to_string()))?;
+
+        let tx_info = self
+            .starknet_client
+            .poll_transaction_completed(tx_hash)
+            .await
+            .map_err(|err| SettleMatchInternalTaskError::Starknet(err.to_string()))?;
+
+        // Check transaction status
+        if let TransactionStatus::Rejected = tx_info.status {
+            return Err(SettleMatchInternalTaskError::Starknet(format!(
+                "transaction rejected: {:?}",
+                tx_info
+                    .transaction_failure_reason
+                    .unwrap_or(TransactionFailureReason {
+                        code: "".to_string(),
+                        error_message: Some(ERR_UNKNOWN_TX_FAILURE.to_string())
+                    })
+            )));
+        }
+
+        Ok(())
     }
 
     /// Update the wallet state and Merkle openings

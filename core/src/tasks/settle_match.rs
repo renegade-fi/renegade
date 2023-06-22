@@ -11,7 +11,6 @@ use async_trait::async_trait;
 use circuits::{traits::LinkableType, types::balance::Balance};
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::{scalar_to_biguint, starknet_felt_to_biguint};
-use curve25519_dalek::scalar::Scalar;
 use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use serde::Serialize;
 use starknet::core::types::{TransactionInfo, TransactionStatus};
@@ -22,7 +21,7 @@ use crate::{
     gossip_api::gossip::GossipOutbound,
     handshake::{manager::HandshakeResult, state::HandshakeState},
     proof_generation::{
-        jobs::{ProofJob, ProofManagerJob, ValidCommitmentsBundle, ValidSettleBundle},
+        jobs::{ProofJob, ProofManagerJob, ValidSettleBundle},
         OrderValidityProofBundle, SizedValidSettleStatement, SizedValidSettleWitness,
     },
     starknet_client::client::StarknetClient,
