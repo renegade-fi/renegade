@@ -14,11 +14,17 @@ use crate::{
     tasks::helpers::apply_match_to_wallets,
 };
 
-use super::driver::{StateWrapper, Task};
+use super::{
+    driver::{StateWrapper, Task},
+    helpers::find_merkle_path,
+};
 use async_trait::async_trait;
 use circuits::{
     traits::{LinkableBaseType, LinkableType},
-    types::r#match::{LinkableMatchResult, MatchResult},
+    types::{
+        balance::Balance,
+        r#match::{LinkableMatchResult, MatchResult},
+    },
     zk_circuits::{
         valid_match_mpc::ValidMatchMpcWitness,
         valid_settle::{ValidSettleStatement, ValidSettleWitness},
@@ -26,6 +32,9 @@ use circuits::{
     zk_gadgets::fixed_point::FixedPoint,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
+use crypto::fields::scalar_to_biguint;
+use mpc_ristretto::mpc_scalar::scalar_to_u64;
+use num_bigint::BigUint;
 use serde::Serialize;
 use starknet::core::types::{TransactionFailureReason, TransactionStatus};
 use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
@@ -53,39 +62,35 @@ const ERR_UNKNOWN_TX_FAILURE: &str = "transaction failed with no reason given";
 /// Describe the settle match internal task
 pub struct SettleMatchInternalTask {
     /// The price at which the match was executed
-    pub execution_price: FixedPoint,
+    execution_price: FixedPoint,
     /// The identifier of the first order
-    pub order_id1: OrderIdentifier,
+    order_id1: OrderIdentifier,
     /// The identifier of the second order
-    pub order_id2: OrderIdentifier,
+    order_id2: OrderIdentifier,
     /// The validity proofs for the first order
-    pub order1_proof: OrderValidityProofBundle,
+    order1_proof: OrderValidityProofBundle,
     /// The validity proof witness for the first order
-    pub order1_validity_witness: OrderValidityWitnessBundle,
+    order1_validity_witness: OrderValidityWitnessBundle,
     /// The validity proofs for the second order
-    pub order2_proof: OrderValidityProofBundle,
+    order2_proof: OrderValidityProofBundle,
     /// The validity proof witness for the second order
-    pub order2_validity_witness: OrderValidityWitnessBundle,
-    /// A copy of the first party's wallet
-    pub wallet1: Wallet,
-    /// A copy of the second party's wallet
-    pub wallet2: Wallet,
+    order2_validity_witness: OrderValidityWitnessBundle,
     /// The match result
-    pub match_result: LinkableMatchResult,
+    match_result: LinkableMatchResult,
     /// The proof of `VALID MATCH MPC` generated in the first task step
-    pub valid_match_mpc: Option<ValidMatchMpcBundle>,
+    valid_match_mpc: Option<ValidMatchMpcBundle>,
     /// The proof of `VALID SETTLE` generated in the second task step
-    pub valid_settle: Option<ValidSettleBundle>,
+    valid_settle: Option<ValidSettleBundle>,
     /// The starknet client to use for submitting transactions
-    pub starknet_client: StarknetClient,
+    starknet_client: StarknetClient,
     /// A sender to the network manager's work queue
-    pub network_sender: TokioSender<GossipOutbound>,
+    network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
-    pub global_state: RelayerState,
+    global_state: RelayerState,
     /// The work queue to add proof management jobs to
-    pub proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     /// The state of the task
-    pub task_state: SettleMatchInternalTaskState,
+    task_state: SettleMatchInternalTaskState,
 }
 
 /// The state of the settle match internal task
@@ -215,17 +220,6 @@ impl SettleMatchInternalTask {
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     ) -> Result<Self, SettleMatchInternalTaskError> {
-        let wallet1 = Self::find_wallet_for_order(&order1, global_state.clone())
-            .await
-            .ok_or_else(|| {
-                SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
-            })?;
-        let wallet2 = Self::find_wallet_for_order(&order2, global_state.clone())
-            .await
-            .ok_or_else(|| {
-                SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
-            })?;
-
         Ok(Self {
             execution_price,
             order_id1: order1,
@@ -234,8 +228,6 @@ impl SettleMatchInternalTask {
             order1_validity_witness: order1_witness,
             order2_proof,
             order2_validity_witness: order2_witness,
-            wallet1,
-            wallet2,
             match_result: match_result.to_linkable(),
             valid_match_mpc: None,
             valid_settle: None,
@@ -248,11 +240,8 @@ impl SettleMatchInternalTask {
     }
 
     /// Find the wallet for an order in the global state
-    async fn find_wallet_for_order(
-        order: &OrderIdentifier,
-        global_state: RelayerState,
-    ) -> Option<Wallet> {
-        let locked_wallet_index = global_state.read_wallet_index().await;
+    async fn find_wallet_for_order(&self, order: &OrderIdentifier) -> Option<Wallet> {
+        let locked_wallet_index = self.global_state.read_wallet_index().await;
         let wallet_id = locked_wallet_index.get_wallet_for_order(order)?;
         locked_wallet_index.get_wallet(&wallet_id).await
     }
@@ -409,7 +398,84 @@ impl SettleMatchInternalTask {
 
     /// Update the wallet state and Merkle openings
     async fn update_state(&self) -> Result<(), SettleMatchInternalTaskError> {
-        todo!()
+        // Lookup the wallets that manage each order
+        let wallet1 = self
+            .find_wallet_for_order(&self.order_id1)
+            .await
+            .ok_or_else(|| {
+                SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
+            })?;
+        let wallet2 = self
+            .find_wallet_for_order(&self.order_id2)
+            .await
+            .ok_or_else(|| {
+                SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
+            })?;
+
+        // Update the wallet state
+        let (mut buy_side_wallet, buy_side_order, mut sell_side_wallet, sell_side_order) =
+            match scalar_to_u64(&self.match_result.direction.val) {
+                0 => (wallet1, self.order_id1, wallet2, self.order_id2),
+                1 => (wallet2, self.order_id2, wallet1, self.order_id1),
+                _ => panic!("invalid match direction"),
+            };
+
+        // Update the balances
+        let base_mint = scalar_to_biguint(&self.match_result.base_mint.val);
+        let quote_mint = scalar_to_biguint(&self.match_result.quote_mint.val);
+
+        let base_amount = scalar_to_u64(&self.match_result.base_amount.val) as i64;
+        let quote_amount = scalar_to_u64(&self.match_result.quote_amount.val) as i64;
+
+        Self::update_balance(base_mint.clone(), base_amount, &mut buy_side_wallet);
+        Self::update_balance(base_mint, -base_amount, &mut sell_side_wallet);
+        Self::update_balance(quote_mint.clone(), -quote_amount, &mut buy_side_wallet);
+        Self::update_balance(quote_mint, -quote_amount, &mut sell_side_wallet);
+
+        // Update the orders
+        buy_side_wallet
+            .orders
+            .get_mut(&buy_side_order)
+            .expect("order not found in wallet")
+            .amount -= base_amount as u64;
+        sell_side_wallet
+            .orders
+            .get_mut(&sell_side_order)
+            .expect("order not found in wallet")
+            .amount -= base_amount as u64;
+
+        // Reblind both wallets
+        buy_side_wallet.reblind_wallet();
+        sell_side_wallet.reblind_wallet();
+
+        // Update the Merkle openings for both wallets
+        self.find_opening(&mut buy_side_wallet).await?;
+        self.find_opening(&mut sell_side_wallet).await?;
+
+        // Re-index the updated wallets in the global state
+        self.global_state.update_wallet(buy_side_wallet).await;
+        self.global_state.update_wallet(sell_side_wallet).await;
+
+        Ok(())
+    }
+
+    /// A helper to add or subtract from the balance of a wallet the given amount
+    fn update_balance(mint: BigUint, amount: i64, wallet: &mut Wallet) {
+        let balance = wallet
+            .balances
+            .entry(mint.clone())
+            .or_insert(Balance { mint, amount: 0 });
+        balance.amount = balance.amount.checked_add_signed(amount).unwrap();
+    }
+
+    /// Find and update the merkle opening for the wallet
+    async fn find_opening(&self, wallet: &mut Wallet) -> Result<(), SettleMatchInternalTaskError> {
+        let opening = find_merkle_path(wallet, &self.starknet_client)
+            .await
+            .map_err(|err| SettleMatchInternalTaskError::Starknet(err.to_string()))?;
+
+        wallet.merkle_proof = Some(opening);
+        Ok(())
     }
 
     /// Update validity proofs for the wallet
