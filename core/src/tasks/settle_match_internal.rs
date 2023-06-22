@@ -6,18 +6,24 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 use crate::{
     gossip_api::gossip::GossipOutbound,
     proof_generation::{
-        jobs::{ProofJob, ProofManagerJob, ValidMatchMpcBundle},
+        jobs::{ProofJob, ProofManagerJob, ValidMatchMpcBundle, ValidSettleBundle},
         OrderValidityProofBundle, OrderValidityWitnessBundle,
     },
     starknet_client::client::StarknetClient,
-    state::{OrderIdentifier, RelayerState},
+    state::{wallet::Wallet, OrderIdentifier, RelayerState},
+    tasks::helpers::apply_match_to_wallets,
 };
 
 use super::driver::{StateWrapper, Task};
 use async_trait::async_trait;
 use circuits::{
-    traits::LinkableBaseType, types::r#match::MatchResult,
-    zk_circuits::valid_match_mpc::ValidMatchMpcWitness, zk_gadgets::fixed_point::FixedPoint,
+    traits::{LinkableBaseType, LinkableType},
+    types::r#match::{LinkableMatchResult, MatchResult},
+    zk_circuits::{
+        valid_match_mpc::ValidMatchMpcWitness,
+        valid_settle::{ValidSettleStatement, ValidSettleWitness},
+    },
+    zk_gadgets::fixed_point::FixedPoint,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
 use serde::Serialize;
@@ -34,6 +40,8 @@ pub const SETTLE_MATCH_INTERNAL_TASK_NAME: &str = "settle-match-internal";
 const ERR_ENQUEUING_JOB: &str = "error enqueuing job with proof generation module";
 /// Error message emitted when awaiting a proof fails
 const ERR_AWAITING_PROOF: &str = "error awaiting proof";
+/// Error message emitted when a wallet cannot be found
+const ERR_WALLET_NOT_FOUND: &str = "wallet not found in global state";
 
 // -------------------
 // | Task Definition |
@@ -55,10 +63,16 @@ pub struct SettleMatchInternalTask {
     pub order2_proof: OrderValidityProofBundle,
     /// The validity proof witness for the second order
     pub order2_validity_witness: OrderValidityWitnessBundle,
+    /// A copy of the first party's wallet
+    pub wallet1: Wallet,
+    /// A copy of the second party's wallet
+    pub wallet2: Wallet,
     /// The match result
-    pub match_result: MatchResult,
+    pub match_result: LinkableMatchResult,
     /// The proof of `VALID MATCH MPC` generated in the first task step
     pub valid_match_mpc: Option<ValidMatchMpcBundle>,
+    /// The proof of `VALID SETTLE` generated in the second task step
+    pub valid_settle: Option<ValidSettleBundle>,
     /// The starknet client to use for submitting transactions
     pub starknet_client: StarknetClient,
     /// A sender to the network manager's work queue
@@ -107,6 +121,8 @@ impl Display for SettleMatchInternalTaskState {
 pub enum SettleMatchInternalTaskError {
     /// Error enqueuing a job with another worker
     EnqueuingJob(String),
+    /// State necessary for execution cannot be found
+    MissingState(String),
 }
 
 impl Display for SettleMatchInternalTaskError {
@@ -180,7 +196,7 @@ impl Task for SettleMatchInternalTask {
 impl SettleMatchInternalTask {
     /// Constructor
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub async fn new(
         execution_price: FixedPoint,
         order1: OrderIdentifier,
         order2: OrderIdentifier,
@@ -193,8 +209,19 @@ impl SettleMatchInternalTask {
         network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, SettleMatchInternalTaskError> {
+        let wallet1 = Self::find_wallet_for_order(&order1, global_state.clone())
+            .await
+            .ok_or_else(|| {
+                SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
+            })?;
+        let wallet2 = Self::find_wallet_for_order(&order2, global_state.clone())
+            .await
+            .ok_or_else(|| {
+                SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
+            })?;
+
+        Ok(Self {
             execution_price,
             order_id1: order1,
             order_id2: order2,
@@ -202,14 +229,27 @@ impl SettleMatchInternalTask {
             order1_validity_witness: order1_witness,
             order2_proof,
             order2_validity_witness: order2_witness,
-            match_result,
+            wallet1,
+            wallet2,
+            match_result: match_result.to_linkable(),
             valid_match_mpc: None,
+            valid_settle: None,
             starknet_client,
             network_sender,
             global_state,
             proof_manager_work_queue,
             task_state: SettleMatchInternalTaskState::Pending,
-        }
+        })
+    }
+
+    /// Find the wallet for an order in the global state
+    async fn find_wallet_for_order(
+        order: &OrderIdentifier,
+        global_state: RelayerState,
+    ) -> Option<Wallet> {
+        let locked_wallet_index = global_state.read_wallet_index().await;
+        let wallet_id = locked_wallet_index.get_wallet_for_order(order)?;
+        locked_wallet_index.get_wallet(&wallet_id).await
     }
 
     /// Prove `VALID MATCH MPC` on the order pair
@@ -227,7 +267,7 @@ impl SettleMatchInternalTask {
             balance2: commitment_witness2.balance_send.clone(),
             amount2: self.match_result.base_amount.into(),
             price2: self.execution_price,
-            match_res: self.match_result.clone().to_linkable(),
+            match_res: self.match_result.clone(),
         };
 
         // Enqueue a job with the proof generation module
@@ -253,8 +293,66 @@ impl SettleMatchInternalTask {
     /// Prove `VALID SETTLE` on the order pair
     ///
     /// TODO: Shootdown nullifiers of now-spent wallets
-    async fn prove_settle(&self) -> Result<(), SettleMatchInternalTaskError> {
-        todo!()
+    async fn prove_settle(&mut self) -> Result<(), SettleMatchInternalTaskError> {
+        // Build a witness
+        let party0_public_shares = &self
+            .order1_validity_witness
+            .reblind_witness
+            .reblinded_wallet_public_shares;
+        let party1_public_shares = &self
+            .order2_validity_witness
+            .reblind_witness
+            .reblinded_wallet_public_shares;
+        let witness = ValidSettleWitness {
+            match_res: self.match_result.clone(),
+            party0_public_shares: party0_public_shares.clone(),
+            party1_public_shares: party1_public_shares.clone(),
+        };
+
+        // Apply the match to the wallet secret shares and build a `VALID SETTLE` statement
+        let mut party0_modified_shares = party0_public_shares.clone().to_base_type();
+        let mut party1_modified_shares = party1_public_shares.clone().to_base_type();
+
+        let party0_commitment_proof = &self.order1_proof.commitment_proof;
+        let party1_commitment_proof = &self.order2_proof.commitment_proof;
+
+        apply_match_to_wallets(
+            &mut party0_modified_shares,
+            &mut party1_modified_shares,
+            &self.order1_proof.commitment_proof,
+            &self.order2_proof.commitment_proof,
+            &self.match_result,
+        );
+
+        let statement = ValidSettleStatement {
+            party0_modified_shares,
+            party1_modified_shares,
+            party0_send_balance_index: party0_commitment_proof.statement.balance_send_index,
+            party0_receive_balance_index: party0_commitment_proof.statement.balance_receive_index,
+            party0_order_index: party0_commitment_proof.statement.order_index,
+            party1_send_balance_index: party1_commitment_proof.statement.balance_send_index,
+            party1_receive_balance_index: party1_commitment_proof.statement.balance_receive_index,
+            party1_order_index: party1_commitment_proof.statement.order_index,
+        };
+
+        // Enqueue a job with the proof generation module
+        let (response_sender, response_receiver) = oneshot::channel();
+        self.proof_manager_work_queue
+            .send(ProofManagerJob {
+                type_: ProofJob::ValidSettle { witness, statement },
+                response_channel: response_sender,
+            })
+            .map_err(|_| {
+                SettleMatchInternalTaskError::EnqueuingJob(ERR_ENQUEUING_JOB.to_string())
+            })?;
+
+        // Await a response
+        let proof = response_receiver.await.map_err(|_| {
+            SettleMatchInternalTaskError::EnqueuingJob(ERR_AWAITING_PROOF.to_string())
+        })?;
+        self.valid_settle = Some(proof.into());
+
+        Ok(())
     }
 
     /// Submit the match transaction
