@@ -327,6 +327,14 @@ impl SettleMatchTask {
             }
         }
 
+        // If the transaction was successful, cancel all orders on both nullifiers, await new validity proofs
+        self.global_state
+            .nullify_orders(party0_reblind_proof.original_shares_nullifier)
+            .await;
+        self.global_state
+            .nullify_orders(party1_reblind_proof.original_shares_nullifier)
+            .await;
+
         Ok(())
     }
 
