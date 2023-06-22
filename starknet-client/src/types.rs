@@ -5,7 +5,7 @@ use std::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
 };
 
-use circuits::types::transfers::{
+use circuit_types::transfers::{
     ExternalTransfer as CircuitExternalTransfer, ExternalTransferDirection,
 };
 use crypto::fields::{biguint_to_starknet_felt, u128_to_starknet_felt};

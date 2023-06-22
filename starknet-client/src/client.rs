@@ -9,10 +9,23 @@ use std::{
     time::Duration,
 };
 
-use circuits::{
+use circuit_types::{
+    merkle::MerkleRoot,
     native_helpers::compute_wallet_commitment_from_private,
-    types::wallet::{Nullifier, WalletShareStateCommitment},
-    zk_gadgets::merkle::MerkleRoot,
+    wallet::{Nullifier, WalletShareStateCommitment},
+    SizedWalletShare,
+};
+use common::types::{
+    chain_id::ChainId,
+    merkle::{MerkleAuthenticationPath, MerkleTreeCoords},
+    proof_bundles::{
+        OrderValidityProofBundle, ValidMatchMpcBundle, ValidSettleBundle, ValidWalletCreateBundle,
+        ValidWalletUpdateBundle,
+    },
+};
+use constants::{
+    DEVNET_CONTRACT_DEPLOYMENT_BLOCK, GOERLI_CONTRACT_DEPLOYMENT_BLOCK,
+    MAINNET_CONTRACT_DEPLOYMENT_BLOCK,
 };
 use crypto::fields::{
     biguint_to_starknet_felt, scalar_to_biguint, starknet_felt_to_biguint, starknet_felt_to_scalar,
@@ -41,24 +54,13 @@ use tracing::log;
 use url::Url;
 
 use crate::{
-    proof_generation::{
-        jobs::{
-            ValidMatchMpcBundle, ValidSettleBundle, ValidWalletCreateBundle,
-            ValidWalletUpdateBundle,
-        },
-        OrderValidityProofBundle,
-    },
-    starknet_client::{
-        helpers::parse_shares_from_calldata, INTERNAL_NODE_CHANGED_EVENT_SELECTOR, MATCH_SELECTOR,
-        MERKLE_ROOT_IN_HISTORY_SELECTOR, NEW_WALLET_SELECTOR, UPDATE_WALLET_SELECTOR,
-        VALUE_INSERTED_EVENT_SELECTOR,
-    },
-    state::{wallet::MerkleAuthenticationPath, MerkleTreeCoords},
-    SizedWalletShare, MERKLE_HEIGHT,
+    helpers::parse_shares_from_calldata, INTERNAL_NODE_CHANGED_EVENT_SELECTOR, MATCH_SELECTOR,
+    MERKLE_HEIGHT, MERKLE_ROOT_IN_HISTORY_SELECTOR, NEW_WALLET_SELECTOR, UPDATE_WALLET_SELECTOR,
+    VALUE_INSERTED_EVENT_SELECTOR,
 };
 
 use super::{
-    error::StarknetClientError, helpers::pack_bytes_into_felts, types::ExternalTransfer, ChainId,
+    error::StarknetClientError, helpers::pack_bytes_into_felts, types::ExternalTransfer,
     DEFAULT_AUTHENTICATION_PATH, GET_PUBLIC_BLINDER_TRANSACTION, NULLIFIER_USED_SELECTOR,
 };
 
@@ -72,13 +74,6 @@ pub type TransactionHash = StarknetFieldElement;
 /// `BLOCK_PAGINATION_WINDOW` blocks; scan them, then search the next
 /// `BLOCK_PAGINATION_WINDOW` blocks
 const BLOCK_PAGINATION_WINDOW: u64 = 1000;
-/// The deployment block for the Mainnet contract
-/// TODO: Update this once the contract is deployed
-const MAINNET_CONTRACT_DEPLOYMENT_BLOCK: u64 = 780361;
-/// The deployment block for the Goerli contract
-const GOERLI_CONTRACT_DEPLOYMENT_BLOCK: u64 = 780361;
-/// The deployment block for the devnet contract
-const DEVNET_CONTRACT_DEPLOYMENT_BLOCK: u64 = 0;
 /// The page size to request when querying events
 const EVENTS_PAGE_SIZE: u64 = 50;
 /// The interval at which to poll the gateway for transaction status

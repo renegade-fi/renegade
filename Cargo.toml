@@ -4,7 +4,8 @@ members = [
 	"circuit-macros",
 	"core",
 	"crypto",
-	"integration-helpers"
+	"integration-helpers",
+	"starknet-client",
 ]
 
 [profile.bench]

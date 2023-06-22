@@ -2,16 +2,20 @@
 //! specific information (keys, api credentials, etc) and provides a cleaner
 //! interface for interacting with on-chain state in Renegade specific patterns
 
+#![allow(incomplete_features)]
+#![deny(clippy::missing_docs_in_private_items)]
+#![deny(missing_docs)]
+#![deny(unsafe_code)]
+#![feature(generic_const_exprs)]
+
 use std::{convert::TryInto, str::FromStr};
 
-use circuits::native_helpers::compute_poseidon_hash;
-use crypto::fields::biguint_to_scalar;
+use constants::MERKLE_HEIGHT;
+use crypto::{fields::biguint_to_scalar, hash::compute_poseidon_hash};
 use curve25519_dalek::scalar::Scalar;
+use lazy_static::lazy_static;
 use num_bigint::BigUint;
-use serde::{Deserialize, Serialize};
 use starknet::core::{types::FieldElement as StarknetFieldElement, utils::get_selector_from_name};
-
-use crate::MERKLE_HEIGHT;
 
 pub mod client;
 pub mod error;
@@ -83,64 +87,4 @@ lazy_static! {
 
         values.try_into().unwrap()
     };
-}
-
-/// Starknet mainnet chain-id
-/// TODO: use `starknet-rs` implementation once we upgrade versions
-pub const STARKNET_MAINNET_ID: StarknetFieldElement = StarknetFieldElement::from_mont([
-    17696389056366564951,
-    18446744073709551615,
-    18446744073709551615,
-    502562008147966918,
-]);
-
-/// Starknet testnet chain-id
-pub const STARKNET_TESTNET_ID: StarknetFieldElement = StarknetFieldElement::from_mont([
-    3753493103916128178,
-    18446744073709548950,
-    18446744073709551615,
-    398700013197595345,
-]);
-
-/// Starknet devnet chain-id
-pub const STARKNET_DEVNET_ID: StarknetFieldElement = STARKNET_TESTNET_ID;
-
-/// A chain identifier used to decide chain-specific behaviors
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub enum ChainId {
-    /// Starknet's alpha-goerli testnet chain
-    #[serde(rename = "goerli")]
-    AlphaGoerli,
-    /// Starknet mainnet
-    #[serde(rename = "mainnet")]
-    Mainnet,
-    /// Devnet at localhost:5050
-    #[serde(rename = "devnet")]
-    Devnet,
-}
-
-impl From<ChainId> for StarknetFieldElement {
-    fn from(chain_id: ChainId) -> StarknetFieldElement {
-        match chain_id {
-            ChainId::AlphaGoerli => STARKNET_TESTNET_ID,
-            ChainId::Mainnet => STARKNET_MAINNET_ID,
-            ChainId::Devnet => STARKNET_DEVNET_ID,
-        }
-    }
-}
-
-impl FromStr for ChainId {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s == "goerli" {
-            Ok(Self::AlphaGoerli)
-        } else if s == "mainnet" {
-            Ok(Self::Mainnet)
-        } else if s == "devnet" {
-            Ok(Self::Devnet)
-        } else {
-            Err(format!("unknown chain ID {s}"))
-        }
-    }
 }
