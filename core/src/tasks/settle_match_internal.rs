@@ -4,15 +4,24 @@
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use crate::{
-    gossip_api::gossip::GossipOutbound, proof_generation::jobs::ProofManagerJob,
-    starknet_client::client::StarknetClient, state::RelayerState,
+    gossip_api::gossip::GossipOutbound,
+    proof_generation::{
+        jobs::{ProofJob, ProofManagerJob, ValidMatchMpcBundle},
+        OrderValidityProofBundle, OrderValidityWitnessBundle,
+    },
+    starknet_client::client::StarknetClient,
+    state::{OrderIdentifier, RelayerState},
 };
 
 use super::driver::{StateWrapper, Task};
 use async_trait::async_trait;
+use circuits::{
+    traits::LinkableBaseType, types::r#match::MatchResult,
+    zk_circuits::valid_match_mpc::ValidMatchMpcWitness, zk_gadgets::fixed_point::FixedPoint,
+};
 use crossbeam::channel::Sender as CrossbeamSender;
 use serde::Serialize;
-use tokio::sync::mpsc::UnboundedSender as TokioSender;
+use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
 
 // -------------
 // | Constants |
@@ -21,12 +30,35 @@ use tokio::sync::mpsc::UnboundedSender as TokioSender;
 /// The name of the task
 pub const SETTLE_MATCH_INTERNAL_TASK_NAME: &str = "settle-match-internal";
 
+/// Error message emitted when enqueuing a job with the proof generation module fails
+const ERR_ENQUEUING_JOB: &str = "error enqueuing job with proof generation module";
+/// Error message emitted when awaiting a proof fails
+const ERR_AWAITING_PROOF: &str = "error awaiting proof";
+
 // -------------------
 // | Task Definition |
 // -------------------
 
 /// Describe the settle match internal task
 pub struct SettleMatchInternalTask {
+    /// The price at which the match was executed
+    pub execution_price: FixedPoint,
+    /// The identifier of the first order
+    pub order_id1: OrderIdentifier,
+    /// The identifier of the second order
+    pub order_id2: OrderIdentifier,
+    /// The validity proofs for the first order
+    pub order1_proof: OrderValidityProofBundle,
+    /// The validity proof witness for the first order
+    pub order1_validity_witness: OrderValidityWitnessBundle,
+    /// The validity proofs for the second order
+    pub order2_proof: OrderValidityProofBundle,
+    /// The validity proof witness for the second order
+    pub order2_validity_witness: OrderValidityWitnessBundle,
+    /// The match result
+    pub match_result: MatchResult,
+    /// The proof of `VALID MATCH MPC` generated in the first task step
+    pub valid_match_mpc: Option<ValidMatchMpcBundle>,
     /// The starknet client to use for submitting transactions
     pub starknet_client: StarknetClient,
     /// A sender to the network manager's work queue
@@ -72,7 +104,10 @@ impl Display for SettleMatchInternalTaskState {
 
 /// The error type that the task emits
 #[derive(Clone, Debug, Serialize)]
-pub enum SettleMatchInternalTaskError {}
+pub enum SettleMatchInternalTaskError {
+    /// Error enqueuing a job with another worker
+    EnqueuingJob(String),
+}
 
 impl Display for SettleMatchInternalTaskError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
@@ -134,7 +169,7 @@ impl Task for SettleMatchInternalTask {
     }
 
     fn state(&self) -> Self::State {
-        self.task_state.clone().into()
+        self.task_state.clone()
     }
 }
 
@@ -144,13 +179,31 @@ impl Task for SettleMatchInternalTask {
 
 impl SettleMatchInternalTask {
     /// Constructor
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
+        execution_price: FixedPoint,
+        order1: OrderIdentifier,
+        order2: OrderIdentifier,
+        order1_proof: OrderValidityProofBundle,
+        order1_witness: OrderValidityWitnessBundle,
+        order2_proof: OrderValidityProofBundle,
+        order2_witness: OrderValidityWitnessBundle,
+        match_result: MatchResult,
         starknet_client: StarknetClient,
         network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     ) -> Self {
         Self {
+            execution_price,
+            order_id1: order1,
+            order_id2: order2,
+            order1_proof,
+            order1_validity_witness: order1_witness,
+            order2_proof,
+            order2_validity_witness: order2_witness,
+            match_result,
+            valid_match_mpc: None,
             starknet_client,
             network_sender,
             global_state,
@@ -160,11 +213,46 @@ impl SettleMatchInternalTask {
     }
 
     /// Prove `VALID MATCH MPC` on the order pair
-    async fn prove_match_mpc(&self) -> Result<(), SettleMatchInternalTaskError> {
-        todo!()
+    async fn prove_match_mpc(&mut self) -> Result<(), SettleMatchInternalTaskError> {
+        // Build a witness
+        let commitment_witness1 = self.order1_validity_witness.copy_commitment_witness();
+        let commitment_witness2 = self.order2_validity_witness.copy_commitment_witness();
+
+        let witness = ValidMatchMpcWitness {
+            order1: commitment_witness1.order.clone(),
+            balance1: commitment_witness1.balance_send.clone(),
+            amount1: self.match_result.base_amount.into(),
+            price1: self.execution_price,
+            order2: commitment_witness2.order.clone(),
+            balance2: commitment_witness2.balance_send.clone(),
+            amount2: self.match_result.base_amount.into(),
+            price2: self.execution_price,
+            match_res: self.match_result.clone().to_linkable(),
+        };
+
+        // Enqueue a job with the proof generation module
+        let (response_sender, response_receiver) = oneshot::channel();
+        self.proof_manager_work_queue
+            .send(ProofManagerJob {
+                type_: ProofJob::ValidMatchMpcSingleprover { witness },
+                response_channel: response_sender,
+            })
+            .map_err(|_| {
+                SettleMatchInternalTaskError::EnqueuingJob(ERR_ENQUEUING_JOB.to_string())
+            })?;
+
+        // Await the proof from the proof manager
+        let proof = response_receiver.await.map_err(|_| {
+            SettleMatchInternalTaskError::EnqueuingJob(ERR_AWAITING_PROOF.to_string())
+        })?;
+        self.valid_match_mpc = Some(proof.into());
+
+        Ok(())
     }
 
     /// Prove `VALID SETTLE` on the order pair
+    ///
+    /// TODO: Shootdown nullifiers of now-spent wallets
     async fn prove_settle(&self) -> Result<(), SettleMatchInternalTaskError> {
         todo!()
     }

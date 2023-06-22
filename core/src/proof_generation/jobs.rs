@@ -6,7 +6,7 @@
 
 use circuits::zk_circuits::{
     valid_commitments::{ValidCommitmentsStatement, ValidCommitmentsWitnessCommitment},
-    valid_match_mpc::ValidMatchMpcWitnessCommitment,
+    valid_match_mpc::{ValidMatchMpcWitness, ValidMatchMpcWitnessCommitment},
     valid_reblind::{ValidReblindStatement, ValidReblindWitnessCommitment},
     valid_settle::{ValidSettleStatement, ValidSettleWitnessCommitment},
     valid_wallet_create::{ValidWalletCreateStatement, ValidWalletCreateWitnessCommitment},
@@ -159,6 +159,8 @@ pub enum ProofBundle {
     ValidCommitments(ValidCommitmentsBundle),
     /// A witness commitment, statement, and proof of `VALID WALLET UPDATE`
     ValidWalletUpdate(ValidWalletUpdateBundle),
+    /// A witness commitment and proof of `VALID MATCH MPC`
+    ValidMatchMpc(ValidMatchMpcBundle),
     /// A witness commitment, statement, and proof of `VALID SETTLE`
     ValidSettle(ValidSettleBundle),
 }
@@ -206,6 +208,16 @@ impl From<ProofBundle> for ValidWalletUpdateBundle {
                 "Proof bundle is not of type ValidWalletUpdate: {:?}",
                 bundle
             );
+        }
+    }
+}
+
+impl From<ProofBundle> for ValidMatchMpcBundle {
+    fn from(bundle: ProofBundle) -> Self {
+        if let ProofBundle::ValidMatchMpc(b) = bundle {
+            b
+        } else {
+            panic!("Proof bundle is not of type ValidMatchMpc: {:?}", bundle)
         }
     }
 }
@@ -271,6 +283,11 @@ pub enum ProofJob {
         witness: SizedValidWalletUpdateWitness,
         /// The statement (public variables) parameterizing the proof
         statement: SizedValidWalletUpdateStatement,
+    },
+    /// A request to create a proof of `VALID MATCH MPC` in a single prover context
+    ValidMatchMpcSingleprover {
+        /// The witness to the proof of `VALID MATCH MPC`
+        witness: ValidMatchMpcWitness,
     },
     /// A request to create a proof of `VALID SETTLE` for a note applied ot a wallet
     ValidSettle {
