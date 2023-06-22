@@ -148,10 +148,15 @@ impl HandshakeExecutor {
                 {
                     log::error!("internal match settlement failed for {order_id:?}");
                     continue;
+                } else {
+                    // The settlement job will have created a job to run the matching engine
+                    // recursively on the now-updated wallet, return instead of continuing
+                    return Ok(());
                 }
             }
         }
 
+        log::info!("No internal matches found for {order:?}");
         Ok(())
     }
 
@@ -214,6 +219,11 @@ fn match_orders(
     valid_match = valid_match
         && order1.price_in_range(midpoint_price)
         && order2.price_in_range(midpoint_price);
+
+    // Neither order is zero'd out
+    // Orders are not removed when they are zero'd because a counterparty cannot update shares to remove an order
+    // without revealing the volume of the order. So zero'd orders may exist in the book until the user removes them
+    valid_match = valid_match && !order1.is_zero() && !order2.is_zero();
 
     if !valid_match {
         return Ok(None);

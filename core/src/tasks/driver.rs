@@ -35,7 +35,7 @@ const BACKOFF_CEILING_MS: u64 = 30_000; // 30 seconds
 /// The initial backoff time when retrying a task
 const INITIAL_BACKOFF_MS: u64 = 2000; // 2 seconds
 /// The number of threads backing the tokio runtime
-const TASK_DRIVER_N_THREADS: usize = 1;
+const TASK_DRIVER_N_THREADS: usize = 5;
 /// The name of the threads backing the task driver
 const TASK_DRIVER_THREAD_NAME: &str = "renegade-task-driver";
 /// The number of times to retry a step in a task before propagating the error
@@ -164,7 +164,7 @@ impl TaskDriver {
                 }
 
                 tokio::time::sleep(curr_backoff).await;
-                log::info!("retrying task from state: {}", task.state());
+                log::info!("retrying task {task_id:?} from state: {}", task.state());
                 curr_backoff *= BACKOFF_AMPLIFICATION_FACTOR;
                 curr_backoff =
                     Duration::min(curr_backoff, Duration::from_millis(BACKOFF_CEILING_MS));
@@ -172,7 +172,7 @@ impl TaskDriver {
 
             // Update the state in the registry
             let task_state = task.state();
-            log::info!("task {task_name} transitioning to state {task_state}");
+            log::info!("task {task_name}({task_id:?}) transitioning to state {task_state}");
 
             {
                 *self.open_tasks.write().await.get_mut(&task_id).unwrap() = task_state.into()

@@ -359,8 +359,8 @@ impl SettleMatchInternalTask {
         // Submit a `match` transaction
         let party0_reblind_proof = &self.order1_proof.reblind_proof.statement;
         let party1_reblind_proof = &self.order2_proof.reblind_proof.statement;
-        let valid_match_proof = self.valid_match_mpc.take().unwrap();
-        let valid_settle_proof = self.valid_settle.take().unwrap();
+        let valid_match_proof = self.valid_match_mpc.clone().unwrap();
+        let valid_settle_proof = self.valid_settle.clone().unwrap();
 
         let tx_hash = self
             .starknet_client
@@ -397,6 +397,15 @@ impl SettleMatchInternalTask {
                     })
             )));
         }
+
+        // If the transaction is successful, cancel all orders on the old wallet nullifiers
+        // and await new validity proofs
+        self.global_state
+            .nullify_orders(party0_reblind_proof.original_shares_nullifier)
+            .await;
+        self.global_state
+            .nullify_orders(party1_reblind_proof.original_shares_nullifier)
+            .await;
 
         Ok(())
     }
