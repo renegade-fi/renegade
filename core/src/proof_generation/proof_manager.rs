@@ -8,6 +8,7 @@ use circuits::{
     singleprover_prove,
     zk_circuits::{
         valid_commitments::{ValidCommitments, ValidCommitmentsStatement},
+        valid_match_mpc::{ValidMatchMpcSingleProver, ValidMatchMpcWitness},
         valid_reblind::{ValidReblind, ValidReblindStatement},
         valid_settle::ValidSettle,
         valid_wallet_create::ValidWalletCreate,
@@ -24,8 +25,8 @@ use crate::{proof_generation::jobs::ProofJob, CancelChannel, MAX_FEES, MERKLE_HE
 use super::{
     error::ProofManagerError,
     jobs::{
-        ProofBundle, ProofManagerJob, ValidCommitmentsBundle, ValidReblindBundle,
-        ValidSettleBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
+        ProofBundle, ProofManagerJob, ValidCommitmentsBundle, ValidMatchMpcBundle,
+        ValidReblindBundle, ValidSettleBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
     },
     SizedValidCommitmentsWitness, SizedValidReblindWitness, SizedValidSettleStatement,
     SizedValidSettleWitness, SizedValidWalletCreateStatement, SizedValidWalletCreateWitness,
@@ -125,6 +126,14 @@ impl ProofManager {
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
             }
 
+            ProofJob::ValidMatchMpcSingleprover { witness } => {
+                // Prove `VALID MATCH MPC`
+                let proof_bundle = Self::prove_valid_match_mpc(witness)?;
+                job.response_channel
+                    .send(ProofBundle::ValidMatchMpc(proof_bundle))
+                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
+            }
+
             ProofJob::ValidSettle { witness, statement } => {
                 // Prove `VALID SETTLE`
                 let proof_bundle = Self::prove_valid_settle(statement, witness)?;
@@ -202,6 +211,20 @@ impl ProofManager {
         Ok(ValidWalletUpdateBundle {
             commitment: witness_comm,
             statement,
+            proof,
+        })
+    }
+
+    /// Create a proof of `VALID MATCH MPC`
+    fn prove_valid_match_mpc(
+        witness: ValidMatchMpcWitness,
+    ) -> Result<ValidMatchMpcBundle, ProofManagerError> {
+        let (witness_comm, proof) = singleprover_prove::<ValidMatchMpcSingleProver>(witness, ())
+            .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+
+        Ok(ValidMatchMpcBundle {
+            commitment: witness_comm,
+            statement: (),
             proof,
         })
     }

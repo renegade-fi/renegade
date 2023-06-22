@@ -3,7 +3,7 @@
 use circuits::{
     traits::LinkableType,
     types::{
-        balance::{Balance, LinkableBalance},
+        balance::Balance,
         order::{Order, OrderSide},
         r#match::MatchResult,
     },
