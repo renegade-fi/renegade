@@ -2,11 +2,12 @@
 
 use std::{convert::TryInto, iter};
 
+use circuit_types::SizedWalletShare;
 use itertools::Itertools;
 use serde::de::DeserializeOwned;
 use starknet::core::types::FieldElement as StarknetFieldElement;
 
-use crate::{starknet_client::NEW_WALLET_SELECTOR, SizedWalletShare};
+use crate::NEW_WALLET_SELECTOR;
 
 use super::{error::StarknetClientError, MATCH_SELECTOR, UPDATE_WALLET_SELECTOR};
 

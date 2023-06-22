@@ -94,16 +94,6 @@ lazy_static! {
     static ref PROTOCOL_SETTLE_KEY: PublicIdentificationKey = Scalar::from(0u8).into();
 }
 
-/// The system-wide value of MAX_BALANCES; the number of allowable balances a wallet holds
-pub(crate) const MAX_BALANCES: usize = 5;
-/// The system-wide value of MAX_ORDERS; the number of allowable orders a wallet holds
-pub(crate) const MAX_ORDERS: usize = 5;
-/// The system-wide value of MAX_FEES; the number of allowable fees a wallet holds
-pub(crate) const MAX_FEES: usize = 2;
-/// The height of the Merkle state tree used by the contract
-pub(crate) const MERKLE_HEIGHT: usize = 32;
-/// The number of historical roots the contract stores as being valid
-pub(crate) const MERKLE_ROOT_HISTORY_LENGTH: usize = 30;
 /// A type wrapper around the wallet type that adds the default generics above
 pub(crate) type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 /// A type wrapper around a wallet share that adds the default generics above

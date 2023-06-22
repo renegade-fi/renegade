@@ -34,6 +34,15 @@ pub fn poseidon_hash_default_params<T: Into<Vec<u64>>>(val: T) -> DalekRistretto
     arkworks_hasher.squeeze_field_elements(1 /* num_elements */)[0]
 }
 
+/// Compute the hash of the randomness of a given wallet
+pub fn compute_poseidon_hash(values: &[Scalar]) -> Scalar {
+    let mut hasher = PoseidonSponge::new(&default_poseidon_params());
+    hasher.absorb(&values.iter().map(scalar_to_prime_field).collect_vec());
+
+    let out: DalekRistrettoField = hasher.squeeze_field_elements(1 /* num_elements */)[0];
+    prime_field_to_scalar(&out)
+}
+
 /// Returns a default set of arkworks params
 ///
 /// We use the Poseidon permutation with the following default parameters:
