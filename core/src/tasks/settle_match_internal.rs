@@ -11,7 +11,7 @@ use crate::{
     },
     starknet_client::client::StarknetClient,
     state::{wallet::Wallet, OrderIdentifier, RelayerState},
-    tasks::helpers::apply_match_to_wallets,
+    tasks::helpers::{apply_match_to_wallets, update_wallet_validity_proofs},
 };
 
 use super::{
@@ -37,7 +37,10 @@ use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use num_bigint::BigUint;
 use serde::Serialize;
 use starknet::core::types::{TransactionFailureReason, TransactionStatus};
-use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
+use tokio::{
+    sync::{mpsc::UnboundedSender as TokioSender, oneshot},
+    task::JoinHandle as TokioJoinHandle,
+};
 
 // -------------
 // | Constants |
@@ -131,6 +134,8 @@ pub enum SettleMatchInternalTaskError {
     EnqueuingJob(String),
     /// State necessary for execution cannot be found
     MissingState(String),
+    /// Error re-proving wallet and order validity
+    ProvingValidity(String),
     /// Error interacting with the Starknet API
     Starknet(String),
 }
@@ -206,7 +211,7 @@ impl Task for SettleMatchInternalTask {
 impl SettleMatchInternalTask {
     /// Constructor
     #[allow(clippy::too_many_arguments)]
-    pub async fn new(
+    pub fn new(
         execution_price: FixedPoint,
         order1: OrderIdentifier,
         order2: OrderIdentifier,
@@ -219,8 +224,8 @@ impl SettleMatchInternalTask {
         network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
-    ) -> Result<Self, SettleMatchInternalTaskError> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             execution_price,
             order_id1: order1,
             order_id2: order2,
@@ -236,7 +241,7 @@ impl SettleMatchInternalTask {
             global_state,
             proof_manager_work_queue,
             task_state: SettleMatchInternalTaskState::Pending,
-        })
+        }
     }
 
     /// Find the wallet for an order in the global state
@@ -313,8 +318,8 @@ impl SettleMatchInternalTask {
         apply_match_to_wallets(
             &mut party0_modified_shares,
             &mut party1_modified_shares,
-            &self.order1_proof.commitment_proof,
-            &self.order2_proof.commitment_proof,
+            party0_commitment_proof,
+            party1_commitment_proof,
             &self.match_result,
         );
 
@@ -430,7 +435,7 @@ impl SettleMatchInternalTask {
         Self::update_balance(base_mint.clone(), base_amount, &mut buy_side_wallet);
         Self::update_balance(base_mint, -base_amount, &mut sell_side_wallet);
         Self::update_balance(quote_mint.clone(), -quote_amount, &mut buy_side_wallet);
-        Self::update_balance(quote_mint, -quote_amount, &mut sell_side_wallet);
+        Self::update_balance(quote_mint, quote_amount, &mut sell_side_wallet);
 
         // Update the orders
         buy_side_wallet
@@ -480,6 +485,62 @@ impl SettleMatchInternalTask {
 
     /// Update validity proofs for the wallet
     async fn update_proofs(&self) -> Result<(), SettleMatchInternalTaskError> {
-        todo!()
+        // Lookup wallets to update proofs for
+        let wallet1 = self
+            .find_wallet_for_order(&self.order_id1)
+            .await
+            .ok_or_else(|| {
+                SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
+            })?;
+        let wallet2 = self
+            .find_wallet_for_order(&self.order_id2)
+            .await
+            .ok_or_else(|| {
+                SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
+            })?;
+
+        // We spawn the proof updates in tasks so that they may run concurrently, we do not
+        // want to wait for the first wallet's proofs to finish before starting the second
+        // wallet's proofs when the proof generation module is capable of handling many at once
+        let t1 = Self::spawn_update_proofs_task(
+            wallet1,
+            self.proof_manager_work_queue.clone(),
+            self.global_state.clone(),
+            self.network_sender.clone(),
+        );
+        let t2 = Self::spawn_update_proofs_task(
+            wallet2,
+            self.proof_manager_work_queue.clone(),
+            self.global_state.clone(),
+            self.network_sender.clone(),
+        );
+
+        // Await both threads and handle errors
+        let (res1, res2) = tokio::join!(t1, t2);
+        res1.unwrap() /* JoinError */
+            .map_err(SettleMatchInternalTaskError::ProvingValidity)
+            .and(
+                res2.unwrap() /* JoinError */
+                    .map_err(SettleMatchInternalTaskError::ProvingValidity),
+            )
+    }
+
+    /// Spawns a task to update the validity proofs for the given wallet
+    /// Returns a `JoinHandle` to the spawned task
+    fn spawn_update_proofs_task(
+        wallet: Wallet,
+        proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+        global_state: RelayerState,
+        network_sender: TokioSender<GossipOutbound>,
+    ) -> TokioJoinHandle<Result<(), String>> {
+        tokio::spawn(async move {
+            update_wallet_validity_proofs(
+                &wallet,
+                proof_manager_work_queue,
+                global_state,
+                network_sender,
+            )
+            .await
+        })
     }
 }
