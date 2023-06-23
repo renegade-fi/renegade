@@ -18,13 +18,13 @@ use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    scalar_from_hex_string, scalar_to_hex_string,
     traits::{
         BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
         LinkableBaseType, LinkableType, MpcBaseType, MpcLinearCombinationLike, MpcType,
         MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
         MultiproverCircuitVariableType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    types::{scalar_from_hex_string, scalar_to_hex_string},
 };
 
 use super::{biguint_from_hex_string, biguint_to_hex_string};
@@ -45,7 +45,7 @@ pub const ROOT_KEY_WORDS: usize = 2;
 #[circuit_type(singleprover_circuit, mpc, multiprover_circuit, linkable, secret_share)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct PublicIdentificationKey {
-    pub(crate) key: Scalar,
+    pub key: Scalar,
 }
 
 impl Serialize for PublicIdentificationKey {

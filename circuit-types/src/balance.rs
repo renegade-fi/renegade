@@ -15,13 +15,13 @@ use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    biguint_from_hex_string, biguint_to_hex_string,
     traits::{
         BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
         LinkableBaseType, LinkableType, MpcBaseType, MpcLinearCombinationLike, MpcType,
         MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
         MultiproverCircuitVariableType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    types::{biguint_from_hex_string, biguint_to_hex_string},
 };
 
 /// Represents the base type of a balance in tuple holding a reference to the
