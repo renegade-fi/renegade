@@ -12,11 +12,11 @@ use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    scalar_from_hex_string, scalar_to_hex_string,
     traits::{
         BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
         LinkableBaseType, LinkableType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    types::{scalar_from_hex_string, scalar_to_hex_string},
 };
 
 use super::{

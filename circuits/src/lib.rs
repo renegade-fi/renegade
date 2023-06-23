@@ -186,91 +186,6 @@ where
     C::verify(witness_commitment, statement, proof, verifier)
 }
 
-// ---------
-// | Types |
-// ---------
-
-/// A linkable commitment is a commitment used in multiple proofs. We split the constraints
-/// of the matching engine into roughly 3 pieces:
-///     1. Input validity checks, done offline by managing relayers (`VALID COMMITMENTS`)
-///     2. The matching engine execution, proved collaboratively over an MPC fabric (`VALID MATCH MPC`)
-///     3. Output validity checks: i.e. note construction and encryption (`VALID MATCH ENCRYPTION`)
-/// These components are split to remove as many constraints from the bottleneck (the collaborative proof)
-/// as possible.
-///
-/// However, we need to ensure that -- for example -- the order used in the proof of `VALID COMMITMENTS`
-/// is the same order as the order used in `VALID MATCH MPC`. This can be done by constructing the Pedersen
-/// commitments to the orders using the same randomness across proofs. That way, the verified may use the
-/// shared Pedersen commitment as an implicit constraint that witness values are equal across proofs.
-///
-/// The `LinkableCommitment` type allows this from the prover side by storing the randomness used in the
-/// original commitment along with the value itself.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct LinkableCommitment {
-    /// The underlying value committed to
-    pub val: Scalar,
-    /// The randomness used to blind the commitment
-    randomness: Scalar,
-}
-
-impl LinkableCommitment {
-    /// Create a new linkable commitment from a given value
-    pub fn new(val: Scalar) -> Self {
-        // Choose a random blinder
-        let mut rng = OsRng {};
-        let randomness = Scalar::random(&mut rng);
-        Self { val, randomness }
-    }
-
-    /// Get the Pedersen commitment to this value
-    pub fn compute_commitment(&self) -> CompressedRistretto {
-        let pedersen_generators = PedersenGens::default();
-        pedersen_generators
-            .commit(self.val, self.randomness)
-            .compress()
-    }
-}
-
-impl From<Scalar> for LinkableCommitment {
-    fn from(val: Scalar) -> Self {
-        LinkableCommitment::new(val)
-    }
-}
-
-impl From<LinkableCommitment> for Scalar {
-    fn from(comm: LinkableCommitment) -> Self {
-        comm.val
-    }
-}
-
-/// A linkable commitment that has been allocated inside of an MPC fabric
-#[derive(Debug)]
-pub struct AuthenticatedLinkableCommitment<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
-    /// The underlying shared scalar
-    pub(crate) val: AuthenticatedScalar<N, S>,
-    /// The randomness used to blind the commitment
-    pub(crate) randomness: AuthenticatedScalar<N, S>,
-}
-
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone
-    for AuthenticatedLinkableCommitment<N, S>
-{
-    fn clone(&self) -> Self {
-        Self {
-            val: self.val.clone(),
-            randomness: self.randomness.clone(),
-        }
-    }
-}
-
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedLinkableCommitment<N, S> {
-    /// Create a linkable commitment from a shared scalar by sampling a shared
-    /// blinder
-    pub fn new(val: AuthenticatedScalar<N, S>, randomness: AuthenticatedScalar<N, S>) -> Self {
-        Self { val, randomness }
-    }
-}
-
 // ----------------
 // | Test Helpers |
 // ----------------
@@ -372,15 +287,6 @@ pub mod native_helpers {
         let recovered_blinder = private_shares.blinder + public_shares.blinder;
         let unblinded_public_shares = public_shares.unblind_shares(recovered_blinder);
         private_shares + unblinded_public_shares
-    }
-
-    /// Compute the hash of the randomness of a given wallet
-    pub fn compute_poseidon_hash(values: &[Scalar]) -> Scalar {
-        let mut hasher = PoseidonSponge::new(&default_poseidon_params());
-        hasher.absorb(&values.iter().map(scalar_to_prime_field).collect_vec());
-
-        let out: DalekRistrettoField = hasher.squeeze_field_elements(1 /* num_elements */)[0];
-        prime_field_to_scalar(&out)
     }
 
     /// Compute a commitment to the shares of a wallet

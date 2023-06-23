@@ -1,7 +1,9 @@
 [workspace]
 members = [
 	"circuits",
+	"circuit-types",
 	"circuit-macros",
+	"constants",
 	"core",
 	"crypto",
 	"integration-helpers",
@@ -15,3 +17,8 @@ lto = true
 [profile.release]
 opt-level = 3 # Full optimizations
 lto = true
+
+[workspace.dependencies]
+constants = { path = "./constants" }
+circuit-types = { path = "./circuit-types" }
+crypto = { path = "./crypto" }
