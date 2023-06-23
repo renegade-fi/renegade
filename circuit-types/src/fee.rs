@@ -4,14 +4,14 @@
 use std::ops::Add;
 
 use crate::{
+    biguint_from_hex_string, biguint_to_hex_string,
+    fixed_point::FixedPoint,
     traits::{
         BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
         LinkableBaseType, LinkableType, MpcBaseType, MpcLinearCombinationLike, MpcType,
         MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
         MultiproverCircuitVariableType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    types::{biguint_from_hex_string, biguint_to_hex_string},
-    zk_gadgets::fixed_point::FixedPoint,
 };
 use circuit_macros::circuit_type;
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};

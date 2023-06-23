@@ -2,14 +2,13 @@
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
 use crate::{
-    mpc::SharedFabric,
     traits::{
         BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
         LinkableBaseType, LinkableType, MpcBaseType, MpcLinearCombinationLike, MpcType,
         MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
         MultiproverCircuitVariableType,
     },
-    AuthenticatedLinkableCommitment,
+    AuthenticatedLinkableCommitment, SharedFabric,
 };
 
 use circuit_macros::circuit_type;

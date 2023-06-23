@@ -41,8 +41,7 @@ use rand_core::{CryptoRng, OsRng, RngCore};
 
 use crate::{
     errors::{MpcError, ProverError, VerifierError},
-    mpc::SharedFabric,
-    AuthenticatedLinkableCommitment, LinkableCommitment,
+    AuthenticatedLinkableCommitment, LinkableCommitment, SharedFabric,
 };
 
 /// The error message emitted when too few scalars are given

@@ -22,8 +22,7 @@ ed25519-dalek = { version = "1.0.1" }
 itertools = "0.10"
 lazy_static = "1.4"
 merlin = "2.0"
-miller_rabin = "1.1.1"
-mpc-ristretto = "0.1"
+mpc-ristretto = { git = "https://github.com/renegade-fi/MPC-Ristretto" }
 mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
 num-integer = "0.1"
