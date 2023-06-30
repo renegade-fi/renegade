@@ -3,6 +3,11 @@
 
 use std::marker::PhantomData;
 
+use circuit_types::{
+    errors::ProverError,
+    traits::{LinearCombinationLike, MpcLinearCombinationLike},
+    SharedFabric,
+};
 use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 use mpc_bulletproof::{
@@ -11,12 +16,7 @@ use mpc_bulletproof::{
 };
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 
-use crate::{
-    errors::ProverError,
-    mpc::SharedFabric,
-    mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    traits::{LinearCombinationLike, MpcLinearCombinationLike},
-};
+use crate::mpc_gadgets::poseidon::PoseidonSpongeParameters;
 
 use super::arithmetic::{ExpGadget, MultiproverExpGadget};
 
@@ -515,6 +515,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 #[cfg(test)]
 mod single_prover_test {
     use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+    use circuit_types::traits::CircuitBaseType;
     use crypto::{
         fields::{prime_field_to_scalar, DalekRistrettoField},
         hash::default_poseidon_params,
@@ -525,7 +526,7 @@ mod single_prover_test {
     use mpc_bulletproof::{r1cs::Prover, PedersenGens};
     use rand_core::{OsRng, RngCore};
 
-    use crate::{mpc_gadgets::poseidon::PoseidonSpongeParameters, traits::CircuitBaseType};
+    use crate::mpc_gadgets::poseidon::PoseidonSpongeParameters;
 
     use super::PoseidonHashGadget;
 

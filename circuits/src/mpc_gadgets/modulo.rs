@@ -1,5 +1,6 @@
 //! Groups logic for computing modulo and truncation operators
 
+use circuit_types::{errors::MpcError, SharedFabric};
 use crypto::fields::{bigint_to_scalar, bigint_to_scalar_bits, scalar_to_bigint};
 use curve25519_dalek::scalar::Scalar;
 use mpc_ristretto::{
@@ -7,9 +8,7 @@ use mpc_ristretto::{
 };
 use num_bigint::BigInt;
 
-use crate::{
-    errors::MpcError, mpc::SharedFabric, mpc_gadgets::bits::bit_lt, scalar_2_to_m, SCALAR_MAX_BITS,
-};
+use crate::{mpc_gadgets::bits::bit_lt, scalar_2_to_m, SCALAR_MAX_BITS};
 
 use super::bits::scalar_from_bits_le;
 

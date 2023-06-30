@@ -5,11 +5,10 @@
 //! proofs are input consistent then amounts to checking that the relevant witness elements
 //! use the same commitment between proofs
 
+use circuit_types::{traits::CircuitBaseType, wallet::LinkableWalletShare};
 use merlin::Transcript;
 use mpc_bulletproof::{r1cs::Prover, PedersenGens};
 use rand_core::OsRng;
-
-use crate::{traits::CircuitBaseType, types::wallet::LinkableWalletShare};
 
 use super::{
     valid_commitments::ValidCommitmentsWitnessCommitment,

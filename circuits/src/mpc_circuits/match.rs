@@ -1,17 +1,15 @@
 //! Groups logic related to the match computation circuit
 
+use circuit_types::{
+    errors::MpcError, fixed_point::AuthenticatedFixedPoint, order::AuthenticatedOrder,
+    r#match::AuthenticatedMatchResult, SharedFabric, AMOUNT_BITS,
+};
 use curve25519_dalek::scalar::Scalar;
 use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
 
-use crate::{
-    errors::MpcError,
-    mpc::SharedFabric,
-    mpc_gadgets::comparators::min,
-    types::{order::AuthenticatedOrder, r#match::AuthenticatedMatchResult, AMOUNT_BITS},
-    zk_gadgets::fixed_point::AuthenticatedFixedPoint,
-};
+use crate::mpc_gadgets::{comparators::min, fixed_point::FixedPointMpcGadget};
 
 /// Executes a match computation that returns matches from a given order intersection
 ///
@@ -40,7 +38,7 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     // The amount of quote token exchanged
     // Round down to the nearest integer value
     let quote_exchanged_fp = min_base_amount.clone() * price;
-    let quote_exchanged = quote_exchanged_fp.as_integer(fabric)?;
+    let quote_exchanged = FixedPointMpcGadget::as_integer(quote_exchanged_fp, fabric)?;
 
     // Zero out the orders if any of the initial checks failed
     Ok(AuthenticatedMatchResult {

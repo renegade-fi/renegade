@@ -8,6 +8,19 @@
 // ----------------------
 
 use circuit_macros::circuit_type;
+use circuit_types::{
+    fixed_point::FixedPointVar,
+    keychain::PublicSigningKey,
+    merkle::{MerkleOpening, MerkleRoot},
+    order::OrderVar,
+    traits::{
+        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
+    },
+    transfers::{ExternalTransfer, ExternalTransferVar},
+    wallet::{Nullifier, WalletShare, WalletShareStateCommitment, WalletVar},
+    AMOUNT_BITS,
+};
+use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
@@ -17,23 +30,12 @@ use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    traits::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-    },
-    types::{
-        keychain::PublicSigningKey,
-        order::OrderVar,
-        transfers::{ExternalTransfer, ExternalTransferVar},
-        wallet::{Nullifier, WalletShare, WalletShareStateCommitment, WalletVar},
-        AMOUNT_BITS,
-    },
     zk_gadgets::{
         comparators::{
             EqGadget, EqVecGadget, EqZeroGadget, GreaterThanEqZeroGadget, NotEqualGadget,
         },
-        fixed_point::FixedPointVar,
         gates::{AndGate, ConstrainBinaryGadget, NotGate, OrGate},
-        merkle::{MerkleOpening, MerkleRoot, PoseidonMerkleHashGadget},
+        merkle::PoseidonMerkleHashGadget,
         select::CondSelectGadget,
         wallet_operations::{NullifierGadget, WalletShareCommitGadget},
     },
@@ -440,6 +442,9 @@ pub struct ValidWalletUpdateWitness<
     /// The new wallet's private secret shares
     pub new_wallet_private_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
 }
+/// A `VALID WALLET UPDATE` witness with default const generic sizing parameters
+pub type SizedValidWalletUpdateWitness =
+    ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
 
 // -----------------------------
 // | Statement Type Definition |
@@ -470,6 +475,9 @@ pub struct ValidWalletUpdateStatement<
     /// The timestamp this update is at
     pub timestamp: u64,
 }
+/// A `VALID WALLET UPDATE` statement with default const generic sizing parameters
+pub type SizedValidWalletUpdateStatement =
+    ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 // ---------------------
 // | Prove Verify Flow |
@@ -506,26 +514,24 @@ where
 mod test {
     #![allow(non_snake_case)]
 
+    use circuit_types::{
+        balance::Balance,
+        native_helpers::{
+            compute_wallet_private_share_commitment, compute_wallet_share_commitment,
+            compute_wallet_share_nullifier,
+        },
+        order::Order,
+        traits::CircuitBaseType,
+        transfers::{ExternalTransfer, ExternalTransferDirection},
+    };
     use merlin::Transcript;
     use mpc_bulletproof::{r1cs::Prover, PedersenGens};
     use num_bigint::BigUint;
     use rand_core::{OsRng, RngCore};
 
-    use crate::{
-        native_helpers::{
-            compute_wallet_private_share_commitment, compute_wallet_share_commitment,
-            compute_wallet_share_nullifier,
-        },
-        traits::CircuitBaseType,
-        types::{
-            balance::Balance,
-            order::Order,
-            transfers::{ExternalTransfer, ExternalTransferDirection},
-        },
-        zk_circuits::test_helpers::{
-            create_multi_opening, create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES,
-            MAX_FEES, MAX_ORDERS, TIMESTAMP,
-        },
+    use crate::zk_circuits::test_helpers::{
+        create_multi_opening, create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES,
+        MAX_FEES, MAX_ORDERS, TIMESTAMP,
     };
 
     use super::{ValidWalletUpdate, ValidWalletUpdateStatement, ValidWalletUpdateWitness};

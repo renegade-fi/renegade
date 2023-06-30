@@ -15,9 +15,18 @@ pub(crate) mod test_helpers {
     use std::iter::from_fn;
 
     use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+    use circuit_types::{
+        balance::Balance,
+        fee::Fee,
+        fixed_point::FixedPoint,
+        keychain::{PublicKeyChain, PublicSigningKey, NUM_KEYS},
+        merkle::MerkleOpening,
+        order::{Order, OrderSide},
+        wallet::{Wallet, WalletShare},
+    };
     use crypto::{
         fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField},
-        hash::default_poseidon_params,
+        hash::{compute_poseidon_hash, default_poseidon_params},
     };
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
@@ -25,19 +34,7 @@ pub(crate) mod test_helpers {
     use num_bigint::BigUint;
     use rand_core::{CryptoRng, OsRng, RngCore};
 
-    use crate::{
-        native_helpers::{
-            compute_poseidon_hash, create_wallet_shares_with_randomness, reblind_wallet,
-        },
-        types::{
-            balance::Balance,
-            fee::Fee,
-            keychain::{PublicKeyChain, PublicSigningKey, NUM_KEYS},
-            order::{Order, OrderSide},
-            wallet::{Wallet, WalletShare},
-        },
-        zk_gadgets::{fixed_point::FixedPoint, merkle::MerkleOpening},
-    };
+    use circuit_types::native_helpers::{create_wallet_shares_with_randomness, reblind_wallet};
 
     // --------------
     // | Dummy Data |

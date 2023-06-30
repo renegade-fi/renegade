@@ -14,17 +14,16 @@ use std::{cell::Ref, rc::Rc};
 
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 use ark_ff::PrimeField;
+use circuit_types::{MpcFabric, SharedFabric};
 use crypto::{fields::prime_field_to_scalar, hash::default_poseidon_params};
 use curve25519_dalek::scalar::Scalar;
 use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
 
-use crate::mpc::{MpcFabric, SharedFabric};
-
-/**
- * Helpers
- */
+// -----------
+// | Helpers |
+// -----------
 
 /// Computes x^a using recursive doubling
 fn scalar_exp<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
@@ -327,11 +326,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHa
 #[cfg(test)]
 mod poseidon_tests {
     use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+    use circuit_types::SharedFabric;
     use crypto::{fields::DalekRistrettoField, hash::default_poseidon_params};
     use integration_helpers::mpc_network::mock_mpc_fabric;
     use rand::{thread_rng, Rng, RngCore};
 
-    use crate::{mpc::SharedFabric, test_helpers::compare_scalar_to_felt};
+    use crate::test_helpers::compare_scalar_to_felt;
 
     use super::{AuthenticatedPoseidonHasher, PoseidonSpongeParameters};
 
