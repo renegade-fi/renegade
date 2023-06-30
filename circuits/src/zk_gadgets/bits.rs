@@ -1,6 +1,11 @@
 //! Groups gadgets for going from scalar -> bits and from bits -> scalar
 use std::marker::PhantomData;
 
+use circuit_types::{
+    errors::ProverError,
+    traits::{LinearCombinationLike, MpcLinearCombinationLike},
+    SharedFabric,
+};
 use crypto::fields::bigint_to_scalar;
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
@@ -10,12 +15,7 @@ use mpc_bulletproof::{
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 use num_bigint::BigInt;
 
-use crate::{
-    errors::ProverError,
-    mpc::SharedFabric,
-    mpc_gadgets::bits::{scalar_to_bits_le, to_bits_le},
-    traits::{LinearCombinationLike, MpcLinearCombinationLike},
-};
+use crate::mpc_gadgets::bits::{scalar_to_bits_le, to_bits_le};
 
 /// Singleprover implementation of the `ToBits` gadget
 pub struct ToBitsGadget<const D: usize> {}
@@ -98,6 +98,7 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
 
 #[cfg(test)]
 mod bits_test {
+    use circuit_types::traits::CircuitBaseType;
     use crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
     use curve25519_dalek::scalar::Scalar;
     use merlin::Transcript;
@@ -106,8 +107,6 @@ mod bits_test {
         PedersenGens,
     };
     use rand_core::{OsRng, RngCore};
-
-    use crate::traits::CircuitBaseType;
 
     use super::ToBitsGadget;
 

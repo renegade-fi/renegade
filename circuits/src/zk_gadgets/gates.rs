@@ -2,6 +2,10 @@
 
 use std::marker::PhantomData;
 
+use circuit_types::{
+    errors::ProverError,
+    traits::{LinearCombinationLike, MpcLinearCombinationLike},
+};
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
@@ -9,11 +13,7 @@ use mpc_bulletproof::{
 };
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 
-use crate::{
-    errors::ProverError,
-    traits::{LinearCombinationLike, MpcLinearCombinationLike},
-    zk_gadgets::comparators::EqGadget,
-};
+use crate::zk_gadgets::comparators::EqGadget;
 
 /// Represents an OR gate in a single-prover constraint system
 pub struct OrGate;

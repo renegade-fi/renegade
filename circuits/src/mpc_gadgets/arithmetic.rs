@@ -1,11 +1,10 @@
 //! Groups MPC gadgets centered around arithmetic operations
 
+use circuit_types::{errors::MpcError, SharedFabric};
 use curve25519_dalek::scalar::Scalar;
 use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
-
-use crate::{errors::MpcError, mpc::SharedFabric};
 
 /// Computes the product of all elements in constant number of rounds
 ///     Result = a_0 * ... * a_n

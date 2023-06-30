@@ -1,28 +1,17 @@
 //! Groups gadgets around computing Merkle entries and proving Merkle openings
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-use circuit_macros::circuit_type;
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
+use circuit_types::{merkle::MerkleOpeningVar, traits::LinearCombinationLike};
+use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
-    r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
+    r1cs::{LinearCombination, RandomizableConstraintSystem},
     r1cs_mpc::R1CSError,
 };
-use rand_core::{CryptoRng, RngCore};
-use serde::{Deserialize, Serialize};
 use std::ops::Neg;
 
-use crate::{
-    mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    traits::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-    },
-    types::{deserialize_array, serialize_array},
-};
+use crate::mpc_gadgets::poseidon::PoseidonSpongeParameters;
 
 use super::poseidon::PoseidonHashGadget;
-
-/// A type alias for readability
-pub type MerkleRoot = Scalar;
 
 /// The single-prover hash gadget, computes the Merkle root of a leaf given a path
 /// of sister nodes
@@ -175,36 +164,6 @@ impl<const HEIGHT: usize> PoseidonMerkleHashGadget<HEIGHT> {
     }
 }
 
-/// A fully specified merkle opening from hashed leaf to root
-#[circuit_type(serde, singleprover_circuit)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MerkleOpening<const HEIGHT: usize> {
-    /// The opening from the leaf node to the root, i.e. the set of sister nodes
-    /// that hash together with the input from the leaf to the root
-    #[serde(
-        serialize_with = "serialize_array",
-        deserialize_with = "deserialize_array"
-    )]
-    pub elems: [Scalar; HEIGHT],
-    /// The opening indices from the leaf node to the root, each value is zero or
-    /// one: 0 indicating that the node in the opening at index i is a left hand
-    /// child of its parent, 1 indicating it's a right hand child
-    #[serde(
-        serialize_with = "serialize_array",
-        deserialize_with = "deserialize_array"
-    )]
-    pub indices: [Scalar; HEIGHT],
-}
-
-impl<const HEIGHT: usize> Default for MerkleOpening<HEIGHT> {
-    fn default() -> Self {
-        Self {
-            elems: [Scalar::zero(); HEIGHT],
-            indices: [Scalar::zero(); HEIGHT],
-        }
-    }
-}
-
 #[cfg(test)]
 pub(crate) mod merkle_test {
     use ark_crypto_primitives::{
@@ -214,6 +173,7 @@ pub(crate) mod merkle_test {
         },
         merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
     };
+    use circuit_types::{merkle::MerkleOpening, traits::CircuitBaseType};
     use crypto::{
         fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField},
         hash::default_poseidon_params,
@@ -225,10 +185,7 @@ pub(crate) mod merkle_test {
     use rand::{thread_rng, Rng};
     use rand_core::OsRng;
 
-    use crate::{
-        traits::CircuitBaseType,
-        zk_gadgets::merkle::{MerkleOpening, PoseidonMerkleHashGadget},
-    };
+    use crate::zk_gadgets::merkle::PoseidonMerkleHashGadget;
 
     struct MerkleConfig {}
     impl Config for MerkleConfig {

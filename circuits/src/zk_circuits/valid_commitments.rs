@@ -10,15 +10,6 @@
 //! VALID COMMITMENTS is proven once per order in the wallet
 
 use crate::{
-    traits::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-    },
-    types::{
-        balance::{BalanceVar, LinkableBalance},
-        fee::{FeeVar, LinkableFee},
-        order::{LinkableOrder, OrderVar},
-        wallet::{LinkableWalletShare, WalletVar},
-    },
     zk_gadgets::{
         comparators::EqGadget,
         gates::{AndGate, ConstrainBinaryGadget, OrGate},
@@ -27,6 +18,16 @@ use crate::{
     SingleProverCircuit,
 };
 use circuit_macros::circuit_type;
+use circuit_types::{
+    balance::{BalanceVar, LinkableBalance},
+    fee::{FeeVar, LinkableFee},
+    order::{LinkableOrder, OrderVar},
+    traits::{
+        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
+    },
+    wallet::{LinkableWalletShare, WalletVar},
+};
+use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use curve25519_dalek::ristretto::CompressedRistretto;
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::r1cs::{LinearCombination, R1CSError, RandomizableConstraintSystem, Variable};
@@ -43,6 +44,9 @@ pub struct ValidCommitments<
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
 >;
+/// `VALID COMMITMENTS` with default state element sizing
+pub type SizedValidCommitments = ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
     ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where
@@ -319,6 +323,8 @@ pub struct ValidCommitmentsWitness<
     /// The fee that the relayer will take upon a successful match
     pub fee: LinkableFee,
 }
+/// A `VALID COMMITMENTS` witness with default const generic sizing parameters
+pub type SizedValidCommitmentsWitness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 /// The statement type for `VALID COMMITMENTS`
 #[circuit_type(singleprover_circuit)]
@@ -366,6 +372,14 @@ where
 mod test {
     #![allow(non_snake_case)]
 
+    use circuit_types::native_helpers::create_wallet_shares_from_private;
+    use circuit_types::{
+        balance::{Balance, BalanceShare},
+        fee::FeeShare,
+        fixed_point::FixedPointShare,
+        order::{OrderShare, OrderSide},
+        traits::{CircuitBaseType, LinkableBaseType},
+    };
     use curve25519_dalek::scalar::Scalar;
     use lazy_static::lazy_static;
     use merlin::Transcript;
@@ -374,18 +388,8 @@ mod test {
     use rand::{thread_rng, Rng};
     use rand_core::OsRng;
 
-    use crate::{
-        native_helpers::create_wallet_shares_from_private,
-        traits::{CircuitBaseType, LinkableBaseType},
-        types::{
-            balance::{Balance, BalanceShare},
-            fee::FeeShare,
-            order::{OrderShare, OrderSide},
-        },
-        zk_circuits::test_helpers::{
-            create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
-        },
-        zk_gadgets::fixed_point::FixedPointShare,
+    use crate::zk_circuits::test_helpers::{
+        create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
     };
 
     use super::{ValidCommitments, ValidCommitmentsStatement, ValidCommitmentsWitness};

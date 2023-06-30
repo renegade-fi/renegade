@@ -1,15 +1,15 @@
 //! Groups integration tests for the match circuitry
 
+use circuit_types::{
+    balance::Balance,
+    fixed_point::FixedPoint,
+    order::{AuthenticatedOrder, Order, OrderSide},
+    r#match::MatchResult,
+    traits::{LinkableBaseType, MpcBaseType, MpcType, MultiproverCircuitBaseType},
+};
 use circuits::{
     mpc_circuits::r#match::compute_match,
-    traits::{LinkableBaseType, MpcBaseType, MpcType, MultiproverCircuitBaseType},
-    types::{
-        balance::Balance,
-        order::{AuthenticatedOrder, Order, OrderSide},
-        r#match::MatchResult,
-    },
     zk_circuits::valid_match_mpc::{AuthenticatedValidMatchMpcWitness, ValidMatchMpcCircuit},
-    zk_gadgets::fixed_point::FixedPoint,
 };
 use integration_helpers::types::IntegrationTest;
 use merlin::Transcript;

@@ -24,8 +24,7 @@ mod test {
     use std::ops::Add;
     use std::{cell::RefCell, rc::Rc};
 
-    use crate::{
-        mpc::{MpcFabric, SharedFabric},
+    use circuit_types::{
         traits::{
             BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType,
             LinearCombinationLike, LinkableBaseType, LinkableType, MpcBaseType,
@@ -33,7 +32,7 @@ mod test {
             MultiproverCircuitCommitmentType, MultiproverCircuitVariableType, SecretShareBaseType,
             SecretShareType, SecretShareVarType,
         },
-        LinkableCommitment,
+        LinkableCommitment, MpcFabric, SharedFabric,
     };
 
     #[circuit_type(

@@ -3,18 +3,17 @@
 use std::marker::PhantomData;
 
 use ark_ff::Zero;
+use circuit_types::errors::ProverError;
+use circuit_types::SharedFabric;
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 
+use circuit_types::traits::{LinearCombinationLike, MpcLinearCombinationLike};
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::r1cs::{LinearCombination, RandomizableConstraintSystem, Variable};
 use mpc_bulletproof::r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, R1CSError};
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 use num_bigint::BigUint;
 use num_integer::Integer;
-
-use crate::errors::ProverError;
-use crate::mpc::SharedFabric;
-use crate::traits::{LinearCombinationLike, MpcLinearCombinationLike};
 
 use super::bits::ToBitsGadget;
 use super::comparators::{EqZeroGadget, LessThanGadget};
@@ -277,6 +276,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
 #[cfg(test)]
 mod arithmetic_tests {
+    use circuit_types::traits::CircuitBaseType;
     use crypto::fields::{bigint_to_scalar, biguint_to_scalar, scalar_to_biguint};
     use curve25519_dalek::scalar::Scalar;
     use integration_helpers::mpc_network::field::get_ristretto_group_modulus;
@@ -288,8 +288,6 @@ mod arithmetic_tests {
     use num_bigint::BigUint;
     use num_integer::Integer;
     use rand_core::{OsRng, RngCore};
-
-    use crate::traits::CircuitBaseType;
 
     use super::{DivRemGadget, ExpGadget, PrivateExpGadget};
 

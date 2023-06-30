@@ -3,21 +3,20 @@
 
 use std::{cmp, time::SystemTime};
 
-use circuits::{
-    mpc::SharedFabric,
-    multiprover_prove,
+use circuit_types::{
+    balance::Balance,
+    fixed_point::FixedPoint,
+    order::{Order, OrderSide},
+    r#match::{AuthenticatedLinkableMatchResult, MatchResult},
     traits::{
         BaseType, LinkableBaseType, MpcBaseType, MpcType, MultiProverCircuit,
         MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
     },
-    types::{
-        balance::Balance,
-        order::{Order, OrderSide},
-        r#match::{AuthenticatedLinkableMatchResult, MatchResult},
-    },
-    verify_collaborative_proof,
+    SharedFabric,
+};
+use circuits::{
+    multiprover_prove, verify_collaborative_proof,
     zk_circuits::valid_match_mpc::{AuthenticatedValidMatchMpcWitness, ValidMatchMpcCircuit},
-    zk_gadgets::fixed_point::FixedPoint,
 };
 use curve25519_dalek::scalar::Scalar;
 use integration_helpers::{mpc_network::mocks::PartyIDBeaverSource, types::IntegrationTest};

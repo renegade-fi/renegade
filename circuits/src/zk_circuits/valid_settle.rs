@@ -2,6 +2,14 @@
 //! both party's secret shares have been updated properly with the result of the match
 
 use circuit_macros::circuit_type;
+use circuit_types::{
+    r#match::LinkableMatchResult,
+    traits::{
+        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
+    },
+    wallet::{LinkableWalletShare, WalletShare, WalletShareVar},
+};
+use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use curve25519_dalek::ristretto::CompressedRistretto;
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::r1cs::{LinearCombination, R1CSError, RandomizableConstraintSystem, Variable};
@@ -9,13 +17,6 @@ use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    traits::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-    },
-    types::{
-        r#match::LinkableMatchResult,
-        wallet::{LinkableWalletShare, WalletShare, WalletShareVar},
-    },
     zk_gadgets::{comparators::EqGadget, select::CondSelectVectorGadget},
     SingleProverCircuit,
 };
@@ -227,6 +228,8 @@ pub struct ValidSettleWitness<
     /// The public secret shares of the second party before the match is applied
     pub party1_public_shares: LinkableWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
 }
+/// A `VALID SETTLE` witness with default const generic sizing parameters
+pub type SizedValidSettleWitness = ValidSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 // -----------------------------
 // | Statement Type Definition |
@@ -259,6 +262,8 @@ pub struct ValidSettleStatement<
     /// The index of the second party's order that was matched
     pub party1_order_index: u64,
 }
+/// A `VALID SETTLE` statement with default const generic sizing parameters
+pub type SizedValidSettleStatement = ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 // ---------------------
 // | Prove Verify Flow |
@@ -292,6 +297,11 @@ where
 mod test {
     #![allow(non_snake_case)]
 
+    use circuit_types::{
+        order::{Order, OrderSide},
+        r#match::MatchResult,
+        traits::{CircuitBaseType, LinkableBaseType},
+    };
     use curve25519_dalek::scalar::Scalar;
     use lazy_static::lazy_static;
     use merlin::Transcript;
@@ -299,16 +309,9 @@ mod test {
     use num_bigint::BigUint;
     use rand_core::OsRng;
 
-    use crate::{
-        traits::{CircuitBaseType, LinkableBaseType},
-        types::{
-            order::{Order, OrderSide},
-            r#match::MatchResult,
-        },
-        zk_circuits::test_helpers::{
-            create_wallet_shares, SizedWallet, INITIAL_BALANCES, INITIAL_FEES, MAX_BALANCES,
-            MAX_FEES, MAX_ORDERS, PUBLIC_KEYS, TIMESTAMP,
-        },
+    use crate::zk_circuits::test_helpers::{
+        create_wallet_shares, SizedWallet, INITIAL_BALANCES, INITIAL_FEES, MAX_BALANCES, MAX_FEES,
+        MAX_ORDERS, PUBLIC_KEYS, TIMESTAMP,
     };
 
     use super::{ValidSettle, ValidSettleStatement, ValidSettleWitness};

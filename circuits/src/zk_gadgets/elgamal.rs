@@ -2,6 +2,9 @@
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
 use circuit_macros::circuit_type;
+use circuit_types::traits::{
+    BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
+};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use lazy_static::lazy_static;
 use mpc_bulletproof::{
@@ -9,10 +12,6 @@ use mpc_bulletproof::{
     r1cs_mpc::R1CSError,
 };
 use rand_core::{CryptoRng, RngCore};
-
-use crate::traits::{
-    BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-};
 
 use super::arithmetic::PrivateExpGadget;
 
@@ -75,6 +74,7 @@ pub struct ElGamalCiphertext {
 
 #[cfg(test)]
 mod elgamal_tests {
+    use circuit_types::traits::CircuitBaseType;
     use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
     use curve25519_dalek::scalar::Scalar;
     use integration_helpers::mpc_network::field::get_ristretto_group_modulus;
@@ -83,7 +83,7 @@ mod elgamal_tests {
     use num_bigint::BigUint;
     use rand_core::{OsRng, RngCore};
 
-    use crate::{traits::CircuitBaseType, zk_gadgets::comparators::EqGadget};
+    use crate::zk_gadgets::comparators::EqGadget;
 
     use super::{ElGamalCiphertext, ElGamalGadget};
 
