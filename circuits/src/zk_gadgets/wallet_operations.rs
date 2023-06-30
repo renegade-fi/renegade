@@ -1,16 +1,16 @@
 //! Groups logic for computing wallet commitments and nullifiers inside of a circuit
 
+use circuit_types::{
+    traits::{CircuitVarType, LinearCombinationLike},
+    wallet::WalletShareVar,
+};
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem},
     r1cs_mpc::R1CSError,
 };
 
-use crate::{
-    mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    traits::{CircuitVarType, LinearCombinationLike},
-    types::wallet::WalletShareVar,
-};
+use crate::mpc_gadgets::poseidon::PoseidonSpongeParameters;
 
 use super::poseidon::PoseidonHashGadget;
 

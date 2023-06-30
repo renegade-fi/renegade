@@ -2,6 +2,14 @@
 
 use std::marker::PhantomData;
 
+use circuit_types::{
+    errors::ProverError,
+    traits::{
+        CircuitVarType, LinearCombinationLike, MpcLinearCombinationLike,
+        MultiproverCircuitVariableType,
+    },
+    SharedFabric,
+};
 use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 use mpc_bulletproof::{
@@ -11,13 +19,7 @@ use mpc_bulletproof::{
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 
 use crate::{
-    errors::ProverError,
-    mpc::SharedFabric,
     mpc_gadgets::bits::{scalar_to_bits_le, to_bits_le},
-    traits::{
-        CircuitVarType, LinearCombinationLike, MpcLinearCombinationLike,
-        MultiproverCircuitVariableType,
-    },
     POSITIVE_SCALAR_MAX_BITS,
 };
 
@@ -441,6 +443,7 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
 mod comparators_test {
     use std::{cmp, ops::Neg};
 
+    use circuit_types::traits::CircuitBaseType;
     use curve25519_dalek::scalar::Scalar;
     use merlin::Transcript;
     use mpc_bulletproof::{
@@ -448,8 +451,6 @@ mod comparators_test {
         PedersenGens,
     };
     use rand_core::{OsRng, RngCore};
-
-    use crate::traits::CircuitBaseType;
 
     use super::{EqZeroGadget, GreaterThanEqGadget, GreaterThanEqZeroGadget};
 

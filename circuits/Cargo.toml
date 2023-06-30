@@ -12,14 +12,16 @@ ark-ff = "0.4"
 bigdecimal = "0.3"
 bitvec = "1.0"
 circuit-macros = { path = "../circuit-macros" }
+circuit-types = { workspace = true }
+constants = { path = "../constants" }
 crypto = { path = "../crypto" }
-curve25519-dalek = "2"
+curve25519-dalek = { workspace = true }
 ed25519-dalek = { version = "1.0.1" }
 itertools = "0.10"
 lazy_static = "1.4"
 merlin = "2.0"
-mpc-ristretto = { git = "https://github.com/renegade-fi/MPC-Ristretto" }
-mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
+mpc-ristretto = { workspace = true }
+mpc-bulletproof = { workspace = true }
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
 num-integer = "0.1"
 rand = { version = "0.8" }

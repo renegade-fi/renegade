@@ -9,6 +9,13 @@
 //! for a formal specification
 
 use circuit_macros::circuit_type;
+use circuit_types::{
+    traits::{
+        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
+    },
+    wallet::{WalletShare, WalletVar},
+};
+use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
@@ -17,14 +24,7 @@ use mpc_bulletproof::{
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    traits::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-    },
-    types::wallet::{WalletShare, WalletVar},
-    zk_gadgets::wallet_operations::WalletShareCommitGadget,
-    SingleProverCircuit, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
-};
+use crate::{zk_gadgets::wallet_operations::WalletShareCommitGadget, SingleProverCircuit};
 
 /// A type alias for an instantiation of this circuit with default generics
 pub type ValidWalletCreateDefault = ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
@@ -108,6 +108,9 @@ pub struct ValidWalletCreateWitness<
     /// The private secret shares of the new wallet
     pub private_wallet_share: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
 }
+/// A type alias that attached system-wide default generics to the witness type
+pub type SizedValidWalletCreateWitness =
+    ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 // -----------------------------
 // | Statement Type Definition |
@@ -128,6 +131,9 @@ pub struct ValidWalletCreateStatement<
     /// The public secret shares of the wallet
     pub public_wallet_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
 }
+/// A type alias that attaches system-wide default generics to the statement type
+pub type SizedValidWalletCreateStatement =
+    ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 // ---------------------
 // | Prove/Verify Flow |
@@ -158,16 +164,17 @@ where
 
 #[cfg(test)]
 mod test {
+    use circuit_types::{
+        balance::Balance, native_helpers::compute_wallet_private_share_commitment, order::Order,
+        traits::CircuitBaseType,
+    };
     use curve25519_dalek::scalar::Scalar;
     use merlin::Transcript;
     use mpc_bulletproof::{r1cs::Prover, PedersenGens};
     use rand_core::OsRng;
 
     use crate::{
-        native_helpers::compute_wallet_private_share_commitment,
         test_helpers::bulletproof_prove_and_verify,
-        traits::CircuitBaseType,
-        types::{balance::Balance, order::Order},
         zk_circuits::{
             test_helpers::{
                 create_wallet_shares, SizedWallet, INITIAL_BALANCES, INITIAL_ORDERS,

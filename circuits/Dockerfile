@@ -10,9 +10,13 @@ COPY ./rust-toolchain ./circuits/rust-toolchain
 RUN cat circuits/rust-toolchain | xargs rustup toolchain install
 
 # Copy in dependencies from the same repo
+COPY ./Cargo.toml ./Cargo.toml
+COPY ./circuit-types ./circuit-types
+COPY ./circuit-macros ./circuit-macros
+COPY ./common ./common
+COPY ./constants ./constants
 COPY ./crypto ./crypto
 COPY ./integration-helpers ./integration-helpers
-COPY ./circuit-macros ./circuit-macros
 
 # Place a set of dummy sources in the path, build the dummy executable
 # to cache built dependencies, then bulid the full executable

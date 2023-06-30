@@ -4,43 +4,31 @@
 //! See the whitepaper (https://renegade.fi/whitepaper.pdf) appendix A.5
 //! for a formal specification
 
-use std::marker::PhantomData;
-
-use crate::{
+use circuit_types::{
+    balance::{AuthenticatedBalanceVar, BalanceVar, LinkableBalance},
     errors::ProverError,
-    mpc::SharedFabric,
+    fixed_point::{AuthenticatedFixedPointVar, FixedPoint, FixedPointVar, DEFAULT_FP_PRECISION},
+    order::{AuthenticatedOrderVar, LinkableOrder, OrderVar},
+    r#match::{AuthenticatedMatchResultVar, LinkableMatchResult, MatchResultVar},
     traits::{
         BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-        MpcBaseType, MpcLinearCombinationLike, MpcType, MultiproverCircuitBaseType,
-        MultiproverCircuitCommitmentType, MultiproverCircuitVariableType, SingleProverCircuit,
+        MpcBaseType, MpcLinearCombinationLike, MpcType, MultiProverCircuit,
+        MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
+        MultiproverCircuitVariableType, SingleProverCircuit,
     },
-    types::{
-        balance::{AuthenticatedBalanceVar, BalanceVar},
-        order::{AuthenticatedOrderVar, OrderVar},
-        r#match::{AuthenticatedMatchResultVar, LinkableMatchResult, MatchResultVar},
-        AMOUNT_BITS, PRICE_BITS,
-    },
-    zk_gadgets::{
-        comparators::EqGadget,
-        fixed_point::{AuthenticatedFixedPointVar, FixedPoint, DEFAULT_PRECISION},
-    },
-    zk_gadgets::{
-        comparators::MultiproverEqGadget,
-        select::{
-            CondSelectGadget, CondSelectVectorGadget, MultiproverCondSelectGadget,
-            MultiproverCondSelectVectorGadget,
-        },
-    },
-    MultiProverCircuit,
+    SharedFabric, AMOUNT_BITS, PRICE_BITS,
 };
-use crate::{
-    types::{balance::LinkableBalance, order::LinkableOrder},
-    zk_gadgets::{
-        comparators::{
-            GreaterThanEqGadget, GreaterThanEqZeroGadget, MultiproverGreaterThanEqGadget,
-            MultiproverGreaterThanEqZeroGadget,
-        },
-        fixed_point::FixedPointVar,
+use std::marker::PhantomData;
+
+use crate::zk_gadgets::{
+    comparators::{
+        EqGadget, GreaterThanEqGadget, GreaterThanEqZeroGadget, MultiproverEqGadget,
+        MultiproverGreaterThanEqGadget, MultiproverGreaterThanEqZeroGadget,
+    },
+    fixed_point::{FixedPointGadget, MultiproverFixedPointGadget},
+    select::{
+        CondSelectGadget, CondSelectVectorGadget, MultiproverCondSelectGadget,
+        MultiproverCondSelectVectorGadget,
     },
 };
 use circuit_macros::circuit_type;
@@ -196,7 +184,9 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
             .price1
             .mul_integer(witness.match_res.base_amount.clone(), cs)
             .map_err(ProverError::Collaborative)?;
-        expected_quote_amount.constrain_equal_integer_ignore_fraction(
+
+        MultiproverFixedPointGadget::constrain_equal_integer_ignore_fraction(
+            &expected_quote_amount,
             &witness.match_res.quote_amount,
             fabric.clone(),
             cs,
@@ -219,7 +209,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where
-        [(); AMOUNT_BITS + DEFAULT_PRECISION]: Sized,
+        [(); AMOUNT_BITS + DEFAULT_FP_PRECISION]: Sized,
     {
         // Validate that the amount is less than the maximum amount given in the order
         MultiproverGreaterThanEqGadget::<'_, AMOUNT_BITS /* bitlength */, _, _>::constrain_greater_than_eq(
@@ -394,8 +384,11 @@ impl ValidMatchMpcSingleProver {
         let expected_quote_amount = witness
             .price1
             .mul_integer(witness.match_res.base_amount, cs);
-        expected_quote_amount
-            .constrain_equal_integer_ignore_fraction(witness.match_res.quote_amount, cs);
+        FixedPointGadget::constrain_equal_integer_ignore_fraction(
+            expected_quote_amount,
+            witness.match_res.quote_amount,
+            cs,
+        );
 
         // --- Price Protection --- //
         Self::verify_price_protection_single_prover(&witness.price1, &witness.order1, cs);
@@ -412,7 +405,7 @@ impl ValidMatchMpcSingleProver {
         order: &OrderVar<Variable>,
         cs: &mut CS,
     ) where
-        [(); AMOUNT_BITS + DEFAULT_PRECISION]: Sized,
+        [(); AMOUNT_BITS + DEFAULT_FP_PRECISION]: Sized,
     {
         // Validate that the amount is less than the maximum amount given in the order
         GreaterThanEqGadget::<AMOUNT_BITS>::constrain_greater_than_eq(

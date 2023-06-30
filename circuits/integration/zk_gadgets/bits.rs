@@ -1,7 +1,8 @@
 //! Groups integration tests for the circuitry that converts between scalars and their
 //! bit representations
 
-use circuits::{traits::MultiproverCircuitBaseType, zk_gadgets::bits::MultiproverToBitsGadget};
+use circuit_types::traits::MultiproverCircuitBaseType;
+use circuits::zk_gadgets::bits::MultiproverToBitsGadget;
 use crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
 use curve25519_dalek::scalar::Scalar;
 use integration_helpers::{mpc_network::batch_share_plaintext_scalar, types::IntegrationTest};

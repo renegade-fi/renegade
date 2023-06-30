@@ -3,22 +3,23 @@
 use std::cmp;
 
 use bitvec::{order::Lsb0, slice::BitSlice};
+use circuit_types::{errors::MpcError, SharedFabric};
 use curve25519_dalek::scalar::Scalar;
 
 use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
 };
 
-use crate::{errors::MpcError, mpc::SharedFabric, scalar_2_to_m, SCALAR_MAX_BITS};
+use crate::{scalar_2_to_m, SCALAR_MAX_BITS};
 
 /// We only sample a blinding factor in the range [0, 2^252] because not all values
 /// with the final bit (253rd) of the value make valid scalars. The scalar field is
 /// of size 2^252 + \delta
 const BLINDING_FACTOR_MAX_BITS: usize = 252;
 
-/**
- * Helpers
- */
+// -----------
+// | Helpers |
+// -----------
 
 /// Composes a sequence of `Scalar`s representing bits in little endian order into a single scalar
 pub(crate) fn scalar_from_bits_le<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(

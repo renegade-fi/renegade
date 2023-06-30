@@ -4,6 +4,18 @@
 //!     3. Re-blinding of a wallet using the sampled blinders
 
 use circuit_macros::circuit_type;
+use circuit_types::{
+    keychain::SecretIdentificationKey,
+    merkle::{MerkleOpening, MerkleRoot},
+    traits::{
+        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
+        SecretShareVarType,
+    },
+    wallet::{
+        LinkableWalletShare, Nullifier, WalletShare, WalletShareStateCommitment, WalletShareVar,
+    },
+};
+use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
 use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::{izip, Itertools};
 use mpc_bulletproof::{
@@ -15,18 +27,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     mpc_gadgets::poseidon::PoseidonSpongeParameters,
-    traits::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-        SecretShareVarType,
-    },
-    types::{
-        keychain::SecretIdentificationKey,
-        wallet::{
-            LinkableWalletShare, Nullifier, WalletShare, WalletShareStateCommitment, WalletShareVar,
-        },
-    },
     zk_gadgets::{
-        merkle::{MerkleOpening, MerkleRoot, PoseidonMerkleHashGadget},
+        merkle::PoseidonMerkleHashGadget,
         poseidon::PoseidonHashGadget,
         wallet_operations::{NullifierGadget, WalletShareCommitGadget},
     },
@@ -44,6 +46,9 @@ pub struct ValidReblind<
     const MAX_FEES: usize,
     const MERKLE_HEIGHT: usize,
 >;
+/// A `VALID REBLIND` circuit with default const generic sizing parameters
+pub type SizedValidReblind = ValidReblind<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
+
 impl<
         const MAX_BALANCES: usize,
         const MAX_ORDERS: usize,
@@ -289,6 +294,9 @@ pub struct ValidReblindWitness<
     /// The secret match key corresponding to the wallet's public match key
     pub sk_match: SecretIdentificationKey,
 }
+/// A `VALID REBLIND` witness with default const generic sizing parameters
+pub type SizedValidReblindWitness =
+    ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
 
 // -----------------------------
 // | Statement Type Definition |
@@ -340,23 +348,23 @@ where
 #[cfg(test)]
 mod test {
     #![allow(non_snake_case)]
+    use circuit_types::{
+        keychain::SecretIdentificationKey,
+        native_helpers::{
+            compute_wallet_private_share_commitment, compute_wallet_share_commitment,
+            compute_wallet_share_nullifier, reblind_wallet,
+        },
+        traits::{BaseType, CircuitBaseType, LinkableBaseType, LinkableType, SecretShareType},
+    };
     use curve25519_dalek::scalar::Scalar;
     use merlin::Transcript;
     use mpc_bulletproof::{r1cs::Prover, PedersenGens};
     use rand::{thread_rng, Rng};
     use rand_core::OsRng;
 
-    use crate::{
-        native_helpers::{
-            compute_wallet_private_share_commitment, compute_wallet_share_commitment,
-            compute_wallet_share_nullifier, reblind_wallet,
-        },
-        traits::{BaseType, CircuitBaseType, LinkableBaseType, LinkableType, SecretShareType},
-        types::keychain::SecretIdentificationKey,
-        zk_circuits::test_helpers::{
-            create_multi_opening, create_wallet_shares, SizedWallet, SizedWalletShare,
-            INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS, PRIVATE_KEYS,
-        },
+    use crate::zk_circuits::test_helpers::{
+        create_multi_opening, create_wallet_shares, SizedWallet, SizedWalletShare, INITIAL_WALLET,
+        MAX_BALANCES, MAX_FEES, MAX_ORDERS, PRIVATE_KEYS,
     };
 
     use super::{ValidReblind, ValidReblindStatement, ValidReblindWitness};

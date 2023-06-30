@@ -2,9 +2,9 @@
 
 use std::iter::from_fn;
 
-use circuits::{
+use circuit_types::{
     native_helpers::create_wallet_shares_with_randomness,
-    types::wallet::{Wallet, WalletShare},
+    wallet::{Wallet, WalletShare},
 };
 use curve25519_dalek::scalar::Scalar;
 use rand_core::OsRng;

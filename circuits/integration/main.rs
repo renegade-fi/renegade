@@ -11,7 +11,7 @@ mod zk_gadgets;
 use std::cell::Ref;
 
 use chrono::Local;
-use circuits::mpc::{MpcFabric, SharedFabric};
+use circuit_types::{MpcFabric, SharedFabric};
 use clap::Parser;
 use env_logger::Builder;
 use integration_helpers::{

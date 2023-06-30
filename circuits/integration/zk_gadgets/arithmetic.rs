@@ -1,5 +1,6 @@
 //! Groups gadgets around arithmetic integration tests
-use circuits::{traits::MultiproverCircuitBaseType, zk_gadgets::arithmetic::MultiproverExpGadget};
+use circuit_types::traits::MultiproverCircuitBaseType;
+use circuits::zk_gadgets::arithmetic::MultiproverExpGadget;
 use crypto::fields::{bigint_to_scalar, scalar_to_bigint};
 use curve25519_dalek::scalar::Scalar;
 use integration_helpers::{

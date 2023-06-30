@@ -2,21 +2,20 @@
 
 use std::marker::PhantomData;
 
+use circuit_types::{
+    errors::ProverError,
+    traits::{
+        CircuitVarType, LinearCombinationLike, MpcLinearCombinationLike,
+        MultiproverCircuitVariableType,
+    },
+    SharedFabric,
+};
 use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
     r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem},
 };
 use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
-
-use crate::{
-    errors::ProverError,
-    mpc::SharedFabric,
-    traits::{
-        CircuitVarType, LinearCombinationLike, MpcLinearCombinationLike,
-        MultiproverCircuitVariableType,
-    },
-};
 
 /// Implements the control flow gate if selector { a } else { b }
 pub struct CondSelectGadget {}
@@ -182,6 +181,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
 #[cfg(test)]
 mod cond_select_test {
+    use circuit_types::traits::CircuitBaseType;
     use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
     use merlin::Transcript;
@@ -190,8 +190,6 @@ mod cond_select_test {
         PedersenGens,
     };
     use rand_core::OsRng;
-
-    use crate::traits::CircuitBaseType;
 
     use super::{CondSelectGadget, CondSelectVectorGadget};
 

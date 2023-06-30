@@ -1,9 +1,10 @@
 //! Groups integration tests around sharing values in an MPC fabric
-use circuits::{
+use circuit_types::{
+    r#match::MatchResult,
     traits::{BaseType, LinkableBaseType, LinkableType, MpcBaseType, MpcType, SecretShareType},
-    types::{r#match::MatchResult, wallet::Wallet},
-    MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+    wallet::Wallet,
 };
+use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use integration_helpers::types::IntegrationTest;
 
 use crate::{IntegrationTestArgs, TestWrapper};
