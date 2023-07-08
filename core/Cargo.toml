@@ -3,80 +3,36 @@ name = "renegade-relayer"
 version = "0.1.0"
 edition = "2018"
 
-[features]
-default = ["debug-tui"]
-debug-tui = ["dep:tui", "dep:tui-logger", "dep:crossterm"]
-
 [dependencies]
-ark-serialize = "0.4"
-async-trait = "0.1.60"
-atomic_float = "0.1"
-base64 = { version = "0.13" }
-bimap = "0.6.2"
-bus = { version = "2.3" }
-circuits = { path = "../circuits" }
+# === Cryptography === #
+curve25519-dalek = { workspace = true }
+
+# === Runtime + Async === #
+crossbeam = "0.8"
+tokio = { workspace = true }
+
+# === Workspace Dependencies === #
+api-server = { path = "../workers/api-server" }
+circuit-types = { path = "../circuit-types" }
+chain-events = { path = "../workers/chain-events" }
+common = { path = "../common" }
+config = { path = "../config" }
+external-api = { path = "../external-api" }
+gossip-api = { path = "../gossip-api" }
+gossip-server = { path = "../workers/gossip-server" }
+handshake-manager = { path = "../workers/handshake-manager" }
+job-types = { path = "../workers/job-types" }
+network-manager = { path = "../workers/network-manager" }
+price-reporter = { path = "../workers/price-reporter" }
+proof-manager = { path = "../workers/proof-manager" }
+starknet-client = { path = "../starknet-client" }
+state = { path = "../state" }
+system-bus = { path = "../system-bus" }
+task-driver = { path = "../task-driver" }
+
+# === Misc Dependencies === #
 chrono = "0.4.23"
 clap = { version = "3.2.8", features = ["derive"] }
-crossbeam = { version = "0.8.1" }
-crossterm = { version = "0.26", optional = true }
-create2 = "0.0.2"
-crypto = { path = "../crypto" }
-curve25519-dalek = "2"
-ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 env_logger = "0.10"
-futures = { version = "0.3.26" }
-futures-util = { version = "0.3" }
-hex = "0.3.1"
-hmac-sha256 = "1.1.6"
-hyper = { version = "0.14", features = ["http1", "http2", "server", "tcp"] }
-integration-helpers = { path = "../integration-helpers" }
-indexmap = "1.9"
-itertools = "0.10"
-lazy_static = "1.4.0"
-libp2p = { version = "0.51", features = [
-    "async-std",
-    "gossipsub",
-    "identify",
-    "kad",
-    "mplex",
-    "noise",
-    "quic",
-    "request-response",
-    "tcp",
-    "tokio",
-    "websocket",
-    "yamux",
-] }
-libp2p-core = { version = "0.39" }
-libp2p-kad = { version = "0.43" }
-libp2p-identity = { version = "0.1" }
-libp2p-swarm = { version = "0.42" }
-libp2p-swarm-derive = { version = "0.32" }
-lru = { version = "0.8" }
-matchit = "0.7"
-mpc-ristretto = "0.1"
-mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
-num-bigint = { version = "0.4.3" }
-num-traits = "0.2"
-once_cell = "1.17"
-portpicker = "0.1"
-rand = { version = "0.8.5", features = ["getrandom"] }
-rand_core = "0.5"
-rayon = { version = "1.5.3" }
-reqwest = "0.11.13"
-ring-channel = "0.11.0"
-serde = { version = "1.0.139", features = ["serde_derive"] }
-serde_json = "1.0"
-starknet = { git = "https://github.com/renegade-fi/starknet-rs" }
-streaming-stats = "0.1.28"
-tokio = { version = "1", features = ["full"] }
-toml = { version = "0.5.9" }
-tracing = { version = "0.1", features = ["log"] }
-tokio-stream = { version = "0.1" }
-tokio-tungstenite = { version = "0.18.0", features = ["native-tls"] }
-tui = { version = "0.19", optional = true }
-tui-logger = { version = "0.8", optional = true }
-tungstenite = { version = "0.18.0" }
-url = "2.3.1"
-uuid = { version = "1.1.2", features = ["v4", "serde"] }
-web3 = "0.18.0"
+lazy_static = "1.4"
+tracing = { workspace = true }
