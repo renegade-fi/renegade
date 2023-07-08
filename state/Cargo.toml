@@ -1,0 +1,45 @@
+[package]
+name = "state"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# === Arithmetic + Crypto === #
+curve25519-dalek = { workspace = true }
+num-bigint = { workspace = true}
+rand = { workspace = true }
+
+# === Workspace Dependencies === #
+circuits = { path = "../circuits" }
+circuit-types = { path = "../circuit-types" }
+common = { path = "../common" }
+config = { path = "../config" }
+constants = { path = "../constants" }
+crypto = { path = "../crypto" }
+external-api = { path = "../external-api" }
+gossip-api = { path = "../gossip-api" }
+job-types = { path = "../workers/job-types" }
+system-bus = { path = "../system-bus" }
+util = { path = "../util" }
+
+# === Async === #
+futures = { version = "0.3.26" }
+futures-util = { version = "0.3" }
+tokio = { workspace = true }
+
+# === Networking === #
+libp2p = { workspace = true }
+
+# === Misc === #
+base64 = { version = "0.13" }
+indexmap = "1.9"
+itertools = { workspace = true }
+lazy_static = "1.4.0"
+serde = { workspace = true, features = ["serde_derive"] }
+tracing = { workspace = true }
+uuid = { version = "1.1.2", features = ["v4", "serde"] }
+
+[dev-dependencies]
+rand_core = "0.5"
+serde_json = { workspace = true }
+curve25519-dalek = { version = "3.1.0", features = ["serde"] }
