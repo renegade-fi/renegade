@@ -1,0 +1,17 @@
+[package]
+name = "system-bus"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# === Threading Model + Runtime === #
+bus = { version = "2.3" }
+futures = { version = "0.3.26" }
+serde = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros"] }
+
+# === Workspace Dependencies === #
+common = { path = "../common" }
+
+[dev-dependencies]
+rand = "0.8"
