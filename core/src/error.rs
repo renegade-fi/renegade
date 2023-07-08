@@ -10,8 +10,6 @@ pub enum CoordinatorError {
     Recovery(String),
     /// Failure to send a cancel signal to a worker
     CancelSend(String),
-    /// Failure to parse config correctly
-    ConfigParse(String),
 }
 
 impl Error for CoordinatorError {}
