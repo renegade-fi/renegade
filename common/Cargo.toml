@@ -1,0 +1,40 @@
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# === Cryptography + Arithmetic === #
+curve25519-dalek = { workspace = true }
+ed25519-dalek = { version = "1.0.1", features = ["serde"] }
+mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
+num-bigint = { workspace = true }
+
+# === Runtime + Networking === #
+crossbeam = "0.8"
+libp2p = { workspace = true }
+libp2p-identity = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+# === Workspace Dependencies === #
+circuits = { path = "../circuits" }
+circuit-types = { path = "../circuit-types" }
+constants = { path = "../constants" }
+crypto = { path = "../crypto" }
+
+# === Misc Dependencies === #
+base64 = { version = "0.13" }
+bimap = "0.6.2"
+indexmap = "1.9"
+itertools = "0.10"
+lazy_static = "1.4"
+serde = { workspace = true }
+serde_json = { workspace = true }
+starknet = { workspace = true }
+uuid = { version = "1.1.2", features = ["v4", "serde"] }
+
+[dev-dependencies]
+rand_core = "0.5"
