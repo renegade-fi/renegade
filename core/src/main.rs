@@ -9,97 +9,42 @@
 #![deny(unsafe_code)]
 #![deny(clippy::missing_docs_in_private_items)]
 
-mod api_server;
-mod chain_events;
-mod config;
-mod default_wrapper;
 mod error;
-mod external_api;
-mod gossip;
-mod gossip_api;
-mod handshake;
-mod network_manager;
-mod price_reporter;
-mod proof_generation;
-mod starknet_client;
-mod state;
-mod system_bus;
-mod tasks;
-mod types;
-mod worker;
 
-use std::{io::Write, process::exit, thread, time::Duration};
+use std::{io::Write, thread, time::Duration};
+
+use api_server::worker::{ApiServer, ApiServerConfig};
+use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
+use common::worker::{watch_worker, Worker};
+use external_api::bus_message::SystemBusMessage;
+use gossip_api::gossip::GossipOutbound;
+use gossip_server::{server::GossipServer, worker::GossipServerConfig};
+use handshake_manager::{manager::HandshakeManager, worker::HandshakeManagerConfig};
+use job_types::{
+    gossip_server::GossipServerJob, handshake_manager::HandshakeExecutionJob,
+    price_reporter::PriceReporterManagerJob,
+};
+use network_manager::{manager::NetworkManager, worker::NetworkManagerConfig};
+use price_reporter::{manager::PriceReporterManager, worker::PriceReporterManagerConfig};
+use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
+use starknet_client::client::{StarknetClient, StarknetClientConfig};
+use state::RelayerState;
+use system_bus::SystemBus;
+use task_driver::{driver::TaskDriver, initialize_state::InitializeStateTask};
 
 use chrono::Local;
-use circuits::{
-    types::{
-        keychain::PublicIdentificationKey,
-        wallet::{Wallet, WalletShare},
-    },
-    zk_gadgets::{fixed_point::FixedPoint, merkle::MerkleOpening},
-};
 use crossbeam::channel;
-use curve25519_dalek::scalar::Scalar;
 use env_logger::Builder;
 use error::CoordinatorError;
-use gossip::worker::GossipServerConfig;
-use handshake::worker::HandshakeManagerConfig;
-use network_manager::worker::NetworkManagerConfig;
-use price_reporter::worker::PriceReporterManagerConfig;
 use tokio::{
     select,
-    sync::{
-        mpsc,
-        watch::{self, Receiver as WatchReceiver},
-    },
+    sync::{mpsc, watch},
 };
 use tracing::log::{self, LevelFilter};
-
-use crate::{
-    api_server::worker::{ApiServer, ApiServerConfig},
-    chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig},
-    gossip::{jobs::GossipServerJob, server::GossipServer},
-    gossip_api::gossip::GossipOutbound,
-    handshake::{jobs::HandshakeExecutionJob, manager::HandshakeManager},
-    network_manager::manager::NetworkManager,
-    price_reporter::{jobs::PriceReporterManagerJob, manager::PriceReporterManager},
-    proof_generation::{proof_manager::ProofManager, worker::ProofManagerConfig},
-    starknet_client::client::{StarknetClient, StarknetClientConfig},
-    state::RelayerState,
-    system_bus::SystemBus,
-    tasks::{driver::TaskDriver, initialize_state::InitializeStateTask},
-    types::SystemBusMessage,
-    worker::{watch_worker, Worker},
-};
 
 #[cfg(feature = "debug-tui")]
 use crate::state::tui::StateTuiApp;
 
-#[macro_use]
-extern crate lazy_static;
-
-/// A type alias for an empty channel used to signal cancellation to workers
-pub(crate) type CancelChannel = WatchReceiver<()>;
-
-// --------------------
-// | Global Constants |
-// --------------------
-
-// TODO: Move these constants to a more discoverable location
-lazy_static! {
-    /// The fee the protocol takes on a match; one basis point
-    static ref PROTOCOL_FEE: FixedPoint = FixedPoint::from_f32_round_down(0.0002);
-    /// The public settle key of the protocol wallet
-    /// Dummy value for now
-    static ref PROTOCOL_SETTLE_KEY: PublicIdentificationKey = Scalar::from(0u8).into();
-}
-
-/// A type wrapper around the wallet type that adds the default generics above
-pub(crate) type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-/// A type wrapper around a wallet share that adds the default generics above
-pub(crate) type SizedWalletShare = WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-/// A type wrapper around a Merkle opening that adds the default height
-pub(crate) type SizedMerkleOpening = MerkleOpening<MERKLE_HEIGHT>;
 /// The amount of time to wait between sending teardown signals and terminating execution
 const TERMINATION_TIMEOUT_MS: u64 = 10_000; // 10 seconds
 
@@ -127,7 +72,6 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Parse command line arguments
     let args = config::parse_command_line_args().expect("error parsing command line args");
-    let args_clone = args.clone();
     log::info!(
         "Relayer running with\n\t version: {}\n\t port: {}\n\t cluster: {:?}",
         args.version,
