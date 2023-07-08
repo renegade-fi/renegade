@@ -7,11 +7,6 @@ use num_bigint::BigUint;
 
 use crate::fields::DalekRistrettoField;
 
-/// The maximum number of orders allowed in a wallet
-pub const MAX_ORDERS: usize = 2;
-/// The maximum number of balances allowed in a wallet
-pub const MAX_BALANCES: usize = 2;
-
 /// Below are:
 ///     1. The MDS matrix (https://en.wikipedia.org/wiki/MDS_matrix) used in between SBoxes
 ///     2. The round constants added to the input of each round
