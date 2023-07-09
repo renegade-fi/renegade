@@ -1,0 +1,25 @@
+[package]
+name = "proof-manager"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# === Cryptography === #
+mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
+
+# === Runtime + Threading === #
+crossbeam = { version = "0.8.1" }
+rayon = { version = "1.5.3" }
+tokio = { workspace = true }
+
+# === Workspace Dependencies === #
+circuits = { path = "../../circuits" }
+common = { path = "../../common" }
+constants = { path = "../../constants" }
+job-types = { path = "../job-types" }
+
+# === Misc Dependencies === #
+serde = { workspace = true }
+tracing = { workspace = true }
