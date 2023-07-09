@@ -1,0 +1,42 @@
+[package]
+name = "price-reporter"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# === Cryptography === #
+hmac-sha256 = "1.1"
+
+# === Async + Runtime === #
+async-trait = "0.1"
+futures = "0.3"
+futures-util = "0.3"
+tokio = { workspace = true }
+
+# === Networking === #
+tokio-stream = "0.1"
+tokio-tungstenite = "0.18"
+tungstenite = "0.18"
+reqwest = "0.11"
+web3 = "0.18"
+
+# === Workspace Dependencies === #
+common = { path = "../../common" }
+external-api = { path = "../../external-api" }
+job-types = { path = "../job-types" }
+system-bus = { path = "../../system-bus" }
+util = { path = "../../util" }
+
+# === Misc Dependencies === #
+atomic_float = "0.1"
+create2 = "0.0.2"
+hex = "0.3.1"
+itertools = "0.11"
+lazy_static = "1.4"
+serde = { workspace = true }
+serde_json = { workspace = true }
+statrs = "0.16"
+tracing = { workspace = true }
+url = "2.4"
