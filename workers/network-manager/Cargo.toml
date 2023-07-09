@@ -1,0 +1,42 @@
+[package]
+name = "network-manager"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# === Concurrency + Networking === #
+async-trait = "0.1.60"
+futures = "0.3"
+libp2p = { workspace = true, features = [
+    "gossipsub",
+    "identify", 
+    "kad",
+    "tokio",
+    "quic",
+]}
+libp2p-core = { workspace = true }
+libp2p-swarm = { workspace = true }
+libp2p-swarm-derive = { workspace = true }
+tokio = { workspace = true }
+
+# === Cryptography === #
+ed25519-dalek = { version = "1.0.1", features = ["serde"] }
+mpc-ristretto = { workspace = true }
+
+# === Workspace Dependencies === #
+common = { path = "../../common" }
+external-api = { path = "../../external-api" }
+gossip-api = { path = "../../gossip-api" }
+job-types = { path = "../job-types" }
+state = { path = "../../state" }
+system-bus = { path = "../../system-bus" }
+util = { path = "../../util" }
+
+# === Misc Dependencies === #
+itertools = "0.11"
+portpicker = "0.1"
+serde_json = { workspace = true }
+tracing = { workspace = true }
+uuid = "1.1.2"
