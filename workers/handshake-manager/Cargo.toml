@@ -1,0 +1,45 @@
+[package]
+name = "handshake-manager"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# === Arithmetic and Cryptography === #
+curve25519-dalek = { workspace = true }
+mpc-bulletproof = { workspace = true }
+mpc-ristretto = { workspace = true }
+
+# === Concurrency + Networking === #
+crossbeam = "0.8.1"
+futures = "0.3"
+libp2p = { workspace = true }
+tokio = { workspace = true }
+
+#=== Workspace Dependencies === #
+circuits = { path = "../../circuits" }
+circuit-types = { path = "../../circuit-types" }
+common = { path = "../../common" }
+constants = { path = "../../constants" }
+crypto = { path = "../../crypto" }
+external-api = { path = "../../external-api" }
+integration-helpers = { path = "../../integration-helpers" }
+job-types = { path = "../job-types" }
+gossip-api = { path = "../../gossip-api" }
+starknet-client = { path = "../../starknet-client" }
+state = { path = "../../state" }
+system-bus = { path = "../../system-bus" }
+task-driver = { path = "../../task-driver" }
+
+# === Misc Dependencies === #
+ark-serialize = "0.4"
+itertools = "0.11"
+lazy_static = "1.4"
+lru = "0.11"
+portpicker = "0.1"
+rand = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+uuid = { version = "1.1.2", features = ["v4", "serde"] }
+
+[dev-dependencies]
+lazy_static = "1.4"
