@@ -1,0 +1,28 @@
+[package]
+name = "chain-events"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# === Arithmetic + Cryptography === #
+curve25519-dalek = { workspace = true }
+
+# === Concurrency + Runtime === #
+crossbeam = "0.8.1"
+tokio = { workspace = true }
+
+# === Networking + Blockchain === #
+starknet = { workspace = true }
+
+# === Workspace Dependencies === #
+circuit-types = { path = "../../circuit-types" }
+common = { path = "../../common" }
+crypto = { path = "../../crypto" }
+gossip-api = { path = "../../gossip-api" }
+job-types = { path = "../job-types" }
+state = { path = "../../state" }
+starknet-client = { path = "../../starknet-client" }
+
+# === Misc Dependencies === #
+lazy_static = "1.4"
+tracing = { workspace = true }
