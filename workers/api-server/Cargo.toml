@@ -1,0 +1,44 @@
+[package]
+name = "api-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# === Cryptography + Arithmetic === #
+ed25519-dalek = { version = "1.0.1", features = ["serde"] }
+num-bigint = { workspace = true }
+num-traits = "0.2"
+
+# === HTTP + Websocket === #
+hyper = { version = "0.14", features = ["http1", "http2", "server", "tcp"] }
+matchit = "0.7"
+tokio-stream = "0.1"
+tokio-tungstenite = { version = "0.18", features = ["native-tls"] }
+tungstenite = "0.18"
+
+# === Runtime + Concurrency === #
+crossbeam = "0.8"
+futures = "0.3"
+futures-util = "0.3"
+tokio = { workspace = true }
+
+# === Workspace Dependencies === #
+circuit-types = { path = "../../circuit-types" }
+common = { path = "../../common" }
+constants = { path = "../../constants" }
+crypto = { path = "../../crypto" }
+external-api = { path = "../../external-api" }
+gossip-api = { path = "../../gossip-api" }
+job-types = { path = "../job-types" }
+starknet-client = { path = "../../starknet-client" }
+state = { path = "../../state" }
+system-bus = { path = "../../system-bus" }
+task-driver = { path = "../../task-driver" }
+
+# === Misc Dependencies === #
+async-trait = "0.1.60"
+itertools = "0.11"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+uuid = "1.1.2"
