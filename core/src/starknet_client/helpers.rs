@@ -1,8 +1,17 @@
 //! Various helpers for Starknet client execution
 
-use std::{convert::TryInto, iter};
+use std::{
+    convert::TryInto,
+    io::{Cursor, Read},
+    iter,
+};
 
+use ark_ff::{BigInteger, PrimeField};
 use itertools::Itertools;
+use mpc_stark::algebra::{
+    scalar::Scalar,
+    stark_curve::{StarkPoint, STARK_POINT_BYTES},
+};
 use serde::de::DeserializeOwned;
 use starknet::core::types::FieldElement as StarknetFieldElement;
 
@@ -170,4 +179,80 @@ pub(super) fn unpack_bytes_from_blob<T: DeserializeOwned>(
     let truncated_bytes = &byte_array[..(n_bytes as usize)];
     serde_json::from_slice(truncated_bytes)
         .map_err(|err| StarknetClientError::Serde(err.to_string()))
+}
+
+struct DeserializationError;
+
+impl From<DeserializationError> for String {
+    fn from(value: DeserializationError) -> Self {
+        String::from("error deserializing from bytes")
+    }
+}
+
+pub(super) fn read_point(cursor: &mut Cursor<&[u8]>) -> Result<StarkPoint, DeserializationError> {
+    let mut buf = [0u8; STARK_POINT_BYTES];
+    cursor
+        .read_exact(&mut buf)
+        .map_err(|_| DeserializationError)?;
+
+    StarkPoint::from_bytes(&buf).map_err(|_| DeserializationError)
+}
+
+pub(super) fn read_scalar(cursor: &mut Cursor<&[u8]>) -> Result<Scalar, DeserializationError> {
+    let mut buf = [0u8; 32];
+    cursor
+        .read_exact(&mut buf)
+        .map_err(|_| DeserializationError)?;
+
+    Ok(Scalar::from_be_bytes_mod_order(&buf))
+}
+
+struct SerializationError;
+
+impl From<SerializationError> for String {
+    fn from(value: SerializationError) -> Self {
+        String::from("error serializing to calldata")
+    }
+}
+
+pub(super) fn point_to_felts(
+    point: &StarkPoint,
+) -> Result<[StarknetFieldElement; 2], SerializationError> {
+    if point.is_identity() {
+        Ok([StarknetFieldElement::ZERO, StarknetFieldElement::ZERO])
+    } else {
+        let aff = point.to_affine();
+        let x_bytes = aff.x.into_bigint().to_bytes_be();
+        let y_bytes = aff.y.into_bigint().to_bytes_be();
+
+        Ok([
+            StarknetFieldElement::from_byte_slice_be(&x_bytes).map_err(|_| SerializationError)?,
+            StarknetFieldElement::from_byte_slice_be(&y_bytes).map_err(|_| SerializationError)?,
+        ])
+    }
+}
+
+pub(super) fn serialize_points_to_calldata(
+    points: &[StarkPoint],
+    felts: &mut Vec<StarknetFieldElement>,
+) -> Result<(), SerializationError> {
+    points.iter().try_for_each(|point| {
+        let point_ser = point_to_felts(point)?;
+        felts.extend(point_ser);
+        Ok(())
+    })?;
+    Ok(())
+}
+
+pub(super) fn serialize_scalars_to_calldata(
+    scalars: &[Scalar],
+    felts: &mut Vec<StarknetFieldElement>,
+) -> Result<(), SerializationError> {
+    scalars.iter().try_for_each(|scalar| {
+        let felt = StarknetFieldElement::from_byte_slice_be(scalar.to_bytes_be().as_slice())
+            .map_err(|_| SerializationError)?;
+        felts.push(felt);
+        Ok(())
+    })?;
+    Ok(())
 }

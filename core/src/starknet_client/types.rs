@@ -3,16 +3,29 @@
 use std::{
     convert::TryInto,
     fmt::{Debug, Display, Formatter, Result as FmtResult},
+    io::Cursor,
 };
 
-use circuits::types::transfers::{
-    ExternalTransfer as CircuitExternalTransfer, ExternalTransferDirection,
+use circuits::{
+    traits::CircuitCommitmentType,
+    types::transfers::{ExternalTransfer as CircuitExternalTransfer, ExternalTransferDirection},
 };
 use crypto::fields::{biguint_to_starknet_felt, u128_to_starknet_felt};
 use lazy_static::lazy_static;
+use mpc_bulletproof::r1cs::R1CSProof;
+use mpc_stark::algebra::{
+    scalar::SCALAR_BYTES,
+    stark_curve::{StarkPoint, STARK_POINT_BYTES},
+};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use starknet::core::types::FieldElement as StarknetFieldElement;
+
+use crate::proof_generation::jobs::ProofBundle;
+
+use super::helpers::{
+    read_point, read_scalar, serialize_points_to_calldata, serialize_scalars_to_calldata,
+};
 
 lazy_static! {
     /// The bit mask for the lower 128 bits of a U256
@@ -125,5 +138,111 @@ impl From<StarknetU256> for Vec<StarknetFieldElement> {
         let high_felt = u128_to_starknet_felt(val.high);
 
         vec![low_felt, high_felt]
+    }
+}
+
+// ---------------------------------------
+// | Proof bundle calldata serialization |
+// ---------------------------------------
+
+pub(super) trait CalldataSerializable {
+    fn to_calldata(&self) -> Result<Vec<StarknetFieldElement>, String>;
+}
+
+impl CalldataSerializable for R1CSProof {
+    #[allow(non_snake_case)]
+    fn to_calldata(&self) -> Result<Vec<StarknetFieldElement>, String> {
+        // This mirrors the implementations of `R1CSProof::from_bytes` and
+        // `InnerProductProof::from_bytes` in the mpc-bulletproof crate
+
+        let proof_bytes = self.to_bytes();
+        let mut proof_bytes_cursor = Cursor::new(proof_bytes.as_slice());
+
+        let A_I1 = read_point(&mut proof_bytes_cursor)?;
+        let A_O1 = read_point(&mut proof_bytes_cursor)?;
+        let S1 = read_point(&mut proof_bytes_cursor)?;
+        let T_1 = read_point(&mut proof_bytes_cursor)?;
+        let T_3 = read_point(&mut proof_bytes_cursor)?;
+        let T_4 = read_point(&mut proof_bytes_cursor)?;
+        let T_5 = read_point(&mut proof_bytes_cursor)?;
+        let T_6 = read_point(&mut proof_bytes_cursor)?;
+        let t_hat = read_scalar(&mut proof_bytes_cursor)?;
+        let t_blind = read_scalar(&mut proof_bytes_cursor)?;
+        let e_blind = read_scalar(&mut proof_bytes_cursor)?;
+
+        // IPP consists of L, R vectors & a, b scalars.
+        // L, R vectors have log2(n) elements each (where n is the number of multiplication gates)
+        // Thus, log2(n) = ((# remaining bytes - 2 * bytes_per_scalar) / bytes_per_point) / 2
+        let ipp_bytes_size = proof_bytes.len() - proof_bytes_cursor.position() as usize;
+        let lg_n = ((ipp_bytes_size - 2 * SCALAR_BYTES) / STARK_POINT_BYTES) / 2;
+
+        let mut L: Vec<StarkPoint> = Vec::with_capacity(lg_n);
+        let mut R: Vec<StarkPoint> = Vec::with_capacity(lg_n);
+        for i in 0..lg_n {
+            let l_point = read_point(&mut proof_bytes_cursor)?;
+            let r_point = read_point(&mut proof_bytes_cursor)?;
+            L.push(l_point);
+            R.push(r_point);
+        }
+
+        let a = read_scalar(&mut proof_bytes_cursor)?;
+        let b = read_scalar(&mut proof_bytes_cursor)?;
+
+        // A_I1..T_6 is 8 points, 2 felts per point
+        // t_hat..e_blind, a & b is 5 scalars, 1 felt per scalar
+        let mut felts = Vec::with_capacity(2 * 8 + 2 * 2 * L.len() + 5);
+
+        serialize_points_to_calldata(&[A_I1, A_O1, S1, T_1, T_3, T_4, T_5, T_6], &mut felts);
+
+        serialize_scalars_to_calldata(&[t_hat, t_blind, e_blind], &mut felts);
+
+        // Need to serialize array length first before the elements
+
+        let lg_n_felt = StarknetFieldElement::from(L.len());
+
+        felts.push(lg_n_felt);
+        serialize_points_to_calldata(&L, &mut felts);
+
+        felts.push(lg_n_felt);
+        serialize_points_to_calldata(&R, &mut felts);
+
+        serialize_scalars_to_calldata(&[a, b], &mut felts);
+
+        Ok(felts)
+    }
+}
+
+impl CalldataSerializable for ProofBundle {
+    fn to_calldata(&self) -> Result<Vec<StarknetFieldElement>, String> {
+        let mut felts = Vec::new();
+
+        match self {
+            ProofBundle::ValidWalletCreate(b) => {
+                felts.extend(b.proof.to_calldata()?);
+                serialize_points_to_calldata(&b.commitment.to_commitments(), &mut felts);
+            }
+            ProofBundle::ValidReblind(b) => {
+                felts.extend(b.proof.to_calldata()?);
+                serialize_points_to_calldata(&b.commitment.to_commitments(), &mut felts);
+            }
+            ProofBundle::ValidCommitments(b) => {
+                felts.extend(b.proof.to_calldata()?);
+                serialize_points_to_calldata(&b.commitment.to_commitments(), &mut felts);
+            }
+            ProofBundle::ValidWalletUpdate(b) => {
+                felts.extend(b.proof.to_calldata()?);
+                serialize_points_to_calldata(&b.commitment.to_commitments(), &mut felts);
+            }
+            ProofBundle::ValidMatchMpc(b) => {
+                felts.extend(b.proof.to_calldata()?);
+                serialize_points_to_calldata(&b.commitment.to_commitments(), &mut felts);
+            }
+            ProofBundle::ValidSettle(b) => {
+                felts.extend(b.proof.to_calldata()?);
+                serialize_points_to_calldata(&b.commitment.to_commitments(), &mut felts);
+            }
+        };
+
+        Ok(felts)
     }
 }
