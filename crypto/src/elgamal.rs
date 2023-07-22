@@ -1,12 +1,12 @@
 //! Helpers for creating encryptions of values
 
-use curve25519_dalek::scalar::Scalar;
 use lazy_static::lazy_static;
+use mpc_stark::algebra::scalar::Scalar;
 use num_bigint::BigUint;
-use rand_core::OsRng;
+use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 
-use crate::fields::{biguint_to_scalar, get_ristretto_group_modulus, scalar_to_biguint};
+use crate::fields::{biguint_to_scalar, get_scalar_field_modulus, scalar_to_biguint};
 
 lazy_static! {
     /// We use the generator 2 here as per the same field configured in Arkworks:
@@ -34,12 +34,12 @@ pub struct ElGamalCiphertext {
 /// Return both the encryption (used as a public variable) and the randomness
 /// used to generate the encryption (used as a witness variable)
 pub fn encrypt_scalar(val: Scalar, pubkey: &BigUint) -> (ElGamalCiphertext, Scalar) {
-    let mut rng = OsRng {};
-    let randomness = scalar_to_biguint(&Scalar::random(&mut rng));
+    let mut rng = thread_rng();
+    let randomness = &Scalar::random(&mut rng).to_biguint();
 
-    let field_mod = get_ristretto_group_modulus();
-    let ciphertext1 = DEFAULT_ELGAMAL_GENERATOR_BIGUINT.modpow(&randomness, &field_mod);
-    let shared_secret = pubkey.modpow(&randomness, &field_mod);
+    let field_mod = get_scalar_field_modulus();
+    let ciphertext1 = DEFAULT_ELGAMAL_GENERATOR_BIGUINT.modpow(randomness, &field_mod);
+    let shared_secret = pubkey.modpow(randomness, &field_mod);
 
     let encrypted_message = (shared_secret * scalar_to_biguint(&val)) % &field_mod;
 
@@ -48,27 +48,27 @@ pub fn encrypt_scalar(val: Scalar, pubkey: &BigUint) -> (ElGamalCiphertext, Scal
             partial_shared_secret: biguint_to_scalar(&ciphertext1),
             encrypted_message: biguint_to_scalar(&encrypted_message),
         },
-        biguint_to_scalar(&randomness),
+        biguint_to_scalar(randomness),
     )
 }
 
 /// Decrypt an ElGamal encrypted scalar using the given private key
 pub fn decrypt_scalar(cipher: ElGamalCiphertext, secret_key: &BigUint) -> Scalar {
-    let field_mod = get_ristretto_group_modulus();
+    let field_mod = get_scalar_field_modulus();
     let partial_shared_secret_biguint = scalar_to_biguint(&cipher.partial_shared_secret);
     let shared_secret = partial_shared_secret_biguint.modpow(secret_key, &field_mod);
 
     let shared_secret_scalar = biguint_to_scalar(&shared_secret);
 
-    shared_secret_scalar.invert() * cipher.encrypted_message
+    shared_secret_scalar.inverse() * cipher.encrypted_message
 }
 
 #[cfg(test)]
 mod tests {
-    use curve25519_dalek::scalar::Scalar;
-    use rand_core::OsRng;
+    use mpc_stark::algebra::scalar::Scalar;
+    use rand::thread_rng;
 
-    use crate::fields::{get_ristretto_group_modulus, scalar_to_biguint};
+    use crate::fields::{get_scalar_field_modulus, scalar_to_biguint};
 
     use super::{decrypt_scalar, encrypt_scalar, DEFAULT_ELGAMAL_GENERATOR_BIGUINT};
 
@@ -76,8 +76,8 @@ mod tests {
     /// decrypts the ciphertext and verifies that the decryption succeeded
     #[test]
     fn test_random_keypair_and_ciphertext() {
-        let mut rng = OsRng {};
-        let modulus = get_ristretto_group_modulus();
+        let mut rng = thread_rng();
+        let modulus = get_scalar_field_modulus();
         let secret_key = scalar_to_biguint(&Scalar::random(&mut rng));
         let public_key = DEFAULT_ELGAMAL_GENERATOR_BIGUINT.modpow(&secret_key, &modulus);
 
