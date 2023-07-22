@@ -38,6 +38,7 @@ pub fn scalar_to_bigdecimal(a: &Scalar) -> BigDecimal {
     BigDecimal::from(bigint)
 }
 
+/// Reduces the scalar to a u64, truncating anything above 2^64 - 1
 pub fn scalar_to_u64(a: &Scalar) -> u64 {
     let bytes = a.to_bytes_be();
     let len = bytes.len();
