@@ -1,5 +1,6 @@
 //! Cryptography helpers and primitives useful throughout the relayer
 #![deny(unsafe_code)]
+#![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
 
 pub mod constants;
