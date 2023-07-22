@@ -2,38 +2,20 @@
 
 use std::{iter, ops::Neg};
 
-use ark_ff::{Fp256, MontBackend, MontConfig, PrimeField};
+use ark_ff::PrimeField;
 use bigdecimal::BigDecimal;
-use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
+use mpc_stark::algebra::scalar::Scalar;
 use num_bigint::{BigInt, BigUint, Sign};
 use starknet::core::types::FieldElement as StarknetFieldElement;
-
-/// Defines a custom Arkworks field with the same modulus as the Dalek Ristretto group
-///
-/// This is necessary for testing against Arkworks, otherwise the values will not be directly comparable
-#[derive(MontConfig)]
-#[modulus = "7237005577332262213973186563042994240857116359379907606001950938285454250989"]
-#[generator = "2"]
-pub struct DalekRistrettoFieldConfig;
-#[allow(missing_docs, clippy::missing_docs_in_private_items)]
-pub type DalekRistrettoField = Fp256<MontBackend<DalekRistrettoFieldConfig, 4>>;
 
 // -----------
 // | Helpers |
 // -----------
 
-/// Returns the prime group modulus for the scalar field that Dalek Ristretto
-/// arithmetic is defined over.
-pub fn get_ristretto_group_modulus() -> BigUint {
-    let modulus: BigUint = BigUint::from(1u64) << 252;
-    let delta_digits = String::from("27742317777372353535851937790883648493")
-        .chars()
-        .map(|c| c.to_digit(10).unwrap() as u8)
-        .collect::<Vec<_>>();
-
-    let delta = BigUint::from_radix_be(&delta_digits, 10 /* radix */).unwrap();
-    modulus + delta
+/// Return the modulus `p` of the `Scalar` ($Z_p$) field as a `BigUint`
+pub fn get_scalar_field_modulus() -> BigUint {
+    Scalar::Field::MODULUS.into()
 }
 
 // ---------------------------
@@ -42,12 +24,12 @@ pub fn get_ristretto_group_modulus() -> BigUint {
 
 /// Convert a scalar to a BigInt
 pub fn scalar_to_bigint(a: &Scalar) -> BigInt {
-    BigInt::from_signed_bytes_le(&a.to_bytes())
+    a.to_biguint().into()
 }
 
 /// Convert a scalar to a BigUint
 pub fn scalar_to_biguint(a: &Scalar) -> BigUint {
-    BigUint::from_bytes_le(&a.to_bytes())
+    a.to_biguint()
 }
 
 /// Convert a scalar to a BigDecimal
@@ -56,18 +38,18 @@ pub fn scalar_to_bigdecimal(a: &Scalar) -> BigDecimal {
     BigDecimal::from(bigint)
 }
 
-/// Converts a dalek scalar to an arkworks ff element
-pub fn scalar_to_prime_field(a: &Scalar) -> DalekRistrettoField {
-    Fp256::from(scalar_to_biguint(a))
+pub fn scalar_to_u64(a: &Scalar) -> u64 {
+    let bytes = a.to_bytes_be();
+    let len = bytes.len();
+
+    // Take the last 8 bytes (64 bits)
+    let bytes: [u8; 8] = bytes[len - 8..len].try_into().unwrap();
+    u64::from_be_bytes(bytes)
 }
 
 /// Converts a dalek scalar to a StarkNet field element
 pub fn scalar_to_starknet_felt(a: &Scalar) -> StarknetFieldElement {
-    // A dalek scalar stores its bytes in little-endian order and
-    // a Starknet felt stores its bytes in big-endian order
-    let mut bytes = a.to_bytes();
-    bytes.reverse();
-    StarknetFieldElement::from_bytes_be(&bytes).unwrap()
+    StarknetFieldElement::from_byte_slice_be(&a.to_bytes_be()).unwrap()
 }
 
 // ----------------------------
@@ -76,32 +58,18 @@ pub fn scalar_to_starknet_felt(a: &Scalar) -> StarknetFieldElement {
 
 /// Convert a bigint to a scalar
 pub fn bigint_to_scalar(a: &BigInt) -> Scalar {
-    let (sign, mut bytes) = a.to_bytes_le();
-    if bytes.len() < 32 {
-        zero_pad_bytes(&mut bytes, 32)
-    }
-
-    let scalar = Scalar::from_bytes_mod_order(bytes[..32].try_into().unwrap());
-
-    match sign {
-        Sign::Minus => scalar.neg(),
-        _ => scalar,
+    match a.sign() {
+        Sign::Minus => {
+            let biguint = a.neg().to_biguint().unwrap();
+            -Scalar::from(biguint)
+        }
+        _ => Scalar::from(a.to_biguint().unwrap()),
     }
 }
 
 /// Convert a BigUint to a scalar
 pub fn biguint_to_scalar(a: &BigUint) -> Scalar {
-    bigint_to_scalar(&a.clone().into())
-}
-
-/// Convert a BigUint to an Arkworks representation of the Ristretto scalar field
-pub fn biguint_to_prime_field(a: &BigUint) -> DalekRistrettoField {
-    scalar_to_prime_field(&biguint_to_scalar(a))
-}
-
-/// Pad an array up to the desired length with zeros
-fn zero_pad_bytes(unpadded_buf: &mut Vec<u8>, n: usize) {
-    unpadded_buf.append(&mut vec![0u8; n - unpadded_buf.len()])
+    Scalar::from(a.clone())
 }
 
 /// Convert a bigint to a vector of bits, encoded as scalars
@@ -125,26 +93,6 @@ pub fn biguint_to_starknet_felt(a: &BigUint) -> StarknetFieldElement {
     scalar_to_starknet_felt(&biguint_to_scalar(a))
 }
 
-// -----------------------------------------
-// | Conversions from Arkworks Field Types |
-// -----------------------------------------
-
-/// Convert an Arkworks field element to a Dalek scalar
-pub fn prime_field_to_scalar<F: PrimeField>(a: &F) -> Scalar {
-    bigint_to_scalar(&prime_field_to_bigint(a))
-}
-
-/// Convert an arkworks prime field element to a bigint
-pub fn prime_field_to_bigint<F: PrimeField>(element: &F) -> BigInt {
-    let felt_biguint = prime_field_to_biguint(element);
-    felt_biguint.into()
-}
-
-/// Convert an arkworks prime field element to a BigUint
-pub fn prime_field_to_biguint<F: PrimeField>(element: &F) -> BigUint {
-    (*element).into()
-}
-
 // -----------------------------------
 // | Conversions from StarkNet Types |
 // -----------------------------------
@@ -153,9 +101,8 @@ pub fn prime_field_to_biguint<F: PrimeField>(element: &F) -> BigUint {
 pub fn starknet_felt_to_scalar(element: &StarknetFieldElement) -> Scalar {
     // A dalek scalar stores its bytes in little-endian order and
     // a Starknet felt stores its bytes in big-endian order
-    let mut felt_bytes = element.to_bytes_be();
-    felt_bytes.reverse();
-    Scalar::from_bytes_mod_order(felt_bytes)
+    let felt_bytes = element.to_bytes_be();
+    Scalar::from_be_bytes_mod_order(&felt_bytes)
 }
 
 /// Convert from a Starknet felt to a BigUint
@@ -191,7 +138,7 @@ pub fn u128_to_starknet_felt(val: u128) -> StarknetFieldElement {
 
 #[cfg(test)]
 mod field_helper_test {
-    use curve25519_dalek::scalar::Scalar;
+    use mpc_stark::algebra::scalar::Scalar;
     use num_bigint::{BigInt, BigUint};
     use rand::{thread_rng, Rng, RngCore};
     use starknet::core::types::FieldElement as StarknetFieldElement;
