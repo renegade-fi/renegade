@@ -17,5 +17,5 @@ dns-lookup = "1.0"
 futures = "0.3"
 inventory = "0.3"
 itertools = "0.10.5"
-mpc-ristretto = "0.1"
+mpc-ristretto = { workspace = true }
 num-bigint = { version = "0.4", features = ["rand"] }
