@@ -2,119 +2,24 @@
 pub mod field;
 pub mod mocks;
 
-use std::{cell::RefCell, net::SocketAddr, rc::Rc};
+use std::net::SocketAddr;
 
-use curve25519_dalek::scalar::Scalar;
 use dns_lookup::lookup_host;
 use futures::executor::block_on;
-use itertools::Itertools;
-use mpc_ristretto::{
-    authenticated_scalar::AuthenticatedScalar,
-    beaver::SharedValueSource,
-    fabric::AuthenticatedMpcFabric,
-    mpc_scalar::scalar_to_u64,
-    network::{MpcNetwork, QuicTwoPartyNet},
-};
+use mpc_stark::{network::QuicTwoPartyNet, MpcFabric};
 
-use self::mocks::{MockMpcNet, PartyIDBeaverSource};
+use self::mocks::PartyIDBeaverSource;
 
-/**
- * Types
- */
-#[allow(type_alias_bounds)]
-pub type SharedFabric<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> =
-    Rc<RefCell<AuthenticatedMpcFabric<N, S>>>;
+/// The size of MPC network to allocate by default
+pub const DEFAULT_MPC_SIZE_HINT: usize = 1_000_000;
 
-/**
- * Helpers
- */
-
-/// Helper to share a plaintext u64 value with the peer over a fabric
-pub fn share_plaintext_u64<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    value: u64,
-    owning_party: u64,
-    fabric: SharedFabric<N, S>,
-) -> u64 {
-    scalar_to_u64(&share_plaintext_scalar(
-        Scalar::from(value),
-        owning_party,
-        fabric,
-    ))
-}
-
-/// Helper to share a batch of plaintext u64s with the peer over the fabric
-pub fn batch_share_plaintext_u64<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    values: &[u64],
-    owning_party: u64,
-    fabric: SharedFabric<N, S>,
-) -> Vec<u64> {
-    batch_share_plaintext_scalar(
-        &values.iter().cloned().map(Scalar::from).collect_vec(),
-        owning_party,
-        fabric,
-    )
-    .iter()
-    .map(scalar_to_u64)
-    .collect_vec()
-}
-
-/// Helper to share a plaintext value with the peer over a fabric
-///
-/// This method is inefficient, but practical for tests
-pub fn share_plaintext_scalar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    value: Scalar,
-    owning_party: u64,
-    fabric: SharedFabric<N, S>,
-) -> Scalar {
-    fabric
-        .as_ref()
-        .borrow()
-        .allocate_private_scalar(owning_party, value)
-        .unwrap()
-        .open()
-        .unwrap()
-        .to_scalar()
-}
-
-/// Helper to share a batch of plaintext values with the peer over a fabric
-///
-/// As above, this method is relatively inefficient, but okay for tests
-pub fn batch_share_plaintext_scalar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    values: &[Scalar],
-    owning_party: u64,
-    fabric: SharedFabric<N, S>,
-) -> Vec<Scalar> {
-    let shared_values = fabric
-        .as_ref()
-        .borrow()
-        .batch_allocate_private_scalars(owning_party, values)
-        .unwrap();
-
-    AuthenticatedScalar::batch_open(&shared_values)
-        .unwrap()
-        .iter()
-        .map(|val| val.to_scalar())
-        .collect::<Vec<_>>()
-}
-
-/// Mocks out an MPC fabric, unlike the method below, no actual communication channel is
-/// created. The method below returns a fabric to be used in integration tests.
-pub fn mock_mpc_fabric(party_id: u64) -> SharedFabric<MockMpcNet, PartyIDBeaverSource> {
-    Rc::new(RefCell::new(AuthenticatedMpcFabric::new_with_network(
-        party_id,
-        Rc::new(RefCell::new(MockMpcNet::default())),
-        Rc::new(RefCell::new(PartyIDBeaverSource::new(party_id))),
-    )))
-}
+// -----------
+// | Helpers |
+// -----------
 
 /// Sets up a basic MPC fabric between two parties using the QUIC transport and
 /// the beaver triplet source defined above
-pub fn setup_mpc_fabric(
-    party_id: u64,
-    local_port: u64,
-    peer_port: u64,
-    docker: bool,
-) -> Rc<RefCell<AuthenticatedMpcFabric<QuicTwoPartyNet, PartyIDBeaverSource>>> {
+pub fn setup_mpc_fabric(party_id: u64, local_port: u64, peer_port: u64, docker: bool) -> MpcFabric {
     // Listen on 0.0.0.0 (all network interfaces) with the given port
     // We do this because listening on localhost when running in a container points to
     // the container's loopback interface, not the docker bridge
@@ -147,13 +52,6 @@ pub fn setup_mpc_fabric(
 
     block_on(net.connect()).unwrap();
 
-    // Share the global mac key (hardcoded to Scalar(15))
-    let net_ref = Rc::new(RefCell::new(net));
-    let beaver_source = Rc::new(RefCell::new(PartyIDBeaverSource::new(party_id)));
-
-    Rc::new(RefCell::new(AuthenticatedMpcFabric::new_with_network(
-        party_id,
-        net_ref,
-        beaver_source,
-    )))
+    let beaver_source = PartyIDBeaverSource::new(party_id);
+    MpcFabric::new_with_size_hint(DEFAULT_MPC_SIZE_HINT, net, beaver_source)
 }
