@@ -4,13 +4,10 @@ use ark_crypto_primitives::sponge::{
     poseidon::{PoseidonConfig, PoseidonSponge},
     CryptographicSponge,
 };
-use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
+use mpc_stark::algebra::scalar::Scalar;
 
-use crate::{
-    constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3},
-    fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField},
-};
+use crate::constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3};
 
 /// Hash the input using a Poseidon hash with default parameters
 ///
@@ -19,28 +16,20 @@ use crate::{
 ///
 /// We require that the input be castable to a vector of u64s; this is to
 /// match the hashes defined in the ZK circuitry
-pub fn poseidon_hash_default_params<T: Into<Vec<u64>>>(val: T) -> DalekRistrettoField {
-    let hashable_values: Vec<u64> = val.into();
-    let arkworks_input = hashable_values
-        .into_iter()
-        .map(DalekRistrettoField::from)
-        .collect_vec();
-
+pub fn poseidon_hash_default_params<T: Into<Scalar>>(val: Vec<T>) -> Scalar {
+    let input = val.into_iter().map(|x| x.into().inner()).collect_vec();
     let mut arkworks_hasher = PoseidonSponge::new(&default_poseidon_params());
-    for val in arkworks_input.iter() {
-        arkworks_hasher.absorb(val)
+    for val in input.into_iter() {
+        arkworks_hasher.absorb(&val)
     }
 
-    arkworks_hasher.squeeze_field_elements(1 /* num_elements */)[0]
+    let out: Scalar::Field = arkworks_hasher.squeeze_field_elements(1 /* num_elements */)[0];
+    out.into()
 }
 
 /// Compute the hash of the randomness of a given wallet
 pub fn compute_poseidon_hash(values: &[Scalar]) -> Scalar {
-    let mut hasher = PoseidonSponge::new(&default_poseidon_params());
-    hasher.absorb(&values.iter().map(scalar_to_prime_field).collect_vec());
-
-    let out: DalekRistrettoField = hasher.squeeze_field_elements(1 /* num_elements */)[0];
-    prime_field_to_scalar(&out)
+    poseidon_hash_default_params(values.to_vec())
 }
 
 /// Returns a default set of arkworks params
@@ -49,7 +38,7 @@ pub fn compute_poseidon_hash(values: &[Scalar]) -> Scalar {
 ///     \alpha = 5; i.e. the s-box is x^5 \mod p. This was chosen because:
 ///     for the prime field used in Ristretto, gcd(3, p-1) = 3
 ///     whereas gcd(5, p-1) = 1, making x^5 (mod p) invertible.
-pub fn default_poseidon_params() -> PoseidonConfig<DalekRistrettoField> {
+pub fn default_poseidon_params() -> PoseidonConfig<Scalar::Field> {
     PoseidonConfig::new(
         8,                              /* full_rounds */
         56,                             /* partial_rounds */
@@ -63,7 +52,7 @@ pub fn default_poseidon_params() -> PoseidonConfig<DalekRistrettoField> {
 
 /// Compute a chained Poseidon hash of the given length from the given seed
 pub fn evaluate_hash_chain(seed: Scalar, length: usize) -> Vec<Scalar> {
-    let mut seed = scalar_to_prime_field(&seed);
+    let mut seed = seed.inner();
     let mut res = Vec::with_capacity(length);
 
     let poseidon_config = default_poseidon_params();
@@ -74,7 +63,7 @@ pub fn evaluate_hash_chain(seed: Scalar, length: usize) -> Vec<Scalar> {
         hasher.absorb(&seed);
         seed = hasher.squeeze_field_elements(1 /* num_elements */)[0];
 
-        res.push(prime_field_to_scalar(&seed));
+        res.push(Scalar::from(seed));
     }
 
     res
