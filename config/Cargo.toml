@@ -1,0 +1,20 @@
+[package]
+name = "config"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# === Networking === #
+libp2p = { workspace = true }
+
+# === Workspace Dependencies === #
+common = { path = "../common" }
+
+# === Misc Dependencies === #
+base64 = "0.13"
+clap = { version = "3.2.8", features = ["derive"] }
+ed25519-dalek = { version = "1.0.1", features = ["serde"] }
+rand_core = "0.5"
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = "0.5.9"
