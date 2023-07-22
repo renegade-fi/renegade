@@ -11,11 +11,15 @@ name = "integration_helpers"
 path = "src/lib.rs"
 
 [dependencies]
+# === Runtime + Networking === #
 async-trait = "0.1"
-curve25519-dalek = "2"
 dns-lookup = "1.0"
 futures = "0.3"
+
+# === Cryptography + Arithmetic === #
+mpc-stark = { workspace = true }
+num-bigint = { version = "0.4", features = ["rand"] }
+
+# === Misc Dependencies === #
 inventory = "0.3"
 itertools = "0.10.5"
-mpc-ristretto = { workspace = true }
-num-bigint = { version = "0.4", features = ["rand"] }
