@@ -1,0 +1,8 @@
+[package]
+name = "util"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# === Networking === #
+libp2p = { workspace = true }
