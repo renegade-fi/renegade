@@ -3,9 +3,8 @@
 #![allow(missing_docs)]
 
 use memoize::memoize;
+use mpc_stark::algebra::scalar::Scalar;
 use num_bigint::BigUint;
-
-use crate::fields::DalekRistrettoField;
 
 /// Below are:
 ///     1. The MDS matrix (https://en.wikipedia.org/wiki/MDS_matrix) used in between SBoxes
@@ -21,7 +20,7 @@ use crate::fields::DalekRistrettoField;
 ///     python3 calc_round_numbers.py
 /// from the scripts above and taking the output for t = 3, \alpha = 5
 #[memoize]
-pub fn POSEIDON_MDS_MATRIX_T_3() -> Vec<Vec<DalekRistrettoField>> {
+pub fn POSEIDON_MDS_MATRIX_T_3() -> Vec<Vec<Scalar::Field>> {
     vec![
         vec![
             field_element_from_hex_string(
@@ -61,7 +60,7 @@ pub fn POSEIDON_MDS_MATRIX_T_3() -> Vec<Vec<DalekRistrettoField>> {
 
 /// Round constants for t = 3 (2-1 hash)
 #[memoize]
-pub fn POSEIDON_ROUND_CONSTANTS_T_3() -> Vec<Vec<DalekRistrettoField>> {
+pub fn POSEIDON_ROUND_CONSTANTS_T_3() -> Vec<Vec<Scalar::Field>> {
     vec![
         vec![
             field_element_from_hex_string(
@@ -773,8 +772,8 @@ pub fn POSEIDON_ROUND_CONSTANTS_T_3() -> Vec<Vec<DalekRistrettoField>> {
 /// Converts a literal hexadecimal string to a field element through BigUint
 /// this function should only ever be called on the constants above, so we panic
 /// if parsing fails
-fn field_element_from_hex_string(byte_string: &[u8]) -> DalekRistrettoField {
-    DalekRistrettoField::from(BigUint::parse_bytes(byte_string, 16 /* radix */).unwrap())
+fn field_element_from_hex_string(byte_string: &[u8]) -> Scalar::Field {
+    Scalar::Field::from(BigUint::parse_bytes(byte_string, 16 /* radix */).unwrap())
 }
 
 #[cfg(test)]
