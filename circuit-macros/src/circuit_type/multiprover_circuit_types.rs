@@ -6,14 +6,13 @@ use syn::{parse_quote, Generics, ItemImpl, ItemStruct, Path};
 
 use crate::circuit_type::{
     build_deserialize_method, build_modified_struct_from_associated_types, ident_with_suffix,
-    mpc_types::{build_mpc_generics, with_mpc_generics},
     new_ident,
 };
 
 use super::{
-    build_commitment_randomness_method, build_serialize_method, filter_generics,
-    ident_strip_prefix, ident_with_generics, impl_clone_by_fields, merge_generics,
-    mpc_types::MPC_TYPE_PREFIX, path_from_ident,
+    build_commitment_randomness_method, build_serialize_method, ident_strip_prefix,
+    ident_with_generics, impl_clone_by_fields, merge_generics, mpc_types::MPC_TYPE_PREFIX,
+    path_from_ident,
 };
 
 /// The name of the trait that multiprover circuit base types implement
@@ -40,8 +39,10 @@ const FROM_MPC_COMMS_METHOD: &str = "from_mpc_commitments";
 /// The `to_mpc_commitments` method on the `MultiproverCircuitCommitmentType` trait
 const TO_MPC_COMMS_METHOD: &str = "to_mpc_commitments";
 
-/// The `AuthenticatedCompressedRistretto` type
-const MPC_COMM_TYPE_NAME: &str = "AuthenticatedCompressedRistretto";
+/// The `AuthenticatedScalarResult` type
+const MPC_RANDOMNESS_TYPE_NAME: &str = "AuthenticatedScalarResult";
+/// The `AuthenticatedStarkPointOpenResult` type
+const MPC_COMM_TYPE_NAME: &str = "AuthenticatedStarkPointOpenResult";
 
 /// The suffix that is appended to variable types
 pub(crate) const VAR_SUFFIX: &str = "Var";
@@ -53,23 +54,13 @@ pub(crate) const COMM_SUFFIX: &str = "Commitment";
 // -----------
 
 /// Build the generic used for the variable type
-pub(crate) fn build_multiprover_var_generics() -> Generics {
-    parse_quote!(<L: MpcLinearCombinationLike<N, S>>)
-}
-
-/// Build the multiprover generics to attach to an implementation
 pub(crate) fn build_multiprover_generics() -> Generics {
-    parse_quote!(<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombinationLike<N, S>>)
-}
-
-/// Add multiprover variable generics to a given identifier
-pub(crate) fn with_multiprover_var_generics(ident: Ident) -> Path {
-    parse_quote!(#ident<L>)
+    parse_quote!(<L: MpcLinearCombinationLike>)
 }
 
 /// Add multiprover generics to a given identifier
 pub(crate) fn with_multiprover_generics(ident: Ident) -> Path {
-    parse_quote!(#ident<N, S, L>)
+    parse_quote!(#ident<L>)
 }
 
 // --------------------------
@@ -97,12 +88,10 @@ pub(crate) fn build_multiprover_circuit_types(
 /// Build an `impl MultiproverCircuitBaseType` block
 fn build_base_type_impl(mpc_type: &ItemStruct) -> TokenStream2 {
     let base_generics = mpc_type.generics.clone();
-    let base_type_generics = filter_generics(base_generics.clone(), build_mpc_generics());
-    let var_associated_generics = build_multiprover_var_generics();
-    let var_type_generics = merge_generics(build_mpc_generics(), build_multiprover_var_generics());
+    let var_type_generics = build_multiprover_generics();
     let where_clause = mpc_type.generics.where_clause.clone();
 
-    let trait_name = with_mpc_generics(new_ident(MULTIPROVER_BASE_TRAIT_NAME));
+    let trait_name = path_from_ident(new_ident(MULTIPROVER_BASE_TRAIT_NAME));
     let mpc_type_name = ident_with_generics(mpc_type.ident.clone(), base_generics.clone());
 
     let base_type_associated_name = new_ident(MULTIPROVER_BASE_TYPE_ASSOCIATED_NAME);
@@ -111,12 +100,12 @@ fn build_base_type_impl(mpc_type: &ItemStruct) -> TokenStream2 {
 
     let derived_base_type_ident = ident_with_generics(
         ident_strip_prefix(&mpc_type.ident.to_string(), MPC_TYPE_PREFIX),
-        base_type_generics,
+        base_generics.clone(),
     );
 
     let derived_var_type_ident = ident_with_generics(
         ident_with_suffix(&mpc_type.ident.to_string(), VAR_SUFFIX),
-        merge_generics(var_type_generics, base_generics.clone()),
+        merge_generics(var_type_generics.clone(), base_generics.clone()),
     );
     let derived_comm_type_ident = ident_with_generics(
         ident_with_suffix(&mpc_type.ident.to_string(), COMM_SUFFIX),
@@ -124,15 +113,18 @@ fn build_base_type_impl(mpc_type: &ItemStruct) -> TokenStream2 {
     );
 
     // Build the `commitment_randomness` method
-    let commitment_randomness_method =
-        build_commitment_randomness_method(mpc_type, trait_name.clone());
+    let commitment_randomness_method = build_commitment_randomness_method(
+        mpc_type,
+        trait_name.clone(),
+        path_from_ident(new_ident(MPC_RANDOMNESS_TYPE_NAME)),
+    );
 
     let impl_block: ItemImpl = parse_quote! {
         impl #base_generics #trait_name for #mpc_type_name
             #where_clause
         {
             type #base_type_associated_name = #derived_base_type_ident;
-            type #var_type_associated_name #var_associated_generics = #derived_var_type_ident;
+            type #var_type_associated_name #var_type_generics = #derived_var_type_ident;
             type #comm_type_associated_name = #derived_comm_type_ident;
 
             #commitment_randomness_method
@@ -146,9 +138,9 @@ fn build_authenticated_var_type(mpc_type: &ItemStruct) -> TokenStream2 {
     let generics = mpc_type.generics.clone();
     let new_name = ident_with_suffix(&mpc_type.ident.to_string(), VAR_SUFFIX);
 
-    let multiprover_base_trait_name = with_mpc_generics(new_ident(MULTIPROVER_BASE_TRAIT_NAME));
+    let multiprover_base_trait_name = path_from_ident(new_ident(MULTIPROVER_BASE_TRAIT_NAME));
     let base_type_var_associated_name =
-        with_multiprover_var_generics(new_ident(MULTIPROVER_BASE_VAR_ASSOCIATED_NAME));
+        with_multiprover_generics(new_ident(MULTIPROVER_BASE_VAR_ASSOCIATED_NAME));
 
     let multiprover_var_type = build_modified_struct_from_associated_types(
         mpc_type,
@@ -203,10 +195,10 @@ fn build_multiprover_var_type_impl(var_type: &ItemStruct) -> TokenStream2 {
 
 /// Build the multiprover circuit commitment type
 fn build_authenticated_comm_type(mpc_type: &ItemStruct) -> TokenStream2 {
-    let generics = merge_generics(build_mpc_generics(), mpc_type.generics.clone());
+    let generics = mpc_type.generics.clone();
     let new_name = ident_with_suffix(&mpc_type.ident.to_string(), COMM_SUFFIX);
 
-    let multiprover_base_trait_name = with_mpc_generics(new_ident(MULTIPROVER_BASE_TRAIT_NAME));
+    let multiprover_base_trait_name = path_from_ident(new_ident(MULTIPROVER_BASE_TRAIT_NAME));
     let base_type_comm_associated_name = new_ident(MULTIPROVER_BASE_COMM_ASSOCIATED_NAME);
 
     let multiprover_comm_type = build_modified_struct_from_associated_types(
@@ -230,20 +222,20 @@ fn build_authenticated_comm_type(mpc_type: &ItemStruct) -> TokenStream2 {
 
 /// Build a `impl MultiproverCircuitCommitmentType` block
 fn build_multiprover_comm_type_impl(comm_type: &ItemStruct, mpc_type: &ItemStruct) -> TokenStream2 {
-    let impl_generics = merge_generics(build_mpc_generics(), mpc_type.generics.clone());
+    let impl_generics = mpc_type.generics.clone();
     let where_clause = mpc_type.generics.where_clause.clone();
 
-    let trait_name = with_mpc_generics(new_ident(MULTIPROVER_COMM_TRAIT_NAME));
+    let trait_name = path_from_ident(new_ident(MULTIPROVER_COMM_TRAIT_NAME));
     let comm_type_name = ident_with_generics(comm_type.ident.clone(), impl_generics.clone());
 
     let base_commitment_type = ident_with_generics(
         ident_strip_prefix(&comm_type.ident.to_string(), MPC_TYPE_PREFIX),
-        filter_generics(mpc_type.generics.clone(), build_mpc_generics()),
+        mpc_type.generics.clone(),
     );
     let associated_comm_type_name = new_ident(BASE_COMM_TYPE_ASSOCIATED_NAME);
 
     // Build a deserialization method from a list of shared commitments
-    let mpc_comm_type = with_mpc_generics(new_ident(MPC_COMM_TYPE_NAME));
+    let mpc_comm_type = path_from_ident(new_ident(MPC_COMM_TYPE_NAME));
     let from_mpc_comms_method = build_deserialize_method(
         new_ident(FROM_MPC_COMMS_METHOD),
         mpc_comm_type.clone(),
