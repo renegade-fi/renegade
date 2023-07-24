@@ -1,12 +1,12 @@
 //! Builds MPC-related types from a base type and implements relevant traits
 
-use proc_macro2::{Ident, TokenStream as TokenStream2};
+use proc_macro2::TokenStream as TokenStream2;
 use quote::ToTokens;
-use syn::{parse_quote, Generics, ItemImpl, ItemStruct, Path};
+use syn::{parse_quote, ImplItemMethod, ItemImpl, ItemStruct};
 
 use crate::circuit_type::{
     build_deserialize_method, build_serialize_method, ident_with_generics, ident_with_prefix,
-    merge_generics, new_ident,
+    new_ident,
 };
 
 use super::{
@@ -29,7 +29,7 @@ const MPC_NATIVE_TYPE_ASSOCIATED_NAME: &str = "NativeType";
 /// The method name that deserializes an authenticated type from a serialized Scalar repr
 const FROM_AUTHENTICATED_SCALARS_METHOD_NAME: &str = "from_authenticated_scalars";
 /// The type that is deserialized from for an MPC type
-const MPC_TYPE_SERIALIZED_IDENT: &str = "AuthenticatedScalar";
+const MPC_TYPE_SERIALIZED_IDENT: &str = "AuthenticatedScalarResult";
 /// The method name that serializes an authenticated type to a vector of allocated Scalars
 const TO_AUTHENTICATED_SCALARS_METHOD_NAME: &str = "to_authenticated_scalars";
 /// The method name that serialized an authenticated type to a vector of allocated scalars
@@ -57,33 +57,20 @@ pub(crate) fn build_mpc_types(
     res
 }
 
-/// Build the generics used in MPC types
-pub(crate) fn build_mpc_generics() -> Generics {
-    parse_quote! {
-        <N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
-    }
-}
-
-/// Append <N, S> to an identifier
-pub(crate) fn with_mpc_generics(ident: Ident) -> Path {
-    parse_quote!(#ident<N, S>)
-}
-
 /// Build an `impl MpcBaseType` struct for the base type
 fn build_mpc_base_type_impl(base_struct: &ItemStruct) -> TokenStream2 {
     let generics = base_struct.generics.clone();
     let where_clause = generics.where_clause.clone();
-    let impl_generics = merge_generics(build_mpc_generics(), generics.clone());
 
-    let base_struct_ident = ident_with_generics(base_struct.ident.clone(), generics);
+    let base_struct_ident = ident_with_generics(base_struct.ident.clone(), generics.clone());
     let mpc_type_name = ident_with_prefix(&base_struct.ident.to_string(), MPC_TYPE_PREFIX);
-    let mpc_type_name = ident_with_generics(mpc_type_name, impl_generics.clone());
+    let mpc_type_name = ident_with_generics(mpc_type_name, generics.clone());
 
-    let mpc_base_type_trait = with_mpc_generics(new_ident(MPC_BASE_TYPE_TRAIT_NAME));
+    let mpc_base_type_trait = new_ident(MPC_BASE_TYPE_TRAIT_NAME);
     let mpc_allocated_type = new_ident(MPC_ALLOCATED_TYPE_ASSOCIATED_NAME);
 
     parse_quote! {
-        impl #impl_generics #mpc_base_type_trait for #base_struct_ident
+        impl #generics #mpc_base_type_trait for #base_struct_ident
             #where_clause
         {
             type #mpc_allocated_type = #mpc_type_name;
@@ -100,16 +87,16 @@ fn build_mpc_type(
     let base_type_name = base_struct.ident.clone();
     let new_name_ident = ident_with_prefix(&base_type_name.to_string(), MPC_TYPE_PREFIX);
 
-    let mpc_base_trait_ident = with_mpc_generics(new_ident(MPC_BASE_TYPE_TRAIT_NAME));
+    let mpc_base_trait_ident = new_ident(MPC_BASE_TYPE_TRAIT_NAME);
     let mpc_type_associated_ident = new_ident(MPC_ALLOCATED_TYPE_ASSOCIATED_NAME);
 
-    let generics = merge_generics(build_mpc_generics(), base_struct.generics.clone());
+    let generics = base_struct.generics.clone();
     let mpc_type = build_modified_struct_from_associated_types(
         base_struct,
         new_name_ident,
         vec![],
         generics,
-        mpc_base_trait_ident,
+        path_from_ident(mpc_base_trait_ident),
         path_from_ident(mpc_type_associated_ident),
     );
 
@@ -134,23 +121,36 @@ fn build_mpc_type(
 fn build_mpc_type_impl(mpc_type: &ItemStruct, base_type: &ItemStruct) -> TokenStream2 {
     let generics = base_type.generics.clone();
     let where_clause = generics.where_clause.clone();
-    let impl_generics = merge_generics(build_mpc_generics(), generics.clone());
 
-    let mpc_type_trait_name = with_mpc_generics(new_ident(MPC_ALLOC_TYPE_TRAIT_NAME));
-    let mpc_type_ident = ident_with_generics(mpc_type.ident.clone(), impl_generics.clone());
+    let mpc_type_trait_name = path_from_ident(new_ident(MPC_ALLOC_TYPE_TRAIT_NAME));
+    let mpc_type_ident = ident_with_generics(mpc_type.ident.clone(), generics.clone());
 
     // This ident is used for the `type NativeType` associated type
     let native_type_ident = new_ident(MPC_NATIVE_TYPE_ASSOCIATED_NAME);
-    let base_type_ident = ident_with_generics(base_type.ident.clone(), generics);
+    let base_type_ident = ident_with_generics(base_type.ident.clone(), generics.clone());
 
-    let authenticated_scalar_type =
-        ident_with_generics(new_ident(MPC_TYPE_SERIALIZED_IDENT), build_mpc_generics());
+    let authenticated_scalar_type = path_from_ident(new_ident(MPC_TYPE_SERIALIZED_IDENT));
     let from_auth_scalars_method = build_deserialize_method(
         new_ident(FROM_AUTHENTICATED_SCALARS_METHOD_NAME),
         authenticated_scalar_type.clone(),
         mpc_type_trait_name.clone(),
         mpc_type,
     );
+
+    // Build a `fabric` method
+    let first_element = &mpc_type
+        .fields
+        .iter()
+        .next()
+        .unwrap()
+        .ident
+        .clone()
+        .unwrap();
+    let fabric_method: ImplItemMethod = parse_quote! {
+        fn fabric(&self) -> &MpcFabric {
+            &self.#first_element.fabric()
+        }
+    };
 
     // Build a `to_authenticated_scalars` method
     let to_auth_scalars_method = build_serialize_method(
@@ -167,11 +167,12 @@ fn build_mpc_type_impl(mpc_type: &ItemStruct, base_type: &ItemStruct) -> TokenSt
     );
 
     let impl_block: ItemImpl = parse_quote! {
-        impl #impl_generics #mpc_type_trait_name for #mpc_type_ident
+        impl #generics #mpc_type_trait_name for #mpc_type_ident
             #where_clause
         {
             type #native_type_ident = #base_type_ident;
 
+            #fabric_method
             #from_auth_scalars_method
             #to_auth_scalars_method
             #to_auth_scalars_linkable_method

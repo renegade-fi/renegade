@@ -17,12 +17,12 @@ use super::{
     build_base_type_impl, build_commitment_randomness_method,
     build_modified_struct_from_associated_types, build_serde_methods, ident_with_generics,
     merge_generics,
-    mpc_types::{build_mpc_generics, build_mpc_types, with_mpc_generics, MPC_TYPE_PREFIX},
+    mpc_types::{build_mpc_types, MPC_TYPE_PREFIX},
     multiprover_circuit_types::build_multiprover_generics,
     path_from_ident,
     singleprover_circuit_types::{
-        build_var_type_generics, CIRCUIT_BASE_TYPE_TRAIT_NAME, COMM_TYPE_ASSOCIATED_NAME,
-        VAR_TYPE_ASSOCIATED_NAME,
+        build_var_type_generics, CIRCUIT_BASE_TYPE_TRAIT_NAME, COMM_RANDOMNESS_TYPE,
+        COMM_TYPE_ASSOCIATED_NAME, VAR_TYPE_ASSOCIATED_NAME,
     },
     FROM_SCALARS_METHOD_NAME, SCALAR_TYPE_IDENT, TO_SCALARS_LINKING_METHOD_NAME,
 };
@@ -199,8 +199,11 @@ fn build_circuit_base_type_impl(linkable_type: &ItemStruct) -> TokenStream2 {
     );
 
     // Build the implementation of `commitment_randomness`
-    let commitment_randomness_fn =
-        build_commitment_randomness_method(linkable_type, path_from_ident(trait_name.clone()));
+    let commitment_randomness_fn = build_commitment_randomness_method(
+        linkable_type,
+        path_from_ident(trait_name.clone()),
+        path_from_ident(new_ident(COMM_RANDOMNESS_TYPE)),
+    );
 
     let impl_block: ItemImpl = parse_quote! {
         impl #generics #trait_name for #type_name
@@ -222,7 +225,6 @@ fn build_multiprover_type(linkable_type: &ItemStruct) -> TokenStream2 {
     // as AuthenticatedLinkableTypeVar and AuthenticatedLinkableTypeCommitment, whereas we would prefer them
     // to be AuthenticatedTypeVar and AuthenticatedTypeCommitment
     let var_generics = build_multiprover_generics();
-    let comm_generics = build_mpc_generics();
     let authenticated_linkable_name =
         ident_with_prefix(&linkable_type.ident.to_string(), MPC_TYPE_PREFIX);
     let linkable_var_name =
@@ -238,7 +240,7 @@ fn build_multiprover_type(linkable_type: &ItemStruct) -> TokenStream2 {
         &base_type_name.to_string(),
         VAR_TYPE_SUFFIX,
     ));
-    let base_comm_type = with_mpc_generics(ident_with_suffix(
+    let base_comm_type = path_from_ident(ident_with_suffix(
         &base_type_name.to_string(),
         COMM_TYPE_SUFFIX,
     ));
@@ -254,7 +256,7 @@ fn build_multiprover_type(linkable_type: &ItemStruct) -> TokenStream2 {
 
     parse_quote! {
         type #linkable_var_name #var_generics = #base_var_type;
-        type #linkable_comm_name #comm_generics = #base_comm_type;
+        type #linkable_comm_name = #base_comm_type;
 
         #mpc_type_impl
     }
