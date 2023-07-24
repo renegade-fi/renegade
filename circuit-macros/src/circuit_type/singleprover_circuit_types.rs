@@ -34,8 +34,10 @@ pub(crate) const COMM_TYPE_ASSOCIATED_NAME: &str = "CommitmentType";
 const FROM_COMMS_METHOD_NAME: &str = "from_commitments";
 /// The method name for converting a commitment type to a serialized commitment vector
 const TO_COMMS_METHOD_NAME: &str = "to_commitments";
+/// The single prover commitment randomness type name
+pub(crate) const COMM_RANDOMNESS_TYPE: &str = "Scalar";
 /// The type that a `from_commitments` method implementation converts from
-const FROM_COMMS_ITER_TYPE: &str = "CompressedRistretto";
+const FROM_COMMS_ITER_TYPE: &str = "StarkPoint";
 /// The method name for converting from serialized variables to a variable type
 const FROM_VARS_METHOD_NAME: &str = "from_vars";
 /// The method name for converting to serialized variables from a variable type
@@ -117,8 +119,11 @@ fn build_circuit_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
     );
 
     // Build the body of the `commitment_randomness` method
-    let commitment_randomness_impl =
-        build_commitment_randomness_method(base_type, path_from_ident(trait_ident.clone()));
+    let commitment_randomness_impl = build_commitment_randomness_method(
+        base_type,
+        path_from_ident(trait_ident.clone()),
+        path_from_ident(new_ident(COMM_RANDOMNESS_TYPE)),
+    );
     let impl_block: ItemImpl = parse_quote! {
         impl #generics #trait_ident for #base_name <#base_type_params>
             #where_clause
