@@ -32,6 +32,7 @@ use num_bigint::BigUint;
 use rand::thread_rng;
 use serde::{de::Error as SerdeErr, Deserialize, Deserializer, Serialize, Serializer};
 use wallet::{Wallet, WalletShare};
+// use wallet::{Wallet, WalletShare};
 
 // -------------
 // | Constants |
