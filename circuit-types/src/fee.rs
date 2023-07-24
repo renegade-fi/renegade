@@ -14,14 +14,17 @@ use crate::{
     },
 };
 use circuit_macros::circuit_type;
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use mpc_bulletproof::r1cs::{LinearCombination, Variable};
-use mpc_ristretto::{
-    authenticated_ristretto::AuthenticatedCompressedRistretto,
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+use mpc_stark::{
+    algebra::{
+        authenticated_scalar::AuthenticatedScalarResult,
+        authenticated_stark_point::AuthenticatedStarkPointOpenResult, scalar::Scalar,
+        stark_curve::StarkPoint,
+    },
+    MpcFabric,
 };
 use num_bigint::BigUint;
-use rand_core::{CryptoRng, RngCore};
+use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 // -----------------

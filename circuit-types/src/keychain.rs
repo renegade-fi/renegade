@@ -1,20 +1,22 @@
 //! Defines the constraint system types for the set of keys a wallet holds
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-use std::{iter, ops::Add};
+use std::ops::Add;
 
 use circuit_macros::circuit_type;
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
+use crypto::fields::get_scalar_field_modulus;
 use ed25519_dalek::PublicKey as DalekKey;
-
-use itertools::Itertools;
 use mpc_bulletproof::r1cs::{LinearCombination, Variable};
-use mpc_ristretto::{
-    authenticated_ristretto::AuthenticatedCompressedRistretto,
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+use mpc_stark::{
+    algebra::{
+        authenticated_scalar::AuthenticatedScalarResult,
+        authenticated_stark_point::AuthenticatedStarkPointOpenResult, scalar::Scalar,
+        stark_curve::StarkPoint,
+    },
+    MpcFabric,
 };
 use num_bigint::BigUint;
-use rand_core::{CryptoRng, RngCore};
+use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -145,51 +147,35 @@ impl<const KEY_WORDS: usize> Default for NonNativeKey<KEY_WORDS> {
 }
 
 impl<const KEY_WORDS: usize> NonNativeKey<KEY_WORDS> {
-    /// Split a biguint into scalar words
-    fn split_biguint_into_words(val: &BigUint) -> [Scalar; KEY_WORDS] {
-        let mut words = Vec::new();
-        let val_bytes_le = val.to_bytes_le();
-
-        for bytes_chunk in val_bytes_le.chunks(SCALAR_MAX_BYTES) {
-            // Pad to 32 bytes to fill a `Scalar`'s buffer, though the `Scalar`'s capacity is
-            // 31 bytes as enforced by the Ristretto group modulus
-            let bytes = bytes_chunk
-                .iter()
-                .cloned()
-                .chain(iter::repeat(0u8))
-                .take(32)
-                .collect_vec();
-            let bytes_buf = bytes.try_into().unwrap();
-
-            let scalar = Scalar::from_bytes_mod_order(bytes_buf);
-            words.push(scalar);
+    /// Split a biguint into scalar words in little endian order
+    fn split_biguint_into_words(mut val: BigUint) -> [Scalar; KEY_WORDS] {
+        let scalar_mod = get_scalar_field_modulus();
+        let mut res = Vec::with_capacity(KEY_WORDS);
+        for _ in 0..KEY_WORDS {
+            let word = Scalar::from(&val % &scalar_mod);
+            val /= &scalar_mod;
+            res.push(word);
         }
 
-        words
-            .into_iter()
-            .chain(iter::repeat(Scalar::zero()))
-            .take(KEY_WORDS)
-            .collect_vec()
-            .try_into()
-            .unwrap()
+        res.try_into().unwrap()
     }
 
     /// Re-collect the key words into a biguint
     fn combine_words_into_biguint(&self) -> BigUint {
-        let mut bytes = Vec::new();
-        for word in &self.key_words {
-            let word_bytes = word.to_bytes()[..SCALAR_MAX_BYTES].to_vec();
-            bytes.extend(word_bytes);
-        }
-
-        BigUint::from_bytes_le(&bytes)
+        let scalar_mod = get_scalar_field_modulus();
+        self.key_words
+            .iter()
+            .rev()
+            .fold(BigUint::from(0u8), |acc, word| {
+                acc * &scalar_mod + word.to_biguint()
+            })
     }
 }
 
 impl<const KEY_WORDS: usize> From<&BigUint> for NonNativeKey<KEY_WORDS> {
     fn from(val: &BigUint) -> Self {
         Self {
-            key_words: Self::split_biguint_into_words(val),
+            key_words: Self::split_biguint_into_words(val.clone()),
         }
     }
 }
@@ -268,4 +254,26 @@ pub struct PublicKeyChain {
     pub pk_root: PublicSigningKey,
     /// The public match key
     pub pk_match: PublicIdentificationKey,
+}
+
+#[cfg(test)]
+mod test {
+    use num_bigint::BigUint;
+    use rand::RngCore;
+
+    use super::NonNativeKey;
+
+    #[test]
+    fn test_nonnative_to_from_biguint() {
+        let mut rng = rand::thread_rng();
+        let mut buf = vec![0u8; 64 /* 512 bits */];
+        rng.fill_bytes(&mut buf);
+
+        // Convert to and from a nonnative key
+        let random_biguint = BigUint::from_bytes_be(&buf);
+        let key: NonNativeKey<3 /* KEY_WORDS */> = (&random_biguint).into();
+        let recovered_biguint: BigUint = (&key).into();
+
+        assert_eq!(random_biguint, recovered_biguint);
+    }
 }
