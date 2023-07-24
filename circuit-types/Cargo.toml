@@ -7,20 +7,25 @@ edition = "2021"
 
 [dependencies]
 # === Crytography === #
-curve25519-dalek = { workspace = true }
+ark-ff = "0.4"
 ed25519-dalek = "1.0.1"
-mpc-ristretto = { workspace = true }
+mpc-stark = { workspace = true }
 mpc-bulletproof = { workspace = true }
 
 # === Arithmetic === #
 bigdecimal = "0.3"
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
-rand_core = "0.5"
+rand = "0.8"
+
+# === Async + Runtime === #
+async-trait = "0.1"
+futures = "0.3"
 
 # === Workspace Crates === #
 circuit-macros = { path = "../circuit-macros" }
 constants = { path = "../constants" }
 crypto = { workspace = true }
+util = { path = "../util" }
 
 # === Misc === #
 itertools = "0.10"
@@ -31,5 +36,6 @@ serde_json = "1.0"
 
 
 [dev-dependencies]
-merlin = "2.0"
-rand = "0.8"
+merlin = { git = "https://github.com/renegade-fi/merlin" }
+test-helpers = { path = "../test-helpers" }
+tokio = { workspace = true }

@@ -6,8 +6,9 @@ use std::ops::{Add, Mul, Neg, Sub};
 
 use bigdecimal::{BigDecimal, ToPrimitive};
 use circuit_macros::circuit_type;
-use crypto::fields::{bigint_to_scalar, biguint_to_scalar, scalar_to_bigdecimal, scalar_to_bigint};
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
+use crypto::fields::{
+    bigint_to_scalar, biguint_to_scalar, scalar_to_bigdecimal, scalar_to_bigint, scalar_to_u64,
+};
 use lazy_static::lazy_static;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
@@ -15,13 +16,16 @@ use mpc_bulletproof::{
         MpcLinearCombination, MpcRandomizableConstraintSystem, MpcVariable, MultiproverError,
     },
 };
-use mpc_ristretto::{
-    authenticated_ristretto::AuthenticatedCompressedRistretto,
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource,
-    mpc_scalar::scalar_to_u64, network::MpcNetwork,
+use mpc_stark::{
+    algebra::{
+        authenticated_scalar::AuthenticatedScalarResult,
+        authenticated_stark_point::AuthenticatedStarkPointOpenResult, scalar::Scalar,
+        stark_curve::StarkPoint,
+    },
+    MpcFabric,
 };
 use num_bigint::BigUint;
-use rand_core::{CryptoRng, RngCore};
+use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
@@ -31,7 +35,7 @@ use crate::{
         MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
         MultiproverCircuitVariableType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    LinkableCommitment, SharedFabric,
+    LinkableCommitment,
 };
 
 /// The default fixed point decimal precision in bits
@@ -49,7 +53,7 @@ lazy_static! {
     /// multiplications
     pub static ref TWO_TO_NEG_M: Scalar = {
         let two_to_m_scalar = biguint_to_scalar(&TWO_TO_M);
-        two_to_m_scalar.invert()
+        two_to_m_scalar.inverse()
     };
 }
 
@@ -401,49 +405,16 @@ impl<L: LinearCombinationLike> Sub<Variable> for FixedPointVar<L> {
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedFixedPoint<N, S> {
-    /// Create an authenticated fixed-point variable from a given scalar integer
-    pub fn from_integer(val: Scalar, fabric: SharedFabric<N, S>) -> Self {
-        // Shift the scalar before allocating
-        let val_shifted = val * *TWO_TO_M_SCALAR;
-        Self {
-            repr: fabric.borrow_fabric().allocate_public_scalar(val_shifted),
-        }
-    }
-}
-
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> From<AuthenticatedScalar<N, S>>
-    for AuthenticatedFixedPoint<N, S>
-{
-    fn from(val: AuthenticatedScalar<N, S>) -> Self {
+impl From<AuthenticatedScalarResult> for AuthenticatedFixedPoint {
+    fn from(val: AuthenticatedScalarResult) -> Self {
         Self { repr: val }
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedFixedPoint<N, S> {
-    /// Create an authenticated fixed point variable from a public floating point
-    pub fn from_public_f32(val: f32, fabric: SharedFabric<N, S>) -> Self {
-        // Shift the floating point into its scalar representation
-        let shifted_val = val * (2u64.pow(DEFAULT_FP_PRECISION as u32) as f32);
-        assert_eq!(
-            shifted_val,
-            shifted_val.floor(),
-            "Given value exceeds precision of constraint system"
-        );
+impl Mul<&AuthenticatedFixedPoint> for &AuthenticatedFixedPoint {
+    type Output = AuthenticatedFixedPoint;
 
-        let scalar_repr = Scalar::from(shifted_val as u64);
-        Self {
-            repr: fabric.borrow_fabric().allocate_public_scalar(scalar_repr),
-        }
-    }
-}
-
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&AuthenticatedFixedPoint<N, S>>
-    for &AuthenticatedFixedPoint<N, S>
-{
-    type Output = AuthenticatedFixedPoint<N, S>;
-
-    fn mul(self, rhs: &AuthenticatedFixedPoint<N, S>) -> Self::Output {
+    fn mul(self, rhs: &AuthenticatedFixedPoint) -> Self::Output {
         // Multiply representations directly then reduce
         let res_repr = self.repr.clone() * rhs.repr.clone();
         AuthenticatedFixedPoint {
@@ -452,36 +423,30 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&AuthenticatedFixed
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&AuthenticatedScalar<N, S>>
-    for &AuthenticatedFixedPoint<N, S>
-{
-    type Output = AuthenticatedFixedPoint<N, S>;
+impl Mul<&AuthenticatedScalarResult> for &AuthenticatedFixedPoint {
+    type Output = AuthenticatedFixedPoint;
 
-    fn mul(self, rhs: &AuthenticatedScalar<N, S>) -> Self::Output {
+    fn mul(self, rhs: &AuthenticatedScalarResult) -> Self::Output {
         AuthenticatedFixedPoint {
             repr: self.repr.clone() * rhs,
         }
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&AuthenticatedFixedPoint<N, S>>
-    for AuthenticatedScalar<N, S>
-{
-    type Output = AuthenticatedFixedPoint<N, S>;
+impl Mul<&AuthenticatedFixedPoint> for AuthenticatedScalarResult {
+    type Output = AuthenticatedFixedPoint;
 
-    fn mul(self, rhs: &AuthenticatedFixedPoint<N, S>) -> Self::Output {
+    fn mul(self, rhs: &AuthenticatedFixedPoint) -> Self::Output {
         AuthenticatedFixedPoint {
             repr: self * rhs.repr.clone(),
         }
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&AuthenticatedFixedPoint<N, S>>
-    for &AuthenticatedFixedPoint<N, S>
-{
-    type Output = AuthenticatedFixedPoint<N, S>;
+impl Add<&AuthenticatedFixedPoint> for &AuthenticatedFixedPoint {
+    type Output = AuthenticatedFixedPoint;
 
-    fn add(self, rhs: &AuthenticatedFixedPoint<N, S>) -> Self::Output {
+    fn add(self, rhs: &AuthenticatedFixedPoint) -> Self::Output {
         AuthenticatedFixedPoint {
             repr: self.repr.clone() + rhs.repr.clone(),
         }
@@ -489,12 +454,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&AuthenticatedFixed
 }
 
 /// Add a scalar to a fixed-point
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&AuthenticatedScalar<N, S>>
-    for &AuthenticatedFixedPoint<N, S>
-{
-    type Output = AuthenticatedFixedPoint<N, S>;
+impl Add<&AuthenticatedScalarResult> for &AuthenticatedFixedPoint {
+    type Output = AuthenticatedFixedPoint;
 
-    fn add(self, rhs: &AuthenticatedScalar<N, S>) -> Self::Output {
+    fn add(self, rhs: &AuthenticatedScalarResult) -> Self::Output {
         // Shift the integer
         let rhs_shifted = *TWO_TO_M_SCALAR * rhs;
         AuthenticatedFixedPoint {
@@ -503,18 +466,16 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&AuthenticatedScala
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&AuthenticatedFixedPoint<N, S>>
-    for &AuthenticatedScalar<N, S>
-{
-    type Output = AuthenticatedFixedPoint<N, S>;
+impl Add<&AuthenticatedFixedPoint> for &AuthenticatedScalarResult {
+    type Output = AuthenticatedFixedPoint;
 
-    fn add(self, rhs: &AuthenticatedFixedPoint<N, S>) -> Self::Output {
+    fn add(self, rhs: &AuthenticatedFixedPoint) -> Self::Output {
         rhs + self
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for &AuthenticatedFixedPoint<N, S> {
-    type Output = AuthenticatedFixedPoint<N, S>;
+impl Neg for &AuthenticatedFixedPoint {
+    type Output = AuthenticatedFixedPoint;
 
     fn neg(self) -> Self::Output {
         AuthenticatedFixedPoint {
@@ -523,35 +484,29 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for &AuthenticatedF
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&AuthenticatedFixedPoint<N, S>>
-    for &AuthenticatedFixedPoint<N, S>
-{
-    type Output = AuthenticatedFixedPoint<N, S>;
+impl Sub<&AuthenticatedFixedPoint> for &AuthenticatedFixedPoint {
+    type Output = AuthenticatedFixedPoint;
 
     #[allow(clippy::suspicious_arithmetic_impl)]
-    fn sub(self, rhs: &AuthenticatedFixedPoint<N, S>) -> Self::Output {
+    fn sub(self, rhs: &AuthenticatedFixedPoint) -> Self::Output {
         self + &rhs.neg()
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&AuthenticatedScalar<N, S>>
-    for &AuthenticatedFixedPoint<N, S>
-{
-    type Output = AuthenticatedFixedPoint<N, S>;
+impl Sub<&AuthenticatedScalarResult> for &AuthenticatedFixedPoint {
+    type Output = AuthenticatedFixedPoint;
 
     #[allow(clippy::suspicious_arithmetic_impl)]
-    fn sub(self, rhs: &AuthenticatedScalar<N, S>) -> Self::Output {
+    fn sub(self, rhs: &AuthenticatedScalarResult) -> Self::Output {
         self + &rhs.neg()
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&AuthenticatedFixedPoint<N, S>>
-    for &AuthenticatedScalar<N, S>
-{
-    type Output = AuthenticatedFixedPoint<N, S>;
+impl Sub<&AuthenticatedFixedPoint> for &AuthenticatedScalarResult {
+    type Output = AuthenticatedFixedPoint;
 
     #[allow(clippy::suspicious_arithmetic_impl)]
-    fn sub(self, rhs: &AuthenticatedFixedPoint<N, S>) -> Self::Output {
+    fn sub(self, rhs: &AuthenticatedFixedPoint) -> Self::Output {
         self + &rhs.neg()
     }
 }
@@ -560,58 +515,44 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&AuthenticatedFixed
 // | Multiprover Constraint System Implementation |
 // ------------------------------------------------
 
-impl<
-        'a,
-        N: 'a + MpcNetwork + Send,
-        S: 'a + SharedValueSource<Scalar>,
-        L: MpcLinearCombinationLike<N, S>,
-    > AuthenticatedFixedPointVar<N, S, L>
-{
+impl<'a, L: MpcLinearCombinationLike> AuthenticatedFixedPointVar<L> {
     /// Constrain two authenticated fixed point variables to equal one another
-    pub fn constrain_equal<L1, CS>(&self, rhs: &AuthenticatedFixedPointVar<N, S, L1>, cs: &mut CS)
+    pub fn constrain_equal<L1, CS>(&self, rhs: &AuthenticatedFixedPointVar<L1>, cs: &mut CS)
     where
-        L1: MpcLinearCombinationLike<N, S>,
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L1: MpcLinearCombinationLike,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         cs.constrain(self.repr.clone().into() - rhs.repr.clone().into());
     }
 
     /// Convert the underlying type to an `MpcLinearCombination`
-    pub fn to_lc(self) -> AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>> {
+    pub fn to_lc(self) -> AuthenticatedFixedPointVar<MpcLinearCombination> {
         AuthenticatedFixedPointVar {
             repr: self.repr.into(),
         }
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
-    From<AuthenticatedFixedPointVar<N, S, MpcVariable<N, S>>>
-    for AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>
+impl From<AuthenticatedFixedPointVar<MpcVariable>>
+    for AuthenticatedFixedPointVar<MpcLinearCombination>
 {
-    fn from(value: AuthenticatedFixedPointVar<N, S, MpcVariable<N, S>>) -> Self {
+    fn from(value: AuthenticatedFixedPointVar<MpcVariable>) -> Self {
         AuthenticatedFixedPointVar {
             repr: value.repr.into(),
         }
     }
 }
 
-impl<
-        'a,
-        N: 'a + MpcNetwork + Send,
-        S: 'a + SharedValueSource<Scalar>,
-        L: MpcLinearCombinationLike<N, S>,
-    > AuthenticatedFixedPointVar<N, S, L>
-{
+impl<'a, L: MpcLinearCombinationLike> AuthenticatedFixedPointVar<L> {
     /// Multiply with another fixed point variable
     ///
     /// We cannot implement the `Mul` trait directly, because the variables need access
     /// to their constraint system
-    pub fn mul_fixed_point<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
+    pub fn mul_fixed_point<CS: MpcRandomizableConstraintSystem<'a>>(
         &self,
         rhs: &Self,
         cs: &mut CS,
-    ) -> Result<AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>, MultiproverError>
-    {
+    ) -> Result<AuthenticatedFixedPointVar<MpcLinearCombination>, MultiproverError> {
         let (_, _, res_repr) = cs.multiply(&self.repr.clone().into(), &rhs.repr.clone().into())?;
         Ok(AuthenticatedFixedPointVar {
             repr: *TWO_TO_NEG_M * res_repr,
@@ -623,22 +564,22 @@ impl<
         &self,
         rhs: L1,
         cs: &mut CS,
-    ) -> Result<AuthenticatedFixedPointVar<N, S, MpcVariable<N, S>>, MultiproverError>
+    ) -> Result<AuthenticatedFixedPointVar<MpcVariable>, MultiproverError>
     where
-        L1: MpcLinearCombinationLike<N, S>,
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L1: MpcLinearCombinationLike,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         let (_, _, res_repr) = cs.multiply(&self.repr.clone().into(), &rhs.into())?;
         Ok(AuthenticatedFixedPointVar { repr: res_repr })
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombinationLike<N, S>>
-    Add<AuthenticatedFixedPointVar<N, S, L>> for AuthenticatedFixedPointVar<N, S, L>
+impl<L: MpcLinearCombinationLike> Add<AuthenticatedFixedPointVar<L>>
+    for AuthenticatedFixedPointVar<L>
 {
-    type Output = AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>;
+    type Output = AuthenticatedFixedPointVar<MpcLinearCombination>;
 
-    fn add(self, rhs: AuthenticatedFixedPointVar<N, S, L>) -> Self::Output {
+    fn add(self, rhs: AuthenticatedFixedPointVar<L>) -> Self::Output {
         AuthenticatedFixedPointVar {
             repr: self.repr.into() + rhs.repr.into(),
         }
@@ -646,10 +587,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombination
 }
 
 /// Addition with field elements (integer representation)
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombinationLike<N, S>> Add<L>
-    for AuthenticatedFixedPointVar<N, S, L>
-{
-    type Output = AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>;
+impl<L: MpcLinearCombinationLike> Add<L> for AuthenticatedFixedPointVar<L> {
+    type Output = AuthenticatedFixedPointVar<MpcLinearCombination>;
 
     fn add(self, rhs: L) -> Self::Output {
         // Shift the integer into a fixed point representation
@@ -661,24 +600,16 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombination
 }
 
 /// Addition with field elements, fixed-point on the rhs
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
-    Add<AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>>
-    for MpcLinearCombination<N, S>
-{
-    type Output = AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>;
+impl Add<AuthenticatedFixedPointVar<MpcLinearCombination>> for MpcLinearCombination {
+    type Output = AuthenticatedFixedPointVar<MpcLinearCombination>;
 
-    fn add(
-        self,
-        rhs: AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>,
-    ) -> Self::Output {
+    fn add(self, rhs: AuthenticatedFixedPointVar<MpcLinearCombination>) -> Self::Output {
         rhs + self
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombinationLike<N, S>> Neg
-    for AuthenticatedFixedPointVar<N, S, L>
-{
-    type Output = AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>;
+impl<L: MpcLinearCombinationLike> Neg for AuthenticatedFixedPointVar<L> {
+    type Output = AuthenticatedFixedPointVar<MpcLinearCombination>;
 
     fn neg(self) -> Self::Output {
         AuthenticatedFixedPointVar {
@@ -687,21 +618,19 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombination
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombinationLike<N, S>>
-    Sub<AuthenticatedFixedPointVar<N, S, L>> for AuthenticatedFixedPointVar<N, S, L>
+impl<L: MpcLinearCombinationLike> Sub<AuthenticatedFixedPointVar<L>>
+    for AuthenticatedFixedPointVar<L>
 {
-    type Output = AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>;
+    type Output = AuthenticatedFixedPointVar<MpcLinearCombination>;
 
     #[allow(clippy::suspicious_arithmetic_impl)]
-    fn sub(self, rhs: AuthenticatedFixedPointVar<N, S, L>) -> Self::Output {
+    fn sub(self, rhs: AuthenticatedFixedPointVar<L>) -> Self::Output {
         self.to_lc() + rhs.neg()
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombinationLike<N, S>> Sub<L>
-    for AuthenticatedFixedPointVar<N, S, L>
-{
-    type Output = AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>;
+impl<L: MpcLinearCombinationLike> Sub<L> for AuthenticatedFixedPointVar<L> {
+    type Output = AuthenticatedFixedPointVar<MpcLinearCombination>;
 
     #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: L) -> Self::Output {
@@ -709,13 +638,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombination
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombinationLike<N, S>>
-    Sub<AuthenticatedFixedPointVar<N, S, L>> for MpcLinearCombination<N, S>
-{
-    type Output = AuthenticatedFixedPointVar<N, S, MpcLinearCombination<N, S>>;
+impl<L: MpcLinearCombinationLike> Sub<AuthenticatedFixedPointVar<L>> for MpcLinearCombination {
+    type Output = AuthenticatedFixedPointVar<MpcLinearCombination>;
 
     #[allow(clippy::suspicious_arithmetic_impl)]
-    fn sub(self, rhs: AuthenticatedFixedPointVar<N, S, L>) -> Self::Output {
+    fn sub(self, rhs: AuthenticatedFixedPointVar<L>) -> Self::Output {
         self + rhs.neg()
     }
 }
@@ -727,10 +654,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>, L: MpcLinearCombination
 #[cfg(test)]
 mod fixed_point_tests {
     use bigdecimal::{BigDecimal, FromPrimitive, Signed};
-    use crypto::fields::get_ristretto_group_modulus;
-    use crypto::fields::{scalar_to_bigdecimal, scalar_to_bigint};
-    use curve25519_dalek::scalar::Scalar;
-    use merlin::Transcript;
+    use crypto::fields::{get_scalar_field_modulus, scalar_to_bigdecimal, scalar_to_bigint};
+    use merlin::HashChainTranscript as Transcript;
     use mpc_bulletproof::{
         r1cs::{ConstraintSystem, Prover},
         PedersenGens,
@@ -914,9 +839,9 @@ mod fixed_point_tests {
             let mut expected_repr = &BigDecimal::from_f32(expected_res).unwrap()
                 * (BigInt::from(1u8) << DEFAULT_FP_PRECISION);
             if expected_repr < BigDecimal::from_i8(0).unwrap() {
-                expected_repr = (get_ristretto_group_modulus().to_bigint().unwrap()
-                    - expected_repr.to_bigint().unwrap())
-                .into();
+                expected_repr = (&get_scalar_field_modulus().to_bigint().unwrap()
+                    - &expected_repr.to_bigint().unwrap())
+                    .into();
             }
 
             // Check the representation directly, this is less prone to error

@@ -5,10 +5,10 @@
 use std::ops::Add;
 
 use circuit_macros::circuit_type;
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::r1cs::{LinearCombination, Variable};
-use rand_core::{CryptoRng, RngCore};
+use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
+use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
