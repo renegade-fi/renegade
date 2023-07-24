@@ -6,11 +6,11 @@
 // ----------------------
 
 use circuit_macros::circuit_type;
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
+use crypto::fields::scalar_to_u64;
 use mpc_bulletproof::r1cs::{LinearCombination, Variable};
-use mpc_ristretto::mpc_scalar::scalar_to_u64;
+use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
 use num_bigint::BigUint;
-use rand_core::{CryptoRng, RngCore};
+use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::traits::{
@@ -57,7 +57,7 @@ impl BaseType for ExternalTransferDirection {
 
 impl CircuitBaseType for ExternalTransferDirection {
     type VarType<L: LinearCombinationLike> = L;
-    type CommitmentType = CompressedRistretto;
+    type CommitmentType = StarkPoint;
 
     fn commitment_randomness<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Vec<Scalar> {
         vec![Scalar::random(rng)]

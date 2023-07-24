@@ -6,25 +6,25 @@
 #[cfg(test)]
 mod test {
     use circuit_macros::circuit_type;
-    use curve25519_dalek::{
-        constants::RISTRETTO_BASEPOINT_POINT, ristretto::CompressedRistretto, scalar::Scalar,
-    };
-    use integration_helpers::mpc_network::mocks::{MockMpcNet, PartyIDBeaverSource};
-    use merlin::Transcript;
+    use merlin::HashChainTranscript as Transcript;
     use mpc_bulletproof::{
         r1cs::{ConstraintSystem, LinearCombination, Prover, Variable, Verifier},
         r1cs_mpc::MpcProver,
         PedersenGens,
     };
-    use mpc_ristretto::{
-        authenticated_ristretto::AuthenticatedCompressedRistretto,
-        authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+    use mpc_stark::{
+        algebra::{
+            authenticated_scalar::AuthenticatedScalarResult,
+            authenticated_stark_point::AuthenticatedStarkPointOpenResult, scalar::Scalar,
+            stark_curve::StarkPoint,
+        },
+        MpcFabric, PARTY0,
     };
-    use rand_core::{CryptoRng, OsRng, RngCore};
+    use rand::{rngs::OsRng, thread_rng, CryptoRng, RngCore};
     use std::ops::Add;
-    use std::{cell::RefCell, rc::Rc};
+    use test_helpers::mpc_network::execute_mock_mpc;
 
-    use circuit_types::{
+    use crate::{
         traits::{
             BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType,
             LinearCombinationLike, LinkableBaseType, LinkableType, MpcBaseType,
@@ -32,7 +32,7 @@ mod test {
             MultiproverCircuitCommitmentType, MultiproverCircuitVariableType, SecretShareBaseType,
             SecretShareType, SecretShareVarType,
         },
-        LinkableCommitment, MpcFabric, SharedFabric,
+        LinkableCommitment,
     };
 
     #[circuit_type(
@@ -43,7 +43,7 @@ mod test {
         multiprover_linkable,
         secret_share
     )]
-    #[derive(Clone, Debug, Default, PartialEq, Eq)]
+    #[derive(Clone, Debug, PartialEq, Eq)]
     struct TestType {
         val: Scalar,
     }
@@ -76,7 +76,7 @@ mod test {
     fn test_circuit_base_type_implementation() {
         let a = TestType { val: Scalar::one() };
 
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let pedersen_gens = PedersenGens::default();
         let mut transcript = Transcript::new(b"test");
         let mut prover = Prover::new(&pedersen_gens, &mut transcript);
@@ -97,7 +97,7 @@ mod test {
         let callback = |_: TestTypeCommitment| {};
         let a = TestType { val: Scalar::one() };
 
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let pedersen_gens = PedersenGens::default();
         let mut transcript = Transcript::new(b"test");
         let mut prover = Prover::new(&pedersen_gens, &mut transcript);
@@ -109,90 +109,73 @@ mod test {
 
     #[tokio::test]
     async fn test_mpc_derived_type() {
-        let handle = tokio::task::spawn_blocking(|| {
-            // Setup a dummy value to allocate then open
-            let dummy = TestType {
+        // Execute an MPC that allocates the value then opens it
+        let (party0_res, party1_res) = execute_mock_mpc(|fabric| async {
+            // Create the value inside the callback so that the callback can implement `FnMut`,
+            // i.e. be called twice without taking ownership of `value` or instead requiring static
+            // lifetime bounds
+            let value = TestType {
                 val: Scalar::from(2u8),
             };
 
-            // Mock an MPC network
-            let dummy_network = Rc::new(RefCell::new(MockMpcNet::new()));
-            let dummy_network_data = vec![Scalar::one(); 100];
-            dummy_network
-                .borrow_mut()
-                .add_mock_scalars(dummy_network_data);
-            let dummy_beaver_source = Rc::new(RefCell::new(PartyIDBeaverSource::new(
-                0, /* party_id */
-            )));
+            let allocated = value.allocate(PARTY0, fabric).unwrap();
+            allocated.open().await
+        })
+        .await;
 
-            let dummy_fabric = MpcFabric::new_with_network(
-                0, /* party_id */
-                dummy_network,
-                dummy_beaver_source,
-            );
-            let shared_fabric = SharedFabric::new(dummy_fabric);
-
-            // Allocate the dummy value in the network
-            let allocated = dummy
-                .allocate(1 /* owning_party */, shared_fabric.clone())
-                .unwrap();
-
-            // Open the allocated value back to its original
-            allocated.open(shared_fabric).unwrap();
-        });
-
-        handle.await.unwrap();
+        // Verify that both parties saw the same value: `TestType { 2 }`
+        let expected_value = TestType {
+            val: Scalar::from(2u8),
+        };
+        assert_eq!(expected_value, party0_res.unwrap());
+        assert_eq!(expected_value, party1_res.unwrap());
     }
 
     #[tokio::test]
     async fn test_multiprover_derived_types() {
-        let handle = tokio::task::spawn_blocking(|| {
+        // Execute an MPC in which the value is allocated in the constraint system
+        // then opened to ensure the correct value
+        let (party0_res, party1_res) = execute_mock_mpc(|fabric| async move {
             // Setup a dummy value to allocate in the constraint system
-            let dummy = TestType {
+            let value = TestType {
                 val: Scalar::from(2u8),
             };
 
-            // Mock an MPC network
-            let dummy_network = Rc::new(RefCell::new(MockMpcNet::new()));
-            dummy_network
-                .borrow_mut()
-                .add_mock_points(vec![RISTRETTO_BASEPOINT_POINT; 100]);
-            dummy_network
-                .borrow_mut()
-                .add_mock_scalars(vec![Scalar::one(); 100]);
-
-            let dummy_beaver_source = Rc::new(RefCell::new(PartyIDBeaverSource::new(
-                0, /* party_id */
-            )));
-
-            let dummy_fabric = MpcFabric::new_with_network(
-                0, /* party_id */
-                dummy_network,
-                dummy_beaver_source,
-            );
-            let dummy_fabric = Rc::new(RefCell::new(dummy_fabric));
-            let shared_fabric = SharedFabric(dummy_fabric.clone());
-
             // Mock a shared prover
-            let pc_gens = PedersenGens::default();
-            let mut transcript = Transcript::new(b"test");
-            let mut prover = MpcProver::new_with_fabric(dummy_fabric, &mut transcript, &pc_gens);
+            let (comm, eval) = {
+                let mut rng = OsRng {};
+                let pc_gens = PedersenGens::default();
+                let transcript = Transcript::new(b"test");
+                let mut prover = MpcProver::new_with_fabric(fabric.clone(), transcript, &pc_gens);
 
-            // Make a commitment into the shared constraint system
-            let mut rng = OsRng {};
-            let dummy_allocated = dummy.allocate(0, shared_fabric).unwrap();
-            let (_, shared_comm) = dummy_allocated
-                .commit_shared(&mut rng, &mut prover)
-                .unwrap();
+                // Allocate the dummy value in the constraint system
+                let dummy_allocated = value.allocate(PARTY0, fabric.clone()).unwrap();
+                let (shared_var, shared_comm) = dummy_allocated
+                    .commit_shared(&mut rng, &mut prover)
+                    .unwrap();
 
-            // Open the commitment to its base type
-            shared_comm.open().unwrap();
-        });
+                // Evaluate the first variable in the var type
+                let vars = shared_var.to_mpc_vars();
+                let eval = prover.eval_lc(&vars[0].clone().into());
+                (shared_comm, eval)
+            }; // Explicitly drop `prover` here, it is not `Send` and cannot be held across an `await` call
 
-        // The test will fail because the dummy data does not represent actual valid secret shares or
-        // commitments. This is okay for testing the macros all that matters is that the types check
-        #[allow(unused_must_use)]
-        handle.await.unwrap_err();
+            let eval_open = eval.open_and_authenticate().await;
+            let comm_open = comm.open_and_authenticate().await;
+
+            (eval_open, comm_open)
+        })
+        .await;
+
+        let (party0_eval, party0_comm) = party0_res;
+        let (party1_eval, party1_comm) = party1_res;
+        let expected_value = TestType {
+            val: Scalar::from(2u8),
+        };
+
+        assert_eq!(party0_comm.unwrap(), party1_comm.unwrap());
+        assert_eq!(party0_eval.unwrap(), expected_value.val);
+        assert_eq!(party1_eval.unwrap(), expected_value.val);
     }
 
     #[test]
@@ -207,7 +190,7 @@ mod test {
         let mut transcript = Transcript::new(b"test");
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let (_, comm1) = linkable_type.commit_witness(&mut rng, &mut prover);
         let (_, comm2) = linkable_type.commit_witness(&mut rng, &mut prover);
 
@@ -243,7 +226,7 @@ mod test {
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
         // Allocate the secret share in the constraint system
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let _ = share.commit_witness(&mut rng, &mut prover);
     }
 
@@ -259,7 +242,7 @@ mod test {
         let mut transcript = Transcript::new(b"test");
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let (_, comm1) = share.commit_witness(&mut rng, &mut prover);
         let (_, comm2) = share.commit_witness(&mut rng, &mut prover);
 
@@ -277,7 +260,7 @@ mod test {
         let mut transcript = Transcript::new(b"test");
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let (var1, _) = share1.commit_witness(&mut rng, &mut prover);
         let (var2, _) = share2.commit_witness(&mut rng, &mut prover);
 

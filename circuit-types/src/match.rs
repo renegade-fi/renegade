@@ -8,19 +8,22 @@ use crate::{
         MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
         MultiproverCircuitVariableType,
     },
-    AuthenticatedLinkableCommitment, SharedFabric,
+    AuthenticatedLinkableCommitment,
 };
 
 use circuit_macros::circuit_type;
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use itertools::Itertools;
 use mpc_bulletproof::r1cs::{LinearCombination, Variable};
-use mpc_ristretto::{
-    authenticated_ristretto::AuthenticatedCompressedRistretto,
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+use mpc_stark::{
+    algebra::{
+        authenticated_scalar::AuthenticatedScalarResult,
+        authenticated_stark_point::AuthenticatedStarkPointOpenResult, scalar::Scalar,
+        stark_curve::StarkPoint,
+    },
+    MpcFabric,
 };
 use num_bigint::BigUint;
-use rand_core::{CryptoRng, OsRng, RngCore};
+use rand::{rngs::OsRng, CryptoRng, RngCore};
 
 /// Represents the match result of a matching MPC in the cleartext
 /// in which two tokens are exchanged
@@ -62,21 +65,16 @@ pub struct MatchResult {
     pub min_amount_order_index: u64,
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMatchResult<N, S> {
+impl AuthenticatedMatchResult {
     /// Construct a linkable type from the base, shared type
-    pub fn link_commitments(
-        self,
-        fabric: SharedFabric<N, S>,
-    ) -> AuthenticatedLinkableMatchResult<N, S> {
+    pub fn link_commitments(self, fabric: MpcFabric) -> AuthenticatedLinkableMatchResult {
         let mut rng = OsRng {};
         let self_serialized = self.to_authenticated_scalars();
         let randomness = (0..self_serialized.len())
             .map(|_| Scalar::random(&mut rng))
             .collect_vec();
 
-        let authenticated_randomness = fabric
-            .borrow_fabric()
-            .batch_allocate_preshared_scalar(&randomness);
+        let authenticated_randomness = fabric.batch_allocate_preshared_scalar(randomness);
 
         let mut authenticated_linkable_scalars = self_serialized
             .into_iter()

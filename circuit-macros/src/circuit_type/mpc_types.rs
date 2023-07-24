@@ -138,6 +138,7 @@ fn build_mpc_type_impl(mpc_type: &ItemStruct, base_type: &ItemStruct) -> TokenSt
     );
 
     // Build a `fabric` method
+    // TODO: Fold the `fabric` method into the `MpcType` trait and call out to its implementation
     let first_element = &mpc_type
         .fields
         .iter()
