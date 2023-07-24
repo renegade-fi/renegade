@@ -1,20 +1,16 @@
 [package]
-name = "integration-helpers"
+name = "test-helpers"
 version = "0.1.0"
 edition = "2021"
 description = "Helpers for setting up and running integration tests for the relayer"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[lib]
-name = "integration_helpers"
-path = "src/lib.rs"
 
 [dependencies]
 # === Runtime + Networking === #
 async-trait = "0.1"
 dns-lookup = "1.0"
 futures = "0.3"
+tokio = { workspace = true }
+tokio-condvar = "0.1"
 
 # === Cryptography + Arithmetic === #
 mpc-stark = { workspace = true }
@@ -23,3 +19,5 @@ num-bigint = { version = "0.4", features = ["rand"] }
 # === Misc Dependencies === #
 inventory = "0.3"
 itertools = "0.10.5"
+rand = { workspace = true }
+serde_json = { workspace = true }
