@@ -321,26 +321,6 @@ fn merge_generics(mut generics1: Generics, generics2: Generics) -> Generics {
     generics1
 }
 
-/// Remove the second set of generics from the first
-fn filter_generics(base: Generics, filter: Generics) -> Generics {
-    // Remove the params from the base
-    let filter_params: HashSet<Ident> = params_from_generics(filter).into_iter().collect();
-    let new_base_params: Punctuated<GenericParam, Comma> = base
-        .params
-        .clone()
-        .into_iter()
-        .filter(|param| match param {
-            GenericParam::Type(type_param) => !filter_params.contains(&type_param.ident),
-            GenericParam::Const(const_param) => !filter_params.contains(&const_param.ident),
-            _ => true, // Ignore lifetime params
-        })
-        .collect();
-
-    let mut new_generics = base;
-    new_generics.params = new_base_params;
-    new_generics
-}
-
 /// Implements a serialization function that looks like
 ///     fn #method_name(self) -> Vec<#target_type> {
 ///         vec![self.field1, self.field2, ...]
@@ -411,6 +391,7 @@ fn build_deserialize_method(
 pub(crate) fn build_commitment_randomness_method(
     base_type: &ItemStruct,
     from_trait: Path,
+    result_type: Path,
 ) -> TokenStream2 {
     // Build the body of the `commitment_randomness` method
     let commitment_randomness_ident = new_ident(COMMITMENT_RANDOMNESS_METHOD_NAME);
@@ -424,7 +405,7 @@ pub(crate) fn build_commitment_randomness_method(
     }
 
     let fn_def: ItemFn = parse_quote! {
-        fn #commitment_randomness_ident <R: RngCore + CryptoRng>(&self, r: &mut R) -> Vec<Scalar> {
+        fn #commitment_randomness_ident <R: RngCore + CryptoRng>(&self, r: &mut R) -> Vec<#result_type> {
             let mut res = Vec::new();
             #(#field_stmts)*
 
