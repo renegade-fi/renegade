@@ -1,6 +1,20 @@
 //! Groups the base type and derived types for the `Order` entity
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
+use circuit_macros::circuit_type;
+use crypto::fields::scalar_to_u64;
+use mpc_bulletproof::r1cs::{LinearCombination, Variable};
+use mpc_stark::{
+    algebra::{
+        authenticated_scalar::AuthenticatedScalarResult,
+        authenticated_stark_point::AuthenticatedStarkPointOpenResult, scalar::Scalar,
+        stark_curve::StarkPoint,
+    },
+    MpcFabric,
+};
+use num_bigint::BigUint;
+use rand::{CryptoRng, RngCore};
+use serde::{Deserialize, Serialize};
 use std::ops::Add;
 
 use crate::{
@@ -14,17 +28,6 @@ use crate::{
     },
     LinkableCommitment,
 };
-use circuit_macros::circuit_type;
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
-use mpc_bulletproof::r1cs::{LinearCombination, Variable};
-use mpc_ristretto::{
-    authenticated_ristretto::AuthenticatedCompressedRistretto,
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource,
-    mpc_scalar::scalar_to_u64, network::MpcNetwork,
-};
-use num_bigint::BigUint;
-use rand_core::{CryptoRng, RngCore};
-use serde::{Deserialize, Serialize};
 
 /// Represents the base type of an open order, including the asset pair, the amount, price,
 /// and direction
@@ -122,15 +125,15 @@ impl BaseType for OrderSide {
 
 impl CircuitBaseType for OrderSide {
     type VarType<L: LinearCombinationLike> = L;
-    type CommitmentType = CompressedRistretto;
+    type CommitmentType = StarkPoint;
 
     fn commitment_randomness<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Vec<Scalar> {
         vec![Scalar::random(rng)]
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcBaseType<N, S> for OrderSide {
-    type AllocatedType = AuthenticatedScalar<N, S>;
+impl MpcBaseType for OrderSide {
+    type AllocatedType = AuthenticatedScalarResult;
 }
 
 impl LinkableBaseType for OrderSide {

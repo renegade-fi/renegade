@@ -1,15 +1,17 @@
 //! Groups type definitions and abstractions useful in the circuitry
-#![feature(generic_const_exprs)]
-#![allow(incomplete_features)]
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
 #![deny(unsafe_code)]
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
+#![feature(future_join)]
 
 pub mod balance;
 pub mod errors;
 pub mod fee;
 pub mod fixed_point;
 pub mod keychain;
+pub mod macro_tests;
 pub mod r#match;
 pub mod merkle;
 pub mod order;
@@ -17,29 +19,17 @@ pub mod traits;
 pub mod transfers;
 pub mod wallet;
 
-use std::{
-    cell::{Ref, RefCell},
-    net::SocketAddr,
-    rc::Rc,
-};
-
 use bigdecimal::Num;
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
-use errors::MpcError;
 use fixed_point::DEFAULT_FP_PRECISION;
 use merkle::MerkleOpening;
 use mpc_bulletproof::PedersenGens;
-use mpc_ristretto::{
-    authenticated_scalar::AuthenticatedScalar,
-    beaver::SharedValueSource,
-    fabric::AuthenticatedMpcFabric,
-    network::{MpcNetwork, QuicTwoPartyNet},
-    BeaverSource,
+use mpc_stark::algebra::{
+    authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar, stark_curve::StarkPoint,
 };
 use num_bigint::BigUint;
-use rand_core::OsRng;
+use rand::thread_rng;
 use serde::{de::Error as SerdeErr, Deserialize, Deserializer, Serialize, Serializer};
 use wallet::{Wallet, WalletShare};
 
@@ -166,17 +156,15 @@ impl LinkableCommitment {
     /// Create a new linkable commitment from a given value
     pub fn new(val: Scalar) -> Self {
         // Choose a random blinder
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let randomness = Scalar::random(&mut rng);
         Self { val, randomness }
     }
 
     /// Get the Pedersen commitment to this value
-    pub fn compute_commitment(&self) -> CompressedRistretto {
+    pub fn compute_commitment(&self) -> StarkPoint {
         let pedersen_generators = PedersenGens::default();
-        pedersen_generators
-            .commit(self.val, self.randomness)
-            .compress()
+        pedersen_generators.commit(self.val, self.randomness)
     }
 }
 
@@ -193,74 +181,20 @@ impl From<LinkableCommitment> for Scalar {
 }
 
 /// A linkable commitment that has been allocated inside of an MPC fabric
-#[derive(Debug)]
-pub struct AuthenticatedLinkableCommitment<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+#[derive(Clone, Debug)]
+pub struct AuthenticatedLinkableCommitment {
     /// The underlying shared scalar
-    pub(crate) val: AuthenticatedScalar<N, S>,
+    pub(crate) val: AuthenticatedScalarResult,
     /// The randomness used to blind the commitment
-    pub(crate) randomness: AuthenticatedScalar<N, S>,
+    pub(crate) randomness: AuthenticatedScalarResult,
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone
-    for AuthenticatedLinkableCommitment<N, S>
-{
-    fn clone(&self) -> Self {
-        Self {
-            val: self.val.clone(),
-            randomness: self.randomness.clone(),
-        }
-    }
-}
-
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedLinkableCommitment<N, S> {
+impl AuthenticatedLinkableCommitment {
     /// Create a linkable commitment from a shared scalar by sampling a shared
     /// blinder
-    pub fn new(val: AuthenticatedScalar<N, S>, randomness: AuthenticatedScalar<N, S>) -> Self {
+    pub fn new(val: AuthenticatedScalarResult, randomness: AuthenticatedScalarResult) -> Self {
         Self { val, randomness }
     }
-}
-/// Type alias that curries one generic out of the concern of this implementation
-#[allow(type_alias_bounds)]
-pub type MpcFabric<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> =
-    AuthenticatedMpcFabric<N, S>;
-/// A shared fabric for multi-owner mutability
-#[derive(Debug)]
-pub struct SharedFabric<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    pub Rc<RefCell<MpcFabric<N, S>>>,
-);
-
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> SharedFabric<N, S> {
-    /// Wrap an existing fabric in a shared mutability struct
-    pub fn new(fabric: AuthenticatedMpcFabric<N, S>) -> Self {
-        Self(Rc::new(RefCell::new(fabric)))
-    }
-
-    /// Borrow the shared MPC fabric as an immutable reference
-    pub fn borrow_fabric(&self) -> Ref<MpcFabric<N, S>> {
-        self.0.as_ref().borrow()
-    }
-}
-
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for SharedFabric<N, S> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-/// Create a new MPC fabric from a high level beaver source
-pub fn new_mpc_fabric<S: SharedValueSource<Scalar>>(
-    party_id: u64,
-    peer_addr: SocketAddr,
-    beaver_source: BeaverSource<S>,
-) -> Result<AuthenticatedMpcFabric<QuicTwoPartyNet, S>, MpcError> {
-    let local_addr: SocketAddr = "192.168.0.1"
-        .parse()
-        .map_err(|_| MpcError::SetupError("invalid peer addr".to_string()))?;
-
-    let fabric = AuthenticatedMpcFabric::new(local_addr, peer_addr, beaver_source, party_id)
-        .map_err(|_| MpcError::SetupError("error connecting to peer".to_string()))?;
-
-    Ok(fabric)
 }
 
 /// Groups helpers that operate on native types; which correspond to circuitry
@@ -274,8 +208,8 @@ pub mod native_helpers {
         wallet::{Nullifier, Wallet, WalletShare, WalletShareStateCommitment},
     };
     use crypto::hash::{compute_poseidon_hash, evaluate_hash_chain};
-    use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
+    use mpc_stark::algebra::scalar::Scalar;
 
     /// Recover a wallet from blinded secret shares
     pub fn wallet_from_blinded_shares<
