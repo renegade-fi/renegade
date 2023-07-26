@@ -7,7 +7,11 @@ edition = "2021"
 bench = []
 
 [dependencies]
-ark-crypto-primitives = { version = "0.4", features = ["crh", "merkle_tree", "sponge"] }
+ark-crypto-primitives = { version = "0.4", features = [
+    "crh",
+    "merkle_tree",
+    "sponge",
+] }
 ark-ff = "0.4"
 bigdecimal = "0.3"
 bitvec = "1.0"
@@ -19,7 +23,7 @@ itertools = "0.10"
 lazy_static = "1.4"
 merlin = "2.0"
 miller_rabin = "1.1.1"
-mpc-ristretto = { git = "https://github.com/renegade-fi/MPC-Ristretto" }
+mpc-ristretto = "0.1"
 mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
 num-integer = "0.1"
@@ -37,7 +41,7 @@ chrono = "0.4"
 clap = { version = "4.0", features = ["derive"] }
 colored = "2"
 ctor = "0.1"
-criterion = { version = "0.4" } 
+criterion = { version = "0.4" }
 dns-lookup = "1.0"
 env_logger = "0.9"
 integration-helpers = { path = "../integration-helpers" }

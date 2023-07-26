@@ -35,18 +35,18 @@ itertools = "0.10"
 lazy_static = "1.4.0"
 libp2p = { version = "0.51", features = [
     "async-std",
-    "gossipsub", 
+    "gossipsub",
     "identify",
     "kad",
     "mplex",
-    "noise", 
+    "noise",
     "quic",
-    "request-response", 
+    "request-response",
     "tcp",
     "tokio",
     "websocket",
     "yamux",
-]}
+] }
 libp2p-core = { version = "0.39" }
 libp2p-kad = { version = "0.43" }
 libp2p-identity = { version = "0.1" }
@@ -54,7 +54,7 @@ libp2p-swarm = { version = "0.42" }
 libp2p-swarm-derive = { version = "0.32" }
 lru = { version = "0.8" }
 matchit = "0.7"
-mpc-ristretto = { git = "https://github.com/renegade-fi/MPC-Ristretto" }
+mpc-ristretto = "0.1"
 mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
 num-bigint = { version = "0.4.3" }
 num-traits = "0.2"

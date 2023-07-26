@@ -38,6 +38,9 @@ const FEE_START_BYTE: usize = 32 - 4;
 /// The historical offset to query blocks in for the first swap
 const BLOCK_OFFSET: u64 = 10_000;
 
+/// The polling interval for the UniswapV3 connection
+const UNI_V3_POLL_INTERVAL: u64 = 12; // seconds
+
 lazy_static! {
     // The ABI for a UniswapV3 Swap event
     static ref SWAP_EVENT_ABI: ethabi::Event = {
@@ -372,7 +375,7 @@ impl ExchangeConnection for UniswapV3Connection {
         // Start streaming events from the swap_filter.
         let mapped_stream =
             base_filter
-                .stream(Duration::new(1, 0))
+                .stream(Duration::new(UNI_V3_POLL_INTERVAL, 0))
                 .filter_map(move |swap| async move {
                     match swap {
                         Ok(swap_event) => Some(Ok(Self::midpoint_from_swap_event(
