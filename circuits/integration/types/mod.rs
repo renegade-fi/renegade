@@ -6,8 +6,8 @@ use circuit_types::{
     native_helpers::create_wallet_shares_with_randomness,
     wallet::{Wallet, WalletShare},
 };
-use curve25519_dalek::scalar::Scalar;
-use rand_core::OsRng;
+use mpc_stark::algebra::scalar::Scalar;
+use rand::rngs::OsRng;
 
 pub mod sharing;
 

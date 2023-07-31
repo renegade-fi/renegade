@@ -5,24 +5,15 @@
 mod mpc_circuits;
 mod mpc_gadgets;
 mod types;
-mod zk_circuits;
-mod zk_gadgets;
-
-use std::cell::Ref;
+// mod zk_circuits;
+// mod zk_gadgets;
 
 use chrono::Local;
-use circuit_types::{MpcFabric, SharedFabric};
 use clap::Parser;
 use env_logger::Builder;
-use integration_helpers::{
-    integration_test_main,
-    mpc_network::{mocks::PartyIDBeaverSource, setup_mpc_fabric},
-};
-use mpc_ristretto::network::QuicTwoPartyNet;
+use mpc_stark::MpcFabric;
+use test_helpers::{integration_test_main, mpc_network::setup_mpc_fabric};
 use tracing::log::LevelFilter;
-
-/// A type alias for a shared mutability wrapper around the MPC fabric
-type SharedMpcFabric = SharedFabric<QuicTwoPartyNet, PartyIDBeaverSource>;
 
 /// The arguments used for running circuits integration tests
 #[derive(Debug, Clone, Parser)]
@@ -52,24 +43,13 @@ struct CliArgs {
 #[derive(Debug, Clone)]
 struct IntegrationTestArgs {
     /// The MPC fabric to use during the course of the integration test
-    pub(crate) mpc_fabric: SharedMpcFabric,
+    pub(crate) mpc_fabric: MpcFabric,
     pub(crate) party_id: u64,
-}
-
-impl IntegrationTestArgs {
-    pub(crate) fn borrow_fabric(&self) -> Ref<MpcFabric<QuicTwoPartyNet, PartyIDBeaverSource>> {
-        self.mpc_fabric.borrow_fabric()
-    }
 }
 
 impl From<CliArgs> for IntegrationTestArgs {
     fn from(args: CliArgs) -> Self {
-        let mpc_fabric = SharedFabric(setup_mpc_fabric(
-            args.party,
-            args.port1,
-            args.port2,
-            args.docker,
-        ));
+        let mpc_fabric = setup_mpc_fabric(args.party, args.port1, args.port2, args.docker);
         let party_id = mpc_fabric.borrow_fabric().party_id();
 
         Self {

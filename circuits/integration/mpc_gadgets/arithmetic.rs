@@ -1,129 +1,112 @@
 //! Groups integration tests for arithmetic gadgets used in the MPC circuits
 
 use circuits::mpc_gadgets::arithmetic::{pow, prefix_mul, product};
-use crypto::fields::scalar_to_biguint;
-use integration_helpers::{
-    mpc_network::field::get_ristretto_group_modulus, types::IntegrationTest,
+use crypto::fields::{get_scalar_field_modulus, scalar_to_u64};
+use mpc_stark::{
+    algebra::{authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar},
+    PARTY0, PARTY1,
 };
-use mpc_ristretto::{authenticated_scalar::AuthenticatedScalar, mpc_scalar::scalar_to_u64};
 use num_bigint::BigUint;
 use rand::{thread_rng, Rng, RngCore};
+use test_helpers::{
+    mpc_network::{
+        await_result, await_result_batch, await_result_batch_with_error, await_result_with_error,
+    },
+    types::IntegrationTest,
+};
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
-use super::{check_equal, check_equal_vec};
+use super::{assert_scalar_batch_eq, assert_scalar_eq};
 
 /// Tests the product gadget
 fn test_product(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party decided on `n` values
     let n = 5;
+    let fabric = &test_args.mpc_fabric;
     let mut rng = thread_rng();
     let my_values = (0..n)
         .map(|_| (rng.gen_range(0..100)) as u64)
         .collect::<Vec<u64>>();
 
     // Share the values
-    let p1_values = test_args
-        .borrow_fabric()
-        .batch_allocate_private_u64s(0 /* owning_party */, &my_values)
-        .map_err(|err| format!("Error sharing party 0's values: {:?}", err))?;
-
-    let p2_values = test_args
-        .borrow_fabric()
-        .batch_allocate_private_u64s(1 /* owning_party */, &my_values)
-        .map_err(|err| format!("Error allocating party 1's values: {:?}", err))?;
+    let p1_values = fabric.batch_share_scalar(my_values.clone(), PARTY0);
+    let p2_values = fabric.batch_share_scalar(my_values, PARTY1);
 
     let mut all_values = Vec::new();
     all_values.append(&mut p1_values.clone());
     all_values.append(&mut p2_values.clone());
 
     // Compute the product
-    let res = product(&all_values, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error computing product: {:?}", err))?
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening and authenticating result: {:?}", err))?;
+    let res = await_result_with_error(
+        product(&all_values, test_args.mpc_fabric.clone()).open_authenticated(),
+    )?;
 
     // Open the shared values and compute the expected result
-    let p1_values_prod = AuthenticatedScalar::batch_open(&p1_values)
-        .map_err(|err| format!("Error opening p1_values: {:?}", err))?
+    let p1_values_prod = await_result_batch(&AuthenticatedScalarResult::open_batch(&p1_values))
         .iter()
-        .fold(1u64, |acc, val| acc * scalar_to_u64(&val.to_scalar()));
+        .fold(Scalar::one(), |acc, val| acc * val);
 
-    let p2_values_prod = AuthenticatedScalar::batch_open(&p2_values)
-        .map_err(|err| format!("Error opening p2_values: {:?}", err))?
+    let p2_values_prod = await_result_batch(&AuthenticatedScalarResult::open_batch(&p2_values))
         .iter()
-        .fold(1u64, |acc, val| acc * scalar_to_u64(&val.to_scalar()));
-
+        .fold(Scalar::one(), |acc, val| acc * val);
     let expected_result = p1_values_prod * p2_values_prod;
-    check_equal(&res, expected_result)?;
 
-    Ok(())
+    assert_scalar_eq(&expected_result, &res)
 }
 
 /// Tests the prefix-mul gadget
 fn test_prefix_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Compute powers of 3
     let n = 25;
+    let fabric = &test_args.mpc_fabric;
     let value = 3;
-    let shared_values = test_args
-        .borrow_fabric()
-        .batch_allocate_private_u64s(0 /* owning_party */, &vec![value; n])
-        .map_err(|err| format!("Error allocating inputs: {:?}", err))?;
+    let shared_values = fabric.batch_share_scalar(vec![value; n], PARTY0);
 
     // Run the prefix_mul gadget
-    let prefixes = prefix_mul(&shared_values, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error computing prefix products: {:?}", err))?;
+    let prefixes = prefix_mul(&shared_values, test_args.mpc_fabric.clone());
 
     // Open the prefixes and verify the result
-    let opened_prefix_products = AuthenticatedScalar::batch_open_and_authenticate(&prefixes)
-        .map_err(|err| format!("Error opening prefixes: {:?}", err))?;
+    let opened_prefix_products = await_result_batch_with_error(
+        &AuthenticatedScalarResult::open_authenticated_batch(&prefixes),
+    )?;
 
     let mut expected_result = Vec::with_capacity(n);
-    let mut acc = 1;
+    let mut acc = Scalar::one();
     for _ in 0..n {
-        acc *= value;
+        acc *= Scalar::from(value);
         expected_result.push(acc);
     }
 
-    check_equal_vec(&opened_prefix_products, &expected_result)?;
-    Ok(())
+    assert_scalar_batch_eq(&expected_result, &opened_prefix_products)
 }
 
 /// Tests the exponentiation gadget
 fn test_pow(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Party 0 selects a base and party 0 selects an exponent
+    let fabric = &test_args.mpc_fabric;
     let mut rng = thread_rng();
-    let random_base = test_args
-        .borrow_fabric()
-        .allocate_private_u64(0 /* owning_party */, rng.next_u64())
-        .map_err(|err| format!("Error sharing base: {:?}", err))?;
 
-    let random_exp = scalar_to_u64(
-        &test_args
-            .borrow_fabric()
-            .allocate_private_u64(1 /* owning_party */, rng.next_u32() as u64)
-            .map_err(|err| format!("Error sharing exponent: {:?}", err))?
-            .open_and_authenticate()
-            .map_err(|err| format!("Error opening exponent: {:?}", err))?
-            .to_scalar(),
-    );
+    let random_base = fabric.share_scalar(rng.next_u64(), PARTY0);
+    let random_exp = await_result(fabric.share_plaintext(Scalar::from(rng.next_u32()), PARTY1));
 
-    let res = pow(&random_base, random_exp, test_args.mpc_fabric.clone())
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening result: {:?}", err))?;
+    let res = await_result_with_error(
+        pow(
+            &random_base,
+            scalar_to_u64(&random_exp),
+            test_args.mpc_fabric.clone(),
+        )
+        .open_authenticated(),
+    )?;
 
     // Open the random input and compute the expected result
-    let random_base_open = random_base
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening random base: {:?}", err))?;
+    let random_base_open = await_result(random_base.open());
+    let expected_res = random_base_open.to_biguint().modpow(
+        &BigUint::from(scalar_to_u64(&random_exp)),
+        &get_scalar_field_modulus(),
+    );
 
-    let expected_res = scalar_to_biguint(&random_base_open.to_scalar())
-        .modpow(&BigUint::from(random_exp), &get_ristretto_group_modulus());
-    if scalar_to_biguint(&res.to_scalar()).ne(&expected_res) {
-        return Err(format!("Expected {:?}, got {:?}", expected_res, res));
-    }
-
-    Ok(())
+    assert_scalar_eq(&Scalar::from(expected_res), &res)
 }
 
 // Take inventory
