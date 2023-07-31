@@ -2,19 +2,16 @@
 pub mod field;
 pub mod mocks;
 
-use std::net::SocketAddr;
+use std::{fmt::Debug, net::SocketAddr};
 
 use dns_lookup::lookup_host;
-use futures::{executor::block_on, Future};
-use mpc_stark::{
-    network::{PartyId, QuicTwoPartyNet},
-    MpcFabric, PARTY0, PARTY1,
-};
-use tokio::io::duplex;
+use futures::{executor::block_on, future::join_all, Future};
+use mpc_stark::{network::QuicTwoPartyNet, MpcFabric, PARTY0, PARTY1};
+use tokio::runtime::Handle;
 
 use crate::mpc_network::mocks::MockNetwork;
 
-use self::mocks::PartyIDBeaverSource;
+use self::mocks::{PartyIDBeaverSource, UnboundedDuplexStream};
 
 /// The size of MPC network to allocate by default
 pub const DEFAULT_MPC_SIZE_HINT: usize = 1_000_000;
@@ -74,7 +71,7 @@ where
     F: FnMut(MpcFabric) -> S,
 {
     // Build a duplex stream to broker communication between the two parties
-    let (party0_stream, party1_stream) = duplex(1024 /* max_buffer_size */);
+    let (party0_stream, party1_stream) = UnboundedDuplexStream::new_duplex_pair();
     let party0_fabric = MpcFabric::new(
         MockNetwork::new(PARTY0, party0_stream),
         PartyIDBeaverSource::new(PARTY0),
@@ -98,4 +95,44 @@ where
     party1_fabric.shutdown();
 
     (party0_output, party1_output)
+}
+
+/// Await a result in a fabric, blocking the current thread
+pub fn await_result<F, T>(f: F) -> T
+where
+    F: Future<Output = T>,
+{
+    Handle::current().block_on(f)
+}
+
+/// Await a result in the fabric that may error, returning a string in place
+pub fn await_result_with_error<F, T, E>(f: F) -> Result<T, String>
+where
+    F: Future<Output = Result<T, E>>,
+    E: Debug,
+{
+    Handle::current()
+        .block_on(f)
+        .map_err(|e| format!("error awaiting result: {e:?}"))
+}
+
+/// Await a batch of results in a fabric, blocking the current thread
+pub fn await_result_batch<F, T>(f: &[F]) -> Vec<T>
+where
+    F: Future<Output = T>,
+{
+    Handle::current().block_on(futures::future::join_all(f))
+}
+
+/// Await a batch of results that may error returning a string in place
+pub fn await_result_batch_with_error<F, T, E>(f: &[F]) -> Result<Vec<T>, String>
+where
+    F: Future<Output = Result<T, E>>,
+    E: Debug,
+{
+    Handle::current()
+        .block_on(join_all(f))
+        .into_iter()
+        .collect::<Result<Vec<T>, E>>()
+        .map_err(|e| format!("error awaiting result: {e:?}"))
 }

@@ -10,7 +10,7 @@ proc-macro = true
 bench = []
 
 [dependencies]
-mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
+mpc-bulletproof = { workspace = true }
 
 proc-macro2 = "1.0.50"
 quote = "1.0.23"

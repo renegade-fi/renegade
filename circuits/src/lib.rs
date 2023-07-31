@@ -1,4 +1,5 @@
 //! Groups circuits for MPC and zero knowledge execution
+
 #![feature(generic_const_exprs)]
 #![allow(incomplete_features)]
 #![deny(missing_docs)]
@@ -11,23 +12,19 @@ use circuit_types::{
         CircuitBaseType, MultiProverCircuit, MultiproverCircuitBaseType,
         MultiproverCircuitCommitmentType, SingleProverCircuit,
     },
-    SharedFabric,
 };
-use curve25519_dalek::scalar::Scalar;
-use merlin::Transcript;
+use merlin::HashChainTranscript as Transcript;
 use mpc_bulletproof::{
     r1cs::{Prover, R1CSProof, Verifier},
-    r1cs_mpc::{MpcProver, SharedR1CSProof},
+    r1cs_mpc::{MpcProver, PartiallySharedR1CSProof},
     PedersenGens,
 };
-use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
 
-mod macro_tests;
 pub mod mpc_circuits;
 pub mod mpc_gadgets;
 mod tracing;
-pub mod zk_circuits;
-pub mod zk_gadgets;
+// pub mod zk_circuits;
+// pub mod zk_gadgets;
 
 /// The highest possible set bit for a positive scalar
 pub(crate) const POSITIVE_SCALAR_MAX_BITS: usize = 251;
@@ -77,6 +74,7 @@ macro_rules! print_multiprover_wire {
     }};
 }
 
+use mpc_stark::{algebra::scalar::Scalar, MpcFabric};
 #[allow(unused)]
 pub(crate) use print_mpc_wire;
 #[allow(unused)]
@@ -114,25 +112,23 @@ pub fn singleprover_prove<C: SingleProverCircuit>(
 
 /// Abstracts over the flow of collaboratively proving a generic circuit
 #[allow(clippy::type_complexity)]
-pub fn multiprover_prove<'a, N, S, C>(
+pub fn multiprover_prove<'a, C>(
     witness: C::Witness,
     statement: C::Statement,
-    fabric: SharedFabric<N, S>,
+    fabric: MpcFabric,
 ) -> Result<
     (
-        <C::Witness as MultiproverCircuitBaseType<N, S>>::MultiproverCommType,
-        SharedR1CSProof<N, S>,
+        <C::Witness as MultiproverCircuitBaseType>::MultiproverCommType,
+        PartiallySharedR1CSProof,
     ),
     ProverError,
 >
 where
-    N: MpcNetwork + Send,
-    S: SharedValueSource<Scalar>,
-    C: MultiProverCircuit<'a, N, S>,
+    C: MultiProverCircuit<'a>,
 {
-    let mut transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
+    let transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
     let pc_gens = PedersenGens::default();
-    let prover = MpcProver::new_with_fabric(fabric.0.clone(), &mut transcript, &pc_gens);
+    let prover = MpcProver::new_with_fabric(fabric.clone(), transcript, &pc_gens);
 
     // Prove the statement
     C::prove(witness, statement.clone(), fabric, prover)
@@ -153,17 +149,15 @@ pub fn verify_singleprover_proof<C: SingleProverCircuit>(
 }
 
 /// Abstracts over the flow of verifying a proof for a collaboratively proved circuit
-pub fn verify_collaborative_proof<'a, N, S, C>(
-    statement: <C::Statement as MultiproverCircuitBaseType<N, S>>::BaseType,
+pub fn verify_collaborative_proof<'a, C>(
+    statement: <C::Statement as MultiproverCircuitBaseType>::BaseType,
     witness_commitment: <
-        <C::Witness as MultiproverCircuitBaseType<N, S>>::MultiproverCommType as MultiproverCircuitCommitmentType<N, S>
+        <C::Witness as MultiproverCircuitBaseType>::MultiproverCommType as MultiproverCircuitCommitmentType
         >::BaseCommitType,
     proof: R1CSProof,
 ) -> Result<(), VerifierError>
 where
-    C: MultiProverCircuit<'a, N, S>,
-    N: MpcNetwork + Send,
-    S: SharedValueSource<Scalar>,
+    C: MultiProverCircuit<'a>,
 {
     // Verify the statement with a fresh transcript
     let mut verifier_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
@@ -179,10 +173,8 @@ where
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use circuit_types::{errors::VerifierError, traits::SingleProverCircuit};
-    use crypto::fields::{prime_field_to_bigint, scalar_to_bigint, DalekRistrettoField};
-    use curve25519_dalek::scalar::Scalar;
     use env_logger::{Builder, Env, Target};
-    use merlin::Transcript;
+    use merlin::HashChainTranscript as Transcript;
     use mpc_bulletproof::{
         r1cs::{Prover, Verifier},
         PedersenGens,
@@ -212,11 +204,6 @@ pub(crate) mod test_helpers {
     // -----------
     // | Helpers |
     // -----------
-
-    /// Compares a Dalek Scalar to an Arkworks field element
-    pub(crate) fn compare_scalar_to_felt(scalar: &Scalar, felt: &DalekRistrettoField) -> bool {
-        scalar_to_bigint(scalar).eq(&prime_field_to_bigint(felt))
-    }
 
     /// Abstracts over the flow of proving and verifying a circuit given
     /// a valid statement + witness assignment
