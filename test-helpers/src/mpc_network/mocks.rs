@@ -11,7 +11,13 @@ use mpc_stark::{
     network::{MpcNetwork, NetworkOutbound, PartyId},
     PARTY0,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt, DuplexStream},
+    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+};
+
+/// The maximum message length in the mock network, used for debugging
+pub const MAX_MESSAGE_LEN: u64 = 1_000_000;
 
 /// An implementation of a beaver value source that returns
 /// beaver triples (0, 0, 0) for party 0 and (1, 1, 1) for party 1
@@ -54,19 +60,62 @@ impl SharedValueSource for PartyIDBeaverSource {
     }
 }
 
+/// An unbounded duplex channel used to mock a network connection
+pub struct UnboundedDuplexStream {
+    /// The send side of the stream
+    send: UnboundedSender<NetworkOutbound>,
+    /// The receive side of the stream
+    recv: UnboundedReceiver<NetworkOutbound>,
+}
+
+impl UnboundedDuplexStream {
+    /// Create a new pair of duplex streams
+    pub fn new_duplex_pair() -> (Self, Self) {
+        let (send1, recv1) = unbounded_channel();
+        let (send2, recv2) = unbounded_channel();
+
+        (
+            Self {
+                send: send1,
+                recv: recv2,
+            },
+            Self {
+                send: send2,
+                recv: recv1,
+            },
+        )
+    }
+
+    /// Send a message on the stream
+    pub fn send(&mut self, msg: NetworkOutbound) {
+        self.send.send(msg).unwrap();
+    }
+
+    /// Recv a message from the stream
+    pub async fn recv(&mut self) -> NetworkOutbound {
+        self.recv.recv().await.unwrap()
+    }
+}
+
 /// A dummy network implementation used for unit testing
 pub struct MockNetwork {
     /// The ID of the local party
     party_id: PartyId,
+    /// The sent message number in the sequence
+    send_sequence_number: usize,
+    /// The receive message number in the sequence
+    recv_sequence_number: usize,
     /// The underlying mock network connection
-    mock_conn: DuplexStream,
+    mock_conn: UnboundedDuplexStream,
 }
 
 impl MockNetwork {
     /// Create a new mock network from one half of a duplex stream
-    pub fn new(party_id: PartyId, stream: DuplexStream) -> Self {
+    pub fn new(party_id: PartyId, stream: UnboundedDuplexStream) -> Self {
         Self {
             party_id,
+            send_sequence_number: 0,
+            recv_sequence_number: 0,
             mock_conn: stream,
         }
     }
@@ -79,40 +128,12 @@ impl MpcNetwork for MockNetwork {
     }
 
     async fn send_message(&mut self, message: NetworkOutbound) -> Result<(), MpcNetworkError> {
-        let msg_bytes = serde_json::to_vec(&message)
-            .map_err(|e| MpcNetworkError::SerializationError(e.to_string()))?;
-
-        // Write the message length first
-        self.mock_conn
-            .write_u64(msg_bytes.len() as u64)
-            .await
-            .map_err(|err| MpcNetworkError::SendError(err.to_string()))?;
-
-        // Write the byte buffer
-        self.mock_conn
-            .write_all(&msg_bytes)
-            .await
-            .map_err(|err| MpcNetworkError::SendError(err.to_string()))?;
-
+        self.mock_conn.send(message);
         Ok(())
     }
 
     async fn receive_message(&mut self) -> Result<NetworkOutbound, MpcNetworkError> {
-        // Receive the message length first
-        let msg_len = self
-            .mock_conn
-            .read_u64()
-            .await
-            .map_err(|err| MpcNetworkError::RecvError(err.to_string()))?;
-
-        let mut buf = vec![0u8; msg_len as usize];
-        self.mock_conn
-            .read_exact(&mut buf)
-            .await
-            .map_err(|err| MpcNetworkError::RecvError(err.to_string()))?;
-
-        let msg: NetworkOutbound = serde_json::from_slice(&buf)
-            .map_err(|e| MpcNetworkError::SerializationError(e.to_string()))?;
+        let msg = self.mock_conn.recv().await;
         Ok(msg)
     }
 
@@ -120,6 +141,7 @@ impl MpcNetwork for MockNetwork {
         &mut self,
         message: NetworkOutbound,
     ) -> Result<NetworkOutbound, MpcNetworkError> {
+        panic!("exchange called");
         if self.party_id() == PARTY0 {
             self.send_message(message).await?;
             self.receive_message().await

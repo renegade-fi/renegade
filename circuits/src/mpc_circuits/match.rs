@@ -2,11 +2,11 @@
 
 use circuit_types::{
     errors::MpcError, fixed_point::AuthenticatedFixedPoint, order::AuthenticatedOrder,
-    r#match::AuthenticatedMatchResult, SharedFabric, AMOUNT_BITS,
+    r#match::AuthenticatedMatchResult, AMOUNT_BITS,
 };
-use curve25519_dalek::scalar::Scalar;
-use mpc_ristretto::{
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+use mpc_stark::{
+    algebra::{authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar},
+    MpcFabric,
 };
 
 use crate::mpc_gadgets::{comparators::min, fixed_point::FixedPointMpcGadget};
@@ -20,16 +20,16 @@ use crate::mpc_gadgets::{comparators::min, fixed_point::FixedPointMpcGadget};
 /// So, if the match result is invalid, the orders don't overlap, etc; the result will
 /// never be opened, and the information never leaked. Therefore, we do not need to zero
 /// out any values in the circuit.
-pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    order1: &AuthenticatedOrder<N, S>,
-    order2: &AuthenticatedOrder<N, S>,
-    amount1: &AuthenticatedScalar<N, S>,
-    amount2: &AuthenticatedScalar<N, S>,
-    price: &AuthenticatedFixedPoint<N, S>,
-    fabric: SharedFabric<N, S>,
-) -> Result<AuthenticatedMatchResult<N, S>, MpcError> {
+pub fn compute_match(
+    order1: &AuthenticatedOrder,
+    order2: &AuthenticatedOrder,
+    amount1: &AuthenticatedScalarResult,
+    amount2: &AuthenticatedScalarResult,
+    price: &AuthenticatedFixedPoint,
+    fabric: MpcFabric,
+) -> AuthenticatedMatchResult {
     // Compute the amount and execution price that will be swapped if the orders match
-    let (min_index, min_base_amount) = min::<AMOUNT_BITS, _, _>(amount1, amount2, fabric.clone())?;
+    let (min_index, min_base_amount) = min::<AMOUNT_BITS>(amount1, amount2, fabric.clone());
 
     // The maximum of the two amounts minus the minimum of the two amounts
     let max_minus_min_amount =
@@ -38,10 +38,10 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     // The amount of quote token exchanged
     // Round down to the nearest integer value
     let quote_exchanged_fp = min_base_amount.clone() * price;
-    let quote_exchanged = FixedPointMpcGadget::as_integer(quote_exchanged_fp, fabric)?;
+    let quote_exchanged = FixedPointMpcGadget::as_integer(quote_exchanged_fp, fabric);
 
     // Zero out the orders if any of the initial checks failed
-    Ok(AuthenticatedMatchResult {
+    AuthenticatedMatchResult {
         quote_mint: order1.quote_mint.clone(),
         base_mint: order1.base_mint.clone(),
         quote_amount: quote_exchanged,
@@ -49,5 +49,5 @@ pub fn compute_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         direction: order1.side.clone(),
         max_minus_min_amount,
         min_amount_order_index: min_index,
-    })
+    }
 }

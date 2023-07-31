@@ -10,15 +10,10 @@
 //! Their poseidon implementation can be found here:
 //!     https://github.com/arkworks-rs/sponge/blob/master/src/poseidon/mod.rs
 
-use std::{cell::Ref, rc::Rc};
-
-use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
-use ark_ff::PrimeField;
-use circuit_types::{MpcFabric, SharedFabric};
-use crypto::{fields::prime_field_to_scalar, hash::default_poseidon_params};
-use curve25519_dalek::scalar::Scalar;
-use mpc_ristretto::{
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+use crypto::hash::PoseidonParams;
+use mpc_stark::{
+    algebra::{authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar},
+    MpcFabric,
 };
 
 // -----------
@@ -26,13 +21,13 @@ use mpc_ristretto::{
 // -----------
 
 /// Computes x^a using recursive doubling
-fn scalar_exp<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    x: &AuthenticatedScalar<N, S>,
+fn scalar_exp(
+    x: &AuthenticatedScalarResult,
     a: u64,
-    fabric: SharedFabric<N, S>,
-) -> AuthenticatedScalar<N, S> {
+    fabric: MpcFabric,
+) -> AuthenticatedScalarResult {
     if a == 0 {
-        fabric.borrow_fabric().allocate_public_u64(1 /* value */)
+        fabric.one_authenticated()
     } else if a == 1 {
         x.clone()
     } else if a % 2 == 1 {
@@ -44,148 +39,32 @@ fn scalar_exp<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     }
 }
 
-/// Convert Arkworks Poseidon parameterization to a Dalek Scalar compatible version
-fn convert_poseidon_params<F: PrimeField>(
-    ark_config: PoseidonConfig<F>,
-) -> PoseidonSpongeParameters {
-    PoseidonSpongeParameters::new(
-        convert_scalars_nested_vec(&ark_config.ark),
-        convert_scalars_nested_vec(&ark_config.mds),
-        ark_config.alpha,
-        ark_config.rate,
-        ark_config.capacity,
-        ark_config.full_rounds,
-        ark_config.partial_rounds,
-    )
-}
-
-/// Convert a vector of Arkworks field elements to a vector of Dalek field elements
-fn convert_scalars_nested_vec<F: PrimeField>(a: &Vec<Vec<F>>) -> Vec<Vec<Scalar>> {
-    let mut res = Vec::with_capacity(a.len());
-    for row in a.iter() {
-        let mut row_res = Vec::with_capacity(row.len());
-        for val in row.iter() {
-            row_res.push(prime_field_to_scalar(val))
-        }
-
-        res.push(row_res);
-    }
-
-    res
-}
-
-/// The parameters for the Poseidon sponge construction
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PoseidonSpongeParameters {
-    /// The round constants added to the elements in between both full and partial rounds
-    pub round_constants: Rc<Vec<Vec<Scalar>>>,
-    /// The MDS (maximum distance separable) matrix that is used as a mix layer
-    /// i.e. after the substitution box is applied and gives \vec{x} we take MDS * \vec{x}
-    pub mds_matrix: Rc<Vec<Vec<Scalar>>>,
-    /// The exponent that parameterizes the permutation; i.e. the SBox is of the form
-    ///     SBox(x) = x^\alpha (mod p)
-    pub alpha: u64,
-    /// The rate at which we hash an input, i.e. the number of field elements the sponge can
-    /// absorb in between permutations
-    pub rate: usize,
-    /// The security capacity of the sponge, the width of the state that is neither absorbed
-    /// into, nor squeezed from
-    pub capacity: usize,
-    /// The number of full rounds to use in the hasher; a full round applies the SBox to each of the
-    /// elements in the input, i.e. all 3 elements if we're using a rate t = 3
-    pub full_rounds: usize,
-    /// The number of partial rounds to use in the hasher; a partial round applies the SBox to only the
-    /// last element of the input
-    pub parital_rounds: usize,
-}
-
-impl PoseidonSpongeParameters {
-    /// Construct a new parameter object from given parameters
-    pub fn new(
-        round_constants: Vec<Vec<Scalar>>,
-        mds_matrix: Vec<Vec<Scalar>>,
-        alpha: u64,
-        rate: usize,
-        capacity: usize,
-        full_rounds: usize,
-        parital_rounds: usize,
-    ) -> Self {
-        // Validate inputs
-        let state_width = rate + capacity;
-        assert_eq!(
-            full_rounds % 2,
-            0,
-            "The number of full rounds must be divisible by two"
-        );
-        assert_eq!(
-            full_rounds + parital_rounds,
-            round_constants.len(),
-            "must have one round constant per round"
-        );
-        assert!(
-            round_constants.iter().all(|rc| rc.len() == state_width),
-            "round constants must be the same width as the state"
-        );
-        assert!(
-            mds_matrix.len() == state_width
-                && mds_matrix.iter().all(|row| row.len() == state_width),
-            "MDS matrix must be of size rate x rate ({:?} x {:?})",
-            state_width,
-            state_width
-        );
-
-        Self {
-            round_constants: Rc::new(round_constants),
-            mds_matrix: Rc::new(mds_matrix),
-            alpha,
-            rate,
-            capacity,
-            full_rounds,
-            parital_rounds,
-        }
-    }
-
-    /// Fetch the round constants for a given round
-    pub fn get_round_constant(&self, round_index: usize) -> &Vec<Scalar> {
-        &self.round_constants[round_index]
-    }
-}
-
-impl Default for PoseidonSpongeParameters {
-    fn default() -> Self {
-        let arkworks_defaults = default_poseidon_params();
-        convert_poseidon_params(arkworks_defaults)
-    }
-}
-
 /// A gadget that implements the Poseidon hash function:
 ///     https://eprint.iacr.org/2019/458.pdf
 ///
 /// TODO: This should ideally work for both AuthenticatedScalars and Scalars
 #[derive(Clone, Debug)]
-pub struct AuthenticatedPoseidonHasher<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+pub struct AuthenticatedPoseidonHasher {
     /// The parameterization of the hash function
-    params: PoseidonSpongeParameters,
+    params: PoseidonParams,
     /// The hash state
-    state: Vec<AuthenticatedScalar<N, S>>,
+    state: Vec<AuthenticatedScalarResult>,
     /// The next index in the state to being absorbing inputs at
     next_index: usize,
     /// Whether the sponge is in squeezing mode. For simplicity, we disallow
     /// the case in which a caller wishes to squeeze values and the absorb more.
     in_squeeze_state: bool,
     /// A reference to the shared MPC fabric that the computation variables are allocated in
-    fabric: SharedFabric<N, S>,
+    fabric: MpcFabric,
 }
 
 /// Native implementation, can be done outside the context of a constraint system
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHasher<N, S> {
+impl AuthenticatedPoseidonHasher {
     /// Construct a new sponge hasher
     /// TODO: Ideally we don't pass in the fabric here, this makes the gadget non-general between
     /// AuthenticatedScalar and Scalar
-    pub fn new(params: &PoseidonSpongeParameters, fabric: SharedFabric<N, S>) -> Self {
-        let initial_state = fabric
-            .borrow_fabric()
-            .allocate_zeros(params.rate + params.capacity);
+    pub fn new(params: &PoseidonParams, fabric: MpcFabric) -> Self {
+        let initial_state = fabric.zeros_authenticated(params.rate + params.capacity);
         Self {
             params: params.clone(),
             state: initial_state,
@@ -193,11 +72,6 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHa
             in_squeeze_state: false, // Start in absorb state
             fabric,
         }
-    }
-
-    /// Borrow a reference to the shared fabric
-    fn borrow_fabric(&self) -> Ref<MpcFabric<N, S>> {
-        self.fabric.borrow_fabric()
     }
 
     /// Absorb an input into the hasher state
@@ -210,7 +84,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHa
     /// the `rate`-sized state was never filled. See the implementation below.
     ///
     /// Arkworks sponge poseidon: https://github.com/arkworks-rs/sponge/blob/master/src/poseidon/mod.rs
-    pub fn absorb(&mut self, a: &AuthenticatedScalar<N, S>) {
+    pub fn absorb(&mut self, a: &AuthenticatedScalarResult) {
         assert!(
             !self.in_squeeze_state,
             "Cannot absorb from a sponge that has already been squeezed"
@@ -222,12 +96,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHa
             self.next_index = 0;
         }
 
-        self.state[self.params.capacity + self.next_index] += a;
+        self.state[self.params.capacity + self.next_index] =
+            &self.state[self.params.capacity + self.next_index] + a;
         self.next_index += 1;
     }
 
     /// Absorb a batch of scalars into the hasher
-    pub fn absorb_batch(&mut self, a: &[AuthenticatedScalar<N, S>]) {
+    pub fn absorb_batch(&mut self, a: &[AuthenticatedScalarResult]) {
         a.iter().for_each(|val| self.absorb(val));
     }
 
@@ -235,7 +110,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHa
     ///
     /// A similar approach is taken here to the one in `absorb`. Specifically, we allow this method
     /// to be called `rate` times in between permutations, to exhaust the state buffer.    pub fn squeeze(&mut self) -> Scalar {
-    pub fn squeeze(&mut self) -> AuthenticatedScalar<N, S> {
+    pub fn squeeze(&mut self) -> AuthenticatedScalarResult {
         // Once we exit the absorb state, ensure that the digest state is permuted before squeezing
         if !self.in_squeeze_state || self.next_index == self.params.rate {
             self.permute();
@@ -247,7 +122,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHa
     }
 
     /// Squeeze a batch of outputs from the hasher
-    pub fn squeeze_batch(&mut self, num_elements: usize) -> Vec<AuthenticatedScalar<N, S>> {
+    pub fn squeeze_batch(&mut self, num_elements: usize) -> Vec<AuthenticatedScalarResult> {
         (0..num_elements).map(|_| self.squeeze()).collect()
     }
 
@@ -262,7 +137,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHa
 
         // Compute partial_rounds rounds in which the sbox is applied to only the last element
         let partial_rounds_start = self.params.full_rounds / 2;
-        let partial_rounds_end = partial_rounds_start + self.params.parital_rounds;
+        let partial_rounds_end = partial_rounds_start + self.params.partial_rounds;
         for round in partial_rounds_start..partial_rounds_end {
             self.add_round_constants(round);
             self.apply_sbox(false /* full_round */);
@@ -271,7 +146,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHa
 
         // Compute another full_rounds / 2 rounds in which we apply the sbox to all elements
         let final_full_rounds_start = partial_rounds_end;
-        let final_full_rounds_end = self.params.parital_rounds + self.params.full_rounds;
+        let final_full_rounds_end = self.params.partial_rounds + self.params.full_rounds;
         for round in final_full_rounds_start..final_full_rounds_end {
             self.add_round_constants(round);
             self.apply_sbox(true /* full_round */);
@@ -281,12 +156,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHa
 
     /// Add the next round constants to the state
     fn add_round_constants(&mut self, round_index: usize) {
+        // .zip(self.params.ark(round_index))
         for (elem, round_constant) in self
             .state
             .iter_mut()
-            .zip(self.params.get_round_constant(round_index))
+            .zip(self.params.ark[round_index].iter())
         {
-            *elem += *round_constant
+            *elem = &*elem + Scalar::from(*round_constant)
         }
     }
 
@@ -307,10 +183,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHa
     /// TODO: Optimize this as well
     fn apply_mds(&mut self) {
         let mut res = Vec::with_capacity(self.params.rate);
-        for row in self.params.mds_matrix.iter() {
-            let mut row_inner_product = self.borrow_fabric().allocate_zero();
+        for row in self.params.mds.iter() {
+            let mut row_inner_product = self.fabric.zero_authenticated();
             for (a, b) in row.iter().zip(self.state.iter()) {
-                row_inner_product += a * b;
+                row_inner_product = row_inner_product + b * Scalar::from(*a);
             }
 
             res.push(row_inner_product);
@@ -326,35 +202,18 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedPoseidonHa
 #[cfg(test)]
 mod poseidon_tests {
     use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
-    use circuit_types::SharedFabric;
-    use crypto::{fields::DalekRistrettoField, hash::default_poseidon_params};
-    use integration_helpers::mpc_network::mock_mpc_fabric;
+    use crypto::hash::default_poseidon_params;
+    use itertools::Itertools;
+    use mpc_stark::{algebra::scalar::Scalar, PARTY0};
     use rand::{thread_rng, Rng, RngCore};
+    use test_helpers::mpc_network::execute_mock_mpc;
 
-    use crate::test_helpers::compare_scalar_to_felt;
-
-    use super::{AuthenticatedPoseidonHasher, PoseidonSpongeParameters};
-
-    /// Ensure that the default parameters pass the validation checks
-    #[test]
-    fn test_params() {
-        let default_params = PoseidonSpongeParameters::default();
-        PoseidonSpongeParameters::new(
-            (*default_params.round_constants).clone(),
-            (*default_params.mds_matrix).clone(),
-            default_params.alpha,
-            default_params.rate,
-            default_params.capacity,
-            default_params.full_rounds,
-            default_params.parital_rounds,
-        );
-    }
+    use super::AuthenticatedPoseidonHasher;
 
     /// Tests the input against the Arkworks implementation of the Poseidon hash
-    #[test]
-    fn test_against_arkworks() {
-        let native_parameters = PoseidonSpongeParameters::default();
-        let arkworks_params = default_poseidon_params();
+    #[tokio::test]
+    async fn test_against_arkworks() {
+        let params = default_poseidon_params();
 
         // Generate a random number of random elements
         let mut rng = thread_rng();
@@ -365,30 +224,37 @@ mod poseidon_tests {
         }
 
         // Hash and squeeze with arkworks first
-        let mut arkworks_poseidon = PoseidonSponge::new(&arkworks_params);
+        let mut arkworks_poseidon = PoseidonSponge::new(&params);
         for random_elem in random_vec.iter() {
             // Arkworks Fp256 does not implement From<u64> so we have to
             // cast to i128 first to ensure that the value is not represented as a negative
-            arkworks_poseidon.absorb(&DalekRistrettoField::from(*random_elem as i128));
+            arkworks_poseidon.absorb(&Scalar::Field::from(*random_elem as i128));
         }
 
-        let arkworks_squeezed: DalekRistrettoField =
+        let arkworks_squeezed: Scalar::Field =
             arkworks_poseidon.squeeze_field_elements(1 /* num_elements */)[0];
 
-        // Hash and squeeze in native hasher
-        let mock_fabric = mock_mpc_fabric(0 /* party_id */);
-        let mut native_poseidon =
-            AuthenticatedPoseidonHasher::new(&native_parameters, SharedFabric(mock_fabric.clone()));
-        for random_elem in random_vec.iter() {
-            native_poseidon.absorb(
-                &mock_fabric
-                    .as_ref()
-                    .borrow()
-                    .allocate_public_u64(*random_elem),
-            )
-        }
+        // Hash and squeeze in an MPC circuit
+        let (party0_res, _) = execute_mock_mpc(|fabric| {
+            let params = params.clone();
+            let random_vec = random_vec.clone();
 
-        let native_squeezed = native_poseidon.squeeze().to_scalar();
-        assert!(compare_scalar_to_felt(&native_squeezed, &arkworks_squeezed));
+            async move {
+                let mut poseidon = AuthenticatedPoseidonHasher::new(&params, fabric.clone());
+                let allocated_elems = random_vec
+                    .into_iter()
+                    .map(|elem| fabric.share_scalar(elem, PARTY0))
+                    .collect_vec();
+
+                for random_elem in allocated_elems.into_iter() {
+                    poseidon.absorb(&random_elem)
+                }
+
+                poseidon.squeeze().open().await
+            }
+        })
+        .await;
+
+        assert_eq!(party0_res, Scalar::from(arkworks_squeezed));
     }
 }
