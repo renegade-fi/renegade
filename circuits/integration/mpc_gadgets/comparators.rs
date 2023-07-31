@@ -1,260 +1,196 @@
 //! Groups integration tests for comparators
 
+use std::slice::Concat;
+
+use bigdecimal::num_traits::NumOps;
 use circuits::mpc_gadgets::comparators::{
     cond_select, cond_select_vec, eq, eq_zero, greater_than, greater_than_equal, kary_or,
     less_than, less_than_equal,
 };
-use integration_helpers::types::IntegrationTest;
-use mpc_ristretto::{authenticated_scalar::AuthenticatedScalar, mpc_scalar::scalar_to_u64};
+use crypto::fields::scalar_to_u64;
+use itertools::Itertools;
+use mpc_stark::{
+    algebra::{authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar},
+    PARTY0, PARTY1,
+};
 use rand::{seq::SliceRandom, thread_rng, Rng, RngCore};
+use test_helpers::{
+    mpc_network::{await_result, await_result_batch_with_error, await_result_with_error},
+    types::IntegrationTest,
+};
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
-use super::{check_equal, check_equal_vec};
+use super::{assert_scalar_batch_eq, assert_scalar_eq};
 
 /// Tests all the inequality comparators
 fn test_inequalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Do not use all bits to avoid overflow, for the sake of testing this is okay
+    let fabric = &test_args.mpc_fabric;
     let my_random_value = (thread_rng().next_u32() / 4) as u64;
-    let shared_a = test_args
-        .borrow_fabric()
-        .allocate_private_u64(0 /* owning_party */, my_random_value)
-        .map_err(|err| format!("Error sharing value: {:?}", err))?;
-    let shared_b = test_args
-        .borrow_fabric()
-        .allocate_private_u64(1 /* owning_party */, my_random_value)
-        .map_err(|err| format!("Error sharing value: {:?}", err))?;
 
-    let opened_a = scalar_to_u64(
-        &shared_a
-            .open_and_authenticate()
-            .map_err(|err| format!("Error opening a: {:?}", err))?
-            .to_scalar(),
-    );
-    let opened_b = scalar_to_u64(
-        &shared_b
-            .open_and_authenticate()
-            .map_err(|err| format!("Error opening shared b: {:?}", err))?
-            .to_scalar(),
-    );
+    let shared_a = fabric.share_scalar(my_random_value, PARTY0);
+    let shared_b = fabric.share_scalar(my_random_value, PARTY1);
+
+    let opened_a = scalar_to_u64(&await_result(shared_a.open()));
+    let opened_b = scalar_to_u64(&await_result(shared_b.open()));
 
     // Test <
-    let lt_result = less_than::<250, _, _>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error computing a < 0: {:?}", err))?
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening a < 0 result: {:?}", err))?;
-    let mut expected_result = (opened_a < opened_b) as u64;
+    let lt_result = await_result_with_error(
+        less_than::<250>(&shared_a, &shared_b, test_args.mpc_fabric.clone()).open_authenticated(),
+    )?;
+    let mut expected_result = opened_a < opened_b;
 
-    check_equal(&lt_result, expected_result)?;
+    assert_scalar_eq(&lt_result, &expected_result.into())?;
 
     // Test <= with equal values
-    let mut lte_result =
-        less_than_equal::<250, _, _>(&shared_a, &shared_a, test_args.mpc_fabric.clone())
-            .map_err(|err| format!("Error computing a <= a: {:?}", err))?
-            .open_and_authenticate()
-            .map_err(|err| format!("Error opening a <= a result: {:?}", err))?;
-    check_equal(&lte_result, 1)?;
+    let mut lte_result = await_result_with_error(
+        less_than_equal::<250>(&shared_a, &shared_a, test_args.mpc_fabric.clone())
+            .open_authenticated(),
+    )?;
+    assert_scalar_eq(&lte_result, &Scalar::one())?;
 
     // Test <= with random values
-    lte_result = less_than_equal::<250, _, _>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error computing a <= b: {:?}", err))?
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening a <= b result: {:?}", err))?;
-    expected_result = (opened_a <= opened_b) as u64;
-    check_equal(&lte_result, expected_result)?;
+    lte_result = await_result_with_error(
+        less_than_equal::<250>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
+            .open_authenticated(),
+    )?;
+    expected_result = opened_a <= opened_b;
+    assert_scalar_eq(&lte_result, &expected_result.into())?;
 
     // Test >
-    let gt_result = greater_than::<250, _, _>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error computing a > b: {:?}", err))?
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening a > b result: {:?}", err))?;
-    expected_result = (opened_a > opened_b) as u64;
-    check_equal(&gt_result, expected_result)?;
+    let gt_result = await_result_with_error(
+        greater_than::<250>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
+            .open_authenticated(),
+    )?;
+    expected_result = opened_a > opened_b;
+    assert_scalar_eq(&gt_result, &expected_result.into())?;
 
     // Test >= with equal values
-    let gte_result =
-        greater_than_equal::<250, _, _>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
-            .map_err(|err| format!("Error computing a >= b: {:?}", err))?
-            .open_and_authenticate()
-            .map_err(|err| format!("Error opening a >= b result: {:?}", err))?;
-    expected_result = (opened_a >= opened_b) as u64;
-    check_equal(&gte_result, expected_result)?;
+    let gte_result = await_result_with_error(
+        greater_than_equal::<250>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
+            .open_authenticated(),
+    )?;
+    expected_result = opened_a >= opened_b;
+    assert_scalar_eq(&gte_result, &expected_result.into())?;
 
     Ok(())
 }
 
 /// Tests the equality comparators
 fn test_equalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let fabric = &test_args.mpc_fabric;
     // 0 == 0
-    let shared_zero = test_args
-        .borrow_fabric()
-        .allocate_private_u64(0 /* owning_party */, 0u64)
-        .map_err(|err| format!("Error sharing zero: {:?}", err))?;
-    let mut res = eq_zero::<250, _, _>(&shared_zero, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error computing 0 == 0: {:?}", err))?
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening the result of 0 == 0: {:?}", err))?;
+    let shared_zero = fabric.zero_authenticated();
+    let mut res = await_result_with_error(
+        eq_zero::<250>(&shared_zero, test_args.mpc_fabric.clone()).open_authenticated(),
+    )?;
 
-    check_equal(&res, 1)?;
+    assert_scalar_eq(&res, &Scalar::one())?;
 
     // random == 0
     let mut rng = thread_rng();
-    let shared_random = test_args
-        .borrow_fabric()
-        .allocate_private_u64(1 /* owning_party */, rng.next_u32() as u64)
-        .map_err(|err| format!("Error sharing private random value: {:?}", err))?;
-    res = eq_zero::<250, _, _>(&shared_random, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error computing random == 0: {:?}", err))?
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening the result of random == 0: {:?}", err))?;
+    let shared_random = fabric.share_scalar(rng.next_u32() as u64, PARTY0);
+    res = await_result_with_error(
+        eq_zero::<250>(&shared_random, test_args.mpc_fabric.clone()).open_authenticated(),
+    )?;
 
-    check_equal(&res, 0)?;
+    assert_scalar_eq(&res, &Scalar::zero())?;
 
     // random_1 == random_1
-    let shared_random = test_args
-        .borrow_fabric()
-        .allocate_private_u64(0 /* owning_party */, rng.next_u32() as u64)
-        .map_err(|err| format!("Error allocating shared random value: {:?}", err))?;
-    res = eq::<250, _, _>(&shared_random, &shared_random, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error computing random_1 == random_1: {:?}", err))?
-        .open_and_authenticate()
-        .map_err(|err| {
-            format!(
-                "Error opening the result of random_1 == random_1: {:?}",
-                err
-            )
-        })?;
+    let shared_random = fabric.share_scalar(rng.next_u32(), PARTY0);
+    res = await_result_with_error(
+        eq::<250>(&shared_random, &shared_random, test_args.mpc_fabric.clone())
+            .open_authenticated(),
+    )?;
 
-    check_equal(&res, 1)?;
+    assert_scalar_eq(&res, &Scalar::one())?;
 
     // random_1 == random_2
-    let shared_random1 = test_args
-        .borrow_fabric()
-        .allocate_private_u64(0 /* owning_party */, rng.next_u32() as u64)
-        .map_err(|err| format!("Error allocating private random value: {:?}", err))?;
-    let shared_random2 = test_args
-        .borrow_fabric()
-        .allocate_private_u64(1 /* owning_party */, rng.next_u32() as u64)
-        .map_err(|err| format!("Error sharing private random value: {:?}", err))?;
+    let shared_random1 = fabric.share_scalar(rng.next_u32(), PARTY0);
+    let shared_random2 = fabric.share_scalar(rng.next_u32(), PARTY1);
 
-    res = eq::<250, _, _>(
-        &shared_random1,
-        &shared_random2,
-        test_args.mpc_fabric.clone(),
-    )
-    .map_err(|err| format!("Error computing random_1 == random_2: {:?}", err))?
-    .open_and_authenticate()
-    .map_err(|err| {
-        format!(
-            "Error opening the result of random_1 == random_2: {:?}",
-            err
+    res = await_result_with_error(
+        eq::<250>(
+            &shared_random1,
+            &shared_random2,
+            test_args.mpc_fabric.clone(),
         )
-    })?;
+        .open_authenticated(),
+    )?;
 
-    check_equal(&res, 0)?;
-
-    Ok(())
+    assert_scalar_eq(&res, &Scalar::zero())
 }
 
 /// Tests the k-ary or boolean operator
 fn test_kary_or(test_args: &IntegrationTestArgs) -> Result<(), String> {
-    // All zeros
-    let n = 10;
-    let zeros = test_args
-        .borrow_fabric()
-        .batch_allocate_private_u64s(0 /* owning_party */, &vec![0u64; n])
-        .map_err(|err| format!("Error sharing zeros: {:?}", err))?;
-    let res = kary_or(&zeros, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error computing OR(0, ..., 0): {:?}", err))?
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening OR(0, ..., 0) result: {:?}", err))?;
+    const N: usize = 10;
+    let fabric = &test_args.mpc_fabric;
 
-    check_equal(&res, 0u64)?;
+    // All zeros
+    let zeros: [AuthenticatedScalarResult; N] = fabric.zeros_authenticated(N).try_into().unwrap();
+    let res = await_result_with_error(
+        kary_or::<N>(&zeros, test_args.mpc_fabric.clone()).open_authenticated(),
+    )?;
+
+    assert_scalar_eq(&res, &Scalar::zero())?;
 
     // A random amount of ones
     let mut rng = thread_rng();
-    let mut values = (0..(rng.gen_range(1..n)))
-        .map(|_| {
-            test_args
-                .borrow_fabric()
-                .allocate_private_u64(1 /* owning_party */, 1 /* value */)
-                .unwrap()
-        })
-        .collect::<Vec<_>>();
-    values.append(
-        &mut (0..n - values.len())
-            .map(|_| {
-                test_args
-                    .borrow_fabric()
-                    .allocate_private_u64(1 /* owning_party */, 0 /* value */)
-                    .unwrap()
-            })
-            .collect::<Vec<_>>(),
-    );
+    let num_ones = rng.gen_range(1..N);
+    let mut values = [
+        vec![Scalar::one(); num_ones],
+        vec![Scalar::zero(); N - num_ones],
+    ]
+    .concat();
 
-    // Randomly permute the array and compute the k-ary or
+    // Randomly permute the array and share with the counterparty
     values.shuffle(&mut rng);
-    let res = kary_or(&values, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error computing random k-ary OR: {:?}", err))?
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening result of random k-ary OR: {:?}", err))?;
+    let shared_bits: [AuthenticatedScalarResult; N] = fabric
+        .batch_share_scalar(values, PARTY0)
+        .try_into()
+        .unwrap();
 
-    check_equal(&res, 1)?;
-
-    Ok(())
+    let res = await_result_with_error(
+        kary_or(&shared_bits, test_args.mpc_fabric.clone()).open_authenticated(),
+    )?;
+    assert_scalar_eq(&res, &Scalar::one())
 }
 
 /// Tests the conditional select gadget
 fn test_cond_select(test_args: &IntegrationTestArgs) -> Result<(), String> {
-    let value1 = test_args
-        .borrow_fabric()
-        .allocate_private_u64(0 /* owning_party */, 5 /* value */)
-        .map_err(|err| format!("Error sharing value 1: {:?}", err))?;
+    let fabric = &test_args.mpc_fabric;
+    let value1 = fabric.share_scalar(5, PARTY0);
+    let value2 = fabric.share_scalar(10, PARTY1);
 
-    let value2 = test_args
-        .borrow_fabric()
-        .allocate_private_u64(1 /* owning_party */, 10 /* value */)
-        .map_err(|err| format!("Error sharing value 2: {:?}", err))?;
+    // Select `value1`
+    let res = await_result_with_error(
+        cond_select(&fabric.one_authenticated(), &value1, &value2).open_authenticated(),
+    )?;
+    assert_scalar_eq(&res, &5.into())?;
 
-    let selector = test_args
-        .borrow_fabric()
-        .allocate_private_u64(0 /* owning_party */, 1 /* value */)
-        .map_err(|err| format!("Error sharing selector: {:?}", err))?;
-
-    let res = cond_select(&selector, &value1, &value2)
-        .map_err(|err| format!("Error computing conditional select: {:?}", err))?
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening conditional select result: {:?}", err))?;
-
-    check_equal(&res, 5)?;
-
-    Ok(())
+    // Select `value2`
+    let res = await_result_with_error(
+        cond_select(&fabric.zero_authenticated(), &value1, &value2).open_authenticated(),
+    )?;
+    assert_scalar_eq(&res, &10.into())
 }
 
 /// Tests the conditional vector select gadget
 fn test_cond_select_vector(test_args: &IntegrationTestArgs) -> Result<(), String> {
-    let values1 = test_args
-        .borrow_fabric()
-        .batch_allocate_private_u64s(0 /* owning_party */, &[1, 2, 3])
-        .map_err(|err| format!("Error sharing values1: {:?}", err))?;
-    let values2 = test_args
-        .borrow_fabric()
-        .batch_allocate_private_u64s(1 /* owning_party */, &[4, 5, 6])
-        .map_err(|err| format!("Error sharing values2: {:?}", err))?;
+    let fabric = &test_args.mpc_fabric;
+    let values1 = fabric.batch_share_scalar(vec![1, 2, 3], PARTY0);
+    let values2 = fabric.batch_share_scalar(vec![4, 5, 6], PARTY1);
 
-    let selector = test_args
-        .borrow_fabric()
-        .allocate_private_u64(0 /* owning_party */, 0 /* value */)
-        .map_err(|err| format!("Error sharing selector: {:?}", err))?;
+    // Select `values1`
+    let res = cond_select_vec(&fabric.one_authenticated(), &values1, &values2);
+    let res_open =
+        await_result_batch_with_error(&AuthenticatedScalarResult::open_authenticated_batch(&res))?;
+    assert_scalar_batch_eq(&res_open, &[1.into(), 2.into(), 3.into()]);
 
-    let res = cond_select_vec(&selector, &values1, &values2)
-        .map_err(|err| format!("Error computing cond_select_vec: {:?}", err))?;
-    let res_open = AuthenticatedScalar::batch_open_and_authenticate(&res)
-        .map_err(|err| format!("Error opening conditional select result: {:?}", err))?;
+    // Select `values2`
 
-    check_equal_vec(&res_open, &[4, 5, 6])?;
-
-    Ok(())
+    assert_scalar_batch_eq(&res_open, &[4, 5, 6])
 }
 
 inventory::submit!(TestWrapper(IntegrationTest {

@@ -1,106 +1,78 @@
 //! Groups integration tests for Poseidon hashing
 
-use ark_crypto_primitives::sponge::{
-    poseidon::{PoseidonConfig, PoseidonSponge},
-    CryptographicSponge,
-};
-use circuits::mpc_gadgets::poseidon::{AuthenticatedPoseidonHasher, PoseidonSpongeParameters};
-use crypto::fields::{prime_field_to_bigint, scalar_to_bigint};
-use curve25519_dalek::scalar::Scalar;
-use integration_helpers::types::IntegrationTest;
-use mpc_ristretto::{
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
+use circuits::mpc_gadgets::poseidon::AuthenticatedPoseidonHasher;
+use crypto::hash::{default_poseidon_params, PoseidonParams};
+use itertools::Itertools;
+use mpc_stark::{
+    algebra::{authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar},
+    PARTY0, PARTY1,
 };
 use rand::{thread_rng, RngCore};
+use test_helpers::{
+    mpc_network::{await_result, await_result_batch},
+    types::IntegrationTest,
+};
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
-use super::{
-    compare_scalar_to_felt, convert_scalars_nested_vec, scalar_to_prime_field, DalekRistrettoField,
-};
-
-/**
- * Helpers
- */
-
-/// Converts a set of Poseidon parameters encoded as scalars to parameters encoded as field elements
-pub(crate) fn convert_params(
-    native_params: &PoseidonSpongeParameters,
-) -> PoseidonConfig<DalekRistrettoField> {
-    PoseidonConfig::new(
-        native_params.full_rounds,
-        native_params.parital_rounds,
-        native_params.alpha,
-        convert_scalars_nested_vec(&native_params.mds_matrix),
-        convert_scalars_nested_vec(&native_params.round_constants),
-        native_params.rate,
-        native_params.capacity,
-    )
-}
+// -----------
+// | Helpers |
+// -----------
 
 /// Helper to check that a given result is the correct hash of the input sequence.
 ///
 /// Uses the Arkworks Poseidon implementation for comparison
-fn check_against_arkworks_hash<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    result: &AuthenticatedScalar<N, S>,
-    input_sequence: &[AuthenticatedScalar<N, S>],
-    hasher_params: &PoseidonSpongeParameters,
+fn check_against_arkworks_hash(
+    result: &AuthenticatedScalarResult,
+    input_sequence: &[AuthenticatedScalarResult],
+    hasher_params: &PoseidonParams,
 ) -> Result<(), String> {
     // Open the input sequence and cast it to field elements
-    let arkworks_input_seq = input_sequence
-        .iter()
-        .map(|val| scalar_to_prime_field(&val.open_and_authenticate().unwrap().to_scalar()))
-        .collect::<Vec<_>>();
+    let arkworks_input = await_result_batch(&AuthenticatedScalarResult::open_batch(input_sequence))
+        .into_iter()
+        .map(|s| s.inner())
+        .collect_vec();
 
     // Build the arkworks hasher
-    let mut arkworks_poseidon = PoseidonSponge::new(&convert_params(hasher_params));
-    for input_elem in arkworks_input_seq.iter() {
+    let mut arkworks_poseidon = PoseidonSponge::new(hasher_params);
+    for input_elem in arkworks_input.iter() {
         // Arkworks Fp256 does not implement From<u64> so we have to
         // cast to i128 first to ensure that the value is not represented as a negative
         arkworks_poseidon.absorb(input_elem);
     }
 
-    let arkworks_squeezed: DalekRistrettoField =
+    let arkworks_squeezed: Scalar::Field =
         arkworks_poseidon.squeeze_field_elements(1 /* num_elements */)[0];
+    let expected = Scalar::from(arkworks_squeezed);
 
     // Open the given result and compare to the computed result
-    let result_open = result
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening expected result: {:?}", err))?;
+    let result_open = await_result(result.open_authenticated())
+        .map_err(|err| format!("Error opening result: {err:?}"))?;
 
-    if !compare_scalar_to_felt(&result_open.to_scalar(), &arkworks_squeezed) {
-        return Err(format!(
-            "Expected {:?}, got {:?}",
-            scalar_to_bigint(&result_open.to_scalar()),
-            prime_field_to_bigint(&arkworks_squeezed)
-        ));
+    if result_open != expected {
+        return Err(format!("Expected {expected:?}, got {result_open:?}",));
     }
 
     Ok(())
 }
 
-/**
- * Tests
- */
+// ---------
+// | Tests |
+// ---------
 
 // Tests that a collaboratively computed poseidon hash works properly
 fn test_hash(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a random string of 5 values to hash and shares them
-    let mut rng = thread_rng();
     let n = 5;
+    let fabric = &test_args.mpc_fabric;
+    let mut rng = thread_rng();
     let my_values = (0..n).map(|_| rng.next_u64()).collect::<Vec<_>>();
 
-    let party0_values = test_args
-        .borrow_fabric()
-        .batch_allocate_private_u64s(0 /* owning_party */, &my_values)
-        .map_err(|err| format!("Error sharing party 0 values: {:?}", err))?;
+    let party0_values = fabric.batch_share_scalar(my_values.clone(), PARTY0);
+    let party1_values = fabric.batch_share_scalar(my_values, PARTY1);
 
-    let party1_values = test_args
-        .borrow_fabric()
-        .batch_allocate_private_u64s(1 /* owning_party */, &my_values)
-        .map_err(|err| format!("Error sharing party 1 values: {:?}", err))?;
-
-    let hasher_params = PoseidonSpongeParameters::default();
+    let hasher_params = default_poseidon_params();
     let mut hasher = AuthenticatedPoseidonHasher::new(&hasher_params, test_args.mpc_fabric.clone());
 
     // Interleave the party's input values

@@ -5,7 +5,7 @@ use circuit_types::{
     wallet::Wallet,
 };
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
-use integration_helpers::types::IntegrationTest;
+use test_helpers::types::IntegrationTest;
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
@@ -55,7 +55,7 @@ fn test_open_linkable_match_res(test_args: &IntegrationTestArgs) -> Result<(), S
 
     let linkable_match_res = match_res.link_commitments(fabric.clone());
     let opened = linkable_match_res
-        .open_and_authenticate(fabric)
+        .open_and_authenticate()
         .map_err(|err| format!("Error opening match result: {:?}", err))?;
 
     if opened.to_base_type() != MatchResult::default() {
