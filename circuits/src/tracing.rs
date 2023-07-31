@@ -109,14 +109,14 @@ lazy_static! {
 #[cfg(test)]
 pub mod test {
     use circuit_macros::circuit_trace;
-    use curve25519_dalek::scalar::Scalar;
     use lazy_static::lazy_static;
-    use merlin::Transcript;
+    use merlin::HashChainTranscript as Transcript;
     use mpc_bulletproof::{
         r1cs::{ConstraintSystem, Prover, Variable},
         PedersenGens,
     };
-    use rand_core::OsRng;
+    use mpc_stark::algebra::scalar::Scalar;
+    use rand::thread_rng;
     use std::{
         collections::{hash_map::Entry, HashMap},
         sync::Mutex,
@@ -141,7 +141,7 @@ pub mod test {
         #[circuit_trace(n_constraints, n_multipliers, latency)]
         pub fn apply_constraints(cs: &mut Prover) {
             // Apply dummy constraints
-            let mut rng = OsRng {};
+            let mut rng = thread_rng();
             let (_, var) = cs.commit(Scalar::one(), Scalar::random(&mut rng));
             let (_, _, mul_out) = cs.multiply(var.into(), Variable::Zero().into());
             cs.constrain(mul_out.into());
@@ -156,7 +156,7 @@ pub mod test {
     #[circuit_trace(non_associated, n_constraints, n_multipliers, latency)]
     fn non_associated_gadget(cs: &mut Prover) {
         // Apply dummy constraints
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let (_, var) = cs.commit(Scalar::one(), Scalar::random(&mut rng));
         let (_, _, mul_out) = cs.multiply(var.into(), Variable::Zero().into());
         cs.constrain(mul_out.into());

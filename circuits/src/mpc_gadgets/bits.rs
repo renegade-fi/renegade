@@ -1,13 +1,15 @@
 //! Groups logic around translating between Scalars and bits
 
-use std::cmp;
+use std::{cmp, iter};
 
-use bitvec::{order::Lsb0, slice::BitSlice};
-use circuit_types::{errors::MpcError, SharedFabric};
-use curve25519_dalek::scalar::Scalar;
-
-use mpc_ristretto::{
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
+use bitvec::{prelude::Lsb0, slice::BitSlice};
+use itertools::Itertools;
+use mpc_stark::{
+    algebra::{
+        authenticated_scalar::AuthenticatedScalarResult,
+        scalar::{Scalar, ScalarResult},
+    },
+    MpcFabric, ResultValue,
 };
 
 use crate::{scalar_2_to_m, SCALAR_MAX_BITS};
@@ -22,9 +24,7 @@ const BLINDING_FACTOR_MAX_BITS: usize = 252;
 // -----------
 
 /// Composes a sequence of `Scalar`s representing bits in little endian order into a single scalar
-pub(crate) fn scalar_from_bits_le<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    bits: &[AuthenticatedScalar<N, S>],
-) -> AuthenticatedScalar<N, S> {
+pub(crate) fn scalar_from_bits_le(bits: &[AuthenticatedScalarResult]) -> AuthenticatedScalarResult {
     assert!(
         !bits.is_empty(),
         "scalar_from_bits_le cannot be called with empty bit array"
@@ -40,48 +40,78 @@ pub(crate) fn scalar_from_bits_le<N: MpcNetwork + Send, S: SharedValueSource<Sca
 }
 
 /// Returns a list of `Scalar`s representing the `m` least significant bits of `a`
-pub(crate) fn scalar_to_bits_le(a: &Scalar) -> Vec<Scalar> {
+pub(crate) fn scalar_to_bits_le<const N: usize>(a: &ScalarResult) -> Vec<ScalarResult> {
     // The byte (8 bit) boundary we must iterate through to fetch `M` bits
-    let bits = BitSlice::<_, Lsb0>::from_slice(a.as_bytes())
-        .iter()
-        .by_vals()
-        .map(|bit| if bit { Scalar::one() } else { Scalar::zero() })
-        .collect::<Vec<Scalar>>();
+    a.fabric().new_batch_gate_op(vec![a.id()], N, |mut args| {
+        let a: Scalar = args.pop().unwrap().into();
+        let a_bigint = a.to_biguint();
 
-    bits
+        BitSlice::<_, Lsb0>::from_slice(&a_bigint.to_bytes_le())
+            .iter()
+            .by_vals()
+            .map(|bit| if bit { Scalar::one() } else { Scalar::zero() })
+            .chain(iter::repeat(Scalar::zero()))
+            .take(N)
+            .map(ResultValue::Scalar)
+            .collect_vec()
+    })
 }
 
 /// Converts the input bitvector to be exactly of the given length
 ///
 /// If the bitvector is shorter than the desired length, it is padded with
 /// zeros. If the bitvectors is longer than the desired length, it is truncated
-pub(crate) fn resize_bitvector_to_length<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    mut bitvec: Vec<AuthenticatedScalar<N, S>>,
+pub(crate) fn resize_bitvector_to_length(
+    mut bitvec: Vec<AuthenticatedScalarResult>,
     desired_length: usize,
-    fabric: SharedFabric<N, S>,
-) -> Vec<AuthenticatedScalar<N, S>> {
+    fabric: MpcFabric,
+) -> Vec<AuthenticatedScalarResult> {
     // Push allocated zeros to the end of the array
     if bitvec.len() < desired_length {
-        bitvec.append(
-            &mut fabric
-                .borrow_fabric()
-                .allocate_zeros(desired_length - bitvec.len()),
-        )
+        bitvec.append(&mut fabric.zeros_authenticated(desired_length - bitvec.len()))
     }
 
     // Truncate in the case that the desired length results in a shrinking
     bitvec[..desired_length].to_vec()
 }
 
-/**
- * Gadgets
- */
+/// Converts the input bitvector to be exactly of the given length for a public input
+///
+/// If the bitvector is shorter than the desired length, it is padded with
+/// zeros. If the bitvectors is longer than the desired length, it is truncated
+pub(crate) fn resize_bitvector_to_length_public(
+    mut bitvec: Vec<ScalarResult>,
+    desired_length: usize,
+    fabric: MpcFabric,
+) -> Vec<ScalarResult> {
+    // Push allocated zeros to the end of the array
+    let length_diff = desired_length - bitvec.len();
+    if length_diff > 0 {
+        bitvec.append(&mut (0..length_diff).map(|_| fabric.zero()).collect())
+    }
+
+    // Truncate in the case that the desired length results in a shrinking
+    bitvec[..desired_length].to_vec()
+}
+
+// -----------
+// | Gadgets |
+// -----------
 
 /// Single bit xor, assumes that `a` and `b` are scalars representing bits
-pub fn bit_xor<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    a: &AuthenticatedScalar<N, S>,
-    b: &AuthenticatedScalar<N, S>,
-) -> AuthenticatedScalar<N, S> {
+pub fn bit_xor(
+    a: &AuthenticatedScalarResult,
+    b: &AuthenticatedScalarResult,
+) -> AuthenticatedScalarResult {
+    // xor(a, b) = a + b - 2ab
+    a + b - Scalar::from(2u64) * a * b
+}
+
+/// Single bit xor where one of the bits is public
+pub fn bit_xor_public(
+    a: &AuthenticatedScalarResult,
+    b: &ScalarResult,
+) -> AuthenticatedScalarResult {
     // xor(a, b) = a + b - 2ab
     a + b - Scalar::from(2u64) * a * b
 }
@@ -89,25 +119,21 @@ pub fn bit_xor<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
 /// Bitwise Add with carry; inputs assumed to be in little endian order
 ///
 /// Returns the added bits and a bit indicating whether the value has overflowed
-pub fn bit_add<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    a: &[AuthenticatedScalar<N, S>],
-    b: &[AuthenticatedScalar<N, S>],
-    fabric: SharedFabric<N, S>,
-) -> (Vec<AuthenticatedScalar<N, S>>, AuthenticatedScalar<N, S>) {
-    bit_add_impl(
-        a,
-        b,
-        fabric.borrow_fabric().allocate_zero(), /* initial_carry */
-    )
+pub fn bit_add(
+    a: &[AuthenticatedScalarResult],
+    b: &[AuthenticatedScalarResult],
+    fabric: MpcFabric,
+) -> (Vec<AuthenticatedScalarResult>, AuthenticatedScalarResult) {
+    bit_add_impl(a, b, fabric.zero_authenticated() /* initial_carry */)
 }
 
 /// Implementation of bit_add that exposes an extra inital_carry parameter
 /// for circuit chaining
-fn bit_add_impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    a: &[AuthenticatedScalar<N, S>],
-    b: &[AuthenticatedScalar<N, S>],
-    initial_carry: AuthenticatedScalar<N, S>,
-) -> (Vec<AuthenticatedScalar<N, S>>, AuthenticatedScalar<N, S>) {
+fn bit_add_impl(
+    a: &[AuthenticatedScalarResult],
+    b: &[AuthenticatedScalarResult],
+    initial_carry: AuthenticatedScalarResult,
+) -> (Vec<AuthenticatedScalarResult>, AuthenticatedScalarResult) {
     assert_eq!(
         a.len(),
         b.len(),
@@ -127,52 +153,86 @@ fn bit_add_impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     (result, carry)
 }
 
+/// Bitwise Add with carry; inputs assumed to be in little endian order
+///
+/// Returns the added bits and a bit indicating whether the value has overflowed
+pub fn bit_add_public(
+    a: &[AuthenticatedScalarResult],
+    b: &[ScalarResult],
+    fabric: MpcFabric,
+) -> (Vec<AuthenticatedScalarResult>, AuthenticatedScalarResult) {
+    bit_add_impl_public(a, b, fabric.zero_authenticated() /* initial_carry */)
+}
+
+/// Implementation of `bit_add` that takes the second input as public values
+fn bit_add_impl_public(
+    a: &[AuthenticatedScalarResult],
+    b: &[ScalarResult],
+    initial_carry: AuthenticatedScalarResult,
+) -> (Vec<AuthenticatedScalarResult>, AuthenticatedScalarResult) {
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "bit_add takes bit representations of equal length"
+    );
+    let mut result = Vec::with_capacity(a.len());
+    let mut carry = initial_carry;
+
+    for (a_bit, b_bit) in a.iter().zip(b.iter()) {
+        // The out bit in this position is A \xor B \xor carry
+        let a_xor_b = bit_xor_public(a_bit, b_bit);
+        result.push(bit_xor(&a_xor_b, &carry));
+        // The carry bit from this depth of the adder
+        carry = a_bit * b_bit + a_xor_b * &carry;
+    }
+
+    (result, carry)
+}
+
 /// CarryOut computes the carry after adding two bitstrings together
 ///
 /// An initial carry bit may be supplied for use in chaining this circuit
-pub fn carry_out<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    a: &[AuthenticatedScalar<N, S>],
-    b: &[AuthenticatedScalar<N, S>],
-    initial_carry: AuthenticatedScalar<N, S>,
-) -> AuthenticatedScalar<N, S> {
+pub fn carry_out(
+    a: &[AuthenticatedScalarResult],
+    b: &[AuthenticatedScalarResult],
+    initial_carry: AuthenticatedScalarResult,
+) -> AuthenticatedScalarResult {
     bit_add_impl(a, b, initial_carry).1
+}
+
+/// A `carry_out` implementation that takes the second input as public values
+pub fn carry_out_public(
+    a: &[AuthenticatedScalarResult],
+    b: &[ScalarResult],
+    initial_carry: AuthenticatedScalarResult,
+) -> AuthenticatedScalarResult {
+    bit_add_impl_public(a, b, initial_carry).1
 }
 
 /// Decomposes the input into its `m` least significant bits
 ///
 /// Here, we use the pre-processing functionality to blind and open a value
 /// that can then be used to compute bitwise decompositions of the input
-pub fn to_bits_le<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    x: &AuthenticatedScalar<N, S>,
-    fabric: SharedFabric<N, S>,
-) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcError> {
+pub fn to_bits_le<const D: usize>(
+    x: &AuthenticatedScalarResult,
+    fabric: MpcFabric,
+) -> Vec<AuthenticatedScalarResult> {
     assert!(
         D < SCALAR_MAX_BITS,
         "Can only support scalars of up to {:?} bits",
         SCALAR_MAX_BITS
     );
-    // If x is public, compute the bits locally
-    if x.is_public() {
-        return Ok(scalar_to_bits_le(&x.to_scalar())
-            .iter()
-            .map(|bit| fabric.borrow_fabric().allocate_public_scalar(*bit))
-            .collect::<Vec<_>>());
-    }
 
     // Sample a random batch of bits and create a random m-bit shared scalar
     let random_bits =
-        fabric
-            .borrow_fabric()
-            .allocate_random_shared_bit_batch(
-                cmp::min(D, BLINDING_FACTOR_MAX_BITS), /* num_scalars */
-            );
+        fabric.random_shared_bits(cmp::min(D, BLINDING_FACTOR_MAX_BITS) /* num_scalars */);
     let random_scalar = scalar_from_bits_le(&random_bits);
 
     // Pop a random scalar to fill in the top k - m bits
     let random_upper_bits = if D < SCALAR_MAX_BITS {
-        fabric.borrow_fabric().allocate_random_shared_scalar() * scalar_2_to_m(D)
+        &fabric.random_shared_scalars(1 /* n */)[0] * scalar_2_to_m(D)
     } else {
-        fabric.borrow_fabric().allocate_zero()
+        fabric.zero()
     };
 
     // This value is used to blind the opening so that the opened value is distributed uniformly at
@@ -180,23 +240,18 @@ pub fn to_bits_le<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Sca
     let blinding_factor = &random_upper_bits + &random_scalar;
 
     // TODO: Do we need to `open_and_authenticate`?
-    // TODO: Fix this offset
     let blinded_value = x - &blinding_factor + scalar_2_to_m(D + 1);
-    let blinded_value_open = blinded_value.open().map_err(|_| {
-        MpcError::OpeningError("error opening blinded value while truncating".to_string())
-    })?;
+    let blinded_value_open = blinded_value.open();
 
     // Convert to bits
-    let blinded_value_bits = fabric
-        .borrow_fabric()
-        .batch_allocate_public_scalar(&scalar_to_bits_le(&blinded_value_open.to_scalar()));
-    let (bits, _) = bit_add(
-        &resize_bitvector_to_length(blinded_value_bits, D, fabric.clone()),
+    let blinded_value_bits = scalar_to_bits_le::<D>(&blinded_value_open);
+    let (bits, _) = bit_add_public(
         &resize_bitvector_to_length(random_bits, D, fabric.clone()),
+        &resize_bitvector_to_length_public(blinded_value_bits, D, fabric.clone()),
         fabric,
     );
 
-    Ok(bits)
+    bits
 }
 
 /// Given two bitwise representations, computes whether the first is less than the second
@@ -210,117 +265,141 @@ pub fn to_bits_le<const D: usize, N: MpcNetwork + Send, S: SharedValueSource<Sca
 /// will cause an overflow.
 ///
 /// Using -b - 1 instead of -b is the difference between the < and <= operators
-pub fn bit_lt<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    a: &[AuthenticatedScalar<N, S>],
-    b: &[AuthenticatedScalar<N, S>],
-    fabric: SharedFabric<N, S>,
-) -> AuthenticatedScalar<N, S> {
+pub fn bit_lt(
+    a: &[AuthenticatedScalarResult],
+    b: &[AuthenticatedScalarResult],
+    fabric: MpcFabric,
+) -> AuthenticatedScalarResult {
     assert_eq!(a.len(), b.len(), "bit_lt takes equal length bit arrays");
     // Invert `b`, add and then evaluate the carry
     let b_inverted = b.iter().map(|bit| Scalar::one() - bit).collect::<Vec<_>>();
-    let carry = carry_out(
-        a,
-        &b_inverted,
-        fabric.borrow_fabric().allocate_public_u64(1 /* value */),
-    );
+    let carry = carry_out(a, &b_inverted, fabric.one_authenticated());
+
+    Scalar::one() - carry
+}
+
+/// A `bit_lt` implementation that takes one of the inputs as public
+pub fn bit_lt_public(
+    a: &[AuthenticatedScalarResult],
+    b: &[ScalarResult],
+    fabric: MpcFabric,
+) -> AuthenticatedScalarResult {
+    assert_eq!(a.len(), b.len(), "bit_lt takes equal length bit arrays");
+    // Invert `b`, add and then evaluate the carry
+    let ones = (0..a.len()).map(|_| fabric.one()).collect_vec();
+    let b_inverted = ScalarResult::batch_sub(&ones, b);
+    let carry = carry_out_public(a, &b_inverted, fabric.one_authenticated());
 
     Scalar::one() - carry
 }
 
 #[cfg(test)]
 mod tests {
-    use std::iter;
-
-    use crypto::fields::{bigint_to_scalar, scalar_to_bigint};
-    use curve25519_dalek::scalar::Scalar;
-    use integration_helpers::mpc_network::mock_mpc_fabric;
-    use mpc_ristretto::mpc_scalar::scalar_to_u64;
-    use num_bigint::BigInt;
+    use futures::future::join_all;
+    use itertools::Itertools;
+    use mpc_stark::{
+        algebra::{authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar},
+        PARTY0,
+    };
+    use num_bigint::BigUint;
     use rand::{thread_rng, Rng, RngCore};
+    use test_helpers::mpc_network::execute_mock_mpc;
 
     use super::{scalar_from_bits_le, scalar_to_bits_le};
 
-    #[test]
-    fn test_scalar_to_bits() {
-        let random_u64 = thread_rng().next_u64();
-        let scalar = Scalar::from(random_u64);
-        let bits = scalar_to_bits_le(&scalar);
+    #[tokio::test]
+    async fn test_scalar_to_bits() {
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let random_u64 = thread_rng().next_u64();
+            let scalar = Scalar::from(random_u64);
+            let mpc_val = fabric.allocate_scalar(scalar);
 
-        let reconstructed = bits
-            .iter()
-            .rev()
-            .fold(Scalar::zero(), |acc, bit| acc * Scalar::from(2u64) + bit);
+            let bits = scalar_to_bits_le::<64>(&mpc_val);
 
-        assert_eq!(scalar, reconstructed);
+            let reconstructed = bits
+                .iter()
+                .rev()
+                .fold(fabric.zero(), |acc, bit| acc * Scalar::from(2u64) + bit);
+
+            scalar == reconstructed.await
+        })
+        .await;
+
+        assert!(res);
     }
 
-    #[test]
-    fn test_scalar_to_bits_all_one() {
-        let n = 250; // Power of 2 to fills bits up to
-        let scalar_bits = 256; // The number of bits used to store a scalar
-        let scalar = (0..n).fold(Scalar::zero(), |acc, _| {
-            acc * Scalar::from(2u64) + Scalar::from(1u64)
-        });
+    #[tokio::test]
+    async fn test_scalar_to_bits_all_one() {
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            const N: usize = 250; // Power of 2 to fills bits up to
+            let scalar_bits = 256; // The number of bits used to store a scalar
+            let scalar = (0..N).fold(Scalar::zero(), |acc, _| {
+                acc * Scalar::from(2u64) + Scalar::from(1u64)
+            });
+            let allocated = fabric.allocate_scalar(scalar);
 
-        let res = scalar_to_bits_le(&scalar)
-            .iter()
-            .map(scalar_to_u64)
-            .collect::<Vec<_>>();
-        let expected_bits = (0..n)
-            .map(|_| 1u64)
-            .chain(iter::repeat(0u64).take(scalar_bits - n))
-            .collect::<Vec<_>>();
-        assert_eq!(res, expected_bits);
+            let res = join_all(scalar_to_bits_le::<N>(&allocated)).await;
+            let expected_bits = (0..N).map(|_| Scalar::one()).collect_vec();
+
+            res == expected_bits
+        })
+        .await;
+
+        assert!(res);
     }
 
-    #[test]
-    fn test_scalar_from_bits() {
-        let mock_fabric = mock_mpc_fabric(0 /* party_id */);
-        let mut rng = thread_rng();
-        let random_bits = (0..252)
-            .map(|_| rng.gen_bool(0.5 /* p */) as u64)
-            .collect::<Vec<_>>();
+    #[tokio::test]
+    async fn test_scalar_from_bits() {
+        let n = 252;
 
-        let random_scalar_bits = mock_fabric
-            .as_ref()
-            .borrow()
-            .batch_allocate_public_u64s(&random_bits);
-        let res = scalar_from_bits_le(&random_scalar_bits);
-        let res_bigint = scalar_to_bigint(&res.to_scalar());
+        let (party0_res, party1_res) = execute_mock_mpc(|fabric| async move {
+            let bits = {
+                let mut rng = thread_rng();
+                (0..n).map(|_| rng.gen_bool(0.5) as u64).collect_vec()
+            }; // Drop `rng`, it is not `Send`
 
-        let expected_res = random_bits
-            .into_iter()
-            .rev()
-            .map(BigInt::from)
-            .fold(BigInt::from(0u64), |acc, val| acc * 2 + val);
+            // Party 0 shares their bits
+            let random_scalar_bits = fabric.batch_share_scalar(bits, PARTY0);
+            let res = scalar_from_bits_le(&random_scalar_bits);
+            let res_open = res.open().await.to_biguint();
 
-        assert_eq!(res_bigint, expected_res);
+            // Open the bits separately and verify their result
+            let bits_open =
+                join_all(AuthenticatedScalarResult::open_batch(&random_scalar_bits)).await;
+            let expected_res = bits_open
+                .into_iter()
+                .map(|s| s.to_biguint())
+                .fold(BigUint::from(0u8), |acc, bit| acc * 2u8 + bit);
+
+            expected_res == res_open
+        })
+        .await;
+
+        assert!(party0_res);
+        assert!(party1_res);
     }
 
-    #[test]
-    fn test_scalar_from_bits_all_one() {
+    #[tokio::test]
+    async fn test_scalar_from_bits_all_one() {
         let n = 250; // The number of bits to fill in as ones
         let scalar_bits = 256; // The number of bits used to store a Scalar
-        let mock_fabric = mock_mpc_fabric(0 /* party_id */);
 
-        let bits = (0..n)
-            .map(|_| mock_fabric.as_ref().borrow().allocate_public_u64(1u64))
-            .chain(
-                iter::repeat(mock_fabric.as_ref().borrow().allocate_zero()).take(scalar_bits - n),
-            )
-            .collect::<Vec<_>>();
+        let (party0_res, party1_res) = execute_mock_mpc(|fabric| async move {
+            let bits = fabric
+                .ones_authenticated(n)
+                .into_iter()
+                .chain(fabric.zeros_authenticated(scalar_bits - n).into_iter())
+                .collect::<Vec<_>>();
 
-        let res = scalar_from_bits_le(&bits);
-        let expected_res = (0..n).fold(BigInt::from(0u64), |acc, _| acc * 2 + 1);
+            let res = scalar_from_bits_le(&bits);
+            let res_open = res.open().await.to_biguint();
+            let expected_res = (0..n).fold(BigUint::from(0u64), |acc, _| acc * 2u8 + 1u8);
 
-        let res_bits = scalar_to_bits_le(&res.to_scalar());
-        let num_ones = res_bits
-            .iter()
-            .cloned()
-            .filter(|bit| bit.eq(&Scalar::one()))
-            .count();
+            res_open == expected_res
+        })
+        .await;
 
-        assert_eq!(num_ones, n);
-        assert_eq!(res.to_scalar(), bigint_to_scalar(&expected_res));
+        assert!(party0_res);
+        assert!(party1_res);
     }
 }
