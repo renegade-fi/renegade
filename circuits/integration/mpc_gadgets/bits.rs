@@ -1,21 +1,25 @@
 //! Groups integration tests for bitwise operating MPC gadgets
 
 use circuits::mpc_gadgets::bits::{bit_add, bit_lt, bit_xor, to_bits_le};
-use curve25519_dalek::scalar::Scalar;
-use integration_helpers::types::IntegrationTest;
-use mpc_ristretto::{
-    authenticated_scalar::AuthenticatedScalar, error::MpcError as FabricError,
-    mpc_scalar::scalar_to_u64,
+use crypto::fields::scalar_to_u64;
+use itertools::Itertools;
+use mpc_stark::{
+    algebra::{authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar},
+    PARTY0, PARTY1,
 };
 use rand::{thread_rng, RngCore};
+use test_helpers::{
+    mpc_network::{await_result, await_result_batch_with_error, await_result_with_error},
+    types::IntegrationTest,
+};
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
-use super::{check_equal, check_equal_vec};
+use super::{assert_scalar_batch_eq, assert_scalar_eq};
 
-/**
- * Helpers
- */
+// -----------
+// | Helpers |
+// -----------
 
 /// Converts a u64 to a bit representation as a vector of u64s.
 fn u64_to_bits_le(mut a: u64) -> Vec<u64> {
@@ -28,45 +32,36 @@ fn u64_to_bits_le(mut a: u64) -> Vec<u64> {
     bits
 }
 
-/**
- * Tests
- */
+// ---------
+// | Tests |
+// ---------
 
 /// Tests the bit xor gadget
 fn test_bit_xor(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Try all combinations of zero and one
-    let shared_zero = test_args
-        .borrow_fabric()
-        .allocate_private_u64(0 /* owning_pargy */, 0 /* value */)
-        .map_err(|err| format!("Error sharing shared zero: {:?}", err))?;
-    let shared_one = test_args
-        .borrow_fabric()
-        .allocate_private_u64(1 /* owning_party */, 1 /* value */)
-        .map_err(|err| format!("Error sharing shared one: {:?}", err))?;
+    let fabric = &test_args.mpc_fabric;
+    let shared_zero = fabric.zero_authenticated();
+    let shared_one = fabric.one_authenticated();
 
     // 0 XOR 0 == 0
-    let zero_xor_zero = bit_xor(&shared_zero, &shared_zero)
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening 0 \\xor 0: {:?}", err))?;
-    check_equal(&zero_xor_zero, 0)?;
+    let zero_xor_zero =
+        await_result_with_error(bit_xor(&shared_zero, &shared_zero).open_authenticated())?;
+    assert_scalar_eq(&zero_xor_zero, &Scalar::zero())?;
 
     // 1 XOR 0 == 1
-    let one_xor_zero = bit_xor(&shared_one, &shared_zero)
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening 1 \\xor 0: {:?}", err))?;
-    check_equal(&one_xor_zero, 1)?;
+    let one_xor_zero =
+        await_result_with_error(bit_xor(&shared_one, &shared_zero).open_authenticated())?;
+    assert_scalar_eq(&one_xor_zero, &Scalar::one())?;
 
     // 0 XOR 1 == 1
-    let zero_xor_one = bit_xor(&shared_zero, &shared_one)
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening 0 \\xor 1: {:?}", err))?;
-    check_equal(&zero_xor_one, 1)?;
+    let zero_xor_one =
+        await_result_with_error(bit_xor(&shared_zero, &shared_one).open_authenticated())?;
+    assert_scalar_eq(&zero_xor_one, &Scalar::one())?;
 
     // 1 XOR 1 == 0
-    let one_xor_one = bit_xor(&shared_one, &shared_one)
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening 1 \\xor 1: {:?}", err))?;
-    check_equal(&one_xor_one, 0)?;
+    let one_xor_one =
+        await_result_with_error(bit_xor(&shared_one, &shared_one).open_authenticated())?;
+    assert_scalar_eq(&one_xor_one, &Scalar::zero())?;
 
     Ok(())
 }
@@ -76,32 +71,26 @@ fn test_bit_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a random number, converts it to bits, then shares and adds it
     // For the sake of the test (because we convert back to u64 to compare) make sure both
     // numbers have log2(x) < 63
+    let fabric = &test_args.mpc_fabric;
     let my_random_number = thread_rng().next_u64() / 2;
     let my_random_bits = u64_to_bits_le(my_random_number);
 
     // Share the bits, party 0 holds a, party 1 holds b
-    let shared_bits_a = test_args
-        .borrow_fabric()
-        .batch_allocate_private_scalars(
-            0, /* owning_party */
-            &my_random_bits
-                .iter()
-                .cloned()
-                .map(Scalar::from)
-                .collect::<Vec<_>>(),
-        )
-        .map_err(|err| format!("Error sharing `a` bits: {:?}", err))?;
-
-    let shared_bits_b = test_args
-        .borrow_fabric()
-        .batch_allocate_private_scalars(
-            1, /* owning_party */
-            &my_random_bits
-                .into_iter()
-                .map(Scalar::from)
-                .collect::<Vec<_>>(),
-        )
-        .map_err(|err| format!("Error sharing `b` bits: {:?}", err))?;
+    let shared_bits_a = fabric.batch_share_scalar(
+        my_random_bits
+            .iter()
+            .cloned()
+            .map(Scalar::from)
+            .collect::<Vec<_>>(),
+        PARTY0,
+    );
+    let shared_bits_b = fabric.batch_share_scalar(
+        my_random_bits
+            .into_iter()
+            .map(Scalar::from)
+            .collect::<Vec<_>>(),
+        PARTY1,
+    );
 
     // Add the bits and open the result
     let res_bits = bit_add(
@@ -110,80 +99,51 @@ fn test_bit_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
         test_args.mpc_fabric.clone(),
     )
     .0;
-    let result = AuthenticatedScalar::batch_open_and_authenticate(&res_bits)
-        .map_err(|err| format!("Error opening addition result: {:?}", err))?;
+    let result = await_result_batch_with_error(
+        &AuthenticatedScalarResult::open_authenticated_batch(&res_bits),
+    )?;
 
     // Open the original random numbers and bitify the sum
-    let random_number1 = test_args
-        .borrow_fabric()
-        .allocate_private_u64(0 /* owning_party */, my_random_number)
-        .map_err(|err| format!("Error sharing random number: {:?}", err))?
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening party0's random number: {:?}", err))?;
+    let random_number1 =
+        await_result(fabric.share_plaintext(Scalar::from(my_random_number), PARTY0));
+    let random_number2 =
+        await_result(fabric.share_plaintext(Scalar::from(my_random_number), PARTY1));
 
-    let random_number2 = test_args
-        .borrow_fabric()
-        .allocate_private_u64(1 /* owning_party */, my_random_number)
-        .map_err(|err| format!("Error sharing random number: {:?}", err))?
-        .open_and_authenticate()
-        .map_err(|err| format!("Error opening party1's random number: {:?}", err))?;
+    let expected_result = scalar_to_u64(&(random_number1 + random_number2));
+    let expected_bits = u64_to_bits_le(expected_result)
+        .into_iter()
+        .map(Scalar::from)
+        .collect_vec();
 
-    let expected_result = scalar_to_u64(&(random_number1.to_scalar() + random_number2.to_scalar()));
-    let expected_bits = u64_to_bits_le(expected_result);
-
-    let all_equal = result
-        .iter()
-        .zip(expected_bits.iter().cloned())
-        .all(|(res, expected)| res.to_scalar().eq(&Scalar::from(expected)));
-
-    if !all_equal {
-        return Err(format!(
-            "Expected: {:?}, got {:?}",
-            expected_bits,
-            result
-                .iter()
-                .map(|bit| scalar_to_u64(&bit.to_scalar()))
-                .collect::<Vec<_>>(),
-        ));
-    }
-
-    Ok(())
+    assert_scalar_batch_eq(&expected_bits, &result)
 }
 
 /// Tests that getting the bits of 0 returns all zeros
 fn test_bits_le_zero(test_args: &IntegrationTestArgs) -> Result<(), String> {
-    let shared_value = test_args
-        .borrow_fabric()
-        .allocate_private_u64(0 /* owning_party */, 0 /* value */)
-        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    let fabric = &test_args.mpc_fabric;
+    let shared_zero = fabric.zero_authenticated();
 
-    let shared_bits = to_bits_le::<250, _, _>(&shared_value, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error computing bits(0): {:?}", err))?
-        .iter()
-        .map(|bit| bit.open_and_authenticate().unwrap())
-        .collect::<Vec<_>>();
+    let shared_bits = to_bits_le::<250>(&shared_zero, test_args.mpc_fabric.clone());
+    let shared_bits_open = await_result_batch_with_error(
+        &AuthenticatedScalarResult::open_authenticated_batch(&shared_bits),
+    )?;
 
-    check_equal_vec(&shared_bits, &vec![0u64; shared_bits.len()])
+    assert_scalar_batch_eq(&shared_bits_open, &vec![Scalar::zero(); shared_bits.len()])
 }
 
 /// Tests the to_bits_le gadget
 fn test_to_bits_le(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let fabric = &test_args.mpc_fabric;
     let value = 119;
 
     // The parties share the value 10 with little endian byte representation 0b0101
-    let shared_value = test_args
-        .borrow_fabric()
-        .allocate_private_u64(0 /* owning_party */, value)
-        .map_err(|err| format!("Error sharing value: {:?}", err))?;
-    let shared_bits = to_bits_le::<8, _, _>(&shared_value, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error in to_bits_le(): {:?}", err))?;
+    let shared_value = fabric.share_scalar(value, PARTY0);
+    let shared_bits = to_bits_le::<8>(&shared_value, test_args.mpc_fabric.clone());
 
     // Open the bits and compare
-    let opened_bits: Vec<Scalar> = shared_bits
-        .iter()
-        .map(|bit| Ok(bit.open_and_authenticate()?.to_scalar()))
-        .collect::<Result<Vec<_>, FabricError>>()
-        .map_err(|err| format!("Error opening shared bits: {:?}", err))?;
+    let opened_bits = await_result_batch_with_error(
+        &AuthenticatedScalarResult::open_authenticated_batch(&shared_bits),
+    )?;
 
     if !opened_bits[..8].eq(&vec![
         Scalar::one(),
@@ -210,67 +170,43 @@ fn test_to_bits_le(test_args: &IntegrationTestArgs) -> Result<(), String> {
 /// Tests the bitwise less than comparator
 fn test_bit_lt(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Test equal values
+    let fabric = &test_args.mpc_fabric;
     let value = 15;
-    let equal_value1 = test_args
-        .borrow_fabric()
-        .allocate_private_u64(0 /* owning_party */, value)
-        .map_err(|err| format!("Error sharing value: {:?}", err))?;
-    let equal_value2 = test_args
-        .borrow_fabric()
-        .allocate_private_u64(1 /* owning_party */, value)
-        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+
+    let equal_value1 = fabric.share_scalar(value, PARTY0);
+    let equal_value2 = fabric.share_scalar(value, PARTY1);
 
     let res = bit_lt(
-        &to_bits_le::<250, _, _>(&equal_value1, test_args.mpc_fabric.clone()).unwrap(),
-        &to_bits_le::<250, _, _>(&equal_value2, test_args.mpc_fabric.clone()).unwrap(),
+        &to_bits_le::<250>(&equal_value1, test_args.mpc_fabric.clone()),
+        &to_bits_le::<250>(&equal_value2, test_args.mpc_fabric.clone()),
         test_args.mpc_fabric.clone(),
     )
-    .open_and_authenticate()
-    .map_err(|err| format!("Error opening bit_lt result: {:?}", err))?;
+    .open_authenticated();
+    let res_open = await_result_with_error(res)?;
 
-    check_equal(&res, 0)?;
+    assert_scalar_eq(&res_open, &Scalar::zero())?;
 
     // Test unequal values
     let mut rng = thread_rng();
-    let value1 = rng.next_u64();
-    let value2 = rng.next_u64();
+    let my_value = rng.next_u64();
 
-    let shared_value1 = test_args
-        .borrow_fabric()
-        .allocate_private_u64(0 /* owning_party */, value1)
-        .map_err(|err| format!("Error sharing value1: {:?}", err))?;
-    let shared_value2 = test_args
-        .borrow_fabric()
-        .allocate_private_u64(1 /* owning_party */, value2)
-        .map_err(|err| format!("Error sharing value2: {:?}", err))?;
+    let shared_value1 = fabric.share_scalar(my_value, PARTY0);
+    let shared_value2 = fabric.share_scalar(my_value, PARTY1);
 
     let res = bit_lt(
-        &to_bits_le::<250, _, _>(&shared_value1, test_args.mpc_fabric.clone()).unwrap(),
-        &to_bits_le::<250, _, _>(&shared_value2, test_args.mpc_fabric.clone()).unwrap(),
+        &to_bits_le::<250>(&shared_value1, test_args.mpc_fabric.clone()),
+        &to_bits_le::<250>(&shared_value2, test_args.mpc_fabric.clone()),
         test_args.mpc_fabric.clone(),
     )
-    .open_and_authenticate()
-    .map_err(|err| format!("Error opening bit_lt result: {:?}", err))?;
+    .open_authenticated();
+    let res_open = await_result_with_error(res)?;
 
     // Open the original values to get the expected result
-    let value1 = scalar_to_u64(
-        &shared_value1
-            .open_and_authenticate()
-            .map_err(|err| format!("Error opening shared value 1: {:?}", err))?
-            .to_scalar(),
-    );
+    let value1 = await_result(fabric.share_plaintext(Scalar::from(my_value), PARTY0));
+    let value2 = await_result(fabric.share_plaintext(Scalar::from(my_value), PARTY1));
+    let expected_res = scalar_to_u64(&value1) < scalar_to_u64(&value2);
 
-    let value2 = scalar_to_u64(
-        &shared_value2
-            .open_and_authenticate()
-            .map_err(|err| format!("Error opening shared value 2: {:?}", err))?
-            .to_scalar(),
-    );
-    let expected_res = value1 < value2;
-
-    check_equal(&res, expected_res as u64)?;
-
-    Ok(())
+    assert_scalar_eq(&res_open, &Scalar::from(expected_res))
 }
 
 // Take inventory

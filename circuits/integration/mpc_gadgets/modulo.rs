@@ -1,14 +1,13 @@
 //! Groups integration tests for modulo MPC gadgets
 use circuits::mpc_gadgets::modulo::{mod_2m, shift_right, truncate};
 use crypto::fields::{bigint_to_scalar, scalar_to_bigint};
-use integration_helpers::types::IntegrationTest;
-use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use num_bigint::{BigInt, RandomBits};
 use rand::{thread_rng, Rng, RngCore};
+use test_helpers::types::IntegrationTest;
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
-use super::check_equal;
+use super::assert_scalar_eq;
 
 /// Test the mod_2m method
 fn test_mod_2m(test_args: &IntegrationTestArgs) -> Result<(), String> {
@@ -25,7 +24,7 @@ fn test_mod_2m(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .open_and_authenticate()
         .map_err(|err| format!("Error opening the result of mod_2m: {:?}", err))?;
 
-    check_equal(&value_mod_2m, 0)?;
+    assert_scalar_eq(&value_mod_2m, 0)?;
 
     // Random value
     let random_value: BigInt = thread_rng().sample(RandomBits::new(250));
@@ -45,7 +44,7 @@ fn test_mod_2m(test_args: &IntegrationTestArgs) -> Result<(), String> {
             .to_scalar(),
     ) % (1 << m);
     let expected_result_u64: u64 = expected_result.try_into().unwrap();
-    check_equal(&random_value_mod_2m, expected_result_u64)?;
+    assert_scalar_eq(&random_value_mod_2m, expected_result_u64)?;
 
     Ok(())
 }
@@ -101,14 +100,9 @@ fn test_shift_right(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .map_err(|err| format!("Error opening and authenticating the result: {:?}", err))?;
 
     // Open the random value and compute the expected result
-    let random_value_open = scalar_to_u64(
-        &random_value
-            .open_and_authenticate()
-            .map_err(|err| format!("Error opening expected result: {:?}", err))?
-            .to_scalar(),
-    );
+    let random_value_open = &random_value.open_and_authenticate();
 
-    check_equal(&res, random_value_open >> shift_amount)
+    assert_scalar_eq(&res, random_value_open >> shift_amount)
 }
 
 inventory::submit!(TestWrapper(IntegrationTest {
