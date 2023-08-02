@@ -2,16 +2,16 @@
 //! in proving knowledge of witness for throughout the network
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-pub mod commitment_links;
-pub mod valid_commitments;
-pub mod valid_match_mpc;
-pub mod valid_reblind;
-pub mod valid_settle;
+// pub mod commitment_links;
+// pub mod valid_commitments;
+// pub mod valid_match_mpc;
+// pub mod valid_reblind;
+// pub mod valid_settle;
 pub mod valid_wallet_create;
-pub mod valid_wallet_update;
+// pub mod valid_wallet_update;
 
-#[cfg(test)]
-pub(crate) mod test_helpers {
+#[cfg(any(test, feature = "test_helpers"))]
+pub mod test_helpers {
     use std::iter::from_fn;
 
     use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
@@ -24,13 +24,14 @@ pub(crate) mod test_helpers {
         order::{Order, OrderSide},
         wallet::{Wallet, WalletShare},
     };
-    use crypto::hash::{compute_poseidon_hash, default_poseidon_params};
+    use itertools::Itertools;
     use lazy_static::lazy_static;
     use mpc_stark::algebra::scalar::Scalar;
     use num_bigint::BigUint;
     use rand::{thread_rng, CryptoRng, RngCore};
+    use renegade_crypto::hash::{compute_poseidon_hash, default_poseidon_params};
 
-    use circuit_types::native_helpers::{create_wallet_shares_with_randomness, reblind_wallet};
+    use circuit_types::native_helpers::create_wallet_shares_with_randomness;
 
     // --------------
     // | Dummy Data |
@@ -39,19 +40,19 @@ pub(crate) mod test_helpers {
     lazy_static! {
         // The key data for the wallet, note that only the identification keys are currently
         // computed correctly
-        pub(crate) static ref PRIVATE_KEYS: Vec<Scalar> = vec![Scalar::one(); NUM_KEYS];
-        pub(crate) static ref PUBLIC_KEYS: PublicKeyChain = PublicKeyChain {
+        pub static ref PRIVATE_KEYS: Vec<Scalar> = vec![Scalar::one(); NUM_KEYS];
+        pub static ref PUBLIC_KEYS: PublicKeyChain = PublicKeyChain {
             pk_root: PublicSigningKey::from(&BigUint::from(2u8).pow(256)),
             pk_match: compute_poseidon_hash(&[PRIVATE_KEYS[1]]).into(),
         };
-        pub(crate) static ref INITIAL_BALANCES: [Balance; MAX_BALANCES] = [
+        pub static ref INITIAL_BALANCES: [Balance; MAX_BALANCES] = [
             Balance { mint: 1u8.into(), amount: 5 },
             Balance {
                 mint: 2u8.into(),
                 amount: 10
             }
         ];
-        pub(crate) static ref INITIAL_ORDERS: [Order; MAX_ORDERS] = [
+        pub static ref INITIAL_ORDERS: [Order; MAX_ORDERS] = [
             Order {
                 quote_mint: 1u8.into(),
                 base_mint: 2u8.into(),
@@ -71,13 +72,13 @@ pub(crate) mod test_helpers {
                 timestamp: TIMESTAMP,
             }
         ];
-        pub(crate) static ref INITIAL_FEES: [Fee; MAX_FEES] = [Fee {
+        pub static ref INITIAL_FEES: [Fee; MAX_FEES] = [Fee {
             settle_key: BigUint::from(11u8),
             gas_addr: BigUint::from(1u8),
             percentage_fee: FixedPoint::from(0.01),
             gas_token_amount: 3,
         }];
-        pub(crate) static ref INITIAL_WALLET: SizedWallet = Wallet {
+        pub static ref INITIAL_WALLET: SizedWallet = Wallet {
             balances: INITIAL_BALANCES.clone(),
             orders: INITIAL_ORDERS.clone(),
             fees: INITIAL_FEES.clone(),
@@ -91,13 +92,13 @@ pub(crate) mod test_helpers {
     // -------------
 
     /// The maximum number of balances allowed in a wallet for tests
-    pub(crate) const MAX_BALANCES: usize = 2;
+    pub const MAX_BALANCES: usize = 2;
     /// The maximum number of orders allowed in a wallet for tests
-    pub(crate) const MAX_ORDERS: usize = 2;
+    pub const MAX_ORDERS: usize = 2;
     /// The maximum number of fees allowed in a wallet for tests
-    pub(crate) const MAX_FEES: usize = 1;
+    pub const MAX_FEES: usize = 1;
     /// The initial timestamp used in testing
-    pub(crate) const TIMESTAMP: u64 = 3; // dummy value
+    pub const TIMESTAMP: u64 = 3; // dummy value
 
     pub type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     pub type SizedWalletShare = WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
@@ -107,7 +108,7 @@ pub(crate) mod test_helpers {
     // -----------
 
     /// Construct secret shares of a wallet for testing
-    pub(crate) fn create_wallet_shares<
+    pub fn create_wallet_shares<
         const MAX_BALANCES: usize,
         const MAX_ORDERS: usize,
         const MAX_FEES: usize,
@@ -140,7 +141,7 @@ pub(crate) mod test_helpers {
     ///     - root: The root of the Merkle tree
     ///     - openings: A vector of opening vectors; the sister nodes hashed with the Merkle path
     ///     - opening_indices: A vector of opening index vectors; the left/right booleans for the path
-    pub(crate) fn create_multi_opening<R: RngCore + CryptoRng, const HEIGHT: usize>(
+    pub fn create_multi_opening<R: RngCore + CryptoRng, const HEIGHT: usize>(
         items: &[Scalar],
         rng: &mut R,
     ) -> (Scalar, Vec<MerkleOpening<HEIGHT>>) {
@@ -180,9 +181,14 @@ pub(crate) mod test_helpers {
 
             // Hash together each left and right pair to get the internal node values at the next height
             let mut next_internal_nodes = Vec::with_capacity(curr_internal_nodes.len() / 2);
-            for left_right in curr_internal_nodes.chunks(2 /* size */) {
+            for left_right in curr_internal_nodes
+                .into_iter()
+                .map(|s| s.inner())
+                .chunks(2 /* size */)
+                .into_iter()
+            {
                 let mut sponge = PoseidonSponge::new(&default_poseidon_params());
-                sponge.absorb(&left_right);
+                sponge.absorb(&left_right.collect_vec());
 
                 let squeezed: Scalar::Field =
                     sponge.squeeze_field_elements(1 /* num_elements */)[0];
@@ -231,6 +237,8 @@ pub(crate) mod test_helpers {
     /// Verify that reblinding a wallet creates valid secret shares of the underlying wallet
     #[test]
     fn test_reblind_wallet() {
+        use circuit_types::native_helpers::reblind_wallet;
+
         let mut wallet = INITIAL_WALLET.clone();
         let (private_share, _) = create_wallet_shares(wallet.clone());
 

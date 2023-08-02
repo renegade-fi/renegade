@@ -35,6 +35,7 @@ RUN mkdir integration
 RUN echo 'fn main() { println!("dummy main!") }' >> integration/dummy-main.rs
 
 COPY circuits/Cargo.toml .
+COPY circuits/benches ./benches
 
 # Modify the Cargo.toml to point to our dummy sources
 RUN sed -i 's/lib.rs/dummy-lib.rs/g' Cargo.toml
