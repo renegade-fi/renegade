@@ -4,13 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-bench = []
+test_helpers = []
 
 [[test]]
 name = "integration"
 path = "integration/main.rs"
 harness = false
-features = ["bench"]
+
+[[bench]]
+name = "valid_wallet_create"
+harness = false
+required-features = ["test_helpers"]
 
 [dependencies]
 # === Crytography + Arithmetic === #
@@ -47,11 +51,13 @@ tracing = { version = "0.1", features = ["log"] }
 [dev-dependencies]
 ark-ec = "0.4"
 ark-ed25519 = "0.4"
+
 chrono = "0.4"
 clap = { version = "4.0", features = ["derive"] }
 colored = "2"
+criterion = { version = "0.5" }
 ctor = "0.1"
-criterion = { version = "0.4" }
+
 dns-lookup = "1.0"
 env_logger = "0.9"
 futures = "0.3"

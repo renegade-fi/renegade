@@ -162,41 +162,29 @@ where
 // | Tests |
 // ---------
 
-#[cfg(test)]
-mod test {
+#[cfg(any(test, feature = "test_helpers"))]
+pub mod test_helpers {
     use circuit_types::{
         balance::Balance, native_helpers::compute_wallet_private_share_commitment, order::Order,
-        traits::CircuitBaseType,
     };
-    use merlin::Transcript;
-    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
-    use mpc_stark::algebra::scalar::Scalar;
-    use rand::thread_rng;
 
-    use crate::{
-        test_helpers::bulletproof_prove_and_verify,
-        zk_circuits::{
-            test_helpers::{
-                create_wallet_shares, SizedWallet, INITIAL_BALANCES, INITIAL_ORDERS,
-                INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
-            },
-            valid_wallet_create::{
-                ValidWalletCreate, ValidWalletCreateStatement, ValidWalletCreateWitness,
-            },
-        },
+    use crate::zk_circuits::test_helpers::{
+        create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
     };
+
+    use super::{ValidWalletCreateStatement, ValidWalletCreateWitness};
 
     /// Witness with default size parameters
-    type SizedWitness = ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    pub(super) type SizedWitness = ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     /// Statement with default size parameters
-    type SizedStatement = ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    pub(super) type SizedStatement = ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     // -----------
     // | Helpers |
     // -----------
 
     /// Helper to get a zero'd out dummy wallet
-    fn create_empty_wallet() -> SizedWallet {
+    pub fn create_empty_wallet() -> SizedWallet {
         // Zero out the balances and orders of the dummy wallet
         let mut wallet = INITIAL_WALLET.clone();
         wallet
@@ -209,14 +197,14 @@ mod test {
     }
 
     /// Create a default, valid witness and statement for `VALID WALLET CREATE`
-    fn create_default_witness_statement() -> (SizedWitness, SizedStatement) {
+    pub fn create_default_witness_statement() -> (SizedWitness, SizedStatement) {
         // Create a wallet and split it into secret shares
         let wallet = create_empty_wallet();
         create_witness_statement_from_wallet(&wallet)
     }
 
     /// Create a witness and statement from a given wallet
-    fn create_witness_statement_from_wallet(
+    pub fn create_witness_statement_from_wallet(
         wallet: &SizedWallet,
     ) -> (SizedWitness, SizedStatement) {
         let (private_shares, public_shares) = create_wallet_shares(wallet.clone());
@@ -235,9 +223,35 @@ mod test {
 
         (witness, statement)
     }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use circuit_types::traits::CircuitBaseType;
+    use merlin::HashChainTranscript as Transcript;
+    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
+    use mpc_stark::algebra::scalar::Scalar;
+    use rand::thread_rng;
+
+    use crate::{
+        test_helpers::bulletproof_prove_and_verify,
+        zk_circuits::{
+            test_helpers::{INITIAL_BALANCES, INITIAL_ORDERS, MAX_BALANCES, MAX_FEES, MAX_ORDERS},
+            valid_wallet_create::{
+                test_helpers::create_default_witness_statement, ValidWalletCreate,
+            },
+        },
+    };
+
+    use super::test_helpers::{
+        create_empty_wallet, create_witness_statement_from_wallet, SizedStatement, SizedWitness,
+    };
 
     /// Asserts that a given witness, statement pair is invalid
-    fn assert_invalid_witness_statement(witness: SizedWitness, statement: SizedStatement) {
+    pub(super) fn assert_invalid_witness_statement(
+        witness: SizedWitness,
+        statement: SizedStatement,
+    ) {
         // Create a constraint system
         let pc_gens = PedersenGens::default();
         let mut transcript = Transcript::new(b"test");

@@ -23,7 +23,7 @@ use mpc_bulletproof::{
 pub mod mpc_circuits;
 pub mod mpc_gadgets;
 mod tracing;
-// pub mod zk_circuits;
+pub mod zk_circuits;
 pub mod zk_gadgets;
 
 /// The highest possible set bit in the Dalek scalar field
@@ -179,6 +179,7 @@ pub(crate) mod test_helpers {
         r1cs::{Prover, Verifier},
         PedersenGens,
     };
+    use tracing::log::LevelFilter;
 
     const TRANSCRIPT_SEED: &str = "test";
 
@@ -197,6 +198,7 @@ pub(crate) mod test_helpers {
 
         let mut builder = Builder::from_env(env);
         builder.target(Target::Stdout);
+        builder.filter_level(LevelFilter::Info);
 
         builder.init();
     }
