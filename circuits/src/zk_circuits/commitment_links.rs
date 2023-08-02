@@ -8,7 +8,7 @@
 use circuit_types::{traits::CircuitBaseType, wallet::LinkableWalletShare};
 use merlin::Transcript;
 use mpc_bulletproof::{r1cs::Prover, PedersenGens};
-use rand_core::OsRng;
+use rand::thread_rng;
 
 use super::{
     valid_commitments::ValidCommitmentsWitnessCommitment,
@@ -96,7 +96,7 @@ where
 
     // Commit to the linked augmented shares and verify that the commitments are the same
     // as the commitments in the validity proofs
-    let mut rng = OsRng {};
+    let mut rng = thread_rng();
     let (_, party0_shares_comm) = party0_augmented_shares.commit_witness(&mut rng, &mut prover);
     let (_, party1_shares_comm) = party1_augmented_shares.commit_witness(&mut rng, &mut prover);
 

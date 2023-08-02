@@ -3,7 +3,6 @@
 
 use circuit_types::traits::MultiproverCircuitBaseType;
 use circuits::zk_gadgets::bits::MultiproverToBitsGadget;
-use crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
 use curve25519_dalek::scalar::Scalar;
 use integration_helpers::{mpc_network::batch_share_plaintext_scalar, types::IntegrationTest};
 use merlin::Transcript;
@@ -12,6 +11,7 @@ use mpc_bulletproof::{
     PedersenGens,
 };
 use rand_core::{OsRng, RngCore};
+use renegade_cryptofields::{bigint_to_scalar_bits, scalar_to_bigint};
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
@@ -19,7 +19,7 @@ use crate::{IntegrationTestArgs, TestWrapper};
 #[allow(unused)]
 macro_rules! print_multiprover_wire {
     ($x:expr, $cs:ident, $party_id:expr) => {{
-        use crypto::fields::scalar_to_biguint;
+        use renegade_cryptofields::scalar_to_biguint;
         let x_eval = $cs.eval(&$x.into()).unwrap().open().unwrap().to_scalar();
         if $party_id == 0 {
             println!("eval({}): {:?}", stringify!($x), scalar_to_biguint(&x_eval));

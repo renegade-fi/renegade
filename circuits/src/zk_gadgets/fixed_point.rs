@@ -8,14 +8,12 @@ use circuit_types::{
         AuthenticatedFixedPointVar, FixedPointVar, DEFAULT_FP_PRECISION, TWO_TO_M_SCALAR,
     },
     traits::{LinearCombinationLike, MpcLinearCombinationLike},
-    SharedFabric,
 };
-use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
     r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, MpcVariable},
 };
-use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
+use mpc_stark::{algebra::scalar::Scalar, MpcFabric};
 
 use super::{
     arithmetic::DivRemGadget,
@@ -99,22 +97,18 @@ impl<CS: RandomizableConstraintSystem> FixedPointGadget<CS> {
 }
 
 /// Performs fixed point operations on a multiprover circuit
-pub struct MultiproverFixedPointGadget<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    PhantomData<&'a (N, S)>,
-);
-impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
-    MultiproverFixedPointGadget<'a, N, S>
-{
+pub struct MultiproverFixedPointGadget<'a>(&'a PhantomData<()>);
+impl<'a> MultiproverFixedPointGadget<'a> {
     // === Equality === //
 
     /// Constrain a fixed point variable to equal a native field element
     pub fn constrain_equal_integer<L, CS>(
-        lhs: &AuthenticatedFixedPointVar<N, S, L>,
-        rhs: &MpcVariable<N, S>,
+        lhs: &AuthenticatedFixedPointVar<L>,
+        rhs: &MpcVariable,
         cs: &mut CS,
     ) where
-        L: MpcLinearCombinationLike<N, S>,
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L: MpcLinearCombinationLike,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         // Shift the integer
         let shifted_rhs = *TWO_TO_M_SCALAR * rhs;
@@ -124,14 +118,14 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     /// Constrain a fixed point variable to be equal to the given integer
     /// when ignoring the fractional part
     pub fn constrain_equal_integer_ignore_fraction<L, CS>(
-        lhs: &AuthenticatedFixedPointVar<N, S, L>,
-        rhs: &MpcVariable<N, S>,
-        fabric: SharedFabric<N, S>,
+        lhs: &AuthenticatedFixedPointVar<L>,
+        rhs: &MpcVariable,
+        fabric: MpcFabric,
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where
-        L: MpcLinearCombinationLike<N, S>,
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L: MpcLinearCombinationLike,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         // Shift the integer and take the difference
         let shifted_rhs = *TWO_TO_M_SCALAR * rhs;

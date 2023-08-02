@@ -7,7 +7,6 @@ use circuits::{
     zk_gadgets::poseidon::MultiproverPoseidonHashGadget,
 };
 
-use crypto::fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField};
 use curve25519_dalek::scalar::Scalar;
 use integration_helpers::types::IntegrationTest;
 use itertools::Itertools;
@@ -18,6 +17,7 @@ use mpc_bulletproof::{
 };
 use mpc_ristretto::authenticated_scalar::AuthenticatedScalar;
 use rand_core::{OsRng, RngCore};
+use renegade_cryptofields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField};
 
 use crate::{mpc_gadgets::poseidon::convert_params, IntegrationTestArgs, TestWrapper};
 

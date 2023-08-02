@@ -1,13 +1,13 @@
 //! Groups integration tests for bitwise operating MPC gadgets
 
 use circuits::mpc_gadgets::bits::{bit_add, bit_lt, bit_xor, to_bits_le};
-use crypto::fields::scalar_to_u64;
 use itertools::Itertools;
 use mpc_stark::{
     algebra::{authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar},
     PARTY0, PARTY1,
 };
 use rand::{thread_rng, RngCore};
+use renegade_crypto::fields::scalar_to_u64;
 use test_helpers::{
     mpc_network::{await_result, await_result_batch_with_error, await_result_with_error},
     types::IntegrationTest,
@@ -100,7 +100,7 @@ fn test_bit_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     )
     .0;
     let result = await_result_batch_with_error(
-        &AuthenticatedScalarResult::open_authenticated_batch(&res_bits),
+        AuthenticatedScalarResult::open_authenticated_batch(&res_bits),
     )?;
 
     // Open the original random numbers and bitify the sum
@@ -125,7 +125,7 @@ fn test_bits_le_zero(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     let shared_bits = to_bits_le::<250>(&shared_zero, test_args.mpc_fabric.clone());
     let shared_bits_open = await_result_batch_with_error(
-        &AuthenticatedScalarResult::open_authenticated_batch(&shared_bits),
+        AuthenticatedScalarResult::open_authenticated_batch(&shared_bits),
     )?;
 
     assert_scalar_batch_eq(&shared_bits_open, &vec![Scalar::zero(); shared_bits.len()])
@@ -136,13 +136,12 @@ fn test_to_bits_le(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let fabric = &test_args.mpc_fabric;
     let value = 119;
 
-    // The parties share the value 10 with little endian byte representation 0b0101
     let shared_value = fabric.share_scalar(value, PARTY0);
     let shared_bits = to_bits_le::<8>(&shared_value, test_args.mpc_fabric.clone());
 
     // Open the bits and compare
     let opened_bits = await_result_batch_with_error(
-        &AuthenticatedScalarResult::open_authenticated_batch(&shared_bits),
+        AuthenticatedScalarResult::open_authenticated_batch(&shared_bits),
     )?;
 
     if !opened_bits[..8].eq(&vec![

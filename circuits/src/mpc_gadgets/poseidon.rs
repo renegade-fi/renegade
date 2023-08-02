@@ -10,11 +10,11 @@
 //! Their poseidon implementation can be found here:
 //!     https://github.com/arkworks-rs/sponge/blob/master/src/poseidon/mod.rs
 
-use crypto::hash::PoseidonParams;
 use mpc_stark::{
     algebra::{authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar},
     MpcFabric,
 };
+use renegade_crypto::hash::PoseidonParams;
 
 // -----------
 // | Helpers |
@@ -156,7 +156,6 @@ impl AuthenticatedPoseidonHasher {
 
     /// Add the next round constants to the state
     fn add_round_constants(&mut self, round_index: usize) {
-        // .zip(self.params.ark(round_index))
         for (elem, round_constant) in self
             .state
             .iter_mut()
@@ -202,10 +201,10 @@ impl AuthenticatedPoseidonHasher {
 #[cfg(test)]
 mod poseidon_tests {
     use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
-    use crypto::hash::default_poseidon_params;
     use itertools::Itertools;
     use mpc_stark::{algebra::scalar::Scalar, PARTY0};
     use rand::{thread_rng, Rng, RngCore};
+    use renegade_crypto::hash::default_poseidon_params;
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use super::AuthenticatedPoseidonHasher;
@@ -235,7 +234,7 @@ mod poseidon_tests {
             arkworks_poseidon.squeeze_field_elements(1 /* num_elements */)[0];
 
         // Hash and squeeze in an MPC circuit
-        let (party0_res, _) = execute_mock_mpc(|fabric| {
+        let (party0_res, _) = execute_mock_mpc(move |fabric| {
             let params = params.clone();
             let random_vec = random_vec.clone();
 

@@ -9,14 +9,21 @@ WORKDIR /build
 COPY ./rust-toolchain ./circuits/rust-toolchain
 RUN cat circuits/rust-toolchain | xargs rustup toolchain install
 
-# Copy in dependencies from the same repo
+# Copy in the workspace Cargo.toml and modify the members field, this allows us to skip
+# transferring all workspace members to the docker image, and instead only transfer the
+# dependencies of the integration test. Every path dependency of the target crate is automatically
+# added to the workspace
 COPY ./Cargo.toml ./Cargo.toml
+RUN sed -i '/members = \[/,/\]/c\members = [ "circuits" ]' Cargo.toml
+
+# Copy in dependencies from the same repo
 COPY ./circuit-types ./circuit-types
 COPY ./circuit-macros ./circuit-macros
 COPY ./common ./common
 COPY ./constants ./constants
-COPY ./crypto ./crypto
-COPY ./integration-helpers ./integration-helpers
+COPY ./renegade-crypto ./renegade-crypto
+COPY ./test-helpers ./test-helpers
+COPY ./util ./util
 
 # Place a set of dummy sources in the path, build the dummy executable
 # to cache built dependencies, then bulid the full executable
