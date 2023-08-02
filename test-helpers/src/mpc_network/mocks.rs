@@ -1,7 +1,5 @@
 //! Mocks of various types used throughout the implementation of the MPC Network
 
-use std::mem::size_of;
-
 use async_trait::async_trait;
 
 use mpc_stark::{
@@ -11,10 +9,7 @@ use mpc_stark::{
     network::{MpcNetwork, NetworkOutbound, PartyId},
     PARTY0,
 };
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, DuplexStream},
-    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 /// The maximum message length in the mock network, used for debugging
 pub const MAX_MESSAGE_LEN: u64 = 1_000_000;
@@ -101,10 +96,6 @@ impl UnboundedDuplexStream {
 pub struct MockNetwork {
     /// The ID of the local party
     party_id: PartyId,
-    /// The sent message number in the sequence
-    send_sequence_number: usize,
-    /// The receive message number in the sequence
-    recv_sequence_number: usize,
     /// The underlying mock network connection
     mock_conn: UnboundedDuplexStream,
 }
@@ -114,8 +105,6 @@ impl MockNetwork {
     pub fn new(party_id: PartyId, stream: UnboundedDuplexStream) -> Self {
         Self {
             party_id,
-            send_sequence_number: 0,
-            recv_sequence_number: 0,
             mock_conn: stream,
         }
     }
@@ -141,7 +130,6 @@ impl MpcNetwork for MockNetwork {
         &mut self,
         message: NetworkOutbound,
     ) -> Result<NetworkOutbound, MpcNetworkError> {
-        panic!("exchange called");
         if self.party_id() == PARTY0 {
             self.send_message(message).await?;
             self.receive_message().await
