@@ -1,15 +1,15 @@
 //! Groups gadgets around computing Merkle entries and proving Merkle openings
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
+use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 use circuit_types::{merkle::MerkleOpeningVar, traits::LinearCombinationLike};
-use curve25519_dalek::scalar::Scalar;
+use crypto::hash::default_poseidon_params;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem},
     r1cs_mpc::R1CSError,
 };
+use mpc_stark::algebra::scalar::Scalar;
 use std::ops::Neg;
-
-use crate::mpc_gadgets::poseidon::PoseidonSpongeParameters;
 
 use super::poseidon::PoseidonHashGadget;
 
@@ -142,7 +142,7 @@ impl<const HEIGHT: usize> PoseidonMerkleHashGadget<HEIGHT> {
         CS: RandomizableConstraintSystem,
     {
         // Build a sponge hasher
-        let hasher_params = PoseidonSpongeParameters::default();
+        let hasher_params = default_poseidon_params();
         let mut hasher = PoseidonHashGadget::new(hasher_params);
         hasher.batch_absorb(values, cs)?;
 
@@ -156,7 +156,7 @@ impl<const HEIGHT: usize> PoseidonMerkleHashGadget<HEIGHT> {
         right: &LinearCombination,
         cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError> {
-        let hasher_params = PoseidonSpongeParameters::default();
+        let hasher_params = default_poseidon_params();
         let mut hasher = PoseidonHashGadget::new(hasher_params);
         hasher.batch_absorb(&[left.clone(), right.clone()], cs)?;
 
@@ -174,36 +174,30 @@ pub(crate) mod merkle_test {
         merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
     };
     use circuit_types::{merkle::MerkleOpening, traits::CircuitBaseType};
-    use crypto::{
-        fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField},
-        hash::default_poseidon_params,
-    };
-    use curve25519_dalek::scalar::Scalar;
+    use crypto::hash::default_poseidon_params;
     use itertools::Itertools;
     use merlin::Transcript;
     use mpc_bulletproof::{r1cs::Prover, PedersenGens};
+    use mpc_stark::algebra::scalar::Scalar;
     use rand::{thread_rng, Rng};
-    use rand_core::OsRng;
 
     use crate::zk_gadgets::merkle::PoseidonMerkleHashGadget;
 
     struct MerkleConfig {}
     impl Config for MerkleConfig {
-        type Leaf = [DalekRistrettoField];
-        type LeafDigest = DalekRistrettoField;
-        type InnerDigest = DalekRistrettoField;
+        type Leaf = [Scalar::Field];
+        type LeafDigest = Scalar::Field;
+        type InnerDigest = Scalar::Field;
 
-        type LeafHash = CRH<DalekRistrettoField>;
-        type TwoToOneHash = TwoToOneCRH<DalekRistrettoField>;
-        type LeafInnerDigestConverter = IdentityDigestConverter<DalekRistrettoField>;
+        type LeafHash = CRH<Scalar::Field>;
+        type TwoToOneHash = TwoToOneCRH<Scalar::Field>;
+        type LeafInnerDigestConverter = IdentityDigestConverter<Scalar::Field>;
     }
 
     /// Create a random sequence of field elements
-    fn random_field_elements(n: usize) -> Vec<DalekRistrettoField> {
-        let mut rng = OsRng {};
-        (0..n)
-            .map(|_| scalar_to_prime_field(&Scalar::random(&mut rng)))
-            .collect_vec()
+    fn random_field_elements(n: usize) -> Vec<Scalar> {
+        let mut rng = thread_rng();
+        (0..n).map(|_| Scalar::random(&mut rng)).collect_vec()
     }
 
     /// Get the opening indices from the index, this can be done by bit-decomposing the input to
@@ -246,7 +240,7 @@ pub(crate) mod merkle_test {
 
         let mut ark_leaf_data = Vec::with_capacity(num_leaves);
         for i in 0..num_leaves {
-            let leaf_data: [DalekRistrettoField; leaf_size] =
+            let leaf_data: [Scalar; leaf_size] =
                 (*random_field_elements(leaf_size)).try_into().unwrap();
             merkle_tree.update(i, &leaf_data).unwrap();
             ark_leaf_data.push(leaf_data);
@@ -254,13 +248,12 @@ pub(crate) mod merkle_test {
 
         // Generate a proof for a random index and prove it in the native gadget
         let random_index = thread_rng().gen_range(0..num_leaves);
-        let expected_root = prime_field_to_scalar(&merkle_tree.root());
+        let expected_root = &merkle_tree.root();
         let opening = merkle_tree.generate_proof(random_index).unwrap();
         let mut opening_scalars = opening
             .auth_path
             .iter()
             .rev() // Path comes in reverse
-            .map(prime_field_to_scalar)
             .collect_vec();
 
         // Hash the sister leaf of the given scalar
@@ -269,16 +262,12 @@ pub(crate) mod merkle_test {
         } else {
             ark_leaf_data[random_index - 1]
         };
-        let sister_leaf_hash: DalekRistrettoField =
-            CRH::evaluate(&arkworks_params, sister_leaf_data).unwrap();
+        let sister_leaf_hash: Scalar = CRH::evaluate(&arkworks_params, sister_leaf_data).unwrap();
 
-        opening_scalars.insert(0, prime_field_to_scalar(&sister_leaf_hash));
+        opening_scalars.insert(0, &sister_leaf_hash);
 
         // Convert the leaf data for the given leaf to scalars
-        let leaf_data = ark_leaf_data[random_index]
-            .iter()
-            .map(prime_field_to_scalar)
-            .collect_vec();
+        let leaf_data = ark_leaf_data[random_index];
 
         // Build a constraint system
         let pc_gens = PedersenGens::default();
@@ -311,7 +300,7 @@ pub(crate) mod merkle_test {
     #[test]
     fn test_invalid_witness() {
         // A random input at the leaf
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let n = 6;
         const TREE_HEIGHT: usize = 10;
         let leaf_data = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
@@ -319,25 +308,15 @@ pub(crate) mod merkle_test {
         // Compute the correct root via Arkworks
         let arkworks_params = default_poseidon_params();
 
-        let arkworks_leaf_data = leaf_data.iter().map(scalar_to_prime_field).collect_vec();
-
         let mut merkle_tree =
             MerkleTree::<MerkleConfig>::blank(&arkworks_params, &arkworks_params, TREE_HEIGHT)
                 .unwrap();
-
-        merkle_tree
-            .update(0 /* index */, &arkworks_leaf_data)
-            .unwrap();
+        merkle_tree.update(0 /* index */, &leaf_data).unwrap();
 
         // Random (incorrect) root
         let expected_root = Scalar::random(&mut rng);
         let opening = merkle_tree.generate_proof(0 /* index */).unwrap();
-        let mut opening_scalars = opening
-            .auth_path
-            .iter()
-            .rev() // Path comes in reverse
-            .map(prime_field_to_scalar)
-            .collect_vec();
+        let mut opening_scalars = opening.auth_path.into_iter().rev().collect_vec();
 
         // Add a zero to the opening scalar for the next leaf
         opening_scalars.insert(0, Scalar::zero());

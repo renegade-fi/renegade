@@ -8,15 +8,13 @@ use circuit_types::{
         CircuitVarType, LinearCombinationLike, MpcLinearCombinationLike,
         MultiproverCircuitVariableType,
     },
-    SharedFabric,
 };
-use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
     r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem},
 };
-use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
+use mpc_stark::{algebra::scalar::Scalar, MpcFabric};
 
 use crate::{
     mpc_gadgets::bits::{scalar_to_bits_le, to_bits_le},
@@ -256,29 +254,22 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
 }
 
 /// A multiprover version of the greater than or equal to zero gadget
-pub struct MultiproverGreaterThanEqZeroGadget<
-    'a,
-    const D: usize,
-    N: 'a + MpcNetwork + Send,
-    S: 'a + SharedValueSource<Scalar>,
-> {
+pub struct MultiproverGreaterThanEqZeroGadget<'a, const D: usize> {
     /// Phantom
-    _phantom: &'a PhantomData<(N, S)>,
+    _phantom: &'a PhantomData<()>,
 }
 
-impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
-    MultiproverGreaterThanEqZeroGadget<'a, D, N, S>
-{
+impl<'a, const D: usize> MultiproverGreaterThanEqZeroGadget<'a, D> {
     /// Constrains the input value to be greater than or equal to zero implicitly
     /// by bit-decomposing the value and re-composing it thereafter
     pub fn constrain_greater_than_zero<L, CS>(
         x: L,
-        fabric: SharedFabric<N, S>,
+        fabric: MpcFabric,
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where
-        L: MpcLinearCombinationLike<N, S>,
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L: MpcLinearCombinationLike,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         let reconstructed_res = Self::bit_decompose_reconstruct(x.clone(), fabric, cs)?;
         cs.constrain(reconstructed_res - x.into());
@@ -293,16 +284,16 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
     /// value is non-negative
     fn bit_decompose_reconstruct<L, CS>(
         x: L,
-        fabric: SharedFabric<N, S>,
+        fabric: MpcFabric,
         cs: &mut CS,
-    ) -> Result<MpcLinearCombination<N, S>, ProverError>
+    ) -> Result<MpcLinearCombination, ProverError>
     where
-        L: MpcLinearCombinationLike<N, S>,
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L: MpcLinearCombinationLike,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         // Evaluate the assignment of the value in the underlying constraint system
         let value_assignment = cs.eval(&x.into()).map_err(ProverError::Collaborative)?;
-        let bits = to_bits_le::<D, N, S>(&value_assignment, fabric)
+        let bits = to_bits_le::<D>(&value_assignment, fabric)
             .map_err(ProverError::Mpc)?
             .into_iter()
             .map(|bit| cs.allocate(Some(bit)).unwrap())
@@ -373,22 +364,20 @@ impl<const D: usize> LessThanGadget<D> {
 }
 
 /// A multiprover variant of the EqGadget
-pub struct MultiproverEqGadget<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> {
+pub struct MultiproverEqGadget<'a> {
     /// Phantom
-    _phantom: &'a PhantomData<(N, S)>,
+    _phantom: &'a PhantomData<()>,
 }
 
-impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
-    MultiproverEqGadget<'a, N, S>
-{
+impl<'a> MultiproverEqGadget<'a> {
     /// Constraint two values to be equal
     pub fn constrain_eq<L1, L2, V1, V2, CS>(a: V1, b: V2, cs: &mut CS)
     where
-        L1: MpcLinearCombinationLike<N, S>,
-        L2: MpcLinearCombinationLike<N, S>,
-        V1: MultiproverCircuitVariableType<N, S, L1>,
-        V2: MultiproverCircuitVariableType<N, S, L2>,
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L1: MpcLinearCombinationLike,
+        L2: MpcLinearCombinationLike,
+        V1: MultiproverCircuitVariableType<L1>,
+        V2: MultiproverCircuitVariableType<L2>,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         let a_vars = a.to_mpc_vars();
         let b_vars = b.to_mpc_vars();
@@ -407,31 +396,24 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 /// A multiprover variant of the GreaterThanEqGadget
 ///
 /// `D` is the bitlength of the input values
-pub struct MultiproverGreaterThanEqGadget<
-    'a,
-    const D: usize,
-    N: 'a + MpcNetwork + Send,
-    S: 'a + SharedValueSource<Scalar>,
-> {
+pub struct MultiproverGreaterThanEqGadget<'a, const D: usize> {
     /// Phantom
-    _phantom: &'a PhantomData<(N, S)>,
+    _phantom: &'a PhantomData<()>,
 }
 
-impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
-    MultiproverGreaterThanEqGadget<'a, D, N, S>
-{
+impl<'a, const D: usize> MultiproverGreaterThanEqGadget<'a, D> {
     /// Constrain the relation a >= b
     pub fn constrain_greater_than_eq<L, CS>(
         a: L,
         b: L,
-        fabric: SharedFabric<N, S>,
+        fabric: MpcFabric,
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where
-        L: MpcLinearCombinationLike<N, S>,
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L: MpcLinearCombinationLike,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
-        MultiproverGreaterThanEqZeroGadget::<'a, D, N, S>::constrain_greater_than_zero(
+        MultiproverGreaterThanEqZeroGadget::<'a, D>::constrain_greater_than_zero(
             a.into() - b.into(),
             fabric,
             cs,
@@ -444,13 +426,13 @@ mod comparators_test {
     use std::{cmp, ops::Neg};
 
     use circuit_types::traits::CircuitBaseType;
-    use curve25519_dalek::scalar::Scalar;
     use merlin::Transcript;
     use mpc_bulletproof::{
         r1cs::{ConstraintSystem, Prover},
         PedersenGens,
     };
-    use rand_core::{OsRng, RngCore};
+    use mpc_stark::algebra::scalar::Scalar;
+    use rand::{thread_rng, RngCore};
 
     use super::{EqZeroGadget, GreaterThanEqGadget, GreaterThanEqZeroGadget};
 
@@ -463,7 +445,7 @@ mod comparators_test {
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
         // First tests with a non-zero value
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let val = Scalar::random(&mut rng).commit_public(&mut prover);
 
         let res = EqZeroGadget::eq_zero(val, &mut prover);
@@ -479,7 +461,7 @@ mod comparators_test {
     /// Test the greater than zero constraint
     #[test]
     fn test_greater_than_zero() {
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let pc_gens = PedersenGens::default();
         let mut transcript = Transcript::new(b"test");
         let mut prover = Prover::new(&pc_gens, &mut transcript);
@@ -500,7 +482,7 @@ mod comparators_test {
     /// Test the greater than or equal to constraint
     #[test]
     fn test_greater_than_eq() {
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let pc_gens = PedersenGens::default();
         let mut transcript = Transcript::new(b"test");
         let mut prover = Prover::new(&pc_gens, &mut transcript);

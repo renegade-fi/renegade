@@ -29,12 +29,13 @@ num-integer = "0.1"
 
 # === Workspace Dependencies === #
 circuit-macros = { path = "../circuit-macros" }
-circuit-types = { workspace = true }
+circuit-types = { path = "../circuit-types" }
 constants = { path = "../constants" }
-crypto = { path = "../crypto" }
+renegade-crypto = { path = "../renegade-crypto" }
 
 # === Misc Dependencies === #
 bitvec = "1.0"
+futures = "0.3"
 itertools = "0.10"
 lazy_static = "1.4"
 rand = { version = "0.8" }

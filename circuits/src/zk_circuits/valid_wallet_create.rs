@@ -16,12 +16,12 @@ use circuit_types::{
     wallet::{WalletShare, WalletVar},
 };
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
     r1cs_mpc::R1CSError,
 };
-use rand_core::{CryptoRng, RngCore};
+use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
+use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{zk_gadgets::wallet_operations::WalletShareCommitGadget, SingleProverCircuit};
@@ -168,10 +168,10 @@ mod test {
         balance::Balance, native_helpers::compute_wallet_private_share_commitment, order::Order,
         traits::CircuitBaseType,
     };
-    use curve25519_dalek::scalar::Scalar;
     use merlin::Transcript;
     use mpc_bulletproof::{r1cs::Prover, PedersenGens};
-    use rand_core::OsRng;
+    use mpc_stark::algebra::scalar::Scalar;
+    use rand::thread_rng;
 
     use crate::{
         test_helpers::bulletproof_prove_and_verify,
@@ -244,7 +244,7 @@ mod test {
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
         // Allocate the witness and statement in the constraint system
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover);
         let statement_var = statement.commit_public(&mut prover);
 

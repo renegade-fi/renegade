@@ -2,7 +2,6 @@
 
 use std::iter;
 
-use circuit_types::errors::MpcError;
 use mpc_stark::{
     algebra::{authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar},
     MpcFabric,
@@ -143,7 +142,7 @@ pub fn kary_or<const D: usize>(
     let unblinded_shared_bits = blinded_sum_bits
         .into_iter()
         .zip(blinding_bits.iter())
-        .map(|(blinded_bit, blinder_bit)| bit_xor_public(blinder_bit, &blinded_bit))
+        .map(|(blinded_bit, blinder_bit)| bit_xor_public(&blinded_bit, blinder_bit))
         .collect::<Vec<_>>();
 
     constant_round_or_impl(&unblinded_shared_bits, fabric)

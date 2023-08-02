@@ -4,15 +4,13 @@ use std::marker::PhantomData;
 use circuit_types::{
     errors::ProverError,
     traits::{LinearCombinationLike, MpcLinearCombinationLike},
-    SharedFabric,
 };
 use crypto::fields::bigint_to_scalar;
-use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
     r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, R1CSError},
 };
-use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
+use mpc_stark::MpcFabric;
 use num_bigint::BigInt;
 
 use crate::mpc_gadgets::bits::{scalar_to_bits_le, to_bits_le};
@@ -47,28 +45,21 @@ impl<const D: usize> ToBitsGadget<D> {
 /// Takes a scalar and returns its bit representation, constrained to be correct
 ///
 /// D is the bitlength of the input vector to bitify
-pub struct MultiproverToBitsGadget<
-    'a,
-    const D: usize,
-    N: MpcNetwork + Send,
-    S: SharedValueSource<Scalar>,
-> {
+pub struct MultiproverToBitsGadget<'a, const D: usize> {
     /// Phantom
-    _phantom: &'a PhantomData<(N, S)>,
+    _phantom: &'a PhantomData<()>,
 }
 
-impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
-    MultiproverToBitsGadget<'a, D, N, S>
-{
+impl<'a, const D: usize> MultiproverToBitsGadget<'a, D> {
     /// Converts a value into its bitwise representation
     pub fn to_bits<L, CS>(
         a: L,
-        fabric: SharedFabric<N, S>,
+        fabric: MpcFabric,
         cs: &mut CS,
-    ) -> Result<Vec<MpcLinearCombination<N, S>>, ProverError>
+    ) -> Result<Vec<MpcLinearCombination>, ProverError>
     where
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
-        L: MpcLinearCombinationLike<N, S>,
+        CS: MpcRandomizableConstraintSystem<'a>,
+        L: MpcLinearCombinationLike,
     {
         // Evaluate the linear combination so that we can use a raw MPC to get the bits
         let a_scalar = cs
@@ -76,7 +67,7 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
             .map_err(ProverError::Collaborative)?;
 
         // Convert the scalar to bits in a raw MPC gadget
-        let bits = to_bits_le::<D /* bits */, N, S>(&a_scalar, fabric).map_err(ProverError::Mpc)?;
+        let bits = to_bits_le::<D /* bits */>(&a_scalar, fabric).map_err(ProverError::Mpc)?;
 
         // Allocate the bits in the constraint system, and constrain their inner product with
         // 1, 2, 4, ..., 2^{D-1} to be equal to the input value
@@ -100,13 +91,13 @@ impl<'a, const D: usize, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Sc
 mod bits_test {
     use circuit_types::traits::CircuitBaseType;
     use crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
-    use curve25519_dalek::scalar::Scalar;
     use merlin::Transcript;
     use mpc_bulletproof::{
         r1cs::{ConstraintSystem, Prover},
         PedersenGens,
     };
-    use rand_core::{OsRng, RngCore};
+    use mpc_stark::algebra::scalar::Scalar;
+    use rand::{thread_rng, RngCore};
 
     use super::ToBitsGadget;
 
@@ -114,7 +105,7 @@ mod bits_test {
     #[test]
     fn test_to_bits() {
         // Create a random input to bitify
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let random_value = rng.next_u64();
 
         // Create the statement by bitifying the input

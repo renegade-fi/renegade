@@ -1,19 +1,15 @@
 //! Groups integration tests for comparators
 
-use std::slice::Concat;
-
-use bigdecimal::num_traits::NumOps;
 use circuits::mpc_gadgets::comparators::{
     cond_select, cond_select_vec, eq, eq_zero, greater_than, greater_than_equal, kary_or,
     less_than, less_than_equal,
 };
-use crypto::fields::scalar_to_u64;
-use itertools::Itertools;
 use mpc_stark::{
     algebra::{authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar},
     PARTY0, PARTY1,
 };
 use rand::{seq::SliceRandom, thread_rng, Rng, RngCore};
+use renegade_crypto::fields::scalar_to_u64;
 use test_helpers::{
     mpc_network::{await_result, await_result_batch_with_error, await_result_with_error},
     types::IntegrationTest,
@@ -66,7 +62,7 @@ fn test_inequalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
     expected_result = opened_a > opened_b;
     assert_scalar_eq(&gt_result, &expected_result.into())?;
 
-    // Test >= with equal values
+    // Test >= with random values
     let gte_result = await_result_with_error(
         greater_than_equal::<250>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
             .open_authenticated(),
@@ -185,12 +181,14 @@ fn test_cond_select_vector(test_args: &IntegrationTestArgs) -> Result<(), String
     // Select `values1`
     let res = cond_select_vec(&fabric.one_authenticated(), &values1, &values2);
     let res_open =
-        await_result_batch_with_error(&AuthenticatedScalarResult::open_authenticated_batch(&res))?;
-    assert_scalar_batch_eq(&res_open, &[1.into(), 2.into(), 3.into()]);
+        await_result_batch_with_error(AuthenticatedScalarResult::open_authenticated_batch(&res))?;
+    assert_scalar_batch_eq(&res_open, &[1.into(), 2.into(), 3.into()])?;
 
     // Select `values2`
-
-    assert_scalar_batch_eq(&res_open, &[4, 5, 6])
+    let res = cond_select_vec(&fabric.zero_authenticated(), &values1, &values2);
+    let res_open =
+        await_result_batch_with_error(AuthenticatedScalarResult::open_authenticated_batch(&res))?;
+    assert_scalar_batch_eq(&res_open, &[4.into(), 5.into(), 6.into()])
 }
 
 inventory::submit!(TestWrapper(IntegrationTest {
