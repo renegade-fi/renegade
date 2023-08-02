@@ -6,17 +6,14 @@ use std::marker::PhantomData;
 use circuit_types::{
     errors::ProverError,
     traits::{LinearCombinationLike, MpcLinearCombinationLike},
-    SharedFabric,
 };
-use curve25519_dalek::scalar::Scalar;
+use crypto::hash::PoseidonParams;
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem},
     r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, MpcVariable, R1CSError},
 };
-use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
-
-use crate::mpc_gadgets::poseidon::PoseidonSpongeParameters;
+use mpc_stark::{algebra::scalar::Scalar, MpcFabric};
 
 use super::arithmetic::{ExpGadget, MultiproverExpGadget};
 
@@ -30,7 +27,7 @@ use super::arithmetic::{ExpGadget, MultiproverExpGadget};
 #[derive(Debug)]
 pub struct PoseidonHashGadget {
     /// The parameterization of the hash function
-    params: PoseidonSpongeParameters,
+    params: PoseidonParams,
     /// The hash state
     state: Vec<LinearCombination>,
     /// The next index in the state to being absorbing inputs at
@@ -42,7 +39,7 @@ pub struct PoseidonHashGadget {
 
 impl PoseidonHashGadget {
     /// Construct a new hash gadget with the given parameterization
-    pub fn new(params: PoseidonSpongeParameters) -> Self {
+    pub fn new(params: PoseidonParams) -> Self {
         // Initialize the state as all zeros
         let state = (0..params.capacity + params.rate)
             .map(|_| LinearCombination::from(Scalar::zero()))
@@ -265,31 +262,25 @@ impl PoseidonHashGadget {
 ///
 /// This version of the gadget is used for the multi-prover case, i.e in an MPC execution
 #[derive(Debug)]
-pub struct MultiproverPoseidonHashGadget<
-    'a,
-    N: 'a + MpcNetwork + Send,
-    S: 'a + SharedValueSource<Scalar>,
-> {
+pub struct MultiproverPoseidonHashGadget<'a> {
     /// The parameterization of the hash function
-    params: PoseidonSpongeParameters,
+    params: PoseidonParams,
     /// The hash state
-    state: Vec<MpcLinearCombination<N, S>>,
+    state: Vec<MpcLinearCombination>,
     /// The next index in the state to being absorbing inputs at
     next_index: usize,
     /// Whether the sponge is in squeezing mode. For simplicity, we disallow
     /// the case in which a caller wishes to squeeze values and the absorb more.
     in_squeeze_state: bool,
     /// A reference to the shared MPC fabric that the computation variables are allocated in
-    fabric: SharedFabric<N, S>,
+    fabric: MpcFabric,
     /// Phantom for the lifetime parameter
     _phantom: PhantomData<&'a ()>,
 }
 
-impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
-    MultiproverPoseidonHashGadget<'a, N, S>
-{
+impl<'a> MultiproverPoseidonHashGadget<'a> {
     /// Construct a new hash gadget with the given parameterization
-    pub fn new(params: PoseidonSpongeParameters, fabric: SharedFabric<N, S>) -> Self {
+    pub fn new(params: PoseidonParams, fabric: MpcFabric) -> Self {
         // Initialize the state as all zeros
         let state = (0..params.capacity + params.rate)
             .map(|_| MpcLinearCombination::from_scalar(Scalar::zero(), fabric.0.clone()))
@@ -313,8 +304,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where
-        L: MpcLinearCombinationLike<N, S>,
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L: MpcLinearCombinationLike,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         self.batch_absorb(hash_input, cs)?;
         self.constrained_squeeze(expected_output.clone(), cs)
@@ -323,8 +314,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     /// Absorb an input into the hasher state
     pub fn absorb<'b, L, CS>(&mut self, a: L, cs: &mut CS) -> Result<(), ProverError>
     where
-        L: MpcLinearCombinationLike<N, S>,
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L: MpcLinearCombinationLike,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         assert!(
             !self.in_squeeze_state,
@@ -346,16 +337,16 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     /// Absorb a batch of inputs into the hasher state
     pub fn batch_absorb<L, CS>(&mut self, a: &[L], cs: &mut CS) -> Result<(), ProverError>
     where
-        L: MpcLinearCombinationLike<N, S>,
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L: MpcLinearCombinationLike,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         a.iter().try_for_each(|val| self.absorb(val.clone(), cs))
     }
 
     /// Squeeze an output from the hasher and return to the caller
-    pub fn squeeze<CS>(&mut self, cs: &mut CS) -> Result<MpcLinearCombination<N, S>, ProverError>
+    pub fn squeeze<CS>(&mut self, cs: &mut CS) -> Result<MpcLinearCombination, ProverError>
     where
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         // Once we exit the absorb state, ensure that the digest state is permuted before squeezing
         if !self.in_squeeze_state || self.next_index == self.params.rate {
@@ -375,8 +366,8 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where
-        L: MpcLinearCombinationLike<N, S>,
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L: MpcLinearCombinationLike,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         let squeezed = self.squeeze(cs)?;
         cs.constrain(squeezed - expected.into());
@@ -388,9 +379,9 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         &mut self,
         num_elems: usize,
         cs: &mut CS,
-    ) -> Result<Vec<MpcLinearCombination<N, S>>, ProverError>
+    ) -> Result<Vec<MpcLinearCombination>, ProverError>
     where
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         (0..num_elems)
             .map(|_| self.squeeze(cs))
@@ -401,12 +392,12 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     /// to the provided statement variables
     pub fn batch_constrained_squeeze<L, CS>(
         &mut self,
-        expected: &[MpcVariable<N, S>],
+        expected: &[MpcVariable],
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where
-        L: MpcLinearCombinationLike<N, S>,
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L: MpcLinearCombinationLike,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         expected
             .iter()
@@ -414,7 +405,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     }
 
     /// Permute the digest by applying the Poseidon round function
-    fn permute<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
+    fn permute<CS: MpcRandomizableConstraintSystem<'a>>(
         &mut self,
         cs: &mut CS,
     ) -> Result<(), ProverError> {
@@ -466,7 +457,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     ///
     /// This step is applied in the Poseidon permutation after the round constants
     /// are added to the state.
-    fn apply_sbox<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
+    fn apply_sbox<CS: MpcRandomizableConstraintSystem<'a>>(
         &mut self,
         full_round: bool,
         cs: &mut CS,
@@ -501,7 +492,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     ///
     /// This step is applied after the sbox is applied to the state
     fn apply_mds(&mut self) {
-        let mut new_state = vec![MpcLinearCombination::<N, S>::default(); self.state.len()];
+        let mut new_state = vec![MpcLinearCombination::default(); self.state.len()];
         for (i, row) in self.params.mds_matrix.iter().enumerate() {
             for (a, b) in row.iter().zip(self.state.iter()) {
                 new_state[i] += *a * b
@@ -514,19 +505,16 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
 #[cfg(test)]
 mod single_prover_test {
+    use std::default;
+
     use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use circuit_types::traits::CircuitBaseType;
-    use crypto::{
-        fields::{prime_field_to_scalar, DalekRistrettoField},
-        hash::default_poseidon_params,
-    };
-    use curve25519_dalek::scalar::Scalar;
+    use crypto::hash::default_poseidon_params;
     use itertools::Itertools;
     use merlin::Transcript;
     use mpc_bulletproof::{r1cs::Prover, PedersenGens};
-    use rand_core::{OsRng, RngCore};
-
-    use crate::mpc_gadgets::poseidon::PoseidonSpongeParameters;
+    use mpc_stark::algebra::scalar::Scalar;
+    use rand::{rngs::OsRng, RngCore};
 
     use super::PoseidonHashGadget;
 
@@ -542,12 +530,11 @@ mod single_prover_test {
         let mut arkworks_hasher = PoseidonSponge::new(&arkworks_params);
 
         for elem in random_elems.iter() {
-            arkworks_hasher.absorb(&DalekRistrettoField::from(*elem as i128));
+            arkworks_hasher.absorb(&Scalar::Field::from(*elem as i128));
         }
 
-        let expected_result: DalekRistrettoField =
+        let expected_result: Scalar::Field =
             arkworks_hasher.squeeze_field_elements(1 /* num_elements */)[0];
-        let expected_scalar = prime_field_to_scalar(&expected_result);
 
         // Build a constraint system
         let pc_gens = PedersenGens::default();
@@ -558,9 +545,9 @@ mod single_prover_test {
             .into_iter()
             .map(|elem| elem.commit_public(&mut prover))
             .collect_vec();
-        let expected_out_var = expected_scalar.commit_public(&mut prover);
+        let expected_out_var = Scalar::from(expected_result).commit_public(&mut prover);
 
-        let mut hasher = PoseidonHashGadget::new(PoseidonSpongeParameters::default());
+        let mut hasher = PoseidonHashGadget::new(default_poseidon_params());
         hasher
             .hash(&preimage_vars, expected_out_var, &mut prover)
             .unwrap();
@@ -587,7 +574,7 @@ mod single_prover_test {
             .collect_vec();
         let expected_out_var = random_expected.commit_public(&mut prover);
 
-        let mut hasher = PoseidonHashGadget::new(PoseidonSpongeParameters::default());
+        let mut hasher = PoseidonHashGadget::new(default_poseidon_params());
         hasher
             .hash(&preimage_vars, expected_out_var, &mut prover)
             .unwrap();

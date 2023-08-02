@@ -1,7 +1,6 @@
 //! Groups gadgets around arithmetic integration tests
 use circuit_types::traits::MultiproverCircuitBaseType;
 use circuits::zk_gadgets::arithmetic::MultiproverExpGadget;
-use crypto::fields::{bigint_to_scalar, scalar_to_bigint};
 use curve25519_dalek::scalar::Scalar;
 use integration_helpers::{
     mpc_network::field::get_ristretto_group_modulus, types::IntegrationTest,
@@ -13,6 +12,7 @@ use mpc_bulletproof::{
     PedersenGens,
 };
 use rand_core::{OsRng, RngCore};
+use renegade_cryptofields::{bigint_to_scalar, scalar_to_bigint};
 
 use crate::{IntegrationTestArgs, TestWrapper};
 

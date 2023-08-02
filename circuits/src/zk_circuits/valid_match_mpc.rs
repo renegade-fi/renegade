@@ -16,7 +16,15 @@ use circuit_types::{
         MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
         MultiproverCircuitVariableType, SingleProverCircuit,
     },
-    SharedFabric, AMOUNT_BITS, PRICE_BITS,
+    AMOUNT_BITS, PRICE_BITS,
+};
+use mpc_stark::{
+    algebra::{
+        authenticated_scalar::AuthenticatedScalarResult,
+        authenticated_stark_point::AuthenticatedStarkPointOpenResult, scalar::Scalar,
+        stark_curve::StarkPoint,
+    },
+    MpcFabric,
 };
 use std::marker::PhantomData;
 
@@ -32,16 +40,11 @@ use crate::zk_gadgets::{
     },
 };
 use circuit_macros::circuit_type;
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
     r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, MpcVariable, R1CSError},
 };
-use mpc_ristretto::{
-    authenticated_ristretto::AuthenticatedCompressedRistretto,
-    authenticated_scalar::AuthenticatedScalar, beaver::SharedValueSource, network::MpcNetwork,
-};
-use rand_core::{CryptoRng, RngCore};
+use rand::{CryptoRng, RngCore};
 
 // ----------------------
 // | Circuit Definition |
@@ -52,23 +55,21 @@ use rand_core::{CryptoRng, RngCore};
 /// This statement is only proven within the context of an MPC, so it only
 /// implements the Multiprover circuit trait
 #[derive(Clone, Debug)]
-pub struct ValidMatchMpcCircuit<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+pub struct ValidMatchMpcCircuit<'a> {
     /// Phantom
-    _phantom: &'a PhantomData<(N, S)>,
+    _phantom: &'a PhantomData<()>,
 }
 
-impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
-    ValidMatchMpcCircuit<'a, N, S>
-{
+impl<'a> ValidMatchMpcCircuit<'a> {
     /// The order crossing check, verifies that the matches result is valid given the orders
     /// and balances of the two parties
     pub fn matching_engine_check<CS>(
-        witness: AuthenticatedValidMatchMpcWitnessVar<N, S, MpcVariable<N, S>>,
-        fabric: SharedFabric<N, S>,
+        witness: AuthenticatedValidMatchMpcWitnessVar<MpcVariable>,
+        fabric: MpcFabric,
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         // --- Match Engine Input Validity --- //
         // Check that both orders are for the matched asset pair
@@ -84,7 +85,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // Check that the balances supplied are for the correct mints; i.e. for the mint
         // that each party sells in the settlement
         let mut selected_mints =
-            MultiproverCondSelectVectorGadget::select::<_, MpcLinearCombination<N, S>, _>(
+            MultiproverCondSelectVectorGadget::select::<_, MpcLinearCombination, _>(
                 &[
                     witness.match_res.base_mint.clone().into(),
                     witness.match_res.quote_mint.clone().into(),
@@ -150,7 +151,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         let max_minus_min1 = &witness.amount1 - &witness.amount2;
         let max_minus_min2 = &witness.amount2 - &witness.amount1;
         let max_minus_min_expected =
-            MultiproverCondSelectGadget::select::<_, MpcLinearCombination<N, S>, _>(
+            MultiproverCondSelectGadget::select::<_, MpcLinearCombination, _>(
                 max_minus_min1,
                 max_minus_min2,
                 witness.match_res.min_amount_order_index,
@@ -201,11 +202,11 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 
     /// Check that a balance covers the advertised amount at a given price, and
     /// that the amount is less than the maximum amount allowed by the order
-    pub fn validate_volume_constraints<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
-        match_res: &AuthenticatedMatchResultVar<N, S, MpcVariable<N, S>>,
-        balance: &AuthenticatedBalanceVar<N, S, MpcVariable<N, S>>,
-        order: &AuthenticatedOrderVar<N, S, MpcVariable<N, S>>,
-        fabric: SharedFabric<N, S>,
+    pub fn validate_volume_constraints<CS: MpcRandomizableConstraintSystem<'a>>(
+        match_res: &AuthenticatedMatchResultVar<MpcVariable>,
+        balance: &AuthenticatedBalanceVar<MpcVariable>,
+        order: &AuthenticatedOrderVar<MpcVariable>,
+        fabric: MpcFabric,
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where
@@ -224,7 +225,7 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
         // cover the amount of the quote token sold in the swap
         // If the direction of the order is 1 (sell the base) then the balance must
         // cover the amount of the base token sold in the swap
-        let amount_sold = MultiproverCondSelectGadget::select::<_, MpcLinearCombination<N, S>, _>(
+        let amount_sold = MultiproverCondSelectGadget::select::<_, MpcLinearCombination, _>(
             match_res.base_amount.clone().into(),
             match_res.quote_amount.clone().into(),
             order.side.clone(),
@@ -242,10 +243,10 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
     /// Verify the price protection on the orders; i.e. that the executed price is not
     /// worse than some user-defined limit
     #[allow(unused)]
-    pub fn verify_price_protection<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
-        price: &AuthenticatedFixedPointVar<N, S, MpcVariable<N, S>>,
-        order: &AuthenticatedOrderVar<N, S, MpcVariable<N, S>>,
-        fabric: SharedFabric<N, S>,
+    pub fn verify_price_protection<CS: MpcRandomizableConstraintSystem<'a>>(
+        price: &AuthenticatedFixedPointVar<MpcVariable>,
+        order: &AuthenticatedOrderVar<MpcVariable>,
+        fabric: MpcFabric,
         cs: &mut CS,
     ) -> Result<(), ProverError> {
         // If the order is buy side, verify that the execution price is less
@@ -501,22 +502,18 @@ pub struct ValidMatchMpcWitness {
 // ---------------------
 
 /// Prover implementation of the Valid Match circuit
-impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCircuit<'a, N, S>
-    for ValidMatchMpcCircuit<'a, N, S>
-{
+impl<'a> MultiProverCircuit<'a> for ValidMatchMpcCircuit<'a> {
     type Statement = ();
-    type Witness = AuthenticatedValidMatchMpcWitness<N, S>;
+    type Witness = AuthenticatedValidMatchMpcWitness;
 
     const BP_GENS_CAPACITY: usize = 512;
 
-    fn apply_constraints_multiprover<CS: MpcRandomizableConstraintSystem<'a, N, S>>(
-        witness: <Self::Witness as MultiproverCircuitBaseType<N, S>>::MultiproverVarType<
-            MpcVariable<N, S>,
+    fn apply_constraints_multiprover<CS: MpcRandomizableConstraintSystem<'a>>(
+        witness: <Self::Witness as MultiproverCircuitBaseType>::MultiproverVarType<MpcVariable>,
+        _statement: <Self::Statement as MultiproverCircuitBaseType>::MultiproverVarType<
+            MpcVariable,
         >,
-        _statement: <Self::Statement as MultiproverCircuitBaseType<N, S>>::MultiproverVarType<
-            MpcVariable<N, S>,
-        >,
-        fabric: SharedFabric<N, S>,
+        fabric: MpcFabric,
         cs: &mut CS,
     ) -> Result<(), ProverError> {
         Self::matching_engine_check(witness, fabric, cs)
@@ -524,11 +521,11 @@ impl<'a, N: 'a + MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiProverCir
 
     fn apply_constraints_singleprover<CS: RandomizableConstraintSystem>(
         witness:
-                <<<Self::Witness as MultiproverCircuitBaseType<N, S>>::MultiproverCommType
-                    as MultiproverCircuitCommitmentType<N, S>>::BaseCommitType
+                <<<Self::Witness as MultiproverCircuitBaseType>::MultiproverCommType
+                    as MultiproverCircuitCommitmentType>::BaseCommitType
                     as CircuitCommitmentType>::VarType,
         statement:
-                <<Self::Statement as MultiproverCircuitBaseType<N, S>>::BaseType
+                <<Self::Statement as MultiproverCircuitBaseType>::BaseType
                     as CircuitBaseType>::VarType<Variable>,
         cs: &mut CS,
     ) -> Result<(), R1CSError> {

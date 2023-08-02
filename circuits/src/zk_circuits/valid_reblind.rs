@@ -16,17 +16,17 @@ use circuit_types::{
     },
 };
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
+use crypto::hash::default_poseidon_params;
 use itertools::{izip, Itertools};
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
     r1cs_mpc::R1CSError,
 };
-use rand_core::{CryptoRng, RngCore};
+use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
+use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    mpc_gadgets::poseidon::PoseidonSpongeParameters,
     zk_gadgets::{
         merkle::PoseidonMerkleHashGadget,
         poseidon::PoseidonHashGadget,
@@ -118,7 +118,7 @@ where
             witness.original_wallet_private_shares.keys.pk_match.clone() + pk_match_unblinded;
 
         // Check that the hash of `sk_match` is the wallet's `pk_match`
-        let poseidon_params = PoseidonSpongeParameters::default();
+        let poseidon_params = default_poseidon_params();
         let mut hasher = PoseidonHashGadget::new(poseidon_params);
         hasher.hash(
             &witness.sk_match.to_lc().to_vars(),
@@ -246,7 +246,7 @@ where
         let mut seed_lc: LinearCombination = seed.into();
         let mut values = Vec::with_capacity(num_vals);
 
-        let hasher_params = PoseidonSpongeParameters::default();
+        let hasher_params = default_poseidon_params();
         let mut hasher = PoseidonHashGadget::new(hasher_params);
 
         // Chained hash of the seed value
@@ -356,11 +356,10 @@ mod test {
         },
         traits::{BaseType, CircuitBaseType, LinkableBaseType, LinkableType, SecretShareType},
     };
-    use curve25519_dalek::scalar::Scalar;
     use merlin::Transcript;
     use mpc_bulletproof::{r1cs::Prover, PedersenGens};
+    use mpc_stark::algebra::scalar::Scalar;
     use rand::{thread_rng, Rng};
-    use rand_core::OsRng;
 
     use crate::zk_circuits::test_helpers::{
         create_multi_opening, create_wallet_shares, SizedWallet, SizedWalletShare, INITIAL_WALLET,
@@ -387,7 +386,7 @@ mod test {
         let mut prover = Prover::new(&pc_gens, &mut transcript);
 
         // Allocate the witness and statement in the constraint system
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover);
         let statement_var = statement.commit_public(&mut prover);
 
@@ -399,7 +398,7 @@ mod test {
 
     /// Construct a witness and statement for `VALID REBLIND` from a given wallet
     fn construct_witness_statement(wallet: &SizedWallet) -> (SizedWitness, ValidReblindStatement) {
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
 
         // Build shares of the original wallet, then reblind it
         let (old_wallet_private_shares, old_wallet_public_shares) =
@@ -531,7 +530,7 @@ mod test {
         let recovered_blinder = witness.reblinded_wallet_private_shares.blinder.val
             + witness.reblinded_wallet_public_shares.blinder.val;
 
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let new_blinder = Scalar::random(&mut rng);
         let new_blinder_private_share = Scalar::random(&mut rng);
 
@@ -638,7 +637,7 @@ mod test {
         let statement = original_statement.clone();
 
         let random_index = rng.gen_range(0..witness.original_share_opening.elems.len());
-        witness.original_share_opening.elems[random_index] = Scalar::random(&mut OsRng {});
+        witness.original_share_opening.elems[random_index] = Scalar::random(&mut thread_rng());
 
         assert!(!constraints_satisfied(witness, statement));
 
@@ -646,7 +645,7 @@ mod test {
         let witness = original_witness;
         let mut statement = original_statement;
 
-        statement.merkle_root = Scalar::random(&mut OsRng {});
+        statement.merkle_root = Scalar::random(&mut thread_rng());
 
         assert!(!constraints_satisfied(witness, statement));
     }
@@ -658,7 +657,7 @@ mod test {
         let wallet = INITIAL_WALLET.clone();
         let (original_witness, original_statement) = construct_witness_statement(&wallet);
 
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
 
         // Invalid nullifier
         let witness = original_witness;
@@ -675,7 +674,7 @@ mod test {
         let wallet = INITIAL_WALLET.clone();
         let (witness, mut statement) = construct_witness_statement(&wallet);
 
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         statement.reblinded_private_share_commitment = Scalar::random(&mut rng);
 
         assert!(!constraints_satisfied(witness, statement));

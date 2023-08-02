@@ -15,7 +15,7 @@ pub fn assert_scalar_eq(a: &Scalar, b: &Scalar) -> Result<(), String> {
     if a == b {
         Ok(())
     } else {
-        Err(format!("Expected {:?} == {:?}", a, b))
+        Err(format!("Expected {a} == {b}"))
     }
 }
 

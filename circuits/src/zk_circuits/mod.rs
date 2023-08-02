@@ -24,15 +24,11 @@ pub(crate) mod test_helpers {
         order::{Order, OrderSide},
         wallet::{Wallet, WalletShare},
     };
-    use crypto::{
-        fields::{prime_field_to_scalar, scalar_to_prime_field, DalekRistrettoField},
-        hash::{compute_poseidon_hash, default_poseidon_params},
-    };
-    use curve25519_dalek::scalar::Scalar;
-    use itertools::Itertools;
+    use crypto::hash::{compute_poseidon_hash, default_poseidon_params};
     use lazy_static::lazy_static;
+    use mpc_stark::algebra::scalar::Scalar;
     use num_bigint::BigUint;
-    use rand_core::{CryptoRng, OsRng, RngCore};
+    use rand::{thread_rng, CryptoRng, RngCore};
 
     use circuit_types::native_helpers::{create_wallet_shares_with_randomness, reblind_wallet};
 
@@ -125,7 +121,7 @@ pub(crate) mod test_helpers {
         [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
     {
         // Sample a random secret share for the blinder
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let blinder_share = Scalar::random(&mut rng);
 
         let blinder = wallet.blinder;
@@ -184,16 +180,13 @@ pub(crate) mod test_helpers {
 
             // Hash together each left and right pair to get the internal node values at the next height
             let mut next_internal_nodes = Vec::with_capacity(curr_internal_nodes.len() / 2);
-            for left_right in curr_internal_nodes
-                .chunks(2 /* size */)
-                .map(|chunk| chunk.iter().map(scalar_to_prime_field).collect_vec())
-            {
+            for left_right in curr_internal_nodes.chunks(2 /* size */) {
                 let mut sponge = PoseidonSponge::new(&default_poseidon_params());
                 sponge.absorb(&left_right);
 
-                let squeezed: DalekRistrettoField =
+                let squeezed: Scalar::Field =
                     sponge.squeeze_field_elements(1 /* num_elements */)[0];
-                next_internal_nodes.push(prime_field_to_scalar(&squeezed));
+                next_internal_nodes.push(Scalar::from(squeezed));
             }
 
             // Update the curr_indices vector to be the index of the parent node in the Merkle tree height

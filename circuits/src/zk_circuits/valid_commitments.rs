@@ -28,10 +28,9 @@ use circuit_types::{
     wallet::{LinkableWalletShare, WalletVar},
 };
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
-use curve25519_dalek::ristretto::CompressedRistretto;
-use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::r1cs::{LinearCombination, R1CSError, RandomizableConstraintSystem, Variable};
-use rand_core::{CryptoRng, RngCore};
+use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
+use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 // ----------------------
@@ -380,13 +379,12 @@ mod test {
         order::{OrderShare, OrderSide},
         traits::{CircuitBaseType, LinkableBaseType},
     };
-    use curve25519_dalek::scalar::Scalar;
     use lazy_static::lazy_static;
     use merlin::Transcript;
     use mpc_bulletproof::{r1cs::Prover, PedersenGens};
+    use mpc_stark::algebra::scalar::Scalar;
     use num_bigint::BigUint;
     use rand::{thread_rng, Rng};
-    use rand_core::OsRng;
 
     use crate::zk_circuits::test_helpers::{
         create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
@@ -528,7 +526,7 @@ mod test {
 
     /// Returns true if the given witness and statement satisfy the relation defined by `VALID COMMITMENTS`
     fn constraints_satisfied(witness: SizedWitness, statement: ValidCommitmentsStatement) -> bool {
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
 
         // Create a constrain system
         let pc_gens = PedersenGens::default();

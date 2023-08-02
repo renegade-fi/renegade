@@ -11,11 +11,11 @@ use circuits::{
     mpc_circuits::r#match::compute_match,
     zk_circuits::valid_match_mpc::{AuthenticatedValidMatchMpcWitness, ValidMatchMpcCircuit},
 };
-use integration_helpers::types::IntegrationTest;
 use merlin::Transcript;
 use mpc_bulletproof::{r1cs_mpc::MpcProver, PedersenGens};
 use num_bigint::BigUint;
-use rand_core::OsRng;
+use rand::OsRng;
+use test_helpers::types::IntegrationTest;
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
