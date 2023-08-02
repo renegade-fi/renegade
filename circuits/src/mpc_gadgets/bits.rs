@@ -356,7 +356,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_scalar_from_bits() {
-        let n = 252;
+        let n = 251;
 
         let (party0_res, party1_res) = execute_mock_mpc(move |fabric| async move {
             let bits = {

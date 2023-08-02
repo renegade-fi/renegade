@@ -67,7 +67,7 @@ impl<const SCALAR_BITS: usize> ElGamalGadget<SCALAR_BITS> {
 #[circuit_type(singleprover_circuit)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct ElGamalCiphertext {
-    /// The parital shared secret; the generator raised to the randomness
+    /// The partial shared secret; the generator raised to the randomness
     pub partial_shared_secret: Scalar,
     /// The encrypted value; the pubkey raised to the randomness, multiplied with the message
     pub encrypted_message: Scalar,
@@ -76,12 +76,12 @@ pub struct ElGamalCiphertext {
 #[cfg(test)]
 mod elgamal_tests {
     use circuit_types::traits::CircuitBaseType;
-    use crypto::fields::{biguint_to_scalar, get_scalar_field_modulus, scalar_to_biguint};
-    use merlin::Transcript;
+    use merlin::HashChainTranscript as Transcript;
     use mpc_bulletproof::{r1cs::Prover, PedersenGens};
     use mpc_stark::algebra::scalar::Scalar;
     use num_bigint::BigUint;
     use rand::{thread_rng, RngCore};
+    use renegade_crypto::fields::{biguint_to_scalar, get_scalar_field_modulus, scalar_to_biguint};
 
     use crate::zk_gadgets::comparators::EqGadget;
 

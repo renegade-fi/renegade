@@ -135,8 +135,8 @@ impl<'a> MultiproverFixedPointGadget<'a> {
         // This is effectively the same as constraining the difference to have an integral
         // component of zero
         let shifted_precision =
-            MpcLinearCombination::from_scalar(*TWO_TO_M_SCALAR - Scalar::one(), fabric.clone().0);
-        MultiproverGreaterThanEqGadget::<'_, DEFAULT_FP_PRECISION, _, _>::constrain_greater_than_eq(
+            MpcLinearCombination::from_scalar(*TWO_TO_M_SCALAR - Scalar::one(), fabric.clone());
+        MultiproverGreaterThanEqGadget::<'_, DEFAULT_FP_PRECISION>::constrain_greater_than_eq(
             shifted_precision,
             diff,
             fabric,
