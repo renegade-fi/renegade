@@ -2,7 +2,7 @@
 pub mod field;
 pub mod mocks;
 
-use std::{fmt::Debug, net::SocketAddr};
+use std::{fmt::Debug, net::SocketAddr, sync::Arc};
 
 use dns_lookup::lookup_host;
 use futures::{executor::block_on, future::join_all, Future};
@@ -64,11 +64,11 @@ pub fn setup_mpc_fabric(party_id: u64, local_port: u64, peer_port: u64, docker: 
 /// This will spawn two tasks to execute either side of the MPC
 ///
 /// Returns the outputs of both parties
-pub async fn execute_mock_mpc<T, S, F>(mut f: F) -> (T, T)
+pub async fn execute_mock_mpc<T, S, F>(f: F) -> (T, T)
 where
     T: Send + 'static,
     S: Future<Output = T> + Send + 'static,
-    F: FnMut(MpcFabric) -> S,
+    F: Fn(MpcFabric) -> S + Send + Sync + 'static,
 {
     // Build a duplex stream to broker communication between the two parties
     let (party0_stream, party1_stream) = UnboundedDuplexStream::new_duplex_pair();
@@ -84,8 +84,16 @@ where
     // Spawn two tasks to execute the MPC
     let fabric0 = party0_fabric.clone();
     let fabric1 = party1_fabric.clone();
-    let party0_task = tokio::spawn(f(fabric0));
-    let party1_task = tokio::spawn(f(fabric1));
+
+    // Move the function pointer to the heap and pass shared ownership to both tasks
+    let arc_f = Arc::new(f);
+    let f_clone1 = arc_f.clone();
+    let f_clone2 = arc_f.clone();
+
+    let party0_task =
+        tokio::task::spawn_blocking(move || Handle::current().block_on(f_clone1(fabric0)));
+    let party1_task =
+        tokio::task::spawn_blocking(move || Handle::current().block_on(f_clone2(fabric1)));
 
     let party0_output = party0_task.await.unwrap();
     let party1_output = party1_task.await.unwrap();
@@ -117,7 +125,7 @@ where
 }
 
 /// Await a batch of results in a fabric, blocking the current thread
-pub fn await_result_batch<F, T>(f: &[F]) -> Vec<T>
+pub fn await_result_batch<F, T>(f: Vec<F>) -> Vec<T>
 where
     F: Future<Output = T>,
 {
@@ -125,7 +133,7 @@ where
 }
 
 /// Await a batch of results that may error returning a string in place
-pub fn await_result_batch_with_error<F, T, E>(f: &[F]) -> Result<Vec<T>, String>
+pub fn await_result_batch_with_error<F, T, E>(f: Vec<F>) -> Result<Vec<T>, String>
 where
     F: Future<Output = Result<T, E>>,
     E: Debug,
