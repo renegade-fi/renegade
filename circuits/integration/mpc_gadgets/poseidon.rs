@@ -2,13 +2,13 @@
 
 use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
 use circuits::mpc_gadgets::poseidon::AuthenticatedPoseidonHasher;
-use crypto::hash::{default_poseidon_params, PoseidonParams};
 use itertools::Itertools;
 use mpc_stark::{
     algebra::{authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar},
     PARTY0, PARTY1,
 };
 use rand::{thread_rng, RngCore};
+use renegade_crypto::hash::{default_poseidon_params, PoseidonParams};
 use test_helpers::{
     mpc_network::{await_result, await_result_batch},
     types::IntegrationTest,
@@ -29,7 +29,7 @@ fn check_against_arkworks_hash(
     hasher_params: &PoseidonParams,
 ) -> Result<(), String> {
     // Open the input sequence and cast it to field elements
-    let arkworks_input = await_result_batch(&AuthenticatedScalarResult::open_batch(input_sequence))
+    let arkworks_input = await_result_batch(AuthenticatedScalarResult::open_batch(input_sequence))
         .into_iter()
         .map(|s| s.inner())
         .collect_vec();

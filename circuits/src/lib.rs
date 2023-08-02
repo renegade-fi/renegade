@@ -26,8 +26,6 @@ mod tracing;
 // pub mod zk_circuits;
 // pub mod zk_gadgets;
 
-/// The highest possible set bit for a positive scalar
-pub(crate) const POSITIVE_SCALAR_MAX_BITS: usize = 251;
 /// The highest possible set bit in the Dalek scalar field
 pub(crate) const SCALAR_MAX_BITS: usize = 253;
 /// The seed for a fiat-shamir transcript
@@ -228,9 +226,9 @@ pub(crate) mod test_helpers {
 
 #[cfg(test)]
 mod circuits_test {
-    use crypto::fields::bigint_to_scalar;
     use num_bigint::BigInt;
     use rand::{thread_rng, Rng};
+    use renegade_crypto::fields::bigint_to_scalar;
 
     use crate::scalar_2_to_m;
 

@@ -109,8 +109,8 @@ pub fn bit_xor(
 
 /// Single bit xor where one of the bits is public
 pub fn bit_xor_public(
-    a: &AuthenticatedScalarResult,
-    b: &ScalarResult,
+    a: &ScalarResult,
+    b: &AuthenticatedScalarResult,
 ) -> AuthenticatedScalarResult {
     // xor(a, b) = a + b - 2ab
     a + b - Scalar::from(2u64) * a * b
@@ -157,8 +157,8 @@ fn bit_add_impl(
 ///
 /// Returns the added bits and a bit indicating whether the value has overflowed
 pub fn bit_add_public(
-    a: &[AuthenticatedScalarResult],
-    b: &[ScalarResult],
+    a: &[ScalarResult],
+    b: &[AuthenticatedScalarResult],
     fabric: MpcFabric,
 ) -> (Vec<AuthenticatedScalarResult>, AuthenticatedScalarResult) {
     bit_add_impl_public(a, b, fabric.zero_authenticated() /* initial_carry */)
@@ -166,8 +166,8 @@ pub fn bit_add_public(
 
 /// Implementation of `bit_add` that takes the second input as public values
 fn bit_add_impl_public(
-    a: &[AuthenticatedScalarResult],
-    b: &[ScalarResult],
+    a: &[ScalarResult],
+    b: &[AuthenticatedScalarResult],
     initial_carry: AuthenticatedScalarResult,
 ) -> (Vec<AuthenticatedScalarResult>, AuthenticatedScalarResult) {
     assert_eq!(
@@ -202,8 +202,8 @@ pub fn carry_out(
 
 /// A `carry_out` implementation that takes the second input as public values
 pub fn carry_out_public(
-    a: &[AuthenticatedScalarResult],
-    b: &[ScalarResult],
+    a: &[ScalarResult],
+    b: &[AuthenticatedScalarResult],
     initial_carry: AuthenticatedScalarResult,
 ) -> AuthenticatedScalarResult {
     bit_add_impl_public(a, b, initial_carry).1
@@ -246,8 +246,8 @@ pub fn to_bits_le<const D: usize>(
     // Convert to bits
     let blinded_value_bits = scalar_to_bits_le::<D>(&blinded_value_open);
     let (bits, _) = bit_add_public(
-        &resize_bitvector_to_length(random_bits, D, fabric.clone()),
         &resize_bitvector_to_length_public(blinded_value_bits, D, fabric.clone()),
+        &resize_bitvector_to_length(random_bits, D, fabric.clone()),
         fabric,
     );
 
@@ -271,8 +271,9 @@ pub fn bit_lt(
     fabric: MpcFabric,
 ) -> AuthenticatedScalarResult {
     assert_eq!(a.len(), b.len(), "bit_lt takes equal length bit arrays");
+
     // Invert `b`, add and then evaluate the carry
-    let b_inverted = b.iter().map(|bit| Scalar::one() - bit).collect::<Vec<_>>();
+    let b_inverted = b.iter().map(|bit| Scalar::one() - bit).collect_vec();
     let carry = carry_out(a, &b_inverted, fabric.one_authenticated());
 
     Scalar::one() - carry
@@ -280,14 +281,17 @@ pub fn bit_lt(
 
 /// A `bit_lt` implementation that takes one of the inputs as public
 pub fn bit_lt_public(
-    a: &[AuthenticatedScalarResult],
-    b: &[ScalarResult],
+    a: &[ScalarResult],
+    b: &[AuthenticatedScalarResult],
     fabric: MpcFabric,
 ) -> AuthenticatedScalarResult {
     assert_eq!(a.len(), b.len(), "bit_lt takes equal length bit arrays");
+
     // Invert `b`, add and then evaluate the carry
-    let ones = (0..a.len()).map(|_| fabric.one()).collect_vec();
-    let b_inverted = ScalarResult::batch_sub(&ones, b);
+    let n = a.len();
+    let ones = fabric.ones_authenticated(n);
+    let b_inverted = AuthenticatedScalarResult::batch_sub(&ones, b);
+
     let carry = carry_out_public(a, &b_inverted, fabric.one_authenticated());
 
     Scalar::one() - carry
@@ -299,11 +303,14 @@ mod tests {
     use itertools::Itertools;
     use mpc_stark::{
         algebra::{authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar},
-        PARTY0,
+        error::MpcError,
+        PARTY0, PARTY1,
     };
     use num_bigint::BigUint;
     use rand::{thread_rng, Rng, RngCore};
     use test_helpers::mpc_network::execute_mock_mpc;
+
+    use crate::mpc_gadgets::bits::{bit_lt, bit_lt_public, to_bits_le};
 
     use super::{scalar_from_bits_le, scalar_to_bits_le};
 
@@ -332,7 +339,6 @@ mod tests {
     async fn test_scalar_to_bits_all_one() {
         let (res, _) = execute_mock_mpc(|fabric| async move {
             const N: usize = 250; // Power of 2 to fills bits up to
-            let scalar_bits = 256; // The number of bits used to store a scalar
             let scalar = (0..N).fold(Scalar::zero(), |acc, _| {
                 acc * Scalar::from(2u64) + Scalar::from(1u64)
             });
@@ -352,7 +358,7 @@ mod tests {
     async fn test_scalar_from_bits() {
         let n = 252;
 
-        let (party0_res, party1_res) = execute_mock_mpc(|fabric| async move {
+        let (party0_res, party1_res) = execute_mock_mpc(move |fabric| async move {
             let bits = {
                 let mut rng = thread_rng();
                 (0..n).map(|_| rng.gen_bool(0.5) as u64).collect_vec()
@@ -368,6 +374,7 @@ mod tests {
                 join_all(AuthenticatedScalarResult::open_batch(&random_scalar_bits)).await;
             let expected_res = bits_open
                 .into_iter()
+                .rev()
                 .map(|s| s.to_biguint())
                 .fold(BigUint::from(0u8), |acc, bit| acc * 2u8 + bit);
 
@@ -384,7 +391,7 @@ mod tests {
         let n = 250; // The number of bits to fill in as ones
         let scalar_bits = 256; // The number of bits used to store a Scalar
 
-        let (party0_res, party1_res) = execute_mock_mpc(|fabric| async move {
+        let (party0_res, party1_res) = execute_mock_mpc(move |fabric| async move {
             let bits = fabric
                 .ones_authenticated(n)
                 .into_iter()
@@ -401,5 +408,106 @@ mod tests {
 
         assert!(party0_res);
         assert!(party1_res);
+    }
+
+    /// Tests the `bit_lt` gadget
+    #[tokio::test]
+    async fn test_bit_lt() {
+        // The number of bits in the field
+        const N: usize = 250;
+
+        // Test the case in which the two values are equal
+        let (party0_res, party1_res): (Result<bool, MpcError>, Result<bool, MpcError>) =
+            execute_mock_mpc(|fabric| async move {
+                let value = 10;
+                let equal_value1 = fabric.share_scalar(value, PARTY0);
+                let equal_value2 = fabric.share_scalar(value, PARTY1);
+
+                let res = bit_lt(
+                    &to_bits_le::<N>(&equal_value1, fabric.clone()),
+                    &to_bits_le::<N>(&equal_value2, fabric.clone()),
+                    fabric.clone(),
+                )
+                .open_authenticated()
+                .await?;
+
+                Ok(res == Scalar::zero())
+            })
+            .await;
+
+        assert!(party0_res.unwrap());
+        assert!(party1_res.unwrap());
+
+        // Test the case in which one value is less than the other
+        let mut rng = thread_rng();
+        let values = (rng.next_u64(), rng.next_u64());
+        let min_value = u64::min(values.0, values.1);
+        let max_value = u64::max(values.0, values.1);
+
+        let (res, _): (Result<(bool, bool), MpcError>, _) =
+            execute_mock_mpc(move |fabric| async move {
+                let min_value = fabric.share_scalar(min_value, PARTY0);
+                let max_value = fabric.share_scalar(max_value, PARTY1);
+
+                let min_bits = to_bits_le::<N>(&min_value, fabric.clone());
+                let max_bits = to_bits_le::<N>(&max_value, fabric.clone());
+
+                // min_value < max_value == true
+                let res1 = bit_lt(&min_bits, &max_bits, fabric.clone())
+                    .open_authenticated()
+                    .await?;
+
+                // max_value < min_value == false
+                let res2 = bit_lt(&max_bits, &min_bits, fabric.clone())
+                    .open_authenticated()
+                    .await?;
+
+                Ok((res1 == Scalar::one(), res2 == Scalar::zero()))
+            })
+            .await;
+
+        let (res1, res2) = res.unwrap();
+        assert!(res1);
+        assert!(res2);
+    }
+
+    /// Test the `bit_lt_public` method
+    #[tokio::test]
+    async fn test_bit_lt_public() {
+        // The number of bits in the field
+        const N: usize = 250;
+
+        let mut rng = thread_rng();
+        let values = (rng.next_u64(), rng.next_u64());
+        let min_value = u64::min(values.0, values.1);
+        let max_value = u64::max(values.0, values.1);
+
+        let (res, _): (Result<(bool, bool), MpcError>, _) =
+            execute_mock_mpc(move |fabric| async move {
+                let min_value = fabric.share_scalar(min_value, PARTY0);
+                let max_value = fabric.share_scalar(max_value, PARTY1);
+
+                let min_bits = to_bits_le::<N>(&min_value, fabric.clone());
+                let max_bits = to_bits_le::<N>(&max_value, fabric.clone());
+
+                // min_value < max_value == true
+                let min_bits_public = AuthenticatedScalarResult::open_batch(&min_bits);
+                let res1 = bit_lt_public(&min_bits_public, &max_bits, fabric.clone())
+                    .open_authenticated()
+                    .await?;
+
+                // max_value < min_value == false
+                let max_bits_public = AuthenticatedScalarResult::open_batch(&max_bits);
+                let res2 = bit_lt_public(&max_bits_public, &min_bits, fabric.clone())
+                    .open_authenticated()
+                    .await?;
+
+                Ok((res1 == Scalar::one(), res2 == Scalar::zero()))
+            })
+            .await;
+
+        let (res1, res2) = res.unwrap();
+        assert!(res1);
+        assert!(res2);
     }
 }

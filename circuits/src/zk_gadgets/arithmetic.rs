@@ -4,14 +4,13 @@ use std::marker::PhantomData;
 
 use ark_ff::Zero;
 use circuit_types::errors::ProverError;
-use circuit_types::SharedFabric;
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 
 use circuit_types::traits::{LinearCombinationLike, MpcLinearCombinationLike};
-use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::r1cs::{LinearCombination, RandomizableConstraintSystem, Variable};
-use mpc_bulletproof::r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, R1CSError};
-use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
+use mpc_bulletproof::r1cs_mpc::{MpcLinearCombination, R1CSError};
+use mpc_stark::algebra::scalar::Scalar;
+use mpc_stark::MpcFabric;
 use num_bigint::BigUint;
 use num_integer::Integer;
 
@@ -230,24 +229,21 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
 // -----------------------
 
 /// A multiprover implementation of the exp gadget
-pub struct MultiproverExpGadget<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> {
+pub struct MultiproverExpGadget<'a> {
     /// Phantom
-    _phantom: PhantomData<&'a (N, S)>,
+    _phantom: &'a PhantomData<()>,
 }
 
-impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
-    MultiproverExpGadget<'a, N, S>
-{
+impl<'a> MultiproverExpGadget<'a> {
     /// Apply the gadget to the input
     pub fn exp<L, CS>(
         x: L,
         alpha: u64,
-        fabric: SharedFabric<N, S>,
+        fabric: MpcFabric,
         cs: &mut CS,
-    ) -> Result<MpcLinearCombination<N, S>, ProverError>
+    ) -> Result<MpcLinearCombination, ProverError>
     where
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
-        L: MpcLinearCombinationLike<N, S>,
+        L: MpcLinearCombinationLike,
     {
         if alpha == 0 {
             Ok(MpcLinearCombination::from_scalar(Scalar::one(), fabric.0))
@@ -277,17 +273,18 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 #[cfg(test)]
 mod arithmetic_tests {
     use circuit_types::traits::CircuitBaseType;
-    use crypto::fields::{bigint_to_scalar, biguint_to_scalar, scalar_to_biguint};
-    use curve25519_dalek::scalar::Scalar;
-    use integration_helpers::mpc_network::field::get_ristretto_group_modulus;
+    use crypto::fields::{
+        bigint_to_scalar, biguint_to_scalar, get_scalar_field_modulus, scalar_to_biguint,
+    };
     use merlin::Transcript;
     use mpc_bulletproof::{
         r1cs::{ConstraintSystem, Prover, Variable},
         PedersenGens,
     };
+    use mpc_stark::algebra::scalar::Scalar;
     use num_bigint::BigUint;
     use num_integer::Integer;
-    use rand_core::{OsRng, RngCore};
+    use rand::{thread_rng, RngCore};
 
     use super::{DivRemGadget, ExpGadget, PrivateExpGadget};
 
@@ -295,13 +292,12 @@ mod arithmetic_tests {
     #[test]
     fn test_single_prover_exp() {
         // Generate a random input
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let alpha = rng.next_u32(); // Compute x^\alpha
         let random_value = Scalar::random(&mut rng);
 
         let random_bigint = scalar_to_biguint(&random_value);
-        let expected_res =
-            random_bigint.modpow(&BigUint::from(alpha), &get_ristretto_group_modulus());
+        let expected_res = random_bigint.modpow(&BigUint::from(alpha), &get_scalar_field_modulus());
         let expected_scalar = bigint_to_scalar(&expected_res.into());
 
         // Build a constraint system
@@ -320,7 +316,7 @@ mod arithmetic_tests {
     /// Tests the single prover exponent gadget on a private exponent
     #[test]
     fn test_private_exp_gadget() {
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let alpha_bytes = 8;
         let mut random_bytes = vec![0u8; alpha_bytes];
         rng.fill_bytes(&mut random_bytes);
@@ -331,7 +327,7 @@ mod arithmetic_tests {
         // Compute the expected exponentiation result
         let x_bigint = scalar_to_biguint(&x);
         let alpha_bigint = scalar_to_biguint(&alpha);
-        let expected = x_bigint.modpow(&alpha_bigint, &get_ristretto_group_modulus());
+        let expected = x_bigint.modpow(&alpha_bigint, &get_scalar_field_modulus());
 
         // Build a constraint system
         let mut prover_transcript = Transcript::new("test".as_bytes());
@@ -352,7 +348,7 @@ mod arithmetic_tests {
     #[test]
     fn test_div_rem() {
         // Sample random inputs
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let random_dividend = BigUint::from(rng.next_u32());
         let random_divisor = BigUint::from(rng.next_u32());
 

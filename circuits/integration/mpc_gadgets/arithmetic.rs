@@ -1,13 +1,13 @@
 //! Groups integration tests for arithmetic gadgets used in the MPC circuits
 
 use circuits::mpc_gadgets::arithmetic::{pow, prefix_mul, product};
-use crypto::fields::{get_scalar_field_modulus, scalar_to_u64};
 use mpc_stark::{
     algebra::{authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar},
     PARTY0, PARTY1,
 };
 use num_bigint::BigUint;
 use rand::{thread_rng, Rng, RngCore};
+use renegade_crypto::fields::{get_scalar_field_modulus, scalar_to_u64};
 use test_helpers::{
     mpc_network::{
         await_result, await_result_batch, await_result_batch_with_error, await_result_with_error,
@@ -43,11 +43,11 @@ fn test_product(test_args: &IntegrationTestArgs) -> Result<(), String> {
     )?;
 
     // Open the shared values and compute the expected result
-    let p1_values_prod = await_result_batch(&AuthenticatedScalarResult::open_batch(&p1_values))
+    let p1_values_prod = await_result_batch(AuthenticatedScalarResult::open_batch(&p1_values))
         .iter()
         .fold(Scalar::one(), |acc, val| acc * val);
 
-    let p2_values_prod = await_result_batch(&AuthenticatedScalarResult::open_batch(&p2_values))
+    let p2_values_prod = await_result_batch(AuthenticatedScalarResult::open_batch(&p2_values))
         .iter()
         .fold(Scalar::one(), |acc, val| acc * val);
     let expected_result = p1_values_prod * p2_values_prod;
@@ -68,7 +68,7 @@ fn test_prefix_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Open the prefixes and verify the result
     let opened_prefix_products = await_result_batch_with_error(
-        &AuthenticatedScalarResult::open_authenticated_batch(&prefixes),
+        AuthenticatedScalarResult::open_authenticated_batch(&prefixes),
     )?;
 
     let mut expected_result = Vec::with_capacity(n);

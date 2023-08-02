@@ -4,13 +4,12 @@ use circuit_types::{
     traits::{CircuitVarType, LinearCombinationLike},
     wallet::WalletShareVar,
 };
+use crypto::hash::default_poseidon_params;
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem},
     r1cs_mpc::R1CSError,
 };
-
-use crate::mpc_gadgets::poseidon::PoseidonSpongeParameters;
 
 use super::poseidon::PoseidonHashGadget;
 
@@ -39,7 +38,7 @@ where
         cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError> {
         // Create a new hash gadget
-        let hash_params = PoseidonSpongeParameters::default();
+        let hash_params = default_poseidon_params();
         let mut hasher = PoseidonHashGadget::new(hash_params);
 
         // Serialize the wallet and hash it into the hasher's state
@@ -60,7 +59,7 @@ where
         cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError> {
         // Create a new hash gadget
-        let hash_params = PoseidonSpongeParameters::default();
+        let hash_params = default_poseidon_params();
         let mut hasher = PoseidonHashGadget::new(hash_params);
 
         // The public shares are added directly to a sponge H(private_commit || public shares)
@@ -107,7 +106,7 @@ impl NullifierGadget {
         CS: RandomizableConstraintSystem,
     {
         // The nullifier is computed as H(C(w)||r)
-        let hash_params = PoseidonSpongeParameters::default();
+        let hash_params = default_poseidon_params();
         let mut hasher = PoseidonHashGadget::new(hash_params);
 
         hasher.batch_absorb(&[share_commitment, wallet_blinder], cs)?;

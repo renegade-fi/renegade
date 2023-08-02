@@ -6,12 +6,11 @@ use circuit_types::{
     errors::ProverError,
     traits::{LinearCombinationLike, MpcLinearCombinationLike},
 };
-use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
     r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem},
 };
-use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
+use mpc_stark::algebra::scalar::Scalar;
 
 use crate::zk_gadgets::comparators::EqGadget;
 
@@ -48,20 +47,17 @@ impl OrGate {
 }
 
 /// Represents an OR gate in a multi-prover constraint system
-pub struct MultiproverOrGate<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
-    /// Phantom
-    _phantom: &'a PhantomData<(N, S)>,
-}
+pub struct MultiproverOrGate<'a>(&'a PhantomData<()>);
 
-impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>> MultiproverOrGate<'a, N, S> {
+impl<'a> MultiproverOrGate<'a> {
     /// Return the logical OR of the two arguments
     ///
     /// The arguments are assumed to be binary (0 or 1), but this assumption should be
     /// constrained elsewhere in the calling circuit
-    pub fn or<L, CS>(a: L, b: L, cs: &mut CS) -> Result<MpcLinearCombination<N, S>, ProverError>
+    pub fn or<L, CS>(a: L, b: L, cs: &mut CS) -> Result<MpcLinearCombination, ProverError>
     where
-        L: MpcLinearCombinationLike<N, S>,
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L: MpcLinearCombinationLike,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         let (a, b, a_times_b) = cs
             .multiply(&a.into(), &b.into())

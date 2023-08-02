@@ -1,7 +1,7 @@
 //! Groups logic related to the match computation circuit
 
 use circuit_types::{
-    errors::MpcError, fixed_point::AuthenticatedFixedPoint, order::AuthenticatedOrder,
+    fixed_point::AuthenticatedFixedPoint, order::AuthenticatedOrder,
     r#match::AuthenticatedMatchResult, AMOUNT_BITS,
 };
 use mpc_stark::{

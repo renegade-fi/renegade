@@ -8,18 +8,15 @@ use circuit_types::{
         CircuitVarType, LinearCombinationLike, MpcLinearCombinationLike,
         MultiproverCircuitVariableType,
     },
-    SharedFabric,
 };
-use curve25519_dalek::scalar::Scalar;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
     r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem},
 };
-use mpc_ristretto::{beaver::SharedValueSource, network::MpcNetwork};
+use mpc_stark::{algebra::scalar::Scalar, MpcFabric};
 
 /// Implements the control flow gate if selector { a } else { b }
-pub struct CondSelectGadget {}
-
+pub struct CondSelectGadget;
 impl CondSelectGadget {
     /// Computes the control flow statement if selector { a } else { b }
     pub fn select<L1, L2, V1, V2, CS>(a: V1, b: V1, selector: L1, cs: &mut CS) -> V2
@@ -52,30 +49,24 @@ impl CondSelectGadget {
 }
 
 /// A multiprover version of the conditional select gadget
-pub struct MultiproverCondSelectGadget<
-    'a,
-    N: 'a + MpcNetwork + Send,
-    S: 'a + SharedValueSource<Scalar>,
-> {
+pub struct MultiproverCondSelectGadget<'a> {
     /// Phantom
-    _phantom: &'a PhantomData<(N, S)>,
+    _phantom: &'a PhantomData<()>,
 }
 
-impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
-    MultiproverCondSelectGadget<'a, N, S>
-{
+impl<'a> MultiproverCondSelectGadget<'a> {
     /// Computes the control flow statement if selector { a } else { b }
     pub fn select<L, V, CS>(
         a: V,
         b: V,
         selector: L,
-        fabric: SharedFabric<N, S>,
+        fabric: MpcFabric,
         cs: &mut CS,
     ) -> Result<V, ProverError>
     where
-        L: MpcLinearCombinationLike<N, S>,
-        V: MultiproverCircuitVariableType<N, S, MpcLinearCombination<N, S>>,
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
+        L: MpcLinearCombinationLike,
+        V: MultiproverCircuitVariableType<MpcLinearCombination>,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         let a_vars = a.to_mpc_vars();
         let b_vars = b.to_mpc_vars();
@@ -136,31 +127,25 @@ impl CondSelectVectorGadget {
 }
 
 /// A multiprover variant of the CondSelectVectorGadget
-pub struct MultiproverCondSelectVectorGadget<
-    'a,
-    N: 'a + MpcNetwork + Send,
-    S: 'a + SharedValueSource<Scalar>,
-> {
+pub struct MultiproverCondSelectVectorGadget<'a> {
     /// Phantom
-    _phantom: &'a PhantomData<(N, S)>,
+    _phantom: &'a PhantomData<()>,
 }
 
-impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
-    MultiproverCondSelectVectorGadget<'a, N, S>
-{
+impl<'a> MultiproverCondSelectVectorGadget<'a> {
     /// Implements the control flow block if selector { a } else { b }
     /// where `a` and `b` are vectors
     pub fn select<L, V, CS>(
         a: &[V],
         b: &[V],
         selector: L,
-        fabric: SharedFabric<N, S>,
+        fabric: MpcFabric,
         cs: &mut CS,
     ) -> Result<Vec<V>, ProverError>
     where
-        CS: MpcRandomizableConstraintSystem<'a, N, S>,
-        L: MpcLinearCombinationLike<N, S>,
-        V: MultiproverCircuitVariableType<N, S, MpcLinearCombination<N, S>>,
+        CS: MpcRandomizableConstraintSystem<'a>,
+        L: MpcLinearCombinationLike,
+        V: MultiproverCircuitVariableType<MpcLinearCombination>,
     {
         assert_eq!(a.len(), b.len(), "a and b must be of equal length");
 
@@ -182,14 +167,14 @@ impl<'a, N: 'a + MpcNetwork + Send, S: 'a + SharedValueSource<Scalar>>
 #[cfg(test)]
 mod cond_select_test {
     use circuit_types::traits::CircuitBaseType;
-    use curve25519_dalek::scalar::Scalar;
     use itertools::Itertools;
     use merlin::Transcript;
     use mpc_bulletproof::{
         r1cs::{ConstraintSystem, LinearCombination, Prover, Variable},
         PedersenGens,
     };
-    use rand_core::OsRng;
+    use mpc_stark::algebra::scalar::Scalar;
+    use rand::rngs::OsRng;
 
     use super::{CondSelectGadget, CondSelectVectorGadget};
 

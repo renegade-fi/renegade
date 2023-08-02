@@ -72,8 +72,9 @@ pub fn mod_2m<const M: usize>(
     let mod_opened_value_bits = scalar_to_bits_le::<M>(&value_open_mod_2m);
 
     // If the modulus is negative, shift up by 2^m
-    let shift_bit = scalar_2m * bit_lt_public(&random_bits, &mod_opened_value_bits, fabric);
+    let bit_lt = bit_lt_public(&mod_opened_value_bits, &random_bits, fabric);
 
+    let shift_bit = scalar_2m * bit_lt;
     shift_bit + value_open_mod_2m - random_lower_bits
 }
 
@@ -88,9 +89,7 @@ pub fn truncate<const M: usize>(
     }
 
     let x_mod_2m = mod_2m::<M>(x, fabric);
-    let res = scalar_2_to_m(M).inverse() * (x - &x_mod_2m);
-
-    res
+    scalar_2_to_m(M).inverse() * (x - &x_mod_2m)
 }
 
 /// Shifts the input right by the specified amount
@@ -105,4 +104,56 @@ pub fn shift_right<const M: usize>(
     }
 
     truncate::<M>(a, fabric)
+}
+
+#[cfg(test)]
+mod tests {
+    use circuit_types::errors::MpcError;
+    use mpc_stark::{algebra::scalar::Scalar, PARTY0};
+    use rand::{thread_rng, RngCore};
+    use test_helpers::mpc_network::execute_mock_mpc;
+
+    use crate::mpc_gadgets::modulo::{mod_2m, shift_right};
+
+    /// Test the `mod2m` gadget
+    #[tokio::test]
+    async fn test_mod2m() {
+        const M: usize = 3;
+        let mut rng = thread_rng();
+        let value = Scalar::random(&mut rng);
+
+        let (res, _): (Result<bool, MpcError>, _) = execute_mock_mpc(move |fabric| async move {
+            let shared_value = fabric.share_scalar(value, PARTY0);
+            let res = mod_2m::<M>(&shared_value, fabric.clone())
+                .open_authenticated()
+                .await
+                .unwrap();
+
+            let expected = Scalar::from(value.to_biguint() % (1u64 << M));
+            Ok(res == expected)
+        })
+        .await;
+
+        assert!(res.unwrap())
+    }
+
+    /// Test the shift right gadget
+    #[tokio::test]
+    async fn test_shift_right() {
+        const SHIFT_AMOUNT: usize = 3;
+        let value = thread_rng().next_u32();
+
+        let (res, _): (Result<bool, MpcError>, _) = execute_mock_mpc(move |fabric| async move {
+            let shared_value = fabric.share_scalar(value, PARTY0);
+            let res = shift_right::<SHIFT_AMOUNT>(&shared_value, fabric.clone())
+                .open_authenticated()
+                .await
+                .unwrap();
+
+            Ok(res == Scalar::from(value >> SHIFT_AMOUNT))
+        })
+        .await;
+
+        assert!(res.unwrap())
+    }
 }

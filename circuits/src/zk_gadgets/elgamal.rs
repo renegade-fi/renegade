@@ -5,13 +5,14 @@ use circuit_macros::circuit_type;
 use circuit_types::traits::{
     BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
 };
-use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use lazy_static::lazy_static;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
     r1cs_mpc::R1CSError,
 };
-use rand_core::{CryptoRng, RngCore};
+use mpc_stark::algebra::scalar::Scalar;
+use mpc_stark::algebra::stark_curve::StarkPoint;
+use rand::{CryptoRng, RngCore};
 
 use super::arithmetic::PrivateExpGadget;
 
@@ -75,13 +76,12 @@ pub struct ElGamalCiphertext {
 #[cfg(test)]
 mod elgamal_tests {
     use circuit_types::traits::CircuitBaseType;
-    use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
-    use curve25519_dalek::scalar::Scalar;
-    use integration_helpers::mpc_network::field::get_ristretto_group_modulus;
+    use crypto::fields::{biguint_to_scalar, get_scalar_field_modulus, scalar_to_biguint};
     use merlin::Transcript;
     use mpc_bulletproof::{r1cs::Prover, PedersenGens};
+    use mpc_stark::algebra::scalar::Scalar;
     use num_bigint::BigUint;
-    use rand_core::{OsRng, RngCore};
+    use rand::{thread_rng, RngCore};
 
     use crate::zk_gadgets::comparators::EqGadget;
 
@@ -91,7 +91,7 @@ mod elgamal_tests {
     #[test]
     fn test_encrypt() {
         // Create a random cipher
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
         let randomness_bitlength = 16;
         let mut randomness_bytes = vec![0u8; randomness_bitlength / 8];
         rng.fill_bytes(&mut randomness_bytes);
@@ -103,7 +103,7 @@ mod elgamal_tests {
         let generator = Scalar::from(3u64);
 
         // Generate the expected encryption
-        let field_mod = get_ristretto_group_modulus();
+        let field_mod = get_scalar_field_modulus();
         let generator_bigint = scalar_to_biguint(&generator);
         let pubkey_bigint = scalar_to_biguint(&pubkey);
         let randomness_bigint = scalar_to_biguint(&randomness);
