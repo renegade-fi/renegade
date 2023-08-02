@@ -4,12 +4,12 @@ use circuit_types::{
     traits::{CircuitVarType, LinearCombinationLike},
     wallet::WalletShareVar,
 };
-use crypto::hash::default_poseidon_params;
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem},
     r1cs_mpc::R1CSError,
 };
+use renegade_crypto::hash::default_poseidon_params;
 
 use super::poseidon::PoseidonHashGadget;
 

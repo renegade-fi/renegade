@@ -17,8 +17,7 @@ use mpc_bulletproof::{
 use mpc_stark::{algebra::scalar::Scalar, MpcFabric};
 
 use crate::{
-    mpc_gadgets::bits::{scalar_to_bits_le, to_bits_le},
-    POSITIVE_SCALAR_MAX_BITS,
+    mpc_gadgets::bits::to_bits_le, zk_gadgets::bits::scalar_to_bits_le, POSITIVE_SCALAR_MAX_BITS,
 };
 
 /// A gadget that returns whether a value is equal to zero
@@ -44,7 +43,7 @@ impl EqZeroGadget {
         let (is_zero, inverse) = if val_eval == Scalar::zero() {
             (Scalar::one(), Scalar::zero())
         } else {
-            (Scalar::zero(), val_eval.invert())
+            (Scalar::zero(), val_eval.inverse())
         };
 
         // Constrain the inverse to be computed correctly and such that
@@ -235,7 +234,7 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
         );
 
         // Bit decompose the input
-        let bits = scalar_to_bits_le(&cs.eval(&x.into()))[..D]
+        let bits = scalar_to_bits_le::<D>(&cs.eval(&x.into()))[..D]
             .iter()
             .map(|bit| cs.allocate(Some(*bit)).unwrap())
             .collect_vec();
@@ -292,9 +291,8 @@ impl<'a, const D: usize> MultiproverGreaterThanEqZeroGadget<'a, D> {
         CS: MpcRandomizableConstraintSystem<'a>,
     {
         // Evaluate the assignment of the value in the underlying constraint system
-        let value_assignment = cs.eval(&x.into()).map_err(ProverError::Collaborative)?;
+        let value_assignment = cs.eval(&x.into());
         let bits = to_bits_le::<D>(&value_assignment, fabric)
-            .map_err(ProverError::Mpc)?
             .into_iter()
             .map(|bit| cs.allocate(Some(bit)).unwrap())
             .collect_vec();
@@ -426,7 +424,7 @@ mod comparators_test {
     use std::{cmp, ops::Neg};
 
     use circuit_types::traits::CircuitBaseType;
-    use merlin::Transcript;
+    use merlin::HashChainTranscript as Transcript;
     use mpc_bulletproof::{
         r1cs::{ConstraintSystem, Prover},
         PedersenGens,

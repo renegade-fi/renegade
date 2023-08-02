@@ -24,12 +24,14 @@ pub mod mpc_circuits;
 pub mod mpc_gadgets;
 mod tracing;
 // pub mod zk_circuits;
-// pub mod zk_gadgets;
+pub mod zk_gadgets;
 
 /// The highest possible set bit in the Dalek scalar field
 pub(crate) const SCALAR_MAX_BITS: usize = 253;
 /// The seed for a fiat-shamir transcript
 pub(crate) const TRANSCRIPT_SEED: &str = "merlin seed";
+/// The maximum bit index that may be set in a positive `Scalar`
+pub(crate) const POSITIVE_SCALAR_MAX_BITS: usize = 250;
 
 // ----------
 // | Macros |

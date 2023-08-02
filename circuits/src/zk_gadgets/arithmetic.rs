@@ -4,11 +4,11 @@ use std::marker::PhantomData;
 
 use ark_ff::Zero;
 use circuit_types::errors::ProverError;
-use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
+use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 
 use circuit_types::traits::{LinearCombinationLike, MpcLinearCombinationLike};
 use mpc_bulletproof::r1cs::{LinearCombination, RandomizableConstraintSystem, Variable};
-use mpc_bulletproof::r1cs_mpc::{MpcLinearCombination, R1CSError};
+use mpc_bulletproof::r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, R1CSError};
 use mpc_stark::algebra::scalar::Scalar;
 use mpc_stark::MpcFabric;
 use num_bigint::BigUint;
@@ -244,9 +244,10 @@ impl<'a> MultiproverExpGadget<'a> {
     ) -> Result<MpcLinearCombination, ProverError>
     where
         L: MpcLinearCombinationLike,
+        CS: MpcRandomizableConstraintSystem<'a>,
     {
         if alpha == 0 {
-            Ok(MpcLinearCombination::from_scalar(Scalar::one(), fabric.0))
+            Ok(MpcLinearCombination::from_scalar(Scalar::one(), fabric))
         } else if alpha == 1 {
             Ok(x.into())
         } else if alpha % 2 == 0 {
@@ -273,10 +274,7 @@ impl<'a> MultiproverExpGadget<'a> {
 #[cfg(test)]
 mod arithmetic_tests {
     use circuit_types::traits::CircuitBaseType;
-    use crypto::fields::{
-        bigint_to_scalar, biguint_to_scalar, get_scalar_field_modulus, scalar_to_biguint,
-    };
-    use merlin::Transcript;
+    use merlin::HashChainTranscript as Transcript;
     use mpc_bulletproof::{
         r1cs::{ConstraintSystem, Prover, Variable},
         PedersenGens,
@@ -285,6 +283,9 @@ mod arithmetic_tests {
     use num_bigint::BigUint;
     use num_integer::Integer;
     use rand::{thread_rng, RngCore};
+    use renegade_crypto::fields::{
+        bigint_to_scalar, biguint_to_scalar, get_scalar_field_modulus, scalar_to_biguint,
+    };
 
     use super::{DivRemGadget, ExpGadget, PrivateExpGadget};
 

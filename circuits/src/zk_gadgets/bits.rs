@@ -1,19 +1,34 @@
 //! Groups gadgets for going from scalar -> bits and from bits -> scalar
-use std::marker::PhantomData;
+use std::{iter, marker::PhantomData};
 
+use bitvec::{order::Lsb0, slice::BitSlice};
 use circuit_types::{
     errors::ProverError,
     traits::{LinearCombinationLike, MpcLinearCombinationLike},
 };
-use crypto::fields::bigint_to_scalar;
+use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
     r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, R1CSError},
 };
-use mpc_stark::MpcFabric;
+use mpc_stark::{algebra::scalar::Scalar, MpcFabric};
 use num_bigint::BigInt;
+use renegade_crypto::fields::bigint_to_scalar;
 
-use crate::mpc_gadgets::bits::{scalar_to_bits_le, to_bits_le};
+use crate::mpc_gadgets::bits::to_bits_le;
+
+/// Convert a scalar to its little endian bit representation where each bit
+/// is itself a `Scalar`
+pub fn scalar_to_bits_le<const N: usize>(a: &Scalar) -> Vec<Scalar> {
+    let a_biguint = a.to_biguint();
+    BitSlice::<_, Lsb0>::from_slice(&a_biguint.to_bytes_le())
+        .iter()
+        .by_vals()
+        .map(|bit| if bit { Scalar::one() } else { Scalar::zero() })
+        .chain(iter::repeat(Scalar::zero()))
+        .take(N)
+        .collect_vec()
+}
 
 /// Singleprover implementation of the `ToBits` gadget
 pub struct ToBitsGadget<const D: usize> {}
@@ -25,7 +40,7 @@ impl<const D: usize> ToBitsGadget<D> {
         L: LinearCombinationLike,
     {
         let a_scalar = cs.eval(&a.clone().into());
-        let bits = &scalar_to_bits_le(&a_scalar)[..D];
+        let bits = &scalar_to_bits_le::<D>(&a_scalar)[..D];
 
         let mut reconstructed = LinearCombination::default();
         let mut res_bits = Vec::with_capacity(D);
@@ -62,12 +77,10 @@ impl<'a, const D: usize> MultiproverToBitsGadget<'a, D> {
         L: MpcLinearCombinationLike,
     {
         // Evaluate the linear combination so that we can use a raw MPC to get the bits
-        let a_scalar = cs
-            .eval(&a.clone().into())
-            .map_err(ProverError::Collaborative)?;
+        let a_scalar = cs.eval(&a.clone().into());
 
         // Convert the scalar to bits in a raw MPC gadget
-        let bits = to_bits_le::<D /* bits */>(&a_scalar, fabric).map_err(ProverError::Mpc)?;
+        let bits = to_bits_le::<D /* bits */>(&a_scalar, fabric);
 
         // Allocate the bits in the constraint system, and constrain their inner product with
         // 1, 2, 4, ..., 2^{D-1} to be equal to the input value
@@ -90,14 +103,14 @@ impl<'a, const D: usize> MultiproverToBitsGadget<'a, D> {
 #[cfg(test)]
 mod bits_test {
     use circuit_types::traits::CircuitBaseType;
-    use crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
-    use merlin::Transcript;
+    use merlin::HashChainTranscript as Transcript;
     use mpc_bulletproof::{
         r1cs::{ConstraintSystem, Prover},
         PedersenGens,
     };
     use mpc_stark::algebra::scalar::Scalar;
     use rand::{thread_rng, RngCore};
+    use renegade_crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
 
     use super::ToBitsGadget;
 
