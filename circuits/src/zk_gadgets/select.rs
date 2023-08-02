@@ -85,7 +85,7 @@ impl<'a> MultiproverCondSelectGadget<'a> {
             let (_, _, mul2_out) = cs
                 .multiply(
                     &b_var,
-                    &(MpcLinearCombination::from_scalar(Scalar::one(), fabric.0.clone())
+                    &(MpcLinearCombination::from_scalar(Scalar::one(), fabric.clone())
                         - selector.clone().into()),
                 )
                 .map_err(ProverError::Collaborative)?;
@@ -168,7 +168,7 @@ impl<'a> MultiproverCondSelectVectorGadget<'a> {
 mod cond_select_test {
     use circuit_types::traits::CircuitBaseType;
     use itertools::Itertools;
-    use merlin::Transcript;
+    use merlin::HashChainTranscript as Transcript;
     use mpc_bulletproof::{
         r1cs::{ConstraintSystem, LinearCombination, Prover, Variable},
         PedersenGens,
