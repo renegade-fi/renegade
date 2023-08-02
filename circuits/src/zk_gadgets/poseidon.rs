@@ -7,13 +7,13 @@ use circuit_types::{
     errors::ProverError,
     traits::{LinearCombinationLike, MpcLinearCombinationLike},
 };
-use crypto::hash::PoseidonParams;
 use itertools::Itertools;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem},
     r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, MpcVariable, R1CSError},
 };
 use mpc_stark::{algebra::scalar::Scalar, MpcFabric};
+use renegade_crypto::hash::PoseidonParams;
 
 use super::arithmetic::{ExpGadget, MultiproverExpGadget};
 
@@ -178,7 +178,7 @@ impl PoseidonHashGadget {
 
         // Compute partial_rounds rounds in which the sbox is applied to only the last element
         let partial_rounds_start = self.params.full_rounds / 2;
-        let partial_rounds_end = partial_rounds_start + self.params.parital_rounds;
+        let partial_rounds_end = partial_rounds_start + self.params.partial_rounds;
         for round in partial_rounds_start..partial_rounds_end {
             self.add_round_constants(round);
             self.apply_sbox(false /* full_round */, cs)?;
@@ -187,7 +187,7 @@ impl PoseidonHashGadget {
 
         // Compute another full_rounds / 2 rounds in which we apply the sbox to all elements
         let final_full_rounds_start = partial_rounds_end;
-        let final_full_rounds_end = self.params.parital_rounds + self.params.full_rounds;
+        let final_full_rounds_end = self.params.partial_rounds + self.params.full_rounds;
         for round in final_full_rounds_start..final_full_rounds_end {
             self.add_round_constants(round);
             self.apply_sbox(true /* full_round */, cs)?;
@@ -201,12 +201,13 @@ impl PoseidonHashGadget {
     ///
     /// This is the first step in any round of the Poseidon permutation
     fn add_round_constants(&mut self, round_number: usize) {
-        for (elem, round_constant) in self
-            .state
-            .iter_mut()
-            .zip(self.params.get_round_constant(round_number))
-        {
-            *elem += LinearCombination::from(*round_constant)
+        for (elem, round_constant) in self.state.iter_mut().zip(
+            self.params.ark[round_number]
+                .iter()
+                .copied()
+                .map(Scalar::from),
+        ) {
+            *elem += LinearCombination::from(round_constant)
         }
     }
 
@@ -242,9 +243,14 @@ impl PoseidonHashGadget {
     fn apply_mds(&mut self) -> Result<(), R1CSError> {
         let mut new_state: Vec<LinearCombination> =
             vec![LinearCombination::default(); self.state.len()];
-        for (i, row) in self.params.mds_matrix.iter().enumerate() {
-            for (a, b) in row.iter().zip(self.state.iter_mut()) {
-                new_state[i] += *a * b.clone()
+        for (i, row) in self.params.mds.iter().enumerate() {
+            for (a, b) in row
+                .iter()
+                .copied()
+                .map(Scalar::from)
+                .zip(self.state.iter_mut())
+            {
+                new_state[i] += a * b.clone()
             }
         }
 
@@ -283,7 +289,7 @@ impl<'a> MultiproverPoseidonHashGadget<'a> {
     pub fn new(params: PoseidonParams, fabric: MpcFabric) -> Self {
         // Initialize the state as all zeros
         let state = (0..params.capacity + params.rate)
-            .map(|_| MpcLinearCombination::from_scalar(Scalar::zero(), fabric.0.clone()))
+            .map(|_| MpcLinearCombination::from_scalar(Scalar::zero(), fabric.clone()))
             .collect::<Vec<_>>();
         Self {
             params,
@@ -418,7 +424,7 @@ impl<'a> MultiproverPoseidonHashGadget<'a> {
 
         // Compute partial_rounds rounds in which the sbox is applied to only the last element
         let partial_rounds_start = self.params.full_rounds / 2;
-        let partial_rounds_end = partial_rounds_start + self.params.parital_rounds;
+        let partial_rounds_end = partial_rounds_start + self.params.partial_rounds;
         for round in partial_rounds_start..partial_rounds_end {
             self.add_round_constants(round);
             self.apply_sbox(false /* full_round */, cs)?;
@@ -427,7 +433,7 @@ impl<'a> MultiproverPoseidonHashGadget<'a> {
 
         // Compute another full_rounds / 2 rounds in which we apply the sbox to all elements
         let final_full_rounds_start = partial_rounds_end;
-        let final_full_rounds_end = self.params.parital_rounds + self.params.full_rounds;
+        let final_full_rounds_end = self.params.partial_rounds + self.params.full_rounds;
         for round in final_full_rounds_start..final_full_rounds_end {
             self.add_round_constants(round);
             self.apply_sbox(true /* full_round */, cs)?;
@@ -441,12 +447,13 @@ impl<'a> MultiproverPoseidonHashGadget<'a> {
     ///
     /// This is the first step in any round of the Poseidon permutation
     fn add_round_constants(&mut self, round_number: usize) {
-        for (elem, round_constant) in self
-            .state
-            .iter_mut()
-            .zip(self.params.get_round_constant(round_number))
-        {
-            *elem += MpcLinearCombination::from_scalar(*round_constant, self.fabric.clone().0)
+        for (elem, round_constant) in self.state.iter_mut().zip(
+            self.params.ark[round_number]
+                .iter()
+                .copied()
+                .map(Scalar::from),
+        ) {
+            *elem += MpcLinearCombination::from_scalar(round_constant, self.fabric.clone())
         }
     }
 
@@ -493,9 +500,9 @@ impl<'a> MultiproverPoseidonHashGadget<'a> {
     /// This step is applied after the sbox is applied to the state
     fn apply_mds(&mut self) {
         let mut new_state = vec![MpcLinearCombination::default(); self.state.len()];
-        for (i, row) in self.params.mds_matrix.iter().enumerate() {
-            for (a, b) in row.iter().zip(self.state.iter()) {
-                new_state[i] += *a * b
+        for (i, row) in self.params.mds.iter().enumerate() {
+            for (a, b) in row.iter().copied().map(Scalar::from).zip(self.state.iter()) {
+                new_state[i] += a * b
             }
         }
 
@@ -505,16 +512,14 @@ impl<'a> MultiproverPoseidonHashGadget<'a> {
 
 #[cfg(test)]
 mod single_prover_test {
-    use std::default;
-
     use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use circuit_types::traits::CircuitBaseType;
-    use crypto::hash::default_poseidon_params;
     use itertools::Itertools;
-    use merlin::Transcript;
+    use merlin::HashChainTranscript as Transcript;
     use mpc_bulletproof::{r1cs::Prover, PedersenGens};
     use mpc_stark::algebra::scalar::Scalar;
     use rand::{rngs::OsRng, RngCore};
+    use renegade_crypto::hash::default_poseidon_params;
 
     use super::PoseidonHashGadget;
 
