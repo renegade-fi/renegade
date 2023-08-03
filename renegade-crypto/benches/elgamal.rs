@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
-use crypto::elgamal::{decrypt_scalar, encrypt_scalar};
 use mpc_stark::algebra::scalar::Scalar;
 use rand::thread_rng;
+use renegade_crypto::elgamal::{decrypt_scalar, encrypt_scalar};
 
 /// Run a benchmark on the ElGamal encryption implementation
 fn bench_encrypt(c: &mut Criterion) {

@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 # === Cryptography === #
-mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
+mpc-bulletproof = { workspace = true }
 
 # === Runtime + Threading === #
 crossbeam = { version = "0.8.1" }

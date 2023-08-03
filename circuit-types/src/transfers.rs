@@ -6,11 +6,11 @@
 // ----------------------
 
 use circuit_macros::circuit_type;
-use crypto::fields::scalar_to_u64;
 use mpc_bulletproof::r1cs::{LinearCombination, Variable};
 use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
 use num_bigint::BigUint;
 use rand::{CryptoRng, RngCore};
+use renegade_crypto::fields::scalar_to_u64;
 use serde::{Deserialize, Serialize};
 
 use crate::traits::{

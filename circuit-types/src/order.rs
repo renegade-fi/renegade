@@ -2,7 +2,6 @@
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
 use circuit_macros::circuit_type;
-use crypto::fields::scalar_to_u64;
 use mpc_bulletproof::r1cs::{LinearCombination, Variable};
 use mpc_stark::{
     algebra::{
@@ -14,6 +13,7 @@ use mpc_stark::{
 };
 use num_bigint::BigUint;
 use rand::{CryptoRng, RngCore};
+use renegade_crypto::fields::scalar_to_u64;
 use serde::{Deserialize, Serialize};
 use std::ops::Add;
 

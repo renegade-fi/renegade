@@ -24,7 +24,7 @@ futures = "0.3"
 # === Workspace Crates === #
 circuit-macros = { path = "../circuit-macros" }
 constants = { path = "../constants" }
-crypto = { workspace = true }
+renegade-crypto = { path = "../renegade-crypto" }
 util = { path = "../util" }
 
 # === Misc === #

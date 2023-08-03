@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 # === Cryptography === #
-mpc-ristretto = { workspace = true }
+mpc-stark =  { workspace = true }
 
 # === Networking === #
 libp2p = { workspace = true, features = ["request-response"] }

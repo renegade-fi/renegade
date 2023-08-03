@@ -9,7 +9,7 @@ edition = "2021"
 # === Cryptography + Arithmetic === #
 curve25519-dalek = { workspace = true }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
-mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
+mpc-bulletproof = { workspace = true }
 num-bigint = { workspace = true }
 
 # === Runtime + Networking === #
@@ -23,7 +23,7 @@ tracing = { workspace = true }
 circuits = { path = "../circuits" }
 circuit-types = { path = "../circuit-types" }
 constants = { path = "../constants" }
-crypto = { path = "../crypto" }
+renegade-crypto = { path = "../renegade-crypto" }
 
 # === Misc Dependencies === #
 base64 = { version = "0.13" }

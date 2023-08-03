@@ -6,9 +6,6 @@ use std::ops::{Add, Mul, Neg, Sub};
 
 use bigdecimal::{BigDecimal, ToPrimitive};
 use circuit_macros::circuit_type;
-use crypto::fields::{
-    bigint_to_scalar, biguint_to_scalar, scalar_to_bigdecimal, scalar_to_bigint, scalar_to_u64,
-};
 use lazy_static::lazy_static;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
@@ -26,6 +23,9 @@ use mpc_stark::{
 };
 use num_bigint::BigUint;
 use rand::{CryptoRng, RngCore};
+use renegade_crypto::fields::{
+    bigint_to_scalar, biguint_to_scalar, scalar_to_bigdecimal, scalar_to_bigint, scalar_to_u64,
+};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
@@ -654,7 +654,6 @@ impl<L: MpcLinearCombinationLike> Sub<AuthenticatedFixedPointVar<L>> for MpcLine
 #[cfg(test)]
 mod fixed_point_tests {
     use bigdecimal::{BigDecimal, FromPrimitive, Signed};
-    use crypto::fields::{get_scalar_field_modulus, scalar_to_bigdecimal, scalar_to_bigint};
     use merlin::HashChainTranscript as Transcript;
     use mpc_bulletproof::{
         r1cs::{ConstraintSystem, Prover},
@@ -662,6 +661,9 @@ mod fixed_point_tests {
     };
     use num_bigint::{BigInt, ToBigInt};
     use rand::{thread_rng, Rng, RngCore};
+    use renegade_crypto::fields::{
+        get_scalar_field_modulus, scalar_to_bigdecimal, scalar_to_bigint,
+    };
 
     use super::*;
 

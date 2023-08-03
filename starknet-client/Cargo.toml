@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 # === Cryptographic + arithmetic dependencies === #
 curve25519-dalek = { workspace = true }
-crypto = { workspace = true }
 num-bigint = { version = "0.4.3" }
 
 # === Networking + Blockchain dependencies === #
@@ -16,14 +15,15 @@ starknet = { workspace = true }
 reqwest = "0.11.13"
 
 # === Workspace Dependencies === #
-circuits = { workspace = true }
-circuit-types = { workspace = true }
+circuits = { path = "../circuits" }
+circuit-types = { path = "../circuit-types" }
 common = { path = "../common" }
-state = { path = "../state" } 
+constants = { path = "../constants" }
+renegade-crypto = { path = "../renegade-crypto" }
+state = { path = "../state" }
 
 
 # === Misc dependencies === #
-constants = { workspace = true }
 itertools = "0.10.0"
 lazy_static = "1.4.0"
 serde = { version = "1.0", features = ["derive"] }

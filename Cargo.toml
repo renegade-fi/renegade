@@ -8,9 +8,9 @@ members = [
 	"common",
 	"config",
 	"core",
-	"crypto",
 	"external-api",
 	"gossip-api",
+	"renegade-crypto",
 	"state",
 	"starknet-client",
 	"system-bus",
@@ -26,6 +26,7 @@ members = [
 	"workers/price-reporter",
 	"workers/proof-manager",
 ]
+exclude = ["mpc-stark", "mpc-bulletproof"]
 
 [profile.bench]
 opt-level = 3 # Full optimizations
@@ -38,19 +39,13 @@ lto = true
 [workspace.dependencies]
 # === Arithmetic + Cryptography === #
 curve25519-dalek = "2.0"
-mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
-mpc-ristretto = "0.1"
+mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof", branch = "stark-curve-refactor" }
+mpc-stark = { git = "https://github.com/renegade-fi/mpc-stark" }
 num-bigint = { version = "0.4.3" }
 rand = "0.8"
 
 # === On-Chain === #
 starknet = { git = "https://github.com/joeykraut/starknet-rs" }
-
-# === Workspace Members === #
-constants = { path = "./constants" }
-circuits = { path = "./circuits" }
-circuit-types = { path = "./circuit-types" }
-crypto = { path = "./crypto" }
 
 # === Networking === #
 libp2p = "0.51"

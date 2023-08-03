@@ -21,7 +21,6 @@ pub mod wallet;
 
 use bigdecimal::Num;
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
-use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use fixed_point::DEFAULT_FP_PRECISION;
 use merkle::MerkleOpening;
 use mpc_bulletproof::PedersenGens;
@@ -30,6 +29,7 @@ use mpc_stark::algebra::{
 };
 use num_bigint::BigUint;
 use rand::thread_rng;
+use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use serde::{de::Error as SerdeErr, Deserialize, Deserializer, Serialize, Serializer};
 use wallet::{Wallet, WalletShare};
 // use wallet::{Wallet, WalletShare};
@@ -208,9 +208,9 @@ pub mod native_helpers {
         traits::BaseType,
         wallet::{Nullifier, Wallet, WalletShare, WalletShareStateCommitment},
     };
-    use crypto::hash::{compute_poseidon_hash, evaluate_hash_chain};
     use itertools::Itertools;
     use mpc_stark::algebra::scalar::Scalar;
+    use renegade_crypto::hash::{compute_poseidon_hash, evaluate_hash_chain};
 
     /// Recover a wallet from blinded secret shares
     pub fn wallet_from_blinded_shares<
