@@ -5,7 +5,7 @@
 // pub mod commitment_links;
 // pub mod valid_commitments;
 // pub mod valid_match_mpc;
-// pub mod valid_reblind;
+pub mod valid_reblind;
 // pub mod valid_settle;
 pub mod valid_wallet_create;
 pub mod valid_wallet_update;
