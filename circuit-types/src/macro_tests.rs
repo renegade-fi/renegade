@@ -110,7 +110,7 @@ mod test {
     #[tokio::test]
     async fn test_mpc_derived_type() {
         // Execute an MPC that allocates the value then opens it
-        let (party0_res, party1_res) = execute_mock_mpc(|fabric| async {
+        let (party0_res, party1_res) = execute_mock_mpc(|fabric| async move {
             // Create the value inside the callback so that the callback can implement `FnMut`,
             // i.e. be called twice without taking ownership of `value` or instead requiring static
             // lifetime bounds
@@ -118,7 +118,7 @@ mod test {
                 val: Scalar::from(2u8),
             };
 
-            let allocated = value.allocate(PARTY0, fabric).unwrap();
+            let allocated = value.allocate(PARTY0, &fabric);
             allocated.open().await
         })
         .await;
@@ -149,7 +149,7 @@ mod test {
                 let mut prover = MpcProver::new_with_fabric(fabric.clone(), transcript, &pc_gens);
 
                 // Allocate the dummy value in the constraint system
-                let dummy_allocated = value.allocate(PARTY0, fabric.clone()).unwrap();
+                let dummy_allocated = value.allocate(PARTY0, &fabric);
                 let (shared_var, shared_comm) = dummy_allocated
                     .commit_shared(&mut rng, &mut prover)
                     .unwrap();

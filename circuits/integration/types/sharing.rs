@@ -49,10 +49,8 @@ fn test_share_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
 /// Tests opening an authenticated Match result that has been proof linked
 fn test_open_linkable_match_res(test_args: &IntegrationTestArgs) -> Result<(), String> {
-    let fabric = test_args.mpc_fabric.clone();
-    let match_res = MatchResult::default()
-        .allocate(0 /* owning_party */, fabric.clone())
-        .map_err(|err| format!("Error allocating match result: {:?}", err))?;
+    let fabric = &test_args.mpc_fabric;
+    let match_res = MatchResult::default().allocate(0 /* owning_party */, fabric);
 
     let linkable_match_res = match_res.link_commitments(fabric);
     let opened = await_result_with_error(linkable_match_res.open_and_authenticate())?;

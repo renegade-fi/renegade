@@ -199,17 +199,11 @@ pub trait MpcBaseType: BaseType {
     type AllocatedType: MpcType;
 
     /// Allocates the base type in the network as a shared value
-    fn allocate(
-        &self,
-        sender: PartyId,
-        fabric: MpcFabric,
-    ) -> Result<Self::AllocatedType, MpcError> {
+    fn allocate(&self, sender: PartyId, fabric: &MpcFabric) -> Self::AllocatedType {
         let self_scalars = self.clone().to_scalars_with_linking();
         let values = fabric.batch_share_scalar(self_scalars, sender);
 
-        Ok(Self::AllocatedType::from_authenticated_scalars(
-            &mut values.into_iter(),
-        ))
+        Self::AllocatedType::from_authenticated_scalars(&mut values.into_iter())
     }
 }
 

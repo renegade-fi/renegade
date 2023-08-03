@@ -67,7 +67,7 @@ pub struct MatchResult {
 
 impl AuthenticatedMatchResult {
     /// Construct a linkable type from the base, shared type
-    pub fn link_commitments(self, fabric: MpcFabric) -> AuthenticatedLinkableMatchResult {
+    pub fn link_commitments(self, fabric: &MpcFabric) -> AuthenticatedLinkableMatchResult {
         let mut rng = OsRng {};
         let self_serialized = self.to_authenticated_scalars();
         let randomness = (0..self_serialized.len())
