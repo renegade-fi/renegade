@@ -510,58 +510,41 @@ where
 // | Tests |
 // ---------
 
-#[cfg(test)]
-mod test {
-    #![allow(non_snake_case)]
-
+#[cfg(any(test, feature = "test_helpers"))]
+pub mod test_helpers {
     use circuit_types::{
-        balance::Balance,
         native_helpers::{
             compute_wallet_private_share_commitment, compute_wallet_share_commitment,
             compute_wallet_share_nullifier,
         },
-        order::Order,
-        traits::CircuitBaseType,
-        transfers::{ExternalTransfer, ExternalTransferDirection},
+        transfers::ExternalTransfer,
     };
-    use merlin::Transcript;
-    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
-    use num_bigint::BigUint;
-    use rand::{thread_rng, RngCore};
+    use rand::thread_rng;
 
     use crate::zk_circuits::test_helpers::{
-        create_multi_opening, create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES,
-        MAX_FEES, MAX_ORDERS, TIMESTAMP,
+        create_multi_opening, create_wallet_shares, SizedWallet, MAX_BALANCES, MAX_FEES,
+        MAX_ORDERS, TIMESTAMP,
     };
 
-    use super::{ValidWalletUpdate, ValidWalletUpdateStatement, ValidWalletUpdateWitness};
+    use super::{ValidWalletUpdateStatement, ValidWalletUpdateWitness};
 
     /// The witness type with default size parameters attached
-    type SizedWitness = ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
+    pub type SizedWitness =
+        ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
     /// The statement type with default size parameters attached
-    type SizedStatement = ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    pub type SizedStatement = ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     /// The height of the Merkle tree to test on
-    const MERKLE_HEIGHT: usize = 3;
+    pub(super) const MERKLE_HEIGHT: usize = 3;
     /// The timestamp of update
-    const NEW_TIMESTAMP: u64 = TIMESTAMP + 1;
+    pub(super) const NEW_TIMESTAMP: u64 = TIMESTAMP + 1;
 
     // -----------
     // | Helpers |
     // -----------
 
-    /// Returns true if the circuit constraints are satisfied on the given parameters
-    fn constraints_satisfied_on_wallets(
-        old_wallet: SizedWallet,
-        new_wallet: SizedWallet,
-        transfer: ExternalTransfer,
-    ) -> bool {
-        let (witness, statement) = construct_witness_statement(old_wallet, new_wallet, transfer);
-        constraints_satisfied(statement, witness)
-    }
-
     /// Construct a witness and statement
-    fn construct_witness_statement(
+    pub fn construct_witness_statement(
         old_wallet: SizedWallet,
         new_wallet: SizedWallet,
         external_transfer: ExternalTransfer,
@@ -608,6 +591,42 @@ mod test {
         };
 
         (witness, statement)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #![allow(non_snake_case)]
+
+    use circuit_types::{
+        balance::Balance,
+        order::Order,
+        traits::CircuitBaseType,
+        transfers::{ExternalTransfer, ExternalTransferDirection},
+    };
+    use merlin::HashChainTranscript as Transcript;
+    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
+    use num_bigint::BigUint;
+    use rand::{thread_rng, RngCore};
+
+    use crate::zk_circuits::{
+        test_helpers::{SizedWallet, INITIAL_WALLET, TIMESTAMP},
+        valid_wallet_update::test_helpers::NEW_TIMESTAMP,
+    };
+
+    use super::{
+        test_helpers::{construct_witness_statement, SizedStatement, SizedWitness},
+        ValidWalletUpdate,
+    };
+
+    /// Returns true if the circuit constraints are satisfied on the given parameters
+    fn constraints_satisfied_on_wallets(
+        old_wallet: SizedWallet,
+        new_wallet: SizedWallet,
+        transfer: ExternalTransfer,
+    ) -> bool {
+        let (witness, statement) = construct_witness_statement(old_wallet, new_wallet, transfer);
+        constraints_satisfied(statement, witness)
     }
 
     /// Return true if the circuit constraints are satisfied on a given
