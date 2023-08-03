@@ -129,7 +129,7 @@ impl<'a> ValidMatchMpcCircuit<'a> {
         // is assumed that orders are well formed, checking this amounts to checking their inclusion
         // in the state tree, which is done in `input_consistency_check`
         cs.constrain(
-            &witness.order1.side + &witness.order2.side - MpcVariable::one(fabric.0.clone()),
+            &witness.order1.side + &witness.order2.side - MpcVariable::one(fabric.clone()),
         );
 
         // Constrain the min_amount_order_index to be binary
@@ -137,7 +137,7 @@ impl<'a> ValidMatchMpcCircuit<'a> {
         let (_, _, mul_out) = cs
             .multiply(
                 &witness.match_res.min_amount_order_index.clone().into(),
-                &(MpcLinearCombination::from_scalar(Scalar::one(), fabric.0.clone())
+                &(MpcLinearCombination::from_scalar(Scalar::one(), fabric.clone())
                     - &witness.match_res.min_amount_order_index),
             )
             .map_err(ProverError::Collaborative)?;
@@ -165,7 +165,7 @@ impl<'a> ValidMatchMpcCircuit<'a> {
         // I.e. the above constraint forces `max_minus_min_amount` to be either max(amounts) - min(amounts)
         // or min(amounts) - max(amounts).
         // Constraining the value to be positive forces it to be equal to max(amounts) - min(amounts)
-        MultiproverGreaterThanEqZeroGadget::<'_, AMOUNT_BITS, _, _>::constrain_greater_than_zero(
+        MultiproverGreaterThanEqZeroGadget::<'_, AMOUNT_BITS>::constrain_greater_than_zero(
             witness.match_res.max_minus_min_amount.clone(),
             fabric.clone(),
             cs,
@@ -213,7 +213,7 @@ impl<'a> ValidMatchMpcCircuit<'a> {
         [(); AMOUNT_BITS + DEFAULT_FP_PRECISION]: Sized,
     {
         // Validate that the amount is less than the maximum amount given in the order
-        MultiproverGreaterThanEqGadget::<'_, AMOUNT_BITS /* bitlength */, _, _>::constrain_greater_than_eq(
+        MultiproverGreaterThanEqGadget::<'_, AMOUNT_BITS /* bitlength */>::constrain_greater_than_eq(
             order.amount.clone(),
             match_res.base_amount.clone(),
             fabric.clone(),
@@ -232,7 +232,7 @@ impl<'a> ValidMatchMpcCircuit<'a> {
             fabric.clone(),
             cs,
         )?;
-        MultiproverGreaterThanEqGadget::<'_, AMOUNT_BITS, _, _>::constrain_greater_than_eq(
+        MultiproverGreaterThanEqGadget::<'_, AMOUNT_BITS>::constrain_greater_than_eq(
             balance.amount.clone().into(),
             amount_sold,
             fabric,
@@ -266,7 +266,7 @@ impl<'a> ValidMatchMpcCircuit<'a> {
             cs,
         )?;
 
-        MultiproverGreaterThanEqGadget::<'_, PRICE_BITS, _, _>::constrain_greater_than_eq(
+        MultiproverGreaterThanEqGadget::<'_, PRICE_BITS>::constrain_greater_than_eq(
             gte_terms.remove(0).repr,
             gte_terms.remove(0).repr,
             fabric,
