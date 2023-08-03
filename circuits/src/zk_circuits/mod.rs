@@ -3,7 +3,7 @@
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
 // pub mod commitment_links;
-// pub mod valid_commitments;
+pub mod valid_commitments;
 // pub mod valid_match_mpc;
 pub mod valid_reblind;
 // pub mod valid_settle;
