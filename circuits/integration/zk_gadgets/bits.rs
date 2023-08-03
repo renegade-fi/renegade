@@ -11,10 +11,7 @@ use mpc_bulletproof::{
 use mpc_stark::{algebra::scalar::Scalar, PARTY0};
 use rand::{thread_rng, RngCore};
 use renegade_crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
-use test_helpers::{
-    mpc_network::{await_result, await_result_batch},
-    types::IntegrationTest,
-};
+use test_helpers::{mpc_network::await_result, types::IntegrationTest};
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
@@ -33,7 +30,7 @@ fn test_to_bits(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let expected_bits = await_result(fabric.batch_share_plaintext(bits.to_vec(), PARTY0));
 
     let pc_gens = PedersenGens::default();
-    let mut transcript = Transcript::new(b"test");
+    let transcript = Transcript::new(b"test");
     let mut prover = MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, &pc_gens);
     let (shared_scalar_var, _) = shared_scalar.commit_shared(&mut rng, &mut prover).unwrap();
     let res_bits = MultiproverToBitsGadget::<64 /* bits */>::to_bits(

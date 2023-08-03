@@ -10,6 +10,7 @@ test_helpers = []
 name = "integration"
 path = "integration/main.rs"
 harness = false
+debug = true
 
 [[bench]]
 name = "valid_wallet_create"
