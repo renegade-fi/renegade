@@ -367,63 +367,28 @@ where
 // | Tests |
 // ---------
 
-#[cfg(test)]
-mod test {
-    #![allow(non_snake_case)]
-
-    use circuit_types::native_helpers::create_wallet_shares_from_private;
+#[cfg(any(test, feature = "test_helpers"))]
+pub mod test_helpers {
     use circuit_types::{
-        balance::{Balance, BalanceShare},
-        fee::FeeShare,
-        fixed_point::FixedPointShare,
-        order::{OrderShare, OrderSide},
-        traits::{CircuitBaseType, LinkableBaseType},
+        balance::Balance, native_helpers::create_wallet_shares_from_private, order::OrderSide,
+        traits::LinkableBaseType,
     };
-    use lazy_static::lazy_static;
-    use merlin::Transcript;
-    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
-    use mpc_stark::algebra::scalar::Scalar;
     use num_bigint::BigUint;
     use rand::{thread_rng, Rng};
 
     use crate::zk_circuits::test_helpers::{
-        create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+        create_wallet_shares, SizedWallet, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
     };
 
-    use super::{ValidCommitments, ValidCommitmentsStatement, ValidCommitmentsWitness};
-
-    // --------------
-    // | Dummy Data |
-    // --------------
-
-    lazy_static! {
-        /// A wallet needing augmentation to receive its side of an order
-        static ref UNAUGMENTED_WALLET: SizedWallet = {
-            // Zero the wallet balance corresponding to the received mint
-            let mut wallet = INITIAL_WALLET.clone();
-            let order_receive_mint = match wallet.orders[0].side {
-                OrderSide::Buy => wallet.orders[0].base_mint.clone(),
-                OrderSide::Sell => wallet.orders[0].quote_mint.clone(),
-            };
-
-            // Find the received mint balance
-            let (balance_ind, _) = find_balance_or_augment(order_receive_mint, &mut wallet, false /* augment */);
-            wallet.balances[balance_ind] = Balance::default();
-            wallet
-        };
-    }
+    use super::{ValidCommitmentsStatement, ValidCommitmentsWitness};
 
     /// A type alias for the VALID COMMITMENTS witness with size parameters attached
-    type SizedWitness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-
-    // -----------
-    // | Helpers |
-    // -----------
+    pub type SizedWitness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     /// Construct a valid witness and statement from the given wallet
     ///
     /// Simply chooses a random order to match against from the wallet
-    fn create_witness_and_statement(
+    pub fn create_witness_and_statement(
         wallet: &SizedWallet,
     ) -> (SizedWitness, ValidCommitmentsStatement) {
         let mut rng = thread_rng();
@@ -492,7 +457,7 @@ mod test {
     ///
     /// If the balance does not exist the `augment` flag lets the method augment the wallet
     /// with a zero'd balance
-    fn find_balance_or_augment(
+    pub(super) fn find_balance_or_augment(
         mint: BigUint,
         wallet: &mut SizedWallet,
         augment: bool,
@@ -523,6 +488,56 @@ mod test {
             }
         }
     }
+}
+
+#[cfg(test)]
+mod test {
+    #![allow(non_snake_case)]
+
+    use circuit_types::{
+        balance::{Balance, BalanceShare},
+        fee::FeeShare,
+        fixed_point::FixedPointShare,
+        order::{OrderShare, OrderSide},
+        traits::{CircuitBaseType, LinkableBaseType},
+    };
+    use lazy_static::lazy_static;
+    use merlin::HashChainTranscript as Transcript;
+    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
+    use mpc_stark::algebra::scalar::Scalar;
+    use rand::thread_rng;
+
+    use crate::zk_circuits::{
+        test_helpers::{SizedWallet, INITIAL_WALLET},
+        valid_commitments::test_helpers::{create_witness_and_statement, find_balance_or_augment},
+    };
+
+    use super::{test_helpers::SizedWitness, ValidCommitments, ValidCommitmentsStatement};
+
+    // --------------
+    // | Dummy Data |
+    // --------------
+
+    lazy_static! {
+        /// A wallet needing augmentation to receive its side of an order
+        static ref UNAUGMENTED_WALLET: SizedWallet = {
+            // Zero the wallet balance corresponding to the received mint
+            let mut wallet = INITIAL_WALLET.clone();
+            let order_receive_mint = match wallet.orders[0].side {
+                OrderSide::Buy => wallet.orders[0].base_mint.clone(),
+                OrderSide::Sell => wallet.orders[0].quote_mint.clone(),
+            };
+
+            // Find the received mint balance
+            let (balance_ind, _) = find_balance_or_augment(order_receive_mint, &mut wallet, false /* augment */);
+            wallet.balances[balance_ind] = Balance::default();
+            wallet
+        };
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
 
     /// Returns true if the given witness and statement satisfy the relation defined by `VALID COMMITMENTS`
     fn constraints_satisfied(witness: SizedWitness, statement: ValidCommitmentsStatement) -> bool {
