@@ -44,7 +44,7 @@ macro_rules! print_wire {
         use crypto::fields::scalar_to_biguint;
         use tracing::log;
         let x_eval = $cs.eval(&$x.into());
-        log::info!("eval({}): {:?}", stringify!($x), scalar_to_biguint(&x_eval));
+        log::info!("eval({}): {x_eval}", stringify!($x));
     }};
 }
 
@@ -63,14 +63,12 @@ macro_rules! print_mpc_wire {
 #[allow(unused)]
 macro_rules! print_multiprover_wire {
     ($x:expr, $cs:ident) => {{
-        use crypto::fields::scalar_to_biguint;
-        use mpc_ristretto::authenticated_scalar::AuthenticatedScalar;
+        use futures::executor::block_on;
+        use mpc_stark::algebra::authenticated_scalar::AuthenticatedScalarResult;
         use tracing::log;
 
-        let x_eval = AuthenticatedScalar::open(&$cs.eval(&$x.into()).unwrap())
-            .unwrap()
-            .to_scalar();
-        log::info!("eval({}): {:?}", stringify!($x), scalar_to_biguint(&x_eval));
+        let x_eval = block_on(AuthenticatedScalarResult::open(&$cs.eval(&$x.into())));
+        log::info!("eval({}): {x_eval}", stringify!($x));
     }};
 }
 

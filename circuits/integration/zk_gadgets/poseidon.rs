@@ -1,6 +1,5 @@
 //! Groups integration tests for multiprover poseidon gadget
 
-use ark_crypto_primitives::sponge::CryptographicSponge;
 use circuit_types::traits::MultiproverCircuitBaseType;
 use circuits::zk_gadgets::poseidon::MultiproverPoseidonHashGadget;
 
@@ -44,7 +43,7 @@ fn test_poseidon_multiprover(test_args: &IntegrationTestArgs) -> Result<(), Stri
 
     // Prove the statement
     let pc_gens = PedersenGens::default();
-    let mut transcript = Transcript::new(b"test");
+    let transcript = Transcript::new(b"test");
     let mut prover = MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, &pc_gens);
     let hash_input: Vec<MpcLinearCombination> = party0_values
         .into_iter()

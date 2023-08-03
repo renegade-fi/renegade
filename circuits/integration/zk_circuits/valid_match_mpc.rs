@@ -12,24 +12,18 @@ use circuit_types::{
         BaseType, LinkableBaseType, MpcBaseType, MpcType, MultiProverCircuit,
         MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
     },
-    SharedFabric,
 };
 use circuits::{
     multiprover_prove, verify_collaborative_proof,
     zk_circuits::valid_match_mpc::{AuthenticatedValidMatchMpcWitness, ValidMatchMpcCircuit},
 };
-use curve25519_dalek::scalar::Scalar;
-use integration_helpers::{mpc_network::mocks::PartyIDBeaverSource, types::IntegrationTest};
 use lazy_static::lazy_static;
-use merlin::Transcript;
+use merlin::HashChainTranscript as Transcript;
 use mpc_bulletproof::{r1cs_mpc::MpcProver, PedersenGens};
-use mpc_ristretto::{
-    beaver::SharedValueSource,
-    mpc_scalar::scalar_to_u64,
-    network::{MpcNetwork, QuicTwoPartyNet},
-};
+use mpc_stark::{algebra::scalar::Scalar, MpcFabric, PARTY0, PARTY1};
 use rand::{thread_rng, Rng};
-use rand_core::OsRng;
+use renegade_crypto::fields::scalar_to_u64;
+use test_helpers::{mpc_network::await_result, types::IntegrationTest};
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
@@ -109,24 +103,18 @@ fn compute_max_amount(price: FixedPoint, order: &Order, balance: &Balance) -> u6
 }
 
 /// Creates an authenticated match from an order in each relayer
-fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+fn match_orders(
     amount: u64,
     price: FixedPoint,
     my_order: &Order,
-    fabric: SharedFabric<N, S>,
-) -> Result<AuthenticatedLinkableMatchResult<N, S>, String> {
+    fabric: MpcFabric,
+) -> AuthenticatedLinkableMatchResult {
     // Share orders
-    let party0_order = my_order
-        .share_public(0 /* owning_party */, fabric.clone())
-        .map_err(|err| format!("Error sharing order: {:?}", err))?;
+    let party0_order = await_result(my_order.share_public(PARTY0, fabric.clone()));
 
     // Share amounts
-    let party0_max_amount = amount
-        .share_public(0 /* owning_party */, fabric.clone())
-        .map_err(|err| format!("Error sharing amount: {:?}", err))?;
-    let party1_max_amount = amount
-        .share_public(1 /* owning_party */, fabric.clone())
-        .map_err(|err| format!("Error sharing amount: {:?}", err))?;
+    let party0_max_amount = await_result(amount.share_public(PARTY0, fabric.clone()));
+    let party1_max_amount = await_result(amount.share_public(PARTY0, fabric.clone()));
 
     // Match the values
     let min_base_amount = cmp::min(party0_max_amount, party1_max_amount);
@@ -147,54 +135,36 @@ fn match_orders<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
     }
     .to_linkable();
 
-    match_res
-        .allocate(0 /* owning_partY */, fabric)
-        .map_err(|err| format!("Error allocating match result in the network: {:?}", err))
+    match_res.allocate(PARTY0, &fabric)
 }
 
 /// Both parties call this value to setup their witness and statement from a given
 /// balance, order tuple
-fn setup_witness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+fn setup_witness(
     price: FixedPoint,
     amount: u64,
     order: Order,
     balance: Balance,
-    fabric: SharedFabric<N, S>,
-) -> Result<AuthenticatedValidMatchMpcWitness<N, S>, String> {
+    fabric: MpcFabric,
+) -> AuthenticatedValidMatchMpcWitness {
     // Generate hashes used for input consistency
-    let match_res = match_orders(amount, price, &order, fabric.clone())?;
+    let match_res = match_orders(amount, price, &order, fabric.clone());
     let linkable_order = order.to_linkable();
     let linkable_balance = balance.to_linkable();
 
-    let allocated_price1 = price
-        .allocate(0 /* owning_party */, fabric.clone())
-        .map_err(|err| format!("Error allocating price in the network: {:?}", err))?;
-    let allocated_price2 = price
-        .allocate(1 /* owning_party */, fabric.clone())
-        .map_err(|err| format!("Error allocating price in the network: {:?}", err))?;
+    let allocated_price1 = price.allocate(PARTY0, &fabric);
+    let allocated_price2 = price.allocate(PARTY1, &fabric);
 
-    let allocated_amount1 = amount
-        .allocate(0 /* owning_party */, fabric.clone())
-        .map_err(|err| format!("Error allocating amount in the network: {:?}", err))?;
-    let allocated_amount2 = amount
-        .allocate(1 /* owning_party */, fabric.clone())
-        .map_err(|err| format!("Error allocating amount in the network: {:?}", err))?;
+    let allocated_amount1 = amount.allocate(PARTY0, &fabric);
+    let allocated_amount2 = amount.allocate(PARTY1, &fabric);
 
-    let allocated_order1 = linkable_order
-        .allocate(0 /* owning_party */, fabric.clone())
-        .map_err(|err| format!("Error allocating order in the network: {:?}", err))?;
-    let allocated_order2 = linkable_order
-        .allocate(1 /* owning_party */, fabric.clone())
-        .map_err(|err| format!("Error allocating order in the network: {:?}", err))?;
+    let allocated_order1 = linkable_order.allocate(PARTY0, &fabric);
+    let allocated_order2 = linkable_order.allocate(PARTY1, &fabric);
 
-    let allocated_balance1 = linkable_balance
-        .allocate(0 /* owning_party */, fabric.clone())
-        .map_err(|err| format!("Error allocating balance in the network: {:?}", err))?;
-    let allocated_balance2 = linkable_balance
-        .allocate(1 /* owning_party */, fabric)
-        .map_err(|err| format!("Error allocating balance in the network: {:?}", err))?;
+    let allocated_balance1 = linkable_balance.allocate(PARTY0, &fabric);
+    let allocated_balance2 = linkable_balance.allocate(PARTY1, &fabric);
 
-    Ok(AuthenticatedValidMatchMpcWitness {
+    AuthenticatedValidMatchMpcWitness {
         order1: allocated_order1,
         balance1: allocated_balance1,
         amount1: allocated_amount1,
@@ -204,47 +174,42 @@ fn setup_witness<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
         balance2: allocated_balance2,
         price2: allocated_price2,
         match_res,
-    })
+    }
 }
 
 /// Prove and verify a valid match MPC circuit, return `true` if verification succeeds
-fn prove_and_verify_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    witness: AuthenticatedValidMatchMpcWitness<N, S>,
-    fabric: SharedFabric<N, S>,
+fn prove_and_verify_match(
+    witness: AuthenticatedValidMatchMpcWitness,
+    fabric: MpcFabric,
 ) -> Result<bool, String> {
     // Prove
     let (witness_comm, proof) =
-        multiprover_prove::<'_, _, _, ValidMatchMpcCircuit<'_, _, _>>(witness, (), fabric)
+        multiprover_prove::<'_, ValidMatchMpcCircuit<'_>>(witness, (), fabric)
             .map_err(|err| format!("Error proving: {:?}", err))?;
 
     // Open
-    let opened_proof = proof
-        .open()
-        .map_err(|err| format!("Error opening proof: {:?}", err))?;
-    let opened_comm = witness_comm
-        .open_and_authenticate()
+    let opened_proof =
+        await_result(proof.open()).map_err(|err| format!("Error opening proof: {:?}", err))?;
+    let opened_comm = await_result(witness_comm.open_and_authenticate())
         .map_err(|err| format!("Error opening witness commitment: {:?}", err))?;
 
     // Verify
-    Ok(verify_collaborative_proof::<
-        '_,
-        QuicTwoPartyNet,
-        PartyIDBeaverSource,
-        ValidMatchMpcCircuit<'_, _, _>,
-    >((), opened_comm, opened_proof)
-    .is_ok())
+    Ok(
+        verify_collaborative_proof::<'_, ValidMatchMpcCircuit<'_>>((), opened_comm, opened_proof)
+            .is_ok(),
+    )
 }
 
 /// Return whether the `VALID MATCH MPC` constraints are satisfied on the given witness
-fn constraints_satisfied<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
-    witness: AuthenticatedValidMatchMpcWitness<N, S>,
-    fabric: SharedFabric<N, S>,
+fn constraints_satisfied(
+    witness: AuthenticatedValidMatchMpcWitness,
+    fabric: MpcFabric,
 ) -> Result<bool, String> {
     let pc_gens = PedersenGens::default();
-    let mut transcript = Transcript::new(b"test");
-    let mut prover = MpcProver::new_with_fabric(fabric.0.clone(), &mut transcript, &pc_gens);
+    let transcript = Transcript::new(b"test");
+    let mut prover = MpcProver::new_with_fabric(fabric.clone(), transcript, &pc_gens);
 
-    let mut rng = OsRng {};
+    let mut rng = thread_rng();
     let (witness_var, _) = witness
         .commit_shared(&mut rng, &mut prover)
         .map_err(|err| format!("Error committing witness: {:?}", err))?;
@@ -263,7 +228,7 @@ fn constraints_satisfied<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
 
 /// Tests that the valid match MPC circuit proves and verifies given a correct witness
 fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), String> {
-    let party_id = test_args.party_id;
+    let party_id = test_args.mpc_fabric.party_id();
     let price = *DUMMY_PRICE;
     let my_order = create_test_order(party_id);
     let my_balance = create_test_balance(party_id);
@@ -274,7 +239,7 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    )?;
+    );
 
     if !prove_and_verify_match(witness, test_args.mpc_fabric.clone())? {
         return Err("Failed to prove and verify match".to_string());
@@ -287,7 +252,7 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
 fn test_valid_match_undercapitalized__base_side(
     test_args: &IntegrationTestArgs,
 ) -> Result<(), String> {
-    let party_id = test_args.party_id;
+    let party_id = test_args.mpc_fabric.party_id();
     let price = *DUMMY_PRICE;
     let my_order = create_test_order(party_id);
     let mut my_balance = create_test_balance(party_id);
@@ -304,7 +269,7 @@ fn test_valid_match_undercapitalized__base_side(
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    )?;
+    );
 
     if !prove_and_verify_match(witness, test_args.mpc_fabric.clone())? {
         return Err("Failed to prove and verify match".to_string());
@@ -317,7 +282,7 @@ fn test_valid_match_undercapitalized__base_side(
 fn test_valid_match_undercapitalized__quote_side(
     test_args: &IntegrationTestArgs,
 ) -> Result<(), String> {
-    let party_id = test_args.party_id;
+    let party_id = test_args.mpc_fabric.party_id();
     let price = *DUMMY_PRICE;
     let my_order = create_test_order(party_id);
     let mut my_balance = create_test_balance(party_id);
@@ -334,7 +299,7 @@ fn test_valid_match_undercapitalized__quote_side(
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    )?;
+    );
 
     if !prove_and_verify_match(witness, test_args.mpc_fabric.clone())? {
         return Err("Failed to prove and verify match".to_string());
@@ -346,16 +311,14 @@ fn test_valid_match_undercapitalized__quote_side(
 /// Test the case in which the price is a non-integral value
 fn test_valid_match__non_integral_price(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let mut rng = thread_rng();
-    let party_id = test_args.party_id;
+    let party_id = test_args.mpc_fabric.party_id();
     let my_order = create_test_order(party_id);
     let my_balance = create_test_balance(party_id);
 
     // Party 0 chooses a random price and shares it with party 1
     let price_range = DUMMY_SELL_SIDE_WORST_PRICE.to_f64()..DUMMY_BUY_SIDE_WORST_PRICE.to_f64();
     let price = FixedPoint::from_f64_round_down(rng.gen_range(price_range));
-    let price = price
-        .share_public(0 /* owning_party */, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error sharing price: {:?}", err))?;
+    let price = await_result(price.share_public(PARTY0, test_args.mpc_fabric.clone()));
 
     // Prove `VALID MATCH MPC
     let witness = setup_witness(
@@ -364,7 +327,7 @@ fn test_valid_match__non_integral_price(test_args: &IntegrationTestArgs) -> Resu
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    )?;
+    );
 
     if !prove_and_verify_match(witness, test_args.mpc_fabric.clone())? {
         return Err("Failed to prove and verify match".to_string());
@@ -375,14 +338,15 @@ fn test_valid_match__non_integral_price(test_args: &IntegrationTestArgs) -> Resu
 
 /// Test the case in which the two parties attempt to match on different mints
 fn test_valid_match__different_mints(test_args: &IntegrationTestArgs) -> Result<(), String> {
-    let party_id = test_args.party_id;
+    let fabric = &test_args.mpc_fabric;
+    let party_id = fabric.party_id();
     let price = *DUMMY_PRICE;
     let mut my_order = create_test_order(party_id);
     let my_balance = create_test_balance(party_id);
     let amount = compute_max_amount(price, &my_order, &my_balance);
 
     // One party switches the quote mint of their order
-    if test_args.party_id == 0 {
+    if fabric.party_id() == PARTY0 {
         my_order.quote_mint = 42u8.into();
     }
 
@@ -393,14 +357,14 @@ fn test_valid_match__different_mints(test_args: &IntegrationTestArgs) -> Result<
         my_order,
         my_balance.clone(),
         test_args.mpc_fabric.clone(),
-    )?;
+    );
     if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
         return Err("Constraints satisfied on invalid witness".to_string());
     }
 
     // Now test with base mint switched
     let mut my_order = create_test_order(party_id);
-    if test_args.party_id == 0 {
+    if fabric.party_id() == PARTY0 {
         my_order.base_mint = 42u8.into();
     }
 
@@ -411,7 +375,7 @@ fn test_valid_match__different_mints(test_args: &IntegrationTestArgs) -> Result<
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    )?;
+    );
     if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
         return Err("Constraints satisfied on invalid witness".to_string());
     }
@@ -421,14 +385,15 @@ fn test_valid_match__different_mints(test_args: &IntegrationTestArgs) -> Result<
 
 /// Test the case in which the parties sit on the same side of the book
 fn test_valid_match__same_side(test_args: &IntegrationTestArgs) -> Result<(), String> {
-    let party_id = test_args.party_id;
+    let fabric = &test_args.mpc_fabric;
+    let party_id = fabric.party_id();
     let price = *DUMMY_PRICE;
     let mut my_order = create_test_order(party_id);
     let my_balance = create_test_balance(party_id);
     let amount = compute_max_amount(price, &my_order, &my_balance);
 
     // Switch the side of the market that the first party sits on
-    if test_args.party_id == 0 {
+    if fabric.party_id() == PARTY0 {
         my_order.side = my_order.side.opposite();
     }
 
@@ -439,7 +404,7 @@ fn test_valid_match__same_side(test_args: &IntegrationTestArgs) -> Result<(), St
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    )?;
+    );
     if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
         return Err("Constraints satisfied on invalid witness".to_string());
     }
@@ -450,14 +415,15 @@ fn test_valid_match__same_side(test_args: &IntegrationTestArgs) -> Result<(), St
 /// Test the case in which the balance provided to the matching engine is not for
 /// the correct asset
 fn test_valid_match__invalid_balance_mint(test_args: &IntegrationTestArgs) -> Result<(), String> {
-    let party_id = test_args.party_id;
+    let fabric = &test_args.mpc_fabric;
+    let party_id = fabric.party_id();
     let price = *DUMMY_PRICE;
     let my_order = create_test_order(party_id);
     let mut my_balance = create_test_balance(party_id);
     let amount = compute_max_amount(price, &my_order, &my_balance);
 
     // Switch the mint of the balance to be the wrong asset in the pair
-    if test_args.party_id == 0 {
+    if fabric.party_id() == PARTY0 {
         if my_balance.mint == my_order.quote_mint {
             my_balance.mint = my_order.base_mint.clone();
         } else {
@@ -472,7 +438,7 @@ fn test_valid_match__invalid_balance_mint(test_args: &IntegrationTestArgs) -> Re
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    )?;
+    );
     if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
         return Err("Constraints satisfied on invalid witness".to_string());
     }
@@ -482,7 +448,8 @@ fn test_valid_match__invalid_balance_mint(test_args: &IntegrationTestArgs) -> Re
 
 /// Test the case in which the balance provided does not cover the advertised amount
 fn test_valid_match__insufficient_balance(test_args: &IntegrationTestArgs) -> Result<(), String> {
-    let party_id = test_args.party_id;
+    let fabric = &test_args.mpc_fabric;
+    let party_id = fabric.party_id();
     let price = *DUMMY_PRICE;
     let my_order = create_test_order(party_id);
     let mut my_balance = create_test_balance(party_id);
@@ -500,7 +467,7 @@ fn test_valid_match__insufficient_balance(test_args: &IntegrationTestArgs) -> Re
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    )?;
+    );
     if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
         return Err("Constraints satisfied on invalid witness".to_string());
     }
@@ -510,7 +477,8 @@ fn test_valid_match__insufficient_balance(test_args: &IntegrationTestArgs) -> Re
 
 /// Test the case in which the matched amount exceeds the order size for a party
 fn test_valid_match__amount_exceeds_order(test_args: &IntegrationTestArgs) -> Result<(), String> {
-    let party_id = test_args.party_id;
+    let fabric = &test_args.mpc_fabric;
+    let party_id = fabric.party_id();
     let price = *DUMMY_PRICE;
     let my_order = create_test_order(party_id);
     let my_balance = create_test_balance(party_id);
@@ -526,7 +494,7 @@ fn test_valid_match__amount_exceeds_order(test_args: &IntegrationTestArgs) -> Re
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    )?;
+    );
     if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
         return Err("Constraints satisfied on invalid witness".to_string());
     }
@@ -538,7 +506,8 @@ fn test_valid_match__amount_exceeds_order(test_args: &IntegrationTestArgs) -> Re
 fn test_valid_match__incorrect_max_minus_min(
     test_args: &IntegrationTestArgs,
 ) -> Result<(), String> {
-    let party_id = test_args.party_id;
+    let fabric = &test_args.mpc_fabric;
+    let party_id = fabric.party_id();
     let price = *DUMMY_PRICE;
     let my_order = create_test_order(party_id);
     let my_balance = create_test_balance(party_id);
@@ -551,17 +520,11 @@ fn test_valid_match__incorrect_max_minus_min(
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    )?;
-    let mut rng = OsRng {};
+    );
+    let mut rng = thread_rng();
     witness.match_res.max_minus_min_amount = Scalar::random(&mut rng)
         .to_linkable()
-        .allocate(0 /* owning_party */, test_args.mpc_fabric.clone())
-        .map_err(|err| {
-            format!(
-                "Error allocating max_minus_min_amount in the network: {:?}",
-                err
-            )
-        })?;
+        .allocate(PARTY0, fabric);
 
     if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
         return Err("Constraints satisfied on invalid witness".to_string());
@@ -573,18 +536,15 @@ fn test_valid_match__incorrect_max_minus_min(
 /// Test the case in which the `max_minus_min` field is switched to be
 /// `min - max` (i.e. negative)
 fn test_valid_match__max_minus_min_negative(test_args: &IntegrationTestArgs) -> Result<(), String> {
-    let party_id = test_args.party_id;
+    let fabric = &test_args.mpc_fabric;
+    let party_id = fabric.party_id();
     let price = *DUMMY_PRICE;
     let my_order = create_test_order(party_id);
     let my_balance = create_test_balance(party_id);
     let amount = compute_max_amount(price, &my_order, &my_balance);
 
-    let party0_amount = amount
-        .share_public(0 /* owning_party */, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error sharing amount: {:?}", err))?;
-    let party1_amount = amount
-        .share_public(1 /* owning_party */, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error sharing amount: {:?}", err))?;
+    let party0_amount = await_result(amount.share_public(PARTY0, test_args.mpc_fabric.clone()));
+    let party1_amount = await_result(amount.share_public(PARTY1, test_args.mpc_fabric.clone()));
     let min_minus_max_amount = Scalar::from(cmp::min(party0_amount, party1_amount))
         - Scalar::from(cmp::max(party0_amount, party1_amount));
 
@@ -595,16 +555,9 @@ fn test_valid_match__max_minus_min_negative(test_args: &IntegrationTestArgs) -> 
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    )?;
-    witness.match_res.max_minus_min_amount = min_minus_max_amount
-        .to_linkable()
-        .allocate(0 /* owning_party */, test_args.mpc_fabric.clone())
-        .map_err(|err| {
-            format!(
-                "Error allocating max_minus_min_amount in the network: {:?}",
-                err
-            )
-        })?;
+    );
+    witness.match_res.max_minus_min_amount =
+        min_minus_max_amount.to_linkable().allocate(PARTY0, fabric);
 
     if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
         return Err("Constraints satisfied on invalid witness".to_string());
@@ -617,7 +570,8 @@ fn test_valid_match__max_minus_min_negative(test_args: &IntegrationTestArgs) -> 
 fn test_valid_match__incorrect_min_amount_order_index(
     test_args: &IntegrationTestArgs,
 ) -> Result<(), String> {
-    let party_id = test_args.party_id;
+    let fabric = &test_args.mpc_fabric;
+    let party_id = fabric.party_id();
     let price = *DUMMY_PRICE;
     let my_order = create_test_order(party_id);
     let my_balance = create_test_balance(party_id);
@@ -630,24 +584,15 @@ fn test_valid_match__incorrect_min_amount_order_index(
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    )?;
-    let min_order_index = witness
-        .match_res
-        .min_amount_order_index
-        .open(test_args.mpc_fabric.clone())
+    );
+    let min_order_index = await_result(witness.match_res.min_amount_order_index.open())
         .map_err(|err| format!("Error opening min_amount_order_index: {:?}", err))?
         .val;
 
     // Invert the index
     witness.match_res.min_amount_order_index = (Scalar::one() - min_order_index)
         .to_linkable()
-        .allocate(0 /* owning_party */, test_args.mpc_fabric.clone())
-        .map_err(|err| {
-            format!(
-                "Error allocating min_amount_order_index in the network: {:?}",
-                err
-            )
-        })?;
+        .allocate(PARTY0, fabric);
 
     if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
         return Err("Constraints satisfied on invalid witness".to_string());
@@ -661,7 +606,8 @@ fn test_valid_match__incorrect_min_amount_order_index(
 fn test_valid_match__price_protection_violated_buy_side(
     test_args: &IntegrationTestArgs,
 ) -> Result<(), String> {
-    let party_id = test_args.party_id;
+    let fabric = &test_args.mpc_fabric;
+    let party_id = fabric.party_id();
     let my_order = create_test_order(party_id);
     let my_balance = create_test_balance(party_id);
 
@@ -676,7 +622,7 @@ fn test_valid_match__price_protection_violated_buy_side(
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    )?;
+    );
 
     if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
         return Err("Constraints satisfied on invalid witness".to_string());
@@ -690,7 +636,8 @@ fn test_valid_match__price_protection_violated_buy_side(
 fn test_valid_match__price_protection_violated_sell_side(
     test_args: &IntegrationTestArgs,
 ) -> Result<(), String> {
-    let party_id = test_args.party_id;
+    let fabric = &test_args.mpc_fabric;
+    let party_id = fabric.party_id();
     let my_order = create_test_order(party_id);
     let my_balance = create_test_balance(party_id);
 
@@ -705,7 +652,7 @@ fn test_valid_match__price_protection_violated_sell_side(
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    )?;
+    );
 
     if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
         return Err("Constraints satisfied on invalid witness".to_string());

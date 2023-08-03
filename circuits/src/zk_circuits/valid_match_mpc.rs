@@ -547,3 +547,130 @@ impl SingleProverCircuit for ValidMatchMpcSingleProver {
         Self::matching_engine_check_single_prover(witness_var, cs)
     }
 }
+
+// ---------
+// | Tests |
+// ---------
+
+#[cfg(test)]
+mod tests {
+    use circuit_types::{
+        balance::Balance,
+        fixed_point::FixedPoint,
+        order::{Order, OrderSide},
+        r#match::MatchResult,
+        traits::{
+            LinkableBaseType, MpcBaseType, MultiProverCircuit, MultiproverCircuitCommitmentType,
+        },
+    };
+    use merlin::HashChainTranscript;
+    use mpc_bulletproof::{r1cs::Verifier, r1cs_mpc::MpcProver, PedersenGens};
+    use mpc_stark::{algebra::scalar::Scalar, MpcFabric, PARTY0, PARTY1};
+    use renegade_crypto::fields::scalar_to_u64;
+    use test_helpers::mpc_network::execute_mock_mpc;
+
+    use crate::zk_circuits::valid_match_mpc::{
+        AuthenticatedValidMatchMpcWitness, ValidMatchMpcCircuit,
+    };
+
+    /// Create a dummy witness to match on
+    fn create_dummy_witness(fabric: &MpcFabric) -> AuthenticatedValidMatchMpcWitness {
+        let min_amount = 5u64;
+        let max_amount = 15u64;
+
+        // Create two orders to match
+        let order1 = Order {
+            quote_mint: 1u8.into(),
+            base_mint: 2u8.into(),
+            side: OrderSide::Buy,
+            worst_case_price: FixedPoint::from(15.),
+            amount: min_amount,
+            timestamp: 0,
+        }
+        .to_linkable();
+        let balance1 = Balance {
+            mint: 1u8.into(),
+            amount: 300,
+        }
+        .to_linkable();
+
+        let order2 = Order {
+            quote_mint: 1u8.into(),
+            base_mint: 2u8.into(),
+            side: OrderSide::Sell,
+            worst_case_price: FixedPoint::from(5.),
+            amount: max_amount,
+            timestamp: 0,
+        }
+        .to_linkable();
+        let balance2 = Balance {
+            mint: 2u8.into(),
+            amount: 300,
+        }
+        .to_linkable();
+
+        let price = FixedPoint::from(9.);
+
+        // Match the orders directly
+        let match_res = MatchResult {
+            quote_mint: 1u8.into(),
+            base_mint: 2u8.into(),
+            quote_amount: scalar_to_u64(&(price * Scalar::from(order1.amount)).floor()),
+            base_amount: min_amount,
+            direction: 0,
+            min_amount_order_index: 0,
+            max_minus_min_amount: max_amount - min_amount,
+        }
+        .to_linkable();
+
+        // Create a witness
+        AuthenticatedValidMatchMpcWitness {
+            order1: order1.allocate(PARTY0, fabric),
+            order2: order2.allocate(PARTY0, fabric),
+            balance1: balance1.allocate(PARTY0, fabric),
+            balance2: balance2.allocate(PARTY0, fabric),
+            price1: price.allocate(PARTY0, fabric),
+            price2: price.allocate(PARTY0, fabric),
+            amount1: order1.amount.val.allocate(PARTY0, fabric),
+            amount2: order2.amount.val.allocate(PARTY1, fabric),
+            match_res: match_res.allocate(PARTY0, fabric),
+        }
+    }
+
+    /// Tests proving a valid match with a valid witness
+    #[tokio::test]
+    async fn prove_valid_witness() {
+        // Execute an MPC to prove the match
+        let ((witness_commitment, proof), _) = execute_mock_mpc(|fabric| async move {
+            let witness = create_dummy_witness(&fabric);
+
+            let (witness_commitment, proof) = {
+                let pc_gens = PedersenGens::default();
+                let transcript = HashChainTranscript::new(b"test");
+                let prover = MpcProver::new_with_fabric(fabric.clone(), transcript, &pc_gens);
+
+                ValidMatchMpcCircuit::prove(
+                    witness,
+                    (), /* statement */
+                    fabric.clone(),
+                    prover,
+                )
+                .unwrap()
+            }; // Let `prover` go out of scope as it is not `Send`
+
+            (
+                witness_commitment.open_and_authenticate().await.unwrap(),
+                proof.open().await.unwrap(),
+            )
+        })
+        .await;
+
+        // Verify the proof
+        let pc_gens = PedersenGens::default();
+        let mut transcript = HashChainTranscript::new(b"test");
+        let verifier = Verifier::new(&pc_gens, &mut transcript);
+
+        ValidMatchMpcCircuit::verify(witness_commitment, () /* statement */, proof, verifier)
+            .unwrap();
+    }
+}
