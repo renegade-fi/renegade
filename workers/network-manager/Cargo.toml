@@ -23,7 +23,7 @@ tokio = { workspace = true }
 
 # === Cryptography === #
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
-mpc-ristretto = { workspace = true }
+mpc-stark =  { workspace = true }
 
 # === Workspace Dependencies === #
 common = { path = "../../common" }

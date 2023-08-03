@@ -19,7 +19,6 @@
 //!     - Secret share types: Additive sharings of a base type
 
 use async_trait::async_trait;
-use crypto::fields::{biguint_to_scalar, scalar_to_biguint, scalar_to_u64};
 use futures::future::join_all;
 use itertools::Itertools;
 use mpc_bulletproof::{
@@ -43,6 +42,7 @@ use mpc_stark::{
 };
 use num_bigint::BigUint;
 use rand::{thread_rng, CryptoRng, RngCore};
+use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint, scalar_to_u64};
 
 use crate::{
     errors::{MpcError, ProverError, VerifierError},

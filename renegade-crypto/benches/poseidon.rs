@@ -1,11 +1,11 @@
 //! Defines benchmarks for the Poseidon hash function
 use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
-use crypto::{
+use mpc_stark::algebra::scalar::Scalar;
+use rand::thread_rng;
+use renegade_crypto::{
     constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3},
     hash::compute_poseidon_hash,
 };
-use mpc_stark::algebra::scalar::Scalar;
-use rand::thread_rng;
 
 /// Run a benchmark on the poseidon hash implementation
 fn bench_hash(c: &mut Criterion) {
