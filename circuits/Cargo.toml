@@ -26,6 +26,11 @@ name = "valid_reblind"
 harness = false
 required-features = ["test_helpers"]
 
+[[bench]]
+name = "valid_commitments"
+harness = false
+required-features = ["test_helpers"]
+
 [dependencies]
 # === Crytography + Arithmetic === #
 ark-crypto-primitives = { version = "0.4", features = [
