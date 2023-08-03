@@ -16,7 +16,6 @@ use circuit_types::{
     },
 };
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
-use crypto::hash::default_poseidon_params;
 use itertools::{izip, Itertools};
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
@@ -24,6 +23,7 @@ use mpc_bulletproof::{
 };
 use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
 use rand::{CryptoRng, RngCore};
+use renegade_crypto::hash::default_poseidon_params;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -345,59 +345,35 @@ where
 // | Tests |
 // ---------
 
-#[cfg(test)]
-mod test {
-    #![allow(non_snake_case)]
+#[cfg(any(test, feature = "test_helpers"))]
+pub mod test_helpers {
     use circuit_types::{
         keychain::SecretIdentificationKey,
         native_helpers::{
             compute_wallet_private_share_commitment, compute_wallet_share_commitment,
             compute_wallet_share_nullifier, reblind_wallet,
         },
-        traits::{BaseType, CircuitBaseType, LinkableBaseType, LinkableType, SecretShareType},
+        traits::LinkableBaseType,
     };
-    use merlin::Transcript;
-    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
-    use mpc_stark::algebra::scalar::Scalar;
-    use rand::{thread_rng, Rng};
+    use rand::thread_rng;
 
     use crate::zk_circuits::test_helpers::{
-        create_multi_opening, create_wallet_shares, SizedWallet, SizedWalletShare, INITIAL_WALLET,
-        MAX_BALANCES, MAX_FEES, MAX_ORDERS, PRIVATE_KEYS,
+        create_multi_opening, create_wallet_shares, SizedWallet, MAX_BALANCES, MAX_FEES,
+        MAX_ORDERS, PRIVATE_KEYS,
     };
 
-    use super::{ValidReblind, ValidReblindStatement, ValidReblindWitness};
+    use super::{ValidReblindStatement, ValidReblindWitness};
 
     /// The height of the Merkle tree used for testing
     const MERKLE_HEIGHT: usize = 3;
 
     /// A witness type with default size parameters attached
-    type SizedWitness = ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
-
-    // -----------
-    // | Helpers |
-    // -----------
-
-    /// Return true if the given witness and statement are in the VALID REBLIND relation
-    fn constraints_satisfied(witness: SizedWitness, statement: ValidReblindStatement) -> bool {
-        // Build a constraint system
-        let pc_gens = PedersenGens::default();
-        let mut transcript = Transcript::new(b"test");
-        let mut prover = Prover::new(&pc_gens, &mut transcript);
-
-        // Allocate the witness and statement in the constraint system
-        let mut rng = thread_rng();
-        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover);
-        let statement_var = statement.commit_public(&mut prover);
-
-        // Apply the constraints
-        ValidReblind::circuit(statement_var, witness_var, &mut prover).unwrap();
-
-        prover.constraints_satisfied()
-    }
+    pub type SizedWitness = ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
 
     /// Construct a witness and statement for `VALID REBLIND` from a given wallet
-    fn construct_witness_statement(wallet: &SizedWallet) -> (SizedWitness, ValidReblindStatement) {
+    pub fn construct_witness_statement(
+        wallet: &SizedWallet,
+    ) -> (SizedWitness, ValidReblindStatement) {
         let mut rng = thread_rng();
 
         // Build shares of the original wallet, then reblind it
@@ -442,6 +418,48 @@ mod test {
         };
 
         (witness, statement)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #![allow(non_snake_case)]
+    use circuit_types::{
+        native_helpers::compute_wallet_private_share_commitment,
+        traits::{BaseType, CircuitBaseType, LinkableBaseType, LinkableType, SecretShareType},
+    };
+    use merlin::HashChainTranscript as Transcript;
+    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
+    use mpc_stark::algebra::scalar::Scalar;
+    use rand::{thread_rng, Rng};
+
+    use crate::zk_circuits::{
+        test_helpers::{SizedWallet, SizedWalletShare, INITIAL_WALLET},
+        valid_reblind::test_helpers::construct_witness_statement,
+    };
+
+    use super::{test_helpers::SizedWitness, ValidReblind, ValidReblindStatement};
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Return true if the given witness and statement are in the VALID REBLIND relation
+    fn constraints_satisfied(witness: SizedWitness, statement: ValidReblindStatement) -> bool {
+        // Build a constraint system
+        let pc_gens = PedersenGens::default();
+        let mut transcript = Transcript::new(b"test");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+        // Allocate the witness and statement in the constraint system
+        let mut rng = thread_rng();
+        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover);
+        let statement_var = statement.commit_public(&mut prover);
+
+        // Apply the constraints
+        ValidReblind::circuit(statement_var, witness_var, &mut prover).unwrap();
+
+        prover.constraints_satisfied()
     }
 
     /// Asserts that a set of secret shares is a valid reblinding of a wallet
