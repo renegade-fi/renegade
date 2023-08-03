@@ -6,7 +6,7 @@
 mod mpc_gadgets;
 mod types;
 // mod zk_circuits;
-// mod zk_gadgets;
+mod zk_gadgets;
 
 use chrono::Local;
 use clap::Parser;
