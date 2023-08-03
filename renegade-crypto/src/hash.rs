@@ -9,6 +9,9 @@ use mpc_stark::algebra::scalar::Scalar;
 
 use crate::constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3};
 
+/// A type alias for the arkworks Poseidon sponge over the Stark field
+pub type PoseidonParams = PoseidonConfig<Scalar::Field>;
+
 /// Hash the input using a Poseidon hash with default parameters
 ///
 /// Uses defaults from the `circuits` package to ensure that hashes are

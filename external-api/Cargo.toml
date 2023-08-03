@@ -9,9 +9,9 @@ num-bigint = { workspace = true }
 num-traits = "0.2"
 
 # === Workspace Dependencies === #
-circuit-types = { path = "../circuit-types" } 
+circuit-types = { path = "../circuit-types" }
 common = { path = "../common" }
-crypto = { path = "../crypto" }
+renegade-crypto = { path = "../renegade-crypto" }
 
 # === Misc Dependencies === #
 itertools = { workspace = true }

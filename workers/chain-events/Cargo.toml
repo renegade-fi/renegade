@@ -17,7 +17,7 @@ starknet = { workspace = true }
 # === Workspace Dependencies === #
 circuit-types = { path = "../../circuit-types" }
 common = { path = "../../common" }
-crypto = { path = "../../crypto" }
+renegade-crypto = { path = "../../renegade-crypto" }
 gossip-api = { path = "../../gossip-api" }
 job-types = { path = "../job-types" }
 state = { path = "../../state" }

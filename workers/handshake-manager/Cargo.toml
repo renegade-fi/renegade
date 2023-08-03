@@ -7,7 +7,7 @@ edition = "2021"
 # === Arithmetic and Cryptography === #
 curve25519-dalek = { workspace = true }
 mpc-bulletproof = { workspace = true }
-mpc-ristretto = { workspace = true }
+mpc-stark = { workspace = true }
 
 # === Concurrency + Networking === #
 crossbeam = "0.8.1"
@@ -20,15 +20,15 @@ circuits = { path = "../../circuits" }
 circuit-types = { path = "../../circuit-types" }
 common = { path = "../../common" }
 constants = { path = "../../constants" }
-crypto = { path = "../../crypto" }
+renegade-crypto = { path = "../../renegade-crypto" }
 external-api = { path = "../../external-api" }
-integration-helpers = { path = "../../integration-helpers" }
 job-types = { path = "../job-types" }
 gossip-api = { path = "../../gossip-api" }
 starknet-client = { path = "../../starknet-client" }
 state = { path = "../../state" }
 system-bus = { path = "../../system-bus" }
 task-driver = { path = "../../task-driver" }
+test-helpers = { path = "../../test-helpers" }
 
 # === Misc Dependencies === #
 ark-serialize = "0.4"

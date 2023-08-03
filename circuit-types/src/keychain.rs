@@ -4,7 +4,6 @@
 use std::ops::Add;
 
 use circuit_macros::circuit_type;
-use crypto::fields::get_scalar_field_modulus;
 use ed25519_dalek::PublicKey as DalekKey;
 use mpc_bulletproof::r1cs::{LinearCombination, Variable};
 use mpc_stark::{
@@ -17,6 +16,7 @@ use mpc_stark::{
 };
 use num_bigint::BigUint;
 use rand::{CryptoRng, RngCore};
+use renegade_crypto::fields::get_scalar_field_modulus;
 use serde::{Deserialize, Serialize};
 
 use crate::{
