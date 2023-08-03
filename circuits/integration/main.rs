@@ -5,7 +5,7 @@
 // mod mpc_circuits;
 mod mpc_gadgets;
 mod types;
-// mod zk_circuits;
+mod zk_circuits;
 mod zk_gadgets;
 
 use chrono::Local;
@@ -60,9 +60,10 @@ fn setup_integration_tests(_test_args: &CliArgs) {
         .format(|buf, record| {
             writeln!(
                 buf,
-                "{} [{}] - {}",
+                "{} [{}] {} - {}",
                 Local::now().format("%Y-%m-%dT%H:%M:%S"),
                 record.level(),
+                record.module_path().unwrap(),
                 record.args()
             )
         })

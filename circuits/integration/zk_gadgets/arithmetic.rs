@@ -9,7 +9,7 @@ use mpc_bulletproof::{
 };
 use mpc_stark::{algebra::scalar::Scalar, PARTY0, PARTY1};
 use rand::{thread_rng, RngCore};
-use renegade_crypto::fields::{get_scalar_field_modulus, scalar_to_bigint};
+use renegade_crypto::fields::get_scalar_field_modulus;
 use test_helpers::{mpc_network::await_result, types::IntegrationTest};
 
 use crate::{IntegrationTestArgs, TestWrapper};
@@ -26,12 +26,12 @@ fn test_exp_multiprover(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let base_open = await_result(shared_base.open()).to_biguint();
     let exp_open = await_result(shared_exp.open()).to_biguint();
 
-    let expected_res = base_open.modpow(&exp_open, &get_scalar_field_modulus().into());
+    let expected_res = base_open.modpow(&exp_open, &get_scalar_field_modulus());
     let expected_scalar = expected_res.into();
 
     // Prove and verify the exp statement
     let pc_gens = PedersenGens::default();
-    let mut transcript = Transcript::new(b"test");
+    let transcript = Transcript::new(b"test");
     let mut prover = MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, &pc_gens);
     let (shared_base_var, _) = shared_base.commit_shared(&mut rng, &mut prover).unwrap();
     let res = MultiproverExpGadget::exp(
@@ -64,7 +64,7 @@ fn test_exp_multiprover_invalid(test_args: &IntegrationTestArgs) -> Result<(), S
     let exp_open = await_result(shared_exp.open()).to_biguint();
 
     let pc_gens = PedersenGens::default();
-    let mut transcript = Transcript::new(b"test");
+    let transcript = Transcript::new(b"test");
     let mut prover = MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, &pc_gens);
     let (shared_base_var, _) = shared_base.commit_shared(&mut rng, &mut prover).unwrap();
 
