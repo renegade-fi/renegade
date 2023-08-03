@@ -292,28 +292,23 @@ where
 // | Tests |
 // ---------
 
-#[cfg(test)]
-mod test {
-    #![allow(non_snake_case)]
-
+#[cfg(any(test, feature = "test_helpers"))]
+pub mod test_helpers {
     use circuit_types::{
         order::{Order, OrderSide},
         r#match::MatchResult,
-        traits::{CircuitBaseType, LinkableBaseType},
+        traits::LinkableBaseType,
     };
     use lazy_static::lazy_static;
-    use merlin::Transcript;
-    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
     use mpc_stark::algebra::scalar::Scalar;
     use num_bigint::BigUint;
-    use rand::thread_rng;
 
     use crate::zk_circuits::test_helpers::{
         create_wallet_shares, SizedWallet, INITIAL_BALANCES, INITIAL_FEES, MAX_BALANCES, MAX_FEES,
         MAX_ORDERS, PUBLIC_KEYS, TIMESTAMP,
     };
 
-    use super::{ValidSettle, ValidSettleStatement, ValidSettleWitness};
+    use super::{ValidSettleStatement, ValidSettleWitness};
 
     // --------------
     // | Dummy Data |
@@ -321,7 +316,7 @@ mod test {
 
     lazy_static! {
         /// The first of two wallets that match
-        static ref WALLET1: SizedWallet = {
+        pub static ref WALLET1: SizedWallet = {
             let orders = [
                 Order {
                     quote_mint: 1u8.into(),
@@ -345,7 +340,7 @@ mod test {
         };
 
         /// The second of two wallets to match, the first wallet with the order side flipped
-        static ref WALLET2: SizedWallet = {
+        pub static ref WALLET2: SizedWallet = {
             let mut wallet = WALLET1.clone();
             wallet.orders[0].side = OrderSide::Sell;
 
@@ -353,7 +348,7 @@ mod test {
         };
 
         /// The result of matching the two orders in the wallets above
-        static ref MATCH_RES: MatchResult = MatchResult {
+        pub static ref MATCH_RES: MatchResult = MatchResult {
             quote_mint: 1u8.into(),
             base_mint: 2u8.into(),
             quote_amount: 5,
@@ -365,16 +360,12 @@ mod test {
     }
 
     /// The witness type for `VALID SETTLE` with default size parameters attached
-    type SizedWitness = ValidSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    pub type SizedWitness = ValidSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     /// The statement type for `VALID SETTLE` with default size parameters attached
-    type SizedStatement = ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-
-    // -----------
-    // | Helpers |
-    // -----------
+    pub type SizedStatement = ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     /// Construct a witness and statement for `VALID SETTLE`
-    fn create_witness_statement(
+    pub fn create_witness_statement(
         party0_wallet: SizedWallet,
         party1_wallet: SizedWallet,
         match_res: MatchResult,
@@ -487,6 +478,26 @@ mod test {
             })
             .map(|(ind, _order)| ind) // keep only the index
     }
+}
+
+#[cfg(test)]
+mod test {
+    #![allow(non_snake_case)]
+
+    use circuit_types::traits::CircuitBaseType;
+    use merlin::HashChainTranscript as Transcript;
+    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
+    use mpc_stark::algebra::scalar::Scalar;
+    use rand::thread_rng;
+
+    use crate::zk_circuits::valid_settle::test_helpers::{
+        create_witness_statement, MATCH_RES, WALLET1, WALLET2,
+    };
+
+    use super::{
+        test_helpers::{SizedStatement, SizedWitness},
+        ValidSettle,
+    };
 
     /// Return true if the given witness and statement satisfy the constraints of
     /// the VALID SETTLE circuit
