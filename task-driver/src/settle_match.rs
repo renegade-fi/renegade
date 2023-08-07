@@ -16,10 +16,9 @@ use common::types::{
     wallet::WalletIdentifier,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::{scalar_to_biguint, starknet_felt_to_biguint};
 use gossip_api::gossip::GossipOutbound;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
-use mpc_ristretto::mpc_scalar::scalar_to_u64;
+use renegade_crypto::fields::{scalar_to_biguint, scalar_to_u64, starknet_felt_to_biguint};
 use serde::Serialize;
 use starknet::core::types::{TransactionInfo, TransactionStatus};
 use starknet_client::client::StarknetClient;

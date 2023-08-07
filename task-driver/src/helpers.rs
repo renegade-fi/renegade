@@ -29,12 +29,12 @@ use common::types::{
     wallet::{Wallet, WalletAuthenticationPath},
 };
 use crossbeam::channel::Sender as CrossbeamSender;
-use curve25519_dalek::scalar::Scalar;
 use gossip_api::{
     gossip::{GossipOutbound, PubsubMessage},
     orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
 };
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
+use mpc_stark::algebra::scalar::Scalar;
 use num_bigint::BigUint;
 use starknet_client::{client::StarknetClient, error::StarknetClientError};
 use state::RelayerState;

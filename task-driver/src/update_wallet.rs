@@ -14,9 +14,9 @@ use circuits::zk_circuits::valid_wallet_update::{
 };
 use common::types::{proof_bundles::ValidWalletUpdateBundle, wallet::Wallet};
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::starknet_felt_to_biguint;
 use gossip_api::gossip::GossipOutbound;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
+use renegade_crypto::fields::starknet_felt_to_biguint;
 use serde::Serialize;
 use starknet::core::types::TransactionStatus;
 use starknet_client::client::StarknetClient;
