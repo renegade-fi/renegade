@@ -268,7 +268,7 @@ impl<'a, const D: usize> MultiproverGreaterThanEqZeroGadget<'a, D> {
     ) -> Result<(), ProverError>
     where
         L: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         let reconstructed_res = Self::bit_decompose_reconstruct(x.clone(), fabric, cs)?;
         cs.constrain(reconstructed_res - x.into());
@@ -288,7 +288,7 @@ impl<'a, const D: usize> MultiproverGreaterThanEqZeroGadget<'a, D> {
     ) -> Result<MpcLinearCombination, ProverError>
     where
         L: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         // Evaluate the assignment of the value in the underlying constraint system
         let value_assignment = cs.eval(&x.into());
@@ -375,7 +375,7 @@ impl<'a> MultiproverEqGadget<'a> {
         L2: MpcLinearCombinationLike,
         V1: MultiproverCircuitVariableType<L1>,
         V2: MultiproverCircuitVariableType<L2>,
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         let a_vars = a.to_mpc_vars();
         let b_vars = b.to_mpc_vars();
@@ -409,7 +409,7 @@ impl<'a, const D: usize> MultiproverGreaterThanEqGadget<'a, D> {
     ) -> Result<(), ProverError>
     where
         L: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         MultiproverGreaterThanEqZeroGadget::<'a, D>::constrain_greater_than_zero(
             a.into() - b.into(),

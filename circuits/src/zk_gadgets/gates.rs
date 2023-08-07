@@ -57,7 +57,7 @@ impl<'a> MultiproverOrGate<'a> {
     pub fn or<L, CS>(a: L, b: L, cs: &mut CS) -> Result<MpcLinearCombination, ProverError>
     where
         L: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         let (a, b, a_times_b) = cs
             .multiply(&a.into(), &b.into())

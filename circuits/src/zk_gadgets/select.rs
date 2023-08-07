@@ -66,7 +66,7 @@ impl<'a> MultiproverCondSelectGadget<'a> {
     where
         L: MpcLinearCombinationLike,
         V: MultiproverCircuitVariableType<MpcLinearCombination>,
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         let a_vars = a.to_mpc_vars();
         let b_vars = b.to_mpc_vars();
@@ -143,7 +143,7 @@ impl<'a> MultiproverCondSelectVectorGadget<'a> {
         cs: &mut CS,
     ) -> Result<Vec<V>, ProverError>
     where
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
         L: MpcLinearCombinationLike,
         V: MultiproverCircuitVariableType<MpcLinearCombination>,
     {

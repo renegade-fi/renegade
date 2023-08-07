@@ -244,7 +244,7 @@ impl<'a> MultiproverExpGadget<'a> {
     ) -> Result<MpcLinearCombination, ProverError>
     where
         L: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         if alpha == 0 {
             Ok(MpcLinearCombination::from_scalar(Scalar::one(), fabric))
