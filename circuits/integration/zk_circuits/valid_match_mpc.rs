@@ -23,7 +23,10 @@ use mpc_bulletproof::{r1cs_mpc::MpcProver, PedersenGens};
 use mpc_stark::{algebra::scalar::Scalar, MpcFabric, PARTY0, PARTY1};
 use rand::{thread_rng, Rng};
 use renegade_crypto::fields::scalar_to_u64;
-use test_helpers::{mpc_network::await_result, types::IntegrationTest};
+use test_helpers::{
+    mpc_network::{await_result, await_result_with_error},
+    types::IntegrationTest,
+};
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
@@ -114,7 +117,7 @@ fn match_orders(
 
     // Share amounts
     let party0_max_amount = await_result(amount.share_public(PARTY0, fabric.clone()));
-    let party1_max_amount = await_result(amount.share_public(PARTY0, fabric.clone()));
+    let party1_max_amount = await_result(amount.share_public(PARTY1, fabric.clone()));
 
     // Match the values
     let min_base_amount = cmp::min(party0_max_amount, party1_max_amount);
@@ -188,8 +191,7 @@ fn prove_and_verify_match(
             .map_err(|err| format!("Error proving: {:?}", err))?;
 
     // Open
-    let opened_proof =
-        await_result(proof.open()).map_err(|err| format!("Error opening proof: {:?}", err))?;
+    let opened_proof = await_result_with_error(proof.open())?;
     let opened_comm = await_result(witness_comm.open_and_authenticate())
         .map_err(|err| format!("Error opening witness commitment: {:?}", err))?;
 
@@ -423,7 +425,7 @@ fn test_valid_match__invalid_balance_mint(test_args: &IntegrationTestArgs) -> Re
     let amount = compute_max_amount(price, &my_order, &my_balance);
 
     // Switch the mint of the balance to be the wrong asset in the pair
-    if fabric.party_id() == PARTY0 {
+    if party_id == PARTY0 {
         if my_balance.mint == my_order.quote_mint {
             my_balance.mint = my_order.base_mint.clone();
         } else {
