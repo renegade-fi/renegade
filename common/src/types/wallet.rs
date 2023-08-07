@@ -21,11 +21,11 @@ use circuit_types::{
     SizedWallet as SizedCircuitWallet, SizedWalletShare,
 };
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
-use crypto::hash::evaluate_hash_chain;
-use curve25519_dalek::scalar::Scalar;
 use indexmap::IndexMap;
 use itertools::Itertools;
+use mpc_stark::algebra::scalar::Scalar;
 use num_bigint::BigUint;
+use renegade_crypto::hash::evaluate_hash_chain;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 

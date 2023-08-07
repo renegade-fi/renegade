@@ -19,7 +19,6 @@ syn = { version = "1.0", features = ["full"] }
 itertools = "0.10"
 
 [dev-dependencies]
-curve25519-dalek = { workspace = true }
 lazy_static = "1.4"
 merlin = "2.0"
 rand = "0.8"
