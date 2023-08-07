@@ -11,11 +11,12 @@ use circuits::{
     mpc_circuits::r#match::compute_match,
     zk_circuits::valid_match_mpc::{AuthenticatedValidMatchMpcWitness, ValidMatchMpcCircuit},
 };
-use merlin::Transcript;
+use merlin::HashChainTranscript as Transcript;
 use mpc_bulletproof::{r1cs_mpc::MpcProver, PedersenGens};
+use mpc_stark::{PARTY0, PARTY1};
 use num_bigint::BigUint;
-use rand::OsRng;
-use test_helpers::types::IntegrationTest;
+use rand::thread_rng;
+use test_helpers::{mpc_network::await_result, types::IntegrationTest};
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
@@ -26,8 +27,9 @@ use crate::{IntegrationTestArgs, TestWrapper};
 /// Tests the match function with non overlapping orders for a variety of failure cases
 fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Convenience selector for brevity
-    let mut rng = OsRng {};
-    let party_id = test_args.party_id;
+    let fabric = &test_args.mpc_fabric;
+    let mut rng = thread_rng();
+    let party_id = fabric.party_id();
     macro_rules! sel {
         ($a:expr, $b:expr) => {
             if party_id == 0 {
@@ -51,12 +53,8 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
     )
     .to_linkable();
 
-    let balance1 = my_balance
-        .allocate(0 /* owning_party */, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error allocating balance1 in the network: {:?}", err))?;
-    let balance2 = my_balance
-        .allocate(1 /* owning_party */, test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error allocating balance2 in the network: {:?}", err))?;
+    let balance1 = my_balance.allocate(PARTY0, fabric);
+    let balance2 = my_balance.allocate(PARTY1, fabric);
 
     // Build the test cases for different invalid match pairs
     let test_cases: Vec<(Order, u64)> = vec![
@@ -112,30 +110,20 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     for (my_order, my_price) in test_cases.into_iter() {
         // Allocate the orders in the network
-        let linkable_order1 = my_order
-            .to_linkable()
-            .allocate(0 /* owning_party */, test_args.mpc_fabric.clone())
-            .map_err(|err| format!("Error allocating order1 in the network: {:?}", err))?;
-        let linkable_order2 = my_order
-            .to_linkable()
-            .allocate(1 /* owning_party */, test_args.mpc_fabric.clone())
-            .map_err(|err| format!("Error allocating order2 in the network: {:?}", err))?;
+        let linkable_order1 = my_order.to_linkable().allocate(PARTY0, fabric);
+        let linkable_order2 = my_order.to_linkable().allocate(PARTY1, fabric);
 
         // Allocate the price in the network
-        let price1 = FixedPoint::from_integer(my_price)
-            .allocate(0 /* owning_party */, test_args.mpc_fabric.clone())
-            .map_err(|err| format!("Error allocating price in the network: {:?}", err))?;
-        let price2 = FixedPoint::from_integer(my_price)
-            .allocate(1 /* owning_party */, test_args.mpc_fabric.clone())
-            .map_err(|err| format!("Error allocating price in the network: {:?}", err))?;
+        let price1 = FixedPoint::from_integer(my_price).allocate(PARTY0, fabric);
+        let price2 = FixedPoint::from_integer(my_price).allocate(PARTY1, fabric);
 
-        let order1: AuthenticatedOrder<_, _> = AuthenticatedOrder::from_authenticated_scalars(
+        let order1: AuthenticatedOrder = AuthenticatedOrder::from_authenticated_scalars(
             &mut linkable_order1
                 .clone()
                 .to_authenticated_scalars()
                 .into_iter(),
         );
-        let order2: AuthenticatedOrder<_, _> = AuthenticatedOrder::from_authenticated_scalars(
+        let order2: AuthenticatedOrder = AuthenticatedOrder::from_authenticated_scalars(
             &mut linkable_order2
                 .clone()
                 .to_authenticated_scalars()
@@ -150,14 +138,13 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
             &order2.amount,
             &price1, // Use the first party's price
             test_args.mpc_fabric.clone(),
-        )
-        .map_err(|err| format!("Error computing order match: {:?}", err))?;
+        );
 
         // Assert that match verification fails
         let pc_gens = PedersenGens::default();
-        let mut transcript = Transcript::new(b"test");
+        let transcript = Transcript::new(b"test");
         let mut dummy_prover =
-            MpcProver::new_with_fabric(test_args.mpc_fabric.clone().0, &mut transcript, &pc_gens);
+            MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, &pc_gens);
 
         let witness = AuthenticatedValidMatchMpcWitness {
             order1: linkable_order1,
@@ -168,7 +155,7 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
             price2: price2.clone(),
             balance1: balance1.clone(),
             balance2: balance2.clone(),
-            match_res: res.link_commitments(test_args.mpc_fabric.clone()),
+            match_res: res.link_commitments(fabric),
         };
         let (witness_var, _) = witness.commit_shared(&mut rng, &mut dummy_prover).unwrap();
 
@@ -191,7 +178,8 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
 fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Convenience selector for brevity, simpler to redefine per test than to
     // pass in party_id from the environment
-    let party_id = test_args.party_id;
+    let fabric = &test_args.mpc_fabric;
+    let party_id = fabric.party_id();
     macro_rules! sel {
         ($a:expr, $b:expr) => {
             if party_id == 0 {
@@ -256,30 +244,25 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
         test_cases.into_iter().zip(expected_results.into_iter())
     {
         // Allocate the prices in the network
-        let price1 = FixedPoint::from_integer(my_price)
-            .allocate(0 /* owning_party */, test_args.mpc_fabric.clone())
-            .map_err(|err| format!("Error allocating price1 in the network: {:?}", err))?;
+        let price1 = FixedPoint::from_integer(my_price).allocate(PARTY0, fabric);
 
         // Allocate the orders in the network
-        let order1 = my_order
-            .allocate(0 /* owning_party */, test_args.mpc_fabric.clone())
-            .map_err(|err| format!("Error allocating order1 in the network: {:?}", err))?;
-        let order2 = my_order
-            .allocate(1 /* owning_party */, test_args.mpc_fabric.clone())
-            .map_err(|err| format!("Error allocating order2 in the network: {:?}", err))?;
+        let order1 = my_order.allocate(PARTY0, fabric);
+        let order2 = my_order.allocate(PARTY1, fabric);
 
         // Compute matches
-        let res = compute_match(
-            &order1,
-            &order2,
-            &order1.amount,
-            &order2.amount,
-            &price1,
-            test_args.mpc_fabric.clone(),
+        let res = await_result(
+            compute_match(
+                &order1,
+                &order2,
+                &order1.amount,
+                &order2.amount,
+                &price1,
+                test_args.mpc_fabric.clone(),
+            )
+            .open_and_authenticate(),
         )
-        .map_err(|err| format!("Error computing order match: {:?}", err))?
-        .open_and_authenticate(test_args.mpc_fabric.clone())
-        .map_err(|err| format!("Error opening match result: {:?}", err))?;
+        .map_err(|e| format!("Error computing match: {:?}", e))?;
 
         // Assert that no match occurred
         if res != expected_res.clone() {
