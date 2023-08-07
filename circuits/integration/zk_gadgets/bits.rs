@@ -31,7 +31,7 @@ fn test_to_bits(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     let pc_gens = PedersenGens::default();
     let transcript = Transcript::new(b"test");
-    let mut prover = MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, &pc_gens);
+    let mut prover = MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, pc_gens);
     let (shared_scalar_var, _) = shared_scalar.commit_shared(&mut rng, &mut prover).unwrap();
     let res_bits = MultiproverToBitsGadget::<64 /* bits */>::to_bits(
         shared_scalar_var,
@@ -47,7 +47,7 @@ fn test_to_bits(test_args: &IntegrationTestArgs) -> Result<(), String> {
         prover.constrain(bit.clone() - allocated_bit);
     }
 
-    if prover.constraints_satisfied().unwrap() {
+    if await_result(prover.constraints_satisfied()) {
         Ok(())
     } else {
         Err("Constraints not satisfied".to_string())

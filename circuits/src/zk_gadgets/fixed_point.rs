@@ -108,7 +108,7 @@ impl<'a> MultiproverFixedPointGadget<'a> {
         cs: &mut CS,
     ) where
         L: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         // Shift the integer
         let shifted_rhs = *TWO_TO_M_SCALAR * rhs;
@@ -125,7 +125,7 @@ impl<'a> MultiproverFixedPointGadget<'a> {
     ) -> Result<(), ProverError>
     where
         L: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         // Shift the integer and take the difference
         let shifted_rhs = *TWO_TO_M_SCALAR * rhs;

@@ -15,7 +15,10 @@ use mpc_stark::{
 };
 use rand::{thread_rng, RngCore};
 use renegade_crypto::hash::{compute_poseidon_hash, default_poseidon_params};
-use test_helpers::{mpc_network::await_result_batch, types::IntegrationTest};
+use test_helpers::{
+    mpc_network::{await_result, await_result_batch},
+    types::IntegrationTest,
+};
 
 use crate::{IntegrationTestArgs, TestWrapper};
 
@@ -44,7 +47,7 @@ fn test_poseidon_multiprover(test_args: &IntegrationTestArgs) -> Result<(), Stri
     // Prove the statement
     let pc_gens = PedersenGens::default();
     let transcript = Transcript::new(b"test");
-    let mut prover = MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, &pc_gens);
+    let mut prover = MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, pc_gens);
     let hash_input: Vec<MpcLinearCombination> = party0_values
         .into_iter()
         .chain(party1_values.into_iter())
@@ -62,7 +65,7 @@ fn test_poseidon_multiprover(test_args: &IntegrationTestArgs) -> Result<(), Stri
         )
         .map_err(|err| format!("Error computing poseidon hash circuit: {:?}", err))?;
 
-    if prover.constraints_satisfied().unwrap() {
+    if await_result(prover.constraints_satisfied()) {
         Ok(())
     } else {
         Err("Constraints not satisfied".to_string())
@@ -86,7 +89,7 @@ fn test_poseidon_multiprover_invalid(test_args: &IntegrationTestArgs) -> Result<
     let hasher_params = default_poseidon_params();
     let pc_gens = PedersenGens::default();
     let transcript = Transcript::new(b"test");
-    let mut prover = MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, &pc_gens);
+    let mut prover = MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, pc_gens);
 
     let hash_input: Vec<MpcLinearCombination> = party0_values
         .iter()
@@ -106,7 +109,7 @@ fn test_poseidon_multiprover_invalid(test_args: &IntegrationTestArgs) -> Result<
         .hash(&hash_input, &expected_out, &mut prover)
         .map_err(|err| format!("Error computing poseidon hash circuit: {:?}", err))?;
 
-    if prover.constraints_satisfied().unwrap() {
+    if await_result(prover.constraints_satisfied()) {
         Err("Constraints satisfied".to_string())
     } else {
         Ok(())

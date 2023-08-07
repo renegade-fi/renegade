@@ -32,7 +32,7 @@ fn test_exp_multiprover(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Prove and verify the exp statement
     let pc_gens = PedersenGens::default();
     let transcript = Transcript::new(b"test");
-    let mut prover = MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, &pc_gens);
+    let mut prover = MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, pc_gens);
     let (shared_base_var, _) = shared_base.commit_shared(&mut rng, &mut prover).unwrap();
     let res = MultiproverExpGadget::exp(
         shared_base_var,
@@ -45,7 +45,7 @@ fn test_exp_multiprover(test_args: &IntegrationTestArgs) -> Result<(), String> {
         res - MpcLinearCombination::from_scalar(expected_scalar, test_args.mpc_fabric.clone()),
     );
 
-    if prover.constraints_satisfied().unwrap() {
+    if await_result(prover.constraints_satisfied()) {
         Ok(())
     } else {
         Err("Constraints not satisfied".to_string())
@@ -65,7 +65,7 @@ fn test_exp_multiprover_invalid(test_args: &IntegrationTestArgs) -> Result<(), S
 
     let pc_gens = PedersenGens::default();
     let transcript = Transcript::new(b"test");
-    let mut prover = MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, &pc_gens);
+    let mut prover = MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, pc_gens);
     let (shared_base_var, _) = shared_base.commit_shared(&mut rng, &mut prover).unwrap();
 
     let res = MultiproverExpGadget::exp(
@@ -78,7 +78,7 @@ fn test_exp_multiprover_invalid(test_args: &IntegrationTestArgs) -> Result<(), S
     prover
         .constrain(res - MpcVariable::new_with_type(Variable::One(), test_args.mpc_fabric.clone()));
 
-    if prover.constraints_satisfied().unwrap() {
+    if await_result(prover.constraints_satisfied()) {
         Err("Constraints satisfied".to_string())
     } else {
         Ok(())
