@@ -10,7 +10,6 @@ crossbeam = "0.8"
 tokio = { workspace = true }
 
 # === Cryptography === #
-curve25519-dalek = { workspace = true }
 mpc-stark = { workspace = true }
 num-bigint = { workspace = true }
 

@@ -20,9 +20,9 @@ use common::types::{
     wallet::{Wallet as StateWallet, WalletIdentifier},
 };
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::starknet_felt_to_biguint;
 use external_api::types::Wallet;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
+use renegade_crypto::fields::starknet_felt_to_biguint;
 use serde::Serialize;
 use starknet::core::types::TransactionStatus;
 use starknet_client::client::StarknetClient;
