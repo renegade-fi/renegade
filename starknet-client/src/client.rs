@@ -27,13 +27,13 @@ use constants::{
     DEVNET_CONTRACT_DEPLOYMENT_BLOCK, GOERLI_CONTRACT_DEPLOYMENT_BLOCK,
     MAINNET_CONTRACT_DEPLOYMENT_BLOCK,
 };
-use crypto::fields::{
-    biguint_to_starknet_felt, scalar_to_biguint, starknet_felt_to_biguint, starknet_felt_to_scalar,
+use mpc_stark::algebra::scalar::Scalar;
+use num_bigint::BigUint;
+use renegade_crypto::fields::{
+    scalar_to_starknet_felt, starknet_felt_to_biguint, starknet_felt_to_scalar,
     starknet_felt_to_u64,
 };
-use curve25519_dalek::scalar::Scalar;
-use num_bigint::BigUint;
-use reqwest::Url as ReqwestUrl;
+use reqwest::Url;
 use starknet::{
     accounts::{Account, Call, SingleOwnerAccount},
     core::types::{
@@ -261,18 +261,6 @@ impl StarknetClient {
         current_account_index
     }
 
-    /// A helper to reduce a Dalek scalar modulo the Stark field
-    ///
-    /// Note that this a bandaid, we will be replacing all the felts with U256
-    /// values in the contract to emulate the Dalek field
-    fn reduce_scalar_to_felt(val: &Scalar) -> StarknetFieldElement {
-        let val_bigint = scalar_to_biguint(val);
-        let modulus_bigint = starknet_felt_to_biguint(&StarknetFieldElement::MAX) + 1u8;
-        let val_mod_starknet_prime = val_bigint % modulus_bigint;
-
-        biguint_to_starknet_felt(&val_mod_starknet_prime)
-    }
-
     /// Helper to make a view call to the contract
     async fn call_contract(
         &self,
@@ -424,7 +412,7 @@ impl StarknetClient {
         &self,
         commitment: Scalar,
     ) -> Result<BigUint, StarknetClientError> {
-        let commitment_starknet_felt = Self::reduce_scalar_to_felt(&commitment);
+        let commitment_starknet_felt = scalar_to_starknet_felt(&commitment);
 
         log::info!(
             "searching for commitment: 0x{:x}",
@@ -549,7 +537,7 @@ impl StarknetClient {
         // Check the wrapper call as well as any internal calls for the ciphertext
         // Typically the relevant calldata will be found in an internal call that the account
         // contract delegates to via __execute__
-        let reduced_blinder_share = Self::reduce_scalar_to_felt(&public_blinder_share);
+        let reduced_blinder_share = scalar_to_starknet_felt(&public_blinder_share);
         for invocation in
             iter::once(&invocation_details).chain(invocation_details.internal_calls.iter())
         {
@@ -580,7 +568,7 @@ impl StarknetClient {
         root: MerkleRoot,
     ) -> Result<bool, StarknetClientError> {
         // TODO: Implement BigUint on the contract
-        let reduced_root = Self::reduce_scalar_to_felt(&root);
+        let reduced_root = scalar_to_starknet_felt(&root);
         let call = FunctionCall {
             contract_address: self.contract_address,
             entry_point_selector: *MERKLE_ROOT_IN_HISTORY_SELECTOR,
@@ -596,7 +584,7 @@ impl StarknetClient {
         &self,
         nullifier: Nullifier,
     ) -> Result<bool, StarknetClientError> {
-        let reduced_nullifier = Self::reduce_scalar_to_felt(&nullifier);
+        let reduced_nullifier = scalar_to_starknet_felt(&nullifier);
         let call = FunctionCall {
             contract_address: self.contract_address,
             entry_point_selector: *NULLIFIER_USED_SELECTOR,
@@ -615,7 +603,7 @@ impl StarknetClient {
         &self,
         public_blinder_share: Scalar,
     ) -> Result<Option<TransactionHash>, StarknetClientError> {
-        let reduced_blinder_share = Self::reduce_scalar_to_felt(&public_blinder_share);
+        let reduced_blinder_share = scalar_to_starknet_felt(&public_blinder_share);
         let call = FunctionCall {
             contract_address: self.contract_address,
             entry_point_selector: *GET_PUBLIC_BLINDER_TRANSACTION,
@@ -654,9 +642,9 @@ impl StarknetClient {
         let wallet_share_commitment =
             compute_wallet_commitment_from_private(public_shares.clone(), private_share_commitment);
         let mut calldata = vec![
-            Self::reduce_scalar_to_felt(&public_shares.blinder),
-            Self::reduce_scalar_to_felt(&wallet_share_commitment),
-            Self::reduce_scalar_to_felt(&private_share_commitment),
+            scalar_to_starknet_felt(&public_shares.blinder),
+            scalar_to_starknet_felt(&wallet_share_commitment),
+            scalar_to_starknet_felt(&private_share_commitment),
         ];
 
         // Pack the wallet's public shares into a list of felts
@@ -693,10 +681,10 @@ impl StarknetClient {
             new_private_shares_commitment,
         );
         let mut calldata = vec![
-            Self::reduce_scalar_to_felt(&old_shares_nullifier),
-            Self::reduce_scalar_to_felt(&new_public_shares.blinder),
-            Self::reduce_scalar_to_felt(&new_wallet_share_commitment),
-            Self::reduce_scalar_to_felt(&new_private_shares_commitment),
+            scalar_to_starknet_felt(&old_shares_nullifier),
+            scalar_to_starknet_felt(&new_public_shares.blinder),
+            scalar_to_starknet_felt(&new_wallet_share_commitment),
+            scalar_to_starknet_felt(&new_private_shares_commitment),
         ];
 
         // Add the external transfer tuple to the calldata
@@ -749,14 +737,14 @@ impl StarknetClient {
 
         // Build the calldata
         let mut calldata = vec![
-            Self::reduce_scalar_to_felt(&party0_old_shares_nullifier),
-            Self::reduce_scalar_to_felt(&party1_old_shares_nullifier),
-            Self::reduce_scalar_to_felt(&party0_public_shares.blinder),
-            Self::reduce_scalar_to_felt(&party1_public_shares.blinder),
-            Self::reduce_scalar_to_felt(&party0_wallet_share_commitment),
-            Self::reduce_scalar_to_felt(&party0_private_share_commitment),
-            Self::reduce_scalar_to_felt(&party1_wallet_share_commitment),
-            Self::reduce_scalar_to_felt(&party1_private_share_commitment),
+            scalar_to_starknet_felt(&party0_old_shares_nullifier),
+            scalar_to_starknet_felt(&party1_old_shares_nullifier),
+            scalar_to_starknet_felt(&party0_public_shares.blinder),
+            scalar_to_starknet_felt(&party1_public_shares.blinder),
+            scalar_to_starknet_felt(&party0_wallet_share_commitment),
+            scalar_to_starknet_felt(&party0_private_share_commitment),
+            scalar_to_starknet_felt(&party1_wallet_share_commitment),
+            scalar_to_starknet_felt(&party1_private_share_commitment),
         ];
 
         calldata.append(&mut pack_serializable!(party0_public_shares));
