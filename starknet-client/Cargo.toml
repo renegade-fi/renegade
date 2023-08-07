@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 # === Cryptographic + arithmetic dependencies === #
-curve25519-dalek = { workspace = true }
+mpc-stark = { workspace = true }
 num-bigint = { version = "0.4.3" }
 
 # === Networking + Blockchain dependencies === #
