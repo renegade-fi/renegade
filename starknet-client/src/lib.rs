@@ -11,10 +11,10 @@
 use std::{convert::TryInto, str::FromStr};
 
 use constants::MERKLE_HEIGHT;
-use crypto::{fields::biguint_to_scalar, hash::compute_poseidon_hash};
-use curve25519_dalek::scalar::Scalar;
 use lazy_static::lazy_static;
+use mpc_stark::algebra::scalar::Scalar;
 use num_bigint::BigUint;
+use renegade_crypto::hash::compute_poseidon_hash;
 use starknet::core::{types::FieldElement as StarknetFieldElement, utils::get_selector_from_name};
 
 pub mod client;
@@ -67,10 +67,11 @@ lazy_static! {
 
     /// The value of an empty leaf in the Merkle tree
     static ref EMPTY_LEAF_VALUE: Scalar = {
-        let val_bigint = BigUint::from_str(
+        BigUint::from_str(
             "306932273398430716639340090025251549301604242969558673011416862133942957551"
-        ).unwrap();
-        biguint_to_scalar(&val_bigint)
+        )
+        .unwrap()
+        .into()
     };
     /// The default values of an authentication path; i.e. the values in the path before any
     /// path elements are changed by insertions
