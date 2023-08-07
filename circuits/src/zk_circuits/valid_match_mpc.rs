@@ -69,7 +69,7 @@ impl<'a> ValidMatchMpcCircuit<'a> {
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         // --- Match Engine Input Validity --- //
         // Check that both orders are for the matched asset pair
@@ -202,7 +202,7 @@ impl<'a> ValidMatchMpcCircuit<'a> {
 
     /// Check that a balance covers the advertised amount at a given price, and
     /// that the amount is less than the maximum amount allowed by the order
-    pub fn validate_volume_constraints<CS: MpcRandomizableConstraintSystem<'a>>(
+    pub fn validate_volume_constraints<CS: MpcRandomizableConstraintSystem>(
         match_res: &AuthenticatedMatchResultVar<MpcVariable>,
         balance: &AuthenticatedBalanceVar<MpcVariable>,
         order: &AuthenticatedOrderVar<MpcVariable>,
@@ -243,7 +243,7 @@ impl<'a> ValidMatchMpcCircuit<'a> {
     /// Verify the price protection on the orders; i.e. that the executed price is not
     /// worse than some user-defined limit
     #[allow(unused)]
-    pub fn verify_price_protection<CS: MpcRandomizableConstraintSystem<'a>>(
+    pub fn verify_price_protection<CS: MpcRandomizableConstraintSystem>(
         price: &AuthenticatedFixedPointVar<MpcVariable>,
         order: &AuthenticatedOrderVar<MpcVariable>,
         fabric: MpcFabric,
@@ -508,7 +508,7 @@ impl<'a> MultiProverCircuit<'a> for ValidMatchMpcCircuit<'a> {
 
     const BP_GENS_CAPACITY: usize = 512;
 
-    fn apply_constraints_multiprover<CS: MpcRandomizableConstraintSystem<'a>>(
+    fn apply_constraints_multiprover<CS: MpcRandomizableConstraintSystem>(
         witness: <Self::Witness as MultiproverCircuitBaseType>::MultiproverVarType<MpcVariable>,
         _statement: <Self::Statement as MultiproverCircuitBaseType>::MultiproverVarType<
             MpcVariable,
@@ -647,7 +647,7 @@ mod tests {
             let (witness_commitment, proof) = {
                 let pc_gens = PedersenGens::default();
                 let transcript = HashChainTranscript::new(b"test");
-                let prover = MpcProver::new_with_fabric(fabric.clone(), transcript, &pc_gens);
+                let prover = MpcProver::new_with_fabric(fabric.clone(), transcript, pc_gens);
 
                 ValidMatchMpcCircuit::prove(
                     witness,

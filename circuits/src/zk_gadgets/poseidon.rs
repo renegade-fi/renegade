@@ -311,17 +311,17 @@ impl<'a> MultiproverPoseidonHashGadget<'a> {
     ) -> Result<(), ProverError>
     where
         L: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         self.batch_absorb(hash_input, cs)?;
         self.constrained_squeeze(expected_output.clone(), cs)
     }
 
     /// Absorb an input into the hasher state
-    pub fn absorb<'b, L, CS>(&mut self, a: L, cs: &mut CS) -> Result<(), ProverError>
+    pub fn absorb<L, CS>(&mut self, a: L, cs: &mut CS) -> Result<(), ProverError>
     where
         L: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         assert!(
             !self.in_squeeze_state,
@@ -344,7 +344,7 @@ impl<'a> MultiproverPoseidonHashGadget<'a> {
     pub fn batch_absorb<L, CS>(&mut self, a: &[L], cs: &mut CS) -> Result<(), ProverError>
     where
         L: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         a.iter().try_for_each(|val| self.absorb(val.clone(), cs))
     }
@@ -352,7 +352,7 @@ impl<'a> MultiproverPoseidonHashGadget<'a> {
     /// Squeeze an output from the hasher and return to the caller
     pub fn squeeze<CS>(&mut self, cs: &mut CS) -> Result<MpcLinearCombination, ProverError>
     where
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         // Once we exit the absorb state, ensure that the digest state is permuted before squeezing
         if !self.in_squeeze_state || self.next_index == self.params.rate {
@@ -373,7 +373,7 @@ impl<'a> MultiproverPoseidonHashGadget<'a> {
     ) -> Result<(), ProverError>
     where
         L: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         let squeezed = self.squeeze(cs)?;
         cs.constrain(squeezed - expected.into());
@@ -387,7 +387,7 @@ impl<'a> MultiproverPoseidonHashGadget<'a> {
         cs: &mut CS,
     ) -> Result<Vec<MpcLinearCombination>, ProverError>
     where
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         (0..num_elems)
             .map(|_| self.squeeze(cs))
@@ -403,7 +403,7 @@ impl<'a> MultiproverPoseidonHashGadget<'a> {
     ) -> Result<(), ProverError>
     where
         L: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         expected
             .iter()
@@ -411,7 +411,7 @@ impl<'a> MultiproverPoseidonHashGadget<'a> {
     }
 
     /// Permute the digest by applying the Poseidon round function
-    fn permute<CS: MpcRandomizableConstraintSystem<'a>>(
+    fn permute<CS: MpcRandomizableConstraintSystem>(
         &mut self,
         cs: &mut CS,
     ) -> Result<(), ProverError> {
@@ -464,7 +464,7 @@ impl<'a> MultiproverPoseidonHashGadget<'a> {
     ///
     /// This step is applied in the Poseidon permutation after the round constants
     /// are added to the state.
-    fn apply_sbox<CS: MpcRandomizableConstraintSystem<'a>>(
+    fn apply_sbox<CS: MpcRandomizableConstraintSystem>(
         &mut self,
         full_round: bool,
         cs: &mut CS,

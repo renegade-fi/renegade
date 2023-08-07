@@ -73,7 +73,7 @@ impl<'a, const D: usize> MultiproverToBitsGadget<'a, D> {
         cs: &mut CS,
     ) -> Result<Vec<MpcLinearCombination>, ProverError>
     where
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
         L: MpcLinearCombinationLike,
     {
         // Evaluate the linear combination so that we can use a raw MPC to get the bits
