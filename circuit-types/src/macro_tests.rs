@@ -146,7 +146,7 @@ mod test {
                 let mut rng = OsRng {};
                 let pc_gens = PedersenGens::default();
                 let transcript = Transcript::new(b"test");
-                let mut prover = MpcProver::new_with_fabric(fabric.clone(), transcript, &pc_gens);
+                let mut prover = MpcProver::new_with_fabric(fabric.clone(), transcript, pc_gens);
 
                 // Allocate the dummy value in the constraint system
                 let dummy_allocated = value.allocate(PARTY0, &fabric);

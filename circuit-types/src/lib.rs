@@ -32,7 +32,6 @@ use rand::thread_rng;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use serde::{de::Error as SerdeErr, Deserialize, Deserializer, Serialize, Serializer};
 use wallet::{Wallet, WalletShare};
-// use wallet::{Wallet, WalletShare};
 
 // -------------
 // | Constants |
