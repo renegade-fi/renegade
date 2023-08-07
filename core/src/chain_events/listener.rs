@@ -16,13 +16,18 @@ use circuits::types::wallet::Nullifier;
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::{starknet_felt_to_biguint, starknet_felt_to_scalar, starknet_felt_to_u64};
 use curve25519_dalek::scalar::Scalar;
-use starknet::providers::jsonrpc::{
-    models::{BlockId, EmittedEvent, ErrorCode, EventFilter},
-    HttpTransport, JsonRpcClient, JsonRpcClientError, RpcError,
-};
 use starknet::{
-    core::{types::FieldElement as StarknetFieldElement, utils::get_selector_from_name},
-    providers::jsonrpc::models::BlockTag,
+    core::{
+        types::{
+            BlockId, BlockTag, EmittedEvent, EventFilter, FieldElement as StarknetFieldElement,
+            StarknetError,
+        },
+        utils::get_selector_from_name,
+    },
+    providers::{
+        jsonrpc::{HttpTransport, JsonRpcClient},
+        MaybeUnknownErrorCode, Provider, ProviderError, StarknetErrorWithMessage,
+    },
 };
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tokio::time::{sleep_until, Instant};
@@ -67,7 +72,7 @@ lazy_static! {
 /// The configuration passed to the listener upon startup
 #[derive(Clone)]
 pub struct OnChainEventListenerConfig {
-    /// A client for connecting to Starknet gateway and jsonrpc nodes
+    /// A client for connecting to Starknet JSON-RPC node
     pub starknet_client: StarknetClient,
     /// A copy of the relayer global state
     pub global_state: RelayerState,
@@ -208,11 +213,11 @@ impl OnChainEventListenerExecutor {
             from_block: Some(BlockId::Number(self.start_block)),
             to_block: Some(BlockId::Tag(BlockTag::Pending)),
             address: Some(self.contract_address()),
-            keys: Some(vec![
+            keys: Some(vec![vec![
                 *MERKLE_ROOT_CHANGED_EVENT_SELECTOR,
                 *MERKLE_NODE_CHANGED_EVENT_SELECTOR,
                 *NULLIFIER_SPENT_EVENT_SELECTOR,
-            ]),
+            ]]),
         };
 
         let pagination_token = self.pagination_token.load(Ordering::Relaxed).to_string();
@@ -221,16 +226,18 @@ impl OnChainEventListenerExecutor {
             .get_events(filter, Some(pagination_token), EVENT_CHUNK_SIZE)
             .await;
 
-        // If the error is an unknown continuation token, ignore it and stop paging
-        if let Err(JsonRpcClientError::RpcError(RpcError::Code(
-            ErrorCode::InvalidContinuationToken,
-        ))) = resp
-        {
-            return Ok((Vec::new(), false));
-        }
-
-        // Otherwise, propagate the error
-        let resp = resp.map_err(|err| OnChainEventListenerError::Rpc(err.to_string()))?;
+        let resp = match resp {
+            Ok(events_page) => Ok(events_page),
+            // If the error is an unknown continuation token, ignore it and stop paging
+            Err(ProviderError::StarknetError(StarknetErrorWithMessage { code, message })) => {
+                if let MaybeUnknownErrorCode::Known(StarknetError::InvalidContinuationToken) = code
+                {
+                    return Ok((Vec::new(), false));
+                };
+                Err(OnChainEventListenerError::Rpc(message))
+            }
+            Err(err) => Err(OnChainEventListenerError::Rpc(err.to_string())),
+        }?;
 
         // Update the executor held continuation token used across calls to `getEvents`
         if let Some(pagination_token) = resp.continuation_token.clone() {
@@ -305,7 +312,7 @@ impl OnChainEventListenerExecutor {
             from_block: Some(BlockId::Number(block_number)),
             to_block: Some(BlockId::Number(block_number + 1)),
             address: Some(self.contract_address()),
-            keys: Some(vec![*MERKLE_NODE_CHANGED_EVENT_SELECTOR]),
+            keys: Some(vec![vec![*MERKLE_NODE_CHANGED_EVENT_SELECTOR]]),
         };
 
         // Maps updated tree coordinates to their new values

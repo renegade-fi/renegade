@@ -36,7 +36,7 @@ use crypto::fields::scalar_to_biguint;
 use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use num_bigint::BigUint;
 use serde::Serialize;
-use starknet::core::types::{TransactionFailureReason, TransactionStatus};
+use starknet::providers::sequencer::models::{TransactionFailureReason, TransactionStatus};
 use tokio::{
     sync::{mpsc::UnboundedSender as TokioSender, oneshot},
     task::JoinHandle as TokioJoinHandle,

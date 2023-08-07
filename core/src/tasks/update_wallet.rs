@@ -10,7 +10,7 @@ use circuits::{native_helpers::wallet_from_blinded_shares, types::transfers::Ext
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::starknet_felt_to_biguint;
 use serde::Serialize;
-use starknet::core::types::TransactionStatus;
+use starknet::providers::sequencer::models::TransactionStatus;
 use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
 use tracing::log;
 

@@ -15,7 +15,7 @@ use circuits::{
 use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::starknet_felt_to_biguint;
 use serde::Serialize;
-use starknet::core::types::TransactionStatus;
+use starknet::providers::sequencer::models::TransactionStatus;
 use tokio::sync::oneshot;
 use tracing::log;
 

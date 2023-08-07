@@ -20,30 +20,25 @@ use crypto::fields::{
 };
 use curve25519_dalek::scalar::Scalar;
 use num_bigint::BigUint;
-use reqwest::Url;
+use reqwest::Url as ReqwestUrl;
 use starknet::{
     accounts::{Account, Call, SingleOwnerAccount},
     core::types::{
-        BlockId as CoreBlockId, FieldElement as StarknetFieldElement, TransactionInfo,
-        TransactionStatus,
+        BlockId as CoreBlockId, BlockTag, EmittedEvent, EventFilter,
+        FieldElement as StarknetFieldElement, FunctionCall,
     },
     providers::{
-        jsonrpc::models::{BlockTag, EventFilter},
-        SequencerGatewayProvider,
-    },
-    signers::{LocalWallet, SigningKey},
-};
-use starknet::{
-    core::types::{CallContractResult, CallFunction},
-    providers::{
-        jsonrpc::{
-            models::{BlockId, EmittedEvent},
-            HttpTransport, JsonRpcClient,
+        jsonrpc::{HttpTransport, JsonRpcClient},
+        sequencer::{
+            models::{TransactionInfo, TransactionStatus},
+            SequencerGatewayProvider,
         },
         Provider,
     },
+    signers::{LocalWallet, SigningKey},
 };
 use tracing::log;
+use url::Url;
 
 use crate::{
     proof_generation::{
@@ -147,7 +142,11 @@ impl StarknetClientConfig {
         match self.chain {
             ChainId::AlphaGoerli => SequencerGatewayProvider::starknet_alpha_goerli(),
             ChainId::Mainnet => SequencerGatewayProvider::starknet_alpha_mainnet(),
-            ChainId::Devnet => SequencerGatewayProvider::starknet_nile_localhost(),
+            ChainId::Devnet => SequencerGatewayProvider::new(
+                Url::parse("http://localhost:5050/gateway").unwrap(),
+                Url::parse("http://localhost:5050/feeder_gateway").unwrap(),
+                StarknetFieldElement::from(0u8),
+            ),
         }
     }
 
@@ -159,8 +158,9 @@ impl StarknetClientConfig {
             return None;
         }
 
-        let transport =
-            HttpTransport::new(Url::parse(&self.starknet_json_rpc_addr.clone().unwrap()).ok()?);
+        let transport = HttpTransport::new(
+            ReqwestUrl::parse(self.starknet_json_rpc_addr.as_ref().unwrap()).ok()?,
+        );
         Some(JsonRpcClient::new(transport))
     }
 }
@@ -281,10 +281,10 @@ impl StarknetClient {
     /// Helper to make a view call to the contract
     async fn call_contract(
         &self,
-        call: CallFunction,
-    ) -> Result<CallContractResult, StarknetClientError> {
-        self.get_gateway_client()
-            .call_contract(call, CoreBlockId::Pending)
+        call: FunctionCall,
+    ) -> Result<Vec<StarknetFieldElement>, StarknetClientError> {
+        self.get_jsonrpc_client()
+            .call(call, CoreBlockId::Tag(BlockTag::Pending))
             .await
             .map_err(|err| StarknetClientError::Gateway(err.to_string()))
     }
@@ -337,14 +337,15 @@ impl StarknetClient {
     ) -> Result<StarknetFieldElement, StarknetClientError> {
         self.gateway_client
             .get_nonce(
+                CoreBlockId::Tag(BlockTag::Pending),
                 self.get_account(account_index).address(),
-                CoreBlockId::Pending,
             )
             .await
             .map_err(|err| StarknetClientError::Rpc(err.to_string()))
     }
 
     /// Poll a transaction until it is finalized into the accepted on L2 state
+    #[allow(deprecated)]
     pub async fn poll_transaction_completed(
         &self,
         tx_hash: StarknetFieldElement,
@@ -475,15 +476,15 @@ impl StarknetClient {
             .await?
             .saturating_sub(BLOCK_PAGINATION_WINDOW);
         let mut end_block = if pending {
-            BlockId::Tag(BlockTag::Pending)
+            CoreBlockId::Tag(BlockTag::Pending)
         } else {
-            BlockId::Number(self.get_block_number().await?)
+            CoreBlockId::Number(self.get_block_number().await?)
         };
 
         let keys = if event_keys.is_empty() {
             None
         } else {
-            Some(event_keys)
+            Some(vec![event_keys])
         };
 
         let earliest_block = match self.config.chain {
@@ -495,8 +496,8 @@ impl StarknetClient {
             // Exhaust events from the start block to the end block
             let mut pagination_token = Some(String::from("0"));
             let filter = EventFilter {
-                from_block: Some(BlockId::Number(start_block)),
-                to_block: Some(end_block.clone()),
+                from_block: Some(CoreBlockId::Number(start_block)),
+                to_block: Some(end_block),
                 address: Some(self.contract_address),
                 keys: keys.clone(),
             };
@@ -525,7 +526,7 @@ impl StarknetClient {
             }
 
             // If no return value is found decrement the start and end block
-            end_block = BlockId::Number(start_block.saturating_sub(BLOCK_PAGINATION_WINDOW));
+            end_block = CoreBlockId::Number(start_block.saturating_sub(BLOCK_PAGINATION_WINDOW));
             start_block = start_block.saturating_sub(BLOCK_PAGINATION_WINDOW);
         }
 
@@ -536,6 +537,7 @@ impl StarknetClient {
     ///
     /// In the case that the referenced transaction is a `match`, we disambiguate between the
     /// two parties by adding the public blinder of the party's shares the caller intends to fetch
+    #[allow(deprecated)]
     pub async fn fetch_public_shares_from_tx(
         &self,
         public_blinder_share: Scalar,
@@ -584,14 +586,14 @@ impl StarknetClient {
     ) -> Result<bool, StarknetClientError> {
         // TODO: Implement BigUint on the contract
         let reduced_root = Self::reduce_scalar_to_felt(&root);
-        let call = CallFunction {
+        let call = FunctionCall {
             contract_address: self.contract_address,
             entry_point_selector: *MERKLE_ROOT_IN_HISTORY_SELECTOR,
             calldata: vec![reduced_root],
         };
 
         let res = self.call_contract(call).await?;
-        Ok(res.result[0].eq(&StarknetFieldElement::from(1u8)))
+        Ok(res[0].eq(&StarknetFieldElement::from(1u8)))
     }
 
     /// Check whether the given nullifier is used
@@ -600,14 +602,14 @@ impl StarknetClient {
         nullifier: Nullifier,
     ) -> Result<bool, StarknetClientError> {
         let reduced_nullifier = Self::reduce_scalar_to_felt(&nullifier);
-        let call = CallFunction {
+        let call = FunctionCall {
             contract_address: self.contract_address,
             entry_point_selector: *NULLIFIER_USED_SELECTOR,
             calldata: vec![reduced_nullifier],
         };
 
         let res = self.call_contract(call).await?;
-        Ok(res.result[0].eq(&StarknetFieldElement::from(0u8)))
+        Ok(res[0].eq(&StarknetFieldElement::from(0u8)))
     }
 
     /// Return the hash of the transaction that last indexed secret shares for
@@ -619,7 +621,7 @@ impl StarknetClient {
         public_blinder_share: Scalar,
     ) -> Result<Option<TransactionHash>, StarknetClientError> {
         let reduced_blinder_share = Self::reduce_scalar_to_felt(&public_blinder_share);
-        let call = CallFunction {
+        let call = FunctionCall {
             contract_address: self.contract_address,
             entry_point_selector: *GET_PUBLIC_BLINDER_TRANSACTION,
             calldata: vec![reduced_blinder_share],
@@ -627,7 +629,7 @@ impl StarknetClient {
 
         self.call_contract(call)
             .await
-            .map(|call_res| call_res.result[0])
+            .map(|call_res| call_res[0])
             .map(|ret_val| {
                 if ret_val.eq(&StarknetFieldElement::from(0u8)) {
                     None
