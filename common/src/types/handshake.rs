@@ -8,7 +8,7 @@ use circuit_types::{
 };
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use crossbeam::channel::Sender;
-use curve25519_dalek::scalar::Scalar;
+use mpc_stark::algebra::scalar::Scalar;
 use uuid::Uuid;
 
 use super::{proof_bundles::ValidMatchMpcBundle, wallet::OrderIdentifier};

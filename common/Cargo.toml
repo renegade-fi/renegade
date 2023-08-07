@@ -7,9 +7,9 @@ edition = "2021"
 
 [dependencies]
 # === Cryptography + Arithmetic === #
-curve25519-dalek = { workspace = true }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 mpc-bulletproof = { workspace = true }
+mpc-stark = { workspace = true }
 num-bigint = { workspace = true }
 
 # === Runtime + Networking === #
