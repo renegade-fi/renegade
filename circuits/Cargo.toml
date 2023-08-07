@@ -33,6 +33,11 @@ harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
+name = "match"
+harness = false
+required-features = ["test_helpers"]
+
+[[bench]]
 name = "valid_settle"
 harness = false
 required-features = ["test_helpers"]
@@ -76,7 +81,7 @@ ark-ed25519 = "0.4"
 chrono = "0.4"
 clap = { version = "4.0", features = ["derive"] }
 colored = "2"
-criterion = { version = "0.5" }
+criterion = { version = "0.5", features = ["async", "async_tokio"] }
 ctor = "0.1"
 
 dns-lookup = "1.0"
