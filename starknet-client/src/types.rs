@@ -8,9 +8,9 @@ use std::{
 use circuit_types::transfers::{
     ExternalTransfer as CircuitExternalTransfer, ExternalTransferDirection,
 };
-use crypto::fields::{biguint_to_starknet_felt, u128_to_starknet_felt};
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
+use renegade_crypto::fields::{biguint_to_starknet_felt, u128_to_starknet_felt};
 use serde::{Deserialize, Serialize};
 use starknet::core::types::FieldElement as StarknetFieldElement;
 
