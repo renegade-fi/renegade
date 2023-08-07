@@ -28,11 +28,10 @@ use common::types::{
     wallet::{OrderIdentifier, Wallet},
 };
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::scalar_to_biguint;
 use gossip_api::gossip::GossipOutbound;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
-use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use num_bigint::BigUint;
+use renegade_crypto::fields::{scalar_to_biguint, scalar_to_u64};
 use serde::Serialize;
 use starknet::core::types::{TransactionFailureReason, TransactionStatus};
 use starknet_client::client::StarknetClient;
