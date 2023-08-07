@@ -552,29 +552,22 @@ impl SingleProverCircuit for ValidMatchMpcSingleProver {
 // | Tests |
 // ---------
 
-#[cfg(test)]
-mod tests {
+#[cfg(any(test, feature = "test_helpers"))]
+pub mod test_helpers {
     use circuit_types::{
         balance::Balance,
         fixed_point::FixedPoint,
         order::{Order, OrderSide},
         r#match::MatchResult,
-        traits::{
-            LinkableBaseType, MpcBaseType, MultiProverCircuit, MultiproverCircuitCommitmentType,
-        },
+        traits::{LinkableBaseType, MpcBaseType},
     };
-    use merlin::HashChainTranscript;
-    use mpc_bulletproof::{r1cs::Verifier, r1cs_mpc::MpcProver, PedersenGens};
     use mpc_stark::{algebra::scalar::Scalar, MpcFabric, PARTY0, PARTY1};
     use renegade_crypto::fields::scalar_to_u64;
-    use test_helpers::mpc_network::execute_mock_mpc;
 
-    use crate::zk_circuits::valid_match_mpc::{
-        AuthenticatedValidMatchMpcWitness, ValidMatchMpcCircuit,
-    };
+    use crate::zk_circuits::valid_match_mpc::AuthenticatedValidMatchMpcWitness;
 
     /// Create a dummy witness to match on
-    fn create_dummy_witness(fabric: &MpcFabric) -> AuthenticatedValidMatchMpcWitness {
+    pub fn create_dummy_witness(fabric: &MpcFabric) -> AuthenticatedValidMatchMpcWitness {
         let min_amount = 5u64;
         let max_amount = 15u64;
 
@@ -636,6 +629,18 @@ mod tests {
             match_res: match_res.allocate(PARTY0, fabric),
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use circuit_types::traits::{MultiProverCircuit, MultiproverCircuitCommitmentType};
+    use merlin::HashChainTranscript;
+    use mpc_bulletproof::{r1cs::Verifier, r1cs_mpc::MpcProver, PedersenGens};
+    use test_helpers::mpc_network::execute_mock_mpc;
+
+    use crate::zk_circuits::valid_match_mpc::{
+        test_helpers::create_dummy_witness, ValidMatchMpcCircuit,
+    };
 
     /// Tests proving a valid match with a valid witness
     #[tokio::test]
