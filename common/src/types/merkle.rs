@@ -2,10 +2,10 @@
 
 use circuit_types::{merkle::MerkleOpening, SizedMerkleOpening};
 use constants::MERKLE_HEIGHT;
-use crypto::hash::compute_poseidon_hash;
-use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
+use mpc_stark::algebra::scalar::Scalar;
 use num_bigint::BigUint;
+use renegade_crypto::hash::compute_poseidon_hash;
 use serde::{Deserialize, Serialize};
 
 /// A wrapper representing the coordinates of a value in a Merkle tree
