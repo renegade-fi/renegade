@@ -126,7 +126,7 @@ where
 {
     let transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
     let pc_gens = PedersenGens::default();
-    let prover = MpcProver::new_with_fabric(fabric.clone(), transcript, &pc_gens);
+    let prover = MpcProver::new_with_fabric(fabric.clone(), transcript, pc_gens);
 
     // Prove the statement
     C::prove(witness, statement.clone(), fabric, prover)

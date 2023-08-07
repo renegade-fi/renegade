@@ -144,7 +144,7 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
         let pc_gens = PedersenGens::default();
         let transcript = Transcript::new(b"test");
         let mut dummy_prover =
-            MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, &pc_gens);
+            MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, pc_gens);
 
         let witness = AuthenticatedValidMatchMpcWitness {
             order1: linkable_order1,
@@ -166,7 +166,7 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
         )
         .unwrap();
 
-        if dummy_prover.constraints_satisfied().unwrap() {
+        if await_result(dummy_prover.constraints_satisfied()) {
             return Err("Constraints satisfied".to_string());
         }
     }

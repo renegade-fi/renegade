@@ -209,7 +209,7 @@ fn constraints_satisfied(
 ) -> Result<bool, String> {
     let pc_gens = PedersenGens::default();
     let transcript = Transcript::new(b"test");
-    let mut prover = MpcProver::new_with_fabric(fabric.clone(), transcript, &pc_gens);
+    let mut prover = MpcProver::new_with_fabric(fabric.clone(), transcript, pc_gens);
 
     let mut rng = thread_rng();
     let (witness_var, _) = witness
@@ -219,9 +219,7 @@ fn constraints_satisfied(
     ValidMatchMpcCircuit::apply_constraints_multiprover(witness_var, (), fabric, &mut prover)
         .map_err(|err| err.to_string())?;
 
-    prover
-        .constraints_satisfied()
-        .map_err(|err| format!("Error checking constraints: {:?}", err))
+    Ok(await_result(prover.constraints_satisfied()))
 }
 
 // ---------
