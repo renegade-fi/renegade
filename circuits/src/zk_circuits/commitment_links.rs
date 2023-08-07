@@ -6,7 +6,7 @@
 //! use the same commitment between proofs
 
 use circuit_types::{traits::CircuitBaseType, wallet::LinkableWalletShare};
-use merlin::Transcript;
+use merlin::HashChainTranscript as Transcript;
 use mpc_bulletproof::{r1cs::Prover, PedersenGens};
 use rand::thread_rng;
 
