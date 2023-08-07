@@ -515,12 +515,12 @@ impl Sub<&AuthenticatedFixedPoint> for &AuthenticatedScalarResult {
 // | Multiprover Constraint System Implementation |
 // ------------------------------------------------
 
-impl<'a, L: MpcLinearCombinationLike> AuthenticatedFixedPointVar<L> {
+impl<L: MpcLinearCombinationLike> AuthenticatedFixedPointVar<L> {
     /// Constrain two authenticated fixed point variables to equal one another
     pub fn constrain_equal<L1, CS>(&self, rhs: &AuthenticatedFixedPointVar<L1>, cs: &mut CS)
     where
         L1: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         cs.constrain(self.repr.clone().into() - rhs.repr.clone().into());
     }
@@ -543,12 +543,12 @@ impl From<AuthenticatedFixedPointVar<MpcVariable>>
     }
 }
 
-impl<'a, L: MpcLinearCombinationLike> AuthenticatedFixedPointVar<L> {
+impl<L: MpcLinearCombinationLike> AuthenticatedFixedPointVar<L> {
     /// Multiply with another fixed point variable
     ///
     /// We cannot implement the `Mul` trait directly, because the variables need access
     /// to their constraint system
-    pub fn mul_fixed_point<CS: MpcRandomizableConstraintSystem<'a>>(
+    pub fn mul_fixed_point<CS: MpcRandomizableConstraintSystem>(
         &self,
         rhs: &Self,
         cs: &mut CS,
@@ -567,7 +567,7 @@ impl<'a, L: MpcLinearCombinationLike> AuthenticatedFixedPointVar<L> {
     ) -> Result<AuthenticatedFixedPointVar<MpcVariable>, MultiproverError>
     where
         L1: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem<'a>,
+        CS: MpcRandomizableConstraintSystem,
     {
         let (_, _, res_repr) = cs.multiply(&self.repr.clone().into(), &rhs.into())?;
         Ok(AuthenticatedFixedPointVar { repr: res_repr })

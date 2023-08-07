@@ -1157,7 +1157,7 @@ pub trait MultiProverCircuit<'a> {
     const BP_GENS_CAPACITY: usize;
 
     /// Apply the constraints of the circuit to a multiprover constraint system
-    fn apply_constraints_multiprover<CS: MpcRandomizableConstraintSystem<'a>>(
+    fn apply_constraints_multiprover<CS: MpcRandomizableConstraintSystem>(
         witness: <Self::Witness as MultiproverCircuitBaseType>::MultiproverVarType<MpcVariable>,
         statement: <Self::Statement as MultiproverCircuitBaseType>::MultiproverVarType<MpcVariable>,
         fabric: MpcFabric,
@@ -1185,7 +1185,7 @@ pub trait MultiProverCircuit<'a> {
         witness: Self::Witness,
         statement: Self::Statement,
         fabric: MpcFabric,
-        mut prover: MpcProver<'a, '_, '_>,
+        mut prover: MpcProver,
     ) -> Result<
         (
             <Self::Witness as MultiproverCircuitBaseType>::MultiproverCommType,
