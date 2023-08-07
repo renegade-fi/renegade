@@ -31,8 +31,7 @@ pub struct GossipServerConfig {
     pub cluster_id: ClusterId,
     /// The servers to bootstrap into the network with
     pub bootstrap_servers: Vec<(WrappedPeerId, Multiaddr)>,
-    /// The starknet client used to connect to sequencer gateway
-    /// and jsonrpc nodes
+    /// The starknet client used to connect to the JSON-RPC node
     pub starknet_client: StarknetClient,
     /// A reference to the relayer-global state
     pub global_state: RelayerState,

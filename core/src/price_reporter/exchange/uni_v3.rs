@@ -373,26 +373,25 @@ impl ExchangeConnection for UniswapV3Connection {
         .await?;
 
         // Start streaming events from the swap_filter.
-        let mapped_stream =
-            base_filter
-                .stream(Duration::new(UNI_V3_POLL_INTERVAL, 0))
-                .filter_map(move |swap| async move {
-                    match swap {
-                        Ok(swap_event) => Some(Ok(Self::midpoint_from_swap_event(
-                            swap_event,
-                            is_flipped,
-                            decimal_adjustment,
-                            &SWAP_EVENT_ABI,
-                        ))),
+        let mapped_stream = base_filter
+            .stream(Duration::new(UNI_V3_POLL_INTERVAL, 0))
+            .filter_map(move |swap| async move {
+                match swap {
+                    Ok(swap_event) => Some(Ok(Self::midpoint_from_swap_event(
+                        swap_event,
+                        is_flipped,
+                        decimal_adjustment,
+                        &SWAP_EVENT_ABI,
+                    ))),
 
-                        Err(e) => {
-                            log::error!("Error parsing Swap event from UniswapV3: {}", e);
-                            Some(Err(ExchangeConnectionError::ConnectionHangup(
-                                e.to_string(),
-                            )))
-                        }
+                    Err(e) => {
+                        log::error!("Error parsing Swap event from UniswapV3: {}", e);
+                        Some(Err(ExchangeConnectionError::ConnectionHangup(
+                            e.to_string(),
+                        )))
                     }
-                });
+                }
+            });
 
         // Build a price stream
         let price_stream = InitializablePriceStream::new_with_initial(

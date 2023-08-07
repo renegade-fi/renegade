@@ -13,7 +13,7 @@ use crossbeam::channel::Sender as CrossbeamSender;
 use crypto::fields::{scalar_to_biguint, starknet_felt_to_biguint};
 use mpc_ristretto::mpc_scalar::scalar_to_u64;
 use serde::Serialize;
-use starknet::core::types::{TransactionInfo, TransactionStatus};
+use starknet::providers::sequencer::models::{TransactionInfo, TransactionStatus};
 use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
 use tracing::log;
 
