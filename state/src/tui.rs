@@ -1,6 +1,4 @@
 //! Groups definitions of the debug text interface
-#![cfg(feature = "debug-tui")]
-
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
@@ -9,6 +7,7 @@ use crossterm::{
 
 use futures::executor::block_on;
 use itertools::Itertools;
+use lazy_static::lazy_static;
 use std::{
     cell::RefCell,
     thread::JoinHandle,
@@ -31,7 +30,7 @@ use tui_logger::{
 
 use std::io;
 
-use crate::config::RelayerConfig;
+use config::RelayerConfig;
 
 use super::RelayerState;
 
@@ -153,7 +152,6 @@ impl StateTuiApp {
                 if let Event::Key(key) = event::read().unwrap() {
                     match key.code {
                         KeyCode::Char('q') => break,
-                        // TODO: Switch tab
                         KeyCode::Tab => {
                             self.selected_tab = match self.selected_tab {
                                 AppTab::Main => AppTab::Logs,
