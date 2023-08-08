@@ -3,6 +3,9 @@ name = "renegade-relayer"
 version = "0.1.0"
 edition = "2018"
 
+[features]
+debug-tui = []
+
 [dependencies]
 # === Runtime + Async === #
 crossbeam = "0.8"
