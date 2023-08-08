@@ -2,7 +2,7 @@
 //!
 //! We use the Poseidon permutation with the following parameters:
 //!     \alpha = 5; i.e. the s-box is x^5 \mod p. This was chosen because:
-//!     for the prime field used in Ristretto, gcd(3, p-1) = 3
+//!     for the prime field used in the Stark curve, gcd(3, p-1) = 3
 //!     whereas gcd(5, p-1) = 1, making x^5 (mod p) invertible.
 //!
 //! This implementation draws heavily from the Arkworks implementation for
