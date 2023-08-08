@@ -30,12 +30,15 @@ tokio = { workspace = true }
 libp2p = { workspace = true }
 
 # === Misc === #
-base64 = { version = "0.13" }
+base64 = "0.13"
+crossterm = "0.26"
 indexmap = "1.9"
 itertools = { workspace = true }
 lazy_static = "1.4.0"
 serde = { workspace = true, features = ["serde_derive"] }
 tracing = { workspace = true }
+tui = "0.19"
+tui-logger = "0.8"
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
 
 [dev-dependencies]

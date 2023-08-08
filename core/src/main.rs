@@ -11,7 +11,7 @@
 
 mod error;
 
-use std::{io::Write, thread, time::Duration};
+use std::{io::Write, process::exit, thread, time::Duration};
 
 use api_server::worker::{ApiServer, ApiServerConfig};
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
@@ -28,6 +28,7 @@ use network_manager::{manager::NetworkManager, worker::NetworkManagerConfig};
 use price_reporter::{manager::PriceReporterManager, worker::PriceReporterManagerConfig};
 use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
 use starknet_client::client::{StarknetClient, StarknetClientConfig};
+use state::tui::StateTuiApp;
 use state::RelayerState;
 use system_bus::SystemBus;
 use task_driver::{driver::TaskDriver, initialize_state::InitializeStateTask};
@@ -41,9 +42,6 @@ use tokio::{
     sync::{mpsc, watch},
 };
 use tracing::log::{self, LevelFilter};
-
-#[cfg(feature = "debug-tui")]
-use crate::state::tui::StateTuiApp;
 
 /// The amount of time to wait between sending teardown signals and terminating execution
 const TERMINATION_TIMEOUT_MS: u64 = 10_000; // 10 seconds
@@ -99,29 +97,21 @@ async fn main() -> Result<(), CoordinatorError> {
     );
 
     // Configure logging and TUI
-    #[cfg(feature = "debug-tui")]
-    {
-        if args.debug {
-            // Build the TUI
-            let tui = StateTuiApp::new(args_clone, global_state.clone());
+    if args.debug {
+        // Build the TUI
+        let tui = StateTuiApp::new(args.clone(), global_state.clone());
 
-            // Attach a watcher to the TUI and exit the process when the TUI quits
-            let join_handle = tui.run();
-            thread::spawn(move || {
-                #[allow(unused_must_use)]
-                {
-                    join_handle.join();
-                }
-                exit(0);
-            });
-        } else {
-            configure_default_log_capture()
-        }
-    }
-
-    #[cfg(not(feature = "debug-tui"))]
-    {
-        configure_default_log_capture();
+        // Attach a watcher to the TUI and exit the process when the TUI quits
+        let join_handle = tui.run();
+        thread::spawn(move || {
+            #[allow(unused_must_use)]
+            {
+                join_handle.join();
+            }
+            exit(0);
+        });
+    } else {
+        configure_default_log_capture()
     }
 
     // Construct a starknet client that workers will use to communicate with Starknet
