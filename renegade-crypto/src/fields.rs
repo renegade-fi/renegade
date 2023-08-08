@@ -50,7 +50,8 @@ pub fn scalar_to_u64(a: &Scalar) -> u64 {
 
 /// Converts a dalek scalar to a StarkNet field element
 pub fn scalar_to_starknet_felt(a: &Scalar) -> StarknetFieldElement {
-    StarknetFieldElement::from_byte_slice_be(&a.to_bytes_be()).unwrap()
+    StarknetFieldElement::from_byte_slice_be(&a.to_bytes_be())
+        .expect("Scalar outside of StarkNet base field")
 }
 
 // ----------------------------

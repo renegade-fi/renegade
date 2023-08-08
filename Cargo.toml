@@ -38,7 +38,6 @@ lto = true
 
 [workspace.dependencies]
 # === Arithmetic + Cryptography === #
-curve25519-dalek = "2.0"
 mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof", branch = "stark-curve-refactor" }
 mpc-stark = { git = "https://github.com/renegade-fi/mpc-stark" }
 num-bigint = { version = "0.4.3" }
