@@ -41,7 +41,7 @@ fn scalar_mod_2m(val: &ScalarResult, m: usize) -> ScalarResult {
 /// factor, we have to shift the value up by one addition of the modulus.
 pub fn mod_2m<const M: usize>(
     a: &AuthenticatedScalarResult,
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
     // The input has 256 bits, so any modulus larger can be ignored
     if M >= 256 {
@@ -81,7 +81,7 @@ pub fn mod_2m<const M: usize>(
 /// Computes the input with the `m` least significant bits truncated
 pub fn truncate<const M: usize>(
     x: &AuthenticatedScalarResult,
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
     // Apply mod2m and then subtract the result to make the value divisible by a public 2^-m
     if M >= SCALAR_MAX_BITS {
@@ -97,7 +97,7 @@ pub fn truncate<const M: usize>(
 /// Effectively just calls out to truncate, but is placed here for abstraction purposes
 pub fn shift_right<const M: usize>(
     a: &AuthenticatedScalarResult,
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
     if M >= 256 {
         return fabric.zero_authenticated();
@@ -124,7 +124,7 @@ mod tests {
 
         let (res, _): (Result<bool, MpcError>, _) = execute_mock_mpc(move |fabric| async move {
             let shared_value = fabric.share_scalar(value, PARTY0);
-            let res = mod_2m::<M>(&shared_value, fabric.clone())
+            let res = mod_2m::<M>(&shared_value, &fabric)
                 .open_authenticated()
                 .await
                 .unwrap();
@@ -145,7 +145,7 @@ mod tests {
 
         let (res, _): (Result<bool, MpcError>, _) = execute_mock_mpc(move |fabric| async move {
             let shared_value = fabric.share_scalar(value, PARTY0);
-            let res = shift_right::<SHIFT_AMOUNT>(&shared_value, fabric.clone())
+            let res = shift_right::<SHIFT_AMOUNT>(&shared_value, &fabric)
                 .open_authenticated()
                 .await
                 .unwrap();

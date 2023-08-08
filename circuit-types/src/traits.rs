@@ -1141,7 +1141,7 @@ pub trait SingleProverCircuit {
 /// The witness type represents the secret witness that the prover has access to but
 /// that the verifier does not. The statement is the set of public inputs and any
 /// other circuit meta-parameters that both prover and verifier have access to.
-pub trait MultiProverCircuit<'a> {
+pub trait MultiProverCircuit {
     /// The witness type, given only to the prover, which generates a blinding commitment
     /// that can be given to the verifier
     type Witness: MultiproverCircuitBaseType;

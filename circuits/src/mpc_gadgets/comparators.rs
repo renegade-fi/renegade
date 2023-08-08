@@ -18,10 +18,10 @@ use super::{
 /// D represents is the bitlength of the input
 pub fn less_than_zero<const D: usize>(
     a: &AuthenticatedScalarResult,
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
     // Truncate the first 250 bits of the input
-    let truncated = truncate::<250>(a, fabric.clone());
+    let truncated = truncate::<250>(a, fabric);
 
     // Because the Ristretto scalar field is a prime field of order slightly greater than 2^252
     // values are negative if either their 251st bit or 252nd bit are set. Therefore, we truncate
@@ -34,9 +34,9 @@ pub fn less_than_zero<const D: usize>(
 /// D represents the bitlength of the input
 pub fn eq_zero<const D: usize>(
     a: &AuthenticatedScalarResult,
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
-    let bits = to_bits_le::<D>(a, fabric.clone());
+    let bits = to_bits_le::<D>(a, fabric);
     Scalar::one() - kary_or::<D>(&bits.try_into().unwrap(), fabric)
 }
 
@@ -46,7 +46,7 @@ pub fn eq_zero<const D: usize>(
 pub fn eq<const D: usize>(
     a: &AuthenticatedScalarResult,
     b: &AuthenticatedScalarResult,
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
     eq_zero::<D>(&(a - b), fabric)
 }
@@ -57,7 +57,7 @@ pub fn eq<const D: usize>(
 pub fn ne<const D: usize>(
     a: &AuthenticatedScalarResult,
     b: &AuthenticatedScalarResult,
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
     Scalar::one() - eq::<D>(a, b, fabric)
 }
@@ -68,7 +68,7 @@ pub fn ne<const D: usize>(
 pub fn less_than<const D: usize>(
     a: &AuthenticatedScalarResult,
     b: &AuthenticatedScalarResult,
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
     less_than_zero::<D>(&(a - b), fabric)
 }
@@ -79,7 +79,7 @@ pub fn less_than<const D: usize>(
 pub fn less_than_equal<const D: usize>(
     a: &AuthenticatedScalarResult,
     b: &AuthenticatedScalarResult,
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
     Scalar::one() - greater_than::<D>(a, b, fabric)
 }
@@ -90,7 +90,7 @@ pub fn less_than_equal<const D: usize>(
 pub fn greater_than<const D: usize>(
     a: &AuthenticatedScalarResult,
     b: &AuthenticatedScalarResult,
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
     less_than_zero::<D>(&(b - a), fabric)
 }
@@ -101,7 +101,7 @@ pub fn greater_than<const D: usize>(
 pub fn greater_than_equal<const D: usize>(
     a: &AuthenticatedScalarResult,
     b: &AuthenticatedScalarResult,
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
     Scalar::one() - less_than::<D>(a, b, fabric)
 }
@@ -117,7 +117,7 @@ pub fn greater_than_equal<const D: usize>(
 /// `D` is the number of variables present in the OR expression
 pub fn kary_or<const D: usize>(
     a: &[AuthenticatedScalarResult; D],
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
     // Sample random blinding bits from the pre-processing functionality
     // We only need to be able to hold the maximum possible count, log_2(# of booleans)
@@ -158,7 +158,7 @@ pub fn kary_or<const D: usize>(
 /// This effectively maps any non-zero count to 1 and zero to 0
 fn constant_round_or_impl(
     a: &[AuthenticatedScalarResult],
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
     // Sum up the booleans
     let n = a.len();
@@ -186,7 +186,7 @@ fn constant_round_or_impl(
 pub fn min<const D: usize>(
     a: &AuthenticatedScalarResult,
     b: &AuthenticatedScalarResult,
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> (AuthenticatedScalarResult, AuthenticatedScalarResult) {
     let a_lt_b = less_than::<D>(a, b, fabric);
     (

@@ -54,7 +54,7 @@ impl MultiproverCondSelectGadget {
         a: V,
         b: V,
         selector: L,
-        fabric: MpcFabric,
+        fabric: &MpcFabric,
         cs: &mut CS,
     ) -> Result<V, ProverError>
     where
@@ -129,7 +129,7 @@ impl MultiproverCondSelectVectorGadget {
         a: &[V],
         b: &[V],
         selector: L,
-        fabric: MpcFabric,
+        fabric: &MpcFabric,
         cs: &mut CS,
     ) -> Result<Vec<V>, ProverError>
     where
@@ -145,7 +145,7 @@ impl MultiproverCondSelectVectorGadget {
                 a_val.clone(),
                 b_val.clone(),
                 selector.clone(),
-                fabric.clone(),
+                fabric,
                 cs,
             )?)
         }

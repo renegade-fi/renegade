@@ -94,7 +94,7 @@ pub fn bench_match_mpc(c: &mut Criterion) {
                     let price = FixedPoint::from_integer(1).allocate(PARTY0, &fabric);
 
                     // Run the MPC
-                    let match_res = compute_match(&o1, &o2, &amount1, &amount2, &price, fabric);
+                    let match_res = compute_match(&o1, &o2, &amount1, &amount2, &price, &fabric);
 
                     // Open the result
                     let _open = match_res.open_and_authenticate().await;

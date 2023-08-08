@@ -470,19 +470,14 @@ impl MultiproverPoseidonHashGadget {
                 .state
                 .iter()
                 .map(|val| {
-                    MultiproverExpGadget::exp(
-                        val.clone(),
-                        self.params.alpha,
-                        self.fabric.clone(),
-                        cs,
-                    )
+                    MultiproverExpGadget::exp(val.clone(), self.params.alpha, &self.fabric, cs)
                 })
                 .collect::<Result<Vec<_>, ProverError>>()?;
         } else {
             self.state[0] = MultiproverExpGadget::exp(
                 self.state[0].clone(),
                 self.params.alpha,
-                self.fabric.clone(),
+                &self.fabric,
                 cs,
             )?
         }
