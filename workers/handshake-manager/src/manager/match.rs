@@ -1,7 +1,7 @@
 //! Groups the handshake manager definitions necessary to run the MPC match computation
 //! and collaboratively generate a proof of `VALID MATCH MPC`
 
-use std::{cell::RefCell, cmp, rc::Rc};
+use std::cmp;
 
 use circuit_types::{
     balance::{Balance, LinkableBalance},
@@ -9,7 +9,6 @@ use circuit_types::{
     order::{LinkableOrder, Order, OrderSide},
     r#match::{AuthenticatedLinkableMatchResult, AuthenticatedMatchResult},
     traits::{BaseType, LinkableType, MpcBaseType, MpcType, MultiproverCircuitCommitmentType},
-    SharedFabric,
 };
 use circuits::{
     mpc_circuits::r#match::compute_match,
@@ -26,14 +25,9 @@ use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMatchMpcBundle},
 };
 use crossbeam::channel::{bounded, Receiver};
-use curve25519_dalek::scalar::Scalar;
-use integration_helpers::mpc_network::mocks::PartyIDBeaverSource;
 use mpc_bulletproof::r1cs::R1CSProof;
-use mpc_ristretto::{
-    beaver::SharedValueSource,
-    fabric::AuthenticatedMpcFabric,
-    network::{MpcNetwork, QuicTwoPartyNet},
-};
+use mpc_stark::{network::QuicTwoPartyNet, MpcFabric, PARTY0, PARTY1};
+use test_helpers::mpc_network::mocks::PartyIDBeaverSource;
 use tracing::log;
 use uuid::Uuid;
 
@@ -138,13 +132,7 @@ impl HandshakeExecutor {
         // Build a fabric
         // TODO: Replace the dummy beaver source
         let beaver_source = PartyIDBeaverSource::new(party_id);
-        let fabric = AuthenticatedMpcFabric::new_with_network(
-            party_id,
-            Rc::new(RefCell::new(mpc_net)),
-            Rc::new(RefCell::new(beaver_source)),
-        );
-
-        let shared_fabric = SharedFabric::new(fabric);
+        let fabric = MpcFabric::new(mpc_net, beaver_source);
 
         // Lookup the witness bundle used in validity proofs for this order, balance, fee pair
         // Use the linkable commitments from this witness to commit to values in `VALID MATCH MPC`
@@ -166,8 +154,8 @@ impl HandshakeExecutor {
             &commitment_witness.order.clone().to_base_type(),
             &commitment_witness.balance_send.clone().to_base_type(),
             &handshake_state.execution_price,
-            shared_fabric.clone(),
-        )?;
+            &fabric,
+        );
 
         // Check if a cancel has come in after the MPC
         if !cancel_channel.is_empty() {
@@ -180,7 +168,7 @@ impl HandshakeExecutor {
             commitment_witness.balance_send.clone(),
             handshake_state.execution_price,
             match_res,
-            shared_fabric.clone(),
+            &fabric,
         )
         .await?;
 
@@ -209,40 +197,30 @@ impl HandshakeExecutor {
             party0_validity_proof,
             party1_validity_proof,
             handshake_state,
-            shared_fabric,
+            &fabric,
             cancel_channel,
         )
         .await
     }
 
     /// Execute the match MPC over the provisioned QUIC stream
-    fn execute_match_mpc<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    fn execute_match_mpc(
         my_order: &Order,
         my_balance: &Balance,
         my_price: &FixedPoint,
-        fabric: SharedFabric<N, S>,
-    ) -> Result<AuthenticatedMatchResult<N, S>, HandshakeManagerError> {
+        fabric: &MpcFabric,
+    ) -> AuthenticatedMatchResult {
         // Allocate the orders in the MPC fabric
-        let shared_order1 = my_order
-            .allocate(0 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let shared_order2 = my_order
-            .allocate(1 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let shared_order1 = my_order.allocate(PARTY0, fabric);
+        let shared_order2 = my_order.allocate(PARTY1, fabric);
 
         // Use the first party's price, the second party's price will be constrained to equal the
         // first party's in the subsequent proof of `VALID MATCH MPC`
-        let price = my_price
-            .allocate(0 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let price = my_price.allocate(PARTY0, fabric);
 
         let my_amount = compute_max_amount(my_price, my_order, my_balance);
-        let amount1 = my_amount
-            .allocate(0 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let amount2 = my_amount
-            .allocate(1 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let amount1 = my_amount.allocate(PARTY0, fabric);
+        let amount2 = my_amount.allocate(PARTY1, fabric);
 
         // Run the circuit
         compute_match(
@@ -253,60 +231,43 @@ impl HandshakeExecutor {
             &price,
             fabric,
         )
-        .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))
     }
 
     /// Generates a collaborative proof of the validity of a given match result
     ///
     /// The implementation *does not* open the match result. This leaks information and should
     /// be done last, after all other openings, validity checks, etc are performed
-    async fn prove_valid_match<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    async fn prove_valid_match(
         my_order: LinkableOrder,
         my_balance: LinkableBalance,
         my_price: FixedPoint,
-        match_res: AuthenticatedMatchResult<N, S>,
-        fabric: SharedFabric<N, S>,
+        match_res: AuthenticatedMatchResult,
+        fabric: &MpcFabric,
     ) -> Result<
         (
-            AuthenticatedLinkableMatchResult<N, S>,
+            AuthenticatedLinkableMatchResult,
             ValidMatchMpcWitnessCommitment,
             R1CSProof,
         ),
         HandshakeManagerError,
     > {
         // Allocate orders and balances in the network
-        let order1 = my_order
-            .allocate(0 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let order2 = my_order
-            .allocate(1 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let order1 = my_order.allocate(PARTY0, fabric);
+        let order2 = my_order.allocate(PARTY1, fabric);
 
-        let balance1 = my_balance
-            .allocate(0 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let balance2 = my_balance
-            .allocate(1 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let balance1 = my_balance.allocate(PARTY0, fabric);
+        let balance2 = my_balance.allocate(PARTY1, fabric);
 
-        let price1 = my_price
-            .allocate(0 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let price2 = my_price
-            .allocate(1 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let price1 = my_price.allocate(PARTY0, fabric);
+        let price2 = my_price.allocate(PARTY1, fabric);
 
         let my_amount = compute_max_amount(
             &my_price,
             &my_order.to_base_type(),
             &my_balance.to_base_type(),
         );
-        let amount1 = my_amount
-            .allocate(0 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-        let amount2 = my_amount
-            .allocate(1 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+        let amount1 = my_amount.allocate(PARTY0, fabric);
+        let amount2 = my_amount.allocate(PARTY1, fabric);
 
         // Build a witness to the VALID MATCH MPC statement
         let witness = AuthenticatedValidMatchMpcWitness {
@@ -318,27 +279,28 @@ impl HandshakeExecutor {
             balance2,
             amount2,
             price2,
-            match_res: match_res.link_commitments(fabric.clone()),
+            match_res: match_res.link_commitments(fabric),
         };
 
         // Prove the statement
-        let (witness_commitment, proof) = multiprover_prove::<
-            '_,
-            N,
-            S,
-            ValidMatchMpcCircuit<'_, N, S>,
-        >(witness.clone(), () /* statement */, fabric)
+        let (witness_commitment, proof) = multiprover_prove::<ValidMatchMpcCircuit>(
+            witness.clone(),
+            (), /* statement */
+            fabric.clone(),
+        )
         .map_err(|err| HandshakeManagerError::Multiprover(err.to_string()))?;
 
         // Open the proof and verify it
         let opened_commit = witness_commitment
             .open_and_authenticate()
+            .await
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
         let opened_proof = proof
             .open()
+            .await
             .map_err(|_| HandshakeManagerError::MpcNetwork("error opening proof".to_string()))?;
 
-        verify_collaborative_proof::<'_, N, S, ValidMatchMpcCircuit<'_, N, S>>(
+        verify_collaborative_proof::<ValidMatchMpcCircuit>(
             (), /* statement */
             opened_commit.clone(),
             opened_proof.clone(),
@@ -350,42 +312,40 @@ impl HandshakeExecutor {
 
     /// Build the handshake result from a match and proof
     #[allow(clippy::too_many_arguments)]
-    async fn build_handshake_result<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>(
+    async fn build_handshake_result(
         &self,
-        shared_match_res: AuthenticatedLinkableMatchResult<N, S>,
+        shared_match_res: AuthenticatedLinkableMatchResult,
         commitment: ValidMatchMpcWitnessCommitment,
         proof: R1CSProof,
         validity_proof_witness: OrderValidityWitnessBundle,
         party0_validity_proof: OrderValidityProofBundle,
         party1_validity_proof: OrderValidityProofBundle,
         handshake_state: HandshakeState,
-        fabric: SharedFabric<N, S>,
+        fabric: &MpcFabric,
         cancel_channel: Receiver<()>,
     ) -> Result<Box<HandshakeResult>, HandshakeManagerError> {
         // Exchange fees and public secret shares before opening the match result
         let party0_fee = validity_proof_witness
             .commitment_witness
             .fee
-            .share_public(0 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+            .share_public(PARTY0, fabric.clone());
         let party1_fee = validity_proof_witness
             .commitment_witness
             .fee
-            .share_public(1 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+            .share_public(PARTY1, fabric.clone());
 
         let party0_public_shares = validity_proof_witness
             .commitment_witness
             .augmented_public_shares
-            .share_public(0 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+            .share_public(PARTY0, fabric.clone());
         let party1_public_shares = validity_proof_witness
             .commitment_witness
             .augmented_public_shares
-            .share_public(1 /* owning_party */, fabric.clone())
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+            .share_public(PARTY1, fabric.clone());
 
         // Verify that the opened augmented shares are the same used in the validity proofs
+        let party0_public_shares = party0_public_shares.await;
+        let party1_public_shares = party1_public_shares.await;
         if !verify_augmented_shares_commitments(
             &party0_public_shares,
             &party1_public_shares,
@@ -405,7 +365,8 @@ impl HandshakeExecutor {
 
         // Open the match result and build the handshake result
         let match_res_open = shared_match_res
-            .open_and_authenticate(fabric)
+            .open_and_authenticate()
+            .await
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
         Ok(Box::new(HandshakeResult {
@@ -419,8 +380,8 @@ impl HandshakeExecutor {
             party1_share_nullifier: handshake_state.peer_share_nullifier,
             party0_reblinded_shares: party0_public_shares,
             party1_reblinded_shares: party1_public_shares,
-            party0_fee,
-            party1_fee,
+            party0_fee: party0_fee.await,
+            party1_fee: party1_fee.await,
         }))
     }
 }
