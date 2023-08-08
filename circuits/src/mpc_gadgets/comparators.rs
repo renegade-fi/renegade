@@ -23,7 +23,7 @@ pub fn less_than_zero<const D: usize>(
     // Truncate the first 250 bits of the input
     let truncated = truncate::<250>(a, fabric);
 
-    // Because the Ristretto scalar field is a prime field of order slightly greater than 2^252
+    // Because the Starknet scalar field is a prime field of order slightly greater than 2^251
     // values are negative if either their 251st bit or 252nd bit are set. Therefore, we truncate
     // all bits below this and compare the value to zero.
     ne::<2 /* bit_length */>(&truncated, &fabric.zero_authenticated(), fabric)

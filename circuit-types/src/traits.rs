@@ -172,10 +172,10 @@ pub trait CircuitVarType<L: LinearCombinationLike>: Clone {
 pub trait CircuitCommitmentType: Clone {
     /// The variable type that this type is a commitment to
     type VarType: CircuitVarType<Variable>;
-    /// Convert from an iterable of compressed ristretto points, each representing
+    /// Convert from an iterable of Stark curve points, each representing
     /// a commitment to an underlying variable
     fn from_commitments<I: Iterator<Item = StarkPoint>>(i: &mut I) -> Self;
-    /// Convert to a vector of compressed ristretto points
+    /// Convert to a vector of Stark curve points
     fn to_commitments(&self) -> Vec<StarkPoint>;
 
     /// Commit to a hidden value in the Verifier
