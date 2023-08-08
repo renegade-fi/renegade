@@ -20,9 +20,9 @@ use common::types::{
     network_order::{NetworkOrder as IndexedNetworkOrder, NetworkOrderState},
     wallet::{KeyChain, OrderIdentifier, Wallet as IndexedWallet, WalletMetadata},
 };
-use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use itertools::Itertools;
 use num_bigint::BigUint;
+use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
