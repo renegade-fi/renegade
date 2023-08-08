@@ -172,14 +172,14 @@ impl WalletIndex {
 #[cfg(test)]
 mod tests {
     use common::types::wallet::PrivateKeyChain;
-    use curve25519_dalek::scalar::Scalar;
+    use mpc_stark::algebra::scalar::Scalar;
     use num_bigint::BigUint;
-    use rand_core::OsRng;
+    use rand::thread_rng;
 
     /// Test serialization/deserialization of a PrivateKeyChain
     #[test]
     fn test_private_keychain_serde() {
-        let mut rng = OsRng {};
+        let mut rng = thread_rng();
 
         // Test with root specified
         let keychain = PrivateKeyChain {
