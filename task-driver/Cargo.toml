@@ -3,6 +3,11 @@ name = "task-driver"
 version = "0.1.0"
 edition = "2021"
 
+[[test]]
+name = "integration"
+path = "integration/main.rs"
+harness = false
+
 [dependencies]
 # === Async + Runtime === #
 async-trait = "0.1.60"
@@ -17,10 +22,10 @@ num-bigint = { workspace = true }
 circuits = { path = "../circuits" }
 circuit-types = { path = "../circuit-types" }
 common = { path = "../common" }
-renegade-crypto = { path = "../renegade-crypto" }
 external-api = { path = "../external-api" }
 gossip-api = { path = "../gossip-api" }
 job-types = { path = "../workers/job-types" }
+renegade-crypto = { path = "../renegade-crypto" }
 starknet-client = { path = "../starknet-client" }
 state = { path = "../state" }
 system-bus = { path = "../system-bus" }
@@ -31,3 +36,6 @@ serde = { workspace = true }
 starknet = { workspace = true }
 tracing = { workspace = true }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
+
+[dev-dependencies]
+test-helpers = { path = "../test-helpers" }
