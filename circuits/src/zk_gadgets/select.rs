@@ -1,7 +1,5 @@
 //! Groups gadgets for conditional selection
 
-use std::marker::PhantomData;
-
 use circuit_types::{
     errors::ProverError,
     traits::{
@@ -49,12 +47,8 @@ impl CondSelectGadget {
 }
 
 /// A multiprover version of the conditional select gadget
-pub struct MultiproverCondSelectGadget<'a> {
-    /// Phantom
-    _phantom: &'a PhantomData<()>,
-}
-
-impl<'a> MultiproverCondSelectGadget<'a> {
+pub struct MultiproverCondSelectGadget;
+impl MultiproverCondSelectGadget {
     /// Computes the control flow statement if selector { a } else { b }
     pub fn select<L, V, CS>(
         a: V,
@@ -127,12 +121,8 @@ impl CondSelectVectorGadget {
 }
 
 /// A multiprover variant of the CondSelectVectorGadget
-pub struct MultiproverCondSelectVectorGadget<'a> {
-    /// Phantom
-    _phantom: &'a PhantomData<()>,
-}
-
-impl<'a> MultiproverCondSelectVectorGadget<'a> {
+pub struct MultiproverCondSelectVectorGadget;
+impl MultiproverCondSelectVectorGadget {
     /// Implements the control flow block if selector { a } else { b }
     /// where `a` and `b` are vectors
     pub fn select<L, V, CS>(
