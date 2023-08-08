@@ -233,7 +233,7 @@ impl MultiproverExpGadget {
     pub fn exp<L, CS>(
         x: L,
         alpha: u64,
-        fabric: MpcFabric,
+        fabric: &MpcFabric,
         cs: &mut CS,
     ) -> Result<MpcLinearCombination, ProverError>
     where
@@ -241,7 +241,10 @@ impl MultiproverExpGadget {
         CS: MpcRandomizableConstraintSystem,
     {
         if alpha == 0 {
-            Ok(MpcLinearCombination::from_scalar(Scalar::one(), fabric))
+            Ok(MpcLinearCombination::from_scalar(
+                Scalar::one(),
+                fabric.clone(),
+            ))
         } else if alpha == 1 {
             Ok(x.into())
         } else if alpha % 2 == 0 {

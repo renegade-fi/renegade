@@ -33,12 +33,9 @@ fn test_to_bits(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let transcript = Transcript::new(b"test");
     let mut prover = MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, pc_gens);
     let (shared_scalar_var, _) = shared_scalar.commit_shared(&mut rng, &mut prover).unwrap();
-    let res_bits = MultiproverToBitsGadget::<64 /* bits */>::to_bits(
-        shared_scalar_var,
-        test_args.mpc_fabric.clone(),
-        &mut prover,
-    )
-    .map_err(|err| format!("Error computing to_bits circuit: {:?}", err))?;
+    let res_bits =
+        MultiproverToBitsGadget::<64 /* bits */>::to_bits(shared_scalar_var, fabric, &mut prover)
+            .map_err(|err| format!("Error computing to_bits circuit: {:?}", err))?;
 
     for (expected_bit, bit) in expected_bits.iter().zip(res_bits.iter()) {
         let allocated_bit =

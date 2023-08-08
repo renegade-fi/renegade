@@ -64,7 +64,7 @@ pub(crate) fn scalar_to_bits_le<const N: usize>(a: &ScalarResult) -> Vec<ScalarR
 pub(crate) fn resize_bitvector_to_length(
     mut bitvec: Vec<AuthenticatedScalarResult>,
     desired_length: usize,
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> Vec<AuthenticatedScalarResult> {
     // Push allocated zeros to the end of the array
     if bitvec.len() < desired_length {
@@ -82,7 +82,7 @@ pub(crate) fn resize_bitvector_to_length(
 pub(crate) fn resize_bitvector_to_length_public(
     mut bitvec: Vec<ScalarResult>,
     desired_length: usize,
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> Vec<ScalarResult> {
     // Push allocated zeros to the end of the array
     let length_diff = desired_length - bitvec.len();
@@ -122,7 +122,7 @@ pub fn bit_xor_public(
 pub fn bit_add(
     a: &[AuthenticatedScalarResult],
     b: &[AuthenticatedScalarResult],
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> (Vec<AuthenticatedScalarResult>, AuthenticatedScalarResult) {
     bit_add_impl(a, b, fabric.zero_authenticated() /* initial_carry */)
 }
@@ -159,7 +159,7 @@ fn bit_add_impl(
 pub fn bit_add_public(
     a: &[ScalarResult],
     b: &[AuthenticatedScalarResult],
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> (Vec<AuthenticatedScalarResult>, AuthenticatedScalarResult) {
     bit_add_impl_public(a, b, fabric.zero_authenticated() /* initial_carry */)
 }
@@ -215,7 +215,7 @@ pub fn carry_out_public(
 /// that can then be used to compute bitwise decompositions of the input
 pub fn to_bits_le<const D: usize>(
     x: &AuthenticatedScalarResult,
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> Vec<AuthenticatedScalarResult> {
     assert!(
         D < SCALAR_MAX_BITS,
@@ -246,8 +246,8 @@ pub fn to_bits_le<const D: usize>(
     // Convert to bits
     let blinded_value_bits = scalar_to_bits_le::<D>(&blinded_value_open);
     let (bits, _) = bit_add_public(
-        &resize_bitvector_to_length_public(blinded_value_bits, D, fabric.clone()),
-        &resize_bitvector_to_length(random_bits, D, fabric.clone()),
+        &resize_bitvector_to_length_public(blinded_value_bits, D, fabric),
+        &resize_bitvector_to_length(random_bits, D, fabric),
         fabric,
     );
 
@@ -268,7 +268,7 @@ pub fn to_bits_le<const D: usize>(
 pub fn bit_lt(
     a: &[AuthenticatedScalarResult],
     b: &[AuthenticatedScalarResult],
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
     assert_eq!(a.len(), b.len(), "bit_lt takes equal length bit arrays");
 
@@ -283,7 +283,7 @@ pub fn bit_lt(
 pub fn bit_lt_public(
     a: &[ScalarResult],
     b: &[AuthenticatedScalarResult],
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
     assert_eq!(a.len(), b.len(), "bit_lt takes equal length bit arrays");
 
@@ -424,9 +424,9 @@ mod tests {
                 let equal_value2 = fabric.share_scalar(value, PARTY1);
 
                 let res = bit_lt(
-                    &to_bits_le::<N>(&equal_value1, fabric.clone()),
-                    &to_bits_le::<N>(&equal_value2, fabric.clone()),
-                    fabric.clone(),
+                    &to_bits_le::<N>(&equal_value1, &fabric),
+                    &to_bits_le::<N>(&equal_value2, &fabric),
+                    &fabric,
                 )
                 .open_authenticated()
                 .await?;
@@ -449,16 +449,16 @@ mod tests {
                 let min_value = fabric.share_scalar(min_value, PARTY0);
                 let max_value = fabric.share_scalar(max_value, PARTY1);
 
-                let min_bits = to_bits_le::<N>(&min_value, fabric.clone());
-                let max_bits = to_bits_le::<N>(&max_value, fabric.clone());
+                let min_bits = to_bits_le::<N>(&min_value, &fabric);
+                let max_bits = to_bits_le::<N>(&max_value, &fabric);
 
                 // min_value < max_value == true
-                let res1 = bit_lt(&min_bits, &max_bits, fabric.clone())
+                let res1 = bit_lt(&min_bits, &max_bits, &fabric)
                     .open_authenticated()
                     .await?;
 
                 // max_value < min_value == false
-                let res2 = bit_lt(&max_bits, &min_bits, fabric.clone())
+                let res2 = bit_lt(&max_bits, &min_bits, &fabric)
                     .open_authenticated()
                     .await?;
 
@@ -487,18 +487,18 @@ mod tests {
                 let min_value = fabric.share_scalar(min_value, PARTY0);
                 let max_value = fabric.share_scalar(max_value, PARTY1);
 
-                let min_bits = to_bits_le::<N>(&min_value, fabric.clone());
-                let max_bits = to_bits_le::<N>(&max_value, fabric.clone());
+                let min_bits = to_bits_le::<N>(&min_value, &fabric);
+                let max_bits = to_bits_le::<N>(&max_value, &fabric);
 
                 // min_value < max_value == true
                 let min_bits_public = AuthenticatedScalarResult::open_batch(&min_bits);
-                let res1 = bit_lt_public(&min_bits_public, &max_bits, fabric.clone())
+                let res1 = bit_lt_public(&min_bits_public, &max_bits, &fabric)
                     .open_authenticated()
                     .await?;
 
                 // max_value < min_value == false
                 let max_bits_public = AuthenticatedScalarResult::open_batch(&max_bits);
-                let res2 = bit_lt_public(&max_bits_public, &min_bits, fabric.clone())
+                let res2 = bit_lt_public(&max_bits_public, &min_bits, &fabric)
                     .open_authenticated()
                     .await?;
 

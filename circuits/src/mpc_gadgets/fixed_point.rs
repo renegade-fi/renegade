@@ -12,7 +12,7 @@ impl FixedPointMpcGadget {
     /// and return the result as an integer
     pub fn as_integer(
         val: AuthenticatedFixedPoint,
-        fabric: MpcFabric,
+        fabric: &MpcFabric,
     ) -> AuthenticatedScalarResult {
         shift_right::<DEFAULT_FP_PRECISION>(&val.repr, fabric)
     }

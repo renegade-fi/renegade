@@ -26,10 +26,10 @@ pub fn compute_match(
     amount1: &AuthenticatedScalarResult,
     amount2: &AuthenticatedScalarResult,
     price: &AuthenticatedFixedPoint,
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> AuthenticatedMatchResult {
     // Compute the amount and execution price that will be swapped if the orders match
-    let (min_index, min_base_amount) = min::<AMOUNT_BITS>(amount1, amount2, fabric.clone());
+    let (min_index, min_base_amount) = min::<AMOUNT_BITS>(amount1, amount2, fabric);
 
     // The maximum of the two amounts minus the minimum of the two amounts
     let max_minus_min_amount =

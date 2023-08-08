@@ -257,7 +257,7 @@ impl<const D: usize> MultiproverGreaterThanEqZeroGadget<D> {
     /// by bit-decomposing the value and re-composing it thereafter
     pub fn constrain_greater_than_zero<L, CS>(
         x: L,
-        fabric: MpcFabric,
+        fabric: &MpcFabric,
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where
@@ -277,7 +277,7 @@ impl<const D: usize> MultiproverGreaterThanEqZeroGadget<D> {
     /// value is non-negative
     fn bit_decompose_reconstruct<L, CS>(
         x: L,
-        fabric: MpcFabric,
+        fabric: &MpcFabric,
         cs: &mut CS,
     ) -> Result<MpcLinearCombination, ProverError>
     where
@@ -390,7 +390,7 @@ impl<const D: usize> MultiproverGreaterThanEqGadget<D> {
     pub fn constrain_greater_than_eq<L, CS>(
         a: L,
         b: L,
-        fabric: MpcFabric,
+        fabric: &MpcFabric,
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where

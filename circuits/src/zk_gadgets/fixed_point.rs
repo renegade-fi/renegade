@@ -120,7 +120,7 @@ impl MultiproverFixedPointGadget {
     pub fn constrain_equal_integer_ignore_fraction<L, CS>(
         lhs: &AuthenticatedFixedPointVar<L>,
         rhs: &MpcVariable,
-        fabric: MpcFabric,
+        fabric: &MpcFabric,
         cs: &mut CS,
     ) -> Result<(), ProverError>
     where
