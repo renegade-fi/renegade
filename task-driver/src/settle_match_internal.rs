@@ -33,7 +33,7 @@ use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use num_bigint::BigUint;
 use renegade_crypto::fields::{scalar_to_biguint, scalar_to_u64};
 use serde::Serialize;
-use starknet::core::types::{TransactionFailureReason, TransactionStatus};
+use starknet::providers::sequencer::models::{TransactionFailureReason, TransactionStatus};
 use starknet_client::client::StarknetClient;
 use state::RelayerState;
 use tokio::{

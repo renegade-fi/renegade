@@ -33,7 +33,7 @@ use renegade_crypto::fields::{
     scalar_to_starknet_felt, starknet_felt_to_biguint, starknet_felt_to_scalar,
     starknet_felt_to_u64,
 };
-use reqwest::Url;
+use reqwest::Url as ReqwestUrl;
 use starknet::{
     accounts::{Account, Call, SingleOwnerAccount},
     core::types::{
@@ -51,7 +51,6 @@ use starknet::{
     signers::{LocalWallet, SigningKey},
 };
 use tracing::log;
-use url::Url;
 
 use crate::{
     helpers::parse_shares_from_calldata, INTERNAL_NODE_CHANGED_EVENT_SELECTOR, MATCH_SELECTOR,
@@ -138,8 +137,8 @@ impl StarknetClientConfig {
             ChainId::AlphaGoerli => SequencerGatewayProvider::starknet_alpha_goerli(),
             ChainId::Mainnet => SequencerGatewayProvider::starknet_alpha_mainnet(),
             ChainId::Devnet => SequencerGatewayProvider::new(
-                Url::parse("http://localhost:5050/gateway").unwrap(),
-                Url::parse("http://localhost:5050/feeder_gateway").unwrap(),
+                ReqwestUrl::parse("http://localhost:5050/gateway").unwrap(),
+                ReqwestUrl::parse("http://localhost:5050/feeder_gateway").unwrap(),
                 StarknetFieldElement::from(0u8),
             ),
         }

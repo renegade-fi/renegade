@@ -18,7 +18,7 @@ use gossip_api::gossip::GossipOutbound;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use renegade_crypto::fields::starknet_felt_to_biguint;
 use serde::Serialize;
-use starknet::core::types::TransactionStatus;
+use starknet::providers::sequencer::models::TransactionStatus;
 use starknet_client::client::StarknetClient;
 use state::RelayerState;
 use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
