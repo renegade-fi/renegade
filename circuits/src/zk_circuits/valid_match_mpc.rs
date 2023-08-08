@@ -26,7 +26,6 @@ use mpc_stark::{
     },
     MpcFabric,
 };
-use std::marker::PhantomData;
 
 use crate::zk_gadgets::{
     comparators::{
@@ -55,12 +54,8 @@ use rand::{CryptoRng, RngCore};
 /// This statement is only proven within the context of an MPC, so it only
 /// implements the Multiprover circuit trait
 #[derive(Clone, Debug)]
-pub struct ValidMatchMpcCircuit<'a> {
-    /// Phantom
-    _phantom: &'a PhantomData<()>,
-}
-
-impl<'a> ValidMatchMpcCircuit<'a> {
+pub struct ValidMatchMpcCircuit;
+impl ValidMatchMpcCircuit {
     /// The order crossing check, verifies that the matches result is valid given the orders
     /// and balances of the two parties
     pub fn matching_engine_check<CS>(
@@ -165,7 +160,7 @@ impl<'a> ValidMatchMpcCircuit<'a> {
         // I.e. the above constraint forces `max_minus_min_amount` to be either max(amounts) - min(amounts)
         // or min(amounts) - max(amounts).
         // Constraining the value to be positive forces it to be equal to max(amounts) - min(amounts)
-        MultiproverGreaterThanEqZeroGadget::<'_, AMOUNT_BITS>::constrain_greater_than_zero(
+        MultiproverGreaterThanEqZeroGadget::<AMOUNT_BITS>::constrain_greater_than_zero(
             witness.match_res.max_minus_min_amount.clone(),
             fabric.clone(),
             cs,
@@ -213,7 +208,7 @@ impl<'a> ValidMatchMpcCircuit<'a> {
         [(); AMOUNT_BITS + DEFAULT_FP_PRECISION]: Sized,
     {
         // Validate that the amount is less than the maximum amount given in the order
-        MultiproverGreaterThanEqGadget::<'_, AMOUNT_BITS /* bitlength */>::constrain_greater_than_eq(
+        MultiproverGreaterThanEqGadget::<AMOUNT_BITS /* bitlength */>::constrain_greater_than_eq(
             order.amount.clone(),
             match_res.base_amount.clone(),
             fabric.clone(),
@@ -232,7 +227,7 @@ impl<'a> ValidMatchMpcCircuit<'a> {
             fabric.clone(),
             cs,
         )?;
-        MultiproverGreaterThanEqGadget::<'_, AMOUNT_BITS>::constrain_greater_than_eq(
+        MultiproverGreaterThanEqGadget::<AMOUNT_BITS>::constrain_greater_than_eq(
             balance.amount.clone().into(),
             amount_sold,
             fabric,
@@ -266,7 +261,7 @@ impl<'a> ValidMatchMpcCircuit<'a> {
             cs,
         )?;
 
-        MultiproverGreaterThanEqGadget::<'_, PRICE_BITS>::constrain_greater_than_eq(
+        MultiproverGreaterThanEqGadget::<PRICE_BITS>::constrain_greater_than_eq(
             gte_terms.remove(0).repr,
             gte_terms.remove(0).repr,
             fabric,
@@ -502,7 +497,7 @@ pub struct ValidMatchMpcWitness {
 // ---------------------
 
 /// Prover implementation of the Valid Match circuit
-impl<'a> MultiProverCircuit<'a> for ValidMatchMpcCircuit<'a> {
+impl MultiProverCircuit for ValidMatchMpcCircuit {
     type Statement = ();
     type Witness = AuthenticatedValidMatchMpcWitness;
 

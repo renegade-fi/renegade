@@ -1,7 +1,5 @@
 //! Groups logical gate gadgets used in ZK circuits
 
-use std::marker::PhantomData;
-
 use circuit_types::{
     errors::ProverError,
     traits::{LinearCombinationLike, MpcLinearCombinationLike},
@@ -47,9 +45,8 @@ impl OrGate {
 }
 
 /// Represents an OR gate in a multi-prover constraint system
-pub struct MultiproverOrGate<'a>(&'a PhantomData<()>);
-
-impl<'a> MultiproverOrGate<'a> {
+pub struct MultiproverOrGate;
+impl MultiproverOrGate {
     /// Return the logical OR of the two arguments
     ///
     /// The arguments are assumed to be binary (0 or 1), but this assumption should be

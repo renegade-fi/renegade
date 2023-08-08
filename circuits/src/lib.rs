@@ -110,7 +110,7 @@ pub fn singleprover_prove<C: SingleProverCircuit>(
 
 /// Abstracts over the flow of collaboratively proving a generic circuit
 #[allow(clippy::type_complexity)]
-pub fn multiprover_prove<'a, C>(
+pub fn multiprover_prove<C>(
     witness: C::Witness,
     statement: C::Statement,
     fabric: MpcFabric,
@@ -122,14 +122,14 @@ pub fn multiprover_prove<'a, C>(
     ProverError,
 >
 where
-    C: MultiProverCircuit<'a>,
+    C: MultiProverCircuit,
 {
     let transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
     let pc_gens = PedersenGens::default();
     let prover = MpcProver::new_with_fabric(fabric.clone(), transcript, pc_gens);
 
     // Prove the statement
-    C::prove(witness, statement.clone(), fabric, prover)
+    C::prove(witness, statement, fabric, prover)
 }
 
 /// Abstracts over the flow of verifying a proof for a single-prover proved circuit
@@ -147,7 +147,7 @@ pub fn verify_singleprover_proof<C: SingleProverCircuit>(
 }
 
 /// Abstracts over the flow of verifying a proof for a collaboratively proved circuit
-pub fn verify_collaborative_proof<'a, C>(
+pub fn verify_collaborative_proof<C>(
     statement: <C::Statement as MultiproverCircuitBaseType>::BaseType,
     witness_commitment: <
         <C::Witness as MultiproverCircuitBaseType>::MultiproverCommType as MultiproverCircuitCommitmentType
@@ -155,7 +155,7 @@ pub fn verify_collaborative_proof<'a, C>(
     proof: R1CSProof,
 ) -> Result<(), VerifierError>
 where
-    C: MultiProverCircuit<'a>,
+    C: MultiProverCircuit,
 {
     // Verify the statement with a fresh transcript
     let mut verifier_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
