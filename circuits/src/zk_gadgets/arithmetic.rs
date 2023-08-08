@@ -1,7 +1,5 @@
 //! Groups ZK gadgets used as arithmetic primitives in more complicated computations
 
-use std::marker::PhantomData;
-
 use ark_ff::Zero;
 use circuit_types::errors::ProverError;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
@@ -229,12 +227,8 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
 // -----------------------
 
 /// A multiprover implementation of the exp gadget
-pub struct MultiproverExpGadget<'a> {
-    /// Phantom
-    _phantom: &'a PhantomData<()>,
-}
-
-impl<'a> MultiproverExpGadget<'a> {
+pub struct MultiproverExpGadget;
+impl MultiproverExpGadget {
     /// Apply the gadget to the input
     pub fn exp<L, CS>(
         x: L,

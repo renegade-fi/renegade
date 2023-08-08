@@ -97,8 +97,8 @@ impl<CS: RandomizableConstraintSystem> FixedPointGadget<CS> {
 }
 
 /// Performs fixed point operations on a multiprover circuit
-pub struct MultiproverFixedPointGadget<'a>(&'a PhantomData<()>);
-impl<'a> MultiproverFixedPointGadget<'a> {
+pub struct MultiproverFixedPointGadget;
+impl MultiproverFixedPointGadget {
     // === Equality === //
 
     /// Constrain a fixed point variable to equal a native field element
@@ -136,7 +136,7 @@ impl<'a> MultiproverFixedPointGadget<'a> {
         // component of zero
         let shifted_precision =
             MpcLinearCombination::from_scalar(*TWO_TO_M_SCALAR - Scalar::one(), fabric.clone());
-        MultiproverGreaterThanEqGadget::<'_, DEFAULT_FP_PRECISION>::constrain_greater_than_eq(
+        MultiproverGreaterThanEqGadget::<DEFAULT_FP_PRECISION>::constrain_greater_than_eq(
             shifted_precision,
             diff,
             fabric,

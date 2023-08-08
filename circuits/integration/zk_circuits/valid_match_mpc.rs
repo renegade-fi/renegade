@@ -186,9 +186,8 @@ fn prove_and_verify_match(
     fabric: MpcFabric,
 ) -> Result<bool, String> {
     // Prove
-    let (witness_comm, proof) =
-        multiprover_prove::<'_, ValidMatchMpcCircuit<'_>>(witness, (), fabric)
-            .map_err(|err| format!("Error proving: {:?}", err))?;
+    let (witness_comm, proof) = multiprover_prove::<ValidMatchMpcCircuit>(witness, (), fabric)
+        .map_err(|err| format!("Error proving: {:?}", err))?;
 
     // Open
     let opened_proof = await_result_with_error(proof.open())?;
@@ -196,10 +195,7 @@ fn prove_and_verify_match(
         .map_err(|err| format!("Error opening witness commitment: {:?}", err))?;
 
     // Verify
-    Ok(
-        verify_collaborative_proof::<'_, ValidMatchMpcCircuit<'_>>((), opened_comm, opened_proof)
-            .is_ok(),
-    )
+    Ok(verify_collaborative_proof::<ValidMatchMpcCircuit>((), opened_comm, opened_proof).is_ok())
 }
 
 /// Return whether the `VALID MATCH MPC` constraints are satisfied on the given witness

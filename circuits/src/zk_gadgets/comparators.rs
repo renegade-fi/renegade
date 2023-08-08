@@ -1,7 +1,5 @@
 //! Groups gadgets for binary comparison operators
 
-use std::marker::PhantomData;
-
 use circuit_types::{
     errors::ProverError,
     traits::{
@@ -253,12 +251,8 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
 }
 
 /// A multiprover version of the greater than or equal to zero gadget
-pub struct MultiproverGreaterThanEqZeroGadget<'a, const D: usize> {
-    /// Phantom
-    _phantom: &'a PhantomData<()>,
-}
-
-impl<'a, const D: usize> MultiproverGreaterThanEqZeroGadget<'a, D> {
+pub struct MultiproverGreaterThanEqZeroGadget<const D: usize>;
+impl<const D: usize> MultiproverGreaterThanEqZeroGadget<D> {
     /// Constrains the input value to be greater than or equal to zero implicitly
     /// by bit-decomposing the value and re-composing it thereafter
     pub fn constrain_greater_than_zero<L, CS>(
@@ -362,12 +356,8 @@ impl<const D: usize> LessThanGadget<D> {
 }
 
 /// A multiprover variant of the EqGadget
-pub struct MultiproverEqGadget<'a> {
-    /// Phantom
-    _phantom: &'a PhantomData<()>,
-}
-
-impl<'a> MultiproverEqGadget<'a> {
+pub struct MultiproverEqGadget;
+impl MultiproverEqGadget {
     /// Constraint two values to be equal
     pub fn constrain_eq<L1, L2, V1, V2, CS>(a: V1, b: V2, cs: &mut CS)
     where
@@ -394,12 +384,8 @@ impl<'a> MultiproverEqGadget<'a> {
 /// A multiprover variant of the GreaterThanEqGadget
 ///
 /// `D` is the bitlength of the input values
-pub struct MultiproverGreaterThanEqGadget<'a, const D: usize> {
-    /// Phantom
-    _phantom: &'a PhantomData<()>,
-}
-
-impl<'a, const D: usize> MultiproverGreaterThanEqGadget<'a, D> {
+pub struct MultiproverGreaterThanEqGadget<const D: usize>;
+impl<const D: usize> MultiproverGreaterThanEqGadget<D> {
     /// Constrain the relation a >= b
     pub fn constrain_greater_than_eq<L, CS>(
         a: L,
@@ -411,7 +397,7 @@ impl<'a, const D: usize> MultiproverGreaterThanEqGadget<'a, D> {
         L: MpcLinearCombinationLike,
         CS: MpcRandomizableConstraintSystem,
     {
-        MultiproverGreaterThanEqZeroGadget::<'a, D>::constrain_greater_than_zero(
+        MultiproverGreaterThanEqZeroGadget::<D>::constrain_greater_than_zero(
             a.into() - b.into(),
             fabric,
             cs,
