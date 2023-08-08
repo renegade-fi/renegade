@@ -39,7 +39,7 @@ pub fn compute_poseidon_hash(values: &[Scalar]) -> Scalar {
 ///
 /// We use the Poseidon permutation with the following default parameters:
 ///     \alpha = 5; i.e. the s-box is x^5 \mod p. This was chosen because:
-///     for the prime field used in Ristretto, gcd(3, p-1) = 3
+///     for the prime field used in Stark curve Scalar field, gcd(3, p-1) = 3
 ///     whereas gcd(5, p-1) = 1, making x^5 (mod p) invertible.
 pub fn default_poseidon_params() -> PoseidonConfig<Scalar::Field> {
     PoseidonConfig::new(
