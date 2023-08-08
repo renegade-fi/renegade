@@ -120,7 +120,7 @@ impl From<SecretIdentificationKey> for Scalar {
 }
 
 /// A non-native key is a key that exists over a non-native field
-/// (i.e. not Ristretto255 Scalar)
+/// (i.e. not Starknet Scalar)
 #[circuit_type(
     serde,
     singleprover_circuit,

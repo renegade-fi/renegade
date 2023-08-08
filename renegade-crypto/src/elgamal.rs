@@ -1,5 +1,6 @@
 //! Helpers for creating encryptions of values
 
+use ark_ff::FftField;
 use lazy_static::lazy_static;
 use mpc_stark::algebra::scalar::Scalar;
 use num_bigint::BigUint;
@@ -9,13 +10,13 @@ use serde::{Deserialize, Serialize};
 use crate::fields::{biguint_to_scalar, get_scalar_field_modulus, scalar_to_biguint};
 
 lazy_static! {
-    /// We use the generator 2 here as per the same field configured in Arkworks:
-    /// https://github.com/arkworks-rs/curves/blob/master/curve25519/src/fields/fr.rs
+    /// We use the generator 3 here as per the field configured in the `mpc-stark` library:
+    /// https://github.com/renegade-fi/mpc-stark/blob/master/src/algebra/scalar.rs#L39
     ///
-    /// This generator is intended to be used with the Ristretto scalar field of prime
+    /// This generator is intended to be used with the Stark curve scalar field of prime
     /// order defined here:
-    /// https://docs.rs/curve25519-dalek-ng/latest/curve25519_dalek_ng/scalar/index.html
-    pub static ref DEFAULT_ELGAMAL_GENERATOR: Scalar = Scalar::from(2u64);
+    /// https://crypto.stackexchange.com/questions/98124/is-the-stark-curve-a-safecurve
+    pub static ref DEFAULT_ELGAMAL_GENERATOR: Scalar = Scalar::from(Scalar::Field::GENERATOR);
     /// A bigint version of the above generator
     pub static ref DEFAULT_ELGAMAL_GENERATOR_BIGUINT: BigUint = scalar_to_biguint(&DEFAULT_ELGAMAL_GENERATOR);
 }

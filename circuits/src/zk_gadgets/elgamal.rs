@@ -5,7 +5,6 @@ use circuit_macros::circuit_type;
 use circuit_types::traits::{
     BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
 };
-use lazy_static::lazy_static;
 use mpc_bulletproof::{
     r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
     r1cs_mpc::R1CSError,
@@ -15,16 +14,6 @@ use mpc_stark::algebra::stark_curve::StarkPoint;
 use rand::{CryptoRng, RngCore};
 
 use super::arithmetic::PrivateExpGadget;
-
-lazy_static! {
-    /// We use the generator 2 here as per the same field configured in Arkworks:
-    /// https://github.com/arkworks-rs/curves/blob/master/curve25519/src/fields/fr.rs
-    ///
-    /// This generator is intended to be used with the Ristretto scalar field of prime
-    /// order defined here:
-    /// https://docs.rs/curve25519-dalek-ng/latest/curve25519_dalek_ng/scalar/index.html
-    pub static ref DEFAULT_ELGAMAL_GENERATOR: Scalar = Scalar::from(2u64);
-}
 
 /// Implements an ElGamal gadget that verifies encryption of some plaintext under a private key
 #[derive(Clone, Debug)]
