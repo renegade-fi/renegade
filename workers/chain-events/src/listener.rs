@@ -19,11 +19,13 @@ use common::types::{
     CancelChannel,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::{starknet_felt_to_biguint, starknet_felt_to_scalar, starknet_felt_to_u64};
-use curve25519_dalek::scalar::Scalar;
 use gossip_api::gossip::GossipOutbound;
 use job_types::{handshake_manager::HandshakeExecutionJob, proof_manager::ProofManagerJob};
 use lazy_static::lazy_static;
+use mpc_stark::algebra::scalar::Scalar;
+use renegade_crypto::fields::{
+    starknet_felt_to_biguint, starknet_felt_to_scalar, starknet_felt_to_u64,
+};
 use starknet::providers::jsonrpc::{
     models::{BlockId, EmittedEvent, ErrorCode, EventFilter},
     HttpTransport, JsonRpcClient, JsonRpcClientError, RpcError,

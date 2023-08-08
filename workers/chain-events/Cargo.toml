@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# === Arithmetic + Cryptography === #
-curve25519-dalek = { workspace = true }
+# === Cryptography === #
+mpc-stark = { workspace = true }
 
 # === Concurrency + Runtime === #
 crossbeam = "0.8.1"

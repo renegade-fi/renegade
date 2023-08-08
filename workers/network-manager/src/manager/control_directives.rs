@@ -9,7 +9,7 @@ use itertools::Itertools;
 use job_types::handshake_manager::HandshakeExecutionJob;
 use libp2p_core::{Endpoint, Multiaddr};
 use libp2p_swarm::{ConnectionId, NetworkBehaviour};
-use mpc_ristretto::network::{MpcNetwork, QuicTwoPartyNet};
+use mpc_stark::network::QuicTwoPartyNet;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
 use util::networking::{is_dialable_addr, is_dialable_multiaddr, multiaddr_to_socketaddr};
@@ -139,11 +139,6 @@ impl NetworkManagerExecutor {
                         )
                     } else {
                         log::info!("successfully connected to peer at addr: {peer_addr:?}");
-                        // Send a wakeup over the brokered bi-stream, this is not automatically done
-                        net.send_bytes(&[0u8])
-                            .await
-                            .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
-
                         // Forward the net to the handshake manager
                         brokered_net = Some(net);
                         break;
@@ -167,10 +162,6 @@ impl NetworkManagerExecutor {
                     .await
                     .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
 
-                // Clear the wakeup buffer
-                net.receive_bytes()
-                    .await
-                    .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
                 net
             }
         };
