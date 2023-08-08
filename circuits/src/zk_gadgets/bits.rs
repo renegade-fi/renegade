@@ -65,7 +65,7 @@ impl<const D: usize> MultiproverToBitsGadget<D> {
     /// Converts a value into its bitwise representation
     pub fn to_bits<L, CS>(
         a: L,
-        fabric: MpcFabric,
+        fabric: &MpcFabric,
         cs: &mut CS,
     ) -> Result<Vec<MpcLinearCombination>, ProverError>
     where

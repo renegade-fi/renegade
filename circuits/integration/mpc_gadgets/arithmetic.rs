@@ -38,9 +38,7 @@ fn test_product(test_args: &IntegrationTestArgs) -> Result<(), String> {
     all_values.append(&mut p2_values.clone());
 
     // Compute the product
-    let res = await_result_with_error(
-        product(&all_values, test_args.mpc_fabric.clone()).open_authenticated(),
-    )?;
+    let res = await_result_with_error(product(&all_values, fabric).open_authenticated())?;
 
     // Open the shared values and compute the expected result
     let p1_values_prod = await_result_batch(AuthenticatedScalarResult::open_batch(&p1_values))
@@ -64,7 +62,7 @@ fn test_prefix_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let shared_values = fabric.batch_share_scalar(vec![value; n], PARTY0);
 
     // Run the prefix_mul gadget
-    let prefixes = prefix_mul(&shared_values, test_args.mpc_fabric.clone());
+    let prefixes = prefix_mul(&shared_values, fabric);
 
     // Open the prefixes and verify the result
     let opened_prefix_products = await_result_batch_with_error(
@@ -91,12 +89,7 @@ fn test_pow(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let random_exp = await_result(fabric.share_plaintext(Scalar::from(rng.next_u32()), PARTY1));
 
     let res = await_result_with_error(
-        pow(
-            &random_base,
-            scalar_to_u64(&random_exp),
-            test_args.mpc_fabric.clone(),
-        )
-        .open_authenticated(),
+        pow(&random_base, scalar_to_u64(&random_exp), fabric).open_authenticated(),
     )?;
 
     // Open the random input and compute the expected result

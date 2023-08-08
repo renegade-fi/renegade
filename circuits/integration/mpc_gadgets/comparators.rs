@@ -33,7 +33,7 @@ fn test_inequalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Test <
     let lt_result = await_result_with_error(
-        less_than::<250>(&shared_a, &shared_b, test_args.mpc_fabric.clone()).open_authenticated(),
+        less_than::<250>(&shared_a, &shared_b, fabric).open_authenticated(),
     )?;
     let mut expected_result = opened_a < opened_b;
 
@@ -41,31 +41,27 @@ fn test_inequalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Test <= with equal values
     let mut lte_result = await_result_with_error(
-        less_than_equal::<250>(&shared_a, &shared_a, test_args.mpc_fabric.clone())
-            .open_authenticated(),
+        less_than_equal::<250>(&shared_a, &shared_a, fabric).open_authenticated(),
     )?;
     assert_scalar_eq(&lte_result, &Scalar::one())?;
 
     // Test <= with random values
     lte_result = await_result_with_error(
-        less_than_equal::<250>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
-            .open_authenticated(),
+        less_than_equal::<250>(&shared_a, &shared_b, fabric).open_authenticated(),
     )?;
     expected_result = opened_a <= opened_b;
     assert_scalar_eq(&lte_result, &expected_result.into())?;
 
     // Test >
     let gt_result = await_result_with_error(
-        greater_than::<250>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
-            .open_authenticated(),
+        greater_than::<250>(&shared_a, &shared_b, fabric).open_authenticated(),
     )?;
     expected_result = opened_a > opened_b;
     assert_scalar_eq(&gt_result, &expected_result.into())?;
 
     // Test >= with random values
     let gte_result = await_result_with_error(
-        greater_than_equal::<250>(&shared_a, &shared_b, test_args.mpc_fabric.clone())
-            .open_authenticated(),
+        greater_than_equal::<250>(&shared_a, &shared_b, fabric).open_authenticated(),
     )?;
     expected_result = opened_a >= opened_b;
     assert_scalar_eq(&gte_result, &expected_result.into())?;
@@ -78,26 +74,22 @@ fn test_equalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let fabric = &test_args.mpc_fabric;
     // 0 == 0
     let shared_zero = fabric.zero_authenticated();
-    let mut res = await_result_with_error(
-        eq_zero::<250>(&shared_zero, test_args.mpc_fabric.clone()).open_authenticated(),
-    )?;
+    let mut res =
+        await_result_with_error(eq_zero::<250>(&shared_zero, fabric).open_authenticated())?;
 
     assert_scalar_eq(&res, &Scalar::one())?;
 
     // random == 0
     let mut rng = thread_rng();
     let shared_random = fabric.share_scalar(rng.next_u32() as u64, PARTY0);
-    res = await_result_with_error(
-        eq_zero::<250>(&shared_random, test_args.mpc_fabric.clone()).open_authenticated(),
-    )?;
+    res = await_result_with_error(eq_zero::<250>(&shared_random, fabric).open_authenticated())?;
 
     assert_scalar_eq(&res, &Scalar::zero())?;
 
     // random_1 == random_1
     let shared_random = fabric.share_scalar(rng.next_u32(), PARTY0);
     res = await_result_with_error(
-        eq::<250>(&shared_random, &shared_random, test_args.mpc_fabric.clone())
-            .open_authenticated(),
+        eq::<250>(&shared_random, &shared_random, fabric).open_authenticated(),
     )?;
 
     assert_scalar_eq(&res, &Scalar::one())?;
@@ -107,12 +99,7 @@ fn test_equalities(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let shared_random2 = fabric.share_scalar(rng.next_u32(), PARTY1);
 
     res = await_result_with_error(
-        eq::<250>(
-            &shared_random1,
-            &shared_random2,
-            test_args.mpc_fabric.clone(),
-        )
-        .open_authenticated(),
+        eq::<250>(&shared_random1, &shared_random2, fabric).open_authenticated(),
     )?;
 
     assert_scalar_eq(&res, &Scalar::zero())
@@ -125,9 +112,7 @@ fn test_kary_or(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // All zeros
     let zeros: [AuthenticatedScalarResult; N] = fabric.zeros_authenticated(N).try_into().unwrap();
-    let res = await_result_with_error(
-        kary_or::<N>(&zeros, test_args.mpc_fabric.clone()).open_authenticated(),
-    )?;
+    let res = await_result_with_error(kary_or::<N>(&zeros, fabric).open_authenticated())?;
 
     assert_scalar_eq(&res, &Scalar::zero())?;
 
@@ -147,9 +132,7 @@ fn test_kary_or(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .try_into()
         .unwrap();
 
-    let res = await_result_with_error(
-        kary_or(&shared_bits, test_args.mpc_fabric.clone()).open_authenticated(),
-    )?;
+    let res = await_result_with_error(kary_or(&shared_bits, fabric).open_authenticated())?;
     assert_scalar_eq(&res, &Scalar::one())
 }
 

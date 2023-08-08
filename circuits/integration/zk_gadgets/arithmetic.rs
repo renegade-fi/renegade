@@ -37,7 +37,7 @@ fn test_exp_multiprover(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let res = MultiproverExpGadget::exp(
         shared_base_var,
         exp_open.try_into().unwrap(),
-        test_args.mpc_fabric.clone(),
+        fabric,
         &mut prover,
     )
     .map_err(|err| format!("Error computing exp circuit: {:?}", err))?;
@@ -71,7 +71,7 @@ fn test_exp_multiprover_invalid(test_args: &IntegrationTestArgs) -> Result<(), S
     let res = MultiproverExpGadget::exp(
         shared_base_var,
         exp_open.try_into().unwrap(),
-        test_args.mpc_fabric.clone(),
+        fabric,
         &mut prover,
     )
     .map_err(|err| format!("Error computing exp circuit: {:?}", err))?;

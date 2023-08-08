@@ -96,7 +96,7 @@ fn test_bit_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let res_bits = bit_add(
         shared_bits_a.as_slice()[..64].try_into().unwrap(),
         shared_bits_b.as_slice()[..64].try_into().unwrap(),
-        test_args.mpc_fabric.clone(),
+        fabric,
     )
     .0;
     let result = await_result_batch_with_error(
@@ -123,7 +123,7 @@ fn test_bits_le_zero(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let fabric = &test_args.mpc_fabric;
     let shared_zero = fabric.zero_authenticated();
 
-    let shared_bits = to_bits_le::<250>(&shared_zero, test_args.mpc_fabric.clone());
+    let shared_bits = to_bits_le::<250>(&shared_zero, fabric);
     let shared_bits_open = await_result_batch_with_error(
         AuthenticatedScalarResult::open_authenticated_batch(&shared_bits),
     )?;
@@ -137,7 +137,7 @@ fn test_to_bits_le(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let value = 119;
 
     let shared_value = fabric.share_scalar(value, PARTY0);
-    let shared_bits = to_bits_le::<8>(&shared_value, test_args.mpc_fabric.clone());
+    let shared_bits = to_bits_le::<8>(&shared_value, fabric);
 
     // Open the bits and compare
     let opened_bits = await_result_batch_with_error(
@@ -176,9 +176,9 @@ fn test_bit_lt(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let equal_value2 = fabric.share_scalar(value, PARTY1);
 
     let res = bit_lt(
-        &to_bits_le::<250>(&equal_value1, test_args.mpc_fabric.clone()),
-        &to_bits_le::<250>(&equal_value2, test_args.mpc_fabric.clone()),
-        test_args.mpc_fabric.clone(),
+        &to_bits_le::<250>(&equal_value1, fabric),
+        &to_bits_le::<250>(&equal_value2, fabric),
+        fabric,
     )
     .open_authenticated();
     let res_open = await_result_with_error(res)?;
@@ -193,9 +193,9 @@ fn test_bit_lt(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let shared_value2 = fabric.share_scalar(my_value, PARTY1);
 
     let res = bit_lt(
-        &to_bits_le::<250>(&shared_value1, test_args.mpc_fabric.clone()),
-        &to_bits_le::<250>(&shared_value2, test_args.mpc_fabric.clone()),
-        test_args.mpc_fabric.clone(),
+        &to_bits_le::<250>(&shared_value1, fabric),
+        &to_bits_le::<250>(&shared_value2, fabric),
+        fabric,
     )
     .open_authenticated();
     let res_open = await_result_with_error(res)?;

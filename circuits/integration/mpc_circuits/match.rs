@@ -137,7 +137,7 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
             &order1.amount,
             &order2.amount,
             &price1, // Use the first party's price
-            test_args.mpc_fabric.clone(),
+            fabric,
         );
 
         // Assert that match verification fails
@@ -258,7 +258,7 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
                 &order1.amount,
                 &order2.amount,
                 &price1,
-                test_args.mpc_fabric.clone(),
+                fabric,
             )
             .open_and_authenticate(),
         )
