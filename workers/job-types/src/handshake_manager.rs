@@ -4,11 +4,10 @@ use circuit_types::wallet::Nullifier;
 use common::types::{gossip::WrappedPeerId, wallet::OrderIdentifier};
 use gossip_api::{gossip::AuthenticatedGossipResponse, handshake::HandshakeMessage};
 use libp2p::request_response::ResponseChannel;
-use mpc_ristretto::network::QuicTwoPartyNet;
+use mpc_stark::network::QuicTwoPartyNet;
 use uuid::Uuid;
 
 /// Represents a job for the handshake manager's thread pool to execute
-#[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum HandshakeExecutionJob {
     /// Update the handshake cache with an entry from an order pair that a cluster

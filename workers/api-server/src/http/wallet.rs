@@ -10,7 +10,6 @@ use circuit_types::{
 };
 use constants::{MAX_FEES, MAX_ORDERS};
 use crossbeam::channel::Sender as CrossbeamSender;
-use crypto::fields::biguint_to_scalar;
 use external_api::{
     http::wallet::{
         AddFeeRequest, AddFeeResponse, CancelOrderResponse, CreateOrderRequest,
@@ -28,6 +27,7 @@ use hyper::{HeaderMap, StatusCode};
 use itertools::Itertools;
 use job_types::proof_manager::ProofManagerJob;
 use num_traits::ToPrimitive;
+use renegade_crypto::fields::biguint_to_scalar;
 use starknet_client::client::StarknetClient;
 use state::RelayerState;
 use task_driver::{
