@@ -12,10 +12,10 @@ use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::{OrderIdentifier, Wallet},
 };
-use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
-use mpc_ristretto::mpc_scalar::scalar_to_u64;
+use mpc_stark::algebra::scalar::Scalar;
 use rand::{seq::SliceRandom, thread_rng};
+use renegade_crypto::fields::scalar_to_u64;
 use task_driver::settle_match_internal::SettleMatchInternalTask;
 use tracing::log;
 
