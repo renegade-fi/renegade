@@ -90,7 +90,7 @@ impl ValidMatchMpcCircuit {
                     witness.match_res.base_mint.clone().into(),
                 ],
                 witness.match_res.direction.clone(),
-                fabric.clone(),
+                &fabric,
                 cs,
             )?;
 
@@ -150,7 +150,7 @@ impl ValidMatchMpcCircuit {
                 max_minus_min1,
                 max_minus_min2,
                 witness.match_res.min_amount_order_index,
-                fabric.clone(),
+                &fabric,
                 cs,
             )?;
         cs.constrain(&max_minus_min_expected - &witness.match_res.max_minus_min_amount);
@@ -162,7 +162,7 @@ impl ValidMatchMpcCircuit {
         // Constraining the value to be positive forces it to be equal to max(amounts) - min(amounts)
         MultiproverGreaterThanEqZeroGadget::<AMOUNT_BITS>::constrain_greater_than_zero(
             witness.match_res.max_minus_min_amount.clone(),
-            fabric.clone(),
+            &fabric,
             cs,
         )?;
 
@@ -184,7 +184,7 @@ impl ValidMatchMpcCircuit {
         MultiproverFixedPointGadget::constrain_equal_integer_ignore_fraction(
             &expected_quote_amount,
             &witness.match_res.quote_amount,
-            fabric.clone(),
+            &fabric,
             cs,
         )?;
 
@@ -211,7 +211,7 @@ impl ValidMatchMpcCircuit {
         MultiproverGreaterThanEqGadget::<AMOUNT_BITS /* bitlength */>::constrain_greater_than_eq(
             order.amount.clone(),
             match_res.base_amount.clone(),
-            fabric.clone(),
+            &fabric,
             cs,
         )?;
 
@@ -224,13 +224,13 @@ impl ValidMatchMpcCircuit {
             match_res.base_amount.clone().into(),
             match_res.quote_amount.clone().into(),
             order.side.clone(),
-            fabric.clone(),
+            &fabric,
             cs,
         )?;
         MultiproverGreaterThanEqGadget::<AMOUNT_BITS>::constrain_greater_than_eq(
             balance.amount.clone().into(),
             amount_sold,
-            fabric,
+            &fabric,
             cs,
         )
     }
@@ -257,14 +257,14 @@ impl ValidMatchMpcCircuit {
                 price.clone().to_lc(),
             ],
             order.side.clone(),
-            fabric.clone(),
+            &fabric,
             cs,
         )?;
 
         MultiproverGreaterThanEqGadget::<PRICE_BITS>::constrain_greater_than_eq(
             gte_terms.remove(0).repr,
             gte_terms.remove(0).repr,
-            fabric,
+            &fabric,
             cs,
         );
 

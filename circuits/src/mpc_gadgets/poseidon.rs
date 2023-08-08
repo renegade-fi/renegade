@@ -24,7 +24,7 @@ use renegade_crypto::hash::PoseidonParams;
 fn scalar_exp(
     x: &AuthenticatedScalarResult,
     a: u64,
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
     if a == 0 {
         fabric.one_authenticated()
@@ -171,10 +171,10 @@ impl AuthenticatedPoseidonHasher {
         // If this is a full round, apply the sbox to each elem
         if full_round {
             for elem in self.state.iter_mut() {
-                *elem = scalar_exp(elem, self.params.alpha, self.fabric.clone());
+                *elem = scalar_exp(elem, self.params.alpha, &self.fabric);
             }
         } else {
-            self.state[0] = scalar_exp(&self.state[0], self.params.alpha, self.fabric.clone())
+            self.state[0] = scalar_exp(&self.state[0], self.params.alpha, &self.fabric)
         }
     }
 

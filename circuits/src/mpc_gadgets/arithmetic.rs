@@ -4,8 +4,8 @@ use mpc_stark::{algebra::authenticated_scalar::AuthenticatedScalarResult, MpcFab
 
 /// Computes the product of all elements in constant number of rounds
 ///     Result = a_0 * ... * a_n
-pub fn product(a: &[AuthenticatedScalarResult], fabric: MpcFabric) -> AuthenticatedScalarResult {
-    prefix_product_impl(a, fabric, &[a.len() - 1])[0].clone()
+pub fn product(a: &[AuthenticatedScalarResult], fabric: &MpcFabric) -> AuthenticatedScalarResult {
+    prefix_product_impl(a, &[a.len() - 1], fabric)[0].clone()
 }
 
 /// Computes the prefix products of the given list of elements: i.e.
@@ -15,12 +15,12 @@ pub fn product(a: &[AuthenticatedScalarResult], fabric: MpcFabric) -> Authentica
 /// https://iacr.org/archive/tcc2006/38760286/38760286.pdf
 pub fn prefix_mul(
     a: &[AuthenticatedScalarResult],
-    fabric: MpcFabric,
+    fabric: &MpcFabric,
 ) -> Vec<AuthenticatedScalarResult> {
     prefix_product_impl(
         a,
-        fabric,
         &(0usize..a.len()).collect::<Vec<_>>(), // Select all prefix products
+        fabric,
     )
 }
 
@@ -33,8 +33,8 @@ pub fn prefix_mul(
 /// Note that each additional prefix incurs more bandwidth (although constant round)
 fn prefix_product_impl(
     a: &[AuthenticatedScalarResult],
-    fabric: MpcFabric,
     pre: &[usize],
+    fabric: &MpcFabric,
 ) -> Vec<AuthenticatedScalarResult> {
     let n = a.len();
     assert!(
@@ -86,7 +86,7 @@ fn prefix_product_impl(
 }
 
 /// Computes a^n using a recursive squaring approach for a public parameter exponent
-pub fn pow(a: &AuthenticatedScalarResult, n: u64, fabric: MpcFabric) -> AuthenticatedScalarResult {
+pub fn pow(a: &AuthenticatedScalarResult, n: u64, fabric: &MpcFabric) -> AuthenticatedScalarResult {
     if n == 0 {
         fabric.one_authenticated()
     } else if n == 1 {
