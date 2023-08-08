@@ -43,9 +43,9 @@ mpc-stark = { git = "https://github.com/renegade-fi/mpc-stark" }
 num-bigint = { version = "0.4.3" }
 rand = "0.8"
 
-# === On-Chain === #
-starknet = { git = "https://github.com/joeykraut/starknet-rs" }
+starknet = { git = "https://github.com/renegade-fi/starknet-rs" }
 
+# === On-Chain === #
 # === Networking === #
 libp2p = "0.51"
 libp2p-core = { version = "0.39" }
