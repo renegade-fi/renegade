@@ -1,8 +1,6 @@
 //! Groups logic for adding Poseidon hash function constraints to a Bulletproof
 //! constraint system
 
-use std::marker::PhantomData;
-
 use circuit_types::{
     errors::ProverError,
     traits::{LinearCombinationLike, MpcLinearCombinationLike},
@@ -268,7 +266,7 @@ impl PoseidonHashGadget {
 ///
 /// This version of the gadget is used for the multi-prover case, i.e in an MPC execution
 #[derive(Debug)]
-pub struct MultiproverPoseidonHashGadget<'a> {
+pub struct MultiproverPoseidonHashGadget {
     /// The parameterization of the hash function
     params: PoseidonParams,
     /// The hash state
@@ -280,11 +278,9 @@ pub struct MultiproverPoseidonHashGadget<'a> {
     in_squeeze_state: bool,
     /// A reference to the shared MPC fabric that the computation variables are allocated in
     fabric: MpcFabric,
-    /// Phantom for the lifetime parameter
-    _phantom: PhantomData<&'a ()>,
 }
 
-impl<'a> MultiproverPoseidonHashGadget<'a> {
+impl MultiproverPoseidonHashGadget {
     /// Construct a new hash gadget with the given parameterization
     pub fn new(params: PoseidonParams, fabric: MpcFabric) -> Self {
         // Initialize the state as all zeros
@@ -297,7 +293,6 @@ impl<'a> MultiproverPoseidonHashGadget<'a> {
             next_index: 0,
             in_squeeze_state: false, // Start in absorb state
             fabric,
-            _phantom: PhantomData,
         }
     }
 

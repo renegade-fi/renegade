@@ -1,5 +1,5 @@
 //! Groups gadgets for going from scalar -> bits and from bits -> scalar
-use std::{iter, marker::PhantomData};
+use std::iter;
 
 use bitvec::{order::Lsb0, slice::BitSlice};
 use circuit_types::{
@@ -60,12 +60,8 @@ impl<const D: usize> ToBitsGadget<D> {
 /// Takes a scalar and returns its bit representation, constrained to be correct
 ///
 /// D is the bitlength of the input vector to bitify
-pub struct MultiproverToBitsGadget<'a, const D: usize> {
-    /// Phantom
-    _phantom: &'a PhantomData<()>,
-}
-
-impl<'a, const D: usize> MultiproverToBitsGadget<'a, D> {
+pub struct MultiproverToBitsGadget<const D: usize>;
+impl<const D: usize> MultiproverToBitsGadget<D> {
     /// Converts a value into its bitwise representation
     pub fn to_bits<L, CS>(
         a: L,
