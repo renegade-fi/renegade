@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 # === Arithmetic and Cryptography === #
-curve25519-dalek = { workspace = true }
 mpc-bulletproof = { workspace = true }
 mpc-stark = { workspace = true }
 
