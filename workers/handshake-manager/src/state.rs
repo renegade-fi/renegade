@@ -15,7 +15,7 @@ use common::{
     AsyncShared,
 };
 use crossbeam::channel::Sender;
-use curve25519_dalek::scalar::Scalar;
+use mpc_stark::algebra::scalar::Scalar;
 use state::RelayerState;
 use uuid::Uuid;
 

@@ -11,5 +11,4 @@ pub mod error;
 mod handshake_cache;
 pub mod manager;
 pub mod state;
-pub mod types;
 pub mod worker;
