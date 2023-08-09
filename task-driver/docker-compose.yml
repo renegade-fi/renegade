@@ -5,7 +5,12 @@ services:
       dockerfile: Dockerfile
     ports:
       - "5050:5050"
-  party0:
+    healthcheck:
+      test: "wget --no-verbose --tries=1 --spider http://localhost:5050/is_alive || exit 1"
+      interval: 5s
+      timeout: 10s
+      retries: 3
+  relayer:
     image: task-driver-integration-test:latest
     build: .
     ports:
@@ -14,3 +19,6 @@ services:
       cargo test --test integration --
         --verbose
     tty: true
+    depends_on:
+      sequencer:
+        condition: service_healthy
