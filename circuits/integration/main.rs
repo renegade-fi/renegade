@@ -8,9 +8,7 @@ mod types;
 mod zk_circuits;
 mod zk_gadgets;
 
-use chrono::Local;
 use clap::Parser;
-use env_logger::Builder;
 use mpc_stark::MpcFabric;
 use test_helpers::{integration_test_main, mpc_network::setup_mpc_fabric};
 use tracing::log::LevelFilter;
@@ -55,20 +53,7 @@ impl From<CliArgs> for IntegrationTestArgs {
 }
 
 fn setup_integration_tests(_test_args: &CliArgs) {
-    // Configure logging
-    Builder::new()
-        .format(|buf, record| {
-            writeln!(
-                buf,
-                "{} [{}] {} - {}",
-                Local::now().format("%Y-%m-%dT%H:%M:%S"),
-                record.level(),
-                record.module_path().unwrap(),
-                record.args()
-            )
-        })
-        .filter(None, LevelFilter::Info)
-        .init();
+    util::logging::setup_system_logger(LevelFilter::Info);
 }
 
 integration_test_main!(CliArgs, IntegrationTestArgs, setup_integration_tests);

@@ -1,9 +1,13 @@
 //! Defines one-off utility functions used throughout the node
-#![feature(ip)]
+#![deny(unsafe_code)]
+#![deny(missing_docs)]
+#![deny(clippy::missing_docs_in_private_items)]
 #![allow(incomplete_features)]
+#![feature(ip)]
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub mod logging;
 pub mod networking;
 pub mod runtime;
 

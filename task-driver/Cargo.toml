@@ -38,4 +38,9 @@ tracing = { workspace = true }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
 
 [dev-dependencies]
+clap = { version = "4.0", features = ["derive"] }
+colored = "2"
+inventory = "0.3"
+
 test-helpers = { path = "../test-helpers" }
+util = { path = "../util" }
