@@ -6,9 +6,5 @@ services:
       - "8000:8000"
     command: >
       cargo test --test integration --
-        --party 0 
-        --port1 8000 
-        --port2 9000 
-        --docker 
         --verbose
     tty: true

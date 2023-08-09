@@ -20,7 +20,6 @@ macro_rules! integration_test_main {
         use std::{borrow::Borrow, cell::RefCell, net::SocketAddr, process::exit, rc::Rc};
 
         use colored::Colorize;
-        use dns_lookup::lookup_host;
         use std::io::{stdout, Write};
         use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 
