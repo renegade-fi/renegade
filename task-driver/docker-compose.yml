@@ -1,4 +1,10 @@
 services:
+  sequencer:
+    build:
+      context: https://github.com/0xSpaceShard/starknet-devnet.git
+      dockerfile: Dockerfile
+    ports:
+      - "5050:5050"
   party0:
     image: task-driver-integration-test:latest
     build: .
