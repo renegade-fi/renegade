@@ -1,8 +1,15 @@
-# Used for running integration tests on a simulated MPC network
-FROM rust:1.63-slim-buster AS builder
+# Build a set of sources that are used to build a dependency cache for the main
+# integration tests. We effectively copy all the sources and then remove the target
+# directory. This means that changes to `task-driver` sources will invalidate the
+# cache for this stage only, as the end state is the same
+FROM alpine AS sources
+COPY . .
+RUN rm -rf task-driver
 
+FROM rust:1.63-slim-buster AS builder
 # Create a build dir and add local dependencies
 WORKDIR /build
+COPY --from=sources . .
 
 # Build the rust toolchain before adding any dependencies; this is the slowest
 # step and we would like to cache it before anything else
@@ -21,10 +28,6 @@ RUN apt-get update && \
 # added to the workspace
 COPY ./Cargo.toml ./Cargo.toml
 RUN sed -i '/members = \[/,/\]/c\members = [ "task-driver" ]' Cargo.toml
-
-# Copy in dependencies from the same repo and remove the target
-COPY . .
-RUN rm -rf task-driver
 
 # Place a set of dummy sources in the path, build the dummy executable
 # to cache built dependencies, then bulid the full executable
