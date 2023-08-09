@@ -10,3 +10,8 @@ libp2p = { workspace = true }
 # === Runtime === #
 futures = "0.3"
 tokio = { workspace = true }
+
+# === Misc === #
+chrono = "0.4"
+env_logger = "0.9"
+tracing = { version = "0.1", features = ["log"] }
