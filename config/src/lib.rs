@@ -18,11 +18,15 @@ use std::{
 use toml::{value::Map, Value};
 
 /// The default version of the node
-const DEFAULT_VERSION: &str = "1";
+const DEFAULT_VERSION: &str = "0.1.0";
 /// The dummy message used for checking elliptic curve key pairs
 const DUMMY_MESSAGE: &str = "signature check";
 /// The CLI argument name for the config file
 const CONFIG_FILE_ARG: &str = "--config-file";
+
+// -------
+// | CLI |
+// -------
 
 /// Defines the relayer system command line interface
 #[derive(Debug, Parser, Serialize, Deserialize)]
@@ -41,7 +45,7 @@ struct Cli {
     // -----------------------
 
     /// The blockchain this node targets for settlement
-    #[clap(long)]
+    #[clap(long, default_value="goerli")]
     pub chain_id: ChainId,
     /// The address of the darkpool contract, defaults to the Goerli deployment
     #[clap(long, value_parser, default_value = "0x02179f01358c09410f234f1ece40d235719e05db3babca7bef0babc974333162")]
@@ -137,6 +141,10 @@ struct Cli {
     pub wallet_file: Option<String>,
 }
 
+// ----------
+// | Config |
+// ----------
+
 /// Defines the system config for the relayer
 #[derive(Debug)]
 pub struct RelayerConfig {
@@ -210,6 +218,13 @@ pub struct RelayerConfig {
     pub eth_websocket_addr: Option<String>,
 }
 
+impl Default for RelayerConfig {
+    fn default() -> Self {
+        // Parse a dummy set of command line args and convert this to a config
+        parse_config_from_args(vec![]).expect("default config does not parse")
+    }
+}
+
 /// A custom clone implementation specifically for the cluster keypair which does not
 /// implement clone
 impl Clone for RelayerConfig {
@@ -265,6 +280,15 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, String> {
     full_args.extend(config_file_args);
     full_args.extend(command_line_args);
 
+    parse_config_from_args(full_args)
+}
+
+/// Parse the config from a set of command line arguments
+///
+/// Separating out this functionality allows us to easily inject custom args apart
+/// from what is specified on the command line
+fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, String> {
+    // Parse the config
     let cli_args = Cli::parse_from(full_args);
 
     // Parse the cluster keypair from CLI args
@@ -439,4 +463,19 @@ fn validate_keypair(keypair: &Keypair) -> Result<(), SignatureError> {
     let mut second_hash: Sha512 = Sha512::new();
     second_hash.update(DUMMY_MESSAGE);
     keypair.verify_prehashed(second_hash, None /* context */, &sig)
+}
+
+// ---------
+// | Tests |
+// ---------
+
+#[cfg(test)]
+mod test {
+    use crate::RelayerConfig;
+
+    /// Test that the default config parses
+    #[test]
+    fn test_default_config() {
+        RelayerConfig::default();
+    }
 }

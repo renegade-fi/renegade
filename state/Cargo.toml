@@ -3,6 +3,9 @@ name = "state"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+mocks = []
+
 [dependencies]
 # === Arithmetic + Crypto === #
 num-bigint = { workspace = true }
