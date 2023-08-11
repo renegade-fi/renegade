@@ -40,7 +40,9 @@ uuid = { version = "1.1.2", features = ["v4", "serde"] }
 [dev-dependencies]
 clap = { version = "4.0", features = ["derive"] }
 colored = "2"
+eyre = { workspace = true }
 inventory = "0.3"
 
+rand = { workspace = true }
 test-helpers = { path = "../test-helpers" }
 util = { path = "../util" }

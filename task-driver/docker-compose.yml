@@ -1,8 +1,7 @@
 services:
   sequencer:
     build:
-      context: https://github.com/0xSpaceShard/starknet-devnet.git
-      dockerfile: Dockerfile
+      dockerfile: ../docker/devnet/Dockerfile
     ports:
       - "5050:5050"
     healthcheck:
@@ -16,8 +15,9 @@ services:
     ports:
       - "8000:8000"
     command: >
-      cargo test --test integration --
-        --verbose
+      cargo test --test integration -- 
+        --darkpool-addr 0x02179f01358c09410f234f1ece40d235719e05db3babca7bef0babc974333162 
+        --verbose 
     tty: true
     depends_on:
       sequencer:

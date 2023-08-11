@@ -1,4 +1,10 @@
 target/
 .git/
+.vscode/
+
+bin/
+**/README.md
+
+**/Cargo.lock
 **/Dockerfile
 **/docker-compose.yml

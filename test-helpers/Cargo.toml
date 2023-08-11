@@ -12,12 +12,22 @@ futures = "0.3"
 tokio = { workspace = true }
 tokio-condvar = "0.1"
 
+# === Node Interaction === #
+starknet = { workspace = true }
+reqwest = "0.11.13"
+
 # === Cryptography + Arithmetic === #
 mpc-stark = { workspace = true }
 num-bigint = { version = "0.4", features = ["rand"] }
 
+# === Workspace Dependencies === # 
+constants = { path = "../constants" }
+
 # === Misc Dependencies === #
 inventory = "0.3"
 itertools = "0.10.5"
+eyre = { workspace = true }
 rand = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
+tracing = { workspace = true }
