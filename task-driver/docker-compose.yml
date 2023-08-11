@@ -4,6 +4,8 @@ services:
       dockerfile: ../docker/devnet/Dockerfile
     ports:
       - "5050:5050"
+    environment:
+      - STARKNET_DEVNET_CAIRO_VM=rust
     healthcheck:
       test: "wget --no-verbose --tries=1 --spider http://localhost:5050/is_alive || exit 1"
       interval: 5s
@@ -15,7 +17,7 @@ services:
     ports:
       - "8000:8000"
     command: >
-      cargo test --test integration -- 
+      cargo test --test integration --features "integration" -- 
         --darkpool-addr 0x02179f01358c09410f234f1ece40d235719e05db3babca7bef0babc974333162 
         --verbose 
     tty: true

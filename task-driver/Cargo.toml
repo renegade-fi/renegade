@@ -3,10 +3,14 @@ name = "task-driver"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+integration = ["state/mocks", "common/mocks"]
+
 [[test]]
 name = "integration"
 path = "integration/main.rs"
 harness = false
+required-features = ["integration"]
 
 [dependencies]
 # === Async + Runtime === #
@@ -46,3 +50,6 @@ inventory = "0.3"
 rand = { workspace = true }
 test-helpers = { path = "../test-helpers" }
 util = { path = "../util" }
+
+constants = { path = "../constants" }
+proof-manager = { path = "../workers/proof-manager", features = ["mocks"] }

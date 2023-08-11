@@ -19,7 +19,10 @@ ENTRYPOINT starknet-devnet \
     --sierra-compiler-path /cairo/bin/starknet-sierra-compile \
     --compiler-args "--add-pythonic-hints --allowed-libfuncs-list-name all" \
     --fork-network alpha-goerli \
+    --fork-retries 3 \
+    --timeout 1000 \
     --host 0.0.0.0 \
     --port 5050 \
     --seed 0 \
-    --verbose \
+    --lite-mode \
+    --verbose

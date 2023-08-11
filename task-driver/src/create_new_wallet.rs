@@ -5,6 +5,7 @@
 //!     4. Pull the Merkle authentication path of the newly created wallet from on-chain state
 
 use core::panic;
+use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use async_trait::async_trait;
@@ -75,6 +76,7 @@ impl Display for NewWalletTaskError {
         write!(f, "{self:?}")
     }
 }
+impl Error for NewWalletTaskError {}
 
 // -------------------
 // | Task Definition |
