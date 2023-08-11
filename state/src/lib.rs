@@ -6,6 +6,9 @@
 
 //! Groups state object definitions and handles logic for serializing access to shared
 //! global state elements
+
+#[cfg(feature = "mocks")]
+pub mod mock;
 mod orderbook;
 pub mod peers;
 mod priority;
