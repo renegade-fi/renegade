@@ -10,6 +10,10 @@ pub mod tasks;
 pub mod token;
 pub mod wallet;
 
+// Re-export the mock types
+#[cfg(feature = "mocks")]
+pub use wallet::mocks as wallet_mocks;
+
 use tokio::sync::watch::Receiver as WatchReceiver;
 
 /// A type alias for an empty channel used to signal cancellation to workers

@@ -280,3 +280,56 @@ pub struct WalletMetadata {
     /// The peers which are believed by the local node to be replicating a given wallet
     pub replicas: HashSet<WrappedPeerId>,
 }
+
+/// Defines mocks for the wallet used in testing
+#[cfg(feature = "mocks")]
+pub mod mocks {
+    use std::{iter, sync::atomic::AtomicU32};
+
+    use circuit_types::{
+        keychain::{
+            PublicIdentificationKey, PublicKeyChain, PublicSigningKey, SecretIdentificationKey,
+        },
+        traits::BaseType,
+        SizedWalletShare,
+    };
+    use indexmap::IndexMap;
+    use mpc_stark::algebra::scalar::Scalar;
+    use num_bigint::BigUint;
+    use uuid::Uuid;
+
+    use super::{KeyChain, PrivateKeyChain, Wallet, WalletMetadata};
+
+    /// Create a mock empty wallet
+    pub fn mock_empty_wallet() -> Wallet {
+        // Create an initial wallet
+        let mut wallet = Wallet {
+            wallet_id: Uuid::new_v4(),
+            orders: IndexMap::default(),
+            balances: IndexMap::default(),
+            fees: vec![],
+            key_chain: KeyChain {
+                public_keys: PublicKeyChain {
+                    pk_root: PublicSigningKey::from(&BigUint::from(0u8)),
+                    pk_match: PublicIdentificationKey::from(Scalar::zero()),
+                },
+                secret_keys: PrivateKeyChain {
+                    sk_root: None,
+                    sk_match: SecretIdentificationKey::from(Scalar::zero()),
+                },
+            },
+            blinder: Scalar::zero(),
+            private_shares: SizedWalletShare::from_scalars(&mut iter::repeat(Scalar::zero())),
+            blinded_public_shares: SizedWalletShare::from_scalars(
+                &mut iter::repeat(Scalar::zero()),
+            ),
+            metadata: WalletMetadata::default(),
+            merkle_proof: None,
+            proof_staleness: AtomicU32::new(0),
+        };
+
+        // Reblind the wallet so that the secret shares a valid sharing of the wallet
+        wallet.reblind_wallet();
+        wallet
+    }
+}
