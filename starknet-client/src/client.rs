@@ -107,6 +107,8 @@ pub struct StarknetClientConfig {
     /// The HTTP addressable JSON-RPC node to connect to for
     /// requests that cannot go through the gateway
     pub starknet_json_rpc_addr: Option<String>,
+    /// The sequencer gateway address to connect to if on `Devnet`
+    pub sequencer_addr: Option<String>,
     /// The API key for the JSON-RPC node
     ///
     /// For now, we require only the API key's ID on our RPC node,
@@ -136,11 +138,18 @@ impl StarknetClientConfig {
         match self.chain {
             ChainId::AlphaGoerli => SequencerGatewayProvider::starknet_alpha_goerli(),
             ChainId::Mainnet => SequencerGatewayProvider::starknet_alpha_mainnet(),
-            ChainId::Devnet => SequencerGatewayProvider::new(
-                ReqwestUrl::parse("http://localhost:5050/gateway").unwrap(),
-                ReqwestUrl::parse("http://localhost:5050/feeder_gateway").unwrap(),
-                StarknetFieldElement::from(0u8),
-            ),
+            ChainId::Devnet => {
+                let sequencer_url = self
+                    .sequencer_addr
+                    .clone()
+                    .unwrap_or_else(|| "http://localhost:5050".to_string());
+
+                SequencerGatewayProvider::new(
+                    ReqwestUrl::parse(&format!("{}/gateway", sequencer_url)).unwrap(),
+                    ReqwestUrl::parse(&format!("{}/feeder_gateway", sequencer_url)).unwrap(),
+                    StarknetFieldElement::from(0u8),
+                )
+            }
         }
     }
 
@@ -454,21 +463,27 @@ impl StarknetClient {
         pending: bool,
     ) -> Result<Option<T>, StarknetClientError> {
         // Paginate backwards in block history
-        let mut start_block = self
-            .get_block_number()
-            .await?
-            .saturating_sub(BLOCK_PAGINATION_WINDOW);
+        let current_block = self.get_block_number().await?;
+        let mut start_block = current_block.saturating_sub(BLOCK_PAGINATION_WINDOW);
         let mut end_block = if pending {
             CoreBlockId::Tag(BlockTag::Pending)
         } else {
-            CoreBlockId::Number(self.get_block_number().await?)
+            CoreBlockId::Number(current_block)
         };
 
-        let keys = if event_keys.is_empty() {
-            None
-        } else {
-            Some(vec![event_keys])
+        // Build the event filter template
+        let mut filter = EventFilter {
+            from_block: Some(CoreBlockId::Number(start_block)),
+            to_block: Some(end_block),
+            address: Some(self.contract_address),
+            keys: if event_keys.is_empty() {
+                None
+            } else {
+                Some(vec![event_keys])
+            },
         };
+
+        println!("got block range: [{start_block}, {end_block:?}]");
 
         let earliest_block = match self.config.chain {
             ChainId::AlphaGoerli => GOERLI_CONTRACT_DEPLOYMENT_BLOCK,
@@ -478,12 +493,8 @@ impl StarknetClient {
         while start_block >= earliest_block.saturating_sub(BLOCK_PAGINATION_WINDOW) {
             // Exhaust events from the start block to the end block
             let mut pagination_token = Some(String::from("0"));
-            let filter = EventFilter {
-                from_block: Some(CoreBlockId::Number(start_block)),
-                to_block: Some(end_block),
-                address: Some(self.contract_address),
-                keys: keys.clone(),
-            };
+            filter.from_block = Some(CoreBlockId::Number(start_block));
+            filter.to_block = Some(end_block);
 
             while pagination_token.is_some() {
                 // Fetch the next page of events

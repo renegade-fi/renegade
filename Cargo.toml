@@ -1,5 +1,4 @@
 [workspace]
-name = "renegade-relayer"
 members = [
 	"circuits",
 	"circuit-types",

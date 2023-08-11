@@ -16,6 +16,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: >
+            --tests
             --all-features -- 
             -D warnings 
             -D unsafe_code 

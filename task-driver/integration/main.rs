@@ -2,13 +2,25 @@
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
+
+mod create_new_wallet;
+mod helpers;
 
 use clap::Parser;
 use common::types::chain_id::ChainId;
+use crossbeam::channel::{unbounded, Sender as CrossbeamSender};
 use eyre::{eyre, Result};
+use helpers::new_mock_task_driver;
+use job_types::proof_manager::ProofManagerJob;
 use mpc_stark::algebra::scalar::Scalar;
+use proof_manager::mock::MockProofManager;
 use rand::thread_rng;
 use starknet_client::client::{StarknetClient, StarknetClientConfig};
+use state::mock::StateMockBuilder;
+use state::RelayerState;
+use task_driver::driver::TaskDriver;
 use test_helpers::{
     contracts::deploy_darkpool, integration_test, integration_test_main,
     mpc_network::await_result_with_error,
@@ -69,10 +81,26 @@ struct CliArgs {
 struct IntegrationTestArgs {
     /// The starknet client that resolves to a locally running devnet node
     starknet_client: StarknetClient,
+    /// A reference to the global state of the mock proof manager
+    global_state: RelayerState,
+    /// The job queue for the mock proof manager
+    proof_job_queue: CrossbeamSender<ProofManagerJob>,
+    /// The mock task driver created for these tests
+    driver: TaskDriver,
 }
 
 impl From<CliArgs> for IntegrationTestArgs {
     fn from(test_args: CliArgs) -> Self {
+        // Create a mock task driver
+        let driver = new_mock_task_driver();
+
+        // Create a mock proof generation module
+        let (proof_job_queue, job_receiver) = unbounded();
+        MockProofManager::start(job_receiver);
+
+        // Create a mock of the global state
+        let global_state = StateMockBuilder::default().build();
+
         // Deploy a version of the darkpool if one is not given
         let darkpool_addr = if let Some(addr) = test_args.darkpool_addr {
             addr
@@ -92,12 +120,18 @@ impl From<CliArgs> for IntegrationTestArgs {
             chain: ChainId::Devnet,
             contract_addr: darkpool_addr,
             starknet_json_rpc_addr: Some(format!("{}/rpc", test_args.devnet_url)),
+            sequencer_addr: Some(test_args.devnet_url),
             infura_api_key: None,
             starknet_account_addresses: vec![test_args.starknet_account_addr],
             starknet_pkeys: vec![test_args.starknet_pkey],
         });
 
-        Self { starknet_client }
+        Self {
+            starknet_client,
+            proof_job_queue,
+            global_state,
+            driver,
+        }
     }
 }
 

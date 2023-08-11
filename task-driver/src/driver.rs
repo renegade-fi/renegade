@@ -40,6 +40,10 @@ const TASK_DRIVER_THREAD_NAME: &str = "renegade-task-driver";
 /// TODO: This is high for now, bring this down as Starknet stabilizes
 const TASK_DRIVER_N_RETRIES: usize = 20;
 
+// ------------------
+// | Task and State |
+// ------------------
+
 /// The task trait defines a sequence of largely async flows, each of which is possibly
 /// unreliable and may need to be retried until completion or to some retry threshold
 #[async_trait]
@@ -92,11 +96,15 @@ impl Display for StateWrapper {
     }
 }
 
+// ---------------
+// | Task Driver |
+// ---------------
+
 /// Drives tasks to completion
 #[derive(Clone)]
 pub struct TaskDriver {
     /// The set of open tasks
-    open_tasks: AsyncShared<HashMap<Uuid, StateWrapper>>,
+    open_tasks: AsyncShared<HashMap<TaskIdentifier, StateWrapper>>,
     /// The runtime to spawn tasks onto
     runtime: AsyncShared<TokioRuntime>,
     /// A reference to the system bus for sending pubsub updates
@@ -134,7 +142,10 @@ impl TaskDriver {
     /// Spawn a new task in the driver
     ///
     /// Returns the ID of the task being spawned
-    pub async fn start_task<T: Task + 'static>(&self, task: T) -> (Uuid, JoinHandle<bool>) {
+    pub async fn start_task<T: Task + 'static>(
+        &self,
+        task: T,
+    ) -> (TaskIdentifier, JoinHandle<bool>) {
         // Add the task to the bookkeeping structure
         let task_id = Uuid::new_v4();
         {
