@@ -36,6 +36,6 @@ serde_json = "1.0"
 
 
 [dev-dependencies]
-merlin = { git = "https://github.com/renegade-fi/merlin" }
+merlin = { workspace = true }
 test-helpers = { path = "../test-helpers" }
 tokio = { workspace = true }

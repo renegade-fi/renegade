@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use crate::{zk_gadgets::wallet_operations::WalletShareCommitGadget, SingleProverCircuit};
 
 /// A type alias for an instantiation of this circuit with default generics
-pub type ValidWalletCreateDefault = ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedValidWalletCreate = ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 // ----------------------
 // | Circuit Definition |

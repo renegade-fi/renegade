@@ -3,11 +3,14 @@ name = "proof-manager"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+mocks = ["dep:circuit-types", "dep:mpc-stark", "dep:merlin", "dep:rand"]
 
 [dependencies]
 # === Cryptography === #
+merlin = { workspace = true, optional = true }
 mpc-bulletproof = { workspace = true }
+mpc-stark = { workspace = true, optional = true }
 
 # === Runtime + Threading === #
 crossbeam = { version = "0.8.1" }
@@ -16,10 +19,12 @@ tokio = { workspace = true }
 
 # === Workspace Dependencies === #
 circuits = { path = "../../circuits" }
+circuit-types = { path = "../../circuit-types", optional = true }
 common = { path = "../../common" }
 constants = { path = "../../constants" }
 job-types = { path = "../job-types" }
 
 # === Misc Dependencies === #
+rand = { workspace = true, optional = true }
 serde = { workspace = true }
 tracing = { workspace = true }

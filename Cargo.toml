@@ -38,6 +38,7 @@ lto = true
 
 [workspace.dependencies]
 # === Arithmetic + Cryptography === #
+merlin = { git = "https://github.com/renegade-fi/merlin" }
 mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof", branch = "stark-curve-refactor" }
 mpc-stark = { git = "https://github.com/renegade-fi/mpc-stark" }
 num-bigint = { version = "0.4.3" }

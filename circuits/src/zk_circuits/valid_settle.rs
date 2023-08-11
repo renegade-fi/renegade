@@ -24,6 +24,8 @@ use crate::{
 // | Circuit Definition |
 // ----------------------
 
+/// A type alias for the `ValidSettle` circuit with default sizing generics set
+pub type SizedValidSettle = ValidSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 /// The circuit definition of `VALID SETTLE`
 pub struct ValidSettle<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>;
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>

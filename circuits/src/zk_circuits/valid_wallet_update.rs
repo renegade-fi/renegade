@@ -42,6 +42,10 @@ use crate::{
     SingleProverCircuit,
 };
 
+/// A type alias for the `ValidWalletUpdate` circuit with default size parameters attached
+pub type SizedValidWalletUpdate =
+    ValidWalletUpdate<MAX_ORDERS, MAX_BALANCES, MAX_FEES, MERKLE_HEIGHT>;
+
 /// The `VALID WALLET UPDATE` circuit
 pub struct ValidWalletUpdate<
     const MAX_BALANCES: usize,
