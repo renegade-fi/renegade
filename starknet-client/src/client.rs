@@ -194,6 +194,7 @@ impl StarknetClient {
                 // Parse the account address and key
                 let account_addr_felt = StarknetFieldElement::from_str(&account_addr).unwrap();
                 let key_felt = StarknetFieldElement::from_str(&key).unwrap();
+
                 // Build the account
                 let signer = LocalWallet::from(SigningKey::from_secret_scalar(key_felt));
                 SingleOwnerAccount::new(

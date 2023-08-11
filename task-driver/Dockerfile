@@ -6,21 +6,25 @@ FROM alpine AS sources
 COPY . .
 RUN rm -rf task-driver
 
+# Add a stage for the contract sources, we pull compiled artifacts out of this stage
+FROM renegade-contracts as contract-sources
+
+# Rust build stage
 FROM rust:1.63-slim-buster AS builder
-# Create a build dir and add local dependencies
-WORKDIR /build
-COPY --from=sources . .
 
 # Build the rust toolchain before adding any dependencies; this is the slowest
 # step and we would like to cache it before anything else
 COPY ./rust-toolchain ./task-driver/rust-toolchain
 RUN cat task-driver/rust-toolchain | xargs rustup toolchain install
 
+# Create a build dir and add local dependencies
+WORKDIR /build
+COPY --from=sources . .
+
 # Install pkg-config, openssl
 RUN apt-get update && \
     apt-get install -y pkg-config && \
     apt-get install -y libssl-dev 
-
 
 # Copy in the workspace Cargo.toml and modify the members field, this allows us to skip
 # transferring all workspace members to the docker image, and instead only transfer the
@@ -58,5 +62,8 @@ COPY task-driver/src ./src
 COPY task-driver/integration ./integration
 
 RUN cargo build --quiet --test integration
+
+# Copy the contract artifacts from the contract-sources stage
+COPY --from=contract-sources /artifacts /artifacts
 
 CMD [ "cargo", "test" ]
