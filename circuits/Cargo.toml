@@ -50,7 +50,7 @@ ark-crypto-primitives = { version = "0.4", features = [
 ] }
 ark-ff = "0.4"
 bigdecimal = "0.3"
-merlin = { git = "https://github.com/renegade-fi/merlin" }
+merlin = { workspace = true }
 mpc-stark = { workspace = true }
 mpc-bulletproof = { workspace = true }
 num-bigint = { version = "0.4", features = ["rand", "serde"] }

@@ -8,5 +8,7 @@
 #![feature(generic_const_exprs)]
 
 pub mod error;
+#[cfg(feature = "mocks")]
+pub mod mock;
 pub mod proof_manager;
 pub mod worker;
