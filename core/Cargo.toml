@@ -55,7 +55,7 @@ libp2p-swarm-derive = { version = "0.32" }
 lru = { version = "0.8" }
 matchit = "0.7"
 mpc-ristretto = "0.1"
-mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
+mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof", branch = "ristretto-curve" }
 num-bigint = { version = "0.4.3" }
 num-traits = "0.2"
 once_cell = "1.17"
