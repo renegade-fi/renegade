@@ -3,6 +3,7 @@
 
 use circuit_types::traits::MultiproverCircuitBaseType;
 use circuits::zk_gadgets::bits::MultiproverToBitsGadget;
+use eyre::{eyre, Result};
 use merlin::HashChainTranscript as Transcript;
 use mpc_bulletproof::{
     r1cs_mpc::{MpcConstraintSystem, MpcLinearCombination, MpcProver},
@@ -11,12 +12,12 @@ use mpc_bulletproof::{
 use mpc_stark::{algebra::scalar::Scalar, PARTY0};
 use rand::{thread_rng, RngCore};
 use renegade_crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
-use test_helpers::{mpc_network::await_result, types::IntegrationTest};
+use test_helpers::{integration_test_async, types::IntegrationTest};
 
-use crate::{IntegrationTestArgs, TestWrapper};
+use crate::IntegrationTestArgs;
 
 /// Tests the to_bits gadget
-fn test_to_bits(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_to_bits(test_args: IntegrationTestArgs) -> Result<()> {
     // Generate a random scalar to bitify
     let mut rng = thread_rng();
     let fabric = &test_args.mpc_fabric;
@@ -27,15 +28,14 @@ fn test_to_bits(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Bitify the input and share the result to build a circuit statement
     let bits = &bigint_to_scalar_bits::<64 /* bits */>(&scalar_to_bigint(&random_scalar))[..64];
-    let expected_bits = await_result(fabric.batch_share_plaintext(bits.to_vec(), PARTY0));
+    let expected_bits = fabric.batch_share_plaintext(bits.to_vec(), PARTY0).await;
 
     let pc_gens = PedersenGens::default();
     let transcript = Transcript::new(b"test");
     let mut prover = MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, pc_gens);
     let (shared_scalar_var, _) = shared_scalar.commit_shared(&mut rng, &mut prover).unwrap();
     let res_bits =
-        MultiproverToBitsGadget::<64 /* bits */>::to_bits(shared_scalar_var, fabric, &mut prover)
-            .map_err(|err| format!("Error computing to_bits circuit: {:?}", err))?;
+        MultiproverToBitsGadget::<64 /* bits */>::to_bits(shared_scalar_var, fabric, &mut prover)?;
 
     for (expected_bit, bit) in expected_bits.iter().zip(res_bits.iter()) {
         let allocated_bit =
@@ -44,15 +44,12 @@ fn test_to_bits(test_args: &IntegrationTestArgs) -> Result<(), String> {
         prover.constrain(bit.clone() - allocated_bit);
     }
 
-    if await_result(prover.constraints_satisfied()) {
+    if prover.constraints_satisfied().await {
         Ok(())
     } else {
-        Err("Constraints not satisfied".to_string())
+        Err(eyre!("Constraints not satisfied"))
     }
 }
 
 // Take inventory
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_gadgets::bits::test_to_bits",
-    test_fn: test_to_bits
-}));
+integration_test_async!(test_to_bits);

@@ -1,3 +1,5 @@
+//! Integration tests for the `circuits` crate
+
 #![cfg(test)]
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
@@ -52,6 +54,7 @@ impl From<CliArgs> for IntegrationTestArgs {
     }
 }
 
+/// Setup logging for integration tests
 fn setup_integration_tests(_test_args: &CliArgs) {
     util::logging::setup_system_logger(LevelFilter::Info);
 }

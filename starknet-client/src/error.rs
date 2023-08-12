@@ -1,5 +1,6 @@
 //! Groups error types returned by the client
 
+use std::error::Error;
 use std::fmt::Display;
 
 /// The error type returned by the StarknetClient interface
@@ -22,3 +23,4 @@ impl Display for StarknetClientError {
         write!(f, "{self:?}")
     }
 }
+impl Error for StarknetClientError {}

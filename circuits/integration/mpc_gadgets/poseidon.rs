@@ -2,6 +2,8 @@
 
 use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
 use circuits::mpc_gadgets::poseidon::AuthenticatedPoseidonHasher;
+use eyre::{eyre, Result};
+use futures::future::join_all;
 use itertools::Itertools;
 use mpc_stark::{
     algebra::{authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar},
@@ -9,12 +11,9 @@ use mpc_stark::{
 };
 use rand::{thread_rng, RngCore};
 use renegade_crypto::hash::{default_poseidon_params, PoseidonParams};
-use test_helpers::{
-    mpc_network::{await_result, await_result_batch},
-    types::IntegrationTest,
-};
+use test_helpers::{integration_test_async, types::IntegrationTest};
 
-use crate::{IntegrationTestArgs, TestWrapper};
+use crate::IntegrationTestArgs;
 
 // -----------
 // | Helpers |
@@ -23,13 +22,14 @@ use crate::{IntegrationTestArgs, TestWrapper};
 /// Helper to check that a given result is the correct hash of the input sequence.
 ///
 /// Uses the Arkworks Poseidon implementation for comparison
-fn check_against_arkworks_hash(
+async fn check_against_arkworks_hash(
     result: &AuthenticatedScalarResult,
     input_sequence: &[AuthenticatedScalarResult],
     hasher_params: &PoseidonParams,
-) -> Result<(), String> {
+) -> Result<()> {
     // Open the input sequence and cast it to field elements
-    let arkworks_input = await_result_batch(AuthenticatedScalarResult::open_batch(input_sequence))
+    let arkworks_input = join_all(AuthenticatedScalarResult::open_batch(input_sequence))
+        .await
         .into_iter()
         .map(|s| s.inner())
         .collect_vec();
@@ -47,11 +47,9 @@ fn check_against_arkworks_hash(
     let expected = Scalar::from(arkworks_squeezed);
 
     // Open the given result and compare to the computed result
-    let result_open = await_result(result.open_authenticated())
-        .map_err(|err| format!("Error opening result: {err:?}"))?;
-
+    let result_open = result.open_authenticated().await?;
     if result_open != expected {
-        return Err(format!("Expected {expected:?}, got {result_open:?}",));
+        return Err(eyre!("Expected {expected:?}, got {result_open:?}",));
     }
 
     Ok(())
@@ -61,8 +59,8 @@ fn check_against_arkworks_hash(
 // | Tests |
 // ---------
 
-// Tests that a collaboratively computed poseidon hash works properly
-fn test_hash(test_args: &IntegrationTestArgs) -> Result<(), String> {
+/// Tests that a collaboratively computed poseidon hash works properly
+async fn test_hash(test_args: IntegrationTestArgs) -> Result<()> {
     // Each party samples a random string of 5 values to hash and shares them
     let n = 5;
     let fabric = &test_args.mpc_fabric;
@@ -88,13 +86,9 @@ fn test_hash(test_args: &IntegrationTestArgs) -> Result<(), String> {
     }
 
     let res = hasher.squeeze();
-    check_against_arkworks_hash(&res, &input_sequence, &hasher_params)?;
+    check_against_arkworks_hash(&res, &input_sequence, &hasher_params).await?;
 
     Ok(())
 }
 
-// Take inventory
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "mpc_gadgets::test_hash",
-    test_fn: test_hash
-}));
+integration_test_async!(test_hash);

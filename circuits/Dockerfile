@@ -1,6 +1,10 @@
 # Used for running integration tests on a simulated MPC network
 FROM rust:1.63-slim-buster AS builder
 
+RUN apt-get update && \
+    apt-get install -y pkg-config && \
+    apt-get install -y libssl-dev  
+
 # Create a build dir and add local dependencies
 WORKDIR /build
 

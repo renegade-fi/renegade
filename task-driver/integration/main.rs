@@ -5,11 +5,13 @@
 
 use clap::Parser;
 use common::types::chain_id::ChainId;
+use eyre::{eyre, Result};
 use mpc_stark::algebra::scalar::Scalar;
 use rand::thread_rng;
 use starknet_client::client::{StarknetClient, StarknetClientConfig};
 use test_helpers::{
-    contracts::deploy_darkpool, integration_test_main, mpc_network::await_result_with_error,
+    contracts::deploy_darkpool, integration_test, integration_test_main,
+    mpc_network::await_result_with_error,
 };
 use tracing::log::LevelFilter;
 use util::runtime::await_result;
@@ -108,24 +110,19 @@ fn setup_integration_tests(_test_args: &CliArgs) {
 /// Dummy test
 ///
 /// TODO: Remove this test
-fn test_dummy(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_dummy(test_args: IntegrationTestArgs) -> Result<()> {
     let client = &test_args.starknet_client;
     let mut rng = thread_rng();
     let random_nullifier = Scalar::random(&mut rng);
 
-    let res = await_result(client.check_nullifier_unused(random_nullifier))
-        .map_err(|err| format!("error checking nullifier: {}", err))?;
+    let res = await_result(client.check_nullifier_unused(random_nullifier))?;
 
     if res {
         Ok(())
     } else {
-        Err("nullifier already used".to_string())
+        Err(eyre!("nullifier already used"))
     }
 }
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "dummy",
-    test_fn: test_dummy,
-}));
+integration_test!(test_dummy);
 
 integration_test_main!(CliArgs, IntegrationTestArgs, setup_integration_tests);

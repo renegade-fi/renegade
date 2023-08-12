@@ -1,6 +1,9 @@
 //! Groups error types for the circuits crate
 
-use std::fmt::{Display, Formatter, Result};
+use std::{
+    error::Error,
+    fmt::{Display, Formatter, Result},
+};
 
 use mpc_bulletproof::r1cs_mpc::{MultiproverError, R1CSError};
 
@@ -24,6 +27,7 @@ impl Display for MpcError {
         write!(f, "{:?}", self)
     }
 }
+impl Error for MpcError {}
 
 /// Represents an error during the course of proving a statement
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -42,6 +46,7 @@ impl Display for ProverError {
         write!(f, "{:?}", self)
     }
 }
+impl Error for ProverError {}
 
 /// Represents an error during proof verification
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,6 +60,7 @@ impl Display for VerifierError {
         write!(f, "{:?}", self)
     }
 }
+impl Error for VerifierError {}
 
 /// Represents an error in converting to/from this package's types
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -65,3 +71,4 @@ impl Display for TypeConversionError {
         write!(f, "{:?}", self.0)
     }
 }
+impl Error for TypeConversionError {}

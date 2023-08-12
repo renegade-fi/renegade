@@ -11,25 +11,28 @@ use circuits::{
     mpc_circuits::r#match::compute_match,
     zk_circuits::valid_match_mpc::{AuthenticatedValidMatchMpcWitness, ValidMatchMpcCircuit},
 };
+use eyre::{eyre, Result};
 use merlin::HashChainTranscript as Transcript;
 use mpc_bulletproof::{r1cs_mpc::MpcProver, PedersenGens};
 use mpc_stark::{PARTY0, PARTY1};
 use num_bigint::BigUint;
 use rand::thread_rng;
-use test_helpers::{mpc_network::await_result, types::IntegrationTest};
+use test_helpers::{integration_test_async, types::IntegrationTest};
 
-use crate::{IntegrationTestArgs, TestWrapper};
+use crate::IntegrationTestArgs;
 
 // --------------
 // | Test Cases |
 // --------------
 
 /// Tests the match function with non overlapping orders for a variety of failure cases
-fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_match_no_match(test_args: IntegrationTestArgs) -> Result<()> {
     // Convenience selector for brevity
     let fabric = &test_args.mpc_fabric;
     let mut rng = thread_rng();
     let party_id = fabric.party_id();
+
+    /// Convenience selector between two party's values
     macro_rules! sel {
         ($a:expr, $b:expr) => {
             if party_id == 0 {
@@ -166,8 +169,8 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
         )
         .unwrap();
 
-        if await_result(dummy_prover.constraints_satisfied()) {
-            return Err("Constraints satisfied".to_string());
+        if dummy_prover.constraints_satisfied().await {
+            return Err(eyre!("Constraints satisfied"));
         }
     }
 
@@ -175,11 +178,13 @@ fn test_match_no_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Tests that a valid match is found when one exists
-fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_match_valid_match(test_args: IntegrationTestArgs) -> Result<()> {
     // Convenience selector for brevity, simpler to redefine per test than to
     // pass in party_id from the environment
     let fabric = &test_args.mpc_fabric;
     let party_id = fabric.party_id();
+
+    /// Convenience selector for values that differ between parties
     macro_rules! sel {
         ($a:expr, $b:expr) => {
             if party_id == 0 {
@@ -251,24 +256,22 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
         let order2 = my_order.allocate(PARTY1, fabric);
 
         // Compute matches
-        let res = await_result(
-            compute_match(
-                &order1,
-                &order2,
-                &order1.amount,
-                &order2.amount,
-                &price1,
-                fabric,
-            )
-            .open_and_authenticate(),
+        let res = compute_match(
+            &order1,
+            &order2,
+            &order1.amount,
+            &order2.amount,
+            &price1,
+            fabric,
         )
-        .map_err(|e| format!("Error computing match: {:?}", e))?;
+        .open_and_authenticate()
+        .await
+        .map_err(|e| eyre!("Error computing match: {e:?}"))?;
 
         // Assert that no match occurred
         if res != expected_res.clone() {
-            return Err(format!(
-                "Match result {:?} does not match expected result {:?}",
-                res, expected_res
+            return Err(eyre!(
+                "Match result {res:?} does not match expected result {expected_res:?}",
             ));
         }
     }
@@ -277,12 +280,5 @@ fn test_match_valid_match(test_args: &IntegrationTestArgs) -> Result<(), String>
 }
 
 // Take inventory
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "mpc_circuits::test_match_no_match",
-    test_fn: test_match_no_match
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "mpc_circuits::test_match_valid_match",
-    test_fn: test_match_valid_match
-}));
+integration_test_async!(test_match_no_match);
+integration_test_async!(test_match_valid_match);

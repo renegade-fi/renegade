@@ -1,8 +1,6 @@
 //! Groups integration tests for the VALID MATCH MPC circuit
 #![allow(non_snake_case)]
 
-use std::{cmp, time::SystemTime};
-
 use circuit_types::{
     balance::Balance,
     fixed_point::FixedPoint,
@@ -17,18 +15,17 @@ use circuits::{
     multiprover_prove, verify_collaborative_proof,
     zk_circuits::valid_match_mpc::{AuthenticatedValidMatchMpcWitness, ValidMatchMpcCircuit},
 };
+use eyre::{eyre, Result};
 use lazy_static::lazy_static;
 use merlin::HashChainTranscript as Transcript;
 use mpc_bulletproof::{r1cs_mpc::MpcProver, PedersenGens};
 use mpc_stark::{algebra::scalar::Scalar, MpcFabric, PARTY0, PARTY1};
 use rand::{thread_rng, Rng};
 use renegade_crypto::fields::scalar_to_u64;
-use test_helpers::{
-    mpc_network::{await_result, await_result_with_error},
-    types::IntegrationTest,
-};
+use std::{cmp, time::SystemTime};
+use test_helpers::{integration_test_async, types::IntegrationTest};
 
-use crate::{IntegrationTestArgs, TestWrapper};
+use crate::IntegrationTestArgs;
 
 // -------------
 // | Test Data |
@@ -106,18 +103,18 @@ fn compute_max_amount(price: FixedPoint, order: &Order, balance: &Balance) -> u6
 }
 
 /// Creates an authenticated match from an order in each relayer
-fn match_orders(
+async fn match_orders(
     amount: u64,
     price: FixedPoint,
     my_order: &Order,
     fabric: MpcFabric,
 ) -> AuthenticatedLinkableMatchResult {
     // Share orders
-    let party0_order = await_result(my_order.share_public(PARTY0, fabric.clone()));
+    let party0_order = my_order.share_public(PARTY0, fabric.clone()).await;
 
     // Share amounts
-    let party0_max_amount = await_result(amount.share_public(PARTY0, fabric.clone()));
-    let party1_max_amount = await_result(amount.share_public(PARTY1, fabric.clone()));
+    let party0_max_amount = amount.share_public(PARTY0, fabric.clone()).await;
+    let party1_max_amount = amount.share_public(PARTY1, fabric.clone()).await;
 
     // Match the values
     let min_base_amount = cmp::min(party0_max_amount, party1_max_amount);
@@ -143,7 +140,7 @@ fn match_orders(
 
 /// Both parties call this value to setup their witness and statement from a given
 /// balance, order tuple
-fn setup_witness(
+async fn setup_witness(
     price: FixedPoint,
     amount: u64,
     order: Order,
@@ -151,7 +148,7 @@ fn setup_witness(
     fabric: MpcFabric,
 ) -> AuthenticatedValidMatchMpcWitness {
     // Generate hashes used for input consistency
-    let match_res = match_orders(amount, price, &order, fabric.clone());
+    let match_res = match_orders(amount, price, &order, fabric.clone()).await;
     let linkable_order = order.to_linkable();
     let linkable_balance = balance.to_linkable();
 
@@ -181,41 +178,35 @@ fn setup_witness(
 }
 
 /// Prove and verify a valid match MPC circuit, return `true` if verification succeeds
-fn prove_and_verify_match(
+async fn prove_and_verify_match(
     witness: AuthenticatedValidMatchMpcWitness,
     fabric: MpcFabric,
-) -> Result<bool, String> {
+) -> Result<bool> {
     // Prove
-    let (witness_comm, proof) = multiprover_prove::<ValidMatchMpcCircuit>(witness, (), fabric)
-        .map_err(|err| format!("Error proving: {:?}", err))?;
+    let (witness_comm, proof) = multiprover_prove::<ValidMatchMpcCircuit>(witness, (), fabric)?;
 
     // Open
-    let opened_proof = await_result_with_error(proof.open())?;
-    let opened_comm = await_result(witness_comm.open_and_authenticate())
-        .map_err(|err| format!("Error opening witness commitment: {:?}", err))?;
+    let opened_proof = proof.open().await?;
+    let opened_comm = witness_comm.open_and_authenticate().await?;
 
     // Verify
     Ok(verify_collaborative_proof::<ValidMatchMpcCircuit>((), opened_comm, opened_proof).is_ok())
 }
 
 /// Return whether the `VALID MATCH MPC` constraints are satisfied on the given witness
-fn constraints_satisfied(
+async fn constraints_satisfied(
     witness: AuthenticatedValidMatchMpcWitness,
     fabric: MpcFabric,
-) -> Result<bool, String> {
+) -> Result<bool> {
     let pc_gens = PedersenGens::default();
     let transcript = Transcript::new(b"test");
     let mut prover = MpcProver::new_with_fabric(fabric.clone(), transcript, pc_gens);
 
     let mut rng = thread_rng();
-    let (witness_var, _) = witness
-        .commit_shared(&mut rng, &mut prover)
-        .map_err(|err| format!("Error committing witness: {:?}", err))?;
+    let (witness_var, _) = witness.commit_shared(&mut rng, &mut prover)?;
 
-    ValidMatchMpcCircuit::apply_constraints_multiprover(witness_var, (), fabric, &mut prover)
-        .map_err(|err| err.to_string())?;
-
-    Ok(await_result(prover.constraints_satisfied()))
+    ValidMatchMpcCircuit::apply_constraints_multiprover(witness_var, (), fabric, &mut prover)?;
+    Ok(prover.constraints_satisfied().await)
 }
 
 // ---------
@@ -223,7 +214,7 @@ fn constraints_satisfied(
 // ---------
 
 /// Tests that the valid match MPC circuit proves and verifies given a correct witness
-fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_valid_match_mpc_valid(test_args: IntegrationTestArgs) -> Result<()> {
     let party_id = test_args.mpc_fabric.party_id();
     let price = *DUMMY_PRICE;
     let my_order = create_test_order(party_id);
@@ -235,19 +226,20 @@ fn test_valid_match_mpc_valid(test_args: &IntegrationTestArgs) -> Result<(), Str
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    );
+    )
+    .await;
 
-    if !prove_and_verify_match(witness, test_args.mpc_fabric.clone())? {
-        return Err("Failed to prove and verify match".to_string());
+    if !prove_and_verify_match(witness, test_args.mpc_fabric.clone()).await? {
+        return Err(eyre!("Failed to prove and verify match"));
     }
 
     Ok(())
 }
 
 /// Test matching an order where the volume is limited by the balance of the sell side party
-fn test_valid_match_undercapitalized__base_side(
-    test_args: &IntegrationTestArgs,
-) -> Result<(), String> {
+async fn test_valid_match_undercapitalized__base_side(
+    test_args: IntegrationTestArgs,
+) -> Result<()> {
     let party_id = test_args.mpc_fabric.party_id();
     let price = *DUMMY_PRICE;
     let my_order = create_test_order(party_id);
@@ -265,19 +257,20 @@ fn test_valid_match_undercapitalized__base_side(
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    );
+    )
+    .await;
 
-    if !prove_and_verify_match(witness, test_args.mpc_fabric.clone())? {
-        return Err("Failed to prove and verify match".to_string());
+    if !prove_and_verify_match(witness, test_args.mpc_fabric.clone()).await? {
+        return Err(eyre!("Failed to prove and verify match"));
     }
 
     Ok(())
 }
 
 /// Test matching an order where the volume is limited by the balance of the buy side party
-fn test_valid_match_undercapitalized__quote_side(
-    test_args: &IntegrationTestArgs,
-) -> Result<(), String> {
+async fn test_valid_match_undercapitalized__quote_side(
+    test_args: IntegrationTestArgs,
+) -> Result<()> {
     let party_id = test_args.mpc_fabric.party_id();
     let price = *DUMMY_PRICE;
     let my_order = create_test_order(party_id);
@@ -295,17 +288,18 @@ fn test_valid_match_undercapitalized__quote_side(
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    );
+    )
+    .await;
 
-    if !prove_and_verify_match(witness, test_args.mpc_fabric.clone())? {
-        return Err("Failed to prove and verify match".to_string());
+    if !prove_and_verify_match(witness, test_args.mpc_fabric.clone()).await? {
+        return Err(eyre!("Failed to prove and verify match"));
     }
 
     Ok(())
 }
 
 /// Test the case in which the price is a non-integral value
-fn test_valid_match__non_integral_price(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_valid_match__non_integral_price(test_args: IntegrationTestArgs) -> Result<()> {
     let mut rng = thread_rng();
     let party_id = test_args.mpc_fabric.party_id();
     let my_order = create_test_order(party_id);
@@ -314,7 +308,9 @@ fn test_valid_match__non_integral_price(test_args: &IntegrationTestArgs) -> Resu
     // Party 0 chooses a random price and shares it with party 1
     let price_range = DUMMY_SELL_SIDE_WORST_PRICE.to_f64()..DUMMY_BUY_SIDE_WORST_PRICE.to_f64();
     let price = FixedPoint::from_f64_round_down(rng.gen_range(price_range));
-    let price = await_result(price.share_public(PARTY0, test_args.mpc_fabric.clone()));
+    let price = price
+        .share_public(PARTY0, test_args.mpc_fabric.clone())
+        .await;
 
     // Prove `VALID MATCH MPC
     let witness = setup_witness(
@@ -323,17 +319,18 @@ fn test_valid_match__non_integral_price(test_args: &IntegrationTestArgs) -> Resu
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    );
+    )
+    .await;
 
-    if !prove_and_verify_match(witness, test_args.mpc_fabric.clone())? {
-        return Err("Failed to prove and verify match".to_string());
+    if !prove_and_verify_match(witness, test_args.mpc_fabric.clone()).await? {
+        return Err(eyre!("Failed to prove and verify match"));
     }
 
     Ok(())
 }
 
 /// Test the case in which the two parties attempt to match on different mints
-fn test_valid_match__different_mints(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_valid_match__different_mints(test_args: IntegrationTestArgs) -> Result<()> {
     let fabric = &test_args.mpc_fabric;
     let party_id = fabric.party_id();
     let price = *DUMMY_PRICE;
@@ -353,9 +350,10 @@ fn test_valid_match__different_mints(test_args: &IntegrationTestArgs) -> Result<
         my_order,
         my_balance.clone(),
         test_args.mpc_fabric.clone(),
-    );
-    if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
-        return Err("Constraints satisfied on invalid witness".to_string());
+    )
+    .await;
+    if constraints_satisfied(witness, test_args.mpc_fabric.clone()).await? {
+        return Err(eyre!("Constraints satisfied on invalid witness"));
     }
 
     // Now test with base mint switched
@@ -371,16 +369,17 @@ fn test_valid_match__different_mints(test_args: &IntegrationTestArgs) -> Result<
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    );
-    if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
-        return Err("Constraints satisfied on invalid witness".to_string());
+    )
+    .await;
+    if constraints_satisfied(witness, test_args.mpc_fabric.clone()).await? {
+        return Err(eyre!("Constraints satisfied on invalid witness"));
     }
 
     Ok(())
 }
 
 /// Test the case in which the parties sit on the same side of the book
-fn test_valid_match__same_side(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_valid_match__same_side(test_args: IntegrationTestArgs) -> Result<()> {
     let fabric = &test_args.mpc_fabric;
     let party_id = fabric.party_id();
     let price = *DUMMY_PRICE;
@@ -400,9 +399,10 @@ fn test_valid_match__same_side(test_args: &IntegrationTestArgs) -> Result<(), St
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    );
-    if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
-        return Err("Constraints satisfied on invalid witness".to_string());
+    )
+    .await;
+    if constraints_satisfied(witness, test_args.mpc_fabric.clone()).await? {
+        return Err(eyre!("Constraints satisfied on invalid witness"));
     }
 
     Ok(())
@@ -410,7 +410,7 @@ fn test_valid_match__same_side(test_args: &IntegrationTestArgs) -> Result<(), St
 
 /// Test the case in which the balance provided to the matching engine is not for
 /// the correct asset
-fn test_valid_match__invalid_balance_mint(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_valid_match__invalid_balance_mint(test_args: IntegrationTestArgs) -> Result<()> {
     let fabric = &test_args.mpc_fabric;
     let party_id = fabric.party_id();
     let price = *DUMMY_PRICE;
@@ -434,16 +434,17 @@ fn test_valid_match__invalid_balance_mint(test_args: &IntegrationTestArgs) -> Re
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    );
-    if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
-        return Err("Constraints satisfied on invalid witness".to_string());
+    )
+    .await;
+    if constraints_satisfied(witness, test_args.mpc_fabric.clone()).await? {
+        return Err(eyre!("Constraints satisfied on invalid witness"));
     }
 
     Ok(())
 }
 
 /// Test the case in which the balance provided does not cover the advertised amount
-fn test_valid_match__insufficient_balance(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_valid_match__insufficient_balance(test_args: IntegrationTestArgs) -> Result<()> {
     let fabric = &test_args.mpc_fabric;
     let party_id = fabric.party_id();
     let price = *DUMMY_PRICE;
@@ -463,16 +464,17 @@ fn test_valid_match__insufficient_balance(test_args: &IntegrationTestArgs) -> Re
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    );
-    if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
-        return Err("Constraints satisfied on invalid witness".to_string());
+    )
+    .await;
+    if constraints_satisfied(witness, test_args.mpc_fabric.clone()).await? {
+        return Err(eyre!("Constraints satisfied on invalid witness"));
     }
 
     Ok(())
 }
 
 /// Test the case in which the matched amount exceeds the order size for a party
-fn test_valid_match__amount_exceeds_order(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_valid_match__amount_exceeds_order(test_args: IntegrationTestArgs) -> Result<()> {
     let fabric = &test_args.mpc_fabric;
     let party_id = fabric.party_id();
     let price = *DUMMY_PRICE;
@@ -490,18 +492,17 @@ fn test_valid_match__amount_exceeds_order(test_args: &IntegrationTestArgs) -> Re
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    );
-    if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
-        return Err("Constraints satisfied on invalid witness".to_string());
+    )
+    .await;
+    if constraints_satisfied(witness, test_args.mpc_fabric.clone()).await? {
+        return Err(eyre!("Constraints satisfied on invalid witness"));
     }
 
     Ok(())
 }
 
 /// Test the case in which the `max_minus_min` field is incorrectly computed
-fn test_valid_match__incorrect_max_minus_min(
-    test_args: &IntegrationTestArgs,
-) -> Result<(), String> {
+async fn test_valid_match__incorrect_max_minus_min(test_args: IntegrationTestArgs) -> Result<()> {
     let fabric = &test_args.mpc_fabric;
     let party_id = fabric.party_id();
     let price = *DUMMY_PRICE;
@@ -516,14 +517,15 @@ fn test_valid_match__incorrect_max_minus_min(
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    );
+    )
+    .await;
     let mut rng = thread_rng();
     witness.match_res.max_minus_min_amount = Scalar::random(&mut rng)
         .to_linkable()
         .allocate(PARTY0, fabric);
 
-    if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
-        return Err("Constraints satisfied on invalid witness".to_string());
+    if constraints_satisfied(witness, test_args.mpc_fabric.clone()).await? {
+        return Err(eyre!("Constraints satisfied on invalid witness"));
     }
 
     Ok(())
@@ -531,7 +533,7 @@ fn test_valid_match__incorrect_max_minus_min(
 
 /// Test the case in which the `max_minus_min` field is switched to be
 /// `min - max` (i.e. negative)
-fn test_valid_match__max_minus_min_negative(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_valid_match__max_minus_min_negative(test_args: IntegrationTestArgs) -> Result<()> {
     let fabric = &test_args.mpc_fabric;
     let party_id = fabric.party_id();
     let price = *DUMMY_PRICE;
@@ -539,8 +541,12 @@ fn test_valid_match__max_minus_min_negative(test_args: &IntegrationTestArgs) -> 
     let my_balance = create_test_balance(party_id);
     let amount = compute_max_amount(price, &my_order, &my_balance);
 
-    let party0_amount = await_result(amount.share_public(PARTY0, test_args.mpc_fabric.clone()));
-    let party1_amount = await_result(amount.share_public(PARTY1, test_args.mpc_fabric.clone()));
+    let party0_amount = amount
+        .share_public(PARTY0, test_args.mpc_fabric.clone())
+        .await;
+    let party1_amount = amount
+        .share_public(PARTY1, test_args.mpc_fabric.clone())
+        .await;
     let min_minus_max_amount = Scalar::from(cmp::min(party0_amount, party1_amount))
         - Scalar::from(cmp::max(party0_amount, party1_amount));
 
@@ -551,21 +557,22 @@ fn test_valid_match__max_minus_min_negative(test_args: &IntegrationTestArgs) -> 
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    );
+    )
+    .await;
     witness.match_res.max_minus_min_amount =
         min_minus_max_amount.to_linkable().allocate(PARTY0, fabric);
 
-    if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
-        return Err("Constraints satisfied on invalid witness".to_string());
+    if constraints_satisfied(witness, test_args.mpc_fabric.clone()).await? {
+        return Err(eyre!("Constraints satisfied on invalid witness"));
     }
 
     Ok(())
 }
 
 /// Test the case in which the `min_amount_order_index` field is incorrectly computed
-fn test_valid_match__incorrect_min_amount_order_index(
-    test_args: &IntegrationTestArgs,
-) -> Result<(), String> {
+async fn test_valid_match__incorrect_min_amount_order_index(
+    test_args: IntegrationTestArgs,
+) -> Result<()> {
     let fabric = &test_args.mpc_fabric;
     let party_id = fabric.party_id();
     let price = *DUMMY_PRICE;
@@ -580,18 +587,17 @@ fn test_valid_match__incorrect_min_amount_order_index(
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    );
-    let min_order_index = await_result(witness.match_res.min_amount_order_index.open())
-        .map_err(|err| format!("Error opening min_amount_order_index: {:?}", err))?
-        .val;
+    )
+    .await;
+    let min_order_index = witness.match_res.min_amount_order_index.open().await?.val;
 
     // Invert the index
     witness.match_res.min_amount_order_index = (Scalar::one() - min_order_index)
         .to_linkable()
         .allocate(PARTY0, fabric);
 
-    if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
-        return Err("Constraints satisfied on invalid witness".to_string());
+    if constraints_satisfied(witness, test_args.mpc_fabric.clone()).await? {
+        return Err(eyre!("Constraints satisfied on invalid witness"));
     }
 
     Ok(())
@@ -599,9 +605,9 @@ fn test_valid_match__incorrect_min_amount_order_index(
 
 /// Test the case in which the execution price exceeds the buy side price
 /// protection
-fn test_valid_match__price_protection_violated_buy_side(
-    test_args: &IntegrationTestArgs,
-) -> Result<(), String> {
+async fn test_valid_match__price_protection_violated_buy_side(
+    test_args: IntegrationTestArgs,
+) -> Result<()> {
     let fabric = &test_args.mpc_fabric;
     let party_id = fabric.party_id();
     let my_order = create_test_order(party_id);
@@ -618,10 +624,11 @@ fn test_valid_match__price_protection_violated_buy_side(
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    );
+    )
+    .await;
 
-    if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
-        return Err("Constraints satisfied on invalid witness".to_string());
+    if constraints_satisfied(witness, test_args.mpc_fabric.clone()).await? {
+        return Err(eyre!("Constraints satisfied on invalid witness"));
     }
 
     Ok(())
@@ -629,9 +636,9 @@ fn test_valid_match__price_protection_violated_buy_side(
 
 /// Test the case in which the execution price falls sort of the sell
 /// side price protection
-fn test_valid_match__price_protection_violated_sell_side(
-    test_args: &IntegrationTestArgs,
-) -> Result<(), String> {
+async fn test_valid_match__price_protection_violated_sell_side(
+    test_args: IntegrationTestArgs,
+) -> Result<()> {
     let fabric = &test_args.mpc_fabric;
     let party_id = fabric.party_id();
     let my_order = create_test_order(party_id);
@@ -648,82 +655,28 @@ fn test_valid_match__price_protection_violated_sell_side(
         my_order,
         my_balance,
         test_args.mpc_fabric.clone(),
-    );
+    )
+    .await;
 
-    if constraints_satisfied(witness, test_args.mpc_fabric.clone())? {
-        return Err("Constraints satisfied on invalid witness".to_string());
+    if constraints_satisfied(witness, test_args.mpc_fabric.clone()).await? {
+        return Err(eyre!("Constraints satisfied on invalid witness"));
     }
 
     Ok(())
 }
 
 // Take inventory
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_circuits::valid_match_mpc::test_valid_match_mpc_valid",
-    test_fn: test_valid_match_mpc_valid
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_circuits::valid_match_mpc::test_valid_match_undercapitalized__base_side",
-    test_fn: test_valid_match_undercapitalized__base_side
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_circuits::valid_match_mpc::test_valid_match_undercapitalized__quote_side",
-    test_fn: test_valid_match_undercapitalized__quote_side
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_circuits::valid_match_mpc::test_valid_match__non_integral_price",
-    test_fn: test_valid_match__non_integral_price
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_circuits::valid_match_mpc::test_valid_match__different_mints",
-    test_fn: test_valid_match__different_mints,
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_circuits::valid_match_mpc::test_valid_match__same_side",
-    test_fn: test_valid_match__same_side,
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_circuits::valid_match_mpc::test_valid_match__invalid_balance_mint",
-    test_fn: test_valid_match__invalid_balance_mint,
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_circuits::valid_match_mpc::test_valid_match__insufficient_balance",
-    test_fn: test_valid_match__insufficient_balance,
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_circuits::valid_match_mpc::test_valid_match__amount_exceeds_order",
-    test_fn: test_valid_match__amount_exceeds_order,
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_circuits::valid_match_mpc::test_valid_match__incorrect_max_minus_min",
-    test_fn: test_valid_match__incorrect_max_minus_min,
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_circuits::valid_match_mpc::test_valid_match__max_minus_min_negative",
-    test_fn: test_valid_match__max_minus_min_negative,
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_circuits::valid_match_mpc::test_valid_match__incorrect_min_amount_order_index",
-    test_fn: test_valid_match__incorrect_min_amount_order_index,
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_circuits::valid_match_mpc::test_valid_match__price_protection_violated_buy_side",
-    test_fn: test_valid_match__price_protection_violated_buy_side,
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_circuits::valid_match_mpc::test_valid_match__price_protection_violated_sell_side",
-    test_fn: test_valid_match__price_protection_violated_sell_side,
-}));
+integration_test_async!(test_valid_match_mpc_valid);
+integration_test_async!(test_valid_match_undercapitalized__base_side);
+integration_test_async!(test_valid_match_undercapitalized__quote_side);
+integration_test_async!(test_valid_match__non_integral_price);
+integration_test_async!(test_valid_match__different_mints);
+integration_test_async!(test_valid_match__same_side);
+integration_test_async!(test_valid_match__invalid_balance_mint);
+integration_test_async!(test_valid_match__insufficient_balance);
+integration_test_async!(test_valid_match__amount_exceeds_order);
+integration_test_async!(test_valid_match__incorrect_max_minus_min);
+integration_test_async!(test_valid_match__max_minus_min_negative);
+integration_test_async!(test_valid_match__incorrect_min_amount_order_index);
+integration_test_async!(test_valid_match__price_protection_violated_buy_side);
+integration_test_async!(test_valid_match__price_protection_violated_sell_side);

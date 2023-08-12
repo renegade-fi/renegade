@@ -3,6 +3,8 @@
 use circuit_types::traits::MultiproverCircuitBaseType;
 use circuits::zk_gadgets::poseidon::MultiproverPoseidonHashGadget;
 
+use eyre::{eyre, Result};
+use futures::future::join_all;
 use itertools::Itertools;
 use merlin::HashChainTranscript as Transcript;
 use mpc_bulletproof::{
@@ -15,15 +17,12 @@ use mpc_stark::{
 };
 use rand::{thread_rng, RngCore};
 use renegade_crypto::hash::{compute_poseidon_hash, default_poseidon_params};
-use test_helpers::{
-    mpc_network::{await_result, await_result_batch},
-    types::IntegrationTest,
-};
+use test_helpers::{integration_test_async, types::IntegrationTest};
 
-use crate::{IntegrationTestArgs, TestWrapper};
+use crate::IntegrationTestArgs;
 
 /// Tests the poseidon hash gadget
-fn test_poseidon_multiprover(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_poseidon_multiprover(test_args: IntegrationTestArgs) -> Result<()> {
     // Each party samples a random set of 5 values
     let n = 1;
     let mut rng = thread_rng();
@@ -35,13 +34,14 @@ fn test_poseidon_multiprover(test_args: &IntegrationTestArgs) -> Result<(), Stri
     let party1_values = fabric.batch_share_scalar(my_values, PARTY1);
 
     // Compute the expected result via Arkworks hash
-    let inputs_open = await_result_batch(AuthenticatedScalarResult::open_batch(
+    let inputs_open = join_all(AuthenticatedScalarResult::open_batch(
         &party0_values
             .iter()
             .cloned()
             .chain(party1_values.iter().cloned())
             .collect_vec(),
-    ));
+    ))
+    .await;
     let expected_result = compute_poseidon_hash(&inputs_open);
 
     // Prove the statement
@@ -57,23 +57,21 @@ fn test_poseidon_multiprover(test_args: &IntegrationTestArgs) -> Result<(), Stri
 
     let params = default_poseidon_params();
     let mut hasher = MultiproverPoseidonHashGadget::new(params, test_args.mpc_fabric.clone());
-    hasher
-        .hash(
-            &hash_input,
-            &MpcLinearCombination::from_scalar(expected_result, test_args.mpc_fabric.clone()),
-            &mut prover,
-        )
-        .map_err(|err| format!("Error computing poseidon hash circuit: {:?}", err))?;
+    hasher.hash(
+        &hash_input,
+        &MpcLinearCombination::from_scalar(expected_result, test_args.mpc_fabric.clone()),
+        &mut prover,
+    )?;
 
-    if await_result(prover.constraints_satisfied()) {
+    if prover.constraints_satisfied().await {
         Ok(())
     } else {
-        Err("Constraints not satisfied".to_string())
+        Err(eyre!("Constraints not satisfied"))
     }
 }
 
 /// Tests the case in which the witness is invalid; i.e. not the correct pre-image
-fn test_poseidon_multiprover_invalid(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_poseidon_multiprover_invalid(test_args: IntegrationTestArgs) -> Result<()> {
     // Sample a random input
     // Each party samples a random set of 5 values
     let n = 1;
@@ -105,24 +103,15 @@ fn test_poseidon_multiprover_invalid(test_args: &IntegrationTestArgs) -> Result<
 
     let mut hasher =
         MultiproverPoseidonHashGadget::new(hasher_params, test_args.mpc_fabric.clone());
-    hasher
-        .hash(&hash_input, &expected_out, &mut prover)
-        .map_err(|err| format!("Error computing poseidon hash circuit: {:?}", err))?;
+    hasher.hash(&hash_input, &expected_out, &mut prover)?;
 
-    if await_result(prover.constraints_satisfied()) {
-        Err("Constraints satisfied".to_string())
+    if prover.constraints_satisfied().await {
+        Err(eyre!("Constraints satisfied"))
     } else {
         Ok(())
     }
 }
 
 // Take inventory
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_gadgets::poseidon::test_poseidon_multiprover",
-    test_fn: test_poseidon_multiprover
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "zk_gadgets::poseidon::test_poseidon_multiprover_invalid",
-    test_fn: test_poseidon_multiprover_invalid,
-}));
+integration_test_async!(test_poseidon_multiprover);
+integration_test_async!(test_poseidon_multiprover_invalid);
