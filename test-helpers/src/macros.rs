@@ -23,7 +23,7 @@ macro_rules! integration_test_main {
         use std::io::{stdout, Write};
         use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 
-        use $crate::types::IntegrationTest;
+        use $crate::types::{IntegrationTest, IntegrationTestFn};
 
         /// Defines a wrapper type around the test args so that the macro caller can take
         /// inventory on the IntegrationTest type which is owned by the `integration-helpers`
@@ -85,8 +85,8 @@ macro_rules! integration_test_main {
                 let test_args: $test_args = args.clone().into();
                 let mut all_success = true;
 
-                for test_wrapper in inventory::iter::<TestWrapper> {
-                    let test = test_wrapper.0.clone();
+                for test_wrapper in inventory::iter::<TestWrapper>.into_iter() {
+                    let test = &test_wrapper.0;
                     if args.borrow().test.is_some()
                         && args.borrow().test.as_deref().unwrap() != test.name
                     {
@@ -99,7 +99,13 @@ macro_rules! integration_test_main {
                         print!("Running {}... ", test.name);
                         stdout().flush().unwrap();
                     }
-                    let res: Result<(), String> = (test.test_fn)(&test_args);
+                    let res: eyre::Result<()> = match test.test_fn {
+                        IntegrationTestFn::SynchronousFn(f) => f(test_args.clone()),
+                        IntegrationTestFn::AsynchronousFn(f) => {
+                            Handle::current().block_on(f(test_args.clone()))
+                        }
+                    };
+
                     all_success &= validate_success(res, verbose);
                 }
 
@@ -123,7 +129,7 @@ macro_rules! integration_test_main {
 
         /// Prints a success or failure message, returns true if success, false if failure
         #[inline]
-        fn validate_success(res: Result<(), String>, verbose: bool) -> bool {
+        fn validate_success(res: eyre::Result<()>, verbose: bool) -> bool {
             if res.is_ok() {
                 if verbose {
                     println!("{}", "Success!".green());

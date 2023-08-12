@@ -1,3 +1,4 @@
+use eyre::{eyre, Result};
 use mpc_stark::algebra::scalar::Scalar;
 
 pub mod arithmetic;
@@ -11,18 +12,18 @@ pub mod poseidon;
 // -----------
 
 /// Assert two scalars are equal, returning a `String` error if they are not
-pub fn assert_scalar_eq(a: &Scalar, b: &Scalar) -> Result<(), String> {
+pub fn assert_scalar_eq(a: &Scalar, b: &Scalar) -> Result<()> {
     if a == b {
         Ok(())
     } else {
-        Err(format!("Expected {a} == {b}"))
+        Err(eyre!("Expected {a} == {b}"))
     }
 }
 
 /// Assert two batches of scalars are equal, returning a `String` error if they are not
-pub fn assert_scalar_batch_eq(a: &[Scalar], b: &[Scalar]) -> Result<(), String> {
+pub fn assert_scalar_batch_eq(a: &[Scalar], b: &[Scalar]) -> Result<()> {
     if a.len() != b.len() {
-        return Err(format!(
+        return Err(eyre!(
             "Expected batch lengths to be equal: {} != {}",
             a.len(),
             b.len()

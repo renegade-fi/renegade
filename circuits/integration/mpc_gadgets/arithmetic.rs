@@ -1,6 +1,8 @@
 //! Groups integration tests for arithmetic gadgets used in the MPC circuits
 
 use circuits::mpc_gadgets::arithmetic::{pow, prefix_mul, product};
+use eyre::Result;
+use futures::future::join_all;
 use mpc_stark::{
     algebra::{authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar},
     PARTY0, PARTY1,
@@ -8,19 +10,14 @@ use mpc_stark::{
 use num_bigint::BigUint;
 use rand::{thread_rng, Rng, RngCore};
 use renegade_crypto::fields::{get_scalar_field_modulus, scalar_to_u64};
-use test_helpers::{
-    mpc_network::{
-        await_result, await_result_batch, await_result_batch_with_error, await_result_with_error,
-    },
-    types::IntegrationTest,
-};
+use test_helpers::{integration_test_async, types::IntegrationTest};
 
-use crate::{IntegrationTestArgs, TestWrapper};
+use crate::IntegrationTestArgs;
 
 use super::{assert_scalar_batch_eq, assert_scalar_eq};
 
 /// Tests the product gadget
-fn test_product(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_product(test_args: IntegrationTestArgs) -> Result<()> {
     // Each party decided on `n` values
     let n = 5;
     let fabric = &test_args.mpc_fabric;
@@ -38,14 +35,16 @@ fn test_product(test_args: &IntegrationTestArgs) -> Result<(), String> {
     all_values.append(&mut p2_values.clone());
 
     // Compute the product
-    let res = await_result_with_error(product(&all_values, fabric).open_authenticated())?;
+    let res = product(&all_values, fabric).open_authenticated().await?;
 
     // Open the shared values and compute the expected result
-    let p1_values_prod = await_result_batch(AuthenticatedScalarResult::open_batch(&p1_values))
+    let p1_values_prod = join_all(AuthenticatedScalarResult::open_batch(&p1_values))
+        .await
         .iter()
         .fold(Scalar::one(), |acc, val| acc * val);
 
-    let p2_values_prod = await_result_batch(AuthenticatedScalarResult::open_batch(&p2_values))
+    let p2_values_prod = join_all(AuthenticatedScalarResult::open_batch(&p2_values))
+        .await
         .iter()
         .fold(Scalar::one(), |acc, val| acc * val);
     let expected_result = p1_values_prod * p2_values_prod;
@@ -54,7 +53,7 @@ fn test_product(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Tests the prefix-mul gadget
-fn test_prefix_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_prefix_mul(test_args: IntegrationTestArgs) -> Result<()> {
     // Compute powers of 3
     let n = 25;
     let fabric = &test_args.mpc_fabric;
@@ -65,9 +64,12 @@ fn test_prefix_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let prefixes = prefix_mul(&shared_values, fabric);
 
     // Open the prefixes and verify the result
-    let opened_prefix_products = await_result_batch_with_error(
-        AuthenticatedScalarResult::open_authenticated_batch(&prefixes),
-    )?;
+    let opened_prefix_products = join_all(AuthenticatedScalarResult::open_authenticated_batch(
+        &prefixes,
+    ))
+    .await
+    .into_iter()
+    .collect::<Result<Vec<_>, _>>()?;
 
     let mut expected_result = Vec::with_capacity(n);
     let mut acc = Scalar::one();
@@ -80,20 +82,22 @@ fn test_prefix_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Tests the exponentiation gadget
-fn test_pow(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_pow(test_args: IntegrationTestArgs) -> Result<()> {
     // Party 0 selects a base and party 0 selects an exponent
     let fabric = &test_args.mpc_fabric;
     let mut rng = thread_rng();
 
     let random_base = fabric.share_scalar(rng.next_u64(), PARTY0);
-    let random_exp = await_result(fabric.share_plaintext(Scalar::from(rng.next_u32()), PARTY1));
+    let random_exp = fabric
+        .share_plaintext(Scalar::from(rng.next_u32()), PARTY1)
+        .await;
 
-    let res = await_result_with_error(
-        pow(&random_base, scalar_to_u64(&random_exp), fabric).open_authenticated(),
-    )?;
+    let res = pow(&random_base, scalar_to_u64(&random_exp), fabric)
+        .open_authenticated()
+        .await?;
 
     // Open the random input and compute the expected result
-    let random_base_open = await_result(random_base.open());
+    let random_base_open = random_base.open().await;
     let expected_res = random_base_open.to_biguint().modpow(
         &BigUint::from(scalar_to_u64(&random_exp)),
         &get_scalar_field_modulus(),
@@ -103,17 +107,6 @@ fn test_pow(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 // Take inventory
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "mpc_gadgets::arithmetic::test_product",
-    test_fn: test_product
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "mpc_gadgets::arithmetic::test_prefix_mul",
-    test_fn: test_prefix_mul
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "mpc_gadgets::arithmetic::test_pow",
-    test_fn: test_pow
-}));
+integration_test_async!(test_product);
+integration_test_async!(test_prefix_mul);
+integration_test_async!(test_pow);

@@ -1,6 +1,8 @@
 //! Groups integration tests for bitwise operating MPC gadgets
 
 use circuits::mpc_gadgets::bits::{bit_add, bit_lt, bit_xor, to_bits_le};
+use eyre::{eyre, Result};
+use futures::future::join_all;
 use itertools::Itertools;
 use mpc_stark::{
     algebra::{authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar},
@@ -8,12 +10,9 @@ use mpc_stark::{
 };
 use rand::{thread_rng, RngCore};
 use renegade_crypto::fields::scalar_to_u64;
-use test_helpers::{
-    mpc_network::{await_result, await_result_batch_with_error, await_result_with_error},
-    types::IntegrationTest,
-};
+use test_helpers::{integration_test_async, types::IntegrationTest};
 
-use crate::{IntegrationTestArgs, TestWrapper};
+use crate::IntegrationTestArgs;
 
 use super::{assert_scalar_batch_eq, assert_scalar_eq};
 
@@ -37,37 +36,41 @@ fn u64_to_bits_le(mut a: u64) -> Vec<u64> {
 // ---------
 
 /// Tests the bit xor gadget
-fn test_bit_xor(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_bit_xor(test_args: IntegrationTestArgs) -> Result<()> {
     // Try all combinations of zero and one
     let fabric = &test_args.mpc_fabric;
     let shared_zero = fabric.zero_authenticated();
     let shared_one = fabric.one_authenticated();
 
     // 0 XOR 0 == 0
-    let zero_xor_zero =
-        await_result_with_error(bit_xor(&shared_zero, &shared_zero).open_authenticated())?;
+    let zero_xor_zero = bit_xor(&shared_zero, &shared_zero)
+        .open_authenticated()
+        .await?;
     assert_scalar_eq(&zero_xor_zero, &Scalar::zero())?;
 
     // 1 XOR 0 == 1
-    let one_xor_zero =
-        await_result_with_error(bit_xor(&shared_one, &shared_zero).open_authenticated())?;
+    let one_xor_zero = bit_xor(&shared_one, &shared_zero)
+        .open_authenticated()
+        .await?;
     assert_scalar_eq(&one_xor_zero, &Scalar::one())?;
 
     // 0 XOR 1 == 1
-    let zero_xor_one =
-        await_result_with_error(bit_xor(&shared_zero, &shared_one).open_authenticated())?;
+    let zero_xor_one = bit_xor(&shared_zero, &shared_one)
+        .open_authenticated()
+        .await?;
     assert_scalar_eq(&zero_xor_one, &Scalar::one())?;
 
     // 1 XOR 1 == 0
-    let one_xor_one =
-        await_result_with_error(bit_xor(&shared_one, &shared_one).open_authenticated())?;
+    let one_xor_one = bit_xor(&shared_one, &shared_one)
+        .open_authenticated()
+        .await?;
     assert_scalar_eq(&one_xor_one, &Scalar::zero())?;
 
     Ok(())
 }
 
 /// Tests the bit_add method
-fn test_bit_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_bit_add(test_args: IntegrationTestArgs) -> Result<()> {
     // Each party samples a random number, converts it to bits, then shares and adds it
     // For the sake of the test (because we convert back to u64 to compare) make sure both
     // numbers have log2(x) < 63
@@ -99,15 +102,20 @@ fn test_bit_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
         fabric,
     )
     .0;
-    let result = await_result_batch_with_error(
-        AuthenticatedScalarResult::open_authenticated_batch(&res_bits),
-    )?;
+    let result = join_all(AuthenticatedScalarResult::open_authenticated_batch(
+        &res_bits,
+    ))
+    .await
+    .into_iter()
+    .collect::<Result<Vec<_>, _>>()?;
 
     // Open the original random numbers and bitify the sum
-    let random_number1 =
-        await_result(fabric.share_plaintext(Scalar::from(my_random_number), PARTY0));
-    let random_number2 =
-        await_result(fabric.share_plaintext(Scalar::from(my_random_number), PARTY1));
+    let random_number1 = fabric
+        .share_plaintext(Scalar::from(my_random_number), PARTY0)
+        .await;
+    let random_number2 = fabric
+        .share_plaintext(Scalar::from(my_random_number), PARTY1)
+        .await;
 
     let expected_result = scalar_to_u64(&(random_number1 + random_number2));
     let expected_bits = u64_to_bits_le(expected_result)
@@ -119,20 +127,23 @@ fn test_bit_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Tests that getting the bits of 0 returns all zeros
-fn test_bits_le_zero(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_bits_le_zero(test_args: IntegrationTestArgs) -> Result<()> {
     let fabric = &test_args.mpc_fabric;
     let shared_zero = fabric.zero_authenticated();
 
     let shared_bits = to_bits_le::<250>(&shared_zero, fabric);
-    let shared_bits_open = await_result_batch_with_error(
-        AuthenticatedScalarResult::open_authenticated_batch(&shared_bits),
-    )?;
+    let shared_bits_open = join_all(AuthenticatedScalarResult::open_authenticated_batch(
+        &shared_bits,
+    ))
+    .await
+    .into_iter()
+    .collect::<Result<Vec<_>, _>>()?;
 
     assert_scalar_batch_eq(&shared_bits_open, &vec![Scalar::zero(); shared_bits.len()])
 }
 
 /// Tests the to_bits_le gadget
-fn test_to_bits_le(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_to_bits_le(test_args: IntegrationTestArgs) -> Result<()> {
     let fabric = &test_args.mpc_fabric;
     let value = 119;
 
@@ -140,9 +151,12 @@ fn test_to_bits_le(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let shared_bits = to_bits_le::<8>(&shared_value, fabric);
 
     // Open the bits and compare
-    let opened_bits = await_result_batch_with_error(
-        AuthenticatedScalarResult::open_authenticated_batch(&shared_bits),
-    )?;
+    let opened_bits = join_all(AuthenticatedScalarResult::open_authenticated_batch(
+        &shared_bits,
+    ))
+    .await
+    .into_iter()
+    .collect::<Result<Vec<_>, _>>()?;
 
     if !opened_bits[..8].eq(&vec![
         Scalar::one(),
@@ -154,7 +168,7 @@ fn test_to_bits_le(test_args: &IntegrationTestArgs) -> Result<(), String> {
         Scalar::one(),
         Scalar::zero(),
     ]) {
-        return Err(format!(
+        return Err(eyre!(
             "Expected 0b11101110, Got {:?}",
             opened_bits[..8]
                 .iter()
@@ -167,7 +181,7 @@ fn test_to_bits_le(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Tests the bitwise less than comparator
-fn test_bit_lt(test_args: &IntegrationTestArgs) -> Result<(), String> {
+async fn test_bit_lt(test_args: IntegrationTestArgs) -> Result<()> {
     // Test equal values
     let fabric = &test_args.mpc_fabric;
     let value = 15;
@@ -180,10 +194,10 @@ fn test_bit_lt(test_args: &IntegrationTestArgs) -> Result<(), String> {
         &to_bits_le::<250>(&equal_value2, fabric),
         fabric,
     )
-    .open_authenticated();
-    let res_open = await_result_with_error(res)?;
+    .open_authenticated()
+    .await?;
 
-    assert_scalar_eq(&res_open, &Scalar::zero())?;
+    assert_scalar_eq(&res, &Scalar::zero())?;
 
     // Test unequal values
     let mut rng = thread_rng();
@@ -197,40 +211,20 @@ fn test_bit_lt(test_args: &IntegrationTestArgs) -> Result<(), String> {
         &to_bits_le::<250>(&shared_value2, fabric),
         fabric,
     )
-    .open_authenticated();
-    let res_open = await_result_with_error(res)?;
+    .open_authenticated()
+    .await?;
 
     // Open the original values to get the expected result
-    let value1 = await_result(fabric.share_plaintext(Scalar::from(my_value), PARTY0));
-    let value2 = await_result(fabric.share_plaintext(Scalar::from(my_value), PARTY1));
+    let value1 = fabric.share_plaintext(Scalar::from(my_value), PARTY0).await;
+    let value2 = fabric.share_plaintext(Scalar::from(my_value), PARTY1).await;
     let expected_res = scalar_to_u64(&value1) < scalar_to_u64(&value2);
 
-    assert_scalar_eq(&res_open, &Scalar::from(expected_res))
+    assert_scalar_eq(&res, &Scalar::from(expected_res))
 }
 
 // Take inventory
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "mpc_gadgets::test_bit_xor",
-    test_fn: test_bit_xor,
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "mpc_gadgets::test_bit_add",
-    test_fn: test_bit_add
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "mpc_gadgets::test_bits_le_zero",
-    test_fn: test_bits_le_zero
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "mpc_gadgets::test_to_bits_le",
-    test_fn: test_to_bits_le
-}));
-
-inventory::submit!(TestWrapper(IntegrationTest {
-    name: "mpc_gadgets::test_bit_lt",
-    test_fn: test_bit_lt
-}));
+integration_test_async!(test_bit_xor);
+integration_test_async!(test_bit_add);
+integration_test_async!(test_bits_le_zero);
+integration_test_async!(test_to_bits_le);
+integration_test_async!(test_bit_lt);
