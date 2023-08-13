@@ -245,11 +245,11 @@ criterion_group! {
     name = valid_wallet_create;
     config = Criterion::default().sample_size(10);
     targets =
-    bench_apply_constraints__small_circuit,
-    bench_prover__small_circuit,
-    bench_verifier__small_circuit,
-    bench_apply_constraints__large_circuit,
-    bench_prover__large_circuit,
-    bench_verifier__large_circuit
+        bench_apply_constraints__small_circuit,
+        bench_prover__small_circuit,
+        bench_verifier__small_circuit,
+        bench_apply_constraints__large_circuit,
+        bench_prover__large_circuit,
+        bench_verifier__large_circuit
 }
 criterion_main!(valid_wallet_create);
