@@ -143,8 +143,8 @@ impl StarknetClientConfig {
             ChainId::AlphaGoerli => SequencerGatewayProvider::starknet_alpha_goerli(),
             ChainId::Mainnet => SequencerGatewayProvider::starknet_alpha_mainnet(),
             ChainId::Devnet => SequencerGatewayProvider::new(
-                Url::parse("http://localhost:5050/gateway").unwrap(),
-                Url::parse("http://localhost:5050/feeder_gateway").unwrap(),
+                Url::parse("http://sequencer.renegade-devnet.renegade.fi/gateway").unwrap(),
+                Url::parse("http://sequencer.renegade-devnet.renegade.fi/feeder_gateway").unwrap(),
                 StarknetFieldElement::from(0u8),
             ),
         }
