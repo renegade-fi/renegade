@@ -355,7 +355,6 @@ pub mod test_helpers {
         },
         traits::LinkableBaseType,
     };
-    use rand::thread_rng;
 
     use crate::zk_circuits::test_helpers::{
         create_multi_opening, create_wallet_shares, SizedWallet, MAX_BALANCES, MAX_FEES,
@@ -374,8 +373,6 @@ pub mod test_helpers {
     pub fn construct_witness_statement(
         wallet: &SizedWallet,
     ) -> (SizedWitness, ValidReblindStatement) {
-        let mut rng = thread_rng();
-
         // Build shares of the original wallet, then reblind it
         let (old_wallet_private_shares, old_wallet_public_shares) =
             create_wallet_shares(wallet.clone());
@@ -389,7 +386,7 @@ pub mod test_helpers {
         );
 
         let (merkle_root, mut opening) =
-            create_multi_opening::<_, MERKLE_HEIGHT>(&[original_shares_commitment], &mut rng);
+            create_multi_opening::<MERKLE_HEIGHT>(&[original_shares_commitment]);
         let original_share_opening = opening.pop().unwrap();
 
         // Compute nullifiers for the old shares

@@ -522,12 +522,11 @@ pub mod test_helpers {
             compute_wallet_share_nullifier,
         },
         transfers::ExternalTransfer,
+        wallet::Wallet,
     };
-    use rand::thread_rng;
 
     use crate::zk_circuits::test_helpers::{
-        create_multi_opening, create_wallet_shares, SizedWallet, MAX_BALANCES, MAX_FEES,
-        MAX_ORDERS, TIMESTAMP,
+        create_multi_opening, create_wallet_shares, MAX_BALANCES, MAX_FEES, MAX_ORDERS, TIMESTAMP,
     };
 
     use super::{ValidWalletUpdateStatement, ValidWalletUpdateWitness};
@@ -548,13 +547,22 @@ pub mod test_helpers {
     // -----------
 
     /// Construct a witness and statement
-    pub fn construct_witness_statement(
-        old_wallet: SizedWallet,
-        new_wallet: SizedWallet,
+    pub fn construct_witness_statement<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+        const MERKLE_HEIGHT: usize,
+    >(
+        old_wallet: Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        new_wallet: Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         external_transfer: ExternalTransfer,
-    ) -> (SizedWitness, SizedStatement) {
-        let mut rng = thread_rng();
-
+    ) -> (
+        ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
+        ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
         // Construct secret shares of the wallets
         let (old_wallet_private_shares, old_wallet_public_shares) =
             create_wallet_shares(old_wallet.clone());
@@ -567,7 +575,7 @@ pub mod test_helpers {
             old_wallet_private_shares.clone(),
         );
         let (merkle_root, mut opening) =
-            create_multi_opening::<_, MERKLE_HEIGHT>(&[old_shares_commitment], &mut rng);
+            create_multi_opening::<MERKLE_HEIGHT>(&[old_shares_commitment]);
         let old_shares_opening = opening.pop().unwrap();
 
         // Compute nullifiers for the old state
@@ -578,13 +586,13 @@ pub mod test_helpers {
         let new_private_shares_commitment =
             compute_wallet_private_share_commitment(new_wallet_private_shares.clone());
 
-        let witness = SizedWitness {
+        let witness = ValidWalletUpdateWitness {
             old_wallet_private_shares,
             old_wallet_public_shares,
             new_wallet_private_shares,
             old_shares_opening,
         };
-        let statement = SizedStatement {
+        let statement = ValidWalletUpdateStatement {
             old_shares_nullifier,
             old_pk_root: old_wallet.keys.pk_root,
             new_private_shares_commitment,

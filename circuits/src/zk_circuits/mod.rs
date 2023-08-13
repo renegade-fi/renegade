@@ -14,7 +14,6 @@ pub mod valid_wallet_update;
 pub mod test_helpers {
     use std::iter::from_fn;
 
-    use ark_crypto_primitives::sponge::{poseidon::PoseidonSponge, CryptographicSponge};
     use circuit_types::{
         balance::Balance,
         fee::Fee,
@@ -28,8 +27,8 @@ pub mod test_helpers {
     use lazy_static::lazy_static;
     use mpc_stark::algebra::scalar::Scalar;
     use num_bigint::BigUint;
-    use rand::{thread_rng, CryptoRng, RngCore};
-    use renegade_crypto::hash::{compute_poseidon_hash, default_poseidon_params};
+    use rand::thread_rng;
+    use renegade_crypto::hash::compute_poseidon_hash;
 
     use circuit_types::native_helpers::create_wallet_shares_with_randomness;
 
@@ -141,83 +140,151 @@ pub mod test_helpers {
     ///     - root: The root of the Merkle tree
     ///     - openings: A vector of opening vectors; the sister nodes hashed with the Merkle path
     ///     - opening_indices: A vector of opening index vectors; the left/right booleans for the path
-    pub fn create_multi_opening<R: RngCore + CryptoRng, const HEIGHT: usize>(
+    pub fn create_multi_opening<const HEIGHT: usize>(
         items: &[Scalar],
-        rng: &mut R,
     ) -> (Scalar, Vec<MerkleOpening<HEIGHT>>) {
         let tree_capacity = 2usize.pow(HEIGHT as u32);
         assert!(
-            items.len() < tree_capacity,
+            items.len() <= tree_capacity,
             "tree capacity exceeded by seed items"
         );
+        assert!(
+            !items.is_empty(),
+            "cannot create a multi-opening for an empty tree"
+        );
 
-        // Pad the inputs up to the tree capacity
-        let mut merkle_leaves = items.to_vec();
-        merkle_leaves.append(&mut vec![Scalar::random(rng); tree_capacity - items.len()]);
+        let zero_value = Scalar::zero();
+        let (root, mut opening_paths) =
+            create_multi_opening_helper(items.to_vec(), zero_value, HEIGHT);
+        opening_paths.truncate(items.len());
 
-        // The return variables
-        let mut openings = vec![Vec::new(); items.len()];
-        let mut opening_indices = vec![Vec::new(); items.len()];
-
-        // Compute the openings and root of the tree
-        let mut curr_internal_nodes = merkle_leaves.clone();
-        let mut curr_indices = (0..items.len()).collect_vec();
-
-        // Loop over the levels of the tree, construct the openings as we go
-        while curr_internal_nodes.len() > 1 {
-            // The curr_indices represents the indices of each opening's path in the current height
-            // compute a sister node for each at the given height and add it to the opening for that
-            // path.
-            for (i, ind) in curr_indices.iter().enumerate() {
-                // Compute the opening index (i.e. whether this is a left or right child)
-                let path_index = ind % 2;
-                // Compute the sister node for the given index at the given height
-                let sister_node =
-                    curr_internal_nodes[if path_index == 0 { ind + 1 } else { ind - 1 }];
-
-                openings[i].push(sister_node);
-                opening_indices[i].push(Scalar::from(path_index as u8));
-            }
-
-            // Hash together each left and right pair to get the internal node values at the next height
-            let mut next_internal_nodes = Vec::with_capacity(curr_internal_nodes.len() / 2);
-            for left_right in curr_internal_nodes
-                .into_iter()
-                .map(|s| s.inner())
-                .chunks(2 /* size */)
-                .into_iter()
-            {
-                let mut sponge = PoseidonSponge::new(&default_poseidon_params());
-                sponge.absorb(&left_right.collect_vec());
-
-                let squeezed: Scalar::Field =
-                    sponge.squeeze_field_elements(1 /* num_elements */)[0];
-                next_internal_nodes.push(Scalar::from(squeezed));
-            }
-
-            // Update the curr_indices vector to be the index of the parent node in the Merkle tree height
-            // above the current height. This is simply \floor(index / 2)
-            curr_indices = curr_indices.iter().map(|index| index >> 2).collect_vec();
-            curr_internal_nodes = next_internal_nodes;
-        }
-
-        let merkle_root = curr_internal_nodes[0];
-
-        // Reformat the openings and indices into the `MerkleOpening` type
-        let merkle_openings = openings
+        // Create Merkle opening paths from each of the results
+        let merkle_paths = opening_paths
             .into_iter()
-            .zip(opening_indices.into_iter())
-            .map(|(elems, indices)| MerkleOpening {
-                elems: elems.try_into().unwrap(),
+            .enumerate()
+            .map(|(i, path)| (get_opening_indices(i, HEIGHT), path))
+            .map(|(indices, path)| MerkleOpening {
                 indices: indices.try_into().unwrap(),
+                elems: path.try_into().unwrap(),
             })
             .collect_vec();
-        (merkle_root, merkle_openings)
+
+        (root, merkle_paths)
+    }
+
+    /// A recursive helper to compute a multi-opening for a set of leaves
+    ///
+    /// Returns the root and a set of paths, where path[i] is hte path for leaves[i]
+    fn create_multi_opening_helper(
+        mut leaves: Vec<Scalar>,
+        zero_value: Scalar,
+        height: usize,
+    ) -> (Scalar, Vec<Vec<Scalar>>) {
+        // If the height is zero we are at the root of the tree, return
+        if height == 0 {
+            return (leaves[0], vec![Vec::new()]);
+        }
+
+        // Otherwise, pad the leaves with zeros to an even number and fold into the next recursive level
+        let pad_length = leaves.len() % 2;
+        leaves.append(&mut vec![zero_value; pad_length]);
+        let next_level_leaves = leaves
+            .chunks_exact(2)
+            .map(compute_poseidon_hash)
+            .collect_vec();
+
+        // Recurse up the tree
+        let zero_value = compute_poseidon_hash(&[zero_value, zero_value]);
+        let (root, parent_openings) =
+            create_multi_opening_helper(next_level_leaves, zero_value, height - 1);
+
+        // Append sister nodes to each recursive result
+        let mut openings: Vec<Vec<Scalar>> = Vec::with_capacity(leaves.len());
+        for (leaf_chunk, recursive_opening) in leaves.chunks_exact(2).zip(parent_openings) {
+            // Add the leaves to each other's paths
+            let (left, right) = (leaf_chunk[0], leaf_chunk[1]);
+            openings.push([vec![right], recursive_opening.clone()].concat());
+            openings.push([vec![left], recursive_opening].concat());
+        }
+
+        (root, openings)
+    }
+
+    /// Get the opening indices for a given insertion index into a Merkle tree
+    ///
+    /// Here, the indices are represented as `Scalar` values where `0` represents a left
+    /// child and `1` represents a right child
+    fn get_opening_indices(leaf_index: usize, height: usize) -> Vec<Scalar> {
+        let mut leaf_index = leaf_index as u64;
+        let mut indices = Vec::with_capacity(height);
+
+        for _ in 0..height {
+            indices.push(Scalar::from(leaf_index & 1));
+            leaf_index >>= 1;
+        }
+        indices
     }
 
     // ---------------------
     // | Helper Validation |
     // ---------------------
+
+    /// Test the Merkle tree root
+    #[test]
+    fn test_multi_opening_root() {
+        const HEIGHT: usize = 2; // capacity 4 merkle tree
+        let leaves = vec![Scalar::from(1u64), Scalar::from(2u64), Scalar::from(3u64)];
+        let (root, _) = create_multi_opening::<HEIGHT>(&leaves);
+
+        // Compute the expected root
+        let expected_root = compute_poseidon_hash(&[
+            compute_poseidon_hash(&[Scalar::from(1u64), Scalar::from(2u64)]),
+            compute_poseidon_hash(&[Scalar::from(3u64), Scalar::zero()]),
+        ]);
+
+        assert_eq!(root, expected_root);
+    }
+
+    /// Test the Merkle tree opening
+    #[test]
+    fn test_multi_opening_path() {
+        const HEIGHT: usize = 3; // capacity 8 merkle tree
+        let leaves = vec![Scalar::from(1u64), Scalar::from(2u64), Scalar::from(3u64)];
+        let (_, openings) = create_multi_opening::<HEIGHT>(&leaves);
+
+        // Compute the expected opening for the first element
+        let hash_3_and_0 = compute_poseidon_hash(&[Scalar::from(3u64), Scalar::zero()]);
+        let hash_0_and_0 = compute_poseidon_hash(&[Scalar::zero(), Scalar::zero()]);
+        let hash_0_four_times = compute_poseidon_hash(&[hash_0_and_0, hash_0_and_0]);
+
+        // The expected opening for the first element
+        let expected_first_opening = vec![Scalar::from(2u64), hash_3_and_0, hash_0_four_times];
+        assert_eq!(openings[0].elems.to_vec(), expected_first_opening);
+
+        let expected_second_opening = vec![Scalar::from(1u64), hash_3_and_0, hash_0_four_times];
+        assert_eq!(openings[1].elems.to_vec(), expected_second_opening);
+    }
+
+    /// Test the path indices of the Merkle opening
+    #[test]
+    fn test_multi_opening_indices() {
+        const HEIGHT: usize = 3; // capacity 8 merkle tree
+        let leaves = vec![Scalar::from(1u64), Scalar::from(2u64), Scalar::from(3u64)];
+        let (_, openings) = create_multi_opening::<HEIGHT>(&leaves);
+
+        // Check the indices
+        let expected_first_indices =
+            vec![Scalar::from(0u64), Scalar::from(0u64), Scalar::from(0u64)];
+        assert_eq!(openings[0].indices.to_vec(), expected_first_indices);
+
+        let expected_second_indices =
+            vec![Scalar::from(1u64), Scalar::from(0u64), Scalar::from(0u64)];
+        assert_eq!(openings[1].indices.to_vec(), expected_second_indices);
+
+        let expected_third_indices =
+            vec![Scalar::from(0u64), Scalar::from(1u64), Scalar::from(0u64)];
+        assert_eq!(openings[2].indices.to_vec(), expected_third_indices);
+    }
 
     /// Verify that the wallet shares helper correctly splits and recombines
     #[test]
