@@ -371,13 +371,13 @@ where
 pub mod test_helpers {
     use circuit_types::{
         balance::Balance, native_helpers::create_wallet_shares_from_private, order::OrderSide,
-        traits::LinkableBaseType,
+        traits::LinkableBaseType, wallet::Wallet,
     };
     use num_bigint::BigUint;
     use rand::{thread_rng, Rng};
 
     use crate::zk_circuits::test_helpers::{
-        create_wallet_shares, SizedWallet, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+        create_wallet_shares, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
     };
 
     use super::{ValidCommitmentsStatement, ValidCommitmentsWitness};
@@ -388,9 +388,19 @@ pub mod test_helpers {
     /// Construct a valid witness and statement from the given wallet
     ///
     /// Simply chooses a random order to match against from the wallet
-    pub fn create_witness_and_statement(
-        wallet: &SizedWallet,
-    ) -> (SizedWitness, ValidCommitmentsStatement) {
+    pub fn create_witness_and_statement<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >(
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    ) -> (
+        ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        ValidCommitmentsStatement,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
         let mut rng = thread_rng();
 
         // Split the wallet into secret shares
@@ -414,14 +424,17 @@ pub mod test_helpers {
         // Find appropriate balances in the wallet
         let (ind_receive, balance_receive) = find_balance_or_augment(
             received_mint,
-            &mut augmented_wallet,
+            &mut augmented_wallet.balances,
             true, /* augment */
         );
-        let (ind_send, balance_send) =
-            find_balance_or_augment(sent_mint, &mut augmented_wallet, false /* augment */);
+        let (ind_send, balance_send) = find_balance_or_augment(
+            sent_mint,
+            &mut augmented_wallet.balances,
+            false, /* augment */
+        );
         let (_, balance_fee) = find_balance_or_augment(
             fee.gas_addr.clone(),
-            &mut augmented_wallet,
+            &mut augmented_wallet.balances,
             false, /* augment */
         );
 
@@ -433,7 +446,7 @@ pub mod test_helpers {
             wallet.blinder,
         );
 
-        let witness = SizedWitness {
+        let witness = ValidCommitmentsWitness {
             private_secret_shares: private_shares.to_linkable(),
             public_secret_shares: public_shares.to_linkable(),
             augmented_public_shares: augmented_public_shares.to_linkable(),
@@ -457,13 +470,12 @@ pub mod test_helpers {
     ///
     /// If the balance does not exist the `augment` flag lets the method augment the wallet
     /// with a zero'd balance
-    pub(super) fn find_balance_or_augment(
+    pub(super) fn find_balance_or_augment<const MAX_BALANCES: usize>(
         mint: BigUint,
-        wallet: &mut SizedWallet,
+        balances: &mut [Balance; MAX_BALANCES],
         augment: bool,
     ) -> (usize, Balance) {
-        let balance = wallet
-            .balances
+        let balance = balances
             .iter()
             .enumerate()
             .find(|(_ind, balance)| balance.mint == mint);
@@ -476,15 +488,14 @@ pub mod test_helpers {
                 }
 
                 // Find a zero'd balance
-                let (zerod_index, _) = wallet
-                    .balances
+                let (zerod_index, _) = balances
                     .iter()
                     .enumerate()
                     .find(|(_ind, balance)| balance.mint == BigUint::from(0u8))
                     .expect("wallet must have zero'd balance to augment");
 
-                wallet.balances[zerod_index] = Balance { mint, amount: 0 };
-                (zerod_index, wallet.balances[zerod_index].clone())
+                balances[zerod_index] = Balance { mint, amount: 0 };
+                (zerod_index, balances[zerod_index].clone())
             }
         }
     }
@@ -529,7 +540,7 @@ mod test {
             };
 
             // Find the received mint balance
-            let (balance_ind, _) = find_balance_or_augment(order_receive_mint, &mut wallet, false /* augment */);
+            let (balance_ind, _) = find_balance_or_augment(order_receive_mint, &mut wallet.balances, false /* augment */);
             wallet.balances[balance_ind] = Balance::default();
             wallet
         };
