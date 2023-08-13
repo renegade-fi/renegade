@@ -76,9 +76,10 @@ lazy_static! {
     pub static ref DEFAULT_AUTHENTICATION_PATH: [Scalar; MERKLE_HEIGHT] = {
         let mut values = Vec::with_capacity(MERKLE_HEIGHT);
 
-        let curr_val = *EMPTY_LEAF_VALUE;
+        let mut curr_val = *EMPTY_LEAF_VALUE;
         for _ in 0..MERKLE_HEIGHT {
             values.push(compute_poseidon_hash(&[curr_val, curr_val]));
+            curr_val = *values.last().unwrap();
         }
 
         values.try_into().unwrap()
