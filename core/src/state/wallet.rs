@@ -380,6 +380,36 @@ impl Wallet {
         self.fees.retain(|fee| !fee.is_default());
     }
 
+    /// Given the current orders in the wallet, augment the balances with all base and quote mints
+    pub fn augment_balances_for_orders(&mut self) {
+        self.remove_default_elements(); // TODO: Do we really need this?
+        for order in self.orders.clone().values() {
+            self.augment_balance(&order.quote_mint);
+            self.augment_balance(&order.base_mint);
+        }
+        // Re-derive the public wallet share, given that the underlying balance data has changed
+        let (new_private_share, new_public_share) = create_wallet_shares_from_private(
+            self.clone().into(),
+            &self.private_shares.clone(),
+            self.blinder,
+        );
+        self.private_shares = new_private_share;
+        self.blinded_public_shares = new_public_share;
+    }
+
+    /// If the mint does not exist in the wallet, add it with a balance of zero
+    fn augment_balance(&mut self, mint: &BigUint) {
+        if !self.balances.contains_key(mint) {
+            self.balances.insert(
+                mint.clone(),
+                Balance {
+                    mint: mint.clone(),
+                    amount: 0u64,
+                },
+            );
+        }
+    }
+
     /// Get the balance, fee, and fee_balance for an order by specifying the order directly
     ///
     /// We allow orders to be matched when undercapitalized; i.e. the respective balance does
@@ -571,11 +601,14 @@ impl WalletIndex {
 
 #[cfg(test)]
 mod tests {
+    use circuits::types::order::Order;
     use curve25519_dalek::scalar::Scalar;
     use num_bigint::BigUint;
     use rand_core::OsRng;
+    use uuid::Uuid;
 
-    use super::PrivateKeyChain;
+    use super::{PrivateKeyChain, Wallet as StateWallet};
+    use crate::external_api::types::Wallet as ApiWallet;
 
     /// Test serialization/deserialization of a PrivateKeyChain
     #[test]
@@ -599,5 +632,42 @@ mod tests {
         let serialized = serde_json::to_string(&keychain).unwrap();
         let deserialized: PrivateKeyChain = serde_json::from_str(&serialized).unwrap();
         assert_eq!(keychain, deserialized);
+    }
+
+    /// Test balance augmentation for a wallet
+    #[test]
+    fn test_augment_balances_for_orders() {
+        // Create a new unblinded wallet, and reblind it
+        let wallet_json = r#"{"id":"bfaa7947-b5e1-4adc-88cb-8ef172516dd4","balances":[],"orders":[],"fees":[],"key_chain":{"public_keys":{"pk_root":"0x131f55acd0e5341f9006207d0496a61b3499008b54a32e61bdd8213b47c99410","pk_match":"0x81241f1b5656586544a3a537dd928772ab7aa23290e1ae88cd7983460278f3","pk_settle":"0x47af0d493c8aff1a000d48f23684fce4f52e0beb9bec961c48ef77cedd636d13"},"secret_keys":{"sk_root":"0xd314753b2b0846d46366990b4f909b6f5d037edb239f760b797d399b3ec7ef72","sk_match":"0x7a8d4fb279f7cbb505dfcec0187ac884886382180e445120db970ca075e9c839","sk_settle":"0xe58449262249fb3b145ae74a0535b7f535e30a73f5513c963e32d232cf7647b9"}},"blinder":[0,0,0,0,0,0,0,0],"blinded_public_shares":[[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[1204392976,3185058107,1419980385,882442379,76981787,2416320637,3504682015,2053548],[19,0,0,0,0,0,0,0],[1174567155,2295167363,848355758,1923840674,937267847,1698997157,458643032,8463391],[0,0,0,0,0,0,0,0]],"private_shares":[[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0]]}"#;
+        let mut wallet: StateWallet = serde_json::from_str::<ApiWallet>(wallet_json)
+            .unwrap()
+            .into();
+        wallet.reblind_wallet();
+
+        // Insert a single order into the wallet
+        assert!(wallet.balances.is_empty() && wallet.orders.is_empty());
+        let base_mint = BigUint::from(1u32);
+        let quote_mint = BigUint::from(2u32);
+        let order = Order {
+            base_mint: base_mint.clone(),
+            quote_mint: quote_mint.clone(),
+            amount: 1u64,
+            ..Default::default()
+        };
+        wallet.orders.insert(Uuid::new_v4(), order);
+        assert!(wallet.orders.len() == 1);
+
+        // `augment_balances_for_orders` should add zero-amount balances for the order
+        wallet.augment_balances_for_orders();
+        let base_balance = wallet.balances.get(&base_mint);
+        let quote_balance = wallet.balances.get(&quote_mint);
+        assert!(wallet.balances.len() == 2 && base_balance.is_some() && quote_balance.is_some());
+        assert!(base_balance.unwrap().amount == 0u64 && quote_balance.unwrap().amount == 0u64);
+
+        // `augment_balances_for_orders` is idempotent
+        let wallet_json_before = serde_json::to_string(&wallet).unwrap();
+        wallet.augment_balances_for_orders();
+        let wallet_json_after = serde_json::to_string(&wallet).unwrap();
+        assert!(wallet_json_before == wallet_json_after);
     }
 }

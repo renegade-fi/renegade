@@ -309,6 +309,10 @@ pub(super) async fn update_wallet_validity_proofs(
         return Ok(());
     }
 
+    // Before proving `VALID REBLIND` and `VALID COMMITMENTS`, ensure that all balances are augmented
+    let wallet = &mut wallet.clone();
+    wallet.augment_balances_for_orders();
+
     // Dispatch a proof of `VALID REBLIND` for the wallet
     let (reblind_witness, reblind_response_channel) =
         construct_wallet_reblind_proof(wallet.clone(), proof_manager_work_queue.clone())?;
