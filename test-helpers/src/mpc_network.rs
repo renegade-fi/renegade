@@ -1,4 +1,5 @@
 //! Groups helpers for setting up and managing an MPC network
+pub mod mock_with_delay;
 pub mod mocks;
 
 use std::{fmt::Debug, net::SocketAddr, sync::Arc};
