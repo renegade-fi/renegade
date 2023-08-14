@@ -354,11 +354,12 @@ pub mod test_helpers {
             compute_wallet_share_nullifier, reblind_wallet,
         },
         traits::LinkableBaseType,
+        wallet::Wallet,
     };
 
     use crate::zk_circuits::test_helpers::{
-        create_multi_opening, create_wallet_shares, SizedWallet, MAX_BALANCES, MAX_FEES,
-        MAX_ORDERS, PRIVATE_KEYS,
+        create_multi_opening, create_wallet_shares, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+        PRIVATE_KEYS,
     };
 
     use super::{ValidReblindStatement, ValidReblindWitness};
@@ -370,9 +371,20 @@ pub mod test_helpers {
     pub type SizedWitness = ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
 
     /// Construct a witness and statement for `VALID REBLIND` from a given wallet
-    pub fn construct_witness_statement(
-        wallet: &SizedWallet,
-    ) -> (SizedWitness, ValidReblindStatement) {
+    pub fn construct_witness_statement<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+        const MERKLE_HEIGHT: usize,
+    >(
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    ) -> (
+        ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
+        ValidReblindStatement,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
         // Build shares of the original wallet, then reblind it
         let (old_wallet_private_shares, old_wallet_public_shares) =
             create_wallet_shares(wallet.clone());
@@ -397,7 +409,7 @@ pub mod test_helpers {
         let new_private_commitment =
             compute_wallet_private_share_commitment(reblinded_private_shares.clone());
 
-        let witness = SizedWitness {
+        let witness = ValidReblindWitness {
             original_wallet_private_shares: old_wallet_private_shares,
             original_wallet_public_shares: old_wallet_public_shares,
             reblinded_wallet_private_shares: reblinded_private_shares.to_linkable(),
