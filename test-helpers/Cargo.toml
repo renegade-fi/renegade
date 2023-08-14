@@ -22,6 +22,7 @@ num-bigint = { version = "0.4", features = ["rand"] }
 
 # === Workspace Dependencies === # 
 constants = { path = "../constants" }
+renegade-crypto = { path = "../renegade-crypto" }
 
 # === Misc Dependencies === #
 inventory = "0.3"

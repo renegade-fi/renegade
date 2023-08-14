@@ -61,14 +61,14 @@ impl SharedValueSource for PartyIDBeaverSource {
 }
 
 /// An unbounded duplex channel used to mock a network connection
-pub struct UnboundedDuplexStream {
+pub struct UnboundedDuplexStream<T> {
     /// The send side of the stream
-    send: UnboundedSender<NetworkOutbound>,
+    send: UnboundedSender<T>,
     /// The receive side of the stream
-    recv: UnboundedReceiver<NetworkOutbound>,
+    recv: UnboundedReceiver<T>,
 }
 
-impl UnboundedDuplexStream {
+impl<T> UnboundedDuplexStream<T> {
     /// Create a new pair of duplex streams
     pub fn new_duplex_pair() -> (Self, Self) {
         let (send1, recv1) = unbounded_channel();
@@ -87,12 +87,12 @@ impl UnboundedDuplexStream {
     }
 
     /// Send a message on the stream
-    pub fn send(&mut self, msg: NetworkOutbound) {
+    pub fn send(&mut self, msg: T) {
         self.send.send(msg).unwrap();
     }
 
     /// Recv a message from the stream
-    pub async fn recv(&mut self) -> NetworkOutbound {
+    pub async fn recv(&mut self) -> T {
         self.recv.recv().await.unwrap()
     }
 }
@@ -102,12 +102,12 @@ pub struct MockNetwork {
     /// The ID of the local party
     party_id: PartyId,
     /// The underlying mock network connection
-    mock_conn: UnboundedDuplexStream,
+    mock_conn: UnboundedDuplexStream<NetworkOutbound>,
 }
 
 impl MockNetwork {
     /// Create a new mock network from one half of a duplex stream
-    pub fn new(party_id: PartyId, stream: UnboundedDuplexStream) -> Self {
+    pub fn new(party_id: PartyId, stream: UnboundedDuplexStream<NetworkOutbound>) -> Self {
         Self {
             party_id,
             mock_conn: stream,
