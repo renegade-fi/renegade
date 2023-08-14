@@ -300,6 +300,7 @@ pub mod test_helpers {
         order::{Order, OrderSide},
         r#match::MatchResult,
         traits::LinkableBaseType,
+        wallet::Wallet,
     };
     use lazy_static::lazy_static;
     use mpc_stark::algebra::scalar::Scalar;
@@ -367,11 +368,21 @@ pub mod test_helpers {
     pub type SizedStatement = ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     /// Construct a witness and statement for `VALID SETTLE`
-    pub fn create_witness_statement(
-        party0_wallet: SizedWallet,
-        party1_wallet: SizedWallet,
+    pub fn create_witness_statement<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >(
+        party0_wallet: Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        party1_wallet: Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         match_res: MatchResult,
-    ) -> (SizedWitness, SizedStatement) {
+    ) -> (
+        ValidSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
         // Mux between received mints based on the match direction
         let (
             party0_received_mint,
@@ -456,7 +467,17 @@ pub mod test_helpers {
     }
 
     /// Find the index of the balance with the given mint in the given wallet
-    fn find_balance_in_wallet(mint: &BigUint, wallet: &SizedWallet) -> Option<usize> {
+    fn find_balance_in_wallet<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >(
+        mint: &BigUint,
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    ) -> Option<usize>
+    where
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
         wallet
             .balances
             .iter()
@@ -466,11 +487,18 @@ pub mod test_helpers {
     }
 
     /// Find the index of the order within the given wallet that is on the given asset pair's book
-    fn find_order_in_wallet(
+    fn find_order_in_wallet<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >(
         base_mint: &BigUint,
         quote_mint: &BigUint,
-        wallet: &SizedWallet,
-    ) -> Option<usize> {
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    ) -> Option<usize>
+    where
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
         wallet
             .orders
             .iter()
