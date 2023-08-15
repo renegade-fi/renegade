@@ -24,7 +24,7 @@ use circuits::{
         ValidMatchMpcWitness,
     },
 };
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 use merlin::HashChainTranscript;
 use mpc_bulletproof::{
@@ -34,8 +34,15 @@ use mpc_bulletproof::{
 };
 use mpc_stark::{algebra::scalar::Scalar, PARTY0, PARTY1};
 use rand::thread_rng;
-use test_helpers::mpc_network::execute_mock_mpc;
+use test_helpers::mpc_network::execute_mock_mpc_with_delay;
 use tokio::runtime::Builder as RuntimeBuilder;
+
+/// A small delay, roughly what would be expected for nodes in the same availability zone
+const SMALL_DELAY_MS: u64 = 1;
+/// A medium sized delay, roughly what would be expected for nodes in the same region
+const MEDIUM_DELAY_MS: u64 = 10;
+/// A larger delay, perhaps between different autonomous systems
+const LARGE_DELAY_MS: u64 = 100;
 
 // -----------
 // | Helpers |
@@ -65,15 +72,11 @@ pub fn get_dummy_singleprover_witness() -> ValidMatchMpcWitness {
     }
 }
 
-// --------------
-// | Benchmarks |
-// --------------
-
-/// Benchmark the time taken to run the raw `match` MPC circuits
-pub fn bench_match_mpc(c: &mut Criterion) {
+/// Benchmark the time taken to run the raw `match` MPC circuits with a given
+/// connection latency
+pub fn bench_match_mpc_with_delay(c: &mut Criterion, delay: Duration) {
     let mut group = c.benchmark_group("match-mpc");
-
-    group.bench_function(BenchmarkId::new("match", ""), |b| {
+    group.bench_function(BenchmarkId::new("match", delay.as_millis()), |b| {
         // Build a Tokio runtime and spawn the benchmarks within it
         let runtime = RuntimeBuilder::new_multi_thread()
             .enable_all()
@@ -84,22 +87,26 @@ pub fn bench_match_mpc(c: &mut Criterion) {
         async_bencher.iter_custom(|n_iters| async move {
             let mut total_time = Duration::from_secs(0);
             for _ in 0..n_iters {
-                let (party0_time, party1_time) = execute_mock_mpc(|fabric| async move {
-                    // Allocate the inputs in the fabric
-                    let start = Instant::now();
-                    let o1 = Order::default().allocate(PARTY0, &fabric);
-                    let o2 = Order::default().allocate(PARTY1, &fabric);
-                    let amount1 = Scalar::one().allocate(PARTY0, &fabric);
-                    let amount2 = Scalar::one().allocate(PARTY1, &fabric);
-                    let price = FixedPoint::from_integer(1).allocate(PARTY0, &fabric);
+                let (party0_time, party1_time) = execute_mock_mpc_with_delay(
+                    |fabric| async move {
+                        // Allocate the inputs in the fabric
+                        let start = Instant::now();
+                        let o1 = Order::default().allocate(PARTY0, &fabric);
+                        let o2 = Order::default().allocate(PARTY1, &fabric);
+                        let amount1 = Scalar::one().allocate(PARTY0, &fabric);
+                        let amount2 = Scalar::one().allocate(PARTY1, &fabric);
+                        let price = FixedPoint::from_integer(1).allocate(PARTY0, &fabric);
 
-                    // Run the MPC
-                    let match_res = compute_match(&o1, &o2, &amount1, &amount2, &price, &fabric);
+                        // Run the MPC
+                        let match_res =
+                            compute_match(&o1, &o2, &amount1, &amount2, &price, &fabric);
 
-                    // Open the result
-                    let _open = match_res.open_and_authenticate().await;
-                    start.elapsed()
-                })
+                        // Open the result
+                        let _open = match_res.open_and_authenticate().await;
+                        start.elapsed()
+                    },
+                    delay,
+                )
                 .await;
 
                 total_time += Duration::max(party0_time, party1_time);
@@ -110,68 +117,75 @@ pub fn bench_match_mpc(c: &mut Criterion) {
     });
 }
 
-/// Benchmark the constraint generation latency of the `match` MPC circuits
-pub fn bench_apply_constraints(c: &mut Criterion) {
+/// Benchmark the constraint generation latency of the raw `match` MPC circuits with
+/// a given connection latency
+pub fn bench_apply_constraints_with_delay(c: &mut Criterion, delay: Duration) {
     let mut group = c.benchmark_group("match-mpc");
 
-    group.bench_function(BenchmarkId::new("constraint-generation", ""), |b| {
-        let runtime = RuntimeBuilder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        let mut async_bencher = b.to_async(runtime);
+    group.bench_function(
+        BenchmarkId::new("constraint-generation", delay.as_millis()),
+        |b| {
+            let runtime = RuntimeBuilder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let mut async_bencher = b.to_async(runtime);
 
-        async_bencher.iter_custom(|n_iters| async move {
-            let mut total_time = Duration::from_secs(0);
-            for _ in 0..n_iters {
-                // Execute an MPC to generate the constraints
-                let (party0_time, party1_time) = execute_mock_mpc(|fabric| async move {
-                    // Create a witness to the proof
-                    let witness = create_dummy_witness(&fabric);
+            async_bencher.iter_custom(|n_iters| async move {
+                let mut total_time = Duration::from_secs(0);
+                for _ in 0..n_iters {
+                    // Execute an MPC to generate the constraints
+                    let (party0_time, party1_time) = execute_mock_mpc_with_delay(
+                        |fabric| async move {
+                            // Create a witness to the proof
+                            let witness = create_dummy_witness(&fabric);
 
-                    // Create a constraint system to allocate the constraints within
-                    let pc_gens = PedersenGens::default();
-                    let transcript = HashChainTranscript::new(b"test");
-                    let mut prover =
-                        MpcProver::new_with_fabric(fabric.clone(), transcript, pc_gens);
+                            // Create a constraint system to allocate the constraints within
+                            let pc_gens = PedersenGens::default();
+                            let transcript = HashChainTranscript::new(b"test");
+                            let mut prover =
+                                MpcProver::new_with_fabric(fabric.clone(), transcript, pc_gens);
 
-                    // Start the measurement after the setup code
-                    let start = Instant::now();
+                            // Start the measurement after the setup code
+                            let start = Instant::now();
 
-                    // Allocate the inputs in the constraint system
-                    let (witness_var, _) = witness
-                        .commit_shared(&mut thread_rng(), &mut prover)
-                        .unwrap();
-                    ValidMatchMpcCircuit::apply_constraints_multiprover(
-                        witness_var,
-                        (),
-                        fabric,
-                        &mut prover,
+                            // Allocate the inputs in the constraint system
+                            let (witness_var, _) = witness
+                                .commit_shared(&mut thread_rng(), &mut prover)
+                                .unwrap();
+                            ValidMatchMpcCircuit::apply_constraints_multiprover(
+                                witness_var,
+                                (),
+                                fabric,
+                                &mut prover,
+                            )
+                            .unwrap();
+
+                            // There is no great way to await the constraint generation, so we check that the constraints are
+                            // satisfied. This is not an exact way to measure execution time, but it is a decent approximation.
+                            // The benchmarks below measure time taken to generate constraints and prove, so they more directly
+                            // estimate constraint generation latency, but as part of a larger circuit
+                            let _satisfied = prover.constraints_satisfied().await;
+                            start.elapsed()
+                        },
+                        delay,
                     )
-                    .unwrap();
+                    .await;
 
-                    // There is no great way to await the constraint generation, so we check that the constraints are
-                    // satisfied. This is not an exact way to measure execution time, but it is a decent approximation.
-                    // The benchmarks below measure time taken to generate constraints and prove, so they more directly
-                    // estimate constraint generation latency, but as part of a larger circuit
-                    let _satisfied = prover.constraints_satisfied().await;
-                    start.elapsed()
-                })
-                .await;
+                    total_time += Duration::max(party0_time, party1_time);
+                }
 
-                total_time += Duration::max(party0_time, party1_time);
-            }
-
-            total_time
-        });
-    });
+                total_time
+            });
+        },
+    );
 }
 
-/// Benchmarks the time it takes to prove a `VALID MATCH MPC` statement
-pub fn bench_prover_latency(c: &mut Criterion) {
+/// Benchmarks the time it takes to prove a `VALID MATCH MPC` statement with a given connection latency
+pub fn bench_prover_latency_with_delay(c: &mut Criterion, delay: Duration) {
     let mut group = c.benchmark_group("match-mpc");
 
-    group.bench_function(BenchmarkId::new("prover", ""), |b| {
+    group.bench_function(BenchmarkId::new("prover", delay.as_millis()), |b| {
         let runtime = RuntimeBuilder::new_multi_thread()
             .enable_all()
             .build()
@@ -182,25 +196,29 @@ pub fn bench_prover_latency(c: &mut Criterion) {
             let mut total_time = Duration::from_secs(0);
             for _ in 0..n_iters {
                 // Execute an MPC to generate the constraints
-                let (party0_time, party1_time) = execute_mock_mpc(|fabric| async move {
-                    // Create a witness to the proof
-                    let witness = create_dummy_witness(&fabric);
+                let (party0_time, party1_time) = execute_mock_mpc_with_delay(
+                    |fabric| async move {
+                        // Create a witness to the proof
+                        let witness = create_dummy_witness(&fabric);
 
-                    // Create a constraint system to allocate the constraints within
-                    let pc_gens = PedersenGens::default();
-                    let transcript = HashChainTranscript::new(b"test");
-                    let prover = MpcProver::new_with_fabric(fabric.clone(), transcript, pc_gens);
+                        // Create a constraint system to allocate the constraints within
+                        let pc_gens = PedersenGens::default();
+                        let transcript = HashChainTranscript::new(b"test");
+                        let prover =
+                            MpcProver::new_with_fabric(fabric.clone(), transcript, pc_gens);
 
-                    // Start the measurement after the setup code
-                    let start = Instant::now();
+                        // Start the measurement after the setup code
+                        let start = Instant::now();
 
-                    // Allocate the inputs in the constraint system
-                    let (_comm, proof) =
-                        ValidMatchMpcCircuit::prove(witness, (), fabric, prover).unwrap();
+                        // Allocate the inputs in the constraint system
+                        let (_comm, proof) =
+                            ValidMatchMpcCircuit::prove(witness, (), fabric, prover).unwrap();
 
-                    let _opened_proof = proof.open().await;
-                    start.elapsed()
-                })
+                        let _opened_proof = black_box(proof.open().await);
+                        start.elapsed()
+                    },
+                    delay,
+                )
                 .await;
 
                 total_time += Duration::max(party0_time, party1_time);
@@ -209,6 +227,64 @@ pub fn bench_prover_latency(c: &mut Criterion) {
             total_time
         });
     });
+}
+
+// --------------
+// | Benchmarks |
+// --------------
+
+/// Benchmark the time taken to run the raw `match` MPC circuits with a small delay
+#[allow(non_snake_case)]
+pub fn bench_match_mpc__small_delay(c: &mut Criterion) {
+    bench_match_mpc_with_delay(c, Duration::from_millis(SMALL_DELAY_MS));
+}
+
+/// Benchmark the time taken to run the raw `match` MPC circuits with a medium delay
+#[allow(non_snake_case)]
+pub fn bench_match_mpc__medium_delay(c: &mut Criterion) {
+    bench_match_mpc_with_delay(c, Duration::from_millis(MEDIUM_DELAY_MS));
+}
+
+/// Benchmark the time taken to run the raw `match` MPC circuits with a large delay
+#[allow(non_snake_case)]
+pub fn bench_match_mpc__large_delay(c: &mut Criterion) {
+    bench_match_mpc_with_delay(c, Duration::from_millis(LARGE_DELAY_MS));
+}
+
+/// Benchmark the constraint generation latency of the raw `match` MPC circuits with a small delay
+#[allow(non_snake_case)]
+pub fn bench_apply_constraints__small_delay(c: &mut Criterion) {
+    bench_apply_constraints_with_delay(c, Duration::from_millis(SMALL_DELAY_MS));
+}
+
+/// Benchmark the constraint generation latency of the raw `match` MPC circuits with a medium delay
+#[allow(non_snake_case)]
+pub fn bench_apply_constraints__medium_delay(c: &mut Criterion) {
+    bench_apply_constraints_with_delay(c, Duration::from_millis(MEDIUM_DELAY_MS));
+}
+
+/// Benchmark the constraint generation latency of the raw `match` MPC circuits with a large delay
+#[allow(non_snake_case)]
+pub fn bench_apply_constraints__large_delay(c: &mut Criterion) {
+    bench_apply_constraints_with_delay(c, Duration::from_millis(LARGE_DELAY_MS));
+}
+
+/// Benchmark the time it takes to prove a `VALID MATCH MPC` statement with a small delay
+#[allow(non_snake_case)]
+pub fn bench_prover_latency__small_delay(c: &mut Criterion) {
+    bench_prover_latency_with_delay(c, Duration::from_millis(SMALL_DELAY_MS));
+}
+
+/// Benchmark the time it takes to prove a `VALID MATCH MPC` statement with a medium delay
+#[allow(non_snake_case)]
+pub fn bench_prover_latency__medium_delay(c: &mut Criterion) {
+    bench_prover_latency_with_delay(c, Duration::from_millis(MEDIUM_DELAY_MS));
+}
+
+/// Benchmark the time it takes to prove a `VALID MATCH MPC` statement with a large delay
+#[allow(non_snake_case)]
+pub fn bench_prover_latency__large_delay(c: &mut Criterion) {
+    bench_prover_latency_with_delay(c, Duration::from_millis(LARGE_DELAY_MS));
 }
 
 /// Benchmarks the verification latency of a `VALID MATCH MPC` statement
@@ -242,6 +318,16 @@ pub fn bench_verifier_latency(c: &mut Criterion) {
 criterion_group! {
     name = match_mpc;
     config = Criterion::default().sample_size(10);
-    targets = bench_match_mpc, bench_apply_constraints, bench_prover_latency, bench_verifier_latency
+    targets =
+        bench_match_mpc__small_delay,
+        bench_match_mpc__medium_delay,
+        bench_match_mpc__large_delay,
+        bench_apply_constraints__small_delay,
+        bench_apply_constraints__medium_delay,
+        bench_apply_constraints__large_delay,
+        bench_prover_latency__small_delay,
+        bench_prover_latency__medium_delay,
+        bench_prover_latency__large_delay,
+        bench_verifier_latency,
 }
 criterion_main!(match_mpc);

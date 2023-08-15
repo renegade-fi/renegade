@@ -2,16 +2,22 @@
 pub mod mock_with_delay;
 pub mod mocks;
 
-use std::{fmt::Debug, net::SocketAddr, sync::Arc};
+use std::{fmt::Debug, net::SocketAddr, sync::Arc, time::Duration};
 
 use dns_lookup::lookup_host;
 use futures::{executor::block_on, future::join_all, Future};
-use mpc_stark::{network::QuicTwoPartyNet, MpcFabric, PARTY0, PARTY1};
+use mpc_stark::{
+    network::{MpcNetwork, QuicTwoPartyNet},
+    MpcFabric, PARTY0, PARTY1,
+};
 use tokio::runtime::Handle;
 
 use crate::mpc_network::mocks::MockNetwork;
 
-use self::mocks::{PartyIDBeaverSource, UnboundedDuplexStream};
+use self::{
+    mock_with_delay::MockNetworkWithDelay,
+    mocks::{PartyIDBeaverSource, UnboundedDuplexStream},
+};
 
 /// The size of MPC network to allocate by default
 pub const DEFAULT_MPC_SIZE_HINT: usize = 1_000_000;
@@ -72,14 +78,38 @@ where
 {
     // Build a duplex stream to broker communication between the two parties
     let (party0_stream, party1_stream) = UnboundedDuplexStream::new_duplex_pair();
-    let party0_fabric = MpcFabric::new(
-        MockNetwork::new(PARTY0, party0_stream),
-        PartyIDBeaverSource::new(PARTY0),
-    );
-    let party1_fabric = MpcFabric::new(
-        MockNetwork::new(PARTY1, party1_stream),
-        PartyIDBeaverSource::new(PARTY1),
-    );
+    let party0_conn = MockNetwork::new(PARTY0, party0_stream);
+    let party1_conn = MockNetwork::new(PARTY1, party1_stream);
+
+    execute_mock_mpc_with_network(f, party0_conn, party1_conn).await
+}
+
+/// Run a mock MPC connected by a duplex stream that has an added delay as the mock network
+pub async fn execute_mock_mpc_with_delay<T, S, F>(f: F, delay: Duration) -> (T, T)
+where
+    T: Send + 'static,
+    S: Future<Output = T> + Send + 'static,
+    F: Fn(MpcFabric) -> S + Send + Sync + 'static,
+{
+    // Build a duplex stream to broker communication between the two parties
+    let (party0_stream, party1_stream) = UnboundedDuplexStream::new_duplex_pair();
+    let party0_conn = MockNetworkWithDelay::new(PARTY0, party0_stream, delay);
+    let party1_conn = MockNetworkWithDelay::new(PARTY1, party1_stream, delay);
+
+    execute_mock_mpc_with_network(f, party0_conn, party1_conn).await
+}
+
+/// Execute a mock MPC with a given implementation of `MpcNetwork`
+async fn execute_mock_mpc_with_network<T, S, F, N>(f: F, party0_conn: N, party1_conn: N) -> (T, T)
+where
+    T: Send + 'static,
+    S: Future<Output = T> + Send + 'static,
+    F: Fn(MpcFabric) -> S + Send + Sync + 'static,
+    N: MpcNetwork + Send + Sync + 'static,
+{
+    // Build a duplex stream to broker communication between the two parties
+    let party0_fabric = MpcFabric::new(party0_conn, PartyIDBeaverSource::new(PARTY0));
+    let party1_fabric = MpcFabric::new(party1_conn, PartyIDBeaverSource::new(PARTY1));
 
     // Spawn two tasks to execute the MPC
     let fabric0 = party0_fabric.clone();
