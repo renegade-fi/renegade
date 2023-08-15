@@ -315,6 +315,11 @@ pub fn bench_verifier_latency(c: &mut Criterion) {
     });
 }
 
+// -------------------
+// | Criterion Setup |
+// -------------------
+
+#[cfg(feature = "large_benchmarks")]
 criterion_group! {
     name = match_mpc;
     config = Criterion::default().sample_size(10);
@@ -330,4 +335,16 @@ criterion_group! {
         bench_prover_latency__large_delay,
         bench_verifier_latency,
 }
+
+#[cfg(not(feature = "large_benchmarks"))]
+criterion_group! {
+    name = match_mpc;
+    config = Criterion::default().sample_size(10);
+    targets =
+        bench_match_mpc__small_delay,
+        bench_apply_constraints__small_delay,
+        bench_prover_latency__small_delay,
+        bench_verifier_latency,
+}
+
 criterion_main!(match_mpc);

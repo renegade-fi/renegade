@@ -241,6 +241,11 @@ pub fn bench_verifier__large_circuit(c: &mut Criterion) {
     );
 }
 
+// -------------------
+// | Criterion Setup |
+// -------------------
+
+#[cfg(feature = "large_benchmarks")]
 criterion_group! {
     name = valid_wallet_create;
     config = Criterion::default().sample_size(10);
@@ -252,4 +257,15 @@ criterion_group! {
         bench_prover__large_circuit,
         bench_verifier__large_circuit
 }
+
+#[cfg(not(feature = "large_benchmarks"))]
+criterion_group! {
+    name = valid_wallet_create;
+    config = Criterion::default().sample_size(10);
+    targets =
+        bench_apply_constraints__small_circuit,
+        bench_prover__small_circuit,
+        bench_verifier__small_circuit,
+}
+
 criterion_main!(valid_wallet_create);

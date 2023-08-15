@@ -5,6 +5,7 @@ edition = "2021"
 
 [features]
 test_helpers = []
+large_benchmarks = []
 
 [[test]]
 name = "integration"
