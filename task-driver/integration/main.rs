@@ -120,7 +120,6 @@ impl From<CliArgs> for IntegrationTestArgs {
             chain: ChainId::Devnet,
             contract_addr: darkpool_addr,
             starknet_json_rpc_addr: Some(format!("{}/rpc", test_args.devnet_url)),
-            sequencer_addr: Some(test_args.devnet_url),
             infura_api_key: None,
             starknet_account_addresses: vec![test_args.starknet_account_addr],
             starknet_pkeys: vec![test_args.starknet_pkey],

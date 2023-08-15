@@ -3,7 +3,6 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    iter,
     str::FromStr,
     sync::{Arc, Mutex},
     time::Duration,
@@ -35,17 +34,14 @@ use renegade_crypto::fields::{
 };
 use reqwest::Url as ReqwestUrl;
 use starknet::{
-    accounts::{Account, Call, SingleOwnerAccount},
+    accounts::{Account, Call, ConnectedAccount, SingleOwnerAccount},
     core::types::{
         BlockId as CoreBlockId, BlockTag, EmittedEvent, EventFilter,
-        FieldElement as StarknetFieldElement, FunctionCall,
+        FieldElement as StarknetFieldElement, FunctionCall, InvokeTransaction,
+        MaybePendingTransactionReceipt, Transaction, TransactionReceipt, TransactionStatus,
     },
     providers::{
         jsonrpc::{HttpTransport, JsonRpcClient},
-        sequencer::{
-            models::{TransactionInfo, TransactionStatus},
-            SequencerGatewayProvider,
-        },
         Provider,
     },
     signers::{LocalWallet, SigningKey},
@@ -80,8 +76,11 @@ const TX_STATUS_POLL_INTERVAL_MS: u64 = 10_000; // 10 seconds
 /// The fee estimate multiplier to use as `MAX_FEE` for transactions
 const MAX_FEE_MULTIPLIER: f32 = 3.0;
 
-/// Error message emitted when wallet secret shares cannot be parsed from a tx
-const ERR_WALLET_SHARES_NOT_FOUND: &str = "could not parse wallet public shares from tx calldata";
+/// Error message emitted when an unexpected transaction type is found
+const ERR_UNEXPECTED_TX_TYPE: &str = "unexpected transaction type found";
+
+/// A type alias for the account type used for interacting with RPC nodes
+pub type RpcAccount = SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>;
 
 /// Macro helper to pack a serializable value into a vector of felts
 ///
@@ -107,8 +106,6 @@ pub struct StarknetClientConfig {
     /// The HTTP addressable JSON-RPC node to connect to for
     /// requests that cannot go through the gateway
     pub starknet_json_rpc_addr: Option<String>,
-    /// The sequencer gateway address to connect to if on `Devnet`
-    pub sequencer_addr: Option<String>,
     /// The API key for the JSON-RPC node
     ///
     /// For now, we require only the API key's ID on our RPC node,
@@ -131,26 +128,6 @@ impl StarknetClientConfig {
     /// Only when this is enabled may the client write transactions to the sequencer
     pub fn account_enabled(&self) -> bool {
         !self.starknet_pkeys.is_empty() && !self.starknet_account_addresses.is_empty()
-    }
-
-    /// Build a gateway client from the config values
-    pub fn new_gateway_client(&self) -> SequencerGatewayProvider {
-        match self.chain {
-            ChainId::AlphaGoerli => SequencerGatewayProvider::starknet_alpha_goerli(),
-            ChainId::Mainnet => SequencerGatewayProvider::starknet_alpha_mainnet(),
-            ChainId::Devnet => {
-                let sequencer_url = self
-                    .sequencer_addr
-                    .clone()
-                    .unwrap_or_else(|| "http://localhost:5050".to_string());
-
-                SequencerGatewayProvider::new(
-                    ReqwestUrl::parse(&format!("{}/gateway", sequencer_url)).unwrap(),
-                    ReqwestUrl::parse(&format!("{}/feeder_gateway", sequencer_url)).unwrap(),
-                    StarknetFieldElement::from(0u8),
-                )
-            }
-        }
     }
 
     /// Create a new JSON-RPC client using the API credentials in the config
@@ -176,12 +153,10 @@ pub struct StarknetClient {
     pub config: StarknetClientConfig,
     /// The address of the contract on-chain
     pub contract_address: StarknetFieldElement,
-    /// The client used to connect with the sequencer gateway
-    gateway_client: Arc<SequencerGatewayProvider>,
     /// The client used to send starknet JSON-RPC requests
     jsonrpc_client: Option<Arc<JsonRpcClient<HttpTransport>>>,
     /// The accounts that may be used to sign outbound transactions
-    accounts: Arc<Vec<SingleOwnerAccount<SequencerGatewayProvider, LocalWallet>>>,
+    accounts: Arc<Vec<RpcAccount>>,
     /// The account index to use for the next transaction
     account_index: Arc<Mutex<usize>>,
 }
@@ -190,7 +165,6 @@ impl StarknetClient {
     /// Constructor
     pub fn new(config: StarknetClientConfig) -> Self {
         // Build the gateway and JSON-RPC clients
-        let gateway_client = Arc::new(config.new_gateway_client());
         let jsonrpc_client = config.new_jsonrpc_client().map(Arc::new);
 
         // Build the accounts to sign transactions with
@@ -207,7 +181,7 @@ impl StarknetClient {
                 // Build the account
                 let signer = LocalWallet::from(SigningKey::from_secret_scalar(key_felt));
                 SingleOwnerAccount::new(
-                    config.new_gateway_client(),
+                    config.new_jsonrpc_client().unwrap(),
                     signer,
                     account_addr_felt,
                     config.chain.into(),
@@ -227,7 +201,6 @@ impl StarknetClient {
         Self {
             config,
             contract_address,
-            gateway_client,
             jsonrpc_client,
             accounts,
             account_index: Arc::new(Mutex::new(0)),
@@ -243,21 +216,13 @@ impl StarknetClient {
         self.config.enabled()
     }
 
-    /// Get the underlying gateway client as an immutable reference
-    pub fn get_gateway_client(&self) -> &SequencerGatewayProvider {
-        &self.gateway_client
-    }
-
     /// Get the underlying RPC client as an immutable reference
     pub fn get_jsonrpc_client(&self) -> &JsonRpcClient<HttpTransport> {
         self.jsonrpc_client.as_ref().unwrap()
     }
 
     /// Get the underlying account at the given index as an immutable reference
-    pub fn get_account(
-        &self,
-        account_index: usize,
-    ) -> &SingleOwnerAccount<SequencerGatewayProvider, LocalWallet> {
+    pub fn get_account(&self, account_index: usize) -> &RpcAccount {
         self.accounts.as_ref().get(account_index).unwrap()
     }
 
@@ -279,6 +244,31 @@ impl StarknetClient {
             .call(call, CoreBlockId::Tag(BlockTag::Pending))
             .await
             .map_err(|err| StarknetClientError::Gateway(err.to_string()))
+    }
+
+    /// Helper to fetch the status of a given transaction
+    async fn get_tx_status(
+        &self,
+        tx_hash: TransactionHash,
+    ) -> Result<TransactionStatus, StarknetClientError> {
+        let receipt = self
+            .get_jsonrpc_client()
+            .get_transaction_receipt(tx_hash)
+            .await
+            .map_err(|err| StarknetClientError::Rpc(err.to_string()))?;
+
+        Ok(match receipt {
+            MaybePendingTransactionReceipt::PendingReceipt(_) => TransactionStatus::Pending,
+            MaybePendingTransactionReceipt::Receipt(receipt) => match receipt {
+                TransactionReceipt::Invoke(info) => info.status,
+                TransactionReceipt::L1Handler(info) => info.status,
+                TransactionReceipt::Declare(info) => info.status,
+                TransactionReceipt::Deploy(info) => info.status,
+                TransactionReceipt::DeployAccount(info) => info.status,
+                #[allow(unreachable_patterns)] // future proofing
+                _ => return Err(StarknetClientError::Rpc(ERR_UNEXPECTED_TX_TYPE.to_string())),
+            },
+        })
     }
 
     /// Helper to setup a contract call with the correct max fee and account nonce
@@ -327,36 +317,27 @@ impl StarknetClient {
         &self,
         account_index: usize,
     ) -> Result<StarknetFieldElement, StarknetClientError> {
-        self.gateway_client
-            .get_nonce(
-                CoreBlockId::Tag(BlockTag::Pending),
-                self.get_account(account_index).address(),
-            )
+        self.get_account(account_index)
+            .get_nonce()
             .await
             .map_err(|err| StarknetClientError::Rpc(err.to_string()))
     }
 
     /// Poll a transaction until it is finalized into the accepted on L2 state
-    #[allow(deprecated)]
     pub async fn poll_transaction_completed(
         &self,
         tx_hash: StarknetFieldElement,
-    ) -> Result<TransactionInfo, StarknetClientError> {
+    ) -> Result<TransactionStatus, StarknetClientError> {
         let sleep_duration = Duration::from_millis(TX_STATUS_POLL_INTERVAL_MS);
         loop {
-            let res = self
-                .gateway_client
-                .get_transaction(tx_hash)
-                .await
-                .map_err(|err| StarknetClientError::Gateway(err.to_string()))?;
-            log::info!("polling transaction, status: {:?}", res.status);
+            let status = self.get_tx_status(tx_hash).await?;
+            log::info!("polling transaction, status: {status:?}");
 
             // Break if the transaction has made it out of the received state
-            match res.status {
+            match status {
                 TransactionStatus::Rejected
-                | TransactionStatus::Pending
                 | TransactionStatus::AcceptedOnL2
-                | TransactionStatus::AcceptedOnL1 => return Ok(res),
+                | TransactionStatus::AcceptedOnL1 => return Ok(status),
                 _ => {}
             }
 
@@ -483,8 +464,6 @@ impl StarknetClient {
             },
         };
 
-        println!("got block range: [{start_block}, {end_block:?}]");
-
         let earliest_block = match self.config.chain {
             ChainId::AlphaGoerli => GOERLI_CONTRACT_DEPLOYMENT_BLOCK,
             ChainId::Mainnet => MAINNET_CONTRACT_DEPLOYMENT_BLOCK,
@@ -537,34 +516,35 @@ impl StarknetClient {
         public_blinder_share: Scalar,
         tx_hash: TransactionHash,
     ) -> Result<SizedWalletShare, StarknetClientError> {
-        let invocation_details = self
-            .get_gateway_client()
-            .get_transaction_trace(tx_hash)
+        // Parse the entrypoint selector and calldata from the invocation info
+        let transaction_info = self
+            .get_jsonrpc_client()
+            .get_transaction_by_hash(tx_hash)
             .await
-            .map_err(|err| StarknetClientError::Gateway(err.to_string()))?
-            .function_invocation
-            .unwrap();
+            .map_err(|err| StarknetClientError::Gateway(err.to_string()))?;
 
-        // Check the wrapper call as well as any internal calls for the ciphertext
-        // Typically the relevant calldata will be found in an internal call that the account
-        // contract delegates to via __execute__
-        let reduced_blinder_share = scalar_to_starknet_felt(&public_blinder_share);
-        for invocation in
-            iter::once(&invocation_details).chain(invocation_details.internal_calls.iter())
-        {
-            if let Ok(public_shares) = parse_shares_from_calldata(
-                invocation.selector.unwrap(),
-                &invocation.calldata,
-                reduced_blinder_share,
-            ) {
-                return Ok(public_shares);
+        let (selector, calldata) = if let Transaction::Invoke(tx_info) = transaction_info {
+            match tx_info {
+                InvokeTransaction::V0(tx_info) => (tx_info.entry_point_selector, tx_info.calldata),
+                InvokeTransaction::V1(tx_info) => {
+                    // In an invoke v1 transaction, the calldata is of the form:
+                    //      `[contract_addr, entrypoint_selector, ..calldata]`
+                    // We need to strip the first two elements to get the actual calldata
+                    let selector = tx_info.calldata[1];
+                    let calldata = tx_info.calldata[2..].to_vec();
+                    (selector, calldata)
+                }
             }
-        }
+        } else {
+            return Err(StarknetClientError::Rpc(ERR_UNEXPECTED_TX_TYPE.to_string()));
+        };
 
-        log::error!("could not parse wallet public shares from transaction trace");
-        Err(StarknetClientError::NotFound(
-            ERR_WALLET_SHARES_NOT_FOUND.to_string(),
-        ))
+        // Parse the secret shares from the calldata
+        parse_shares_from_calldata(
+            selector,
+            &calldata,
+            scalar_to_starknet_felt(&public_blinder_share),
+        )
     }
 
     // ------------------------

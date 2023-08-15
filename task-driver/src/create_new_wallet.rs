@@ -25,7 +25,6 @@ use external_api::types::Wallet;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use renegade_crypto::fields::starknet_felt_to_biguint;
 use serde::Serialize;
-use starknet::providers::sequencer::models::TransactionStatus;
 use starknet_client::client::StarknetClient;
 use state::RelayerState;
 use tokio::sync::oneshot;
@@ -39,8 +38,6 @@ use super::{
 /// Error occurs when a wallet is submitted with secret shares that do not combine
 /// to recover the wallet
 const ERR_INVALID_SHARING: &str = "invalid secret shares for wallet";
-/// Error occurs when a Starknet transaction fails
-const ERR_TRANSACTION_FAILED: &str = "transaction rejected";
 /// The task name to display when logging
 const NEW_WALLET_TASK_NAME: &str = "create-new-wallet";
 
@@ -276,17 +273,10 @@ impl NewWalletTask {
             .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))?;
         log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
 
-        let res = self
-            .starknet_client
+        self.starknet_client
             .poll_transaction_completed(tx_hash)
             .await
             .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))?;
-
-        if let TransactionStatus::Rejected = res.status {
-            return Err(NewWalletTaskError::Starknet(
-                ERR_TRANSACTION_FAILED.to_string(),
-            ));
-        }
 
         Ok(())
     }

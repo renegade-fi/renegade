@@ -120,7 +120,6 @@ async fn main() -> Result<(), CoordinatorError> {
         contract_addr: args.contract_address.clone(),
         infura_api_key: None,
         starknet_json_rpc_addr: args.starknet_jsonrpc_node.clone(),
-        sequencer_addr: None, /* use default address */
         starknet_account_addresses: args.starknet_account_addresses,
         starknet_pkeys: args.starknet_private_keys,
     });
