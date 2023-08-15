@@ -6,3 +6,4 @@ Cargo.lock
 .vscode
 *.sw[a-p]
 secrets.env
+**/flamegraph.svg
