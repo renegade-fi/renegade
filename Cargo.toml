@@ -30,6 +30,7 @@ exclude = ["mpc-stark", "mpc-bulletproof"]
 [profile.bench]
 opt-level = 3 # Full optimizations
 lto = true
+debug = true
 
 [profile.release]
 opt-level = 3 # Full optimizations
