@@ -175,9 +175,9 @@ pub mod test_helpers {
     use super::{ValidWalletCreateStatement, ValidWalletCreateWitness};
 
     /// Witness with default size parameters
-    pub(super) type SizedWitness = ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    pub type SizedWitness = ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     /// Statement with default size parameters
-    pub(super) type SizedStatement = ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    pub type SizedStatement = ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     // -----------
     // | Helpers |
