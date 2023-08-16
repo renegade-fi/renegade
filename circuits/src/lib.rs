@@ -6,6 +6,11 @@
 #![deny(clippy::missing_docs_in_private_items)]
 #![deny(unsafe_code)]
 
+use crate::zk_circuits::{
+    valid_commitments::SizedValidCommitments, valid_match_mpc::ValidMatchMpcCircuit,
+    valid_reblind::SizedValidReblind, valid_settle::SizedValidSettle,
+    valid_wallet_create::SizedValidWalletCreate, valid_wallet_update::SizedValidWalletUpdate,
+};
 use circuit_types::{
     errors::{ProverError, VerifierError},
     traits::{
@@ -13,11 +18,12 @@ use circuit_types::{
         MultiproverCircuitCommitmentType, SingleProverCircuit,
     },
 };
+use lazy_static::lazy_static;
 use merlin::HashChainTranscript as Transcript;
 use mpc_bulletproof::{
     r1cs::{Prover, R1CSProof, Verifier},
     r1cs_mpc::{MpcProver, PartiallySharedR1CSProof},
-    PedersenGens,
+    BulletproofGens, PedersenGens,
 };
 
 pub mod mpc_circuits;
@@ -32,6 +38,25 @@ pub(crate) const SCALAR_MAX_BITS: usize = 253;
 pub(crate) const TRANSCRIPT_SEED: &str = "merlin seed";
 /// The maximum bit index that may be set in a positive `Scalar`
 pub(crate) const POSITIVE_SCALAR_MAX_BITS: usize = 250;
+
+lazy_static! {
+    /// The maximum number of generators that may be needed for any of the circuits
+    /// so that the generators may be pre-allocated and re-used between proofs
+    static ref MAX_GENERATORS: usize = vec![
+        SizedValidWalletCreate::BP_GENS_CAPACITY,
+        SizedValidWalletUpdate::BP_GENS_CAPACITY,
+        SizedValidReblind::BP_GENS_CAPACITY,
+        SizedValidCommitments::BP_GENS_CAPACITY,
+        ValidMatchMpcCircuit::BP_GENS_CAPACITY,
+        SizedValidSettle::BP_GENS_CAPACITY,
+    ]
+    .into_iter()
+    .max()
+    .unwrap();
+
+    /// The pre-allocated bulletproof generators for the circuits
+    static ref PRE_ALLOCATED_GENS: BulletproofGens = BulletproofGens::new(*MAX_GENERATORS, 1 /* party_capacity */);
+}
 
 // ----------
 // | Macros |
@@ -105,7 +130,7 @@ pub fn singleprover_prove<C: SingleProverCircuit>(
     let pc_gens = PedersenGens::default();
     let prover = Prover::new(&pc_gens, &mut transcript);
 
-    C::prove(witness, statement, prover)
+    C::prove(witness, statement, &PRE_ALLOCATED_GENS, prover)
 }
 
 /// Abstracts over the flow of collaboratively proving a generic circuit
@@ -129,7 +154,7 @@ where
     let prover = MpcProver::new_with_fabric(fabric.clone(), transcript, pc_gens);
 
     // Prove the statement
-    C::prove(witness, statement, fabric, prover)
+    C::prove(witness, statement, &PRE_ALLOCATED_GENS, fabric, prover)
 }
 
 /// Abstracts over the flow of verifying a proof for a single-prover proved circuit
@@ -143,7 +168,13 @@ pub fn verify_singleprover_proof<C: SingleProverCircuit>(
     let pc_gens = PedersenGens::default();
     let verifier = Verifier::new(&pc_gens, &mut verifier_transcript);
 
-    C::verify(witness_commitment, statement, proof, verifier)
+    C::verify(
+        witness_commitment,
+        statement,
+        proof,
+        &PRE_ALLOCATED_GENS,
+        verifier,
+    )
 }
 
 /// Abstracts over the flow of verifying a proof for a collaboratively proved circuit
@@ -162,7 +193,13 @@ where
     let pc_gens = PedersenGens::default();
     let verifier = Verifier::new(&pc_gens, &mut verifier_transcript);
 
-    C::verify(witness_commitment, statement, proof, verifier)
+    C::verify(
+        witness_commitment,
+        statement,
+        proof,
+        &PRE_ALLOCATED_GENS,
+        verifier,
+    )
 }
 
 // ----------------
@@ -175,7 +212,7 @@ pub(crate) mod test_helpers {
     use merlin::HashChainTranscript as Transcript;
     use mpc_bulletproof::{
         r1cs::{Prover, Verifier},
-        PedersenGens,
+        BulletproofGens, PedersenGens,
     };
     use tracing::log::LevelFilter;
 
@@ -207,6 +244,8 @@ pub(crate) mod test_helpers {
 
     /// Abstracts over the flow of proving and verifying a circuit given
     /// a valid statement + witness assignment
+    ///
+    /// Here we do not use the pre-allocated generators, as this is too expensive to do in tests
     pub fn bulletproof_prove_and_verify<C: SingleProverCircuit>(
         witness: C::Witness,
         statement: C::Statement,
@@ -215,14 +254,17 @@ pub(crate) mod test_helpers {
         let pc_gens = PedersenGens::default();
         let prover = Prover::new(&pc_gens, &mut transcript);
 
+        let bp_gens = BulletproofGens::new(C::BP_GENS_CAPACITY, 1 /* party_capacity */);
+
         // Prove the statement
-        let (witness_commitment, proof) = C::prove(witness, statement.clone(), prover).unwrap();
+        let (witness_commitment, proof) =
+            C::prove(witness, statement.clone(), &bp_gens, prover).unwrap();
 
         // Verify the statement with a fresh transcript
         let mut verifier_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
         let verifier = Verifier::new(&pc_gens, &mut verifier_transcript);
 
-        C::verify(witness_commitment, statement, proof, verifier)
+        C::verify(witness_commitment, statement, proof, &bp_gens, verifier)
     }
 }
 

@@ -7,16 +7,17 @@ use circuit_types::{
     traits::{CircuitBaseType, SingleProverCircuit},
     wallet::Wallet,
 };
-use circuits::zk_circuits::valid_settle::{
-    test_helpers::create_witness_statement, ValidSettle, ValidSettleStatement, ValidSettleWitness,
+use circuits::{
+    singleprover_prove, verify_singleprover_proof,
+    zk_circuits::valid_settle::{
+        test_helpers::create_witness_statement, ValidSettle, ValidSettleStatement,
+        ValidSettleWitness,
+    },
 };
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use merlin::HashChainTranscript;
-use mpc_bulletproof::{
-    r1cs::{Prover, Verifier},
-    PedersenGens,
-};
+use mpc_bulletproof::{r1cs::Prover, PedersenGens};
 use rand::thread_rng;
 
 /// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT)
@@ -104,11 +105,11 @@ pub fn bench_prover_with_sizes<
             create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>();
 
         b.iter(|| {
-            let mut transcript = HashChainTranscript::new(b"test");
-            let pc_gens = PedersenGens::default();
-            let prover = Prover::new(&pc_gens, &mut transcript);
-
-            ValidSettle::prove(witness.clone(), statement.clone(), prover).unwrap();
+            singleprover_prove::<ValidSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>(
+                witness.clone(),
+                statement.clone(),
+            )
+            .unwrap();
         });
     });
 }
@@ -133,20 +134,17 @@ pub fn bench_verifier_with_sizes<
         // First generate a proof that will be verified multiple times
         let (witness, statement) =
             create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>();
-        let mut transcript = HashChainTranscript::new(b"test");
-        let pc_gens = PedersenGens::default();
-        let prover = Prover::new(&pc_gens, &mut transcript);
 
-        let (commitments, proof) = ValidSettle::prove(witness, statement.clone(), prover).unwrap();
+        let (commitments, proof) = singleprover_prove::<
+            ValidSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        >(witness, statement.clone())
+        .unwrap();
+
         b.iter(|| {
-            let mut transcript = HashChainTranscript::new(b"test");
-            let verifier = Verifier::new(&pc_gens, &mut transcript);
-
-            ValidSettle::verify(
-                commitments.clone(),
+            verify_singleprover_proof::<ValidSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>(
                 statement.clone(),
+                commitments.clone(),
                 proof.clone(),
-                verifier,
             )
             .unwrap();
         });

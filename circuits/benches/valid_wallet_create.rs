@@ -9,6 +9,7 @@ use circuits::zk_circuits::test_helpers::{create_wallet_shares, PUBLIC_KEYS};
 use circuits::zk_circuits::valid_wallet_create::{
     ValidWalletCreate, ValidWalletCreateStatement, ValidWalletCreateWitness,
 };
+use circuits::{singleprover_prove, verify_singleprover_proof};
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use itertools::Itertools;
@@ -133,11 +134,11 @@ pub fn bench_prover_with_sizes<
     );
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            let mut transcript = HashChainTranscript::new(b"test");
-            let pc_gens = PedersenGens::default();
-            let prover = Prover::new(&pc_gens, &mut transcript);
-
-            ValidWalletCreate::prove(witness.clone(), statement.clone(), prover).unwrap();
+            singleprover_prove::<ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>(
+                witness.clone(),
+                statement.clone(),
+            )
+            .unwrap();
         });
     });
 }
@@ -155,12 +156,11 @@ pub fn bench_verifier_with_sizes<
     // First generate a proof that will be verified multiple times
     let (witness, statement) =
         create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>();
-    let mut transcript = HashChainTranscript::new(b"test");
-    let pc_gens = PedersenGens::default();
-    let prover = Prover::new(&pc_gens, &mut transcript);
 
-    let (commitments, proof) =
-        ValidWalletCreate::prove(witness, statement.clone(), prover).unwrap();
+    let (commitments, proof) = singleprover_prove::<
+        ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    >(witness, statement.clone())
+    .unwrap();
 
     let mut group = c.benchmark_group("valid_wallet_create");
     let benchmark_id = BenchmarkId::new(
@@ -169,14 +169,10 @@ pub fn bench_verifier_with_sizes<
     );
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            let mut transcript = HashChainTranscript::new(b"test");
-            let verifier = mpc_bulletproof::r1cs::Verifier::new(&pc_gens, &mut transcript);
-
-            ValidWalletCreate::verify(
-                commitments.clone(),
+            verify_singleprover_proof::<ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>(
                 statement.clone(),
+                commitments.clone(),
                 proof.clone(),
-                verifier,
             )
             .unwrap();
         });

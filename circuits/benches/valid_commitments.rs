@@ -6,20 +6,20 @@ use circuit_types::{
     traits::{CircuitBaseType, SingleProverCircuit},
     wallet::Wallet,
 };
-use circuits::zk_circuits::{
-    test_helpers::PUBLIC_KEYS,
-    valid_commitments::{
-        test_helpers::create_witness_and_statement, ValidCommitments, ValidCommitmentsStatement,
-        ValidCommitmentsWitness,
+use circuits::{
+    singleprover_prove, verify_singleprover_proof,
+    zk_circuits::{
+        test_helpers::PUBLIC_KEYS,
+        valid_commitments::{
+            test_helpers::create_witness_and_statement, ValidCommitments,
+            ValidCommitmentsStatement, ValidCommitmentsWitness,
+        },
     },
 };
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use merlin::HashChainTranscript;
-use mpc_bulletproof::{
-    r1cs::{Prover, Verifier},
-    PedersenGens,
-};
+use mpc_bulletproof::{r1cs::Prover, PedersenGens};
 use rand::thread_rng;
 
 /// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT)
@@ -110,11 +110,11 @@ pub fn bench_prover_with_sizes<
         let (witness, statement) =
             create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>();
         b.iter(|| {
-            let mut transcript = HashChainTranscript::new(b"test");
-            let pc_gens = PedersenGens::default();
-            let prover = Prover::new(&pc_gens, &mut transcript);
-
-            ValidCommitments::prove(witness.clone(), statement.clone(), prover).unwrap();
+            singleprover_prove::<ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>(
+                witness.clone(),
+                statement.clone(),
+            )
+            .unwrap();
         });
     });
 }
@@ -139,23 +139,16 @@ pub fn bench_verifier_with_sizes<
         // First generate a proof that will be verified multiple times
         let (witness, statement) =
             create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>();
-        let mut transcript = HashChainTranscript::new(b"test");
-        let pc_gens = PedersenGens::default();
-        let prover = Prover::new(&pc_gens, &mut transcript);
 
-        let (commitments, proof) =
-            ValidCommitments::prove(witness, statement.clone(), prover).unwrap();
+        let (commitments, proof) = singleprover_prove::<
+            ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        >(witness, statement.clone())
+        .unwrap();
 
         b.iter(|| {
-            let mut transcript = HashChainTranscript::new(b"test");
-            let verifier = Verifier::new(&pc_gens, &mut transcript);
-
-            let res = ValidCommitments::verify(
-                commitments.clone(),
-                statement.clone(),
-                proof.clone(),
-                verifier,
-            );
+            let res = verify_singleprover_proof::<
+                ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+            >(statement.clone(), commitments.clone(), proof.clone());
 
             #[allow(unused_must_use)]
             {
