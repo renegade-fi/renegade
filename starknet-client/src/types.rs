@@ -82,9 +82,9 @@ impl From<ExternalTransfer> for Vec<StarknetFieldElement> {
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct StarknetU256 {
     /// The low 128 bits of the represented integer
-    low: u128,
+    pub low: u128,
     /// The high 128 bits of the represented integer
-    high: u128,
+    pub high: u128,
 }
 
 impl From<BigUint> for StarknetU256 {
