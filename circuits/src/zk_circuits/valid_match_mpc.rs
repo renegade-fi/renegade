@@ -630,7 +630,7 @@ pub mod test_helpers {
 mod tests {
     use circuit_types::traits::{MultiProverCircuit, MultiproverCircuitCommitmentType};
     use merlin::HashChainTranscript;
-    use mpc_bulletproof::{r1cs::Verifier, r1cs_mpc::MpcProver, PedersenGens};
+    use mpc_bulletproof::{r1cs::Verifier, r1cs_mpc::MpcProver, BulletproofGens, PedersenGens};
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::zk_circuits::valid_match_mpc::{
@@ -649,9 +649,15 @@ mod tests {
                 let transcript = HashChainTranscript::new(b"test");
                 let prover = MpcProver::new_with_fabric(fabric.clone(), transcript, pc_gens);
 
+                let bp_gens = BulletproofGens::new(
+                    ValidMatchMpcCircuit::BP_GENS_CAPACITY,
+                    1, /* party_capacity */
+                );
+
                 ValidMatchMpcCircuit::prove(
                     witness,
                     (), /* statement */
+                    &bp_gens,
                     fabric.clone(),
                     prover,
                 )
@@ -670,7 +676,18 @@ mod tests {
         let mut transcript = HashChainTranscript::new(b"test");
         let verifier = Verifier::new(&pc_gens, &mut transcript);
 
-        ValidMatchMpcCircuit::verify(witness_commitment, () /* statement */, proof, verifier)
-            .unwrap();
+        let bp_gens = BulletproofGens::new(
+            ValidMatchMpcCircuit::BP_GENS_CAPACITY,
+            1, /* party_capacity */
+        );
+
+        ValidMatchMpcCircuit::verify(
+            witness_commitment,
+            (), /* statement */
+            proof,
+            &bp_gens,
+            verifier,
+        )
+        .unwrap();
     }
 }

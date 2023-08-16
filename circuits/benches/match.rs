@@ -14,11 +14,11 @@ use circuit_types::{
     r#match::LinkableMatchResult,
     traits::{
         LinkableBaseType, MpcBaseType, MpcType, MultiProverCircuit, MultiproverCircuitBaseType,
-        SingleProverCircuit,
     },
 };
 use circuits::{
     mpc_circuits::r#match::compute_match,
+    multiprover_prove, singleprover_prove, verify_singleprover_proof,
     zk_circuits::valid_match_mpc::{
         test_helpers::create_dummy_witness, ValidMatchMpcCircuit, ValidMatchMpcSingleProver,
         ValidMatchMpcWitness,
@@ -27,11 +27,7 @@ use circuits::{
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 use merlin::HashChainTranscript;
-use mpc_bulletproof::{
-    r1cs::{Prover, Verifier},
-    r1cs_mpc::MpcProver,
-    PedersenGens,
-};
+use mpc_bulletproof::{r1cs_mpc::MpcProver, PedersenGens};
 use mpc_stark::{algebra::scalar::Scalar, PARTY0, PARTY1};
 use rand::thread_rng;
 use test_helpers::mpc_network::execute_mock_mpc_with_delay;
@@ -201,18 +197,16 @@ pub fn bench_prover_latency_with_delay(c: &mut Criterion, delay: Duration) {
                         // Create a witness to the proof
                         let witness = create_dummy_witness(&fabric);
 
-                        // Create a constraint system to allocate the constraints within
-                        let pc_gens = PedersenGens::default();
-                        let transcript = HashChainTranscript::new(b"test");
-                        let prover =
-                            MpcProver::new_with_fabric(fabric.clone(), transcript, pc_gens);
-
                         // Start the measurement after the setup code
                         let start = Instant::now();
 
                         // Allocate the inputs in the constraint system
-                        let (_comm, proof) =
-                            ValidMatchMpcCircuit::prove(witness, (), fabric, prover).unwrap();
+                        let (_comm, proof) = multiprover_prove::<ValidMatchMpcCircuit>(
+                            witness.clone(),
+                            (), /* statement */
+                            fabric,
+                        )
+                        .unwrap();
 
                         let _opened_proof = black_box(proof.open().await);
                         start.elapsed()
@@ -291,24 +285,16 @@ pub fn bench_prover_latency__large_delay(c: &mut Criterion) {
 pub fn bench_verifier_latency(c: &mut Criterion) {
     // Create a dummy proof to verify in the benchmark loop
     let dummy_witness = get_dummy_singleprover_witness();
-    let pc_gens = PedersenGens::default();
-    let mut transcript = HashChainTranscript::new(b"test");
-    let prover = Prover::new(&pc_gens, &mut transcript);
-
     let (witness_comm, proof) =
-        ValidMatchMpcSingleProver::prove(dummy_witness, (), prover).unwrap();
+        singleprover_prove::<ValidMatchMpcSingleProver>(dummy_witness, ()).unwrap();
 
     let mut group = c.benchmark_group("match-mpc");
     group.bench_function(BenchmarkId::new("verifier", ""), |b| {
         b.iter(|| {
-            let mut transcript = HashChainTranscript::new(b"test");
-            let verifier = Verifier::new(&pc_gens, &mut transcript);
-
-            assert!(ValidMatchMpcSingleProver::verify(
+            assert!(verify_singleprover_proof::<ValidMatchMpcSingleProver>(
+                (), /* statement */
                 witness_comm.clone(),
-                (),
-                proof.clone(),
-                verifier
+                proof.clone()
             )
             .is_err());
         })

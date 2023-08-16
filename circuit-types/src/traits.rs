@@ -1082,6 +1082,7 @@ pub trait SingleProverCircuit {
     fn prove(
         witness: Self::Witness,
         statement: Self::Statement,
+        bp_gens: &BulletproofGens,
         mut prover: Prover,
     ) -> Result<
         (
@@ -1100,8 +1101,7 @@ pub trait SingleProverCircuit {
             .map_err(ProverError::R1CS)?;
 
         // Generate the proof
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens).map_err(ProverError::R1CS)?;
+        let proof = prover.prove(bp_gens).map_err(ProverError::R1CS)?;
 
         Ok((witness_comm, proof))
     }
@@ -1114,6 +1114,7 @@ pub trait SingleProverCircuit {
         witness_commitment: <Self::Witness as CircuitBaseType>::CommitmentType,
         statement: Self::Statement,
         proof: R1CSProof,
+        bp_gens: &BulletproofGens,
         mut verifier: Verifier,
     ) -> Result<(), VerifierError> {
         // Commit to the witness and statement
@@ -1125,9 +1126,8 @@ pub trait SingleProverCircuit {
             .map_err(VerifierError::R1CS)?;
 
         // Verify the proof
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         verifier
-            .verify(&proof, &bp_gens)
+            .verify(&proof, bp_gens)
             .map_err(VerifierError::R1CS)
     }
 }
@@ -1184,6 +1184,7 @@ pub trait MultiProverCircuit {
     fn prove(
         witness: Self::Witness,
         statement: Self::Statement,
+        bp_gens: &BulletproofGens,
         fabric: MpcFabric,
         mut prover: MpcProver,
     ) -> Result<
@@ -1206,8 +1207,7 @@ pub trait MultiProverCircuit {
         Self::apply_constraints_multiprover(witness_var, statement_var, fabric, &mut prover)?;
 
         // Generate the proof
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
-        let proof = prover.prove(&bp_gens).map_err(ProverError::Collaborative)?;
+        let proof = prover.prove(bp_gens).map_err(ProverError::Collaborative)?;
 
         Ok((witness_comm, proof))
     }
@@ -1227,6 +1227,7 @@ pub trait MultiProverCircuit {
                 as MultiproverCircuitCommitmentType>::BaseCommitType,
         statement: <Self::Statement as MultiproverCircuitBaseType>::BaseType,
         proof: R1CSProof,
+        bp_gens: &BulletproofGens,
         mut verifier: Verifier,
     ) -> Result<(), VerifierError>
 where {
@@ -1239,9 +1240,8 @@ where {
             .map_err(VerifierError::R1CS)?;
 
         // Verify the proof
-        let bp_gens = BulletproofGens::new(Self::BP_GENS_CAPACITY, 1 /* party_capacity */);
         verifier
-            .verify(&proof, &bp_gens)
+            .verify(&proof, bp_gens)
             .map_err(VerifierError::R1CS)
     }
 }

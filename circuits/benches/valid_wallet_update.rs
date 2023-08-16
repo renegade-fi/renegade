@@ -9,9 +9,12 @@ use circuit_types::{
     transfers::ExternalTransfer,
     wallet::Wallet,
 };
-use circuits::zk_circuits::valid_wallet_update::{
-    test_helpers::construct_witness_statement, ValidWalletUpdate, ValidWalletUpdateStatement,
-    ValidWalletUpdateWitness,
+use circuits::{
+    singleprover_prove, verify_singleprover_proof,
+    zk_circuits::valid_wallet_update::{
+        test_helpers::construct_witness_statement, ValidWalletUpdate, ValidWalletUpdateStatement,
+        ValidWalletUpdateWitness,
+    },
 };
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
@@ -123,11 +126,10 @@ pub fn bench_prover_with_sizes<
             create_witness_statement::<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>();
 
         b.iter(|| {
-            let mut transcript = HashChainTranscript::new(b"test");
-            let pc_gens = PedersenGens::default();
-            let prover = Prover::new(&pc_gens, &mut transcript);
-
-            ValidWalletUpdate::prove(witness.clone(), statement.clone(), prover).unwrap();
+            singleprover_prove::<
+                ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
+            >(witness.clone(), statement.clone())
+            .unwrap();
         });
     });
 }
@@ -156,23 +158,16 @@ pub fn bench_verifier<
         // First generate a proof that will be verified multiple times
         let (witness, statement) =
             create_witness_statement::<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>();
-        let mut transcript = HashChainTranscript::new(b"test");
-        let pc_gens = PedersenGens::default();
-        let prover = Prover::new(&pc_gens, &mut transcript);
 
-        let (commitments, proof) =
-            ValidWalletUpdate::prove(witness, statement.clone(), prover).unwrap();
+        let (commitments, proof) = singleprover_prove::<
+            ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
+        >(witness, statement.clone())
+        .unwrap();
 
         b.iter(|| {
-            let mut transcript = HashChainTranscript::new(b"test");
-            let verifier = mpc_bulletproof::r1cs::Verifier::new(&pc_gens, &mut transcript);
-
-            ValidWalletUpdate::verify(
-                commitments.clone(),
-                statement.clone(),
-                proof.clone(),
-                verifier,
-            )
+            verify_singleprover_proof::<
+                ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
+            >(statement.clone(), commitments.clone(), proof.clone())
             .unwrap();
         });
     });
