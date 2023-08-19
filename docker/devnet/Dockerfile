@@ -1,28 +1,50 @@
-# We modify the base image of the `starknet-devnet` to include the Sierra compiler version
-# used in our contracts. The devnet compiles sources once they are declared from Sierra
-# to casm, so it needs a matching version to those used to generate the sender side artifacts
-FROM shardlabs/starknet-devnet AS base
+# Pull the compiled contract sources from the locally avialable image
+# This assumes that you have already built the contract sources, which happens
+# automatically when run via `cargo-integrate`
+FROM renegade-contracts:latest AS sources
 
-# Install curl and tar
-RUN apk add --no-cache curl tar
+# We use the katana RPC node as a devnet sequencer for testing
+# https://book.dojoengine.org/toolchain/katana/overview.html
+FROM ubuntu AS devnet
 
-# Install the Cairo compiler version used for our contracts
-ARG CAIRO_COMPILER_VERSION=2.0.1
+# Install dependencies
+RUN apt-get update && \
+    apt-get install -y git \
+    curl \
+    jq \
+    gcc
+
+# Install Cargo
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Install Katana directly from source
+ARG DOJO_REVISION=b0d24a3
+RUN git clone https://github.com/dojoengine/dojo
+WORKDIR /dojo
+RUN git checkout $DOJO_REVISION
+RUN cargo install --path ./crates/katana --locked --force
+
+# Install the CLI for deploying contracts
 WORKDIR /
-RUN curl -L -o /cairo-build.tar.gz https://github.com/starkware-libs/cairo/releases/download/v${CAIRO_COMPILER_VERSION}/release-x86_64-unknown-linux-musl.tar.gz
+RUN git clone -b cairo2-no-poseidon-or-verifier \
+    https://github.com/renegade-fi/renegade-contracts.git
+WORKDIR /renegade-contracts/starknet_scripts
+RUN cargo build
 
-RUN tar -xzf /cairo-build.tar.gz
-RUN rm /cairo-build.tar.gz
+# Copy the compiled contract sources from the sources image
+WORKDIR /
+COPY --from=sources /artifacts /artifacts
+COPY ./setup-sequencer.sh /setup-sequencer.sh
+RUN /setup-sequencer.sh || exit -1
 
-# Modify the entrypoint to run with our custom flags
-ENTRYPOINT starknet-devnet \
-    --sierra-compiler-path /cairo/bin/starknet-sierra-compile \
-    --compiler-args "--add-pythonic-hints --allowed-libfuncs-list-name all" \
-    --fork-network alpha-goerli \
-    --fork-retries 3 \
-    --timeout 1000 \
-    --host 0.0.0.0 \
-    --port 5050 \
+# Copy the deployment log to a configurable location
+ARG DEPLOYMENT_CONFIG_VOLUME=/deployments
+RUN mkdir $DEPLOYMENT_CONFIG_VOLUME
+RUN cp /renegade-contracts/starknet_scripts/deployments.json $DEPLOYMENT_CONFIG_VOLUME
+
+ENTRYPOINT katana \
     --seed 0 \
-    --lite-mode \
-    --verbose
+    --load-state /katana-state.out \
+    --disable-fee \
+    --chain-id KATANA

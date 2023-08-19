@@ -22,8 +22,7 @@ use state::mock::StateMockBuilder;
 use state::RelayerState;
 use task_driver::driver::TaskDriver;
 use test_helpers::{
-    contracts::deploy_darkpool, integration_test, integration_test_main,
-    mpc_network::await_result_with_error,
+    contracts::parse_addr_from_deployments_file, integration_test, integration_test_main,
 };
 use tracing::log::LevelFilter;
 use util::runtime::await_result;
@@ -45,7 +44,7 @@ struct CliArgs {
     #[arg(
         short = 'p',
         long,
-        default_value = "0xe3e70682c2094cac629f6fbed82c07cd"
+        default_value = "0x300001800000000300000180000000000030000000000003006001800006600"
     )]
     starknet_pkey: String,
     /// The address of the account contract to use for testing
@@ -54,7 +53,7 @@ struct CliArgs {
     /// run with seed 0
     #[arg(
         long,
-        default_value = "0x7e00d496e324876bbc8531f2d9a82bf154d1a04a50218ee74cdd372f75a551a"
+        default_value = "0x3ee9e18edc71a6df30ac3aca2e0b02a198fbce19b7480a63a0d71cbd76652e0"
     )]
     starknet_account_addr: String,
     /// The address of the darkpool deployed on Starknet at the time the test is started
@@ -62,6 +61,10 @@ struct CliArgs {
     /// If not provided, the test will deploy a new darkpool contract
     #[arg(long)]
     darkpool_addr: Option<String>,
+    /// The location of a `deployments.json` file that contains the addresses of the
+    /// deployed contracts
+    #[arg(long)]
+    deployments_path: Option<String>,
     /// The location of the contract compilation artifacts as an absolute path
     #[arg(long, default_value = "/artifacts")]
     cairo_artifacts_path: String,
@@ -102,17 +105,14 @@ impl From<CliArgs> for IntegrationTestArgs {
         let global_state = StateMockBuilder::default().build();
 
         // Deploy a version of the darkpool if one is not given
+        assert!(
+            test_args.darkpool_addr.is_some() || test_args.deployments_path.is_some(),
+            "one of `darkpool_addr` or `deployments_path` must be provided"
+        );
         let darkpool_addr = if let Some(addr) = test_args.darkpool_addr {
             addr
         } else {
-            await_result_with_error(deploy_darkpool(
-                &test_args.starknet_account_addr,
-                &test_args.starknet_pkey,
-                &test_args.cairo_artifacts_path,
-                &test_args.devnet_url,
-            ))
-            .map(|res| res.to_string())
-            .unwrap()
+            parse_addr_from_deployments_file(test_args.deployments_path.unwrap()).unwrap()
         };
 
         // Build a client that references the darkpool
