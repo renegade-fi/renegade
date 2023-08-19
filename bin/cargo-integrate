@@ -13,17 +13,12 @@ fi
 # Use BuildKit
 export DOCKER_BUILDKIT=1
 
-# Build the contracts first if not already built
-docker build --tag "renegade-contracts:latest" -f "docker/contracts/Dockerfile" .
-
-# Build the image
-docker build --tag "$2"-integration-test:latest -f "$2"/Dockerfile .
-
 # Bring up the compose file for the target package
 docker-compose \
   --file "$2"/docker-compose.yml \
   up \
   --remove-orphans \
+  --build \
   --force-recreate \
   --renew-anon-volumes \
   --abort-on-container-exit \

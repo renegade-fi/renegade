@@ -28,6 +28,7 @@ renegade-crypto = { path = "../renegade-crypto" }
 inventory = "0.3"
 itertools = "0.10.5"
 eyre = { workspace = true }
+json = "0.12"
 rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

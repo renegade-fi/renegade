@@ -1,7 +1,9 @@
 services:
   party0:
     image: circuits-integration-test:latest
-    build: .
+    build:
+      context: ..
+      dockerfile: circuits/Dockerfile
     ports:
       - "8000:8000"
     command: >
@@ -14,7 +16,9 @@ services:
     tty: true
   party1:
     image: circuits-integration-test:latest
-    build: .
+    build:
+      context: ..
+      dockerfile: circuits/Dockerfile
     ports:
       - "9000:9000"
     command: >

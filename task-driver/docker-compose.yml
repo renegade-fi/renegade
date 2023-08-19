@@ -1,26 +1,41 @@
 services:
+  contracts:
+    build:
+      context: ../docker/contracts
+    image: renegade-contracts:latest
+    entrypoint: sleep infinity
   sequencer:
     build:
-      dockerfile: ../docker/devnet/Dockerfile
+      context: ../docker/devnet
+    volumes:
+      - deployments:/deployments
     ports:
       - "5050:5050"
     environment:
       - STARKNET_DEVNET_CAIRO_VM=rust
     healthcheck:
-      test: "wget --no-verbose --tries=1 --spider http://localhost:5050/is_alive || exit 1"
+      test: "curl -X POST -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"starknet_chainId\",\"params\":[],\"id\":1}' http://localhost:5050/rpc || exit 1"
       interval: 5s
       timeout: 10s
       retries: 3
+    depends_on:
+      - contracts
   relayer:
     image: task-driver-integration-test:latest
-    build: .
+    build:
+      context: ..
+      dockerfile: task-driver/Dockerfile
+    volumes:
+      - deployments:/deployments
     ports:
       - "8000:8000"
     command: >
       cargo test --test integration --features "integration" -- 
-        --darkpool-addr 0x02179f01358c09410f234f1ece40d235719e05db3babca7bef0babc974333162 
+        --deployments-path /deployments/deployments.json
         --verbose 
     tty: true
     depends_on:
       sequencer:
         condition: service_healthy
+volumes:
+  deployments:

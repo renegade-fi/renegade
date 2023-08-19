@@ -8,14 +8,16 @@ RUN apt-get update && \
     apt-get install -y curl
 
 # Install Scarb
-ARG SCARB_VERSION=0.5.1
+ARG SCARB_VERSION=0.6.2
 ENV SHELL /bin/bash
 RUN curl --proto '=https' --tlsv1.2 -sSf https://docs.swmansion.com/scarb/install.sh | /bin/sh -s -- -v $SCARB_VERSION 
 ENV PATH="/root/.local/bin:${PATH}"
 
 # Clone the contracts source and build the contracts
 WORKDIR /sources
-RUN git clone https://github.com/renegade-fi/renegade-contracts.git
+RUN git clone \
+    -b cairo2-no-poseidon-or-verifier \
+    https://github.com/renegade-fi/renegade-contracts.git
 
 WORKDIR /sources/renegade-contracts
 RUN scarb build
