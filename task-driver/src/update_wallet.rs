@@ -18,7 +18,6 @@ use gossip_api::gossip::GossipOutbound;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use renegade_crypto::fields::starknet_felt_to_biguint;
 use serde::Serialize;
-use starknet::providers::sequencer::models::TransactionStatus;
 use starknet_client::client::StarknetClient;
 use state::RelayerState;
 use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
@@ -37,8 +36,6 @@ const UPDATE_WALLET_TASK_NAME: &str = "update-wallet";
 const ERR_INVALID_BLINDING: &str = "invalid blinding for new wallet";
 /// The wallet does not have a known Merkle proof attached
 const ERR_NO_MERKLE_PROOF: &str = "merkle proof for wallet not found";
-/// A transaction submitted to the contract failed to execute
-const ERR_TRANSACTION_FAILED: &str = "transaction failed";
 
 // -------------------
 // | Task Definition |
@@ -302,17 +299,10 @@ impl UpdateWalletTask {
         log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
 
         // Await transaction completion
-        let tx_info = self
-            .starknet_client
+        self.starknet_client
             .poll_transaction_completed(tx_hash)
             .await
             .map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))?;
-
-        if let TransactionStatus::Rejected = tx_info.status {
-            return Err(UpdateWalletTaskError::StarknetClient(
-                ERR_TRANSACTION_FAILED.to_string(),
-            ));
-        }
 
         Ok(())
     }

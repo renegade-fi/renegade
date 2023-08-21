@@ -20,7 +20,6 @@ use gossip_api::gossip::GossipOutbound;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use renegade_crypto::fields::{scalar_to_biguint, scalar_to_u64, starknet_felt_to_biguint};
 use serde::Serialize;
-use starknet::providers::sequencer::models::{TransactionInfo, TransactionStatus};
 use starknet_client::client::StarknetClient;
 use state::RelayerState;
 use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
@@ -31,10 +30,8 @@ use super::{
     helpers::{apply_match_to_wallets, find_merkle_path, update_wallet_validity_proofs},
 };
 
-/// Error emitted when a transaction fails
-const ERR_TRANSACTION_FAILED: &str = "transaction rejected";
 /// The error message the contract emits when a nullifier has been used
-const NULLIFIER_USED_ERROR_MSG: &str = "nullifier already used";
+pub(crate) const NULLIFIER_USED_ERROR_MSG: &str = "nullifier already used";
 
 /// The party ID of the first party
 const PARTY0: u64 = 0;
@@ -308,21 +305,10 @@ impl SettleMatchTask {
             tx_submit_res.map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
 
         log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
-        let tx_info = self
-            .starknet_client
+        self.starknet_client
             .poll_transaction_completed(tx_hash)
             .await
             .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
-
-        // If the transaction fails because the local party's match nullifier is already spend, then
-        // the counterparty encumbered the local party, in this case, it is safe to move to settlement
-        if let TransactionStatus::Rejected = tx_info.status {
-            if !Self::nullifier_spent_failure(tx_info) {
-                return Err(SettleMatchTaskError::StarknetClient(
-                    ERR_TRANSACTION_FAILED.to_string(),
-                ));
-            }
-        }
 
         // If the transaction was successful, cancel all orders on both nullifiers, await new validity proofs
         self.global_state
@@ -333,17 +319,6 @@ impl SettleMatchTask {
             .await;
 
         Ok(())
-    }
-
-    /// Whether or not a transaction failed because the given nullifier was already spent
-    fn nullifier_spent_failure(tx_info: TransactionInfo) -> bool {
-        if let Some(failure_reason) = tx_info.transaction_failure_reason
-            && let Some(error_message) = failure_reason.error_message
-            {
-                return error_message.contains(NULLIFIER_USED_ERROR_MSG)
-            }
-
-        false
     }
 
     /// Apply the match result to the local wallet, find the wallet's new
