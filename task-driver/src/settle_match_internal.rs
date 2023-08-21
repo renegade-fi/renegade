@@ -3,7 +3,7 @@
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use crate::helpers::{apply_match_to_wallets, update_wallet_validity_proofs};
+use crate::{helpers::{apply_match_to_wallets, update_wallet_validity_proofs}, settle_match::NULLIFIER_USED_ERROR_MSG};
 
 use super::{
     driver::{StateWrapper, Task},
@@ -33,7 +33,6 @@ use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use num_bigint::BigUint;
 use renegade_crypto::fields::{scalar_to_biguint, scalar_to_u64};
 use serde::Serialize;
-use starknet::providers::sequencer::models::{TransactionFailureReason, TransactionStatus};
 use starknet_client::client::StarknetClient;
 use state::RelayerState;
 use tokio::{
@@ -54,8 +53,6 @@ const ERR_ENQUEUING_JOB: &str = "error enqueuing job with proof generation modul
 const ERR_AWAITING_PROOF: &str = "error awaiting proof";
 /// Error message emitted when a wallet cannot be found
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found in global state";
-/// Error message emitted when a transaction fails with no reason given
-const ERR_UNKNOWN_TX_FAILURE: &str = "transaction failed with no reason given";
 
 // -------------------
 // | Task Definition |
@@ -361,7 +358,7 @@ impl SettleMatchInternalTask {
         let valid_match_proof = self.valid_match_mpc.clone().unwrap();
         let valid_settle_proof = self.valid_settle.clone().unwrap();
 
-        let tx_hash = self
+        let tx_submit_res = self
             .starknet_client
             .submit_match(
                 party0_reblind_proof.original_shares_nullifier,
@@ -375,27 +372,20 @@ impl SettleMatchInternalTask {
                 valid_match_proof,
                 valid_settle_proof,
             )
-            .await
-            .map_err(|err| SettleMatchInternalTaskError::Starknet(err.to_string()))?;
+            .await;
 
-        let tx_info = self
+        if let Err(ref tx_rejection) = tx_submit_res 
+            && tx_rejection.to_string().contains(NULLIFIER_USED_ERROR_MSG)
+        {
+            return Ok(());
+        }
+        let tx_hash = tx_submit_res.map_err(|err| SettleMatchInternalTaskError::Starknet(err.to_string()))?;
+
+         self
             .starknet_client
             .poll_transaction_completed(tx_hash)
             .await
             .map_err(|err| SettleMatchInternalTaskError::Starknet(err.to_string()))?;
-
-        // Check transaction status
-        if let TransactionStatus::Rejected = tx_info.status {
-            return Err(SettleMatchInternalTaskError::Starknet(format!(
-                "transaction rejected: {:?}",
-                tx_info
-                    .transaction_failure_reason
-                    .unwrap_or(TransactionFailureReason {
-                        code: "".to_string(),
-                        error_message: Some(ERR_UNKNOWN_TX_FAILURE.to_string())
-                    })
-            )));
-        }
 
         // If the transaction is successful, cancel all orders on the old wallet nullifiers
         // and await new validity proofs

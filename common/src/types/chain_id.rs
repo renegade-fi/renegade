@@ -3,7 +3,9 @@
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
-use starknet::core::types::FieldElement as StarknetFieldElement;
+use starknet::core::{
+    types::FieldElement as StarknetFieldElement, utils::cairo_short_string_to_felt,
+};
 
 /// Starknet mainnet chain-id
 /// TODO: use `starknet-rs` implementation once we upgrade versions
@@ -34,9 +36,12 @@ pub enum ChainId {
     /// Starknet mainnet
     #[serde(rename = "mainnet")]
     Mainnet,
-    /// Devnet at localhost:5050
+    /// A locally hosted devnet node
     #[serde(rename = "devnet")]
     Devnet,
+    /// A Katana devnet node at `localhost:5050`
+    #[serde(rename = "katana")]
+    Katana,
 }
 
 impl From<ChainId> for StarknetFieldElement {
@@ -45,6 +50,7 @@ impl From<ChainId> for StarknetFieldElement {
             ChainId::AlphaGoerli => STARKNET_TESTNET_ID,
             ChainId::Mainnet => STARKNET_MAINNET_ID,
             ChainId::Devnet => STARKNET_DEVNET_ID,
+            ChainId::Katana => cairo_short_string_to_felt("KATANA").unwrap(),
         }
     }
 }
@@ -59,6 +65,8 @@ impl FromStr for ChainId {
             Ok(Self::Mainnet)
         } else if s == "devnet" {
             Ok(Self::Devnet)
+        } else if s == "katana" {
+            Ok(Self::Katana)
         } else {
             Err(format!("unknown chain ID {s}"))
         }

@@ -1,9 +1,8 @@
 //! The relayer worker implementation for the event listener
 
 use common::worker::Worker;
-use std::thread::{self, Builder, JoinHandle};
+use std::thread::{Builder, JoinHandle};
 use tokio::runtime::Builder as RuntimeBuilder;
-use tracing::log;
 
 use super::{
     error::OnChainEventListenerError,
@@ -18,14 +17,10 @@ impl Worker for OnChainEventListener {
     where
         Self: Sized,
     {
-        let executor = if config.enabled() {
-            Some(OnChainEventListenerExecutor::new(config))
-        } else {
-            None
-        };
+        let executor = OnChainEventListenerExecutor::new(config);
 
         Ok(Self {
-            executor,
+            executor: Some(executor),
             // Replaced at startup
             executor_handle: None,
         })
@@ -41,29 +36,21 @@ impl Worker for OnChainEventListener {
 
     fn start(&mut self) -> Result<(), Self::Error> {
         // Spawn the execution loop in a separate thread
-        let executor = self.executor.take();
+        let executor = self.executor.take().unwrap();
         let join_handle = Builder::new()
             .name("on-chain-event-listener-executor".to_string())
             .spawn(move || {
-                // If we were unable to build an executor from the config, park the executing thread
-                // This is simpler than forcing some partial-operating logic up to the coordinator
-                if let Some(executor) = executor {
-                    let runtime = RuntimeBuilder::new_current_thread()
-                        .enable_all()
-                        .thread_name("on-chain-listener-runtime")
-                        .build()
-                        .map_err(|err| OnChainEventListenerError::Setup(err.to_string()));
-                    if let Err(e) = runtime {
-                        return e;
-                    }
-
-                    let runtime = runtime.unwrap();
-                    runtime.block_on(executor.execute())
-                } else {
-                    log::info!("on-chain event listener missing config options; parking worker...");
-                    thread::park();
-                    unreachable!();
+                let runtime = RuntimeBuilder::new_current_thread()
+                    .enable_all()
+                    .thread_name("on-chain-listener-runtime")
+                    .build()
+                    .map_err(|err| OnChainEventListenerError::Setup(err.to_string()));
+                if let Err(e) = runtime {
+                    return e;
                 }
+
+                let runtime = runtime.unwrap();
+                runtime.block_on(executor.execute())
             })
             .map_err(|err| OnChainEventListenerError::Setup(err.to_string()))?;
 

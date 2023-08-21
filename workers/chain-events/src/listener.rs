@@ -87,14 +87,6 @@ pub struct OnChainEventListenerConfig {
     pub cancel_channel: CancelChannel,
 }
 
-impl OnChainEventListenerConfig {
-    /// Determines whether the parameters needed to enable the on-chain event
-    /// listener are present. If not the worker should not startup
-    pub fn enabled(&self) -> bool {
-        self.starknet_client.jsonrpc_enabled()
-    }
-}
-
 /// The worker responsible for listening for on-chain events, translating them to jobs for
 /// other workers, and forwarding these jobs to the relevant workers
 pub struct OnChainEventListener {

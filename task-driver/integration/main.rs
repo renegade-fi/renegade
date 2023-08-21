@@ -117,10 +117,9 @@ impl From<CliArgs> for IntegrationTestArgs {
 
         // Build a client that references the darkpool
         let starknet_client = StarknetClient::new(StarknetClientConfig {
-            chain: ChainId::Devnet,
+            chain: ChainId::Katana,
             contract_addr: darkpool_addr,
-            starknet_json_rpc_addr: Some(format!("{}/rpc", test_args.devnet_url)),
-            sequencer_addr: Some(test_args.devnet_url),
+            starknet_json_rpc_addr: format!("{}/rpc", test_args.devnet_url),
             infura_api_key: None,
             starknet_account_addresses: vec![test_args.starknet_account_addr],
             starknet_pkeys: vec![test_args.starknet_pkey],
