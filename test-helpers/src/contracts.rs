@@ -11,7 +11,7 @@ use starknet::contract::ContractFactory;
 use starknet::core::chain_id;
 use starknet::core::crypto::compute_hash_on_elements;
 use starknet::core::types::{
-    MaybePendingTransactionReceipt, TransactionFinalityStatus, TransactionReceipt,
+    MaybePendingTransactionReceipt, TransactionReceipt, TransactionStatus,
 };
 use starknet::core::utils::get_selector_from_name;
 use starknet::providers::jsonrpc::HttpTransport;
@@ -235,8 +235,7 @@ fn calculate_contract_address(
 async fn await_transaction(tx_hash: FieldElement, rpc_client: &StarknetTestAcct) -> Result<()> {
     log::info!("Awaiting transaction {tx_hash:?}");
     loop {
-        if let TransactionFinalityStatus::AcceptedOnL2 =
-            get_transaction_status(tx_hash, rpc_client).await?
+        if let TransactionStatus::AcceptedOnL2 = get_transaction_status(tx_hash, rpc_client).await?
         {
             break;
         }
@@ -250,7 +249,7 @@ async fn await_transaction(tx_hash: FieldElement, rpc_client: &StarknetTestAcct)
 async fn get_transaction_status(
     tx_hash: FieldElement,
     rpc_client: &StarknetTestAcct,
-) -> Result<TransactionFinalityStatus> {
+) -> Result<TransactionStatus> {
     let tx_receipt = rpc_client
         .provider()
         .get_transaction_receipt(tx_hash)
@@ -260,9 +259,9 @@ async fn get_transaction_status(
             return Err(eyre!("Transaction is still pending: {:?}", receipt));
         }
         MaybePendingTransactionReceipt::Receipt(receipt) => match receipt {
-            TransactionReceipt::Invoke(tx) => tx.finality_status,
-            TransactionReceipt::Declare(tx) => tx.finality_status,
-            TransactionReceipt::Deploy(tx) => tx.finality_status,
+            TransactionReceipt::Invoke(tx) => tx.status,
+            TransactionReceipt::Declare(tx) => tx.status,
+            TransactionReceipt::Deploy(tx) => tx.status,
             _ => {
                 return Err(eyre!(
                     "Transaction receipt is not an invoke, declare, or deploy receipt"

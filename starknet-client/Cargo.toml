@@ -7,6 +7,8 @@ edition = "2021"
 
 [dependencies]
 # === Cryptographic + arithmetic dependencies === #
+ark-ff = "0.4"
+mpc-bulletproof = { workspace = true }
 mpc-stark = { workspace = true }
 num-bigint = { version = "0.4.3" }
 
@@ -21,7 +23,6 @@ common = { path = "../common" }
 constants = { path = "../constants" }
 renegade-crypto = { path = "../renegade-crypto" }
 state = { path = "../state" }
-
 
 # === Misc dependencies === #
 itertools = "0.10.0"

@@ -8,8 +8,6 @@ use std::fmt::Display;
 pub enum StarknetClientError {
     /// An error executing a transaction
     ExecuteTransaction(String),
-    /// An error performing a request against the sequencer gateway
-    Gateway(String),
     /// No value was found when scanning contract state
     NotFound(String),
     /// An error performing a JSON-RPC request

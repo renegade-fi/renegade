@@ -3,7 +3,10 @@
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use crate::{helpers::{apply_match_to_wallets, update_wallet_validity_proofs}, settle_match::NULLIFIER_USED_ERROR_MSG};
+use crate::{
+    helpers::{apply_match_to_wallets, update_wallet_validity_proofs},
+    settle_match::NULLIFIER_USED_ERROR_MSG,
+};
 
 use super::{
     driver::{StateWrapper, Task},
@@ -374,15 +377,15 @@ impl SettleMatchInternalTask {
             )
             .await;
 
-        if let Err(ref tx_rejection) = tx_submit_res 
+        if let Err(ref tx_rejection) = tx_submit_res
             && tx_rejection.to_string().contains(NULLIFIER_USED_ERROR_MSG)
         {
             return Ok(());
         }
-        let tx_hash = tx_submit_res.map_err(|err| SettleMatchInternalTaskError::Starknet(err.to_string()))?;
+        let tx_hash =
+            tx_submit_res.map_err(|err| SettleMatchInternalTaskError::Starknet(err.to_string()))?;
 
-         self
-            .starknet_client
+        self.starknet_client
             .poll_transaction_completed(tx_hash)
             .await
             .map_err(|err| SettleMatchInternalTaskError::Starknet(err.to_string()))?;

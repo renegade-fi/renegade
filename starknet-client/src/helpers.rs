@@ -1,9 +1,8 @@
 //! Various helpers for Starknet client execution
 
-use std::{convert::TryInto, iter};
+use std::convert::TryInto;
 
 use circuit_types::SizedWalletShare;
-use itertools::Itertools;
 use serde::de::DeserializeOwned;
 use starknet::core::types::FieldElement as StarknetFieldElement;
 
@@ -119,33 +118,6 @@ fn parse_shares_from_match(
     };
 
     Ok(calldata[start_idx..end_idx].to_vec())
-}
-
-/// Pack bytes into Starknet field elements
-pub(super) fn pack_bytes_into_felts(bytes: &[u8]) -> Vec<StarknetFieldElement> {
-    // Run-length encoded
-    let mut res = vec![StarknetFieldElement::from(bytes.len() as u64)];
-    for i in (0..bytes.len()).step_by(BYTES_PER_FELT) {
-        // Construct a felt from bytes [i..i+BYTES_PER_FELT], padding
-        // to 32 in length
-        let range_end = usize::min(i + BYTES_PER_FELT, bytes.len());
-        let mut bytes_padded: Vec<u8> = bytes[i..range_end]
-            .iter()
-            .cloned()
-            .chain(iter::repeat(0u8))
-            .take(32)
-            .collect_vec();
-
-        // We pack into the felt in little endian format so that the felt does
-        // not overflow the field size
-        bytes_padded.reverse();
-
-        // Cast to array
-        let bytes_padded: [u8; 32] = bytes_padded.try_into().unwrap();
-        res.push(StarknetFieldElement::from_bytes_be(&bytes_padded).unwrap());
-    }
-
-    res
 }
 
 /// Unpack bytes that were previously packed into felts
