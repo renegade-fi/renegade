@@ -36,7 +36,7 @@ lazy_static! {
     static ref NULLIFIER_USED_SELECTOR: StarknetFieldElement = get_selector_from_name("is_nullifier_used")
         .unwrap();
     /// Contract view function selector to fetch the hash of the transaction that indexed a given public blinder share
-    static ref GET_PUBLIC_BLINDER_TRANSACTION: StarknetFieldElement = get_selector_from_name("get_public_blinder_transaction")
+    static ref GET_PUBLIC_BLINDER_TRANSACTION: StarknetFieldElement = get_selector_from_name("get_wallet_blinder_transaction")
         .unwrap();
 
     // -- Setters --
@@ -48,18 +48,15 @@ lazy_static! {
     static ref UPDATE_WALLET_SELECTOR: StarknetFieldElement = get_selector_from_name("update_wallet")
         .unwrap();
     /// Contract function selector to submit a match, encumbering two wallets
-    static ref MATCH_SELECTOR: StarknetFieldElement = get_selector_from_name("match")
-        .unwrap();
-    /// Contract function selector to settle a note into a wallet
-    static ref SETTLE_SELECTOR: StarknetFieldElement = get_selector_from_name("settle")
+    static ref MATCH_SELECTOR: StarknetFieldElement = get_selector_from_name("process_match")
         .unwrap();
 
     /// The event selector for internal node changes
     pub static ref INTERNAL_NODE_CHANGED_EVENT_SELECTOR: StarknetFieldElement =
-        get_selector_from_name("Merkle_internal_node_changed").unwrap();
+        get_selector_from_name("MerkleInternalNodeChanged").unwrap();
     /// The event selector for Merkle value insertion
     pub static ref VALUE_INSERTED_EVENT_SELECTOR: StarknetFieldElement =
-        get_selector_from_name("Merkle_value_inserted").unwrap();
+        get_selector_from_name("MerkleValueInserted").unwrap();
 
     // ------------------------
     // | Merkle Tree Metadata |

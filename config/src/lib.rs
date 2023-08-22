@@ -48,7 +48,7 @@ struct Cli {
     #[clap(long, default_value="goerli")]
     pub chain_id: ChainId,
     /// The address of the darkpool contract, defaults to the Goerli deployment
-    #[clap(long, value_parser, default_value = "0x02179f01358c09410f234f1ece40d235719e05db3babca7bef0babc974333162")]
+    #[clap(long, value_parser, default_value = "0x06aadd0758f809d4dc5c5686bcde6dc3e51d211aaf7eca8e902dc76e1217c7ab")]
     pub contract_address: String,
 
     // ----------------------------

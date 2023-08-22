@@ -260,16 +260,15 @@ impl OnChainEventListenerExecutor {
 
             // Skip this event if all Merkle events for this block have been consumed
             let last_consistent_block = self.merkle_last_consistent_block.load(Ordering::Relaxed);
-            let event_block = event.block_number.unwrap_or(last_consistent_block);
-            if event_block <= last_consistent_block {
+            if event.block_number <= last_consistent_block {
                 return Ok(());
             }
 
-            self.handle_root_changed(event_block).await?;
+            self.handle_root_changed(event.block_number).await?;
 
             // Update the last consistent block
             self.merkle_last_consistent_block
-                .store(event_block, Ordering::Relaxed);
+                .store(event.block_number, Ordering::Relaxed);
         } else if key == *NULLIFIER_SPENT_EVENT_SELECTOR {
             // Parse the nullifier from the felt
             log::info!("Handling nullifier spent event");
