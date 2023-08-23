@@ -7,6 +7,7 @@
 #![deny(clippy::missing_docs_in_private_items)]
 #![allow(incomplete_features)]
 #![feature(let_chains)]
+#![feature(generic_const_exprs)]
 
 pub mod errors;
 pub mod exchange;

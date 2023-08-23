@@ -1,5 +1,7 @@
 //! The API module defines messaging interfaces between p2p nodes
 #![deny(missing_docs)]
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
 
 use num_bigint::BigUint;
 use num_traits::Num;
