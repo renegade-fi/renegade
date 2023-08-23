@@ -1,7 +1,7 @@
 //! Groups logic related to the match computation circuit
 
 use circuit_types::{
-    fixed_point::AuthenticatedFixedPoint, order::AuthenticatedOrder,
+    fixed_point::AuthenticatedFixedPoint, order::AuthenticatedLinkableOrder,
     r#match::AuthenticatedMatchResult, AMOUNT_BITS,
 };
 use mpc_stark::{
@@ -21,8 +21,8 @@ use crate::mpc_gadgets::{comparators::min, fixed_point::FixedPointMpcGadget};
 /// never be opened, and the information never leaked. Therefore, we do not need to zero
 /// out any values in the circuit.
 pub fn compute_match(
-    order1: &AuthenticatedOrder,
-    order2: &AuthenticatedOrder,
+    order1: &AuthenticatedLinkableOrder,
+    order2: &AuthenticatedLinkableOrder,
     amount1: &AuthenticatedScalarResult,
     amount2: &AuthenticatedScalarResult,
     price: &AuthenticatedFixedPoint,
@@ -33,7 +33,7 @@ pub fn compute_match(
 
     // The maximum of the two amounts minus the minimum of the two amounts
     let max_minus_min_amount =
-        &order1.amount + &order2.amount - Scalar::from(2u64) * &min_base_amount;
+        order1.amount.value() + order2.amount.value() - Scalar::from(2u64) * &min_base_amount;
 
     // The amount of quote token exchanged
     // Round down to the nearest integer value
@@ -42,11 +42,11 @@ pub fn compute_match(
 
     // Zero out the orders if any of the initial checks failed
     AuthenticatedMatchResult {
-        quote_mint: order1.quote_mint.clone(),
-        base_mint: order1.base_mint.clone(),
+        quote_mint: order1.quote_mint.value().clone(),
+        base_mint: order1.base_mint.value().clone(),
         quote_amount: quote_exchanged,
         base_amount: min_base_amount,
-        direction: order1.side.clone(),
+        direction: order1.side.value().clone(),
         max_minus_min_amount,
         min_amount_order_index: min_index,
     }

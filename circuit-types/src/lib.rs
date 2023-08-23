@@ -186,7 +186,7 @@ pub struct AuthenticatedLinkableCommitment {
     /// The underlying shared scalar
     pub(crate) val: AuthenticatedScalarResult,
     /// The randomness used to blind the commitment
-    pub(crate) randomness: AuthenticatedScalarResult,
+    randomness: AuthenticatedScalarResult,
 }
 
 impl AuthenticatedLinkableCommitment {
@@ -194,6 +194,11 @@ impl AuthenticatedLinkableCommitment {
     /// blinder
     pub fn new(val: AuthenticatedScalarResult, randomness: AuthenticatedScalarResult) -> Self {
         Self { val, randomness }
+    }
+
+    /// Get the underlying value of the commitment
+    pub fn value(&self) -> &AuthenticatedScalarResult {
+        &self.val
     }
 }
 
