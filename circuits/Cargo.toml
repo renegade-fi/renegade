@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 test_helpers = []
 large_benchmarks = []
+stats = ["mpc-stark/stats"]
 
 [[test]]
 name = "integration"
@@ -39,6 +40,11 @@ required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_settle"
+harness = false
+required-features = ["test_helpers"]
+
+[[bench]]
+name = "full_match"
 harness = false
 required-features = ["test_helpers"]
 

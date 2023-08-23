@@ -258,14 +258,14 @@ impl HandshakeExecutor {
         .map_err(|err| HandshakeManagerError::Multiprover(err.to_string()))?;
 
         // Open the proof and verify it
-        let opened_commit = witness_commitment
-            .open_and_authenticate()
-            .await
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
         let opened_proof = proof
             .open()
             .await
             .map_err(|_| HandshakeManagerError::MpcNetwork("error opening proof".to_string()))?;
+        let opened_commit = witness_commitment
+            .open_and_authenticate()
+            .await
+            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
         verify_collaborative_proof::<ValidMatchMpcCircuit>(
             (), /* statement */
