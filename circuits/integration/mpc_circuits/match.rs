@@ -3,7 +3,7 @@
 use circuit_types::{
     balance::Balance,
     fixed_point::FixedPoint,
-    order::{AuthenticatedOrder, Order, OrderSide},
+    order::{Order, OrderSide},
     r#match::MatchResult,
     traits::{LinkableBaseType, MpcBaseType, MpcType, MultiproverCircuitBaseType},
 };
@@ -113,32 +113,19 @@ async fn test_match_no_match(test_args: IntegrationTestArgs) -> Result<()> {
 
     for (my_order, my_price) in test_cases.into_iter() {
         // Allocate the orders in the network
-        let linkable_order1 = my_order.to_linkable().allocate(PARTY0, fabric);
-        let linkable_order2 = my_order.to_linkable().allocate(PARTY1, fabric);
+        let order1 = my_order.to_linkable().allocate(PARTY0, fabric);
+        let order2 = my_order.to_linkable().allocate(PARTY1, fabric);
 
         // Allocate the price in the network
         let price1 = FixedPoint::from_integer(my_price).allocate(PARTY0, fabric);
         let price2 = FixedPoint::from_integer(my_price).allocate(PARTY1, fabric);
 
-        let order1: AuthenticatedOrder = AuthenticatedOrder::from_authenticated_scalars(
-            &mut linkable_order1
-                .clone()
-                .to_authenticated_scalars()
-                .into_iter(),
-        );
-        let order2: AuthenticatedOrder = AuthenticatedOrder::from_authenticated_scalars(
-            &mut linkable_order2
-                .clone()
-                .to_authenticated_scalars()
-                .into_iter(),
-        );
-
         // Compute matches
         let res = compute_match(
             &order1,
             &order2,
-            &order1.amount,
-            &order2.amount,
+            order1.amount.value(),
+            order2.amount.value(),
             &price1, // Use the first party's price
             fabric,
         );
@@ -150,11 +137,11 @@ async fn test_match_no_match(test_args: IntegrationTestArgs) -> Result<()> {
             MpcProver::new_with_fabric(test_args.mpc_fabric.clone(), transcript, pc_gens);
 
         let witness = AuthenticatedValidMatchMpcWitness {
-            order1: linkable_order1,
-            amount1: order1.amount,
+            order1: order1.clone(),
+            amount1: order1.amount.value().clone(),
             price1: price1.clone(),
-            order2: linkable_order2,
-            amount2: order2.amount,
+            order2: order2.clone(),
+            amount2: order2.amount.value().clone(),
             price2: price2.clone(),
             balance1: balance1.clone(),
             balance2: balance2.clone(),
@@ -252,15 +239,15 @@ async fn test_match_valid_match(test_args: IntegrationTestArgs) -> Result<()> {
         let price1 = FixedPoint::from_integer(my_price).allocate(PARTY0, fabric);
 
         // Allocate the orders in the network
-        let order1 = my_order.allocate(PARTY0, fabric);
-        let order2 = my_order.allocate(PARTY1, fabric);
+        let order1 = my_order.to_linkable().allocate(PARTY0, fabric);
+        let order2 = my_order.to_linkable().allocate(PARTY1, fabric);
 
         // Compute matches
         let res = compute_match(
             &order1,
             &order2,
-            &order1.amount,
-            &order2.amount,
+            order1.amount.value(),
+            order2.amount.value(),
             &price1,
             fabric,
         )

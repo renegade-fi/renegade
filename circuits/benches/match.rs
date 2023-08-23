@@ -87,8 +87,8 @@ pub fn bench_match_mpc_with_delay(c: &mut Criterion, delay: Duration) {
                     |fabric| async move {
                         // Allocate the inputs in the fabric
                         let start = Instant::now();
-                        let o1 = Order::default().allocate(PARTY0, &fabric);
-                        let o2 = Order::default().allocate(PARTY1, &fabric);
+                        let o1 = Order::default().to_linkable().allocate(PARTY0, &fabric);
+                        let o2 = Order::default().to_linkable().allocate(PARTY1, &fabric);
                         let amount1 = Scalar::one().allocate(PARTY0, &fabric);
                         let amount2 = Scalar::one().allocate(PARTY1, &fabric);
                         let price = FixedPoint::from_integer(1).allocate(PARTY0, &fabric);

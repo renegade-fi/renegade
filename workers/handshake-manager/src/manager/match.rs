@@ -7,7 +7,7 @@ use circuit_types::{
     balance::{Balance, LinkableBalance},
     fixed_point::FixedPoint,
     order::{LinkableOrder, Order, OrderSide},
-    r#match::{AuthenticatedLinkableMatchResult, AuthenticatedMatchResult},
+    r#match::AuthenticatedLinkableMatchResult,
     traits::{BaseType, LinkableType, MpcBaseType, MpcType, MultiproverCircuitCommitmentType},
 };
 use circuits::{
@@ -150,9 +150,9 @@ impl HandshakeExecutor {
 
         // Run the mpc to get a match result
         let commitment_witness = proof_witnesses.copy_commitment_witness();
-        let match_res = Self::execute_match_mpc(
-            &commitment_witness.order.clone().to_base_type(),
-            &commitment_witness.balance_send.clone().to_base_type(),
+        let witness = Self::execute_match_mpc(
+            &commitment_witness.order,
+            &commitment_witness.balance_send,
             &handshake_state.execution_price,
             &fabric,
         );
@@ -163,14 +163,7 @@ impl HandshakeExecutor {
         }
 
         // Prove `VALID MATCH MPC` with the counterparty
-        let (match_res, commitment, proof) = Self::prove_valid_match(
-            commitment_witness.order.clone(),
-            commitment_witness.balance_send.clone(),
-            handshake_state.execution_price,
-            match_res,
-            &fabric,
-        )
-        .await?;
+        let (commitment, proof) = Self::prove_valid_match(&witness, &fabric).await?;
 
         // Verify the commitment links between the match proof and the two parties'
         // proofs of VALID COMMITMENTS
@@ -190,7 +183,7 @@ impl HandshakeExecutor {
         }
 
         self.build_handshake_result(
-            match_res,
+            witness.match_res,
             commitment,
             proof,
             proof_witnesses,
@@ -205,32 +198,47 @@ impl HandshakeExecutor {
 
     /// Execute the match MPC over the provisioned QUIC stream
     fn execute_match_mpc(
-        my_order: &Order,
-        my_balance: &Balance,
+        my_order: &LinkableOrder,
+        my_balance: &LinkableBalance,
         my_price: &FixedPoint,
         fabric: &MpcFabric,
-    ) -> AuthenticatedMatchResult {
+    ) -> AuthenticatedValidMatchMpcWitness {
         // Allocate the orders in the MPC fabric
-        let shared_order1 = my_order.allocate(PARTY0, fabric);
-        let shared_order2 = my_order.allocate(PARTY1, fabric);
+        let o1 = my_order.allocate(PARTY0, fabric);
+        let b1 = my_balance.allocate(PARTY0, fabric);
+        let price1 = my_price.allocate(PARTY0, fabric);
+
+        let o2 = my_order.allocate(PARTY1, fabric);
+        let b2 = my_balance.allocate(PARTY1, fabric);
+        let price2 = my_price.allocate(PARTY1, fabric);
 
         // Use the first party's price, the second party's price will be constrained to equal the
         // first party's in the subsequent proof of `VALID MATCH MPC`
         let price = my_price.allocate(PARTY0, fabric);
 
-        let my_amount = compute_max_amount(my_price, my_order, my_balance);
+        let my_amount = compute_max_amount(
+            my_price,
+            &my_order.to_base_type(),
+            &my_balance.to_base_type(),
+        );
         let amount1 = my_amount.allocate(PARTY0, fabric);
         let amount2 = my_amount.allocate(PARTY1, fabric);
 
         // Run the circuit
-        compute_match(
-            &shared_order1,
-            &shared_order2,
-            &amount1,
-            &amount2,
-            &price,
-            fabric,
-        )
+        let match_res = compute_match(&o1, &o2, &amount1, &amount2, &price, fabric);
+
+        // Build a witness for the collaborative proof
+        AuthenticatedValidMatchMpcWitness {
+            order1: o1,
+            balance1: b1,
+            amount1,
+            price1,
+            order2: o2,
+            balance2: b2,
+            amount2,
+            price2,
+            match_res: match_res.link_commitments(fabric),
+        }
     }
 
     /// Generates a collaborative proof of the validity of a given match result
@@ -238,50 +246,9 @@ impl HandshakeExecutor {
     /// The implementation *does not* open the match result. This leaks information and should
     /// be done last, after all other openings, validity checks, etc are performed
     async fn prove_valid_match(
-        my_order: LinkableOrder,
-        my_balance: LinkableBalance,
-        my_price: FixedPoint,
-        match_res: AuthenticatedMatchResult,
+        witness: &AuthenticatedValidMatchMpcWitness,
         fabric: &MpcFabric,
-    ) -> Result<
-        (
-            AuthenticatedLinkableMatchResult,
-            ValidMatchMpcWitnessCommitment,
-            R1CSProof,
-        ),
-        HandshakeManagerError,
-    > {
-        // Allocate orders and balances in the network
-        let order1 = my_order.allocate(PARTY0, fabric);
-        let order2 = my_order.allocate(PARTY1, fabric);
-
-        let balance1 = my_balance.allocate(PARTY0, fabric);
-        let balance2 = my_balance.allocate(PARTY1, fabric);
-
-        let price1 = my_price.allocate(PARTY0, fabric);
-        let price2 = my_price.allocate(PARTY1, fabric);
-
-        let my_amount = compute_max_amount(
-            &my_price,
-            &my_order.to_base_type(),
-            &my_balance.to_base_type(),
-        );
-        let amount1 = my_amount.allocate(PARTY0, fabric);
-        let amount2 = my_amount.allocate(PARTY1, fabric);
-
-        // Build a witness to the VALID MATCH MPC statement
-        let witness = AuthenticatedValidMatchMpcWitness {
-            order1,
-            balance1,
-            amount1,
-            price1,
-            order2,
-            balance2,
-            amount2,
-            price2,
-            match_res: match_res.link_commitments(fabric),
-        };
-
+    ) -> Result<(ValidMatchMpcWitnessCommitment, R1CSProof), HandshakeManagerError> {
         // Prove the statement
         let (witness_commitment, proof) = multiprover_prove::<ValidMatchMpcCircuit>(
             witness.clone(),
@@ -307,7 +274,7 @@ impl HandshakeExecutor {
         )
         .map_err(|err| HandshakeManagerError::VerificationError(err.to_string()))?;
 
-        Ok((witness.match_res, opened_commit, opened_proof))
+        Ok((opened_commit, opened_proof))
     }
 
     /// Build the handshake result from a match and proof
