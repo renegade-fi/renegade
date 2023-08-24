@@ -89,7 +89,7 @@ pub enum AppTab {
 impl AppTab {
     /// Get the list of tab names
     pub fn tab_names() -> Vec<String> {
-        vec!["Main", "Logs"]
+        ["Main", "Logs"]
             .iter()
             .map(|str| str.to_string())
             .collect_vec()

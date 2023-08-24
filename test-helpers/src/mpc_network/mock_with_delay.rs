@@ -179,7 +179,7 @@ mod tests {
             }
         });
 
-        let receiver = tokio::spawn((|| {
+        let receiver = tokio::spawn({
             async move {
                 let mut conn = MockNetworkWithDelay::new(
                     PARTY0,
@@ -206,7 +206,7 @@ mod tests {
 
                 true
             }
-        })());
+        });
 
         let (sender_result, receiver_result) = tokio::join!(sender, receiver);
         sender_result.unwrap();

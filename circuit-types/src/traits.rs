@@ -121,7 +121,7 @@ pub trait CircuitBaseType: BaseType {
         let randomness = self.commitment_randomness(rng);
         let (comms, vars): (Vec<StarkPoint>, Vec<Variable>) = scalars
             .into_iter()
-            .zip(randomness.into_iter())
+            .zip(randomness)
             .map(|(s, r)| prover.commit(s, r))
             .unzip();
 
@@ -405,7 +405,7 @@ pub trait SecretShareType: Sized + BaseType {
         let mut res_scalars = self
             .to_scalars()
             .into_iter()
-            .zip(rhs.to_scalars().into_iter())
+            .zip(rhs.to_scalars())
             .map(|(s1, s2)| s1 + s2);
 
         Self::Base::from_scalars(&mut res_scalars)
@@ -452,7 +452,7 @@ pub trait SecretShareVarType<L: LinearCombinationLike>: Sized + CircuitVarType<L
         let mut res_lcs = self
             .to_vars()
             .into_iter()
-            .zip(rhs.to_vars().into_iter())
+            .zip(rhs.to_vars())
             .map(|(v1, v2)| v1.into() + v2.into());
 
         Self::Base::from_vars(&mut res_lcs)

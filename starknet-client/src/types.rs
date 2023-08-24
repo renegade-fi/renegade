@@ -288,7 +288,7 @@ impl CalldataSerializable for MatchPayload {
                 .iter()
                 .map(scalar_to_starknet_felt),
         )
-        .chain(self.valid_commitments_proof.to_calldata().into_iter())
+        .chain(self.valid_commitments_proof.to_calldata())
         .chain(iter::once(StarknetFieldElement::from(
             self.valid_commitments_witness_commitments.len(),
         )))
@@ -297,7 +297,7 @@ impl CalldataSerializable for MatchPayload {
                 .iter()
                 .flat_map(|p| p.to_calldata()),
         )
-        .chain(self.valid_reblind_proof.to_calldata().into_iter())
+        .chain(self.valid_reblind_proof.to_calldata())
         .chain(iter::once(StarknetFieldElement::from(
             self.valid_reblind_witness_commitments.len(),
         )))

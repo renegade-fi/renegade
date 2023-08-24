@@ -104,7 +104,7 @@ impl<M: Clone + Sync> TopicReader<M> {
 
     /// Poll the underlying bus, wrapped in `PollFn` to give an async interface
     /// to the reader
-    fn poll_bus(&mut self, cx: &mut Context<'_>) -> Poll<M> {
+    fn poll_bus(&mut self, cx: &Context<'_>) -> Poll<M> {
         // If we have previously buffered a message for delivery; take ownership of
         // the message and leave `None` in its place
         if self.buffered_message.borrow().is_some() {
