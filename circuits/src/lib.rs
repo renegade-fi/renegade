@@ -1,10 +1,11 @@
 //! Groups circuits for MPC and zero knowledge execution
 
-#![feature(generic_const_exprs)]
-#![allow(incomplete_features)]
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
 #![deny(unsafe_code)]
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
+#![feature(inherent_associated_types)]
 
 use crate::zk_circuits::{
     valid_commitments::SizedValidCommitments, valid_match_mpc::ValidMatchMpcCircuit,

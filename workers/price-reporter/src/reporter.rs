@@ -463,7 +463,7 @@ impl ConnectionMuxer {
     ) -> Result<Box<dyn ExchangeConnection>, ExchangeConnectionError> {
         // Increment the retry count and filter out old requests
         let now = Instant::now();
-        let retry_timestamps = self.exchange_retries.entry(exchange).or_insert(vec![]);
+        let retry_timestamps = self.exchange_retries.entry(exchange).or_default();
         retry_timestamps
             .retain(|ts| now.duration_since(*ts) < Duration::from_millis(MAX_CONN_RETRY_WINDOW_MS));
 

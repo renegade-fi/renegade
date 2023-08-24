@@ -791,7 +791,7 @@ mod test {
 
     #[test]
     fn test_field_element_from_hex_string() {
-        // Sample a random field element, convert it to a hex string, and then back to the field elemetn
+        // Sample a random field element, convert it to a hex string, and then back to the field element
         let mut rng = thread_rng();
         let random_elt = Scalar::random(&mut rng).to_biguint();
         let hex_string = format!("0x{:x}", random_elt);

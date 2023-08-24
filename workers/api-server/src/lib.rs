@@ -39,7 +39,7 @@ const ERR_EXPIRATION_FORMAT_INVALID: &str = "could not parse signature expiratio
 const ERR_SIG_VERIFICATION_FAILED: &str = "signature verification failed";
 
 /// A helper to authenticate a request via expiring signatures using the method below
-pub(self) fn authenticate_wallet_request(
+fn authenticate_wallet_request(
     headers: HeaderMap,
     body: &[u8],
     pk_root: &PublicSigningKey,
@@ -98,7 +98,7 @@ pub(self) fn authenticate_wallet_request(
 /// The signature should be a sponge hash of the serialized request body
 /// and a unix timestamp representing the expiration of the signature. A
 /// call to this method after the expiration timestamp should return false
-pub(self) fn validate_expiring_signature(
+fn validate_expiring_signature(
     body: &[u8],
     expiration_timestamp: u64,
     signature: &[u8],

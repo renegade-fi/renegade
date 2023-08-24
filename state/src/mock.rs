@@ -75,7 +75,7 @@ impl StateMockBuilder {
             let (sender, _) = tokio::sync::mpsc::unbounded_channel();
             sender
         });
-        let system_bus = self.bus.unwrap_or_else(SystemBus::new);
+        let system_bus = self.bus.unwrap_or_default();
 
         RelayerState::initialize_global_state(&self.config, handshake_queue, system_bus)
     }

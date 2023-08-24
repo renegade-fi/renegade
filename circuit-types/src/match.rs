@@ -78,7 +78,7 @@ impl AuthenticatedMatchResult {
 
         let mut authenticated_linkable_scalars = self_serialized
             .into_iter()
-            .zip(authenticated_randomness.into_iter())
+            .zip(authenticated_randomness)
             .map(|(scalar, randomness)| AuthenticatedLinkableCommitment::new(scalar, randomness))
             .flat_map(|linked_scalar| linked_scalar.to_authenticated_scalars_with_linking());
 
