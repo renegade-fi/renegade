@@ -28,6 +28,7 @@ COPY --from=sources . .
 # dependencies of the integration test. Every path dependency of the target crate is automatically
 # added to the workspace
 COPY ./Cargo.toml ./Cargo.toml
+COPY ./Cargo.lock ./Cargo.lock
 RUN sed -i '/members = \[/,/\]/c\members = [ "starknet-client" ]' Cargo.toml
 
 # Place a set of dummy sources in the path, build the dummy executable

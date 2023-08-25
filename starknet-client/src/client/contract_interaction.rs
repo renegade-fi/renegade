@@ -14,6 +14,7 @@ use common::types::proof_bundles::ValidWalletCreateBundle;
 use common::types::proof_bundles::ValidWalletUpdateBundle;
 use mpc_stark::algebra::scalar::Scalar;
 use renegade_crypto::fields::scalar_to_starknet_felt;
+use renegade_crypto::fields::starknet_felt_to_scalar;
 use starknet::accounts::Call;
 use starknet::core::types::FieldElement as StarknetFieldElement;
 use starknet::core::types::FunctionCall;
@@ -23,6 +24,7 @@ use crate::types::ExternalTransfer;
 use crate::types::MatchPayload;
 use crate::GET_PUBLIC_BLINDER_TRANSACTION;
 use crate::MATCH_SELECTOR;
+use crate::MERKLE_ROOT_SELECTOR;
 use crate::NEW_WALLET_SELECTOR;
 use crate::NULLIFIER_USED_SELECTOR;
 use crate::UPDATE_WALLET_SELECTOR;
@@ -33,6 +35,18 @@ use super::TransactionHash;
 
 impl StarknetClient {
     // --- Getters ---
+
+    /// Get the current Merkle root in the contract
+    pub async fn get_merkle_root(&self) -> Result<Scalar, StarknetClientError> {
+        let call = FunctionCall {
+            contract_address: self.contract_address,
+            entry_point_selector: *MERKLE_ROOT_SELECTOR,
+            calldata: vec![],
+        };
+
+        let res = self.call_contract(call).await?;
+        Ok(starknet_felt_to_scalar(&res[0]))
+    }
 
     /// Check whether the given Merkle root is valid
     pub async fn check_merkle_root_valid(
