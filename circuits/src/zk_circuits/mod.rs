@@ -143,6 +143,14 @@ pub mod test_helpers {
     pub fn create_multi_opening<const HEIGHT: usize>(
         items: &[Scalar],
     ) -> (Scalar, Vec<MerkleOpening<HEIGHT>>) {
+        create_multi_opening_with_default_leaf(items, Scalar::zero() /* default_value */)
+    }
+
+    /// Create a multi opening with a non-zero default (empty) leaf value
+    pub fn create_multi_opening_with_default_leaf<const HEIGHT: usize>(
+        items: &[Scalar],
+        default_leaf: Scalar,
+    ) -> (Scalar, Vec<MerkleOpening<HEIGHT>>) {
         let tree_capacity = 2usize.pow(HEIGHT as u32);
         assert!(
             items.len() <= tree_capacity,
@@ -153,9 +161,8 @@ pub mod test_helpers {
             "cannot create a multi-opening for an empty tree"
         );
 
-        let zero_value = Scalar::zero();
         let (root, mut opening_paths) =
-            create_multi_opening_helper(items.to_vec(), zero_value, HEIGHT);
+            create_multi_opening_helper(items.to_vec(), default_leaf, HEIGHT);
         opening_paths.truncate(items.len());
 
         // Create Merkle opening paths from each of the results

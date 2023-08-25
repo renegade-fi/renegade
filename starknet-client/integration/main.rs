@@ -8,17 +8,13 @@
 mod chain_state;
 mod helpers;
 
+use circuit_types::SizedWalletShare;
 use clap::{ArgGroup, Parser};
 use common::types::chain_id::ChainId;
 use eyre::Result;
 use mpc_stark::algebra::scalar::Scalar;
-use rand::thread_rng;
 use starknet_client::client::{StarknetClient, StarknetClientConfig};
-use test_helpers::{
-    assert_true_result, contracts::parse_addr_from_deployments_file, integration_test_async,
-    integration_test_main,
-};
-use tracing::log;
+use test_helpers::{contracts::parse_addr_from_deployments_file, integration_test_main};
 use tracing::log::LevelFilter;
 use util::runtime::block_on_result;
 
@@ -85,12 +81,24 @@ struct IntegrationTestArgs {
 }
 
 /// The set of pre-allocated state elements in the contract
+///
+/// We insert three wallets into the state to test against, this gives two wallets in each
+/// other's first-level Merkle authentication paths, and one with a default value in its
+/// first-level Merkle authentication path
 #[derive(Clone)]
 struct PreAllocatedState {
     /// The commitment inserted at index 0 in the Merkle tree when integration tests begin
     index0_commitment: Scalar,
-    /// The nullifier inserted at index 1 in the Merkle tree when integration tests begin
+    /// The commitment inserted at index 1 in the Merkle tree when integration tests begin
     index1_commitment: Scalar,
+    /// The commitment inserted at index 2 in the Merkle tree when integration tests begin
+    index2_commitment: Scalar,
+    /// The public wallet shares of the first wallet added to the tree
+    index0_public_wallet_shares: SizedWalletShare,
+    /// The public wallet shares of the second wallet added to the tree
+    index1_public_wallet_shares: SizedWalletShare,
+    /// The public wallet shares of the third wallet added to the tree
+    index2_public_wallet_shares: SizedWalletShare,
 }
 
 impl From<CliArgs> for IntegrationTestArgs {
@@ -127,15 +135,17 @@ impl From<CliArgs> for IntegrationTestArgs {
 /// Sets up pre-allocated state used by the integration tests
 fn setup_pre_allocated_state(client: &StarknetClient) -> Result<PreAllocatedState> {
     // Insert two new wallets into the contract
-    let index0_commitment = block_on_result(deploy_new_wallet(client))?;
-    let index1_commitment = block_on_result(deploy_new_wallet(client))?;
-
-    log::info!("index 0 commitment: {index0_commitment}");
-    log::info!("index 1 commitment: {index1_commitment}");
+    let (index0_commitment, index0_shares) = block_on_result(deploy_new_wallet(client))?;
+    let (index1_commitment, index1_shares) = block_on_result(deploy_new_wallet(client))?;
+    let (index2_commitment, index2_shares) = block_on_result(deploy_new_wallet(client))?;
 
     Ok(PreAllocatedState {
         index0_commitment,
         index1_commitment,
+        index2_commitment,
+        index0_public_wallet_shares: index0_shares,
+        index1_public_wallet_shares: index1_shares,
+        index2_public_wallet_shares: index2_shares,
     })
 }
 
@@ -144,21 +154,5 @@ fn setup_integration_tests(_test_args: &CliArgs) {
     // Configure logging
     util::logging::setup_system_logger(LevelFilter::Info);
 }
-
-/// A dummy test that always passes
-///
-/// TODO: Delete this
-async fn test_dummy(args: IntegrationTestArgs) -> Result<()> {
-    // Test that a random nullifier is not marked as used by the contract
-    let client = &args.starknet_client;
-
-    let mut rng = thread_rng();
-    let random_nullifier = Scalar::random(&mut rng);
-
-    let unused = client.check_nullifier_unused(random_nullifier).await?;
-    assert_true_result!(unused)
-}
-
-integration_test_async!(test_dummy);
 
 integration_test_main!(CliArgs, IntegrationTestArgs, setup_integration_tests);

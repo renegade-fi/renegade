@@ -20,7 +20,7 @@ pub type MerkleRoot = Scalar;
 
 /// A fully specified merkle opening from hashed leaf to root
 #[circuit_type(serde, singleprover_circuit)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MerkleOpening<const HEIGHT: usize> {
     /// The opening from the leaf node to the root, i.e. the set of sister nodes
     /// that hash together with the input from the leaf to the root
