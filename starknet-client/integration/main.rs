@@ -6,6 +6,7 @@
 #![feature(generic_const_exprs)]
 
 mod chain_state;
+mod contract_interaction;
 mod helpers;
 
 use circuit_types::SizedWalletShare;

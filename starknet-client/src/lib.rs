@@ -29,6 +29,9 @@ lazy_static! {
 
     // -- Getters --
 
+    /// Contract view function selector to fetch the current Merkle root
+    static ref MERKLE_ROOT_SELECTOR: StarknetFieldElement = get_selector_from_name("get_root")
+        .unwrap();
     /// Contract view function selector to test whether the given Merkle root is valid
     static ref MERKLE_ROOT_IN_HISTORY_SELECTOR: StarknetFieldElement = get_selector_from_name("root_in_history")
         .unwrap();
