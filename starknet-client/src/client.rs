@@ -77,6 +77,11 @@ impl StarknetClientConfig {
         !self.starknet_pkeys.is_empty() && !self.starknet_account_addresses.is_empty()
     }
 
+    /// Get the darkpool contract address as a `StarknetFieldElement`
+    pub fn contract_address(&self) -> StarknetFieldElement {
+        StarknetFieldElement::from_hex_be(&self.contract_addr).unwrap()
+    }
+
     /// Create a new JSON-RPC client using the API credentials in the config
     ///
     /// Returns `None` if the config does not specify the correct credentials
@@ -145,10 +150,7 @@ impl StarknetClient {
         let accounts = Arc::new(accounts);
 
         // Parse the contract address
-        let contract_address: StarknetFieldElement =
-            StarknetFieldElement::from_str(&config.contract_addr).unwrap_or_else(|_| {
-                panic!("could not parse contract address {}", config.contract_addr)
-            });
+        let contract_address = config.contract_address();
 
         Self {
             config,

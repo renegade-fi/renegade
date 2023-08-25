@@ -26,7 +26,9 @@ use starknet::{
 use tracing::log;
 
 use crate::{
-    client::EVENTS_PAGE_SIZE, error::StarknetClientError, helpers::parse_shares_from_calldata,
+    client::EVENTS_PAGE_SIZE,
+    error::StarknetClientError,
+    helpers::{parse_first_darkpool_transaction, parse_shares_from_calldata},
     DEFAULT_AUTHENTICATION_PATH, INTERNAL_NODE_CHANGED_EVENT_SELECTOR,
     VALUE_INSERTED_EVENT_SELECTOR,
 };
@@ -295,12 +297,12 @@ impl StarknetClient {
             match info {
                 InvokeTransaction::V0(tx_info) => (tx_info.entry_point_selector, tx_info.calldata),
                 InvokeTransaction::V1(tx_info) => {
-                    // In an invoke v1 transaction, the calldata is of the form:
-                    //      `[contract_addr, entrypoint_selector, ..calldata]`
-                    // We need to strip the first two elements to get the actual calldata
-                    let selector = tx_info.calldata[1];
-                    let calldata = tx_info.calldata[2..].to_vec();
-                    (selector, calldata)
+                    parse_first_darkpool_transaction(tx_info.calldata, &self.contract_address)
+                        .ok_or_else(|| {
+                            StarknetClientError::NotFound(
+                                "failed to parse darkpool transaction".to_string(),
+                            )
+                        })?
                 }
             }
         } else {

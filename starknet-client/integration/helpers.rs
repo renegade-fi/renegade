@@ -19,7 +19,9 @@ use rand::thread_rng;
 use starknet_client::client::StarknetClient;
 
 /// Deploy a new wallet and return the commitment inserted into the state tree
-pub async fn deploy_new_wallet(client: &StarknetClient) -> Result<WalletShareStateCommitment> {
+pub async fn deploy_new_wallet(
+    client: &StarknetClient,
+) -> Result<(WalletShareStateCommitment, SizedWalletShare)> {
     let mut rng = thread_rng();
     let private_shares_commitment = Scalar::random(&mut rng);
     let public_shares = SizedWalletShare::from_scalars(&mut iter::repeat(Scalar::random(&mut rng)));
@@ -40,13 +42,13 @@ pub async fn deploy_new_wallet(client: &StarknetClient) -> Result<WalletShareSta
             },
         )
         .await?;
-    client.poll_transaction_completed(tx_hash).await.unwrap();
+    client.poll_transaction_completed(tx_hash).await?;
 
     // The contract will compute the full commitment and insert it into the Merkle tree;
     // we repeat the same computation here for consistency
     let full_commitment =
-        compute_wallet_commitment_from_private(public_shares, private_shares_commitment);
-    Ok(full_commitment)
+        compute_wallet_commitment_from_private(public_shares.clone(), private_shares_commitment);
+    Ok((full_commitment, public_shares))
 }
 
 /// Create a dummy R1CS proof

@@ -48,6 +48,11 @@ pub fn scalar_to_u64(a: &Scalar) -> u64 {
     u64::from_be_bytes(bytes)
 }
 
+/// Reduces the scalar to a usize, truncating anything above usize::MAX
+pub fn scalar_to_usize(a: &Scalar) -> usize {
+    scalar_to_u64(a) as usize
+}
+
 /// Converts a dalek scalar to a StarkNet field element
 pub fn scalar_to_starknet_felt(a: &Scalar) -> StarknetFieldElement {
     StarknetFieldElement::from_byte_slice_be(&a.to_bytes_be())
@@ -116,6 +121,11 @@ pub fn starknet_felt_to_biguint(element: &StarknetFieldElement) -> BigUint {
 pub fn starknet_felt_to_u64(element: &StarknetFieldElement) -> u64 {
     let bytes: [u8; 8] = element.to_bytes_be()[24..].try_into().unwrap();
     u64::from_be_bytes(bytes)
+}
+
+/// Convert from a Starknet felt to a usize
+pub fn starknet_felt_to_usize(element: &StarknetFieldElement) -> usize {
+    starknet_felt_to_u64(element) as usize
 }
 
 /// Convert a u128 to a Starknet felt

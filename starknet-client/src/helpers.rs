@@ -2,19 +2,14 @@
 
 use std::convert::TryInto;
 
-use circuit_types::SizedWalletShare;
-use serde::de::DeserializeOwned;
+use circuit_types::{traits::BaseType, SizedWalletShare};
+use renegade_crypto::fields::{starknet_felt_to_scalar, starknet_felt_to_usize};
 use starknet::core::types::FieldElement as StarknetFieldElement;
+use tracing::log;
 
 use crate::NEW_WALLET_SELECTOR;
 
 use super::{error::StarknetClientError, MATCH_SELECTOR, UPDATE_WALLET_SELECTOR};
-
-/// The number of bytes we can pack into a given Starknet field element
-///
-/// The starknet field is of size 2 ** 251 + \delta, which fits at most
-/// 31 bytes cleanly into a single felt
-const BYTES_PER_FELT: usize = 31;
 
 /// The number of field elements used to represent an external transfer struct
 const EXTERNAL_TRANSFER_N_FELTS: usize = 5;
@@ -29,10 +24,96 @@ const UPDATE_WALLET_EXTERNAL_TRANSFER_LEN: usize = 4;
 
 /// Error message emitted when a public blinder share is not found in calldata
 const ERR_BLINDER_NOT_FOUND: &str = "public blinder share not found in calldata";
-/// Error message emitted when a blob encoding is invalidly structured
-const ERR_INVALID_BLOB_ENCODING: &str = "blob encoding incorrect";
 /// Error message emitted when an invalid selector is given in the transaction's execution trace
 const ERR_INVALID_SELECTOR: &str = "invalid selector received";
+
+// --------------------
+// | Calldata Parsing |
+// --------------------
+
+// InvokeV1 calldata is structured as follows:
+//  0: `call_array_len`
+//  1..4:
+//      1: `contract_addr`
+//      2: `selector`
+//      3. `data_offset`
+//      4. `data_len`
+//  ... for `call_array_len` elements
+//  `calldata_array_len` * 4 + 1: `calldata_len`
+//  ... `raw_calldata`
+/// The index of the `call_array_len` argument in InvokeV1 calldata
+const CALL_ARRAY_LEN_IDX: usize = 0;
+/// The length of each call array element's metadata in InvokeV1 calldata
+const CALL_ARRAY_ELEMENT_METADATA_LEN: usize = 4;
+/// The index of the contract address argument in a call array element's metadata
+const CALL_ARRAY_CONTRACT_ADDR_IDX: usize = 0;
+/// The index of the selector argument in a call array element's metadata
+const CALL_ARRAY_SELECTOR_IDX: usize = 1;
+/// The index of the data offset argument in a call array element's metadata
+const CALL_ARRAY_DATA_OFFSET_IDX: usize = 2;
+/// The index of the data length argument in a call array element's metadata
+const CALL_ARRAY_DATA_LEN_IDX: usize = 3;
+
+/// Parses the first darkpool transaction in a call array
+///
+/// n.b. It is generally assumed that only one darkpool transaction exists in a given
+/// call array, and the caller should take care to ensure this is the case
+///
+/// Returns the selector and calldata of the first darkpool transaction found
+pub(crate) fn parse_first_darkpool_transaction(
+    tx_call_array: Vec<StarknetFieldElement>,
+    darkpool_contract_addr: &StarknetFieldElement,
+) -> Option<(StarknetFieldElement, Vec<StarknetFieldElement>)> {
+    // Parse the number of calls in the call array
+    let n_calls = starknet_felt_to_usize(&tx_call_array[CALL_ARRAY_LEN_IDX]);
+
+    // Find the first renegade transaction in the call array metadata
+    let metadata_start = CALL_ARRAY_LEN_IDX + 1;
+    let metadata_end = metadata_start + (n_calls * CALL_ARRAY_ELEMENT_METADATA_LEN);
+
+    let (selector, data_offset, data_len) = find_first_darkpool_transaction(
+        &tx_call_array[metadata_start..metadata_end],
+        darkpool_contract_addr,
+    )?;
+
+    // Parse the calldata of the transaction
+    let calldata_start = metadata_end;
+    let calldata = tx_call_array[calldata_start..].to_vec();
+    let darkpool_calldata = calldata[data_offset..(data_offset + data_len)].to_vec();
+
+    Some((selector, darkpool_calldata))
+}
+
+/// Finds the first darkpool transaction and returns the selector, the
+/// data offset, and the data length
+fn find_first_darkpool_transaction(
+    call_array_metadata: &[StarknetFieldElement],
+    darkpool_contract_addr: &StarknetFieldElement,
+) -> Option<(StarknetFieldElement, usize, usize)> {
+    let mut cursor = 0;
+    while cursor < call_array_metadata.len() {
+        let contract_addr = call_array_metadata[cursor + CALL_ARRAY_CONTRACT_ADDR_IDX];
+        let selector = call_array_metadata[cursor + CALL_ARRAY_SELECTOR_IDX];
+        let data_offset = call_array_metadata[cursor + CALL_ARRAY_DATA_OFFSET_IDX];
+        let data_len = call_array_metadata[cursor + CALL_ARRAY_DATA_LEN_IDX];
+
+        if contract_addr == *darkpool_contract_addr {
+            return Some((
+                selector,
+                starknet_felt_to_usize(&data_offset),
+                starknet_felt_to_usize(&data_len),
+            ));
+        }
+
+        cursor += CALL_ARRAY_ELEMENT_METADATA_LEN;
+    }
+
+    None
+}
+
+// -----------------
+// | Share Parsing |
+// -----------------
 
 /// Parse wallet public secret shares from the calldata of a transaction based on the
 /// selector invoked
@@ -51,13 +132,17 @@ pub(super) fn parse_shares_from_calldata(
             parse_shares_from_match(public_blinder_share, calldata)?
         }
         _ => {
+            log::error!("invalid selector received: {selector}");
             return Err(StarknetClientError::NotFound(
                 ERR_INVALID_SELECTOR.to_string(),
-            ))
+            ));
         }
     };
 
-    unpack_bytes_from_blob(felt_blob)
+    // Convert to scalars and re-structure into a wallet share
+    Ok(SizedWalletShare::from_scalars(
+        &mut felt_blob.iter().map(starknet_felt_to_scalar),
+    ))
 }
 
 /// Parse wallet public shares from the calldata of a `new_wallet` transaction
@@ -118,29 +203,4 @@ fn parse_shares_from_match(
     };
 
     Ok(calldata[start_idx..end_idx].to_vec())
-}
-
-/// Unpack bytes that were previously packed into felts
-pub(super) fn unpack_bytes_from_blob<T: DeserializeOwned>(
-    blob: Vec<StarknetFieldElement>,
-) -> Result<T, StarknetClientError> {
-    let n_bytes: u64 = blob[0]
-        .try_into()
-        .map_err(|_| StarknetClientError::Serde(ERR_INVALID_BLOB_ENCODING.to_string()))?;
-
-    // Build a byte array from the calldata blob
-    let mut byte_array: Vec<u8> = Vec::with_capacity(BYTES_PER_FELT * blob.len());
-    for felt in blob[1..].iter() {
-        let mut bytes = felt.to_bytes_be();
-        // We pack bytes into the felts in little endian order to avoid
-        // field overflows. So reverse into little endian then truncate
-        bytes.reverse();
-
-        byte_array.append(&mut bytes[..BYTES_PER_FELT].to_vec());
-    }
-
-    // Deserialize the byte array back into a ciphertext vector
-    let truncated_bytes = &byte_array[..(n_bytes as usize)];
-    serde_json::from_slice(truncated_bytes)
-        .map_err(|err| StarknetClientError::Serde(err.to_string()))
 }

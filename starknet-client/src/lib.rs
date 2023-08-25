@@ -63,9 +63,9 @@ lazy_static! {
     // ------------------------
 
     /// The value of an empty leaf in the Merkle tree
-    static ref EMPTY_LEAF_VALUE: Scalar = {
+    pub static ref EMPTY_LEAF_VALUE: Scalar = {
         BigUint::from_str(
-            "306932273398430716639340090025251549301604242969558673011416862133942957551"
+            "306932273398430716639340090025251550554329269971178413658580639401611971225"
         )
         .unwrap()
         .into()
@@ -78,9 +78,10 @@ lazy_static! {
     pub static ref DEFAULT_AUTHENTICATION_PATH: [Scalar; MERKLE_HEIGHT] = {
         let mut values = Vec::with_capacity(MERKLE_HEIGHT);
 
-        let curr_val = *EMPTY_LEAF_VALUE;
+        let mut curr_val = *EMPTY_LEAF_VALUE;
         for _ in 0..MERKLE_HEIGHT {
-            values.push(compute_poseidon_hash(&[curr_val, curr_val]));
+            values.push(curr_val);
+            curr_val = compute_poseidon_hash(&[curr_val, curr_val]);
         }
 
         values.try_into().unwrap()
