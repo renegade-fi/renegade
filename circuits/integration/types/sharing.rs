@@ -6,7 +6,7 @@ use circuit_types::{
 };
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use eyre::{eyre, Result};
-use test_helpers::{integration_test_async, types::IntegrationTest};
+use test_helpers::integration_test_async;
 
 use crate::IntegrationTestArgs;
 

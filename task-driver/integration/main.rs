@@ -25,7 +25,7 @@ use test_helpers::{
     contracts::parse_addr_from_deployments_file, integration_test, integration_test_main,
 };
 use tracing::log::LevelFilter;
-use util::runtime::await_result;
+use util::runtime::block_on_result;
 
 /// The hostport that the test expects a local devnet node to be running on
 ///
@@ -148,7 +148,7 @@ fn test_dummy(test_args: IntegrationTestArgs) -> Result<()> {
     let mut rng = thread_rng();
     let random_nullifier = Scalar::random(&mut rng);
 
-    let res = await_result(client.check_nullifier_unused(random_nullifier))?;
+    let res = block_on_result(client.check_nullifier_unused(random_nullifier))?;
 
     if res {
         Ok(())

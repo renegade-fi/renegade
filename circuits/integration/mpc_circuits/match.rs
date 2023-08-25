@@ -17,7 +17,7 @@ use mpc_bulletproof::{r1cs_mpc::MpcProver, PedersenGens};
 use mpc_stark::{PARTY0, PARTY1};
 use num_bigint::BigUint;
 use rand::thread_rng;
-use test_helpers::{integration_test_async, types::IntegrationTest};
+use test_helpers::integration_test_async;
 
 use crate::IntegrationTestArgs;
 

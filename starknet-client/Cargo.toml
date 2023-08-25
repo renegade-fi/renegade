@@ -3,10 +3,14 @@ name = "starknet-client"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+integration = ["circuits/test_helpers"]
+
 [[test]]
 name = "integration"
 path = "integration/main.rs"
 harness = false
+required-features = ["integration"]
 
 [dependencies]
 # === Cryptographic + arithmetic dependencies === #
@@ -42,6 +46,8 @@ eyre = { workspace = true }
 inventory = "0.3"
 
 rand = { workspace = true }
+
+tokio = { workspace = true }
 
 test-helpers = { path = "../test-helpers" }
 util = { path = "../util" }
