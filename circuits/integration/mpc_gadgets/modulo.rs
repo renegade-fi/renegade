@@ -5,7 +5,7 @@ use mpc_stark::{algebra::scalar::Scalar, PARTY0, PARTY1};
 use num_bigint::{BigUint, RandomBits};
 use rand::{thread_rng, Rng, RngCore};
 use renegade_crypto::fields::scalar_to_biguint;
-use test_helpers::{integration_test_async, types::IntegrationTest};
+use test_helpers::integration_test_async;
 
 use crate::IntegrationTestArgs;
 

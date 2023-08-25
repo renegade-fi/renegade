@@ -10,7 +10,7 @@ use futures::Future;
 #[macro_export]
 macro_rules! integration_test {
     ($test_fn:ident) => {
-        inventory::submit!(crate::TestWrapper(IntegrationTest {
+        inventory::submit!(crate::TestWrapper(test_helpers::types::IntegrationTest {
             name: std::concat! {std::module_path!(), "::", stringify!($test_fn)},
             test_fn: test_helpers::types::IntegrationTestFn::SynchronousFn($test_fn),
         }));
@@ -21,7 +21,7 @@ macro_rules! integration_test {
 #[macro_export]
 macro_rules! integration_test_async {
     ($test_fn:ident) => {
-        inventory::submit!(crate::TestWrapper(IntegrationTest {
+        inventory::submit!(crate::TestWrapper(test_helpers::types::IntegrationTest {
             name: std::concat! {std::module_path!(), "::", stringify!($test_fn)},
             test_fn: test_helpers::types::IntegrationTestFn::AsynchronousFn(move |args| {
                 std::boxed::Box::pin($test_fn(args))

@@ -12,7 +12,7 @@ use mpc_bulletproof::{
 use mpc_stark::{algebra::scalar::Scalar, PARTY0};
 use rand::{thread_rng, RngCore};
 use renegade_crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
-use test_helpers::{integration_test_async, types::IntegrationTest};
+use test_helpers::integration_test_async;
 
 use crate::IntegrationTestArgs;
 

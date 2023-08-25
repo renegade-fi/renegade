@@ -23,7 +23,7 @@ use mpc_stark::{algebra::scalar::Scalar, MpcFabric, PARTY0, PARTY1};
 use rand::{thread_rng, Rng};
 use renegade_crypto::fields::scalar_to_u64;
 use std::{cmp, time::SystemTime};
-use test_helpers::{integration_test_async, types::IntegrationTest};
+use test_helpers::integration_test_async;
 
 use crate::IntegrationTestArgs;
 

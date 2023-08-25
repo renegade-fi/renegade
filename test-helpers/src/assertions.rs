@@ -2,7 +2,7 @@
 
 /// Assert that a boolean value is true, return an error otherwise
 #[macro_export]
-macro_rules! assert_true {
+macro_rules! assert_true_result {
     ($x:expr) => {
         if $x {
             Ok(())
@@ -17,7 +17,7 @@ macro_rules! assert_true {
 
 /// Assert that two values are equal, return an error otherwise
 #[macro_export]
-macro_rules! assert_eq {
+macro_rules! assert_eq_result {
     ($x:expr, $y:expr) => {
         if $x == $y {
             Ok(())

@@ -10,7 +10,7 @@ use mpc_stark::{
 };
 use rand::{thread_rng, RngCore};
 use renegade_crypto::fields::scalar_to_u64;
-use test_helpers::{integration_test_async, types::IntegrationTest};
+use test_helpers::integration_test_async;
 
 use crate::IntegrationTestArgs;
 

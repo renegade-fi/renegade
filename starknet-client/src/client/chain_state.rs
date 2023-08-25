@@ -186,11 +186,6 @@ impl StarknetClient {
     ) -> Result<BigUint, StarknetClientError> {
         let commitment_starknet_felt = scalar_to_starknet_felt(&commitment);
 
-        log::info!(
-            "searching for commitment: 0x{:x}",
-            starknet_felt_to_biguint(&commitment_starknet_felt)
-        );
-
         // Paginate through events in the contract, searching for the Merkle tree insertion event that
         // corresponds to the given commitment
         //
@@ -238,7 +233,7 @@ impl StarknetClient {
 
         // Paginate backwards in block history
         let earliest_block = self.config.earliest_block();
-        'outer: for end_block in (earliest_block..current_block)
+        'outer: for end_block in (earliest_block..=current_block)
             .rev()
             .step_by(BLOCK_PAGINATION_WINDOW)
         {

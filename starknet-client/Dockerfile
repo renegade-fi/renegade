@@ -49,7 +49,7 @@ RUN sed -i 's/main.rs/dummy-main.rs/g' Cargo.toml
 ENV RUSTFLAGS=-Awarnings
 ENV RUST_BACKTRACE=1
 
-RUN cargo build --quiet --test integration 
+RUN cargo build --quiet --test integration --features "integration"
 
 # Edit the Cargo.toml back to the original, build the full executable
 RUN sed -i 's/dummy-lib.rs/lib.rs/g' Cargo.toml
@@ -58,4 +58,4 @@ RUN sed -i 's/dummy-main.rs/main.rs/g' Cargo.toml
 COPY starknet-client/src ./src
 COPY starknet-client/integration ./integration
 
-RUN cargo build --quiet --test integration 
+RUN cargo build --quiet --test integration --features "integration"

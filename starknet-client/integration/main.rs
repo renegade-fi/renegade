@@ -5,6 +5,9 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
+mod chain_state;
+mod helpers;
+
 use clap::{ArgGroup, Parser};
 use common::types::chain_id::ChainId;
 use eyre::Result;
@@ -12,10 +15,14 @@ use mpc_stark::algebra::scalar::Scalar;
 use rand::thread_rng;
 use starknet_client::client::{StarknetClient, StarknetClientConfig};
 use test_helpers::{
-    assert_true, contracts::parse_addr_from_deployments_file, integration_test_async,
+    assert_true_result, contracts::parse_addr_from_deployments_file, integration_test_async,
     integration_test_main,
 };
+use tracing::log;
 use tracing::log::LevelFilter;
+use util::runtime::block_on_result;
+
+use crate::helpers::deploy_new_wallet;
 
 /// The hostport that the test expects a local devnet node to be running on
 ///
@@ -73,6 +80,17 @@ struct CliArgs {
 struct IntegrationTestArgs {
     /// The starknet client that resolves to a locally running devnet node
     starknet_client: StarknetClient,
+    /// The pre-allocated state elements in the contract
+    pre_allocated_state: PreAllocatedState,
+}
+
+/// The set of pre-allocated state elements in the contract
+#[derive(Clone)]
+struct PreAllocatedState {
+    /// The commitment inserted at index 0 in the Merkle tree when integration tests begin
+    index0_commitment: Scalar,
+    /// The nullifier inserted at index 1 in the Merkle tree when integration tests begin
+    index1_commitment: Scalar,
 }
 
 impl From<CliArgs> for IntegrationTestArgs {
@@ -98,8 +116,27 @@ impl From<CliArgs> for IntegrationTestArgs {
             starknet_pkeys: vec![test_args.starknet_pkey],
         });
 
-        Self { starknet_client }
+        let pre_allocated_state = setup_pre_allocated_state(&starknet_client).unwrap();
+        Self {
+            starknet_client,
+            pre_allocated_state,
+        }
     }
+}
+
+/// Sets up pre-allocated state used by the integration tests
+fn setup_pre_allocated_state(client: &StarknetClient) -> Result<PreAllocatedState> {
+    // Insert two new wallets into the contract
+    let index0_commitment = block_on_result(deploy_new_wallet(client))?;
+    let index1_commitment = block_on_result(deploy_new_wallet(client))?;
+
+    log::info!("index 0 commitment: {index0_commitment}");
+    log::info!("index 1 commitment: {index1_commitment}");
+
+    Ok(PreAllocatedState {
+        index0_commitment,
+        index1_commitment,
+    })
 }
 
 /// Setup code for the integration tests
@@ -119,7 +156,7 @@ async fn test_dummy(args: IntegrationTestArgs) -> Result<()> {
     let random_nullifier = Scalar::random(&mut rng);
 
     let unused = client.check_nullifier_unused(random_nullifier).await?;
-    assert_true!(unused)
+    assert_true_result!(unused)
 }
 
 integration_test_async!(test_dummy);

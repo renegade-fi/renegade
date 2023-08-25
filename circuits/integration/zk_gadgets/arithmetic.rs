@@ -11,7 +11,7 @@ use mpc_bulletproof::{
 use mpc_stark::{algebra::scalar::Scalar, PARTY0, PARTY1};
 use rand::{thread_rng, RngCore};
 use renegade_crypto::fields::get_scalar_field_modulus;
-use test_helpers::{integration_test_async, types::IntegrationTest};
+use test_helpers::integration_test_async;
 
 use crate::IntegrationTestArgs;
 

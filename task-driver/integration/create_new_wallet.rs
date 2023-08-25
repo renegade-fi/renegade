@@ -2,7 +2,7 @@
 
 use eyre::{eyre, Result};
 use task_driver::create_new_wallet::NewWalletTask;
-use test_helpers::{integration_test_async, types::IntegrationTest};
+use test_helpers::integration_test_async;
 
 use crate::{helpers::create_empty_api_wallet, IntegrationTestArgs};
 
