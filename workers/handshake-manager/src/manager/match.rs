@@ -22,7 +22,9 @@ use circuits::{
 };
 use common::types::{
     handshake::{HandshakeResult, HandshakeState},
-    proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMatchMpcBundle},
+    proof_bundles::{
+        GenericValidMatchMpcBundle, OrderValidityProofBundle, OrderValidityWitnessBundle,
+    },
 };
 use crossbeam::channel::{bounded, Receiver};
 use mpc_bulletproof::r1cs::R1CSProof;
@@ -338,11 +340,11 @@ impl HandshakeExecutor {
 
         Ok(Box::new(HandshakeResult {
             match_: match_res_open,
-            match_proof: ValidMatchMpcBundle {
+            match_proof: Box::new(GenericValidMatchMpcBundle {
                 commitment,
                 statement: (),
                 proof,
-            },
+            }),
             party0_share_nullifier: handshake_state.local_share_nullifier,
             party1_share_nullifier: handshake_state.peer_share_nullifier,
             party0_reblinded_shares: party0_public_shares,

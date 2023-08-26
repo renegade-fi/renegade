@@ -23,6 +23,8 @@ use circuits::{
 };
 use common::types::{
     proof_bundles::{
+        GenericValidCommitmentsBundle, GenericValidMatchMpcBundle, GenericValidReblindBundle,
+        GenericValidSettleBundle, GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle,
         ProofBundle, ValidCommitmentsBundle, ValidMatchMpcBundle, ValidReblindBundle,
         ValidSettleBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
     },
@@ -158,11 +160,11 @@ impl ProofManager {
         >(witness, statement.clone())
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(ValidWalletCreateBundle {
+        Ok(Box::new(GenericValidWalletCreateBundle {
             commitment,
             statement,
             proof,
-        })
+        }))
     }
 
     /// Create a proof of `VALID REBLIND`
@@ -176,11 +178,11 @@ impl ProofManager {
         >(witness, statement.clone())
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(ValidReblindBundle {
+        Ok(Box::new(GenericValidReblindBundle {
             commitment: witness_comm,
             statement,
             proof,
-        })
+        }))
     }
 
     /// Create a proof of `VALID COMMITMENTS`
@@ -194,11 +196,11 @@ impl ProofManager {
         >(witness, statement.clone())
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(ValidCommitmentsBundle {
+        Ok(Box::new(GenericValidCommitmentsBundle {
             commitment: witness_comm,
             statement,
             proof,
-        })
+        }))
     }
 
     /// Create a proof of `VALID WALLET UPDATE`
@@ -211,11 +213,11 @@ impl ProofManager {
         >(witness, statement.clone())
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(ValidWalletUpdateBundle {
+        Ok(Box::new(GenericValidWalletUpdateBundle {
             commitment: witness_comm,
             statement,
             proof,
-        })
+        }))
     }
 
     /// Create a proof of `VALID MATCH MPC`
@@ -225,11 +227,11 @@ impl ProofManager {
         let (witness_comm, proof) = singleprover_prove::<ValidMatchMpcSingleProver>(witness, ())
             .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(ValidMatchMpcBundle {
+        Ok(Box::new(GenericValidMatchMpcBundle {
             commitment: witness_comm,
             statement: (),
             proof,
-        })
+        }))
     }
 
     /// Create a proof of `VALID SETTLE`
@@ -242,10 +244,10 @@ impl ProofManager {
         >(witness, statement.clone())
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(ValidSettleBundle {
+        Ok(Box::new(GenericValidSettleBundle {
             commitment: witness_comm,
             statement,
             proof,
-        })
+        }))
     }
 }

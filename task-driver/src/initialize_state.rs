@@ -4,7 +4,6 @@
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter, Result as FmtResult},
-    sync::Arc,
 };
 
 use async_trait::async_trait;
@@ -235,7 +234,7 @@ impl InitializeStateTask {
             )
             .map_err(InitializeStateTaskError::ProveValidReblind)?;
 
-            let wallet_reblind_witness = Arc::new(reblind_witness);
+            let wallet_reblind_witness = Box::new(reblind_witness);
             reblind_response_channels.push((wallet.wallet_id, response_channel));
 
             // Create a proof of `VALID COMMITMENTS` for each order
@@ -250,7 +249,7 @@ impl InitializeStateTask {
                 )
                 .map_err(InitializeStateTaskError::ProveValidCommitments)?;
 
-                let order_commitment_witness = Arc::new(commitments_witness);
+                let order_commitment_witness = Box::new(commitments_witness);
 
                 // Attach a copy of the witness to the locally managed state
                 // This witness is referenced by match computations which compute linkable commitments
@@ -281,7 +280,7 @@ impl InitializeStateTask {
                 .await
                 .map_err(|err| InitializeStateTaskError::ProveValidReblind(err.to_string()))?
                 .into();
-            reblind_proofs.insert(wallet_id, Arc::new(proof));
+            reblind_proofs.insert(wallet_id, Box::new(proof));
         }
 
         // Await a proof response for each order then attach it to the order index entry
@@ -295,7 +294,7 @@ impl InitializeStateTask {
             // Add proofs to the global state, the local node will gossip these around
             let reblind_proof = reblind_proofs.get(&wallet_id).unwrap().clone();
             let proof_bundle = OrderValidityProofBundle {
-                commitment_proof: Arc::new(proof_bundle),
+                commitment_proof: Box::new(proof_bundle),
                 reblind_proof,
             };
             self.global_state

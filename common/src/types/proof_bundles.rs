@@ -1,7 +1,5 @@
 //! Defines proof bundles that are passed across worker boundaries
 
-use std::sync::Arc;
-
 use circuits::zk_circuits::{
     valid_commitments::{
         SizedValidCommitmentsWitness, ValidCommitmentsStatement, ValidCommitmentsWitnessCommitment,
@@ -41,7 +39,7 @@ pub struct GenericValidWalletCreateBundle<
 
 /// A type alias that specifies default generics for `GenericValidWalletCreateBundle`
 pub type ValidWalletCreateBundle =
-    GenericValidWalletCreateBundle<MAX_BALANCES, MAX_BALANCES, MAX_FEES>;
+    Box<GenericValidWalletCreateBundle<MAX_BALANCES, MAX_BALANCES, MAX_FEES>>;
 
 /// The response type for a request to generate a proof of `VALID WALLET UPDATE`
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -64,7 +62,7 @@ pub struct GenericValidWalletUpdateBundle<
 
 /// A type alias that specifies the default generics for `GenericValidWalletUpdateBundle`
 pub type ValidWalletUpdateBundle =
-    GenericValidWalletUpdateBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
+    Box<GenericValidWalletUpdateBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>>;
 
 /// The response type for a request to generate a proof of `VALID REBLIND`
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -87,7 +85,7 @@ pub struct GenericValidReblindBundle<
 
 /// A type alias that specifies default generics for `GenericValidReblindBundle`
 pub type ValidReblindBundle =
-    GenericValidReblindBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
+    Box<GenericValidReblindBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>>;
 
 /// The response type for a request to generate a proof of `VALID COMMITMENTS`
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -107,11 +105,12 @@ pub struct GenericValidCommitmentsBundle<
 }
 
 /// A type alias that specifies the default generics for `GenericValidCommitmentsBundle`
-pub type ValidCommitmentsBundle = GenericValidCommitmentsBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type ValidCommitmentsBundle =
+    Box<GenericValidCommitmentsBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>;
 
 /// A bundle of the statement, witness commitment, and proof of `VALID MATCH MPC`
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidMatchMpcBundle {
+pub struct GenericValidMatchMpcBundle {
     /// A commitment to the witness type of `VALID COMMITMENTS`
     pub commitment: ValidMatchMpcWitnessCommitment,
     /// The statement (public variables) used to prove `VALID COMMITMENTS`
@@ -119,6 +118,9 @@ pub struct ValidMatchMpcBundle {
     /// The proof itself
     pub proof: R1CSProof,
 }
+
+/// A type alias that boxes a `GenericValidMatchMpcBundle`
+pub type ValidMatchMpcBundle = Box<GenericValidMatchMpcBundle>;
 
 /// The response type for a request to generate a proof of `VALID SETTLE`
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -139,7 +141,7 @@ pub struct GenericValidSettleBundle<
 }
 
 /// A type alias that specifies default generics for `GenericValidSettleBundle`
-pub type ValidSettleBundle = GenericValidSettleBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type ValidSettleBundle = Box<GenericValidSettleBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>;
 
 /// The bundle returned by the proof generation module
 #[derive(Clone, Debug)]
@@ -237,9 +239,9 @@ impl From<ProofBundle> for ValidSettleBundle {
 #[derive(Clone, Debug)]
 pub struct OrderValidityProofBundle {
     /// The proof of `VALID REBLIND` for the order's wallet
-    pub reblind_proof: Arc<ValidReblindBundle>,
+    pub reblind_proof: Box<ValidReblindBundle>,
     /// The proof of `VALID COMMITMENTS` for the order
-    pub commitment_proof: Arc<ValidCommitmentsBundle>,
+    pub commitment_proof: Box<ValidCommitmentsBundle>,
 }
 
 impl OrderValidityProofBundle {
@@ -272,8 +274,8 @@ impl<'de> Deserialize<'de> for OrderValidityProofBundle {
             <(ValidReblindBundle, ValidCommitmentsBundle)>::deserialize(deserializer)?;
 
         Ok(OrderValidityProofBundle {
-            reblind_proof: Arc::new(reblind_proof),
-            commitment_proof: Arc::new(commitment_proof),
+            reblind_proof: Box::new(reblind_proof),
+            commitment_proof: Box::new(commitment_proof),
         })
     }
 }
@@ -286,9 +288,9 @@ impl<'de> Deserialize<'de> for OrderValidityProofBundle {
 #[derive(Clone, Debug)]
 pub struct OrderValidityWitnessBundle {
     /// The witness of `VALID REBLIND` for the order's wallet
-    pub reblind_witness: Arc<SizedValidReblindWitness>,
+    pub reblind_witness: Box<SizedValidReblindWitness>,
     /// The witness of `VALID COMMITMENTS` for the order
-    pub commitment_witness: Arc<SizedValidCommitmentsWitness>,
+    pub commitment_witness: Box<SizedValidCommitmentsWitness>,
 }
 
 impl OrderValidityWitnessBundle {
@@ -321,8 +323,8 @@ impl<'de> Deserialize<'de> for OrderValidityWitnessBundle {
             <(SizedValidReblindWitness, SizedValidCommitmentsWitness)>::deserialize(deserializer)?;
 
         Ok(OrderValidityWitnessBundle {
-            reblind_witness: Arc::new(reblind_witness),
-            commitment_witness: Arc::new(commitment_witness),
+            reblind_witness: Box::new(reblind_witness),
+            commitment_witness: Box::new(commitment_witness),
         })
     }
 }
@@ -337,7 +339,7 @@ pub mod mocks {
     //!
     //! Note that these mocks are not expected to verify
 
-    use std::{iter, sync::Arc};
+    use std::iter;
 
     use circuit_types::traits::{BaseType, CircuitCommitmentType};
     use circuits::zk_circuits::{
@@ -352,6 +354,8 @@ pub mod mocks {
     use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
 
     use super::{
+        GenericValidCommitmentsBundle, GenericValidMatchMpcBundle, GenericValidReblindBundle,
+        GenericValidSettleBundle, GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle,
         OrderValidityProofBundle, ValidCommitmentsBundle, ValidMatchMpcBundle, ValidReblindBundle,
         ValidSettleBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
     };
@@ -363,11 +367,11 @@ pub mod mocks {
             StarkPoint::identity(),
         ));
 
-        ValidWalletCreateBundle {
+        Box::new(GenericValidWalletCreateBundle {
             statement,
             commitment,
             proof: dummy_r1cs_proof(),
-        }
+        })
     }
 
     /// Create a dummy proof bundle for `VALID WALLET UPDATE`
@@ -378,11 +382,11 @@ pub mod mocks {
         ));
         let proof = dummy_r1cs_proof();
 
-        ValidWalletUpdateBundle {
+        Box::new(GenericValidWalletUpdateBundle {
             statement,
             commitment,
             proof,
-        }
+        })
     }
 
     /// Create a dummy proof bundle for `VALID REBLIND`
@@ -392,11 +396,11 @@ pub mod mocks {
             StarkPoint::identity(),
         ));
 
-        ValidReblindBundle {
+        Box::new(GenericValidReblindBundle {
             statement,
             commitment,
             proof: dummy_r1cs_proof(),
-        }
+        })
     }
 
     /// Create a dummy proof bundle for `VALID COMMITMENTS`
@@ -406,18 +410,18 @@ pub mod mocks {
             StarkPoint::identity(),
         ));
 
-        ValidCommitmentsBundle {
+        Box::new(GenericValidCommitmentsBundle {
             statement,
             commitment,
             proof: dummy_r1cs_proof(),
-        }
+        })
     }
 
     /// Create a dummy validity proof bundle
     pub fn dummy_validity_proof_bundle() -> OrderValidityProofBundle {
         OrderValidityProofBundle {
-            reblind_proof: Arc::new(dummy_valid_reblind_bundle()),
-            commitment_proof: Arc::new(dummy_valid_commitments_bundle()),
+            reblind_proof: Box::new(dummy_valid_reblind_bundle()),
+            commitment_proof: Box::new(dummy_valid_commitments_bundle()),
         }
     }
 
@@ -427,11 +431,11 @@ pub mod mocks {
             StarkPoint::identity(),
         ));
 
-        ValidMatchMpcBundle {
+        Box::new(GenericValidMatchMpcBundle {
             commitment,
             statement: (),
             proof: dummy_r1cs_proof(),
-        }
+        })
     }
 
     /// Create a dummy proof bundle ofr `VALID SETTLE`
@@ -441,11 +445,11 @@ pub mod mocks {
             StarkPoint::identity(),
         ));
 
-        ValidSettleBundle {
+        Box::new(GenericValidSettleBundle {
             statement,
             commitment,
             proof: dummy_r1cs_proof(),
-        }
+        })
     }
 
     /// Create a dummy R1CS proof
