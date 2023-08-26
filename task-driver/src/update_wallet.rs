@@ -3,6 +3,7 @@
 //!
 //! This involves proving `VALID WALLET UPDATE`, submitting on-chain, and re-indexing state
 
+use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use async_trait::async_trait;
@@ -83,6 +84,8 @@ impl Display for UpdateWalletTaskError {
         write!(f, "{self:?}")
     }
 }
+
+impl Error for UpdateWalletTaskError {}
 
 /// Defines the state of the deposit balance task
 #[derive(Clone, Debug)]

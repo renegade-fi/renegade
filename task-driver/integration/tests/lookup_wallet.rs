@@ -1,16 +1,16 @@
 //! Integration tests for the `LookupWalletTask`
 
-use eyre::{eyre, Result};
+use eyre::Result;
 use mpc_stark::algebra::scalar::Scalar;
 use rand::{distributions::uniform::SampleRange, thread_rng};
 use task_driver::lookup_wallet::LookupWalletTask;
-use test_helpers::{assert_eq_result, assert_true_result, integration_test_async};
+use test_helpers::{assert_true_result, integration_test_async};
 use uuid::Uuid;
 
 use crate::{
     helpers::{
         allocate_wallet_in_darkpool, create_empty_api_wallet, empty_wallet_from_seed,
-        mock_wallet_update,
+        lookup_wallet_and_check_result, mock_wallet_update,
     },
     IntegrationTestArgs,
 };
@@ -56,36 +56,7 @@ async fn test_lookup_wallet__valid_wallet(test_args: IntegrationTestArgs) -> Res
         mock_wallet_update(&mut wallet, client).await?;
     }
 
-    let task = LookupWalletTask::new(
-        wallet.wallet_id,
-        blinder_seed,
-        share_seed,
-        wallet.key_chain,
-        test_args.starknet_client.clone(),
-        test_args.network_sender.clone(),
-        test_args.global_state.clone(),
-        test_args.proof_job_queue.clone(),
-    );
-    let (_task_id, handle) = test_args.driver.start_task(task).await;
-    let success = handle.await?;
-
-    assert_true_result!(success)?;
-
-    // Check the global state for the wallet and verify that it was correctly recovered
-    let state_wallet = test_args
-        .global_state
-        .read_wallet_index()
-        .await
-        .read_wallet(&wallet.wallet_id)
-        .await
-        .ok_or_else(|| eyre!("Wallet not found in global state"))?
-        .clone();
-
-    // Compare the secret shares directly
-    assert_eq_result!(
-        state_wallet.blinded_public_shares,
-        wallet.blinded_public_shares
-    )?;
-    assert_eq_result!(state_wallet.private_shares, wallet.private_shares)
+    // Check that the wallet is discoverable from contract state and correctly constructed
+    lookup_wallet_and_check_result(&wallet, blinder_seed, share_seed, test_args).await
 }
 integration_test_async!(test_lookup_wallet__valid_wallet);

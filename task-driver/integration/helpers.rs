@@ -9,13 +9,66 @@ use common::types::{
     wallet_mocks::mock_empty_wallet,
 };
 use external_api::types::Wallet as ApiWallet;
-use eyre::Result;
+use eyre::{eyre, Result};
 use mpc_stark::algebra::scalar::Scalar;
 use rand::thread_rng;
 use renegade_crypto::hash::{evaluate_hash_chain, PoseidonCSPRNG};
 use starknet_client::client::StarknetClient;
 use system_bus::SystemBus;
-use task_driver::driver::{TaskDriver, TaskDriverConfig};
+use task_driver::{
+    driver::{TaskDriver, TaskDriverConfig},
+    lookup_wallet::LookupWalletTask,
+};
+use test_helpers::{assert_eq_result, assert_true_result};
+use uuid::Uuid;
+
+use crate::IntegrationTestArgs;
+
+// ---------
+// | Tasks |
+// ---------
+
+/// Lookup a wallet in the contract state and verify that it matches the expected wallet
+pub(crate) async fn lookup_wallet_and_check_result(
+    expected_wallet: &Wallet,
+    blinder_seed: Scalar,
+    share_seed: Scalar,
+    test_args: IntegrationTestArgs,
+) -> Result<()> {
+    // Start a lookup task for the new wallet
+    let new_wallet_id = Uuid::new_v4();
+    let state = test_args.global_state;
+    let task = LookupWalletTask::new(
+        new_wallet_id,
+        blinder_seed,
+        share_seed,
+        expected_wallet.key_chain.clone(),
+        test_args.starknet_client,
+        test_args.network_sender,
+        state.clone(),
+        test_args.proof_job_queue,
+    );
+
+    let (_task_id, handle) = test_args.driver.start_task(task).await;
+    let success = handle.await?;
+    assert_true_result!(success)?;
+
+    // Check the global state for the wallet and verify that it was correctly recovered
+    let state_wallet = state
+        .read_wallet_index()
+        .await
+        .read_wallet(&new_wallet_id)
+        .await
+        .ok_or_else(|| eyre!("Wallet not found in global state"))?
+        .clone();
+
+    // Compare the secret shares directly
+    assert_eq_result!(
+        state_wallet.blinded_public_shares,
+        expected_wallet.blinded_public_shares
+    )?;
+    assert_eq_result!(state_wallet.private_shares, expected_wallet.private_shares)
+}
 
 // ------------------------
 // | Contract Interaction |
