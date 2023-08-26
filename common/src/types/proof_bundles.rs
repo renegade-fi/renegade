@@ -326,3 +326,156 @@ impl<'de> Deserialize<'de> for OrderValidityWitnessBundle {
         })
     }
 }
+
+// ---------
+// | Mocks |
+// ---------
+
+#[cfg(feature = "mocks")]
+pub mod mocks {
+    //! Mocks for proof bundle and proof objects
+    //!
+    //! Note that these mocks are not expected to verify
+
+    use std::{iter, sync::Arc};
+
+    use circuit_types::traits::{BaseType, CircuitCommitmentType};
+    use circuits::zk_circuits::{
+        valid_commitments::{ValidCommitmentsStatement, ValidCommitmentsWitnessCommitment},
+        valid_match_mpc::ValidMatchMpcWitnessCommitment,
+        valid_reblind::{ValidReblindStatement, ValidReblindWitnessCommitment},
+        valid_settle::{ValidSettleStatement, ValidSettleWitnessCommitment},
+        valid_wallet_create::{ValidWalletCreateStatement, ValidWalletCreateWitnessCommitment},
+        valid_wallet_update::{ValidWalletUpdateStatement, ValidWalletUpdateWitnessCommitment},
+    };
+    use mpc_bulletproof::{r1cs::R1CSProof, InnerProductProof};
+    use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
+
+    use super::{
+        OrderValidityProofBundle, ValidCommitmentsBundle, ValidMatchMpcBundle, ValidReblindBundle,
+        ValidSettleBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
+    };
+
+    /// Create a dummy proof bundle for `VALID WALLET CREATE`
+    pub fn dummy_valid_wallet_create_bundle() -> ValidWalletCreateBundle {
+        let statement = ValidWalletCreateStatement::from_scalars(&mut iter::repeat(Scalar::one()));
+        let commitment = ValidWalletCreateWitnessCommitment::from_commitments(&mut iter::repeat(
+            StarkPoint::identity(),
+        ));
+
+        ValidWalletCreateBundle {
+            statement,
+            commitment,
+            proof: dummy_r1cs_proof(),
+        }
+    }
+
+    /// Create a dummy proof bundle for `VALID WALLET UPDATE`
+    pub fn dummy_valid_wallet_update_bundle() -> ValidWalletUpdateBundle {
+        let statement = ValidWalletUpdateStatement::from_scalars(&mut iter::repeat(Scalar::one()));
+        let commitment = ValidWalletUpdateWitnessCommitment::from_commitments(&mut iter::repeat(
+            StarkPoint::identity(),
+        ));
+        let proof = dummy_r1cs_proof();
+
+        ValidWalletUpdateBundle {
+            statement,
+            commitment,
+            proof,
+        }
+    }
+
+    /// Create a dummy proof bundle for `VALID REBLIND`
+    pub fn dummy_valid_reblind_bundle() -> ValidReblindBundle {
+        let statement = ValidReblindStatement::from_scalars(&mut iter::repeat(Scalar::one()));
+        let commitment = ValidReblindWitnessCommitment::from_commitments(&mut iter::repeat(
+            StarkPoint::identity(),
+        ));
+
+        ValidReblindBundle {
+            statement,
+            commitment,
+            proof: dummy_r1cs_proof(),
+        }
+    }
+
+    /// Create a dummy proof bundle for `VALID COMMITMENTS`
+    pub fn dummy_valid_commitments_bundle() -> ValidCommitmentsBundle {
+        let statement = ValidCommitmentsStatement::from_scalars(&mut iter::repeat(Scalar::one()));
+        let commitment = ValidCommitmentsWitnessCommitment::from_commitments(&mut iter::repeat(
+            StarkPoint::identity(),
+        ));
+
+        ValidCommitmentsBundle {
+            statement,
+            commitment,
+            proof: dummy_r1cs_proof(),
+        }
+    }
+
+    /// Create a dummy validity proof bundle
+    pub fn dummy_validity_proof_bundle() -> OrderValidityProofBundle {
+        OrderValidityProofBundle {
+            reblind_proof: Arc::new(dummy_valid_reblind_bundle()),
+            commitment_proof: Arc::new(dummy_valid_commitments_bundle()),
+        }
+    }
+
+    /// Create a dummy proof bundle for `VALID MATCH MPC`
+    pub fn dummy_valid_match_mpc_bundle() -> ValidMatchMpcBundle {
+        let commitment = ValidMatchMpcWitnessCommitment::from_commitments(&mut iter::repeat(
+            StarkPoint::identity(),
+        ));
+
+        ValidMatchMpcBundle {
+            commitment,
+            statement: (),
+            proof: dummy_r1cs_proof(),
+        }
+    }
+
+    /// Create a dummy proof bundle ofr `VALID SETTLE`
+    pub fn dummy_valid_settle_bundle() -> ValidSettleBundle {
+        let statement = ValidSettleStatement::from_scalars(&mut iter::repeat(Scalar::one()));
+        let commitment = ValidSettleWitnessCommitment::from_commitments(&mut iter::repeat(
+            StarkPoint::identity(),
+        ));
+
+        ValidSettleBundle {
+            statement,
+            commitment,
+            proof: dummy_r1cs_proof(),
+        }
+    }
+
+    /// Create a dummy R1CS proof
+    pub fn dummy_r1cs_proof() -> R1CSProof {
+        R1CSProof {
+            A_I1: StarkPoint::identity(),
+            A_O1: StarkPoint::identity(),
+            S1: StarkPoint::identity(),
+            A_I2: StarkPoint::identity(),
+            A_O2: StarkPoint::identity(),
+            S2: StarkPoint::identity(),
+            T_1: StarkPoint::identity(),
+            T_3: StarkPoint::identity(),
+            T_4: StarkPoint::identity(),
+            T_5: StarkPoint::identity(),
+            T_6: StarkPoint::identity(),
+            t_x: Scalar::one(),
+            t_x_blinding: Scalar::one(),
+            e_blinding: Scalar::one(),
+            ipp_proof: dummy_ip_proof(),
+        }
+    }
+
+    /// Create a dummy inner product proof
+    pub fn dummy_ip_proof() -> InnerProductProof {
+        InnerProductProof {
+            L_vec: vec![StarkPoint::identity()],
+            R_vec: vec![StarkPoint::identity()],
+            a: Scalar::one(),
+            b: Scalar::one(),
+        }
+    }
+}

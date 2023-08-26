@@ -94,7 +94,7 @@ pub(super) fn construct_wallet_reblind_proof(
         wallet.blinded_public_shares.clone(),
     );
     let (reblinded_private_shares, reblinded_public_shares) =
-        reblind_wallet(wallet.private_shares.clone(), circuit_wallet);
+        reblind_wallet(wallet.private_shares.clone(), &circuit_wallet);
 
     let merkle_root = authentication_path.compute_root();
     let private_reblinded_commitment =
@@ -195,7 +195,7 @@ pub(super) fn construct_wallet_commitment_proof(
         .val;
     let augmented_blinder = reblinded_private_blinder + reblinded_public_blinder;
     let (_, augmented_public_shares) = create_wallet_shares_from_private(
-        augmented_wallet,
+        &augmented_wallet,
         &valid_reblind_witness
             .reblinded_wallet_private_shares
             .clone()
