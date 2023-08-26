@@ -126,7 +126,7 @@ pub mod test_helpers {
 
         let blinder = wallet.blinder;
         create_wallet_shares_with_randomness(
-            wallet,
+            &wallet,
             blinder,
             blinder_share,
             from_fn(|| Some(Scalar::random(&mut rng))),
@@ -318,7 +318,7 @@ pub mod test_helpers {
 
         // Reblind the shares
         let (reblinded_private_shares, reblinded_public_shares) =
-            reblind_wallet(private_share, wallet.clone());
+            reblind_wallet(private_share, &wallet);
 
         // Unblind the public shares, recover from shares
         let recovered_blinder = reblinded_public_shares.blinder + reblinded_private_shares.blinder;

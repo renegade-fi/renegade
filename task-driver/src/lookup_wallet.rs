@@ -14,7 +14,7 @@ use gossip_api::gossip::GossipOutbound;
 use itertools::Itertools;
 use job_types::proof_manager::ProofManagerJob;
 use mpc_stark::algebra::scalar::Scalar;
-use renegade_crypto::{fields::starknet_felt_to_biguint, hash::compute_poseidon_hash};
+use renegade_crypto::{fields::starknet_felt_to_biguint, hash::PoseidonCSPRNG};
 use serde::Serialize;
 use starknet_client::client::StarknetClient;
 use state::RelayerState;
@@ -290,30 +290,5 @@ impl LookupWalletTask {
         )
         .await
         .map_err(LookupWalletTaskError::ProofGeneration)
-    }
-}
-
-/// A hash chain from a seed used to compute CSPRNG values
-pub(super) struct PoseidonCSPRNG {
-    /// The seed of the CSPRNG, this is chained into a hash function
-    /// to give pseudorandom values
-    seed: Scalar,
-}
-
-impl PoseidonCSPRNG {
-    /// Constructor
-    pub(super) fn new(seed: Scalar) -> Self {
-        Self { seed }
-    }
-}
-
-impl Iterator for PoseidonCSPRNG {
-    type Item = Scalar;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let hash_res = compute_poseidon_hash(&[self.seed]);
-        self.seed = hash_res;
-
-        Some(hash_res)
     }
 }

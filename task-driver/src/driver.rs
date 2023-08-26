@@ -40,6 +40,43 @@ const TASK_DRIVER_THREAD_NAME: &str = "renegade-task-driver";
 /// TODO: This is high for now, bring this down as Starknet stabilizes
 const TASK_DRIVER_N_RETRIES: usize = 20;
 
+// ----------
+// | Config |
+// ----------
+
+/// The configuration for the task driver
+#[derive(Clone)]
+pub struct TaskDriverConfig {
+    /// The backoff amplification factor
+    ///
+    /// I.e. the multiplicative increase in backoff timeout after a failed step
+    pub backoff_amplification_factor: u32,
+    /// The maximum backoff timeout in milliseconds
+    pub backoff_ceiling_ms: u64,
+    /// The initial backoff timeout in milliseconds
+    pub initial_backoff_ms: u64,
+    /// The number of retries to attempt before propagating an error
+    pub n_retries: usize,
+    /// The number of threads backing the tokio runtime
+    pub n_threads: usize,
+    /// The system bus to publish task updates onto
+    pub system_bus: SystemBus<SystemBusMessage>,
+}
+
+impl TaskDriverConfig {
+    /// Constructor
+    pub fn default_with_bus(system_bus: SystemBus<SystemBusMessage>) -> Self {
+        Self {
+            backoff_amplification_factor: BACKOFF_AMPLIFICATION_FACTOR,
+            backoff_ceiling_ms: BACKOFF_CEILING_MS,
+            initial_backoff_ms: INITIAL_BACKOFF_MS,
+            n_retries: TASK_DRIVER_N_RETRIES,
+            n_threads: TASK_DRIVER_N_THREADS,
+            system_bus,
+        }
+    }
+}
+
 // ------------------
 // | Task and State |
 // ------------------
@@ -107,13 +144,13 @@ pub struct TaskDriver {
     open_tasks: AsyncShared<HashMap<TaskIdentifier, StateWrapper>>,
     /// The runtime to spawn tasks onto
     runtime: AsyncShared<TokioRuntime>,
-    /// A reference to the system bus for sending pubsub updates
-    system_bus: SystemBus<SystemBusMessage>,
+    /// The task driver's config
+    config: TaskDriverConfig,
 }
 
 impl TaskDriver {
     /// Constructor
-    pub fn new(system_bus: SystemBus<SystemBusMessage>) -> Self {
+    pub fn new(config: TaskDriverConfig) -> Self {
         // Build a runtime
         let runtime = TokioRuntimeBuilder::new_multi_thread()
             .enable_all()
@@ -125,7 +162,7 @@ impl TaskDriver {
         Self {
             open_tasks: new_async_shared(HashMap::new()),
             runtime: new_async_shared(runtime),
-            system_bus,
+            config,
         }
     }
 
@@ -169,13 +206,14 @@ impl TaskDriver {
 
     /// Run a task to completion
     async fn run_task_to_completion<T: Task>(&self, task_id: Uuid, mut task: T) -> bool {
+        let config = &self.config;
         let task_name = task.name();
 
         // Run each step individually and update the state after each step
         'outer: while !task.completed() {
             // Take a step
-            let mut retries = TASK_DRIVER_N_RETRIES;
-            let mut curr_backoff = Duration::from_millis(INITIAL_BACKOFF_MS);
+            let mut retries = config.n_retries;
+            let mut curr_backoff = Duration::from_millis(config.initial_backoff_ms);
 
             while let Err(e) = task.step().await {
                 log::error!("error executing task step: {e:?}");
@@ -188,9 +226,11 @@ impl TaskDriver {
 
                 tokio::time::sleep(curr_backoff).await;
                 log::info!("retrying task {task_id:?} from state: {}", task.state());
-                curr_backoff *= BACKOFF_AMPLIFICATION_FACTOR;
-                curr_backoff =
-                    Duration::min(curr_backoff, Duration::from_millis(BACKOFF_CEILING_MS));
+                curr_backoff *= config.backoff_amplification_factor;
+                curr_backoff = Duration::min(
+                    curr_backoff,
+                    Duration::from_millis(config.backoff_ceiling_ms),
+                );
             }
 
             // Update the state in the registry
@@ -202,7 +242,7 @@ impl TaskDriver {
             } // open_tasks lock released
 
             // Publish the state to the system bus for listeners on this task
-            self.system_bus.publish(
+            self.config.system_bus.publish(
                 task_topic_name(&task_id),
                 SystemBusMessage::TaskStatusUpdate {
                     task_id,

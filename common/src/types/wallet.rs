@@ -216,7 +216,7 @@ impl Wallet {
         new_private_shares.push(new_blinder_private_share);
 
         let (new_private_share, new_public_share) = create_wallet_shares_from_private(
-            self.clone().into(),
+            &self.clone().into(),
             &WalletShare::from_scalars(&mut new_private_shares.into_iter()),
             new_blinder,
         );

@@ -440,11 +440,8 @@ pub mod test_helpers {
 
         // After augmenting, split the augmented wallet into shares, using the same private secret shares
         // as the original (un-augmented) wallet
-        let (_, augmented_public_shares) = create_wallet_shares_from_private(
-            augmented_wallet.clone(),
-            &private_shares,
-            wallet.blinder,
-        );
+        let (_, augmented_public_shares) =
+            create_wallet_shares_from_private(&augmented_wallet, &private_shares, wallet.blinder);
 
         let witness = ValidCommitmentsWitness {
             private_secret_shares: private_shares.to_linkable(),

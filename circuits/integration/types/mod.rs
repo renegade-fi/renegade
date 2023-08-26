@@ -17,7 +17,7 @@ pub fn create_wallet_shares<
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
 >(
-    wallet: Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
 ) -> (
     WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
