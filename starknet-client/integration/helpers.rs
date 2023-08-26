@@ -11,7 +11,7 @@ use circuit_types::{
 use circuits::zk_circuits::valid_wallet_create::{
     ValidWalletCreateStatement, ValidWalletCreateWitnessCommitment,
 };
-use common::types::proof_bundles::{mocks::dummy_r1cs_proof, ValidWalletCreateBundle};
+use common::types::proof_bundles::{mocks::dummy_r1cs_proof, GenericValidWalletCreateBundle};
 use eyre::Result;
 use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
 use rand::thread_rng;
@@ -30,7 +30,7 @@ pub async fn deploy_new_wallet(
         .new_wallet(
             private_shares_commitment,
             public_shares.clone(),
-            ValidWalletCreateBundle {
+            Box::new(GenericValidWalletCreateBundle {
                 statement: ValidWalletCreateStatement {
                     private_shares_commitment,
                     public_wallet_shares: public_shares.clone(),
@@ -39,7 +39,7 @@ pub async fn deploy_new_wallet(
                     &mut iter::repeat(StarkPoint::identity()),
                 ),
                 proof: dummy_r1cs_proof(),
-            },
+            }),
         )
         .await?;
     client.poll_transaction_completed(tx_hash).await?;

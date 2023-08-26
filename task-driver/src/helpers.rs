@@ -1,7 +1,5 @@
 //! Helpers for common functionality across tasks
 
-use std::sync::Arc;
-
 use circuit_types::{
     balance::Balance,
     fee::Fee,
@@ -308,7 +306,7 @@ pub(super) async fn update_wallet_validity_proofs(
     // Dispatch a proof of `VALID REBLIND` for the wallet
     let (reblind_witness, reblind_response_channel) =
         construct_wallet_reblind_proof(wallet.clone(), proof_manager_work_queue.clone())?;
-    let wallet_reblind_witness = Arc::new(reblind_witness);
+    let wallet_reblind_witness = Box::new(reblind_witness);
 
     // For each order, construct a proof of `VALID COMMITMENTS`
     let mut commitments_response_channels = Vec::new();
@@ -322,7 +320,7 @@ pub(super) async fn update_wallet_validity_proofs(
             global_state.disable_fee_validation,
         )?;
 
-        let order_commitment_witness = Arc::new(commitments_witness);
+        let order_commitment_witness = Box::new(commitments_witness);
 
         // Attach a copy of the witness to the locally managed state
         // This witness is referenced by match computations which compute linkable commitments
@@ -349,7 +347,7 @@ pub(super) async fn update_wallet_validity_proofs(
         .await
         .map_err(|_| ERR_PROVE_REBLIND_FAILED.to_string())?
         .into();
-    let reblind_proof = Arc::new(reblind_proof);
+    let reblind_proof = Box::new(reblind_proof);
 
     // Await proofs for each order, store them in the state
     for (order_id, receiver) in commitments_response_channels.into_iter() {
@@ -361,7 +359,7 @@ pub(super) async fn update_wallet_validity_proofs(
 
         let proof_bundle = OrderValidityProofBundle {
             reblind_proof: reblind_proof.clone(),
-            commitment_proof: Arc::new(commitment_proof),
+            commitment_proof: Box::new(commitment_proof),
         };
         global_state
             .add_order_validity_proofs(&order_id, proof_bundle.clone())

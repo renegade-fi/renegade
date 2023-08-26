@@ -17,6 +17,8 @@ use circuits::zk_circuits::{
     },
 };
 use common::types::proof_bundles::{
+    GenericValidCommitmentsBundle, GenericValidMatchMpcBundle, GenericValidReblindBundle,
+    GenericValidSettleBundle, GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle,
     ProofBundle, ValidCommitmentsBundle, ValidMatchMpcBundle, ValidReblindBundle,
     ValidSettleBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
 };
@@ -137,11 +139,11 @@ impl MockProofManager {
         let commitment = create_mock_commitment::<SizedValidWalletCreate>(witness);
         let proof = create_mock_proof();
 
-        ValidWalletCreateBundle {
+        Box::new(GenericValidWalletCreateBundle {
             statement,
             commitment,
             proof,
-        }
+        })
     }
 
     /// Generate a dummy proof of `VALID WALLET UPDATE`
@@ -152,11 +154,11 @@ impl MockProofManager {
         let commitment = create_mock_commitment::<SizedValidWalletUpdate>(witness);
         let proof = create_mock_proof();
 
-        ValidWalletUpdateBundle {
+        Box::new(GenericValidWalletUpdateBundle {
             statement,
             commitment,
             proof,
-        }
+        })
     }
 
     /// Generate a dummy proof of `VALID REBLIND`
@@ -167,11 +169,11 @@ impl MockProofManager {
         let commitment = create_mock_commitment::<SizedValidReblind>(witness);
         let proof = create_mock_proof();
 
-        ValidReblindBundle {
+        Box::new(GenericValidReblindBundle {
             statement,
             commitment,
             proof,
-        }
+        })
     }
 
     /// Create a dummy proof of `VALID COMMITMENTS`
@@ -182,11 +184,11 @@ impl MockProofManager {
         let commitment = create_mock_commitment::<SizedValidCommitments>(witness);
         let proof = create_mock_proof();
 
-        ValidCommitmentsBundle {
+        Box::new(GenericValidCommitmentsBundle {
             statement,
             commitment,
             proof,
-        }
+        })
     }
 
     /// Create a dummy proof of `VALID MATCH MPC`
@@ -194,11 +196,11 @@ impl MockProofManager {
         let commitment = create_mock_commitment::<ValidMatchMpcSingleProver>(witness);
         let proof = create_mock_proof();
 
-        ValidMatchMpcBundle {
+        Box::new(GenericValidMatchMpcBundle {
             commitment,
             statement: (),
             proof,
-        }
+        })
     }
 
     /// Create a dummy proof of `VALID SETTLE`
@@ -209,11 +211,11 @@ impl MockProofManager {
         let commitment = create_mock_commitment::<SizedValidSettle>(witness);
         let proof = create_mock_proof();
 
-        ValidSettleBundle {
+        Box::new(GenericValidSettleBundle {
             statement,
             commitment,
             proof,
-        }
+        })
     }
 }
 
