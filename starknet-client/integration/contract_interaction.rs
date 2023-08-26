@@ -1,8 +1,9 @@
 //! Defines integration tests for `StarknetClient` methods that interact directly
 //! with darkpool contract methods
 
-use circuit_types::{
-    native_helpers::compute_wallet_share_commitment, traits::BaseType, SizedWalletShare,
+use common::types::proof_bundles::mocks::{
+    dummy_valid_match_mpc_bundle, dummy_valid_settle_bundle, dummy_valid_wallet_update_bundle,
+    dummy_validity_proof_bundle,
 };
 use eyre::Result;
 use mpc_stark::algebra::scalar::Scalar;
@@ -10,10 +11,7 @@ use rand::thread_rng;
 use test_helpers::{assert_eq_result, assert_true_result, integration_test_async};
 
 use crate::{
-    helpers::{
-        deploy_new_wallet, dummy_valid_match_mpc_bundle, dummy_valid_settle_bundle,
-        dummy_valid_wallet_update_bundle, dummy_validity_proof_bundle, dummy_wallet_share,
-    },
+    helpers::{deploy_new_wallet, dummy_wallet_share},
     IntegrationTestArgs,
 };
 

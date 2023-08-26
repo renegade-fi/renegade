@@ -389,7 +389,7 @@ pub mod test_helpers {
         let (old_wallet_private_shares, old_wallet_public_shares) =
             create_wallet_shares(wallet.clone());
         let (reblinded_private_shares, reblinded_public_shares) =
-            reblind_wallet(old_wallet_private_shares.clone(), wallet.clone());
+            reblind_wallet(old_wallet_private_shares.clone(), wallet);
 
         // Create Merkle openings for the old shares
         let original_shares_commitment = compute_wallet_share_commitment(

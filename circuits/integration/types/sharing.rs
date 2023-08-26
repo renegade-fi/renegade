@@ -19,7 +19,7 @@ type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 async fn test_share_public(test_args: IntegrationTestArgs) -> Result<()> {
     // Construct a linkable wallet share type
     let wallet = SizedWallet::default();
-    let (private_shares, blinded_public_shares) = create_wallet_shares(wallet.clone());
+    let (private_shares, blinded_public_shares) = create_wallet_shares(&wallet);
 
     let linkable_private_share = private_shares.to_linkable();
     let linkable_public_share = blinded_public_shares.to_linkable();

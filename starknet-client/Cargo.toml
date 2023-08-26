@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-integration = ["circuits/test_helpers"]
+integration = ["circuits/test_helpers", "common/mocks"]
 
 [[test]]
 name = "integration"

@@ -31,7 +31,10 @@ use starknet_client::client::{StarknetClient, StarknetClientConfig};
 use state::tui::StateTuiApp;
 use state::RelayerState;
 use system_bus::SystemBus;
-use task_driver::{driver::TaskDriver, initialize_state::InitializeStateTask};
+use task_driver::{
+    driver::{TaskDriver, TaskDriverConfig},
+    initialize_state::InitializeStateTask,
+};
 
 use chrono::Local;
 use crossbeam::channel;
@@ -126,7 +129,8 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Build a task driver that may be used to spawn long-lived asynchronous tasks that
     // are common among workers
-    let task_driver = TaskDriver::new(system_bus.clone());
+    let task_driver_config = TaskDriverConfig::default_with_bus(system_bus.clone());
+    let task_driver = TaskDriver::new(task_driver_config);
 
     // Spawn a thread to sync the relayer-global state with on-chain state and
     // network state

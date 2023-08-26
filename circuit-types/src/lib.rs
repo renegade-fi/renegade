@@ -302,7 +302,7 @@ pub mod native_helpers {
         const MAX_FEES: usize,
     >(
         private_secret_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        wallet: Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     ) -> (
         WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
@@ -342,7 +342,7 @@ pub mod native_helpers {
         const MAX_ORDERS: usize,
         const MAX_FEES: usize,
     >(
-        wallet: Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         private_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         blinder: Scalar,
     ) -> (
@@ -369,7 +369,7 @@ pub mod native_helpers {
         const MAX_ORDERS: usize,
         const MAX_FEES: usize,
     >(
-        wallet: Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         blinder: Scalar,
         private_blinder_share: Scalar,
         secret_shares: T,

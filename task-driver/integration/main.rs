@@ -5,27 +5,27 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
-mod create_new_wallet;
 mod helpers;
+mod tests;
+
+use std::sync::Arc;
 
 use clap::Parser;
 use common::types::chain_id::ChainId;
 use crossbeam::channel::{unbounded, Sender as CrossbeamSender};
-use eyre::{eyre, Result};
+use gossip_api::gossip::GossipOutbound;
 use helpers::new_mock_task_driver;
 use job_types::proof_manager::ProofManagerJob;
-use mpc_stark::algebra::scalar::Scalar;
 use proof_manager::mock::MockProofManager;
-use rand::thread_rng;
 use starknet_client::client::{StarknetClient, StarknetClientConfig};
 use state::mock::StateMockBuilder;
 use state::RelayerState;
 use task_driver::driver::TaskDriver;
-use test_helpers::{
-    contracts::parse_addr_from_deployments_file, integration_test, integration_test_main,
+use test_helpers::{contracts::parse_addr_from_deployments_file, integration_test_main};
+use tokio::sync::mpsc::{
+    unbounded_channel, UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender,
 };
 use tracing::log::LevelFilter;
-use util::runtime::block_on_result;
 
 /// The hostport that the test expects a local devnet node to be running on
 ///
@@ -84,6 +84,12 @@ struct CliArgs {
 struct IntegrationTestArgs {
     /// The starknet client that resolves to a locally running devnet node
     starknet_client: StarknetClient,
+    /// A sender to the network manager's work queue
+    network_sender: TokioSender<GossipOutbound>,
+    /// A receiver for the network manager's work queue
+    ///
+    /// Held here to avoid closing the channel on `Drop`
+    _network_receiver: Arc<TokioReceiver<GossipOutbound>>,
     /// A reference to the global state of the mock proof manager
     global_state: RelayerState,
     /// The job queue for the mock proof manager
@@ -96,6 +102,9 @@ impl From<CliArgs> for IntegrationTestArgs {
     fn from(test_args: CliArgs) -> Self {
         // Create a mock task driver
         let driver = new_mock_task_driver();
+
+        // Create a mock network sender and receiver
+        let (network_sender, network_receiver) = unbounded_channel();
 
         // Create a mock proof generation module
         let (proof_job_queue, job_receiver) = unbounded();
@@ -127,6 +136,8 @@ impl From<CliArgs> for IntegrationTestArgs {
 
         Self {
             starknet_client,
+            network_sender,
+            _network_receiver: Arc::new(network_receiver),
             proof_job_queue,
             global_state,
             driver,
@@ -139,23 +150,5 @@ fn setup_integration_tests(_test_args: &CliArgs) {
     // Configure logging
     util::logging::setup_system_logger(LevelFilter::Info);
 }
-
-/// Dummy test
-///
-/// TODO: Remove this test
-fn test_dummy(test_args: IntegrationTestArgs) -> Result<()> {
-    let client = &test_args.starknet_client;
-    let mut rng = thread_rng();
-    let random_nullifier = Scalar::random(&mut rng);
-
-    let res = block_on_result(client.check_nullifier_unused(random_nullifier))?;
-
-    if res {
-        Ok(())
-    } else {
-        Err(eyre!("nullifier already used"))
-    }
-}
-integration_test!(test_dummy);
 
 integration_test_main!(CliArgs, IntegrationTestArgs, setup_integration_tests);

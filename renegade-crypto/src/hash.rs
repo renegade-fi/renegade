@@ -12,6 +12,31 @@ use crate::constants::{POSEIDON_MDS_MATRIX_T_3, POSEIDON_ROUND_CONSTANTS_T_3};
 /// A type alias for the arkworks Poseidon sponge over the Stark field
 pub type PoseidonParams = PoseidonConfig<Scalar::Field>;
 
+/// A hash chain from a seed used to compute CSPRNG values
+pub struct PoseidonCSPRNG {
+    /// The seed of the CSPRNG, this is chained into a hash function
+    /// to give pseudorandom values
+    state: Scalar,
+}
+
+impl PoseidonCSPRNG {
+    /// Constructor
+    pub fn new(seed: Scalar) -> Self {
+        Self { state: seed }
+    }
+}
+
+impl Iterator for PoseidonCSPRNG {
+    type Item = Scalar;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let hash_res = compute_poseidon_hash(&[self.state]);
+        self.state = hash_res;
+
+        Some(hash_res)
+    }
+}
+
 /// Hash the input using a Poseidon hash with default parameters
 ///
 /// Uses defaults from the `circuits` package to ensure that hashes are
