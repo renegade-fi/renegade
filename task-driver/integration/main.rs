@@ -33,6 +33,10 @@ use tracing::log::LevelFilter;
 /// with a DNS alias `sequencer` pointing to a devnet node running in a sister container
 const DEVNET_HOSTPORT: &str = "http://sequencer:5050";
 
+// -------
+// | CLI |
+// -------
+
 /// The arguments used to run the integration tests
 #[derive(Debug, Clone, Parser)]
 #[command(author, version, about, long_about=None)]
@@ -98,52 +102,63 @@ struct IntegrationTestArgs {
     driver: TaskDriver,
 }
 
+// -----------
+// | Mocking |
+// -----------
+
 impl From<CliArgs> for IntegrationTestArgs {
     fn from(test_args: CliArgs) -> Self {
-        // Create a mock task driver
-        let driver = new_mock_task_driver();
-
         // Create a mock network sender and receiver
         let (network_sender, network_receiver) = unbounded_channel();
-
         // Create a mock proof generation module
         let (proof_job_queue, job_receiver) = unbounded();
         MockProofManager::start(job_receiver);
 
-        // Create a mock of the global state
-        let global_state = StateMockBuilder::default().build();
-
-        // Deploy a version of the darkpool if one is not given
-        assert!(
-            test_args.darkpool_addr.is_some() || test_args.deployments_path.is_some(),
-            "one of `darkpool_addr` or `deployments_path` must be provided"
-        );
-        let darkpool_addr = if let Some(addr) = test_args.darkpool_addr {
-            addr
-        } else {
-            parse_addr_from_deployments_file(test_args.deployments_path.unwrap()).unwrap()
-        };
-
-        // Build a client that references the darkpool
-        let starknet_client = StarknetClient::new(StarknetClientConfig {
-            chain: ChainId::Katana,
-            contract_addr: darkpool_addr,
-            starknet_json_rpc_addr: format!("{}/rpc", test_args.devnet_url),
-            infura_api_key: None,
-            starknet_account_addresses: vec![test_args.starknet_account_addr],
-            starknet_pkeys: vec![test_args.starknet_pkey],
-        });
-
         Self {
-            starknet_client,
+            starknet_client: setup_starknet_client_mock(test_args),
             network_sender,
             _network_receiver: Arc::new(network_receiver),
             proof_job_queue,
-            global_state,
-            driver,
+            global_state: setup_global_state_mock(),
+            driver: new_mock_task_driver(),
         }
     }
 }
+
+/// Create a global state mock for the `task-driver` integration tests
+fn setup_global_state_mock() -> RelayerState {
+    StateMockBuilder::default().disable_fee_validation().build()
+}
+
+/// Setup a mock `StarknetClient` for the integration tests
+fn setup_starknet_client_mock(test_args: CliArgs) -> StarknetClient {
+    assert!(
+        test_args.darkpool_addr.is_some() || test_args.deployments_path.is_some(),
+        "one of `darkpool_addr` or `deployments_path` must be provided"
+    );
+
+    // The darkpool address may either be specified directly, or given by a deployments file
+    // in a known location
+    let darkpool_addr = if let Some(addr) = test_args.darkpool_addr {
+        addr
+    } else {
+        parse_addr_from_deployments_file(test_args.deployments_path.unwrap()).unwrap()
+    };
+
+    // Build a client that references the darkpool
+    StarknetClient::new(StarknetClientConfig {
+        chain: ChainId::Katana,
+        contract_addr: darkpool_addr,
+        starknet_json_rpc_addr: format!("{}/rpc", test_args.devnet_url),
+        infura_api_key: None,
+        starknet_account_addresses: vec![test_args.starknet_account_addr.clone()],
+        starknet_pkeys: vec![test_args.starknet_pkey],
+    })
+}
+
+// ----------------
+// | Test Harness |
+// ----------------
 
 /// Setup code for the integration tests
 fn setup_integration_tests(_test_args: &CliArgs) {

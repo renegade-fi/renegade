@@ -293,11 +293,14 @@ pub mod mocks {
         traits::BaseType,
         SizedWalletShare,
     };
+    use constants::MERKLE_HEIGHT;
     use indexmap::IndexMap;
     use mpc_stark::algebra::scalar::Scalar;
     use num_bigint::BigUint;
     use rand::thread_rng;
     use uuid::Uuid;
+
+    use crate::types::merkle::MerkleAuthenticationPath;
 
     use super::{KeyChain, PrivateKeyChain, Wallet, WalletMetadata};
 
@@ -328,12 +331,21 @@ pub mod mocks {
                 Scalar::random(&mut rng),
             )),
             metadata: WalletMetadata::default(),
-            merkle_proof: None,
+            merkle_proof: Some(mock_merkle_path()),
             proof_staleness: AtomicU32::new(0),
         };
 
         // Reblind the wallet so that the secret shares a valid sharing of the wallet
         wallet.reblind_wallet();
         wallet
+    }
+
+    /// Create a mock Merkle path for a wallet
+    pub fn mock_merkle_path() -> MerkleAuthenticationPath {
+        MerkleAuthenticationPath::new(
+            [Scalar::zero(); MERKLE_HEIGHT],
+            BigUint::from(0u8),
+            Scalar::zero(),
+        )
     }
 }

@@ -5,6 +5,7 @@
 //!     - Build a settlement proof, and submit this to the contract in a `settle` transaction
 //!     - Await finality then update the wallets into the relayer-global state
 
+use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use async_trait::async_trait;
@@ -128,6 +129,8 @@ impl Display for SettleMatchTaskError {
         write!(f, "{self:?}")
     }
 }
+
+impl Error for SettleMatchTaskError {}
 
 #[async_trait]
 impl Task for SettleMatchTask {

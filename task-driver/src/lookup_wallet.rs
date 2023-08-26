@@ -2,6 +2,7 @@
 //! public view key identifier, then begins managing the wallet
 
 use std::{
+    error::Error,
     fmt::{Display, Formatter, Result as FmtResult},
     sync::atomic::AtomicU32,
 };
@@ -97,6 +98,8 @@ impl Display for LookupWalletTaskError {
         write!(f, "{self:?}")
     }
 }
+
+impl Error for LookupWalletTaskError {}
 
 #[async_trait]
 impl Task for LookupWalletTask {
