@@ -273,11 +273,7 @@ impl NewWalletTask {
             .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))?;
         log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
 
-        self.starknet_client
-            .poll_transaction_completed(tx_hash)
-            .await
-            .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))?;
-
+        // TODO: Fix the polling method and await finality here
         Ok(())
     }
 

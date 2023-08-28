@@ -304,11 +304,8 @@ impl SettleMatchTask {
         let tx_hash =
             tx_submit_res.map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
 
+        // TODO: Fix the polling method and await finality here
         log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
-        self.starknet_client
-            .poll_transaction_completed(tx_hash)
-            .await
-            .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
 
         // If the transaction was successful, cancel all orders on both nullifiers, await new validity proofs
         self.global_state
