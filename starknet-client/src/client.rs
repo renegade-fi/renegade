@@ -3,6 +3,9 @@
 
 mod chain_state;
 mod contract_interaction;
+mod pathfinder;
+
+pub use pathfinder::TransactionStatus;
 
 use std::{
     str::FromStr,
@@ -15,7 +18,7 @@ use constants::{
     MAINNET_CONTRACT_DEPLOYMENT_BLOCK,
 };
 
-use reqwest::Url as ReqwestUrl;
+use reqwest::{Client, Url as ReqwestUrl};
 use starknet::{
     accounts::SingleOwnerAccount,
     core::types::FieldElement as StarknetFieldElement,
@@ -40,7 +43,7 @@ const BLOCK_PAGINATION_WINDOW: usize = 1000;
 /// The page size to request when querying events
 const EVENTS_PAGE_SIZE: u64 = 50;
 /// The interval at which to poll the gateway for transaction status
-const TX_STATUS_POLL_INTERVAL_MS: u64 = 10_000; // 10 seconds
+const TX_STATUS_POLL_INTERVAL_MS: u64 = 3_000; // 3 seconds
 /// The fee estimate multiplier to use as `MAX_FEE` for transactions
 const MAX_FEE_MULTIPLIER: f32 = 3.0;
 
@@ -112,6 +115,8 @@ pub struct StarknetClient {
     pub contract_address: StarknetFieldElement,
     /// The client used to send starknet JSON-RPC requests
     jsonrpc_client: Arc<JsonRpcClient<HttpTransport>>,
+    /// An HTTP client used for making raw JSON-RPC requests    
+    http_client: Client,
     /// The accounts that may be used to sign outbound transactions
     accounts: Arc<Vec<StarknetAcct>>,
     /// The account index to use for the next transaction
@@ -156,6 +161,7 @@ impl StarknetClient {
             config,
             contract_address,
             jsonrpc_client,
+            http_client: Client::new(),
             accounts,
             account_index: Arc::new(Mutex::new(0)),
         }

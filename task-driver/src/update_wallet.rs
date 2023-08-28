@@ -296,10 +296,17 @@ impl UpdateWalletTask {
             )
             .await
             .map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))?;
-        log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
 
-        // TODO: Fix the polling method and await finality here
-        Ok(())
+        log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
+        let status = self
+            .starknet_client
+            .poll_transaction_completed(tx_hash)
+            .await
+            .map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))?;
+
+        status
+            .into_result()
+            .map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))
     }
 
     /// Find the wallet opening for the new wallet and re-index the wallet in the global state

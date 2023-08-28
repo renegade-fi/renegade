@@ -6,7 +6,10 @@ use std::{
 };
 
 use circuit_types::SizedWalletShare;
-use common::types::merkle::{MerkleAuthenticationPath, MerkleTreeCoords};
+use common::types::{
+    chain_id::ChainId,
+    merkle::{MerkleAuthenticationPath, MerkleTreeCoords},
+};
 use constants::MERKLE_HEIGHT;
 use mpc_stark::algebra::scalar::Scalar;
 use num_bigint::BigUint;
@@ -18,8 +21,7 @@ use starknet::{
     accounts::{Account, Call},
     core::types::{
         BlockId, BlockTag, EmittedEvent, EventFilter, FieldElement as StarknetFieldElement,
-        FunctionCall, InvokeTransaction, MaybePendingTransactionReceipt, Transaction,
-        TransactionReceipt,
+        FunctionCall, InvokeTransaction, Transaction,
     },
     providers::Provider,
 };
@@ -34,8 +36,8 @@ use crate::{
 };
 
 use super::{
-    StarknetClient, TransactionHash, BLOCK_PAGINATION_WINDOW, ERR_UNEXPECTED_TX_TYPE,
-    MAX_FEE_MULTIPLIER, TX_STATUS_POLL_INTERVAL_MS,
+    pathfinder::TransactionStatus, StarknetClient, TransactionHash, BLOCK_PAGINATION_WINDOW,
+    ERR_UNEXPECTED_TX_TYPE, MAX_FEE_MULTIPLIER, TX_STATUS_POLL_INTERVAL_MS,
 };
 impl StarknetClient {
     /// Helper to make a view call to the contract
@@ -105,25 +107,25 @@ impl StarknetClient {
     pub async fn poll_transaction_completed(
         &self,
         tx_hash: StarknetFieldElement,
-    ) -> Result<TransactionReceipt, StarknetClientError> {
+    ) -> Result<TransactionStatus, StarknetClientError> {
+        // On devnet, we do not generally have access to the pathfinder API, and transaction
+        // finality is essentially instant, so we skip the polling
+        match self.config.chain {
+            ChainId::Devnet | ChainId::Katana => {
+                log::debug!("skipping polling loop");
+                return Ok(TransactionStatus::AcceptedOnL2);
+            }
+            _ => {}
+        }
+
         let sleep_duration = Duration::from_millis(TX_STATUS_POLL_INTERVAL_MS);
+
         loop {
-            let res = self
-                .jsonrpc_client
-                .get_transaction_receipt(tx_hash)
-                .await
-                .map_err(|err| StarknetClientError::Rpc(err.to_string()))?;
+            let status = self.get_tx_status(tx_hash).await?;
 
-            // Break if the transaction has made it out of the received state
-            match res {
-                MaybePendingTransactionReceipt::PendingReceipt(_) => {
-                    log::info!("transaction 0x{tx_hash:x} pending...");
-                }
-                MaybePendingTransactionReceipt::Receipt(receipt) => {
-                    log::info!("transaction 0x{tx_hash:x} finalized",);
-
-                    return Ok(receipt);
-                }
+            log::info!("tx: 0x{tx_hash:x} status: {status:?}");
+            if status.is_terminal() {
+                return Ok(status);
             }
 
             // Sleep and poll again
@@ -235,14 +237,16 @@ impl StarknetClient {
 
         // Paginate backwards in block history
         let earliest_block = self.config.earliest_block();
-        'outer: for end_block in (earliest_block..=current_block)
+
+        let mut end_block = BlockId::Tag(BlockTag::Latest);
+        let start_block_limit = current_block.saturating_sub(BLOCK_PAGINATION_WINDOW as u64);
+        'outer: for start_block in (earliest_block..=start_block_limit)
             .rev()
             .step_by(BLOCK_PAGINATION_WINDOW)
         {
             // Exhaust events from the start block to the end block
-            let start_block = end_block.saturating_sub(BLOCK_PAGINATION_WINDOW as u64);
             filter.from_block = Some(BlockId::Number(start_block));
-            filter.to_block = Some(BlockId::Number(end_block));
+            filter.to_block = Some(end_block);
 
             // Keep paging until the response includes no token
             let mut pagination_token = None;
@@ -271,6 +275,7 @@ impl StarknetClient {
             if start_block == 0 {
                 break 'outer;
             }
+            end_block = BlockId::Number(start_block - 1);
         }
 
         Ok(None)

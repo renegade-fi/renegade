@@ -36,7 +36,7 @@ use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use num_bigint::BigUint;
 use renegade_crypto::fields::{scalar_to_biguint, scalar_to_u64};
 use serde::Serialize;
-use starknet_client::client::StarknetClient;
+use starknet_client::client::{StarknetClient, TransactionStatus};
 use state::RelayerState;
 use tokio::{
     sync::{mpsc::UnboundedSender as TokioSender, oneshot},
@@ -385,9 +385,19 @@ impl SettleMatchInternalTask {
         }
         let tx_hash =
             tx_submit_res.map_err(|err| SettleMatchInternalTaskError::Starknet(err.to_string()))?;
-        log::info!("tx hash: 0x{tx_hash:x}");
 
-        // TODO: Fix the polling method and await finality here
+        log::info!("tx hash: 0x{tx_hash:x}");
+        let status = self
+            .starknet_client
+            .poll_transaction_completed(tx_hash)
+            .await
+            .map_err(|err| SettleMatchInternalTaskError::Starknet(err.to_string()))?;
+        if status == TransactionStatus::Reverted || status == TransactionStatus::Aborted {
+            return Err(SettleMatchInternalTaskError::Starknet(format!(
+                "transaction failed with status: {:?}",
+                status
+            )));
+        }
 
         // If the transaction is successful, cancel all orders on the old wallet nullifiers
         // and await new validity proofs

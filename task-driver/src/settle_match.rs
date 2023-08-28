@@ -20,7 +20,7 @@ use gossip_api::gossip::GossipOutbound;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use renegade_crypto::fields::{scalar_to_biguint, scalar_to_u64, starknet_felt_to_biguint};
 use serde::Serialize;
-use starknet_client::client::StarknetClient;
+use starknet_client::client::{StarknetClient, TransactionStatus};
 use state::RelayerState;
 use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
 use tracing::log;
@@ -304,8 +304,18 @@ impl SettleMatchTask {
         let tx_hash =
             tx_submit_res.map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
 
-        // TODO: Fix the polling method and await finality here
         log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
+        let status = self
+            .starknet_client
+            .poll_transaction_completed(tx_hash)
+            .await
+            .map_err(|err| SettleMatchTaskError::StarknetClient(err.to_string()))?;
+        if status == TransactionStatus::Reverted || status == TransactionStatus::Aborted {
+            return Err(SettleMatchTaskError::StarknetClient(format!(
+                "transaction failed with status: {:?}",
+                status
+            )));
+        }
 
         // If the transaction was successful, cancel all orders on both nullifiers, await new validity proofs
         self.global_state

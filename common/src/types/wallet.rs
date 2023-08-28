@@ -296,6 +296,7 @@ pub mod mocks {
     use indexmap::IndexMap;
     use mpc_stark::algebra::scalar::Scalar;
     use num_bigint::BigUint;
+    use rand::thread_rng;
     use uuid::Uuid;
 
     use super::{KeyChain, PrivateKeyChain, Wallet, WalletMetadata};
@@ -303,6 +304,7 @@ pub mod mocks {
     /// Create a mock empty wallet
     pub fn mock_empty_wallet() -> Wallet {
         // Create an initial wallet
+        let mut rng = thread_rng();
         let mut wallet = Wallet {
             wallet_id: Uuid::new_v4(),
             orders: IndexMap::default(),
@@ -318,11 +320,13 @@ pub mod mocks {
                     sk_match: SecretIdentificationKey::from(Scalar::zero()),
                 },
             },
-            blinder: Scalar::zero(),
-            private_shares: SizedWalletShare::from_scalars(&mut iter::repeat(Scalar::zero())),
-            blinded_public_shares: SizedWalletShare::from_scalars(
-                &mut iter::repeat(Scalar::zero()),
-            ),
+            blinder: Scalar::random(&mut rng),
+            private_shares: SizedWalletShare::from_scalars(&mut iter::repeat(Scalar::random(
+                &mut rng,
+            ))),
+            blinded_public_shares: SizedWalletShare::from_scalars(&mut iter::repeat(
+                Scalar::random(&mut rng),
+            )),
             metadata: WalletMetadata::default(),
             merkle_proof: None,
             proof_staleness: AtomicU32::new(0),
