@@ -14,6 +14,8 @@ pub enum StarknetClientError {
     Rpc(String),
     /// An error serializing/deserializing calldata
     Serde(String),
+    /// A transaction failure
+    TransactionFailure(String),
 }
 
 impl Display for StarknetClientError {
