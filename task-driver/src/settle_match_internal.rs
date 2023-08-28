@@ -42,6 +42,7 @@ use tokio::{
     sync::{mpsc::UnboundedSender as TokioSender, oneshot},
     task::JoinHandle as TokioJoinHandle,
 };
+use tracing::log;
 
 // -------------
 // | Constants |
@@ -384,11 +385,9 @@ impl SettleMatchInternalTask {
         }
         let tx_hash =
             tx_submit_res.map_err(|err| SettleMatchInternalTaskError::Starknet(err.to_string()))?;
+        log::info!("tx hash: 0x{tx_hash:x}");
 
-        self.starknet_client
-            .poll_transaction_completed(tx_hash)
-            .await
-            .map_err(|err| SettleMatchInternalTaskError::Starknet(err.to_string()))?;
+        // TODO: Fix the polling method and await finality here
 
         // If the transaction is successful, cancel all orders on the old wallet nullifiers
         // and await new validity proofs
