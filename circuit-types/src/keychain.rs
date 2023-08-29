@@ -3,10 +3,8 @@
 
 use std::ops::Add;
 
-use ark_ec::models::short_weierstrass::Affine;
-use ark_ff::fields::PrimeField;
 use circuit_macros::circuit_type;
-use lazy_static::lazy_static;
+use ed25519_dalek::PublicKey as DalekKey;
 use mpc_bulletproof::r1cs::{LinearCombination, Variable};
 use mpc_stark::{
     algebra::{
@@ -17,9 +15,8 @@ use mpc_stark::{
     MpcFabric,
 };
 use num_bigint::BigUint;
-use num_integer::Integer;
 use rand::{CryptoRng, RngCore};
-use renegade_crypto::fields::biguint_to_scalar;
+use renegade_crypto::fields::get_scalar_field_modulus;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -32,14 +29,14 @@ use crate::{
     },
 };
 
+use super::{biguint_from_hex_string, biguint_to_hex_string};
+
 /// The number of keys held in a wallet's keychain
 pub const NUM_KEYS: usize = 4;
-/// The number of scalar words needed to represent STARK curve base field element
-pub const SCALAR_WORDS_PER_FELT: usize = 2;
-
-lazy_static! {
-    static ref TWO_TO_128: BigUint = BigUint::from(1u8) << 128;
-}
+/// The number of bytes used in a single scalar to represent a key
+pub const SCALAR_MAX_BYTES: usize = 31;
+/// The number of words needed to represent a non-native root key
+pub const ROOT_KEY_WORDS: usize = 2;
 
 // -------------
 // | Key Types |
@@ -122,17 +119,8 @@ impl From<SecretIdentificationKey> for Scalar {
     }
 }
 
-// -----------------
-// | Keychain Type |
-// -----------------
-
-/// An ECDSA public key is an elliptic curve point (in our case a `StarkPoint`),
-/// however, to distinguish from `StarkPoint`s that are used throughout the proof system
-/// but not allocated in the circuits, we represent the point by its affine coordinates.
-///
-/// Since the affine coordinates are elements of the base field, which is larger than the
-/// scalar field, each coordinate is represented using 2 `Scalar`s (one for the lower 128 bits,
-/// the other for the higher 128 bits).
+/// A non-native key is a key that exists over a non-native field
+/// (i.e. not Starknet Scalar)
 #[circuit_type(
     serde,
     singleprover_circuit,
@@ -141,56 +129,105 @@ impl From<SecretIdentificationKey> for Scalar {
     linkable,
     secret_share
 )]
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PublicSigningKey {
-    pub x: [Scalar; SCALAR_WORDS_PER_FELT],
-    pub y: [Scalar; SCALAR_WORDS_PER_FELT],
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NonNativeKey<const KEY_WORDS: usize> {
+    /// The `Scalar` words used to represent the key
+    ///
+    /// Because the key is a point on a non-native curve, its representation requires
+    /// a bigint like approach
+    pub key_words: [Scalar; KEY_WORDS],
 }
 
-impl PublicSigningKey {
-    /// Split a biguint into 128-bit scalar words
-    fn split_biguint_into_words(val: &BigUint) -> [Scalar; SCALAR_WORDS_PER_FELT] {
-        let (high, low) = BigUint::div_rem(val, &TWO_TO_128);
-
-        [biguint_to_scalar(&low), biguint_to_scalar(&high)]
-    }
-
-    /// Combine 128-bit scalar words into a biguint
-    fn combine_words_into_biguint(words: &[Scalar; SCALAR_WORDS_PER_FELT]) -> BigUint {
-        let low_biguint = words[0].to_biguint();
-        let high_biguint = words[1].to_biguint();
-
-        (high_biguint << 128) + low_biguint
-    }
-}
-
-impl From<StarkPoint> for PublicSigningKey {
-    fn from(value: StarkPoint) -> Self {
-        let Affine { x, y, infinity } = value.to_affine();
-        assert!(!infinity, "public key cannot be additive identity");
-
-        let x_biguint: BigUint = x.into_bigint().into();
-        let x_words = Self::split_biguint_into_words(&x_biguint);
-        let y_biguint: BigUint = y.into_bigint().into();
-        let y_words = Self::split_biguint_into_words(&y_biguint);
-
+impl<const KEY_WORDS: usize> Default for NonNativeKey<KEY_WORDS> {
+    fn default() -> Self {
         Self {
-            x: x_words,
-            y: y_words,
+            key_words: [Scalar::zero(); KEY_WORDS],
         }
     }
 }
 
-impl From<PublicSigningKey> for StarkPoint {
-    fn from(value: PublicSigningKey) -> Self {
-        let x = PublicSigningKey::combine_words_into_biguint(&value.x);
-        let y = PublicSigningKey::combine_words_into_biguint(&value.y);
-        StarkPoint::from_affine_coords(x, y)
+impl<const KEY_WORDS: usize> NonNativeKey<KEY_WORDS> {
+    /// Split a biguint into scalar words in little endian order
+    fn split_biguint_into_words(mut val: BigUint) -> [Scalar; KEY_WORDS] {
+        let scalar_mod = get_scalar_field_modulus();
+        let mut res = Vec::with_capacity(KEY_WORDS);
+        for _ in 0..KEY_WORDS {
+            let word = Scalar::from(&val % &scalar_mod);
+            val /= &scalar_mod;
+            res.push(word);
+        }
+
+        res.try_into().unwrap()
+    }
+
+    /// Re-collect the key words into a biguint
+    fn combine_words_into_biguint(&self) -> BigUint {
+        let scalar_mod = get_scalar_field_modulus();
+        self.key_words
+            .iter()
+            .rev()
+            .fold(BigUint::from(0u8), |acc, word| {
+                acc * &scalar_mod + word.to_biguint()
+            })
     }
 }
 
+impl<const KEY_WORDS: usize> From<&BigUint> for NonNativeKey<KEY_WORDS> {
+    fn from(val: &BigUint) -> Self {
+        Self {
+            key_words: Self::split_biguint_into_words(val.clone()),
+        }
+    }
+}
+
+impl<const KEY_WORDS: usize> From<&NonNativeKey<KEY_WORDS>> for BigUint {
+    fn from(value: &NonNativeKey<KEY_WORDS>) -> Self {
+        value.combine_words_into_biguint()
+    }
+}
+
+impl<const KEY_WORDS: usize> Serialize for NonNativeKey<KEY_WORDS> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Recover a bigint from the scalar words
+        biguint_to_hex_string(&self.into(), serializer)
+    }
+}
+
+impl<'de, const KEY_WORDS: usize> Deserialize<'de> for NonNativeKey<KEY_WORDS> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let val = biguint_from_hex_string(deserializer)?;
+        Ok(Self::from(&val))
+    }
+}
+
+impl<const KEY_WORDS: usize> From<&NonNativeKey<KEY_WORDS>> for DalekKey {
+    fn from(val: &NonNativeKey<KEY_WORDS>) -> Self {
+        let key_bytes = BigUint::from(val).to_bytes_le();
+        DalekKey::from_bytes(&key_bytes).unwrap()
+    }
+}
+
+impl<const KEY_WORDS: usize> From<DalekKey> for NonNativeKey<KEY_WORDS> {
+    fn from(key: DalekKey) -> Self {
+        let key_bytes = key.as_bytes();
+        Self::from(&BigUint::from_bytes_le(key_bytes))
+    }
+}
+
+// -----------------
+// | Keychain Type |
+// -----------------
+
 /// A type alias for readability
-pub type SecretSigningKey = Scalar;
+pub type PublicSigningKey = NonNativeKey<ROOT_KEY_WORDS>;
+/// A type alias for readability
+pub type SecretSigningKey = NonNativeKey<ROOT_KEY_WORDS>;
 
 /// Represents the base type, defining two keys with different access levels
 ///
@@ -221,18 +258,22 @@ pub struct PublicKeyChain {
 
 #[cfg(test)]
 mod test {
-    use mpc_stark::{algebra::stark_curve::StarkPoint, random_point};
+    use num_bigint::BigUint;
+    use rand::RngCore;
 
-    use super::PublicSigningKey;
+    use super::NonNativeKey;
 
     #[test]
-    fn test_pub_signing_key_to_from_starkpoint() {
-        let rand_pt = random_point();
+    fn test_nonnative_to_from_biguint() {
+        let mut rng = rand::thread_rng();
+        let mut buf = vec![0u8; 64 /* 512 bits */];
+        rng.fill_bytes(&mut buf);
 
         // Convert to and from a nonnative key
-        let pubkey: PublicSigningKey = rand_pt.into();
-        let recovered_pt: StarkPoint = pubkey.into();
+        let random_biguint = BigUint::from_bytes_be(&buf);
+        let key: NonNativeKey<3 /* KEY_WORDS */> = (&random_biguint).into();
+        let recovered_biguint: BigUint = (&key).into();
 
-        assert_eq!(rand_pt, recovered_pt);
+        assert_eq!(random_biguint, recovered_biguint);
     }
 }

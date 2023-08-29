@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 # === Crytography === #
 ark-ff = "0.4"
-ark-ec = "0.4"
 ed25519-dalek = "1.0.1"
 mpc-stark = { workspace = true }
 mpc-bulletproof = { workspace = true }
@@ -16,7 +15,6 @@ mpc-bulletproof = { workspace = true }
 # === Arithmetic === #
 bigdecimal = "0.3"
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
-num-integer = "0.1.45"
 rand = "0.8"
 
 # === Async + Runtime === #

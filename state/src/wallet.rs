@@ -173,6 +173,7 @@ impl WalletIndex {
 mod tests {
     use common::types::wallet::PrivateKeyChain;
     use mpc_stark::algebra::scalar::Scalar;
+    use num_bigint::BigUint;
     use rand::thread_rng;
 
     /// Test serialization/deserialization of a PrivateKeyChain
@@ -182,7 +183,7 @@ mod tests {
 
         // Test with root specified
         let keychain = PrivateKeyChain {
-            sk_root: Some(Scalar::zero()),
+            sk_root: Some((&BigUint::from(0u8)).into()),
             sk_match: Scalar::random(&mut rng).into(),
         };
         let serialized = serde_json::to_string(&keychain).unwrap();

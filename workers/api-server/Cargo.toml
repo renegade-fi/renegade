@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 # === Cryptography + Arithmetic === #
+ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 num-bigint = { workspace = true }
 num-traits = "0.2"
 
