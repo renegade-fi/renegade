@@ -25,7 +25,7 @@ pub mod test_helpers {
     };
     use itertools::Itertools;
     use lazy_static::lazy_static;
-    use mpc_stark::algebra::scalar::Scalar;
+    use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
     use num_bigint::BigUint;
     use rand::thread_rng;
     use renegade_crypto::hash::compute_poseidon_hash;
@@ -41,7 +41,7 @@ pub mod test_helpers {
         // computed correctly
         pub static ref PRIVATE_KEYS: Vec<Scalar> = vec![Scalar::one(); NUM_KEYS];
         pub static ref PUBLIC_KEYS: PublicKeyChain = PublicKeyChain {
-            pk_root: PublicSigningKey::from(&BigUint::from(2u8).pow(256)),
+            pk_root: PublicSigningKey::from(StarkPoint::generator()),
             pk_match: compute_poseidon_hash(&[PRIVATE_KEYS[1]]).into(),
         };
         pub static ref INITIAL_BALANCES: [Balance; MAX_BALANCES] = [
