@@ -48,6 +48,7 @@ eyre = { workspace = true }
 inventory = "0.3"
 
 lazy_static = "1.4"
+num-traits = "0.2"
 
 rand = { workspace = true }
 test-helpers = { path = "../test-helpers" }

@@ -14,8 +14,10 @@ fi
 export DOCKER_BUILDKIT=1
 
 # Bring up the compose file for the target package
+compose_file="$2"/docker-compose.yml
+docker-compose --file $compose_file down --volumes
 docker-compose \
-  --file "$2"/docker-compose.yml \
+  --file $compose_file \
   up \
   --remove-orphans \
   --build \
