@@ -4,9 +4,11 @@ use ark_ff::PrimeField;
 use itertools::Itertools;
 use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
 use rand::rngs::OsRng;
+use serde::{Deserialize, Serialize};
 use tiny_keccak::{Hasher, Keccak};
 
 /// An ECDSA signature
+#[derive(Serialize, Deserialize)]
 pub struct Signature {
     /// The `r` value of the signature
     pub r: Scalar,
@@ -25,15 +27,16 @@ fn keccak256(bytes: &[u8]) -> [u8; 32] {
 
 /// Computes a Keccak256 hash over a message that has been serialized into a sequence of bytes,
 /// and returns the result as a big-endian integer reduced modulo the scalar field order
-pub fn bytes_message_hash_to_scalar(message: &[u8]) -> Scalar {
+pub fn compute_bytes_hash(message: &[u8]) -> Scalar {
     let hash_bytes = keccak256(message);
     Scalar::from_be_bytes_mod_order(&hash_bytes)
 }
 
 /// Computes a Keccak256 hash over a message that has been serialized into a sequence of scalars
-/// in a manner that is consistent with the Cairo implementation of Keccak256,
+/// in a manner that is consistent with the Cairo implementation of Keccak256
+/// (https://github.com/starkware-libs/cairo/blob/v2.1.1/corelib/src/keccak.cairo#L36),
 /// and returns the result as a big-endian integer reduced modulo the scalar field order
-pub fn scalar_message_hash_to_scalar(message: &[Scalar]) -> Scalar {
+pub fn compute_message_hash(message: &[Scalar]) -> Scalar {
     let message_bytes = message
         .iter()
         .flat_map(|s| {
@@ -43,12 +46,12 @@ pub fn scalar_message_hash_to_scalar(message: &[Scalar]) -> Scalar {
             s.to_bytes_be().into_iter().rev()
         })
         .collect_vec();
-    bytes_message_hash_to_scalar(&message_bytes)
+    compute_bytes_hash(&message_bytes)
 }
 
 /// Generates an ECDSA signature over a message hash using the provided secret key
 #[allow(non_snake_case)]
-fn generate_signature(h: &Scalar, secret_key: &Scalar) -> Signature {
+fn generate_signature(hash: &Scalar, secret_key: &Scalar) -> Signature {
     let mut rng = OsRng;
 
     let mut r = Scalar::zero();
@@ -64,7 +67,7 @@ fn generate_signature(h: &Scalar, secret_key: &Scalar) -> Signature {
         r = Scalar::from_biguint(&kG.to_affine().x.into_bigint().into());
     }
 
-    let s = (h + (secret_key * r)) * k.inverse();
+    let s = (hash + (secret_key * r)) * k.inverse();
 
     Signature { r, s }
 }
@@ -72,17 +75,17 @@ fn generate_signature(h: &Scalar, secret_key: &Scalar) -> Signature {
 /// Generates an ECDSA signature over a message that has been serialized into a sequence of scalars
 /// using the provided secret key
 pub fn sign_scalar_message(message: &[Scalar], secret_key: &Scalar) -> Signature {
-    generate_signature(&scalar_message_hash_to_scalar(message), secret_key)
+    generate_signature(&compute_message_hash(message), secret_key)
 }
 
 /// Generates an ECDSA signature over a message that has been serialized into a sequence of bytes
 /// using the provided secret key
 pub fn sign_bytes_message(message: &[u8], secret_key: &Scalar) -> Signature {
-    generate_signature(&bytes_message_hash_to_scalar(message), secret_key)
+    generate_signature(&compute_bytes_hash(message), secret_key)
 }
 
 /// Verifies an ECDSA signature over a message hash using the provided public key
-fn verify_signature(h: &Scalar, signature: &Signature, public_key: &StarkPoint) -> bool {
+fn verify_signature(hash: &Scalar, signature: &Signature, public_key: &StarkPoint) -> bool {
     let Signature { r, s } = signature;
 
     if r == &Scalar::zero() || s == &Scalar::zero() {
@@ -90,7 +93,7 @@ fn verify_signature(h: &Scalar, signature: &Signature, public_key: &StarkPoint) 
     }
 
     let s_inv = s.inverse();
-    let u1 = h * s_inv;
+    let u1 = hash * s_inv;
     let u2 = r * s_inv;
     let check_point = u1 * StarkPoint::generator() + u2 * public_key;
 
@@ -110,7 +113,7 @@ pub fn verify_signed_bytes_message(
     signature: &Signature,
     public_key: &StarkPoint,
 ) -> bool {
-    let h = bytes_message_hash_to_scalar(message);
+    let h = compute_bytes_hash(message);
     verify_signature(&h, signature, public_key)
 }
 
@@ -120,7 +123,7 @@ pub fn verify_signed_scalar_message(
     signature: &Signature,
     public_key: &StarkPoint,
 ) -> bool {
-    let h = scalar_message_hash_to_scalar(message);
+    let h = compute_message_hash(message);
     verify_signature(&h, signature, public_key)
 }
 
