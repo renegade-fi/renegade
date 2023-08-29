@@ -295,7 +295,7 @@ pub mod mocks {
     };
     use constants::MERKLE_HEIGHT;
     use indexmap::IndexMap;
-    use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
+    use mpc_stark::algebra::scalar::Scalar;
     use num_bigint::BigUint;
     use rand::thread_rng;
     use uuid::Uuid;
@@ -315,7 +315,7 @@ pub mod mocks {
             fees: vec![],
             key_chain: KeyChain {
                 public_keys: PublicKeyChain {
-                    pk_root: PublicSigningKey::from(StarkPoint::generator()),
+                    pk_root: PublicSigningKey::from(&BigUint::from(0u8)),
                     pk_match: PublicIdentificationKey::from(Scalar::zero()),
                 },
                 secret_keys: PrivateKeyChain {

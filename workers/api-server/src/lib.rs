@@ -11,6 +11,7 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use circuit_types::keychain::PublicSigningKey;
+use ed25519_dalek::{Digest, PublicKey, Sha512, Signature};
 use hyper::{HeaderMap, StatusCode};
 
 use self::error::ApiServerError;
@@ -26,25 +27,25 @@ const RENEGADE_AUTH_HEADER_NAME: &str = "renegade-auth";
 /// Header name for the expiration timestamp of a signature
 const RENEGADE_SIG_EXPIRATION_HEADER_NAME: &str = "renegade-auth-expiration";
 
-// /// Error displayed when the signature format is invalid
-// const ERR_SIG_FORMAT_INVALID: &str = "signature format invalid";
+/// Error displayed when the signature format is invalid
+const ERR_SIG_FORMAT_INVALID: &str = "signature format invalid";
 /// Error displayed when the signature header is missing
 const ERR_SIG_HEADER_MISSING: &str = "signature missing from request";
 /// Error displayed when the signature expiration header is missing
 const ERR_SIG_EXPIRATION_MISSING: &str = "signature expiration missing from headers";
 /// Error displayed when the expiration format is invalid
 const ERR_EXPIRATION_FORMAT_INVALID: &str = "could not parse signature expiration timestamp";
-// /// Error displayed when signature verification fails on a request
-// const ERR_SIG_VERIFICATION_FAILED: &str = "signature verification failed";
+/// Error displayed when signature verification fails on a request
+const ERR_SIG_VERIFICATION_FAILED: &str = "signature verification failed";
 
 /// A helper to authenticate a request via expiring signatures using the method below
 fn authenticate_wallet_request(
     headers: HeaderMap,
-    _body: &[u8],
-    _pk_root: &PublicSigningKey,
+    body: &[u8],
+    pk_root: &PublicSigningKey,
 ) -> Result<(), ApiServerError> {
     // Parse the signature and the expiration timestamp from the header
-    let _signature = headers
+    let signature = headers
         .get(RENEGADE_AUTH_HEADER_NAME)
         .ok_or_else(|| {
             ApiServerError::HttpStatusCode(
@@ -63,7 +64,7 @@ fn authenticate_wallet_request(
         })?;
 
     // Parse the expiration into a timestamp
-    let _expiration = sig_expiration
+    let expiration = sig_expiration
         .to_str()
         .map_err(|_| {
             ApiServerError::HttpStatusCode(
@@ -80,9 +81,16 @@ fn authenticate_wallet_request(
             })
         })?;
 
-    // TODO: Add STARK curve ECDSA sigverify check
-
-    Ok(())
+    // Recover a public key from the byte packed scalar representing the public key
+    let root_key: PublicKey = pk_root.into();
+    if !validate_expiring_signature(body, expiration, signature, root_key)? {
+        Err(ApiServerError::HttpStatusCode(
+            StatusCode::UNAUTHORIZED,
+            ERR_SIG_VERIFICATION_FAILED.to_string(),
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 /// A helper to verify a signature on a request body
@@ -90,11 +98,11 @@ fn authenticate_wallet_request(
 /// The signature should be a sponge hash of the serialized request body
 /// and a unix timestamp representing the expiration of the signature. A
 /// call to this method after the expiration timestamp should return false
-fn _validate_expiring_signature(
-    _body: &[u8],
+fn validate_expiring_signature(
+    body: &[u8],
     expiration_timestamp: u64,
-    _signature: &[u8],
-    _pk_root: PublicSigningKey,
+    signature: &[u8],
+    pk_root: PublicKey,
 ) -> Result<bool, ApiServerError> {
     // Check the expiration timestamp
     let now = SystemTime::now();
@@ -105,9 +113,17 @@ fn _validate_expiring_signature(
         return Ok(false);
     }
 
-    // TODO: Hash the body and the expiration timestamp into a digest to check the signature against
+    // Hash the body and the expiration timestamp into a digest to check the signature against
+    let mut hasher = Sha512::default();
+    hasher.update(body);
+    hasher.update(expiration_timestamp.to_le_bytes());
 
-    // TODO: Check the signature
+    // Check the signature
+    let sig: Signature = serde_json::from_slice(signature).map_err(|_| {
+        ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_SIG_FORMAT_INVALID.to_string())
+    })?;
 
-    Ok(true)
+    Ok(pk_root
+        .verify_prehashed(hasher, None /* context */, &sig)
+        .is_ok())
 }
