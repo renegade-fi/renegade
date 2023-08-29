@@ -17,7 +17,9 @@ use mpc_stark::{
     MpcFabric,
 };
 use num_bigint::BigUint;
+use num_integer::Integer;
 use rand::{CryptoRng, RngCore};
+use renegade_crypto::fields::biguint_to_scalar;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -32,12 +34,11 @@ use crate::{
 
 /// The number of keys held in a wallet's keychain
 pub const NUM_KEYS: usize = 4;
-/// The number of scalar words needed to represent STARK base field element
-pub const FELT_WORDS: usize = 2;
+/// The number of scalar words needed to represent STARK curve base field element
+pub const SCALAR_WORDS_PER_FELT: usize = 2;
 
 lazy_static! {
-    /// The bit mask for the lower 128 bits of a U256
-    static ref LOW_BIT_MASK: BigUint = (BigUint::from(1u8) << 128) - 1u8;
+    static ref TWO_TO_128: BigUint = BigUint::from(1u8) << 128;
 }
 
 // -------------
@@ -142,22 +143,20 @@ impl From<SecretIdentificationKey> for Scalar {
 )]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicSigningKey {
-    pub x: [Scalar; FELT_WORDS],
-    pub y: [Scalar; FELT_WORDS],
+    pub x: [Scalar; SCALAR_WORDS_PER_FELT],
+    pub y: [Scalar; SCALAR_WORDS_PER_FELT],
 }
 
 impl PublicSigningKey {
     /// Split a biguint into 128-bit scalar words
-    fn split_biguint_into_words(val: &BigUint) -> [Scalar; FELT_WORDS] {
-        let low_mask = val & &*LOW_BIT_MASK;
-        let low: u128 = low_mask.try_into().unwrap();
-        let high: u128 = (val >> 128u32).try_into().unwrap();
+    fn split_biguint_into_words(val: &BigUint) -> [Scalar; SCALAR_WORDS_PER_FELT] {
+        let (high, low) = BigUint::div_rem(val, &TWO_TO_128);
 
-        [Scalar::from(low), Scalar::from(high)]
+        [biguint_to_scalar(&low), biguint_to_scalar(&high)]
     }
 
     /// Combine 128-bit scalar words into a biguint
-    fn combine_words_into_biguint(words: &[Scalar; FELT_WORDS]) -> BigUint {
+    fn combine_words_into_biguint(words: &[Scalar; SCALAR_WORDS_PER_FELT]) -> BigUint {
         let low_biguint = words[0].to_biguint();
         let high_biguint = words[1].to_biguint();
 
@@ -168,21 +167,16 @@ impl PublicSigningKey {
 impl From<StarkPoint> for PublicSigningKey {
     fn from(value: StarkPoint) -> Self {
         let Affine { x, y, infinity } = value.to_affine();
-        if infinity {
-            Self {
-                x: [Scalar::zero(); 2],
-                y: [Scalar::zero(); 2],
-            }
-        } else {
-            let x_biguint: BigUint = x.into_bigint().into();
-            let x_words = Self::split_biguint_into_words(&x_biguint);
-            let y_biguint: BigUint = y.into_bigint().into();
-            let y_words = Self::split_biguint_into_words(&y_biguint);
+        assert!(!infinity, "public key cannot be additive identity");
 
-            Self {
-                x: x_words,
-                y: y_words,
-            }
+        let x_biguint: BigUint = x.into_bigint().into();
+        let x_words = Self::split_biguint_into_words(&x_biguint);
+        let y_biguint: BigUint = y.into_bigint().into();
+        let y_words = Self::split_biguint_into_words(&y_biguint);
+
+        Self {
+            x: x_words,
+            y: y_words,
         }
     }
 }

@@ -296,6 +296,7 @@ pub mod mocks {
     use constants::MERKLE_HEIGHT;
     use indexmap::IndexMap;
     use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
+    use num_bigint::BigUint;
     use rand::thread_rng;
     use uuid::Uuid;
 
