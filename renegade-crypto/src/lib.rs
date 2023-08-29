@@ -6,6 +6,7 @@
 #![feature(inherent_associated_types)]
 
 pub mod constants;
+pub mod ecdsa;
 pub mod elgamal;
 pub mod fields;
 pub mod hash;
