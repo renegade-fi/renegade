@@ -41,7 +41,7 @@ pub mod test_helpers {
         // computed correctly
         pub static ref PRIVATE_KEYS: Vec<Scalar> = vec![Scalar::one(); NUM_KEYS];
         pub static ref PUBLIC_KEYS: PublicKeyChain = PublicKeyChain {
-            pk_root: PublicSigningKey::from(StarkPoint::generator()),
+            pk_root: PublicSigningKey::from(&StarkPoint::generator()),
             pk_match: compute_poseidon_hash(&[PRIVATE_KEYS[1]]).into(),
         };
         pub static ref INITIAL_BALANCES: [Balance; MAX_BALANCES] = [

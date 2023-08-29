@@ -7,6 +7,7 @@ edition = "2021"
 # === Cryptography + Arithmetic === #
 num-bigint = { workspace = true }
 num-traits = "0.2"
+mpc-stark = { workspace = true }
 
 # === HTTP + Websocket === #
 hyper = { version = "0.14", features = ["http1", "http2", "server", "tcp"] }
