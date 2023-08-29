@@ -41,7 +41,7 @@ use super::{
 };
 impl StarknetClient {
     /// Helper to make a view call to the contract
-    pub(crate) async fn call_contract(
+    pub async fn call_contract(
         &self,
         call: FunctionCall,
     ) -> Result<Vec<StarknetFieldElement>, StarknetClientError> {
@@ -52,7 +52,7 @@ impl StarknetClient {
     }
 
     /// Helper to setup a contract call with the correct max fee and account nonce
-    pub(crate) async fn execute_transaction(
+    pub async fn execute_transaction(
         &self,
         call: Call,
     ) -> Result<TransactionHash, StarknetClientError> {

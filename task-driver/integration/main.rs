@@ -65,6 +65,18 @@ struct CliArgs {
     /// If not provided, the test will deploy a new darkpool contract
     #[arg(long)]
     darkpool_addr: Option<String>,
+    /// The address of a dummy ERC-20 token deployed on the devnet node
+    ///
+    /// It is assumed that the given account address has a balance of this token
+    /// on the devnet node. This is generally true for default values; i.e. pre-deployed
+    /// accounts with the default $ETH ERC-20 token
+    ///
+    /// Defaults to the ETH base token address with the same address as on Goerli
+    #[arg(
+        long,
+        default_value = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+    )]
+    erc20_addr: String,
     /// The location of a `deployments.json` file that contains the addresses of the
     /// deployed contracts
     #[arg(long)]
@@ -86,6 +98,10 @@ struct CliArgs {
 /// The arguments provided to every integration test
 #[derive(Clone)]
 struct IntegrationTestArgs {
+    /// The address of a pre-deployed ERC20 for testing
+    erc20_addr: String,
+    /// The client's account address
+    account_addr: String,
     /// The starknet client that resolves to a locally running devnet node
     starknet_client: StarknetClient,
     /// A sender to the network manager's work queue
@@ -115,6 +131,8 @@ impl From<CliArgs> for IntegrationTestArgs {
         MockProofManager::start(job_receiver);
 
         Self {
+            erc20_addr: test_args.erc20_addr.clone(),
+            account_addr: test_args.starknet_account_addr.clone(),
             starknet_client: setup_starknet_client_mock(test_args),
             network_sender,
             _network_receiver: Arc::new(network_receiver),

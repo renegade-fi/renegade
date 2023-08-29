@@ -10,10 +10,16 @@ use common::types::{
 };
 use external_api::types::Wallet as ApiWallet;
 use eyre::{eyre, Result};
+use lazy_static::lazy_static;
 use mpc_stark::algebra::scalar::Scalar;
+use num_bigint::BigUint;
+use num_traits::Num;
 use rand::thread_rng;
 use renegade_crypto::hash::{evaluate_hash_chain, PoseidonCSPRNG};
-use starknet_client::client::StarknetClient;
+use starknet::core::types::FieldElement as StarknetFieldElement;
+use starknet::{accounts::Call, core::utils::get_selector_from_name};
+use starknet_client::types::CalldataSerializable;
+use starknet_client::{client::StarknetClient, types::StarknetU256};
 use system_bus::SystemBus;
 use task_driver::{
     driver::{TaskDriver, TaskDriverConfig},
@@ -23,6 +29,23 @@ use test_helpers::{assert_eq_result, assert_true_result};
 use uuid::Uuid;
 
 use crate::IntegrationTestArgs;
+
+lazy_static! {
+    /// The selector for an ERC20 `increaseAllowance` call
+    pub static ref ERC20_APPROVE_SELECTOR: StarknetFieldElement =
+        get_selector_from_name("approve").unwrap();
+}
+
+/// Parse a biguint from a hex string
+pub fn biguint_from_hex_string(s: &str) -> BigUint {
+    let stripped = s.strip_prefix("0x").unwrap_or(s);
+    BigUint::from_str_radix(stripped, 16 /* radix */).unwrap()
+}
+
+/// Parse a field element from a hex string
+pub fn felt_from_hex_string(s: &str) -> StarknetFieldElement {
+    StarknetFieldElement::from_hex_be(s).unwrap()
+}
 
 // ---------
 // | Tasks |
@@ -74,6 +97,21 @@ pub(crate) async fn lookup_wallet_and_check_result(
 // | Contract Interaction |
 // ------------------------
 
+/// Allocate a new empty wallet in the darkpool
+///
+/// Returns the `blinder_stream_seed` and `share_stream_seed` used to secret share the wallet
+/// as well as the wallet itself
+pub async fn new_wallet_in_darkpool(client: &StarknetClient) -> Result<(Wallet, Scalar, Scalar)> {
+    let mut rng = thread_rng();
+    let blinder_seed = Scalar::random(&mut rng);
+    let share_seed = Scalar::random(&mut rng);
+
+    let wallet = empty_wallet_from_seed(blinder_seed, share_seed);
+    allocate_wallet_in_darkpool(&wallet, client).await?;
+
+    Ok((wallet, blinder_seed, share_seed))
+}
+
 /// Create a wallet in the contract state
 pub async fn allocate_wallet_in_darkpool(wallet: &Wallet, client: &StarknetClient) -> Result<()> {
     let share_comm = wallet.get_private_share_commitment();
@@ -108,6 +146,34 @@ pub async fn mock_wallet_update(wallet: &mut Wallet, client: &StarknetClient) ->
         )
         .await?;
     client.poll_transaction_completed(tx_hash).await?;
+    Ok(())
+}
+
+/// Increase the ERC20 allowance of the darkpool contract for the given account
+pub(crate) async fn increase_erc20_allowance(
+    amount: u64,
+    test_args: IntegrationTestArgs,
+) -> Result<()> {
+    let client = &test_args.starknet_client;
+    let darkpool_addr = &client.config.contract_addr;
+
+    // Add the `spender` and `amount` to the calldata
+    let mut calldata = vec![felt_from_hex_string(darkpool_addr)];
+    calldata.extend(
+        StarknetU256 {
+            low: amount as u128,
+            high: 0,
+        }
+        .to_calldata(),
+    );
+
+    let allow_call = Call {
+        to: felt_from_hex_string(&test_args.erc20_addr),
+        selector: *ERC20_APPROVE_SELECTOR,
+        calldata,
+    };
+
+    client.execute_transaction(allow_call).await?;
     Ok(())
 }
 

@@ -88,7 +88,7 @@ macro_rules! integration_test_main {
                 for test_wrapper in inventory::iter::<TestWrapper>.into_iter() {
                     let test = &test_wrapper.0;
                     if args.borrow().test.is_some()
-                        && args.borrow().test.as_deref().unwrap() != test.name
+                        && !test.name.contains(args.borrow().test.as_deref().unwrap())
                     {
                         continue;
                     }
