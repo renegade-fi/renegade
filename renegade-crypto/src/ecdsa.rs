@@ -108,23 +108,19 @@ fn verify_signature(hash: &Scalar, signature: &Signature, public_key: &StarkPoin
 }
 
 /// Verifies an ECDSA signature over a message that has been serialized into a sequence of bytes
-pub fn verify_signed_bytes_message(
-    message: &[u8],
-    signature: &Signature,
-    public_key: &StarkPoint,
-) -> bool {
-    let h = compute_bytes_hash(message);
-    verify_signature(&h, signature, public_key)
+pub fn verify_signed_bytes(message: &[u8], signature: &Signature, public_key: &StarkPoint) -> bool {
+    let hash = compute_bytes_hash(message);
+    verify_signature(&hash, signature, public_key)
 }
 
 /// Verifies an ECDSA signature over a message that has been serialized into a sequence of bytes
-pub fn verify_signed_scalar_message(
+pub fn verify_signed_message(
     message: &[Scalar],
     signature: &Signature,
     public_key: &StarkPoint,
 ) -> bool {
-    let h = compute_message_hash(message);
-    verify_signature(&h, signature, public_key)
+    let hash = compute_message_hash(message);
+    verify_signature(&hash, signature, public_key)
 }
 
 #[cfg(test)]
@@ -142,11 +138,7 @@ mod tests {
 
         let message = b"Hello, world!";
         let signature = sign_bytes_message(message, &secret_key);
-        assert!(verify_signed_bytes_message(
-            message,
-            &signature,
-            &public_key
-        ));
+        assert!(verify_signed_bytes(message, &signature, &public_key));
     }
 
     #[test]
@@ -160,11 +152,7 @@ mod tests {
         let mut signature = sign_bytes_message(message, &secret_key);
         signature.r += Scalar::random(&mut rng);
 
-        assert!(!verify_signed_bytes_message(
-            message,
-            &signature,
-            &public_key
-        ));
+        assert!(!verify_signed_bytes(message, &signature, &public_key));
     }
 
     #[test]
@@ -178,11 +166,7 @@ mod tests {
             .take(10)
             .collect_vec();
         let signature = sign_scalar_message(&message, &secret_key);
-        assert!(verify_signed_scalar_message(
-            &message,
-            &signature,
-            &public_key
-        ));
+        assert!(verify_signed_message(&message, &signature, &public_key));
     }
 
     #[test]
@@ -198,10 +182,6 @@ mod tests {
         let mut signature = sign_scalar_message(&message, &secret_key);
         signature.r += Scalar::random(&mut rng);
 
-        assert!(!verify_signed_scalar_message(
-            &message,
-            &signature,
-            &public_key
-        ));
+        assert!(!verify_signed_message(&message, &signature, &public_key));
     }
 }

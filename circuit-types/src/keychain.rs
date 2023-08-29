@@ -164,8 +164,8 @@ impl PublicSigningKey {
     }
 }
 
-impl From<StarkPoint> for PublicSigningKey {
-    fn from(value: StarkPoint) -> Self {
+impl From<&StarkPoint> for PublicSigningKey {
+    fn from(value: &StarkPoint) -> Self {
         let Affine { x, y, infinity } = value.to_affine();
         assert!(!infinity, "public key cannot be additive identity");
 
@@ -181,8 +181,8 @@ impl From<StarkPoint> for PublicSigningKey {
     }
 }
 
-impl From<PublicSigningKey> for StarkPoint {
-    fn from(value: PublicSigningKey) -> Self {
+impl From<&PublicSigningKey> for StarkPoint {
+    fn from(value: &PublicSigningKey) -> Self {
         let x = PublicSigningKey::combine_words_into_biguint(&value.x);
         let y = PublicSigningKey::combine_words_into_biguint(&value.y);
         StarkPoint::from_affine_coords(x, y)
@@ -230,8 +230,8 @@ mod test {
         let rand_pt = random_point();
 
         // Convert to and from a nonnative key
-        let pubkey: PublicSigningKey = rand_pt.into();
-        let recovered_pt: StarkPoint = pubkey.into();
+        let pubkey: PublicSigningKey = (&rand_pt).into();
+        let recovered_pt: StarkPoint = (&pubkey).into();
 
         assert_eq!(rand_pt, recovered_pt);
     }
