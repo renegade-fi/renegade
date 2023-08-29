@@ -80,7 +80,7 @@ fn authenticate_wallet_request(
             })
         })?;
 
-    // TODO: Add STARK ECDSA sigverify check
+    // TODO: Add STARK curve ECDSA sigverify check
 
     Ok(())
 }
