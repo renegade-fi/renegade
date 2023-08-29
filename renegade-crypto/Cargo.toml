@@ -18,6 +18,7 @@ ark-crypto-primitives = { version = "0.4", features = ["sponge"] }
 bigdecimal = "0.3"
 mpc-stark = { workspace = true }
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
+tiny-keccak = "2"
 
 # === Misc Dependencies === #
 itertools = "0.10"
