@@ -47,6 +47,8 @@ colored = "2"
 eyre = { workspace = true }
 inventory = "0.3"
 
+lazy_static = "1.4"
+
 rand = { workspace = true }
 test-helpers = { path = "../test-helpers" }
 util = { path = "../util" }
