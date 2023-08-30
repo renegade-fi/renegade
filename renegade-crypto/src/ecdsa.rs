@@ -28,7 +28,9 @@ fn keccak256(bytes: &[u8]) -> [u8; 32] {
 /// Computes a Keccak256 hash over a message that has been serialized into a sequence of bytes,
 /// and returns the result as a big-endian integer reduced modulo the scalar field order
 pub fn compute_bytes_hash(message: &[u8]) -> Scalar {
-    let hash_bytes = keccak256(message);
+    // Here, we need to reverse the bytes to interpret them as a big-endian integer
+    // to match the Cairo Keccak implementation
+    let hash_bytes = keccak256(message).into_iter().rev().collect_vec();
     Scalar::from_be_bytes_mod_order(&hash_bytes)
 }
 
