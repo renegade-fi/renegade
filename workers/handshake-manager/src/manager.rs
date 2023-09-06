@@ -718,8 +718,8 @@ impl HandshakeExecutor {
     fn token_pair_for_order(&self, order: &Order) -> (Token, Token) {
         match self.chain_id {
             ChainId::AlphaGoerli | ChainId::Devnet => (
-                Token::from_starknet_goerli_addr_biguint(&order.base_mint),
-                Token::from_starknet_goerli_addr_biguint(&order.quote_mint),
+                Token::from_addr_biguint(&order.base_mint),
+                Token::from_addr_biguint(&order.quote_mint),
             ),
             _ => todo!("Implement price remapping for {:?}", self.chain_id),
         }
