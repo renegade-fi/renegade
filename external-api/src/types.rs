@@ -188,7 +188,7 @@ impl From<(OrderIdentifier, IndexedOrder)> for Order {
             quote_mint: order.quote_mint,
             base_mint: order.base_mint,
             side: order.side,
-            type_: OrderType::Limit,
+            type_: OrderType::Midpoint,
             worst_case_price: order.worst_case_price,
             amount: BigUint::from(order.amount),
             timestamp: order.timestamp,
