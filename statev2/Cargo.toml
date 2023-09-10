@@ -1,0 +1,14 @@
+[package]
+name = "statev2"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+# === Storage === #
+flexbuffers = "2.0"
+libmdbx = "0.3"
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3.8"
