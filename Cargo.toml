@@ -11,6 +11,7 @@ members = [
 	"gossip-api",
 	"renegade-crypto",
 	"state",
+	"statev2",
 	"starknet-client",
 	"system-bus",
 	"task-driver",
