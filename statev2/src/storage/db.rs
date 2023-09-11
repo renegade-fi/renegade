@@ -5,7 +5,9 @@
 
 use std::{borrow::Cow, path::Path};
 
-use libmdbx::{Database, TableFlags, Transaction, WriteFlags, WriteMap, RO, RW};
+use libmdbx::{
+    Database, Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap, RO, RW,
+};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -15,6 +17,10 @@ use super::{
 
 /// The number of tables to open in the database
 const NUM_TABLES: usize = 2;
+
+// ------------
+// | Database |
+// ------------
 
 /// The database config
 pub struct DbConfig {
@@ -49,10 +55,9 @@ impl DB {
     pub fn create_table(&self, table_name: &str) -> Result<(), StorageError> {
         // Begin a tx
         let tx = self.new_write_tx()?;
-        tx.create_table(Some(table_name), TableFlags::default())
-            .map_err(StorageError::TxOp)
-            .map(|_| ())
-            .and_then(|_| tx.commit().map_err(StorageError::Commit).map(|_| ()))
+        tx.create_table(table_name)?;
+
+        tx.commit()
     }
 
     /// Set a key in the database
@@ -62,20 +67,9 @@ impl DB {
         key: &K,
         value: &V,
     ) -> Result<(), StorageError> {
-        // Serialize the key and value
-        let key_bytes = Self::serialize_value(key)?;
-        let value_bytes = Self::serialize_value(value)?;
-
-        // Begin a tx
         let tx = self.new_write_tx()?;
-        let table = tx
-            .open_table(Some(table_name))
-            .map_err(StorageError::OpenTable)?;
-
-        // Set the value
-        tx.put(&table, key_bytes, value_bytes, WriteFlags::default())
-            .map_err(StorageError::TxOp)
-            .and_then(|_| tx.commit().map_err(StorageError::Commit).map(|_| ()))
+        tx.write(table_name, key, value)?;
+        tx.commit()
     }
 
     /// Get a key from the database
@@ -84,21 +78,19 @@ impl DB {
         table_name: &str,
         key: &K,
     ) -> Result<Option<V>, StorageError> {
-        // Serialize the key
-        let key_bytes = Self::serialize_value(key)?;
-
-        // Begin a tx
         let tx = self.new_read_tx()?;
-        let table = tx
-            .open_table(Some(table_name))
-            .map_err(StorageError::OpenTable)?;
+        let val = tx.read(table_name, key)?;
+        tx.commit()?;
 
-        // Get the value
-        let value_bytes: Option<Cow<'_, [u8]>> =
-            tx.get(&table, &key_bytes).map_err(StorageError::TxOp)?;
-        value_bytes
-            .map(|bytes| Self::deserialize_value(&bytes))
-            .transpose()
+        Ok(val)
+    }
+
+    // Flush the database to disk
+    pub fn sync(&self) -> Result<(), StorageError> {
+        self.db
+            .sync(true /* force */)
+            .map_err(StorageError::Sync)
+            .map(|_| ())
     }
 
     // -----------
@@ -118,22 +110,116 @@ impl DB {
     }
 
     /// Create a new read-only transaction
-    fn new_read_tx(&self) -> Result<Transaction<'_, RO, WriteMap>, StorageError> {
-        self.db.begin_ro_txn().map_err(StorageError::BeginTx)
+    fn new_read_tx(&self) -> Result<DbTxn<RO>, StorageError> {
+        let txn = self.db.begin_ro_txn().map_err(StorageError::BeginTx)?;
+        Ok(DbTxn::new(txn))
     }
 
     /// Create a new read-write transaction
-    fn new_write_tx(&self) -> Result<Transaction<'_, RW, WriteMap>, StorageError> {
-        self.db.begin_rw_txn().map_err(StorageError::BeginTx)
+    fn new_write_tx(&self) -> Result<DbTxn<RW>, StorageError> {
+        self.db
+            .begin_rw_txn()
+            .map_err(StorageError::BeginTx)
+            .map(DbTxn::new)
+    }
+}
+
+// ---------------
+// | Transaction |
+// ---------------
+
+/// A transaction in the database
+///
+/// MDBX guarantees isolation between transactions
+pub struct DbTxn<'db, T: TransactionKind> {
+    /// The underlying `mdbx` transaction
+    txn: Transaction<'db, T, WriteMap>,
+}
+
+impl<'db, T: TransactionKind> DbTxn<'db, T> {
+    /// Constructor
+    pub fn new(txn: Transaction<'db, T, WriteMap>) -> Self {
+        Self { txn }
+    }
+
+    /// Get a key from the database
+    pub fn read<K: Key, V: Value>(
+        &self,
+        table_name: &str,
+        key: &K,
+    ) -> Result<Option<V>, StorageError> {
+        // Serialize the key
+        let key_bytes = DB::serialize_value(key)?;
+
+        // Get the value
+        let table = self.open_table(table_name)?;
+        let value_bytes: Option<Cow<'_, [u8]>> = self
+            .txn
+            .get(&table, &key_bytes)
+            .map_err(StorageError::TxOp)?;
+
+        value_bytes
+            .map(|bytes| DB::deserialize_value(&bytes))
+            .transpose()
+    }
+
+    /// Commit the transaction
+    pub fn commit(self) -> Result<(), StorageError> {
+        self.txn.commit().map_err(StorageError::Commit).map(|_| ())
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Open a table if the transaction has not done so already
+    fn open_table(&self, table_name: &str) -> Result<Table, StorageError> {
+        self.txn
+            .open_table(Some(table_name))
+            .map_err(StorageError::OpenTable)
+    }
+}
+
+// Write-enabled implementation
+impl<'db> DbTxn<'db, RW> {
+    /// Create a new table in the database
+    pub fn create_table(&self, table_name: &str) -> Result<(), StorageError> {
+        self.txn
+            .create_table(Some(table_name), TableFlags::default())
+            .map_err(StorageError::TxOp)
+            .map(|_| ())
+    }
+
+    /// Set a key in the database
+    pub fn write<K: Key, V: Value>(
+        &self,
+        table_name: &str,
+        key: &K,
+        value: &V,
+    ) -> Result<(), StorageError> {
+        // Serialize the key and value
+        let key_bytes = DB::serialize_value(key)?;
+        let value_bytes = DB::serialize_value(value)?;
+
+        // Set the value
+        let table = self.open_table(table_name)?;
+        self.txn
+            .put(&table, key_bytes, value_bytes, WriteFlags::default())
+            .map_err(StorageError::TxOp)
     }
 }
 
 #[cfg(test)]
 mod test {
+    use std::{sync::Arc, thread};
+
     use serde::{Deserialize, Serialize};
     use tempfile::tempdir;
 
     use super::{DbConfig, DB};
+
+    /// A dummy table name
+    const TABLE_NAME: &str = "test_table";
 
     // -----------
     // | Helpers |
@@ -158,6 +244,13 @@ mod test {
         }
     }
 
+    // Default resolves to the dummy value
+    impl Default for TestValue {
+        fn default() -> Self {
+            Self::dummy()
+        }
+    }
+
     /// Create a mock database backed by a temporary directory
     fn mock_db() -> DB {
         let tempdir = tempdir().unwrap();
@@ -179,7 +272,6 @@ mod test {
         // Add a value to the DB then read it back
         let db = mock_db();
 
-        const TABLE_NAME: &str = "test_table";
         let key_name = "test_key".to_string();
 
         db.create_table(TABLE_NAME).unwrap();
@@ -195,12 +287,177 @@ mod test {
     fn test_get_nonexistent() {
         let db = mock_db();
 
-        const TABLE_NAME: &str = "test_table";
         let key_name = "test_key".to_string();
-
         db.create_table(TABLE_NAME).unwrap();
         let val: Option<TestValue> = db.read(TABLE_NAME, &key_name).unwrap();
 
         assert_eq!(val, None);
+    }
+
+    /// Tests a read only tx to a table
+    #[test]
+    fn test_ro_tx_simple() {
+        // Create a table and add a value
+        let db = mock_db();
+        db.create_table(TABLE_NAME).unwrap();
+
+        let key = "test_key".to_string();
+        let value = TestValue::dummy();
+
+        db.write(TABLE_NAME, &key, &value).unwrap();
+
+        // Create a read only transaction and read the value twice
+        let tx = db.new_read_tx().unwrap();
+        let v1: Option<TestValue> = tx.read(TABLE_NAME, &key).unwrap();
+        let v2: Option<TestValue> = tx.read(TABLE_NAME, &key).unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(v1.unwrap(), value);
+        assert_eq!(v2.unwrap(), value);
+    }
+
+    /// Tests a read-write tx to a table
+    #[test]
+    fn test_rw_tx_simple() {
+        // Create a mock DB
+        let db = mock_db();
+        db.create_table(TABLE_NAME).unwrap();
+
+        // Write two keys to the table
+        let key1 = "test_key".to_string();
+        let key2 = "test_key2".to_string();
+        let value1 = TestValue::dummy();
+        let value2 = TestValue {
+            a: 5,
+            ..Default::default()
+        };
+
+        let tx = db.new_write_tx().unwrap();
+        tx.write(TABLE_NAME, &key1, &value1).unwrap();
+        tx.write(TABLE_NAME, &key2, &value2).unwrap();
+        tx.commit().unwrap();
+
+        // Read the values back
+        let tx = db.new_read_tx().unwrap();
+        let v1: Option<TestValue> = tx.read(TABLE_NAME, &key1).unwrap();
+        let v2: Option<TestValue> = tx.read(TABLE_NAME, &key2).unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(v1.unwrap(), value1);
+        assert_eq!(v2.unwrap(), value2);
+    }
+
+    /// Tests reading and writing to multiple tables in a tx
+    #[test]
+    fn test_multi_table_rw() {
+        // Create the first table
+        let db = mock_db();
+        db.create_table(TABLE_NAME).unwrap();
+
+        let key1 = "test_key".to_string();
+        let key2 = "test_key2".to_string();
+        let value1 = TestValue::dummy();
+        let value2 = TestValue {
+            a: 5,
+            ..Default::default()
+        };
+
+        // Create a second table in the write tx
+        const TABLE_NAME2: &str = "test_table2";
+        let tx = db.new_write_tx().unwrap();
+        tx.create_table(TABLE_NAME2).unwrap();
+
+        tx.write(TABLE_NAME, &key1, &value1).unwrap();
+        tx.write(TABLE_NAME2, &key2, &value2).unwrap();
+        tx.commit().unwrap();
+
+        // Read the values back
+        let tx = db.new_read_tx().unwrap();
+        let v1: Option<TestValue> = tx.read(TABLE_NAME, &key1).unwrap();
+        let v2: Option<TestValue> = tx.read(TABLE_NAME2, &key2).unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(v1.unwrap(), value1);
+        assert_eq!(v2.unwrap(), value2);
+    }
+
+    /// Tests concurrent transaction isolation
+    #[test]
+    fn test_concurrent_updates() {
+        // Create a mock DB and table
+        let tempdir = tempdir().unwrap();
+        let path = tempdir.path().to_str().unwrap().to_string();
+        let db = Arc::new(DB::new(DbConfig { path: path.clone() }).unwrap());
+
+        db.create_table(TABLE_NAME).unwrap();
+
+        // Write an initial value to the table
+        let key = "counter".to_string();
+        let tx = db.new_write_tx().unwrap();
+        tx.write(TABLE_NAME, &key, &1u64).unwrap();
+        tx.commit().unwrap();
+
+        // Spawn two threads to increment the counter
+        let mut join_handles = Vec::new();
+        for _ in 0..2 {
+            let key_clone = key.clone();
+            let db_clone = db.clone();
+
+            let handle = thread::spawn(move || {
+                let tx = db_clone.new_write_tx().unwrap();
+                let value: u64 = tx.read(TABLE_NAME, &key_clone).unwrap().unwrap();
+                tx.write(TABLE_NAME, &key_clone, &(value + 1)).unwrap();
+                tx.commit().unwrap();
+            });
+
+            join_handles.push(handle);
+        }
+
+        // Await termination
+        join_handles
+            .into_iter()
+            .for_each(|handle| handle.join().unwrap());
+
+        // Now read back the value, it should be incremented twice
+        let tx = db.new_read_tx().unwrap();
+        let value: u64 = tx.read(TABLE_NAME, &key).unwrap().unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(value, 3);
+    }
+
+    /// Tests recovering from a crash
+    #[test]
+    fn test_crash_recover() {
+        let tempdir = tempdir().unwrap();
+        let path = tempdir.path().to_str().unwrap().to_string();
+
+        // Create a mock DB and table
+        let db = DB::new(DbConfig { path: path.clone() }).unwrap();
+
+        // Set a key
+        let key = "test_key".to_string();
+        let value = TestValue {
+            a: 10,
+            ..Default::default()
+        };
+
+        let tx = db.new_write_tx().unwrap();
+        tx.create_table(TABLE_NAME).unwrap();
+        tx.write(TABLE_NAME, &key, &value).unwrap();
+        tx.commit().unwrap();
+
+        // Drop the db to simulate a crash
+        db.sync().unwrap();
+        drop(db);
+
+        // Re-open the database at the same path and read the value
+        let db = DB::new(DbConfig { path }).unwrap();
+
+        let tx = db.new_read_tx().unwrap();
+        let val: Option<TestValue> = tx.read(TABLE_NAME, &key).unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(val.unwrap(), value);
     }
 }

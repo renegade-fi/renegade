@@ -22,6 +22,8 @@ pub enum StorageError {
     OpenTable(MdbxError),
     /// Error serializing a value for storage
     Serialization(FlexbuffersSerializationError),
+    /// Error syncing the database
+    Sync(MdbxError),
     /// Error while performing a transaction operation
     TxOp(MdbxError),
 }
