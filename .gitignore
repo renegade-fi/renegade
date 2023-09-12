@@ -1,7 +1,6 @@
 **/target
 **/build
 **/no_commit
-Cargo.lock
 .idea
 .vscode
 *.sw[a-p]
