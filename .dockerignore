@@ -1,8 +1,14 @@
-target/
 .git/
 .vscode/
+.idea/
+*.sw[a-p]
 
 bin/
+secrets.env
+
+**/target
+**/build
+**/no_commit
 **/README.md
 
 **/Dockerfile
