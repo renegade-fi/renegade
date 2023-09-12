@@ -3,7 +3,7 @@
 //! We serialize types using the `flexbuffers` format (a schema-less version of
 //! `flatbuffers`): https://flatbuffers.dev/flexbuffers.html
 
-use std::{borrow::Cow, path::Path};
+use std::path::Path;
 
 use libmdbx::{
     Database, Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap, RO, RW,
@@ -11,12 +11,30 @@ use libmdbx::{
 use serde::{Deserialize, Serialize};
 
 use super::{
+    cursor::DbCursor,
     error::StorageError,
     traits::{Key, Value},
+    CowBuffer,
 };
 
 /// The number of tables to open in the database
 const NUM_TABLES: usize = 2;
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Serialize a value to a `flexbuffers` byte vector
+pub(crate) fn serialize_value<V: Serialize>(value: &V) -> Result<Vec<u8>, StorageError> {
+    flexbuffers::to_vec(value).map_err(StorageError::Serialization)
+}
+
+/// Deserialize a value from a `flexbuffers` byte vector
+pub(crate) fn deserialize_value<V: for<'de> Deserialize<'de>>(
+    value_bytes: &[u8],
+) -> Result<V, StorageError> {
+    flexbuffers::from_slice(value_bytes).map_err(StorageError::Deserialization)
+}
 
 // ------------
 // | Database |
@@ -25,7 +43,7 @@ const NUM_TABLES: usize = 2;
 /// The database config
 pub struct DbConfig {
     /// The path to open the database at
-    path: String,
+    pub path: String,
 }
 
 /// The persistent storage layer for the relayer's state machine
@@ -60,18 +78,6 @@ impl DB {
         tx.commit()
     }
 
-    /// Set a key in the database
-    pub fn write<K: Key, V: Value>(
-        &self,
-        table_name: &str,
-        key: &K,
-        value: &V,
-    ) -> Result<(), StorageError> {
-        let tx = self.new_write_tx()?;
-        tx.write(table_name, key, value)?;
-        tx.commit()
-    }
-
     /// Get a key from the database
     pub fn read<K: Key, V: Value>(
         &self,
@@ -85,42 +91,38 @@ impl DB {
         Ok(val)
     }
 
-    // Flush the database to disk
-    pub fn sync(&self) -> Result<(), StorageError> {
-        self.db
-            .sync(true /* force */)
-            .map_err(StorageError::Sync)
-            .map(|_| ())
-    }
-
-    // -----------
-    // | Helpers |
-    // -----------
-
-    /// Serialize a value to a `flexbuffers` byte vector
-    fn serialize_value<V: Serialize>(value: &V) -> Result<Vec<u8>, StorageError> {
-        flexbuffers::to_vec(value).map_err(StorageError::Serialization)
-    }
-
-    /// Deserialize a value from a `flexbuffers` byte vector
-    fn deserialize_value<V: for<'de> Deserialize<'de>>(
-        value_bytes: &[u8],
-    ) -> Result<V, StorageError> {
-        flexbuffers::from_slice(value_bytes).map_err(StorageError::Deserialization)
+    /// Set a key in the database
+    pub fn write<K: Key, V: Value>(
+        &self,
+        table_name: &str,
+        key: &K,
+        value: &V,
+    ) -> Result<(), StorageError> {
+        let tx = self.new_write_tx()?;
+        tx.write(table_name, key, value)?;
+        tx.commit()
     }
 
     /// Create a new read-only transaction
-    fn new_read_tx(&self) -> Result<DbTxn<RO>, StorageError> {
+    pub fn new_read_tx(&self) -> Result<DbTxn<RO>, StorageError> {
         let txn = self.db.begin_ro_txn().map_err(StorageError::BeginTx)?;
         Ok(DbTxn::new(txn))
     }
 
     /// Create a new read-write transaction
-    fn new_write_tx(&self) -> Result<DbTxn<RW>, StorageError> {
+    pub fn new_write_tx(&self) -> Result<DbTxn<RW>, StorageError> {
         self.db
             .begin_rw_txn()
             .map_err(StorageError::BeginTx)
             .map(DbTxn::new)
+    }
+
+    /// Flush the database to disk
+    pub fn sync(&self) -> Result<(), StorageError> {
+        self.db
+            .sync(true /* force */)
+            .map_err(StorageError::Sync)
+            .map(|_| ())
     }
 }
 
@@ -148,19 +150,22 @@ impl<'db, T: TransactionKind> DbTxn<'db, T> {
         table_name: &str,
         key: &K,
     ) -> Result<Option<V>, StorageError> {
-        // Serialize the key
-        let key_bytes = DB::serialize_value(key)?;
-
-        // Get the value
-        let table = self.open_table(table_name)?;
-        let value_bytes: Option<Cow<'_, [u8]>> = self
-            .txn
-            .get(&table, &key_bytes)
-            .map_err(StorageError::TxOp)?;
-
+        // Read bytes then deserialize as a `serde::Serialize`
+        let value_bytes = self.read_bytes(table_name, key)?;
         value_bytes
-            .map(|bytes| DB::deserialize_value(&bytes))
+            .map(|bytes| deserialize_value(&bytes))
             .transpose()
+    }
+
+    /// Open a cursor in the txn
+    pub fn cursor<K: Key, V: Value>(
+        &self,
+        table_name: &str,
+    ) -> Result<DbCursor<'_, T, K, V>, StorageError> {
+        let table = self.open_table(table_name)?;
+        let cursor = self.txn.cursor(&table).map_err(StorageError::TxOp)?;
+
+        Ok(DbCursor::new(cursor))
     }
 
     /// Commit the transaction
@@ -171,6 +176,20 @@ impl<'db, T: TransactionKind> DbTxn<'db, T> {
     // -----------
     // | Helpers |
     // -----------
+
+    /// Read a byte array directly from the database
+    fn read_bytes<K: Key>(
+        &self,
+        table_name: &str,
+        key: &K,
+    ) -> Result<Option<CowBuffer>, StorageError> {
+        // Serialize the key
+        let key_bytes = serialize_value(key)?;
+
+        // Get the value
+        let table = self.open_table(table_name)?;
+        self.txn.get(&table, &key_bytes).map_err(StorageError::TxOp)
+    }
 
     /// Open a table if the transaction has not done so already
     fn open_table(&self, table_name: &str) -> Result<Table, StorageError> {
@@ -197,9 +216,23 @@ impl<'db> DbTxn<'db, RW> {
         key: &K,
         value: &V,
     ) -> Result<(), StorageError> {
-        // Serialize the key and value
-        let key_bytes = DB::serialize_value(key)?;
-        let value_bytes = DB::serialize_value(value)?;
+        let value_bytes = serialize_value(value)?;
+        self.write_bytes(table_name, key, &value_bytes)
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Write a byte array directly to the database
+    fn write_bytes<K: Key>(
+        &self,
+        table_name: &str,
+        key: &K,
+        value_bytes: &[u8],
+    ) -> Result<(), StorageError> {
+        // Serialize the key
+        let key_bytes = serialize_value(key)?;
 
         // Set the value
         let table = self.open_table(table_name)?;
@@ -215,6 +248,8 @@ mod test {
 
     use serde::{Deserialize, Serialize};
     use tempfile::tempdir;
+
+    use crate::test_helpers::mock_db;
 
     use super::{DbConfig, DB};
 
@@ -249,17 +284,6 @@ mod test {
         fn default() -> Self {
             Self::dummy()
         }
-    }
-
-    /// Create a mock database backed by a temporary directory
-    fn mock_db() -> DB {
-        let tempdir = tempdir().unwrap();
-        let path = tempdir.path().to_str().unwrap();
-
-        DB::new(DbConfig {
-            path: path.to_string(),
-        })
-        .unwrap()
     }
 
     // ---------

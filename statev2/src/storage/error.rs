@@ -8,6 +8,7 @@ use flexbuffers::{
 };
 use libmdbx::Error as MdbxError;
 
+/// The error type emitted by the storage layer
 #[derive(Debug)]
 pub enum StorageError {
     /// Error creating a new transaction in the database
