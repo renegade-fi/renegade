@@ -138,16 +138,38 @@ impl<'txn, T: TransactionKind, K: Key, V: Value> Iterator for DbCursor<'txn, T, 
 
 #[cfg(test)]
 mod test {
-    use crate::test_helpers::mock_db;
+    use rand::{
+        seq::{IteratorRandom, SliceRandom},
+        thread_rng,
+    };
+
+    use crate::{storage::db::DB, test_helpers::mock_db};
 
     /// The name of the table used for testing
     const TEST_TABLE: &str = "test-table";
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Inserts 0..n into the table as "{i}" -> i in random order
+    fn insert_n_random(db: &DB, n: usize) {
+        let mut values = (0..n).collect::<Vec<_>>();
+        values.shuffle(&mut thread_rng());
+
+        let tx = db.new_write_tx().unwrap();
+        for i in values.into_iter() {
+            let key = i.to_string();
+            tx.write(TEST_TABLE, &key, &i).unwrap();
+        }
+        tx.commit().unwrap();
+    }
 
     // ---------
     // | Tests |
     // ---------
 
-    /// Test the `first` method of a cursor
+    /// Test the `first` method of a cursor on an empty table
     #[test]
     fn test_empty_table() {
         let db = mock_db();
@@ -159,5 +181,177 @@ mod test {
         let first = cursor.first().unwrap();
 
         assert!(first.is_none());
+    }
+
+    /// Test the `first` method of a cursor on a table
+    #[test]
+    fn test_first() {
+        let db = mock_db();
+        db.create_table(TEST_TABLE).unwrap();
+
+        let (key, value): (String, String) = ("key".to_string(), "value".to_string());
+
+        // Insert a key/value pair
+        db.write(TEST_TABLE, &key, &value).unwrap();
+
+        // Read the first key, it should be `Some`
+        let tx = db.new_read_tx().unwrap();
+        let mut cursor = tx.cursor::<String, String>(TEST_TABLE).unwrap();
+        let first = cursor.first().unwrap();
+
+        assert_eq!(first.unwrap(), (key, value));
+    }
+
+    /// Test the sorting of a cursor
+    #[test]
+    fn test_sorted_order_string_key() {
+        let db = mock_db();
+        db.create_table(TEST_TABLE).unwrap();
+
+        let (k1, v1) = ("b".to_string(), "b_value".to_string());
+        let (k2, v2) = ("a".to_string(), "a_value".to_string());
+
+        // Insert values in reverse sorted order
+        db.write(TEST_TABLE, &k1, &v1).unwrap();
+        db.write(TEST_TABLE, &k2, &v2).unwrap();
+
+        // Read the values out of the cursor
+        let tx = db.new_read_tx().unwrap();
+        let mut cursor = tx.cursor::<String, String>(TEST_TABLE).unwrap();
+        let first = cursor.first().unwrap().unwrap();
+
+        assert_eq!(first, (k2, v2));
+    }
+
+    /// Tests the sorting of a cursor with a numeric key
+    #[test]
+    fn test_sorted_order_numeric_key() {
+        // Create a db and insert 0..N into the table randomly
+        const N: usize = 1000;
+
+        let db = mock_db();
+        db.create_table(TEST_TABLE).unwrap();
+
+        insert_n_random(&db, N);
+
+        // Run a cursor over the table
+        let tx = db.new_read_tx().unwrap();
+        let cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
+        for (i, pair) in cursor.enumerate() {
+            let (k, v) = pair.unwrap();
+            assert_eq!(k, i.to_string());
+            assert_eq!(v, i);
+        }
+    }
+
+    /// Tests seeking and then peeking the current value then the next value
+    #[test]
+    fn test_seek_and_next() {
+        // Create a db and insert 0..N into the table randomly
+        const N: usize = 1000;
+
+        let db = mock_db();
+        db.create_table(TEST_TABLE).unwrap();
+
+        insert_n_random(&db, N);
+
+        // Choose a random seek index
+        let seek_index = (0..(N - 1)).choose(&mut thread_rng()).unwrap();
+
+        // Seek to the value, assert its correctness, then check the next value
+        let tx = db.new_read_tx().unwrap();
+        let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
+        let (k, v) = cursor.seek(seek_index.to_string()).unwrap().unwrap();
+
+        assert_eq!(k, seek_index.to_string());
+        assert_eq!(v, seek_index);
+
+        let (k, v) = cursor.get_current().unwrap().unwrap();
+        assert_eq!(k, seek_index.to_string());
+        assert_eq!(v, seek_index);
+
+        let (k, v) = cursor.next().unwrap().unwrap();
+        assert_eq!(k, (seek_index + 1).to_string());
+        assert_eq!(v, seek_index + 1);
+    }
+
+    /// Tests seeking and then peeking the current value then previous value
+    #[test]
+    fn test_seek_and_prev() {
+        // Create a db and insert 0..N into the table randomly
+        const N: usize = 1000;
+
+        let db = mock_db();
+        db.create_table(TEST_TABLE).unwrap();
+
+        insert_n_random(&db, N);
+
+        // Choose a random seek index
+        let seek_index = (1..N).choose(&mut thread_rng()).unwrap();
+
+        // Seek to the value, assert its correctness, then check the previous value
+        let tx = db.new_read_tx().unwrap();
+        let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
+        let (k, v) = cursor.seek(seek_index.to_string()).unwrap().unwrap();
+
+        assert_eq!(k, seek_index.to_string());
+        assert_eq!(v, seek_index);
+
+        let (k, v) = cursor.get_current().unwrap().unwrap();
+        assert_eq!(k, seek_index.to_string());
+        assert_eq!(v, seek_index);
+
+        let (k, v) = cursor.prev().unwrap().unwrap();
+        assert_eq!(k, (seek_index - 1).to_string());
+        assert_eq!(v, seek_index - 1);
+    }
+
+    /// Tests seeking to the to the first key greater than or equal to the given key
+    #[test]
+    fn test_seek_geq() {
+        // Create a db and insert 0..N into the table randomly
+        const N: usize = 1000;
+
+        let db = mock_db();
+        db.create_table(TEST_TABLE).unwrap();
+
+        let mut values = (0..N).collect::<Vec<_>>();
+        values.shuffle(&mut thread_rng());
+
+        // Insert all but one value
+        let exclude = (0..(N - 1)).choose(&mut thread_rng()).unwrap();
+        let tx = db.new_write_tx().unwrap();
+        for i in values.into_iter() {
+            if i == exclude {
+                continue;
+            }
+
+            let key = i.to_string();
+            tx.write(TEST_TABLE, &key, &i).unwrap();
+        }
+        tx.commit().unwrap();
+
+        // Test `seek_geq` to a key that does exist
+        let seek_ind = exclude - 1;
+
+        let tx = db.new_read_tx().unwrap();
+        let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
+        let (k, v) = cursor.seek_geq(seek_ind.to_string()).unwrap().unwrap();
+
+        assert_eq!(k, seek_ind.to_string());
+        assert_eq!(v, seek_ind);
+
+        tx.commit().unwrap();
+
+        // Now try seeking to a key that doesn't exist
+        let seek_ind = exclude;
+
+        let tx = db.new_read_tx().unwrap();
+        let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
+        let (k, v) = cursor.seek_geq(seek_ind.to_string()).unwrap().unwrap();
+
+        let expected = seek_ind + 1;
+        assert_eq!(k, expected.to_string());
+        assert_eq!(v, expected);
     }
 }
