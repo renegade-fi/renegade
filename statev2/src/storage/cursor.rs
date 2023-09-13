@@ -19,6 +19,12 @@ use super::{
 pub struct DbCursor<'txn, Tx: TransactionKind, K: Key, V: Value> {
     /// The underlying cursor
     inner: Cursor<'txn, Tx>,
+    /// The buffered kv pair at the current position
+    ///
+    /// This field is used to provide a `seek` implementation that does not
+    /// consume the value under the cursor after seeking. We prefer to seek
+    /// and then separately read the value out
+    buffered_value: Option<(K, V)>,
     /// A phantom data field to hold the deserialized type of the table
     _phantom: PhantomData<(K, V)>,
 }
@@ -29,34 +35,17 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     pub fn new(cursor: Cursor<'txn, Tx>) -> Self {
         Self {
             inner: cursor,
+            buffered_value: None,
             _phantom: PhantomData,
         }
     }
 
-    /// Seek to the first key in the table and return it's kv pair
-    pub fn seek_first(&mut self) -> Result<Option<(K, V)>, StorageError> {
-        let res = self
-            .inner
-            .first::<CowBuffer, CowBuffer>()
-            .map_err(StorageError::TxOp)?;
-
-        res.map(|(k, v)| Self::deserialize_key_value(k, v))
-            .transpose()
-    }
-
-    /// Seek to the last key and return its kv pair
-    pub fn seek_last(&mut self) -> Result<Option<(K, V)>, StorageError> {
-        let res = self
-            .inner
-            .last::<CowBuffer, CowBuffer>()
-            .map_err(StorageError::TxOp)?;
-
-        res.map(|(k, v)| Self::deserialize_key_value(k, v))
-            .transpose()
-    }
-
     /// Get the key/value at the current position
     pub fn get_current(&mut self) -> Result<Option<(K, V)>, StorageError> {
+        if let Some((k, v)) = self.buffered_value.take() {
+            return Ok(Some((k, v)));
+        }
+
         let res = self
             .inner
             .get_current::<CowBuffer, CowBuffer>()
@@ -77,26 +66,46 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
             .transpose()
     }
 
-    /// Position the cursor at a specific key
-    pub fn seek(&mut self, k: &K) -> Result<Option<(K, V)>, StorageError> {
-        let k_bytes = serialize_value(&k)?;
+    /// Seek to the first key in the table
+    pub fn seek_first(&mut self) -> Result<(), StorageError> {
+        let res = self
+            .inner
+            .first::<CowBuffer, CowBuffer>()
+            .map_err(StorageError::TxOp)?;
 
-        self.inner
+        self.buffer_kv_pair(res)
+    }
+
+    /// Seek to the last key in the table
+    pub fn seek_last(&mut self) -> Result<(), StorageError> {
+        let res = self
+            .inner
+            .last::<CowBuffer, CowBuffer>()
+            .map_err(StorageError::TxOp)?;
+
+        self.buffer_kv_pair(res)
+    }
+
+    /// Position the cursor at a specific key
+    pub fn seek(&mut self, k: &K) -> Result<(), StorageError> {
+        let k_bytes = serialize_value(&k)?;
+        let res = self
+            .inner
             .set_key::<CowBuffer, CowBuffer>(&k_bytes)
-            .map_err(StorageError::TxOp)?
-            .map(|(k, v)| Self::deserialize_key_value(k, v))
-            .transpose()
+            .map_err(StorageError::TxOp)?;
+
+        self.buffer_kv_pair(res)
     }
 
     /// Position at the first key greater than or equal to the given key
-    pub fn seek_geq(&mut self, k: &K) -> Result<Option<(K, V)>, StorageError> {
+    pub fn seek_geq(&mut self, k: &K) -> Result<(), StorageError> {
         let k_bytes = serialize_value(k)?;
-
-        self.inner
+        let res = self
+            .inner
             .set_range::<CowBuffer, CowBuffer>(&k_bytes)
-            .map_err(StorageError::TxOp)?
-            .map(|(k, v)| Self::deserialize_key_value(k, v))
-            .transpose()
+            .map_err(StorageError::TxOp)?;
+
+        self.buffer_kv_pair(res)
     }
 
     // -----------
@@ -109,6 +118,15 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
         v_buffer: CowBuffer,
     ) -> Result<(K, V), StorageError> {
         Ok((deserialize_value(&k_buffer)?, deserialize_value(&v_buffer)?))
+    }
+
+    /// Buffer the kv pair at the current position
+    fn buffer_kv_pair(&mut self, pair: Option<(CowBuffer, CowBuffer)>) -> Result<(), StorageError> {
+        self.buffered_value = pair
+            .map(|(k, v)| Self::deserialize_key_value(k, v))
+            .transpose()?;
+
+        Ok(())
     }
 }
 
@@ -137,6 +155,10 @@ impl<'txn, T: TransactionKind, K: Key, V: Value> Iterator for DbCursor<'txn, T, 
     type Item = Result<(K, V), StorageError>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some((k, v)) = self.buffered_value.take() {
+            return Some(Ok((k, v)));
+        }
+
         let res = self.inner.next().map_err(StorageError::TxOp);
         if let Err(e) = res {
             return Some(Err(e));
@@ -189,7 +211,8 @@ mod test {
         // Read the first key, it should be `None`
         let tx = db.new_read_tx().unwrap();
         let mut cursor = tx.cursor::<String /* key */, String /* value */>(TEST_TABLE).unwrap();
-        let first = cursor.seek_first().unwrap();
+        cursor.seek_first().unwrap();
+        let first = cursor.get_current().unwrap();
 
         assert!(first.is_none());
     }
@@ -208,7 +231,8 @@ mod test {
         // Read the first key, it should be `Some`
         let tx = db.new_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, String>(TEST_TABLE).unwrap();
-        let first = cursor.seek_first().unwrap();
+        cursor.seek_first().unwrap();
+        let first = cursor.get_current().unwrap();
 
         assert_eq!(first.unwrap(), (key, value));
     }
@@ -224,8 +248,9 @@ mod test {
 
         // Read the last key, it should be `Some`
         let tx = db.new_read_tx().unwrap();
-        let cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
-        let last = cursor.last().unwrap();
+        let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
+        cursor.seek_last().unwrap();
+        let last = cursor.get_current().unwrap();
 
         assert_eq!(last.unwrap(), ((N - 1).to_string(), N - 1));
     }
@@ -246,7 +271,8 @@ mod test {
         // Read the values out of the cursor
         let tx = db.new_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, String>(TEST_TABLE).unwrap();
-        let first = cursor.seek_first().unwrap().unwrap();
+        cursor.seek_first().unwrap();
+        let first = cursor.get_current().unwrap().unwrap();
 
         assert_eq!(first, (k2, v2));
     }
@@ -289,7 +315,8 @@ mod test {
         // Seek to the value, assert its correctness, then check the next value
         let tx = db.new_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
-        let (k, v) = cursor.seek(&seek_index.to_string()).unwrap().unwrap();
+        cursor.seek(&seek_index.to_string()).unwrap();
+        let (k, v) = cursor.get_current().unwrap().unwrap();
 
         assert_eq!(k, seek_index.to_string());
         assert_eq!(v, seek_index);
@@ -320,7 +347,8 @@ mod test {
         // Seek to the value, assert its correctness, then check the previous value
         let tx = db.new_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
-        let (k, v) = cursor.seek(&seek_index.to_string()).unwrap().unwrap();
+        cursor.seek(&seek_index.to_string()).unwrap();
+        let (k, v) = cursor.get_current().unwrap().unwrap();
 
         assert_eq!(k, seek_index.to_string());
         assert_eq!(v, seek_index);
@@ -364,7 +392,8 @@ mod test {
 
         let tx = db.new_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
-        let (k, v) = cursor.seek_geq(&seek_ind.to_string()).unwrap().unwrap();
+        cursor.seek_geq(&seek_ind.to_string()).unwrap();
+        let (k, v) = cursor.get_current().unwrap().unwrap();
 
         assert_eq!(k, seek_ind.to_string());
         assert_eq!(v, seek_ind);
@@ -376,7 +405,8 @@ mod test {
 
         let tx = db.new_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
-        let (k, v) = cursor.seek_geq(&seek_ind.to_string()).unwrap().unwrap();
+        cursor.seek_geq(&seek_ind.to_string()).unwrap();
+        let (k, v) = cursor.get_current().unwrap().unwrap();
 
         let expected = seek_ind + 1;
         assert_eq!(k, expected.to_string());
