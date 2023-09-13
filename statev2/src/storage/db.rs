@@ -52,9 +52,6 @@ pub struct DbConfig {
 pub struct DB {
     /// The underlying `mdbx` instance
     db: Database<WriteMap>,
-    /// The config for the database
-    #[allow(unused)]
-    config: DbConfig,
 }
 
 impl DB {
@@ -66,7 +63,7 @@ impl DB {
             .open(db_path)
             .map_err(StorageError::OpenDb)?;
 
-        Ok(Self { db, config })
+        Ok(Self { db })
     }
 
     /// Create a new table in the database

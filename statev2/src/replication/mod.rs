@@ -5,3 +5,4 @@
 
 pub mod error;
 pub mod log_store;
+pub mod raft_node;

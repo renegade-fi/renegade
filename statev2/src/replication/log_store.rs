@@ -1,7 +1,7 @@
 //! Defines the storage layer for the `raft` implementation. We store logs, snapshots,
 //! metadata, etc in the storage layer -- concretely an embedded KV store
 
-use std::sync::Arc;
+use std::{cmp, sync::Arc};
 
 use libmdbx::{TransactionKind, RO};
 use protobuf::Message;
@@ -37,6 +37,12 @@ pub const CONF_STATE_KEY: &str = "conf-state";
 /// The name of the snapshot metadata key in the KV store
 pub const SNAPSHOT_METADATA_KEY: &str = "snapshot-metadata";
 
+/// A marker for a placeholder in an unused variable
+///
+/// Currently used to indicate that a peer ID is not used in a snapshot
+/// as the snapshot logic does not branch on peer ID
+pub const UNUSED: u64 = 0;
+
 // -----------
 // | Helpers |
 // -----------
@@ -71,8 +77,16 @@ impl LogStore {
         db.create_table(RAFT_LOGS_TABLE)
             .map_err(ReplicationError::Storage)?;
 
-        Ok(Self { db })
+        // Write a default snapshot to the metadata table
+        let self_ = Self { db };
+        self_.apply_snapshot(RaftSnapshot::new());
+
+        Ok(self_)
     }
+
+    // -----------
+    // | Getters |
+    // -----------
 
     /// Read a log entry, returning an error if an entry does not exist for the given index
     pub fn read_log_entry(&self, index: u64) -> Result<RaftEntry, ReplicationError> {
@@ -92,6 +106,51 @@ impl LogStore {
     ) -> Result<DbCursor<'_, T, String, ProtoStorageWrapper<RaftEntry>>, ReplicationError> {
         tx.cursor(RAFT_LOGS_TABLE)
             .map_err(ReplicationError::Storage)
+    }
+
+    // -----------
+    // | Setters |
+    // -----------
+
+    /// Apply a snapshot to the log store
+    pub fn apply_snapshot(&self, snapshot: RaftSnapshot) {
+        let tx = self.db.new_write_tx().unwrap();
+        let meta = snapshot.get_metadata();
+
+        // Write the `ConfState` to the metadata table
+        tx.write(
+            RAFT_METADATA_TABLE,
+            &CONF_STATE_KEY.to_string(),
+            &ProtoStorageWrapper(meta.get_conf_state().clone()),
+        )
+        .unwrap();
+
+        // Write the `HardState` to the metadata table
+        let new_state: ProtoStorageWrapper<HardState> = tx
+            .read(RAFT_METADATA_TABLE, &HARD_STATE_KEY.to_string())
+            .unwrap()
+            .unwrap_or_default();
+        let mut new_state = new_state.into_inner();
+
+        new_state.set_term(cmp::max(new_state.get_term(), meta.get_term()));
+        new_state.set_commit(meta.index);
+
+        tx.write(
+            RAFT_METADATA_TABLE,
+            &HARD_STATE_KEY.to_string(),
+            &ProtoStorageWrapper(new_state),
+        )
+        .unwrap();
+
+        // Write the snapshot metadata
+        tx.write(
+            RAFT_METADATA_TABLE,
+            &SNAPSHOT_METADATA_KEY.to_string(),
+            &ProtoStorageWrapper(snapshot.get_metadata().clone()),
+        )
+        .unwrap();
+
+        tx.commit().unwrap();
     }
 }
 
@@ -164,9 +223,19 @@ impl Storage for LogStore {
 
     /// Returns the term for a given index in the log
     fn term(&self, idx: u64) -> RaftResult<u64> {
-        self.read_log_entry(idx)
-            .map_err(RaftError::from)
-            .map(|entry| entry.term)
+        match self.read_log_entry(idx).map(|entry| entry.term) {
+            // Check the snapshot if not found
+            Err(ReplicationError::EntryNotFound) => {
+                if let Ok(snap) = self.snapshot(idx, UNUSED)
+                    && snap.get_metadata().get_index() == idx
+                {
+                    Ok(snap.get_metadata().get_term())
+                } else {
+                    Err(RaftError::Store(RaftStorageError::Unavailable))
+                }
+            }
+            res => res.map_err(RaftError::from),
+        }
     }
 
     /// Returns the index of the first available entry in the log
@@ -177,7 +246,14 @@ impl Storage for LogStore {
 
         match cursor.get_current().map_err(RaftError::from)? {
             Some((key, _)) => parse_lsn(&key).map_err(RaftError::from),
-            None => Ok(0),
+            None => {
+                let snapshot_idx = self
+                    .snapshot(0 /* request_idx */, UNUSED)?
+                    .get_metadata()
+                    .get_index();
+
+                Ok(snapshot_idx + 1)
+            }
         }
     }
 
@@ -189,7 +265,14 @@ impl Storage for LogStore {
 
         match cursor.get_current().map_err(RaftError::from)? {
             Some((key, _)) => parse_lsn(&key).map_err(RaftError::from),
-            None => Ok(0),
+            None => {
+                let snapshot_idx = self
+                    .snapshot(0 /* request_idx */, UNUSED)?
+                    .get_metadata()
+                    .get_index();
+
+                Ok(snapshot_idx)
+            }
         }
     }
 
@@ -220,7 +303,7 @@ impl Storage for LogStore {
 
 #[cfg(test)]
 mod test {
-    use std::{cmp, sync::Arc};
+    use std::sync::Arc;
 
     use protobuf::Message;
     use raft::{
@@ -231,7 +314,7 @@ mod test {
 
     use crate::{storage::ProtoStorageWrapper, test_helpers::mock_db};
 
-    use super::{lsn_to_key, LogStore, HARD_STATE_KEY, RAFT_METADATA_TABLE};
+    use super::{lsn_to_key, LogStore};
 
     // -----------
     // | Helpers |
@@ -270,48 +353,6 @@ mod test {
         }
 
         res
-    }
-
-    /// Apply a snapshot to the raft log store
-    fn apply_snapshot(store: &LogStore, snapshot: Snapshot) {
-        let tx = store.db.new_write_tx().unwrap();
-
-        let meta = snapshot.get_metadata();
-
-        // Write the `ConfState` to the metadata table
-        tx.write(
-            super::RAFT_METADATA_TABLE,
-            &super::CONF_STATE_KEY.to_string(),
-            &ProtoStorageWrapper(meta.get_conf_state().clone()),
-        )
-        .unwrap();
-
-        // Write the `HardState` to the metadata table
-        let new_state: ProtoStorageWrapper<HardState> = tx
-            .read(RAFT_METADATA_TABLE, &HARD_STATE_KEY.to_string())
-            .unwrap()
-            .unwrap_or_default();
-        let mut new_state = new_state.into_inner();
-
-        new_state.set_term(cmp::max(new_state.get_term(), meta.get_term()));
-        new_state.set_commit(meta.index);
-
-        tx.write(
-            RAFT_METADATA_TABLE,
-            &HARD_STATE_KEY.to_string(),
-            &ProtoStorageWrapper(new_state),
-        )
-        .unwrap();
-
-        // Write the snapshot metadata
-        tx.write(
-            super::RAFT_METADATA_TABLE,
-            &super::SNAPSHOT_METADATA_KEY.to_string(),
-            &ProtoStorageWrapper(snapshot.get_metadata().clone()),
-        )
-        .unwrap();
-
-        tx.commit().unwrap();
     }
 
     /// Create a mock `LogStore`
@@ -359,7 +400,7 @@ mod test {
     fn test_recover_snapshot_state() {
         let store = mock_log_store();
         let snap = mock_snapshot();
-        apply_snapshot(&store, snap.clone());
+        store.apply_snapshot(snap.clone());
 
         // Now fetch the initial state
         let state = store.initial_state().unwrap();
@@ -369,26 +410,12 @@ mod test {
         assert_eq!(&state.conf_state, snap.get_metadata().get_conf_state());
     }
 
-    /// Tests fetching a snapshot from storage when the snapshot is not stored
-    #[test]
-    fn test_missing_snapshot() {
-        let store = mock_log_store();
-        let res = store.snapshot(10 /* index */, 0 /* peer_id */);
-
-        assert!(matches!(
-            res,
-            Err(RaftError::Store(
-                RaftStorageError::SnapshotTemporarilyUnavailable
-            ))
-        ))
-    }
-
     /// Tests fetching a snapshot from storage when the stored snapshot is out of date
     #[test]
     fn test_out_of_date_snapshot() {
         let store = mock_log_store();
         let snap = mock_snapshot();
-        apply_snapshot(&store, snap.clone());
+        store.apply_snapshot(snap.clone());
 
         // Attempt to fetch a snapshot at a higher index than the one stored
         let index = snap.get_metadata().get_index() + 1;
@@ -405,7 +432,7 @@ mod test {
     fn test_up_to_date_snapshot() {
         let store = mock_log_store();
         let snap = mock_snapshot();
-        apply_snapshot(&store, snap.clone());
+        store.apply_snapshot(snap.clone());
 
         // Attempt to fetch a snapshot at a lower index than the one stored
         let index = snap.get_metadata().get_index() - 1;
@@ -430,7 +457,7 @@ mod test {
         let last = store.last_index().unwrap();
         let entry_term = store.term(1 /* index */);
 
-        assert_eq!(first, 0);
+        assert_eq!(first, 1);
         assert_eq!(last, 0);
         assert!(matches!(
             entry_term,
