@@ -68,6 +68,8 @@ impl LogStore {
         // Create the logs table in the db
         db.create_table(RAFT_METADATA_TABLE)
             .map_err(ReplicationError::Storage)?;
+        db.create_table(RAFT_LOGS_TABLE)
+            .map_err(ReplicationError::Storage)?;
 
         Ok(Self { db })
     }
@@ -167,21 +169,25 @@ impl Storage for LogStore {
             .map(|entry| entry.term)
     }
 
+    /// Returns the index of the first available entry in the log
     fn first_index(&self) -> RaftResult<u64> {
         let tx = self.db.new_read_tx().map_err(RaftError::from)?;
         let mut cursor = self.logs_cursor::<RO>(&tx).map_err(RaftError::from)?;
+        cursor.seek_first().map_err(RaftError::from)?;
 
-        match cursor.seek_first().map_err(RaftError::from)? {
+        match cursor.get_current().map_err(RaftError::from)? {
             Some((key, _)) => parse_lsn(&key).map_err(RaftError::from),
             None => Ok(0),
         }
     }
 
+    /// Returns the index of the last available entry in the log
     fn last_index(&self) -> RaftResult<u64> {
         let tx = self.db.new_read_tx().map_err(RaftError::from)?;
         let mut cursor = self.logs_cursor::<RO>(&tx).map_err(RaftError::from)?;
+        cursor.seek_last().map_err(RaftError::from)?;
 
-        match cursor.seek_last().map_err(RaftError::from)? {
+        match cursor.get_current().map_err(RaftError::from)? {
             Some((key, _)) => parse_lsn(&key).map_err(RaftError::from),
             None => Ok(0),
         }
@@ -202,9 +208,7 @@ impl Storage for LogStore {
             .ok_or_else(|| RaftError::Store(RaftStorageError::SnapshotTemporarilyUnavailable))?;
 
         if metadata.index < request_index {
-            return Err(RaftError::Store(
-                RaftStorageError::SnapshotTemporarilyUnavailable,
-            ));
+            return Err(RaftError::Store(RaftStorageError::SnapshotOutOfDate));
         }
 
         let mut snap = RaftSnapshot::new();
@@ -216,18 +220,315 @@ impl Storage for LogStore {
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
+    use std::{cmp, sync::Arc};
 
-    use crate::test_helpers::mock_db;
+    use protobuf::Message;
+    use raft::{
+        prelude::{ConfState, Entry as RaftEntry, HardState, Snapshot, SnapshotMetadata},
+        Error as RaftError, GetEntriesContext, Storage, StorageError as RaftStorageError,
+    };
+    use rand::{seq::IteratorRandom, thread_rng};
 
-    use super::LogStore;
+    use crate::{storage::ProtoStorageWrapper, test_helpers::mock_db};
 
-    /// Test that creating the log store works
-    ///
-    /// TODO: Remove me
-    #[test]
-    fn test_constructor() {
+    use super::{lsn_to_key, LogStore, HARD_STATE_KEY, RAFT_METADATA_TABLE};
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    // TODO: Remove these setter helpers when the `LogStore` interface is integrated with the
+    // consensus engine. This will require explicitly adding setter methods that we can
+    // use instead
+
+    /// Add a mock entry to the log store
+    fn add_entry(store: &LogStore, entry: &RaftEntry) {
+        let tx = store.db.new_write_tx().unwrap();
+        tx.write(
+            super::RAFT_LOGS_TABLE,
+            &lsn_to_key(entry.index),
+            &ProtoStorageWrapper(entry.clone()),
+        )
+        .unwrap();
+
+        tx.commit().unwrap();
+    }
+
+    /// Add a batch of entries to the log store
+    fn add_entry_batch(store: &LogStore, entries: &[RaftEntry]) {
+        entries.iter().for_each(|entry| add_entry(store, entry));
+    }
+
+    /// Create a series of empty entries for the log
+    fn empty_entries(n: usize) -> Vec<RaftEntry> {
+        let mut res = Vec::with_capacity(n);
+        for i in 0..n {
+            let mut entry = RaftEntry::new();
+            entry.index = i as u64;
+
+            res.push(entry);
+        }
+
+        res
+    }
+
+    /// Apply a snapshot to the raft log store
+    fn apply_snapshot(store: &LogStore, snapshot: Snapshot) {
+        let tx = store.db.new_write_tx().unwrap();
+
+        let meta = snapshot.get_metadata();
+
+        // Write the `ConfState` to the metadata table
+        tx.write(
+            super::RAFT_METADATA_TABLE,
+            &super::CONF_STATE_KEY.to_string(),
+            &ProtoStorageWrapper(meta.get_conf_state().clone()),
+        )
+        .unwrap();
+
+        // Write the `HardState` to the metadata table
+        let new_state: ProtoStorageWrapper<HardState> = tx
+            .read(RAFT_METADATA_TABLE, &HARD_STATE_KEY.to_string())
+            .unwrap()
+            .unwrap_or_default();
+        let mut new_state = new_state.into_inner();
+
+        new_state.set_term(cmp::max(new_state.get_term(), meta.get_term()));
+        new_state.set_commit(meta.index);
+
+        tx.write(
+            RAFT_METADATA_TABLE,
+            &HARD_STATE_KEY.to_string(),
+            &ProtoStorageWrapper(new_state),
+        )
+        .unwrap();
+
+        // Write the snapshot metadata
+        tx.write(
+            super::RAFT_METADATA_TABLE,
+            &super::SNAPSHOT_METADATA_KEY.to_string(),
+            &ProtoStorageWrapper(snapshot.get_metadata().clone()),
+        )
+        .unwrap();
+
+        tx.commit().unwrap();
+    }
+
+    /// Create a mock `LogStore`
+    fn mock_log_store() -> LogStore {
         let db = Arc::new(mock_db());
-        let _store = LogStore::new(db).unwrap();
+        LogStore::new(db).unwrap()
+    }
+
+    /// Create a mock snapshot
+    fn mock_snapshot() -> Snapshot {
+        // Create a mock snapshot
+        let mut snap = Snapshot::new();
+        let mut metadata = SnapshotMetadata::new();
+
+        // Hard state
+        metadata.set_term(15);
+        metadata.set_index(5);
+
+        // Conf state
+        let mut conf_state = ConfState::new();
+        conf_state.set_voters(vec![1, 2, 3]);
+        metadata.set_conf_state(conf_state.clone());
+
+        snap.set_metadata(metadata.clone());
+        snap
+    }
+
+    // ------------------
+    // | Metadata Tests |
+    // ------------------
+
+    /// Test the initial state without having initialized the `LogStore`
+    /// i.e. upon raft initial startup
+    #[test]
+    fn test_startup_state() {
+        let store = mock_log_store();
+        let state = store.initial_state().unwrap();
+
+        assert_eq!(state.hard_state, HardState::new());
+        assert_eq!(state.conf_state, ConfState::new());
+    }
+
+    /// Tests applying a snapshot then fetching initial state, simulating a crash recovery
+    #[test]
+    fn test_recover_snapshot_state() {
+        let store = mock_log_store();
+        let snap = mock_snapshot();
+        apply_snapshot(&store, snap.clone());
+
+        // Now fetch the initial state
+        let state = store.initial_state().unwrap();
+
+        assert_eq!(state.hard_state.term, snap.get_metadata().get_term());
+        assert_eq!(state.hard_state.commit, snap.get_metadata().get_index());
+        assert_eq!(&state.conf_state, snap.get_metadata().get_conf_state());
+    }
+
+    /// Tests fetching a snapshot from storage when the snapshot is not stored
+    #[test]
+    fn test_missing_snapshot() {
+        let store = mock_log_store();
+        let res = store.snapshot(10 /* index */, 0 /* peer_id */);
+
+        assert!(matches!(
+            res,
+            Err(RaftError::Store(
+                RaftStorageError::SnapshotTemporarilyUnavailable
+            ))
+        ))
+    }
+
+    /// Tests fetching a snapshot from storage when the stored snapshot is out of date
+    #[test]
+    fn test_out_of_date_snapshot() {
+        let store = mock_log_store();
+        let snap = mock_snapshot();
+        apply_snapshot(&store, snap.clone());
+
+        // Attempt to fetch a snapshot at a higher index than the one stored
+        let index = snap.get_metadata().get_index() + 1;
+        let res = store.snapshot(index, 0 /* peer_id */);
+
+        assert!(matches!(
+            res,
+            Err(RaftError::Store(RaftStorageError::SnapshotOutOfDate))
+        ))
+    }
+
+    /// Tests fetching an up-to-date snapshot
+    #[test]
+    fn test_up_to_date_snapshot() {
+        let store = mock_log_store();
+        let snap = mock_snapshot();
+        apply_snapshot(&store, snap.clone());
+
+        // Attempt to fetch a snapshot at a lower index than the one stored
+        let index = snap.get_metadata().get_index() - 1;
+        let res = store.snapshot(index, 0 /* peer_id */);
+
+        assert!(res.is_ok());
+        let snap_res = res.unwrap();
+
+        assert_eq!(snap_res.get_metadata(), snap.get_metadata());
+    }
+
+    // -------------------
+    // | Log Entry Tests |
+    // -------------------
+
+    /// Tests fetching the first and last entries from an empty log
+    #[test]
+    fn test_empty_log() {
+        let store = mock_log_store();
+
+        let first = store.first_index().unwrap();
+        let last = store.last_index().unwrap();
+        let entry_term = store.term(1 /* index */);
+
+        assert_eq!(first, 0);
+        assert_eq!(last, 0);
+        assert!(matches!(
+            entry_term,
+            Err(RaftError::Store(RaftStorageError::Unavailable))
+        ))
+    }
+
+    /// Tests fetching the entries from a basic log with a handful of entries
+    #[test]
+    fn test_log_access_basic() {
+        const N: usize = 1_000;
+        let store = mock_log_store();
+
+        // Add a few entries to the log
+        let entries = empty_entries(N);
+        add_entry_batch(&store, &entries);
+
+        // Fetch the first and last indices
+        let first = store.first_index().unwrap();
+        let last = store.last_index().unwrap();
+
+        assert_eq!(first, 0);
+        assert_eq!(last, (N - 1) as u64);
+
+        // Fetch the entries
+        let entries = store
+            .entries(
+                first,
+                last + 1,
+                None,
+                GetEntriesContext::empty(false /* can_async */),
+            )
+            .unwrap();
+
+        assert_eq!(entries.len(), N);
+        assert_eq!(entries, entries);
+    }
+
+    /// Tests fetching a subset of entries from a log
+    #[test]
+    fn test_log_access_subset() {
+        const N: usize = 1_000;
+        let store = mock_log_store();
+
+        // Add a few entries to the log
+        let entries = empty_entries(N);
+        add_entry_batch(&store, &entries);
+
+        let mut rng = thread_rng();
+        let low = (0..(N - 1)).choose(&mut rng).unwrap();
+        let high = (low..N).choose(&mut rng).unwrap();
+
+        // Fetch the entries
+        let entries_res = store
+            .entries(
+                low as u64,
+                high as u64,
+                None,
+                GetEntriesContext::empty(false /* can_async */),
+            )
+            .unwrap();
+
+        assert_eq!(entries_res.len(), high - low);
+        assert_eq!(entries_res, &entries[low..high]);
+    }
+
+    /// Tests log access with a cap on the result's memory footprint
+    #[test]
+    fn test_log_access_with_size_bound() {
+        const N: usize = 1_000;
+        let store = mock_log_store();
+
+        // Add a few entries to the log
+        let entries = empty_entries(N);
+        add_entry_batch(&store, &entries);
+
+        let mut rng = thread_rng();
+        let low = (0..(N - 1)).choose(&mut rng).unwrap();
+        let high = (low..N).choose(&mut rng).unwrap();
+
+        // Cap the size at an amount that will give a random number of entries
+        let n_entries = (0..(high - low)).choose(&mut rng).unwrap();
+        let max_size = entries[low..(low + n_entries)]
+            .iter()
+            .map(|entry| entry.compute_size())
+            .sum::<u32>();
+
+        // Fetch the entries
+        let entries_res = store
+            .entries(
+                low as u64,
+                high as u64,
+                Some(max_size as u64),
+                GetEntriesContext::empty(false /* can_async */),
+            )
+            .unwrap();
+
+        assert_eq!(entries_res.len(), n_entries);
+        assert_eq!(entries_res, &entries[low..(low + entries_res.len())]);
     }
 }
