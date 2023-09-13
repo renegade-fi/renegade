@@ -5,9 +5,13 @@ edition = "2021"
 
 [dependencies]
 
+# === Replication === #
+raft = "0.7"
+
 # === Storage === #
 flexbuffers = "2.0"
 libmdbx = "0.3"
+protobuf = "2.0"
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]

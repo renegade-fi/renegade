@@ -7,6 +7,7 @@
 #![deny(clippy::missing_docs_in_private_items)]
 #![deny(unsafe_code)]
 
+pub mod replication;
 pub mod storage;
 
 #[cfg(test)]
