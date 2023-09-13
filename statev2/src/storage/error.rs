@@ -7,6 +7,7 @@ use flexbuffers::{
     SerializationError as FlexbuffersSerializationError,
 };
 use libmdbx::Error as MdbxError;
+use raft::{Error as RaftError, StorageError as RaftStorageError};
 
 /// The error type emitted by the storage layer
 #[derive(Debug)]
@@ -36,3 +37,9 @@ impl Display for StorageError {
 }
 
 impl Error for StorageError {}
+
+impl From<StorageError> for RaftError {
+    fn from(value: StorageError) -> Self {
+        RaftError::Store(RaftStorageError::Other(Box::new(value)))
+    }
+}

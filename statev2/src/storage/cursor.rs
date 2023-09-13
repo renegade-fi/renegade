@@ -34,10 +34,21 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     }
 
     /// Seek to the first key in the table and return it's kv pair
-    pub fn first(&mut self) -> Result<Option<(K, V)>, StorageError> {
+    pub fn seek_first(&mut self) -> Result<Option<(K, V)>, StorageError> {
         let res = self
             .inner
             .first::<CowBuffer, CowBuffer>()
+            .map_err(StorageError::TxOp)?;
+
+        res.map(|(k, v)| Self::deserialize_key_value(k, v))
+            .transpose()
+    }
+
+    /// Seek to the last key and return its kv pair
+    pub fn seek_last(&mut self) -> Result<Option<(K, V)>, StorageError> {
+        let res = self
+            .inner
+            .last::<CowBuffer, CowBuffer>()
             .map_err(StorageError::TxOp)?;
 
         res.map(|(k, v)| Self::deserialize_key_value(k, v))
@@ -67,7 +78,7 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     }
 
     /// Position the cursor at a specific key
-    pub fn seek(&mut self, k: K) -> Result<Option<(K, V)>, StorageError> {
+    pub fn seek(&mut self, k: &K) -> Result<Option<(K, V)>, StorageError> {
         let k_bytes = serialize_value(&k)?;
 
         self.inner
@@ -78,8 +89,8 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     }
 
     /// Position at the first key greater than or equal to the given key
-    pub fn seek_geq(&mut self, k: K) -> Result<Option<(K, V)>, StorageError> {
-        let k_bytes = serialize_value(&k)?;
+    pub fn seek_geq(&mut self, k: &K) -> Result<Option<(K, V)>, StorageError> {
+        let k_bytes = serialize_value(k)?;
 
         self.inner
             .set_range::<CowBuffer, CowBuffer>(&k_bytes)
@@ -105,9 +116,9 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
 impl<'txn, K: Key, V: Value> DbCursor<'txn, RW, K, V> {
     /// Insert a key/value pair into the table, the cursor will be positioned at the inserted key
     /// or near it when this method fails
-    pub fn put(&mut self, k: K, v: V) -> Result<(), StorageError> {
-        let k_bytes = serialize_value(&k)?;
-        let v_bytes = serialize_value(&v)?;
+    pub fn put(&mut self, k: &K, v: &V) -> Result<(), StorageError> {
+        let k_bytes = serialize_value(k)?;
+        let v_bytes = serialize_value(v)?;
 
         self.inner
             .put(&k_bytes, &v_bytes, WriteFlags::default())
@@ -178,7 +189,7 @@ mod test {
         // Read the first key, it should be `None`
         let tx = db.new_read_tx().unwrap();
         let mut cursor = tx.cursor::<String /* key */, String /* value */>(TEST_TABLE).unwrap();
-        let first = cursor.first().unwrap();
+        let first = cursor.seek_first().unwrap();
 
         assert!(first.is_none());
     }
@@ -197,9 +208,26 @@ mod test {
         // Read the first key, it should be `Some`
         let tx = db.new_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, String>(TEST_TABLE).unwrap();
-        let first = cursor.first().unwrap();
+        let first = cursor.seek_first().unwrap();
 
         assert_eq!(first.unwrap(), (key, value));
+    }
+
+    /// Test the `last` method of a cursor
+    #[test]
+    fn test_last() {
+        const N: usize = 10000;
+        let db = mock_db();
+        db.create_table(TEST_TABLE).unwrap();
+
+        insert_n_random(&db, N);
+
+        // Read the last key, it should be `Some`
+        let tx = db.new_read_tx().unwrap();
+        let cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
+        let last = cursor.last().unwrap();
+
+        assert_eq!(last.unwrap(), ((N - 1).to_string(), N - 1));
     }
 
     /// Test the sorting of a cursor
@@ -218,7 +246,7 @@ mod test {
         // Read the values out of the cursor
         let tx = db.new_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, String>(TEST_TABLE).unwrap();
-        let first = cursor.first().unwrap().unwrap();
+        let first = cursor.seek_first().unwrap().unwrap();
 
         assert_eq!(first, (k2, v2));
     }
@@ -261,7 +289,7 @@ mod test {
         // Seek to the value, assert its correctness, then check the next value
         let tx = db.new_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
-        let (k, v) = cursor.seek(seek_index.to_string()).unwrap().unwrap();
+        let (k, v) = cursor.seek(&seek_index.to_string()).unwrap().unwrap();
 
         assert_eq!(k, seek_index.to_string());
         assert_eq!(v, seek_index);
@@ -292,7 +320,7 @@ mod test {
         // Seek to the value, assert its correctness, then check the previous value
         let tx = db.new_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
-        let (k, v) = cursor.seek(seek_index.to_string()).unwrap().unwrap();
+        let (k, v) = cursor.seek(&seek_index.to_string()).unwrap().unwrap();
 
         assert_eq!(k, seek_index.to_string());
         assert_eq!(v, seek_index);
@@ -336,7 +364,7 @@ mod test {
 
         let tx = db.new_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
-        let (k, v) = cursor.seek_geq(seek_ind.to_string()).unwrap().unwrap();
+        let (k, v) = cursor.seek_geq(&seek_ind.to_string()).unwrap().unwrap();
 
         assert_eq!(k, seek_ind.to_string());
         assert_eq!(v, seek_ind);
@@ -348,7 +376,7 @@ mod test {
 
         let tx = db.new_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
-        let (k, v) = cursor.seek_geq(seek_ind.to_string()).unwrap().unwrap();
+        let (k, v) = cursor.seek_geq(&seek_ind.to_string()).unwrap().unwrap();
 
         let expected = seek_ind + 1;
         assert_eq!(k, expected.to_string());
