@@ -12,6 +12,8 @@ pub enum ReplicationError {
     EntryNotFound,
     /// Error parsing a stored value
     ParseValue(String),
+    /// An error from the raft library
+    Raft(RaftError),
     /// An error interacting with storage
     Storage(StorageError),
 }
@@ -28,6 +30,7 @@ impl From<ReplicationError> for RaftError {
     fn from(value: ReplicationError) -> Self {
         match value {
             ReplicationError::EntryNotFound => RaftError::Store(RaftStorageError::Unavailable),
+            ReplicationError::Raft(e) => e,
             ReplicationError::Storage(e) => e.into(),
             ReplicationError::ParseValue(s) => RaftError::Store(RaftStorageError::Other(Box::new(
                 ReplicationError::ParseValue(s),

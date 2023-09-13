@@ -6,6 +6,8 @@
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
 #![deny(unsafe_code)]
+#![allow(incomplete_features)]
+#![feature(let_chains)]
 
 pub mod replication;
 pub mod storage;
