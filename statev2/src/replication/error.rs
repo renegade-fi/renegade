@@ -1,6 +1,7 @@
 //! Defines error types emitted by the replication layer
 
 use raft::{Error as RaftError, StorageError as RaftStorageError};
+use std::io::Error as IOError;
 use std::{error::Error, fmt::Display};
 
 use crate::storage::error::StorageError;
@@ -14,6 +15,10 @@ pub enum ReplicationError {
     ParseValue(String),
     /// An error from the raft library
     Raft(RaftError),
+    /// An error receiving a message
+    RecvMessage(IOError),
+    /// An error sending a message
+    SendMessage(IOError),
     /// An error interacting with storage
     Storage(StorageError),
 }
@@ -35,6 +40,7 @@ impl From<ReplicationError> for RaftError {
             ReplicationError::ParseValue(s) => RaftError::Store(RaftStorageError::Other(Box::new(
                 ReplicationError::ParseValue(s),
             ))),
+            ReplicationError::SendMessage(e) | ReplicationError::RecvMessage(e) => RaftError::Io(e),
         }
     }
 }
