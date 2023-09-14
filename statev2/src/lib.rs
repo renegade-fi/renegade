@@ -8,6 +8,7 @@
 #![deny(unsafe_code)]
 #![allow(incomplete_features)]
 #![feature(let_chains)]
+#![feature(io_error_more)]
 
 pub mod replication;
 pub mod storage;

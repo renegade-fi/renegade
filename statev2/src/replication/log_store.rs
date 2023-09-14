@@ -79,7 +79,7 @@ impl LogStore {
 
         // Write a default snapshot to the metadata table
         let self_ = Self { db };
-        self_.apply_snapshot(RaftSnapshot::new());
+        self_.apply_snapshot(&RaftSnapshot::new());
 
         Ok(self_)
     }
@@ -112,8 +112,44 @@ impl LogStore {
     // | Setters |
     // -----------
 
+    /// Apply a config change to the log store
+    pub fn apply_config_state(&self, change: ConfState) -> Result<(), ReplicationError> {
+        let tx = self.db.new_write_tx().map_err(ReplicationError::Storage)?;
+
+        let value = ProtoStorageWrapper(change);
+        tx.write(RAFT_METADATA_TABLE, &CONF_STATE_KEY.to_string(), &value)
+            .map_err(ReplicationError::Storage)?;
+
+        tx.commit().map_err(ReplicationError::Storage)
+    }
+
+    /// Apply a hard state to the log store
+    pub fn apply_hard_state(&self, state: HardState) -> Result<(), ReplicationError> {
+        let tx = self.db.new_write_tx().map_err(ReplicationError::Storage)?;
+
+        let value = ProtoStorageWrapper(state);
+        tx.write(RAFT_METADATA_TABLE, &HARD_STATE_KEY.to_string(), &value)
+            .map_err(ReplicationError::Storage)?;
+
+        tx.commit().map_err(ReplicationError::Storage)
+    }
+
+    /// Append entries to the raft log
+    pub fn append_log_entries(&self, entries: Vec<RaftEntry>) -> Result<(), ReplicationError> {
+        let tx = self.db.new_write_tx().map_err(ReplicationError::Storage)?;
+        for entry in entries.into_iter() {
+            let key = lsn_to_key(entry.index);
+            let value = ProtoStorageWrapper(entry);
+
+            tx.write(RAFT_LOGS_TABLE, &key, &value)
+                .map_err(ReplicationError::Storage)?;
+        }
+
+        tx.commit().map_err(ReplicationError::Storage)
+    }
+
     /// Apply a snapshot to the log store
-    pub fn apply_snapshot(&self, snapshot: RaftSnapshot) {
+    pub fn apply_snapshot(&self, snapshot: &RaftSnapshot) {
         let tx = self.db.new_write_tx().unwrap();
         let meta = snapshot.get_metadata();
 
@@ -312,34 +348,17 @@ mod test {
     };
     use rand::{seq::IteratorRandom, thread_rng};
 
-    use crate::{storage::ProtoStorageWrapper, test_helpers::mock_db};
+    use crate::test_helpers::mock_db;
 
-    use super::{lsn_to_key, LogStore};
+    use super::LogStore;
 
     // -----------
     // | Helpers |
     // -----------
 
-    // TODO: Remove these setter helpers when the `LogStore` interface is integrated with the
-    // consensus engine. This will require explicitly adding setter methods that we can
-    // use instead
-
-    /// Add a mock entry to the log store
-    fn add_entry(store: &LogStore, entry: &RaftEntry) {
-        let tx = store.db.new_write_tx().unwrap();
-        tx.write(
-            super::RAFT_LOGS_TABLE,
-            &lsn_to_key(entry.index),
-            &ProtoStorageWrapper(entry.clone()),
-        )
-        .unwrap();
-
-        tx.commit().unwrap();
-    }
-
     /// Add a batch of entries to the log store
     fn add_entry_batch(store: &LogStore, entries: &[RaftEntry]) {
-        entries.iter().for_each(|entry| add_entry(store, entry));
+        store.append_log_entries(entries.to_vec()).unwrap();
     }
 
     /// Create a series of empty entries for the log
@@ -400,7 +419,7 @@ mod test {
     fn test_recover_snapshot_state() {
         let store = mock_log_store();
         let snap = mock_snapshot();
-        store.apply_snapshot(snap.clone());
+        store.apply_snapshot(&snap);
 
         // Now fetch the initial state
         let state = store.initial_state().unwrap();
@@ -415,7 +434,7 @@ mod test {
     fn test_out_of_date_snapshot() {
         let store = mock_log_store();
         let snap = mock_snapshot();
-        store.apply_snapshot(snap.clone());
+        store.apply_snapshot(&snap);
 
         // Attempt to fetch a snapshot at a higher index than the one stored
         let index = snap.get_metadata().get_index() + 1;
@@ -432,7 +451,7 @@ mod test {
     fn test_up_to_date_snapshot() {
         let store = mock_log_store();
         let snap = mock_snapshot();
-        store.apply_snapshot(snap.clone());
+        store.apply_snapshot(&snap);
 
         // Attempt to fetch a snapshot at a lower index than the one stored
         let index = snap.get_metadata().get_index() - 1;

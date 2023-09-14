@@ -16,9 +16,10 @@ serde = { workspace = true, features = ["derive"] }
 
 # === Misc === #
 slog = "2.2"
-tracing = { workspace = true }
+tracing = { workspace = true, features = ["log"] }
 tracing-slog = "0.2"
 
 [dev-dependencies]
+crossbeam = "0.8"
 tempfile = "3.8"
 rand = { workspace = true }
