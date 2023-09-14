@@ -156,6 +156,9 @@ where
 
         // Validate updates to the balances within the wallet
         Self::validate_balance_updates(&old_wallet, &new_wallet, external_transfer, cs);
+
+        // Validate that all relayer fees have been paid if the managing cluster changes
+        Self::validate_cluster_management_change(&old_wallet, &new_wallet, cs);
     }
 
     // ------------
@@ -182,6 +185,9 @@ where
         external_transfer: ExternalTransferVar<Variable>,
         cs: &mut CS,
     ) {
+        // Validate that fees are paid if the transfer is a withdrawal
+        Self::validate_fees_paid(old_wallet, &external_transfer, cs);
+
         // Zero out the external transfer amount if its mint is zero
         let external_transfer_zero = EqZeroGadget::eq_zero(external_transfer.mint, cs);
         let external_transfer_not_zero = NotGate::not(external_transfer_zero, cs);
@@ -275,6 +281,39 @@ where
         let transfer_applied = EqGadget::eq(external_transfer_applied, Variable::One(), cs);
         let transfer_applied_or_zero = OrGate::or(transfer_applied, external_transfer_zero, cs);
         cs.constrain(transfer_applied_or_zero - Variable::One());
+    }
+
+    /// Validate that if the update withdraws *any* balance, *all* fees have already been
+    /// paid
+    ///
+    /// We require all fees to be paid to prevent a user from self matching at an adversarial
+    /// price (effectively a transfer) and then withdrawing a large balance without paying fees
+    fn validate_fees_paid<CS: RandomizableConstraintSystem>(
+        original_wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        transfer: &ExternalTransferVar<Variable>,
+        cs: &mut CS,
+    ) {
+        // Check that all fee balances are zero
+        let mut balances_zero = Vec::new();
+        for balance in original_wallet.balances.iter() {
+            let protocol_balance_zero =
+                EqZeroGadget::eq_zero(balance.protocol_fee_balance.clone(), cs);
+            let relayer_balance_zero =
+                EqZeroGadget::eq_zero(balance.relayer_fee_balance.clone(), cs);
+
+            balances_zero.push(protocol_balance_zero);
+            balances_zero.push(relayer_balance_zero);
+        }
+
+        let all_fees_zero = AndGate::multi_and(&balances_zero, cs);
+        let not_all_fees_zero = NotGate::not(all_fees_zero, cs);
+
+        // If the transfer is a withdrawal, it is encoded as one, otherwise zero
+        // So we can use the direction as a mask on `not_all_fees_zero` and constraint the result
+        // to be zero. This constraints the following to be true
+        //      is_deposit || all_fees_zero
+        let (_, _, deposit_or_zero) = cs.multiply(transfer.direction.into(), not_all_fees_zero);
+        cs.constrain(deposit_or_zero.into());
     }
 
     /// Constrains all balance mints to be unique or zero
@@ -419,6 +458,40 @@ where
         order2.timestamp = order1.timestamp.clone();
 
         EqGadget::eq(order1.clone(), order2, cs)
+    }
+
+    // ------------------------------
+    // | Cluster Management Changes |
+    // ------------------------------
+
+    /// Validate a cluster management change
+    ///
+    /// All relayer fee balances must be zero to change the cluster managing a given wallet
+    fn validate_cluster_management_change<CS: RandomizableConstraintSystem>(
+        old_wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        new_wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut CS,
+    ) {
+        // Check if the cluster management has changed
+        let clusters_equal = EqGadget::eq(
+            old_wallet.managing_cluster.clone(),
+            new_wallet.managing_cluster.clone(),
+            cs,
+        );
+
+        let mut relayer_fees_zero = Vec::new();
+        for balance in old_wallet.balances.iter() {
+            relayer_fees_zero.push(EqZeroGadget::eq_zero(
+                balance.relayer_fee_balance.clone(),
+                cs,
+            ));
+        }
+
+        let all_fees_zero = AndGate::multi_and(&relayer_fees_zero, cs);
+
+        // Either no cluster management change, or all relayer fees are zero
+        let validity_check = OrGate::or(clusters_equal, all_fees_zero, cs);
+        EqGadget::constrain_eq(validity_check, Variable::One(), cs);
     }
 }
 
