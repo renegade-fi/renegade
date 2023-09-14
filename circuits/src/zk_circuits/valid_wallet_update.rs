@@ -275,6 +275,18 @@ where
             // Constrain one of the three mint conditions to hold
             let valid_mint = OrGate::multi_or(&[valid_mint1, valid_mint2, valid_mint3], cs);
             cs.constrain(Variable::One() - valid_mint);
+
+            // The protocol and relayer fees should remain unchanged
+            EqGadget::constrain_eq(
+                old_balance.relayer_fee_balance.clone(),
+                new_balance.relayer_fee_balance.clone(),
+                cs,
+            );
+            EqGadget::constrain_eq(
+                old_balance.protocol_fee_balance.clone(),
+                new_balance.protocol_fee_balance.clone(),
+                cs,
+            );
         }
 
         // Validate that the external transfer's mint did show up in exactly one of the balances
@@ -685,6 +697,7 @@ mod test {
 
     use circuit_types::{
         balance::Balance,
+        keychain::NonNativeKey,
         order::Order,
         traits::CircuitBaseType,
         transfers::{ExternalTransfer, ExternalTransferDirection},
@@ -692,7 +705,7 @@ mod test {
     use merlin::HashChainTranscript as Transcript;
     use mpc_bulletproof::{r1cs::Prover, PedersenGens};
     use num_bigint::BigUint;
-    use rand::{thread_rng, RngCore};
+    use rand::{seq::IteratorRandom, thread_rng, RngCore};
 
     use crate::zk_circuits::{
         test_helpers::{SizedWallet, INITIAL_WALLET, TIMESTAMP},
@@ -1003,6 +1016,66 @@ mod test {
         ));
     }
 
+    /// Tests the case in which an external transfer is performed when the wallet has
+    /// outstanding relayer fees, which is invalid
+    #[test]
+    fn test_external_transfer__outstanding_relayer_fees() {
+        let mut rng = thread_rng();
+        let mut old_wallet = INITIAL_WALLET.clone();
+
+        // Add a non-zero relayer fee balance to a random balance in the wallet
+        let balance_ind = (0..old_wallet.balances.len()).choose(&mut rng).unwrap();
+        old_wallet.balances[balance_ind].relayer_fee_balance += 1;
+
+        let mut new_wallet = INITIAL_WALLET.clone();
+        new_wallet.balances[0].amount = 0;
+
+        // Withdraw all of the first balance from the new wallet
+        let withdraw_mint = old_wallet.balances[0].mint.clone();
+        let withdraw_amount = old_wallet.balances[0].amount;
+
+        let transfer = ExternalTransfer {
+            mint: withdraw_mint,
+            amount: BigUint::from(withdraw_amount),
+            direction: ExternalTransferDirection::Withdrawal,
+            account_addr: BigUint::from(0u8),
+        };
+
+        assert!(!constraints_satisfied_on_wallets(
+            old_wallet, new_wallet, transfer
+        ));
+    }
+
+    /// Tests the case in which an external transfer is performed when the wallet has
+    /// outstanding protocol fees, which is invalid
+    #[test]
+    fn test_external_transfer__outstanding_protocol_fees() {
+        let mut rng = thread_rng();
+        let mut old_wallet = INITIAL_WALLET.clone();
+
+        // Add a non-zero relayer fee balance to a random balance in the wallet
+        let balance_ind = (0..old_wallet.balances.len()).choose(&mut rng).unwrap();
+        old_wallet.balances[balance_ind].protocol_fee_balance += 1;
+
+        let mut new_wallet = INITIAL_WALLET.clone();
+        new_wallet.balances[0].amount = 0;
+
+        // Withdraw all of the first balance from the new wallet
+        let withdraw_mint = old_wallet.balances[0].mint.clone();
+        let withdraw_amount = old_wallet.balances[0].amount;
+
+        let transfer = ExternalTransfer {
+            mint: withdraw_mint,
+            amount: BigUint::from(withdraw_amount),
+            direction: ExternalTransferDirection::Withdrawal,
+            account_addr: BigUint::from(0u8),
+        };
+
+        assert!(!constraints_satisfied_on_wallets(
+            old_wallet, new_wallet, transfer
+        ));
+    }
+
     // ----------------------
     // | Deposit Test Cases |
     // ----------------------
@@ -1109,6 +1182,42 @@ mod test {
         ));
     }
 
+    // -----------------------------
+    // | Cluster Management Change |
+    // -----------------------------
+
+    /// Tests a valid cluster management change
+    #[test]
+    fn test_valid_cluster_management_update() {
+        let old_wallet = INITIAL_WALLET.clone();
+        let mut new_wallet = INITIAL_WALLET.clone();
+        new_wallet.managing_cluster = NonNativeKey::from(&BigUint::from(1u8));
+
+        assert!(constraints_satisfied_on_wallets(
+            old_wallet,
+            new_wallet,
+            ExternalTransfer::default()
+        ));
+    }
+
+    /// Tests an invalid cluster management change
+    ///
+    /// I.e. the wallet has unpaid relayer fees
+    #[test]
+    fn test_invalid_cluster_management_update() {
+        let mut old_wallet = INITIAL_WALLET.clone();
+        old_wallet.balances[0].relayer_fee_balance += 1;
+
+        let mut new_wallet = old_wallet.clone();
+        new_wallet.managing_cluster = NonNativeKey::from(&BigUint::from(1u8));
+
+        assert!(!constraints_satisfied_on_wallets(
+            old_wallet,
+            new_wallet,
+            ExternalTransfer::default()
+        ));
+    }
+
     // -------------------------------
     // | Malicious Prover Test Cases |
     // -------------------------------
@@ -1122,6 +1231,35 @@ mod test {
 
         // Prover spuriously zeros a balance without transfer
         new_wallet.balances[0] = Balance::default();
+
+        assert!(!constraints_satisfied_on_wallets(
+            old_wallet,
+            new_wallet,
+            ExternalTransfer::default()
+        ));
+    }
+
+    /// Tests the case in which a prover attempts to change a protocol fee balance
+    #[test]
+    fn test_malicious_prover__protocol_fee_changed() {
+        // Old wallet has a non-zero fee balance, prover tries to zero it
+        let mut old_wallet = INITIAL_WALLET.clone();
+        old_wallet.balances[0].protocol_fee_balance += 1;
+        let new_wallet = INITIAL_WALLET.clone();
+
+        assert!(!constraints_satisfied_on_wallets(
+            old_wallet,
+            new_wallet,
+            ExternalTransfer::default()
+        ));
+    }
+
+    /// Tests the case in which a prover attempts o change a relayer fee balance
+    #[test]
+    fn test_malicious_prover__relayer_fee_changed() {
+        let old_wallet = INITIAL_WALLET.clone();
+        let mut new_wallet = old_wallet.clone();
+        new_wallet.balances[1].relayer_fee_balance += 1;
 
         assert!(!constraints_satisfied_on_wallets(
             old_wallet,
