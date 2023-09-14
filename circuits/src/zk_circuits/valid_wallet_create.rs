@@ -301,11 +301,29 @@ pub mod tests {
         assert_invalid_witness_statement(witness, statement);
     }
 
-    /// Tests the cas in which a non-zero balance is given
+    /// Tests the case in which a non-zero balance is given
     #[test]
     fn test_nonzero_balance() {
         let mut wallet = create_empty_wallet();
         wallet.balances[0] = INITIAL_BALANCES[0].clone();
+
+        let (witness, statement) = create_witness_statement_from_wallet(&wallet);
+        assert_invalid_witness_statement(witness, statement);
+    }
+
+    /// Tests the case in which a non-zero fee balance is given
+    #[test]
+    fn test_nonzero_fee_balance() {
+        // Relayer fee balance
+        let mut wallet = create_empty_wallet();
+        wallet.balances[1].relayer_fee_balance = 1;
+
+        let (witness, statement) = create_witness_statement_from_wallet(&wallet);
+        assert_invalid_witness_statement(witness, statement);
+
+        // Protocol fee balance
+        let mut wallet = create_empty_wallet();
+        wallet.balances[1].protocol_fee_balance = 1;
 
         let (witness, statement) = create_witness_statement_from_wallet(&wallet);
         assert_invalid_witness_statement(witness, statement);
