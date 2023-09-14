@@ -2,6 +2,7 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
+use circuit_types::fixed_point::FixedPoint;
 use circuit_types::native_helpers::compute_wallet_private_share_commitment;
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
 use circuit_types::wallet::Wallet;
@@ -44,8 +45,9 @@ where
     let wallet = Wallet::<MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
         balances: create_default_arr(),
         orders: create_default_arr(),
-        fees: create_default_arr(),
         keys: PUBLIC_KEYS.clone(),
+        match_fee: FixedPoint::from(0.0001),
+        managing_cluster: PUBLIC_KEYS.pk_root.clone(),
         blinder: Scalar::zero(),
     };
 
