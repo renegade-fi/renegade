@@ -48,6 +48,10 @@ pub struct Balance {
     pub mint: BigUint,
     /// The amount of the given token stored in this balance
     pub amount: u64,
+    /// The amount currently owed in fees to the protocol
+    pub protocol_fee_balance: u64,
+    /// The amount currently owned in fees to the managing relayer cluster
+    pub relayer_fee_balance: u64,
 }
 
 impl Balance {

@@ -79,6 +79,7 @@ fn create_test_balance(party_id: u64) -> Balance {
     Balance {
         mint: sel!(party_id, 1u8.into(), 2u8.into()),
         amount: 200,
+        ..Default::default()
     }
 }
 

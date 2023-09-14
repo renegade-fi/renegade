@@ -47,11 +47,13 @@ async fn test_match_no_match(test_args: IntegrationTestArgs) -> Result<()> {
     let my_balance = sel!(
         Balance {
             mint: BigUint::from(1u8),
-            amount: 200
+            amount: 200,
+            ..Default::default()
         },
         Balance {
             mint: BigUint::from(2u8),
-            amount: 200
+            amount: 200,
+            ..Default::default()
         }
     )
     .to_linkable();

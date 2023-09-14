@@ -806,6 +806,7 @@ mod test {
         new_wallet.balances[1] = Balance {
             mint: withdrawn_mint.clone(),
             amount: 1,
+            ..new_wallet.balances[1].clone()
         };
 
         // Build a valid transfer
@@ -834,6 +835,7 @@ mod test {
         new_wallet.balances[1] = Balance {
             mint: withdrawn_mint.clone(),
             amount: 2, // Added an extra unit of balance
+            ..new_wallet.balances[1].clone()
         };
 
         // Build a valid transfer
