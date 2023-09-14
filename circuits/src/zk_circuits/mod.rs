@@ -45,10 +45,12 @@ pub mod test_helpers {
             pk_match: compute_poseidon_hash(&[PRIVATE_KEYS[1]]).into(),
         };
         pub static ref INITIAL_BALANCES: [Balance; MAX_BALANCES] = [
-            Balance { mint: 1u8.into(), amount: 5 },
+            Balance { mint: 1u8.into(), amount: 5, protocol_fee_balance: 0, relayer_fee_balance: 0 },
             Balance {
                 mint: 2u8.into(),
-                amount: 10
+                amount: 10,
+                protocol_fee_balance: 0,
+                relayer_fee_balance: 0,
             }
         ];
         pub static ref INITIAL_ORDERS: [Order; MAX_ORDERS] = [
@@ -80,8 +82,9 @@ pub mod test_helpers {
         pub static ref INITIAL_WALLET: SizedWallet = Wallet {
             balances: INITIAL_BALANCES.clone(),
             orders: INITIAL_ORDERS.clone(),
-            fees: INITIAL_FEES.clone(),
+            match_fee: FixedPoint::from(0.01),
             keys: PUBLIC_KEYS.clone(),
+            managing_cluster: PUBLIC_KEYS.pk_root.clone(),
             blinder: Scalar::from(42u64)
         };
     }

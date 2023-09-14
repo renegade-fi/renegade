@@ -195,14 +195,18 @@ where
         }
     }
 
-    /// Validate that fees, keys, and blinders remain the same in the pre and post
+    /// Validate that `match_fee`, keys, and blinders remain the same in the pre and post
     /// wallet shares
     fn validate_fees_keys_blinder_updates<CS: RandomizableConstraintSystem>(
         pre_update_shares: WalletShareVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         post_update_shares: WalletShareVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) {
-        EqGadget::constrain_eq(pre_update_shares.fees, post_update_shares.fees, cs);
+        EqGadget::constrain_eq(
+            pre_update_shares.match_fee,
+            post_update_shares.match_fee,
+            cs,
+        );
         EqGadget::constrain_eq(pre_update_shares.keys, post_update_shares.keys, cs);
         EqGadget::constrain_eq(pre_update_shares.blinder, post_update_shares.blinder, cs);
     }
@@ -307,8 +311,8 @@ pub mod test_helpers {
     use num_bigint::BigUint;
 
     use crate::zk_circuits::test_helpers::{
-        create_wallet_shares, SizedWallet, INITIAL_BALANCES, INITIAL_FEES, MAX_BALANCES, MAX_FEES,
-        MAX_ORDERS, PUBLIC_KEYS, TIMESTAMP,
+        create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+        TIMESTAMP,
     };
 
     use super::{ValidSettleStatement, ValidSettleWitness};
@@ -334,11 +338,8 @@ pub mod test_helpers {
             ];
 
             SizedWallet {
-                balances: INITIAL_BALANCES.clone(),
                 orders,
-                fees: INITIAL_FEES.clone(),
-                keys: PUBLIC_KEYS.clone(),
-                blinder: Scalar::from(1u8),
+                ..INITIAL_WALLET.clone()
             }
         };
 
@@ -697,9 +698,9 @@ mod test {
 
         assert!(!constraints_satisfied(witness.clone(), statement));
 
-        // Modify a fee
+        // Modify the `match_fee`
         let mut statement = original_statement.clone();
-        statement.party0_modified_shares.fees[0].gas_token_amount += Scalar::one();
+        statement.party0_modified_shares.match_fee.repr += Scalar::one();
 
         assert!(!constraints_satisfied(witness.clone(), statement));
 

@@ -20,7 +20,6 @@ use crate::{
 use circuit_macros::circuit_type;
 use circuit_types::{
     balance::{BalanceVar, LinkableBalance},
-    fee::{FeeVar, LinkableFee},
     order::{LinkableOrder, OrderVar},
     traits::{
         BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
@@ -110,17 +109,9 @@ where
         );
         cs.constrain(witness.balance_receive.mint - receive_mint);
 
-        // Verify that the fee balance is in the wallet
-        // TODO: Implement fees properly
-        Self::contains_balance(witness.balance_fee.clone(), &augmented_wallet, cs);
-        cs.constrain(witness.balance_fee.mint - witness.fee.gas_addr);
-
         // Verify that the order is at the correct index
         Self::constrain_valid_order(&witness.order, cs);
         Self::contains_order_at_index(statement.order_index, witness.order, &augmented_wallet, cs);
-
-        // Verify that the fee is contained in the wallet
-        Self::contains_fee(witness.fee, &augmented_wallet, cs);
     }
 
     /// Constrains the order input to the matching engine is valid
@@ -158,6 +149,8 @@ where
                 BalanceVar {
                     mint: Variable::Zero(),
                     amount: Variable::Zero(),
+                    protocol_fee_balance: Variable::Zero(),
+                    relayer_fee_balance: Variable::Zero(),
                 },
                 cs,
             );
@@ -166,6 +159,8 @@ where
                 BalanceVar {
                     mint: received_mint.clone(),
                     amount: Variable::Zero().into(),
+                    protocol_fee_balance: Variable::Zero().into(),
+                    relayer_fee_balance: Variable::Zero().into(),
                 },
                 cs,
             );
@@ -199,10 +194,12 @@ where
             EqGadget::constrain_eq(base_order.clone(), augmented_order.clone(), cs);
         }
 
-        // All fees should be the same
-        for (base_fee, augmented_fee) in base_wallet.fees.iter().zip(augmented_wallet.fees.iter()) {
-            EqGadget::constrain_eq(base_fee.clone(), augmented_fee.clone(), cs);
-        }
+        // The `match_fee` should remain unchanged
+        EqGadget::constrain_eq(
+            base_wallet.match_fee.clone(),
+            augmented_wallet.match_fee.clone(),
+            cs,
+        );
 
         // Keys should be equal
         EqGadget::constrain_eq(base_wallet.keys.clone(), augmented_wallet.keys.clone(), cs);
@@ -258,36 +255,6 @@ where
 
         cs.constrain(order_found - Variable::One())
     }
-
-    /// Verify that the wallet contains the given balance at an unspecified index
-    fn contains_balance<CS: RandomizableConstraintSystem>(
-        target_balance: BalanceVar<Variable>,
-        wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        cs: &mut CS,
-    ) {
-        let mut balance_found: LinearCombination = Variable::Zero().into();
-        for balance in wallet.balances.iter() {
-            let balances_eq = EqGadget::eq(balance.clone(), target_balance.clone(), cs);
-            balance_found += balances_eq;
-        }
-
-        cs.constrain(balance_found - Variable::One());
-    }
-
-    /// Verify that the wallet contains the given fee at an unspecified index
-    fn contains_fee<CS: RandomizableConstraintSystem>(
-        target_fee: FeeVar<Variable>,
-        wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        cs: &mut CS,
-    ) {
-        let mut fee_found: LinearCombination = Variable::Zero().into();
-        for fee in wallet.fees.iter() {
-            let fees_eq = EqGadget::eq(fee.clone(), target_fee.clone(), cs);
-            fee_found += fees_eq;
-        }
-
-        cs.constrain(fee_found - Variable::One())
-    }
 }
 
 // ---------------------------
@@ -317,10 +284,6 @@ pub struct ValidCommitmentsWitness<
     pub balance_send: LinkableBalance,
     /// The balance that the wallet will receive into when the order is matched
     pub balance_receive: LinkableBalance,
-    /// The balance that will cover the relayer's fee when matched
-    pub balance_fee: LinkableBalance,
-    /// The fee that the relayer will take upon a successful match
-    pub fee: LinkableFee,
 }
 /// A `VALID COMMITMENTS` witness with default const generic sizing parameters
 pub type SizedValidCommitmentsWitness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
@@ -374,7 +337,6 @@ pub mod test_helpers {
         traits::LinkableBaseType, wallet::Wallet,
     };
     use num_bigint::BigUint;
-    use rand::{thread_rng, Rng};
 
     use crate::zk_circuits::test_helpers::{
         create_wallet_shares, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
@@ -401,16 +363,12 @@ pub mod test_helpers {
     where
         [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
     {
-        let mut rng = thread_rng();
-
         // Split the wallet into secret shares
         let (private_shares, public_shares) = create_wallet_shares(wallet.clone());
 
-        // Choose an order and fee to match on
+        // Choose an order
         let ind_order = 0;
-        let ind_fee = rng.gen_range(0..wallet.fees.len());
         let order = wallet.orders[ind_order].clone();
-        let fee = wallet.fees[ind_fee].clone();
 
         // Restructure the mints from the order direction
         let (received_mint, sent_mint) = if order.side == OrderSide::Buy {
@@ -432,11 +390,6 @@ pub mod test_helpers {
             &mut augmented_wallet.balances,
             false, /* augment */
         );
-        let (_, balance_fee) = find_balance_or_augment(
-            fee.gas_addr.clone(),
-            &mut augmented_wallet.balances,
-            false, /* augment */
-        );
 
         // After augmenting, split the augmented wallet into shares, using the same private secret shares
         // as the original (un-augmented) wallet
@@ -450,8 +403,6 @@ pub mod test_helpers {
             order: order.to_linkable(),
             balance_send: balance_send.to_linkable(),
             balance_receive: balance_receive.to_linkable(),
-            balance_fee: balance_fee.to_linkable(),
-            fee: fee.to_linkable(),
         };
 
         let statement = ValidCommitmentsStatement {
@@ -491,7 +442,10 @@ pub mod test_helpers {
                     .find(|(_ind, balance)| balance.mint == BigUint::from(0u8))
                     .expect("wallet must have zero'd balance to augment");
 
-                balances[zerod_index] = Balance { mint, amount: 0 };
+                balances[zerod_index] = Balance {
+                    mint,
+                    ..Default::default()
+                };
                 (zerod_index, balances[zerod_index].clone())
             }
         }
@@ -504,7 +458,6 @@ mod test {
 
     use circuit_types::{
         balance::{Balance, BalanceShare},
-        fee::FeeShare,
         fixed_point::FixedPointShare,
         order::{OrderShare, OrderSide},
         traits::{CircuitBaseType, LinkableBaseType},
@@ -615,6 +568,8 @@ mod test {
         witness.public_secret_shares.balances[augmentation_index as usize] = BalanceShare {
             amount: Scalar::one(),
             mint: Scalar::one(),
+            protocol_fee_balance: Scalar::zero(),
+            relayer_fee_balance: Scalar::zero(),
         }
         .to_linkable();
 
@@ -640,7 +595,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify a fee in the wallet
-        witness.augmented_public_shares.fees[0].gas_token_amount.val += Scalar::one();
+        witness.augmented_public_shares.match_fee.repr.val += Scalar::one();
         assert!(!constraints_satisfied(witness, statement));
     }
 
@@ -713,6 +668,8 @@ mod test {
             BalanceShare {
                 mint: Scalar::zero(),
                 amount: Scalar::zero(),
+                protocol_fee_balance: Scalar::zero(),
+                relayer_fee_balance: Scalar::zero(),
             }
             .to_linkable();
         assert!(!constraints_satisfied(witness, statement));
@@ -729,31 +686,10 @@ mod test {
             BalanceShare {
                 mint: Scalar::zero(),
                 amount: Scalar::zero(),
+                protocol_fee_balance: Scalar::zero(),
+                relayer_fee_balance: Scalar::zero(),
             }
             .to_linkable();
-        assert!(!constraints_satisfied(witness, statement));
-    }
-
-    /// Test the case in which the fee balance is missing from the wallet
-    #[test]
-    fn test_invalid_commitment__fee_balance_missing() {
-        let wallet = INITIAL_WALLET.clone();
-        let (mut witness, statement) = create_witness_and_statement(&wallet);
-
-        // Modify the fee balance from the order; clobber all balances because this
-        // does not come with an index
-        witness
-            .augmented_public_shares
-            .balances
-            .iter_mut()
-            .for_each(|balance| {
-                *balance = BalanceShare {
-                    mint: Scalar::zero(),
-                    amount: Scalar::zero(),
-                }
-                .to_linkable()
-            });
-
         assert!(!constraints_satisfied(witness, statement));
     }
 
@@ -775,31 +711,6 @@ mod test {
             timestamp: Scalar::zero(),
         }
         .to_linkable();
-        assert!(!constraints_satisfied(witness, statement));
-    }
-
-    /// Test the case in which the fee is missing from the wallet
-    #[test]
-    fn test_invalid_commitment__fee_missing() {
-        let wallet = INITIAL_WALLET.clone();
-        let (mut witness, statement) = create_witness_and_statement(&wallet);
-
-        // Modify the fees, clobber all of them because the fee does not contain an index
-        witness
-            .augmented_public_shares
-            .fees
-            .iter_mut()
-            .for_each(|fee| {
-                *fee = FeeShare {
-                    settle_key: Scalar::zero(),
-                    gas_addr: Scalar::zero(),
-                    gas_token_amount: Scalar::zero(),
-                    percentage_fee: FixedPointShare {
-                        repr: Scalar::zero(),
-                    },
-                }
-                .to_linkable()
-            });
         assert!(!constraints_satisfied(witness, statement));
     }
 }

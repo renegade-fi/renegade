@@ -579,6 +579,7 @@ pub mod test_helpers {
         let balance1 = Balance {
             mint: 1u8.into(),
             amount: 300,
+            ..Default::default()
         }
         .to_linkable();
 
@@ -594,6 +595,7 @@ pub mod test_helpers {
         let balance2 = Balance {
             mint: 2u8.into(),
             amount: 300,
+            ..Default::default()
         }
         .to_linkable();
 

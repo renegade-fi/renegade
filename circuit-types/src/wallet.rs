@@ -12,6 +12,8 @@ use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    fixed_point::FixedPoint,
+    keychain::PublicSigningKey,
     scalar_from_hex_string, scalar_to_hex_string,
     traits::{
         BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
@@ -20,8 +22,7 @@ use crate::{
 };
 
 use super::{
-    balance::Balance, deserialize_array, fee::Fee, keychain::PublicKeyChain, order::Order,
-    serialize_array,
+    balance::Balance, deserialize_array, keychain::PublicKeyChain, order::Order, serialize_array,
 };
 
 /// A commitment to the wallet's secret shares that is entered into the global state
@@ -55,14 +56,12 @@ where
         deserialize_with = "deserialize_array"
     )]
     pub orders: [Order; MAX_ORDERS],
-    /// The list of payable fees in the wallet
-    #[serde(
-        serialize_with = "serialize_array",
-        deserialize_with = "deserialize_array"
-    )]
-    pub fees: [Fee; MAX_FEES],
+    /// The fixed point fee that a relayer is authorized to take for executing a match
+    pub match_fee: FixedPoint,
     /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle, pk_view)
     pub keys: PublicKeyChain,
+    /// The managing cluster of the wallet, authorized to match on the wallet's orders
+    pub managing_cluster: PublicSigningKey,
     /// The wallet randomness used to blind secret shares
     #[serde(
         serialize_with = "scalar_to_hex_string",
@@ -88,12 +87,9 @@ where
                 .collect_vec()
                 .try_into()
                 .unwrap(),
-            fees: (0..MAX_FEES)
-                .map(|_| Fee::default())
-                .collect_vec()
-                .try_into()
-                .unwrap(),
+            match_fee: FixedPoint::default(),
             keys: PublicKeyChain::default(),
+            managing_cluster: PublicSigningKey::default(),
             blinder: Scalar::zero(),
         }
     }
