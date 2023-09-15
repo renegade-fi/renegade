@@ -62,6 +62,8 @@ pub fn get_dummy_singleprover_witness() -> ValidMatchMpcWitness {
             quote_amount: Scalar::one().to_linkable(),
             base_amount: Scalar::one().to_linkable(),
             direction: Scalar::one().to_linkable(),
+            protocol_quote_fee_amount: Scalar::one().to_linkable(),
+            protocol_base_fee_amount: Scalar::one().to_linkable(),
             max_minus_min_amount: Scalar::one().to_linkable(),
             min_amount_order_index: Scalar::one().to_linkable(),
         },

@@ -192,7 +192,7 @@ async fn test_match_valid_match(test_args: IntegrationTestArgs) -> Result<()> {
                 base_mint: 2u8.into(),
                 side: sel!(OrderSide::Buy, OrderSide::Sell),
                 worst_case_price: FixedPoint::from_integer(sel!(15, 5)),
-                amount: sel!(20, 30),
+                amount: sel!(20_000, 30_000),
                 timestamp: 0, // unused
             },
             10, /* execution_price */
@@ -204,7 +204,7 @@ async fn test_match_valid_match(test_args: IntegrationTestArgs) -> Result<()> {
                 base_mint: 2u8.into(),
                 side: sel!(OrderSide::Sell, OrderSide::Buy),
                 worst_case_price: FixedPoint::from_integer(sel!(5, 15)),
-                amount: 15,
+                amount: 15_000,
                 timestamp: 0, // unused
             },
             10, /* execution_price */
@@ -217,18 +217,22 @@ async fn test_match_valid_match(test_args: IntegrationTestArgs) -> Result<()> {
         MatchResult {
             quote_mint: BigUint::from(1u8),
             base_mint: BigUint::from(2u8),
-            quote_amount: 200,
-            base_amount: 20,
+            quote_amount: 200_000,
+            base_amount: 20_000,
             direction: 0,
-            max_minus_min_amount: 10,
+            protocol_quote_fee_amount: 59,
+            protocol_base_fee_amount: 5,
+            max_minus_min_amount: 10_000,
             min_amount_order_index: 0,
         },
         MatchResult {
             quote_mint: BigUint::from(1u8),
             base_mint: BigUint::from(2u8),
-            quote_amount: 150,
-            base_amount: 15,
+            quote_amount: 150_000,
+            base_amount: 15_000,
             direction: 1,
+            protocol_quote_fee_amount: 44,
+            protocol_base_fee_amount: 4,
             max_minus_min_amount: 0,
             min_amount_order_index: 1,
         },

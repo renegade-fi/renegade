@@ -51,6 +51,11 @@ pub struct MatchResult {
     /// sells the quote; 1 implies that party 2 buys the base and sells the quote
     pub direction: u64, // Binary
 
+    /// The amount of the quote token paid to the protocol in fee
+    pub protocol_quote_fee_amount: u64,
+    /// The amount of the base token paid to the protocol in fee
+    pub protocol_base_fee_amount: u64,
+
     /// The following are supporting variables, derivable from the above, but useful for
     /// shrinking the size of the zero knowledge circuit. As well, they are computed during
     /// the course of the MPC, so it incurs no extra cost to include them in the witness

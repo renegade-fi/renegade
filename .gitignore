@@ -1,9 +1,13 @@
 **/target
 **/build
 **/no_commit
+**/.DS_store
+
 Cargo.lock
+
 .idea
 .vscode
+
 *.sw[a-p]
 secrets.env
 **/flamegraph.svg

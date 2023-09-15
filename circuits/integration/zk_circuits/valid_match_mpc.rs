@@ -127,6 +127,8 @@ async fn match_orders(
         base_amount: min_base_amount,
         quote_amount,
         direction: party0_order.side.into(),
+        protocol_base_fee_amount: 0,
+        protocol_quote_fee_amount: 0,
         max_minus_min_amount: cmp::max(party0_max_amount, party1_max_amount) - min_base_amount,
         min_amount_order_index: if party0_max_amount == min_base_amount {
             0
