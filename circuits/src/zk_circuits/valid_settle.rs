@@ -358,6 +358,8 @@ pub mod test_helpers {
             quote_amount: 5,
             base_amount: 1,
             direction: 0, /* party0 buys base */
+            protocol_quote_fee_amount: 0,
+            protocol_base_fee_amount: 0,
             max_minus_min_amount: 0,
             min_amount_order_index: 0,
         };

@@ -23,6 +23,9 @@ pub const MERKLE_HEIGHT: usize = 32;
 /// The number of historical roots the contract stores as being valid
 pub const MERKLE_ROOT_HISTORY_LENGTH: usize = 30;
 
+/// The percentage fee the protocol takes on each side of a match
+pub const PROTOCOL_FEE: f64 = 0.0003; // 3 basis points
+
 // ----------------------
 // | Starknet Constants |
 // ----------------------

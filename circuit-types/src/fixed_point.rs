@@ -405,9 +405,30 @@ impl<L: LinearCombinationLike> Sub<Variable> for FixedPointVar<L> {
     }
 }
 
+impl AuthenticatedFixedPoint {
+    /// Convert an integer value into its fixed point representation
+    pub fn from_integer(val: &AuthenticatedScalarResult) -> Self {
+        Self {
+            repr: *TWO_TO_M_SCALAR * val,
+        }
+    }
+}
+
 impl From<AuthenticatedScalarResult> for AuthenticatedFixedPoint {
     fn from(val: AuthenticatedScalarResult) -> Self {
         Self { repr: val }
+    }
+}
+
+impl Mul<&FixedPoint> for &AuthenticatedFixedPoint {
+    type Output = AuthenticatedFixedPoint;
+
+    fn mul(self, rhs: &FixedPoint) -> Self::Output {
+        // Multiply representations directly then reduce
+        let res_repr = self.repr.clone() * rhs.repr;
+        AuthenticatedFixedPoint {
+            repr: *TWO_TO_NEG_M * res_repr,
+        }
     }
 }
 
