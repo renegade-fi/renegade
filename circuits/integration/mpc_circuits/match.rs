@@ -122,6 +122,10 @@ async fn test_match_no_match(test_args: IntegrationTestArgs) -> Result<()> {
         let price1 = FixedPoint::from_integer(my_price).allocate(PARTY0, fabric);
         let price2 = FixedPoint::from_integer(my_price).allocate(PARTY1, fabric);
 
+        // Allocate relayer fee terms in the network
+        let relayer0_fee_term = FixedPoint::from_integer(0).allocate(PARTY0, fabric);
+        let relayer1_fee_term = FixedPoint::from_integer(0).allocate(PARTY1, fabric);
+
         // Compute matches
         let res = compute_match(
             &order1,
@@ -129,6 +133,8 @@ async fn test_match_no_match(test_args: IntegrationTestArgs) -> Result<()> {
             order1.amount.value(),
             order2.amount.value(),
             &price1, // Use the first party's price
+            &relayer0_fee_term,
+            &relayer1_fee_term,
             fabric,
         );
 
@@ -222,6 +228,8 @@ async fn test_match_valid_match(test_args: IntegrationTestArgs) -> Result<()> {
             direction: 0,
             protocol_quote_fee_amount: 59,
             protocol_base_fee_amount: 5,
+            party0_relayer_fee_amount: 0,
+            party1_relayer_fee_amount: 0,
             max_minus_min_amount: 10_000,
             min_amount_order_index: 0,
         },
@@ -233,6 +241,8 @@ async fn test_match_valid_match(test_args: IntegrationTestArgs) -> Result<()> {
             direction: 1,
             protocol_quote_fee_amount: 44,
             protocol_base_fee_amount: 4,
+            party0_relayer_fee_amount: 0,
+            party1_relayer_fee_amount: 0,
             max_minus_min_amount: 0,
             min_amount_order_index: 1,
         },
@@ -248,6 +258,9 @@ async fn test_match_valid_match(test_args: IntegrationTestArgs) -> Result<()> {
         let order1 = my_order.to_linkable().allocate(PARTY0, fabric);
         let order2 = my_order.to_linkable().allocate(PARTY1, fabric);
 
+        let relayer0_fee_term = FixedPoint::from_integer(0).allocate(PARTY0, fabric);
+        let relayer1_fee_term = FixedPoint::from_integer(0).allocate(PARTY1, fabric);
+
         // Compute matches
         let res = compute_match(
             &order1,
@@ -255,6 +268,8 @@ async fn test_match_valid_match(test_args: IntegrationTestArgs) -> Result<()> {
             order1.amount.value(),
             order2.amount.value(),
             &price1,
+            &relayer0_fee_term,
+            &relayer1_fee_term,
             fabric,
         )
         .open_and_authenticate()

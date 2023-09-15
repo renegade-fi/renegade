@@ -199,6 +199,13 @@ impl Mul<Scalar> for FixedPoint {
     }
 }
 
+impl Mul<FixedPoint> for FixedPoint {
+    type Output = FixedPoint;
+    fn mul(self, rhs: FixedPoint) -> Self::Output {
+        self.mul_fixed_point(rhs)
+    }
+}
+
 impl Neg for FixedPoint {
     type Output = FixedPoint;
     fn neg(self) -> Self::Output {

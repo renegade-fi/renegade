@@ -64,6 +64,8 @@ pub fn get_dummy_singleprover_witness() -> ValidMatchMpcWitness {
             direction: Scalar::one().to_linkable(),
             protocol_quote_fee_amount: Scalar::one().to_linkable(),
             protocol_base_fee_amount: Scalar::one().to_linkable(),
+            party0_relayer_fee_amount: Scalar::one().to_linkable(),
+            party1_relayer_fee_amount: Scalar::one().to_linkable(),
             max_minus_min_amount: Scalar::one().to_linkable(),
             min_amount_order_index: Scalar::one().to_linkable(),
         },
@@ -93,11 +95,14 @@ pub fn bench_match_mpc_with_delay(c: &mut Criterion, delay: Duration) {
                         let o2 = Order::default().to_linkable().allocate(PARTY1, &fabric);
                         let amount1 = Scalar::one().allocate(PARTY0, &fabric);
                         let amount2 = Scalar::one().allocate(PARTY1, &fabric);
+                        let fee_term1 = FixedPoint::from_integer(1).allocate(PARTY0, &fabric);
+                        let fee_term2 = FixedPoint::from_integer(1).allocate(PARTY1, &fabric);
                         let price = FixedPoint::from_integer(1).allocate(PARTY0, &fabric);
 
                         // Run the MPC
-                        let match_res =
-                            compute_match(&o1, &o2, &amount1, &amount2, &price, &fabric);
+                        let match_res = compute_match(
+                            &o1, &o2, &amount1, &amount2, &price, &fee_term1, &fee_term2, &fabric,
+                        );
 
                         // Open the result
                         let _open = match_res.open_and_authenticate().await;

@@ -23,12 +23,20 @@ use crate::mpc_gadgets::{comparators::min, fixed_point::FixedPointMpcGadget};
 /// So, if the match result is invalid, the orders don't overlap, etc; the result will
 /// never be opened, and the information never leaked. Therefore, we do not need to zero
 /// out any values in the circuit.
+///
+/// The fee terms are calculated outside of the circuit and passed in directly by the relayers.
+/// For a relayer that intends to sell the base asset, this term is directly the fee authorized by
+/// the user. For a relayer that intends to sell the quote asset, a unit change is implicitly applied
+/// to the fee term; which concretely means multiplying the authorized fee by the execution price (in quote/base)
+#[allow(clippy::too_many_arguments)]
 pub fn compute_match(
     order1: &AuthenticatedLinkableOrder,
     order2: &AuthenticatedLinkableOrder,
     amount1: &AuthenticatedScalarResult,
     amount2: &AuthenticatedScalarResult,
     price: &AuthenticatedFixedPoint,
+    relayer0_fee_term: &AuthenticatedFixedPoint,
+    relayer1_fee_term: &AuthenticatedFixedPoint,
     fabric: &MpcFabric,
 ) -> AuthenticatedMatchResult {
     // Compute the amount and execution price that will be swapped if the orders match
@@ -53,6 +61,13 @@ pub fn compute_match(
         fabric,
     );
 
+    // The fee terms are directly multiplied by the base amount, any unit conversion via execution price is
+    // assumed to be accounted for in the fee term and is constrained by the proof of `VALID MATCH MPC`
+    let party0_relayer_fee_amount =
+        compute_relayer_fee(&min_base_amount, relayer0_fee_term, fabric);
+    let party1_relayer_fee_amount =
+        compute_relayer_fee(&min_base_amount, relayer1_fee_term, fabric);
+
     // Zero out the orders if any of the initial checks failed
     AuthenticatedMatchResult {
         quote_mint: order1.quote_mint.value().clone(),
@@ -62,6 +77,8 @@ pub fn compute_match(
         direction: order1.side.value().clone(),
         protocol_quote_fee_amount,
         protocol_base_fee_amount,
+        party0_relayer_fee_amount,
+        party1_relayer_fee_amount,
         max_minus_min_amount,
         min_amount_order_index: min_index,
     }
@@ -78,6 +95,19 @@ pub fn compute_protocol_fee(
 
     // Round down to the nearest integral value
     FixedPointMpcGadget::as_integer(protocol_fee_amount, fabric)
+}
+
+/// Compute the relayer fee for a given swap amount
+pub fn compute_relayer_fee(
+    base_swap_amount: &AuthenticatedScalarResult,
+    relayer_fee: &AuthenticatedFixedPoint,
+    fabric: &MpcFabric,
+) -> AuthenticatedScalarResult {
+    // Compute the relayer fee
+    let relayer_fee_amount = relayer_fee * base_swap_amount;
+
+    // Round down to the nearest integral value
+    FixedPointMpcGadget::as_integer(relayer_fee_amount, fabric)
 }
 
 // ---------
@@ -126,6 +156,10 @@ mod tests {
         };
         /// A dummy execution price
         static ref PRICE: FixedPoint = FixedPoint::from_integer(10);
+        /// A dummy relayer fee; 20 bps
+        static ref RELAYER_FEE0: FixedPoint = FixedPoint::from_f64_round_down(0.002);
+        /// A second dummy relayer fee; 10 bps
+        static ref RELAYER_FEE1: FixedPoint = FixedPoint::from_f64_round_down(0.001);
     }
 
     /// Execute a match on the dummy values above and return the match result
@@ -138,9 +172,25 @@ mod tests {
             let amount1 = o1.amount.value().clone();
             let amount2 = o2.amount.value().clone();
 
+            // Relayer 0 managed the buy side order, which buys the base by selling the quote asset; therefore
+            // it must change units of its fee term via multiplication by the execution price
+            let relayer_fee0 = *RELAYER_FEE0;
+            let relayer0_fee_term = (*PRICE * relayer_fee0).allocate(PARTY0, &fabric);
+
+            let relayer1_fee_term = RELAYER_FEE1.clone().allocate(PARTY1, &fabric);
+
             let price = PRICE.clone().allocate(PARTY0, &fabric);
 
-            let match_res = compute_match(&o1, &o2, &amount1, &amount2, &price, &fabric);
+            let match_res = compute_match(
+                &o1,
+                &o2,
+                &amount1,
+                &amount2,
+                &price,
+                &relayer0_fee_term,
+                &relayer1_fee_term,
+                &fabric,
+            );
             match_res.open().await.unwrap()
         })
         .await;
@@ -186,5 +236,28 @@ mod tests {
 
         assert_eq!(expected_quote_fee, res.protocol_quote_fee_amount);
         assert_eq!(expected_base_fee, res.protocol_base_fee_amount);
+    }
+
+    /// Tests that the match computation correctly computes the relayer fee
+    #[tokio::test]
+    async fn test_match_relayer_fee() {
+        // Get the match result
+        let res = execute_match_on_orders().await;
+
+        // Check the relayer fee amount
+        let expected_relayer0_fee = *RELAYER_FEE0 * Scalar::from(res.base_amount) * *PRICE;
+        let expected_relayer0_fee = expected_relayer0_fee.floor();
+
+        let expected_relayer1_fee = *RELAYER_FEE1 * Scalar::from(res.base_amount);
+        let expected_relayer1_fee = expected_relayer1_fee.floor();
+
+        assert_eq!(
+            scalar_to_u64(&expected_relayer0_fee),
+            res.party0_relayer_fee_amount
+        );
+        assert_eq!(
+            scalar_to_u64(&expected_relayer1_fee),
+            res.party1_relayer_fee_amount
+        );
     }
 }

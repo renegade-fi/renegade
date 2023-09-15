@@ -49,6 +49,8 @@ lazy_static! {
     static ref DUMMY_BUY_SIDE_WORST_PRICE: FixedPoint = FixedPoint::from_integer(15);
     /// The default worse case sell side price
     static ref DUMMY_SELL_SIDE_WORST_PRICE: FixedPoint = FixedPoint::from_integer(5);
+    /// The dummy relayer fee charged
+    static ref DUMMY_RELAYER_FEE: FixedPoint = FixedPoint::from_f64_round_down(0.002); // 20 bps
 }
 
 /// Construct a test order based on party ID
@@ -121,6 +123,16 @@ async fn match_orders(
     let min_base_amount = cmp::min(party0_max_amount, party1_max_amount);
     let quote_amount = scalar_to_u64(&(price * Scalar::from(min_base_amount)).floor());
 
+    // Create the fee terms, that is the fee take multiplied by the volume sold by each party
+    let my_fee_term = if my_order.side.is_buy() {
+        FixedPoint::from_integer(quote_amount) * *DUMMY_RELAYER_FEE
+    } else {
+        FixedPoint::from_integer(min_base_amount) * *DUMMY_RELAYER_FEE
+    }
+    .floor();
+    let party0_relayer_fee = my_fee_term.share_public(PARTY0, fabric.clone()).await;
+    let party1_relayer_fee = my_fee_term.share_public(PARTY1, fabric.clone()).await;
+
     let match_res = MatchResult {
         base_mint: party0_order.base_mint,
         quote_mint: party0_order.quote_mint,
@@ -129,6 +141,8 @@ async fn match_orders(
         direction: party0_order.side.into(),
         protocol_base_fee_amount: 0,
         protocol_quote_fee_amount: 0,
+        party0_relayer_fee_amount: scalar_to_u64(&party0_relayer_fee),
+        party1_relayer_fee_amount: scalar_to_u64(&party1_relayer_fee),
         max_minus_min_amount: cmp::max(party0_max_amount, party1_max_amount) - min_base_amount,
         min_amount_order_index: if party0_max_amount == min_base_amount {
             0

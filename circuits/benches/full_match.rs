@@ -40,14 +40,25 @@ async fn run_match_with_delay(delay: Duration) -> Duration {
             let order1 = Order::default().to_linkable().allocate(PARTY0, &fabric);
             let balance1 = Balance::default().to_linkable().allocate(PARTY0, &fabric);
             let amount1 = Scalar::one().allocate(PARTY0, &fabric);
+            let relayer0_fee_term = FixedPoint::from_integer(1).allocate(PARTY0, &fabric);
 
             let order2 = Order::default().to_linkable().allocate(PARTY1, &fabric);
             let balance2 = Balance::default().to_linkable().allocate(PARTY1, &fabric);
             let amount2 = Scalar::one().allocate(PARTY1, &fabric);
             let price = FixedPoint::from_integer(1).allocate(PARTY0, &fabric);
+            let relayer1_fee_term = FixedPoint::from_integer(1).allocate(PARTY1, &fabric);
 
             // Run the MPC to generate a witness for the proof
-            let match_res = compute_match(&order1, &order2, &amount1, &amount2, &price, &fabric);
+            let match_res = compute_match(
+                &order1,
+                &order2,
+                &amount1,
+                &amount2,
+                &price,
+                &relayer0_fee_term,
+                &relayer1_fee_term,
+                &fabric,
+            );
 
             // Generate a proof of `VALID MATCH MPC`
             let witness = AuthenticatedValidMatchMpcWitness {

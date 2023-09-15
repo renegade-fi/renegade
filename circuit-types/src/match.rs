@@ -56,6 +56,11 @@ pub struct MatchResult {
     /// The amount of the base token paid to the protocol in fee
     pub protocol_base_fee_amount: u64,
 
+    /// The amount that the first party owes to their relayer in fee
+    pub party0_relayer_fee_amount: u64,
+    /// The amount that the second party owes to their relayer in fee
+    pub party1_relayer_fee_amount: u64,
+
     /// The following are supporting variables, derivable from the above, but useful for
     /// shrinking the size of the zero knowledge circuit. As well, they are computed during
     /// the course of the MPC, so it incurs no extra cost to include them in the witness
