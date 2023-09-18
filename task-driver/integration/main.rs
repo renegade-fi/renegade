@@ -21,11 +21,12 @@ use starknet_client::client::{StarknetClient, StarknetClientConfig};
 use state::mock::StateMockBuilder;
 use state::RelayerState;
 use task_driver::driver::TaskDriver;
-use test_helpers::{contracts::parse_addr_from_deployments_file, integration_test_main};
+use test_helpers::integration_test_main;
 use tokio::sync::mpsc::{
     unbounded_channel, UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender,
 };
 use tracing::log::LevelFilter;
+use util::starknet::parse_addr_from_deployments_file;
 
 /// The hostport that the test expects a local devnet node to be running on
 ///

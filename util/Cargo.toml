@@ -14,4 +14,6 @@ tokio = { workspace = true }
 # === Misc === #
 chrono = "0.4"
 env_logger = "0.9"
+eyre = { workspace = true }
+json = "0.12"
 tracing = { version = "0.1", features = ["log"] }
