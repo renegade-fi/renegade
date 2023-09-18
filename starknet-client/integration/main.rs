@@ -15,9 +15,9 @@ use common::types::chain_id::ChainId;
 use eyre::Result;
 use mpc_stark::algebra::scalar::Scalar;
 use starknet_client::client::{StarknetClient, StarknetClientConfig};
-use test_helpers::{contracts::parse_addr_from_deployments_file, integration_test_main};
+use test_helpers::integration_test_main;
 use tracing::log::LevelFilter;
-use util::runtime::block_on_result;
+use util::{runtime::block_on_result, starknet::parse_addr_from_deployments_file};
 
 use crate::helpers::deploy_new_wallet;
 

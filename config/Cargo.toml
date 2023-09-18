@@ -9,6 +9,7 @@ libp2p = { workspace = true }
 
 # === Workspace Dependencies === #
 common = { path = "../common" }
+util = { path = "../util" }
 
 # === Misc Dependencies === #
 base64 = "0.13"

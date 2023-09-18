@@ -1,7 +1,5 @@
 //! Utils related to declaring, deploying, and interacting with smart contracts in
 //! the context of an integration test
-//!
-//! TODO: This should all be productionized and moved to the `starknet-client` crate
 
 use constants::MERKLE_HEIGHT;
 use eyre::{eyre, Result};
@@ -16,7 +14,6 @@ use starknet::core::types::{
 use starknet::core::utils::get_selector_from_name;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
-use std::io::Read;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{
@@ -54,11 +51,6 @@ pub const CASM_FILE_EXTENSION: &str = "casm.json";
 /// The name of the initialize function
 pub const INITIALIZE_FN_NAME: &str = "initialize";
 
-/// The deployments key in the `deployments.json` file
-pub const DEPLOYMENTS_KEY: &str = "deployments";
-/// The darkpool key in the `deployments.json` file
-pub const DARKPOOL_KEY: &str = "darkpool";
-
 /// Cairo string for "STARKNET_CONTRACT_ADDRESS"
 const PREFIX_CONTRACT_ADDRESS: FieldElement = FieldElement::from_mont([
     3829237882463328880,
@@ -81,18 +73,6 @@ pub type StarknetTestAcct = SingleOwnerAccount<JsonRpcClient<HttpTransport>, Loc
 // -----------
 // | Helpers |
 // -----------
-
-/// Parse a `deployments.json` file to get the address of the darkpool contract
-pub fn parse_addr_from_deployments_file(file_path: String) -> Result<String> {
-    let mut file_contents = String::new();
-    File::open(file_path)?.read_to_string(&mut file_contents)?;
-
-    let parsed_json = json::parse(&file_contents)?;
-    parsed_json[DEPLOYMENTS_KEY][DARKPOOL_KEY]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| eyre!("Could not parse darkpool address from deployments file"))
-}
 
 /// Setup the darkpool contract and return its address
 pub async fn deploy_darkpool(

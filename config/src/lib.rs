@@ -16,6 +16,7 @@ use std::{
     net::{IpAddr, SocketAddr},
 };
 use toml::{value::Map, Value};
+use util::starknet::parse_addr_from_deployments_file;
 
 /// The default version of the node
 const DEFAULT_VERSION: &str = "0.1.0";
@@ -50,6 +51,9 @@ struct Cli {
     /// The address of the darkpool contract, defaults to the Goerli deployment
     #[clap(long, value_parser, default_value = "0x06aadd0758f809d4dc5c5686bcde6dc3e51d211aaf7eca8e902dc76e1217c7ab")]
     pub contract_address: String,
+    /// The path to the file containing deployments info for the darkpool contract
+    #[clap(long, value_parser)]
+    pub deployments_file: Option<String>,
 
     // ----------------------------
     // | Networking Configuration |
@@ -325,7 +329,7 @@ fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, Strin
         parsed_bootstrap_addrs.push((WrappedPeerId(peer_id), parsed_addr));
     }
 
-    let config = RelayerConfig {
+    let mut config = RelayerConfig {
         version: cli_args
             .version
             .unwrap_or_else(|| String::from(DEFAULT_VERSION)),
@@ -353,6 +357,7 @@ fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, Strin
         eth_websocket_addr: cli_args.eth_websocket_addr,
         debug: cli_args.debug,
     };
+    set_contract_from_file(&mut config, cli_args.deployments_file)?;
 
     Ok(config)
 }
@@ -441,6 +446,18 @@ fn toml_value_to_string(val: &Value) -> Result<String, String> {
             return Err("unsupported value".to_string());
         }
     })
+}
+
+/// Parse the contract address from a deployments file, overriding the default
+/// value in the config
+fn set_contract_from_file(config: &mut RelayerConfig, file: Option<String>) -> Result<(), String> {
+    // Do not override if the file is not specified
+    if let Some(path) = file {
+        let darkpool_addr = parse_addr_from_deployments_file(path).map_err(|e| e.to_string())?;
+        config.contract_address = darkpool_addr;
+    }
+
+    Ok(())
 }
 
 /// Runtime validation of the keypair passed into the relayer via config
