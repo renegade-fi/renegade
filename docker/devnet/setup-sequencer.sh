@@ -23,6 +23,7 @@ cargo run -- \
     --dump-deployments \
     --artifacts-path /artifacts \
     -c darkpool \
+    -c usdc \
     --network localhost \
     --address 0x3ee9e18edc71a6df30ac3aca2e0b02a198fbce19b7480a63a0d71cbd76652e0 \
     --private-key 0x300001800000000300000180000000000030000000000003006001800006600
