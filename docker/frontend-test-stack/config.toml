@@ -1,0 +1,20 @@
+p2p-port = 8000
+http-port = 3000
+websocket-port = 4000
+version = 0
+chain-id = "goerli"
+public-ip = "127.0.0.1:8000"
+
+deployments-file = "/deployments/deployments.json"
+
+# External commumnication config
+disable-binance = true
+starknet-gateway = "http://sequencer:5050/rpc"
+
+# The cluster starknet account and signing key for a pre-deployed account
+starknet-account-addr = "0x3ee9e18edc71a6df30ac3aca2e0b02a198fbce19b7480a63a0d71cbd76652e0"
+starknet-account-pkey = "0x300001800000000300000180000000000030000000000003006001800006600"
+
+# A base64 encoded dummy keypair
+cluster-public-key = "ksPP4AJGbB1bUj5acbZ8Ngzy7mCSM3xvE9FDwb5zH0c="
+cluster-private-key = "knbytV3abagdJsXKqkL5dkXWaMxho3f8O+85LMr/P+s="

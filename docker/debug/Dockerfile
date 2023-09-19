@@ -18,7 +18,7 @@ RUN apt-get update && \
 COPY Cargo.toml Cargo.lock ./
 COPY ./core/Cargo.toml ./core/Cargo.toml
 COPY ./circuits ./circuits
-COPY ./crypto ./crypto
+COPY ./renegade-crypto ./renegade-crypto
 COPY ./circuit-macros ./circuit-macros
 COPY ./integration-helpers ./integration-helpers
 

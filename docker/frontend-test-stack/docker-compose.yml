@@ -1,12 +1,12 @@
 services:
   contracts:
     build:
-      context: ../docker/contracts
+      context: ../contracts
     image: renegade-contracts:latest
     entrypoint: sleep infinity
   sequencer:
     build:
-      context: ../docker/devnet
+      context: ../devnet
     volumes:
       - deployments:/deployments
     ports:
@@ -19,19 +19,15 @@ services:
     depends_on:
       - contracts
   relayer:
-    image: task-driver-integration-test:latest
     build:
-      context: ..
-      dockerfile: task-driver/Dockerfile
+      context: ../..
+      dockerfile: ./docker/frontend-test-stack/Dockerfile
+    ports:
+      - "3000:3000"
+      - "4000:4000"
+      - "8000:8000"
     volumes:
       - deployments:/deployments
-    ports:
-      - "8000:8000"
-    command: >
-      cargo test --test integration --features "integration" -- 
-        --deployments-path /deployments/deployments.json
-        --verbose 
-    tty: true
     depends_on:
       sequencer:
         condition: service_healthy
