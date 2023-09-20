@@ -2,7 +2,7 @@ p2p-port = 8000
 http-port = 3000
 websocket-port = 4000
 version = 0
-chain-id = "goerli"
+chain-id = "katana"
 public-ip = "127.0.0.1:8000"
 
 deployments-file = "/deployments/deployments.json"
