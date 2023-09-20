@@ -1,0 +1,11 @@
+[package]
+name = "state_proto"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bytes = "1.5"
+prost = "0.12"
+
+[build-dependencies]
+prost-build = "0.12"
