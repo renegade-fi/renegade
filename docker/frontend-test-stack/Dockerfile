@@ -29,7 +29,7 @@ RUN find . -path '*/src/*' -name 'lib.rs' -type f -exec sh -c ': > {}' \;
 
 # Build with a dummy main entrypoint, so that we can cache external dependencies
 RUN echo "fn main() {}" >> core/src/main.rs
-RUN cargo build
+RUN cargo build --release
 
 # Copy the real sources into the build directory and rebuild without the dummy entrypoints
 COPY --from=sources /build .
@@ -39,7 +39,7 @@ ENV RUSTFLAGS=-Awarnings
 ENV RUST_BACKTRACE=1
 
 # Build the target
-RUN cargo build
+RUN cargo build --release
 
 # --- EXECUTABLE STAGE --- #
 FROM debian:latest
