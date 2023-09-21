@@ -55,20 +55,22 @@ impl From<ProtoScalar> for Scalar {
 
 #[cfg(test)]
 mod tests {
-    use super::{AddOrder, AddPeers, NetworkOrder, PeerInfo};
+    use crate::{AddOrderBuilder, AddPeersBuilder, NetworkOrderBuilder, PeerInfoBuilder};
+
+    use super::{AddOrder, AddPeers};
     use prost::Message;
 
     /// Tests the add new peer message
     #[test]
     fn test_new_peer_serialization() {
-        let msg = AddPeers {
-            peers: vec![PeerInfo {
-                peer_id: Some("1234".to_string().into()),
-                addr: "127.0.0.1:5000".to_string(),
-                cluster_id: Some("1234".to_string().into()),
-                cluster_auth_sig: vec![],
-            }],
-        };
+        let new_peer = PeerInfoBuilder::default()
+            .peer_id("1234".to_string().into())
+            .build()
+            .unwrap();
+        let msg = AddPeersBuilder::default()
+            .peers(vec![new_peer])
+            .build()
+            .unwrap();
 
         let bytes = msg.encode_to_vec();
         let recovered: AddPeers = AddPeers::decode(bytes.as_slice()).unwrap();
@@ -79,12 +81,11 @@ mod tests {
     /// Tests the add new order message
     #[test]
     fn test_new_order_serialization() {
-        let msg = AddOrder {
-            order: Some(NetworkOrder {
-                id: Some("1234".to_string().into()),
-                ..Default::default()
-            }),
-        };
+        let order = NetworkOrderBuilder::default()
+            .id("1234".to_string().into())
+            .build()
+            .unwrap();
+        let msg = AddOrderBuilder::default().order(order).build().unwrap();
 
         let bytes = msg.encode_to_vec();
         let recovered: AddOrder = AddOrder::decode(bytes.as_slice()).unwrap();
