@@ -4,8 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# === Proto Dependencies === #
 bytes = "1.5"
 prost = "0.12"
+
+# === Workspace Dependencies === #
+common = { path = "../../common" }
+
+# === Misc Dependencies === #
+eyre = { workspace = true }
+mpc-stark = "0.2"
+uuid = "1.1.2"
 
 [build-dependencies]
 prost-build = "0.12"
