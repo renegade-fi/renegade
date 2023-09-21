@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 # === Proto Dependencies === #
 bytes = "1.5"
+derive_builder = "0.12"
 prost = "0.12"
 
 # === Workspace Dependencies === #
