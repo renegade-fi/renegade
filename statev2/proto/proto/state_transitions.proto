@@ -1,15 +1,8 @@
 syntax = "proto3";
-package state_transitions;
+package state;
 
+import "peers.proto";
+import "common.proto";
+import "orders.proto";
+import "wallet.proto";
 import "google/protobuf/empty.proto";
-
-
-/// Add a new cluter peer to the new peer index
-message NewPeer {
-    /// The ID of the peer in the libp2p PeerId format
-    string peer_id = 1;
-}
-
-service ClusterStateTransitions {
-    rpc AddPeer(NewPeer) returns (google.protobuf.Empty);
-}
