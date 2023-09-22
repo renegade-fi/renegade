@@ -236,7 +236,7 @@ impl<'db> DbTxn<'db, RW> {
         // Delete the value
         let table = self.open_table(table_name)?;
         self.txn
-            .del(&table, &key_bytes, None /* data */)
+            .del(&table, key_bytes, None /* data */)
             .map_err(StorageError::TxOp)
     }
 

@@ -16,6 +16,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
+use util::networking::is_dialable_multiaddr;
 
 /// The topic prefix for the cluster management pubsub topic
 ///
@@ -120,6 +121,11 @@ impl PeerInfo {
     /// Get the address stored in the PeerInfo
     pub fn get_addr(&self) -> Multiaddr {
         self.addr.clone()
+    }
+
+    /// Returns whether or not the peer's address is dialable
+    pub fn is_dialable(&self, allow_local: bool) -> bool {
+        is_dialable_multiaddr(&self.addr, allow_local)
     }
 
     /// Get the ID of the cluster this peer belongs to

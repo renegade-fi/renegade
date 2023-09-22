@@ -1,7 +1,15 @@
+use std::{str::FromStr, sync::atomic::AtomicU64};
+
+use common::types::gossip::{
+    ClusterId as RuntimeClusterId, PeerInfo as RuntimePeerInfo, WrappedPeerId,
+};
+use error::StateProtoError;
 use mpc_stark::algebra::scalar::Scalar;
+use multiaddr::Multiaddr;
 use uuid::{Error as UuidError, Uuid};
 
 pub use protos::*;
+pub mod error;
 
 #[deny(missing_docs)]
 #[deny(clippy::missing_docs_in_private_items)]
@@ -50,6 +58,50 @@ impl TryFrom<ProtoUuid> for Uuid {
 impl From<ProtoScalar> for Scalar {
     fn from(scalar: ProtoScalar) -> Self {
         Scalar::from_be_bytes_mod_order(&scalar.value)
+    }
+}
+
+/// ClusterId
+impl From<ClusterId> for RuntimeClusterId {
+    fn from(value: ClusterId) -> Self {
+        RuntimeClusterId::from_str(&value.id).expect("infallible")
+    }
+}
+
+/// PeerInfo
+impl TryFrom<PeerId> for WrappedPeerId {
+    type Error = StateProtoError;
+    fn try_from(value: PeerId) -> Result<Self, Self::Error> {
+        WrappedPeerId::from_str(&value.id)
+            .map_err(|e| StateProtoError::ParseError(format!("PeerId: {}", e)))
+    }
+}
+
+impl TryFrom<PeerInfo> for RuntimePeerInfo {
+    type Error = StateProtoError;
+    fn try_from(info: PeerInfo) -> Result<Self, Self::Error> {
+        // Parse the individual fields from the proto
+        let peer_id = info.peer_id.ok_or_else(|| StateProtoError::MissingField {
+            field_name: "peer_id".to_string(),
+        })?;
+
+        let addr = Multiaddr::from_str(&info.addr)
+            .map_err(|e| StateProtoError::ParseError(format!("Multiaddr: {e}")))?;
+
+        let cluster_id = info
+            .cluster_id
+            .ok_or_else(|| StateProtoError::MissingField {
+                field_name: "cluster_id".to_string(),
+            })?;
+
+        // Collect into the runtime type
+        Ok(RuntimePeerInfo {
+            peer_id: WrappedPeerId::try_from(peer_id)?,
+            addr,
+            last_heartbeat: AtomicU64::new(0),
+            cluster_id: RuntimeClusterId::from(cluster_id),
+            cluster_auth_signature: info.cluster_auth_sig,
+        })
     }
 }
 
