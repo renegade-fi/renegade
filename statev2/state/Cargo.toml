@@ -19,6 +19,7 @@ tokio = { workspace = true }
 
 # === Workspace Dependencies === #
 common = { path = "../../common" }
+constants = { path = "../../constants" }
 external-api = { path = "../../external-api" }
 job-types = { path = "../../workers/job-types" }
 state-proto = { path = "../proto" }
@@ -26,6 +27,7 @@ system-bus = { path = "../../system-bus" }
 
 # === Misc === #
 itertools = "0.10"
+mpc-stark = "0.2"
 slog = "2.2"
 tracing = { workspace = true, features = ["log"] }
 tracing-slog = "0.2"
@@ -35,3 +37,4 @@ crossbeam = "0.8"
 multiaddr = "0.17"
 tempfile = "3.8"
 rand = { workspace = true }
+uuid = "1.4"

@@ -142,6 +142,17 @@ impl NetworkOrder {
     }
 }
 
+impl PartialEq for NetworkOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.cluster == other.cluster
+            && self.public_share_nullifier == other.public_share_nullifier
+            && self.state == other.state
+    }
+}
+
+impl Eq for NetworkOrder {}
+
 /// Display implementation that ignores enum struct values
 impl Display for NetworkOrderState {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
@@ -151,5 +162,44 @@ impl Display for NetworkOrderState {
             NetworkOrderState::Matched { .. } => f.write_str("Matched"),
             NetworkOrderState::Cancelled => f.write_str("Cancelled"),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::str::FromStr;
+
+    use mpc_stark::algebra::scalar::Scalar;
+    use rand::thread_rng;
+    use uuid::Uuid;
+
+    use crate::types::gossip::ClusterId;
+
+    use super::{NetworkOrder, NetworkOrderState};
+
+    /// Checks the behavior of the equals operation on a `NetworkOrder`
+    ///
+    /// This test is largely meant to force the equality operation to include all fields
+    /// other than those explicitly ignored. When new fields are added, this test will need
+    /// to be updated, indicating that the `PartialEq` implementation should also be updated
+    #[test]
+    fn test_network_order_eq() {
+        let mut rng = thread_rng();
+        let order1 = NetworkOrder {
+            id: Uuid::new_v4(),
+            public_share_nullifier: Scalar::random(&mut rng),
+            local: true,
+            cluster: ClusterId::from_str("cluster").unwrap(),
+            state: NetworkOrderState::Cancelled,
+            validity_proofs: None,
+            validity_proof_witnesses: None,
+        };
+        let mut order2 = order1.clone();
+
+        assert_eq!(order1, order2);
+
+        // Change an arbitrary field
+        order2.id = Uuid::new_v4();
+        assert_ne!(order1, order2);
     }
 }

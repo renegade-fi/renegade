@@ -3,11 +3,17 @@
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
 #![deny(unsafe_code)]
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
 
 use std::{str::FromStr, sync::atomic::AtomicU64};
 
-use common::types::gossip::{
-    ClusterId as RuntimeClusterId, PeerInfo as RuntimePeerInfo, WrappedPeerId,
+use common::types::{
+    gossip::{ClusterId as RuntimeClusterId, PeerInfo as RuntimePeerInfo, WrappedPeerId},
+    network_order::{
+        NetworkOrder as RuntimeNetworkOrder, NetworkOrderState as RuntimeNetworkOrderState,
+    },
+    proof_bundles::OrderValidityProofBundle,
 };
 use error::StateProtoError;
 use mpc_stark::algebra::scalar::Scalar;
@@ -56,10 +62,26 @@ impl TryFrom<ProtoUuid> for Uuid {
     }
 }
 
+impl From<Uuid> for ProtoUuid {
+    fn from(value: Uuid) -> Self {
+        Self {
+            value: value.to_string(),
+        }
+    }
+}
+
 /// Scalar
 impl From<ProtoScalar> for Scalar {
     fn from(scalar: ProtoScalar) -> Self {
         Scalar::from_be_bytes_mod_order(&scalar.value)
+    }
+}
+
+impl From<Scalar> for ProtoScalar {
+    fn from(value: Scalar) -> Self {
+        Self {
+            value: value.to_bytes_be(),
+        }
     }
 }
 
@@ -103,6 +125,69 @@ impl TryFrom<PeerInfo> for RuntimePeerInfo {
             last_heartbeat: AtomicU64::new(0),
             cluster_id: RuntimeClusterId::from(cluster_id),
             cluster_auth_signature: info.cluster_auth_sig,
+        })
+    }
+}
+
+// NetworkOrder
+impl From<NetworkOrderState> for RuntimeNetworkOrderState {
+    fn from(value: NetworkOrderState) -> Self {
+        match value {
+            NetworkOrderState::Received => RuntimeNetworkOrderState::Received,
+            NetworkOrderState::Verified => RuntimeNetworkOrderState::Verified,
+            NetworkOrderState::Cancelled => RuntimeNetworkOrderState::Cancelled,
+        }
+    }
+}
+
+impl TryFrom<NetworkOrder> for RuntimeNetworkOrder {
+    type Error = StateProtoError;
+    fn try_from(order: NetworkOrder) -> Result<Self, Self::Error> {
+        // Parse the individual fields
+        let id: Uuid = order
+            .id
+            .clone()
+            .ok_or_else(|| StateProtoError::MissingField {
+                field_name: "id".to_string(),
+            })
+            .and_then(|id| {
+                Uuid::try_from(id).map_err(|e| StateProtoError::ParseError(e.to_string()))
+            })?;
+
+        let nullifier: Scalar = order
+            .nullifier
+            .clone()
+            .ok_or_else(|| StateProtoError::MissingField {
+                field_name: "nullifier".to_string(),
+            })?
+            .into();
+
+        let cluster_id = order
+            .cluster
+            .clone()
+            .ok_or_else(|| StateProtoError::MissingField {
+                field_name: "cluster_id".to_string(),
+            })?;
+
+        let state = order.state();
+
+        let proof = order.proof;
+        let validity_proofs: Option<OrderValidityProofBundle> = if proof.is_empty() {
+            None
+        } else {
+            Some(serde_json::from_slice(&proof).map_err(|e| {
+                StateProtoError::ParseError(format!("OrderValidityProofBundle: {}", e))
+            })?)
+        };
+
+        Ok(Self {
+            id,
+            public_share_nullifier: nullifier,
+            cluster: RuntimeClusterId::from(cluster_id),
+            state: state.into(),
+            local: false,
+            validity_proofs,
+            validity_proof_witnesses: None,
         })
     }
 }
