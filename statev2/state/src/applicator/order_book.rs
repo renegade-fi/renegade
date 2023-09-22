@@ -44,8 +44,7 @@ const ERR_ORDER_MISSING: &str = "Order missing from message";
 // | Orderbook Implementation |
 // ----------------------------
 
-/// A type that represents the priority for an order, including its cluster
-/// priority
+/// A type that represents the match priority for an order, including its cluster priority
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OrderPriority {
     /// The priority of the cluster that the order is managed by
@@ -118,12 +117,26 @@ impl StateApplicator {
             .new_write_tx()
             .map_err(StateApplicatorError::Storage)?;
         Self::attach_validity_proof_with_tx(&id, bundle, &tx)?;
-        tx.commit().map_err(StateApplicatorError::Storage)
+        let order_info = Self::read_order_info(&id, &tx)?;
+        tx.commit().map_err(StateApplicatorError::Storage)?;
+
+        self.system_bus().publish(
+            ORDER_STATE_CHANGE_TOPIC.to_string(),
+            SystemBusMessage::OrderStateChange { order: order_info },
+        );
+        Ok(())
     }
 
     /// Nullify orders indexed by a given wallet share nullifier
     pub fn nullify_orders(&self, msg: NullifyOrdersMsg) -> Result<()> {
-        unimplemented!()
+        let nullifier: Scalar = msg.nullifier.unwrap_or_default().into();
+        let tx = self
+            .db()
+            .new_write_tx()
+            .map_err(StateApplicatorError::Storage)?;
+
+        self.nullify_orders_with_tx(nullifier, &tx)?;
+        tx.commit().map_err(StateApplicatorError::Storage)
     }
 
     // ------------------------
@@ -142,6 +155,8 @@ impl StateApplicator {
     }
 
     /// Update the validity proof for an order
+    ///
+    /// It is assumed that the proof has been verified before this method is called
     fn attach_validity_proof_with_tx(
         order_id: &OrderIdentifier,
         proof: OrderValidityProofBundle,
@@ -162,6 +177,22 @@ impl StateApplicator {
         order_info.public_share_nullifier = proof.reblind_proof.statement.original_shares_nullifier;
         order_info.validity_proofs = Some(proof);
         Self::write_order_info(&order_info, tx)
+    }
+
+    /// Cancel an order
+    fn cancel_order_with_tx(&self, order_id: &OrderIdentifier, tx: &DbTxn<'_, RW>) -> Result<()> {
+        let mut order = Self::read_order_info(order_id, tx)?;
+        order.state = NetworkOrderState::Cancelled;
+        order.validity_proof_witnesses = None;
+        order.validity_proofs = None;
+
+        Self::write_order_info(&order, tx)?;
+        self.system_bus().publish(
+            ORDER_STATE_CHANGE_TOPIC.to_string(),
+            SystemBusMessage::OrderStateChange { order },
+        );
+
+        Ok(())
     }
 
     // ----------------------
@@ -218,6 +249,16 @@ impl StateApplicator {
     // -------------------------
     // | Nullifier Set Helpers |
     // -------------------------
+
+    /// Cancel all orders on a given nullifier
+    fn nullify_orders_with_tx(&self, nullifier: Scalar, tx: &DbTxn<'_, RW>) -> Result<()> {
+        let set = Self::read_nullifier_set(nullifier, tx)?;
+        for order_id in set.into_iter() {
+            self.cancel_order_with_tx(&order_id, tx)?;
+        }
+
+        Ok(())
+    }
 
     /// Update the nullifier an order is indexed by
     fn update_order_nullifier(
@@ -303,7 +344,7 @@ mod test {
     use rand::thread_rng;
     use state_proto::{
         AddOrder, AddOrderValidityProof, AddOrderValidityProofBuilder, NetworkOrderBuilder,
-        NetworkOrderState,
+        NetworkOrderState, NullifyOrdersBuilder,
     };
     use uuid::Uuid;
 
@@ -403,5 +444,47 @@ mod test {
 
         assert_eq!(tx.state, NetworkOrderState::Verified.into());
         assert!(tx.validity_proofs.is_some());
+    }
+
+    /// Test nullifying orders
+    #[test]
+    fn test_nullify_orders() {
+        let applicator = mock_applicator();
+
+        // Add two orders to the book
+        let order_msg1 = add_order_msg();
+        let order_msg2 = add_order_msg();
+
+        applicator.new_order(order_msg1.clone()).unwrap();
+        applicator.new_order(order_msg2.clone()).unwrap();
+
+        // Nullify the first order
+        let first_order: NetworkOrder = order_msg1.order.unwrap().try_into().unwrap();
+        let msg = NullifyOrdersBuilder::default()
+            .nullifier(first_order.public_share_nullifier.into())
+            .build()
+            .unwrap();
+        applicator.nullify_orders(msg).unwrap();
+
+        // Verify that the first order is cancelled
+        let db = applicator.db();
+        let order1: NetworkOrder = db
+            .read(ORDERS_TABLE, &StateApplicator::order_key(&first_order.id))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(order1.state, NetworkOrderState::Cancelled.into());
+
+        // Verify that the second order is unmodified
+        let expected_order2: NetworkOrder = order_msg2.order.unwrap().try_into().unwrap();
+        let order2: NetworkOrder = db
+            .read(
+                ORDERS_TABLE,
+                &StateApplicator::order_key(&expected_order2.id),
+            )
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(order2, expected_order2);
     }
 }
