@@ -76,3 +76,25 @@ impl StateApplicator {
         &self.config.system_bus
     }
 }
+
+#[cfg(test)]
+mod test_helpers {
+    use std::sync::Arc;
+
+    use system_bus::SystemBus;
+
+    use crate::test_helpers::mock_db;
+
+    use super::{StateApplicator, StateApplicatorConfig};
+
+    /// Create a mock `StateApplicator`
+    pub(crate) fn mock_applicator() -> StateApplicator {
+        let config = StateApplicatorConfig {
+            allow_local: true,
+            db: Arc::new(mock_db()),
+            system_bus: SystemBus::new(),
+        };
+
+        StateApplicator::new(config).unwrap()
+    }
+}

@@ -6,7 +6,10 @@ use std::{error::Error, fmt::Display};
 #[derive(Clone, Debug)]
 pub enum StateProtoError {
     /// A field is missing from a proto
-    MissingField { field_name: String },
+    MissingField {
+        /// The missing field
+        field_name: String,
+    },
     /// An error parsing a proto message into a runtime type
     ParseError(String),
 }

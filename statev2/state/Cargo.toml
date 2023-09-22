@@ -32,5 +32,6 @@ tracing-slog = "0.2"
 
 [dev-dependencies]
 crossbeam = "0.8"
+multiaddr = "0.17"
 tempfile = "3.8"
 rand = { workspace = true }

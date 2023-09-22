@@ -6,7 +6,7 @@ use state_proto::error::StateProtoError;
 
 use crate::storage::error::StorageError;
 
-/// The error type emitted by the replication layer
+/// The error type emitted by the storage applicator
 #[derive(Debug)]
 pub enum StateApplicatorError {
     /// An error interacting with storage
