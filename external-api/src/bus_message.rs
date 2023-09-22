@@ -2,7 +2,7 @@
 
 use common::types::{
     exchange::PriceReport,
-    gossip::PeerInfo,
+    gossip::{PeerInfo, WrappedPeerId},
     network_order::NetworkOrder,
     tasks::TaskIdentifier,
     token::Token,
@@ -87,7 +87,7 @@ pub enum SystemBusMessage {
     /// A peer was expired after successive heartbeat failures
     PeerExpired {
         /// The expired peer
-        peer: PeerInfo,
+        peer: WrappedPeerId,
     },
 
     // -- Price Report -- //

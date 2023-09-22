@@ -1,5 +1,5 @@
 [package]
-name = "state_proto"
+name = "state-proto"
 version = "0.1.0"
 edition = "2021"
 
@@ -14,6 +14,7 @@ common = { path = "../../common" }
 
 # === Misc Dependencies === #
 eyre = { workspace = true }
+multiaddr = "0.17"
 mpc-stark = "0.2"
 uuid = "1.1.2"
 

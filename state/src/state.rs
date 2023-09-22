@@ -263,7 +263,7 @@ impl RelayerState {
         if let Some(peer) = expired_peer {
             self.system_bus.publish(
                 NETWORK_TOPOLOGY_TOPIC.to_string(),
-                SystemBusMessage::PeerExpired { peer },
+                SystemBusMessage::PeerExpired { peer: peer.peer_id },
             );
         }
     }

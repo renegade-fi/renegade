@@ -10,6 +10,7 @@
 #![feature(let_chains)]
 #![feature(io_error_more)]
 
+pub mod applicator;
 pub mod replication;
 pub mod storage;
 
