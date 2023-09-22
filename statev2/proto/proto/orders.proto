@@ -63,5 +63,5 @@ message AddOrderValidityProof {
 /// Nullify all orders that are indexed by a given nullifier
 message NullifyOrders {
     /// The nullifier to nullify orders by
-    bytes nullifier = 1;
+    ProtoScalar nullifier = 1;
 }
