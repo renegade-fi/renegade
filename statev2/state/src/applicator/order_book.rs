@@ -3,9 +3,15 @@
 //! TODO: For the order book in particular, it is likely to our advantage to index orders outside
 //! of the DB as well in an in-memory data structure for efficient lookup
 
-use common::types::{gossip::ClusterId, network_order::NetworkOrder, wallet::OrderIdentifier};
+use common::types::{
+    gossip::ClusterId,
+    network_order::{NetworkOrder, NetworkOrderState},
+    proof_bundles::OrderValidityProofBundle,
+    wallet::OrderIdentifier,
+};
 use constants::ORDER_STATE_CHANGE_TOPIC;
 use external_api::bus_message::SystemBusMessage;
+use itertools::Itertools;
 use libmdbx::{TransactionKind, RW};
 use mpc_stark::algebra::scalar::Scalar;
 use serde::{Deserialize, Serialize};
@@ -13,6 +19,7 @@ use state_proto::{
     AddOrder as AddOrderMsg, AddOrderValidityProof as AddOrderValidityProofMsg,
     NullifyOrders as NullifyOrdersMsg,
 };
+use uuid::Error as UuidError;
 
 use crate::{
     applicator::{error::StateApplicatorError, ORDERS_TABLE, PRIORITIES_TABLE},
@@ -96,7 +103,22 @@ impl StateApplicator {
 
     /// Add a validity proof for an order
     pub fn add_order_validity_proof(&self, msg: AddOrderValidityProofMsg) -> Result<()> {
-        unimplemented!()
+        // Deserialize the proof bundle
+        let id: OrderIdentifier = msg
+            .order_id
+            .unwrap_or_default()
+            .try_into()
+            .map_err(|e: UuidError| StateApplicatorError::Parse(e.to_string()))?;
+
+        let bundle: OrderValidityProofBundle = serde_json::from_slice(&msg.proof)
+            .map_err(|e| StateApplicatorError::Parse(e.to_string()))?;
+
+        let tx = self
+            .db()
+            .new_write_tx()
+            .map_err(StateApplicatorError::Storage)?;
+        Self::attach_validity_proof_with_tx(&id, bundle, &tx)?;
+        tx.commit().map_err(StateApplicatorError::Storage)
     }
 
     /// Nullify orders indexed by a given wallet share nullifier
@@ -104,9 +126,71 @@ impl StateApplicator {
         unimplemented!()
     }
 
-    // -----------
-    // | Helpers |
-    // -----------
+    // ------------------------
+    // | Order Update Helpers |
+    // ------------------------
+
+    /// Add an order to the book
+    ///
+    /// TODO: For an initial implementation we do not re-index based on local orders or
+    /// verified orders. This will be added with the getter implementations
+    fn add_order_with_tx(order: &NetworkOrder, tx: &DbTxn<'_, RW>) -> Result<()> {
+        // Write the order to storage
+        Self::write_order_info(order, tx)?;
+        // Add the order to the set of orders indexed by the nullifier
+        Self::append_to_nullifier_set(order.public_share_nullifier, order.id, tx)
+    }
+
+    /// Update the validity proof for an order
+    fn attach_validity_proof_with_tx(
+        order_id: &OrderIdentifier,
+        proof: OrderValidityProofBundle,
+        tx: &DbTxn<'_, RW>,
+    ) -> Result<()> {
+        // Read the order's current info
+        let mut order_info = Self::read_order_info(order_id, tx)?;
+
+        // Re-index based on the proof's nullifier
+        let prev_nullifier = order_info.public_share_nullifier;
+        let new_nullifier = proof.reblind_proof.statement.original_shares_nullifier;
+        if prev_nullifier != new_nullifier {
+            Self::update_order_nullifier(order_id, prev_nullifier, new_nullifier, tx)?;
+        }
+
+        // Update the order's info
+        order_info.state = NetworkOrderState::Verified;
+        order_info.public_share_nullifier = proof.reblind_proof.statement.original_shares_nullifier;
+        order_info.validity_proofs = Some(proof);
+        Self::write_order_info(&order_info, tx)
+    }
+
+    // ----------------------
+    // | Order Info Helpers |
+    // ----------------------
+
+    /// Reads the order info for the given order from storage
+    ///
+    /// Errors if the order is not present
+    fn read_order_info<T: TransactionKind>(
+        order_id: &OrderIdentifier,
+        tx: &DbTxn<'_, T>,
+    ) -> Result<NetworkOrder> {
+        let order_key = Self::order_key(order_id);
+        tx.read(ORDERS_TABLE, &order_key)
+            .map_err(StateApplicatorError::Storage)?
+            .ok_or_else(|| StateApplicatorError::MissingEntry(order_key))
+    }
+
+    /// Writes the order info for the given order to storage
+    fn write_order_info(order: &NetworkOrder, tx: &DbTxn<'_, RW>) -> Result<()> {
+        let order_key = Self::order_key(&order.id);
+        tx.write(ORDERS_TABLE, &order_key, order)
+            .map_err(StateApplicatorError::Storage)
+    }
+
+    // --------------------------
+    // | Order Priority Helpers |
+    // --------------------------
 
     /// Get the priority of a cluster
     fn get_cluster_priority_with_tx<T: TransactionKind>(
@@ -131,29 +215,66 @@ impl StateApplicator {
             .map_err(StateApplicatorError::Storage)
     }
 
-    /// Add an order to the book
-    ///
-    /// TODO: For an initial implementation we do not re-index based on local orders or
-    /// verified orders. This will be added with the getter implementations
-    fn add_order_with_tx(order: &NetworkOrder, tx: &DbTxn<'_, RW>) -> Result<()> {
-        // Write the order to storage
-        let order_key = Self::order_key(&order.id);
-        tx.write(ORDERS_TABLE, &order_key, order)
-            .map_err(StateApplicatorError::Storage)?;
+    // -------------------------
+    // | Nullifier Set Helpers |
+    // -------------------------
 
-        // Add the order to the set of orders indexed by the nullifier
-        let nullifier_key = Self::nullifier_key(order.public_share_nullifier);
-        let mut nullifier_set: Vec<OrderIdentifier> = tx
-            .read(ORDERS_TABLE, &nullifier_key)
-            .map_err(StateApplicatorError::Storage)?
-            .unwrap_or_default();
-        if !nullifier_set.contains(&order.id) {
-            nullifier_set.push(order.id);
-            tx.write(ORDERS_TABLE, &nullifier_key, &nullifier_set)
+    /// Update the nullifier an order is indexed by
+    fn update_order_nullifier(
+        order_id: &OrderIdentifier,
+        old_nullifier: Scalar,
+        new_nullifier: Scalar,
+        tx: &DbTxn<'_, RW>,
+    ) -> Result<()> {
+        // Read the nullifier set for the old nullifier and remove the order
+        let old_set = Self::read_nullifier_set(old_nullifier, tx)?;
+        let updated_old_set = old_set
+            .into_iter()
+            .filter(|id| id != order_id)
+            .collect_vec();
+        Self::write_nullifier_set(old_nullifier, updated_old_set, tx)?;
+
+        // Add the order to the new nullifier set
+        Self::append_to_nullifier_set(new_nullifier, *order_id, tx)
+    }
+
+    /// Read the nullifier set for a given nullifier
+    fn read_nullifier_set<T: TransactionKind>(
+        nullifier: Scalar,
+        tx: &DbTxn<'_, T>,
+    ) -> Result<Vec<OrderIdentifier>> {
+        let nullifier_key = Self::nullifier_key(nullifier);
+        tx.read(ORDERS_TABLE, &nullifier_key)
+            .map_err(StateApplicatorError::Storage)
+            .map(|set| set.unwrap_or_default())
+    }
+
+    /// Append an order to a given nullifier set
+    fn append_to_nullifier_set(
+        nullifier: Scalar,
+        order_id: OrderIdentifier,
+        tx: &DbTxn<'_, RW>,
+    ) -> Result<()> {
+        let key = Self::nullifier_key(nullifier);
+        let mut nullifier_set = Self::read_nullifier_set(nullifier, tx)?;
+        if !nullifier_set.contains(&order_id) {
+            nullifier_set.push(order_id);
+            tx.write(ORDERS_TABLE, &key, &nullifier_set)
                 .map_err(StateApplicatorError::Storage)?;
         }
 
         Ok(())
+    }
+
+    /// Write the nullifier set for a given nullifier
+    fn write_nullifier_set(
+        nullifier: Scalar,
+        nullifier_set: Vec<OrderIdentifier>,
+        tx: &DbTxn<'_, RW>,
+    ) -> Result<()> {
+        let key = Self::nullifier_key(nullifier);
+        tx.write(ORDERS_TABLE, &key, &nullifier_set)
+            .map_err(StateApplicatorError::Storage)
     }
 
     /// Create an order key from an order ID
@@ -171,12 +292,19 @@ impl StateApplicator {
 // | Tests |
 // ---------
 
-#[cfg(test)]
+#[cfg(all(test, feature = "all-tests"))]
 mod test {
-    use common::types::{network_order::NetworkOrder, wallet::OrderIdentifier};
+
+    use common::types::{
+        network_order::NetworkOrder, proof_bundles::mocks::dummy_validity_proof_bundle,
+        wallet::OrderIdentifier,
+    };
     use mpc_stark::algebra::scalar::Scalar;
     use rand::thread_rng;
-    use state_proto::{AddOrder, NetworkOrderBuilder, NetworkOrderState};
+    use state_proto::{
+        AddOrder, AddOrderValidityProof, AddOrderValidityProofBuilder, NetworkOrderBuilder,
+        NetworkOrderState,
+    };
     use uuid::Uuid;
 
     use crate::applicator::{
@@ -196,6 +324,18 @@ mod test {
             .unwrap();
 
         AddOrder { order: Some(order) }
+    }
+
+    /// Creates a dummy `AddOrderValidityProof` message for testing
+    fn add_proof_msg(order_id: OrderIdentifier) -> AddOrderValidityProof {
+        let mock_proof = dummy_validity_proof_bundle();
+        let proof_bytes = serde_json::to_vec(&mock_proof).unwrap();
+
+        AddOrderValidityProofBuilder::default()
+            .order_id(order_id.into())
+            .proof(proof_bytes)
+            .build()
+            .unwrap()
     }
 
     /// Tests adding an order to the order book
@@ -238,5 +378,30 @@ mod test {
             .unwrap()
             .unwrap();
         assert_eq!(priority, OrderPriority::default());
+    }
+
+    /// Test adding a validity proof to an order
+    #[test]
+    fn test_add_validity_proof() {
+        let applicator = mock_applicator();
+
+        // First add an order
+        let order_msg = add_order_msg();
+        applicator.new_order(order_msg.clone()).unwrap();
+
+        // Then add a validity proof
+        let order_id: Uuid = order_msg.order.unwrap().id.unwrap().try_into().unwrap();
+        let proof_msg = add_proof_msg(order_id);
+        applicator.add_order_validity_proof(proof_msg).unwrap();
+
+        // Verify that the order's state is updated
+        let db = applicator.db();
+        let tx: NetworkOrder = db
+            .read(ORDERS_TABLE, &StateApplicator::order_key(&order_id))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(tx.state, NetworkOrderState::Verified.into());
+        assert!(tx.validity_proofs.is_some());
     }
 }

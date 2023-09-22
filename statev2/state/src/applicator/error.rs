@@ -9,6 +9,8 @@ use crate::storage::error::StorageError;
 /// The error type emitted by the storage applicator
 #[derive(Debug)]
 pub enum StateApplicatorError {
+    /// Missing keys in the database necessary for a tx
+    MissingEntry(String),
     /// An error interacting with storage
     Storage(StorageError),
     /// An error parsing a message separately from proto errors
