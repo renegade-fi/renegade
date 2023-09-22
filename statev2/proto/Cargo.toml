@@ -16,6 +16,7 @@ common = { path = "../../common" }
 eyre = { workspace = true }
 multiaddr = "0.17"
 mpc-stark = "0.2"
+serde_json = "1.0"
 uuid = "1.1.2"
 
 [build-dependencies]

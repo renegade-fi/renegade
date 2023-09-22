@@ -11,6 +11,7 @@ use crate::storage::db::DB;
 use self::error::StateApplicatorError;
 
 pub mod error;
+pub mod order_book;
 pub mod peer_index;
 
 // -------------
@@ -24,6 +25,10 @@ pub(crate) type Result<T> = std::result::Result<T, StateApplicatorError>;
 pub(crate) const PEER_INFO_TABLE: &str = "peer-info";
 /// The name of the db table that stores cluster membership information
 pub(crate) const CLUSTER_MEMBERSHIP_TABLE: &str = "cluster-membership";
+/// The name of the db table that stores order and cluster priorities
+pub(crate) const PRIORITIES_TABLE: &str = "priorities";
+/// The name of the table that stores orders by their ID
+pub(crate) const ORDERS_TABLE: &str = "orders";
 
 /// The config for the state applicator
 #[derive(Clone)]
@@ -58,7 +63,14 @@ impl StateApplicator {
 
     /// Create tables in the DB if not already created
     fn create_db_tables(db: &DB) -> Result<()> {
-        for table in [PEER_INFO_TABLE, CLUSTER_MEMBERSHIP_TABLE].iter() {
+        for table in [
+            PEER_INFO_TABLE,
+            CLUSTER_MEMBERSHIP_TABLE,
+            PRIORITIES_TABLE,
+            ORDERS_TABLE,
+        ]
+        .iter()
+        {
             db.create_table(table)
                 .map_err(Into::<StateApplicatorError>::into)?;
         }
