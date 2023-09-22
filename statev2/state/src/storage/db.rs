@@ -100,6 +100,17 @@ impl DB {
         tx.commit()
     }
 
+    /// Delete a key from the database
+    ///
+    /// Returns `true` if the key was present in the table
+    pub fn delete<K: Key>(&self, table_name: &str, key: &K) -> Result<bool, StorageError> {
+        let tx = self.new_write_tx()?;
+        let did_exist = tx.delete(table_name, key)?;
+        tx.commit()?;
+
+        Ok(did_exist)
+    }
+
     /// Create a new read-only transaction
     pub fn new_read_tx(&self) -> Result<DbTxn<RO>, StorageError> {
         let txn = self.db.begin_ro_txn().map_err(StorageError::BeginTx)?;
@@ -217,6 +228,18 @@ impl<'db> DbTxn<'db, RW> {
         self.write_bytes(table_name, key, &value_bytes)
     }
 
+    /// Remove a key from the database
+    pub fn delete<K: Key>(&self, table_name: &str, key: &K) -> Result<bool, StorageError> {
+        // Serialize the key
+        let key_bytes = serialize_value(key)?;
+
+        // Delete the value
+        let table = self.open_table(table_name)?;
+        self.txn
+            .del(&table, &key_bytes, None /* data */)
+            .map_err(StorageError::TxOp)
+    }
+
     // -----------
     // | Helpers |
     // -----------
@@ -313,6 +336,34 @@ mod test {
         let val: Option<TestValue> = db.read(TABLE_NAME, &key_name).unwrap();
 
         assert_eq!(val, None);
+    }
+
+    /// Tests deleting a key
+    #[test]
+    fn test_delete() {
+        let db = mock_db();
+        let key_name = "test_key".to_string();
+
+        db.create_table(TABLE_NAME).unwrap();
+        db.write(TABLE_NAME, &key_name, &TestValue::dummy())
+            .unwrap();
+        let exists = db.delete(TABLE_NAME, &key_name).unwrap();
+        let val: Option<TestValue> = db.read(TABLE_NAME, &key_name).unwrap();
+
+        assert!(exists);
+        assert_eq!(val, None);
+    }
+
+    /// Tests deleting a non-existent key
+    #[test]
+    fn test_delete_nonexistent() {
+        let db = mock_db();
+        let key_name = "test_key".to_string();
+
+        db.create_table(TABLE_NAME).unwrap();
+        let exists = db.delete(TABLE_NAME, &key_name).unwrap();
+
+        assert!(!exists);
     }
 
     /// Tests a read only tx to a table
