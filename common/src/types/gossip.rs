@@ -222,6 +222,15 @@ impl<'de> Visitor<'de> for PeerIDVisitor {
         formatter.write_str("a libp2p::PeerID encoded as a byte array")
     }
 
+    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+    where
+        E: SerdeErr,
+    {
+        PeerId::from_bytes(v)
+            .map(WrappedPeerId)
+            .map_err(|e| SerdeErr::custom(format!("deserializing byte array to PeerID: {e:?}")))
+    }
+
     fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
     where
         A: serde::de::SeqAccess<'de>,

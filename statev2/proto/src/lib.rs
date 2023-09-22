@@ -1,3 +1,9 @@
+//! Defines proto types for state transitions and type operations on them
+
+#![deny(missing_docs)]
+#![deny(clippy::missing_docs_in_private_items)]
+#![deny(unsafe_code)]
+
 use std::{str::FromStr, sync::atomic::AtomicU64};
 
 use common::types::gossip::{
@@ -10,10 +16,6 @@ use uuid::{Error as UuidError, Uuid};
 
 pub use protos::*;
 pub mod error;
-
-#[deny(missing_docs)]
-#[deny(clippy::missing_docs_in_private_items)]
-#[deny(unsafe_code)]
 
 /// Protobuf definitions for state transitions
 #[allow(missing_docs)]
