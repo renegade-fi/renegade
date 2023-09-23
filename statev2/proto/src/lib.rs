@@ -6,22 +6,48 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
-use std::{str::FromStr, sync::atomic::AtomicU64};
+use std::{
+    collections::HashSet,
+    str::FromStr,
+    sync::atomic::{AtomicU32, AtomicU64},
+};
 
+use circuit_types::{
+    balance::Balance as CircuitBalance,
+    fee::Fee as CircuitFee,
+    fixed_point::FixedPoint,
+    keychain::{
+        PublicIdentificationKey, PublicKeyChain as CircuitPublicKeyChain, SecretIdentificationKey,
+    },
+    order::{Order as CircuitOrder, OrderSide as CircuitOrderSide},
+    traits::BaseType,
+    SizedWalletShare,
+};
 use common::types::{
     gossip::{ClusterId as RuntimeClusterId, PeerInfo as RuntimePeerInfo, WrappedPeerId},
+    merkle::MerkleAuthenticationPath,
     network_order::{
         NetworkOrder as RuntimeNetworkOrder, NetworkOrderState as RuntimeNetworkOrderState,
     },
     proof_bundles::OrderValidityProofBundle,
+    wallet::{
+        KeyChain as RuntimeKeyChain, OrderIdentifier, PrivateKeyChain as RuntimePrivateKeyChain,
+        Wallet as RuntimeWallet, WalletMetadata as RuntimeWalletMetadata,
+    },
 };
 use error::StateProtoError;
+use indexmap::IndexMap;
+use itertools::Itertools;
 use mpc_stark::algebra::scalar::Scalar;
 use multiaddr::Multiaddr;
-use uuid::{Error as UuidError, Uuid};
+use num_bigint::BigUint;
+use uuid::Uuid;
 
 pub use protos::*;
 pub mod error;
+
+/// An error emitted when the siblings array in a Merkle path is incorrectly sized
+const ERR_INCORRECT_SIBLINGS_SIZE: &str = "incorrect number of siblings";
 
 /// Protobuf definitions for state transitions
 #[allow(missing_docs)]
@@ -30,9 +56,9 @@ mod protos {
     include!(concat!(env!("OUT_DIR"), "/state.rs"));
 }
 
-// --------------------
-// | Type Definitions |
-// --------------------
+// ----------------------------------
+// | Type Definitions + Conversions |
+// ----------------------------------
 
 /// PeerId
 impl From<String> for PeerId {
@@ -56,9 +82,9 @@ impl From<String> for ProtoUuid {
 }
 
 impl TryFrom<ProtoUuid> for Uuid {
-    type Error = UuidError;
+    type Error = StateProtoError;
     fn try_from(uuid: ProtoUuid) -> Result<Self, Self::Error> {
-        Uuid::parse_str(&uuid.value)
+        Uuid::parse_str(&uuid.value).map_err(|e| StateProtoError::ParseError(e.to_string()))
     }
 }
 
@@ -81,6 +107,21 @@ impl From<Scalar> for ProtoScalar {
     fn from(value: Scalar) -> Self {
         Self {
             value: value.to_bytes_be(),
+        }
+    }
+}
+
+/// BigInt
+impl From<ProtoBigInt> for BigUint {
+    fn from(big_int: ProtoBigInt) -> Self {
+        BigUint::from_bytes_le(&big_int.value)
+    }
+}
+
+impl From<BigUint> for ProtoBigInt {
+    fn from(value: BigUint) -> Self {
+        Self {
+            value: value.to_bytes_le(),
         }
     }
 }
@@ -188,6 +229,252 @@ impl TryFrom<NetworkOrder> for RuntimeNetworkOrder {
             local: false,
             validity_proofs,
             validity_proof_witnesses: None,
+        })
+    }
+}
+
+/// Wallet
+impl From<Balance> for CircuitBalance {
+    fn from(value: Balance) -> Self {
+        let mint: BigUint = value.mint.unwrap_or_default().into();
+        let amount: u64 = value.amount;
+
+        CircuitBalance { mint, amount }
+    }
+}
+
+impl From<OrderSide> for CircuitOrderSide {
+    fn from(value: OrderSide) -> Self {
+        match value {
+            OrderSide::Buy => CircuitOrderSide::Buy,
+            OrderSide::Sell => CircuitOrderSide::Sell,
+        }
+    }
+}
+
+impl From<Order> for CircuitOrder {
+    fn from(value: Order) -> Self {
+        let quote_mint: BigUint = value.quote_mint.clone().unwrap_or_default().into();
+        let base_mint: BigUint = value.base_mint.clone().unwrap_or_default().into();
+        let side: CircuitOrderSide = value.side().into();
+        let amount = value.amount;
+        let worst_case_price = FixedPoint::from_f64_round_down(value.worst_case_price);
+        let timestamp = value.timestamp;
+
+        CircuitOrder {
+            quote_mint,
+            base_mint,
+            side,
+            amount,
+            worst_case_price,
+            timestamp,
+        }
+    }
+}
+
+impl From<Fee> for CircuitFee {
+    fn from(value: Fee) -> Self {
+        let settle_key: BigUint = value.settle_key.clone().unwrap_or_default().into();
+        let gas_addr: BigUint = value.gas_addr.clone().unwrap_or_default().into();
+        let gas_token_amount = value.gas_amount;
+        let percentage_fee = FixedPoint::from_f64_round_down(value.percentage_fee);
+
+        CircuitFee {
+            settle_key,
+            gas_addr,
+            gas_token_amount,
+            percentage_fee,
+        }
+    }
+}
+
+impl TryFrom<PrivateKeyChain> for RuntimePrivateKeyChain {
+    type Error = StateProtoError;
+
+    fn try_from(value: PrivateKeyChain) -> Result<Self, Self::Error> {
+        let sk_root = if value.sk_root.is_empty() {
+            None
+        } else {
+            Some(
+                serde_json::from_slice(&value.sk_root)
+                    .map_err(|e| StateProtoError::ParseError(e.to_string()))?,
+            )
+        };
+
+        let sk_match: Scalar = value
+            .sk_match
+            .clone()
+            .ok_or_else(|| StateProtoError::MissingField {
+                field_name: "sk_match".to_string(),
+            })?
+            .into();
+
+        Ok(RuntimePrivateKeyChain {
+            sk_root,
+            sk_match: SecretIdentificationKey { key: sk_match },
+        })
+    }
+}
+
+impl TryFrom<PublicKeyChain> for CircuitPublicKeyChain {
+    type Error = StateProtoError;
+
+    fn try_from(value: PublicKeyChain) -> Result<Self, Self::Error> {
+        let pk_root = serde_json::from_slice(&value.pk_root)
+            .map_err(|e| StateProtoError::ParseError(e.to_string()))?;
+        let pk_match: Scalar = value
+            .pk_match
+            .clone()
+            .ok_or_else(|| StateProtoError::MissingField {
+                field_name: "pk_match".to_string(),
+            })?
+            .into();
+
+        Ok(CircuitPublicKeyChain {
+            pk_root,
+            pk_match: PublicIdentificationKey { key: pk_match },
+        })
+    }
+}
+
+impl TryFrom<KeyChain> for RuntimeKeyChain {
+    type Error = StateProtoError;
+
+    fn try_from(value: KeyChain) -> Result<Self, Self::Error> {
+        let public_keys: CircuitPublicKeyChain = value
+            .public_keys
+            .clone()
+            .ok_or_else(|| StateProtoError::MissingField {
+                field_name: "public_key_chain".to_string(),
+            })
+            .and_then(TryInto::try_into)?;
+        let secret_keys: RuntimePrivateKeyChain = value
+            .secret_keys
+            .clone()
+            .ok_or_else(|| StateProtoError::MissingField {
+                field_name: "private_key_chain".to_string(),
+            })
+            .and_then(TryInto::try_into)?;
+
+        Ok(RuntimeKeyChain {
+            public_keys,
+            secret_keys,
+        })
+    }
+}
+
+impl TryFrom<WalletMetadata> for RuntimeWalletMetadata {
+    type Error = StateProtoError;
+
+    fn try_from(value: WalletMetadata) -> Result<Self, Self::Error> {
+        let replicas = value
+            .replicas
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<HashSet<_>, _>>()?;
+
+        Ok(RuntimeWalletMetadata { replicas })
+    }
+}
+
+impl TryFrom<WalletAuthenticationPath> for MerkleAuthenticationPath {
+    type Error = StateProtoError;
+
+    fn try_from(path: WalletAuthenticationPath) -> Result<Self, Self::Error> {
+        let path_siblings = path
+            .path_siblings
+            .into_iter()
+            .map(Into::<Scalar>::into)
+            .collect_vec()
+            .try_into()
+            .map_err(|_| StateProtoError::ParseError(ERR_INCORRECT_SIBLINGS_SIZE.to_string()))?;
+
+        let leaf_index = BigUint::from(path.leaf_index);
+        let value = path
+            .value
+            .ok_or_else(|| StateProtoError::MissingField {
+                field_name: "value".to_string(),
+            })?
+            .into();
+
+        Ok(MerkleAuthenticationPath {
+            path_siblings,
+            leaf_index,
+            value,
+        })
+    }
+}
+
+impl TryFrom<Wallet> for RuntimeWallet {
+    type Error = StateProtoError;
+    fn try_from(value: Wallet) -> Result<Self, Self::Error> {
+        let id = Uuid::try_from(value.id.unwrap_or_default())?;
+        let balances: Vec<CircuitBalance> = value.balances.into_iter().map(Into::into).collect();
+
+        let orders: IndexMap<OrderIdentifier, CircuitOrder> = value
+            .orders
+            .into_iter()
+            .map(|o| {
+                let id =
+                    o.id.clone()
+                        .ok_or_else(|| StateProtoError::MissingField {
+                            field_name: "order id".to_string(),
+                        })
+                        .and_then(TryInto::try_into)?;
+
+                Ok((id, o.into()))
+            })
+            .collect::<Result<_, _>>()?;
+
+        let fees: Vec<CircuitFee> = value.fees.into_iter().map(Into::into).collect();
+
+        let key_chain: RuntimeKeyChain = value
+            .keychain
+            .ok_or_else(|| StateProtoError::MissingField {
+                field_name: "keychain".to_string(),
+            })
+            .and_then(TryInto::try_into)?;
+
+        let blinder: Scalar = value
+            .blinder
+            .ok_or_else(|| StateProtoError::MissingField {
+                field_name: "blinder".to_string(),
+            })?
+            .into();
+
+        // Zero pad the shares to avoid panicking in the `from_scalars` method
+        // in case the message is malformed. The correctness of the secret shares is assumed
+        // to be validated elsewhere
+        let private_shares = SizedWalletShare::from_scalars(
+            &mut value
+                .private_shares
+                .into_iter()
+                .map(|s| s.into())
+                .chain(std::iter::repeat(Scalar::zero())),
+        );
+        let blinded_public_shares = SizedWalletShare::from_scalars(
+            &mut value
+                .blinded_public_shares
+                .into_iter()
+                .map(|s| s.into())
+                .chain(std::iter::repeat(Scalar::zero())),
+        );
+
+        let merkle_proof: Option<MerkleAuthenticationPath> =
+            value.opening.map(TryInto::try_into).transpose()?;
+
+        Ok(RuntimeWallet {
+            wallet_id: id,
+            orders,
+            balances: balances.into_iter().map(|b| (b.mint.clone(), b)).collect(),
+            fees,
+            key_chain,
+            blinder,
+            metadata: RuntimeWalletMetadata::default(),
+            private_shares,
+            blinded_public_shares,
+            merkle_proof,
+            proof_staleness: AtomicU32::new(0),
         })
     }
 }
