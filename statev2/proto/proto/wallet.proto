@@ -18,18 +18,20 @@ enum OrderSide {
 
 /// The order type 
 message Order {
+    /// The ID of the order
+    ProtoUuid id = 1;
     /// The mint of the quote token 
-    ProtoBigInt quote_mint = 1;
+    ProtoBigInt quote_mint = 2;
     /// The mint of the base token
-    ProtoBigInt base_mint = 2;
+    ProtoBigInt base_mint = 3;
     /// The side of the order
-    OrderSide side = 3;
+    OrderSide side = 4;
     /// The amount of the order
-    uint64 amount = 4;
+    uint64 amount = 5;
     /// The worst case price that the user is willing to accept on this order
-    double worse_cast_price = 5;
+    double worst_case_price = 6;
     /// A timestamp indicating when the order was placed
-    uint64 timestamp = 6;
+    uint64 timestamp = 7;
 }
 
 /// The balance type 
@@ -59,7 +61,7 @@ message PublicKeyChain {
     /// The serialization of the public root key
     bytes pk_root = 1;
     /// The serialization of the public match key
-    bytes pk_match = 2;
+    ProtoScalar pk_match = 2;
 }
 
 /// The secret keychain, represents the secret keys for wallet operations
@@ -67,7 +69,7 @@ message PrivateKeyChain {
     /// The serialization of the secret root key
     bytes sk_root = 1;
     /// The serialization of the secret match key
-    bytes sk_match = 2;
+    ProtoScalar sk_match = 2;
 }
 
 /// The keychain type, representing both public and secret keys for wallet operations
@@ -121,9 +123,9 @@ message Wallet {
 // -------------
 
 /// Add wallets to the global state
-message AddWallets {
+message AddWallet {
     /// The wallets to add
-    repeated Wallet wallets = 1;
+    Wallet wallets = 1;
 }
 
 /// Update a wallet in the global state

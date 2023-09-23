@@ -19,7 +19,6 @@ use state_proto::{
     AddOrder as AddOrderMsg, AddOrderValidityProof as AddOrderValidityProofMsg,
     NullifyOrders as NullifyOrdersMsg,
 };
-use uuid::Error as UuidError;
 
 use crate::{
     applicator::{error::StateApplicatorError, ORDERS_TABLE, PRIORITIES_TABLE},
@@ -107,7 +106,7 @@ impl StateApplicator {
             .order_id
             .unwrap_or_default()
             .try_into()
-            .map_err(|e: UuidError| StateApplicatorError::Parse(e.to_string()))?;
+            .map_err(StateApplicatorError::Proto)?;
 
         let bundle: OrderValidityProofBundle = serde_json::from_slice(&msg.proof)
             .map_err(|e| StateApplicatorError::Parse(e.to_string()))?;
