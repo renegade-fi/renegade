@@ -267,7 +267,7 @@ impl Clone for RelayerConfig {
             starknet_private_keys: self.starknet_private_keys.clone(),
             eth_websocket_addr: self.eth_websocket_addr.clone(),
             debug: self.debug,
-            demo: self.demo
+            demo: self.demo,
         }
     }
 }
@@ -366,7 +366,7 @@ fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, Strin
         starknet_private_keys: cli_args.starknet_private_keys,
         eth_websocket_addr: cli_args.eth_websocket_addr,
         debug: cli_args.debug,
-        demo: cli_args.demo
+        demo: cli_args.demo,
     };
     set_contract_from_file(&mut config, cli_args.deployments_file)?;
 

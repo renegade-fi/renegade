@@ -137,7 +137,7 @@ pub(super) fn construct_wallet_commitment_proof(
     valid_reblind_witness: &SizedValidReblindWitness,
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     disable_fee_validation: bool,
-    demo: bool
+    demo: bool,
 ) -> Result<(SizedValidCommitmentsWitness, TokioReceiver<ProofBundle>), String> {
     // Choose the first fee. If no fee is found and fee validation is disabled, use a zero fee
     let first_fee = wallet.fees.iter().find(|f| !f.is_default()).cloned();
@@ -319,7 +319,7 @@ pub(super) async fn update_wallet_validity_proofs(
             &wallet_reblind_witness,
             proof_manager_work_queue.clone(),
             global_state.disable_fee_validation,
-            global_state.demo
+            global_state.demo,
         )?;
 
         let order_commitment_witness = Box::new(commitments_witness);
