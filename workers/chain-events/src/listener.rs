@@ -15,7 +15,6 @@ use circuit_types::wallet::Nullifier;
 
 use common::types::{
     merkle::{MerkleAuthenticationPath, MerkleTreeCoords},
-    wallet::Wallet,
     CancelChannel,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
@@ -346,32 +345,10 @@ impl OnChainEventListenerExecutor {
                 continue;
             }
 
-            // Increment the staleness counter; tracks the number of roots since the orders in this wallet
-            // had `VALID COMMITMENTS` proven
-            locked_wallet
-                .proof_staleness
-                .fetch_add(1u32, Ordering::Relaxed);
-
             self.update_wallet_merkle_path(
                 locked_wallet.merkle_proof.as_mut().unwrap(),
                 &node_change_events,
             );
-
-            // Check if the wallet needs a new commitment proof
-            if locked_wallet.needs_new_commitment_proof() {
-                // Clone out of the wallet lock so that the lock may be dropped
-                let self_clone = self.clone();
-                let wallet_clone = locked_wallet.clone();
-
-                tokio::spawn(async move {
-                    if let Err(e) = self_clone
-                        .update_wallet_commitment_proofs(wallet_clone)
-                        .await
-                    {
-                        log::error!("error updating wallet commitment proofs: {e}");
-                    }
-                });
-            }
         }
 
         Ok(())
@@ -393,20 +370,5 @@ impl OnChainEventListenerExecutor {
                 merkle_proof.path_siblings[i] = *updated_value;
             }
         }
-    }
-
-    /// Generate a new commitment proof for a wallet's orders on a fresh Merkle state
-    async fn update_wallet_commitment_proofs(
-        &self,
-        wallet: Wallet,
-    ) -> Result<(), OnChainEventListenerError> {
-        // Calling this function on a wallet without a Merkle proof should not happen, but we do
-        // not fail the worker in the case that it does
-        if wallet.merkle_proof.is_none() {
-            log::error!("tried to update VALID COMMITMENTS for a wallet that has no Merkle authentication path");
-            return Ok(());
-        }
-
-        unimplemented!("Implement wallet commitment proof task in encryption redesign")
     }
 }

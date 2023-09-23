@@ -3,7 +3,6 @@
 use std::{
     collections::HashMap,
     convert::TryInto,
-    sync::atomic::AtomicU32,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -140,7 +139,6 @@ impl From<Wallet> for IndexedWallet {
             key_chain: wallet.key_chain,
             blinder: biguint_to_scalar(&wallet.blinder),
             metadata: WalletMetadata::default(),
-            proof_staleness: AtomicU32::new(0),
             blinded_public_shares,
             private_shares,
             merkle_proof: None,

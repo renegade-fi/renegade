@@ -1,11 +1,6 @@
 //! Defines wallet types useful throughout the workspace
 
-use std::{
-    collections::HashSet,
-    hash::Hash,
-    iter,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use std::{collections::HashSet, hash::Hash, iter};
 
 use circuit_types::{
     balance::Balance,
@@ -61,7 +56,7 @@ pub struct KeyChain {
 pub type WalletAuthenticationPath = MerkleAuthenticationPath;
 
 /// Represents a wallet managed by the local relayer
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Wallet {
     /// The identifier used to index the wallet
     pub wallet_id: WalletIdentifier,
@@ -96,32 +91,6 @@ pub struct Wallet {
     /// The authentication paths for the public and private shares of the wallet
     #[serde(default)]
     pub merkle_proof: Option<WalletAuthenticationPath>,
-    /// The staleness of the valid commitments proof for each order in
-    /// the wallet, i.e. the number of new roots that have been seen
-    /// on-chain since `VALID COMMITMENTS` was last proved for this wallet
-    #[serde(default)]
-    pub proof_staleness: AtomicU32,
-}
-
-/// Custom clone implementation, cannot be derived with the AtomicU32
-impl Clone for Wallet {
-    fn clone(&self) -> Self {
-        let staleness = self.proof_staleness.load(Ordering::Relaxed);
-
-        Self {
-            wallet_id: self.wallet_id,
-            orders: self.orders.clone(),
-            balances: self.balances.clone(),
-            fees: self.fees.clone(),
-            key_chain: self.key_chain.clone(),
-            blinder: self.blinder,
-            metadata: self.metadata.clone(),
-            private_shares: self.private_shares.clone(),
-            blinded_public_shares: self.blinded_public_shares.clone(),
-            merkle_proof: self.merkle_proof.clone(),
-            proof_staleness: AtomicU32::new(staleness),
-        }
-    }
 }
 
 /// Custom serialization for an `IndexMap` type that preserves insertion ordering
@@ -226,21 +195,6 @@ impl Wallet {
         self.blinder = new_blinder;
     }
 
-    /// Decides whether the wallet's orders need new commitment proofs
-    ///
-    /// When the Merkle roots get too stale, we need to re-prove the
-    /// `VALID COMMITMENTS` entry for each order in the wallet and `VALID REBLIND`
-    /// for the wallet itself on a fresh root that the contract will have stored
-    /// when matches occur
-    ///
-    /// This method, although simple, is written abstractly to allow us to change
-    /// the logic that decides this down the line
-    ///
-    /// TODO: Evaluate if we still need this method
-    pub fn needs_new_commitment_proof(&self) -> bool {
-        false
-    }
-
     /// Remove default balances, orders, fees
     pub fn remove_default_elements(&mut self) {
         self.balances.retain(|_mint, balance| !balance.is_default());
@@ -275,7 +229,7 @@ impl Wallet {
 }
 
 /// Metadata relevant to the wallet's network state
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WalletMetadata {
     /// The peers which are believed by the local node to be replicating a given wallet
     pub replicas: HashSet<WrappedPeerId>,
@@ -284,7 +238,7 @@ pub struct WalletMetadata {
 /// Defines mocks for the wallet used in testing
 #[cfg(feature = "mocks")]
 pub mod mocks {
-    use std::{iter, sync::atomic::AtomicU32};
+    use std::iter;
 
     use circuit_types::{
         keychain::{
@@ -332,7 +286,6 @@ pub mod mocks {
             )),
             metadata: WalletMetadata::default(),
             merkle_proof: Some(mock_merkle_path()),
-            proof_staleness: AtomicU32::new(0),
         };
 
         // Reblind the wallet so that the secret shares a valid sharing of the wallet

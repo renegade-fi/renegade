@@ -30,7 +30,7 @@ impl MerkleTreeCoords {
 }
 
 /// Represents a Merkle authentication path for a wallet
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MerkleAuthenticationPath {
     /// A list of sibling node values that are hashed with
     /// the wallet commitment in the root computation

@@ -122,10 +122,10 @@ message Wallet {
 // | Interface |
 // -------------
 
-/// Add wallets to the global state
+/// Add wallet to the global state
 message AddWallet {
-    /// The wallets to add
-    Wallet wallets = 1;
+    /// The wallet to add
+    Wallet wallet = 1;
 }
 
 /// Update a wallet in the global state
