@@ -165,7 +165,7 @@ impl HandshakeExecutor {
         }
 
         // Prove `VALID MATCH MPC` with the counterparty
-        let (commitment, proof) = Self::prove_valid_match(&witness, &fabric).await?;
+        let (commitment, proof) = Self::prove_valid_match(&witness, &fabric, self.global_state.demo).await?;
 
         // Verify the commitment links between the match proof and the two parties'
         // proofs of VALID COMMITMENTS
@@ -250,6 +250,7 @@ impl HandshakeExecutor {
     async fn prove_valid_match(
         witness: &AuthenticatedValidMatchMpcWitness,
         fabric: &MpcFabric,
+        demo: bool
     ) -> Result<(ValidMatchMpcWitnessCommitment, R1CSProof), HandshakeManagerError> {
         // Prove the statement
         let (witness_commitment, proof) = multiprover_prove::<ValidMatchMpcCircuit>(
@@ -268,13 +269,14 @@ impl HandshakeExecutor {
             .open_and_authenticate()
             .await
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-
-        verify_collaborative_proof::<ValidMatchMpcCircuit>(
-            (), /* statement */
-            opened_commit.clone(),
-            opened_proof.clone(),
-        )
-        .map_err(|err| HandshakeManagerError::VerificationError(err.to_string()))?;
+            if !demo {
+                verify_collaborative_proof::<ValidMatchMpcCircuit>(
+                    (), /* statement */
+                    opened_commit.clone(),
+                    opened_proof.clone(),
+                )
+                .map_err(|err| HandshakeManagerError::VerificationError(err.to_string()))?;
+            }
 
         Ok((opened_commit, opened_proof))
     }

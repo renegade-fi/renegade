@@ -109,11 +109,18 @@ struct Cli {
     #[clap(long, value_parser)]
     pub disable_binance: bool,
     /// Flag to disable fee validation
-    #[clap(long, value_parser)]
+    #[clap(long, value_parser, default_value = "true")]
     pub disable_fee_validation: bool,
     /// Whether or not to run the relayer in debug mode
     #[clap(short, long, value_parser)]
     pub debug: bool,
+    /// Whether or not to run the relayer in demo mode
+    /// 
+    /// Demo mode disables a few features: 1) Do not perform external transfers,
+    /// as ERC-20 contracts are not deployed on devnet. 2) Do not check
+    /// collaborative proof validity, as Merkle proofs are currently invalid
+    #[clap(long, value_parser, default_value = "true")]
+    pub demo: bool,
     /// The software version of the relayer
     #[clap(short, long, value_parser)]
     pub version: Option<String>,
@@ -200,6 +207,8 @@ pub struct RelayerConfig {
     pub disable_fee_validation: bool,
     /// Whether or not the relayer is in debug mode
     pub debug: bool,
+    /// Whether or not the relayer is in demo mode
+    pub demo: bool,
 
     // -----------
     // | Secrets |
@@ -258,6 +267,7 @@ impl Clone for RelayerConfig {
             starknet_private_keys: self.starknet_private_keys.clone(),
             eth_websocket_addr: self.eth_websocket_addr.clone(),
             debug: self.debug,
+            demo: self.demo
         }
     }
 }
@@ -356,6 +366,7 @@ fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, Strin
         starknet_private_keys: cli_args.starknet_private_keys,
         eth_websocket_addr: cli_args.eth_websocket_addr,
         debug: cli_args.debug,
+        demo: cli_args.demo
     };
     set_contract_from_file(&mut config, cli_args.deployments_file)?;
 

@@ -897,14 +897,19 @@ impl TypedHandler for DepositBalanceHandler {
         new_wallet.reblind_wallet();
 
         // Begin an update-wallet task
+        let external_transfer = ExternalTransfer {
+            account_addr: req.from_addr,
+            mint: req.mint,
+            amount: req.amount,
+            direction: ExternalTransferDirection::Deposit,
+        };
         let task = UpdateWalletTask::new(
             get_current_timestamp(),
-            Some(ExternalTransfer {
-                account_addr: req.from_addr,
-                mint: req.mint,
-                amount: req.amount,
-                direction: ExternalTransferDirection::Deposit,
-            }),
+            if self.global_state.demo {
+                None
+            } else {
+                Some(external_transfer)
+            },
             old_wallet,
             new_wallet,
             self.starknet_client.clone(),
@@ -997,14 +1002,19 @@ impl TypedHandler for WithdrawBalanceHandler {
         new_wallet.reblind_wallet();
 
         // Begin a task
+        let external_transfer = ExternalTransfer {
+            account_addr: req.destination_addr,
+            mint,
+            amount: req.amount,
+            direction: ExternalTransferDirection::Withdrawal,
+        };
         let task = UpdateWalletTask::new(
             get_current_timestamp(),
-            Some(ExternalTransfer {
-                account_addr: req.destination_addr,
-                mint,
-                amount: req.amount,
-                direction: ExternalTransferDirection::Withdrawal,
-            }),
+            if self.global_state.demo {
+                None
+            } else {
+                Some(external_transfer)
+            },
             old_wallet,
             new_wallet,
             self.starknet_client.clone(),
