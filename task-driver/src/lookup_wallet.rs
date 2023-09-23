@@ -4,7 +4,6 @@
 use std::{
     error::Error,
     fmt::{Display, Formatter, Result as FmtResult},
-    sync::atomic::AtomicU32,
 };
 
 use async_trait::async_trait;
@@ -262,7 +261,6 @@ impl LookupWalletTask {
             private_shares,
             blinded_public_shares: public_shares,
             merkle_proof: None, // discovered in next step
-            proof_staleness: AtomicU32::new(0),
         };
 
         // Find the authentication path for the wallet

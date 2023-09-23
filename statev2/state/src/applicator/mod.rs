@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use common::types::gossip::ClusterId;
 use external_api::bus_message::SystemBusMessage;
 use system_bus::SystemBus;
 
@@ -13,6 +14,7 @@ use self::error::StateApplicatorError;
 pub mod error;
 pub mod order_book;
 pub mod peer_index;
+pub mod wallet_index;
 
 // -------------
 // | Constants |
@@ -25,20 +27,28 @@ pub(crate) type Result<T> = std::result::Result<T, StateApplicatorError>;
 pub(crate) const PEER_INFO_TABLE: &str = "peer-info";
 /// The name of the db table that stores cluster membership information
 pub(crate) const CLUSTER_MEMBERSHIP_TABLE: &str = "cluster-membership";
+
 /// The name of the db table that stores order and cluster priorities
 pub(crate) const PRIORITIES_TABLE: &str = "priorities";
 /// The name of the table that stores orders by their ID
 pub(crate) const ORDERS_TABLE: &str = "orders";
+
+/// The name of the db table that maps order to their encapsulating wallet
+pub(crate) const ORDER_TO_WALLET_TABLE: &str = "order-to-wallet";
+/// The name of the db table that stores wallet information
+pub(crate) const WALLETS_TABLE: &str = "wallet-info";
 
 /// The config for the state applicator
 #[derive(Clone)]
 pub struct StateApplicatorConfig {
     /// Whether or not to allow peers on the localhost
     pub allow_local: bool,
+    /// The local peer's cluster ID
+    pub cluster_id: ClusterId,
     /// A handle to the database underlying the storage layer
-    db: Arc<DB>,
+    pub db: Arc<DB>,
     /// A handle to the system bus used for internal pubsub
-    system_bus: SystemBus<SystemBusMessage>,
+    pub system_bus: SystemBus<SystemBusMessage>,
 }
 
 /// The applicator applies state updates to the global state and persists them to local storage
@@ -68,6 +78,8 @@ impl StateApplicator {
             CLUSTER_MEMBERSHIP_TABLE,
             PRIORITIES_TABLE,
             ORDERS_TABLE,
+            ORDER_TO_WALLET_TABLE,
+            WALLETS_TABLE,
         ]
         .iter()
         {
@@ -91,8 +103,9 @@ impl StateApplicator {
 
 #[cfg(test)]
 mod test_helpers {
-    use std::sync::Arc;
+    use std::{str::FromStr, sync::Arc};
 
+    use common::types::gossip::ClusterId;
     use system_bus::SystemBus;
 
     use crate::test_helpers::mock_db;
@@ -105,6 +118,7 @@ mod test_helpers {
             allow_local: true,
             db: Arc::new(mock_db()),
             system_bus: SystemBus::new(),
+            cluster_id: ClusterId::from_str("test-cluster").unwrap(),
         };
 
         StateApplicator::new(config).unwrap()

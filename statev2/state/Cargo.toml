@@ -22,6 +22,7 @@ serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true }
 
 # === Workspace Dependencies === #
+circuit-types = { path = "../../circuit-types" }
 common = { path = "../../common" }
 constants = { path = "../../constants" }
 external-api = { path = "../../external-api" }
@@ -41,6 +42,7 @@ uuid = "1.1.2"
 [dev-dependencies]
 crossbeam = "0.8"
 multiaddr = "0.17"
+num-bigint = "0.4"
 tempfile = "3.8"
 rand = { workspace = true }
 uuid = "1.4"

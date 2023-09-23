@@ -116,7 +116,7 @@ impl StateApplicator {
             .new_write_tx()
             .map_err(StateApplicatorError::Storage)?;
         Self::attach_validity_proof_with_tx(&id, bundle, &tx)?;
-        let order_info = Self::read_order_info(&id, &tx)?;
+        let order_info = Self::read_order_info_unchecked(&id, &tx)?;
         tx.commit().map_err(StateApplicatorError::Storage)?;
 
         self.system_bus().publish(
@@ -146,11 +146,21 @@ impl StateApplicator {
     ///
     /// TODO: For an initial implementation we do not re-index based on local orders or
     /// verified orders. This will be added with the getter implementations
-    fn add_order_with_tx(order: &NetworkOrder, tx: &DbTxn<'_, RW>) -> Result<()> {
+    pub(super) fn add_order_with_tx(order: &NetworkOrder, tx: &DbTxn<'_, RW>) -> Result<()> {
+        // Remove the order from its nullifier set if it is already indexed
+        if let Some(info) = Self::read_order_info(&order.id, tx)? {
+            Self::update_order_nullifier(
+                &order.id,
+                info.public_share_nullifier,
+                order.public_share_nullifier,
+                tx,
+            )?;
+        } else {
+            Self::append_to_nullifier_set(order.public_share_nullifier, order.id, tx)?;
+        }
+
         // Write the order to storage
-        Self::write_order_info(order, tx)?;
-        // Add the order to the set of orders indexed by the nullifier
-        Self::append_to_nullifier_set(order.public_share_nullifier, order.id, tx)
+        Self::write_order_info(order, tx)
     }
 
     /// Update the validity proof for an order
@@ -162,7 +172,7 @@ impl StateApplicator {
         tx: &DbTxn<'_, RW>,
     ) -> Result<()> {
         // Read the order's current info
-        let mut order_info = Self::read_order_info(order_id, tx)?;
+        let mut order_info = Self::read_order_info_unchecked(order_id, tx)?;
 
         // Re-index based on the proof's nullifier
         let prev_nullifier = order_info.public_share_nullifier;
@@ -180,7 +190,7 @@ impl StateApplicator {
 
     /// Cancel an order
     fn cancel_order_with_tx(&self, order_id: &OrderIdentifier, tx: &DbTxn<'_, RW>) -> Result<()> {
-        let mut order = Self::read_order_info(order_id, tx)?;
+        let mut order = Self::read_order_info_unchecked(order_id, tx)?;
         order.state = NetworkOrderState::Cancelled;
         order.validity_proof_witnesses = None;
         order.validity_proofs = None;
@@ -201,14 +211,24 @@ impl StateApplicator {
     /// Reads the order info for the given order from storage
     ///
     /// Errors if the order is not present
-    fn read_order_info<T: TransactionKind>(
+    fn read_order_info_unchecked<T: TransactionKind>(
         order_id: &OrderIdentifier,
         tx: &DbTxn<'_, T>,
     ) -> Result<NetworkOrder> {
+        Self::read_order_info(order_id, tx)
+            .transpose()
+            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_ORDER_MISSING.to_string()))?
+    }
+
+    /// Reads order info for the given order from storage, but does not
+    /// error if the order is not present
+    fn read_order_info<T: TransactionKind>(
+        order_id: &OrderIdentifier,
+        tx: &DbTxn<'_, T>,
+    ) -> Result<Option<NetworkOrder>> {
         let order_key = Self::order_key(order_id);
         tx.read(ORDERS_TABLE, &order_key)
-            .map_err(StateApplicatorError::Storage)?
-            .ok_or_else(|| StateApplicatorError::MissingEntry(order_key))
+            .map_err(StateApplicatorError::Storage)
     }
 
     /// Writes the order info for the given order to storage
