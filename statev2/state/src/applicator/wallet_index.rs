@@ -142,8 +142,7 @@ impl StateApplicator {
 }
 
 #[cfg(all(test, feature = "all-tests"))]
-mod test {
-
+pub(crate) mod test {
     use common::types::{wallet::Wallet, wallet_mocks::mock_empty_wallet};
     use constants::MERKLE_HEIGHT;
     use mpc_stark::algebra::scalar::Scalar;
@@ -229,7 +228,7 @@ mod test {
     }
 
     /// Create a dummy `AddWallet` message
-    fn dummy_add_wallet() -> AddWallet {
+    pub(crate) fn dummy_add_wallet() -> AddWallet {
         let wallet = dummy_proto_wallet();
         AddWalletBuilder::default().wallet(wallet).build().unwrap()
     }

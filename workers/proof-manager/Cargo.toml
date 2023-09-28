@@ -13,7 +13,7 @@ mpc-bulletproof = { workspace = true }
 mpc-stark = { workspace = true, optional = true }
 
 # === Runtime + Threading === #
-crossbeam = { version = "0.8.1" }
+crossbeam = { workspace = true }
 rayon = { version = "1.5.3" }
 tokio = { workspace = true }
 

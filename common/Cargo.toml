@@ -14,7 +14,7 @@ mpc-stark = { workspace = true }
 num-bigint = { workspace = true }
 
 # === Runtime + Networking === #
-crossbeam = "0.8"
+crossbeam = { workspace = true }
 libp2p = { workspace = true }
 libp2p-identity = { workspace = true }
 tokio = { workspace = true }

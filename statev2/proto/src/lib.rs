@@ -57,8 +57,8 @@ mod protos {
 // | Type Definitions + Conversions |
 // ----------------------------------
 
-/// The `StateTransition` type encapsulates all possible state transitions and allows
-/// in an adjacently tagged enum representation
+/// The `StateTransition` type encapsulates all possible state transitions, allowing transitions
+/// to be handled generically before they are applied
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StateTransition {
     /// Add a wallet to the managed state
