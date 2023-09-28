@@ -7,15 +7,23 @@ use std::{
     time::{Duration, Instant},
 };
 
+use config::RelayerConfig;
+use external_api::bus_message::SystemBusMessage;
 use protobuf::Message;
 use raft::{
     prelude::{ConfChange, Entry, EntryType, HardState, Message as RaftMessage, Snapshot},
     Config as RaftConfig, RawNode,
 };
+use rand::{thread_rng, RngCore};
 use slog::Logger;
+use state_proto::StateTransition;
+use system_bus::SystemBus;
 use tracing_slog::TracingSlogDrain;
 
-use crate::storage::db::DB;
+use crate::{
+    applicator::{StateApplicator, StateApplicatorConfig},
+    storage::db::DB,
+};
 
 use super::{error::ReplicationError, log_store::LogStore, network::RaftNetwork};
 
@@ -28,30 +36,62 @@ const RAFT_TICK_INTERVAL_MS: u64 = 100; // 100 ms
 /// The interval at which to poll for new inbound messages
 const RAFT_POLL_INTERVAL_MS: u64 = 10; // 10 ms
 
+/// The config for the local replication node
+#[derive(Clone)]
+pub struct ReplicationNodeConfig<N: RaftNetwork> {
+    /// A copy of the relayer's config
+    relayer_config: RelayerConfig,
+    /// A reference to the networking layer that backs the raft node
+    network: N,
+    /// A handle on the persistent storage layer underlying the raft node
+    db: Arc<DB>,
+    /// A handle to the system-global bus
+    system_bus: SystemBus<SystemBusMessage>,
+}
+
 /// A raft node that replicates the relayer's state machine
 pub struct ReplicationNode<N: RaftNetwork> {
     /// The inner raft node
     inner: RawNode<LogStore>,
+    /// A handle to the state applicator: the module responsible for applying state
+    /// transitions to the state machine when they are committed
+    applicator: StateApplicator,
     /// The networking layer backing the raft node
     network: N,
 }
 
 impl<N: RaftNetwork> ReplicationNode<N> {
     /// Creates a new replication node
-    pub fn new(db: Arc<DB>, network: N, config: &RaftConfig) -> Result<Self, ReplicationError> {
+    pub fn new(config: ReplicationNodeConfig<N>) -> Result<Self, ReplicationError> {
         // Build the log store on top of the DB
-        let store = LogStore::new(db)?;
+        let store = LogStore::new(config.db.clone())?;
+
+        // Build a state applicator to handle state transitions
+        let applicator = StateApplicator::new(StateApplicatorConfig {
+            allow_local: config.relayer_config.allow_local,
+            cluster_id: config.relayer_config.cluster_id,
+            db: config.db.clone(),
+            system_bus: config.system_bus,
+        })
+        .map_err(ReplicationError::Applicator)?;
 
         // Build an slog logger and connect it to the tracing logger
         let tracing_drain = TracingSlogDrain;
         let logger = Logger::root(tracing_drain, slog::o!());
 
         // Build raft node
-        let node = RawNode::new(config, store, &logger).map_err(ReplicationError::Raft)?;
+        // TODO: Replace random node ID with the first 8 bytes of the local peer ID
+        let raft_config = RaftConfig {
+            id: thread_rng().next_u64(),
+            ..Default::default()
+        };
+
+        let node = RawNode::new(&raft_config, store, &logger).map_err(ReplicationError::Raft)?;
 
         Ok(Self {
             inner: node,
-            network,
+            applicator,
+            network: config.network,
         })
     }
 
@@ -160,7 +200,13 @@ impl<N: RaftNetwork> ReplicationNode<N> {
             match entry.get_entry_type() {
                 EntryType::EntryNormal => {
                     // Apply a normal entry to the state machine
-                    // TODO: Implement this after defining our state transitions
+                    let entry_bytes = entry.get_data();
+                    let transition: StateTransition = serde_json::from_slice(entry_bytes)
+                        .map_err(|e| ReplicationError::ParseValue(e.to_string()))?;
+
+                    self.applicator
+                        .handle_state_transition(transition)
+                        .map_err(ReplicationError::Applicator)?;
                 }
                 EntryType::EntryConfChange | EntryType::EntryConfChangeV2 => {
                     // Apply a config change entry to the state machine
@@ -203,28 +249,29 @@ impl<N: RaftNetwork> ReplicationNode<N> {
 
 #[cfg(test)]
 mod test {
-    use raft::Config as RaftConfig;
     use std::sync::Arc;
 
     use crate::{replication::network::test_helpers::MockNetwork, test_helpers::mock_db};
 
-    use super::ReplicationNode;
-
-    /// A local node ID for testing
-    const NODE_ID: u64 = 1;
+    use super::{ReplicationNode, ReplicationNodeConfig};
 
     /// Tests that the constructor works properly, largely this means testing that the `LogStore`
     /// initialization is compatible with the `raft` setup
     #[test]
     fn test_constructor() {
         let db = Arc::new(mock_db());
-        let config = RaftConfig::new(NODE_ID);
 
         // Setup a dummy network, for this test it is okay if both ends resolve
         // to the same channel
         let (network_out, network_in) = crossbeam::channel::unbounded();
         let net = MockNetwork::new(network_out, network_in);
 
-        let _node = ReplicationNode::new(db, net, &config).unwrap();
+        let node_config = ReplicationNodeConfig {
+            relayer_config: Default::default(),
+            network: net,
+            db: db.clone(),
+            system_bus: Default::default(),
+        };
+        let _node = ReplicationNode::new(node_config).unwrap();
     }
 }
