@@ -16,7 +16,7 @@ fn main() -> Result<()> {
     let builder_pattern_targets = ".";
     builder_config.message_attribute(
         builder_pattern_targets,
-        "#[derive(derive_builder::Builder)]",
+        "#[derive(derive_builder::Builder, serde::Serialize, serde::Deserialize)]",
     );
     builder_config.message_attribute(builder_pattern_targets, "#[builder(pattern = \"owned\")]");
     builder_config.message_attribute(builder_pattern_targets, "#[builder(default)]");

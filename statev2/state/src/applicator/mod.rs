@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use common::types::gossip::ClusterId;
 use external_api::bus_message::SystemBusMessage;
+use state_proto::StateTransition;
 use system_bus::SystemBus;
 
 use crate::storage::db::DB;
@@ -69,6 +70,19 @@ impl StateApplicator {
         Self::create_db_tables(&config.db)?;
 
         Ok(Self { config })
+    }
+
+    /// Handle a state transition
+    pub fn handle_state_transition(&self, transition: StateTransition) -> Result<()> {
+        match transition {
+            StateTransition::AddWallet(msg) => self.add_wallet(msg),
+            StateTransition::UpdateWallet(msg) => self.update_wallet(msg),
+            StateTransition::AddOrder(msg) => self.new_order(msg),
+            StateTransition::AddOrderValidityProof(msg) => self.add_order_validity_proof(msg),
+            StateTransition::NullifyOrders(msg) => self.nullify_orders(msg),
+            StateTransition::AddPeers(msg) => self.add_peers(msg),
+            StateTransition::RemovePeer(msg) => self.remove_peer(msg),
+        }
     }
 
     /// Create tables in the DB if not already created

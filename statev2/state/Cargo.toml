@@ -24,6 +24,7 @@ tokio = { workspace = true }
 # === Workspace Dependencies === #
 circuit-types = { path = "../../circuit-types" }
 common = { path = "../../common" }
+config = { path = "../../config" }
 constants = { path = "../../constants" }
 external-api = { path = "../../external-api" }
 job-types = { path = "../../workers/job-types" }
@@ -33,6 +34,7 @@ system-bus = { path = "../../system-bus" }
 # === Misc === #
 itertools = "0.10"
 mpc-stark = "0.2"
+rand = "0.8"
 serde_json = "1.0"
 slog = "2.2"
 tracing = { workspace = true, features = ["log"] }

@@ -4,11 +4,14 @@ use raft::{Error as RaftError, StorageError as RaftStorageError};
 use std::io::Error as IOError;
 use std::{error::Error, fmt::Display};
 
+use crate::applicator::error::StateApplicatorError;
 use crate::storage::error::StorageError;
 
 /// The error type emitted by the replication layer
 #[derive(Debug)]
 pub enum ReplicationError {
+    /// An error originating from the `StateApplicator`
+    Applicator(StateApplicatorError),
     /// A value was not found in storage
     EntryNotFound,
     /// Error parsing a stored value
@@ -34,6 +37,7 @@ impl Error for ReplicationError {}
 impl From<ReplicationError> for RaftError {
     fn from(value: ReplicationError) -> Self {
         match value {
+            ReplicationError::Applicator(_) => RaftError::ProposalDropped,
             ReplicationError::EntryNotFound => RaftError::Store(RaftStorageError::Unavailable),
             ReplicationError::Raft(e) => e,
             ReplicationError::Storage(e) => e.into(),

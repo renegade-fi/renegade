@@ -37,6 +37,7 @@ use itertools::Itertools;
 use mpc_stark::algebra::scalar::Scalar;
 use multiaddr::Multiaddr;
 use num_bigint::BigUint;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub use protos::*;
@@ -55,6 +56,26 @@ mod protos {
 // ----------------------------------
 // | Type Definitions + Conversions |
 // ----------------------------------
+
+/// The `StateTransition` type encapsulates all possible state transitions and allows
+/// in an adjacently tagged enum representation
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum StateTransition {
+    /// Add a wallet to the managed state
+    AddWallet(AddWallet),
+    /// Update a wallet in the managed state
+    UpdateWallet(UpdateWallet),
+    /// Add an order to the network order book
+    AddOrder(AddOrder),
+    /// Add a validity proof to an existing order in the book
+    AddOrderValidityProof(AddOrderValidityProof),
+    /// Cancel all orders on a given nullifier
+    NullifyOrders(NullifyOrders),
+    /// Add a set of peers to the network topology
+    AddPeers(AddPeers),
+    /// Remove a peer from the network topology
+    RemovePeer(RemovePeer),
+}
 
 /// PeerId
 impl From<String> for PeerId {
