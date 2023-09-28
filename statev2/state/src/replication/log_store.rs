@@ -79,7 +79,7 @@ impl LogStore {
 
         // Write a default snapshot to the metadata table
         let self_ = Self { db };
-        self_.apply_snapshot(&RaftSnapshot::new());
+        self_.apply_snapshot(&RaftSnapshot::new())?;
 
         Ok(self_)
     }
@@ -149,7 +149,7 @@ impl LogStore {
     }
 
     /// Apply a snapshot to the log store
-    pub fn apply_snapshot(&self, snapshot: &RaftSnapshot) {
+    pub fn apply_snapshot(&self, snapshot: &RaftSnapshot) -> Result<(), ReplicationError> {
         let tx = self.db.new_write_tx().unwrap();
         let meta = snapshot.get_metadata();
 
@@ -159,12 +159,12 @@ impl LogStore {
             &CONF_STATE_KEY.to_string(),
             &ProtoStorageWrapper(meta.get_conf_state().clone()),
         )
-        .unwrap();
+        .map_err(ReplicationError::Storage)?;
 
         // Write the `HardState` to the metadata table
         let new_state: ProtoStorageWrapper<HardState> = tx
             .read(RAFT_METADATA_TABLE, &HARD_STATE_KEY.to_string())
-            .unwrap()
+            .map_err(ReplicationError::Storage)?
             .unwrap_or_default();
         let mut new_state = new_state.into_inner();
 
@@ -176,7 +176,7 @@ impl LogStore {
             &HARD_STATE_KEY.to_string(),
             &ProtoStorageWrapper(new_state),
         )
-        .unwrap();
+        .map_err(ReplicationError::Storage)?;
 
         // Write the snapshot metadata
         tx.write(
@@ -184,9 +184,9 @@ impl LogStore {
             &SNAPSHOT_METADATA_KEY.to_string(),
             &ProtoStorageWrapper(snapshot.get_metadata().clone()),
         )
-        .unwrap();
+        .map_err(ReplicationError::Storage)?;
 
-        tx.commit().unwrap();
+        tx.commit().map_err(ReplicationError::Storage)
     }
 }
 
@@ -419,7 +419,7 @@ mod test {
     fn test_recover_snapshot_state() {
         let store = mock_log_store();
         let snap = mock_snapshot();
-        store.apply_snapshot(&snap);
+        store.apply_snapshot(&snap).unwrap();
 
         // Now fetch the initial state
         let state = store.initial_state().unwrap();
@@ -434,7 +434,7 @@ mod test {
     fn test_out_of_date_snapshot() {
         let store = mock_log_store();
         let snap = mock_snapshot();
-        store.apply_snapshot(&snap);
+        store.apply_snapshot(&snap).unwrap();
 
         // Attempt to fetch a snapshot at a higher index than the one stored
         let index = snap.get_metadata().get_index() + 1;
@@ -451,7 +451,7 @@ mod test {
     fn test_up_to_date_snapshot() {
         let store = mock_log_store();
         let snap = mock_snapshot();
-        store.apply_snapshot(&snap);
+        store.apply_snapshot(&snap).unwrap();
 
         // Attempt to fetch a snapshot at a lower index than the one stored
         let index = snap.get_metadata().get_index() - 1;

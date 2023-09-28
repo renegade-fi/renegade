@@ -17,7 +17,7 @@ tokio-tungstenite = { version = "0.18", features = ["native-tls"] }
 tungstenite = "0.18"
 
 # === Runtime + Concurrency === #
-crossbeam = "0.8"
+crossbeam = { workspace = true }
 futures = "0.3"
 futures-util = "0.3"
 tokio = { workspace = true }

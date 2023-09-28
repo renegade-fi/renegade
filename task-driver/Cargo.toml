@@ -15,7 +15,7 @@ required-features = ["integration"]
 [dependencies]
 # === Async + Runtime === #
 async-trait = "0.1.60"
-crossbeam = "0.8"
+crossbeam = { workspace = true }
 tokio = { workspace = true }
 
 # === Cryptography === #

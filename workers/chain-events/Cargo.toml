@@ -8,7 +8,7 @@ edition = "2021"
 mpc-stark = { workspace = true }
 
 # === Concurrency + Runtime === #
-crossbeam = "0.8.1"
+crossbeam = { workspace = true }
 tokio = { workspace = true }
 
 # === Networking + Blockchain === #

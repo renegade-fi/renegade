@@ -30,7 +30,7 @@ pub trait RaftNetwork {
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use crossbeam::channel::{
-        Receiver as CrossbeamReceiver, Sender as CrossbeamSender, TryRecvError,
+        unbounded, Receiver as CrossbeamReceiver, Sender as CrossbeamSender, TryRecvError,
     };
     use raft::prelude::Message as RaftMessage;
     use std::io::{Error as IOError, ErrorKind};
@@ -54,6 +54,14 @@ pub(crate) mod test_helpers {
             receiver: CrossbeamReceiver<RaftMessage>,
         ) -> Self {
             Self { sender, receiver }
+        }
+
+        /// Create a double sided mock connection
+        pub fn new_duplex_conn() -> (Self, Self) {
+            let (s1, r1) = unbounded();
+            let (s2, r2) = unbounded();
+
+            (Self::new(s1, r2), Self::new(s2, r1))
         }
     }
 

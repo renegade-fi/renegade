@@ -19,6 +19,7 @@ protobuf = "2.0"
 serde = { workspace = true, features = ["derive"] }
 
 # === Messaging + Concurrency === #
+crossbeam = { workspace = true }
 tokio = { workspace = true }
 
 # === Workspace Dependencies === #
@@ -42,7 +43,6 @@ tracing-slog = "0.2"
 uuid = "1.1.2"
 
 [dev-dependencies]
-crossbeam = "0.8"
 multiaddr = "0.17"
 num-bigint = "0.4"
 tempfile = "3.8"

@@ -8,7 +8,7 @@ debug-tui = []
 
 [dependencies]
 # === Runtime + Async === #
-crossbeam = "0.8"
+crossbeam = { workspace = true }
 tokio = { workspace = true }
 
 # === Workspace Dependencies === #

@@ -9,7 +9,7 @@ mpc-bulletproof = { workspace = true }
 mpc-stark = { workspace = true }
 
 # === Concurrency + Networking === #
-crossbeam = "0.8.1"
+crossbeam = { workspace = true }
 futures = "0.3"
 libp2p = { workspace = true }
 tokio = { workspace = true }
