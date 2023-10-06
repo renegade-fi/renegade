@@ -721,6 +721,10 @@ impl HandshakeExecutor {
                 Token::from_addr_biguint(&order.base_mint),
                 Token::from_addr_biguint(&order.quote_mint),
             ),
+            ChainId::Katana => (
+                Token::from_katana_addr_biguint(&order.base_mint),
+                Token::from_katana_addr_biguint(&order.quote_mint),
+            ),
             _ => todo!("Implement price remapping for {:?}", self.chain_id),
         }
     }

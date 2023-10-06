@@ -19,6 +19,8 @@ use std::{
     fmt::{self, Display},
 };
 
+use crate::biguint_to_str_addr;
+
 use super::exchange::{Exchange, ALL_EXCHANGES};
 
 /// A helper enum to describe the state of each ticker on each Exchange. Same means that the ERC-20
@@ -626,6 +628,25 @@ lazy_static! {
             ),
         ].into_iter().collect()
     };
+
+    /// Remaps Katana ERC20 addresses to their Ethereum mainnet counterparts
+    /// so that a price can be determined
+    ///
+    /// TODO: This will be removed when we implement our custom bridging solution
+    static ref KATANA_TOKEN_REMAP: HashMap<String, String> = {
+        vec![
+            // USDC
+            (
+                "0x8e3feea13add88dce4439bc1d02a662ab4c4cb6dca4639dccba89b4e594680".to_string(),
+                Token::from_ticker("USDC").get_addr().to_string(),
+            ),
+            // ETH
+            (
+                "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7".to_string(),
+                Token::from_ticker("WETH").get_addr().to_string(),
+            ),
+        ].into_iter().collect()
+    };
 }
 
 /// The core Token abstraction, used for unambiguous definition of an ERC-20 asset.
@@ -656,16 +677,28 @@ impl Token {
         }
     }
 
+    /// Given an ERC-20 address on Katana, return a new Token
+    pub fn from_katana_addr(addr: &str) -> Self {
+        Self {
+            addr: KATANA_TOKEN_REMAP.get(addr).unwrap().to_string(),
+        }
+    }
+
     /// Given an ERC-20 contract address represented as a `BigUint`, returns a Token
     pub fn from_addr_biguint(addr: &BigUint) -> Self {
         Self {
-            addr: format!("0x{}", addr.to_str_radix(16 /* radix */)),
+            addr: biguint_to_str_addr(addr),
         }
     }
 
     /// Given an ERC-20 contract address on Starknet-Goerli (represented as a `BigUint`) returns a Token
     pub fn from_starknet_goerli_addr_biguint(addr: &BigUint) -> Self {
-        Self::from_starknet_goerli_addr(&format!("0x{}", addr.to_str_radix(16 /* radix */)))
+        Self::from_starknet_goerli_addr(&biguint_to_str_addr(addr))
+    }
+
+    /// Given an ERC-20 contract address on Katana (represented as a `BigUint`) returns a Token
+    pub fn from_katana_addr_biguint(addr: &BigUint) -> Self {
+        Self::from_katana_addr(&biguint_to_str_addr(addr))
     }
 
     /// Given an ERC-20 ticker, returns a new Token.

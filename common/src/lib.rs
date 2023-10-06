@@ -6,6 +6,7 @@
 #![deny(clippy::missing_docs_in_private_items)]
 #![feature(generic_const_exprs)]
 
+use num_bigint::BigUint;
 use std::sync::{Arc, RwLock};
 use tokio::sync::RwLock as TokioRwLock;
 
@@ -22,4 +23,10 @@ pub type AsyncShared<T> = Arc<TokioRwLock<T>>;
 /// Wrap an abstract value in an async shared lock
 pub fn new_async_shared<T>(wrapped: T) -> AsyncShared<T> {
     Arc::new(TokioRwLock::new(wrapped))
+}
+
+/// From a biguint, get a hex string with a 0x prefix
+pub fn biguint_to_str_addr(x: &BigUint) -> String {
+    let addr = x.to_str_radix(16 /* radix */);
+    format!("0x{addr}")
 }
