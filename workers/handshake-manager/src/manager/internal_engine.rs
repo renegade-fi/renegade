@@ -224,15 +224,18 @@ fn match_orders(
     // without revealing the volume of the order. So zero'd orders may exist in the book until the user removes them
     valid_match = valid_match && !order1.is_zero() && !order2.is_zero();
 
+    // Compute the amount matched by the engine
+    let party0_max_amount = compute_max_amount(&midpoint_price, order1, balance1);
+    let party1_max_amount = compute_max_amount(&midpoint_price, order2, balance2);
+
+    let min_base_amount = u64::min(party0_max_amount, party1_max_amount);
+    valid_match = valid_match && min_base_amount > 0;
+
     if !valid_match {
         return Ok(None);
     }
 
-    // Match the orders
-    let party0_max_amount = compute_max_amount(&midpoint_price, order1, balance1);
-    let party1_max_amount = compute_max_amount(&midpoint_price, order2, balance2);
-    let min_base_amount = u64::min(party0_max_amount, party1_max_amount);
-
+    // Compute the auxiliary data for the match
     let quote_amount = midpoint_price * Scalar::from(min_base_amount);
     let quote_amount = scalar_to_u64(&quote_amount.floor());
     let max_minus_min_amount = u64::max(party0_max_amount, party1_max_amount) - min_base_amount;
@@ -524,6 +527,29 @@ mod tests {
         let balance2 = BALANCE2.clone();
 
         let midpoint_price = SELL_SIDE_WORST_CASE_PRICE - 1.;
+
+        let res = match_orders(
+            midpoint_price.into(),
+            &order1,
+            &balance1,
+            &order2,
+            &balance2,
+        )
+        .unwrap();
+
+        assert!(res.is_none());
+    }
+
+    /// Tests a balance of zero on one side
+    #[test]
+    fn test_zero_balance() {
+        let order1 = ORDER1.clone();
+        let balance1 = BALANCE1.clone();
+        let order2 = ORDER2.clone();
+        let mut balance2 = BALANCE2.clone();
+
+        balance2.amount = 0;
+        let midpoint_price = 7.;
 
         let res = match_orders(
             midpoint_price.into(),
