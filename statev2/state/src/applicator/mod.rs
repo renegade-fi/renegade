@@ -82,6 +82,7 @@ impl StateApplicator {
             StateTransition::NullifyOrders(msg) => self.nullify_orders(msg),
             StateTransition::AddPeers(msg) => self.add_peers(msg),
             StateTransition::RemovePeer(msg) => self.remove_peer(msg),
+            _ => unimplemented!("Unsupported state transition forwarded to applicator"),
         }
     }
 

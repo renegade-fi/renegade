@@ -10,15 +10,19 @@ use std::{
 use config::RelayerConfig;
 use crossbeam::channel::{Receiver as CrossbeamReceiver, TryRecvError};
 use external_api::bus_message::SystemBusMessage;
-use protobuf::Message;
+use protobuf::{Message, RepeatedField};
 use raft::{
-    prelude::{ConfChange, Entry, EntryType, HardState, Message as RaftMessage, Snapshot},
+    prelude::{
+        ConfChangeSingle, ConfChangeType, ConfChangeV2, Entry, EntryType, HardState,
+        Message as RaftMessage, Snapshot,
+    },
     Config as RaftConfig, RawNode,
 };
 use rand::{thread_rng, RngCore};
 use slog::Logger;
 use state_proto::StateTransition;
 use system_bus::SystemBus;
+use tracing::log::info;
 use tracing_slog::TracingSlogDrain;
 
 use crate::{
@@ -43,6 +47,9 @@ const PROPOSAL_QUEUE_DISCONNECTED: &str = "Proposal queue disconnected";
 pub struct ReplicationNodeConfig<N: RaftNetwork> {
     /// The period (in milliseconds) on which to tick the raft node
     tick_period_ms: u64,
+    /// Optimistically assume that the local node will take the role of leader, i.e. that
+    /// this is the cluster boot node
+    assume_leader: bool,
     /// A copy of the relayer's config
     relayer_config: RelayerConfig,
     /// A reference to the channel on which the replication node may receive proposals
@@ -92,7 +99,9 @@ impl<N: RaftNetwork> ReplicationNode<N> {
     ) -> Result<Self, ReplicationError> {
         // Build the log store on top of the DB
         let store = LogStore::new(config.db.clone())?;
-        Self::setup_storage_as_leader(raft_config.id, &store)?;
+        if config.assume_leader {
+            Self::setup_storage_as_leader(raft_config.id, &store)?;
+        }
 
         // Build a state applicator to handle state transitions
         let applicator = StateApplicator::new(StateApplicatorConfig {
@@ -183,11 +192,56 @@ impl<N: RaftNetwork> ReplicationNode<N> {
 
     /// Process a state transition proposal
     fn process_proposal(&mut self, proposal: StateTransition) -> Result<(), ReplicationError> {
-        let payload = serde_json::to_vec(&proposal)
-            .map_err(|e| ReplicationError::SerializeValue(e.to_string()))?;
+        // Handle raft cluster changes directly, otherwise append the proposal to the log
+        match proposal {
+            StateTransition::AddRaftLearner(peer_id) => self.add_learner(peer_id),
+            StateTransition::AddRaftPeer(peer_id) => self.add_peer(peer_id),
+            StateTransition::RemoveRaftPeer(peer_id) => self.remove_peer(peer_id),
+            _ => {
+                let payload = serde_json::to_vec(&proposal)
+                    .map_err(|e| ReplicationError::SerializeValue(e.to_string()))?;
+
+                self.inner
+                    .propose(vec![] /* context */, payload)
+                    .map_err(ReplicationError::Raft)
+            }
+        }
+    }
+
+    /// Add a raft learner to the group
+    fn add_learner(&mut self, peer_id: u64) -> Result<(), ReplicationError> {
+        let mut change = ConfChangeSingle::new();
+        change.set_node_id(peer_id);
+        change.set_change_type(ConfChangeType::AddLearnerNode);
+
+        self.conf_change(change)
+    }
+
+    /// Add a peer to the raft
+    fn add_peer(&mut self, peer_id: u64) -> Result<(), ReplicationError> {
+        let mut change = ConfChangeSingle::new();
+        change.set_node_id(peer_id);
+        change.set_change_type(ConfChangeType::AddNode);
+
+        self.conf_change(change)
+    }
+
+    /// Remove a peer from the raft
+    fn remove_peer(&mut self, peer_id: u64) -> Result<(), ReplicationError> {
+        let mut change = ConfChangeSingle::new();
+        change.set_node_id(peer_id);
+        change.set_change_type(ConfChangeType::RemoveNode);
+
+        self.conf_change(change)
+    }
+
+    /// Propose a single configuration change to the cluster
+    fn conf_change(&mut self, change: ConfChangeSingle) -> Result<(), ReplicationError> {
+        let mut conf_change = ConfChangeV2::new();
+        conf_change.set_changes(RepeatedField::from_vec(vec![change]));
 
         self.inner
-            .propose(vec![] /* context */, payload)
+            .propose_conf_change(vec![] /* context */, conf_change)
             .map_err(ReplicationError::Raft)
     }
 
@@ -220,7 +274,6 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         // Commit entries
         self.commit_entries(ready.take_committed_entries())?;
 
-        // Append new entries to the raft log
         self.append_entries(ready.take_entries())?;
 
         // Update the raft hard state
@@ -274,13 +327,18 @@ impl<N: RaftNetwork> ReplicationNode<N> {
                     let transition: StateTransition = serde_json::from_slice(entry_bytes)
                         .map_err(|e| ReplicationError::ParseValue(e.to_string()))?;
 
+                    info!(
+                        "node {} applying state transition {transition:?}",
+                        self.inner.raft.id
+                    );
+
                     self.applicator
                         .handle_state_transition(transition)
                         .map_err(ReplicationError::Applicator)?;
                 }
-                EntryType::EntryConfChange | EntryType::EntryConfChangeV2 => {
+                EntryType::EntryConfChangeV2 => {
                     // Apply a config change entry to the state machine
-                    let mut config_change = ConfChange::new();
+                    let mut config_change = ConfChangeV2::new();
                     config_change
                         .merge_from_bytes(entry.get_data())
                         .map_err(|e| ReplicationError::ParseValue(e.to_string()))?;
@@ -292,8 +350,9 @@ impl<N: RaftNetwork> ReplicationNode<N> {
                         .map_err(ReplicationError::Raft)?;
 
                     // Store the new config in the log store
-                    self.inner.mut_store().apply_config_state(config_state)?;
+                    self.inner.mut_store().apply_config_state(config_state)?
                 }
+                _ => panic!("unexpected entry type: {entry:?}"),
             }
         }
 
@@ -323,7 +382,6 @@ pub(crate) mod test_helpers {
 
     use crossbeam::channel::Receiver as CrossbeamReceiver;
     use raft::prelude::Config as RaftConfig;
-    use rand::{thread_rng, RngCore};
     use state_proto::StateTransition;
     use system_bus::SystemBus;
 
@@ -331,32 +389,72 @@ pub(crate) mod test_helpers {
 
     use super::{ReplicationNode, ReplicationNodeConfig};
 
-    /// Create a mock node
-    pub fn mock_replication_node(
+    /// Create a leader node
+    pub fn mock_leader(
+        id: u64,
         db: Arc<DB>,
         proposal_queue: CrossbeamReceiver<StateTransition>,
         network: MockNetwork,
     ) -> ReplicationNode<MockNetwork> {
-        // Build a raft node that has high tick frequency and low leader timeout intervals to
-        // speed up tests. In unit tests there is no practical latency issue, so we can set the
-        // timeouts to the minimum values they may validly take
-        ReplicationNode::new_with_config(
-            ReplicationNodeConfig {
-                tick_period_ms: 10,
-                relayer_config: Default::default(),
-                proposal_queue,
-                network,
-                db,
-                system_bus: SystemBus::new(),
-            },
+        mock_replication_node(id, true /* leader */, db, proposal_queue, network)
+    }
+
+    /// Create a follower node
+    pub fn mock_follower(
+        id: u64,
+        db: Arc<DB>,
+        proposal_queue: CrossbeamReceiver<StateTransition>,
+        network: MockNetwork,
+    ) -> ReplicationNode<MockNetwork> {
+        mock_replication_node(id, false /* leader */, db, proposal_queue, network)
+    }
+
+    /// Create a mock node
+    pub fn mock_replication_node(
+        id: u64,
+        leader: bool,
+        db: Arc<DB>,
+        proposal_queue: CrossbeamReceiver<StateTransition>,
+        network: MockNetwork,
+    ) -> ReplicationNode<MockNetwork> {
+        mock_replication_node_with_config(
+            leader,
+            db,
+            proposal_queue,
+            network,
+            // Build a raft node that has high tick frequency and low leader timeout intervals to
+            // speed up tests. In unit tests there is no practical latency issue, so we can set the
+            // timeouts to the minimum values they may validly take
             RaftConfig {
-                id: thread_rng().next_u64(),
+                id,
                 election_tick: 2,
                 min_election_tick: 2,
                 max_election_tick: 3,
                 heartbeat_tick: 1,
                 ..Default::default()
             },
+        )
+    }
+
+    /// Create a moc node with a given raft config
+    pub fn mock_replication_node_with_config(
+        leader: bool,
+        db: Arc<DB>,
+        proposal_queue: CrossbeamReceiver<StateTransition>,
+        network: MockNetwork,
+        raft_config: RaftConfig,
+    ) -> ReplicationNode<MockNetwork> {
+        ReplicationNode::new_with_config(
+            ReplicationNodeConfig {
+                tick_period_ms: 10,
+                assume_leader: leader,
+                relayer_config: Default::default(),
+                proposal_queue,
+                network,
+                db,
+                system_bus: SystemBus::new(),
+            },
+            raft_config,
         )
         .unwrap()
     }
@@ -366,17 +464,26 @@ pub(crate) mod test_helpers {
 mod test {
     use std::{sync::Arc, thread, time::Duration};
 
-    use common::types::wallet::Wallet;
+    use common::types::wallet::{Wallet, WalletIdentifier};
     use crossbeam::channel::unbounded;
     use state_proto::StateTransition;
 
     use crate::{
         applicator::{wallet_index::test::dummy_add_wallet, WALLETS_TABLE},
-        replication::network::test_helpers::MockNetwork,
+        replication::{
+            network::test_helpers::MockNetwork,
+            raft_node::test_helpers::{mock_follower, mock_leader},
+        },
+        storage::db::DB,
         test_helpers::mock_db,
     };
 
-    use super::{test_helpers::mock_replication_node, ReplicationNode, ReplicationNodeConfig};
+    use super::{ReplicationNode, ReplicationNodeConfig};
+
+    /// Find a wallet in the given DB by its wallet ID
+    fn find_wallet_in_db(wallet_id: WalletIdentifier, db: Arc<DB>) -> Wallet {
+        db.read(WALLETS_TABLE, &wallet_id).unwrap().unwrap()
+    }
 
     /// Tests that the constructor works properly, largely this means testing that the `LogStore`
     /// initialization is compatible with the `raft` setup
@@ -388,6 +495,7 @@ mod test {
         let (_, proposal_receiver) = unbounded();
         let node_config = ReplicationNodeConfig {
             tick_period_ms: 10,
+            assume_leader: true,
             relayer_config: Default::default(),
             proposal_queue: proposal_receiver,
             network: net,
@@ -404,7 +512,7 @@ mod test {
         let (net, _net2) = MockNetwork::new_duplex_conn();
         let (proposal_send, proposal_recv) = unbounded();
 
-        let node = mock_replication_node(db.clone(), proposal_recv, net);
+        let node = mock_leader(1 /* id */, db.clone(), proposal_recv, net);
         let handle = thread::spawn(|| node.run());
 
         // Give the raft time to timeout and elect a leader
@@ -422,9 +530,60 @@ mod test {
         // Check that the wallet was added to the index
         let expected_wallet: Wallet = add_wallet_msg.wallet.unwrap().try_into().unwrap();
         let wallet_id = expected_wallet.wallet_id;
-        let wallet: Wallet = db.read(WALLETS_TABLE, &wallet_id).unwrap().unwrap();
+        let wallet = find_wallet_in_db(wallet_id, db);
 
         assert!(!handle.is_finished());
         assert_eq!(wallet, expected_wallet);
+    }
+
+    /// Tests two nodes joining the cluster
+    #[test]
+    fn test_node_join() {
+        let db1 = Arc::new(mock_db());
+        let db2 = Arc::new(mock_db());
+        let (net1, net2) = MockNetwork::new_duplex_conn();
+        let (proposal_send1, proposal_recv1) = unbounded();
+        let (_proposal_send2, proposal_recv2) = unbounded();
+
+        let node1 = mock_leader(1 /* id */, db1.clone(), proposal_recv1, net1);
+        let node2 = mock_follower(2 /* id */, db2.clone(), proposal_recv2, net2);
+
+        let handle1 = thread::spawn(|| {
+            if let Err(e) = node1.run() {
+                println!("Node 1 error: {e:?}")
+            }
+        });
+        thread::sleep(Duration::from_millis(300));
+
+        let handle2 = thread::spawn(|| {
+            if let Err(e) = node2.run() {
+                println!("Node 2 error: {e:?}")
+            }
+        });
+
+        // Add node to the cluster
+        let add_node2 = StateTransition::AddRaftPeer(2);
+        proposal_send1.send(add_node2).unwrap();
+
+        // Propose a wallet to the first node
+        let add_wallet_msg = dummy_add_wallet();
+        let transition = StateTransition::AddWallet(add_wallet_msg.clone());
+        proposal_send1.send(transition).unwrap();
+
+        // Wait a bit for the proposal to be processed
+        thread::sleep(Duration::from_millis(1_000));
+
+        assert!(!handle1.is_finished());
+        assert!(!handle2.is_finished());
+
+        // Check that the wallet has been indexed in both DBs
+        let expected_wallet: Wallet = add_wallet_msg.wallet.unwrap().try_into().unwrap();
+        let wallet1 = find_wallet_in_db(expected_wallet.wallet_id, db1);
+        let wallet2 = find_wallet_in_db(expected_wallet.wallet_id, db2);
+
+        assert_eq!(wallet1, expected_wallet);
+        assert_eq!(wallet2, expected_wallet);
+        assert!(!handle1.is_finished());
+        assert!(!handle2.is_finished());
     }
 }
