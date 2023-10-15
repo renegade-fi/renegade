@@ -25,8 +25,7 @@ use test_helpers::integration_test_main;
 use tokio::sync::mpsc::{
     unbounded_channel, UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender,
 };
-use tracing::log::LevelFilter;
-use util::starknet::parse_addr_from_deployments_file;
+use util::{logging::LevelFilter, starknet::parse_addr_from_deployments_file};
 
 /// The hostport that the test expects a local devnet node to be running on
 ///
@@ -182,7 +181,7 @@ fn setup_starknet_client_mock(test_args: CliArgs) -> StarknetClient {
 /// Setup code for the integration tests
 fn setup_integration_tests(_test_args: &CliArgs) {
     // Configure logging
-    util::logging::setup_system_logger(LevelFilter::Info);
+    util::logging::setup_system_logger(LevelFilter::INFO);
 }
 
 integration_test_main!(CliArgs, IntegrationTestArgs, setup_integration_tests);

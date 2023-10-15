@@ -1,7 +1,10 @@
 //! Defines the storage layer for the `raft` implementation. We store logs, snapshots,
 //! metadata, etc in the storage layer -- concretely an embedded KV store
 
-use std::{cmp, sync::Arc};
+use std::{
+    cmp::{self, Ordering},
+    sync::Arc,
+};
 
 use libmdbx::{TransactionKind, RO};
 use protobuf::Message;
@@ -97,6 +100,32 @@ impl LogStore {
             .ok_or_else(|| ReplicationError::EntryNotFound)?;
 
         Ok(entry.into_inner())
+    }
+
+    /// Read the `ConfState` of the raft from storage
+    fn read_conf_state_with_tx<T: TransactionKind>(
+        &self,
+        tx: &DbTxn<'_, T>,
+    ) -> Result<ConfState, ReplicationError> {
+        let conf_state: ProtoStorageWrapper<ConfState> = tx
+            .read(RAFT_METADATA_TABLE, &CONF_STATE_KEY.to_string())
+            .map_err(ReplicationError::Storage)?
+            .unwrap_or_default();
+
+        Ok(conf_state.into_inner())
+    }
+
+    /// Read the `HardState` of the raft from storage
+    fn read_hard_state_with_tx<T: TransactionKind>(
+        &self,
+        tx: &DbTxn<'_, T>,
+    ) -> Result<HardState, ReplicationError> {
+        let hard_state: ProtoStorageWrapper<HardState> = tx
+            .read(RAFT_METADATA_TABLE, &HARD_STATE_KEY.to_string())
+            .map_err(ReplicationError::Storage)?
+            .unwrap_or_default();
+
+        Ok(hard_state.into_inner())
     }
 
     /// A helper to construct a cursor over the logs
@@ -195,18 +224,12 @@ impl Storage for LogStore {
     fn initial_state(&self) -> RaftResult<RaftState> {
         // Read the hard state
         let tx = self.db.new_read_tx().map_err(RaftError::from)?;
-        let hard_state: ProtoStorageWrapper<HardState> = tx
-            .read(RAFT_METADATA_TABLE, &HARD_STATE_KEY.to_string())
-            .map_err(RaftError::from)?
-            .unwrap_or_default();
-        let conf_state: ProtoStorageWrapper<ConfState> = tx
-            .read(RAFT_METADATA_TABLE, &CONF_STATE_KEY.to_string())
-            .map_err(RaftError::from)?
-            .unwrap_or_default();
+        let hard_state = self.read_hard_state_with_tx(&tx)?;
+        let conf_state = self.read_conf_state_with_tx(&tx)?;
 
         Ok(RaftState {
-            hard_state: hard_state.into_inner(),
-            conf_state: conf_state.into_inner(),
+            hard_state,
+            conf_state,
         })
     }
 
@@ -244,14 +267,15 @@ impl Storage for LogStore {
             }
 
             // If we've reached the max size, break
+            // Do not limit the size to zero entries
             let size = entry.compute_size();
-            if size > remaining_space {
+            if !entries.is_empty() && size > remaining_space {
                 break;
             }
 
             // Otherwise, add the entry to the list and update the remaining space
             entries.push(entry);
-            remaining_space -= size;
+            remaining_space = remaining_space.saturating_sub(size);
         }
 
         Ok(entries)
@@ -318,20 +342,38 @@ impl Storage for LogStore {
     ///
     /// The `to` field indicates the peer this will be sent to, unused here
     fn snapshot(&self, request_index: u64, _to: u64) -> RaftResult<RaftSnapshot> {
+        let mut snap = RaftSnapshot::default();
+        let md = snap.mut_metadata();
+
         // Read the snapshot metadata from the metadata table
         let tx = self.db.new_read_tx().map_err(RaftError::from)?;
-        let metadata: SnapshotMetadata = tx
+
+        let hard_state = self.read_hard_state_with_tx(&tx)?;
+        md.index = hard_state.commit;
+
+        let stored_metadata: SnapshotMetadata = tx
             .read(RAFT_METADATA_TABLE, &SNAPSHOT_METADATA_KEY.to_string())
             .map_err(RaftError::from)?
             .map(|value: ProtoStorageWrapper<SnapshotMetadata>| value.into_inner())
             .ok_or_else(|| RaftError::Store(RaftStorageError::SnapshotTemporarilyUnavailable))?;
 
-        if metadata.index < request_index {
-            return Err(RaftError::Store(RaftStorageError::SnapshotOutOfDate));
+        md.term = match md.index.cmp(&stored_metadata.index) {
+            Ordering::Equal => stored_metadata.term,
+            Ordering::Greater => self
+                .read_log_entry(md.index)
+                .map(|entry| entry.term)
+                .map_err(RaftError::from)?,
+            Ordering::Less => {
+                return Err(RaftError::Store(RaftStorageError::SnapshotOutOfDate));
+            }
+        };
+
+        if md.index < request_index {
+            md.index = request_index;
         }
 
-        let mut snap = RaftSnapshot::new();
-        snap.set_metadata(metadata);
+        let conf_state = self.read_conf_state_with_tx(&tx)?;
+        md.set_conf_state(conf_state);
 
         Ok(snap)
     }
@@ -344,7 +386,7 @@ mod test {
     use protobuf::Message;
     use raft::{
         prelude::{ConfState, Entry as RaftEntry, HardState, Snapshot, SnapshotMetadata},
-        Error as RaftError, GetEntriesContext, Storage, StorageError as RaftStorageError,
+        GetEntriesContext, Storage,
     };
     use rand::{seq::IteratorRandom, thread_rng};
 
@@ -429,23 +471,6 @@ mod test {
         assert_eq!(&state.conf_state, snap.get_metadata().get_conf_state());
     }
 
-    /// Tests fetching a snapshot from storage when the stored snapshot is out of date
-    #[test]
-    fn test_out_of_date_snapshot() {
-        let store = mock_log_store();
-        let snap = mock_snapshot();
-        store.apply_snapshot(&snap).unwrap();
-
-        // Attempt to fetch a snapshot at a higher index than the one stored
-        let index = snap.get_metadata().get_index() + 1;
-        let res = store.snapshot(index, 0 /* peer_id */);
-
-        assert!(matches!(
-            res,
-            Err(RaftError::Store(RaftStorageError::SnapshotOutOfDate))
-        ))
-    }
-
     /// Tests fetching an up-to-date snapshot
     #[test]
     fn test_up_to_date_snapshot() {
@@ -478,10 +503,7 @@ mod test {
 
         assert_eq!(first, 1);
         assert_eq!(last, 0);
-        assert!(matches!(
-            entry_term,
-            Err(RaftError::Store(RaftStorageError::Unavailable))
-        ))
+        assert!(matches!(entry_term, Ok(0)))
     }
 
     /// Tests fetching the entries from a basic log with a handful of entries

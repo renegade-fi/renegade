@@ -57,6 +57,9 @@ mod protos {
 // | Type Definitions + Conversions |
 // ----------------------------------
 
+/// A type alias for peer IDs used in the replication layer
+pub type RaftPeerId = u64;
+
 /// The `StateTransition` type encapsulates all possible state transitions, allowing transitions
 /// to be handled generically before they are applied
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -71,10 +74,16 @@ pub enum StateTransition {
     AddOrderValidityProof(AddOrderValidityProof),
     /// Cancel all orders on a given nullifier
     NullifyOrders(NullifyOrders),
-    /// Add a set of peers to the network topology
+    /// Add a set of peers to the p2p network topology
     AddPeers(AddPeers),
+    /// Add a raft learner to the cluster
+    AddRaftLearner(RaftPeerId),
+    /// Add a raft peer to the local consensus cluster
+    AddRaftPeer(RaftPeerId),
     /// Remove a peer from the network topology
     RemovePeer(RemovePeer),
+    /// Remove a raft peer from the local consensus cluster
+    RemoveRaftPeer(RaftPeerId),
 }
 
 /// PeerId

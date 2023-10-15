@@ -14,7 +14,7 @@ mod zk_gadgets;
 use clap::Parser;
 use mpc_stark::MpcFabric;
 use test_helpers::{integration_test_main, mpc_network::setup_mpc_fabric};
-use tracing::log::LevelFilter;
+use util::logging::LevelFilter;
 
 /// The arguments used for running circuits integration tests
 #[derive(Debug, Clone, Parser)]
@@ -57,7 +57,7 @@ impl From<CliArgs> for IntegrationTestArgs {
 
 /// Setup logging for integration tests
 fn setup_integration_tests(_test_args: &CliArgs) {
-    util::logging::setup_system_logger(LevelFilter::Info);
+    util::logging::setup_system_logger(LevelFilter::INFO);
 }
 
 integration_test_main!(CliArgs, IntegrationTestArgs, setup_integration_tests);

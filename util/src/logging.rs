@@ -1,23 +1,12 @@
 //! Defines helpers for logging
 
-use chrono::Local;
-use env_logger::Builder;
-use std::io::Write;
-use tracing::log::LevelFilter;
+pub use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::fmt::format::Format;
 
 /// Initialize a logger at the given log level
 pub fn setup_system_logger(level: LevelFilter) {
-    Builder::new()
-        .format(|buf, record| {
-            writeln!(
-                buf,
-                "{} [{}] {} - {}",
-                Local::now().format("%Y-%m-%dT%H:%M:%S"),
-                record.level(),
-                record.module_path().unwrap(),
-                record.args()
-            )
-        })
-        .filter(None, level)
+    tracing_subscriber::fmt()
+        .event_format(Format::default().pretty())
+        .with_max_level(level)
         .init();
 }

@@ -16,8 +16,9 @@ use eyre::Result;
 use mpc_stark::algebra::scalar::Scalar;
 use starknet_client::client::{StarknetClient, StarknetClientConfig};
 use test_helpers::integration_test_main;
-use tracing::log::LevelFilter;
-use util::{runtime::block_on_result, starknet::parse_addr_from_deployments_file};
+use util::{
+    logging::LevelFilter, runtime::block_on_result, starknet::parse_addr_from_deployments_file,
+};
 
 use crate::helpers::deploy_new_wallet;
 
@@ -153,7 +154,7 @@ fn setup_pre_allocated_state(client: &StarknetClient) -> Result<PreAllocatedStat
 /// Setup code for the integration tests
 fn setup_integration_tests(_test_args: &CliArgs) {
     // Configure logging
-    util::logging::setup_system_logger(LevelFilter::Info);
+    util::logging::setup_system_logger(LevelFilter::INFO);
 }
 
 integration_test_main!(CliArgs, IntegrationTestArgs, setup_integration_tests);
