@@ -98,7 +98,7 @@ impl CoinbaseConnection {
 
         // Authenticate the request with the API key
         let channel = "level2";
-        let timestamp = (get_current_time_seconds() / 1000).to_string();
+        let timestamp = get_current_time_seconds().to_string();
         let signature_bytes = HMAC::mac(
             format!("{}{}{}", timestamp, channel, product_ids),
             api_secret,
