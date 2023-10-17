@@ -39,29 +39,41 @@ pub(crate) mod test_helpers {
 
     use super::RaftNetwork;
 
-    /// A mock network that is brokered by two channels
+    /// A mock network that is brokered by `N` channels
+    ///
+    /// Emulates a mesh network by sitting centralized between all point-to-point comms
     pub struct MockNetwork {
         /// The sender channel
-        sender: CrossbeamSender<RaftMessage>,
-        /// The receiver channel                                    
+        senders: Vec<CrossbeamSender<RaftMessage>>,
+        /// The owner's receiver channel                                    
         receiver: CrossbeamReceiver<RaftMessage>,
     }
 
     impl MockNetwork {
-        /// Constructor
-        pub fn new(
-            sender: CrossbeamSender<RaftMessage>,
-            receiver: CrossbeamReceiver<RaftMessage>,
-        ) -> Self {
-            Self { sender, receiver }
+        /// Constructor, returns a handle to the network mesh for each node
+        pub fn new_n_way_mesh(n_nodes: usize) -> Vec<Self> {
+            let mut senders = Vec::with_capacity(n_nodes);
+            let mut receivers = Vec::with_capacity(n_nodes);
+
+            for _ in 0..n_nodes {
+                let (s, r) = unbounded();
+                senders.push(s);
+                receivers.push(r);
+            }
+
+            receivers
+                .into_iter()
+                .map(|r| Self {
+                    senders: senders.clone(),
+                    receiver: r,
+                })
+                .collect()
         }
 
         /// Create a double sided mock connection
         pub fn new_duplex_conn() -> (Self, Self) {
-            let (s1, r1) = unbounded();
-            let (s2, r2) = unbounded();
-
-            (Self::new(s1, r2), Self::new(s2, r1))
+            let mut res = Self::new_n_way_mesh(2 /* n_nodes */);
+            (res.remove(0), res.remove(0))
         }
     }
 
@@ -69,7 +81,8 @@ pub(crate) mod test_helpers {
         type Error = ReplicationError;
 
         fn send(&mut self, message: RaftMessage) -> Result<(), Self::Error> {
-            self.sender
+            let recipient = (message.to - 1) as usize;
+            self.senders[recipient]
                 .send(message)
                 .map_err(|e| ReplicationError::SendMessage(IOError::new(ErrorKind::NetworkDown, e)))
         }

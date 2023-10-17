@@ -16,7 +16,7 @@ use raft::{
         ConfChangeSingle, ConfChangeType, ConfChangeV2, Entry, EntryType, HardState,
         Message as RaftMessage, Snapshot,
     },
-    Config as RaftConfig, RawNode,
+    Config as RaftConfig, Error as RaftError, RawNode,
 };
 use rand::{thread_rng, RngCore};
 use slog::Logger;
@@ -177,7 +177,11 @@ impl<N: RaftNetwork> ReplicationNode<N> {
 
             // Check for new messages from raft peers
             while let Some(msg) = self.network.try_recv().map_err(Into::into)? {
-                self.inner.step(msg).map_err(ReplicationError::Raft)?;
+                match self.inner.step(msg) {
+                    // Ignore messages from unknown peers
+                    Err(RaftError::StepPeerNotFound) => Ok(()),
+                    res => res.map_err(ReplicationError::Raft),
+                }?;
             }
 
             // Tick the raft node after the sleep interval has elapsed
@@ -378,16 +382,131 @@ impl<N: RaftNetwork> ReplicationNode<N> {
 
 #[cfg(test)]
 pub(crate) mod test_helpers {
-    use std::sync::Arc;
+    use std::{
+        sync::Arc,
+        thread::{self, JoinHandle},
+        time::Duration,
+    };
 
-    use crossbeam::channel::Receiver as CrossbeamReceiver;
+    use crossbeam::channel::{unbounded, Receiver as CrossbeamReceiver, Sender};
     use raft::prelude::Config as RaftConfig;
     use state_proto::StateTransition;
     use system_bus::SystemBus;
 
-    use crate::{replication::network::test_helpers::MockNetwork, storage::db::DB};
+    use crate::{
+        replication::{error::ReplicationError, network::test_helpers::MockNetwork},
+        storage::db::DB,
+        test_helpers::mock_db,
+    };
 
     use super::{ReplicationNode, ReplicationNodeConfig};
+
+    /// A mock cluster, holds the handles of the threads running each node, as well as
+    /// references to their databases and proposal queues
+    pub struct MockReplicationCluster {
+        /// The handles of the nodes in the cluster
+        handles: Vec<JoinHandle<Result<(), ReplicationError>>>,
+        /// The dbs of the nodes
+        dbs: Vec<Arc<DB>>,
+        /// The proposal senders of the nodes
+        proposal_senders: Vec<Sender<StateTransition>>,
+    }
+
+    impl MockReplicationCluster {
+        /// Create a mock cluster of nodes
+        pub fn new(n_nodes: usize) -> Self {
+            let mut nets = MockNetwork::new_n_way_mesh(n_nodes);
+            let dbs = (0..n_nodes)
+                .map(|_| Arc::new(mock_db()))
+                .collect::<Vec<_>>();
+
+            let mut senders = Vec::new();
+            let mut receivers = Vec::new();
+            for _ in 0..n_nodes {
+                let (sender, receiver) = unbounded();
+                senders.push(sender);
+                receivers.push(receiver);
+            }
+
+            // Build one leader and `n_nodes - 1` followers
+            let leader = mock_leader(
+                1, /* id */
+                dbs[0].clone(),
+                receivers.remove(0),
+                nets.remove(0),
+            );
+
+            let followers = (1..n_nodes)
+                .zip(receivers)
+                .map(|(i, recv)| {
+                    mock_follower((i + 1) as u64, dbs[i].clone(), recv, nets.remove(0))
+                })
+                .collect::<Vec<_>>();
+
+            // Spawn each node in a separate thread
+            let handles = vec![leader]
+                .into_iter()
+                .chain(followers)
+                .enumerate()
+                .map(|(i, node)| {
+                    thread::spawn(move || {
+                        if let Err(e) = node.run() {
+                            println!("node-{} error: {e:?}", i + 1);
+                            return Err(e);
+                        }
+
+                        Ok(())
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            // Give the cluster some time to stabilize after an election
+            thread::sleep(Duration::from_millis(50));
+
+            // Propose a node addition to the cluster for each of the followers
+            let leader_proposal_queue = senders[0].clone();
+            for node_id in 2..=n_nodes {
+                let add_node = StateTransition::AddRaftPeer(node_id as u64);
+                leader_proposal_queue.send(add_node).unwrap();
+                thread::sleep(Duration::from_millis(50))
+            }
+
+            Self {
+                handles,
+                dbs,
+                proposal_senders: senders,
+            }
+        }
+
+        /// Get a reference to the `n`th node's DB
+        ///
+        /// We 1-index here to match the node IDs
+        pub fn db(&self, node_id: usize) -> Arc<DB> {
+            self.dbs[node_id - 1].clone()
+        }
+
+        /// Send a proposal to the `n`th node
+        ///
+        /// We 1-index here to match the node IDs
+        pub fn send_proposal(&self, node_id: usize, proposal: StateTransition) {
+            self.proposal_senders[node_id - 1].send(proposal).unwrap();
+        }
+
+        /// Remove a node from the cluster
+        pub fn remove_node(&self, node_id: usize) {
+            let remove_node = StateTransition::RemoveRaftPeer(node_id as u64);
+            self.proposal_senders[node_id - 1]
+                .send(remove_node)
+                .unwrap();
+        }
+
+        /// Assert that no crashes have occurred
+        pub fn assert_no_crashes(&self) {
+            for handle in self.handles.iter() {
+                assert!(!handle.is_finished());
+            }
+        }
+    }
 
     /// Create a leader node
     pub fn mock_leader(
@@ -406,7 +525,20 @@ pub(crate) mod test_helpers {
         proposal_queue: CrossbeamReceiver<StateTransition>,
         network: MockNetwork,
     ) -> ReplicationNode<MockNetwork> {
-        mock_replication_node(id, false /* leader */, db, proposal_queue, network)
+        mock_replication_node_with_config(
+            false, /* leader */
+            db,
+            proposal_queue,
+            network,
+            RaftConfig {
+                id,
+                election_tick: 20,
+                min_election_tick: 20,
+                max_election_tick: 30,
+                heartbeat_tick: 1,
+                ..Default::default()
+            },
+        )
     }
 
     /// Create a mock node
@@ -466,13 +598,13 @@ mod test {
 
     use common::types::wallet::{Wallet, WalletIdentifier};
     use crossbeam::channel::unbounded;
+    use rand::{thread_rng, Rng};
     use state_proto::StateTransition;
 
     use crate::{
         applicator::{wallet_index::test::dummy_add_wallet, WALLETS_TABLE},
         replication::{
-            network::test_helpers::MockNetwork,
-            raft_node::test_helpers::{mock_follower, mock_leader},
+            network::test_helpers::MockNetwork, raft_node::test_helpers::MockReplicationCluster,
         },
         storage::db::DB,
         test_helpers::mock_db,
@@ -508,82 +640,109 @@ mod test {
     /// Tests handling a proposal to add a wallet
     #[test]
     fn test_proposal_add_wallet() {
-        let db = Arc::new(mock_db());
-        let (net, _net2) = MockNetwork::new_duplex_conn();
-        let (proposal_send, proposal_recv) = unbounded();
-
-        let node = mock_leader(1 /* id */, db.clone(), proposal_recv, net);
-        let handle = thread::spawn(|| node.run());
-
-        // Give the raft time to timeout and elect a leader
-        thread::sleep(Duration::from_millis(300));
+        let mock_cluster = MockReplicationCluster::new(1 /* n_nodes */);
+        mock_cluster.assert_no_crashes();
 
         // Send a proposal to add a wallet
         let add_wallet_msg = dummy_add_wallet();
         let transition = StateTransition::AddWallet(add_wallet_msg.clone());
-
-        proposal_send.send(transition).unwrap();
+        mock_cluster.send_proposal(1 /* node_id */, transition);
 
         // Wait a bit for the proposal to be processed
         thread::sleep(Duration::from_millis(100));
 
         // Check that the wallet was added to the index
+        let db = mock_cluster.db(1 /* node_id */);
         let expected_wallet: Wallet = add_wallet_msg.wallet.unwrap().try_into().unwrap();
         let wallet_id = expected_wallet.wallet_id;
         let wallet = find_wallet_in_db(wallet_id, db);
 
-        assert!(!handle.is_finished());
+        mock_cluster.assert_no_crashes();
         assert_eq!(wallet, expected_wallet);
     }
 
     /// Tests two nodes joining the cluster
     #[test]
     fn test_node_join() {
-        let db1 = Arc::new(mock_db());
-        let db2 = Arc::new(mock_db());
-        let (net1, net2) = MockNetwork::new_duplex_conn();
-        let (proposal_send1, proposal_recv1) = unbounded();
-        let (_proposal_send2, proposal_recv2) = unbounded();
-
-        let node1 = mock_leader(1 /* id */, db1.clone(), proposal_recv1, net1);
-        let node2 = mock_follower(2 /* id */, db2.clone(), proposal_recv2, net2);
-
-        let handle1 = thread::spawn(|| {
-            if let Err(e) = node1.run() {
-                println!("Node 1 error: {e:?}")
-            }
-        });
-        thread::sleep(Duration::from_millis(300));
-
-        let handle2 = thread::spawn(|| {
-            if let Err(e) = node2.run() {
-                println!("Node 2 error: {e:?}")
-            }
-        });
-
-        // Add node to the cluster
-        let add_node2 = StateTransition::AddRaftPeer(2);
-        proposal_send1.send(add_node2).unwrap();
+        let cluster = MockReplicationCluster::new(2 /* n_nodes */);
 
         // Propose a wallet to the first node
         let add_wallet_msg = dummy_add_wallet();
         let transition = StateTransition::AddWallet(add_wallet_msg.clone());
-        proposal_send1.send(transition).unwrap();
+        cluster.send_proposal(1 /* node_id */, transition);
 
         // Wait a bit for the proposal to be processed
-        thread::sleep(Duration::from_millis(1_000));
-
-        assert!(!handle1.is_finished());
-        assert!(!handle2.is_finished());
+        thread::sleep(Duration::from_millis(100));
 
         // Check that the wallet has been indexed in both DBs
+        let db1 = cluster.db(1 /* node_id */);
+        let db2 = cluster.db(2 /* node_id */);
+
         let expected_wallet: Wallet = add_wallet_msg.wallet.unwrap().try_into().unwrap();
         let wallet1 = find_wallet_in_db(expected_wallet.wallet_id, db1);
         let wallet2 = find_wallet_in_db(expected_wallet.wallet_id, db2);
 
         assert_eq!(wallet1, expected_wallet);
         assert_eq!(wallet2, expected_wallet);
-        assert!(!handle1.is_finished());
-        assert!(!handle2.is_finished());
+        cluster.assert_no_crashes();
+    }
+
+    /// Tests proposing to followers in a larger cluster
+    #[test]
+    fn test_many_node_consensus() {
+        const N: usize = 5;
+        let mut rng = thread_rng();
+        let cluster = MockReplicationCluster::new(N);
+
+        // Propose a wallet to a random node
+        let add_wallet_msg = dummy_add_wallet();
+        let transition = StateTransition::AddWallet(add_wallet_msg.clone());
+        let node_id = rng.gen_range(1..=N);
+        cluster.send_proposal(node_id, transition);
+
+        thread::sleep(Duration::from_millis(500));
+
+        // Check a random node for the wallet
+        let node_id = rng.gen_range(1..=N);
+        let db = cluster.db(node_id);
+
+        let expected_wallet: Wallet = add_wallet_msg.wallet.unwrap().try_into().unwrap();
+        let wallet = find_wallet_in_db(expected_wallet.wallet_id, db);
+
+        assert_eq!(wallet, expected_wallet);
+        cluster.assert_no_crashes();
+    }
+
+    #[test]
+    fn test_node_leave() {
+        const N: usize = 5;
+        let mut rng = thread_rng();
+        let cluster = MockReplicationCluster::new(N);
+
+        // Remove a node from the cluster
+        let removed_node = rng.gen_range(1..=N);
+        cluster.remove_node(removed_node);
+        thread::sleep(Duration::from_millis(50));
+
+        // Select a node that was not removed, and propose a new wallet
+        let add_wallet_msg = dummy_add_wallet();
+        let transition = StateTransition::AddWallet(add_wallet_msg.clone());
+
+        let mut node_id = rng.gen_range(1..=N);
+        while node_id == removed_node {
+            node_id = rng.gen_range(1..=N);
+        }
+
+        cluster.send_proposal(node_id, transition);
+        thread::sleep(Duration::from_millis(500));
+
+        // Check the removed node, verify that it never received the update
+        let db = cluster.db(removed_node);
+
+        let expected_wallet: Wallet = add_wallet_msg.wallet.unwrap().try_into().unwrap();
+        let res: Option<Wallet> = db.read(WALLETS_TABLE, &expected_wallet.wallet_id).unwrap();
+
+        assert!(res.is_none());
+        cluster.assert_no_crashes();
     }
 }
