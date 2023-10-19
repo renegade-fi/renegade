@@ -30,6 +30,7 @@ util = { path = "../util" }
 # === Misc Dependencies === #
 base64 = { version = "0.13" }
 bimap = "0.6.2"
+derivative = "2.2"
 indexmap = "1.9"
 itertools = "0.10"
 lazy_static = "1.4"

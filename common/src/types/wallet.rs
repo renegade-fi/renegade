@@ -1,6 +1,14 @@
 //! Defines wallet types useful throughout the workspace
 
-use std::{collections::HashSet, hash::Hash, iter};
+use std::{
+    collections::HashSet,
+    hash::Hash,
+    iter,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 use circuit_types::{
     balance::Balance,
@@ -16,12 +24,14 @@ use circuit_types::{
     SizedWallet as SizedCircuitWallet, SizedWalletShare,
 };
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use derivative::Derivative;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use mpc_stark::algebra::scalar::Scalar;
 use num_bigint::BigUint;
 use renegade_crypto::hash::evaluate_hash_chain;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use tracing::log;
 use uuid::Uuid;
 
 use super::{gossip::WrappedPeerId, merkle::MerkleAuthenticationPath};
@@ -32,7 +42,8 @@ pub type WalletIdentifier = Uuid;
 pub type OrderIdentifier = Uuid;
 
 /// Represents the private keys a relayer has access to for a given wallet
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Derivative, Serialize, Deserialize)]
+#[derivative(PartialEq, Eq)]
 pub struct PrivateKeyChain {
     /// Optionally the relayer holds sk_root, in which case the relayer has
     /// heightened permissions than the standard case
@@ -56,7 +67,8 @@ pub struct KeyChain {
 pub type WalletAuthenticationPath = MerkleAuthenticationPath;
 
 /// Represents a wallet managed by the local relayer
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Derivative, Deserialize)]
+#[derivative(PartialEq)]
 pub struct Wallet {
     /// The identifier used to index the wallet
     pub wallet_id: WalletIdentifier,
@@ -91,6 +103,23 @@ pub struct Wallet {
     /// The authentication paths for the public and private shares of the wallet
     #[serde(default)]
     pub merkle_proof: Option<WalletAuthenticationPath>,
+    /// An update lock, used to protect against concurrent updates to a wallet
+    ///
+    /// `true` implies that the lock is held elsewhere
+    ///
+    /// TODO: Remove this in favor of a more robust update dependency solution once the
+    /// state has been refactored to a raft-based consensus
+    #[derivative(PartialEq = "ignore")]
+    #[serde(skip_serializing, skip_deserializing, default = "default_update_lock")]
+    pub update_locked: Arc<AtomicBool>,
+}
+
+/// A custom default method that serde uses for deserialization; simply creates a new
+/// lock that is initialized unlocked
+///
+/// TODO: Remove this when we remove the field
+fn default_update_lock() -> Arc<AtomicBool> {
+    Arc::new(AtomicBool::default())
 }
 
 /// Custom serialization for an `IndexMap` type that preserves insertion ordering
@@ -149,7 +178,32 @@ impl From<Wallet> for SizedCircuitWallet {
     }
 }
 
+// TODO: Remove wallet locking methods
 impl Wallet {
+    /// Try to lock the wallet for an update
+    ///
+    /// Returns `true` if the update succeeded
+    pub fn try_lock_wallet(&self) -> bool {
+        log::debug!("locking wallet: {}", self.wallet_id,);
+
+        self.update_locked
+            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    }
+
+    /// Unlock the wallet
+    pub fn unlock_wallet(&self) -> bool {
+        log::debug!("unlocking wallet: {}", self.wallet_id);
+        self.update_locked
+            .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    }
+
+    /// Check if the wallet is locked
+    pub fn is_locked(&self) -> bool {
+        self.update_locked.load(Ordering::Relaxed)
+    }
+
     /// Computes the commitment to the private shares of the wallet
     pub fn get_private_share_commitment(&self) -> WalletShareStateCommitment {
         compute_wallet_private_share_commitment(self.private_shares.clone())
@@ -238,7 +292,10 @@ pub struct WalletMetadata {
 /// Defines mocks for the wallet used in testing
 #[cfg(feature = "mocks")]
 pub mod mocks {
-    use std::iter;
+    use std::{
+        iter,
+        sync::{atomic::AtomicBool, Arc},
+    };
 
     use circuit_types::{
         keychain::{
@@ -286,6 +343,7 @@ pub mod mocks {
             )),
             metadata: WalletMetadata::default(),
             merkle_proof: Some(mock_merkle_path()),
+            update_locked: Arc::new(AtomicBool::default()),
         };
 
         // Reblind the wallet so that the secret shares a valid sharing of the wallet
