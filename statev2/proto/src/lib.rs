@@ -6,7 +6,14 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
-use std::{collections::HashSet, str::FromStr, sync::atomic::AtomicU64};
+use std::{
+    collections::HashSet,
+    str::FromStr,
+    sync::{
+        atomic::{AtomicBool, AtomicU64},
+        Arc,
+    },
+};
 
 use circuit_types::{
     balance::Balance as CircuitBalance,
@@ -500,6 +507,7 @@ impl TryFrom<Wallet> for RuntimeWallet {
             private_shares,
             blinded_public_shares,
             merkle_proof,
+            update_locked: Arc::new(AtomicBool::default()),
         })
     }
 }

@@ -77,6 +77,8 @@ pub enum UpdateWalletTaskError {
     StateMissing(String),
     /// An error while updating validity proofs for a wallet
     UpdatingValidityProofs(String),
+    /// Wallet is already locked, cannot update
+    WalletLocked,
 }
 
 impl Display for UpdateWalletTaskError {
@@ -175,6 +177,12 @@ impl Task for UpdateWalletTask {
         Ok(())
     }
 
+    // Unlock the update lock if the task fails
+    async fn cleanup(&mut self) -> Result<(), UpdateWalletTaskError> {
+        self.old_wallet.unlock_wallet();
+        Ok(())
+    }
+
     fn completed(&self) -> bool {
         matches!(self.state(), Self::State::Completed)
     }
@@ -208,6 +216,10 @@ impl UpdateWalletTask {
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     ) -> Result<Self, UpdateWalletTaskError> {
+        if !old_wallet.try_lock_wallet() {
+            return Err(UpdateWalletTaskError::WalletLocked);
+        }
+
         // Safety check, the new wallet's secret shares must recover the new wallet
         let new_circuit_wallet: SizedWallet = new_wallet.clone().into();
         let recovered_wallet = wallet_from_blinded_shares(

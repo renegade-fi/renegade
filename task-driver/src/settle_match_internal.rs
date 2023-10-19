@@ -24,6 +24,7 @@ use circuits::zk_circuits::{
     valid_match_mpc::ValidMatchMpcWitness,
     valid_settle::{ValidSettleStatement, ValidSettleWitness},
 };
+use common::types::wallet::WalletIdentifier;
 use common::types::{
     proof_bundles::{
         OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMatchMpcBundle,
@@ -141,6 +142,8 @@ pub enum SettleMatchInternalTaskError {
     ProvingValidity(String),
     /// Error interacting with the Starknet API
     Starknet(String),
+    /// A wallet is already locked
+    WalletLocked(WalletIdentifier),
 }
 
 impl Display for SettleMatchInternalTaskError {
@@ -194,6 +197,17 @@ impl Task for SettleMatchInternalTask {
         Ok(())
     }
 
+    async fn cleanup(&mut self) -> Result<(), Self::Error> {
+        self.find_wallet_for_order(&self.order_id1)
+            .await?
+            .unlock_wallet();
+        self.find_wallet_for_order(&self.order_id2)
+            .await?
+            .unlock_wallet();
+
+        Ok(())
+    }
+
     fn name(&self) -> String {
         SETTLE_MATCH_INTERNAL_TASK_NAME.to_string()
     }
@@ -214,7 +228,7 @@ impl Task for SettleMatchInternalTask {
 impl SettleMatchInternalTask {
     /// Constructor
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub async fn new(
         execution_price: FixedPoint,
         order1: OrderIdentifier,
         order2: OrderIdentifier,
@@ -227,8 +241,8 @@ impl SettleMatchInternalTask {
         network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, SettleMatchInternalTaskError> {
+        let self_ = Self {
             execution_price,
             order_id1: order1,
             order_id2: order2,
@@ -244,14 +258,46 @@ impl SettleMatchInternalTask {
             global_state,
             proof_manager_work_queue,
             task_state: SettleMatchInternalTaskState::Pending,
+        };
+
+        // Try to lock both wallets, if they cannot be locked then the task cannot be run
+        // and the internal matching engine will re-run next time the proofs are updated
+        let wallet1 = self_.find_wallet_for_order(&order1).await?;
+        let wallet2 = self_.find_wallet_for_order(&order2).await?;
+
+        if !wallet1.try_lock_wallet() {
+            return Err(SettleMatchInternalTaskError::WalletLocked(
+                wallet1.wallet_id,
+            ));
         }
+
+        if !wallet2.try_lock_wallet() {
+            return Err(SettleMatchInternalTaskError::WalletLocked(
+                wallet2.wallet_id,
+            ));
+        }
+
+        Ok(self_)
     }
 
     /// Find the wallet for an order in the global state
-    async fn find_wallet_for_order(&self, order: &OrderIdentifier) -> Option<Wallet> {
+    async fn find_wallet_for_order(
+        &self,
+        order: &OrderIdentifier,
+    ) -> Result<Wallet, SettleMatchInternalTaskError> {
         let locked_wallet_index = self.global_state.read_wallet_index().await;
-        let wallet_id = locked_wallet_index.get_wallet_for_order(order)?;
-        locked_wallet_index.get_wallet(&wallet_id).await
+        let wallet_id = locked_wallet_index
+            .get_wallet_for_order(order)
+            .ok_or_else(|| {
+                SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
+            })?;
+
+        locked_wallet_index
+            .get_wallet(&wallet_id)
+            .await
+            .ok_or_else(|| {
+                SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
+            })
     }
 
     /// Prove `VALID MATCH MPC` on the order pair
@@ -417,18 +463,8 @@ impl SettleMatchInternalTask {
     /// Update the wallet state and Merkle openings
     async fn update_state(&self) -> Result<(), SettleMatchInternalTaskError> {
         // Lookup the wallets that manage each order
-        let wallet1 = self
-            .find_wallet_for_order(&self.order_id1)
-            .await
-            .ok_or_else(|| {
-                SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
-            })?;
-        let wallet2 = self
-            .find_wallet_for_order(&self.order_id2)
-            .await
-            .ok_or_else(|| {
-                SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
-            })?;
+        let wallet1 = self.find_wallet_for_order(&self.order_id1).await?;
+        let wallet2 = self.find_wallet_for_order(&self.order_id2).await?;
 
         // Update the wallet state
         let (mut buy_side_wallet, buy_side_order, mut sell_side_wallet, sell_side_order) =
@@ -499,18 +535,8 @@ impl SettleMatchInternalTask {
     /// Update validity proofs for the wallet
     async fn update_proofs(&self) -> Result<(), SettleMatchInternalTaskError> {
         // Lookup wallets to update proofs for
-        let wallet1 = self
-            .find_wallet_for_order(&self.order_id1)
-            .await
-            .ok_or_else(|| {
-                SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
-            })?;
-        let wallet2 = self
-            .find_wallet_for_order(&self.order_id2)
-            .await
-            .ok_or_else(|| {
-                SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
-            })?;
+        let wallet1 = self.find_wallet_for_order(&self.order_id1).await?;
+        let wallet2 = self.find_wallet_for_order(&self.order_id2).await?;
 
         // We spawn the proof updates in tasks so that they may run concurrently, we do not
         // want to wait for the first wallet's proofs to finish before starting the second

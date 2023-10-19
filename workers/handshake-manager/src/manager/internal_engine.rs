@@ -136,7 +136,9 @@ impl HandshakeExecutor {
                     self.network_channel.clone(),
                     self.global_state.clone(),
                     self.proof_manager_work_queue.clone(),
-                );
+                )
+                .await
+                .map_err(|_| HandshakeManagerError::TaskError(ERR_TASK_EXECUTION.to_string()))?;
 
                 let (_, join_handle) = self.task_driver.start_task(task).await;
 

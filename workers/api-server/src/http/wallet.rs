@@ -8,6 +8,7 @@ use circuit_types::{
     order::Order,
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
+use common::types::wallet::{Wallet, WalletIdentifier};
 use constants::{MAX_FEES, MAX_ORDERS};
 use crossbeam::channel::Sender as CrossbeamSender;
 use external_api::{
@@ -57,6 +58,34 @@ pub(super) fn get_current_timestamp() -> u64 {
     now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
 }
 
+/// Find the wallet for the given id in the global state
+///
+/// Attempts to acquire the lock for an update on the wallet
+async fn find_wallet_for_update(
+    wallet_id: WalletIdentifier,
+    state: &RelayerState,
+) -> Result<Wallet, ApiServerError> {
+    // Find the wallet in global state and use its keys to authenticate the request
+    let wallet = state
+        .read_wallet_index()
+        .await
+        .get_wallet(&wallet_id)
+        .await
+        .ok_or_else(|| {
+            ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, ERR_WALLET_NOT_FOUND.to_string())
+        })?;
+
+    // Acquire the lock for the wallet
+    if wallet.is_locked() {
+        return Err(ApiServerError::HttpStatusCode(
+            StatusCode::LOCKED,
+            ERR_UPDATE_IN_PROGRESS.to_string(),
+        ));
+    }
+
+    Ok(wallet)
+}
+
 // ---------------
 // | HTTP Routes |
 // ---------------
@@ -102,6 +131,8 @@ const ERR_ORDERS_FULL: &str = "wallet's orderbook is full";
 const ERR_FEES_FULL: &str = "wallet's fee list is full";
 /// The error message to display when a fee index is out of range
 const ERR_FEE_OUT_OF_RANGE: &str = "fee index out of range";
+/// Error message displayed when an update is already in progress on a wallet
+const ERR_UPDATE_IN_PROGRESS: &str = "wallet update already in progress";
 
 // -------------------------
 // | Wallet Route Handlers |
@@ -456,18 +487,7 @@ impl TypedHandler for CreateOrderHandler {
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
         // Lookup the wallet in the global state
-        let old_wallet = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
-            .ok_or_else(|| {
-                ApiServerError::HttpStatusCode(
-                    StatusCode::NOT_FOUND,
-                    ERR_WALLET_NOT_FOUND.to_string(),
-                )
-            })?;
+        let old_wallet = find_wallet_for_update(wallet_id, &self.global_state).await?;
 
         // Ensure that there is space below MAX_ORDERS for the new order
         let num_orders = old_wallet
@@ -560,18 +580,7 @@ impl TypedHandler for UpdateOrderHandler {
         let order_id = parse_order_id_from_params(&params)?;
 
         // Lookup the wallet in the global state
-        let old_wallet = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
-            .ok_or_else(|| {
-                ApiServerError::HttpStatusCode(
-                    StatusCode::NOT_FOUND,
-                    ERR_WALLET_NOT_FOUND.to_string(),
-                )
-            })?;
+        let old_wallet = find_wallet_for_update(wallet_id, &self.global_state).await?;
 
         // Pop the old order and replace it with a new one
         let mut new_wallet = old_wallet.clone();
@@ -669,18 +678,7 @@ impl TypedHandler for CancelOrderHandler {
         let order_id = parse_order_id_from_params(&params)?;
 
         // Lookup the wallet in the global state
-        let old_wallet = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
-            .ok_or_else(|| {
-                ApiServerError::HttpStatusCode(
-                    StatusCode::NOT_FOUND,
-                    ERR_WALLET_NOT_FOUND.to_string(),
-                )
-            })?;
+        let old_wallet = find_wallet_for_update(wallet_id, &self.global_state).await?;
 
         // Remove the order from the new wallet
         let mut new_wallet = old_wallet.clone();
@@ -871,18 +869,7 @@ impl TypedHandler for DepositBalanceHandler {
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
         // Lookup the old wallet by id
-        let old_wallet = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
-            .ok_or_else(|| {
-                ApiServerError::HttpStatusCode(
-                    StatusCode::NOT_FOUND,
-                    ERR_WALLET_NOT_FOUND.to_string(),
-                )
-            })?;
+        let old_wallet = find_wallet_for_update(wallet_id, &self.global_state).await?;
 
         // Apply the balance update to the old wallet to get the new wallet
         let mut new_wallet = old_wallet.clone();
@@ -969,18 +956,7 @@ impl TypedHandler for WithdrawBalanceHandler {
         let mint = parse_mint_from_params(&params)?;
 
         // Lookup the wallet in the global state
-        let old_wallet = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
-            .ok_or_else(|| {
-                ApiServerError::HttpStatusCode(
-                    StatusCode::NOT_FOUND,
-                    ERR_WALLET_NOT_FOUND.to_string(),
-                )
-            })?;
+        let old_wallet = find_wallet_for_update(wallet_id, &self.global_state).await?;
 
         // Apply the withdrawal to the wallet
         let withdrawal_amount = req.amount.to_u64().unwrap();
@@ -1126,18 +1102,7 @@ impl TypedHandler for AddFeeHandler {
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
         // Lookup the wallet in the global state
-        let old_wallet = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
-            .ok_or_else(|| {
-                ApiServerError::HttpStatusCode(
-                    StatusCode::NOT_FOUND,
-                    ERR_WALLET_NOT_FOUND.to_string(),
-                )
-            })?;
+        let old_wallet = find_wallet_for_update(wallet_id, &self.global_state).await?;
 
         // Ensure that the fees list is not full
         let num_fees = old_wallet
@@ -1225,18 +1190,7 @@ impl TypedHandler for RemoveFeeHandler {
         let fee_index = parse_index_from_params(&params)?;
 
         // Lookup the wallet in the global state
-        let old_wallet = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
-            .ok_or_else(|| {
-                ApiServerError::HttpStatusCode(
-                    StatusCode::NOT_FOUND,
-                    ERR_WALLET_NOT_FOUND.to_string(),
-                )
-            })?;
+        let old_wallet = find_wallet_for_update(wallet_id, &self.global_state).await?;
 
         if fee_index >= old_wallet.fees.len() {
             return Err(ApiServerError::HttpStatusCode(

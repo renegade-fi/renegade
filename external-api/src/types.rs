@@ -3,6 +3,7 @@
 use std::{
     collections::HashMap,
     convert::TryInto,
+    sync::{atomic::AtomicBool, Arc},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -142,6 +143,7 @@ impl From<Wallet> for IndexedWallet {
             blinded_public_shares,
             private_shares,
             merkle_proof: None,
+            update_locked: Arc::new(AtomicBool::default()),
         }
     }
 }

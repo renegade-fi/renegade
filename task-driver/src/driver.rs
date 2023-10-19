@@ -98,6 +98,10 @@ pub trait Task: Send {
     fn name(&self) -> String;
     /// Take a step in the task, steps should represent largely async behavior
     async fn step(&mut self) -> Result<(), Self::Error>;
+    /// A cleanup step that is run in the event of a task failure
+    async fn cleanup(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
 }
 
 /// Defines a wrapper that allows state objects to be stored generically
@@ -221,6 +225,7 @@ impl TaskDriver {
 
                 if retries == 0 {
                     log::error!("retries exceeded... task failed");
+
                     break 'outer;
                 }
 
@@ -251,6 +256,9 @@ impl TaskDriver {
             );
         }
 
+        if let Err(e) = task.cleanup().await {
+            log::error!("error cleaning up task: {e:?}");
+        }
         task.completed()
     }
 }
