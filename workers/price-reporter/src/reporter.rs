@@ -411,8 +411,22 @@ impl ConnectionMuxer {
                             Err(e) => {
                                 // Restart the connection
                                 log::error!("Error streaming from {exchange}: {e}, restarting connection...");
-                                let new_conn = self.retry_connection(exchange).await.unwrap();
-                                stream_map.insert(exchange, new_conn);
+                                loop {
+                                    match self.retry_connection(exchange).await {
+                                        Ok(conn) => {
+                                            log::info!("Successfully reconnected to {exchange}");
+                                            stream_map.insert(exchange, conn);
+                                        }
+                                        Err(ExchangeConnectionError::MaxRetries(_)) => {
+                                            log::error!("Max retries ({MAX_CONN_RETRIES}) exceeded, unable to connect to {exchange}... removing from data sources");
+                                            stream_map.remove(&exchange);
+                                            break;
+                                        }
+                                        _ => {
+                                            log::warn!("Connection retry attempt failed");
+                                        },
+                                    }
+                                }
                             }
 
                         }
@@ -478,6 +492,7 @@ impl ConnectionMuxer {
         tokio::time::sleep(Duration::from_secs(CONN_RETRY_DELAY_MS)).await;
 
         // Reconnect
+        log::info!("Retrying connection to {exchange}");
         connect_exchange(&self.base_token, &self.quote_token, &self.config, exchange).await
     }
 }
