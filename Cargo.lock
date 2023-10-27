@@ -1245,7 +1245,7 @@ dependencies = [
  "crossbeam",
  "derivative",
  "ed25519-dalek 1.0.1",
- "indexmap 1.9.3",
+ "indexmap 2.0.2",
  "itertools 0.10.5",
  "lazy_static",
  "libp2p",
@@ -2709,9 +2709,9 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.14.0"
+version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c6201b9ff9fd90a5a3bac2e56a830d0caa509576f0e503818ee82c181b3437a"
+checksum = "f93e7192158dbcda357bdec5fb5788eebf8bbac027f3f33e719d29135ae84156"
 dependencies = [
  "ahash 0.8.3",
  "allocator-api2",
@@ -3079,12 +3079,12 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.0.0"
+version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5477fe2230a79769d8dc68e0eabf5437907c0457a5614a9e8dddb67f65eb65d"
+checksum = "8adf3ddd720272c6ea8bf59463c04e0f93d0bbf7c5439b691bca2987e0270897"
 dependencies = [
  "equivalent",
- "hashbrown 0.14.0",
+ "hashbrown 0.14.2",
 ]
 
 [[package]]
@@ -3756,7 +3756,7 @@ version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4a83fb7698b3643a0e34f9ae6f2e8f0178c0fd42f8b59d493aa271ff3a5bf21"
 dependencies = [
- "hashbrown 0.14.0",
+ "hashbrown 0.14.2",
 ]
 
 [[package]]
@@ -4593,7 +4593,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1d3afd2628e69da2be385eb6f2fd57c8ac7977ceeff6dc166ff1657b0e386a9"
 dependencies = [
  "fixedbitset",
- "indexmap 2.0.0",
+ "indexmap 2.0.2",
 ]
 
 [[package]]
@@ -6447,7 +6447,7 @@ dependencies = [
  "futures",
  "futures-util",
  "gossip-api",
- "indexmap 1.9.3",
+ "indexmap 2.0.2",
  "itertools 0.10.5",
  "job-types",
  "lazy_static",
@@ -6476,7 +6476,7 @@ dependencies = [
  "common",
  "derive_builder 0.12.0",
  "eyre",
- "indexmap 1.9.3",
+ "indexmap 2.0.2",
  "itertools 0.11.0",
  "mpc-stark",
  "multiaddr",

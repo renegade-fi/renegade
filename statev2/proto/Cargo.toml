@@ -15,7 +15,7 @@ common = { path = "../../common" }
 
 # === Misc Dependencies === #
 eyre = { workspace = true }
-indexmap = "1.9"
+indexmap = { workspace = true }
 itertools = "0.11"
 multiaddr = "0.17"
 mpc-stark = "0.2"
