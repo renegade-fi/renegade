@@ -35,7 +35,7 @@ libp2p = { workspace = true }
 # === Misc === #
 base64 = "0.13"
 crossterm = "0.26"
-indexmap = "1.9"
+indexmap = { workspace = true }
 itertools = { workspace = true }
 lazy_static = "1.4.0"
 serde = { workspace = true, features = ["serde_derive"] }

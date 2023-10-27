@@ -36,7 +36,6 @@ use task_driver::{
     update_wallet::UpdateWalletTask,
 };
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
-use uuid::Uuid;
 
 use crate::{
     error::ApiServerError,
@@ -585,12 +584,11 @@ impl TypedHandler for UpdateOrderHandler {
         // Pop the old order and replace it with a new one
         let mut new_wallet = old_wallet.clone();
 
-        let new_id = Uuid::new_v4();
         let timestamp = get_current_timestamp();
         let mut new_order: Order = req.order.into();
         new_order.timestamp = timestamp;
 
-        // We edit the key and value of the underlying map in-place (as opposed to `pop` and `insert`)
+        // We edit the value of the underlying map in-place (as opposed to `pop` and `insert`)
         // to maintain ordering of the orders. This is important for the circuit, which relies on
         // the order of the orders to be consistent between the old and new wallets
         let index = new_wallet.orders.get_index_of(&order_id).ok_or_else(|| {
@@ -599,8 +597,7 @@ impl TypedHandler for UpdateOrderHandler {
         new_wallet
             .orders
             .get_index_mut(index)
-            .map(|(order_id, order)| {
-                *order_id = new_id;
+            .map(|(_, order)| {
                 *order = new_order;
             })
             // Unwrap is safe as the index is necessarily valid
@@ -622,10 +619,7 @@ impl TypedHandler for UpdateOrderHandler {
         .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
         let (task_id, _) = self.task_driver.start_task(task).await;
 
-        Ok(UpdateOrderResponse {
-            task_id,
-            new_order_id: new_id,
-        })
+        Ok(UpdateOrderResponse { task_id })
     }
 }
 
