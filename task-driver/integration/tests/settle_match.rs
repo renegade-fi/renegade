@@ -18,7 +18,7 @@ use circuit_types::{
 };
 use circuits::zk_circuits::valid_match_mpc::ValidMatchMpcWitness;
 use common::types::{
-    handshake::HandshakeResult,
+    handshake::{mocks::mock_handshake_state, HandshakeResult, HandshakeState},
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMatchMpcBundle},
     wallet::Wallet,
 };
@@ -29,7 +29,7 @@ use num_bigint::BigUint;
 use rand::thread_rng;
 use renegade_crypto::fields::scalar_to_u64;
 use state::RelayerState;
-use task_driver::settle_match_internal::SettleMatchInternalTask;
+use task_driver::{settle_match::SettleMatchTask, settle_match_internal::SettleMatchInternalTask};
 use test_helpers::{assert_eq_result, assert_true_result, integration_test_async};
 use tokio::sync::{mpsc::unbounded_channel, oneshot::channel};
 use uuid::Uuid;
@@ -154,8 +154,8 @@ async fn setup_sell_side_wallet(
 /// Setup a `HandshakeResult` by mocking out the process taken by the handshake
 /// manager
 async fn setup_match_result(
-    wallet1: &Wallet,
-    wallet2: &Wallet,
+    mut wallet1: Wallet,
+    mut wallet2: Wallet,
     test_args: &IntegrationTestArgs,
 ) -> Result<HandshakeResult> {
     let mut rng = thread_rng();
@@ -178,13 +178,17 @@ async fn setup_match_result(
         min_amount_order_index: 0,
     };
 
+    // Simulate a reblind that would happen before a match
+    wallet1.reblind_wallet();
+    wallet2.reblind_wallet();
+
     Ok(HandshakeResult {
         match_: match_.to_linkable(),
         party0_share_nullifier: Scalar::random(&mut rng),
         party1_share_nullifier: Scalar::random(&mut rng),
         party0_reblinded_shares: wallet1.blinded_public_shares.to_linkable(),
         party1_reblinded_shares: wallet2.blinded_public_shares.to_linkable(),
-        match_proof: dummy_match_proof(wallet1, wallet2, match_, test_args).await?,
+        match_proof: dummy_match_proof(&wallet1, &wallet2, match_, test_args).await?,
         party0_fee: Fee::default().to_linkable(),
         party1_fee: Fee::default().to_linkable(),
     })
@@ -270,7 +274,7 @@ async fn verify_settlement(
     let state = &test_args.global_state;
 
     // 1. Apply the match to the wallet
-    apply_match(&mut wallet, order_side, &match_res).await;
+    apply_match(&mut wallet, order_side, &match_res);
     wallet.reblind_wallet();
 
     // 2. Lookup the wallet in global state, verify that this matches the expected
@@ -294,7 +298,7 @@ async fn verify_settlement(
 }
 
 /// Apply a match to the wallet
-async fn apply_match(wallet: &mut Wallet, order_side: OrderSide, match_res: &MatchResult) {
+fn apply_match(wallet: &mut Wallet, order_side: OrderSide, match_res: &MatchResult) {
     let quote_mint = match_res.quote_mint.clone();
     let base_mint = match_res.base_mint.clone();
 
@@ -347,7 +351,8 @@ async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()
         setup_sell_side_wallet(test_args.clone()).await?;
 
     // Setup the match result
-    let handshake_res = setup_match_result(&buy_wallet, &sell_wallet, &test_args).await?;
+    let handshake_res =
+        setup_match_result(buy_wallet.clone(), sell_wallet.clone(), &test_args).await?;
 
     // Create the task
     let (network_sender, _network_recv) = unbounded_channel();
@@ -394,3 +399,66 @@ async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()
     .await
 }
 integration_test_async!(test_settle_internal_match);
+
+/// Tests settling a match that came from an MPC
+async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
+    // Create two new wallets with orders that match
+    let state = &test_args.global_state;
+    let client = &test_args.starknet_client;
+    let (buy_wallet, buy_blinder_seed, buy_share_seed) =
+        setup_buy_side_wallet(test_args.clone()).await?;
+    let (mut sell_wallet, sell_blinder_seed, sell_share_seed) =
+        setup_sell_side_wallet(test_args.clone()).await?;
+
+    // Setup the match result
+    let handshake_res =
+        setup_match_result(buy_wallet.clone(), sell_wallet.clone(), &test_args).await?;
+    let handshake_state = HandshakeState {
+        local_order_id: *buy_wallet.orders.first().unwrap().0,
+        peer_order_id: *sell_wallet.orders.first().unwrap().0,
+        ..mock_handshake_state()
+    };
+
+    let (network_sender, _network_recv) = unbounded_channel();
+    let task = SettleMatchTask::new(
+        handshake_state,
+        Box::new(handshake_res.clone()),
+        get_first_order_proofs(&buy_wallet, state).await?,
+        get_first_order_proofs(&sell_wallet, state).await?,
+        client.clone(),
+        network_sender,
+        state.clone(),
+        test_args.proof_job_queue.clone(),
+    )
+    .await;
+
+    let (_id, handle) = test_args.driver.start_task(task).await;
+    let res = handle.await?;
+    assert_true_result!(res)?;
+
+    // Only the first wallet would have been updated in the global state, as the second wallet
+    // is assumed to be managed by another cluster
+    let match_res = handshake_res.match_.to_base_type();
+    verify_settlement(
+        buy_wallet,
+        buy_blinder_seed,
+        buy_share_seed,
+        OrderSide::Buy,
+        match_res.clone(),
+        test_args.clone(),
+    )
+    .await?;
+
+    // The second wallet we must verify by looking up on-chain
+    apply_match(&mut sell_wallet, OrderSide::Sell, &match_res);
+    sell_wallet.reblind_wallet();
+
+    lookup_wallet_and_check_result(
+        &sell_wallet,
+        sell_blinder_seed,
+        sell_share_seed,
+        test_args.clone(),
+    )
+    .await
+}
+integration_test_async!(test_settle_mpc_match);
