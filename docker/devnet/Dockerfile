@@ -43,7 +43,7 @@ ARG DEPLOYMENT_CONFIG_VOLUME=/deployments
 RUN mkdir $DEPLOYMENT_CONFIG_VOLUME
 RUN cp /renegade-contracts/starknet_scripts/deployments.json $DEPLOYMENT_CONFIG_VOLUME
 
-ENTRYPOINT katana \
+ENTRYPOINT RUST_LOG=info katana \
     --seed 0 \
     --load-state /katana-state.out \
     --disable-fee \

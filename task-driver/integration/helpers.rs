@@ -152,6 +152,7 @@ pub async fn mock_wallet_update(wallet: &mut Wallet, client: &StarknetClient) ->
 /// Increase the ERC20 allowance of the darkpool contract for the given account
 pub(crate) async fn increase_erc20_allowance(
     amount: u64,
+    mint: &str,
     test_args: IntegrationTestArgs,
 ) -> Result<()> {
     let client = &test_args.starknet_client;
@@ -168,7 +169,7 @@ pub(crate) async fn increase_erc20_allowance(
     );
 
     let allow_call = Call {
-        to: felt_from_hex_string(&test_args.erc20_addr),
+        to: felt_from_hex_string(mint),
         selector: *ERC20_APPROVE_SELECTOR,
         calldata,
     };

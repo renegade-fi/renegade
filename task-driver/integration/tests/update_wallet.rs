@@ -51,7 +51,7 @@ lazy_static! {
 // -----------
 
 /// Perform a wallet update task and verify that it succeeds
-async fn execute_wallet_update(
+pub(crate) async fn execute_wallet_update(
     old_wallet: Wallet,
     new_wallet: Wallet,
     transfer: Option<ExternalTransfer>,
@@ -262,7 +262,7 @@ async fn test_update_wallet__deposit_and_withdraw(test_args: IntegrationTestArgs
     wallet.reblind_wallet();
 
     // Approve the deposit on the ERC20 contract
-    increase_erc20_allowance(amount, test_args.clone()).await?;
+    increase_erc20_allowance(amount, &test_args.erc20_addr, test_args.clone()).await?;
 
     let account_addr = biguint_from_hex_string(&test_args.account_addr);
     execute_wallet_update_and_verify_shares(
