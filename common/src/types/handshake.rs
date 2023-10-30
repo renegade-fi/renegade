@@ -165,3 +165,31 @@ impl HandshakeResult {
         self.match_.base_amount.val.ne(&Scalar::zero())
     }
 }
+
+#[cfg(feature = "mocks")]
+pub mod mocks {
+    //! Handshake object mocks for testing
+    use circuit_types::fixed_point::FixedPoint;
+    use mpc_stark::algebra::scalar::Scalar;
+    use rand::thread_rng;
+    use uuid::Uuid;
+
+    use super::{ConnectionRole, HandshakeState, State};
+
+    /// Create a mock `HandshakeState` for testing purposes
+    pub fn mock_handshake_state() -> HandshakeState {
+        let mut rng = thread_rng();
+
+        HandshakeState {
+            request_id: Uuid::new_v4(),
+            role: ConnectionRole::Dialer,
+            peer_order_id: Uuid::new_v4(),
+            local_order_id: Uuid::new_v4(),
+            peer_share_nullifier: Scalar::random(&mut rng),
+            local_share_nullifier: Scalar::random(&mut rng),
+            execution_price: FixedPoint::from_f64_round_down(10.),
+            state: State::Completed,
+            cancel_channel: None,
+        }
+    }
+}

@@ -151,6 +151,7 @@ impl Display for SettleMatchInternalTaskError {
         write!(f, "{self:?}")
     }
 }
+impl Error for SettleMatchInternalTaskError {}
 
 #[async_trait]
 impl Task for SettleMatchInternalTask {
