@@ -243,7 +243,7 @@ impl SettleMatchInternalTask {
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     ) -> Result<Self, SettleMatchInternalTaskError> {
-        let self_ = Self {
+        let mut self_ = Self {
             execution_price,
             order_id1: order1,
             order_id2: order2,
@@ -261,10 +261,23 @@ impl SettleMatchInternalTask {
             task_state: SettleMatchInternalTaskState::Pending,
         };
 
-        // Try to lock both wallets, if they cannot be locked then the task cannot be run
-        // and the internal matching engine will re-run next time the proofs are updated
-        let wallet1 = self_.find_wallet_for_order(&order1).await?;
-        let wallet2 = self_.find_wallet_for_order(&order2).await?;
+        if let Err(e) = self_.setup_task(&order1, &order2).await {
+            self_.cleanup().await?;
+            return Err(e);
+        }
+
+        Ok(self_)
+    }
+
+    /// Try to lock both wallets, if they cannot be locked then the task cannot be run
+    /// and the internal matching engine will re-run next time the proofs are updated
+    async fn setup_task(
+        &mut self,
+        order1: &OrderIdentifier,
+        order2: &OrderIdentifier,
+    ) -> Result<(), SettleMatchInternalTaskError> {
+        let wallet1 = self.find_wallet_for_order(order1).await?;
+        let wallet2 = self.find_wallet_for_order(order2).await?;
 
         if !wallet1.try_lock_wallet() {
             return Err(SettleMatchInternalTaskError::WalletLocked(
@@ -278,7 +291,7 @@ impl SettleMatchInternalTask {
             ));
         }
 
-        Ok(self_)
+        Ok(())
     }
 
     /// Find the wallet for an order in the global state
