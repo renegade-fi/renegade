@@ -1,8 +1,11 @@
 //! Broadly this breaks down into the following steps:
 //!     - Build the notes that result from the match and encrypt them
-//!     - Submit these notes and the relevant proofs to the contract in a `match` transaction
-//!     - Await transaction finality, then lookup the notes in the commitment tree
-//!     - Build a settlement proof, and submit this to the contract in a `settle` transaction
+//!     - Submit these notes and the relevant proofs to the contract in a
+//!       `match` transaction
+//!     - Await transaction finality, then lookup the notes in the commitment
+//!       tree
+//!     - Build a settlement proof, and submit this to the contract in a
+//!       `settle` transaction
 //!     - Await finality then update the wallets into the relayer-global state
 
 use std::error::Error;
@@ -145,26 +148,26 @@ impl Task for SettleMatchTask {
             SettleMatchTaskState::ProvingSettle => {
                 let proof = self.prove_settle().await?;
                 self.task_state = SettleMatchTaskState::SubmittingMatch { proof }
-            }
+            },
 
             SettleMatchTaskState::SubmittingMatch { proof } => {
                 self.submit_match(proof).await?;
                 self.task_state = SettleMatchTaskState::UpdatingState;
-            }
+            },
 
             SettleMatchTaskState::UpdatingState => {
                 self.update_wallet_state().await?;
                 self.task_state = SettleMatchTaskState::UpdatingValidityProofs;
-            }
+            },
 
             SettleMatchTaskState::UpdatingValidityProofs => {
                 self.update_validity_proofs().await?;
                 self.task_state = SettleMatchTaskState::Completed;
-            }
+            },
 
             SettleMatchTaskState::Completed => {
                 unreachable!("step called on completed task")
-            }
+            },
         }
 
         Ok(())
@@ -298,8 +301,9 @@ impl SettleMatchTask {
             )
             .await;
 
-        // If the transaction failed because a nullifier was already used, assume that the counterparty
-        // already submitted a `match` and move on to settlement
+        // If the transaction failed because a nullifier was already used, assume that
+        // the counterparty already submitted a `match` and move on to
+        // settlement
         if let Err(ref tx_rejection) = tx_submit_res
             && tx_rejection.to_string().contains(NULLIFIER_USED_ERROR_MSG){
                 return Ok(())
@@ -320,7 +324,8 @@ impl SettleMatchTask {
             )));
         }
 
-        // If the transaction was successful, cancel all orders on both nullifiers, await new validity proofs
+        // If the transaction was successful, cancel all orders on both nullifiers,
+        // await new validity proofs
         self.global_state
             .nullify_orders(party0_reblind_proof.original_shares_nullifier)
             .await;

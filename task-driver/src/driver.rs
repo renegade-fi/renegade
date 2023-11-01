@@ -81,8 +81,9 @@ impl TaskDriverConfig {
 // | Task and State |
 // ------------------
 
-/// The task trait defines a sequence of largely async flows, each of which is possibly
-/// unreliable and may need to be retried until completion or to some retry threshold
+/// The task trait defines a sequence of largely async flows, each of which is
+/// possibly unreliable and may need to be retried until completion or to some
+/// retry threshold
 #[async_trait]
 pub trait Task: Send {
     /// The state type of the task, used for task introspection

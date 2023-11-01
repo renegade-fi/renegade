@@ -22,7 +22,8 @@ use merlin::HashChainTranscript;
 use mpc_bulletproof::{r1cs::Prover, PedersenGens};
 use rand::thread_rng;
 
-/// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT)
+/// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS,
+/// MAX_FEES, MERKLE_HEIGHT)
 const SMALL_PARAM_SET: (usize, usize, usize, usize) = (2, 2, 1, 5);
 /// The parameter set for the large sized circuit
 const LARGE_PARAM_SET: (usize, usize, usize, usize) =
@@ -164,7 +165,8 @@ pub fn bench_verifier_with_sizes<
 // | Benchmarks |
 // --------------
 
-/// Tests the time taken to apply the constraints of a small `VALID REBLIND` circuit
+/// Tests the time taken to apply the constraints of a small `VALID REBLIND`
+/// circuit
 #[allow(non_snake_case)]
 pub fn bench_apply_constraints__small_circuit(c: &mut Criterion) {
     bench_apply_constraints_with_sizes::<
@@ -197,7 +199,8 @@ pub fn bench_verifier__small_circuit(c: &mut Criterion) {
     >(c);
 }
 
-/// Tests the time taken to apply the constraints of a large `VALID REBLIND` circuit
+/// Tests the time taken to apply the constraints of a large `VALID REBLIND`
+/// circuit
 #[allow(non_snake_case)]
 pub fn bench_apply_constraints__large_circuit(c: &mut Criterion) {
     bench_apply_constraints_with_sizes::<

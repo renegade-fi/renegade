@@ -44,13 +44,13 @@ pub enum GossipOutbound {
         /// The message contents
         message: PubsubMessage,
     },
-    /// A message to the network manager itself indicating some control directive
-    /// from another module
+    /// A message to the network manager itself indicating some control
+    /// directive from another module
     ManagementMessage(ManagerControlDirective),
 }
 
-/// A wrapper around the GossipRequest type that allows us to attach cluster signatures
-/// to each request
+/// A wrapper around the GossipRequest type that allows us to attach cluster
+/// signatures to each request
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AuthenticatedGossipRequest {
     /// A signature of the request body with the sender's cluster private key
@@ -121,20 +121,20 @@ pub enum GossipRequest {
     OrderInfo(OrderInfoRequest),
     /// A request that a peer replicate a set of wallets
     Replicate(ReplicateRequestBody),
-    /// A pushed message forwarded from the sender when a validity proof bundle is
-    /// requested, updated, or constructed for the first time
+    /// A pushed message forwarded from the sender when a validity proof bundle
+    /// is requested, updated, or constructed for the first time
     ValidityProof {
         /// The order this proof is for
         order_id: OrderIdentifier,
-        /// The bundle of validity proofs; includes `VALID REBLIND` for the order's
-        /// wallet, and `VALID COMMITMENTS` for the order itself
+        /// The bundle of validity proofs; includes `VALID REBLIND` for the
+        /// order's wallet, and `VALID COMMITMENTS` for the order itself
         proof_bundle: OrderValidityProofBundle,
     },
     /// A request type that pushes the witness used in the validity proofs for
     /// an order to the receiver
     ///
-    /// This may be triggered when the receiver broadcasts a pubsub message indicating that it
-    /// needs a copy of the witness
+    /// This may be triggered when the receiver broadcasts a pubsub message
+    /// indicating that it needs a copy of the witness
     ValidityWitness {
         /// The order this witness is for
         order_id: OrderIdentifier,
@@ -151,8 +151,8 @@ pub enum GossipRequest {
 impl GossipRequest {
     /// Explicitly states which requests need cluster authentication
     ///
-    /// The code here is intentionally verbose to force any new request/response types
-    /// to be defined with authentication in mind
+    /// The code here is intentionally verbose to force any new request/response
+    /// types to be defined with authentication in mind
     pub fn requires_cluster_auth(&self) -> bool {
         match self {
             GossipRequest::Bootstrap(..) => false,
@@ -167,7 +167,8 @@ impl GossipRequest {
     }
 }
 
-/// A wrapper around the `GossipResponse` type that allows us to attach signatures
+/// A wrapper around the `GossipResponse` type that allows us to attach
+/// signatures
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AuthenticatedGossipResponse {
     /// A signature of the request body with the sender's cluster private key
@@ -177,8 +178,8 @@ pub struct AuthenticatedGossipResponse {
 }
 
 impl AuthenticatedGossipResponse {
-    /// A helper function to create a simple ack without needing to explicitly construct
-    /// the nested enumerative types
+    /// A helper function to create a simple ack without needing to explicitly
+    /// construct the nested enumerative types
     pub fn new_ack() -> Self {
         Self {
             sig: Vec::new(),
@@ -231,8 +232,9 @@ impl AuthenticatedGossipResponse {
 /// Represents the possible response types for a request-response message
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GossipResponse {
-    /// A simple Ack response, libp2p sometimes closes connections if no response is
-    /// sent, so we can send an empty ack in place for requests that need no response
+    /// A simple Ack response, libp2p sometimes closes connections if no
+    /// response is sent, so we can send an empty ack in place for requests
+    /// that need no response
     Ack,
     /// A response from a peer to a sender's heartbeat request
     Heartbeat(HeartbeatMessage),
@@ -250,8 +252,8 @@ pub enum GossipResponse {
 impl GossipResponse {
     /// Explicitly states which requests need cluster authentication
     ///
-    /// The code here is intentionally verbose to force any new request/response types
-    /// to be defined with authentication in mind
+    /// The code here is intentionally verbose to force any new request/response
+    /// types to be defined with authentication in mind
     pub fn requires_cluster_auth(&self) -> bool {
         match self {
             GossipResponse::Ack => false,
@@ -262,7 +264,8 @@ impl GossipResponse {
     }
 }
 
-/// A wrapper around pubsub messages that allows us to attach signatures to the message
+/// A wrapper around pubsub messages that allows us to attach signatures to the
+/// message
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AuthenticatedPubsubMessage {
     /// The signature attached to the message
@@ -343,15 +346,16 @@ pub enum PubsubMessage {
         /// The message body
         message: ClusterManagementMessage,
     },
-    /// A message broadcast to the network to indicate that OrderBook state has changed
+    /// A message broadcast to the network to indicate that OrderBook state has
+    /// changed
     OrderBookManagement(OrderBookManagementMessage),
 }
 
 impl PubsubMessage {
     /// Explicitly states which messages need cluster authentication
     ///
-    /// The code here is intentionally verbose to force any new request/response types
-    /// to be defined with authentication in mind
+    /// The code here is intentionally verbose to force any new request/response
+    /// types to be defined with authentication in mind
     pub fn requires_cluster_auth(&self) -> bool {
         match self {
             PubsubMessage::ClusterManagement { .. } => true,
@@ -360,12 +364,12 @@ impl PubsubMessage {
     }
 }
 
-/// A message type send from a worker to the network manager itself to explicitly
-/// control or signal information
+/// A message type send from a worker to the network manager itself to
+/// explicitly control or signal information
 #[derive(Clone, Debug)]
 pub enum ManagerControlDirective {
-    /// A command signalling to the network manager to open up a QUIC connection and build
-    /// an MPC network instance to handshake over
+    /// A command signalling to the network manager to open up a QUIC connection
+    /// and build an MPC network instance to handshake over
     BrokerMpcNet {
         /// The ID of the ongoing handshake
         request_id: Uuid,
@@ -387,11 +391,11 @@ pub enum ManagerControlDirective {
         /// The new address
         address: Multiaddr,
     },
-    /// A command informing the network manager that the gossip protocol has warmed up
-    /// in the network
+    /// A command informing the network manager that the gossip protocol has
+    /// warmed up in the network
     ///
-    /// The network manager delays Pubsub messages (buffering them) until warmup has elapsed
-    /// to allow the libp2p swarm time to build connections that the gossipsub protocol may
-    /// graft to
+    /// The network manager delays Pubsub messages (buffering them) until warmup
+    /// has elapsed to allow the libp2p swarm time to build connections that
+    /// the gossipsub protocol may graft to
     GossipWarmupComplete,
 }

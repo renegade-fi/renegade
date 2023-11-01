@@ -37,7 +37,8 @@ pub struct GenericValidWalletCreateBundle<
     pub proof: R1CSProof,
 }
 
-/// A type alias that specifies default generics for `GenericValidWalletCreateBundle`
+/// A type alias that specifies default generics for
+/// `GenericValidWalletCreateBundle`
 pub type ValidWalletCreateBundle =
     Box<GenericValidWalletCreateBundle<MAX_BALANCES, MAX_BALANCES, MAX_FEES>>;
 
@@ -60,7 +61,8 @@ pub struct GenericValidWalletUpdateBundle<
     pub proof: R1CSProof,
 }
 
-/// A type alias that specifies the default generics for `GenericValidWalletUpdateBundle`
+/// A type alias that specifies the default generics for
+/// `GenericValidWalletUpdateBundle`
 pub type ValidWalletUpdateBundle =
     Box<GenericValidWalletUpdateBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>>;
 
@@ -104,11 +106,13 @@ pub struct GenericValidCommitmentsBundle<
     pub proof: R1CSProof,
 }
 
-/// A type alias that specifies the default generics for `GenericValidCommitmentsBundle`
+/// A type alias that specifies the default generics for
+/// `GenericValidCommitmentsBundle`
 pub type ValidCommitmentsBundle =
     Box<GenericValidCommitmentsBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>;
 
-/// A bundle of the statement, witness commitment, and proof of `VALID MATCH MPC`
+/// A bundle of the statement, witness commitment, and proof of `VALID MATCH
+/// MPC`
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GenericValidMatchMpcBundle {
     /// A commitment to the witness type of `VALID COMMITMENTS`
@@ -235,7 +239,8 @@ impl From<ProofBundle> for ValidSettleBundle {
 /// Wraps a proof of `VALID REBLIND` and a proof of `VALID COMMITMENTS` into
 /// a common structure so that they may be passed around easily
 ///
-/// We allocate the underlying proofs on the heap to avoid excessive data movement
+/// We allocate the underlying proofs on the heap to avoid excessive data
+/// movement
 #[derive(Clone, Debug)]
 pub struct OrderValidityProofBundle {
     /// The proof of `VALID REBLIND` for the order's wallet
@@ -284,7 +289,8 @@ impl<'de> Deserialize<'de> for OrderValidityProofBundle {
 /// proof of `VALID COMMITMENTS` into a common structure so that they
 /// may be passed around easily
 ///
-/// We allocate the underlying witnesses on the heap to avoid excessive data movement
+/// We allocate the underlying witnesses on the heap to avoid excessive data
+/// movement
 #[derive(Clone, Debug)]
 pub struct OrderValidityWitnessBundle {
     /// The witness of `VALID REBLIND` for the order's wallet

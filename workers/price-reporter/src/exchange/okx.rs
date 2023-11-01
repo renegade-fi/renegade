@@ -151,7 +151,7 @@ impl ExchangeConnection for OkxConnection {
                     Some(Err(ExchangeConnectionError::ConnectionHangup(
                         e.to_string(),
                     )))
-                }
+                },
             }
         });
 

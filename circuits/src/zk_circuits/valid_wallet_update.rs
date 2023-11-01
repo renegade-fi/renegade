@@ -1,7 +1,7 @@
 //! Defines the `VALID WALLET UPDATE` circuit
 //!
-//! This circuit proves that a user-generated update to a wallet is valid, and that
-//! the state nullification/creation is computed correctly
+//! This circuit proves that a user-generated update to a wallet is valid, and
+//! that the state nullification/creation is computed correctly
 
 // ----------------------
 // | Circuit Definition |
@@ -42,7 +42,8 @@ use crate::{
     SingleProverCircuit,
 };
 
-/// A type alias for the `ValidWalletUpdate` circuit with default size parameters attached
+/// A type alias for the `ValidWalletUpdate` circuit with default size
+/// parameters attached
 pub type SizedValidWalletUpdate =
     ValidWalletUpdate<MAX_ORDERS, MAX_BALANCES, MAX_FEES, MERKLE_HEIGHT>;
 
@@ -196,8 +197,8 @@ where
             cs,
         );
 
-        // Stores a boolean indicating whether the external transfer appeared in the new balances
-        // it must be applied to at least one balance
+        // Stores a boolean indicating whether the external transfer appeared in the new
+        // balances it must be applied to at least one balance
         let mut external_transfer_applied: LinearCombination = Variable::Zero().into();
 
         // Check the balance state transition for each balance
@@ -207,9 +208,9 @@ where
             let mut expected_balance = old_balance.amount.clone();
 
             // Add in the external transfer information term if applicable
-            // The external transfer term applies if either the old balance's mint or the new balance's
-            // mint equals the transfer mint. These two mints are constrained to be consistent with one
-            // another below
+            // The external transfer term applies if either the old balance's mint or the
+            // new balance's mint equals the transfer mint. These two mints are
+            // constrained to be consistent with one another below
             let equals_external_transfer_mint = OrGate::or(
                 EqGadget::eq(old_balance.mint.clone(), external_transfer.mint, cs),
                 EqGadget::eq(new_balance.mint.clone(), external_transfer.mint, cs),
@@ -232,9 +233,10 @@ where
             );
 
             // Constrain the mints to be set correctly. A valid mint is one of:
-            //  1. The same mint as in the old wallet, if the balance previously existed and was not zero'd
-            //  2. The mint of the transfer if the balance was previously zero; balances are constrained
-            //     to be unique elsewhere in the circuit
+            //  1. The same mint as in the old wallet, if the balance previously existed and
+            //     was not zero'd
+            //  2. The mint of the transfer if the balance was previously zero; balances are
+            //     constrained to be unique elsewhere in the circuit
             //  3. The zero mint, if the balance is zero
             let mints_equal = EqGadget::eq(old_balance.mint.clone(), new_balance.mint.clone(), cs);
             let equals_transfer_mint =
@@ -271,7 +273,8 @@ where
             cs.constrain(Variable::One() - valid_mint);
         }
 
-        // Validate that the external transfer's mint did show up in exactly one of the balances
+        // Validate that the external transfer's mint did show up in exactly one of the
+        // balances
         let transfer_applied = EqGadget::eq(external_transfer_applied, Variable::One(), cs);
         let transfer_applied_or_zero = OrGate::or(transfer_applied, external_transfer_zero, cs);
         cs.constrain(transfer_applied_or_zero - Variable::One());
@@ -319,9 +322,9 @@ where
     }
 
     /// Constrain the timestamps to be properly updated
-    /// For each order, if the order is unchanged from the previous wallet, the timestamp
-    /// should remain constant. Otherwise, the timestamp should be updated to the current
-    /// timestamp passed as a public variable
+    /// For each order, if the order is unchanged from the previous wallet, the
+    /// timestamp should remain constant. Otherwise, the timestamp should be
+    /// updated to the current timestamp passed as a public variable
     fn constrain_updated_order_timestamps<CS: RandomizableConstraintSystem>(
         old_wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         new_wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
@@ -336,8 +339,8 @@ where
                 EqGadget::eq(new_order.timestamp.clone(), old_order.timestamp.clone(), cs);
             let timestamp_updated = EqGadget::eq(new_order.timestamp.clone(), new_timestamp, cs);
 
-            // Either the orders are equal and the timestamp is not updated, or the timestamp has
-            // been updated to the new timestamp
+            // Either the orders are equal and the timestamp is not updated, or the
+            // timestamp has been updated to the new timestamp
             let equal_and_not_updated = AndGate::and(equals_old_order, timestamp_not_updated, cs);
             let not_equal_and_updated = AndGate::and(
                 NotGate::not(equals_old_order, cs),
@@ -479,7 +482,8 @@ pub struct ValidWalletUpdateStatement<
     /// The timestamp this update is at
     pub timestamp: u64,
 }
-/// A `VALID WALLET UPDATE` statement with default const generic sizing parameters
+/// A `VALID WALLET UPDATE` statement with default const generic sizing
+/// parameters
 pub type SizedValidWalletUpdateStatement =
     ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
@@ -631,7 +635,8 @@ mod test {
         ValidWalletUpdate,
     };
 
-    /// Returns true if the circuit constraints are satisfied on the given parameters
+    /// Returns true if the circuit constraints are satisfied on the given
+    /// parameters
     fn constraints_satisfied_on_wallets(
         old_wallet: SizedWallet,
         new_wallet: SizedWallet,
@@ -694,7 +699,8 @@ mod test {
         ))
     }
 
-    /// Tests placing an order with a timestamp that does not match the publicly claimed timestamp
+    /// Tests placing an order with a timestamp that does not match the publicly
+    /// claimed timestamp
     #[test]
     fn test_place_order__invalid_timestamp() {
         let mut old_wallet = INITIAL_WALLET.clone();
@@ -849,8 +855,8 @@ mod test {
         ));
     }
 
-    /// Tests an invalid external transfer in which the prover attempts to withdraw more
-    /// than their wallet's balance
+    /// Tests an invalid external transfer in which the prover attempts to
+    /// withdraw more than their wallet's balance
     #[test]
     fn test_external_transfer__overdraft_withdrawal() {
         let old_wallet = INITIAL_WALLET.clone();
@@ -875,8 +881,8 @@ mod test {
         ));
     }
 
-    /// Tests an invalid withdrawal in which the prover attempts to withdraw a balance
-    /// that their wallet does not hold
+    /// Tests an invalid withdrawal in which the prover attempts to withdraw a
+    /// balance that their wallet does not hold
     #[test]
     fn test_external_transfer__withdraw_no_balance() {
         let old_wallet = INITIAL_WALLET.clone();
@@ -900,8 +906,8 @@ mod test {
         ));
     }
 
-    /// Tests an invalid withdrawal in which the prover adds an unrelated balance
-    /// as well as decrementing the updated balance
+    /// Tests an invalid withdrawal in which the prover adds an unrelated
+    /// balance as well as decrementing the updated balance
     #[test]
     fn test_external_transfer__invalid_withdrawal_extra_update() {
         let old_wallet = INITIAL_WALLET.clone();

@@ -12,8 +12,8 @@ use system_bus::{SystemBus, TopicReader};
 
 use crate::{error::ApiServerError, router::UrlParams};
 
-/// The main trait that route handlers implement for their topic, handles any custom logic
-/// required to process a websocket subscribe/unsubscribe request
+/// The main trait that route handlers implement for their topic, handles any
+/// custom logic required to process a websocket subscribe/unsubscribe request
 #[async_trait]
 pub trait WebsocketTopicHandler: Send + Sync {
     /// Handle a request to subscribe to the topic

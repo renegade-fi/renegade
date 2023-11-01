@@ -15,7 +15,8 @@ impl NetworkManagerExecutor {
         &mut self,
         event: IdentifyEvent,
     ) -> Result<(), NetworkManagerError> {
-        // Update the local peer's public IP address if it has not already been discovered
+        // Update the local peer's public IP address if it has not already been
+        // discovered
         if let IdentifyEvent::Received { info, .. } = event {
             if !self.discovered_identity {
                 // Replace the port if the discovered NAT port is incorrect

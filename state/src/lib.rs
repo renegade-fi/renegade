@@ -5,8 +5,8 @@
 #![feature(generic_const_exprs)]
 #![feature(let_chains)]
 
-//! Groups state object definitions and handles logic for serializing access to shared
-//! global state elements
+//! Groups state object definitions and handles logic for serializing access to
+//! shared global state elements
 
 #[cfg(feature = "mocks")]
 pub mod mock;

@@ -27,8 +27,9 @@ use rand::{rngs::OsRng, CryptoRng, RngCore};
 
 /// Represents the match result of a matching MPC in the cleartext
 /// in which two tokens are exchanged
-/// TODO: When we convert these values to fixed point rationals, we will need to sacrifice one
-/// bit of precision to ensure that the difference in prices is divisible by two
+/// TODO: When we convert these values to fixed point rationals, we will need to
+/// sacrifice one bit of precision to ensure that the difference in prices is
+/// divisible by two
 #[circuit_type(
     serde,
     singleprover_circuit,
@@ -48,20 +49,22 @@ pub struct MatchResult {
     /// The amount of the base token exchanged by this match
     pub base_amount: u64,
     /// The direction of the match, 0 implies that party 1 buys the base and
-    /// sells the quote; 1 implies that party 2 buys the base and sells the quote
+    /// sells the quote; 1 implies that party 2 buys the base and sells the
+    /// quote
     pub direction: u64, // Binary
 
-    /// The following are supporting variables, derivable from the above, but useful for
-    /// shrinking the size of the zero knowledge circuit. As well, they are computed during
-    /// the course of the MPC, so it incurs no extra cost to include them in the witness
+    /// The following are supporting variables, derivable from the above, but
+    /// useful for shrinking the size of the zero knowledge circuit. As
+    /// well, they are computed during the course of the MPC, so it incurs
+    /// no extra cost to include them in the witness
 
-    /// The minimum amount of the two orders minus the maximum amount of the two orders.
-    /// We include it here to tame some of the non-linearity of the zk circuit, i.e. we
-    /// can shortcut some of the computation and implicitly constrain the match result
-    /// with this extra value
+    /// The minimum amount of the two orders minus the maximum amount of the two
+    /// orders. We include it here to tame some of the non-linearity of the
+    /// zk circuit, i.e. we can shortcut some of the computation and
+    /// implicitly constrain the match result with this extra value
     pub max_minus_min_amount: u64,
-    /// The index of the order (0 or 1) that has the minimum amount, i.e. the order that is
-    /// completely filled by this match
+    /// The index of the order (0 or 1) that has the minimum amount, i.e. the
+    /// order that is completely filled by this match
     pub min_amount_order_index: u64,
 }
 

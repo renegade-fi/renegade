@@ -54,15 +54,17 @@ pub struct AuthenticatedPoseidonHasher {
     /// Whether the sponge is in squeezing mode. For simplicity, we disallow
     /// the case in which a caller wishes to squeeze values and the absorb more.
     in_squeeze_state: bool,
-    /// A reference to the shared MPC fabric that the computation variables are allocated in
+    /// A reference to the shared MPC fabric that the computation variables are
+    /// allocated in
     fabric: MpcFabric,
 }
 
-/// Native implementation, can be done outside the context of a constraint system
+/// Native implementation, can be done outside the context of a constraint
+/// system
 impl AuthenticatedPoseidonHasher {
     /// Construct a new sponge hasher
-    /// TODO: Ideally we don't pass in the fabric here, this makes the gadget non-general between
-    /// AuthenticatedScalar and Scalar
+    /// TODO: Ideally we don't pass in the fabric here, this makes the gadget
+    /// non-general between AuthenticatedScalar and Scalar
     pub fn new(params: &PoseidonParams, fabric: MpcFabric) -> Self {
         let initial_state = fabric.zeros_authenticated(params.rate + params.capacity);
         Self {
@@ -76,12 +78,14 @@ impl AuthenticatedPoseidonHasher {
 
     /// Absorb an input into the hasher state
     ///
-    /// Here, we match the arkworks sponge implementation (link below) in that we absorb
-    /// until we have added one element to each element of the state; and only then do we permute.
-    /// Put differently, we wait to absorb `rate` elements between permutations.
+    /// Here, we match the arkworks sponge implementation (link below) in that
+    /// we absorb until we have added one element to each element of the
+    /// state; and only then do we permute. Put differently, we wait to
+    /// absorb `rate` elements between permutations.
     ///
-    /// When squeezing, we must make sure that a permutation *does* happen in the case that
-    /// the `rate`-sized state was never filled. See the implementation below.
+    /// When squeezing, we must make sure that a permutation *does* happen in
+    /// the case that the `rate`-sized state was never filled. See the
+    /// implementation below.
     ///
     /// Arkworks sponge poseidon: https://github.com/arkworks-rs/sponge/blob/master/src/poseidon/mod.rs
     pub fn absorb(&mut self, a: &AuthenticatedScalarResult) {
@@ -108,10 +112,13 @@ impl AuthenticatedPoseidonHasher {
 
     /// Squeeze an output from the hasher state
     ///
-    /// A similar approach is taken here to the one in `absorb`. Specifically, we allow this method
-    /// to be called `rate` times in between permutations, to exhaust the state buffer.    pub fn squeeze(&mut self) -> Scalar {
+    /// A similar approach is taken here to the one in `absorb`. Specifically,
+    /// we allow this method to be called `rate` times in between
+    /// permutations, to exhaust the state buffer.    pub fn squeeze(&mut self)
+    /// -> Scalar {
     pub fn squeeze(&mut self) -> AuthenticatedScalarResult {
-        // Once we exit the absorb state, ensure that the digest state is permuted before squeezing
+        // Once we exit the absorb state, ensure that the digest state is permuted
+        // before squeezing
         if !self.in_squeeze_state || self.next_index == self.params.rate {
             self.permute();
             self.next_index = 0;
@@ -135,7 +142,8 @@ impl AuthenticatedPoseidonHasher {
             self.apply_mds();
         }
 
-        // Compute partial_rounds rounds in which the sbox is applied to only the last element
+        // Compute partial_rounds rounds in which the sbox is applied to only the last
+        // element
         let partial_rounds_start = self.params.full_rounds / 2;
         let partial_rounds_end = partial_rounds_start + self.params.partial_rounds;
         for round in partial_rounds_start..partial_rounds_end {
@@ -144,7 +152,8 @@ impl AuthenticatedPoseidonHasher {
             self.apply_mds();
         }
 
-        // Compute another full_rounds / 2 rounds in which we apply the sbox to all elements
+        // Compute another full_rounds / 2 rounds in which we apply the sbox to all
+        // elements
         let final_full_rounds_start = partial_rounds_end;
         let final_full_rounds_end = self.params.partial_rounds + self.params.full_rounds;
         for round in final_full_rounds_start..final_full_rounds_end {

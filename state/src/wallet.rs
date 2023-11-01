@@ -158,9 +158,9 @@ impl WalletIndex {
 
     /// Expire peers as replicas of each wallet we know about
     ///
-    /// This method is called when a cluster peer is determined to have failed; we should
-    /// update the replication state and take any steps necessary to get the wallet replicated
-    /// on a safe number of peers
+    /// This method is called when a cluster peer is determined to have failed;
+    /// we should update the replication state and take any steps necessary
+    /// to get the wallet replicated on a safe number of peers
     pub async fn remove_peer_replicas(&self, peer: &WrappedPeerId) {
         for (_, wallet) in self.wallet_map.iter() {
             let mut locked_wallet = wallet.write().await;

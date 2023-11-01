@@ -73,8 +73,9 @@ impl StateMockBuilder {
     pub fn build(self) -> RelayerState {
         let handshake_queue = self.handshake_job_queue.unwrap_or_else(|| {
             let (sender, _recv) = tokio::sync::mpsc::unbounded_channel();
-            // Forget the receiver side so that it may be deallocated without calling `Drop` which
-            // would close the channel, causing some mocked codepaths to panic
+            // Forget the receiver side so that it may be deallocated without calling `Drop`
+            // which would close the channel, causing some mocked codepaths to
+            // panic
             std::mem::forget(_recv);
             sender
         });

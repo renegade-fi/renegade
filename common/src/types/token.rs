@@ -1,15 +1,18 @@
-//! The Token is the cross-exchange abstraction of a fungible token. Since many different exchanges
-//! define different standards for token names, tickers, etc., we use the Ethereum mainnet ERC-20
-//! address as the authoritative identifier for each token. We map each of these contract addresses
-//! into ticker names for consumption by each centralized exchange, as appropriate.
+//! The Token is the cross-exchange abstraction of a fungible token. Since many
+//! different exchanges define different standards for token names, tickers,
+//! etc., we use the Ethereum mainnet ERC-20 address as the authoritative
+//! identifier for each token. We map each of these contract addresses
+//! into ticker names for consumption by each centralized exchange, as
+//! appropriate.
 //!
-//! Tokens fall under two different categories: "Named Tokens" that have centralized and
-//! decentralized exchange price feed support, and "Unnamed Tokens" that only have decentralized
-//! exchange price feed support. We explicitly name all Named Tokens below, as the relayer need to
-//! manually map these ERC-20 addresses into websocket subscription requests.
+//! Tokens fall under two different categories: "Named Tokens" that have
+//! centralized and decentralized exchange price feed support, and "Unnamed
+//! Tokens" that only have decentralized exchange price feed support. We
+//! explicitly name all Named Tokens below, as the relayer need to manually map
+//! these ERC-20 addresses into websocket subscription requests.
 //!
-//! In general, Named Tokens use all exchanges where they are listed, whereas Unnamed Tokens only
-//! use Uniswap V3 for the price feed.
+//! In general, Named Tokens use all exchanges where they are listed, whereas
+//! Unnamed Tokens only use Uniswap V3 for the price feed.
 use bimap::BiMap;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
@@ -23,9 +26,10 @@ use crate::biguint_to_str_addr;
 
 use super::exchange::{Exchange, ALL_EXCHANGES};
 
-/// A helper enum to describe the state of each ticker on each Exchange. Same means that the ERC-20
-/// and Exchange tickers are the same, Renamed means that the Exchange ticker is different from the
-/// underlying ERC-20, and Unsupported  means that the asset is not supported on the Exchange.
+/// A helper enum to describe the state of each ticker on each Exchange. Same
+/// means that the ERC-20 and Exchange tickers are the same, Renamed means that
+/// the Exchange ticker is different from the underlying ERC-20, and Unsupported
+/// means that the asset is not supported on the Exchange.
 #[derive(Clone, Copy, Debug)]
 enum ExchangeTicker {
     /// The Exchange-native ticker is the same as the ERC-20 ticker.
@@ -36,14 +40,16 @@ enum ExchangeTicker {
     Unsupported,
 }
 
-// We populate three global heap-allocated structs for convenience and metadata lookup. The first is
-// a bidirectional map between the ERC-20 contract address and the ERC-20 ticker. The second is a
-// HashMap between the ERC-20 contract address and the number of decimals (fixed-point offset). The
-// third is a HashMap between the ERC-20 ticker and each Exchange's expected name for each ticker.
+// We populate three global heap-allocated structs for convenience and metadata
+// lookup. The first is a bidirectional map between the ERC-20 contract address
+// and the ERC-20 ticker. The second is a HashMap between the ERC-20 contract
+// address and the number of decimals (fixed-point offset). The third is a
+// HashMap between the ERC-20 ticker and each Exchange's expected name for each
+// ticker.
 
-/// The raw ERC-20 data to be parsed as heap-allocated global structs. The layout of ERC20_DATA is
-/// (ERC-20 Address, Decimals, ERC-20 Ticker, Binance Ticker, Coinbase Ticker, Kraken Ticker, Okx
-/// Ticker).
+/// The raw ERC-20 data to be parsed as heap-allocated global structs. The
+/// layout of ERC20_DATA is (ERC-20 Address, Decimals, ERC-20 Ticker, Binance
+/// Ticker, Coinbase Ticker, Kraken Ticker, Okx Ticker).
 static ERC20_DATA: &[(
     &str,
     u8,
@@ -53,7 +59,7 @@ static ERC20_DATA: &[(
     ExchangeTicker,
     ExchangeTicker,
 )] = &[
-    /* L1 */
+    // L1
     (
         "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599",
         8,
@@ -108,7 +114,7 @@ static ERC20_DATA: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
-    /* LSDs */
+    // LSDs
     (
         "0xbe9895146f7af43049ca1c1ae358b0541ea49704",
         18,
@@ -127,7 +133,7 @@ static ERC20_DATA: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Same,
     ),
-    /* Stables */
+    // Stables
     (
         "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
         6,
@@ -155,7 +161,7 @@ static ERC20_DATA: &[(
         ExchangeTicker::Unsupported,
         ExchangeTicker::Unsupported,
     ),
-    /* Oracles */
+    // Oracles
     (
         "0xba11d00c5f74255f56a5e366f4f77f5a186d7f55",
         18,
@@ -174,7 +180,7 @@ static ERC20_DATA: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Same,
     ),
-    /* DeFi Trading */
+    // DeFi Trading
     (
         "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
         18,
@@ -265,7 +271,7 @@ static ERC20_DATA: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Same,
     ),
-    /* DeFi Lending */
+    // DeFi Lending
     (
         "0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9",
         18,
@@ -311,7 +317,7 @@ static ERC20_DATA: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Same,
     ),
-    /* DeFi Lending Undercollateralized */
+    // DeFi Lending Undercollateralized
     (
         "0x4c19596f5aaff459fa38b0f7ed92f11ae6543784",
         8,
@@ -330,7 +336,7 @@ static ERC20_DATA: &[(
         ExchangeTicker::Unsupported,
         ExchangeTicker::Unsupported,
     ),
-    /* DeFi Other */
+    // DeFi Other
     (
         "0xc011a73ee8576fb46f5e1c5751ca3b9fe0af2a6f",
         18,
@@ -358,7 +364,7 @@ static ERC20_DATA: &[(
         ExchangeTicker::Unsupported,
         ExchangeTicker::Unsupported,
     ),
-    /* Bridges */
+    // Bridges
     (
         "0x408e41876cccdc0f92210600ef50372656052a38",
         18,
@@ -386,7 +392,7 @@ static ERC20_DATA: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
-    /* L2s */
+    // L2s
     (
         "0xbbbbca6a901c926f240b89eacb641d8aec7aeafd",
         18,
@@ -405,7 +411,7 @@ static ERC20_DATA: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
-    /* NFTs */
+    // NFTs
     (
         "0x4d224452801aced8b2f0aebe155379bb5d594381",
         18,
@@ -442,7 +448,7 @@ static ERC20_DATA: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
-    /* Misc */
+    // Misc
     (
         "0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce",
         18,
@@ -649,7 +655,8 @@ lazy_static! {
     };
 }
 
-/// The core Token abstraction, used for unambiguous definition of an ERC-20 asset.
+/// The core Token abstraction, used for unambiguous definition of an ERC-20
+/// asset.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Token {
     /// The ERC-20 address of the Token.
@@ -684,19 +691,22 @@ impl Token {
         }
     }
 
-    /// Given an ERC-20 contract address represented as a `BigUint`, returns a Token
+    /// Given an ERC-20 contract address represented as a `BigUint`, returns a
+    /// Token
     pub fn from_addr_biguint(addr: &BigUint) -> Self {
         Self {
             addr: biguint_to_str_addr(addr),
         }
     }
 
-    /// Given an ERC-20 contract address on Starknet-Goerli (represented as a `BigUint`) returns a Token
+    /// Given an ERC-20 contract address on Starknet-Goerli (represented as a
+    /// `BigUint`) returns a Token
     pub fn from_starknet_goerli_addr_biguint(addr: &BigUint) -> Self {
         Self::from_starknet_goerli_addr(&biguint_to_str_addr(addr))
     }
 
-    /// Given an ERC-20 contract address on Katana (represented as a `BigUint`) returns a Token
+    /// Given an ERC-20 contract address on Katana (represented as a `BigUint`)
+    /// returns a Token
     pub fn from_katana_addr_biguint(addr: &BigUint) -> Self {
         Self::from_katana_addr(&biguint_to_str_addr(addr))
     }
@@ -716,8 +726,9 @@ impl Token {
         &self.addr
     }
 
-    /// Returns the ERC-20 ticker, if available. Note that it is OK if certain Tickers do not have
-    /// any ERC-20 ticker, as we support long-tail assets.
+    /// Returns the ERC-20 ticker, if available. Note that it is OK if certain
+    /// Tickers do not have any ERC-20 ticker, as we support long-tail
+    /// assets.
     pub fn get_ticker(&self) -> Option<&str> {
         ADDR_TICKER_BIMAP
             .get_by_left(&self.addr)
@@ -757,9 +768,10 @@ impl Token {
         supported_exchanges
     }
 
-    /// Returns the ticker, in accordance with what each Exchange expects. This requires
-    /// hard-coding and manual lookup, since CEXes typically do not support indexing by ERC-20
-    /// address. If the ticker is not supported by the Exchange, returns None.
+    /// Returns the ticker, in accordance with what each Exchange expects. This
+    /// requires hard-coding and manual lookup, since CEXes typically do not
+    /// support indexing by ERC-20 address. If the ticker is not supported
+    /// by the Exchange, returns None.
     pub fn get_exchange_ticker(&self, exchange: Exchange) -> String {
         // If there is not a Renegade-native ticker, then the token must be Unnamed.
         if !self.is_named() {

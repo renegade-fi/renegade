@@ -19,7 +19,8 @@ use super::arithmetic::{ExpGadget, MultiproverExpGadget};
 // | Singleprover Gadget |
 // -----------------------
 
-/// A hash gadget that applies a Poseidon hash function to the given constraint system
+/// A hash gadget that applies a Poseidon hash function to the given constraint
+/// system
 ///
 /// This version of the gadget is used for the single-prover case, i.e. no MPC
 #[derive(Debug)]
@@ -58,7 +59,8 @@ impl PoseidonHashGadget {
         self.in_squeeze_state = false;
     }
 
-    /// Hashes the given input and constraints the result to equal the expected output
+    /// Hashes the given input and constraints the result to equal the expected
+    /// output
     pub fn hash<L, CS>(
         &mut self,
         hash_input: &[L],
@@ -106,13 +108,14 @@ impl PoseidonHashGadget {
             .try_for_each(|val| self.absorb(Into::<LinearCombination>::into(val.clone()), cs))
     }
 
-    /// Squeeze an element from the sponge and return its representation in the constraint
-    /// system
+    /// Squeeze an element from the sponge and return its representation in the
+    /// constraint system
     pub fn squeeze<CS: RandomizableConstraintSystem>(
         &mut self,
         cs: &mut CS,
     ) -> Result<LinearCombination, R1CSError> {
-        // Once we exit the absorb state, ensure that the digest state is permuted before squeezing
+        // Once we exit the absorb state, ensure that the digest state is permuted
+        // before squeezing
         if !self.in_squeeze_state || self.next_index == self.params.rate {
             self.permute(cs)?;
             self.next_index = 0;
@@ -122,8 +125,8 @@ impl PoseidonHashGadget {
         Ok(self.state[self.params.capacity + self.next_index].clone())
     }
 
-    /// Squeeze a batch of elements from the sponge and return their representation in the
-    /// constraint system
+    /// Squeeze a batch of elements from the sponge and return their
+    /// representation in the constraint system
     pub fn batch_squeeze<CS: RandomizableConstraintSystem>(
         &mut self,
         num_elements: usize,
@@ -149,8 +152,8 @@ impl PoseidonHashGadget {
         Ok(())
     }
 
-    /// Squeeze a set of elements from the hasher, and constraint the elements to be equal
-    /// to the provided statement variables
+    /// Squeeze a set of elements from the hasher, and constraint the elements
+    /// to be equal to the provided statement variables
     pub fn batch_constrained_squeeze<L, CS>(
         &mut self,
         expected: &[L],
@@ -174,7 +177,8 @@ impl PoseidonHashGadget {
             self.apply_mds()?;
         }
 
-        // Compute partial_rounds rounds in which the sbox is applied to only the last element
+        // Compute partial_rounds rounds in which the sbox is applied to only the last
+        // element
         let partial_rounds_start = self.params.full_rounds / 2;
         let partial_rounds_end = partial_rounds_start + self.params.partial_rounds;
         for round in partial_rounds_start..partial_rounds_end {
@@ -183,7 +187,8 @@ impl PoseidonHashGadget {
             self.apply_mds()?;
         }
 
-        // Compute another full_rounds / 2 rounds in which we apply the sbox to all elements
+        // Compute another full_rounds / 2 rounds in which we apply the sbox to all
+        // elements
         let final_full_rounds_start = partial_rounds_end;
         let final_full_rounds_end = self.params.partial_rounds + self.params.full_rounds;
         for round in final_full_rounds_start..final_full_rounds_end {
@@ -209,13 +214,14 @@ impl PoseidonHashGadget {
         }
     }
 
-    /// Apply the Poseidon s-box (i.e. x^\alpha \mod L) for given parameter \alpha
+    /// Apply the Poseidon s-box (i.e. x^\alpha \mod L) for given parameter
+    /// \alpha
     ///
-    /// This permutation is applied to every element of the state for a full round,
-    /// and only to the last element of the state for a partial round
+    /// This permutation is applied to every element of the state for a full
+    /// round, and only to the last element of the state for a partial round
     ///
-    /// This step is applied in the Poseidon permutation after the round constants
-    /// are added to the state.
+    /// This step is applied in the Poseidon permutation after the round
+    /// constants are added to the state.
     fn apply_sbox<CS: RandomizableConstraintSystem>(
         &mut self,
         full_round: bool,
@@ -262,9 +268,11 @@ impl PoseidonHashGadget {
 // | Multiprover Gadget |
 // ----------------------
 
-/// A hash gadget that applies a Poseidon hash function to the given constraint system
+/// A hash gadget that applies a Poseidon hash function to the given constraint
+/// system
 ///
-/// This version of the gadget is used for the multi-prover case, i.e in an MPC execution
+/// This version of the gadget is used for the multi-prover case, i.e in an MPC
+/// execution
 #[derive(Debug)]
 pub struct MultiproverPoseidonHashGadget {
     /// The parameterization of the hash function
@@ -276,7 +284,8 @@ pub struct MultiproverPoseidonHashGadget {
     /// Whether the sponge is in squeezing mode. For simplicity, we disallow
     /// the case in which a caller wishes to squeeze values and the absorb more.
     in_squeeze_state: bool,
-    /// A reference to the shared MPC fabric that the computation variables are allocated in
+    /// A reference to the shared MPC fabric that the computation variables are
+    /// allocated in
     fabric: MpcFabric,
 }
 
@@ -296,8 +305,8 @@ impl MultiproverPoseidonHashGadget {
         }
     }
 
-    /// Hashes the payload and then constrains the squeezed output to be the provided
-    /// expected output.
+    /// Hashes the payload and then constrains the squeezed output to be the
+    /// provided expected output.
     pub fn hash<L, CS>(
         &mut self,
         hash_input: &[L],
@@ -349,7 +358,8 @@ impl MultiproverPoseidonHashGadget {
     where
         CS: MpcRandomizableConstraintSystem,
     {
-        // Once we exit the absorb state, ensure that the digest state is permuted before squeezing
+        // Once we exit the absorb state, ensure that the digest state is permuted
+        // before squeezing
         if !self.in_squeeze_state || self.next_index == self.params.rate {
             self.permute(cs)?;
             self.next_index = 0;
@@ -389,8 +399,8 @@ impl MultiproverPoseidonHashGadget {
             .collect::<Result<Vec<_>, ProverError>>()
     }
 
-    /// Squeeze a set of elements from the hasher, and constraint the elements to be equal
-    /// to the provided statement variables
+    /// Squeeze a set of elements from the hasher, and constraint the elements
+    /// to be equal to the provided statement variables
     pub fn batch_constrained_squeeze<L, CS>(
         &mut self,
         expected: &[MpcVariable],
@@ -417,7 +427,8 @@ impl MultiproverPoseidonHashGadget {
             self.apply_mds();
         }
 
-        // Compute partial_rounds rounds in which the sbox is applied to only the last element
+        // Compute partial_rounds rounds in which the sbox is applied to only the last
+        // element
         let partial_rounds_start = self.params.full_rounds / 2;
         let partial_rounds_end = partial_rounds_start + self.params.partial_rounds;
         for round in partial_rounds_start..partial_rounds_end {
@@ -426,7 +437,8 @@ impl MultiproverPoseidonHashGadget {
             self.apply_mds();
         }
 
-        // Compute another full_rounds / 2 rounds in which we apply the sbox to all elements
+        // Compute another full_rounds / 2 rounds in which we apply the sbox to all
+        // elements
         let final_full_rounds_start = partial_rounds_end;
         let final_full_rounds_end = self.params.partial_rounds + self.params.full_rounds;
         for round in final_full_rounds_start..final_full_rounds_end {
@@ -452,13 +464,14 @@ impl MultiproverPoseidonHashGadget {
         }
     }
 
-    /// Apply the Poseidon s-box (i.e. x^\alpha \mod L) for given parameter \alpha
+    /// Apply the Poseidon s-box (i.e. x^\alpha \mod L) for given parameter
+    /// \alpha
     ///
-    /// This permutation is applied to every element of the state for a full round,
-    /// and only to the last element of the state for a partial round
+    /// This permutation is applied to every element of the state for a full
+    /// round, and only to the last element of the state for a partial round
     ///
-    /// This step is applied in the Poseidon permutation after the round constants
-    /// are added to the state.
+    /// This step is applied in the Poseidon permutation after the round
+    /// constants are added to the state.
     fn apply_sbox<CS: MpcRandomizableConstraintSystem>(
         &mut self,
         full_round: bool,

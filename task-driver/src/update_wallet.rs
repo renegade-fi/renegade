@@ -1,7 +1,8 @@
-//! Defines a task for submitting `update_wallet` transactions, transitioning the state of
-//! an existing darkpool wallet
+//! Defines a task for submitting `update_wallet` transactions, transitioning
+//! the state of an existing darkpool wallet
 //!
-//! This involves proving `VALID WALLET UPDATE`, submitting on-chain, and re-indexing state
+//! This involves proving `VALID WALLET UPDATE`, submitting on-chain, and
+//! re-indexing state
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
@@ -147,31 +148,31 @@ impl Task for UpdateWalletTask {
         match self.state() {
             UpdateWalletTaskState::Pending => {
                 self.task_state = UpdateWalletTaskState::Proving;
-            }
+            },
             UpdateWalletTaskState::Proving => {
                 // Begin the proof of `VALID WALLET UPDATE`
                 let proof_bundle = self.generate_proof().await?;
                 self.task_state = UpdateWalletTaskState::SubmittingTx { proof_bundle };
-            }
+            },
             UpdateWalletTaskState::SubmittingTx { .. } => {
                 // Submit the proof and transaction info to the contract and await
                 // transaction finality
                 self.submit_tx().await?;
                 self.task_state = UpdateWalletTaskState::FindingOpening;
-            }
+            },
             UpdateWalletTaskState::FindingOpening => {
                 // Find a new Merkle opening for the wallet
                 self.find_opening().await?;
                 self.task_state = UpdateWalletTaskState::UpdatingValidityProofs;
-            }
+            },
             UpdateWalletTaskState::UpdatingValidityProofs => {
                 // Update validity proofs for now-nullified orders
                 self.update_validity_proofs().await?;
                 self.task_state = UpdateWalletTaskState::Completed;
-            }
+            },
             UpdateWalletTaskState::Completed => {
                 panic!("step() called in state Completed")
-            }
+            },
         }
 
         Ok(())
@@ -246,7 +247,8 @@ impl UpdateWalletTask {
         })
     }
 
-    /// Generate a proof of `VALID WALLET UPDATE` for the wallet with added balance
+    /// Generate a proof of `VALID WALLET UPDATE` for the wallet with added
+    /// balance
     async fn generate_proof(&self) -> Result<ValidWalletUpdateBundle, UpdateWalletTaskError> {
         let merkle_opening =
             self.old_wallet.merkle_proof.clone().ok_or_else(|| {
@@ -289,7 +291,8 @@ impl UpdateWalletTask {
             .map_err(|err| UpdateWalletTaskError::ProofGeneration(err.to_string()))
     }
 
-    /// Submit the `update_wallet` transaction to the contract and await finality
+    /// Submit the `update_wallet` transaction to the contract and await
+    /// finality
     async fn submit_tx(&mut self) -> Result<(), UpdateWalletTaskError> {
         let proof = if let UpdateWalletTaskState::SubmittingTx { proof_bundle } = self.state() {
             proof_bundle
@@ -324,15 +327,18 @@ impl UpdateWalletTask {
             .map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))
     }
 
-    /// Find the wallet opening for the new wallet and re-index the wallet in the global state
+    /// Find the wallet opening for the new wallet and re-index the wallet in
+    /// the global state
     async fn find_opening(&mut self) -> Result<(), UpdateWalletTaskError> {
-        // Attach the opening to the new wallet, and index the wallet in the global state
+        // Attach the opening to the new wallet, and index the wallet in the global
+        // state
         let merkle_opening = find_merkle_path(&self.new_wallet, &self.starknet_client)
             .await
             .map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))?;
         self.new_wallet.merkle_proof = Some(merkle_opening);
 
-        // After the state is finalized on-chain, re-index the wallet in the global state
+        // After the state is finalized on-chain, re-index the wallet in the global
+        // state
         self.global_state
             .update_wallet(self.new_wallet.clone())
             .await;
@@ -340,8 +346,9 @@ impl UpdateWalletTask {
         Ok(())
     }
 
-    /// After a wallet update has been submitted on-chain, re-prove `VALID REBLIND`
-    /// for the wallet and `VALID COMMITMENTS` for all orders in the wallet
+    /// After a wallet update has been submitted on-chain, re-prove `VALID
+    /// REBLIND` for the wallet and `VALID COMMITMENTS` for all orders in
+    /// the wallet
     async fn update_validity_proofs(&self) -> Result<(), UpdateWalletTaskError> {
         update_wallet_validity_proofs(
             &self.new_wallet,

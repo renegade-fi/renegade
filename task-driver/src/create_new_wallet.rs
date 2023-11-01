@@ -1,8 +1,10 @@
-//! A task defining the flow to create a new wallet, at a high level the steps are:
+//! A task defining the flow to create a new wallet, at a high level the steps
+//! are:
 //!     1. Index the wallet locally
 //!     2. Prove `VALID WALLET CREATE` for the wallet
 //!     3. Submit this on-chain and await transaction success
-//!     4. Pull the Merkle authentication path of the newly created wallet from on-chain state
+//!     4. Pull the Merkle authentication path of the newly created wallet from
+//!        on-chain state
 
 use core::panic;
 use std::error::Error;
@@ -35,8 +37,8 @@ use super::{
     helpers::find_merkle_path,
 };
 
-/// Error occurs when a wallet is submitted with secret shares that do not combine
-/// to recover the wallet
+/// Error occurs when a wallet is submitted with secret shares that do not
+/// combine to recover the wallet
 const ERR_INVALID_SHARING: &str = "invalid secret shares for wallet";
 /// The task name to display when logging
 const NEW_WALLET_TASK_NAME: &str = "create-new-wallet";
@@ -106,7 +108,7 @@ impl Display for NewWalletTaskState {
         match self {
             NewWalletTaskState::SubmittingTx { .. } => {
                 write!(f, "SubmittingTx")
-            }
+            },
             _ => write!(f, "{self:?}"),
         }
     }
@@ -138,26 +140,26 @@ impl Task for NewWalletTask {
         match self.state() {
             NewWalletTaskState::Pending => {
                 self.task_state = NewWalletTaskState::Proving;
-            }
+            },
             NewWalletTaskState::Proving => {
                 // Begin proof and attach the proof to the state afterwards
                 let proof_bundle = self.generate_proof().await?;
                 self.task_state = NewWalletTaskState::SubmittingTx { proof_bundle }
-            }
+            },
             NewWalletTaskState::SubmittingTx { .. } => {
                 // Submit the wallet on-chain
                 self.submit_wallet_tx().await?;
                 self.task_state = NewWalletTaskState::FindingMerkleOpening;
-            }
+            },
             NewWalletTaskState::FindingMerkleOpening => {
                 // Find the authentication path via contract events, and index this
                 // in the global state
                 self.find_merkle_path().await?;
                 self.task_state = NewWalletTaskState::Completed;
-            }
+            },
             NewWalletTaskState::Completed => {
                 panic!("step() called in completed state")
-            }
+            },
         }
 
         Ok(())
@@ -284,8 +286,9 @@ impl NewWalletTask {
             .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))
     }
 
-    /// A helper to find the new Merkle authentication path in the contract state
-    /// and update the global state with the new wallet's authentication path
+    /// A helper to find the new Merkle authentication path in the contract
+    /// state and update the global state with the new wallet's
+    /// authentication path
     async fn find_merkle_path(&self) -> Result<(), NewWalletTaskError> {
         // Find the authentication path of the wallet's private shares
         let wallet_auth_path = find_merkle_path(&self.wallet, &self.starknet_client)

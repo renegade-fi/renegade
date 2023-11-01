@@ -56,7 +56,8 @@ where
     where
         CS: RandomizableConstraintSystem,
     {
-        // Validate the commitment given in the statement is a valid commitment to the private secret shares
+        // Validate the commitment given in the statement is a valid commitment to the
+        // private secret shares
         let commitment = WalletShareCommitGadget::compute_private_commitment(
             witness.private_wallet_share.clone(),
             cs,
@@ -131,7 +132,8 @@ pub struct ValidWalletCreateStatement<
     /// The public secret shares of the wallet
     pub public_wallet_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
 }
-/// A type alias that attaches system-wide default generics to the statement type
+/// A type alias that attaches system-wide default generics to the statement
+/// type
 pub type SizedValidWalletCreateStatement =
     ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
@@ -271,7 +273,8 @@ pub mod tests {
     // | Tests |
     // ---------
 
-    /// Tests that the circuit correctly verifies with valid zero'd balance and orders lists
+    /// Tests that the circuit correctly verifies with valid zero'd balance and
+    /// orders lists
     #[test]
     fn test_valid_initial_wallet() {
         let (witness, statement) = create_default_witness_statement();
@@ -282,7 +285,8 @@ pub mod tests {
         assert!(res.is_ok())
     }
 
-    /// Tests the case in which the commitment to the private shares is incorrect
+    /// Tests the case in which the commitment to the private shares is
+    /// incorrect
     #[test]
     fn test_invalid_commitment() {
         let (witness, mut statement) = create_default_witness_statement();

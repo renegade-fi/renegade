@@ -1,5 +1,5 @@
-//! A raft node that processes events from the consensus layer and the network, and handles
-//! interactions with storage
+//! A raft node that processes events from the consensus layer and the network,
+//! and handles interactions with storage
 
 use std::{
     sync::Arc,
@@ -47,12 +47,13 @@ const PROPOSAL_QUEUE_DISCONNECTED: &str = "Proposal queue disconnected";
 pub struct ReplicationNodeConfig<N: RaftNetwork> {
     /// The period (in milliseconds) on which to tick the raft node
     tick_period_ms: u64,
-    /// Optimistically assume that the local node will take the role of leader, i.e. that
-    /// this is the cluster boot node
+    /// Optimistically assume that the local node will take the role of leader,
+    /// i.e. that this is the cluster boot node
     assume_leader: bool,
     /// A copy of the relayer's config
     relayer_config: RelayerConfig,
-    /// A reference to the channel on which the replication node may receive proposals
+    /// A reference to the channel on which the replication node may receive
+    /// proposals
     proposal_queue: CrossbeamReceiver<StateTransition>,
     /// A reference to the networking layer that backs the raft node
     network: N,
@@ -70,8 +71,8 @@ pub struct ReplicationNode<N: RaftNetwork> {
     inner: RawNode<LogStore>,
     /// The queue on which state transition proposals may be received
     proposal_queue: CrossbeamReceiver<StateTransition>,
-    /// A handle to the state applicator: the module responsible for applying state
-    /// transitions to the state machine when they are committed
+    /// A handle to the state applicator: the module responsible for applying
+    /// state transitions to the state machine when they are committed
     applicator: StateApplicator,
     /// The networking layer backing the raft node
     network: N,
@@ -128,16 +129,18 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         })
     }
 
-    /// Set defaults in the storage module that imply the local peer is the leader
-    /// and the only member of the cluster.
+    /// Set defaults in the storage module that imply the local peer is the
+    /// leader and the only member of the cluster.
     ///
-    /// This may change as the local peer bootstraps into the network and discovers cluster
-    /// peers, at which point it will step down as begin syncing with the cluster
+    /// This may change as the local peer bootstraps into the network and
+    /// discovers cluster peers, at which point it will step down as begin
+    /// syncing with the cluster
     fn setup_storage_as_leader(my_id: u64, storage: &LogStore) -> Result<(), ReplicationError> {
-        // Store a default snapshot under the assumption that the raft was just initialized
-        // from the local node. This is effectively a raft wherein the first term has just begun,
-        // and the log is empty at the first index. We also register the local peer as the only
-        // voter known to the cluster. This ensures that the local peer will elect itself leader
+        // Store a default snapshot under the assumption that the raft was just
+        // initialized from the local node. This is effectively a raft wherein
+        // the first term has just begun, and the log is empty at the first
+        // index. We also register the local peer as the only voter known to the
+        // cluster. This ensures that the local peer will elect itself leader
         let mut snap = Snapshot::new();
         let md = snap.mut_metadata();
 
@@ -149,8 +152,8 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         storage.apply_snapshot(&snap)
     }
 
-    /// The main loop of the raft consensus engine, we tick the state machine every
-    /// `tick_period_ms` milliseconds
+    /// The main loop of the raft consensus engine, we tick the state machine
+    /// every `tick_period_ms` milliseconds
     pub fn run(mut self) -> Result<(), ReplicationError> {
         let tick_interval = Duration::from_millis(self.tick_period_ms);
         let poll_interval = Duration::from_millis(RAFT_POLL_INTERVAL_MS);
@@ -196,7 +199,8 @@ impl<N: RaftNetwork> ReplicationNode<N> {
 
     /// Process a state transition proposal
     fn process_proposal(&mut self, proposal: StateTransition) -> Result<(), ReplicationError> {
-        // Handle raft cluster changes directly, otherwise append the proposal to the log
+        // Handle raft cluster changes directly, otherwise append the proposal to the
+        // log
         match proposal {
             StateTransition::AddRaftLearner(peer_id) => self.add_learner(peer_id),
             StateTransition::AddRaftPeer(peer_id) => self.add_peer(peer_id),
@@ -208,7 +212,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
                 self.inner
                     .propose(vec![] /* context */, payload)
                     .map_err(ReplicationError::Raft)
-            }
+            },
         }
     }
 
@@ -251,12 +255,14 @@ impl<N: RaftNetwork> ReplicationNode<N> {
 
     /// Process the ready state of the node
     ///
-    /// The ready state includes a collection of all state transition events that have occurred
-    /// since the last time the ready state was polled. This includes:
+    /// The ready state includes a collection of all state transition events
+    /// that have occurred since the last time the ready state was polled.
+    /// This includes:
     ///     - Messages to be sent to other nodes
     ///     - Snapshots from the leader
     ///     - Committed entries
-    ///     - New entries that should be appended to the log, but not yet applied
+    ///     - New entries that should be appended to the log, but not yet
+    ///       applied
     ///     - `HardState` changes, e.g. new leader, new commit index, etc
     /// and more. For mor information see:
     ///     https://docs.rs/raft/latest/raft/index.html#processing-the-ready-state
@@ -339,7 +345,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
                     self.applicator
                         .handle_state_transition(transition)
                         .map_err(ReplicationError::Applicator)?;
-                }
+                },
                 EntryType::EntryConfChangeV2 => {
                     // Apply a config change entry to the state machine
                     let mut config_change = ConfChangeV2::new();
@@ -355,7 +361,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
 
                     // Store the new config in the log store
                     self.inner.mut_store().apply_config_state(config_state)?
-                }
+                },
                 _ => panic!("unexpected entry type: {entry:?}"),
             }
         }
@@ -365,7 +371,8 @@ impl<N: RaftNetwork> ReplicationNode<N> {
 
     /// Append new log entries from the ready state
     ///
-    /// These entries are not yet committed and should not yet be applied to the state machine
+    /// These entries are not yet committed and should not yet be applied to the
+    /// state machine
     fn append_entries(&mut self, entries: Vec<Entry>) -> Result<(), ReplicationError> {
         self.inner.mut_store().append_log_entries(entries)
     }
@@ -401,8 +408,8 @@ pub(crate) mod test_helpers {
 
     use super::{ReplicationNode, ReplicationNodeConfig};
 
-    /// A mock cluster, holds the handles of the threads running each node, as well as
-    /// references to their databases and proposal queues
+    /// A mock cluster, holds the handles of the threads running each node, as
+    /// well as references to their databases and proposal queues
     pub struct MockReplicationCluster {
         /// The handles of the nodes in the cluster
         handles: Vec<JoinHandle<Result<(), ReplicationError>>>,
@@ -430,7 +437,7 @@ pub(crate) mod test_helpers {
 
             // Build one leader and `n_nodes - 1` followers
             let leader = mock_leader(
-                1, /* id */
+                1, // id
                 dbs[0].clone(),
                 receivers.remove(0),
                 nets.remove(0),
@@ -526,7 +533,7 @@ pub(crate) mod test_helpers {
         network: MockNetwork,
     ) -> ReplicationNode<MockNetwork> {
         mock_replication_node_with_config(
-            false, /* leader */
+            false, // leader
             db,
             proposal_queue,
             network,
@@ -617,8 +624,9 @@ mod test {
         db.read(WALLETS_TABLE, &wallet_id).unwrap().unwrap()
     }
 
-    /// Tests that the constructor works properly, largely this means testing that the `LogStore`
-    /// initialization is compatible with the `raft` setup
+    /// Tests that the constructor works properly, largely this means testing
+    /// that the `LogStore` initialization is compatible with the `raft`
+    /// setup
     #[test]
     fn test_constructor() {
         let db = Arc::new(mock_db());

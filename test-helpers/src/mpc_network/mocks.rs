@@ -35,7 +35,8 @@ impl PartyIDBeaverSource {
 }
 
 /// The PartyIDBeaverSource returns beaver triplets split statically between the
-/// parties. We assume a = 2, b = 3 ==> c = 6. [a] = (1, 1); [b] = (3, 0) [c] = (2, 4)
+/// parties. We assume a = 2, b = 3 ==> c = 6. [a] = (1, 1); [b] = (3, 0) [c] =
+/// (2, 4)
 impl SharedValueSource for PartyIDBeaverSource {
     fn next_shared_bit(&mut self) -> Scalar {
         // Simply output partyID, assume partyID \in {0, 1}

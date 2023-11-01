@@ -69,8 +69,8 @@ impl<CS: RandomizableConstraintSystem> FixedPointGadget<CS> {
         let diff = lhs.repr.into() - shifted_rhs;
 
         // Constrain the difference to be less than the precision on the fixed point,
-        // This is effectively the same as constraining the difference to have an integral
-        // component of zero
+        // This is effectively the same as constraining the difference to have an
+        // integral component of zero
         GreaterThanEqGadget::<DEFAULT_FP_PRECISION>::constrain_greater_than_eq(
             LinearCombination::from(*TWO_TO_M_SCALAR - Scalar::one()),
             diff,
@@ -80,8 +80,8 @@ impl<CS: RandomizableConstraintSystem> FixedPointGadget<CS> {
 
     // === Arithmetic Ops === //
 
-    /// Computes the closest integral value less than the given fixed point variable and
-    /// constraints this value to be correctly computed.
+    /// Computes the closest integral value less than the given fixed point
+    /// variable and constraints this value to be correctly computed.
     ///
     /// Returns the integer representation directly
     pub fn floor<L: LinearCombinationLike>(val: FixedPointVar<L>, cs: &mut CS) -> Variable {
@@ -132,8 +132,8 @@ impl MultiproverFixedPointGadget {
         let diff = lhs.repr.clone().into() - shifted_rhs;
 
         // Constrain the difference to be less than the precision on the fixed point,
-        // This is effectively the same as constraining the difference to have an integral
-        // component of zero
+        // This is effectively the same as constraining the difference to have an
+        // integral component of zero
         let shifted_precision =
             MpcLinearCombination::from_scalar(*TWO_TO_M_SCALAR - Scalar::one(), fabric.clone());
         MultiproverGreaterThanEqGadget::<DEFAULT_FP_PRECISION>::constrain_greater_than_eq(

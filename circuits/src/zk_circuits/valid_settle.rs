@@ -1,5 +1,6 @@
-//! Defines the VALID SETTLE circuit, which is proven after a match, validating that
-//! both party's secret shares have been updated properly with the result of the match
+//! Defines the VALID SETTLE circuit, which is proven after a match, validating
+//! that both party's secret shares have been updated properly with the result
+//! of the match
 
 use circuit_macros::circuit_type;
 use circuit_types::{
@@ -110,9 +111,9 @@ where
 
     /// Verify that the balance updates to a wallet are valid
     ///
-    /// That is, all balances in the settled wallet are the same as in the pre-settle wallet
-    /// except for the balance sent and the balance received, which have the correct amounts
-    /// applied from the match
+    /// That is, all balances in the settled wallet are the same as in the
+    /// pre-settle wallet except for the balance sent and the balance
+    /// received, which have the correct amounts applied from the match
     fn validate_balance_updates<CS: RandomizableConstraintSystem>(
         send_index: Variable,
         send_amount: LinearCombination,
@@ -159,8 +160,8 @@ where
 
     /// Verify that order updates to a wallet are valid
     ///
-    /// The orders should all be equal except that the amount of the matched order
-    /// should be decremented by the amount of the base token swapped
+    /// The orders should all be equal except that the amount of the matched
+    /// order should be decremented by the amount of the base token swapped
     fn validate_order_updates<CS: RandomizableConstraintSystem>(
         order_index: Variable,
         base_amount_swapped: Variable,
@@ -195,8 +196,8 @@ where
         }
     }
 
-    /// Validate that fees, keys, and blinders remain the same in the pre and post
-    /// wallet shares
+    /// Validate that fees, keys, and blinders remain the same in the pre and
+    /// post wallet shares
     fn validate_fees_keys_blinder_updates<CS: RandomizableConstraintSystem>(
         pre_update_shares: WalletShareVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         post_update_shares: WalletShareVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
@@ -258,7 +259,8 @@ pub struct ValidSettleStatement<
     pub party0_order_index: u64,
     /// The index of the balance that the second party sent in the settlement
     pub party1_send_balance_index: u64,
-    /// The index of teh balance that the second party received in the settlement
+    /// The index of teh balance that the second party received in the
+    /// settlement
     pub party1_receive_balance_index: u64,
     /// The index of the second party's order that was matched
     pub party1_order_index: u64,
@@ -362,9 +364,11 @@ pub mod test_helpers {
         };
     }
 
-    /// The witness type for `VALID SETTLE` with default size parameters attached
+    /// The witness type for `VALID SETTLE` with default size parameters
+    /// attached
     pub type SizedWitness = ValidSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    /// The statement type for `VALID SETTLE` with default size parameters attached
+    /// The statement type for `VALID SETTLE` with default size parameters
+    /// attached
     pub type SizedStatement = ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     /// Construct a witness and statement for `VALID SETTLE`
@@ -486,7 +490,8 @@ pub mod test_helpers {
             .map(|(ind, _balance)| ind) // keep only the index
     }
 
-    /// Find the index of the order within the given wallet that is on the given asset pair's book
+    /// Find the index of the order within the given wallet that is on the given
+    /// asset pair's book
     fn find_order_in_wallet<
         const MAX_BALANCES: usize,
         const MAX_ORDERS: usize,
@@ -529,8 +534,8 @@ mod test {
         ValidSettle,
     };
 
-    /// Return true if the given witness and statement satisfy the constraints of
-    /// the VALID SETTLE circuit
+    /// Return true if the given witness and statement satisfy the constraints
+    /// of the VALID SETTLE circuit
     fn constraints_satisfied(witness: SizedWitness, statement: SizedStatement) -> bool {
         // Build a constraint system
         let pc_gens = PedersenGens::default();
@@ -674,7 +679,8 @@ mod test {
         assert!(!constraints_satisfied(witness, statement));
     }
 
-    /// Tests cases in which an element is spuriously modified that should not be
+    /// Tests cases in which an element is spuriously modified that should not
+    /// be
     #[test]
     fn test_invalid_settle__spurious_modifications() {
         let party0_wallet = WALLET1.clone();

@@ -1,14 +1,15 @@
-//! The order book state primitive represents a cache of known orders in the network
+//! The order book state primitive represents a cache of known orders in the
+//! network
 //!
-//! Note that these orders are not necessarily locally managed orders; this state
-//! element also holds orders known to be managed by other peers. This allows the
-//! local node to take into account known outstanding orders when scheduling
-//! handshakes with peers.
+//! Note that these orders are not necessarily locally managed orders; this
+//! state element also holds orders known to be managed by other peers. This
+//! allows the local node to take into account known outstanding orders when
+//! scheduling handshakes with peers.
 //!
-//! As well, this state primitive provides a means by which to centralize the collection
-//! of IoIs (indications of interest); which are partially revealing elements of an
-//! order (e.g. volume, direction, base asset, etc). These are also taken into account
-//! when scheduling handshakes
+//! As well, this state primitive provides a means by which to centralize the
+//! collection of IoIs (indications of interest); which are partially revealing
+//! elements of an order (e.g. volume, direction, base asset, etc). These are
+//! also taken into account when scheduling handshakes
 
 use circuit_types::wallet::Nullifier;
 use common::{
@@ -34,21 +35,24 @@ use uuid::Uuid;
 /// The error emitted when enqueueing a job to the handshake manager fails
 const ERR_MATCH_JOB_ENQUEUE: &str = "error enqueuing internal matching engine job";
 
-/// Represents the order index, a collection of known orders allocated in the network
+/// Represents the order index, a collection of known orders allocated in the
+/// network
 #[derive(Clone, Debug)]
 pub struct NetworkOrderBook {
     /// The mapping from order identifier to order information
     order_map: HashMap<OrderIdentifier, AsyncShared<NetworkOrder>>,
-    /// A mapping from the wallet's public share nullifier to the set of orders in this wallet
+    /// A mapping from the wallet's public share nullifier to the set of orders
+    /// in this wallet
     orders_by_nullifier: HashMap<Nullifier, AsyncShared<HashSet<OrderIdentifier>>>,
     /// A list of order IDs maintained locally
     local_orders: AsyncShared<HashSet<OrderIdentifier>>,
     /// The set of orders in the `Verified` state; i.e. ready to match
     verified_orders: AsyncShared<HashSet<OrderIdentifier>>,
-    /// A producer to the handshake work queue, so that the orderbook may schedule internal
-    /// matching engine jobs on newly verified orders
+    /// A producer to the handshake work queue, so that the orderbook may
+    /// schedule internal matching engine jobs on newly verified orders
     handshake_job_queue: TokioSender<HandshakeExecutionJob>,
-    /// A handle referencing the system bus to publish state transition events onto
+    /// A handle referencing the system bus to publish state transition events
+    /// onto
     system_bus: SystemBus<SystemBusMessage>,
 }
 
@@ -166,10 +170,11 @@ impl NetworkOrderBook {
         }
     }
 
-    /// Return whether the given locally managed order is ready to schedule handshakes on
+    /// Return whether the given locally managed order is ready to schedule
+    /// handshakes on
     ///
-    /// This amounts to validating that a copy of the validity proof and witness are stored
-    /// locally
+    /// This amounts to validating that a copy of the validity proof and witness
+    /// are stored locally
     pub async fn order_ready_for_handshake(&self, order_id: &OrderIdentifier) -> bool {
         self.read_order(order_id)
             .await
@@ -213,7 +218,8 @@ impl NetworkOrderBook {
             .collect_vec()
     }
 
-    /// Return a list of all known order IDs in the book with clusters to contact for info
+    /// Return a list of all known order IDs in the book with clusters to
+    /// contact for info
     pub async fn get_order_owner_pairs(&self) -> Vec<(OrderIdentifier, ClusterId)> {
         let mut pairs = Vec::new();
         for (order_id, info) in self.order_map.iter() {
@@ -223,8 +229,8 @@ impl NetworkOrderBook {
         pairs
     }
 
-    /// Returns true if the local node holds validity proofs (reblind and commitment) for
-    /// the given order
+    /// Returns true if the local node holds validity proofs (reblind and
+    /// commitment) for the given order
     pub async fn has_validity_proofs(&self, order_id: &OrderIdentifier) -> bool {
         if let Some(order_info) = self.read_order(order_id).await {
             return order_info.validity_proofs.is_some();
@@ -242,8 +248,8 @@ impl NetworkOrderBook {
         self.read_order(order_id).await?.validity_proofs.clone()
     }
 
-    /// Returns true if the local node holds a copy of the witnesses for `VALID REBLIND` and
-    /// `VALID COMMITMENTS` for the given order
+    /// Returns true if the local node holds a copy of the witnesses for `VALID
+    /// REBLIND` and `VALID COMMITMENTS` for the given order
     pub async fn has_validity_witness(&self, order_id: &OrderIdentifier) -> bool {
         if let Some(order_info) = self.read_order(order_id).await {
             return order_info.validity_proof_witnesses.is_some();
@@ -278,8 +284,8 @@ impl NetworkOrderBook {
     // | Setters |
     // -----------
 
-    /// Add an order to the book, necessarily this order is in the received state because
-    /// we must fetch a validity proof to move it to verified
+    /// Add an order to the book, necessarily this order is in the received
+    /// state because we must fetch a validity proof to move it to verified
     pub async fn add_order(&mut self, order: NetworkOrder) {
         // If the order is local, add it to the local order list
         if order.local {
@@ -320,7 +326,8 @@ impl NetworkOrderBook {
                 .remove(order_id);
         }
 
-        // Index by the public share nullifier seen in the proof, this is guaranteed correct
+        // Index by the public share nullifier seen in the proof, this is guaranteed
+        // correct
         self.write_nullifier_order_set(proofs.reblind_proof.statement.original_shares_nullifier)
             .await
             .insert(*order_id);
@@ -337,8 +344,8 @@ impl NetworkOrderBook {
             locked_order.validity_proof_witnesses = Some(witnesses);
         }
 
-        // Enqueue a job with the handshake manager to run the internal matching engine on
-        // the newly verified order
+        // Enqueue a job with the handshake manager to run the internal matching engine
+        // on the newly verified order
         if self.order_ready_for_handshake(order_id).await {
             self.handshake_job_queue
                 .send(HandshakeExecutionJob::InternalMatchingEngine { order: *order_id })
@@ -375,7 +382,8 @@ impl NetworkOrderBook {
             order.transition_verified(validity_proofs);
             self.add_verified_order(*order_id).await;
 
-            // Enqueue a job with the handshake manager to run the internal matching engine on
+            // Enqueue a job with the handshake manager to run the internal matching engine
+            // on
             if order.ready_for_match() {
                 self.handshake_job_queue
                     .send(HandshakeExecutionJob::InternalMatchingEngine { order: order.id })

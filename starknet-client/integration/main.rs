@@ -24,8 +24,9 @@ use crate::helpers::deploy_new_wallet;
 
 /// The hostport that the test expects a local devnet node to be running on
 ///
-/// This assumes that the integration tests are running in a docker-compose setup
-/// with a DNS alias `sequencer` pointing to a devnet node running in a sister container
+/// This assumes that the integration tests are running in a docker-compose
+/// setup with a DNS alias `sequencer` pointing to a devnet node running in a
+/// sister container
 const DEVNET_HOSTPORT: &str = "http://sequencer:5050";
 
 /// The arguments used to run the integration tests
@@ -52,11 +53,12 @@ struct CliArgs {
         default_value = "0x3ee9e18edc71a6df30ac3aca2e0b02a198fbce19b7480a63a0d71cbd76652e0"
     )]
     starknet_account_addr: String,
-    /// The address of the darkpool deployed on Starknet at the time the test is started
+    /// The address of the darkpool deployed on Starknet at the time the test is
+    /// started
     #[clap(long, group = "deploy_config")]
     darkpool_addr: Option<String>,
-    /// The location of a `deployments.json` file that contains the addresses of the
-    /// deployed contracts
+    /// The location of a `deployments.json` file that contains the addresses of
+    /// the deployed contracts
     #[arg(long, group = "deploy_config")]
     deployments_path: Option<String>,
     /// The location of the contract compilation artifacts as an absolute path
@@ -84,16 +86,19 @@ struct IntegrationTestArgs {
 
 /// The set of pre-allocated state elements in the contract
 ///
-/// We insert three wallets into the state to test against, this gives two wallets in each
-/// other's first-level Merkle authentication paths, and one with a default value in its
-/// first-level Merkle authentication path
+/// We insert three wallets into the state to test against, this gives two
+/// wallets in each other's first-level Merkle authentication paths, and one
+/// with a default value in its first-level Merkle authentication path
 #[derive(Clone)]
 struct PreAllocatedState {
-    /// The commitment inserted at index 0 in the Merkle tree when integration tests begin
+    /// The commitment inserted at index 0 in the Merkle tree when integration
+    /// tests begin
     index0_commitment: Scalar,
-    /// The commitment inserted at index 1 in the Merkle tree when integration tests begin
+    /// The commitment inserted at index 1 in the Merkle tree when integration
+    /// tests begin
     index1_commitment: Scalar,
-    /// The commitment inserted at index 2 in the Merkle tree when integration tests begin
+    /// The commitment inserted at index 2 in the Merkle tree when integration
+    /// tests begin
     index2_commitment: Scalar,
     /// The public wallet shares of the first wallet added to the tree
     index0_public_wallet_shares: SizedWalletShare,
@@ -105,7 +110,8 @@ struct PreAllocatedState {
 
 impl From<CliArgs> for IntegrationTestArgs {
     fn from(test_args: CliArgs) -> Self {
-        // Pull the contract address either from the CLI or a shared volume at the CLI specified path
+        // Pull the contract address either from the CLI or a shared volume at the CLI
+        // specified path
         assert!(
             test_args.darkpool_addr.is_some() || test_args.deployments_path.is_some(),
             "one of `darkpool_addr` or `deployments_path` must be provided"

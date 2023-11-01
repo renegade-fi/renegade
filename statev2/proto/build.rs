@@ -9,10 +9,12 @@ fn main() -> Result<()> {
     let mut builder_config = Config::default();
     // Derive a builder pattern for each generated message
     // The builder options enabled are:
-    // - Use the owned pattern, i.e. each setter consumes the builder and returns a new one
-    // - Allow uninitialized fields by deferring to the struct default implementation
-    // - Strip options; i.e. setters do no take `Option<T>` but `T` for optional fields, which is the
-    //   case for most prost-generated fields
+    // - Use the owned pattern, i.e. each setter consumes the builder and returns a
+    //   new one
+    // - Allow uninitialized fields by deferring to the struct default
+    //   implementation
+    // - Strip options; i.e. setters do no take `Option<T>` but `T` for optional
+    //   fields, which is the case for most prost-generated fields
     let builder_pattern_targets = ".";
     builder_config.message_attribute(
         builder_pattern_targets,

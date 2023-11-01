@@ -54,8 +54,8 @@ impl MerkleAuthenticationPath {
         }
     }
 
-    /// Static helper method to get the coordinates of a Merkle authentication path from
-    /// the leaf value
+    /// Static helper method to get the coordinates of a Merkle authentication
+    /// path from the leaf value
     pub fn construct_path_coords(leaf_index: BigUint, height: usize) -> Vec<MerkleTreeCoords> {
         let mut coords = Vec::with_capacity(height);
         let mut curr_height_index = leaf_index;

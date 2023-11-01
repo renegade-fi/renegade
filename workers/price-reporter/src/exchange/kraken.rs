@@ -156,7 +156,7 @@ impl ExchangeConnection for KrakenConnection {
                     Some(Err(ExchangeConnectionError::ConnectionHangup(
                         e.to_string(),
                     )))
-                }
+                },
             }
         });
 

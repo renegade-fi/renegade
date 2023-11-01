@@ -11,7 +11,8 @@ use renegade_crypto::{
 fn bench_hash(c: &mut Criterion) {
     let mut rng = thread_rng();
 
-    // The param parsing is memoized, run it once so this does not affect the benchmark
+    // The param parsing is memoized, run it once so this does not affect the
+    // benchmark
     {
         POSEIDON_MDS_MATRIX_T_3();
         POSEIDON_ROUND_CONSTANTS_T_3();

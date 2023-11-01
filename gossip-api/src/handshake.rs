@@ -10,7 +10,8 @@ pub type MidpointPrice = (Token, Token, Price);
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PriceVector(pub Vec<MidpointPrice>);
 impl PriceVector {
-    /// Returns the price of a given token pair, if it exists in the price vector
+    /// Returns the price of a given token pair, if it exists in the price
+    /// vector
     pub fn find_pair(&self, base: &Token, quote: &Token) -> Option<MidpointPrice> {
         self.0
             .iter()
@@ -51,17 +52,18 @@ pub enum HandshakeMessage {
         /// The vector of prices that the sender is proposing to the receiver
         price_vector: PriceVector,
     },
-    /// Reject a proposed match candidate, this can happen for a number of reasons;
-    /// e.g. the local peer has already cached the proposed order pair as matched,
-    /// or the local peer has not yet validated the proof of `VALID COMMITMENTS` for
-    /// the peer's order
+    /// Reject a proposed match candidate, this can happen for a number of
+    /// reasons; e.g. the local peer has already cached the proposed order
+    /// pair as matched, or the local peer has not yet validated the proof
+    /// of `VALID COMMITMENTS` for the peer's order
     RejectMatchCandidate {
         /// The ID of the peer rejecting the proposal
         peer_id: WrappedPeerId,
-        /// The recipient's order, i.e. the order that the proposer used from their own
-        /// managed book
+        /// The recipient's order, i.e. the order that the proposer used from
+        /// their own managed book
         peer_order: OrderIdentifier,
-        /// The order of the sender, i.e. the peer that rejects the match proposal
+        /// The order of the sender, i.e. the peer that rejects the match
+        /// proposal
         sender_order: OrderIdentifier,
         /// The reason that the rejecting peer is rejecting the proposal
         reason: MatchRejectionReason,
@@ -74,12 +76,14 @@ pub enum HandshakeMessage {
         port: u16,
         /// A flag indicating that the order pair has already been matched
         ///
-        /// In this case, the peers will not attempt to match the orders, as they have
-        /// already been determined to not match elsewhere in the system
+        /// In this case, the peers will not attempt to match the orders, as
+        /// they have already been determined to not match elsewhere in
+        /// the system
         ///
-        /// This message is sent as a courtesy cache-feedback message from the peer that
-        /// has already cached this order pair, to the peer that proposed this order pair
-        /// so that the proposer may update its cache
+        /// This message is sent as a courtesy cache-feedback message from the
+        /// peer that has already cached this order pair, to the peer
+        /// that proposed this order pair so that the proposer may
+        /// update its cache
         previously_matched: bool,
         /// The first order to attempt to match
         order1: OrderIdentifier,
@@ -95,7 +99,8 @@ pub enum MatchRejectionReason {
     Cached,
     /// The local order proposed is not ready for scheduling
     LocalOrderNotReady,
-    /// The rejecting peer has not yet verified the proposer's proof of `VALID COMMITMENTS`
+    /// The rejecting peer has not yet verified the proposer's proof of `VALID
+    /// COMMITMENTS`
     NoValidityProof,
     /// The prices proposed by the peer are not accepted by the rejecting peer
     NoPriceAgreement,

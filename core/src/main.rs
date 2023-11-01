@@ -1,4 +1,5 @@
-//! The entrypoint to the relayer, starts the coordinator thread which manages all other worker threads
+//! The entrypoint to the relayer, starts the coordinator thread which manages
+//! all other worker threads
 #![feature(const_likely)]
 #![feature(iter_advance_by)]
 #![feature(ip)]
@@ -46,7 +47,8 @@ use tokio::{
 };
 use tracing::log::{self, LevelFilter};
 
-/// The amount of time to wait between sending teardown signals and terminating execution
+/// The amount of time to wait between sending teardown signals and terminating
+/// execution
 const TERMINATION_TIMEOUT_MS: u64 = 10_000; // 10 seconds
 
 // --------------
@@ -61,8 +63,10 @@ const TERMINATION_TIMEOUT_MS: u64 = 10_000; // 10 seconds
 ///     3. Cleans up and recovers any failed workers that are recoverable
 ///
 /// The general flow for allocating a worker's resources is:
-///     1. Allocate any communication primitives the worker needs access to (job queues, global bus, etc)
-///     2. Build a cancel channel that the coordinator can use to cancel worker execution
+///     1. Allocate any communication primitives the worker needs access to (job
+///        queues, global bus, etc)
+///     2. Build a cancel channel that the coordinator can use to cancel worker
+///        execution
 ///     3. Allocate and start the worker's execution
 ///     4. Allocate a thread to monitor the worker for faults
 #[tokio::main]
@@ -92,7 +96,8 @@ async fn main() -> Result<(), CoordinatorError> {
         mpsc::unbounded_channel::<PriceReporterManagerJob>();
     let (proof_generation_worker_sender, proof_generation_worker_receiver) = channel::unbounded();
 
-    // Construct the global state and warm up the config orders by generating proofs of `VALID COMMITMENTS`
+    // Construct the global state and warm up the config orders by generating proofs
+    // of `VALID COMMITMENTS`
     let global_state = RelayerState::initialize_global_state(
         &args,
         handshake_worker_sender.clone(),
@@ -117,7 +122,8 @@ async fn main() -> Result<(), CoordinatorError> {
         configure_default_log_capture()
     }
 
-    // Construct a starknet client that workers will use to communicate with Starknet
+    // Construct a starknet client that workers will use to communicate with
+    // Starknet
     let starknet_client = StarknetClient::new(StarknetClientConfig {
         chain: args.chain_id,
         contract_addr: args.contract_address.clone(),
@@ -127,8 +133,8 @@ async fn main() -> Result<(), CoordinatorError> {
         starknet_pkeys: args.starknet_private_keys,
     });
 
-    // Build a task driver that may be used to spawn long-lived asynchronous tasks that
-    // are common among workers
+    // Build a task driver that may be used to spawn long-lived asynchronous tasks
+    // that are common among workers
     let task_driver_config = TaskDriverConfig::default_with_bus(system_bus.clone());
     let task_driver = TaskDriver::new(task_driver_config);
 
@@ -380,7 +386,8 @@ fn configure_default_log_capture() {
         .init();
 }
 
-/// Attempt to recover a failed module by cleaning up its resources and re-allocating it
+/// Attempt to recover a failed module by cleaning up its resources and
+/// re-allocating it
 fn recover_worker<W: Worker>(failed_worker: W) -> Result<W, CoordinatorError> {
     if !failed_worker.is_recoverable() {
         return Err(CoordinatorError::Recovery(format!(

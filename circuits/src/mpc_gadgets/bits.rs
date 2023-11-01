@@ -14,16 +14,17 @@ use mpc_stark::{
 
 use crate::{scalar_2_to_m, SCALAR_MAX_BITS};
 
-/// We only sample a blinding factor in the range [0, 2^252] because not all values
-/// with the final bit (253rd) of the value make valid scalars. The scalar field is
-/// of size 2^252 + \delta
+/// We only sample a blinding factor in the range [0, 2^252] because not all
+/// values with the final bit (253rd) of the value make valid scalars. The
+/// scalar field is of size 2^252 + \delta
 const BLINDING_FACTOR_MAX_BITS: usize = 252;
 
 // -----------
 // | Helpers |
 // -----------
 
-/// Composes a sequence of `Scalar`s representing bits in little endian order into a single scalar
+/// Composes a sequence of `Scalar`s representing bits in little endian order
+/// into a single scalar
 pub(crate) fn scalar_from_bits_le(bits: &[AuthenticatedScalarResult]) -> AuthenticatedScalarResult {
     assert!(
         !bits.is_empty(),
@@ -39,7 +40,8 @@ pub(crate) fn scalar_from_bits_le(bits: &[AuthenticatedScalarResult]) -> Authent
     result
 }
 
-/// Returns a list of `Scalar`s representing the `m` least significant bits of `a`
+/// Returns a list of `Scalar`s representing the `m` least significant bits of
+/// `a`
 pub(crate) fn scalar_to_bits_le<const N: usize>(a: &ScalarResult) -> Vec<ScalarResult> {
     // The byte (8 bit) boundary we must iterate through to fetch `M` bits
     a.fabric().new_batch_gate_op(vec![a.id()], N, |mut args| {
@@ -75,7 +77,8 @@ pub(crate) fn resize_bitvector_to_length(
     bitvec[..desired_length].to_vec()
 }
 
-/// Converts the input bitvector to be exactly of the given length for a public input
+/// Converts the input bitvector to be exactly of the given length for a public
+/// input
 ///
 /// If the bitvector is shorter than the desired length, it is padded with
 /// zeros. If the bitvectors is longer than the desired length, it is truncated
@@ -235,8 +238,8 @@ pub fn to_bits_le<const D: usize>(
         fabric.zero()
     };
 
-    // This value is used to blind the opening so that the opened value is distributed uniformly at
-    // random over the scalar field
+    // This value is used to blind the opening so that the opened value is
+    // distributed uniformly at random over the scalar field
     let blinding_factor = &random_upper_bits + &random_scalar;
 
     // TODO: Do we need to `open_and_authenticate`?
@@ -254,15 +257,18 @@ pub fn to_bits_le<const D: usize>(
     bits
 }
 
-/// Given two bitwise representations, computes whether the first is less than the second
+/// Given two bitwise representations, computes whether the first is less than
+/// the second
 ///
-/// Intuitively, we consider that a and b are in two's complement representation. We flip all
-/// the bits of `b`; which gives us a representation of -b - 1. In two's complement, the negation
-/// of a value represents the distance of that value to the group order. If b > a; the distance
-/// from b to the group order is smaller than that of a to the group order. Adding `b`'s "distance"
-/// to `a` will then not cause an overflow (carry bit is 0). If b < a; the distance from `b` to the
-/// group order is greater than that of `a` to the group order; so adding `b`'s distance to `a`
-/// will cause an overflow.
+/// Intuitively, we consider that a and b are in two's complement
+/// representation. We flip all the bits of `b`; which gives us a representation
+/// of -b - 1. In two's complement, the negation of a value represents the
+/// distance of that value to the group order. If b > a; the distance
+/// from b to the group order is smaller than that of a to the group order.
+/// Adding `b`'s "distance" to `a` will then not cause an overflow (carry bit is
+/// 0). If b < a; the distance from `b` to the group order is greater than that
+/// of `a` to the group order; so adding `b`'s distance to `a` will cause an
+/// overflow.
 ///
 /// Using -b - 1 instead of -b is the difference between the < and <= operators
 pub fn bit_lt(

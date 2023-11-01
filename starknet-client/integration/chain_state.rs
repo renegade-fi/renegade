@@ -34,8 +34,8 @@ integration_test_async!(test_find_commitment);
 
 /// Tests finding a Merkle authentication path for a pre-allocated commitment
 ///
-/// For now, the test only checks that the indices are correct, but not that the path is valid
-/// because the contract is using Pedersen for efficiency
+/// For now, the test only checks that the indices are correct, but not that the
+/// path is valid because the contract is using Pedersen for efficiency
 ///
 /// TODO: Check the validity of the Merkle path
 async fn test_find_merkle_path(test_args: IntegrationTestArgs) -> Result<()> {
@@ -51,7 +51,8 @@ async fn test_find_merkle_path(test_args: IntegrationTestArgs) -> Result<()> {
         *EMPTY_LEAF_VALUE,
     );
 
-    // Find Merkle openings via the `StarknetClient` and compare them to the expected openings
+    // Find Merkle openings via the `StarknetClient` and compare them to the
+    // expected openings
     for (index, commitment) in [
         test_args.pre_allocated_state.index0_commitment,
         test_args.pre_allocated_state.index1_commitment,

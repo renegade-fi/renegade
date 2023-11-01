@@ -1,4 +1,5 @@
-//! Groups ZK gadgets used as arithmetic primitives in more complicated computations
+//! Groups ZK gadgets used as arithmetic primitives in more complicated
+//! computations
 
 use ark_ff::Zero;
 use circuit_types::errors::ProverError;
@@ -127,8 +128,8 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
         Self::exp_private_impl(x_lc, &alpha_bits, cs)
     }
 
-    /// An implementation helper for fixed base exponentiation that assumes a bit decomposition of
-    /// the exponent is passed in
+    /// An implementation helper for fixed base exponentiation that assumes a
+    /// bit decomposition of the exponent is passed in
     fn exp_private_fixed_base_impl<L, CS>(
         x: Scalar,
         alpha_bits: &[Variable],
@@ -153,7 +154,8 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
         // If the value is odd multiply by an extra copy of `x`
         let recursive_plus_one = x * recursive_doubled;
 
-        // Mux between the two results depending on whether the current exponent is odd or even
+        // Mux between the two results depending on whether the current exponent is odd
+        // or even
         let odd_bit_selection: LinearCombination =
             CondSelectGadget::select(recursive_plus_one, recursive_doubled.into(), is_odd, cs);
 
@@ -164,7 +166,8 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
         Ok(zero_mask)
     }
 
-    /// An implementation helper that assumes a bit decomposition of the exponent
+    /// An implementation helper that assumes a bit decomposition of the
+    /// exponent
     fn exp_private_impl<L, CS>(
         x: L,
         alpha_bits: &[Variable],
@@ -191,7 +194,8 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
         // If the value is odd multiply by an extra copy of `x`
         let (_, _, recursive_plus_one) = cs.multiply(x_lc, recursive_doubled.into());
 
-        // Mux between the two results depending on whether the current exponent is odd or even
+        // Mux between the two results depending on whether the current exponent is odd
+        // or even
         let odd_bit_selection: LinearCombination =
             CondSelectGadget::select(recursive_plus_one, recursive_doubled, is_odd, cs);
 
@@ -202,8 +206,8 @@ impl<const ALPHA_BITS: usize> PrivateExpGadget<ALPHA_BITS> {
         Ok(zero_mask)
     }
 
-    /// Returns whether all the given bits are zero, it is assumed that these values
-    /// are constrained to be binary elsewhere in the circuit
+    /// Returns whether all the given bits are zero, it is assumed that these
+    /// values are constrained to be binary elsewhere in the circuit
     fn all_bits_zero<L, CS>(bits: &[L], cs: &mut CS) -> Variable
     where
         L: LinearCombinationLike,

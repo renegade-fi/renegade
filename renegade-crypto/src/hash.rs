@@ -68,13 +68,13 @@ pub fn compute_poseidon_hash(values: &[Scalar]) -> Scalar {
 ///     whereas gcd(5, p-1) = 1, making x^5 (mod p) invertible.
 pub fn default_poseidon_params() -> PoseidonConfig<Scalar::Field> {
     PoseidonConfig::new(
-        8,                              /* full_rounds */
-        56,                             /* partial_rounds */
-        5,                              /* alpha */
-        POSEIDON_MDS_MATRIX_T_3(),      /* mds matrix */
-        POSEIDON_ROUND_CONSTANTS_T_3(), /* round constants */
-        2,                              /* rate */
-        1,                              /* capacity */
+        8,                              // full_rounds
+        56,                             // partial_rounds
+        5,                              // alpha
+        POSEIDON_MDS_MATRIX_T_3(),      // mds matrix
+        POSEIDON_ROUND_CONSTANTS_T_3(), // round constants
+        2,                              // rate
+        1,                              // capacity
     )
 }
 
@@ -85,8 +85,9 @@ pub fn evaluate_hash_chain(seed: Scalar, length: usize) -> Vec<Scalar> {
 
     let poseidon_config = default_poseidon_params();
     for _ in 0..length {
-        // New hasher every time to reset the hash state, Arkworks sponges don't natively
-        // support resets, so we pay the small re-initialization overhead
+        // New hasher every time to reset the hash state, Arkworks sponges don't
+        // natively support resets, so we pay the small re-initialization
+        // overhead
         let mut hasher = PoseidonSponge::new(&poseidon_config);
         hasher.absorb(&seed);
         seed = hasher.squeeze_field_elements(1 /* num_elements */)[0];

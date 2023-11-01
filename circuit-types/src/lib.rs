@@ -52,7 +52,8 @@ pub const PRICE_BITS: usize = DEFAULT_FP_PRECISION + 32;
 pub type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 /// A wallet share with system-wide default generic parameters attached
 pub type SizedWalletShare = WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-/// A type alias for the Merkle opening with system-wide default generics attached
+/// A type alias for the Merkle opening with system-wide default generics
+/// attached
 pub type SizedMerkleOpening = MerkleOpening<MERKLE_HEIGHT>;
 
 // -----------------------------------------
@@ -129,21 +130,26 @@ where
 // | Meta Types |
 // --------------
 
-/// A linkable commitment is a commitment used in multiple proofs. We split the constraints
-/// of the matching engine into roughly 3 pieces:
-///     1. Input validity checks, done offline by managing relayers (`VALID COMMITMENTS`)
-///     2. The matching engine execution, proved collaboratively over an MPC fabric (`VALID MATCH MPC`)
-///     3. Output validity checks: i.e. note construction and encryption (`VALID MATCH ENCRYPTION`)
-/// These components are split to remove as many constraints from the bottleneck (the collaborative proof)
-/// as possible.
+/// A linkable commitment is a commitment used in multiple proofs. We split the
+/// constraints of the matching engine into roughly 3 pieces:
+///     1. Input validity checks, done offline by managing relayers (`VALID
+///        COMMITMENTS`)
+///     2. The matching engine execution, proved collaboratively over an MPC
+///        fabric (`VALID MATCH MPC`)
+///     3. Output validity checks: i.e. note construction and encryption (`VALID
+///        MATCH ENCRYPTION`)
+/// These components are split to remove as many constraints from the bottleneck
+/// (the collaborative proof) as possible.
 ///
-/// However, we need to ensure that -- for example -- the order used in the proof of `VALID COMMITMENTS`
-/// is the same order as the order used in `VALID MATCH MPC`. This can be done by constructing the Pedersen
-/// commitments to the orders using the same randomness across proofs. That way, the verified may use the
-/// shared Pedersen commitment as an implicit constraint that witness values are equal across proofs.
+/// However, we need to ensure that -- for example -- the order used in the
+/// proof of `VALID COMMITMENTS` is the same order as the order used in `VALID
+/// MATCH MPC`. This can be done by constructing the Pedersen commitments to the
+/// orders using the same randomness across proofs. That way, the verified may
+/// use the shared Pedersen commitment as an implicit constraint that witness
+/// values are equal across proofs.
 ///
-/// The `LinkableCommitment` type allows this from the prover side by storing the randomness used in the
-/// original commitment along with the value itself.
+/// The `LinkableCommitment` type allows this from the prover side by storing
+/// the randomness used in the original commitment along with the value itself.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LinkableCommitment {
     /// The underlying value committed to
@@ -335,8 +341,8 @@ pub mod native_helpers {
 
     /// Construct public shares of a wallet given the private shares and blinder
     ///
-    /// The return type is a tuple containing the private and public shares. Note
-    /// that the private shares returned are exactly those passed in
+    /// The return type is a tuple containing the private and public shares.
+    /// Note that the private shares returned are exactly those passed in
     pub fn create_wallet_shares_from_private<
         const MAX_BALANCES: usize,
         const MAX_ORDERS: usize,

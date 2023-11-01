@@ -1,5 +1,5 @@
-//! Defines the task the local node runs at startup to find existing wallets in the contract
-//! state and create validity proofs for them
+//! Defines the task the local node runs at startup to find existing wallets in
+//! the contract state and create validity proofs for them
 
 use std::{
     collections::HashMap,
@@ -114,18 +114,18 @@ impl Task for InitializeStateTask {
         match self.task_state {
             InitializeStateTaskState::Pending => {
                 self.task_state = InitializeStateTaskState::FindingMerkleOpening;
-            }
+            },
             InitializeStateTaskState::FindingMerkleOpening => {
                 self.find_wallet_openings().await?;
                 self.task_state = InitializeStateTaskState::CreatingValidityProofs;
-            }
+            },
             InitializeStateTaskState::CreatingValidityProofs => {
                 self.create_validity_proofs().await?;
                 self.task_state = InitializeStateTaskState::Completed;
-            }
+            },
             InitializeStateTaskState::Completed => {
                 unreachable!("step called on completed task")
-            }
+            },
         }
 
         Ok(())
@@ -175,7 +175,7 @@ impl InitializeStateTask {
                         order_id,
                         wallet_nullifier,
                         local_cluster_id.clone(),
-                        true, /* local */
+                        true, // local
                     ))
                     .await;
             }
@@ -214,7 +214,8 @@ impl InitializeStateTask {
         Ok(())
     }
 
-    /// Prove `VALID COMMITMENTS` and `VALID REBLIND` for all orders in all the initial wallets
+    /// Prove `VALID COMMITMENTS` and `VALID REBLIND` for all orders in all the
+    /// initial wallets
     async fn create_validity_proofs(&self) -> Result<(), InitializeStateTaskError> {
         let locked_wallet_index = self.global_state.read_wallet_index().await;
 
@@ -252,8 +253,9 @@ impl InitializeStateTask {
                 let order_commitment_witness = Box::new(commitments_witness);
 
                 // Attach a copy of the witness to the locally managed state
-                // This witness is referenced by match computations which compute linkable commitments
-                // to shared witness elements; i.e. they commit with the same randomness
+                // This witness is referenced by match computations which compute linkable
+                // commitments to shared witness elements; i.e. they commit with
+                // the same randomness
                 {
                     self.global_state
                         .read_order_book()

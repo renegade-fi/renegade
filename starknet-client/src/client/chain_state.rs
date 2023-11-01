@@ -1,4 +1,5 @@
-//! Defines `StarknetClient` implementations related to querying and updating the chain state
+//! Defines `StarknetClient` implementations related to querying and updating
+//! the chain state
 
 use std::{
     collections::{HashMap, HashSet},
@@ -51,7 +52,8 @@ impl StarknetClient {
             .map_err(|err| StarknetClientError::Rpc(err.to_string()))
     }
 
-    /// Helper to setup a contract call with the correct max fee and account nonce
+    /// Helper to setup a contract call with the correct max fee and account
+    /// nonce
     pub async fn execute_transaction(
         &self,
         call: Call,
@@ -108,14 +110,14 @@ impl StarknetClient {
         &self,
         tx_hash: StarknetFieldElement,
     ) -> Result<TransactionStatus, StarknetClientError> {
-        // On devnet, we do not generally have access to the pathfinder API, and transaction
-        // finality is essentially instant, so we skip the polling
+        // On devnet, we do not generally have access to the pathfinder API, and
+        // transaction finality is essentially instant, so we skip the polling
         match self.config.chain {
             ChainId::Devnet | ChainId::Katana => {
                 log::debug!("skipping polling loop");
                 return Ok(TransactionStatus::AcceptedOnL2);
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         let sleep_duration = Duration::from_millis(TX_STATUS_POLL_INTERVAL_MS);
@@ -133,8 +135,9 @@ impl StarknetClient {
         }
     }
 
-    /// Searches on-chain state for the insertion of the given wallet, then finds the most
-    /// recent updates of the path's siblings and creates a Merkle authentication path
+    /// Searches on-chain state for the insertion of the given wallet, then
+    /// finds the most recent updates of the path's siblings and creates a
+    /// Merkle authentication path
     pub async fn find_merkle_authentication_path(
         &self,
         commitment: Scalar,
@@ -142,8 +145,9 @@ impl StarknetClient {
         // Find the index of the wallet in the commitment tree
         let leaf_index = self.find_commitment_in_state(commitment).await?;
 
-        // Construct a set that holds pairs of (depth, index) values in the authentication path; i.e. the
-        // tree coordinates of the sibling nodes in the authentication path
+        // Construct a set that holds pairs of (depth, index) values in the
+        // authentication path; i.e. the tree coordinates of the sibling nodes
+        // in the authentication path
         let mut authentication_path_coords: HashSet<MerkleTreeCoords> =
             MerkleAuthenticationPath::construct_path_coords(leaf_index.clone(), MERKLE_HEIGHT)
                 .into_iter()
@@ -190,8 +194,8 @@ impl StarknetClient {
     ) -> Result<BigUint, StarknetClientError> {
         let commitment_starknet_felt = scalar_to_starknet_felt(&commitment);
 
-        // Paginate through events in the contract, searching for the Merkle tree insertion event that
-        // corresponds to the given commitment
+        // Paginate through events in the contract, searching for the Merkle tree
+        // insertion event that corresponds to the given commitment
         //
         // Return the Merkle leaf index at which the commitment was inserted
         self.paginate_events(
@@ -215,8 +219,8 @@ impl StarknetClient {
 
     /// A helper for paginating backwards in block history over contract events
     ///
-    /// Calls the handler on each event, which indicates whether the pagination should
-    /// stop, and gives a response value
+    /// Calls the handler on each event, which indicates whether the pagination
+    /// should stop, and gives a response value
     async fn paginate_events<T>(
         &self,
         mut handler: impl FnMut(EmittedEvent) -> Result<Option<T>, StarknetClientError>,
@@ -281,10 +285,12 @@ impl StarknetClient {
         Ok(None)
     }
 
-    /// Fetch and parse the public secret shares from the calldata of the given transactions
+    /// Fetch and parse the public secret shares from the calldata of the given
+    /// transactions
     ///
-    /// In the case that the referenced transaction is a `match`, we disambiguate between the
-    /// two parties by adding the public blinder of the party's shares the caller intends to fetch
+    /// In the case that the referenced transaction is a `match`, we
+    /// disambiguate between the two parties by adding the public blinder of
+    /// the party's shares the caller intends to fetch
     #[allow(deprecated)]
     pub async fn fetch_public_shares_from_tx(
         &self,
@@ -308,7 +314,7 @@ impl StarknetClient {
                                 "failed to parse darkpool transaction".to_string(),
                             )
                         })?
-                }
+                },
             }
         } else {
             return Err(StarknetClientError::NotFound(

@@ -19,5 +19,6 @@ use tokio::sync::watch::Receiver as WatchReceiver;
 /// A type alias for an empty channel used to signal cancellation to workers
 pub type CancelChannel = WatchReceiver<()>;
 
-/// An alias for the price of an asset pair that abstracts away its representation
+/// An alias for the price of an asset pair that abstracts away its
+/// representation
 pub type Price = f64;

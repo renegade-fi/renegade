@@ -31,8 +31,8 @@ use serde::{Deserialize, Serialize};
 // | Fee Base Type |
 // -----------------
 
-/// Represents a fee-tuple in the state, i.e. a commitment to pay a relayer for a given
-/// match
+/// Represents a fee-tuple in the state, i.e. a commitment to pay a relayer for
+/// a given match
 #[circuit_type(
     serde,
     singleprover_circuit,

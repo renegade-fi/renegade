@@ -72,7 +72,8 @@ where
     ) -> Result<(), R1CSError> {
         // -- State Validity -- //
 
-        // Verify the opening of the old wallet's private secret shares to the Merkle root
+        // Verify the opening of the old wallet's private secret shares to the Merkle
+        // root
         let old_shares_comm = WalletShareCommitGadget::compute_wallet_share_commitment(
             witness.original_wallet_public_shares.clone(),
             witness.original_wallet_private_shares.clone(),
@@ -140,19 +141,25 @@ where
         Ok(())
     }
 
-    /// Validates that the given reblinded wallet is the correct reblinding of the old wallet
+    /// Validates that the given reblinded wallet is the correct reblinding of
+    /// the old wallet
     ///
     /// There are two CSPRNG streams used in reblinding a wallet:
-    ///     1. The `blinder` stream, from this stream we sample the new wallet blinder $r$, and its
-    ///        private secret share $r_1$. The public secret share is then $r_2 = r - r_1$.
-    ///     2. The `share` stream, from this stream we sample secret shares used for individual wallet
-    ///        elements. That is for a given wallet element w[i], we sample $r^{share}_i$ as the private
-    ///        secret share. The public secret share is then $w[i] + r - r^{share}_i$. Note that this
-    ///        secret share is blinded using the blinder from step 1.
+    ///     1. The `blinder` stream, from this stream we sample the new wallet
+    ///        blinder $r$, and its private secret share $r_1$. The public
+    ///        secret share is then $r_2 = r - r_1$.
+    ///     2. The `share` stream, from this stream we sample secret shares used
+    ///        for individual wallet elements. That is for a given wallet
+    ///        element w[i], we sample $r^{share}_i$ as the private secret
+    ///        share. The public secret share is then $w[i] + r - r^{share}_i$.
+    ///        Note that this secret share is blinded using the blinder from
+    ///        step 1.
     ///
-    /// These CSPRNGs are implemented as chained Poseidon hashes of a secret seed. We seed a CSPRNG
-    /// with the last sampled value from the old wallet. For the `blinder` stream this is $r_1$ of the
-    /// old wallet. For the secret share stream, this is the last private share in the serialized wallet
+    /// These CSPRNGs are implemented as chained Poseidon hashes of a secret
+    /// seed. We seed a CSPRNG with the last sampled value from the old
+    /// wallet. For the `blinder` stream this is $r_1$ of the old wallet.
+    /// For the secret share stream, this is the last private share in the
+    /// serialized wallet
     fn validate_reblind<CS: RandomizableConstraintSystem>(
         old_private_shares: WalletShareVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         old_public_shares: WalletShareVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
@@ -181,12 +188,13 @@ where
         let new_blinder = blinder_samples.remove(0);
         let new_blinder_private_share = blinder_samples.remove(0);
 
-        // Sample secret shares for individual wallet elements, we sample for n - 1 shares because
-        // the wallet serialization includes the wallet blinder, which was resampled separately in
-        // the previous step
+        // Sample secret shares for individual wallet elements, we sample for n - 1
+        // shares because the wallet serialization includes the wallet blinder,
+        // which was resampled separately in the previous step
         //
-        // As well, we seed the CSPRNG with the second to last share in the old wallet, again because
-        // the wallet blinder comes from a separate stream of randomness
+        // As well, we seed the CSPRNG with the second to last share in the old wallet,
+        // again because the wallet blinder comes from a separate stream of
+        // randomness
         let serialized_length = old_private_shares_ser.len();
         let share_samples = Self::sample_csprng(
             old_private_shares_ser[serialized_length - 2],
@@ -196,7 +204,8 @@ where
 
         // -- Private Shares -- //
 
-        // Enforce that all the private shares of the reblinded wallet are exactly the sampled secret shares
+        // Enforce that all the private shares of the reblinded wallet are exactly the
+        // sampled secret shares
         cs.constrain(reblinded_private_blinder_share - new_blinder_private_share.clone());
         for (private_share, sampled_blinder) in reblinded_private_shares_ser
             .iter()
@@ -220,8 +229,9 @@ where
             old_public_shares_ser.iter().cloned(),
             share_samples.iter().cloned(),
         ) {
-            // Adding the two old shares gives the blinded share w[i] + r_old, we then subtract the old blinder,
-            // and add the new one in to get the newly blinded value w[i] + r_new. Finally, subtract the new private
+            // Adding the two old shares gives the blinded share w[i] + r_old, we then
+            // subtract the old blinder, and add the new one in to get the newly
+            // blinded value w[i] + r_new. Finally, subtract the new private
             // share to arrive at the new public share
             let old_blinded_value = old_private_share + old_public_share;
             let new_blinded_value = old_blinded_value + new_blinder.clone() - old_blinder.clone();
@@ -233,7 +243,8 @@ where
         Ok(())
     }
 
-    /// Samples values from a chained Poseidon hash CSPRNG, seeded with the given input
+    /// Samples values from a chained Poseidon hash CSPRNG, seeded with the
+    /// given input
     fn sample_csprng<L, CS>(
         seed: L,
         num_vals: usize,
@@ -257,8 +268,8 @@ where
 
             values.push(seed_lc.clone());
 
-            // Reset the hasher state; we want the CSPRNG chain to be stateless, this includes
-            // the internal state of the Poseidon sponge
+            // Reset the hasher state; we want the CSPRNG chain to be stateless, this
+            // includes the internal state of the Poseidon sponge
             hasher.reset_state();
         }
 
@@ -370,7 +381,8 @@ pub mod test_helpers {
     /// A witness type with default size parameters attached
     pub type SizedWitness = ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
 
-    /// Construct a witness and statement for `VALID REBLIND` from a given wallet
+    /// Construct a witness and statement for `VALID REBLIND` from a given
+    /// wallet
     pub fn construct_witness_statement<
         const MAX_BALANCES: usize,
         const MAX_ORDERS: usize,
@@ -453,7 +465,8 @@ mod test {
     // | Helpers |
     // -----------
 
-    /// Return true if the given witness and statement are in the VALID REBLIND relation
+    /// Return true if the given witness and statement are in the VALID REBLIND
+    /// relation
     fn constraints_satisfied(witness: SizedWitness, statement: ValidReblindStatement) -> bool {
         // Build a constraint system
         let pc_gens = PedersenGens::default();
@@ -473,16 +486,17 @@ mod test {
 
     /// Asserts that a set of secret shares is a valid reblinding of a wallet
     ///
-    /// This is useful for testing that malicious modifications to the wallet's blinding have
-    /// left the wallet unaffected, for isolating failure cases
+    /// This is useful for testing that malicious modifications to the wallet's
+    /// blinding have left the wallet unaffected, for isolating failure
+    /// cases
     fn assert_valid_reblinding(
         private_shares: SizedWalletShare,
         public_shares: SizedWalletShare,
         wallet: &SizedWallet,
     ) {
         // This boils down to checking equality on the recovered wallet and the original
-        // wallet except for the wallet blinder, so we clobber that field to be trivially
-        // equal between the wallets
+        // wallet except for the wallet blinder, so we clobber that field to be
+        // trivially equal between the wallets
         let recovered_blinder = private_shares.blinder + public_shares.blinder;
         let unblinded_public_shares = public_shares.unblind_shares(recovered_blinder);
         let mut recovered_wallet = unblinded_public_shares + private_shares;
@@ -505,7 +519,8 @@ mod test {
         assert!(constraints_satisfied(witness, statement))
     }
 
-    /// Tests an invalid reblinding, i.e. a secret share that was sampled incorrectly
+    /// Tests an invalid reblinding, i.e. a secret share that was sampled
+    /// incorrectly
     #[test]
     fn test_invalid_reblind__invalid_secret_share() {
         // Construct the witness and statement
@@ -694,7 +709,8 @@ mod test {
         assert!(!constraints_satisfied(witness, statement));
     }
 
-    /// Tests the case in which the prover uses an invalid private share commitment
+    /// Tests the case in which the prover uses an invalid private share
+    /// commitment
     #[test]
     fn test_invalid_commitment() {
         // Construct the witness and statement

@@ -140,8 +140,8 @@ impl PeerIndex {
 
     /// Return a mapping from peer ID to the peer's info
     ///
-    /// This is constructed when the heartbeat message is constructed and sent to
-    /// heartbeat peers
+    /// This is constructed when the heartbeat message is constructed and sent
+    /// to heartbeat peers
     pub async fn get_info_map(&self) -> HashMap<WrappedPeerId, PeerInfo> {
         let mut res = HashMap::new();
         for (peer_id, info) in self.peer_map.iter() {
@@ -157,9 +157,11 @@ impl PeerIndex {
 
     /// Add a peer to the peer index
     ///
-    /// Validates that the known address for the peer is dialable, i.e. not a local address
+    /// Validates that the known address for the peer is dialable, i.e. not a
+    /// local address
     pub async fn add_peer(&mut self, peer_info: PeerInfo) {
-        // If the peer info specifies a local addr, skip adding the peer, it is not dialable
+        // If the peer info specifies a local addr, skip adding the peer, it is not
+        // dialable
         if !is_dialable_multiaddr(&peer_info.addr, self.allow_local) {
             log::info!(
                 "got peer info with un-dialable addr {:?}, skipping indexing",

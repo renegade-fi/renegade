@@ -374,8 +374,8 @@ impl From<HashMap<String, Vec<Peer>>> for Network {
     }
 }
 
-/// A cluster of peers, in the security model a cluster is assumed to be controlled
-/// by a single actor
+/// A cluster of peers, in the security model a cluster is assumed to be
+/// controlled by a single actor
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Cluster {
     /// Identifier

@@ -1,4 +1,5 @@
-//! Helpers for manipulating values within a field and translating between fields
+//! Helpers for manipulating values within a field and translating between
+//! fields
 
 use std::{iter, ops::Neg};
 
@@ -69,7 +70,7 @@ pub fn bigint_to_scalar(a: &BigInt) -> Scalar {
         Sign::Minus => {
             let biguint = a.neg().to_biguint().unwrap();
             -Scalar::from(biguint)
-        }
+        },
         _ => Scalar::from(a.to_biguint().unwrap()),
     }
 }

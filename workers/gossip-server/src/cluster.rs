@@ -26,30 +26,31 @@ impl GossipProtocolExecutor {
         match job {
             ClusterManagementJob::ClusterJoinRequest(cluster_id, req) => {
                 self.handle_cluster_join_job(cluster_id, req).await?;
-            }
+            },
 
             ClusterManagementJob::ReplicateRequest(req) => {
                 self.handle_replicate_request(req).await?;
-            }
+            },
 
             ClusterManagementJob::AddWalletReplica { wallet_id, peer_id } => {
                 self.handle_add_replica_job(peer_id, wallet_id).await
-            }
+            },
 
             ClusterManagementJob::ShareValidityProofs(req) => {
                 self.handle_share_validity_proofs_job(req).await?;
-            }
+            },
 
             ClusterManagementJob::UpdateValidityProof(order_id, proof_bundle) => {
                 self.handle_updated_validity_proof(order_id, proof_bundle)
                     .await;
-            }
+            },
         }
 
         Ok(())
     }
 
-    /// Handles a cluster management job to add a new node to the local peer's cluster
+    /// Handles a cluster management job to add a new node to the local peer's
+    /// cluster
     async fn handle_cluster_join_job(
         &self,
         cluster_id: ClusterId,
@@ -130,7 +131,8 @@ impl GossipProtocolExecutor {
         // Update cluster management bookkeeping
         let topic = self.global_state.local_cluster_id.get_management_topic();
 
-        // Broadcast a message to the network indicating that the wallet is now replicated
+        // Broadcast a message to the network indicating that the wallet is now
+        // replicated
         let replicated_message = PubsubMessage::ClusterManagement {
             cluster_id: self.global_state.local_cluster_id.clone(),
             message: ClusterManagementMessage::Replicated(ReplicatedMessage {
@@ -175,7 +177,8 @@ impl GossipProtocolExecutor {
         Ok(())
     }
 
-    /// Handles an incoming job to update a wallet's replicas with a newly added peer
+    /// Handles an incoming job to update a wallet's replicas with a newly added
+    /// peer
     async fn handle_add_replica_job(&self, peer_id: WrappedPeerId, wallet_id: WalletIdentifier) {
         self.global_state
             .read_wallet_index()
@@ -184,12 +187,14 @@ impl GossipProtocolExecutor {
             .await;
     }
 
-    /// Handles an incoming job to check for validity proofs and send them to a cluster peer
+    /// Handles an incoming job to check for validity proofs and send them to a
+    /// cluster peer
     async fn handle_share_validity_proofs_job(
         &self,
         req: ValidityProofRequest,
     ) -> Result<(), GossipError> {
-        // Check the local order book for any requested proofs that the local peer has stored
+        // Check the local order book for any requested proofs that the local peer has
+        // stored
         let mut outbound_messages = Vec::new();
         {
             let locked_order_book = self.global_state.read_order_book().await;
@@ -216,7 +221,8 @@ impl GossipProtocolExecutor {
         Ok(())
     }
 
-    /// Handle a message from a cluster peer that sends validity proofs for an order
+    /// Handle a message from a cluster peer that sends validity proofs for an
+    /// order
     async fn handle_updated_validity_proof(
         &self,
         order_id: OrderIdentifier,

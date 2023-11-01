@@ -121,7 +121,7 @@ async fn setup_wallet_with_order_balance(
     execute_wallet_update(
         old_wallet,
         wallet.clone(),
-        None, /* transfer */
+        None, // transfer
         test_args.clone(),
     )
     .await?;
@@ -310,12 +310,12 @@ fn apply_match(wallet: &mut Wallet, order_side: OrderSide, match_res: &MatchResu
             // Buy the base, sell the quote
             apply_balance_update(wallet, quote_mint, -quote_amount);
             apply_balance_update(wallet, base_mint, base_amount);
-        }
+        },
         OrderSide::Sell => {
             // Buy the quote, sell the base
             apply_balance_update(wallet, quote_mint, quote_amount);
             apply_balance_update(wallet, base_mint, -base_amount);
-        }
+        },
     };
 
     // Update the order volume
@@ -436,8 +436,8 @@ async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
     let res = handle.await?;
     assert_true_result!(res)?;
 
-    // Only the first wallet would have been updated in the global state, as the second wallet
-    // is assumed to be managed by another cluster
+    // Only the first wallet would have been updated in the global state, as the
+    // second wallet is assumed to be managed by another cluster
     let match_res = handshake_res.match_.to_base_type();
     verify_settlement(
         buy_wallet,

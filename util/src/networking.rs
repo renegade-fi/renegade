@@ -10,7 +10,7 @@ pub fn multiaddr_to_socketaddr(addr: &Multiaddr, port: u16) -> Option<SocketAddr
         match protoc {
             Protocol::Ip4(ip4_addr) => return Some(SocketAddr::new(ip4_addr.into(), port)),
             Protocol::Ip6(ip6_addr) => return Some(SocketAddr::new(ip6_addr.into(), port)),
-            _ => {}
+            _ => {},
         }
     }
 
@@ -28,9 +28,9 @@ pub fn is_dialable_multiaddr(addr: &Multiaddr, allow_local: bool) -> bool {
 
 /// Returns true if the given address is a dialable remote address
 ///
-/// The `allow_local` flag allows the local node to dial peers on a local network
-/// interface. This should be set to true if it is expected that more than one node
-/// is running on a given interface.
+/// The `allow_local` flag allows the local node to dial peers on a local
+/// network interface. This should be set to true if it is expected that more
+/// than one node is running on a given interface.
 pub fn is_dialable_addr(addr: &SocketAddr, allow_local: bool) -> bool {
     !addr.ip().is_unspecified() && // 0.0.0.0
     !addr.ip().is_benchmarking() &&

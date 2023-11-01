@@ -63,7 +63,8 @@ lazy_static! {
 // | Macros |
 // ----------
 
-/// A debug macro used for printing wires in a single-prover circuit during execution
+/// A debug macro used for printing wires in a single-prover circuit during
+/// execution
 #[allow(unused)]
 macro_rules! print_wire {
     ($x:expr, $cs:ident) => {{
@@ -158,7 +159,8 @@ where
     C::prove(witness, statement, &PRE_ALLOCATED_GENS, fabric, prover)
 }
 
-/// Abstracts over the flow of verifying a proof for a single-prover proved circuit
+/// Abstracts over the flow of verifying a proof for a single-prover proved
+/// circuit
 pub fn verify_singleprover_proof<C: SingleProverCircuit>(
     statement: C::Statement,
     witness_commitment: <C::Witness as CircuitBaseType>::CommitmentType,
@@ -178,7 +180,8 @@ pub fn verify_singleprover_proof<C: SingleProverCircuit>(
     )
 }
 
-/// Abstracts over the flow of verifying a proof for a collaboratively proved circuit
+/// Abstracts over the flow of verifying a proof for a collaboratively proved
+/// circuit
 pub fn verify_collaborative_proof<C>(
     statement: <C::Statement as MultiproverCircuitBaseType>::BaseType,
     witness_commitment: <
@@ -246,7 +249,8 @@ pub(crate) mod test_helpers {
     /// Abstracts over the flow of proving and verifying a circuit given
     /// a valid statement + witness assignment
     ///
-    /// Here we do not use the pre-allocated generators, as this is too expensive to do in tests
+    /// Here we do not use the pre-allocated generators, as this is too
+    /// expensive to do in tests
     pub fn bulletproof_prove_and_verify<C: SingleProverCircuit>(
         witness: C::Witness,
         statement: C::Statement,

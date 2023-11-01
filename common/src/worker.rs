@@ -1,5 +1,5 @@
-//! Defines the `Worker` trait; abstracting over worker-specific functionalities to allow
-//! the coordinator thread to start, cleanup, and restart workers
+//! Defines the `Worker` trait; abstracting over worker-specific functionalities
+//! to allow the coordinator thread to start, cleanup, and restart workers
 
 use std::{
     fmt::Debug,
@@ -9,8 +9,8 @@ use std::{
 use tokio::sync::mpsc::Sender;
 use tracing::log;
 
-/// The Worker trait abstracts over worker functionality with a series of callbacks that
-/// allow a worker to be started, cleaned up, and restarted
+/// The Worker trait abstracts over worker functionality with a series of
+/// callbacks that allow a worker to be started, cleaned up, and restarted
 pub trait Worker {
     /// The configuration needed to spawn the implementing worker
     type WorkerConfig;
@@ -28,7 +28,8 @@ pub trait Worker {
     /// Returns a name by which the worker can be identified
     fn name(&self) -> String;
 
-    /// Called to join the calling thread's execution to the execution of the worker
+    /// Called to join the calling thread's execution to the execution of the
+    /// worker
     ///
     /// Returns a set of join handles, each of which is to be watched
     fn join(&mut self) -> Vec<JoinHandle<Self::Error>>;
@@ -38,8 +39,8 @@ pub trait Worker {
 
     /// Recover the worker by re-allocating it
     ///
-    /// This method consumes the worker instance so that it can transfer ownership
-    /// of any re-usable components.
+    /// This method consumes the worker instance so that it can transfer
+    /// ownership of any re-usable components.
     ///
     /// The return value of this method should be a fresh instance of the worker
     fn recover(self) -> Self

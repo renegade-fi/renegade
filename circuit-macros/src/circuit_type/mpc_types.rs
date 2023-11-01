@@ -19,27 +19,32 @@ pub(crate) const MPC_TYPE_PREFIX: &str = "Authenticated";
 
 /// The name of the trait that specifies an MPC base type name
 const MPC_BASE_TYPE_TRAIT_NAME: &str = "MpcBaseType";
-/// The name of the associated type representing the allocated type of a base type
+/// The name of the associated type representing the allocated type of a base
+/// type
 const MPC_ALLOCATED_TYPE_ASSOCIATED_NAME: &str = "AllocatedType";
 /// The name of the trait that specifies an allocated MPC type
 const MPC_ALLOC_TYPE_TRAIT_NAME: &str = "MpcType";
 /// The name of the associated type representing the native type of an MPC type
 const MPC_NATIVE_TYPE_ASSOCIATED_NAME: &str = "NativeType";
 
-/// The method name that deserializes an authenticated type from a serialized Scalar repr
+/// The method name that deserializes an authenticated type from a serialized
+/// Scalar repr
 const FROM_AUTHENTICATED_SCALARS_METHOD_NAME: &str = "from_authenticated_scalars";
 /// The type that is deserialized from for an MPC type
 const MPC_TYPE_SERIALIZED_IDENT: &str = "AuthenticatedScalarResult";
-/// The method name that serializes an authenticated type to a vector of allocated Scalars
+/// The method name that serializes an authenticated type to a vector of
+/// allocated Scalars
 const TO_AUTHENTICATED_SCALARS_METHOD_NAME: &str = "to_authenticated_scalars";
-/// The method name that serialized an authenticated type to a vector of allocated scalars
-/// including the scalars needed to commit to the value in a (possibly) linkable manner
+/// The method name that serialized an authenticated type to a vector of
+/// allocated scalars including the scalars needed to commit to the value in a
+/// (possibly) linkable manner
 const TO_AUTHENTICATED_SCALARS_LINKABLE_METHOD_NAME: &str = "to_authenticated_scalars_with_linking";
 
 /// Build the MPC types from a base type
 ///
-/// If `include_multiprover` is set, the MPC types will also implement `MultiproverBaseType` and
-/// multi-prover circuit types will be allocated for the struct
+/// If `include_multiprover` is set, the MPC types will also implement
+/// `MultiproverBaseType` and multi-prover circuit types will be allocated for
+/// the struct
 pub(crate) fn build_mpc_types(
     base_struct: &ItemStruct,
     include_multiprover: bool,
@@ -138,7 +143,8 @@ fn build_mpc_type_impl(mpc_type: &ItemStruct, base_type: &ItemStruct) -> TokenSt
     );
 
     // Build a `fabric` method
-    // TODO: Fold the `fabric` method into the `MpcType` trait and call out to its implementation
+    // TODO: Fold the `fabric` method into the `MpcType` trait and call out to its
+    // implementation
     let first_element = &mpc_type
         .fields
         .iter()

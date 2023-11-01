@@ -1,5 +1,5 @@
-//! Utils related to declaring, deploying, and interacting with smart contracts in
-//! the context of an integration test
+//! Utils related to declaring, deploying, and interacting with smart contracts
+//! in the context of an integration test
 
 use constants::MERKLE_HEIGHT;
 use eyre::{eyre, Result};
@@ -112,8 +112,8 @@ pub async fn deploy_darkpool(
     let deploy_tx = contract
         .deploy(
             calldata.clone(),
-            FieldElement::ZERO, /* salt */
-            false,              /* unique */
+            FieldElement::ZERO, // salt
+            false,              // unique
         )
         .send()
         .await?;
@@ -204,8 +204,8 @@ fn calculate_contract_address(
 ) -> FieldElement {
     compute_hash_on_elements(&[
         PREFIX_CONTRACT_ADDRESS,
-        FieldElement::ZERO, /* deployer address */
-        FieldElement::ZERO, /* salt */
+        FieldElement::ZERO, // deployer address
+        FieldElement::ZERO, // salt
         class_hash,
         compute_hash_on_elements(constructor_calldata),
     ]) % ADDR_BOUND
@@ -237,7 +237,7 @@ async fn get_transaction_status(
     let status = match tx_receipt {
         MaybePendingTransactionReceipt::PendingReceipt(receipt) => {
             return Err(eyre!("Transaction is still pending: {:?}", receipt));
-        }
+        },
         MaybePendingTransactionReceipt::Receipt(receipt) => match receipt {
             TransactionReceipt::Invoke(tx) => tx.status,
             TransactionReceipt::Declare(tx) => tx.status,
@@ -246,7 +246,7 @@ async fn get_transaction_status(
                 return Err(eyre!(
                     "Transaction receipt is not an invoke, declare, or deploy receipt"
                 ));
-            }
+            },
         },
     };
 

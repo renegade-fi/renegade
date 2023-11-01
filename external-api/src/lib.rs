@@ -79,8 +79,8 @@ where
 mod test {
     use super::EmptyRequestResponse;
 
-    /// Tests empty request/response serialization, expected behavior is that it serializes to and from
-    /// the string "null"
+    /// Tests empty request/response serialization, expected behavior is that it
+    /// serializes to and from the string "null"
     #[test]
     fn test_serde_empty() {
         let req = EmptyRequestResponse {};

@@ -29,9 +29,9 @@ pub struct MerkleOpening<const HEIGHT: usize> {
         deserialize_with = "deserialize_array"
     )]
     pub elems: [Scalar; HEIGHT],
-    /// The opening indices from the leaf node to the root, each value is zero or
-    /// one: 0 indicating that the node in the opening at index i is a left hand
-    /// child of its parent, 1 indicating it's a right hand child
+    /// The opening indices from the leaf node to the root, each value is zero
+    /// or one: 0 indicating that the node in the opening at index i is a
+    /// left hand child of its parent, 1 indicating it's a right hand child
     #[serde(
         serialize_with = "serialize_array",
         deserialize_with = "deserialize_array"

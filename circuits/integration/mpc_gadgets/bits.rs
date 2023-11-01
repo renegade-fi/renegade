@@ -71,9 +71,9 @@ async fn test_bit_xor(test_args: IntegrationTestArgs) -> Result<()> {
 
 /// Tests the bit_add method
 async fn test_bit_add(test_args: IntegrationTestArgs) -> Result<()> {
-    // Each party samples a random number, converts it to bits, then shares and adds it
-    // For the sake of the test (because we convert back to u64 to compare) make sure both
-    // numbers have log2(x) < 63
+    // Each party samples a random number, converts it to bits, then shares and adds
+    // it For the sake of the test (because we convert back to u64 to compare)
+    // make sure both numbers have log2(x) < 63
     let fabric = &test_args.mpc_fabric;
     let my_random_number = thread_rng().next_u64() / 2;
     let my_random_bits = u64_to_bits_le(my_random_number);

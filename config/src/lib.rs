@@ -191,8 +191,8 @@ pub struct RelayerConfig {
     pub websocket_port: u16,
     /// The local peer's base64 encoded p2p key
     pub p2p_key: Option<String>,
-    /// Whether to disable the price reporter if e.g. we are streaming from a dedicated
-    /// external API gateway node in the cluster
+    /// Whether to disable the price reporter if e.g. we are streaming from a
+    /// dedicated external API gateway node in the cluster
     pub disable_price_reporter: bool,
     /// Whether to disable price streaming from Binance for location blocks
     pub disable_binance: bool,
@@ -229,8 +229,8 @@ impl Default for RelayerConfig {
     }
 }
 
-/// A custom clone implementation specifically for the cluster keypair which does not
-/// implement clone
+/// A custom clone implementation specifically for the cluster keypair which
+/// does not implement clone
 impl Clone for RelayerConfig {
     fn clone(&self) -> Self {
         Self {
@@ -289,8 +289,8 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, String> {
 
 /// Parse the config from a set of command line arguments
 ///
-/// Separating out this functionality allows us to easily inject custom args apart
-/// from what is specified on the command line
+/// Separating out this functionality allows us to easily inject custom args
+/// apart from what is specified on the command line
 fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, String> {
     // Parse the config
     let cli_args = Cli::parse_from(full_args);
@@ -407,7 +407,7 @@ fn config_file_args(cli_args: &[String]) -> Result<Vec<String>, String> {
                 }
 
                 res
-            }
+            },
             // All other type may simply be parsed as --key val
             _ => {
                 vec![
@@ -416,7 +416,7 @@ fn config_file_args(cli_args: &[String]) -> Result<Vec<String>, String> {
                         format!("error parsing config value: {:?} = {:?}", cli_arg, value)
                     })?,
                 ]
-            }
+            },
         };
 
         config_file_args.extend(values);
@@ -444,7 +444,7 @@ fn toml_value_to_string(val: &Value) -> Result<String, String> {
         Value::Boolean(val) => format!("{:?}", val),
         _ => {
             return Err("unsupported value".to_string());
-        }
+        },
     })
 }
 
@@ -464,8 +464,8 @@ fn set_contract_from_file(config: &mut RelayerConfig, file: Option<String>) -> R
 /// Sign a simple request and verify the signature
 ///
 /// The public interface does not allow us to more directly check the keypair
-/// as public_key == private_key * ed25519_generator, so we opt for this instead.
-/// Happens once at startup so we are not concerned with performance
+/// as public_key == private_key * ed25519_generator, so we opt for this
+/// instead. Happens once at startup so we are not concerned with performance
 fn validate_keypair(keypair: &Keypair) -> Result<(), SignatureError> {
     // Hash the message
     let mut hash_digest: Sha512 = Sha512::new();

@@ -26,7 +26,8 @@ lazy_static! {
 pub struct ElGamalCiphertext {
     /// The shared secret; the generator raised to the randomness
     pub partial_shared_secret: Scalar,
-    /// The encrypted value; the pubkey raised to the randomness, multiplied with the message
+    /// The encrypted value; the pubkey raised to the randomness, multiplied
+    /// with the message
     pub encrypted_message: Scalar,
 }
 
@@ -73,8 +74,9 @@ mod tests {
 
     use super::{decrypt_scalar, encrypt_scalar, DEFAULT_ELGAMAL_GENERATOR_BIGUINT};
 
-    /// Generates a random keypair and encrypts a random scalar under this keypair
-    /// decrypts the ciphertext and verifies that the decryption succeeded
+    /// Generates a random keypair and encrypts a random scalar under this
+    /// keypair decrypts the ciphertext and verifies that the decryption
+    /// succeeded
     #[test]
     fn test_random_keypair_and_ciphertext() {
         let mut rng = thread_rng();

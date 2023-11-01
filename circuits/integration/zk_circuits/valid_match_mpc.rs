@@ -95,7 +95,7 @@ fn compute_max_amount(price: FixedPoint, order: &Order, balance: &Balance) -> u6
             let price_f64 = price.to_f64();
             let balance_limit = (balance.amount as f64 / price_f64).floor() as u64;
             cmp::min(order.amount, balance_limit)
-        }
+        },
         // Buy the quote, sell the base, the maximum amount is directly limited
         // by the balance
         OrderSide::Sell => cmp::min(order.amount, balance.amount),
@@ -138,8 +138,8 @@ async fn match_orders(
     match_res.allocate(PARTY0, &fabric)
 }
 
-/// Both parties call this value to setup their witness and statement from a given
-/// balance, order tuple
+/// Both parties call this value to setup their witness and statement from a
+/// given balance, order tuple
 async fn setup_witness(
     price: FixedPoint,
     amount: u64,
@@ -177,7 +177,8 @@ async fn setup_witness(
     }
 }
 
-/// Prove and verify a valid match MPC circuit, return `true` if verification succeeds
+/// Prove and verify a valid match MPC circuit, return `true` if verification
+/// succeeds
 async fn prove_and_verify_match(
     witness: AuthenticatedValidMatchMpcWitness,
     fabric: MpcFabric,
@@ -193,7 +194,8 @@ async fn prove_and_verify_match(
     Ok(verify_collaborative_proof::<ValidMatchMpcCircuit>((), opened_comm, opened_proof).is_ok())
 }
 
-/// Return whether the `VALID MATCH MPC` constraints are satisfied on the given witness
+/// Return whether the `VALID MATCH MPC` constraints are satisfied on the given
+/// witness
 async fn constraints_satisfied(
     witness: AuthenticatedValidMatchMpcWitness,
     fabric: MpcFabric,
@@ -213,7 +215,8 @@ async fn constraints_satisfied(
 // | Tests |
 // ---------
 
-/// Tests that the valid match MPC circuit proves and verifies given a correct witness
+/// Tests that the valid match MPC circuit proves and verifies given a correct
+/// witness
 async fn test_valid_match_mpc_valid(test_args: IntegrationTestArgs) -> Result<()> {
     let party_id = test_args.mpc_fabric.party_id();
     let price = *DUMMY_PRICE;
@@ -236,7 +239,8 @@ async fn test_valid_match_mpc_valid(test_args: IntegrationTestArgs) -> Result<()
     Ok(())
 }
 
-/// Test matching an order where the volume is limited by the balance of the sell side party
+/// Test matching an order where the volume is limited by the balance of the
+/// sell side party
 async fn test_valid_match_undercapitalized__base_side(
     test_args: IntegrationTestArgs,
 ) -> Result<()> {
@@ -245,7 +249,8 @@ async fn test_valid_match_undercapitalized__base_side(
     let my_order = create_test_order(party_id);
     let mut my_balance = create_test_balance(party_id);
 
-    // The party selling the base does not have the balance to cover their full order
+    // The party selling the base does not have the balance to cover their full
+    // order
     if my_order.side == OrderSide::Sell {
         my_balance.amount = 5;
     }
@@ -267,7 +272,8 @@ async fn test_valid_match_undercapitalized__base_side(
     Ok(())
 }
 
-/// Test matching an order where the volume is limited by the balance of the buy side party
+/// Test matching an order where the volume is limited by the balance of the buy
+/// side party
 async fn test_valid_match_undercapitalized__quote_side(
     test_args: IntegrationTestArgs,
 ) -> Result<()> {
@@ -276,7 +282,8 @@ async fn test_valid_match_undercapitalized__quote_side(
     let my_order = create_test_order(party_id);
     let mut my_balance = create_test_balance(party_id);
 
-    // The party selling the base does not have the balance to cover their full order
+    // The party selling the base does not have the balance to cover their full
+    // order
     if my_order.side == OrderSide::Buy {
         my_balance.amount = 5;
     }
@@ -408,8 +415,8 @@ async fn test_valid_match__same_side(test_args: IntegrationTestArgs) -> Result<(
     Ok(())
 }
 
-/// Test the case in which the balance provided to the matching engine is not for
-/// the correct asset
+/// Test the case in which the balance provided to the matching engine is not
+/// for the correct asset
 async fn test_valid_match__invalid_balance_mint(test_args: IntegrationTestArgs) -> Result<()> {
     let fabric = &test_args.mpc_fabric;
     let party_id = fabric.party_id();
@@ -443,7 +450,8 @@ async fn test_valid_match__invalid_balance_mint(test_args: IntegrationTestArgs) 
     Ok(())
 }
 
-/// Test the case in which the balance provided does not cover the advertised amount
+/// Test the case in which the balance provided does not cover the advertised
+/// amount
 async fn test_valid_match__insufficient_balance(test_args: IntegrationTestArgs) -> Result<()> {
     let fabric = &test_args.mpc_fabric;
     let party_id = fabric.party_id();
@@ -569,7 +577,8 @@ async fn test_valid_match__max_minus_min_negative(test_args: IntegrationTestArgs
     Ok(())
 }
 
-/// Test the case in which the `min_amount_order_index` field is incorrectly computed
+/// Test the case in which the `min_amount_order_index` field is incorrectly
+/// computed
 async fn test_valid_match__incorrect_min_amount_order_index(
     test_args: IntegrationTestArgs,
 ) -> Result<()> {

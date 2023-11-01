@@ -101,8 +101,8 @@ fn get_timestamp_millis() -> u64 {
 // | Manager and Executor |
 // ------------------------
 
-/// Manages requests to handshake from a peer and sends outbound requests to initiate
-/// a handshake
+/// Manages requests to handshake from a peer and sends outbound requests to
+/// initiate a handshake
 pub struct HandshakeManager {
     /// The config on the handshake manager
     pub config: HandshakeManagerConfig,
@@ -125,9 +125,11 @@ pub struct HandshakeExecutor {
     pub(super) handshake_cache: SharedHandshakeCache<OrderIdentifier>,
     /// Stores the state of existing handshake executions
     pub(super) handshake_state_index: HandshakeStateIndex,
-    /// The channel on which other workers enqueue jobs for the protocol executor
+    /// The channel on which other workers enqueue jobs for the protocol
+    /// executor
     pub(super) job_channel: DefaultOption<TokioReceiver<HandshakeExecutionJob>>,
-    /// The channel on which the handshake executor may forward requests to the network
+    /// The channel on which the handshake executor may forward requests to the
+    /// network
     pub(super) network_channel: TokioSender<GossipOutbound>,
     /// The pricer reporter's work queue, used for fetching price reports
     pub(super) price_reporter_job_queue: TokioSender<PriceReporterManagerJob>,
@@ -141,7 +143,8 @@ pub struct HandshakeExecutor {
     pub(super) task_driver: TaskDriver,
     /// The system bus used to publish internal broadcast messages
     pub(super) system_bus: SystemBus<SystemBusMessage>,
-    /// The channel on which the coordinator thread may cancel handshake execution
+    /// The channel on which the coordinator thread may cancel handshake
+    /// execution
     pub(super) cancel: CancelChannel,
 }
 
@@ -206,7 +209,8 @@ impl HandshakeExecutor {
     }
 }
 
-/// Main event handler implementations; each of these methods are run inside the threadpool
+/// Main event handler implementations; each of these methods are run inside the
+/// threadpool
 impl HandshakeExecutor {
     /// Handle a handshake message from the peer
     pub async fn handle_handshake_job(
@@ -217,7 +221,7 @@ impl HandshakeExecutor {
             // The timer thread has scheduled an outbound handshake
             HandshakeExecutionJob::PerformHandshake { order } => {
                 self.perform_handshake(order).await
-            }
+            },
 
             // An order has been updated, the executor should run the internal engine on the
             // new order to check for matches
@@ -228,8 +232,8 @@ impl HandshakeExecutor {
                     block_on(self_clone.run_internal_matching_engine(order))
                 })
                 .await
-                .unwrap() /* JoinError */
-            }
+                .unwrap() // JoinError
+            },
 
             // Indicates that a peer has sent a message during the course of a handshake
             HandshakeExecutionJob::ProcessHandshakeMessage {
@@ -240,10 +244,10 @@ impl HandshakeExecutor {
             } => {
                 self.handle_handshake_message(request_id, message, response_channel)
                     .await
-            }
+            },
 
-            // A peer has completed a match on the given order pair; cache this match pair as completed
-            // and do not schedule the pair going forward
+            // A peer has completed a match on the given order pair; cache this match pair as
+            // completed and do not schedule the pair going forward
             HandshakeExecutionJob::CacheEntry { order1, order2 } => {
                 self.handshake_cache
                     .write()
@@ -251,10 +255,10 @@ impl HandshakeExecutor {
                     .mark_completed(order1, order2);
 
                 Ok(())
-            }
+            },
 
-            // A peer has initiated a match on the given order pair; place this order pair in an invisibility
-            // window, i.e. do not initiate matches on this pair
+            // A peer has initiated a match on the given order pair; place this order pair in an
+            // invisibility window, i.e. do not initiate matches on this pair
             HandshakeExecutionJob::PeerMatchInProgress { order1, order2 } => {
                 self.handshake_cache.write().await.mark_invisible(
                     order1,
@@ -263,10 +267,10 @@ impl HandshakeExecutor {
                 );
 
                 Ok(())
-            }
+            },
 
-            // Indicates that the network manager has setup a network connection for a handshake to execute over
-            // the local peer should connect and go forward with the MPC
+            // Indicates that the network manager has setup a network connection for a handshake to
+            // execute over the local peer should connect and go forward with the MPC
             HandshakeExecutionJob::MpcNetSetup {
                 request_id,
                 party_id,
@@ -343,14 +347,14 @@ impl HandshakeExecutor {
                         .await;
                 }
                 Ok(())
-            }
+            },
 
             // Indicates that in-flight MPCs on the given nullifier should be terminated
             HandshakeExecutionJob::MpcShootdown { nullifier } => {
                 self.handshake_state_index
                     .shootdown_nullifier(nullifier)
                     .await
-            }
+            },
         }
     }
 
@@ -401,8 +405,7 @@ impl HandshakeExecutor {
                 .ok_or_else(|| HandshakeManagerError::StateNotFound(ERR_NO_WALLET.to_string()))?;
             let (base, quote) = self.token_pair_for_order(&order);
 
-            let execution_price =
-                price_vector
+            let execution_price = price_vector
                     .find_pair(&base, &quote)
                     .ok_or_else(|| {
                         HandshakeManagerError::NoPriceData(ERR_NO_PRICE_DATA.to_string())
@@ -434,8 +437,8 @@ impl HandshakeExecutor {
             // ACK does not need to be handled
             HandshakeMessage::Ack => Ok(()),
 
-            // A peer initiates a handshake by proposing a pair of orders to match, the local node should
-            // decide whether to proceed with the match
+            // A peer initiates a handshake by proposing a pair of orders to match, the local node
+            // should decide whether to proceed with the match
             HandshakeMessage::ProposeMatchCandidate {
                 peer_id,
                 peer_order: my_order,
@@ -451,10 +454,10 @@ impl HandshakeExecutor {
                     response_channel.unwrap(),
                 )
                 .await
-            }
+            },
 
-            // A peer has rejected a proposed match candidate, this can happen for a number of reasons, enumerated
-            // by the `reason` field in the message
+            // A peer has rejected a proposed match candidate, this can happen for a number of
+            // reasons, enumerated by the `reason` field in the message
             HandshakeMessage::RejectMatchCandidate {
                 peer_order,
                 sender_order,
@@ -464,11 +467,11 @@ impl HandshakeExecutor {
                 self.handle_proposal_rejection(peer_order, sender_order, reason)
                     .await;
                 Ok(())
-            }
+            },
 
-            // The response to ProposeMatchCandidate, indicating whether the peers should initiate an MPC; if the
-            // responding peer has the proposed order pair cached it will indicate so and the two peers will abandon
-            // the handshake
+            // The response to ProposeMatchCandidate, indicating whether the peers should initiate
+            // an MPC; if the responding peer has the proposed order pair cached it will
+            // indicate so and the two peers will abandon the handshake
             HandshakeMessage::AcceptMatchCandidate {
                 peer_id,
                 port,
@@ -485,15 +488,16 @@ impl HandshakeExecutor {
                     response_channel,
                 )
                 .await
-            }
+            },
         }
     }
 
-    /// Handles a message sent from a peer in response to an InitiateMatch message from the local peer
-    /// The remote peer's response should contain a proposed candidate to match against
+    /// Handles a message sent from a peer in response to an InitiateMatch
+    /// message from the local peer The remote peer's response should
+    /// contain a proposed candidate to match against
     ///
-    /// The local peer first checks that this pair has not been matched, and then proceeds to broker an
-    /// MPC network for it
+    /// The local peer first checks that this pair has not been matched, and
+    /// then proceeds to broker an MPC network for it
     #[allow(clippy::too_many_arguments)]
     async fn handle_propose_match_candidate(
         &self,
@@ -504,8 +508,8 @@ impl HandshakeExecutor {
         price_vector: PriceVector,
         response_channel: ResponseChannel<AuthenticatedGossipResponse>,
     ) -> Result<(), HandshakeManagerError> {
-        // Only accept the proposed order pair if the peer's order has already been verified by
-        // the local node
+        // Only accept the proposed order pair if the peer's order has already been
+        // verified by the local node
         let peer_order_info = self
             .global_state
             .read_order_book()
@@ -568,8 +572,8 @@ impl HandshakeExecutor {
             )
             .await?;
 
-        // Check if the order pair has previously been matched, if so notify the peer and
-        // terminate the handshake
+        // Check if the order pair has previously been matched, if so notify the peer
+        // and terminate the handshake
         let previously_matched = {
             let locked_handshake_cache = self.handshake_cache.read().await;
             locked_handshake_cache.contains(my_order, sender_order)
@@ -603,8 +607,8 @@ impl HandshakeExecutor {
             .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
         // Send a pubsub message indicating intent to match on the given order pair
-        // Cluster peers will then avoid scheduling this match until the match either completes, or
-        // the cache entry's invisibility window times out
+        // Cluster peers will then avoid scheduling this match until the match either
+        // completes, or the cache entry's invisibility window times out
         let cluster_id = { self.global_state.local_cluster_id.clone() };
         self.network_channel
             .send(GossipOutbound::Pubsub {
@@ -655,7 +659,8 @@ impl HandshakeExecutor {
             .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))
     }
 
-    /// Handles a rejected match proposal, possibly updating the cache for a missing entry
+    /// Handles a rejected match proposal, possibly updating the cache for a
+    /// missing entry
     async fn handle_proposal_rejection(
         &self,
         my_order: OrderIdentifier,
@@ -671,8 +676,8 @@ impl HandshakeExecutor {
         }
     }
 
-    /// Handles the flow of executing a match after both parties have agreed on an order
-    /// pair to attempt a match with
+    /// Handles the flow of executing a match after both parties have agreed on
+    /// an order pair to attempt a match with
     async fn handle_execute_match(
         &self,
         request_id: Uuid,
@@ -729,10 +734,12 @@ impl HandshakeExecutor {
         }
     }
 
-    /// Sends a request or response depending on whether the response channel is None
+    /// Sends a request or response depending on whether the response channel is
+    /// None
     ///
-    /// We send messages this way to naturally fit them into the libp2p request/response messaging
-    /// protocol, which mandates that requests and responses be paired, otherwise connections are liable
+    /// We send messages this way to naturally fit them into the libp2p
+    /// request/response messaging protocol, which mandates that requests
+    /// and responses be paired, otherwise connections are liable
     /// to be assumed "dead" and dropped
     fn send_request_response(
         &self,
@@ -809,9 +816,9 @@ impl HandshakeExecutor {
         // Update the state of the handshake in the completed state
         self.handshake_state_index.completed(&request_id).await;
 
-        // Send a message to cluster peers indicating that the local peer has completed a match
-        // Cluster peers should cache the matched order pair as completed and not initiate matches
-        // on this pair going forward
+        // Send a message to cluster peers indicating that the local peer has completed
+        // a match Cluster peers should cache the matched order pair as
+        // completed and not initiate matches on this pair going forward
         let cluster_id = self.global_state.local_cluster_id.clone();
         self.network_channel
             .send(GossipOutbound::Pubsub {
@@ -839,7 +846,8 @@ impl HandshakeExecutor {
         Ok(())
     }
 
-    /// Helper to spawn a task in the task driver that submits a match and settles its result
+    /// Helper to spawn a task in the task driver that submits a match and
+    /// settles its result
     async fn submit_match(
         &self,
         party0_proof: OrderValidityProofBundle,

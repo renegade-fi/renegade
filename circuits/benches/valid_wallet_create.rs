@@ -19,7 +19,8 @@ use mpc_bulletproof::PedersenGens;
 use mpc_stark::algebra::scalar::Scalar;
 use rand::thread_rng;
 
-/// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS, MAX_FEES)
+/// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS,
+/// MAX_FEES)
 const SMALL_PARAM_SET: (usize, usize, usize) = (2, 2, 1);
 /// The parameter set for the large sized circuit
 const LARGE_PARAM_SET: (usize, usize, usize) = (MAX_BALANCES, MAX_ORDERS, MAX_FEES);
@@ -28,7 +29,8 @@ const LARGE_PARAM_SET: (usize, usize, usize) = (MAX_BALANCES, MAX_ORDERS, MAX_FE
 // | Helpers |
 // -----------
 
-/// Create a full sized witness and statement for the `VALID WALLET CREATE` circuit
+/// Create a full sized witness and statement for the `VALID WALLET CREATE`
+/// circuit
 pub fn create_sized_witness_statement<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
@@ -183,8 +185,8 @@ pub fn bench_verifier_with_sizes<
 // | Benchmarks |
 // --------------
 
-/// Tests the time taken to apply the constraints of `VALID WALLET CREATE` circuit
-/// on a smaller sized circuit
+/// Tests the time taken to apply the constraints of `VALID WALLET CREATE`
+/// circuit on a smaller sized circuit
 #[allow(non_snake_case)]
 pub fn bench_apply_constraints__small_circuit(c: &mut Criterion) {
     bench_apply_constraints_with_sizes::<
@@ -210,8 +212,8 @@ pub fn bench_verifier__small_circuit(c: &mut Criterion) {
     );
 }
 
-/// Tests the time taken to apply the constraints of `VALID WALLET CREATE` circuit
-/// on a large sized circuit
+/// Tests the time taken to apply the constraints of `VALID WALLET CREATE`
+/// circuit on a large sized circuit
 #[allow(non_snake_case)]
 pub fn bench_apply_constraints__large_circuit(c: &mut Criterion) {
     bench_apply_constraints_with_sizes::<

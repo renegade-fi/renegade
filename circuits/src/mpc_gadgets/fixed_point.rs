@@ -8,8 +8,8 @@ use super::modulo::shift_right;
 /// Implements gadgets on top of the existing shared fixed point type
 pub struct FixedPointMpcGadget;
 impl FixedPointMpcGadget {
-    /// Shift the given fixed point value to the right by the given number of bits
-    /// and return the result as an integer
+    /// Shift the given fixed point value to the right by the given number of
+    /// bits and return the result as an integer
     pub fn as_integer(
         val: AuthenticatedFixedPoint,
         fabric: &MpcFabric,

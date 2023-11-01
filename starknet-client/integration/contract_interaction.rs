@@ -1,5 +1,5 @@
-//! Defines integration tests for `StarknetClient` methods that interact directly
-//! with darkpool contract methods
+//! Defines integration tests for `StarknetClient` methods that interact
+//! directly with darkpool contract methods
 
 use common::types::proof_bundles::mocks::{
     dummy_valid_match_mpc_bundle, dummy_valid_settle_bundle, dummy_valid_wallet_update_bundle,
@@ -48,7 +48,7 @@ async fn test_nullifier_used(test_args: IntegrationTestArgs) -> Result<()> {
         .update_wallet(
             Scalar::one(),
             dummy_nullifier,
-            None, /* external_transfer */
+            None, // external_transfer
             dummy_wallet_share(),
             dummy_valid_wallet_update_bundle(),
         )
@@ -60,7 +60,8 @@ async fn test_nullifier_used(test_args: IntegrationTestArgs) -> Result<()> {
 }
 integration_test_async!(test_nullifier_used);
 
-/// Tests submitting a new wallet and then recovering its shares from the contract
+/// Tests submitting a new wallet and then recovering its shares from the
+/// contract
 async fn test_new_wallet(test_args: IntegrationTestArgs) -> Result<()> {
     let client = &test_args.starknet_client;
 
@@ -93,9 +94,9 @@ async fn test_update_wallet(test_args: IntegrationTestArgs) -> Result<()> {
     // Update the wallet
     let tx_hash = client
         .update_wallet(
-            Scalar::random(&mut rng), /* new_private_shares_commitment */
+            Scalar::random(&mut rng), // new_private_shares_commitment
             nullifier,
-            None, /* external_transfer */
+            None, // external_transfer
             new_shares.clone(),
             dummy_valid_wallet_update_bundle(),
         )
@@ -120,7 +121,8 @@ async fn test_update_wallet(test_args: IntegrationTestArgs) -> Result<()> {
 }
 integration_test_async!(test_update_wallet);
 
-/// Tests submitting a match and then recovering both of the wallets' shares shares from the contract
+/// Tests submitting a match and then recovering both of the wallets' shares
+/// shares from the contract
 async fn test_match(test_args: IntegrationTestArgs) -> Result<()> {
     let client = &test_args.starknet_client;
 

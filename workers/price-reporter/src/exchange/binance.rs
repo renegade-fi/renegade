@@ -156,8 +156,8 @@ impl ExchangeConnection for BinanceConnection {
         let mapped_stream = read.filter_map(|message| async {
             match message.map(Self::midpoint_from_ws_message) {
                 // The result is for reading a message from the websocket, the inner result is for
-                // processing that message and returns an option. Flip the order of the option and the result
-                // in the processed message
+                // processing that message and returns an option. Flip the order of the option and
+                // the result in the processed message
                 Ok(mapped_stream) => mapped_stream.transpose(),
                 // Error on the incoming (filtered) stream
                 Err(e) => {
@@ -165,11 +165,12 @@ impl ExchangeConnection for BinanceConnection {
                     Some(Err(ExchangeConnectionError::ConnectionHangup(
                         e.to_string(),
                     )))
-                }
+                },
             }
         });
 
-        // Construct an initialized price stream from the initial price and the mapped stream
+        // Construct an initialized price stream from the initial price and the mapped
+        // stream
         let price_stream = InitializablePriceStream::new_with_initial(
             Box::pin(mapped_stream),
             initial_price_report.midpoint_price,

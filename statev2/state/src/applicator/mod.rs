@@ -1,5 +1,5 @@
-//! The state applicator applies updates that have been committed to by the raft group
-//! to the global state, persisting them to local storage
+//! The state applicator applies updates that have been committed to by the raft
+//! group to the global state, persisting them to local storage
 
 use std::sync::Arc;
 
@@ -52,12 +52,13 @@ pub struct StateApplicatorConfig {
     pub system_bus: SystemBus<SystemBusMessage>,
 }
 
-/// The applicator applies state updates to the global state and persists them to local storage
-/// after consensus has been formed on the updates
+/// The applicator applies state updates to the global state and persists them
+/// to local storage after consensus has been formed on the updates
 ///
-/// If we view our state implementation as a distributed log forming consensus over the ordering of RPC
-/// executions, then the `StateApplicator` can be thought of as the RPC server that executes the RPCs
-/// after their consensus has been formed
+/// If we view our state implementation as a distributed log forming consensus
+/// over the ordering of RPC executions, then the `StateApplicator` can be
+/// thought of as the RPC server that executes the RPCs after their consensus
+/// has been formed
 #[derive(Clone)]
 pub struct StateApplicator {
     /// The config for the applicator

@@ -138,7 +138,8 @@ pub(super) fn construct_wallet_commitment_proof(
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     disable_fee_validation: bool,
 ) -> Result<(SizedValidCommitmentsWitness, TokioReceiver<ProofBundle>), String> {
-    // Choose the first fee. If no fee is found and fee validation is disabled, use a zero fee
+    // Choose the first fee. If no fee is found and fee validation is disabled, use
+    // a zero fee
     let first_fee = wallet.fees.iter().find(|f| !f.is_default()).cloned();
     let fee = if disable_fee_validation {
         first_fee.unwrap_or(Fee::default())
@@ -174,7 +175,7 @@ pub(super) fn construct_wallet_commitment_proof(
     let (_, fee_balance) = find_or_augment_balance(
         fee.gas_addr.clone(),
         &mut augmented_wallet,
-        false, /* augment */
+        false, // augment
     )
     .ok_or_else(|| ERR_BALANCE_NOT_FOUND.to_string())?;
 
@@ -275,7 +276,7 @@ fn find_or_augment_balance(
                 empty_balance_ind,
                 wallet.balances[empty_balance_ind].clone(),
             ))
-        }
+        },
     }
 }
 
@@ -289,8 +290,9 @@ fn find_order(order: &Order, wallet: &SizedWallet) -> Option<usize> {
         .map(|(ind, _o)| ind)
 }
 
-/// Find a wallet on-chain, and update its validity proofs. That is, a proof of `VALID REBLIND`
-/// for the wallet, and one proof of `VALID COMMITMENTS` for each order in the wallet
+/// Find a wallet on-chain, and update its validity proofs. That is, a proof of
+/// `VALID REBLIND` for the wallet, and one proof of `VALID COMMITMENTS` for
+/// each order in the wallet
 pub(super) async fn update_wallet_validity_proofs(
     wallet: &Wallet,
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
@@ -323,8 +325,9 @@ pub(super) async fn update_wallet_validity_proofs(
         let order_commitment_witness = Box::new(commitments_witness);
 
         // Attach a copy of the witness to the locally managed state
-        // This witness is referenced by match computations which compute linkable commitments
-        // to shared witness elements; i.e. they commit with the same randomness
+        // This witness is referenced by match computations which compute linkable
+        // commitments to shared witness elements; i.e. they commit with the
+        // same randomness
         {
             global_state
                 .read_order_book()

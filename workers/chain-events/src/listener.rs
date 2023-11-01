@@ -80,14 +80,15 @@ pub struct OnChainEventListenerConfig {
     pub handshake_manager_job_queue: TokioSender<HandshakeExecutionJob>,
     /// The worker job queue for the ProofGenerationManager
     pub proof_generation_work_queue: CrossbeamSender<ProofManagerJob>,
-    /// The work queue for the network manager, used to send outbound gossip messages
+    /// The work queue for the network manager, used to send outbound gossip
+    /// messages
     pub network_manager_work_queue: TokioSender<GossipOutbound>,
     /// The channel on which the coordinator may send a cancel signal
     pub cancel_channel: CancelChannel,
 }
 
-/// The worker responsible for listening for on-chain events, translating them to jobs for
-/// other workers, and forwarding these jobs to the relevant workers
+/// The worker responsible for listening for on-chain events, translating them
+/// to jobs for other workers, and forwarding these jobs to the relevant workers
 pub struct OnChainEventListener {
     /// The executor run in a separate thread
     pub(super) executor: Option<OnChainEventListenerExecutor>,
@@ -227,7 +228,7 @@ impl OnChainEventListenerExecutor {
                 };
 
                 Err(OnChainEventListenerError::Rpc(message))
-            }
+            },
 
             // Otherwise propagate the error
             Err(err) => Err(OnChainEventListenerError::Rpc(err.to_string())),
@@ -238,10 +239,10 @@ impl OnChainEventListenerExecutor {
             let parsed_token = u64::from_str(&pagination_token).unwrap();
             self.pagination_token.store(parsed_token, Ordering::Relaxed);
         } else {
-            // If no explicit pagination token is given, increment the pagination token by the
-            // number of events received. Ideally the API would do this, but it simply returns None
-            // to indicate no more pages are ready. We would like to persist this token across polls
-            // to getEvents.
+            // If no explicit pagination token is given, increment the pagination token by
+            // the number of events received. Ideally the API would do this, but
+            // it simply returns None to indicate no more pages are ready. We
+            // would like to persist this token across polls to getEvents.
             self.pagination_token
                 .fetch_add(resp.events.len() as u64, Ordering::Relaxed);
         }
@@ -327,8 +328,9 @@ impl OnChainEventListenerExecutor {
                 let tree_coordinate = MerkleTreeCoords::new(height, index);
 
                 // Add the value to the list of changes
-                // The events stream comes in transaction order, so the most recent value of each
-                // internal node in the block will overwrite older values and be the final value stored
+                // The events stream comes in transaction order, so the most recent value of
+                // each internal node in the block will overwrite older values
+                // and be the final value stored
                 let new_value = starknet_felt_to_scalar(&event.data[2]);
                 node_change_events.insert(tree_coordinate, new_value);
             }
@@ -354,8 +356,8 @@ impl OnChainEventListenerExecutor {
         Ok(())
     }
 
-    /// A helper to update the Merkle path of a wallet given the Merkle internal nodes
-    /// that have changed
+    /// A helper to update the Merkle path of a wallet given the Merkle internal
+    /// nodes that have changed
     fn update_wallet_merkle_path(
         &self,
         merkle_proof: &mut MerkleAuthenticationPath,

@@ -44,8 +44,8 @@ pub async fn deploy_new_wallet(
         .await?;
     client.poll_transaction_completed(tx_hash).await?;
 
-    // The contract will compute the full commitment and insert it into the Merkle tree;
-    // we repeat the same computation here for consistency
+    // The contract will compute the full commitment and insert it into the Merkle
+    // tree; we repeat the same computation here for consistency
     let full_commitment =
         compute_wallet_commitment_from_private(public_shares.clone(), private_shares_commitment);
     Ok((full_commitment, public_shares))

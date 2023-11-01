@@ -22,7 +22,8 @@ use merlin::HashChainTranscript;
 use mpc_bulletproof::{r1cs::Prover, PedersenGens};
 use rand::thread_rng;
 
-/// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT)
+/// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS,
+/// MAX_FEES, MERKLE_HEIGHT)
 const SMALL_PARAM_SET: (usize, usize, usize) = (2, 2, 1);
 /// The parameter set for the large sized circuit
 const LARGE_PARAM_SET: (usize, usize, usize) = (MAX_BALANCES, MAX_ORDERS, MAX_FEES);
@@ -31,7 +32,8 @@ const LARGE_PARAM_SET: (usize, usize, usize) = (MAX_BALANCES, MAX_ORDERS, MAX_FE
 // | Helpers |
 // -----------
 
-/// Create a witness and statement for `VALID COMMITMENTS` with the given sizing generics
+/// Create a witness and statement for `VALID COMMITMENTS` with the given sizing
+/// generics
 pub fn create_sized_witness_statement<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
@@ -162,7 +164,8 @@ pub fn bench_verifier_with_sizes<
 // | Benchmarks |
 // --------------
 
-/// Benchmarks constraint generation latency on a small `VALID COMMITMENTS` circuit
+/// Benchmarks constraint generation latency on a small `VALID COMMITMENTS`
+/// circuit
 #[allow(non_snake_case)]
 fn bench_apply_constraints__small_circuit(c: &mut Criterion) {
     bench_apply_constraints_with_sizes::<
@@ -188,7 +191,8 @@ fn bench_verifier__small_circuit(c: &mut Criterion) {
     );
 }
 
-/// Benchmarks constraint generation latency on a large `VALID COMMITMENTS` circuit
+/// Benchmarks constraint generation latency on a large `VALID COMMITMENTS`
+/// circuit
 #[allow(non_snake_case)]
 fn bench_apply_constraints__large_circuit(c: &mut Criterion) {
     bench_apply_constraints_with_sizes::<

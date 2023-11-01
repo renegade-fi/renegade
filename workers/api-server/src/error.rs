@@ -30,7 +30,7 @@ impl From<ApiServerError> for Response<Body> {
         match err {
             ApiServerError::HttpStatusCode(status, message) => {
                 build_response_from_status_code(status, message)
-            }
+            },
             _ => build_500_response(err.to_string()),
         }
     }

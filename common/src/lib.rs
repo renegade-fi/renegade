@@ -1,4 +1,5 @@
-//! Defines common types, traits, and functionality useful throughout the workspace
+//! Defines common types, traits, and functionality useful throughout the
+//! workspace
 
 #![deny(unsafe_code)]
 #![deny(missing_docs)]

@@ -39,7 +39,8 @@ impl Display for Exchange {
     }
 }
 
-/// The PriceReport is the universal format for price feeds from all external exchanges.
+/// The PriceReport is the universal format for price feeds from all external
+/// exchanges.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PriceReport {
@@ -47,8 +48,8 @@ pub struct PriceReport {
     pub base_token: Token,
     /// The quote Token
     pub quote_token: Token,
-    /// The Exchange that this PriceReport came from. If the PriceReport is a median aggregate,
-    /// then the exchange is None.
+    /// The Exchange that this PriceReport came from. If the PriceReport is a
+    /// median aggregate, then the exchange is None.
     pub exchange: Option<Exchange>,
     /// The midpoint price of the exchange's order book.
     pub midpoint_price: Price,
@@ -58,26 +59,28 @@ pub struct PriceReport {
     pub reported_timestamp: Option<u128>,
 }
 
-/// The state of the PriceReporter. The Nominal state means that enough ExchangeConnections are
-/// reporting recent prices, so it is OK to proceed with MPCs at the given median price.
+/// The state of the PriceReporter. The Nominal state means that enough
+/// ExchangeConnections are reporting recent prices, so it is OK to proceed with
+/// MPCs at the given median price.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PriceReporterState {
     /// Enough reporters are correctly reporting to construct a median price.
     Nominal(PriceReport),
-    /// Not enough data has yet to be reported from the ExchangeConnections. Includes the number of
-    /// ExchangeConnection reporters.
+    /// Not enough data has yet to be reported from the ExchangeConnections.
+    /// Includes the number of ExchangeConnection reporters.
     NotEnoughDataReported(usize),
-    /// At least one of the ExchangeConnection has not reported a recent enough report. Includes
-    /// the current time_diff in milliseconds.
+    /// At least one of the ExchangeConnection has not reported a recent enough
+    /// report. Includes the current time_diff in milliseconds.
     DataTooStale(PriceReport, u64),
-    /// There has been too much deviation in the prices between the exchanges; holding off until
-    /// prices stabilize. Includes the current deviation as a fraction.
+    /// There has been too much deviation in the prices between the exchanges;
+    /// holding off until prices stabilize. Includes the current deviation
+    /// as a fraction.
     TooMuchDeviation(PriceReport, f64),
 }
 
-/// The state of an ExchangeConnection. Note that the ExchangeConnection itself simply streams news
-/// PriceReports, and the task of determining if the PriceReports have yet to arrive is the job of
-/// the PriceReporter
+/// The state of an ExchangeConnection. Note that the ExchangeConnection itself
+/// simply streams news PriceReports, and the task of determining if the
+/// PriceReports have yet to arrive is the job of the PriceReporter
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ExchangeConnectionState {
     /// The ExchangeConnection is reporting as normal.
@@ -93,7 +96,7 @@ impl Display for ExchangeConnectionState {
         let fmt_str = match self {
             ExchangeConnectionState::Nominal(price_report) => {
                 format!("{:.4}", price_report.midpoint_price)
-            }
+            },
             ExchangeConnectionState::NoDataReported => String::from("NoDataReported"),
             ExchangeConnectionState::Unsupported => String::from("Unsupported"),
         };

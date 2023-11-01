@@ -34,9 +34,11 @@ const BASE_COMM_TYPE_ASSOCIATED_NAME: &str = "BaseCommitType";
 const FROM_MPC_VARS_METHOD: &str = "from_mpc_vars";
 /// The `to_mpc_vars` method on the `MultiproverCircuitVariableType` trait
 const TO_MPC_VARS_METHOD: &str = "to_mpc_vars";
-/// The `from_mpc_commitments` method on the `MultiproverCircuitCommitmentType` trait
+/// The `from_mpc_commitments` method on the `MultiproverCircuitCommitmentType`
+/// trait
 const FROM_MPC_COMMS_METHOD: &str = "from_mpc_commitments";
-/// The `to_mpc_commitments` method on the `MultiproverCircuitCommitmentType` trait
+/// The `to_mpc_commitments` method on the `MultiproverCircuitCommitmentType`
+/// trait
 const TO_MPC_COMMS_METHOD: &str = "to_mpc_commitments";
 
 /// The `AuthenticatedScalarResult` type

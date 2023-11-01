@@ -123,21 +123,21 @@ impl Task for LookupWalletTask {
         match self.task_state {
             LookupWalletTaskState::Pending => {
                 self.task_state = LookupWalletTaskState::FindingWallet
-            }
+            },
 
             LookupWalletTaskState::FindingWallet => {
                 self.find_wallet().await?;
                 self.task_state = LookupWalletTaskState::CreatingValidityProofs;
-            }
+            },
 
             LookupWalletTaskState::CreatingValidityProofs => {
                 self.create_validity_proofs().await?;
                 self.task_state = LookupWalletTaskState::Completed;
-            }
+            },
 
             LookupWalletTaskState::Completed => {
                 unreachable!("step called on task in Completed state")
-            }
+            },
         }
 
         Ok(())
@@ -175,10 +175,11 @@ impl LookupWalletTask {
         }
     }
 
-    /// Find the wallet in the contract storage and create an opening for the wallet
+    /// Find the wallet in the contract storage and create an opening for the
+    /// wallet
     async fn find_wallet(&mut self) -> Result<(), LookupWalletTaskError> {
-        // Find the latest transaction updating the wallet, as indexed by the public share
-        // of the blinders
+        // Find the latest transaction updating the wallet, as indexed by the public
+        // share of the blinders
         let mut blinder_csprng = PoseidonCSPRNG::new(self.blinder_seed);
 
         let mut blinder_index = 0;
@@ -187,8 +188,8 @@ impl LookupWalletTask {
 
         let mut updating_tx = None;
 
-        // TODO: Look for first non-nullified public blinder share, not just the first share
-        // that has been indexed
+        // TODO: Look for first non-nullified public blinder share, not just the first
+        // share that has been indexed
         while
             let (blinder, private_share) = blinder_csprng.next_tuple().unwrap() &&
             let Some(tx) = self
@@ -219,9 +220,10 @@ impl LookupWalletTask {
             .await
             .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?;
 
-        // Build an iterator over private secret shares and fast forward to the given wallet index
-        // `shares_per_wallet` does not include the private share of the wallet blinder, this comes from
-        // a separate stream of randomness, so we take the serialized length minus one
+        // Build an iterator over private secret shares and fast forward to the given
+        // wallet index `shares_per_wallet` does not include the private share
+        // of the wallet blinder, this comes from a separate stream of
+        // randomness, so we take the serialized length minus one
         let shares_per_wallet = public_shares.to_scalars().len();
         let mut private_share_csprng = PoseidonCSPRNG::new(self.secret_share_seed);
         private_share_csprng
@@ -277,8 +279,8 @@ impl LookupWalletTask {
         Ok(())
     }
 
-    /// Prove `VALID REBLIND` for the recovered wallet, and `VALID COMMITMENTS` for
-    /// each order within the wallet
+    /// Prove `VALID REBLIND` for the recovered wallet, and `VALID COMMITMENTS`
+    /// for each order within the wallet
     async fn create_validity_proofs(&self) -> Result<(), LookupWalletTaskError> {
         let wallet = self
             .wallet

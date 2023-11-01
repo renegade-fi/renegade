@@ -50,7 +50,8 @@ impl HandshakeStateIndex {
     // | Index Management Methods |
     // ----------------------------
 
-    /// Adds a new handshake to the state where the peer's order is already known (e.g. the peer initiated the handshake)
+    /// Adds a new handshake to the state where the peer's order is already
+    /// known (e.g. the peer initiated the handshake)
     #[allow(clippy::too_many_arguments)]
     pub async fn new_handshake(
         &self,
@@ -108,7 +109,8 @@ impl HandshakeStateIndex {
         Ok(())
     }
 
-    /// Removes a handshake after processing is complete; either by match completion or error
+    /// Removes a handshake after processing is complete; either by match
+    /// completion or error
     pub async fn remove_handshake(&self, request_id: &Uuid) -> Option<HandshakeState> {
         // Remove from the state
         let state = {
@@ -143,9 +145,10 @@ impl HandshakeStateIndex {
             locked_nullifier_map.remove(&nullifier).unwrap_or_default()
         }; // locked_nullifier_map released
 
-        // For each request, remove the state entry for the request and send a cancel signal
-        // over the request's cancel channel if one has already been allocated. The receiver
-        // of this channel is the worker running in the MPC runtime
+        // For each request, remove the state entry for the request and send a cancel
+        // signal over the request's cancel channel if one has already been
+        // allocated. The receiver of this channel is the worker running in the
+        // MPC runtime
         for request in requests.iter() {
             if let Some(state) = self.remove_handshake(request).await
             && let Some(channel) = state.cancel_channel

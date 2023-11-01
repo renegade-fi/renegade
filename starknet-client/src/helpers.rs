@@ -17,12 +17,14 @@ use super::{error::StarknetClientError, MATCH_SELECTOR, UPDATE_WALLET_SELECTOR};
 const MATCH_PARTY0_PUBLIC_BLINDER_SHARE_IDX: usize = 0;
 /// The index of the `public_wallet_share_len` argument in `new_wallet` calldata
 const NEW_WALLET_SHARE_LEN_IDX: usize = 2;
-/// The index of the `external_transfers_len` argument in `update_wallet` calldata
+/// The index of the `external_transfers_len` argument in `update_wallet`
+/// calldata
 const UPDATE_WALLET_SHARE_LEN_IDX: usize = 3;
 
 /// Error message emitted when a public blinder share is not found in calldata
 const ERR_BLINDER_NOT_FOUND: &str = "public blinder share not found in calldata";
-/// Error message emitted when an invalid selector is given in the transaction's execution trace
+/// Error message emitted when an invalid selector is given in the transaction's
+/// execution trace
 const ERR_INVALID_SELECTOR: &str = "invalid selector received";
 
 // --------------------
@@ -43,7 +45,8 @@ const ERR_INVALID_SELECTOR: &str = "invalid selector received";
 const CALL_ARRAY_LEN_IDX: usize = 0;
 /// The length of each call array element's metadata in InvokeV1 calldata
 const CALL_ARRAY_ELEMENT_METADATA_LEN: usize = 4;
-/// The index of the contract address argument in a call array element's metadata
+/// The index of the contract address argument in a call array element's
+/// metadata
 const CALL_ARRAY_CONTRACT_ADDR_IDX: usize = 0;
 /// The index of the selector argument in a call array element's metadata
 const CALL_ARRAY_SELECTOR_IDX: usize = 1;
@@ -54,8 +57,8 @@ const CALL_ARRAY_DATA_LEN_IDX: usize = 3;
 
 /// Parses the first darkpool transaction in a call array
 ///
-/// n.b. It is generally assumed that only one darkpool transaction exists in a given
-/// call array, and the caller should take care to ensure this is the case
+/// n.b. It is generally assumed that only one darkpool transaction exists in a
+/// given call array, and the caller should take care to ensure this is the case
 ///
 /// Returns the selector and calldata of the first darkpool transaction found
 pub(crate) fn parse_first_darkpool_transaction(
@@ -114,11 +117,11 @@ fn find_first_darkpool_transaction(
 // | Share Parsing |
 // -----------------
 
-/// Parse wallet public secret shares from the calldata of a transaction based on the
-/// selector invoked
+/// Parse wallet public secret shares from the calldata of a transaction based
+/// on the selector invoked
 ///
-/// Accept the public blinder share to disambiguate for transactions that update two sets
-/// of secret shares in their calldata
+/// Accept the public blinder share to disambiguate for transactions that update
+/// two sets of secret shares in their calldata
 pub(super) fn parse_shares_from_calldata(
     selector: StarknetFieldElement,
     calldata: &[StarknetFieldElement],
@@ -129,13 +132,13 @@ pub(super) fn parse_shares_from_calldata(
         _ if selector == *UPDATE_WALLET_SELECTOR => parse_shares_from_update_wallet(calldata)?,
         _ if selector == *MATCH_SELECTOR => {
             parse_shares_from_match(public_blinder_share, calldata)?
-        }
+        },
         _ => {
             log::error!("invalid selector received: {selector}");
             return Err(StarknetClientError::NotFound(
                 ERR_INVALID_SELECTOR.to_string(),
             ));
-        }
+        },
     };
 
     // Convert to scalars and re-structure into a wallet share
@@ -149,7 +152,8 @@ fn parse_shares_from_new_wallet(
     Vec::<Scalar>::from_calldata(&mut calldata[NEW_WALLET_SHARE_LEN_IDX..].iter().copied())
 }
 
-/// Parse wallet public shares from the calldata of an `update_wallet` transaction
+/// Parse wallet public shares from the calldata of an `update_wallet`
+/// transaction
 fn parse_shares_from_update_wallet(
     calldata: &[StarknetFieldElement],
 ) -> Result<Vec<Scalar>, StarknetClientError> {
@@ -158,10 +162,11 @@ fn parse_shares_from_update_wallet(
 
 /// Parse wallet public shares from the calldata of a `match` transaction
 ///
-/// The calldata for `process_match` begins with two `MatchPayload` objects, one for each party.
-/// We check the first one, the first element of which is the public blinder share of the party;
-/// if it matches the desired share, we parse public shares from the first match payload, otherwise
-/// we seek past the first match payload to the second
+/// The calldata for `process_match` begins with two `MatchPayload` objects, one
+/// for each party. We check the first one, the first element of which is the
+/// public blinder share of the party; if it matches the desired share, we parse
+/// public shares from the first match payload, otherwise we seek past the first
+/// match payload to the second
 fn parse_shares_from_match(
     public_blinder_share: StarknetFieldElement,
     calldata: &[StarknetFieldElement],

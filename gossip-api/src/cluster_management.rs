@@ -12,30 +12,33 @@ use serde::{Deserialize, Serialize};
 pub enum ClusterManagementMessage {
     /// A cluster join message, indicating that a peer wishes to join
     Join(ClusterJoinMessage),
-    /// A message indicating that the publisher has replicated the wallets contained
-    /// in the message body
+    /// A message indicating that the publisher has replicated the wallets
+    /// contained in the message body
     Replicated(ReplicatedMessage),
-    /// A message to cluster peers indicating that the publisher has begun a handshake
-    /// on the given order pair
+    /// A message to cluster peers indicating that the publisher has begun a
+    /// handshake on the given order pair
     ///
-    /// Recipients should place this order pair in an invisibility window and not schedule
-    /// it for handshake until the invisibility period has elapsed and either resulted in
-    /// a match or an error
+    /// Recipients should place this order pair in an invisibility window and
+    /// not schedule it for handshake until the invisibility period has
+    /// elapsed and either resulted in a match or an error
     MatchInProgress(OrderIdentifier, OrderIdentifier),
-    /// A cache synchronization update wherein the sender informs its cluster peers that
-    /// it has run the match computation on a given pair of orders
+    /// A cache synchronization update wherein the sender informs its cluster
+    /// peers that it has run the match computation on a given pair of
+    /// orders
     ///
-    /// The peers should cache this order pair as completed, and not initiate handshakes
-    /// with other peers on this order
+    /// The peers should cache this order pair as completed, and not initiate
+    /// handshakes with other peers on this order
     CacheSync(OrderIdentifier, OrderIdentifier),
-    /// A request from a peer for a proof of `VALID COMMITMENTS` for a given order
+    /// A request from a peer for a proof of `VALID COMMITMENTS` for a given
+    /// order
     ///
-    /// This request is sent when a peer replicates a wallet, but does not receive a proof
-    /// along with the wallet. Instead of immediately generating such a proof locally,
-    /// the peer may request it from its cluster
+    /// This request is sent when a peer replicates a wallet, but does not
+    /// receive a proof along with the wallet. Instead of immediately
+    /// generating such a proof locally, the peer may request it from its
+    /// cluster
     RequestOrderValidityProof(ValidityProofRequest),
-    /// A request from a peer to its cluster for a copy of the witness to `VALID COMMITMENTS`
-    /// for a given order
+    /// A request from a peer to its cluster for a copy of the witness to `VALID
+    /// COMMITMENTS` for a given order
     RequestOrderValidityWitness(ValidityWitnessRequest),
 }
 

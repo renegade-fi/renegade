@@ -22,7 +22,8 @@ pub fn assert_scalar_eq(a: &Scalar, b: &Scalar) -> Result<()> {
     }
 }
 
-/// Assert two batches of scalars are equal, returning a `String` error if they are not
+/// Assert two batches of scalars are equal, returning a `String` error if they
+/// are not
 pub fn assert_scalar_batch_eq(a: &[Scalar], b: &[Scalar]) -> Result<()> {
     if a.len() != b.len() {
         return Err(eyre!(

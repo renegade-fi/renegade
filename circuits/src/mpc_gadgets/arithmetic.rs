@@ -24,13 +24,15 @@ pub fn prefix_mul(
     )
 }
 
-/// Provides a common implementation for computing the prefix products of a series for a given set
-/// of prefixes
+/// Provides a common implementation for computing the prefix products of a
+/// series for a given set of prefixes
 ///
-/// Prefixes are specified as a list pre = [pre_1, pre_2, ..., pre_k] where pre_l implies that the
-/// method returns \prod_{i=0}^l a_i in the lth element of the return vector
+/// Prefixes are specified as a list pre = [pre_1, pre_2, ..., pre_k] where
+/// pre_l implies that the method returns \prod_{i=0}^l a_i in the lth element
+/// of the return vector
 ///
-/// Note that each additional prefix incurs more bandwidth (although constant round)
+/// Note that each additional prefix incurs more bandwidth (although constant
+/// round)
 fn prefix_product_impl(
     a: &[AuthenticatedScalarResult],
     pre: &[usize],
@@ -46,15 +48,16 @@ fn prefix_product_impl(
     let (b_values, b_inv_values) = fabric.random_inverse_pairs(n + 1 /* num_inverses */);
 
     // Using the inverse pairs (b_i, b_i^-1), compute d_i = b_{i-1} * a_i * b_i^-1
-    // We will open these values and use them to form telescoping partial products wherein the only non-cancelled terms
-    // are a b_{k-1} * b_k^-1
+    // We will open these values and use them to form telescoping partial products
+    // wherein the only non-cancelled terms are a b_{k-1} * b_k^-1
     let d_partial = AuthenticatedScalarResult::batch_mul(&b_values[..n], a);
     let d_values = AuthenticatedScalarResult::batch_mul(&d_partial, &b_inv_values[1..]);
 
     // TODO: Can we just call `batch_open` here and simply authenticate at the end?
     let d_values_open = AuthenticatedScalarResult::open_batch(&d_values);
 
-    // The partial products are formed by creating a series of telescoping products and then cancelling them out with the correct b_i values
+    // The partial products are formed by creating a series of telescoping products
+    // and then cancelling them out with the correct b_i values
     let mut partial_products = Vec::with_capacity(n);
     let mut accumulator = fabric.one_authenticated();
     for d_value in d_values_open.iter() {
@@ -85,7 +88,8 @@ fn prefix_product_impl(
     AuthenticatedScalarResult::batch_mul(&selected_partial_products, &cancellation_factors)
 }
 
-/// Computes a^n using a recursive squaring approach for a public parameter exponent
+/// Computes a^n using a recursive squaring approach for a public parameter
+/// exponent
 pub fn pow(a: &AuthenticatedScalarResult, n: u64, fabric: &MpcFabric) -> AuthenticatedScalarResult {
     if n == 0 {
         fabric.one_authenticated()

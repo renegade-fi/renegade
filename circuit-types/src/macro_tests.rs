@@ -1,6 +1,7 @@
-//! Defines tests for macros in the `circuit_macros` crate. We do this so that we may define the
-//! bulk of the traits, data structures, etc outside of the `circuit-macros` crate; as a proc-macro
-//! crate cannot export non proc-macro items
+//! Defines tests for macros in the `circuit_macros` crate. We do this so that
+//! we may define the bulk of the traits, data structures, etc outside of the
+//! `circuit-macros` crate; as a proc-macro crate cannot export non proc-macro
+//! items
 
 #[allow(clippy::missing_docs_in_private_items)]
 #[cfg(test)]
@@ -111,9 +112,9 @@ mod test {
     async fn test_mpc_derived_type() {
         // Execute an MPC that allocates the value then opens it
         let (party0_res, party1_res) = execute_mock_mpc(|fabric| async move {
-            // Create the value inside the callback so that the callback can implement `FnMut`,
-            // i.e. be called twice without taking ownership of `value` or instead requiring static
-            // lifetime bounds
+            // Create the value inside the callback so that the callback can implement
+            // `FnMut`, i.e. be called twice without taking ownership of `value`
+            // or instead requiring static lifetime bounds
             let value = TestType {
                 val: Scalar::from(2u8),
             };
@@ -158,7 +159,8 @@ mod test {
                 let vars = shared_var.to_mpc_vars();
                 let eval = prover.eval_lc(&vars[0].clone().into());
                 (shared_comm, eval)
-            }; // Explicitly drop `prover` here, it is not `Send` and cannot be held across an `await` call
+            }; // Explicitly drop `prover` here, it is not `Send` and cannot be held across an
+               // `await` call
 
             let eval_open = eval.open_and_authenticate().await;
             let comm_open = comm.open_and_authenticate().await;
@@ -232,7 +234,8 @@ mod test {
 
     #[test]
     fn test_secret_share_linkable_commitments() {
-        // Build a secret share, commit to it twice, and verify the commitments are equal
+        // Build a secret share, commit to it twice, and verify the commitments are
+        // equal
         let share = LinkableTestTypeShare {
             val: Scalar::one().into(),
         };
@@ -251,7 +254,8 @@ mod test {
 
     #[test]
     fn test_secret_share_var_arithmetic() {
-        // Build two secret shares, allocate them in the constraint system, then evaluate their sum
+        // Build two secret shares, allocate them in the constraint system, then
+        // evaluate their sum
         let share1 = TestTypeShare { val: Scalar::one() };
         let share2 = TestTypeShare { val: Scalar::one() };
 

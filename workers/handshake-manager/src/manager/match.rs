@@ -1,5 +1,5 @@
-//! Groups the handshake manager definitions necessary to run the MPC match computation
-//! and collaboratively generate a proof of `VALID MATCH MPC`
+//! Groups the handshake manager definitions necessary to run the MPC match
+//! computation and collaboratively generate a proof of `VALID MATCH MPC`
 
 use std::cmp;
 
@@ -37,8 +37,8 @@ use crate::error::HandshakeManagerError;
 
 use super::HandshakeExecutor;
 
-/// Error message emitted when the opened VALID MATCH proof does not properly link to
-/// both parties' proofs of VALID COMMITMENTS
+/// Error message emitted when the opened VALID MATCH proof does not properly
+/// link to both parties' proofs of VALID COMMITMENTS
 const ERR_INVALID_PROOF_LINK: &str =
     "invalid commitment link between VALID COMMITMENTS and VALID MATCH MPC";
 
@@ -55,7 +55,7 @@ fn compute_max_amount(price: &FixedPoint, order: &Order, balance: &Balance) -> u
             let price_f64 = price.to_f64();
             let balance_limit = (balance.amount as f64 / price_f64).floor() as u64;
             cmp::min(order.amount, balance_limit)
-        }
+        },
         // Buy the quote, sell the base, the maximum amount is directly limited
         // by the balance
         OrderSide::Sell => cmp::min(order.amount, balance.amount),
@@ -92,10 +92,11 @@ impl HandshakeExecutor {
                 )
             })?;
 
-        // Build a cancel channel; the coordinator may use this to cancel (shootdown) an in flight MPC
+        // Build a cancel channel; the coordinator may use this to cancel (shootdown) an
+        // in flight MPC
         let (cancel_sender, cancel_receiver) = bounded(1 /* capacity */);
-        // Record the match as in progress and tag it with a cancel channel that may be used to
-        // abort the MPC
+        // Record the match as in progress and tag it with a cancel channel that may be
+        // used to abort the MPC
         self.handshake_state_index
             .in_progress(&request_id, cancel_sender)
             .await;
@@ -119,7 +120,8 @@ impl HandshakeExecutor {
         Ok(res)
     }
 
-    /// Implementation of the execute_match method that is wrapped in a Tokio runtime
+    /// Implementation of the execute_match method that is wrapped in a Tokio
+    /// runtime
     async fn execute_match_impl(
         &self,
         party_id: u64,
@@ -136,8 +138,9 @@ impl HandshakeExecutor {
         let beaver_source = PartyIDBeaverSource::new(party_id);
         let fabric = MpcFabric::new(mpc_net, beaver_source);
 
-        // Lookup the witness bundle used in validity proofs for this order, balance, fee pair
-        // Use the linkable commitments from this witness to commit to values in `VALID MATCH MPC`
+        // Lookup the witness bundle used in validity proofs for this order, balance,
+        // fee pair Use the linkable commitments from this witness to commit to
+        // values in `VALID MATCH MPC`
         let proof_witnesses = self
             .global_state
             .read_order_book()
@@ -214,8 +217,8 @@ impl HandshakeExecutor {
         let b2 = my_balance.allocate(PARTY1, fabric);
         let price2 = my_price.allocate(PARTY1, fabric);
 
-        // Use the first party's price, the second party's price will be constrained to equal the
-        // first party's in the subsequent proof of `VALID MATCH MPC`
+        // Use the first party's price, the second party's price will be constrained to
+        // equal the first party's in the subsequent proof of `VALID MATCH MPC`
         let price = my_price.allocate(PARTY0, fabric);
 
         let my_amount = compute_max_amount(
@@ -245,8 +248,9 @@ impl HandshakeExecutor {
 
     /// Generates a collaborative proof of the validity of a given match result
     ///
-    /// The implementation *does not* open the match result. This leaks information and should
-    /// be done last, after all other openings, validity checks, etc are performed
+    /// The implementation *does not* open the match result. This leaks
+    /// information and should be done last, after all other openings,
+    /// validity checks, etc are performed
     async fn prove_valid_match(
         witness: &AuthenticatedValidMatchMpcWitness,
         fabric: &MpcFabric,
@@ -254,7 +258,7 @@ impl HandshakeExecutor {
         // Prove the statement
         let (witness_commitment, proof) = multiprover_prove::<ValidMatchMpcCircuit>(
             witness.clone(),
-            (), /* statement */
+            (), // statement
             fabric.clone(),
         )
         .map_err(|err| HandshakeManagerError::Multiprover(err.to_string()))?;
@@ -270,7 +274,7 @@ impl HandshakeExecutor {
             .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
 
         verify_collaborative_proof::<ValidMatchMpcCircuit>(
-            (), /* statement */
+            (), // statement
             opened_commit.clone(),
             opened_proof.clone(),
         )
@@ -312,7 +316,8 @@ impl HandshakeExecutor {
             .augmented_public_shares
             .share_public(PARTY1, fabric.clone());
 
-        // Verify that the opened augmented shares are the same used in the validity proofs
+        // Verify that the opened augmented shares are the same used in the validity
+        // proofs
         let party0_public_shares = party0_public_shares.await;
         let party1_public_shares = party1_public_shares.await;
         if !verify_augmented_shares_commitments(

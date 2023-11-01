@@ -26,11 +26,12 @@ const ARG_NON_ASSOCIATED: &str = "non_associated";
 /// The feature flag that enables tracing via these macros
 #[allow(dead_code)]
 const TRACER_FEATURE_FLAG: &str = "bench";
-/// The suffix appended to the trace target implementation to give it a different signature
-/// from its trampoline
+/// The suffix appended to the trace target implementation to give it a
+/// different signature from its trampoline
 const TRACE_TARGET_SUFFIX: &str = "impl";
 
-/// Stores the macro arguments as to which metrics are enabled for a given tracing target
+/// Stores the macro arguments as to which metrics are enabled for a given
+/// tracing target
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct MacroArgs {
     /// The number of constraints metric
@@ -70,8 +71,8 @@ pub(crate) fn parse_macro_args(args: TokenStream) -> Result<MacroArgs> {
     Ok(macro_args)
 }
 
-/// Implementation of the circuit tracer, parses the token stream and defines the two
-/// trampoline function implementation
+/// Implementation of the circuit tracer, parses the token stream and defines
+/// the two trampoline function implementation
 pub(crate) fn circuit_trace_impl(target_fn: ItemFn, macro_args: MacroArgs) -> TokenStream {
     let mut out_tokens = TokenStream2::default();
 
@@ -86,8 +87,8 @@ pub(crate) fn circuit_trace_impl(target_fn: ItemFn, macro_args: MacroArgs) -> To
     out_tokens.into()
 }
 
-/// Build both trampoline implementations (active and inactive) and return their parsed
-/// syntax-tree types
+/// Build both trampoline implementations (active and inactive) and return their
+/// parsed syntax-tree types
 fn build_trampoline_impls(target_fn: &ItemFn, macro_args: MacroArgs) -> (ItemFn, ItemFn) {
     (
         build_inactive_trampoline(target_fn, macro_args),
@@ -95,11 +96,12 @@ fn build_trampoline_impls(target_fn: &ItemFn, macro_args: MacroArgs) -> (ItemFn,
     )
 }
 
-/// Build the trampoline implementation that actively traces the target, gated behind the
-/// "bench" feature flag
+/// Build the trampoline implementation that actively traces the target, gated
+/// behind the "bench" feature flag
 fn build_active_trampoline(target_fn: &ItemFn, macro_args: MacroArgs) -> ItemFn {
-    // In the active trampoline, we keep the signature and visibility of the target the same
-    // The changes are to add an attribute #[cfg(feature = "bench")] and change the body to:
+    // In the active trampoline, we keep the signature and visibility of the target
+    // the same The changes are to add an attribute #[cfg(feature = "bench")]
+    // and change the body to:
     //  1. Add a prelude that sets up trace metrics and scope
     //  2. Call the target method
     //  3. Add an epilog to close trace metrics and scope
@@ -128,12 +130,13 @@ fn build_active_trampoline(target_fn: &ItemFn, macro_args: MacroArgs) -> ItemFn 
     out_fn
 }
 
-/// Builds the prelude to the tracer, registers metrics and takes measurements that must happen before
-/// circuit execution (e.g. current timestamp)
+/// Builds the prelude to the tracer, registers metrics and takes measurements
+/// that must happen before circuit execution (e.g. current timestamp)
 ///
-/// TODO: When trace metrics involving the constraint system are enabled (e.g. n_constraints) the macro
-/// assumes the existence of a local binding `cs: ConstraintSystem` that can be used to query the
-/// constraint system metrics. In the future, we should remove this brittle assumption or allow rebinding
+/// TODO: When trace metrics involving the constraint system are enabled (e.g.
+/// n_constraints) the macro assumes the existence of a local binding `cs:
+/// ConstraintSystem` that can be used to query the constraint system metrics.
+/// In the future, we should remove this brittle assumption or allow rebinding
 /// the name as a macro argument
 fn build_tracer_prelude(target_fn_name: &Ident, macro_args: MacroArgs) -> TokenStream2 {
     // Scope into the target fn
@@ -148,8 +151,8 @@ fn build_tracer_prelude(target_fn_name: &Ident, macro_args: MacroArgs) -> TokenS
         } // CURR_SCOPE lock released
     });
 
-    // Setup enabled metrics, we intentionally obfuscate the names of the trace variables to ensure
-    // they don't alias with any (well named) local bindings
+    // Setup enabled metrics, we intentionally obfuscate the names of the trace
+    // variables to ensure they don't alias with any (well named) local bindings
     if macro_args.n_constraints {
         tokens.extend(quote! {
             let __n_constraint_pre = cs.num_constraints() as u64;
@@ -171,13 +174,14 @@ fn build_tracer_prelude(target_fn_name: &Ident, macro_args: MacroArgs) -> TokenS
     tokens
 }
 
-/// Builds the epilogue after the tracer, records metrics into global `MetricsCapture` for analysis
-/// and closes the current scope
+/// Builds the epilogue after the tracer, records metrics into global
+/// `MetricsCapture` for analysis and closes the current scope
 fn build_tracer_epilogue(macro_args: MacroArgs) -> TokenStream2 {
     // Record dummy metrics and scope out of the method
     let mut tokens = TokenStream2::default();
 
-    // Record timing first before performing any other operations, including locking the metrics
+    // Record timing first before performing any other operations, including locking
+    // the metrics
     if macro_args.latency {
         tokens.extend(quote! {
             let __latency = __time_pre.elapsed().as_millis();
@@ -236,12 +240,13 @@ fn build_tracer_epilogue(macro_args: MacroArgs) -> TokenStream2 {
     tokens
 }
 
-/// Build the trampoline implementation that does not trace and simply passes through to
-/// the target function. This implementation is active when the `bench` feature flag is disabled
+/// Build the trampoline implementation that does not trace and simply passes
+/// through to the target function. This implementation is active when the
+/// `bench` feature flag is disabled
 fn build_inactive_trampoline(target_fn: &ItemFn, macro_args: MacroArgs) -> ItemFn {
-    // In the inactive trampoline, we keep the signature and visibility of the target the same
-    // The changes are to add an attribute #[cfg(not(feature = "bench"))] and change the body to call
-    // the target
+    // In the inactive trampoline, we keep the signature and visibility of the
+    // target the same The changes are to add an attribute #[cfg(not(feature =
+    // "bench"))] and change the body to call the target
     let mut out_fn = target_fn.clone();
 
     // Add the conditional compilation attr
@@ -257,7 +262,8 @@ fn build_inactive_trampoline(target_fn: &ItemFn, macro_args: MacroArgs) -> ItemF
     out_fn
 }
 
-/// Build the argument list for the target function from the trampoline function's signature
+/// Build the argument list for the target function from the trampoline
+/// function's signature
 fn build_target_invocation(trampoline_sig: &Signature, macro_args: MacroArgs) -> ExprCall {
     let mut args = Vec::new();
     let mut parsed_receiver = None;
@@ -268,7 +274,7 @@ fn build_target_invocation(trampoline_sig: &Signature, macro_args: MacroArgs) ->
                 if let Pat::Ident(pattern) = *type_pattern.pat {
                     args.push(pattern.ident)
                 };
-            }
+            },
             FnArg::Receiver(receiver) => parsed_receiver = Some(receiver),
         }
     }
@@ -276,8 +282,9 @@ fn build_target_invocation(trampoline_sig: &Signature, macro_args: MacroArgs) ->
     // Build the expression resolving to the function; using Self:: prelude if the
     let target_fn_name = get_modified_target_name(trampoline_sig);
     let function = if macro_args.non_associated {
-        // The default is that gadgets specify circuitry in associated functions, if the non-associated
-        // flag is explicitly set, call the function outside of the current object's scope
+        // The default is that gadgets specify circuitry in associated functions, if the
+        // non-associated flag is explicitly set, call the function outside of
+        // the current object's scope
         Expr::Path(parse_quote!(#target_fn_name))
     } else {
         Expr::Path(parse_quote!(Self::#target_fn_name))
@@ -302,9 +309,10 @@ fn build_target_invocation(trampoline_sig: &Signature, macro_args: MacroArgs) ->
 
 /// Build the modified target function
 ///
-/// The tracing target needs to be renamed so that calls to `fn_name` will route through the
-/// trampoline implementation. As well, we mask the visibility to private and allow the trampoline
-/// to inherit the visibility of the underlying implementation
+/// The tracing target needs to be renamed so that calls to `fn_name` will route
+/// through the trampoline implementation. As well, we mask the visibility to
+/// private and allow the trampoline to inherit the visibility of the underlying
+/// implementation
 fn modify_target_fn(target_fn: &ItemFn) -> ItemFn {
     let mut modified_target = target_fn.clone();
     modified_target.sig.ident = get_modified_target_name(&target_fn.sig);

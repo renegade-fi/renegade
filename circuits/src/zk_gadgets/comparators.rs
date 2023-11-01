@@ -53,10 +53,11 @@ impl EqZeroGadget {
         let (_, _, val_times_inv) = cs.multiply(val_lc.clone(), inv_var.into());
         cs.constrain(is_zero_var - Scalar::one() + val_times_inv);
 
-        // Constrain the input times the output to equal zero, this handles the edge case in the
-        // above constraint in which the value is one, the prover assigns inv and is_zero such
-        // that inv is neither zero nor one
-        // I.e. the only way to satisfy this constraint when the value is non-zero is if is_zero == 0
+        // Constrain the input times the output to equal zero, this handles the edge
+        // case in the above constraint in which the value is one, the prover
+        // assigns inv and is_zero such that inv is neither zero nor one
+        // I.e. the only way to satisfy this constraint when the value is non-zero is if
+        // is_zero == 0
         let (_, _, in_times_out) = cs.multiply(val_lc, is_zero_var.into());
         cs.constrain(in_times_out.into());
 
@@ -198,7 +199,8 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
         L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
-        // If we can reconstruct the value without the highest bit, the value is non-negative
+        // If we can reconstruct the value without the highest bit, the value is
+        // non-negative
         let bit_reconstructed = Self::bit_decompose_reconstruct(x.clone(), cs);
         EqZeroGadget::eq_zero(bit_reconstructed - x.into(), cs)
     }
@@ -209,17 +211,18 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
         L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
-        // If we can reconstruct the value without the highest bit, the value is non-negative
+        // If we can reconstruct the value without the highest bit, the value is
+        // non-negative
         let bit_reconstructed = Self::bit_decompose_reconstruct(x.clone(), cs);
         cs.constrain(bit_reconstructed - x.into())
     }
 
-    /// A helper function to decompose a scalar into bits and then reconstruct it;
-    /// returns the reconstructed result
+    /// A helper function to decompose a scalar into bits and then reconstruct
+    /// it; returns the reconstructed result
     ///
-    /// This is used by limiting the bit width of the decomposition -- if a value can
-    /// be reconstructed without its highest bit (i.e. highest bit is zero) then it is
-    /// non-negative
+    /// This is used by limiting the bit width of the decomposition -- if a
+    /// value can be reconstructed without its highest bit (i.e. highest bit
+    /// is zero) then it is non-negative
     fn bit_decompose_reconstruct<L, CS>(x: L, cs: &mut CS) -> LinearCombination
     where
         L: LinearCombinationLike,
@@ -238,9 +241,9 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
             .collect_vec();
 
         // Constrain the bit decomposition to be correct
-        // This implicitly constrains the value to be greater than zero, i.e. if it can be represented
-        // without the highest bit set, then it is greater than zero. This assumes a two's complement
-        // representation
+        // This implicitly constrains the value to be greater than zero, i.e. if it can
+        // be represented without the highest bit set, then it is greater than
+        // zero. This assumes a two's complement representation
         let mut res = LinearCombination::default();
         for bit in bits.into_iter().rev() {
             res = res * Scalar::from(2u64) + bit
@@ -253,8 +256,9 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
 /// A multiprover version of the greater than or equal to zero gadget
 pub struct MultiproverGreaterThanEqZeroGadget<const D: usize>;
 impl<const D: usize> MultiproverGreaterThanEqZeroGadget<D> {
-    /// Constrains the input value to be greater than or equal to zero implicitly
-    /// by bit-decomposing the value and re-composing it thereafter
+    /// Constrains the input value to be greater than or equal to zero
+    /// implicitly by bit-decomposing the value and re-composing it
+    /// thereafter
     pub fn constrain_greater_than_zero<L, CS>(
         x: L,
         fabric: &MpcFabric,
@@ -269,12 +273,12 @@ impl<const D: usize> MultiproverGreaterThanEqZeroGadget<D> {
         Ok(())
     }
 
-    /// A helper function to compute the bit decomposition of an allocated scalar and
-    /// then reconstruct from the bit decomposition.
+    /// A helper function to compute the bit decomposition of an allocated
+    /// scalar and then reconstruct from the bit decomposition.
     ///
-    /// This is useful because we can bit decompose with all but the highest bit. If the
-    /// reconstructed result is equal to the input; the highest bit is not set and the
-    /// value is non-negative
+    /// This is useful because we can bit decompose with all but the highest
+    /// bit. If the reconstructed result is equal to the input; the highest
+    /// bit is not set and the value is non-negative
     fn bit_decompose_reconstruct<L, CS>(
         x: L,
         fabric: &MpcFabric,
@@ -292,9 +296,9 @@ impl<const D: usize> MultiproverGreaterThanEqZeroGadget<D> {
             .collect_vec();
 
         // Constrain the bit decomposition to be correct
-        // This implicitly constrains the value to be greater than zero, i.e. if it can be represented
-        // without the highest bit set, then it is greater than zero. This assumes a two's complement
-        // representation
+        // This implicitly constrains the value to be greater than zero, i.e. if it can
+        // be represented without the highest bit set, then it is greater than
+        // zero. This assumes a two's complement representation
         let mut res = MpcLinearCombination::default();
         for bit in bits.into_iter().rev() {
             res = res * Scalar::from(2u64) + bit;

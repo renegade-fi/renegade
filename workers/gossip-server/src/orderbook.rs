@@ -31,7 +31,8 @@ use super::{errors::GossipError, server::GossipProtocolExecutor};
 
 /// Error message emitted when an already-used nullifier is received
 const ERR_NULLIFIER_USED: &str = "invalid nullifier, already used";
-/// Error message emitted when two validity proofs are improperly commitment linked
+/// Error message emitted when two validity proofs are improperly commitment
+/// linked
 const ERR_INVALID_PROOF_LINK: &str =
     "invalid proof link between VALID REBLIND and VALID COMMITMENTS";
 
@@ -48,7 +49,7 @@ impl GossipProtocolExecutor {
             } => {
                 self.handle_order_info_request(order_id, response_channel)
                     .await
-            }
+            },
 
             OrderBookManagementJob::OrderInfoResponse { info, .. } => {
                 if let Some(order_info) = info {
@@ -56,7 +57,7 @@ impl GossipProtocolExecutor {
                 }
 
                 Ok(())
-            }
+            },
 
             OrderBookManagementJob::OrderReceived {
                 order_id,
@@ -71,7 +72,7 @@ impl GossipProtocolExecutor {
             } => {
                 self.handle_new_validity_proof(order_id, cluster, proof_bundle)
                     .await
-            }
+            },
 
             OrderBookManagementJob::OrderWitness {
                 order_id,
@@ -79,13 +80,13 @@ impl GossipProtocolExecutor {
             } => {
                 self.handle_validity_witness_request(order_id, requesting_peer)
                     .await
-            }
+            },
 
             OrderBookManagementJob::OrderWitnessResponse { order_id, witness } => {
                 self.handle_validity_witness_response(order_id, witness)
                     .await;
                 Ok(())
-            }
+            },
         }
     }
 
@@ -130,7 +131,8 @@ impl GossipProtocolExecutor {
         order_info.local = is_local;
         self.global_state.add_order(order_info).await;
 
-        // If there is a proof attached to the order, verify it and transition to `Verified`
+        // If there is a proof attached to the order, verify it and transition to
+        // `Verified`
         if let Some(proof_bundle) = proof {
             // We can trust local (i.e. originating from cluster peers) proofs
             if !is_local {
@@ -144,14 +146,15 @@ impl GossipProtocolExecutor {
                 .unwrap()?;
             }
 
-            // If the order is a locally managed order, the local peer also needs a copy of the witness
-            // so that it may link commitments between the validity proof and subsequent match/encryption
-            // proofs
+            // If the order is a locally managed order, the local peer also needs a copy of
+            // the witness so that it may link commitments between the validity
+            // proof and subsequent match/encryption proofs
             if is_local {
                 self.request_order_witness(order_id)?;
             }
 
-            // Update the state of the order to `Verified` by attaching the verified validity proof
+            // Update the state of the order to `Verified` by attaching the verified
+            // validity proof
             self.global_state
                 .add_order_validity_proofs(&order_id, proof_bundle)
                 .await;
@@ -187,8 +190,8 @@ impl GossipProtocolExecutor {
 
     /// Handles a new validity proof attached to an order
     ///
-    /// TODO: We also need to sanity check the statement variables with the contract state,
-    /// e.g. merkle root, nullifiers, etc.
+    /// TODO: We also need to sanity check the statement variables with the
+    /// contract state, e.g. merkle root, nullifiers, etc.
     async fn handle_new_validity_proof(
         &self,
         order_id: OrderIdentifier,
@@ -234,8 +237,9 @@ impl GossipProtocolExecutor {
             .await;
 
         // If the order is locally managed, also fetch the wintess used in the proof,
-        // this is used for proof linking. I.e. the local node needs the commitment parameters
-        // for each witness element so that it may share commitments with future proofs
+        // this is used for proof linking. I.e. the local node needs the commitment
+        // parameters for each witness element so that it may share commitments
+        // with future proofs
         if is_local {
             self.request_order_witness(order_id)?;
         }
@@ -243,8 +247,8 @@ impl GossipProtocolExecutor {
         Ok(())
     }
 
-    /// Requests a copy of the witness used in an order's validity proof for a locally
-    /// managed order
+    /// Requests a copy of the witness used in an order's validity proof for a
+    /// locally managed order
     fn request_order_witness(&self, order_id: OrderIdentifier) -> Result<(), GossipError> {
         let message =
             ClusterManagementMessage::RequestOrderValidityWitness(ValidityWitnessRequest {
@@ -288,7 +292,8 @@ impl GossipProtocolExecutor {
             }
         } // peer_index lock released
 
-        // If the local peer has a copy of the witness stored locally, send it to the peer
+        // If the local peer has a copy of the witness stored locally, send it to the
+        // peer
         if let Some(order_info) = self
             .global_state
             .read_order_book()
@@ -307,7 +312,8 @@ impl GossipProtocolExecutor {
         Ok(())
     }
 
-    /// Handle a response from a peer containing a witness for `VALID COMMITMENTS`
+    /// Handle a response from a peer containing a witness for `VALID
+    /// COMMITMENTS`
     async fn handle_validity_witness_response(
         &self,
         order_id: OrderIdentifier,
@@ -320,7 +326,8 @@ impl GossipProtocolExecutor {
             .await;
     }
 
-    /// Verify the validity proofs (`VALID REBLIND` and `VALID COMMITMENTS`) of an incoming order
+    /// Verify the validity proofs (`VALID REBLIND` and `VALID COMMITMENTS`) of
+    /// an incoming order
     ///
     /// Aside from proof verification, this involves validating the statement
     /// variables (e.g. merkle root) for the proof
@@ -354,7 +361,8 @@ impl GossipProtocolExecutor {
             .map_err(|err| GossipError::StarknetRequest(err.to_string()))?
         {
             log::info!("got order with invalid merkle root, skipping...");
-            // TODO: Once the contract implements foreign field Merkle, error on this test
+            // TODO: Once the contract implements foreign field Merkle, error on
+            // this test
             // return Err(GossipError::ValidCommitmentVerification(
             //     "invalid merkle root, not in contract history".to_string(),
             // ));
@@ -383,8 +391,8 @@ impl GossipProtocolExecutor {
         Ok(())
     }
 
-    /// Assert that a nullifier is unused in the contract, returns a GossipError if
-    /// the nullifier has been used
+    /// Assert that a nullifier is unused in the contract, returns a GossipError
+    /// if the nullifier has been used
     async fn assert_nullifier_unused(&self, nullifier: Nullifier) -> Result<(), GossipError> {
         self.starknet_client()
             .check_nullifier_unused(nullifier)

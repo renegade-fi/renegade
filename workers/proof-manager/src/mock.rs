@@ -108,22 +108,22 @@ impl MockProofManager {
         let bundle = match job_type {
             ProofJob::ValidWalletCreate { witness, statement } => {
                 ProofBundle::ValidWalletCreate(Self::valid_wallet_create(witness, statement))
-            }
+            },
             ProofJob::ValidWalletUpdate { witness, statement } => {
                 ProofBundle::ValidWalletUpdate(Self::valid_wallet_update(witness, statement))
-            }
+            },
             ProofJob::ValidReblind { witness, statement } => {
                 ProofBundle::ValidReblind(Self::valid_reblind(witness, statement))
-            }
+            },
             ProofJob::ValidCommitments { witness, statement } => {
                 ProofBundle::ValidCommitments(Self::valid_commitments(witness, statement))
-            }
+            },
             ProofJob::ValidMatchMpcSingleprover { witness } => {
                 ProofBundle::ValidMatchMpc(Self::valid_match_mpc(witness))
-            }
+            },
             ProofJob::ValidSettle { witness, statement } => {
                 ProofBundle::ValidSettle(Self::valid_settle(witness, statement))
-            }
+            },
         };
 
         response_channel

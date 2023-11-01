@@ -14,8 +14,8 @@ pub mod traits;
 /// A type alias used for reading from the database
 type CowBuffer<'a> = Cow<'a, [u8]>;
 
-/// A wrapper struct that allows us to implement serde traits on a protobuf `Message`
-/// which lets us store protobuf messages in the database
+/// A wrapper struct that allows us to implement serde traits on a protobuf
+/// `Message` which lets us store protobuf messages in the database
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProtoStorageWrapper<T: Message>(pub T);
 impl<T: Message> ProtoStorageWrapper<T> {

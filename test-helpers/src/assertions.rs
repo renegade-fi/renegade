@@ -1,4 +1,5 @@
-//! Defines assertion helpers that match the signature of the `renegade` integration tests
+//! Defines assertion helpers that match the signature of the `renegade`
+//! integration tests
 
 /// Assert that a boolean value is true, return an error otherwise
 #[macro_export]

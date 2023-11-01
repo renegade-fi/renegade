@@ -41,7 +41,8 @@ pub(crate) mod test_helpers {
 
     /// A mock network that is brokered by `N` channels
     ///
-    /// Emulates a mesh network by sitting centralized between all point-to-point comms
+    /// Emulates a mesh network by sitting centralized between all
+    /// point-to-point comms
     pub struct MockNetwork {
         /// The sender channel
         senders: Vec<CrossbeamSender<RaftMessage>>,

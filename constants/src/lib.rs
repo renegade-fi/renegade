@@ -8,13 +8,16 @@
 // | System-Wide Constants |
 // -------------------------
 
-/// The system-wide value of MAX_BALANCES; the number of allowable balances a wallet holds
+/// The system-wide value of MAX_BALANCES; the number of allowable balances a
+/// wallet holds
 pub const MAX_BALANCES: usize = 5;
 
-/// The system-wide value of MAX_ORDERS; the number of allowable orders a wallet holds
+/// The system-wide value of MAX_ORDERS; the number of allowable orders a wallet
+/// holds
 pub const MAX_ORDERS: usize = 5;
 
-/// The system-wide value of MAX_FEES; the number of allowable fees a wallet holds
+/// The system-wide value of MAX_FEES; the number of allowable fees a wallet
+/// holds
 pub const MAX_FEES: usize = 2;
 
 /// The height of the Merkle state tree used by the contract

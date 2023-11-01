@@ -42,8 +42,8 @@ pub const ROOT_KEY_WORDS: usize = 2;
 // | Key Types |
 // -------------
 
-/// A public identification key is the image-under-hash of the secret identification key
-/// knowledge of which is proved in a circuit
+/// A public identification key is the image-under-hash of the secret
+/// identification key knowledge of which is proved in a circuit
 #[circuit_type(singleprover_circuit, mpc, multiprover_circuit, linkable, secret_share)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct PublicIdentificationKey {
@@ -81,7 +81,8 @@ impl From<PublicIdentificationKey> for Scalar {
     }
 }
 
-/// A secret identification key is the hash preimage of the public identification key
+/// A secret identification key is the hash preimage of the public
+/// identification key
 #[circuit_type(serde, singleprover_circuit)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct SecretIdentificationKey {
@@ -133,8 +134,8 @@ impl From<SecretIdentificationKey> for Scalar {
 pub struct NonNativeKey<const KEY_WORDS: usize> {
     /// The `Scalar` words used to represent the key
     ///
-    /// Because the key is a point on a non-native curve, its representation requires
-    /// a bigint like approach
+    /// Because the key is a point on a non-native curve, its representation
+    /// requires a bigint like approach
     pub key_words: [Scalar; KEY_WORDS],
 }
 
@@ -232,14 +233,15 @@ pub type SecretSigningKey = NonNativeKey<ROOT_KEY_WORDS>;
 /// Represents the base type, defining two keys with different access levels
 ///
 /// Note that these keys are of different types, though over the same field
-///     - `pk_root` is the public root key, the secret key is used as a signing key
-///     - `pk_match` is the public match key, it is used as an identification key
-///        authorizing a holder of `sk_match` to match orders in the wallet
+///     - `pk_root` is the public root key, the secret key is used as a signing
+///       key
+///     - `pk_match` is the public match key, it is used as an identification
+///       key authorizing a holder of `sk_match` to match orders in the wallet
 ///
-/// When we say identification key, we are talking about an abstract, zero-knowledge
-/// identification scheme (not necessarily a signature scheme). Concretely, this currently
-/// is setup as `pk_identity` = Hash(`sk_identity`), and the prover proves knowledge of
-/// pre-image in a related circuit
+/// When we say identification key, we are talking about an abstract,
+/// zero-knowledge identification scheme (not necessarily a signature scheme).
+/// Concretely, this currently is setup as `pk_identity` = Hash(`sk_identity`),
+/// and the prover proves knowledge of pre-image in a related circuit
 #[circuit_type(
     serde,
     singleprover_circuit,

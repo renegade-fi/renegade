@@ -11,10 +11,11 @@ use tracing::log;
 
 use super::{HandshakeExecutor, HandshakeManagerError, ERR_NO_WALLET};
 
-/// The maximum percentage deviation that is allowed between a peer's proposed price
-/// and a locally observed price before the proposed price is rejected
+/// The maximum percentage deviation that is allowed between a peer's proposed
+/// price and a locally observed price before the proposed price is rejected
 const MAX_PRICE_DEVIATION: f64 = 0.01;
-/// Error message emitted when price data could not be found for a given token pair
+/// Error message emitted when price data could not be found for a given token
+/// pair
 const ERR_NO_PRICE_STREAM: &str = "price report not available for token pair";
 
 // ----------------
@@ -106,10 +107,11 @@ lazy_static! {
     };
 }
 
-/// Initializes price streams for the default token pairs in the `price-reporter`
+/// Initializes price streams for the default token pairs in the
+/// `price-reporter`
 ///
-/// This will cause the price reporter to connect to exchanges and begin streaming, ahead of
-/// when we need prices
+/// This will cause the price reporter to connect to exchanges and begin
+/// streaming, ahead of when we need prices
 pub fn init_price_streams(
     price_reporter_job_queue: TokioSender<PriceReporterManagerJob>,
 ) -> Result<(), HandshakeManagerError> {
@@ -159,7 +161,7 @@ impl HandshakeExecutor {
                         report.quote_token,
                         report.midpoint_price,
                     ));
-                }
+                },
 
                 // TODO: We may want to re-evaluate whether we want to accept price reports
                 // with large deviation. This largely happens because of Uniswap, and we could
@@ -170,11 +172,11 @@ impl HandshakeExecutor {
                         report.quote_token,
                         report.midpoint_price,
                     ));
-                }
+                },
 
                 err_state => {
                     log::warn!("Price report invalid during price agreement: {err_state:?}");
-                }
+                },
             }
         }
 
@@ -186,8 +188,9 @@ impl HandshakeExecutor {
     /// The input prices are those proposed by a peer that has initiated a match
     /// against a locally managed order
     ///
-    /// The result is `None` if the prices are rejected. If the prices are accepted the result
-    /// is the midpoint price of the asset pair that the local party's order is on
+    /// The result is `None` if the prices are rejected. If the prices are
+    /// accepted the result is the midpoint price of the asset pair that the
+    /// local party's order is on
     pub(super) async fn validate_price_vector(
         &self,
         proposed_prices: &PriceVector,
@@ -206,10 +209,10 @@ impl HandshakeExecutor {
         if proposed_price.is_none() {
             return Ok(None);
         }
-        let (_, _, proposed_price) = proposed_price.unwrap(); /* (base, quote, price) */
+        let (_, _, proposed_price) = proposed_price.unwrap(); // (base, quote, price)
 
-        // Validate that the maximum deviation between the proposed prices and the locally
-        // observed prices is within the acceptable range
+        // Validate that the maximum deviation between the proposed prices and the
+        // locally observed prices is within the acceptable range
         let my_prices: HashMap<(Token, Token), Price> = self.fetch_price_vector().await?.into();
         let peer_prices: HashMap<(Token, Token), Price> = proposed_prices.clone().into();
         if !my_prices.contains_key(&(base.clone(), quote.clone())) {
@@ -219,9 +222,10 @@ impl HandshakeExecutor {
         }
 
         // We cannot simply validate that the peer's proposed price for *our asset pair*
-        // is within the acceptable range. This behavior would allow the peer to probe price
-        // rejections with different assets to determine the asset pair an order is on
-        // So instead we validate all of the peer's proposed prices that we have local prices for
+        // is within the acceptable range. This behavior would allow the peer to probe
+        // price rejections with different assets to determine the asset pair an
+        // order is on So instead we validate all of the peer's proposed prices
+        // that we have local prices for
         for ((base, quote), peer_price) in peer_prices.into_iter() {
             if let Some(my_price) = my_prices.get(&(base, quote)) {
                 let price_deviation = (peer_price - my_price) / my_price;

@@ -51,7 +51,8 @@ pub fn felt_from_hex_string(s: &str) -> StarknetFieldElement {
 // | Tasks |
 // ---------
 
-/// Lookup a wallet in the contract state and verify that it matches the expected wallet
+/// Lookup a wallet in the contract state and verify that it matches the
+/// expected wallet
 pub(crate) async fn lookup_wallet_and_check_result(
     expected_wallet: &Wallet,
     blinder_seed: Scalar,
@@ -76,7 +77,8 @@ pub(crate) async fn lookup_wallet_and_check_result(
     let success = handle.await?;
     assert_true_result!(success)?;
 
-    // Check the global state for the wallet and verify that it was correctly recovered
+    // Check the global state for the wallet and verify that it was correctly
+    // recovered
     let state_wallet = state
         .read_wallet_index()
         .await
@@ -99,8 +101,8 @@ pub(crate) async fn lookup_wallet_and_check_result(
 
 /// Allocate a new empty wallet in the darkpool
 ///
-/// Returns the `blinder_stream_seed` and `share_stream_seed` used to secret share the wallet
-/// as well as the wallet itself
+/// Returns the `blinder_stream_seed` and `share_stream_seed` used to secret
+/// share the wallet as well as the wallet itself
 pub async fn new_wallet_in_darkpool(client: &StarknetClient) -> Result<(Wallet, Scalar, Scalar)> {
     let mut rng = thread_rng();
     let blinder_seed = Scalar::random(&mut rng);
@@ -124,10 +126,11 @@ pub async fn allocate_wallet_in_darkpool(wallet: &Wallet, client: &StarknetClien
     Ok(())
 }
 
-/// Mock a wallet update by reblinding the shares and sending them to the contract
-/// via an `update_wallet` transaction
+/// Mock a wallet update by reblinding the shares and sending them to the
+/// contract via an `update_wallet` transaction
 ///
-/// Mutates the wallet in place so that the changes in the contract are reflected in the caller's state
+/// Mutates the wallet in place so that the changes in the contract are
+/// reflected in the caller's state
 pub async fn mock_wallet_update(wallet: &mut Wallet, client: &StarknetClient) -> Result<()> {
     wallet.reblind_wallet();
 
@@ -140,7 +143,7 @@ pub async fn mock_wallet_update(wallet: &mut Wallet, client: &StarknetClient) ->
         .update_wallet(
             share_comm,
             nullifier,
-            None, /* external_transfer */
+            None, // external_transfer
             wallet.blinded_public_shares.clone(),
             proof,
         )
@@ -187,8 +190,8 @@ pub fn new_mock_task_driver() -> TaskDriver {
     let bus = SystemBus::new();
     let config = TaskDriverConfig {
         backoff_amplification_factor: 2,
-        backoff_ceiling_ms: 1_000, /* 1 second */
-        initial_backoff_ms: 100,   /* 100 milliseconds */
+        backoff_ceiling_ms: 1_000, // 1 second
+        initial_backoff_ms: 100,   // 100 milliseconds
         n_retries: 2,
         n_threads: 5,
         system_bus: bus,

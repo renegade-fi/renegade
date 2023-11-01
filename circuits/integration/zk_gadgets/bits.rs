@@ -1,5 +1,5 @@
-//! Groups integration tests for the circuitry that converts between scalars and their
-//! bit representations
+//! Groups integration tests for the circuitry that converts between scalars and
+//! their bit representations
 
 use circuit_types::traits::MultiproverCircuitBaseType;
 use circuits::zk_gadgets::bits::MultiproverToBitsGadget;

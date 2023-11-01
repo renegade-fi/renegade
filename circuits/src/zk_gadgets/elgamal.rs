@@ -15,12 +15,14 @@ use rand::{CryptoRng, RngCore};
 
 use super::arithmetic::PrivateExpGadget;
 
-/// Implements an ElGamal gadget that verifies encryption of some plaintext under a private key
+/// Implements an ElGamal gadget that verifies encryption of some plaintext
+/// under a private key
 #[derive(Clone, Debug)]
 pub struct ElGamalGadget<const SCALAR_BITS: usize> {}
 
 impl<const SCALAR_BITS: usize> ElGamalGadget<SCALAR_BITS> {
-    /// Encrypts the given value with the given key and randomness in the constraint system
+    /// Encrypts the given value with the given key and randomness in the
+    /// constraint system
     pub fn encrypt<L, CS>(
         generator: Scalar,
         randomness: L,
@@ -32,8 +34,8 @@ impl<const SCALAR_BITS: usize> ElGamalGadget<SCALAR_BITS> {
         L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
     {
-        // Take the generator raised to the randomness, so that the secret key holder may
-        // reconstruct the shared secret
+        // Take the generator raised to the randomness, so that the secret key holder
+        // may reconstruct the shared secret
         let partial_shared_secret = PrivateExpGadget::<SCALAR_BITS>::exp_private_fixed_base(
             generator,
             randomness.clone(),
@@ -58,7 +60,8 @@ impl<const SCALAR_BITS: usize> ElGamalGadget<SCALAR_BITS> {
 pub struct ElGamalCiphertext {
     /// The partial shared secret; the generator raised to the randomness
     pub partial_shared_secret: Scalar,
-    /// The encrypted value; the pubkey raised to the randomness, multiplied with the message
+    /// The encrypted value; the pubkey raised to the randomness, multiplied
+    /// with the message
     pub encrypted_message: Scalar,
 }
 

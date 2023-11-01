@@ -1,4 +1,5 @@
-//! Groups integration tests for matching an order and proving `VALID MATCH MPC` collaboratively
+//! Groups integration tests for matching an order and proving `VALID MATCH MPC`
+//! collaboratively
 //!
 //! TODO: Benchmark with various simulated latencies
 
@@ -33,9 +34,11 @@ use rand::thread_rng;
 use test_helpers::mpc_network::execute_mock_mpc_with_delay;
 use tokio::runtime::Builder as RuntimeBuilder;
 
-/// A small delay, roughly what would be expected for nodes in the same availability zone
+/// A small delay, roughly what would be expected for nodes in the same
+/// availability zone
 const SMALL_DELAY_MS: u64 = 1;
-/// A medium sized delay, roughly what would be expected for nodes in the same region
+/// A medium sized delay, roughly what would be expected for nodes in the same
+/// region
 const MEDIUM_DELAY_MS: u64 = 10;
 /// A larger delay, perhaps between different autonomous systems
 const LARGE_DELAY_MS: u64 = 100;
@@ -113,8 +116,8 @@ pub fn bench_match_mpc_with_delay(c: &mut Criterion, delay: Duration) {
     });
 }
 
-/// Benchmark the constraint generation latency of the raw `match` MPC circuits with
-/// a given connection latency
+/// Benchmark the constraint generation latency of the raw `match` MPC circuits
+/// with a given connection latency
 pub fn bench_apply_constraints_with_delay(c: &mut Criterion, delay: Duration) {
     let mut group = c.benchmark_group("match-mpc");
 
@@ -157,10 +160,13 @@ pub fn bench_apply_constraints_with_delay(c: &mut Criterion, delay: Duration) {
                             )
                             .unwrap();
 
-                            // There is no great way to await the constraint generation, so we check that the constraints are
-                            // satisfied. This is not an exact way to measure execution time, but it is a decent approximation.
-                            // The benchmarks below measure time taken to generate constraints and prove, so they more directly
-                            // estimate constraint generation latency, but as part of a larger circuit
+                            // There is no great way to await the constraint generation, so we check
+                            // that the constraints are satisfied. This
+                            // is not an exact way to measure execution time, but it is a decent
+                            // approximation. The benchmarks below
+                            // measure time taken to generate constraints and prove, so they more
+                            // directly estimate constraint generation
+                            // latency, but as part of a larger circuit
                             let _satisfied = prover.constraints_satisfied().await;
                             start.elapsed()
                         },
@@ -177,7 +183,8 @@ pub fn bench_apply_constraints_with_delay(c: &mut Criterion, delay: Duration) {
     );
 }
 
-/// Benchmarks the time it takes to prove a `VALID MATCH MPC` statement with a given connection latency
+/// Benchmarks the time it takes to prove a `VALID MATCH MPC` statement with a
+/// given connection latency
 pub fn bench_prover_latency_with_delay(c: &mut Criterion, delay: Duration) {
     let mut group = c.benchmark_group("match-mpc");
 
@@ -203,7 +210,7 @@ pub fn bench_prover_latency_with_delay(c: &mut Criterion, delay: Duration) {
                         // Allocate the inputs in the constraint system
                         let (_comm, proof) = multiprover_prove::<ValidMatchMpcCircuit>(
                             witness.clone(),
-                            (), /* statement */
+                            (), // statement
                             fabric,
                         )
                         .unwrap();
@@ -227,55 +234,64 @@ pub fn bench_prover_latency_with_delay(c: &mut Criterion, delay: Duration) {
 // | Benchmarks |
 // --------------
 
-/// Benchmark the time taken to run the raw `match` MPC circuits with a small delay
+/// Benchmark the time taken to run the raw `match` MPC circuits with a small
+/// delay
 #[allow(non_snake_case)]
 pub fn bench_match_mpc__small_delay(c: &mut Criterion) {
     bench_match_mpc_with_delay(c, Duration::from_millis(SMALL_DELAY_MS));
 }
 
-/// Benchmark the time taken to run the raw `match` MPC circuits with a medium delay
+/// Benchmark the time taken to run the raw `match` MPC circuits with a medium
+/// delay
 #[allow(non_snake_case)]
 pub fn bench_match_mpc__medium_delay(c: &mut Criterion) {
     bench_match_mpc_with_delay(c, Duration::from_millis(MEDIUM_DELAY_MS));
 }
 
-/// Benchmark the time taken to run the raw `match` MPC circuits with a large delay
+/// Benchmark the time taken to run the raw `match` MPC circuits with a large
+/// delay
 #[allow(non_snake_case)]
 pub fn bench_match_mpc__large_delay(c: &mut Criterion) {
     bench_match_mpc_with_delay(c, Duration::from_millis(LARGE_DELAY_MS));
 }
 
-/// Benchmark the constraint generation latency of the raw `match` MPC circuits with a small delay
+/// Benchmark the constraint generation latency of the raw `match` MPC circuits
+/// with a small delay
 #[allow(non_snake_case)]
 pub fn bench_apply_constraints__small_delay(c: &mut Criterion) {
     bench_apply_constraints_with_delay(c, Duration::from_millis(SMALL_DELAY_MS));
 }
 
-/// Benchmark the constraint generation latency of the raw `match` MPC circuits with a medium delay
+/// Benchmark the constraint generation latency of the raw `match` MPC circuits
+/// with a medium delay
 #[allow(non_snake_case)]
 pub fn bench_apply_constraints__medium_delay(c: &mut Criterion) {
     bench_apply_constraints_with_delay(c, Duration::from_millis(MEDIUM_DELAY_MS));
 }
 
-/// Benchmark the constraint generation latency of the raw `match` MPC circuits with a large delay
+/// Benchmark the constraint generation latency of the raw `match` MPC circuits
+/// with a large delay
 #[allow(non_snake_case)]
 pub fn bench_apply_constraints__large_delay(c: &mut Criterion) {
     bench_apply_constraints_with_delay(c, Duration::from_millis(LARGE_DELAY_MS));
 }
 
-/// Benchmark the time it takes to prove a `VALID MATCH MPC` statement with a small delay
+/// Benchmark the time it takes to prove a `VALID MATCH MPC` statement with a
+/// small delay
 #[allow(non_snake_case)]
 pub fn bench_prover_latency__small_delay(c: &mut Criterion) {
     bench_prover_latency_with_delay(c, Duration::from_millis(SMALL_DELAY_MS));
 }
 
-/// Benchmark the time it takes to prove a `VALID MATCH MPC` statement with a medium delay
+/// Benchmark the time it takes to prove a `VALID MATCH MPC` statement with a
+/// medium delay
 #[allow(non_snake_case)]
 pub fn bench_prover_latency__medium_delay(c: &mut Criterion) {
     bench_prover_latency_with_delay(c, Duration::from_millis(MEDIUM_DELAY_MS));
 }
 
-/// Benchmark the time it takes to prove a `VALID MATCH MPC` statement with a large delay
+/// Benchmark the time it takes to prove a `VALID MATCH MPC` statement with a
+/// large delay
 #[allow(non_snake_case)]
 pub fn bench_prover_latency__large_delay(c: &mut Criterion) {
     bench_prover_latency_with_delay(c, Duration::from_millis(LARGE_DELAY_MS));
@@ -292,7 +308,7 @@ pub fn bench_verifier_latency(c: &mut Criterion) {
     group.bench_function(BenchmarkId::new("verifier", ""), |b| {
         b.iter(|| {
             assert!(verify_singleprover_proof::<ValidMatchMpcSingleProver>(
-                (), /* statement */
+                (), // statement
                 witness_comm.clone(),
                 proof.clone()
             )

@@ -15,14 +15,15 @@ use crate::{
     IntegrationTestArgs,
 };
 
-/// Tests looking up a wallet that has not been created yet, the task should fail
+/// Tests looking up a wallet that has not been created yet, the task should
+/// fail
 #[allow(non_snake_case)]
 async fn test_lookup_wallet__invalid_wallet(test_args: IntegrationTestArgs) -> Result<()> {
     let wallet = create_empty_api_wallet();
     let task = LookupWalletTask::new(
         Uuid::new_v4(),
-        Scalar::zero(), /* blinder_stream_seed */
-        Scalar::zero(), /* secret_share_stream_seed */
+        Scalar::zero(), // blinder_stream_seed
+        Scalar::zero(), // secret_share_stream_seed
         wallet.key_chain,
         test_args.starknet_client.clone(),
         test_args.network_sender.clone(),
@@ -56,7 +57,8 @@ async fn test_lookup_wallet__valid_wallet(test_args: IntegrationTestArgs) -> Res
         mock_wallet_update(&mut wallet, client).await?;
     }
 
-    // Check that the wallet is discoverable from contract state and correctly constructed
+    // Check that the wallet is discoverable from contract state and correctly
+    // constructed
     lookup_wallet_and_check_result(&wallet, blinder_seed, share_seed, test_args).await
 }
 integration_test_async!(test_lookup_wallet__valid_wallet);

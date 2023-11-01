@@ -30,13 +30,13 @@ pub const DEFAULT_MPC_SIZE_HINT: usize = 1_000_000;
 /// the beaver triplet source defined above
 pub fn setup_mpc_fabric(party_id: u64, local_port: u64, peer_port: u64, docker: bool) -> MpcFabric {
     // Listen on 0.0.0.0 (all network interfaces) with the given port
-    // We do this because listening on localhost when running in a container points to
-    // the container's loopback interface, not the docker bridge
+    // We do this because listening on localhost when running in a container points
+    // to the container's loopback interface, not the docker bridge
     let local_addr: SocketAddr = format!("0.0.0.0:{}", local_port).parse().unwrap();
 
-    // If the code is running in a docker compose setup (set by the --docker flag); attempt
-    // to lookup the peer via DNS. The compose networking interface will add an alias for
-    // party0 for the first peer and party1 for the second.
+    // If the code is running in a docker compose setup (set by the --docker flag);
+    // attempt to lookup the peer via DNS. The compose networking interface will
+    // add an alias for party0 for the first peer and party1 for the second.
     // If not running on docker, dial the peer directly on the loopback interface.
     let peer_addr: SocketAddr = {
         if docker {
@@ -84,7 +84,8 @@ where
     execute_mock_mpc_with_network(f, party0_conn, party1_conn).await
 }
 
-/// Run a mock MPC connected by a duplex stream that has an added delay as the mock network
+/// Run a mock MPC connected by a duplex stream that has an added delay as the
+/// mock network
 pub async fn execute_mock_mpc_with_delay<T, S, F>(f: F, delay: Duration) -> (T, T)
 where
     T: Send + 'static,

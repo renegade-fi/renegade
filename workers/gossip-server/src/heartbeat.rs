@@ -67,8 +67,9 @@ impl GossipProtocolExecutor {
         &self,
         message: HeartbeatMessage,
     ) -> Result<(), GossipError> {
-        // Peer info is deserialized as a mapping keyed with strings instead of WrappedPeerId
-        // Convert the keys to WrappedPeerIds before merging the state for easy comparison
+        // Peer info is deserialized as a mapping keyed with strings instead of
+        // WrappedPeerId Convert the keys to WrappedPeerIds before merging the
+        // state for easy comparison
         let mut incoming_peer_info: HashMap<WrappedPeerId, PeerInfo> = HashMap::new();
         for (str_peer_id, peer_info) in message.known_peers.clone().into_iter() {
             let peer_id = WrappedPeerId::from_str(&str_peer_id)
@@ -88,8 +89,8 @@ impl GossipProtocolExecutor {
         &self,
         incoming_peer_info: &HashMap<WrappedPeerId, PeerInfo>,
     ) -> Result<(), GossipError> {
-        // Acquire only a read lock to determine if the local peer index is out of date. If so, upgrade to
-        // a write lock and update the local index
+        // Acquire only a read lock to determine if the local peer index is out of date.
+        // If so, upgrade to a write lock and update the local index
         let mut peers_to_add = Vec::new();
         {
             let locked_peer_info = self.global_state.read_peer_index().await;
@@ -110,10 +111,11 @@ impl GossipProtocolExecutor {
         Ok(())
     }
 
-    /// Merges the wallet information from an incoming heartbeat with the locally
-    /// stored wallet information
+    /// Merges the wallet information from an incoming heartbeat with the
+    /// locally stored wallet information
     ///
-    /// In specific, the local peer must update its replicas list for any wallet it manages
+    /// In specific, the local peer must update its replicas list for any wallet
+    /// it manages
     async fn merge_wallets(&self, peer_wallets: HashMap<WalletIdentifier, WalletMetadata>) {
         let locked_wallets = self.global_state.read_wallet_index().await;
         let locked_peers = self.global_state.read_peer_index().await;
@@ -122,8 +124,8 @@ impl GossipProtocolExecutor {
             // This may happen for a multitude of reasons; one reason is that the local node
             // has expired a peer, but the remote node has not
             //
-            // In this case, we leave the expired peer in the invisibility window, waiting for
-            // the expired peer to expire on all other cluster peers
+            // In this case, we leave the expired peer in the invisibility window, waiting
+            // for the expired peer to expire on all other cluster peers
             wallet_info
                 .replicas
                 .retain(|replica| locked_peers.contains_peer(replica));
@@ -135,13 +137,14 @@ impl GossipProtocolExecutor {
         }
     }
 
-    /// Merges order book information from the incoming heartbeat request, requests order information
-    /// from peers if an order is not present
+    /// Merges order book information from the incoming heartbeat request,
+    /// requests order information from peers if an order is not present
     async fn merge_order_book(
         &self,
         incoming_orders: Vec<(OrderIdentifier, ClusterId)>,
     ) -> Result<(), GossipError> {
-        // Build a list of orders not stored locally and request order information for each one
+        // Build a list of orders not stored locally and request order information for
+        // each one
         let mut new_orders = Vec::new();
         {
             let locked_order_book = self.global_state.read_order_book().await;
@@ -178,13 +181,13 @@ impl GossipProtocolExecutor {
     ///     1. The peer is not already in the known peers
     ///     2. The peer has not been recently expired by the local party
     /// The second condition is necessary because if we expire a peer, the party
-    /// sending a heartbeat may not have expired the faulty peer yet, and may still
-    /// send the faulty peer as a known peer. So we exclude thought-to-be-faulty
-    /// peers for an "invisibility window"
+    /// sending a heartbeat may not have expired the faulty peer yet, and may
+    /// still send the faulty peer as a known peer. So we exclude
+    /// thought-to-be-faulty peers for an "invisibility window"
     ///
-    /// Returns a boolean indicating whether the peer is now indexed in the peer info
-    /// state. This value may be false if the peer has been recently expired and its
-    /// invisibility window has not elapsed
+    /// Returns a boolean indicating whether the peer is now indexed in the peer
+    /// info state. This value may be false if the peer has been recently
+    /// expired and its invisibility window has not elapsed
     pub(super) async fn add_new_peers(
         &self,
         new_peer_ids: &[WrappedPeerId],
@@ -204,7 +207,8 @@ impl GossipProtocolExecutor {
                             return false;
                         }
 
-                        // Remove the peer from the expiry cache if its invisibility window has elapsed
+                        // Remove the peer from the expiry cache if its invisibility window has
+                        // elapsed
                         locked_expiry_cache.pop_entry(*peer_id);
                     }
 
@@ -225,7 +229,8 @@ impl GossipProtocolExecutor {
         Ok(true)
     }
 
-    /// Adds new addresses to the address index in the network manager so that they may be dialed on outbound
+    /// Adds new addresses to the address index in the network manager so that
+    /// they may be dialed on outbound
     fn add_new_addrs(
         &self,
         peer_ids: &[WrappedPeerId],
@@ -245,7 +250,8 @@ impl GossipProtocolExecutor {
         Ok(())
     }
 
-    /// Sends heartbeat message to peers to exchange network information and ensure liveness
+    /// Sends heartbeat message to peers to exchange network information and
+    /// ensure liveness
     pub(super) async fn send_heartbeat(
         &self,
         recipient_peer_id: WrappedPeerId,
@@ -301,9 +307,10 @@ impl GossipProtocolExecutor {
         // Remove expired peers from global state
         self.global_state.remove_peer(&peer_id).await;
 
-        // Add peers to expiry cache for the duration of their invisibility window. This ensures that
-        // we do not add the expired peer back to the global state until some time has elapsed. Without
-        // this check, another peer may send us a heartbeat attesting to the expired peer's liveness,
+        // Add peers to expiry cache for the duration of their invisibility window. This
+        // ensures that we do not add the expired peer back to the global state
+        // until some time has elapsed. Without this check, another peer may
+        // send us a heartbeat attesting to the expired peer's liveness,
         // having itself not expired the peer locally.
         let mut locked_expiry_cache = self.peer_expiry_cache.write().await;
         locked_expiry_cache.put(peer_id, now);
@@ -321,9 +328,9 @@ impl GossipProtocolExecutor {
 pub(super) struct HeartbeatTimer;
 
 impl HeartbeatTimer {
-    /// Spawns two timers, one for sending intra-cluster heartbeat messages, another for inter-cluster
-    /// The interval parameters specify how often the timers should cycle through all peers in their
-    /// target list
+    /// Spawns two timers, one for sending intra-cluster heartbeat messages,
+    /// another for inter-cluster The interval parameters specify how often
+    /// the timers should cycle through all peers in their target list
     pub fn new(
         job_queue: TokioSender<GossipServerJob>,
         intra_cluster_interval_ms: u64,
@@ -373,10 +380,12 @@ impl HeartbeatTimer {
 
     /// Main timing loop for heartbeats sent to non-cluster nodes
     ///
-    /// We space out the heartbeat requests to give a better traffic pattern. This means that in each
-    /// time quantum, one heartbeat is scheduled. We compute the length of a time quantum with respect
-    /// to the heartbeat period constant defined above. That is, we specify the interval in between
-    /// heartbeats for a given peer, and space out all heartbeats in that interval
+    /// We space out the heartbeat requests to give a better traffic pattern.
+    /// This means that in each time quantum, one heartbeat is scheduled. We
+    /// compute the length of a time quantum with respect to the heartbeat
+    /// period constant defined above. That is, we specify the interval in
+    /// between heartbeats for a given peer, and space out all heartbeats in
+    /// that interval
     async fn inter_cluster_execution_loop(
         job_queue: TokioSender<GossipServerJob>,
         wait_period: Duration,
@@ -391,8 +400,9 @@ impl HeartbeatTimer {
                 let peer_info_locked = global_state.read_peer_index().await;
                 let next_peer = peer_info_locked.nth(peer_index).await;
 
-                // Skip if we have overflowed the list or if the next peer is in the local peer's cluster;
-                // a separate timer will enqueue intra-cluster heartbeats at a faster rate
+                // Skip if we have overflowed the list or if the next peer is in the local
+                // peer's cluster; a separate timer will enqueue intra-cluster
+                // heartbeats at a faster rate
                 let mut next_peer_id = None;
                 if let Some(peer_info) = next_peer {
                     if peer_info.get_cluster_id() != local_cluster {
@@ -410,14 +420,15 @@ impl HeartbeatTimer {
                 }
             }
 
-            // Do not simply (index + 1) % count; this will skip the first few elements if the list of known
-            // peers has shrunk since the last iteration
+            // Do not simply (index + 1) % count; this will skip the first few elements if
+            // the list of known peers has shrunk since the last iteration
             peer_index += 1;
             if peer_index >= peer_count {
                 peer_index = 0;
             }
 
-            // Compute the time quantum to sleep for, may change between loops if peers are added or removed
+            // Compute the time quantum to sleep for, may change between loops if peers are
+            // added or removed
             let current_time_quantum = wait_period / (peer_count as u32);
             thread::sleep(current_time_quantum);
         }
@@ -425,8 +436,8 @@ impl HeartbeatTimer {
 
     /// The main timing loop for heartbeats send to in-cluster peers
     ///
-    /// Slightly more readable to break this out into its own method as opposed to
-    /// adding more control flow statements above
+    /// Slightly more readable to break this out into its own method as opposed
+    /// to adding more control flow statements above
     async fn intra_cluster_execution_loop(
         job_queue: TokioSender<GossipServerJob>,
         wait_period: Duration,
@@ -455,14 +466,15 @@ impl HeartbeatTimer {
                 }
             }
 
-            // Do not simply (index + 1) % count; this will skip the first few elements if the list of known
-            // peers has shrunk since the last iteration
+            // Do not simply (index + 1) % count; this will skip the first few elements if
+            // the list of known peers has shrunk since the last iteration
             peer_index += 1;
             if peer_index >= peer_count {
                 peer_index = 0;
             }
 
-            // Compute the time quantum to sleep for, may change between loops if peers are added or removed
+            // Compute the time quantum to sleep for, may change between loops if peers are
+            // added or removed
             let current_time_quantum = wait_period / (peer_count as u32);
             thread::sleep(current_time_quantum);
         }

@@ -87,8 +87,8 @@ lazy_static! {
     };
 }
 
-/// The core handler for UniswapV3, responsible for defining Swap event filters, streaming events,
-/// and parsing as PriceReports.
+/// The core handler for UniswapV3, responsible for defining Swap event filters,
+/// streaming events, and parsing as PriceReports.
 pub struct UniswapV3Connection {
     /// The underlying price stream
     price_stream: Box<dyn Stream<Item = PriceStreamType> + Unpin + Send>,
@@ -122,8 +122,8 @@ impl UniswapV3Connection {
             })
             .unwrap();
 
-        // Extract the `sqrtPriceX96` and convert it to the marginal price of the Uniswapv3 pool,
-        // as per: https://docs.uniswap.org/sdk/v3/guides/fetching-prices#understanding-sqrtprice
+        // Extract the `sqrtPriceX96` and convert it to the marginal price of the
+        // Uniswapv3 pool, as per: https://docs.uniswap.org/sdk/v3/guides/fetching-prices#understanding-sqrtprice
         let sqrt_price_x96 = &swap.params[4].value;
         let sqrt_price_x96 = match sqrt_price_x96 {
             ethabi::Token::Uint(sqrt_price_x96) => sqrt_price_x96,
@@ -138,7 +138,8 @@ impl UniswapV3Connection {
             (price_numerator, price_denominator)
         };
 
-        // The best way to convert U256 to f64 is unfortunately to parse via Strings. Big L.
+        // The best way to convert U256 to f64 is unfortunately to parse via Strings.
+        // Big L.
         let price_numerator: f64 = price_numerator.to_string().parse().unwrap();
         let price_denominator: f64 = price_denominator.to_string().parse().unwrap();
 
@@ -228,10 +229,10 @@ impl UniswapV3Connection {
         ))
     }
 
-    /// Given the base_token and quote_token, finds the address of the UniswapV3 pool with highest
-    /// TVL among all fee tiers (1bp, 5bp, 30bp, 100bp). In addition, we return a boolean
-    /// is_flipped that reflects whether the assets are flipped (i.e., quote per base) in the
-    /// Uniswap pool
+    /// Given the base_token and quote_token, finds the address of the UniswapV3
+    /// pool with highest TVL among all fee tiers (1bp, 5bp, 30bp, 100bp).
+    /// In addition, we return a boolean is_flipped that reflects whether
+    /// the assets are flipped (i.e., quote per base) in the Uniswap pool
     async fn get_pool_address(
         base_token: &Token,
         quote_token: &Token,
@@ -299,8 +300,8 @@ impl UniswapV3Connection {
             base_balances.push(base_balance);
         }
 
-        // Given the derived pool addresses and base balances, pick the pool address with the
-        // highest base balance
+        // Given the derived pool addresses and base balances, pick the pool address
+        // with the highest base balance
         let mut max_base_balance = U256::zero();
         let mut max_pool_idx: usize = 0;
         for (i, base_balance) in base_balances.into_iter().enumerate() {
@@ -365,8 +366,8 @@ impl ExchangeConnection for UniswapV3Connection {
         let (base_filter, is_flipped) = Self::create_swap_filter(
             &base_token,
             &quote_token,
-            None, /* from_block */
-            None, /* to_block */
+            None, // from_block
+            None, // to_block
             &web3_connection,
         )
         .await?;
@@ -389,7 +390,7 @@ impl ExchangeConnection for UniswapV3Connection {
                             Some(Err(ExchangeConnectionError::ConnectionHangup(
                                 e.to_string(),
                             )))
-                        }
+                        },
                     }
                 });
 

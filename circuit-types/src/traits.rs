@@ -4,17 +4,22 @@
 //! and inherit safety properties from the type checker and linters (i.e. unused
 //! witness elements)
 //!
-//! We group types of types by traits which associate with other types. For example, types
-//! allocated in an MPC circuit implement different traits than ZK circuit types do, due to
-//! their different underlying primitives
+//! We group types of types by traits which associate with other types. For
+//! example, types allocated in an MPC circuit implement different traits than
+//! ZK circuit types do, due to their different underlying primitives
 //!
 //! At a high level the types are:
-//!     - Base types: application level types that have semantically meaningful values
-//!     - Single-prover variable types: base types allocated in a single-prover constraint system
-//!     - Single-prover commitment types: commitments to base types in a single-prover system
+//!     - Base types: application level types that have semantically meaningful
+//!       values
+//!     - Single-prover variable types: base types allocated in a single-prover
+//!       constraint system
+//!     - Single-prover commitment types: commitments to base types in a
+//!       single-prover system
 //!     - MPC types: base types that have been allocated in an MPC fabric
-//!     - Multi-prover variable types: base types allocated in a multi-prover constraint system
-//!     - Multi-prover commitment types: commitments to base types in a multi-prover system
+//!     - Multi-prover variable types: base types allocated in a multi-prover
+//!       constraint system
+//!     - Multi-prover commitment types: commitments to base types in a
+//!       multi-prover system
 //!     - Linkable types: Types that may be commitment linked across proofs
 //!     - Secret share types: Additive sharings of a base type
 
@@ -60,18 +65,21 @@ const ERR_TOO_FEW_COMMITMENTS: &str = "from_commitments: Invalid number of commi
 // | Type Traits |
 // ---------------
 
-/// Implementing types are base (application level) types that define serialization to/from `Scalars`
+/// Implementing types are base (application level) types that define
+/// serialization to/from `Scalars`
 ///
-/// Commitment, variable, MPC, etc types are implemented automatically from serialization and deserialization
+/// Commitment, variable, MPC, etc types are implemented automatically from
+/// serialization and deserialization
 #[async_trait]
 pub trait BaseType: Clone {
-    /// Convert the base type to its serialized scalar representation in the circuit
+    /// Convert the base type to its serialized scalar representation in the
+    /// circuit
     fn to_scalars(&self) -> Vec<Scalar>;
-    /// Convert the base type to its serialized scalar representation including commitment
-    /// linking information
+    /// Convert the base type to its serialized scalar representation including
+    /// commitment linking information
     ///
-    /// The default implementation does nothing beyond what `to_scalars` does, but commitment
-    /// linked types should override this method
+    /// The default implementation does nothing beyond what `to_scalars` does,
+    /// but commitment linked types should override this method
     fn to_scalars_with_linking(&self) -> Vec<Scalar> {
         self.to_scalars()
     }
@@ -80,9 +88,9 @@ pub trait BaseType: Clone {
 
     /// Share the plaintext value with the counterparty over an MPC fabric
     ///
-    /// This method is added to the `BaseType` trait for maximum flexibility, so that
-    /// types may be shared without requiring them to implement the full `MpcBaseType`
-    /// trait
+    /// This method is added to the `BaseType` trait for maximum flexibility, so
+    /// that types may be shared without requiring them to implement the
+    /// full `MpcBaseType` trait
     async fn share_public(&self, owning_party: PartyId, fabric: MpcFabric) -> Self {
         let self_scalars = self.clone().to_scalars_with_linking();
         let res_scalars = fabric
@@ -143,8 +151,8 @@ pub trait CircuitBaseType: BaseType {
 
     /// Get the randomness used to commit to this value
     ///
-    /// We make this method generically defined so that linkable types may store and
-    /// re-use their commitment randomness between proofs
+    /// We make this method generically defined so that linkable types may store
+    /// and re-use their commitment randomness between proofs
     fn commitment_randomness<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Vec<Scalar>;
 }
 
@@ -167,8 +175,8 @@ pub trait CircuitVarType<L: LinearCombinationLike>: Clone {
     }
 }
 
-/// Implementing types are commitments to base types that have an analogous variable
-/// type allocated with them
+/// Implementing types are commitments to base types that have an analogous
+/// variable type allocated with them
 pub trait CircuitCommitmentType: Clone {
     /// The variable type that this type is a commitment to
     type VarType: CircuitVarType<Variable>;
@@ -215,16 +223,18 @@ pub trait MpcType: Clone {
     type NativeType: BaseType;
     /// Get a reference to the underlying MPC fabric
     fn fabric(&self) -> &MpcFabric;
-    /// Convert from an iterable of authenticated scalars: scalars that have been
-    /// allocated in an MPC fabric
+    /// Convert from an iterable of authenticated scalars: scalars that have
+    /// been allocated in an MPC fabric
     fn from_authenticated_scalars<I: Iterator<Item = AuthenticatedScalarResult>>(i: &mut I)
         -> Self;
     /// Convert to a vector of authenticated scalars
     fn to_authenticated_scalars(&self) -> Vec<AuthenticatedScalarResult>;
-    /// Convert to a vector of authenticated scalars with proof linking information included
+    /// Convert to a vector of authenticated scalars with proof linking
+    /// information included
     ///
-    /// By default this method does nothing beyond what `to_authenticated_scalars` does, but
-    /// commitment linked types should override this method to include commitment randomness
+    /// By default this method does nothing beyond what
+    /// `to_authenticated_scalars` does, but commitment linked types should
+    /// override this method to include commitment randomness
     fn to_authenticated_scalars_with_linking(&self) -> Vec<AuthenticatedScalarResult> {
         self.to_authenticated_scalars()
     }
@@ -271,11 +281,11 @@ impl MpcLinearCombinationLike for MpcLinearCombination {}
 pub trait MultiproverCircuitBaseType: MpcType {
     /// The base type of the multiprover circuit type
     type BaseType: CircuitBaseType;
-    /// The multiprover constraint system variable type that results when committing
-    /// to the base type in a multiprover constraint system
+    /// The multiprover constraint system variable type that results when
+    /// committing to the base type in a multiprover constraint system
     type MultiproverVarType<L: MpcLinearCombinationLike>: MultiproverCircuitVariableType<L>;
-    /// The shared commitment type that results when committing to the base type in a multiprover
-    /// constraint system
+    /// The shared commitment type that results when committing to the base type
+    /// in a multiprover constraint system
     type MultiproverCommType: MultiproverCircuitCommitmentType;
 
     /// Commit to the value in a multiprover constraint system
@@ -326,9 +336,10 @@ pub trait MultiproverCircuitCommitmentType: Clone + Sync {
     type BaseCommitType: CircuitCommitmentType;
     /// Deserialization form an iterator over MPC allocated commitments
     ///
-    /// The transcript opens each commitment as it is generated so that the transcript may
-    /// be evaluated in plaintext (outside of the MPC circuit). For this reason, the primitive
-    /// type of a multiprover commitment type is the result of this opening, which may resolve to
+    /// The transcript opens each commitment as it is generated so that the
+    /// transcript may be evaluated in plaintext (outside of the MPC
+    /// circuit). For this reason, the primitive type of a multiprover
+    /// commitment type is the result of this opening, which may resolve to
     /// an error if either party cheats
     fn from_mpc_commitments<I: Iterator<Item = AuthenticatedStarkPointOpenResult>>(
         i: &mut I,
@@ -352,7 +363,8 @@ pub trait MultiproverCircuitCommitmentType: Clone + Sync {
 
 // --- Proof Linkable Types --- //
 
-/// Implementing types have an analogous linkable type that may be shared between proofs
+/// Implementing types have an analogous linkable type that may be shared
+/// between proofs
 pub trait LinkableBaseType: BaseType {
     /// The linkable type that re-uses commitment randomness between commitments
     type Linkable: LinkableType;
@@ -360,8 +372,8 @@ pub trait LinkableBaseType: BaseType {
     fn to_linkable(&self) -> Self::Linkable;
 }
 
-/// Implementing types are proof-linkable analogs of a base type, which hold onto their commitment
-/// randomness and re-use it between proofs
+/// Implementing types are proof-linkable analogs of a base type, which hold
+/// onto their commitment randomness and re-use it between proofs
 pub trait LinkableType: Clone + BaseType {
     /// The base type this type is a linkable commitment for
     type BaseType: LinkableBaseType;
@@ -374,7 +386,8 @@ pub trait LinkableType: Clone + BaseType {
 
 // --- Secret Share Types --- //
 
-/// Implementing types may be secret shared via the `SecretShareType` trait below
+/// Implementing types may be secret shared via the `SecretShareType` trait
+/// below
 pub trait SecretShareBaseType: BaseType {
     /// The secret share type for this base type
     type ShareType: SecretShareType;
@@ -398,9 +411,10 @@ pub trait SecretShareType: Sized + BaseType {
 
     /// Add two sets of shares to recover the base type
     ///
-    /// We do not require that shares implement `Add` because we wish to default implement
-    /// traits on generics types (e.g. `[T]` where `T: SecretShareType`). Requiring an additional
-    /// trait bound on `T` would prevent this.
+    /// We do not require that shares implement `Add` because we wish to default
+    /// implement traits on generics types (e.g. `[T]` where `T:
+    /// SecretShareType`). Requiring an additional trait bound on `T` would
+    /// prevent this.
     fn add_shares(self, rhs: Self) -> Self::Base {
         let mut res_scalars = self
             .to_scalars()
@@ -441,9 +455,10 @@ pub trait SecretShareVarType<L: LinearCombinationLike>: Sized + CircuitVarType<L
 
     /// Add two sets of shares to recover the base type
     ///
-    /// We do not require that shares implement `Add` because we wish to default implement
-    /// traits on generics types (e.g. `[T]` where `T: SecretShareType`). Requiring an additional
-    /// trait bound on `T` would prevent this.
+    /// We do not require that shares implement `Add` because we wish to default
+    /// implement traits on generics types (e.g. `[T]` where `T:
+    /// SecretShareType`). Requiring an additional trait bound on `T` would
+    /// prevent this.
     fn add_shares<L1, R>(self, rhs: R) -> Self::Base
     where
         L1: LinearCombinationLike,
@@ -1047,19 +1062,20 @@ impl<const N: usize, L: LinearCombinationLike, T: SecretShareVarType<L>> SecretS
 
 /// Defines the abstraction of a Circuit.
 ///
-/// A circuit represents a provable unit, a complete NP statement that takes as input
-/// a series of values, commits to them, and applies constraints
+/// A circuit represents a provable unit, a complete NP statement that takes as
+/// input a series of values, commits to them, and applies constraints
 ///
 /// The input types are broken out into the witness type and the statement type.
-/// The witness type represents the secret witness that the prover has access to but
-/// that the verifier does not. The statement is the set of public inputs and any
-/// other circuit meta-parameters that both prover and verifier have access to.
+/// The witness type represents the secret witness that the prover has access to
+/// but that the verifier does not. The statement is the set of public inputs
+/// and any other circuit meta-parameters that both prover and verifier have
+/// access to.
 pub trait SingleProverCircuit {
-    /// The witness type, given only to the prover, which generates a blinding commitment
-    /// that can be given to the verifier
+    /// The witness type, given only to the prover, which generates a blinding
+    /// commitment that can be given to the verifier
     type Witness: CircuitBaseType;
-    /// The statement type, given to both the prover and verifier, parameterizes the underlying
-    /// NP statement being proven
+    /// The statement type, given to both the prover and verifier, parameterizes
+    /// the underlying NP statement being proven
     type Statement: CircuitBaseType;
 
     /// The size of the bulletproof generators that must be allocated
@@ -1108,8 +1124,8 @@ pub trait SingleProverCircuit {
 
     /// Verify a proof of the statement represented by the circuit
     ///
-    /// The verifier has access to the statement variables, but only hiding (and binding)
-    /// commitments to the witness variables
+    /// The verifier has access to the statement variables, but only hiding (and
+    /// binding) commitments to the witness variables
     fn verify(
         witness_commitment: <Self::Witness as CircuitBaseType>::CommitmentType,
         statement: Self::Statement,
@@ -1132,21 +1148,23 @@ pub trait SingleProverCircuit {
     }
 }
 
-/// Defines the abstraction of a Circuit that is evaluated in a multiprover setting
+/// Defines the abstraction of a Circuit that is evaluated in a multiprover
+/// setting
 ///
-/// A circuit represents a provable unit, a complete NP statement that takes as input
-/// a series of values, commits to them, and applies constraints.
+/// A circuit represents a provable unit, a complete NP statement that takes as
+/// input a series of values, commits to them, and applies constraints.
 ///
 /// The input types are broken out into the witness type and the statement type.
-/// The witness type represents the secret witness that the prover has access to but
-/// that the verifier does not. The statement is the set of public inputs and any
-/// other circuit meta-parameters that both prover and verifier have access to.
+/// The witness type represents the secret witness that the prover has access to
+/// but that the verifier does not. The statement is the set of public inputs
+/// and any other circuit meta-parameters that both prover and verifier have
+/// access to.
 pub trait MultiProverCircuit {
-    /// The witness type, given only to the prover, which generates a blinding commitment
-    /// that can be given to the verifier
+    /// The witness type, given only to the prover, which generates a blinding
+    /// commitment that can be given to the verifier
     type Witness: MultiproverCircuitBaseType;
-    /// The statement type, given to both the prover and verifier, parameterizes the underlying
-    /// NP statement being proven
+    /// The statement type, given to both the prover and verifier, parameterizes
+    /// the underlying NP statement being proven
     type Statement: Clone + MultiproverCircuitBaseType + MpcType;
 
     /// The size of the bulletproof generators that must be allocated
@@ -1214,13 +1232,14 @@ pub trait MultiProverCircuit {
 
     /// Verify a proof of the statement represented by the circuit
     ///
-    /// The verifier has access to the statement variables, but only hiding (and binding)
-    /// commitments to the witness variables
+    /// The verifier has access to the statement variables, but only hiding (and
+    /// binding) commitments to the witness variables
     ///
-    /// The verifier in this case provides the same interface as the single prover case.
-    /// The proof and commitments to the witness should be "opened" by having the MPC
-    /// parties reconstruct the underlying secret from their shares. Then the opened
-    /// proof and commitments can be passed to the verifier.
+    /// The verifier in this case provides the same interface as the single
+    /// prover case. The proof and commitments to the witness should be
+    /// "opened" by having the MPC parties reconstruct the underlying secret
+    /// from their shares. Then the opened proof and commitments can be
+    /// passed to the verifier.
     fn verify(
         witness_commitments:
             <<Self::Witness as MultiproverCircuitBaseType>::MultiproverCommType

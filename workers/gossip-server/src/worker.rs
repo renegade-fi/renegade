@@ -71,8 +71,8 @@ impl Worker for GossipServer {
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
-        // Start the heartbeat executor, this worker manages pinging peers and responding to
-        // heartbeat requests from peers
+        // Start the heartbeat executor, this worker manages pinging peers and
+        // responding to heartbeat requests from peers
         let protocol_executor = GossipProtocolExecutor::new(
             self.config.network_sender.clone(),
             self.config.job_receiver.take().unwrap(),

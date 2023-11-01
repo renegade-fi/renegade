@@ -25,21 +25,21 @@ macro_rules! integration_test_main {
 
         use $crate::types::{IntegrationTest, IntegrationTestFn};
 
-        /// Defines a wrapper type around the test args so that the macro caller can take
-        /// inventory on the IntegrationTest type which is owned by the `integration-helpers`
-        /// package.
+        /// Defines a wrapper type around the test args so that the macro caller can
+        /// take inventory on the IntegrationTest type which is owned by the
+        /// `integration-helpers` package.
         ///
-        /// This is necessary because the inventory::collect macro implements a foreign trait
-        /// on the type it accepts
+        /// This is necessary because the inventory::collect macro implements a foreign
+        /// trait on the type it accepts
         struct TestWrapper(IntegrationTest<$test_args>);
 
         // Collect the statically defined tests into an iterable
         inventory::collect!(TestWrapper);
 
-        /// Defines a secondary CLI that allows the test harness to simply no-op if `--skip integration`
-        /// is passed. This is useful when running only unit tests from the workspace level, i.e.:
-        ///     cargo test --workspace -- --skip integration
-        /// will properly skip tests run by this harness
+        /// Defines a secondary CLI that allows the test harness to simply no-op if
+        /// `--skip integration` is passed. This is useful when running only unit tests
+        /// from the workspace level, i.e.:     cargo test --workspace -- --skip
+        /// integration will properly skip tests run by this harness
 
         #[derive(Debug, Clone, Parser)]
         #[command(author, version, about, long_about=None)]
@@ -94,8 +94,9 @@ macro_rules! integration_test_main {
                     }
 
                     if verbose {
-                        // Flush the write buffer before the test executes. We print success or failure on the same
-                        // line as the "Running", but if the test panics, we want to know which test was run
+                        // Flush the write buffer before the test executes. We print success or
+                        // failure on the same line as the "Running", but if the
+                        // test panics, we want to know which test was run
                         print!("Running {}... ", test.name);
                         stdout().flush().unwrap();
                     }
@@ -103,7 +104,7 @@ macro_rules! integration_test_main {
                         IntegrationTestFn::SynchronousFn(f) => f(test_args.clone()),
                         IntegrationTestFn::AsynchronousFn(f) => {
                             Handle::current().block_on(f(test_args.clone()))
-                        }
+                        },
                     };
 
                     all_success &= validate_success(res, verbose);
@@ -127,7 +128,8 @@ macro_rules! integration_test_main {
             exit(-1);
         }
 
-        /// Prints a success or failure message, returns true if success, false if failure
+        /// Prints a success or failure message, returns true if success, false if
+        /// failure
         #[inline]
         fn validate_success(res: eyre::Result<()>, verbose: bool) -> bool {
             if res.is_ok() {

@@ -70,7 +70,8 @@ async fn test_poseidon_multiprover(test_args: IntegrationTestArgs) -> Result<()>
     }
 }
 
-/// Tests the case in which the witness is invalid; i.e. not the correct pre-image
+/// Tests the case in which the witness is invalid; i.e. not the correct
+/// pre-image
 async fn test_poseidon_multiprover_invalid(test_args: IntegrationTestArgs) -> Result<()> {
     // Sample a random input
     // Each party samples a random set of 5 values

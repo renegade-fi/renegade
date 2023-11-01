@@ -63,8 +63,8 @@ lazy_static! {
 
 /// Represents a fixed point number not yet allocated in the constraint system
 ///
-/// This is useful for centralizing conversion logic to provide an abstract to_scalar,
-/// from_scalar interface to modules that commit to this value
+/// This is useful for centralizing conversion logic to provide an abstract
+/// to_scalar, from_scalar interface to modules that commit to this value
 #[circuit_type(
     singleprover_circuit,
     mpc,
@@ -86,12 +86,14 @@ impl FixedPoint {
         Self { repr: val_shifted }
     }
 
-    /// Create a new fixed point representation, rounding down to the nearest representable float
+    /// Create a new fixed point representation, rounding down to the nearest
+    /// representable float
     pub fn from_f32_round_down(val: f32) -> Self {
         Self::from_f64_round_down(val as f64)
     }
 
-    /// Create a new fixed point representation, rounding up to the nearest representable float
+    /// Create a new fixed point representation, rounding up to the nearest
+    /// representable float
     pub fn from_f64_round_down(val: f64) -> Self {
         let shifted_val = val * (2u64.pow(DEFAULT_FP_PRECISION as u32) as f64);
         Self {
@@ -114,7 +116,8 @@ impl FixedPoint {
         }
     }
 
-    /// Rounds down the given value to an integer and returns the integer representation
+    /// Rounds down the given value to an integer and returns the integer
+    /// representation
     pub fn floor(&self) -> Scalar {
         // Clear the bottom `DEFAULT_FP_PRECISION` bits
         let mut self_bigint = scalar_to_bigint(&self.repr);
@@ -277,8 +280,8 @@ impl From<LinkableFixedPoint> for FixedPoint {
 /// A commitment to a fixed-precision variable
 
 impl<L: LinearCombinationLike> FixedPointVar<L> {
-    /// Evaluate the given fixed point variable in the constraint system and return the underlying
-    /// value as a floating point
+    /// Evaluate the given fixed point variable in the constraint system and
+    /// return the underlying value as a floating point
     ///
     /// Note: not optimized, used mostly for tests
     pub fn eval<CS: RandomizableConstraintSystem>(&self, cs: &CS) -> f32 {
@@ -291,13 +294,14 @@ impl<L: LinearCombinationLike> FixedPointVar<L> {
         shifted_eval.to_f32().unwrap()
     }
 
-    /// Multiplication cannot be implemented directly via the std::ops trait, because it needs
-    /// access to a constraint system
+    /// Multiplication cannot be implemented directly via the std::ops trait,
+    /// because it needs access to a constraint system
     ///
-    /// When we multiply two fixed point variables (say x and y for z = x * y, represented as
-    /// x' = x * 2^M);
+    /// When we multiply two fixed point variables (say x and y for z = x * y,
+    /// represented as x' = x * 2^M);
     /// we get the result x' * y' = x * 2^M * y * 2^M = z' * 2^M,
-    /// so we need an extra reduction step in which we multiply the result by 2^-M
+    /// so we need an extra reduction step in which we multiply the result by
+    /// 2^-M
     pub fn mul_fixed_point<CS: RandomizableConstraintSystem>(
         &self,
         rhs: &Self,
@@ -311,9 +315,10 @@ impl<L: LinearCombinationLike> FixedPointVar<L> {
 
     /// Multiplication with an integer value
     ///
-    /// This needs no reduction step as this is implicitly done by *not* converting the integer to a fixed-point
-    /// representation. I.e. instead of taking x * 2^M * y * 2^M * 2^-M, we can just directly
-    /// multiply x * 2^M * y
+    /// This needs no reduction step as this is implicitly done by *not*
+    /// converting the integer to a fixed-point representation. I.e. instead
+    /// of taking x * 2^M * y * 2^M * 2^-M, we can just directly multiply x
+    /// * 2^M * y
     pub fn mul_integer<L1, CS>(&self, rhs: L1, cs: &mut CS) -> FixedPointVar<LinearCombination>
     where
         L1: LinearCombinationLike,
@@ -360,7 +365,8 @@ impl<L: LinearCombinationLike> Add<FixedPointVar<L>> for Variable {
     }
 }
 
-/// Negation of a fixed point variable, simply negate the underlying representation
+/// Negation of a fixed point variable, simply negate the underlying
+/// representation
 impl<L: LinearCombinationLike> Neg for FixedPointVar<L> {
     type Output = FixedPointVar<LinearCombination>;
 
@@ -546,8 +552,8 @@ impl From<AuthenticatedFixedPointVar<MpcVariable>>
 impl<L: MpcLinearCombinationLike> AuthenticatedFixedPointVar<L> {
     /// Multiply with another fixed point variable
     ///
-    /// We cannot implement the `Mul` trait directly, because the variables need access
-    /// to their constraint system
+    /// We cannot implement the `Mul` trait directly, because the variables need
+    /// access to their constraint system
     pub fn mul_fixed_point<CS: MpcRandomizableConstraintSystem>(
         &self,
         rhs: &Self,
@@ -733,7 +739,8 @@ mod fixed_point_tests {
             let fp1 = rng.gen_range(0.0..1000000.);
             let fp2 = rng.gen_range(0.0..1000000.);
 
-            // Compute expected res in f64 to ensure we have enough representational capacity
+            // Compute expected res in f64 to ensure we have enough representational
+            // capacity
             let expected_res = (fp1 as f64) + (fp2 as f64);
 
             let mut expected_repr = BigDecimal::try_from(expected_res).unwrap();
@@ -749,8 +756,8 @@ mod fixed_point_tests {
 
             let expected_repr_bigint = expected_repr.to_bigint().unwrap();
 
-            // Computing the actual expected value has some room for floating point mis-precision;
-            // as a result we constraint the values to be close
+            // Computing the actual expected value has some room for floating point
+            // mis-precision; as a result we constraint the values to be close
             assert!((res_var_repr - expected_repr_bigint).abs() < BigInt::from(10u8));
         }
     }
@@ -779,8 +786,9 @@ mod fixed_point_tests {
             let res_var = fp_var.mul_integer(int_var, &mut prover);
             let res = res_var.eval(&prover);
 
-            // Using floating points as a base comparison loses some precision, especially for large
-            // numbers. Instead just check that the floating point error is sufficiently small
+            // Using floating points as a base comparison loses some precision, especially
+            // for large numbers. Instead just check that the floating point
+            // error is sufficiently small
             assert!((res - expected_res).abs() / res < 0.001);
         }
     }
@@ -808,8 +816,9 @@ mod fixed_point_tests {
             let res_var = fp_var + int_var;
             let res = res_var.eval(&prover);
 
-            // Using floating points as a base comparison loses some precision, especially for large
-            // numbers. Instead just check that the floating point error is sufficiently small
+            // Using floating points as a base comparison loses some precision, especially
+            // for large numbers. Instead just check that the floating point
+            // error is sufficiently small
             assert!((res - expected_res).abs() / res < 0.001);
         }
     }

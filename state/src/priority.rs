@@ -46,8 +46,8 @@ impl OrderPriority {
 /// cluster and order granularity
 ///
 /// A cluster can have its priority lowered from the default for toxic behavior
-/// (dropping MPCs, unreliable heartbeats, faulty proofs, etc). An order may have
-/// its priority raised as a result of known IoIs on the order
+/// (dropping MPCs, unreliable heartbeats, faulty proofs, etc). An order may
+/// have its priority raised as a result of known IoIs on the order
 #[derive(Debug, Default)]
 pub struct HandshakePriorityStore {
     /// A mapping from cluster ID to priority

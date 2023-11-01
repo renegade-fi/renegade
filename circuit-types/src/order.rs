@@ -29,8 +29,8 @@ use crate::{
     LinkableCommitment,
 };
 
-/// Represents the base type of an open order, including the asset pair, the amount, price,
-/// and direction
+/// Represents the base type of an open order, including the asset pair, the
+/// amount, price, and direction
 #[circuit_type(
     serde,
     singleprover_circuit,
@@ -60,8 +60,9 @@ pub struct Order {
     pub amount: u64,
     /// The worse case price the user is willing to accept on this order
     ///
-    /// If the order is a buy, this is the maximum price the user is willing to pay
-    /// If the order is a sell, this is the minimum price the user is willing to accept
+    /// If the order is a buy, this is the maximum price the user is willing to
+    /// pay If the order is a sell, this is the minimum price the user is
+    /// willing to accept
     pub worst_case_price: FixedPoint,
     /// A timestamp indicating when the order was placed, set by the user
     pub timestamp: u64,
@@ -81,7 +82,8 @@ impl Order {
         self.amount == 0
     }
 
-    /// Determines whether the given price is within the allowable range for the order
+    /// Determines whether the given price is within the allowable range for the
+    /// order
     pub fn price_in_range(&self, price: FixedPoint) -> bool {
         match self.side {
             OrderSide::Buy => price.to_f64() <= self.worst_case_price.to_f64(),

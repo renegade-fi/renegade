@@ -56,8 +56,8 @@ use rand::{CryptoRng, RngCore};
 #[derive(Clone, Debug)]
 pub struct ValidMatchMpcCircuit;
 impl ValidMatchMpcCircuit {
-    /// The order crossing check, verifies that the matches result is valid given the orders
-    /// and balances of the two parties
+    /// The order crossing check, verifies that the matches result is valid
+    /// given the orders and balances of the two parties
     pub fn matching_engine_check<CS>(
         witness: AuthenticatedValidMatchMpcWitnessVar<MpcVariable>,
         fabric: MpcFabric,
@@ -116,13 +116,15 @@ impl ValidMatchMpcCircuit {
         )?;
 
         // --- Match Engine Execution Validity --- //
-        // Check that the direction of the match is the same as the first party's direction
+        // Check that the direction of the match is the same as the first party's
+        // direction
         cs.constrain(witness.match_res.direction.clone() - witness.order1.side.clone());
 
-        // Check that the orders are on opposite sides of the market. It is assumed that order
-        // sides are already constrained to be binary when they are submitted. More broadly it
-        // is assumed that orders are well formed, checking this amounts to checking their inclusion
-        // in the state tree, which is done in `input_consistency_check`
+        // Check that the orders are on opposite sides of the market. It is assumed that
+        // order sides are already constrained to be binary when they are
+        // submitted. More broadly it is assumed that orders are well formed,
+        // checking this amounts to checking their inclusion in the state tree,
+        // which is done in `input_consistency_check`
         cs.constrain(
             &witness.order1.side + &witness.order2.side - MpcVariable::one(fabric.clone()),
         );
@@ -138,10 +140,11 @@ impl ValidMatchMpcCircuit {
             .map_err(ProverError::Collaborative)?;
         cs.constrain(mul_out.into());
 
-        // Check that the amount of base currency exchanged is equal to the minimum of the two
-        // order's amounts
+        // Check that the amount of base currency exchanged is equal to the minimum of
+        // the two order's amounts
 
-        // 1. Constrain the max_minus_min_amount to be correctly computed with respect to the argmin
+        // 1. Constrain the max_minus_min_amount to be correctly computed with respect
+        //    to the argmin
         // witness variable min_amount_order_index
         let max_minus_min1 = &witness.amount1 - &witness.amount2;
         let max_minus_min2 = &witness.amount2 - &witness.amount1;
@@ -156,17 +159,20 @@ impl ValidMatchMpcCircuit {
         cs.constrain(&max_minus_min_expected - &witness.match_res.max_minus_min_amount);
 
         // 2. Constrain the max_minus_min_amount value to be positive
-        // This, along with the previous check, constrain `max_minus_min_amount` to be computed correctly.
-        // I.e. the above constraint forces `max_minus_min_amount` to be either max(amounts) - min(amounts)
+        // This, along with the previous check, constrain `max_minus_min_amount` to be
+        // computed correctly. I.e. the above constraint forces
+        // `max_minus_min_amount` to be either max(amounts) - min(amounts)
         // or min(amounts) - max(amounts).
-        // Constraining the value to be positive forces it to be equal to max(amounts) - min(amounts)
+        // Constraining the value to be positive forces it to be equal to max(amounts) -
+        // min(amounts)
         MultiproverGreaterThanEqZeroGadget::<AMOUNT_BITS>::constrain_greater_than_zero(
             witness.match_res.max_minus_min_amount.clone(),
             &fabric,
             cs,
         )?;
 
-        // 3. Constrain the executed base amount to be the minimum of the two order amounts
+        // 3. Constrain the executed base amount to be the minimum of the two order
+        //    amounts
         // We use the identity
         //      min(a, b) = 1/2 * (a + b - [max(a, b) - min(a, b)])
         // Above we are given max(a, b) - min(a, b), so we can enforce the constraint
@@ -235,8 +241,8 @@ impl ValidMatchMpcCircuit {
         )
     }
 
-    /// Verify the price protection on the orders; i.e. that the executed price is not
-    /// worse than some user-defined limit
+    /// Verify the price protection on the orders; i.e. that the executed price
+    /// is not worse than some user-defined limit
     #[allow(unused)]
     pub fn verify_price_protection<CS: MpcRandomizableConstraintSystem>(
         price: &AuthenticatedFixedPointVar<MpcVariable>,
@@ -325,13 +331,15 @@ impl ValidMatchMpcSingleProver {
         );
 
         // --- Match Engine Execution Validity --- //
-        // Check that the direction of the match is the same as the first party's direction
+        // Check that the direction of the match is the same as the first party's
+        // direction
         cs.constrain(witness.match_res.direction - witness.order1.side);
 
-        // Check that the orders are on opposite sides of the market. It is assumed that order
-        // sides are already constrained to be binary when they are submitted. More broadly it
-        // is assumed that orders are well formed, checking this amounts to checking their inclusion
-        // in the state tree, which is done in `input_consistency_check`
+        // Check that the orders are on opposite sides of the market. It is assumed that
+        // order sides are already constrained to be binary when they are
+        // submitted. More broadly it is assumed that orders are well formed,
+        // checking this amounts to checking their inclusion in the state tree,
+        // which is done in `input_consistency_check`
         cs.constrain(witness.order1.side + witness.order2.side - Variable::One());
 
         // Constrain the min_amount_order_index to be binary
@@ -342,10 +350,11 @@ impl ValidMatchMpcSingleProver {
         );
         cs.constrain(mul_out.into());
 
-        // Check that the amount of base currency exchanged is equal to the minimum of the two
-        // order's amounts
+        // Check that the amount of base currency exchanged is equal to the minimum of
+        // the two order's amounts
 
-        // 1. Constrain the max_minus_min_amount to be correctly computed with respect to the argmin
+        // 1. Constrain the max_minus_min_amount to be correctly computed with respect
+        //    to the argmin
         // witness variable min_amount_order_index
         let max_minus_min1 = witness.amount1 - witness.amount2;
         let max_minus_min2 = witness.amount2 - witness.amount1;
@@ -358,16 +367,19 @@ impl ValidMatchMpcSingleProver {
         cs.constrain(max_minus_min_expected - witness.match_res.max_minus_min_amount);
 
         // 2. Constrain the max_minus_min_amount value to be positive
-        // This, along with the previous check, constrain `max_minus_min_amount` to be computed correctly.
-        // I.e. the above constraint forces `max_minus_min_amount` to be either max(amounts) - min(amounts)
+        // This, along with the previous check, constrain `max_minus_min_amount` to be
+        // computed correctly. I.e. the above constraint forces
+        // `max_minus_min_amount` to be either max(amounts) - min(amounts)
         // or min(amounts) - max(amounts).
-        // Constraining the value to be positive forces it to be equal to max(amounts) - min(amounts)
+        // Constraining the value to be positive forces it to be equal to max(amounts) -
+        // min(amounts)
         GreaterThanEqZeroGadget::<AMOUNT_BITS>::constrain_greater_than_zero(
             witness.match_res.max_minus_min_amount,
             cs,
         );
 
-        // 3. Constrain the executed base amount to be the minimum of the two order amounts
+        // 3. Constrain the executed base amount to be the minimum of the two order
+        //    amounts
         // We use the identity
         //      min(a, b) = 1/2 * (a + b - [max(a, b) - min(a, b)])
         // Above we are given max(a, b) - min(a, b), so we can enforce the constraint
@@ -428,8 +440,8 @@ impl ValidMatchMpcSingleProver {
         );
     }
 
-    /// Verify the price protection on the orders; i.e. that the executed price is not
-    /// worse than some user-defined limit
+    /// Verify the price protection on the orders; i.e. that the executed price
+    /// is not worse than some user-defined limit
     #[allow(unused)]
     pub fn verify_price_protection_single_prover<CS: RandomizableConstraintSystem>(
         price: &FixedPointVar<Variable>,
@@ -464,8 +476,8 @@ impl ValidMatchMpcSingleProver {
 // | Witness Type Definition |
 // ---------------------------
 
-/// The full witness, recovered by opening the witness commitment, but never realized in
-/// the plaintext by either party
+/// The full witness, recovered by opening the witness commitment, but never
+/// realized in the plaintext by either party
 #[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
 #[derive(Clone, Debug)]
 pub struct ValidMatchMpcWitness {
@@ -487,8 +499,8 @@ pub struct ValidMatchMpcWitness {
     pub amount2: Scalar,
     /// The result of running a match MPC on the given orders
     ///
-    /// We do not open this value before proving so that we can avoid leaking information
-    /// before the collaborative proof has finished
+    /// We do not open this value before proving so that we can avoid leaking
+    /// information before the collaborative proof has finished
     pub match_res: LinkableMatchResult,
 }
 
@@ -651,12 +663,12 @@ mod tests {
 
                 let bp_gens = BulletproofGens::new(
                     ValidMatchMpcCircuit::BP_GENS_CAPACITY,
-                    1, /* party_capacity */
+                    1, // party_capacity
                 );
 
                 ValidMatchMpcCircuit::prove(
                     witness,
-                    (), /* statement */
+                    (), // statement
                     &bp_gens,
                     fabric.clone(),
                     prover,
@@ -678,12 +690,12 @@ mod tests {
 
         let bp_gens = BulletproofGens::new(
             ValidMatchMpcCircuit::BP_GENS_CAPACITY,
-            1, /* party_capacity */
+            1, // party_capacity
         );
 
         ValidMatchMpcCircuit::verify(
             witness_commitment,
-            (), /* statement */
+            (), // statement
             proof,
             &bp_gens,
             verifier,

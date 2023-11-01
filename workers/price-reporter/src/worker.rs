@@ -1,5 +1,5 @@
-//! Defines the Worker logic for the PriceReporterManger, which simply dispatches jobs to the
-//! PriceReporterManagerExecutor.
+//! Defines the Worker logic for the PriceReporterManger, which simply
+//! dispatches jobs to the PriceReporterManagerExecutor.
 use common::{
     default_wrapper::DefaultWrapper,
     types::{exchange::Exchange, CancelChannel},
@@ -38,8 +38,8 @@ pub struct PriceReporterManagerConfig {
     ///
     /// Used in locations that Binance has IP blocked
     pub disable_binance: bool,
-    /// The channel on which the coordinator may mandate that the price reporter manager cancel its
-    /// execution
+    /// The channel on which the coordinator may mandate that the price reporter
+    /// manager cancel its execution
     pub cancel_channel: CancelChannel,
 }
 
@@ -53,7 +53,7 @@ impl PriceReporterManagerConfig {
         match exchange {
             Exchange::Coinbase => {
                 self.coinbase_api_key.is_some() && self.coinbase_api_secret.is_some()
-            }
+            },
             Exchange::UniswapV3 => self.eth_websocket_addr.is_some(),
             _ => true,
         }
@@ -73,8 +73,8 @@ impl Worker for PriceReporterManager {
     }
 
     fn is_recoverable(&self) -> bool {
-        // Recovery for each PriceReporter is implemented via Error propagation; all panics in the
-        // PriceReporterManager are unrecoverable
+        // Recovery for each PriceReporter is implemented via Error propagation; all
+        // panics in the PriceReporterManager are unrecoverable
         false
     }
 

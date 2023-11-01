@@ -22,8 +22,8 @@ impl NetworkManagerExecutor {
         topic: String,
         message: PubsubMessage,
     ) -> Result<(), NetworkManagerError> {
-        // If the gossip server has not warmed up the local node into the network, buffer
-        // the pubsub message for forwarding after the warmup
+        // If the gossip server has not warmed up the local node into the network,
+        // buffer the pubsub message for forwarding after the warmup
         if !self.warmup_finished {
             self.warmup_buffer
                 .push(BufferedPubsubMessage { topic, message });
@@ -75,14 +75,15 @@ impl NetworkManagerExecutor {
                                 ClusterManagementJob::ClusterJoinRequest(cluster_id, join_request),
                             ))
                             .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
-                    }
+                    },
 
                     // Forward the management message to the gossip server for processing
                     ClusterManagementMessage::Replicated(ReplicatedMessage {
                         wallets,
                         peer_id,
                     }) => {
-                        // Forward one job per replicated wallet; makes gossip server implementation cleaner
+                        // Forward one job per replicated wallet; makes gossip server implementation
+                        // cleaner
                         for wallet_id in wallets.into_iter() {
                             self.gossip_work_queue
                                 .send(GossipServerJob::Cluster(
@@ -90,7 +91,7 @@ impl NetworkManagerExecutor {
                                 ))
                                 .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
                         }
-                    }
+                    },
 
                     // ---------
                     // | Match |
@@ -103,8 +104,9 @@ impl NetworkManagerExecutor {
                         .send(HandshakeExecutionJob::CacheEntry { order1, order2 })
                         .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?,
 
-                    // Forward the match in progress message to the handshake manager so that it can avoid
-                    // scheduling a duplicate handshake for the given order pair
+                    // Forward the match in progress message to the handshake manager so that it can
+                    // avoid scheduling a duplicate handshake for the given
+                    // order pair
                     ClusterManagementMessage::MatchInProgress(order1, order2) => self
                         .handshake_work_queue
                         .send(HandshakeExecutionJob::PeerMatchInProgress { order1, order2 })
@@ -114,15 +116,15 @@ impl NetworkManagerExecutor {
                     // | Orderbook |
                     // -------------
 
-                    // Forward a request for validity proofs to the gossip server to check for locally
-                    // available proofs
+                    // Forward a request for validity proofs to the gossip server to check for
+                    // locally available proofs
                     ClusterManagementMessage::RequestOrderValidityProof(req) => {
                         self.gossip_work_queue
                             .send(GossipServerJob::Cluster(
                                 ClusterManagementJob::ShareValidityProofs(req),
                             ))
                             .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
-                    }
+                    },
 
                     // Forward a request to the gossip server to share validity proof witness
                     ClusterManagementMessage::RequestOrderValidityWitness(req) => self
@@ -135,7 +137,7 @@ impl NetworkManagerExecutor {
                         ))
                         .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?,
                 }
-            }
+            },
             PubsubMessage::OrderBookManagement(msg) => match msg {
                 OrderBookManagementMessage::OrderReceived {
                     order_id,

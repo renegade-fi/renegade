@@ -93,7 +93,7 @@ impl NetworkManagerExecutor {
                             .map_err(|_| {
                                 NetworkManagerError::Network("error sending Ack".to_string())
                             })
-                    }
+                    },
 
                     GossipRequest::ValidityProof {
                         order_id,
@@ -117,7 +117,7 @@ impl NetworkManagerExecutor {
                             channel,
                             message: GossipResponse::Ack,
                         })
-                    }
+                    },
 
                     GossipRequest::WalletUpdate { wallet } => {
                         self.gossip_work_queue
@@ -129,9 +129,9 @@ impl NetworkManagerExecutor {
                             channel,
                             message: GossipResponse::Ack,
                         })
-                    }
+                    },
                 }
-            }
+            },
 
             // Handle inbound response
             RequestResponseMessage::Response { response, .. } => {
@@ -161,7 +161,8 @@ impl NetworkManagerExecutor {
                             request_id,
                             peer_id: WrappedPeerId(peer_id),
                             message,
-                            // The handshake should response via a new request sent on the network manager channel
+                            // The handshake should response via a new request sent on the network
+                            // manager channel
                             response_channel: None,
                         })
                         .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
@@ -173,7 +174,7 @@ impl NetworkManagerExecutor {
                         ))
                         .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
                 }
-            }
+            },
         }
     }
 }

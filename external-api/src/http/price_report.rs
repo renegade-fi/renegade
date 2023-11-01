@@ -20,8 +20,10 @@ pub struct GetExchangeHealthStatesRequest {
 /// A response containing the health of each exchange
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetExchangeHealthStatesResponse {
-    /// The PriceReporterState corresponding to the instantaneous median PriceReport
+    /// The PriceReporterState corresponding to the instantaneous median
+    /// PriceReport
     pub median: PriceReporterState,
-    /// The map of all ExchangeConnectionState corresponding to each individual exchange
+    /// The map of all ExchangeConnectionState corresponding to each individual
+    /// exchange
     pub all_exchanges: HashMap<Exchange, ExchangeConnectionState>,
 }

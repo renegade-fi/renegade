@@ -1,11 +1,11 @@
 //! Defines a container type that implements clone on any default capable type
 //!
-//! Replaces the cloned value with the underlying default, allowing a value to be
-//! passed once to across thread boundaries and then cloned again as default
+//! Replaces the cloned value with the underlying default, allowing a value to
+//! be passed once to across thread boundaries and then cloned again as default
 //!
-//! This is particularly useful when passing parameters into async runtimes, they
-//! may be `take`n at the executor level, and then passed as default via dispatch
-//! methods. See the gossip server for an example
+//! This is particularly useful when passing parameters into async runtimes,
+//! they may be `take`n at the executor level, and then passed as default via
+//! dispatch methods. See the gossip server for an example
 
 use std::{
     borrow::{Borrow, BorrowMut},
@@ -14,8 +14,8 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-/// The default wrapper structure, wraps a default capable value in a cell that may
-/// be taken or cloned once.
+/// The default wrapper structure, wraps a default capable value in a cell that
+/// may be taken or cloned once.
 pub struct DefaultWrapper<D: Default>(D);
 /// A default wrapper for an option
 pub type DefaultOption<D> = DefaultWrapper<Option<D>>;

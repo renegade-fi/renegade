@@ -104,7 +104,7 @@ fn build_secret_share_type(base_type: &ItemStruct, serde: bool) -> TokenStream2 
     // Build linkable commitment types for the secret shares
     res.extend(build_linkable_types(
         &secret_share_type,
-        false, /* include_multiprover */
+        false, // include_multiprover
         serde,
     ));
     res.extend(secret_share_type.to_token_stream());
@@ -124,12 +124,12 @@ fn build_secret_share_type(base_type: &ItemStruct, serde: bool) -> TokenStream2 
 
 /// Build an addition implementation between secret share types
 ///
-/// This is equivalent to recovering the plaintext by adding two secret shares, hence the
-/// addition target is the base type
+/// This is equivalent to recovering the plaintext by adding two secret shares,
+/// hence the addition target is the base type
 ///
-/// We explicitly dispatch to `add_shares` which is implementable generically. The macro
-/// handles implementations on local traits, as their generic versions are often not able
-/// to have `Add` implemented
+/// We explicitly dispatch to `add_shares` which is implementable generically.
+/// The macro handles implementations on local traits, as their generic versions
+/// are often not able to have `Add` implemented
 fn build_addition_impl(base_type: &ItemStruct) -> TokenStream2 {
     let generics = base_type.generics.clone();
     let where_clause = base_type.generics.where_clause.clone();

@@ -1,5 +1,6 @@
-//! The exchanges module defines individual ExchangeConnection logic, including all parsing logic
-//! for price messages from both centralized and decentralized exchanges.
+//! The exchanges module defines individual ExchangeConnection logic, including
+//! all parsing logic for price messages from both centralized and decentralized
+//! exchanges.
 mod binance;
 mod coinbase;
 pub(crate) mod connection;
@@ -39,17 +40,17 @@ pub async fn connect_exchange(
     Ok(match exchange {
         Exchange::Binance => {
             Box::new(BinanceConnection::connect(base_token, quote_token, config).await?)
-        }
+        },
         Exchange::Coinbase => {
             Box::new(CoinbaseConnection::connect(base_token, quote_token, config).await?)
-        }
+        },
         Exchange::Kraken => {
             Box::new(KrakenConnection::connect(base_token, quote_token, config).await?)
-        }
+        },
         Exchange::Okx => Box::new(OkxConnection::connect(base_token, quote_token, config).await?),
         Exchange::UniswapV3 => {
             Box::new(UniswapV3Connection::connect(base_token, quote_token, config).await?)
-        }
+        },
     })
 }
 
@@ -78,8 +79,8 @@ impl<T: Stream<Item = PriceStreamType> + Unpin> Stream for InitializablePriceStr
         if this
             .buffered_value_consumed
             .compare_exchange(
-                false, /* current */
-                true,  /* new */
+                false, // current
+                true,  // new
                 Ordering::Release,
                 Ordering::Relaxed,
             )

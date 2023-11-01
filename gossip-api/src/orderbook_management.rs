@@ -42,15 +42,16 @@ pub enum OrderBookManagementMessage {
         /// The cluster that manages this order
         cluster: ClusterId,
     },
-    /// A new validity proof bundle has been generated for an order, it should be placed in
-    /// the `Verified` state after local peers verify the proof
+    /// A new validity proof bundle has been generated for an order, it should
+    /// be placed in the `Verified` state after local peers verify the proof
     OrderProofUpdated {
         /// The identifier of the now updated order
         order_id: OrderIdentifier,
         /// The cluster that manages this order
         cluster: ClusterId,
-        /// The new validity proof bundle for the order, containing a proof of `VALID COMMITMENTS`
-        /// for the order, and one of `VALID REBLIND` for the wallet
+        /// The new validity proof bundle for the order, containing a proof of
+        /// `VALID COMMITMENTS` for the order, and one of `VALID
+        /// REBLIND` for the wallet
         proof_bundle: OrderValidityProofBundle,
     },
 }

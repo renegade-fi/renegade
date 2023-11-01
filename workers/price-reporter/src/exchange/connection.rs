@@ -52,7 +52,7 @@ pub(super) async fn ws_connect(
         Err(e) => {
             log::error!("Cannot connect to the remote URL: {}", url);
             return Err(ExchangeConnectionError::HandshakeFailure(e.to_string()));
-        }
+        },
     };
 
     let (ws_sink, ws_stream) = ws_conn.split();
@@ -102,7 +102,8 @@ pub(super) fn parse_json_field_array<T: FromStr>(
 /// Parse an json structure from a websocket message
 pub fn parse_json_from_message(message: Message) -> Result<Option<Value>, ExchangeConnectionError> {
     if let Message::Text(message_str) = message {
-        // Okx sends some undocumented messages: Empty strings and "Protocol violation" messages
+        // Okx sends some undocumented messages: Empty strings and "Protocol violation"
+        // messages
         if message_str == PROTOCOL_VIOLATION_MSG || message_str.is_empty() {
             return Ok(None);
         }

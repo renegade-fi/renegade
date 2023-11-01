@@ -23,9 +23,10 @@ pub fn less_than_zero<const D: usize>(
     // Truncate the first 250 bits of the input
     let truncated = truncate::<250>(a, fabric);
 
-    // Because the Starknet scalar field is a prime field of order slightly greater than 2^251
-    // values are negative if either their 251st bit or 252nd bit are set. Therefore, we truncate
-    // all bits below this and compare the value to zero.
+    // Because the Starknet scalar field is a prime field of order slightly greater
+    // than 2^251 values are negative if either their 251st bit or 252nd bit are
+    // set. Therefore, we truncate all bits below this and compare the value to
+    // zero.
     ne::<2 /* bit_length */>(&truncated, &fabric.zero_authenticated(), fabric)
 }
 
@@ -120,7 +121,8 @@ pub fn kary_or<const D: usize>(
     fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
     // Sample random blinding bits from the pre-processing functionality
-    // We only need to be able to hold the maximum possible count, log_2(# of booleans)
+    // We only need to be able to hold the maximum possible count, log_2(# of
+    // booleans)
     let max_bits = ((a.len() + 1) as f32).log2().ceil() as usize;
     let blinding_bits = fabric.random_shared_bits(max_bits);
     let blinding_value = scalar_from_bits_le(&blinding_bits);
@@ -137,8 +139,8 @@ pub fn kary_or<const D: usize>(
     // Decompose the blinded sum into bits
     let blinded_sum_bits = scalar_to_bits_le::<D>(&blinded_sum_open.value);
 
-    // XOR the blinded sum bits with the blinding bits that are still shared to obtain a sharing of the
-    // sum bits (unblinded)
+    // XOR the blinded sum bits with the blinding bits that are still shared to
+    // obtain a sharing of the sum bits (unblinded)
     let unblinded_shared_bits = blinded_sum_bits
         .into_iter()
         .zip(blinding_bits.iter())
@@ -165,7 +167,8 @@ fn constant_round_or_impl(
     let sum_a: AuthenticatedScalarResult = a.iter().cloned().sum();
 
     // Compute (1 - sum) * (2 - sum) * ... * (n - sum) / n!
-    // We wrap the n! in implicitly here to avoid overflow computing n! directly for large n
+    // We wrap the n! in implicitly here to avoid overflow computing n! directly for
+    // large n
     let sum_monomials = (1..n + 1)
         .map(|x| (Scalar::from(x as u64) - &sum_a) * Scalar::from(x as u64).inverse())
         .collect::<Vec<_>>();

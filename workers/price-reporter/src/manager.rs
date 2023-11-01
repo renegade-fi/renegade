@@ -1,5 +1,5 @@
-//! Defines the PriceReporterManagerExecutor, the handler that is responsible for executing
-//! individual PriceReporterManagerJobs.
+//! Defines the PriceReporterManagerExecutor, the handler that is responsible
+//! for executing individual PriceReporterManagerJobs.
 use common::default_wrapper::{DefaultOption, DefaultWrapper};
 use common::types::exchange::{Exchange, ExchangeConnectionState, PriceReporterState};
 use common::types::token::Token;
@@ -15,8 +15,9 @@ use super::{
     errors::PriceReporterManagerError, reporter::PriceReporter, worker::PriceReporterManagerConfig,
 };
 
-/// The PriceReporterManager worker is a wrapper around the PriceReporterManagerExecutor, handling
-/// and dispatching jobs to the executor for spin-up and shut-down of individual PriceReporters.
+/// The PriceReporterManager worker is a wrapper around the
+/// PriceReporterManagerExecutor, handling and dispatching jobs to the executor
+/// for spin-up and shut-down of individual PriceReporters.
 pub struct PriceReporterManager {
     /// The config for the PriceReporterManager
     pub(super) config: PriceReporterManagerConfig,
@@ -26,11 +27,12 @@ pub struct PriceReporterManager {
     pub(super) manager_runtime: Option<Runtime>,
 }
 
-/// The actual executor that handles incoming jobs, to create and destroy PriceReporters, and peek
-/// at PriceReports.
+/// The actual executor that handles incoming jobs, to create and destroy
+/// PriceReporters, and peek at PriceReports.
 #[derive(Clone)]
 pub struct PriceReporterManagerExecutor {
-    /// The map between base/quote token pairs and the instantiated PriceReporter
+    /// The map between base/quote token pairs and the instantiated
+    /// PriceReporter
     active_price_reporters: AsyncShared<HashMap<(Token, Token), PriceReporter>>,
     /// The manager config
     config: PriceReporterManagerConfig,
@@ -112,7 +114,7 @@ impl PriceReporterManagerExecutor {
             } => {
                 self.peek_all_exchanges(base_token, quote_token, channel)
                     .await
-            }
+            },
         }
     }
 
@@ -173,7 +175,8 @@ impl PriceReporterManagerExecutor {
     // | Helpers |
     // -----------
 
-    /// Internal helper function to get a (base_token, quote_token) PriceReporter
+    /// Internal helper function to get a (base_token, quote_token)
+    /// PriceReporter
     async fn get_price_reporter(
         &self,
         base_token: Token,
@@ -191,8 +194,9 @@ impl PriceReporterManagerExecutor {
             })
     }
 
-    /// Internal helper function to get a (base_token, quote_token) PriceReporter. If the
-    /// PriceReporter does not already exist, first creates it.
+    /// Internal helper function to get a (base_token, quote_token)
+    /// PriceReporter. If the PriceReporter does not already exist, first
+    /// creates it.
     async fn get_price_reporter_or_create(
         &mut self,
         base_token: Token,

@@ -231,7 +231,8 @@ mod tests {
         assert!(info1.is_none());
         assert_eq!(info2, peer_info2);
 
-        // Verify that the cluster membership for the peers' cluster only contains the second peer
+        // Verify that the cluster membership for the peers' cluster only contains the
+        // second peer
         let cluster_peers: Vec<WrappedPeerId> = db
             .read(CLUSTER_MEMBERSHIP_TABLE, &peer_info1.cluster_id)
             .unwrap()

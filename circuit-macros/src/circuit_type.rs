@@ -1,5 +1,5 @@
-//! Macro implementation of the `circuit_type` macro that defines associated types and conversions
-//! between them for an application level base type
+//! Macro implementation of the `circuit_type` macro that defines associated
+//! types and conversions between them for an application level base type
 
 mod linkable_types;
 mod mpc_types;
@@ -30,12 +30,15 @@ use self::{
 /// The trait name for the base type that all other types are derived from
 const BASE_TYPE_TRAIT_NAME: &str = "BaseType";
 
-/// The name of the method that converts a serialized scalar iterator to a base type
+/// The name of the method that converts a serialized scalar iterator to a base
+/// type
 const FROM_SCALARS_METHOD_NAME: &str = "from_scalars";
-/// The name of the method that converts a base type to a serialized vector of scalars
+/// The name of the method that converts a base type to a serialized vector of
+/// scalars
 const TO_SCALARS_METHOD_NAME: &str = "to_scalars";
-/// The name of the method that converts a base type to a serialized vector of scalars
-/// including the scalars needed to commit to the base type in a (possibly) linkable manner
+/// The name of the method that converts a base type to a serialized vector of
+/// scalars including the scalars needed to commit to the base type in a
+/// (possibly) linkable manner
 const TO_SCALARS_LINKING_METHOD_NAME: &str = "to_scalars_with_linking";
 /// The identifier of the `Scalar` type
 const SCALAR_TYPE_IDENT: &str = "Scalar";
@@ -43,12 +46,13 @@ const SCALAR_TYPE_IDENT: &str = "Scalar";
 /// The method name for creating commitment randomness to a base type
 pub(crate) const COMMITMENT_RANDOMNESS_METHOD_NAME: &str = "commitment_randomness";
 
-/// The flag indicating the expansion should include a single prover circuit type definition
-/// for the base type
+/// The flag indicating the expansion should include a single prover circuit
+/// type definition for the base type
 const ARG_SINGLEPROVER_TYPE: &str = "singleprover_circuit";
 /// The flag indicating the expansion should include types for an MPC circuit
 const ARG_MPC_TYPE: &str = "mpc";
-/// The flag indicating the expansion should include types for a multiprover circuit
+/// The flag indicating the expansion should include types for a multiprover
+/// circuit
 const ARG_MULTIPROVER_TYPE: &str = "multiprover_circuit";
 /// The flag indicating the expansion should include a proof-linkable type
 const ARG_LINKABLE_TYPE: &str = "linkable";
@@ -70,7 +74,8 @@ pub(crate) struct MacroArgs {
     pub build_mpc_types: bool,
     /// Whether or not to allocate multiprover circuit types for the struct
     pub build_multiprover_types: bool,
-    /// Whether or not to allocate multiprover linkable circuit types for the struct
+    /// Whether or not to allocate multiprover linkable circuit types for the
+    /// struct
     pub build_multiprover_linkable_types: bool,
     /// Whether or not to allocate secret share types for the struct
     pub build_secret_share_types: bool,
@@ -162,7 +167,7 @@ pub(crate) fn circuit_type_impl(target_struct: ItemStruct, macro_args: MacroArgs
         let mpc_type_tokens = build_mpc_types(
             &target_struct,
             macro_args.build_multiprover_types,
-            false, /* multiprover_base_only */
+            false, // multiprover_base_only
         );
         out_tokens.extend(mpc_type_tokens);
     }
@@ -349,9 +354,9 @@ fn build_serialize_method(
     fn_impl.to_token_stream()
 }
 
-/// Implements a deserialization function for a trait that looks like the following
-///     fn #method_name<I: Iterator<Item = #from_type>>(i: &mut I) -> Self {
-///         Self { field1: i.next().unwrap(), field2: , ... }
+/// Implements a deserialization function for a trait that looks like the
+/// following     fn #method_name<I: Iterator<Item = #from_type>>(i: &mut I) ->
+/// Self {         Self { field1: i.next().unwrap(), field2: , ... }
 ///     }
 fn build_deserialize_method(
     method_name: Ident,
@@ -386,8 +391,8 @@ fn build_deserialize_method(
     }
 }
 
-/// Build an implementation of the `commitment_randomness` method that calls out to each
-/// field's implementation
+/// Build an implementation of the `commitment_randomness` method that calls out
+/// to each field's implementation
 pub(crate) fn build_commitment_randomness_method(
     base_type: &ItemStruct,
     from_trait: Path,
@@ -415,8 +420,9 @@ pub(crate) fn build_commitment_randomness_method(
     fn_def.to_token_stream()
 }
 
-/// Implement `Clone` by cloning each field individually, this is useful when we have a generic
-/// that does not extend clone, i.e. the `MpcNetwork`, but we still want its type to be `Clone`
+/// Implement `Clone` by cloning each field individually, this is useful when we
+/// have a generic that does not extend clone, i.e. the `MpcNetwork`, but we
+/// still want its type to be `Clone`
 fn impl_clone_by_fields(base_struct: &ItemStruct) -> TokenStream2 {
     let generics = base_struct.generics.clone();
     let where_clause = generics.where_clause.clone();
@@ -443,7 +449,8 @@ fn impl_clone_by_fields(base_struct: &ItemStruct) -> TokenStream2 {
     impl_block.to_token_stream()
 }
 
-/// Build a `serde` serialization and deserialization implementation for the type
+/// Build a `serde` serialization and deserialization implementation for the
+/// type
 fn build_serde_methods(
     base_type: &ItemStruct,
     serialized_type: Path,

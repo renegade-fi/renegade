@@ -74,8 +74,8 @@ pub(crate) async fn execute_wallet_update(
     assert_true_result!(success)
 }
 
-/// Execute a wallet update, then lookup the new wallet from on-chain state and verify it has
-/// been correctly constructed
+/// Execute a wallet update, then lookup the new wallet from on-chain state and
+/// verify it has been correctly constructed
 async fn execute_wallet_update_and_verify_shares(
     old_wallet: Wallet,
     new_wallet: Wallet,
@@ -104,7 +104,7 @@ async fn test_update_wallet_then_recover(test_args: IntegrationTestArgs) -> Resu
     execute_wallet_update_and_verify_shares(
         old_wallet,
         wallet,
-        None, /* transfer */
+        None, // transfer
         blinder_seed,
         share_seed,
         test_args,
@@ -132,7 +132,7 @@ async fn test_update_wallet__place_order(test_args: IntegrationTestArgs) -> Resu
     execute_wallet_update_and_verify_shares(
         old_wallet,
         wallet,
-        None, /* transfer */
+        None, // transfer
         blinder_seed,
         share_seed,
         test_args,
@@ -165,7 +165,7 @@ async fn test_update_wallet__cancel_order(test_args: IntegrationTestArgs) -> Res
     execute_wallet_update_and_verify_shares(
         old_wallet,
         wallet,
-        None, /* transfer */
+        None, // transfer
         blinder_seed,
         share_seed,
         test_args,
@@ -193,7 +193,7 @@ async fn test_update_wallet__add_fee(test_args: IntegrationTestArgs) -> Result<(
     execute_wallet_update_and_verify_shares(
         old_wallet,
         wallet,
-        None, /* transfer */
+        None, // transfer
         blinder_seed,
         share_seed,
         test_args,
@@ -225,7 +225,7 @@ async fn test_update_wallet__remove_fee(test_args: IntegrationTestArgs) -> Resul
     execute_wallet_update_and_verify_shares(
         old_wallet,
         wallet,
-        None, /* transfer */
+        None, // transfer
         blinder_seed,
         share_seed,
         test_args,

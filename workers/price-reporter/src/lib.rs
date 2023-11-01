@@ -1,6 +1,7 @@
-//! The price reporter module manages all external price feeds, including PriceReporter spin-up and
-//! tear-down, websocket connections to all exchanges (both centralized and decentralized), and
-//! aggregation of individual PriceReports into medians.
+//! The price reporter module manages all external price feeds, including
+//! PriceReporter spin-up and tear-down, websocket connections to all exchanges
+//! (both centralized and decentralized), and aggregation of individual
+//! PriceReports into medians.
 
 #![deny(unsafe_code)]
 #![deny(missing_docs)]

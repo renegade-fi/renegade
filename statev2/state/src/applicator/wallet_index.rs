@@ -63,9 +63,10 @@ impl StateApplicator {
     /// This update may take many forms: placing/cancelling an order, depositing
     /// or withdrawing a balance, etc.
     ///
-    /// It is assumed that the update to the wallet is proven valid and posted on-chain
-    /// before this method is called. That is, we maintain the invariant that the state
-    /// stored by this module is valid -- but possibly stale -- contract state
+    /// It is assumed that the update to the wallet is proven valid and posted
+    /// on-chain before this method is called. That is, we maintain the
+    /// invariant that the state stored by this module is valid -- but
+    /// possibly stale -- contract state
     pub fn update_wallet(&self, msg: UpdateWalletMessage) -> Result<()> {
         // Parse the wallet from the message
         let wallet: Wallet = msg
@@ -88,7 +89,7 @@ impl StateApplicator {
                     *id,
                     nullifier,
                     self.config.cluster_id.clone(),
-                    true, /* local */
+                    true, // local
                 ),
                 &tx,
             )?;

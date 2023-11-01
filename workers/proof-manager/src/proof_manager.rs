@@ -50,8 +50,8 @@ pub(crate) const PROOF_GENERATION_N_THREADS: usize = 10;
 // | Proof Generation |
 // --------------------
 
-/// The proof manager provides a messaging interface and implementation for proving statements
-/// related to system state transitions
+/// The proof manager provides a messaging interface and implementation for
+/// proving statements related to system state transitions
 #[derive(Debug)]
 pub struct ProofManager {
     /// The queue on which the proof manager receives new jobs
@@ -65,8 +65,8 @@ pub struct ProofManager {
 }
 
 impl ProofManager {
-    /// The execution loop blocks on the job queue then schedules proof generation
-    /// jobs onto a thread pool
+    /// The execution loop blocks on the job queue then schedules proof
+    /// generation jobs onto a thread pool
     pub(crate) fn execution_loop(
         job_queue: Receiver<ProofManagerJob>,
         thread_pool: Arc<ThreadPool>,
@@ -106,7 +106,7 @@ impl ProofManager {
                 job.response_channel
                     .send(ProofBundle::ValidWalletCreate(proof_bundle))
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
-            }
+            },
 
             ProofJob::ValidReblind { witness, statement } => {
                 // Prove `VALID REBLIND`
@@ -114,7 +114,7 @@ impl ProofManager {
                 job.response_channel
                     .send(ProofBundle::ValidReblind(proof_bundle))
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
-            }
+            },
 
             ProofJob::ValidCommitments { witness, statement } => {
                 // Prove `VALID COMMITMENTS`
@@ -122,14 +122,14 @@ impl ProofManager {
                 job.response_channel
                     .send(ProofBundle::ValidCommitments(proof_bundle))
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
-            }
+            },
 
             ProofJob::ValidWalletUpdate { witness, statement } => {
                 let proof_bundle = Self::prove_valid_wallet_update(witness, statement)?;
                 job.response_channel
                     .send(ProofBundle::ValidWalletUpdate(proof_bundle))
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
-            }
+            },
 
             ProofJob::ValidMatchMpcSingleprover { witness } => {
                 // Prove `VALID MATCH MPC`
@@ -137,7 +137,7 @@ impl ProofManager {
                 job.response_channel
                     .send(ProofBundle::ValidMatchMpc(proof_bundle))
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
-            }
+            },
 
             ProofJob::ValidSettle { witness, statement } => {
                 // Prove `VALID SETTLE`
@@ -145,7 +145,7 @@ impl ProofManager {
                 job.response_channel
                     .send(ProofBundle::ValidSettle(proof_bundle))
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
-            }
+            },
         }
     }
 

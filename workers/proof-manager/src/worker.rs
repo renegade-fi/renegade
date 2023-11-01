@@ -24,8 +24,8 @@ const MAIN_THREAD_NAME: &str = "proof-generation-main";
 pub struct ProofManagerConfig {
     /// The job queue on which the manager may receive proof generation jobs
     pub job_queue: Receiver<ProofManagerJob>,
-    /// The cancel channel that the coordinator uses to signal to the proof generation
-    /// module that it should shut down
+    /// The cancel channel that the coordinator uses to signal to the proof
+    /// generation module that it should shut down
     pub cancel_channel: CancelChannel,
 }
 

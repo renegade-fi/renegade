@@ -39,10 +39,11 @@ impl HandshakeExecutor {
     /// Run the internal matching engine on the given order
     ///
     /// TODO: This could be optimized by indexing orders by asset pairs in the
-    /// global state, but this would require further denormalizing the order book
-    /// index. We will hold off on this optimization until we either:
+    /// global state, but this would require further denormalizing the order
+    /// book index. We will hold off on this optimization until we either:
     ///     1. Determine this code path to be a bottleneck
-    ///     2. Have a better state management abstraction that makes denormalization easier
+    ///     2. Have a better state management abstraction that makes
+    ///        denormalization easier
     pub(super) async fn run_internal_matching_engine(
         &self,
         order: OrderIdentifier,
@@ -74,7 +75,7 @@ impl HandshakeExecutor {
             .await?
             .find_pair(&base, &quote)
             .ok_or_else(|| HandshakeManagerError::NoPriceData(ERR_NO_PRICE_DATA.to_string()))?
-            .2; /* (base, quote, price) */
+            .2; // (base, quote, price)
         let price = FixedPoint::from_f64_round_down(price);
 
         // Shuffle the ordering of the other orders for fairness
@@ -222,8 +223,9 @@ fn match_orders(
         && order2.price_in_range(midpoint_price);
 
     // Neither order is zero'd out
-    // Orders are not removed when they are zero'd because a counterparty cannot update shares to remove an order
-    // without revealing the volume of the order. So zero'd orders may exist in the book until the user removes them
+    // Orders are not removed when they are zero'd because a counterparty cannot
+    // update shares to remove an order without revealing the volume of the
+    // order. So zero'd orders may exist in the book until the user removes them
     valid_match = valid_match && !order1.is_zero() && !order2.is_zero();
 
     // Compute the amount matched by the engine
@@ -266,7 +268,7 @@ fn compute_max_amount(price: &FixedPoint, order: &Order, balance: &Balance) -> u
             let price_f64 = price.to_f64();
             let balance_limit = (balance.amount as f64 / price_f64).floor() as u64;
             u64::min(order.amount, balance_limit)
-        }
+        },
         // Buy the quote, sell the base, the maximum amount is directly limited
         // by the balance
         OrderSide::Sell => u64::min(order.amount, balance.amount),
@@ -356,14 +358,15 @@ mod tests {
         assert_eq!(res.base_amount, 50);
         assert_eq!(
             res.quote_amount,
-            350 /* midpoint_price * base_amount */
+            350 // midpoint_price * base_amount
         );
         assert_eq!(res.direction, 0);
         assert_eq!(res.max_minus_min_amount, 50);
         assert_eq!(res.min_amount_order_index, 0);
     }
 
-    /// Test a valid match between two order where the buy side is undercapitalized
+    /// Test a valid match between two order where the buy side is
+    /// undercapitalized
     #[test]
     fn test_valid_match_undercapitalized_buy() {
         let order1 = ORDER1.clone();
@@ -396,7 +399,8 @@ mod tests {
         assert_eq!(res.min_amount_order_index, 0);
     }
 
-    /// Test a valid match between two order where the sell side is undercapitalized
+    /// Test a valid match between two order where the sell side is
+    /// undercapitalized
     #[test]
     fn test_valid_match_undercapitalized_sell() {
         let order1 = ORDER1.clone();

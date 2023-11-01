@@ -75,7 +75,7 @@ pub fn replace_port(multiaddr: &mut Multiaddr, port: u16) {
             *multiaddr = multiaddr
                 .replace(transport_index, |_| Some(Protocol::Udp(port)))
                 .unwrap();
-        }
+        },
         None => *multiaddr = multiaddr.clone().with(Protocol::Udp(port)),
     }
 }
@@ -100,9 +100,10 @@ pub struct NetworkManager {
     pub(super) thread_handle: Option<JoinHandle<NetworkManagerError>>,
 }
 
-/// The NetworkManager handles both incoming and outbound messages to the p2p network
-/// It accepts events from workers elsewhere in the relayer that are to be propagated
-/// out to the network; as well as listening on the network for messages from other peers.
+/// The NetworkManager handles both incoming and outbound messages to the p2p
+/// network It accepts events from workers elsewhere in the relayer that are to
+/// be propagated out to the network; as well as listening on the network for
+/// messages from other peers.
 impl NetworkManager {
     /// Setup global state after peer_id and address have been assigned
     pub(super) async fn update_global_state_after_startup(&self) {
@@ -153,11 +154,12 @@ struct BufferedPubsubMessage {
     pub message: PubsubMessage,
 }
 
-/// The executor abstraction runs in a thread separately from the network manager
+/// The executor abstraction runs in a thread separately from the network
+/// manager
 ///
 /// This allows the thread to take ownership of the executor object and perform
-/// object-oriented operations while allowing the network manager ownership to be
-/// held by the coordinator thread
+/// object-oriented operations while allowing the network manager ownership to
+/// be held by the coordinator thread
 pub(super) struct NetworkManagerExecutor {
     /// The local port listened on
     p2p_port: u16,
@@ -189,7 +191,8 @@ pub(super) struct NetworkManagerExecutor {
     global_state: RelayerState,
     /// A reference to the system bus for consuming internal pubsub events
     system_bus: SystemBus<SystemBusMessage>,
-    /// The cancel channel that the coordinator thread may use to cancel this worker
+    /// The cancel channel that the coordinator thread may use to cancel this
+    /// worker
     cancel: DefaultWrapper<Option<CancelChannel>>,
 }
 
@@ -229,7 +232,8 @@ impl NetworkManagerExecutor {
 
     /// The main loop in which the worker thread processes requests
     /// The worker handles two types of events:
-    ///      1. Events from the network; which it dispatches to appropriate handler threads
+    ///      1. Events from the network; which it dispatches to appropriate
+    ///         handler threads
     ///      2. Events from workers to be sent over the network
     /// It handles these in the tokio select! macro below
     pub(super) async fn executor_loop(mut self) -> NetworkManagerError {
@@ -301,7 +305,7 @@ impl NetworkManagerExecutor {
                 }
 
                 Ok(())
-            }
+            },
             // Pubsub events currently do nothing
             ComposedProtocolEvent::PubSub(msg) => {
                 if let GossipsubEvent::Message { message, .. } = msg {
@@ -309,12 +313,12 @@ impl NetworkManagerExecutor {
                 }
 
                 Ok(())
-            }
+            },
             // KAD events do nothing for now, routing tables are automatically updated by libp2p
             ComposedProtocolEvent::Kademlia(_) => Ok(()),
 
-            // Identify events do nothing for now, the behavior automatically updates the `external_addresses`
-            // field in the swarm
+            // Identify events do nothing for now, the behavior automatically updates the
+            // `external_addresses` field in the swarm
             ComposedProtocolEvent::Identify(e) => self.handle_identify_event(e).await,
         }
     }
@@ -334,7 +338,7 @@ impl NetworkManagerExecutor {
                     .send_request(&peer_id, req_body);
 
                 Ok(())
-            }
+            },
             GossipOutbound::Response { channel, message } => {
                 // Attach a signature if necessary
                 let req_body =
@@ -350,10 +354,10 @@ impl NetworkManagerExecutor {
                             "error sending response, channel closed".to_string(),
                         )
                     })
-            }
+            },
             GossipOutbound::Pubsub { topic, message } => {
                 self.forward_outbound_pubsub(topic, message)
-            }
+            },
             GossipOutbound::ManagementMessage(command) => self.handle_control_directive(command),
         }
     }

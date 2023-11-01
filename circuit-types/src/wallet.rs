@@ -24,7 +24,8 @@ use super::{
     serialize_array,
 };
 
-/// A commitment to the wallet's secret shares that is entered into the global state
+/// A commitment to the wallet's secret shares that is entered into the global
+/// state
 pub type WalletShareStateCommitment = Scalar;
 /// Commitment type alias for readability
 pub type NoteCommitment = Scalar;
@@ -61,7 +62,8 @@ where
         deserialize_with = "deserialize_array"
     )]
     pub fees: [Fee; MAX_FEES],
-    /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle, pk_view)
+    /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle,
+    /// pk_view)
     pub keys: PublicKeyChain,
     /// The wallet randomness used to blind secret shares
     #[serde(
@@ -106,8 +108,9 @@ where
 {
     /// Blinds the wallet, but does not blind the blinder itself
     ///
-    /// This is necessary because the default implementation of `blind` that is derived
-    /// by the macro will blind the blinder as well as the shares, which is undesirable
+    /// This is necessary because the default implementation of `blind` that is
+    /// derived by the macro will blind the blinder as well as the shares,
+    /// which is undesirable
     pub fn blind_shares(self, blinder: Scalar) -> WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
         let prev_blinder = self.blinder;
         let mut blinded = self.blind(blinder);
@@ -140,8 +143,9 @@ where
 {
     /// Blinds the wallet, but does not blind the blinder itself
     ///
-    /// This is necessary because the default implementation of `blind` that is derived
-    /// by the macro will blind the blinder as well as the shares, which is undesirable
+    /// This is necessary because the default implementation of `blind` that is
+    /// derived by the macro will blind the blinder as well as the shares,
+    /// which is undesirable
     pub fn blind_shares<L1: LinearCombinationLike>(
         self,
         blinder: L1,

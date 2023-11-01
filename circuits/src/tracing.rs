@@ -1,7 +1,8 @@
 //! Groups the global static data structures used for tracing circuit execution
 //!
-//! The types used here are copied over from the circuit-macros crate. Due to the restriction
-//! on procedural macros to own their crate, these two crates cannot share these types.
+//! The types used here are copied over from the circuit-macros crate. Due to
+//! the restriction on procedural macros to own their crate, these two crates
+//! cannot share these types.
 #![allow(unused)]
 
 use lazy_static::lazy_static;
@@ -82,7 +83,8 @@ impl MetricsCapture {
         }
     }
 
-    /// Record a scoped metric, if the metric already exists for the scope, aggregate it
+    /// Record a scoped metric, if the metric already exists for the scope,
+    /// aggregate it
     pub fn record_metric(&mut self, scope: Scope, metric_name: String, value: u64) {
         if let Entry::Vacant(e) = self.metrics.entry(scope.clone()) {
             e.insert(ScopedMetrics::new());
@@ -105,7 +107,8 @@ lazy_static! {
     pub(crate) static ref CURR_SCOPE: Mutex<Scope> = Mutex::new(Scope::new());
 }
 
-/// We define the macro tests here to avoid duplicating the above data structures
+/// We define the macro tests here to avoid duplicating the above data
+/// structures
 #[cfg(test)]
 pub mod test {
     use circuit_macros::circuit_trace;
@@ -134,8 +137,8 @@ pub mod test {
         static ref TEST_LOCK: Mutex<()> = Mutex::new(());
     }
 
-    /// A dummy gadget whose constraint generation is done through an associated function, used to
-    /// test the trace macro on an associated function
+    /// A dummy gadget whose constraint generation is done through an associated
+    /// function, used to test the trace macro on an associated function
     pub struct Gadget {}
     impl Gadget {
         #[circuit_trace(n_constraints, n_multipliers, latency)]
@@ -151,8 +154,8 @@ pub mod test {
         }
     }
 
-    /// A dummy macro target that is not an associated function of any abstract gadget, used to
-    /// test the non-associated macro arg
+    /// A dummy macro target that is not an associated function of any abstract
+    /// gadget, used to test the non-associated macro arg
     #[circuit_trace(non_associated, n_constraints, n_multipliers, latency)]
     fn non_associated_gadget(cs: &mut Prover) {
         // Apply dummy constraints
@@ -165,7 +168,8 @@ pub mod test {
         thread::sleep(Duration::from_millis(100));
     }
 
-    /// Tests the tracer macro on an associated function when the tracer is enabled
+    /// Tests the tracer macro on an associated function when the tracer is
+    /// enabled
     #[cfg(feature = "bench")]
     #[test]
     fn test_macro_associated() {
@@ -179,8 +183,8 @@ pub mod test {
 
         Gadget::apply_constraints(&mut prover);
 
-        // Read the values from the tracer, this test is gated behind the same feature flag
-        // as the tracer, so metrics should have been recorded
+        // Read the values from the tracer, this test is gated behind the same feature
+        // flag as the tracer, so metrics should have been recorded
         let gadget_scope = Scope::from_path(vec!["apply_constraints".to_string()]);
         let mut locked_metrics = SCOPED_METRICS.lock().unwrap();
 
@@ -200,7 +204,8 @@ pub mod test {
         assert_eq!(1, n_multipliers_metric);
     }
 
-    /// Tests the tracer macro on a non-associated function when the tracer is enabled
+    /// Tests the tracer macro on a non-associated function when the tracer is
+    /// enabled
     #[cfg(feature = "bench")]
     #[test]
     fn test_macro_non_associated() {
@@ -214,8 +219,8 @@ pub mod test {
 
         non_associated_gadget(&mut prover);
 
-        // Read the values from the tracer, this test is gated behind the same feature flag
-        // as the tracer, so metrics should have been recorded
+        // Read the values from the tracer, this test is gated behind the same feature
+        // flag as the tracer, so metrics should have been recorded
         let gadget_scope = Scope::from_path(vec!["non_associated_gadget".to_string()]);
         let mut locked_metrics = SCOPED_METRICS.lock().unwrap();
 
@@ -235,7 +240,8 @@ pub mod test {
         assert_eq!(1, n_multipliers_metric);
     }
 
-    /// Tests the tracer macro on an associated function when the tracer is disabled
+    /// Tests the tracer macro on an associated function when the tracer is
+    /// disabled
     #[cfg(not(feature = "bench"))]
     #[test]
     fn test_macro_associated() {
@@ -246,8 +252,8 @@ pub mod test {
 
         Gadget::apply_constraints(&mut prover);
 
-        // Read the values from the tracer, this test is gated behind the same feature flag
-        // as the tracer, so metrics should have been recorded
+        // Read the values from the tracer, this test is gated behind the same feature
+        // flag as the tracer, so metrics should have been recorded
         let gadget_scope = Scope::from_path(vec!["apply_constraints".to_string()]);
         let mut locked_metrics = SCOPED_METRICS.lock().unwrap();
 
@@ -264,7 +270,8 @@ pub mod test {
             .is_none());
     }
 
-    /// Tests the tracer macro on a non-associated function when the tracer is disabled
+    /// Tests the tracer macro on a non-associated function when the tracer is
+    /// disabled
     #[cfg(not(feature = "bench"))]
     #[test]
     fn test_macro_non_associated() {
@@ -275,8 +282,8 @@ pub mod test {
 
         non_associated_gadget(&mut prover);
 
-        // Read the values from the tracer, this test is gated behind the same feature flag
-        // as the tracer, so metrics should have been recorded
+        // Read the values from the tracer, this test is gated behind the same feature
+        // flag as the tracer, so metrics should have been recorded
         let gadget_scope = Scope::from_path(vec!["non_associated_gadget".to_string()]);
         let mut locked_metrics = SCOPED_METRICS.lock().unwrap();
 

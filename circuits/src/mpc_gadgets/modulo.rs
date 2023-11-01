@@ -34,11 +34,12 @@ fn scalar_mod_2m(val: &ScalarResult, m: usize) -> ScalarResult {
 
 /// Computes the value of the input modulo 2^m
 ///
-/// Blinds the value with a random scalar, opens the blinded value, applies the modulo
-/// operator, then inverts the blinding.
+/// Blinds the value with a random scalar, opens the blinded value, applies the
+/// modulo operator, then inverts the blinding.
 ///
-/// One catch is that if the resulting value of the modulo is less than the blinding
-/// factor, we have to shift the value up by one addition of the modulus.
+/// One catch is that if the resulting value of the modulo is less than the
+/// blinding factor, we have to shift the value up by one addition of the
+/// modulus.
 pub fn mod_2m<const M: usize>(
     a: &AuthenticatedScalarResult,
     fabric: &MpcFabric,
@@ -83,7 +84,8 @@ pub fn truncate<const M: usize>(
     x: &AuthenticatedScalarResult,
     fabric: &MpcFabric,
 ) -> AuthenticatedScalarResult {
-    // Apply mod2m and then subtract the result to make the value divisible by a public 2^-m
+    // Apply mod2m and then subtract the result to make the value divisible by a
+    // public 2^-m
     if M >= SCALAR_MAX_BITS {
         return fabric.zero_authenticated();
     }
@@ -94,7 +96,8 @@ pub fn truncate<const M: usize>(
 
 /// Shifts the input right by the specified amount
 ///
-/// Effectively just calls out to truncate, but is placed here for abstraction purposes
+/// Effectively just calls out to truncate, but is placed here for abstraction
+/// purposes
 pub fn shift_right<const M: usize>(
     a: &AuthenticatedScalarResult,
     fabric: &MpcFabric,

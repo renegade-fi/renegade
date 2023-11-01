@@ -13,8 +13,8 @@ pub struct ClientWebsocketMessage {
     pub body: WebsocketMessage,
 }
 
-/// A message type that indicates the client would like to either subscribe or unsubscribe
-/// from a given topic
+/// A message type that indicates the client would like to either subscribe or
+/// unsubscribe from a given topic
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "method", rename_all = "lowercase")]
 pub enum WebsocketMessage {
@@ -30,8 +30,9 @@ pub enum WebsocketMessage {
     },
 }
 
-/// A message that is sent in response to a subscribe/unsubscribe message, notifies the client
-/// of the now active subscriptions after a subscribe/unsubscribe message is applied
+/// A message that is sent in response to a subscribe/unsubscribe message,
+/// notifies the client of the now active subscriptions after a
+/// subscribe/unsubscribe message is applied
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SubscriptionResponse {
     /// The subscriptions that remain after applying the requested update

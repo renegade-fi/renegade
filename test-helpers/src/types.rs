@@ -45,8 +45,8 @@ pub struct IntegrationTest<FnArgs> {
     pub test_fn: IntegrationTestFn<FnArgs>,
 }
 
-/// A type for encapsulating both synchronous and asynchronous integration tests within
-/// a single test harness
+/// A type for encapsulating both synchronous and asynchronous integration tests
+/// within a single test harness
 #[allow(clippy::type_complexity)]
 pub enum IntegrationTestFn<FnArgs> {
     /// A synchronous test, i.e. not `async`

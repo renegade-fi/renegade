@@ -62,9 +62,11 @@ pub struct CoinbaseConnection {
 pub struct CoinbaseOrderBookData {
     // Note: The reason we use String's for price_level is because using f32 as a key produces
     // collision issues
-    /// A HashMap representing the local mirroring of Coinbase's order book bids.
+    /// A HashMap representing the local mirroring of Coinbase's order book
+    /// bids.
     bids: HashMap<String, f32>,
-    /// A HashMap representing the local mirroring of Coinbase's order book offers.
+    /// A HashMap representing the local mirroring of Coinbase's order book
+    /// offers.
     offers: HashMap<String, f32>,
 }
 
@@ -152,17 +154,17 @@ impl CoinbaseConnection {
                     } else {
                         order_book.bids.insert(price_level.clone(), new_quantity);
                     }
-                }
+                },
                 COINBASE_OFFER => {
                     if new_quantity == 0.0 {
                         order_book.offers.remove(&price_level);
                     } else {
                         order_book.offers.insert(price_level.clone(), new_quantity);
                     }
-                }
+                },
                 _ => {
                     return Err(ExchangeConnectionError::InvalidMessage(side.to_string()));
-                }
+                },
             }
         }
 
@@ -227,19 +229,20 @@ impl ExchangeConnection for CoinbaseConnection {
                     Ok(val) => {
                         let res = Self::midpoint_from_ws_message(&mut order_book, val).await;
                         res.transpose()
-                    }
+                    },
 
                     Err(e) => {
                         log::error!("Error reading message from Coinbase websocket: {e}");
                         Some(Err(ExchangeConnectionError::ConnectionHangup(
                             e.to_string(),
                         )))
-                    }
+                    },
                 }
             }
         });
 
-        // Construct an initialized price stream from the initial price and the mapped stream
+        // Construct an initialized price stream from the initial price and the mapped
+        // stream
         let price_stream = InitializablePriceStream::new(Box::pin(mapped_stream));
 
         Ok(Self {

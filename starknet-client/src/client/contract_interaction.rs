@@ -1,4 +1,5 @@
-//! Defines `StarknetClient` helpers that allow for interacting with the `darkpool` contract
+//! Defines `StarknetClient` helpers that allow for interacting with the
+//! `darkpool` contract
 
 use circuit_types::merkle::MerkleRoot;
 use circuit_types::native_helpers::compute_wallet_commitment_from_private;
@@ -111,7 +112,8 @@ impl StarknetClient {
 
     /// Call the `new_wallet` contract method with the given source data
     ///
-    /// Returns the transaction hash corresponding to the `new_wallet` invocation
+    /// Returns the transaction hash corresponding to the `new_wallet`
+    /// invocation
     pub async fn new_wallet(
         &self,
         private_share_commitment: WalletShareStateCommitment,
@@ -148,9 +150,9 @@ impl StarknetClient {
         .await
     }
 
-    /// Call the `update_wallet` function in the contract, passing it all the information
-    /// needed to nullify the old wallet, transition the wallet to a newly committed one,
-    /// and handle internal/external transfers
+    /// Call the `update_wallet` function in the contract, passing it all the
+    /// information needed to nullify the old wallet, transition the wallet
+    /// to a newly committed one, and handle internal/external transfers
     ///
     /// Returns the transaction hash of the `update_wallet` call
     #[allow(clippy::too_many_arguments)]

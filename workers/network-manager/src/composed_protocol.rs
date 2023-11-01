@@ -1,9 +1,11 @@
-//! This file defines the logic for combining various libp2p network behaviors into a single
-//! protocol. We combine a handful of different libp2p protocols to support different
-//! use cases:
+//! This file defines the logic for combining various libp2p network behaviors
+//! into a single protocol. We combine a handful of different libp2p protocols
+//! to support different use cases:
 //!      1. RequestResponse: Used for p2p direct communication (e.g. heartbeat)
-//!      2. KAD: Used for peer discovery and application level routing information (e.g. wallet ownership)
-//!      3. GossipSub: a decentralized pubsub protocol, used for broadcast primitives.
+//!      2. KAD: Used for peer discovery and application level routing
+//!         information (e.g. wallet ownership)
+//!      3. GossipSub: a decentralized pubsub protocol, used for broadcast
+//!         primitives.
 
 use async_trait::async_trait;
 use gossip_api::gossip::{AuthenticatedGossipRequest, AuthenticatedGossipResponse};
@@ -39,8 +41,8 @@ use super::error::NetworkManagerError;
 /// The maximum size libp2p should allocate buffer space for
 const MAX_MESSAGE_SIZE: usize = 1_000_000_000;
 
-/// The composed behavior that handles all types of network requests that various
-/// workers need access to
+/// The composed behavior that handles all types of network requests that
+/// various workers need access to
 #[derive(NetworkBehaviour)]
 #[behaviour(out_event = "ComposedProtocolEvent")]
 pub struct ComposedNetworkBehavior {
@@ -52,8 +54,8 @@ pub struct ComposedNetworkBehavior {
     pub kademlia_dht: Kademlia<MemoryStore>,
     /// The Gossipsub behavior; used for broadcast (pubsub) primitives
     pub pubsub: Gossipsub,
-    /// The identify protocol behavior, used for getting publicly facing information
-    /// about the local node
+    /// The identify protocol behavior, used for getting publicly facing
+    /// information about the local node
     pub identify: IdentifyProtocol,
 }
 
@@ -88,8 +90,8 @@ impl ComposedNetworkBehavior {
         )
         .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
-        // The identify protocol; used to allow the local node to gain publicly facing info
-        // about itself; i.e. dialable IP
+        // The identify protocol; used to allow the local node to gain publicly facing
+        // info about itself; i.e. dialable IP
         let identify = IdentifyProtocol::new(IdentifyConfig::new(
             protocol_version.to_string(),
             keypair.public(),

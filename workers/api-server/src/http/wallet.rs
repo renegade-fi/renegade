@@ -120,7 +120,8 @@ pub(super) const REMOVE_FEE_ROUTE: &str = "/v0/wallet/:wallet_id/fees/:index/rem
 // | Error Messages |
 // ------------------
 
-/// Error message displayed when a balance is insufficient to transfer the requested amount
+/// Error message displayed when a balance is insufficient to transfer the
+/// requested amount
 const ERR_INSUFFICIENT_BALANCE: &str = "insufficient balance";
 /// Error message displayed when a given order cannot be found
 const ERR_ORDER_NOT_FOUND: &str = "order not found";
@@ -515,7 +516,7 @@ impl TypedHandler for CreateOrderHandler {
         // Spawn a task to handle the order creation flow
         let task = UpdateWalletTask::new(
             timestamp,
-            None, /* external_transfer */
+            None, // external_transfer
             old_wallet,
             new_wallet,
             self.starknet_client.clone(),
@@ -588,9 +589,10 @@ impl TypedHandler for UpdateOrderHandler {
         let mut new_order: Order = req.order.into();
         new_order.timestamp = timestamp;
 
-        // We edit the value of the underlying map in-place (as opposed to `pop` and `insert`)
-        // to maintain ordering of the orders. This is important for the circuit, which relies on
-        // the order of the orders to be consistent between the old and new wallets
+        // We edit the value of the underlying map in-place (as opposed to `pop` and
+        // `insert`) to maintain ordering of the orders. This is important for
+        // the circuit, which relies on the order of the orders to be consistent
+        // between the old and new wallets
         let index = new_wallet.orders.get_index_of(&order_id).ok_or_else(|| {
             ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, ERR_ORDER_NOT_FOUND.to_string())
         })?;
@@ -608,7 +610,7 @@ impl TypedHandler for UpdateOrderHandler {
         // Spawn a task to handle the order creation flow
         let task = UpdateWalletTask::new(
             timestamp,
-            None, /* external_transfer */
+            None, // external_transfer
             old_wallet,
             new_wallet,
             self.starknet_client.clone(),
@@ -684,7 +686,7 @@ impl TypedHandler for CancelOrderHandler {
         // Spawn a task to handle the order creation flow
         let task = UpdateWalletTask::new(
             get_current_timestamp(),
-            None, /* external_transfer */
+            None, // external_transfer
             old_wallet,
             new_wallet,
             self.starknet_client.clone(),
@@ -1119,7 +1121,7 @@ impl TypedHandler for AddFeeHandler {
         // Create a task to submit this update to the contract
         let task = UpdateWalletTask::new(
             get_current_timestamp(),
-            None, /* external_transfer */
+            None, // external_transfer
             old_wallet,
             new_wallet,
             self.starknet_client.clone(),
@@ -1201,7 +1203,7 @@ impl TypedHandler for RemoveFeeHandler {
         // Start a task to submit this update to the contract
         let task = UpdateWalletTask::new(
             get_current_timestamp(),
-            None, /* external_transfer */
+            None, // external_transfer
             old_wallet,
             new_wallet,
             self.starknet_client.clone(),

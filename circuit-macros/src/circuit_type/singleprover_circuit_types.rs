@@ -30,9 +30,11 @@ pub(crate) const VAR_TYPE_ASSOCIATED_NAME: &str = "VarType";
 /// The name of the associated type for commitments
 pub(crate) const COMM_TYPE_ASSOCIATED_NAME: &str = "CommitmentType";
 
-/// The method name for converting from serialized commitments to a commitment type
+/// The method name for converting from serialized commitments to a commitment
+/// type
 const FROM_COMMS_METHOD_NAME: &str = "from_commitments";
-/// The method name for converting a commitment type to a serialized commitment vector
+/// The method name for converting a commitment type to a serialized commitment
+/// vector
 const TO_COMMS_METHOD_NAME: &str = "to_commitments";
 /// The single prover commitment randomness type name
 pub(crate) const COMM_RANDOMNESS_TYPE: &str = "Scalar";
@@ -59,8 +61,8 @@ const LINEAR_COMBINATION_ASSOCIATED_TYPE_NAME: &str = "LinearCombinationType";
 // | Helpers |
 // -----------
 
-/// Build generic bounds for variable types which abstract over the functional differences
-/// of `Variable`s and `LinearCombination`s
+/// Build generic bounds for variable types which abstract over the functional
+/// differences of `Variable`s and `LinearCombination`s
 pub(crate) fn build_var_type_generics() -> Generics {
     let l_ident = new_ident(LINEAR_COMBINATION_LIKE_GENERIC);
     parse_quote!(<#l_ident: LinearCombinationLike>)
@@ -76,7 +78,8 @@ pub(crate) fn with_var_type_generics(ident: Ident) -> Path {
 // | Implementation |
 // ------------------
 
-/// Build single-prover circuit types for the base type, these are variable and commitment types
+/// Build single-prover circuit types for the base type, these are variable and
+/// commitment types
 pub(crate) fn build_circuit_types(base_type: &ItemStruct, serde: bool) -> TokenStream2 {
     let mut res_stream = TokenStream2::default();
 
@@ -202,7 +205,8 @@ fn build_var_type_impl(var_struct: &ItemStruct, base_type: &ItemStruct) -> Token
     impl_block.to_token_stream()
 }
 
-/// Build a commitment type; the type of a commitment to the base type that has been allocated
+/// Build a commitment type; the type of a commitment to the base type that has
+/// been allocated
 pub(crate) fn build_commitment_type(base_type: &ItemStruct, serde: bool) -> TokenStream2 {
     let generics = base_type.generics.clone();
     let base_name = base_type.ident.clone();
@@ -232,7 +236,8 @@ pub(crate) fn build_commitment_type(base_type: &ItemStruct, serde: bool) -> Toke
     res
 }
 
-/// Build the `impl CircuitCommitmentType for ...` block fo the commitment struct
+/// Build the `impl CircuitCommitmentType for ...` block fo the commitment
+/// struct
 fn build_comm_type_impl(comm_struct: &ItemStruct) -> TokenStream2 {
     let generics = comm_struct.generics.clone();
     let where_clause = generics.where_clause.clone();

@@ -252,7 +252,8 @@ impl<'de> Visitor<'de> for PeerIDVisitor {
 pub struct ClusterId(String);
 impl ClusterId {
     /// Construct a clusterID, it's more readable and debuggable to compress the
-    /// public key into a base64 encoded representation than to use the value directly
+    /// public key into a base64 encoded representation than to use the value
+    /// directly
     pub fn new(cluster_pubkey: &PublicKey) -> Self {
         let encoded_key = base64::encode(cluster_pubkey.as_bytes());
         Self(encoded_key)

@@ -60,8 +60,8 @@ pub struct RelayerState {
     matched_order_pairs: AsyncShared<Vec<(OrderIdentifier, OrderIdentifier)>>,
     /// Priorities for scheduling handshakes with each peer
     pub handshake_priorities: AsyncShared<HandshakePriorityStore>,
-    /// A reference to the relayer-global system bus; used to stream state updates
-    /// to listening parties
+    /// A reference to the relayer-global system bus; used to stream state
+    /// updates to listening parties
     pub system_bus: SystemBus<SystemBusMessage>,
 }
 
@@ -180,8 +180,8 @@ impl RelayerState {
         Some(*verified_orders.get(distribution.sample(&mut rng)).unwrap())
     }
 
-    /// Get a peer in the cluster that manages the given order, used to dial during
-    /// handshake scheduling
+    /// Get a peer in the cluster that manages the given order, used to dial
+    /// during handshake scheduling
     pub async fn get_peer_managing_order(
         &self,
         order_id: &OrderIdentifier,
@@ -206,8 +206,8 @@ impl RelayerState {
     // | Peer Index Setters |
     // ----------------------
 
-    /// Add a peer without validation that the cluster auth signature is valid or that the
-    /// peer's address is dialable
+    /// Add a peer without validation that the cluster auth signature is valid
+    /// or that the peer's address is dialable
     ///
     /// This should only be used when validation can be assumed from context
     pub async fn add_peer_unchecked(&self, peer_info: PeerInfo) {
@@ -231,7 +231,8 @@ impl RelayerState {
     ) {
         let mut locked_peer_index = self.write_peer_index().await;
         for peer in peer_ids.iter() {
-            // Skip this peer if peer info wasn't sent, or if their cluster auth signature doesn't verify
+            // Skip this peer if peer info wasn't sent, or if their cluster auth signature
+            // doesn't verify
             if let Some(info) = peer_info.get(peer) && info.verify_cluster_auth_sig().is_ok() {
                 // Record a dummy heartbeat to setup the initial state
                 info.successful_heartbeat();
@@ -359,7 +360,7 @@ impl RelayerState {
                         order_id,
                         wallet_share_nullifier,
                         self.local_cluster_id.clone(),
-                        true, /* local */
+                        true, // local
                     ))
                     .await;
             }
@@ -385,7 +386,7 @@ impl RelayerState {
                         *order_id,
                         wallet_share_nullifier,
                         self.local_cluster_id.clone(),
-                        true, /* local */
+                        true, // local
                     ))
                     .await;
             }

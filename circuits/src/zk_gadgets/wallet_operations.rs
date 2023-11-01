@@ -1,4 +1,5 @@
-//! Groups logic for computing wallet commitments and nullifiers inside of a circuit
+//! Groups logic for computing wallet commitments and nullifiers inside of a
+//! circuit
 
 use circuit_types::{
     traits::{CircuitVarType, LinearCombinationLike},
@@ -49,7 +50,8 @@ where
         hasher.squeeze(cs)
     }
 
-    /// Compute the commitment to the full wallet given a commitment to the private shares
+    /// Compute the commitment to the full wallet given a commitment to the
+    /// private shares
     pub fn compute_wallet_commitment_from_private<
         L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,
@@ -62,7 +64,8 @@ where
         let hash_params = default_poseidon_params();
         let mut hasher = PoseidonHashGadget::new(hash_params);
 
-        // The public shares are added directly to a sponge H(private_commit || public shares)
+        // The public shares are added directly to a sponge H(private_commit || public
+        // shares)
         let mut hash_input = vec![private_commitment];
         hash_input.append(
             &mut blinded_public_wallet_share
@@ -76,7 +79,8 @@ where
         hasher.squeeze(cs)
     }
 
-    /// Compute the full commitment of a wallet's shares given both the public and private shares
+    /// Compute the full commitment of a wallet's shares given both the public
+    /// and private shares
     pub fn compute_wallet_share_commitment<
         L: LinearCombinationLike,
         CS: RandomizableConstraintSystem,

@@ -16,12 +16,13 @@ use super::{proof_bundles::ValidMatchMpcBundle, wallet::OrderIdentifier};
 /// A type alias for a linkable wallet share with default sizing parameters
 pub type SizedLinkableWalletShare = LinkableWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
-/// The role in an MPC network setup; either Dialer or Listener depending on which node
-/// initiates the connection
+/// The role in an MPC network setup; either Dialer or Listener depending on
+/// which node initiates the connection
 #[derive(Clone, Debug)]
 pub enum ConnectionRole {
     /// Dials the peer, initiating the connection
-    /// The dialer also plays the role of the king in the subsequent MPC computation
+    /// The dialer also plays the role of the king in the subsequent MPC
+    /// computation
     Dialer,
     /// Listens for an inbound connection from the dialer
     Listener,
@@ -41,10 +42,11 @@ impl ConnectionRole {
 /// The state of a given handshake execution
 #[derive(Clone, Debug)]
 pub struct HandshakeState {
-    /// The request identifier of the handshake, used to uniquely identify a handshake
-    /// correspondence between peers
+    /// The request identifier of the handshake, used to uniquely identify a
+    /// handshake correspondence between peers
     pub request_id: Uuid,
-    /// The role of the local peer in the MPC, dialer is party 0, listener is party 1
+    /// The role of the local peer in the MPC, dialer is party 0, listener is
+    /// party 1
     pub role: ConnectionRole,
     /// The identifier of the order that the remote peer has proposed for match
     pub peer_order_id: OrderIdentifier,
@@ -65,19 +67,21 @@ pub struct HandshakeState {
 /// A state enumeration for the valid states a handshake may take
 #[derive(Clone, Debug)]
 pub enum State {
-    /// The state entered into when order pair negotiation beings, i.e. the initial state
-    /// This state is exited when either:
+    /// The state entered into when order pair negotiation beings, i.e. the
+    /// initial state This state is exited when either:
     ///     1. A pair of orders is successfully decided on to execute matches
     ///     2. No pair of unmatched orders is found
     OrderNegotiation,
-    /// This state is entered when an order pair has been successfully negotiated, and the
-    /// match computation has begun. This state is either exited by a successful match or
-    /// an error
+    /// This state is entered when an order pair has been successfully
+    /// negotiated, and the match computation has begun. This state is
+    /// either exited by a successful match or an error
     MatchInProgress,
-    /// This state signals that the handshake has completed successfully one way or another;
-    /// either by successful match, or because no non-cached order pairs were found
+    /// This state signals that the handshake has completed successfully one way
+    /// or another; either by successful match, or because no non-cached
+    /// order pairs were found
     Completed,
-    /// This state is entered if an error occurs somewhere throughout the handshake execution
+    /// This state is entered if an error occurs somewhere throughout the
+    /// handshake execution
     Error(String),
 }
 
@@ -134,8 +138,9 @@ impl HandshakeState {
     }
 }
 
-/// The type returned by the match process, including the result, the validity proof bundle,
-/// and all witness/statement variables that must be revealed to complete the match
+/// The type returned by the match process, including the result, the validity
+/// proof bundle, and all witness/statement variables that must be revealed to
+/// complete the match
 #[derive(Clone, Debug)]
 pub struct HandshakeResult {
     /// The plaintext, opened result of the match

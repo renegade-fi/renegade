@@ -1,7 +1,8 @@
-//! The gossip server manages the general gossip network interaction of a single p2p node
+//! The gossip server manages the general gossip network interaction of a single
+//! p2p node
 //!
-//! This file groups logic for creating the server as well as the central dispatch/execution
-//! loop of the workers
+//! This file groups logic for creating the server as well as the central
+//! dispatch/execution loop of the workers
 
 use common::{
     default_wrapper::DefaultWrapper,
@@ -62,11 +63,13 @@ impl GossipServer {
     /// cluster
     pub(super) async fn bootstrap_into_network(&self) -> Result<(), GossipError> {
         // Bootstrap into the network in two steps:
-        //  1. Forward all bootstrap addresses to the network manager so it may dial them
+        //  1. Forward all bootstrap addresses to the network manager so it may dial
+        //     them
         //  2. Send bootstrap requests to all bootstrapping peers
         //  3. Send heartbeats to all peers for state sync
-        // Wait until all peers have been indexed before sending requests to give async network
-        // manager time to index the peers in the case that these messages are processed concurrently
+        // Wait until all peers have been indexed before sending requests to give async
+        // network manager time to index the peers in the case that these
+        // messages are processed concurrently
 
         // 1. Forward bootstrap addresses to the network manager
         for (peer_id, peer_addr) in self.config.bootstrap_servers.iter() {
@@ -114,17 +117,20 @@ impl GossipServer {
         self.warmup_then_join_cluster().await
     }
 
-    /// Enqueues a pubsub message to join the local peer's cluster, then spawns a timer
-    /// that allows the network manager to warm up pubsub connections
+    /// Enqueues a pubsub message to join the local peer's cluster, then spawns
+    /// a timer that allows the network manager to warm up pubsub
+    /// connections
     ///
-    /// Once this timer expires, the timer thread enqueues a management directive in the
-    /// network manager to release buffered pubsub messages onto the network.
+    /// Once this timer expires, the timer thread enqueues a management
+    /// directive in the network manager to release buffered pubsub messages
+    /// onto the network.
     ///
-    /// This is done to allow the network manager to gossip about network structure and graft
-    /// a pubsub mesh before attempting to publish
+    /// This is done to allow the network manager to gossip about network
+    /// structure and graft a pubsub mesh before attempting to publish
     async fn warmup_then_join_cluster(&self) -> Result<(), GossipError> {
-        // Send a pubsub message indicating that the local peer has joined the cluster; this message
-        // will be buffered by the network manager until the warmup period is complete
+        // Send a pubsub message indicating that the local peer has joined the cluster;
+        // this message will be buffered by the network manager until the warmup
+        // period is complete
         let peer_info = self
             .config
             .global_state
@@ -152,8 +158,8 @@ impl GossipServer {
 
         // Copy items so they may be moved into the spawned thread
         let network_sender_copy = self.config.network_sender.clone();
-        // Spawn a thread to wait on a timeout and then signal to the network manager that it
-        // may flush the pubsub buffer
+        // Spawn a thread to wait on a timeout and then signal to the network manager
+        // that it may flush the pubsub buffer
         Builder::new()
             .name("gossip-warmup-timer".to_string())
             .spawn(move || {
@@ -178,9 +184,9 @@ impl GossipServer {
 /// Executes the heartbeat protocols
 #[derive(Clone)]
 pub struct GossipProtocolExecutor {
-    /// The peer expiry cache holds peers in an invisibility window so that when a peer is
-    /// expired, it cannot be incorrectly re-discovered for some time, until its expiry
-    /// has had time to propagate
+    /// The peer expiry cache holds peers in an invisibility window so that when
+    /// a peer is expired, it cannot be incorrectly re-discovered for some
+    /// time, until its expiry has had time to propagate
     pub(super) peer_expiry_cache: SharedLRUCache,
     /// The channel on which to receive jobs
     pub(super) job_receiver: DefaultWrapper<Option<TokioReceiver<GossipServerJob>>>,
@@ -238,8 +244,9 @@ impl GossipProtocolExecutor {
             self.global_state.clone(),
         );
 
-        // We check for cancels both before receiving a job (so that we don't sleep after cancellation)
-        // and after a receiving a job (so that we avoid unnecessary work)
+        // We check for cancels both before receiving a job (so that we don't sleep
+        // after cancellation) and after a receiving a job (so that we avoid
+        // unnecessary work)
         let mut job_receiver = self.job_receiver.take().unwrap();
         loop {
             tokio::select! {
@@ -281,7 +288,7 @@ impl GossipProtocolExecutor {
                     })
                     .map_err(|err| GossipError::SendMessage(err.to_string()))
                     .and(res)
-            }
+            },
             GossipServerJob::ExecuteHeartbeat(peer_id) => self.send_heartbeat(peer_id).await,
             GossipServerJob::HandleHeartbeatReq {
                 message, channel, ..
@@ -299,20 +306,20 @@ impl GossipProtocolExecutor {
 
                 // Merge newly discovered peers into local state
                 self.merge_state_from_message(message).await.and(res)
-            }
+            },
             GossipServerJob::HandleHeartbeatResp { peer_id, message } => {
                 self.record_heartbeat(peer_id).await;
                 self.merge_state_from_message(message).await
-            }
+            },
             GossipServerJob::Cluster(job) => self.handle_cluster_management_job(job).await,
             GossipServerJob::OrderBookManagement(management_message) => {
                 self.handle_order_book_management_job(management_message)
                     .await
-            }
+            },
             GossipServerJob::WalletUpdate { wallet } => {
                 self.global_state.update_wallet(*wallet).await;
                 Ok(())
-            }
+            },
         };
 
         if let Err(err) = res {

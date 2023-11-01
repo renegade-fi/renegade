@@ -12,8 +12,8 @@ use std::ops::Neg;
 
 use super::poseidon::PoseidonHashGadget;
 
-/// The single-prover hash gadget, computes the Merkle root of a leaf given a path
-/// of sister nodes
+/// The single-prover hash gadget, computes the Merkle root of a leaf given a
+/// path of sister nodes
 pub struct PoseidonMerkleHashGadget<const HEIGHT: usize> {}
 impl<const HEIGHT: usize> PoseidonMerkleHashGadget<HEIGHT> {
     /// Compute the root of the tree given the leaf node and the path of
@@ -33,7 +33,8 @@ impl<const HEIGHT: usize> PoseidonMerkleHashGadget<HEIGHT> {
         Self::compute_root_prehashed(leaf_hash, opening, cs)
     }
 
-    /// Compute the root given an already hashed leaf, i.e. do not hash a leaf buffer first
+    /// Compute the root given an already hashed leaf, i.e. do not hash a leaf
+    /// buffer first
     pub fn compute_root_prehashed<L1, L2, CS>(
         leaf_node: L1,
         opening: MerkleOpeningVar<L2, HEIGHT>,
@@ -47,8 +48,8 @@ impl<const HEIGHT: usize> PoseidonMerkleHashGadget<HEIGHT> {
         // Hash the leaf_node into a field element
         let mut current_hash: LinearCombination = leaf_node.into();
         for (path_elem, lr_select) in opening.elems.into_iter().zip(opening.indices.into_iter()) {
-            // Select the left and right hand sides based on whether this node in the opening represents the
-            // left or right hand child of its parent
+            // Select the left and right hand sides based on whether this node in the
+            // opening represents the left or right hand child of its parent
             let (lhs, rhs) = Self::select_left_right(
                 current_hash.clone(),
                 path_elem.into(),
@@ -79,7 +80,8 @@ impl<const HEIGHT: usize> PoseidonMerkleHashGadget<HEIGHT> {
         Ok(())
     }
 
-    /// Compute the root from a prehashed leaf and constrain it to an expected value
+    /// Compute the root from a prehashed leaf and constrain it to an expected
+    /// value
     pub fn compute_and_constrain_root_prehashed<L1, L2, CS>(
         leaf_node: L1,
         opening: MerkleOpeningVar<L2, HEIGHT>,
@@ -127,9 +129,9 @@ impl<const HEIGHT: usize> PoseidonMerkleHashGadget<HEIGHT> {
         let left_child = left_child_term1 + left_child_term2;
 
         // If lr_select == 0 { sister_node } else { current_hash }
-        // We can avoid an extra multiplication here, because we know the lhs term, the rhs term is
-        // equal to the other term, which can be computed by addition alone
-        //      rhs = a + b - lhs
+        // We can avoid an extra multiplication here, because we know the lhs term, the
+        // rhs term is equal to the other term, which can be computed by
+        // addition alone      rhs = a + b - lhs
         let right_child = current_hash_lc + sister_node_lc - left_child.clone();
         (left_child, right_child)
     }
@@ -148,8 +150,8 @@ impl<const HEIGHT: usize> PoseidonMerkleHashGadget<HEIGHT> {
         hasher.squeeze(cs)
     }
 
-    /// Hash two internal nodes in the (binary) Merkle tree, giving the tree value at
-    /// the parent node
+    /// Hash two internal nodes in the (binary) Merkle tree, giving the tree
+    /// value at the parent node
     fn hash_internal_nodes<CS: RandomizableConstraintSystem>(
         left: &LinearCombination,
         right: &LinearCombination,
@@ -199,10 +201,12 @@ pub(crate) mod merkle_test {
         (0..n).map(|_| Scalar::random(&mut rng)).collect_vec()
     }
 
-    /// Get the opening indices from the index, this can be done by bit-decomposing the input to
-    /// determine incrementally which subtree a given index should be a part of.
+    /// Get the opening indices from the index, this can be done by
+    /// bit-decomposing the input to determine incrementally which subtree a
+    /// given index should be a part of.
     ///
-    /// The tree indices from leaf to root are exactly the LSB decomposition of the scalar
+    /// The tree indices from leaf to root are exactly the LSB decomposition of
+    /// the scalar
     pub(crate) fn get_opening_indices<const HEIGHT: usize>(
         mut leaf_index: usize,
     ) -> [Scalar; HEIGHT]

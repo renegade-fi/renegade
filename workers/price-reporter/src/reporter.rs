@@ -1,5 +1,6 @@
-//! Defines the PriceReporter, which is responsible for computing median PriceReports by managing
-//! individual ExchangeConnections in a fault-tolerant manner.
+//! Defines the PriceReporter, which is responsible for computing median
+//! PriceReports by managing individual ExchangeConnections in a fault-tolerant
+//! manner.
 use atomic_float::AtomicF64;
 use common::types::exchange::{
     Exchange, ExchangeConnectionState, PriceReport, PriceReporterState, ALL_EXCHANGES,
@@ -29,19 +30,21 @@ use super::{errors::ExchangeConnectionError, worker::PriceReporterManagerConfig}
 // | Constants |
 // -------------
 
-/// If none of the ExchangeConnections have reported an update within MAX_REPORT_AGE (in
-/// milliseconds), we pause matches until we receive a more recent price. Note that this threshold
-/// cannot be too aggressive, as certain long-tail asset pairs legitimately do not update that
-/// often.
+/// If none of the ExchangeConnections have reported an update within
+/// MAX_REPORT_AGE (in milliseconds), we pause matches until we receive a more
+/// recent price. Note that this threshold cannot be too aggressive, as certain
+/// long-tail asset pairs legitimately do not update that often.
 const MAX_REPORT_AGE_MS: u64 = 20_000; // 20 seconds
-/// If we do not have at least MIN_CONNECTIONS reports, we pause matches until we have enough
-/// reports. This only applies to Named tokens, as Unnamed tokens simply use UniswapV3.
+/// If we do not have at least MIN_CONNECTIONS reports, we pause matches until
+/// we have enough reports. This only applies to Named tokens, as Unnamed tokens
+/// simply use UniswapV3.
 const MIN_CONNECTIONS: usize = 1;
-/// If a single PriceReport is more than MAX_DEVIATION (as a fraction) away from the midpoint, then
-/// we pause matches until the prices stabilize.
+/// If a single PriceReport is more than MAX_DEVIATION (as a fraction) away from
+/// the midpoint, then we pause matches until the prices stabilize.
 const MAX_DEVIATION: f64 = 0.02;
 
-/// The number of milliseconds to wait in between sending keepalive messages to the connections
+/// The number of milliseconds to wait in between sending keepalive messages to
+/// the connections
 const KEEPALIVE_INTERVAL_MS: u64 = 15_000; // 15 seconds
 /// The number of milliseconds to wait in between retrying connections
 const CONN_RETRY_DELAY_MS: u64 = 2_000; // 2 seconds
@@ -51,11 +54,12 @@ const MAX_CONN_RETRY_WINDOW_MS: u64 = 60_000; // 1 minute
 /// The maximum number of retries to attempt before giving up on a connection
 const MAX_CONN_RETRIES: usize = 5;
 
-/// The number of milliseconds to wait in between sending median price report updates
+/// The number of milliseconds to wait in between sending median price report
+/// updates
 const MEDIAN_PRICE_REPORT_INTERVAL_MS: u64 = 1_000; // 1 second
 
-/// The price reporter handles opening connections to exchanges, and computing price reports
-/// and medians from the exchange data
+/// The price reporter handles opening connections to exchanges, and computing
+/// price reports and medians from the exchange data
 #[derive(Clone, Debug)]
 pub struct PriceReporter {
     /// The base Token (e.g., WETH)
@@ -71,7 +75,8 @@ pub struct PriceReporter {
 /// Uses atomic primitives to allow for hardware synchronized update streaming
 #[derive(Clone, Debug)]
 pub struct AtomicPriceStreamState {
-    /// The price information for each exchange, updated by the `ConnectionMuxer`
+    /// The price information for each exchange, updated by the
+    /// `ConnectionMuxer`
     price_map: HashMap<Exchange, Arc<AtomicF64>>,
     /// A map indicating the time at which the last price was received from each
     /// exchange
@@ -132,8 +137,8 @@ impl PriceReporter {
         let supported_exchanges =
             Self::compute_supported_exchanges_for_pair(&base_token, &quote_token, &config);
 
-        // Create shared memory that the `ConnectionMuxer` will use to communicate with the
-        // `PriceReporter`
+        // Create shared memory that the `ConnectionMuxer` will use to communicate with
+        // the `PriceReporter`
         let shared_exchange_state =
             AtomicPriceStreamState::new_from_exchanges(supported_exchanges.clone());
 
@@ -146,7 +151,8 @@ impl PriceReporter {
             shared_exchange_state.clone(),
         );
 
-        // TODO: This thread can panic, we may want to handle that at the manager level and restart
+        // TODO: This thread can panic, we may want to handle that at the manager level
+        // and restart
         tokio::spawn(connection_muxer.execution_loop());
 
         // Spawn a thread to stream median price reports
@@ -168,7 +174,8 @@ impl PriceReporter {
         self.get_state()
     }
 
-    /// Non-blocking report of the latest ExchangeConnectionState for all exchanges
+    /// Non-blocking report of the latest ExchangeConnectionState for all
+    /// exchanges
     pub fn peek_all_exchanges(&self) -> HashMap<Exchange, ExchangeConnectionState> {
         let mut exchange_connection_states = HashMap::<Exchange, ExchangeConnectionState>::new();
 
@@ -211,9 +218,10 @@ impl PriceReporter {
         }
     }
 
-    /// Returns if this PriceReport is of a "Named" token pair (as opposed to an "Unnamed" pair)
-    /// If the PriceReport is Named, then the prices are denominated in USD and largely derived
-    /// from centralized exchanges. If the PriceReport is Unnamed, then the prices are derived from
+    /// Returns if this PriceReport is of a "Named" token pair (as opposed to an
+    /// "Unnamed" pair) If the PriceReport is Named, then the prices are
+    /// denominated in USD and largely derived from centralized exchanges.
+    /// If the PriceReport is Unnamed, then the prices are derived from
     /// UniswapV3 and do not do fixed-point decimals adjustment.
     fn is_named(&self) -> bool {
         self.base_token.is_named() && self.quote_token.is_named()
@@ -249,11 +257,13 @@ impl PriceReporter {
         }
     }
 
-    /// Given a PriceReport for each Exchange, compute the current PriceReporterState. We check for
-    /// various issues (delayed prices, no data yet received, etc.), and if no issues are found,
-    /// compute the median PriceReport
+    /// Given a PriceReport for each Exchange, compute the current
+    /// PriceReporterState. We check for various issues (delayed prices, no
+    /// data yet received, etc.), and if no issues are found, compute the
+    /// median PriceReport
     fn get_state(&self) -> PriceReporterState {
-        // If the Token pair is Unnamed, then we simply report the UniswapV3 price if one exists.
+        // If the Token pair is Unnamed, then we simply report the UniswapV3 price if
+        // one exists.
         if !self.is_named() {
             let (uni_price, uni_ts) = self.exchange_info.read_price(&Exchange::UniswapV3).unwrap();
             if uni_price == Price::default() {
@@ -315,9 +325,9 @@ impl PriceReporter {
 // -------------------
 
 /// The connection muxer manages a set of websocket connections abstracted as
-/// `ExchangeConnection`s. It is responsible for restarting connections that fail, and
-/// communicating the latest price reports to the `PriceReporter` via an atomic shared
-/// memory primitive
+/// `ExchangeConnection`s. It is responsible for restarting connections that
+/// fail, and communicating the latest price reports to the `PriceReporter` via
+/// an atomic shared memory primitive
 struct ConnectionMuxer {
     /// The base token that the managed connections are reporting on
     base_token: Token,
@@ -443,8 +453,8 @@ impl ConnectionMuxer {
     ) -> Result<StreamMap<Exchange, Box<dyn ExchangeConnection>>, ExchangeConnectionError> {
         // We do not use a more convenient stream here for concurrent init because of:
         //   https://github.com/rust-lang/rust/issues/102211
-        // In specific, streams in async blocks sometimes have lifetimes erased which makes
-        // it impossible for the compiler to infer auto-traits like `Send`
+        // In specific, streams in async blocks sometimes have lifetimes erased which
+        // makes it impossible for the compiler to infer auto-traits like `Send`
         let futures = self
             .exchanges
             .iter()

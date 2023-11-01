@@ -1,5 +1,5 @@
-//! Defines handlers for network manager control directives, which are messages that
-//! correspond to some action in the NetworkManager itself
+//! Defines handlers for network manager control directives, which are messages
+//! that correspond to some action in the NetworkManager itself
 
 use std::net::SocketAddr;
 
@@ -20,11 +20,11 @@ use crate::error::NetworkManagerError;
 use super::{NetworkManagerExecutor, ERR_BROKER_MPC_NET, ERR_NO_KNOWN_ADDR};
 
 impl NetworkManagerExecutor {
-    /// Handles a message from another worker module that explicitly directs the network manager
-    /// to take some action
+    /// Handles a message from another worker module that explicitly directs the
+    /// network manager to take some action
     ///
-    /// The end destination of these messages is not a network peer, but the local network manager
-    /// itself
+    /// The end destination of these messages is not a network peer, but the
+    /// local network manager itself
     pub(super) fn handle_control_directive(
         &mut self,
         command: ManagerControlDirective,
@@ -44,7 +44,7 @@ impl NetworkManagerExecutor {
                     .add_address(&peer_id, address);
 
                 Ok(())
-            }
+            },
 
             // Build an MPC net for the given peers to communicate over
             ManagerControlDirective::BrokerMpcNet {
@@ -87,14 +87,15 @@ impl NetworkManagerExecutor {
                 });
 
                 Ok(())
-            }
+            },
 
             // Inform the network manager that the gossip server has warmed up the local node in
             // the cluster by advertising the local node's presence
             //
             // The network manager delays sending pubsub events until the gossip protocol has warmed
-            // up, because at startup, there are no known peers to publish to. The network manager gives
-            // the gossip server some time to discover new addresses before publishing to the network.
+            // up, because at startup, there are no known peers to publish to. The network manager
+            // gives the gossip server some time to discover new addresses before
+            // publishing to the network.
             ManagerControlDirective::GossipWarmupComplete => {
                 self.warmup_finished = true;
                 // Forward all buffered messages to the network
@@ -103,11 +104,12 @@ impl NetworkManagerExecutor {
                 }
 
                 Ok(())
-            }
+            },
         }
     }
 
-    /// Broker an MPC net between the local and remote peer using the given known addresses
+    /// Broker an MPC net between the local and remote peer using the given
+    /// known addresses
     async fn broker_mpc_net(
         allow_local: bool,
         request_id: Uuid,
@@ -144,17 +146,19 @@ impl NetworkManagerExecutor {
                         break;
                     }
 
-                    // During the connection attempt, the selected port was bound to, and dropping the `net`
-                    // may not immediately free up the port; so we increment the outbound port and continue
+                    // During the connection attempt, the selected port was bound to, and dropping
+                    // the `net` may not immediately free up the port; so we
+                    // increment the outbound port and continue
                     local_port += 1;
                 }
 
                 brokered_net
                     .ok_or_else(|| NetworkManagerError::Network(ERR_BROKER_MPC_NET.to_string()))?
-            }
+            },
 
             ConnectionRole::Listener => {
-                // As the listener, the peer address is inconsequential, and can be a dummy value
+                // As the listener, the peer address is inconsequential, and can be a dummy
+                // value
                 let local_addr: SocketAddr = format!("0.0.0.0:{local_port}").parse().unwrap();
                 let peer_addr: SocketAddr = "0.0.0.0:0".parse().unwrap();
                 let mut net = QuicTwoPartyNet::new(party_id, local_addr, peer_addr);
@@ -163,11 +167,11 @@ impl NetworkManagerExecutor {
                     .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
 
                 net
-            }
+            },
         };
 
-        // After the dependencies are injected into the network; forward it to the handshake manager to
-        // dial the peer and begin the MPC
+        // After the dependencies are injected into the network; forward it to the
+        // handshake manager to dial the peer and begin the MPC
         handshake_work_queue
             .send(HandshakeExecutionJob::MpcNetSetup {
                 request_id,

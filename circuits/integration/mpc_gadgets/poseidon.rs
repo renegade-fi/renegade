@@ -19,7 +19,8 @@ use crate::IntegrationTestArgs;
 // | Helpers |
 // -----------
 
-/// Helper to check that a given result is the correct hash of the input sequence.
+/// Helper to check that a given result is the correct hash of the input
+/// sequence.
 ///
 /// Uses the Arkworks Poseidon implementation for comparison
 async fn check_against_arkworks_hash(

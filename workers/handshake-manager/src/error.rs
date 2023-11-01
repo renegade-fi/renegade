@@ -7,8 +7,8 @@ use std::fmt::Display;
 pub enum HandshakeManagerError {
     /// Error resulting from a cancellation signal
     Cancelled(String),
-    /// An invalid request ID was passed in a message; i.e. the request ID is not known
-    /// to the local state machine
+    /// An invalid request ID was passed in a message; i.e. the request ID is
+    /// not known to the local state machine
     InvalidRequest(String),
     /// Error in MPC networking
     MpcNetwork(String),

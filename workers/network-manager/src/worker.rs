@@ -48,7 +48,8 @@ pub struct NetworkManagerConfig {
     /// The cluster keypair, wrapped in an option to allow the worker thread to
     /// take ownership of the keypair
     pub cluster_keypair: Option<Keypair>,
-    /// The known public addr that the local node is listening behind, if one exists
+    /// The known public addr that the local node is listening behind, if one
+    /// exists
     pub known_public_addr: Option<SocketAddr>,
     /// The channel on which to receive requests from other workers
     /// for outbound traffic
@@ -77,9 +78,10 @@ impl Worker for NetworkManager {
         let local_peer_id = config.global_state.local_peer_id;
         let local_keypair = config.global_state.local_keypair.clone();
 
-        // If the local node is given a known dialable addr for itself at startup, construct
-        // the local addr directly, otherwise set it to the canonical unspecified addr targeting
-        // all network interfaces and allow it to be discovered via the `Identify` protocol
+        // If the local node is given a known dialable addr for itself at startup,
+        // construct the local addr directly, otherwise set it to the canonical
+        // unspecified addr targeting all network interfaces and allow it to be
+        // discovered via the `Identify` protocol
         let ip_protoc = config
             .known_public_addr
             .map(|socketaddr| match socketaddr.ip() {
@@ -103,9 +105,9 @@ impl Worker for NetworkManager {
         })
     }
 
-    /// The network manager is not recoverable because restarting it requires re-allocating its
-    /// work queue. This would require updating any senders on this queue as well, it is simpler
-    /// to just fail
+    /// The network manager is not recoverable because restarting it requires
+    /// re-allocating its work queue. This would require updating any
+    /// senders on this queue as well, it is simpler to just fail
     fn is_recoverable(&self) -> bool {
         false
     }

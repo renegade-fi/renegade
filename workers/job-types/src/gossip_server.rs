@@ -25,7 +25,8 @@ pub enum GossipServerJob {
     ),
     /// Handle an incoming cluster management job
     Cluster(ClusterManagementJob),
-    /// Job type for the heartbeat executor to send an outbound heartbeat request
+    /// Job type for the heartbeat executor to send an outbound heartbeat
+    /// request
     ExecuteHeartbeat(WrappedPeerId),
     /// Handle an incoming heartbeat request from a peer
     HandleHeartbeatReq {
@@ -56,8 +57,8 @@ pub enum GossipServerJob {
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum ClusterManagementJob {
-    /// Add a replica for a given wallet to the state and begin gossip operations
-    /// for that wallet
+    /// Add a replica for a given wallet to the state and begin gossip
+    /// operations for that wallet
     AddWalletReplica {
         /// The ID fo the wallet that is newly replicated
         wallet_id: WalletIdentifier,
@@ -103,8 +104,9 @@ pub enum OrderBookManagementJob {
         /// The cluster that manages this order
         cluster: ClusterId,
     },
-    /// A new validity proof bundle has been generated for an order, it should be placed in
-    /// the `Verified` state after the local peer verifies the proof
+    /// A new validity proof bundle has been generated for an order, it should
+    /// be placed in the `Verified` state after the local peer verifies the
+    /// proof
     OrderProofUpdated {
         /// The identifier of the now updated order
         order_id: OrderIdentifier,
@@ -121,7 +123,8 @@ pub enum OrderBookManagementJob {
         /// The peer to return the response to
         requesting_peer: WrappedPeerId,
     },
-    /// A response to a request for the validity proof witnesses for a given order
+    /// A response to a request for the validity proof witnesses for a given
+    /// order
     OrderWitnessResponse {
         /// The order ID that info is requested for
         order_id: OrderIdentifier,

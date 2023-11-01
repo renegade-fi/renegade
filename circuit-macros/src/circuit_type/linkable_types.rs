@@ -93,8 +93,8 @@ fn build_linkable_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
     impl_block.to_token_stream()
 }
 
-/// Build the modified version of the struct that replaces each field with its commitment
-/// linkable analog
+/// Build the modified version of the struct that replaces each field with its
+/// commitment linkable analog
 fn build_linkable_struct(
     base_type: &ItemStruct,
     include_multiprover: bool,
@@ -170,8 +170,8 @@ fn build_linkable_type_impl(linkable_type: &ItemStruct) -> TokenStream2 {
     impl_block.to_token_stream()
 }
 
-/// Build the `CircuitBaseType` implementation of the linkable type so that it may be committed
-/// to within a constraint system
+/// Build the `CircuitBaseType` implementation of the linkable type so that it
+/// may be committed to within a constraint system
 ///
 /// Assumes that a base type exists for the non-linkable implementation
 fn build_circuit_base_type_impl(linkable_type: &ItemStruct) -> TokenStream2 {
@@ -222,8 +222,9 @@ fn build_circuit_base_type_impl(linkable_type: &ItemStruct) -> TokenStream2 {
 fn build_multiprover_type(linkable_type: &ItemStruct) -> TokenStream2 {
     // Add type aliases for the allocated linkable commitment and variable types
     // to the non-linkable ones, the MPC types will allocate multiprover var types
-    // as AuthenticatedLinkableTypeVar and AuthenticatedLinkableTypeCommitment, whereas we would prefer them
-    // to be AuthenticatedTypeVar and AuthenticatedTypeCommitment
+    // as AuthenticatedLinkableTypeVar and AuthenticatedLinkableTypeCommitment,
+    // whereas we would prefer them to be AuthenticatedTypeVar and
+    // AuthenticatedTypeCommitment
     let var_generics = build_multiprover_generics();
     let authenticated_linkable_name =
         ident_with_prefix(&linkable_type.ident.to_string(), MPC_TYPE_PREFIX);
@@ -245,12 +246,13 @@ fn build_multiprover_type(linkable_type: &ItemStruct) -> TokenStream2 {
         COMM_TYPE_SUFFIX,
     ));
 
-    // We do not construct new multiprover types, we instead implement `MulitproverCircuitBaseType` directly
-    // and target the types already constructed
+    // We do not construct new multiprover types, we instead implement
+    // `MulitproverCircuitBaseType` directly and target the types already
+    // constructed
     let mpc_type_impl = build_mpc_types(
         linkable_type,
-        true, /* include_multiprover */
-        true, /* multiprover_base_only */
+        true, // include_multiprover
+        true, // multiprover_base_only
     );
     // let multiprover_impl = build_multiprover_base_type_impl(linkable_type);
 

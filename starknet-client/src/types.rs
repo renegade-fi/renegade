@@ -23,7 +23,8 @@ use starknet::core::types::FieldElement as StarknetFieldElement;
 
 use crate::error::StarknetClientError;
 
-/// The error message emitted when the end of the calldata is reached before deserialization is complete
+/// The error message emitted when the end of the calldata is reached before
+/// deserialization is complete
 const ERR_CALLDATA_END: &str = "end of calldata reached before deserialization complete";
 
 lazy_static! {
@@ -73,7 +74,8 @@ impl From<CircuitExternalTransfer> for ExternalTransfer {
     }
 }
 
-/// A serialization implementation in the format that the Starknet client expects
+/// A serialization implementation in the format that the Starknet client
+/// expects
 impl From<ExternalTransfer> for Vec<StarknetFieldElement> {
     fn from(transfer: ExternalTransfer) -> Self {
         // The amount is serialized as a U256, which is represented by two
@@ -90,8 +92,8 @@ impl From<ExternalTransfer> for Vec<StarknetFieldElement> {
     }
 }
 
-/// A single party's state validity proof bundle used as input to the matching engine
-/// and forwarded to the contract for verification
+/// A single party's state validity proof bundle used as input to the matching
+/// engine and forwarded to the contract for verification
 #[derive(Clone)]
 pub struct MatchPayload {
     /// The public share of the new wallet's blinder
@@ -166,7 +168,8 @@ impl From<StarknetU256> for Vec<StarknetFieldElement> {
 // | Calldata Serialization |
 // --------------------------
 
-/// Implementing types may be serialized into `Starknet` calldata, i.e. a vector of `FieldElement`s
+/// Implementing types may be serialized into `Starknet` calldata, i.e. a vector
+/// of `FieldElement`s
 ///
 /// Borrowed from https://github.com/renegade-fi/renegade-contracts/blob/main/tests/src/utils.rs#L357
 pub trait CalldataSerializable {
@@ -174,7 +177,8 @@ pub trait CalldataSerializable {
     fn to_calldata(&self) -> Vec<StarknetFieldElement>;
 }
 
-/// Implementing types may be deserialized from `Starknet` calldata, i.e. a vector of `FieldElement`s
+/// Implementing types may be deserialized from `Starknet` calldata, i.e. a
+/// vector of `FieldElement`s
 pub trait CalldataDeserializable<I: Iterator<Item = StarknetFieldElement>>: Sized {
     /// Deserializes the type from a vector of `FieldElement`s  
     fn from_calldata(i: &mut I) -> Result<Self, StarknetClientError>;

@@ -50,7 +50,8 @@ use uuid::Uuid;
 pub use protos::*;
 pub mod error;
 
-/// An error emitted when the siblings array in a Merkle path is incorrectly sized
+/// An error emitted when the siblings array in a Merkle path is incorrectly
+/// sized
 const ERR_INCORRECT_SIBLINGS_SIZE: &str = "incorrect number of siblings";
 
 /// Protobuf definitions for state transitions
@@ -67,8 +68,8 @@ mod protos {
 /// A type alias for peer IDs used in the replication layer
 pub type RaftPeerId = u64;
 
-/// The `StateTransition` type encapsulates all possible state transitions, allowing transitions
-/// to be handled generically before they are applied
+/// The `StateTransition` type encapsulates all possible state transitions,
+/// allowing transitions to be handled generically before they are applied
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StateTransition {
     /// Add a wallet to the managed state
@@ -476,8 +477,8 @@ impl TryFrom<Wallet> for RuntimeWallet {
             .into();
 
         // Zero pad the shares to avoid panicking in the `from_scalars` method
-        // in case the message is malformed. The correctness of the secret shares is assumed
-        // to be validated elsewhere
+        // in case the message is malformed. The correctness of the secret shares is
+        // assumed to be validated elsewhere
         let private_shares = SizedWalletShare::from_scalars(
             &mut value
                 .private_shares

@@ -1,7 +1,9 @@
-//! Applicator methods for the network order book, separated out for discoverability
+//! Applicator methods for the network order book, separated out for
+//! discoverability
 //!
-//! TODO: For the order book in particular, it is likely to our advantage to index orders outside
-//! of the DB as well in an in-memory data structure for efficient lookup
+//! TODO: For the order book in particular, it is likely to our advantage to
+//! index orders outside of the DB as well in an in-memory data structure for
+//! efficient lookup
 
 use common::types::{
     gossip::ClusterId,
@@ -43,7 +45,8 @@ const ERR_ORDER_MISSING: &str = "Order missing from message";
 // | Orderbook Implementation |
 // ----------------------------
 
-/// A type that represents the match priority for an order, including its cluster priority
+/// A type that represents the match priority for an order, including its
+/// cluster priority
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OrderPriority {
     /// The priority of the cluster that the order is managed by
@@ -144,8 +147,9 @@ impl StateApplicator {
 
     /// Add an order to the book
     ///
-    /// TODO: For an initial implementation we do not re-index based on local orders or
-    /// verified orders. This will be added with the getter implementations
+    /// TODO: For an initial implementation we do not re-index based on local
+    /// orders or verified orders. This will be added with the getter
+    /// implementations
     pub(super) fn add_order_with_tx(order: &NetworkOrder, tx: &DbTxn<'_, RW>) -> Result<()> {
         // Remove the order from its nullifier set if it is already indexed
         if let Some(info) = Self::read_order_info(&order.id, tx)? {
@@ -165,7 +169,8 @@ impl StateApplicator {
 
     /// Update the validity proof for an order
     ///
-    /// It is assumed that the proof has been verified before this method is called
+    /// It is assumed that the proof has been verified before this method is
+    /// called
     fn attach_validity_proof_with_tx(
         order_id: &OrderIdentifier,
         proof: OrderValidityProofBundle,

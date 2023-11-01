@@ -1,11 +1,11 @@
-//! Defines the VALID COMMITMENTS circuit which leaks indices of balances and orders
-//! that will need to be updated upon a successful match. Specifically, the circuit
-//! verifies that balances, orders, etc are contained in a wallet at the claimed
-//! index. These balances, orders, etc are then linked to the settlement proofs
-//! upon a successful match.
+//! Defines the VALID COMMITMENTS circuit which leaks indices of balances and
+//! orders that will need to be updated upon a successful match. Specifically,
+//! the circuit verifies that balances, orders, etc are contained in a wallet at
+//! the claimed index. These balances, orders, etc are then linked to the
+//! settlement proofs upon a successful match.
 //!
-//! Note that the wallet's state inclusion in the global Merkle tree is proven in
-//! a linked proof of `VALID REBLIND`.
+//! Note that the wallet's state inclusion in the global Merkle tree is proven
+//! in a linked proof of `VALID REBLIND`.
 //!
 //! VALID COMMITMENTS is proven once per order in the wallet
 
@@ -81,9 +81,9 @@ where
         let receive_mint = receive_send_mint.remove(0);
         let send_mint = receive_send_mint.remove(0);
 
-        // Verify that the wallets are the same other than a possibly augmented balance of
-        // zero for the received mint of the order. This augmented balance must come in place of
-        // a previous balance that was zero.
+        // Verify that the wallets are the same other than a possibly augmented balance
+        // of zero for the received mint of the order. This augmented balance
+        // must come in place of a previous balance that was zero.
         Self::verify_wallets_equal_with_augmentation(
             statement.balance_receive_index,
             receive_mint.clone(),
@@ -132,7 +132,8 @@ where
         ConstrainBinaryGadget::constrain_binary(order.side, cs);
     }
 
-    /// Verify that two wallets are equal except possibly with a balance augmentation
+    /// Verify that two wallets are equal except possibly with a balance
+    /// augmentation
     fn verify_wallets_equal_with_augmentation<CS: RandomizableConstraintSystem>(
         receive_index: Variable,
         received_mint: LinearCombination,
@@ -140,9 +141,9 @@ where
         augmented_wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut CS,
     ) {
-        // All balances should be the same except possibly the balance at the receive index. We allow
-        // This balance to be zero'd in the base wallet, and have the received mint with zero
-        // balance in the augmented wallet
+        // All balances should be the same except possibly the balance at the receive
+        // index. We allow This balance to be zero'd in the base wallet, and
+        // have the received mint with zero balance in the augmented wallet
         let mut curr_index: LinearCombination = Variable::Zero().into();
         for (base_balance, augmented_balance) in base_wallet
             .balances
@@ -175,7 +176,8 @@ where
                 cs,
             );
 
-            // Validate that the balance is either unmodified or augmented from (0, 0) to (receive_mint, 0)
+            // Validate that the balance is either unmodified or augmented from (0, 0) to
+            // (receive_mint, 0)
             let augmented_from_zero = AndGate::multi_and(
                 &[
                     prev_balance_zero,
@@ -259,7 +261,8 @@ where
         cs.constrain(order_found - Variable::One())
     }
 
-    /// Verify that the wallet contains the given balance at an unspecified index
+    /// Verify that the wallet contains the given balance at an unspecified
+    /// index
     fn contains_balance<CS: RandomizableConstraintSystem>(
         target_balance: BalanceVar<Variable>,
         wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
@@ -304,12 +307,15 @@ pub struct ValidCommitmentsWitness<
 > where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
-    /// The private secret shares of the wallet that have been reblinded for match
+    /// The private secret shares of the wallet that have been reblinded for
+    /// match
     pub private_secret_shares: LinkableWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The public secret shares of the wallet that have been reblinded for match
+    /// The public secret shares of the wallet that have been reblinded for
+    /// match
     pub public_secret_shares: LinkableWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The modified public secret shares, possibly with a zero'd balance added for
-    /// the mint that will be received by this party upon a successful match
+    /// The modified public secret shares, possibly with a zero'd balance added
+    /// for the mint that will be received by this party upon a successful
+    /// match
     pub augmented_public_shares: LinkableWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The order that the prover intends to match against with this proof
     pub order: LinkableOrder,
@@ -382,7 +388,8 @@ pub mod test_helpers {
 
     use super::{ValidCommitmentsStatement, ValidCommitmentsWitness};
 
-    /// A type alias for the VALID COMMITMENTS witness with size parameters attached
+    /// A type alias for the VALID COMMITMENTS witness with size parameters
+    /// attached
     pub type SizedWitness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     /// Construct a valid witness and statement from the given wallet
@@ -425,21 +432,21 @@ pub mod test_helpers {
         let (ind_receive, balance_receive) = find_balance_or_augment(
             received_mint,
             &mut augmented_wallet.balances,
-            true, /* augment */
+            true, // augment
         );
         let (ind_send, balance_send) = find_balance_or_augment(
             sent_mint,
             &mut augmented_wallet.balances,
-            false, /* augment */
+            false, // augment
         );
         let (_, balance_fee) = find_balance_or_augment(
             fee.gas_addr.clone(),
             &mut augmented_wallet.balances,
-            false, /* augment */
+            false, // augment
         );
 
-        // After augmenting, split the augmented wallet into shares, using the same private secret shares
-        // as the original (un-augmented) wallet
+        // After augmenting, split the augmented wallet into shares, using the same
+        // private secret shares as the original (un-augmented) wallet
         let (_, augmented_public_shares) =
             create_wallet_shares_from_private(&augmented_wallet, &private_shares, wallet.blinder);
 
@@ -463,10 +470,11 @@ pub mod test_helpers {
         (witness, statement)
     }
 
-    /// Finds a balance for the given order returning the index and the balance itself
+    /// Finds a balance for the given order returning the index and the balance
+    /// itself
     ///
-    /// If the balance does not exist the `augment` flag lets the method augment the wallet
-    /// with a zero'd balance
+    /// If the balance does not exist the `augment` flag lets the method augment
+    /// the wallet with a zero'd balance
     pub(super) fn find_balance_or_augment<const MAX_BALANCES: usize>(
         mint: BigUint,
         balances: &mut [Balance; MAX_BALANCES],
@@ -493,7 +501,7 @@ pub mod test_helpers {
 
                 balances[zerod_index] = Balance { mint, amount: 0 };
                 (zerod_index, balances[zerod_index].clone())
-            }
+            },
         }
     }
 }
@@ -547,7 +555,8 @@ mod test {
     // | Helpers |
     // -----------
 
-    /// Returns true if the given witness and statement satisfy the relation defined by `VALID COMMITMENTS`
+    /// Returns true if the given witness and statement satisfy the relation
+    /// defined by `VALID COMMITMENTS`
     fn constraints_satisfied(witness: SizedWitness, statement: ValidCommitmentsStatement) -> bool {
         let mut rng = thread_rng();
 
@@ -588,7 +597,8 @@ mod test {
         assert!(constraints_satisfied(witness, statement))
     }
 
-    /// Tests the case in which the prover attempts to add a non-zero balance to the augmented wallet
+    /// Tests the case in which the prover attempts to add a non-zero balance to
+    /// the augmented wallet
     #[test]
     fn test_invalid_commitment__augmented_nonzero_balance() {
         let wallet = UNAUGMENTED_WALLET.clone();
@@ -604,7 +614,8 @@ mod test {
         assert!(!constraints_satisfied(witness, statement));
     }
 
-    /// Tests the case in which the prover clobbers a non-zero balance to augment the wallet
+    /// Tests the case in which the prover clobbers a non-zero balance to
+    /// augment the wallet
     #[test]
     fn test_invalid_commitment__augmentation_clobbers_balance() {
         let wallet = UNAUGMENTED_WALLET.clone();
@@ -621,7 +632,8 @@ mod test {
         assert!(!constraints_satisfied(witness, statement))
     }
 
-    /// Tests the case in which a prover attempts to modify an order in the augmented wallet
+    /// Tests the case in which a prover attempts to modify an order in the
+    /// augmented wallet
     #[test]
     fn test_invalid_commitment__augmentation_modifies_order() {
         let wallet = UNAUGMENTED_WALLET.clone();
@@ -633,7 +645,8 @@ mod test {
         assert!(!constraints_satisfied(witness, statement));
     }
 
-    /// Test the case in which a prover attempts to modify a fee in the augmented wallet
+    /// Test the case in which a prover attempts to modify a fee in the
+    /// augmented wallet
     #[test]
     fn test_invalid_commitment__augmentation_modifies_fee() {
         let wallet = UNAUGMENTED_WALLET.clone();
@@ -644,7 +657,8 @@ mod test {
         assert!(!constraints_satisfied(witness, statement));
     }
 
-    /// Test the case in which a prover attempts to modify wallet keys and blinders in augmentation
+    /// Test the case in which a prover attempts to modify wallet keys and
+    /// blinders in augmentation
     #[test]
     fn test_invalid_commitment__augmentation_modifies_keys() {
         let wallet = UNAUGMENTED_WALLET.clone();
@@ -655,7 +669,8 @@ mod test {
         assert!(!constraints_satisfied(witness, statement));
     }
 
-    /// Test the case in which a prover attempts to modify the blinder in augmentation
+    /// Test the case in which a prover attempts to modify the blinder in
+    /// augmentation
     #[test]
     fn test_invalid_commitment__augmentation_modifies_blinder() {
         let wallet = UNAUGMENTED_WALLET.clone();
@@ -784,7 +799,8 @@ mod test {
         let wallet = INITIAL_WALLET.clone();
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
-        // Modify the fees, clobber all of them because the fee does not contain an index
+        // Modify the fees, clobber all of them because the fee does not contain an
+        // index
         witness
             .augmented_public_shares
             .fees

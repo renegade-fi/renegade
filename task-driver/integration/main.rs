@@ -29,8 +29,9 @@ use util::{logging::LevelFilter, starknet::parse_addr_from_deployments_file};
 
 /// The hostport that the test expects a local devnet node to be running on
 ///
-/// This assumes that the integration tests are running in a docker-compose setup
-/// with a DNS alias `sequencer` pointing to a devnet node running in a sister container
+/// This assumes that the integration tests are running in a docker-compose
+/// setup with a DNS alias `sequencer` pointing to a devnet node running in a
+/// sister container
 const DEVNET_HOSTPORT: &str = "http://sequencer:5050";
 
 // -------
@@ -60,7 +61,8 @@ struct CliArgs {
         default_value = "0x3ee9e18edc71a6df30ac3aca2e0b02a198fbce19b7480a63a0d71cbd76652e0"
     )]
     starknet_account_addr: String,
-    /// The address of the darkpool deployed on Starknet at the time the test is started
+    /// The address of the darkpool deployed on Starknet at the time the test is
+    /// started
     ///
     /// If not provided, the test will deploy a new darkpool contract
     #[arg(long)]
@@ -68,17 +70,18 @@ struct CliArgs {
     /// The address of a dummy ERC-20 token deployed on the devnet node
     ///
     /// It is assumed that the given account address has a balance of this token
-    /// on the devnet node. This is generally true for default values; i.e. pre-deployed
-    /// accounts with the default $ETH ERC-20 token
+    /// on the devnet node. This is generally true for default values; i.e.
+    /// pre-deployed accounts with the default $ETH ERC-20 token
     ///
-    /// Defaults to the ETH base token address with the same address as on Goerli
+    /// Defaults to the ETH base token address with the same address as on
+    /// Goerli
     #[arg(
         long,
         default_value = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
     )]
     erc20_addr: String,
-    /// The location of a `deployments.json` file that contains the addresses of the
-    /// deployed contracts
+    /// The location of a `deployments.json` file that contains the addresses of
+    /// the deployed contracts
     #[arg(long)]
     deployments_path: Option<String>,
     /// The location of the contract compilation artifacts as an absolute path
@@ -155,8 +158,8 @@ fn setup_starknet_client_mock(test_args: CliArgs) -> StarknetClient {
         "one of `darkpool_addr` or `deployments_path` must be provided"
     );
 
-    // The darkpool address may either be specified directly, or given by a deployments file
-    // in a known location
+    // The darkpool address may either be specified directly, or given by a
+    // deployments file in a known location
     let darkpool_addr = if let Some(addr) = test_args.darkpool_addr {
         addr
     } else {

@@ -18,7 +18,8 @@ use crate::types::Wallet;
 
 /// The system bus topic published to when a network topology change occurs
 pub const NETWORK_TOPOLOGY_TOPIC: &str = "network-topology";
-/// The system bus topic published to for all wallet updates, not those given by Id
+/// The system bus topic published to for all wallet updates, not those given by
+/// Id
 pub const ALL_WALLET_UPDATES_TOPIC: &str = "wallet-updates";
 
 /// Get the topic name for a given wallet
@@ -66,7 +67,8 @@ pub enum SystemBusMessage {
     },
 
     // -- Order Book -- //
-    /// A message indicating that a new order has come into the network order book
+    /// A message indicating that a new order has come into the network order
+    /// book
     NewOrder {
         /// The newly discovered order
         order: NetworkOrder,
@@ -93,7 +95,8 @@ pub enum SystemBusMessage {
     // -- Price Report -- //
     /// A message indicating that a new median PriceReport has been published
     PriceReportMedian(PriceReport),
-    /// A message indicating that a new individual exchange PriceReport has been published
+    /// A message indicating that a new individual exchange PriceReport has been
+    /// published
     PriceReportExchange(PriceReport),
 
     // -- Tasks -- //
@@ -120,8 +123,8 @@ pub enum SystemBusMessage {
     },
 }
 
-/// A wrapper around a SystemBusMessage containing the topic, used for serializing websocket
-/// messages to clients
+/// A wrapper around a SystemBusMessage containing the topic, used for
+/// serializing websocket messages to clients
 #[derive(Clone, Debug, Serialize)]
 pub struct SystemBusMessageWithTopic {
     /// The topic of this message

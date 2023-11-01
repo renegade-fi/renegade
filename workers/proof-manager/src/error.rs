@@ -1,4 +1,5 @@
-//! Defines error types emitted during the course of the proof generation module's execution
+//! Defines error types emitted during the course of the proof generation
+//! module's execution
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
 

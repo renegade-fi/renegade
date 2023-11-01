@@ -1,7 +1,8 @@
 //! Defines a cursor in the database
 //!
-//! This cursor implementation is a thin wrapper around the `mdbx` cursor that provides
-//! serialization and deserialization of the keys and values in the database
+//! This cursor implementation is a thin wrapper around the `mdbx` cursor that
+//! provides serialization and deserialization of the keys and values in the
+//! database
 
 use std::marker::PhantomData;
 
@@ -132,8 +133,8 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
 
 /// Mutation methods
 impl<'txn, K: Key, V: Value> DbCursor<'txn, RW, K, V> {
-    /// Insert a key/value pair into the table, the cursor will be positioned at the inserted key
-    /// or near it when this method fails
+    /// Insert a key/value pair into the table, the cursor will be positioned at
+    /// the inserted key or near it when this method fails
     pub fn put(&mut self, k: &K, v: &V) -> Result<(), StorageError> {
         let k_bytes = serialize_value(k)?;
         let v_bytes = serialize_value(v)?;
@@ -362,7 +363,8 @@ mod test {
         assert_eq!(v, seek_index - 1);
     }
 
-    /// Tests seeking to the to the first key greater than or equal to the given key
+    /// Tests seeking to the to the first key greater than or equal to the given
+    /// key
     #[test]
     fn test_seek_geq() {
         // Create a db and insert 0..N into the table randomly

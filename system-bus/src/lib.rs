@@ -30,10 +30,11 @@ type Shared<T> = Arc<RwLock<T>>;
 /// The number of messages to buffer inside a single topic's bus
 const BUS_BUFFER_SIZE: usize = 10;
 
-/// A wrapper around `BusReader` that allows us to store topic-relevant information,
-/// add reference counts, and build pollable methods around reading
+/// A wrapper around `BusReader` that allows us to store topic-relevant
+/// information, add reference counts, and build pollable methods around reading
 ///
-/// The trait bounds on the message (Clone + Sync) are required by the Bus implementation
+/// The trait bounds on the message (Clone + Sync) are required by the Bus
+/// implementation
 #[derive(Debug)]
 pub struct TopicReader<M> {
     /// The name of the topic that this reader listens to
@@ -42,14 +43,15 @@ pub struct TopicReader<M> {
     reader: BusReader<M>,
     /// A buffered message; used when a call to has_next returns a value
     buffered_message: RefCell<Option<M>>,
-    /// When the reader is dropped we decrement this value in the parent struct so that
-    /// the topic may be deallocated if we are the last reader
+    /// When the reader is dropped we decrement this value in the parent struct
+    /// so that the topic may be deallocated if we are the last reader
     num_readers: Arc<AtomicU16>,
-    /// The list of wakers on the given topic; the reader should add itself to the waker
-    /// queue when it is polled and returns pending
+    /// The list of wakers on the given topic; the reader should add itself to
+    /// the waker queue when it is polled and returns pending
     topic_wakers: Shared<Vec<Waker>>,
-    /// A reference to the system bus's topic mesh; readers hold this reference so that they
-    /// may deallocate the topic when dropped if they are the last reader on the topic
+    /// A reference to the system bus's topic mesh; readers hold this reference
+    /// so that they may deallocate the topic when dropped if they are the
+    /// last reader on the topic
     topic_mesh: Shared<HashMap<String, Shared<TopicFabric<M>>>>,
 }
 
@@ -80,7 +82,8 @@ impl<M: Clone + Sync> TopicReader<M> {
     ///
     /// The bus primitive we use here does not support a `has_next` method;
     /// instead we can do a non-blocking attempted recv. If this returns a value
-    /// we buffer it so that it can be consumed by the next call to `next_message`
+    /// we buffer it so that it can be consumed by the next call to
+    /// `next_message`
     pub fn has_next(&mut self) -> bool {
         // If we've previously buffered a message
         if self.buffered_message.borrow().is_some() {
@@ -135,12 +138,13 @@ impl<M: Clone + Sync> Stream for TopicReader<M> {
     }
 }
 
-/// A reference counting `Drop` implementation for the reader; if the reader is the last
-/// reader on a given topic, it should clean up the topic from the system bus's mesh
+/// A reference counting `Drop` implementation for the reader; if the reader is
+/// the last reader on a given topic, it should clean up the topic from the
+/// system bus's mesh
 impl<M> Drop for TopicReader<M> {
     fn drop(&mut self) {
-        // If there was only one reader (local thread) before this reader was dropped, deallocate the
-        // topic in the pubsub mesh
+        // If there was only one reader (local thread) before this reader was dropped,
+        // deallocate the topic in the pubsub mesh
         let prev_num_readers = self.num_readers.fetch_sub(1 /* val */, Ordering::Relaxed);
         if prev_num_readers == 1 {
             let mut locked_mesh = self.topic_mesh.write().expect("topic_mesh lock poisoned");
@@ -225,8 +229,9 @@ impl<M: Clone + Sync> TopicFabric<M> {
 /// Note that publishing to a topic with no subscribers is a no-op
 #[derive(Clone, Debug)]
 pub struct SystemBus<M> {
-    /// The topic mesh connects publishers to subscribers, it is concretely implemented
-    /// as a mapping from topic name (String) to a bus (single-producer, multi-consumer)
+    /// The topic mesh connects publishers to subscribers, it is concretely
+    /// implemented as a mapping from topic name (String) to a bus
+    /// (single-producer, multi-consumer)
     topic_mesh: Shared<HashMap<String, Shared<TopicFabric<M>>>>,
 }
 
@@ -281,7 +286,8 @@ impl<M: Clone + Sync> SystemBus<M> {
             );
         } // locked_mesh released
 
-        // Build a reader on the topic of interest and return it as a pollable to the subscriber
+        // Build a reader on the topic of interest and return it as a pollable to the
+        // subscriber
         let locked_mesh = self.read_topic_mesh();
         let mut locked_topic = locked_mesh
             .get(&topic)
@@ -302,10 +308,11 @@ impl<M: Clone + Sync> SystemBus<M> {
         }
     }
 
-    /// Returns whether or not the given topic has been subscribed to by any readers
+    /// Returns whether or not the given topic has been subscribed to by any
+    /// readers
     ///
-    /// This method is implemented mostly for testing purposes, i.e. to give us an idea of
-    /// whether the topic is allocated in the underlying mesh
+    /// This method is implemented mostly for testing purposes, i.e. to give us
+    /// an idea of whether the topic is allocated in the underlying mesh
     pub fn has_listeners(&self, topic: &String) -> bool {
         self.read_topic_mesh().contains_key(topic)
     }
@@ -358,13 +365,15 @@ mod system_bus_tests {
         pubsub.publish(TEST_TOPIC.to_string(), message1);
         pubsub.publish(TEST_TOPIC.to_string(), message2);
 
-        // Ensure that has_next returns true and that the messages are appropriately delivered
+        // Ensure that has_next returns true and that the messages are appropriately
+        // delivered
         assert!(reader.has_next());
         assert_eq!(message1, reader.next_message().await);
         assert_eq!(message2, reader.next_message().await);
     }
 
-    /// Tests that a reader joining after messages are sent *does not* receive old messages
+    /// Tests that a reader joining after messages are sent *does not* receive
+    /// old messages
     #[tokio::test]
     async fn test_subscribe_after_send() {
         let mut rng = thread_rng();
@@ -386,8 +395,8 @@ mod system_bus_tests {
         assert!(!reader.has_next());
     }
 
-    /// Tests that multiple readers joining in between messages receive only the messages
-    /// they were active for
+    /// Tests that multiple readers joining in between messages receive only the
+    /// messages they were active for
     #[tokio::test]
     async fn test_readers_staggered_join() {
         let mut rng = thread_rng();
@@ -427,11 +436,12 @@ mod system_bus_tests {
         assert_eq!(2, pubsub.num_listeners(&TEST_TOPIC.to_string()));
     }
 
-    /// Tests that topics are deallocated from the pubsub mesh when the last reader is dropped
+    /// Tests that topics are deallocated from the pubsub mesh when the last
+    /// reader is dropped
     #[tokio::test]
     async fn test_dealloc_topic() {
-        // Setup the pubsub mesh; there are no listeners to any topic to begin, so `has_listeners`
-        // should return false
+        // Setup the pubsub mesh; there are no listeners to any topic to begin, so
+        // `has_listeners` should return false
         let pubsub = SystemBus::<u64>::new();
         assert!(!pubsub.has_listeners(&TEST_TOPIC.to_string()));
 

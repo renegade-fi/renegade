@@ -1,5 +1,6 @@
-//! Defines the storage layer for the `raft` implementation. We store logs, snapshots,
-//! metadata, etc in the storage layer -- concretely an embedded KV store
+//! Defines the storage layer for the `raft` implementation. We store logs,
+//! snapshots, metadata, etc in the storage layer -- concretely an embedded KV
+//! store
 
 use std::{
     cmp::{self, Ordering},
@@ -91,7 +92,8 @@ impl LogStore {
     // | Getters |
     // -----------
 
-    /// Read a log entry, returning an error if an entry does not exist for the given index
+    /// Read a log entry, returning an error if an entry does not exist for the
+    /// given index
     pub fn read_log_entry(&self, index: u64) -> Result<RaftEntry, ReplicationError> {
         let tx = self.db.new_read_tx().map_err(ReplicationError::Storage)?;
         let entry: ProtoStorageWrapper<RaftEntry> = tx
@@ -313,7 +315,7 @@ impl Storage for LogStore {
                     .get_index();
 
                 Ok(snapshot_idx + 1)
-            }
+            },
         }
     }
 
@@ -332,7 +334,7 @@ impl Storage for LogStore {
                     .get_index();
 
                 Ok(snapshot_idx)
-            }
+            },
         }
     }
 
@@ -365,7 +367,7 @@ impl Storage for LogStore {
                 .map_err(RaftError::from)?,
             Ordering::Less => {
                 return Err(RaftError::Store(RaftStorageError::SnapshotOutOfDate));
-            }
+            },
         };
 
         if md.index < request_index {
@@ -456,7 +458,8 @@ mod test {
         assert_eq!(state.conf_state, ConfState::new());
     }
 
-    /// Tests applying a snapshot then fetching initial state, simulating a crash recovery
+    /// Tests applying a snapshot then fetching initial state, simulating a
+    /// crash recovery
     #[test]
     fn test_recover_snapshot_state() {
         let store = mock_log_store();

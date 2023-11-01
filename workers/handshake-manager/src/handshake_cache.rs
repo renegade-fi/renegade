@@ -1,9 +1,11 @@
-//! Implements a cache of pairs of order identifiers that have already been matched against
-//! one another. We use this cache to avoid duplicating work; i.e. once a pair of orders have
-//! gone through the matching engine, they should not be matched again.
+//! Implements a cache of pairs of order identifiers that have already been
+//! matched against one another. We use this cache to avoid duplicating work;
+//! i.e. once a pair of orders have gone through the matching engine, they
+//! should not be matched again.
 //!
-//! The cache abstracts mostly over ordering semantics. We cache in pairs of orders and the
-//! caller should not have to implement messy logic to order the pairs correctly.
+//! The cache abstracts mostly over ordering semantics. We cache in pairs of
+//! orders and the caller should not have to implement messy logic to order the
+//! pairs correctly.
 
 // TODO: Remove this lint allowance
 #![allow(dead_code)]
@@ -21,8 +23,8 @@ use lru::LruCache;
 /// A type alias for a HandshakeCache shared between threads
 pub(super) type SharedHandshakeCache<O> = AsyncShared<HandshakeCache<O>>;
 
-/// Caches pairs of orders that have already been matched so that we may avoid attempting to
-/// match orders multiple times
+/// Caches pairs of orders that have already been matched so that we may avoid
+/// attempting to match orders multiple times
 ///
 /// `O` is an abstract order identifier that can be hashed into a cache key
 pub struct HandshakeCache<O> {
@@ -32,11 +34,13 @@ pub struct HandshakeCache<O> {
     max_size: usize,
     /// The underlying LRU cache controlling eviction from the HandshakeCache
     ///
-    /// Entries are cached with the lower (abstract ordering) identifier stored first
+    /// Entries are cached with the lower (abstract ordering) identifier stored
+    /// first
     lru_cache: LruCache<(O, O), HandshakeCacheState>,
 }
 
-/// Represents the state of an entry in the handshake cache for various types of caching
+/// Represents the state of an entry in the handshake cache for various types of
+/// caching
 #[derive(Clone, Copy, Debug)]
 pub enum HandshakeCacheState {
     /// A completed match, either by the local peer or a cluster replica;
@@ -50,8 +54,8 @@ pub enum HandshakeCacheState {
     ///     1. The remote peer completes a match on the pair; in which case it
     ///        will broadcast a message to complete the pair, moving it to the
     ///        completed state
-    ///     2. The remote peer fails to complete a match; the invisibility window
-    ///        elapses, and this entry is removed from the cache
+    ///     2. The remote peer fails to complete a match; the invisibility
+    ///        window elapses, and this entry is removed from the cache
     Invisible {
         /// The `Instant` at which the invisibility window expires
         until: Instant,
@@ -76,8 +80,8 @@ impl<O: Clone + Eq + Hash + Ord> HandshakeCache<O> {
     /// Computes the cache tuple from a given pair of identifiers
     ///
     /// The ordering of identifiers in the cache tuple is defined abstractly by
-    /// the implementation of `Ord` on the identifier type. We place the "lesser"
-    /// identifier first in the tuple
+    /// the implementation of `Ord` on the identifier type. We place the
+    /// "lesser" identifier first in the tuple
     fn cache_tuple(o1: O, o2: O) -> (O, O) {
         let first_entry = min(o1.clone(), o2.clone());
         let second_entry = max(o1, o2);
@@ -104,8 +108,8 @@ impl<O: Clone + Eq + Hash + Ord> HandshakeCache<O> {
 
     /// Checks whether a given pair is cached
     pub fn contains(&self, o1: O, o2: O) -> bool {
-        // If the cache contains the entry in the `Invisible` state and the invisibility window
-        // has expired, return false
+        // If the cache contains the entry in the `Invisible` state and the invisibility
+        // window has expired, return false
         if let Some(entry) = self.lru_cache.peek(&Self::cache_tuple(o1, o2)) {
             match entry {
                 HandshakeCacheState::Completed => true,
@@ -114,7 +118,7 @@ impl<O: Clone + Eq + Hash + Ord> HandshakeCache<O> {
                     // `Instant::now()`. If `is_none() == true` then the invisibility
                     // window has not elapsed and the entry is considered cached
                     Instant::now().checked_duration_since(*until).is_none()
-                }
+                },
             }
         } else {
             false

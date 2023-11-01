@@ -234,7 +234,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             EXCHANGE_HEALTH_ROUTE.to_string(),
-            false, /* auth_required */
+            false, // auth_required
             ExchangeHealthStatesHandler::new(config.clone()),
         );
 
@@ -242,7 +242,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             PING_ROUTE.to_string(),
-            false, /* auth_required */
+            false, // auth_required
             PingHandler::new(),
         );
 
@@ -250,7 +250,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_TASK_STATUS_ROUTE.to_string(),
-            false, /* auth_required */
+            false, // auth_required
             GetTaskStatusHandler::new(config.task_driver.clone()),
         );
 
@@ -258,7 +258,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_WALLET_ROUTE.to_string(),
-            true, /* auth_required */
+            true, // auth_required
             GetWalletHandler::new(global_state.clone()),
         );
 
@@ -266,7 +266,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             CREATE_WALLET_ROUTE.to_string(),
-            false, /* auth_required */
+            false, // auth_required
             CreateWalletHandler::new(
                 config.starknet_client.clone(),
                 global_state.clone(),
@@ -279,7 +279,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             FIND_WALLET_ROUTE.to_string(),
-            false, /* auth_required */
+            false, // auth_required
             FindWalletHandler::new(
                 config.starknet_client.clone(),
                 config.network_sender.clone(),
@@ -293,7 +293,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             WALLET_ORDERS_ROUTE.to_string(),
-            true, /* auth_required */
+            true, // auth_required
             GetOrdersHandler::new(global_state.clone()),
         );
 
@@ -301,7 +301,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             WALLET_ORDERS_ROUTE.to_string(),
-            true, /* auth_required */
+            true, // auth_required
             CreateOrderHandler::new(
                 config.starknet_client.clone(),
                 config.network_sender.clone(),
@@ -315,7 +315,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_ORDER_BY_ID_ROUTE.to_string(),
-            true, /* auth_required */
+            true, // auth_required
             GetOrderByIdHandler::new(global_state.clone()),
         );
 
@@ -323,7 +323,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             UPDATE_ORDER_ROUTE.to_string(),
-            true, /* auth_required */
+            true, // auth_required
             UpdateOrderHandler::new(
                 config.starknet_client.clone(),
                 config.network_sender.clone(),
@@ -337,7 +337,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             CANCEL_ORDER_ROUTE.to_string(),
-            true, /* auth_required */
+            true, // auth_required
             CancelOrderHandler::new(
                 config.starknet_client.clone(),
                 config.network_sender.clone(),
@@ -351,7 +351,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_BALANCES_ROUTE.to_string(),
-            true, /* auth_required */
+            true, // auth_required
             GetBalancesHandler::new(global_state.clone()),
         );
 
@@ -359,7 +359,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_BALANCE_BY_MINT_ROUTE.to_string(),
-            true, /* auth_required */
+            true, // auth_required
             GetBalanceByMintHandler::new(global_state.clone()),
         );
 
@@ -367,7 +367,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             DEPOSIT_BALANCE_ROUTE.to_string(),
-            true, /* auth_required */
+            true, // auth_required
             DepositBalanceHandler::new(
                 config.starknet_client.clone(),
                 config.network_sender.clone(),
@@ -381,7 +381,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             WITHDRAW_BALANCE_ROUTE.to_string(),
-            true, /* auth_required */
+            true, // auth_required
             WithdrawBalanceHandler::new(
                 config.starknet_client.clone(),
                 config.network_sender.clone(),
@@ -395,7 +395,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             FEES_ROUTE.to_string(),
-            true, /* auth_required */
+            true, // auth_required
             GetFeesHandler::new(global_state.clone()),
         );
 
@@ -403,7 +403,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             FEES_ROUTE.to_string(),
-            true, /* auth_required */
+            true, // auth_required
             AddFeeHandler::new(
                 config.starknet_client.clone(),
                 config.network_sender.clone(),
@@ -417,7 +417,7 @@ impl HttpServer {
         router.add_route(
             Method::POST,
             REMOVE_FEE_ROUTE.to_string(),
-            true, /* auth_required */
+            true, // auth_required
             RemoveFeeHandler::new(
                 config.starknet_client.clone(),
                 config.network_sender.clone(),
@@ -431,7 +431,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_NETWORK_ORDERS_ROUTE.to_string(),
-            false, /* auth_required */
+            false, // auth_required
             GetNetworkOrdersHandler::new(global_state.clone()),
         );
 
@@ -439,7 +439,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_NETWORK_ORDER_BY_ID_ROUTE.to_string(),
-            false, /* auth_required */
+            false, // auth_required
             GetNetworkOrderByIdHandler::new(global_state.clone()),
         );
 
@@ -447,7 +447,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_NETWORK_TOPOLOGY_ROUTE.to_string(),
-            false, /* auth_required */
+            false, // auth_required
             GetNetworkTopologyHandler::new(global_state.clone()),
         );
 
@@ -455,7 +455,7 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_CLUSTER_INFO_ROUTE.to_string(),
-            false, /* auth_required */
+            false, // auth_required
             GetClusterInfoHandler::new(global_state.clone()),
         );
 
@@ -463,15 +463,15 @@ impl HttpServer {
         router.add_route(
             Method::GET,
             GET_PEER_INFO_ROUTE.to_string(),
-            false, /* auth_required */
+            false, // auth_required
             GetPeerInfoHandler::new(global_state),
         );
 
         router
     }
 
-    /// The execution loop for the http server, accepts incoming connections, serves them,
-    /// and awaits the next connection
+    /// The execution loop for the http server, accepts incoming connections,
+    /// serves them, and awaits the next connection
     pub async fn execution_loop(self) -> Result<(), ApiServerError> {
         // Build an HTTP handler callback
         // Clone self and move it into each layer of the callback so that each

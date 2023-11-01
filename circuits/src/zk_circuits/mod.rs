@@ -133,13 +133,16 @@ pub mod test_helpers {
         )
     }
 
-    /// Create a multi-item opening in a Merkle tree, do so by constructing the Merkle tree
-    /// from the given items, padded with zeros
+    /// Create a multi-item opening in a Merkle tree, do so by constructing the
+    /// Merkle tree from the given items, padded with zeros
     ///
-    /// The return type is structured as a tuple with the following elements in order:
+    /// The return type is structured as a tuple with the following elements in
+    /// order:
     ///     - root: The root of the Merkle tree
-    ///     - openings: A vector of opening vectors; the sister nodes hashed with the Merkle path
-    ///     - opening_indices: A vector of opening index vectors; the left/right booleans for the path
+    ///     - openings: A vector of opening vectors; the sister nodes hashed
+    ///       with the Merkle path
+    ///     - opening_indices: A vector of opening index vectors; the left/right
+    ///       booleans for the path
     pub fn create_multi_opening<const HEIGHT: usize>(
         items: &[Scalar],
     ) -> (Scalar, Vec<MerkleOpening<HEIGHT>>) {
@@ -181,7 +184,8 @@ pub mod test_helpers {
 
     /// A recursive helper to compute a multi-opening for a set of leaves
     ///
-    /// Returns the root and a set of paths, where path[i] is hte path for leaves[i]
+    /// Returns the root and a set of paths, where path[i] is hte path for
+    /// leaves[i]
     fn create_multi_opening_helper(
         mut leaves: Vec<Scalar>,
         zero_value: Scalar,
@@ -192,7 +196,8 @@ pub mod test_helpers {
             return (leaves[0], vec![Vec::new()]);
         }
 
-        // Otherwise, pad the leaves with zeros to an even number and fold into the next recursive level
+        // Otherwise, pad the leaves with zeros to an even number and fold into the next
+        // recursive level
         let pad_length = leaves.len() % 2;
         leaves.append(&mut vec![zero_value; pad_length]);
         let next_level_leaves = leaves
@@ -219,8 +224,8 @@ pub mod test_helpers {
 
     /// Get the opening indices for a given insertion index into a Merkle tree
     ///
-    /// Here, the indices are represented as `Scalar` values where `0` represents a left
-    /// child and `1` represents a right child
+    /// Here, the indices are represented as `Scalar` values where `0`
+    /// represents a left child and `1` represents a right child
     fn get_opening_indices(leaf_index: usize, height: usize) -> Vec<Scalar> {
         let mut leaf_index = leaf_index as u64;
         let mut indices = Vec::with_capacity(height);
@@ -308,7 +313,8 @@ pub mod test_helpers {
         assert_eq!(wallet, recovered_wallet);
     }
 
-    /// Verify that reblinding a wallet creates valid secret shares of the underlying wallet
+    /// Verify that reblinding a wallet creates valid secret shares of the
+    /// underlying wallet
     #[test]
     fn test_reblind_wallet() {
         use circuit_types::native_helpers::reblind_wallet;

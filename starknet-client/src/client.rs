@@ -75,7 +75,8 @@ pub struct StarknetClientConfig {
 impl StarknetClientConfig {
     /// Whether or not a signing account has been passed with the config
     ///
-    /// Only when this is enabled may the client write transactions to the sequencer
+    /// Only when this is enabled may the client write transactions to the
+    /// sequencer
     pub fn account_enabled(&self) -> bool {
         !self.starknet_pkeys.is_empty() && !self.starknet_account_addresses.is_empty()
     }
@@ -105,8 +106,8 @@ impl StarknetClientConfig {
     }
 }
 
-/// A wrapper around the concrete JSON-RPC client that provides helpers for common
-/// Renegade-specific access patterns
+/// A wrapper around the concrete JSON-RPC client that provides helpers for
+/// common Renegade-specific access patterns
 #[derive(Clone)]
 pub struct StarknetClient {
     /// The config for the client

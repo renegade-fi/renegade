@@ -38,7 +38,8 @@ const ERR_EXPIRATION_FORMAT_INVALID: &str = "could not parse signature expiratio
 /// Error displayed when signature verification fails on a request
 const ERR_SIG_VERIFICATION_FAILED: &str = "signature verification failed";
 
-/// A helper to authenticate a request via expiring signatures using the method below
+/// A helper to authenticate a request via expiring signatures using the method
+/// below
 fn authenticate_wallet_request(
     headers: HeaderMap,
     body: &[u8],
@@ -113,7 +114,8 @@ fn validate_expiring_signature(
         return Ok(false);
     }
 
-    // Hash the body and the expiration timestamp into a digest to check the signature against
+    // Hash the body and the expiration timestamp into a digest to check the
+    // signature against
     let mut hasher = Sha512::default();
     hasher.update(body);
     hasher.update(expiration_timestamp.to_le_bytes());

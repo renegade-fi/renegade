@@ -20,7 +20,8 @@ use merlin::HashChainTranscript;
 use mpc_bulletproof::{r1cs::Prover, PedersenGens};
 use rand::thread_rng;
 
-/// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT)
+/// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS,
+/// MAX_FEES, MERKLE_HEIGHT)
 const SMALL_PARAM_SET: (usize, usize, usize) = (2, 2, 1);
 /// The parameter set for the large sized circuit
 const LARGE_PARAM_SET: (usize, usize, usize) = (MAX_BALANCES, MAX_ORDERS, MAX_FEES);
@@ -29,7 +30,8 @@ const LARGE_PARAM_SET: (usize, usize, usize) = (MAX_BALANCES, MAX_ORDERS, MAX_FE
 // | Helpers |
 // -----------
 
-/// Create a witness and a statement for the `VALID SETTLE` circuit with the given sizing parameters
+/// Create a witness and a statement for the `VALID SETTLE` circuit with the
+/// given sizing parameters
 pub fn create_sized_witness_statement<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,

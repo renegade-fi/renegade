@@ -17,8 +17,8 @@ pub struct OrGate;
 impl OrGate {
     /// Computes the logical OR of the two arguments
     ///
-    /// The arguments are assumed to be binary (0 or 1), but this assumption should be
-    /// constrained elsewhere in the calling circuit
+    /// The arguments are assumed to be binary (0 or 1), but this assumption
+    /// should be constrained elsewhere in the calling circuit
     pub fn or<L, CS>(a: L, b: L, cs: &mut CS) -> LinearCombination
     where
         L: LinearCombinationLike,
@@ -30,8 +30,8 @@ impl OrGate {
 
     /// Computes the logical OR of `n` arguments: out = a_1 || a_2 || .. || a_n
     ///
-    /// The arguments are assumed to be binary (0 or 1), but this assumption should be
-    /// constrained elsewhere in the calling circuit
+    /// The arguments are assumed to be binary (0 or 1), but this assumption
+    /// should be constrained elsewhere in the calling circuit
     pub fn multi_or<L, CS>(a: &[L], cs: &mut CS) -> LinearCombination
     where
         L: LinearCombinationLike,
@@ -49,8 +49,8 @@ pub struct MultiproverOrGate;
 impl MultiproverOrGate {
     /// Return the logical OR of the two arguments
     ///
-    /// The arguments are assumed to be binary (0 or 1), but this assumption should be
-    /// constrained elsewhere in the calling circuit
+    /// The arguments are assumed to be binary (0 or 1), but this assumption
+    /// should be constrained elsewhere in the calling circuit
     pub fn or<L, CS>(a: L, b: L, cs: &mut CS) -> Result<MpcLinearCombination, ProverError>
     where
         L: MpcLinearCombinationLike,
@@ -69,8 +69,8 @@ pub struct AndGate;
 impl AndGate {
     /// Computes the logical AND of the two inputs: out = a & b
     ///
-    /// The arguments are assumed to be binary (0 or 1), but this assumption should be
-    /// constrained elsewhere in the calling circuit
+    /// The arguments are assumed to be binary (0 or 1), but this assumption
+    /// should be constrained elsewhere in the calling circuit
     pub fn and<L, CS>(a: L, b: L, cs: &mut CS) -> Variable
     where
         L: LinearCombinationLike,
@@ -83,8 +83,8 @@ impl AndGate {
 
     /// Computes the logical AND of `n` inputs: out = a_1 & a_2 & ... & a_n
     ///
-    /// The arguments are assumed to be binary (0 or 1), but this assumption should be
-    /// constrained elsewhere in the calling circuit
+    /// The arguments are assumed to be binary (0 or 1), but this assumption
+    /// should be constrained elsewhere in the calling circuit
     pub fn multi_and<L, CS>(a: &[L], cs: &mut CS) -> Variable
     where
         L: LinearCombinationLike,
@@ -108,8 +108,8 @@ pub struct NotGate;
 impl NotGate {
     /// Computes the logical NOT of an input boolean: out = !a
     ///
-    /// The argument is assumed to be binary (0 or 1), but this assumption should be
-    /// constrained elsewhere in the calling circuit
+    /// The argument is assumed to be binary (0 or 1), but this assumption
+    /// should be constrained elsewhere in the calling circuit
     pub fn not<L, CS>(a: L, _cs: &mut CS) -> LinearCombination
     where
         L: LinearCombinationLike,

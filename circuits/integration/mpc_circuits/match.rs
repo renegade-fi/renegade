@@ -25,7 +25,8 @@ use crate::IntegrationTestArgs;
 // | Test Cases |
 // --------------
 
-/// Tests the match function with non overlapping orders for a variety of failure cases
+/// Tests the match function with non overlapping orders for a variety of
+/// failure cases
 async fn test_match_no_match(test_args: IntegrationTestArgs) -> Result<()> {
     // Convenience selector for brevity
     let fabric = &test_args.mpc_fabric;
@@ -71,7 +72,7 @@ async fn test_match_no_match(test_args: IntegrationTestArgs) -> Result<()> {
                 amount: sel!(20, 30),
                 timestamp: 0, // unused
             },
-            10, /* execution_price */
+            10, // execution_price
         ),
         // Base mints different
         (
@@ -83,7 +84,7 @@ async fn test_match_no_match(test_args: IntegrationTestArgs) -> Result<()> {
                 amount: sel!(20, 30),
                 timestamp: 0, // unused
             },
-            10, /* execution_price */
+            10, // execution_price
         ),
         // Orders on the same side (buy side)
         (
@@ -95,7 +96,7 @@ async fn test_match_no_match(test_args: IntegrationTestArgs) -> Result<()> {
                 amount: 20,
                 timestamp: 0, // unused
             },
-            10, /* execution_price */
+            10, // execution_price
         ),
         // Prices differ between orders
         (
@@ -107,7 +108,7 @@ async fn test_match_no_match(test_args: IntegrationTestArgs) -> Result<()> {
                 amount: 30,
                 timestamp: 0, // unused
             },
-            sel!(10, 11), /* execution_price */
+            sel!(10, 11), // execution_price
         ),
     ];
 
@@ -193,7 +194,7 @@ async fn test_match_valid_match(test_args: IntegrationTestArgs) -> Result<()> {
                 amount: sel!(20, 30),
                 timestamp: 0, // unused
             },
-            10, /* execution_price */
+            10, // execution_price
         ),
         // Same amount
         (
@@ -205,7 +206,7 @@ async fn test_match_valid_match(test_args: IntegrationTestArgs) -> Result<()> {
                 amount: 15,
                 timestamp: 0, // unused
             },
-            10, /* execution_price */
+            10, // execution_price
         ),
     ];
 

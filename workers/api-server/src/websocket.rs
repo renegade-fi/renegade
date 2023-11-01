@@ -92,7 +92,7 @@ impl WebsocketServer {
             .insert(
                 HANDSHAKE_ROUTE,
                 Box::new(DefaultHandler::new_with_remap(
-                    false, /* authenticated */
+                    false, // authenticated
                     HANDSHAKE_STATUS_TOPIC.to_string(),
                     config.system_bus.clone(),
                 )),
@@ -126,7 +126,7 @@ impl WebsocketServer {
             .insert(
                 ORDER_BOOK_ROUTE,
                 Box::new(DefaultHandler::new_with_remap(
-                    false, /* authenticated */
+                    false, // authenticated
                     ORDER_STATE_CHANGE_TOPIC.to_string(),
                     config.system_bus.clone(),
                 )),
@@ -138,7 +138,7 @@ impl WebsocketServer {
             .insert(
                 NETWORK_INFO_TOPIC,
                 Box::new(DefaultHandler::new_with_remap(
-                    false, /* authenticated */
+                    false, // authenticated
                     NETWORK_TOPOLOGY_TOPIC.to_string(),
                     config.system_bus.clone(),
                 )),
@@ -186,7 +186,8 @@ impl WebsocketServer {
 
     /// Handle a websocket connection
     ///
-    /// Manages subscriptions to internal channels and dispatches subscribe/unsubscribe requests
+    /// Manages subscriptions to internal channels and dispatches
+    /// subscribe/unsubscribe requests
     async fn handle_connection(&self, stream: TcpStream) -> Result<(), ApiServerError> {
         // Accept the websocket upgrade and split into read/write streams
         let websocket_stream = accept_async(stream)
@@ -194,13 +195,15 @@ impl WebsocketServer {
             .map_err(|err| ApiServerError::WebsocketServerFailure(err.to_string()))?;
         let (mut write_stream, mut read_stream) = websocket_stream.split();
 
-        // The websocket client will add subscriptions throughout the communication; this tracks the
-        // active subscriptions that the local connection has open
+        // The websocket client will add subscriptions throughout the communication;
+        // this tracks the active subscriptions that the local connection has
+        // open
         let mut subscriptions = StreamMap::new();
 
-        // The `StreamMap` future implementation will return `Poll::Ready(None)` if no streams are
-        // registered, indicating that the mapped stream is empty. We would prefer it to return
-        // `Poll::Pending` in this case, so we enter a dummy stream into the map.
+        // The `StreamMap` future implementation will return `Poll::Ready(None)` if no
+        // streams are registered, indicating that the mapped stream is empty.
+        // We would prefer it to return `Poll::Pending` in this case, so we
+        // enter a dummy stream into the map.
         let dummy_reader = self
             .config
             .system_bus
@@ -269,7 +272,7 @@ impl WebsocketServer {
                     };
 
                     Message::Text(response)
-                }
+                },
 
                 // Respond with an error if deserialization fails
                 Err(e) => Message::Text(format!("Invalid request: {}", e)),
@@ -308,7 +311,7 @@ impl WebsocketServer {
                     .handle_subscribe_message(topic.clone(), &params)
                     .await?;
                 client_subscriptions.insert(topic.clone(), reader);
-            }
+            },
 
             WebsocketMessage::Unsubscribe { topic } => {
                 // Parse the route and apply a handler to it
@@ -319,7 +322,7 @@ impl WebsocketServer {
 
                 // Remove the topic subscription from the stream map
                 client_subscriptions.remove(&topic);
-            }
+            },
         };
 
         Ok(SubscriptionResponse {
@@ -391,7 +394,8 @@ impl WebsocketServer {
         authenticate_wallet_request(headers, &body_serialized, &pk_root)
     }
 
-    /// Push an internal event that the client is subscribed to onto the websocket
+    /// Push an internal event that the client is subscribed to onto the
+    /// websocket
     async fn push_subscribed_event(
         &self,
         topic: String,

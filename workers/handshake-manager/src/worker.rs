@@ -60,7 +60,8 @@ impl Worker for HandshakeManager {
     type Error = HandshakeManagerError;
 
     fn new(mut config: Self::WorkerConfig) -> Result<Self, Self::Error> {
-        // Start a timer thread, periodically asks workers to begin handshakes with peers
+        // Start a timer thread, periodically asks workers to begin handshakes with
+        // peers
         let scheduler = HandshakeScheduler::new(
             config.job_sender.clone(),
             config.global_state.clone(),

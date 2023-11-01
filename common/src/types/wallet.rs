@@ -50,11 +50,13 @@ pub struct PrivateKeyChain {
     ///
     /// We call such a relayer a "super relayer"
     pub sk_root: Option<SecretSigningKey>,
-    /// The match private key, authorizes the relayer to match orders for the wallet
+    /// The match private key, authorizes the relayer to match orders for the
+    /// wallet
     pub sk_match: SecretIdentificationKey,
 }
 
-/// Represents the public and private keys given to the relayer managing a wallet
+/// Represents the public and private keys given to the relayer managing a
+/// wallet
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeyChain {
     /// The public keys in the wallet
@@ -107,22 +109,23 @@ pub struct Wallet {
     ///
     /// `true` implies that the lock is held elsewhere
     ///
-    /// TODO: Remove this in favor of a more robust update dependency solution once the
-    /// state has been refactored to a raft-based consensus
+    /// TODO: Remove this in favor of a more robust update dependency solution
+    /// once the state has been refactored to a raft-based consensus
     #[derivative(PartialEq = "ignore")]
     #[serde(skip_serializing, skip_deserializing, default = "default_update_lock")]
     pub update_locked: Arc<AtomicBool>,
 }
 
-/// A custom default method that serde uses for deserialization; simply creates a new
-/// lock that is initialized unlocked
+/// A custom default method that serde uses for deserialization; simply creates
+/// a new lock that is initialized unlocked
 ///
 /// TODO: Remove this when we remove the field
 fn default_update_lock() -> Arc<AtomicBool> {
     Arc::new(AtomicBool::default())
 }
 
-/// Custom serialization for an `IndexMap` type that preserves insertion ordering
+/// Custom serialization for an `IndexMap` type that preserves insertion
+/// ordering
 fn serialize_indexmap<S, K, V>(map: &IndexMap<K, V>, s: S) -> Result<S::Ok, S::Error>
 where
     K: Serialize + Clone,
@@ -134,7 +137,8 @@ where
     vec.serialize(s)
 }
 
-/// Custom deserialization for an `IndexMap` type that preserves insertion ordering
+/// Custom deserialization for an `IndexMap` type that preserves insertion
+/// ordering
 fn deserialize_indexmap<'de, D, K, V>(d: D) -> Result<IndexMap<K, V>, D::Error>
 where
     D: Deserializer<'de>,
@@ -256,10 +260,11 @@ impl Wallet {
         self.fees.retain(|fee| !fee.is_default());
     }
 
-    /// Get the balance, fee, and fee_balance for an order by specifying the order directly
+    /// Get the balance, fee, and fee_balance for an order by specifying the
+    /// order directly
     ///
-    /// We allow orders to be matched when undercapitalized; i.e. the respective balance does
-    /// not cover the full volume of the order.
+    /// We allow orders to be matched when undercapitalized; i.e. the respective
+    /// balance does not cover the full volume of the order.
     pub fn get_balance_and_fee_for_order(&self, order: &Order) -> Option<(Balance, Fee, Balance)> {
         // The mint the local party will be spending if the order is matched
         let order_mint = match order.side {
@@ -285,7 +290,8 @@ impl Wallet {
 /// Metadata relevant to the wallet's network state
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WalletMetadata {
-    /// The peers which are believed by the local node to be replicating a given wallet
+    /// The peers which are believed by the local node to be replicating a given
+    /// wallet
     pub replicas: HashSet<WrappedPeerId>,
 }
 

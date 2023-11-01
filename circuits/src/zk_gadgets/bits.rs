@@ -33,7 +33,8 @@ pub fn scalar_to_bits_le<const N: usize>(a: &Scalar) -> Vec<Scalar> {
 /// Singleprover implementation of the `ToBits` gadget
 pub struct ToBitsGadget<const D: usize> {}
 impl<const D: usize> ToBitsGadget<D> {
-    /// Converts a value to its bitwise representation in a single-prover constraint system
+    /// Converts a value to its bitwise representation in a single-prover
+    /// constraint system
     pub fn to_bits<L, CS>(a: L, cs: &mut CS) -> Result<Vec<Variable>, R1CSError>
     where
         CS: RandomizableConstraintSystem,
@@ -78,8 +79,8 @@ impl<const D: usize> MultiproverToBitsGadget<D> {
         // Convert the scalar to bits in a raw MPC gadget
         let bits = to_bits_le::<D /* bits */>(&a_scalar, fabric);
 
-        // Allocate the bits in the constraint system, and constrain their inner product with
-        // 1, 2, 4, ..., 2^{D-1} to be equal to the input value
+        // Allocate the bits in the constraint system, and constrain their inner product
+        // with 1, 2, 4, ..., 2^{D-1} to be equal to the input value
         let mut reconstructed = MpcLinearCombination::default();
         let mut res_bits = Vec::with_capacity(D);
         for (index, bit) in bits.into_iter().enumerate() {

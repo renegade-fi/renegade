@@ -157,7 +157,7 @@ impl StateTuiApp {
                                 AppTab::Main => AppTab::Logs,
                                 AppTab::Logs => AppTab::Main,
                             }
-                        }
+                        },
                         // Dispatch the state transition to the smart logger if
                         // the logs tab is selected
                         _ => {
@@ -169,14 +169,14 @@ impl StateTuiApp {
                                     // Vim style scrolling
                                     KeyCode::Char('j') => {
                                         state.transition(&LoggerEvent::NextPageKey)
-                                    }
+                                    },
                                     KeyCode::Char('k') => {
                                         state.transition(&LoggerEvent::PrevPageKey)
-                                    }
-                                    _ => {}
+                                    },
+                                    _ => {},
                                 }
                             }
-                        }
+                        },
                     }
                 }
             }

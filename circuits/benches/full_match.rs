@@ -1,4 +1,5 @@
-//! Benchmarks a full match of two orders including the raw MPC and the collaborative proof
+//! Benchmarks a full match of two orders including the raw MPC and the
+//! collaborative proof
 #![allow(unused)]
 
 use std::time::{Duration, Instant};
@@ -19,9 +20,11 @@ use mpc_stark::{algebra::scalar::Scalar, MpcFabric, PARTY0, PARTY1};
 use test_helpers::mpc_network::execute_mock_mpc_with_delay;
 use tokio::runtime::Builder as RuntimeBuilder;
 
-/// A small delay, roughly what would be expected for nodes in the same availability zone
+/// A small delay, roughly what would be expected for nodes in the same
+/// availability zone
 const SMALL_DELAY_MS: u64 = 1;
-/// A medium sized delay, roughly what would be expected for nodes in the same region
+/// A medium sized delay, roughly what would be expected for nodes in the same
+/// region
 const MEDIUM_DELAY_MS: u64 = 10;
 /// A larger delay, perhaps between different autonomous systems
 const LARGE_DELAY_MS: u64 = 100;

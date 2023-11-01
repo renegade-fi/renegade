@@ -17,8 +17,8 @@ use super::{
 /// A type alias for URL generic params maps, i.e. /path/to/resource/:id
 pub(super) type UrlParams = HashMap<String, String>;
 
-/// The maximum time an OPTIONS request to our HTTP API may be cached, we go above
-/// the default of 5 seconds to avoid unnecessary pre-flights
+/// The maximum time an OPTIONS request to our HTTP API may be cached, we go
+/// above the default of 5 seconds to avoid unnecessary pre-flights
 const PREFLIGHT_CACHE_TIME: &str = "7200"; // 2 hours, Chromium max
 /// Error message displayed when a wallet cannot be found in the global state
 pub(super) const ERR_WALLET_NOT_FOUND: &str = "wallet not found";
@@ -74,10 +74,10 @@ pub trait Handler: Send + Sync {
     async fn handle(&self, req: Request<Body>, url_params: UrlParams) -> Response<Body>;
 }
 
-/// A handler that has associated Request/Response type information attached to it.
-/// We implement this as a subtrait so that the router can store trait objects
-/// (associated types are disallowed on trait objects) as Handler that concretely
-/// re-use the default serialization/deserialization logic below
+/// A handler that has associated Request/Response type information attached to
+/// it. We implement this as a subtrait so that the router can store trait
+/// objects (associated types are disallowed on trait objects) as Handler that
+/// concretely re-use the default serialization/deserialization logic below
 #[async_trait]
 pub trait TypedHandler: Send + Sync {
     /// The request type that the handler consumes
@@ -94,8 +94,9 @@ pub trait TypedHandler: Send + Sync {
     ) -> Result<Self::Response, ApiServerError>;
 }
 
-/// Auto-implementation of the Handler trait for a TypedHandler which covers the process
-/// of deserializing the request, reporting errors, and serializing the response into a body
+/// Auto-implementation of the Handler trait for a TypedHandler which covers the
+/// process of deserializing the request, reporting errors, and serializing the
+/// response into a body
 #[async_trait]
 impl<
         Req: DeserializeOwned + for<'de> Deserialize<'de> + Send,
@@ -107,7 +108,8 @@ impl<
         // Copy the headers before consuming the body
         let headers = req.headers().clone();
 
-        // Deserialize the request into the request type, return HTTP 400 if deserialization fails
+        // Deserialize the request into the request type, return HTTP 400 if
+        // deserialization fails
         let req_body_bytes = hyper::body::to_bytes(req.into_body()).await;
         if let Err(e) = req_body_bytes {
             return build_400_response(e.to_string());
@@ -115,8 +117,8 @@ impl<
 
         let mut unwrapped: &[u8] = &req_body_bytes.unwrap(); // Necessary to explicitly hold temporary value
         if unwrapped.is_empty() {
-            // If no HTTP body data was passed, replace the data with "null". Serde expects "null" as
-            // the serialized version of an empty struct
+            // If no HTTP body data was passed, replace the data with "null". Serde expects
+            // "null" as the serialized version of an empty struct
             unwrapped = "null".as_bytes();
         }
         let deserialized = serde_json::from_reader(unwrapped);
@@ -130,10 +132,11 @@ impl<
         let res = self.handle_typed(headers, req_body, url_params).await;
         if let Ok(resp) = res {
             // Serialize the response into a body. We explicitly allow for all cross-origin
-            // requests, as users connecting to a locally-run node have a different origin port.
+            // requests, as users connecting to a locally-run node have a different origin
+            // port.
 
-            // TODO: Either remove this in the future, or ensure that no sensitive information can
-            // leak from cross-origin requests.
+            // TODO: Either remove this in the future, or ensure that no sensitive
+            // information can leak from cross-origin requests.
             Response::builder()
                 .header("Access-Control-Allow-Origin", "*")
                 .body(Body::from(serde_json::to_vec(&resp).unwrap()))
@@ -144,14 +147,16 @@ impl<
     }
 }
 
-/// Wrapper around a matchit router that allows different HTTP request types to be matches
+/// Wrapper around a matchit router that allows different HTTP request types to
+/// be matches
 pub struct Router {
     /// The underlying router
     ///
     /// Holds a tuple of the handler and a boolean indicating whether
     /// wallet authentication (sk_root) signature is required for the request
     router: MatchRouter<(Box<dyn Handler>, bool)>,
-    /// A copy of the relayer global state, used to lookup wallet keys for authentication
+    /// A copy of the relayer global state, used to lookup wallet keys for
+    /// authentication
     global_state: RelayerState,
 }
 
