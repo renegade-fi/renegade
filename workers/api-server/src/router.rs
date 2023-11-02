@@ -130,19 +130,26 @@ impl<
 
         // Forward to the typed handler
         let res = self.handle_typed(headers, req_body, url_params).await;
-        if let Ok(resp) = res {
-            // Serialize the response into a body. We explicitly allow for all cross-origin
-            // requests, as users connecting to a locally-run node have a different origin
-            // port.
+        let builder = Response::builder().header("Access-Control-Allow-Origin", "*");
+        match res {
+            Ok(resp) => {
+                // Serialize the response into a body. We explicitly allow for all cross-origin
+                // requests, as users connecting to a locally-run node have a different origin
+                // port.
 
-            // TODO: Either remove this in the future, or ensure that no sensitive
-            // information can leak from cross-origin requests.
-            Response::builder()
-                .header("Access-Control-Allow-Origin", "*")
-                .body(Body::from(serde_json::to_vec(&resp).unwrap()))
-                .unwrap()
-        } else {
-            res.err().unwrap().into()
+                // TODO: Either remove this in the future, or ensure that no sensitive
+                // information can leak from cross-origin requests.
+                builder
+                    .body(Body::from(serde_json::to_vec(&resp).unwrap()))
+                    .unwrap()
+            },
+            Err(ApiServerError::HttpStatusCode(status, msg)) => {
+                builder.status(status).body(Body::from(msg)).unwrap()
+            },
+            Err(_) => builder
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap(),
         }
     }
 }
