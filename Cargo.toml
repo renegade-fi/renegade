@@ -40,6 +40,7 @@ lto = true
 
 [workspace.dependencies]
 # === Arithmetic + Cryptography === #
+ark-mpc = { git = "https://github.com/renegade-fi/ark-mpc" }
 merlin = { git = "https://github.com/renegade-fi/merlin" }
 mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
 mpc-stark = "0.2"

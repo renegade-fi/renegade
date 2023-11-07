@@ -3,6 +3,10 @@ name = "renegade-crypto"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["inline"]
+inline = []
+
 [[bench]]
 name = "elgamal"
 harness = false
@@ -13,11 +17,16 @@ harness = false
 
 [dependencies]
 # === Cryptography + Arithmetic === #
-ark-ff = "0.4"
 ark-crypto-primitives = { version = "0.4", features = ["sponge"] }
+ark-ec = "0.4"
+ark-ff = "0.4"
+ark-mpc = { workspace = true }
 bigdecimal = "0.3"
 mpc-stark = { workspace = true }
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
+
+# === Workspace Dependencies === #
+constants = { path = "../constants" }
 
 # === Misc Dependencies === #
 itertools = "0.10"
@@ -31,3 +40,5 @@ starknet = { workspace = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async", "async_tokio"] }
+itertools = "0.11"
+zkhash = { git = "https://github.com/HorizenLabs/poseidon2.git" }
