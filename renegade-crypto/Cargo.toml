@@ -40,5 +40,4 @@ starknet = { workspace = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async", "async_tokio"] }
-itertools = "0.11"
 zkhash = { git = "https://github.com/HorizenLabs/poseidon2.git" }

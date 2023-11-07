@@ -5511,7 +5511,6 @@ dependencies = [
  "constants",
  "criterion",
  "itertools 0.10.5",
- "itertools 0.11.0",
  "lazy_static",
  "memoize",
  "mpc-stark",
