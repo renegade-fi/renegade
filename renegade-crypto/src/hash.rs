@@ -1,5 +1,10 @@
 //! Implementations of cryptographic hash functions
 
+mod constants;
+mod poseidon2;
+pub use constants::*;
+pub use poseidon2::*;
+
 use ark_crypto_primitives::sponge::{
     poseidon::{PoseidonConfig, PoseidonSponge},
     CryptographicSponge,

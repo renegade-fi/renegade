@@ -4,6 +4,8 @@
 #![deny(clippy::missing_docs_in_private_items)]
 #![deny(missing_docs)]
 
+use ark_mpc::algebra::Scalar as GenericScalar;
+
 // -------------------------
 // | System-Wide Constants |
 // -------------------------
@@ -25,6 +27,16 @@ pub const MERKLE_HEIGHT: usize = 32;
 
 /// The number of historical roots the contract stores as being valid
 pub const MERKLE_ROOT_HISTORY_LENGTH: usize = 30;
+
+// ------------------------------------
+// | System Specific Type Definitions |
+// ------------------------------------
+
+/// The curve that our proof system operates over
+pub type Curve = ark_bn254::G1Projective;
+
+/// The scalar type that the MPC is defined over    
+pub type Scalar = GenericScalar<Curve>;
 
 // ----------------------
 // | Starknet Constants |
