@@ -4,7 +4,7 @@
 #![deny(clippy::missing_docs_in_private_items)]
 #![deny(missing_docs)]
 
-use ark_mpc::algebra::Scalar as GenericScalar;
+use ark_mpc::algebra::{CurvePoint as GenericCurvePoint, Scalar as GenericScalar};
 
 // -------------------------
 // | System-Wide Constants |
@@ -37,6 +37,9 @@ pub type Curve = ark_bn254::G1Projective;
 
 /// The scalar type that the MPC is defined over    
 pub type Scalar = GenericScalar<Curve>;
+
+/// The curve point type that the MPC is defined over
+pub type CurvePoint = GenericCurvePoint<Curve>;
 
 // ----------------------
 // | Starknet Constants |
