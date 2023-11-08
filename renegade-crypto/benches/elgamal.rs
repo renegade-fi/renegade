@@ -1,5 +1,5 @@
+use constants::Scalar;
 use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
-use mpc_stark::algebra::scalar::Scalar;
 use rand::thread_rng;
 use renegade_crypto::elgamal::{decrypt_scalar, encrypt_scalar};
 
