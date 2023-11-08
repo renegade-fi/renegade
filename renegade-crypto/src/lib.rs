@@ -5,7 +5,6 @@
 #![allow(incomplete_features)]
 #![feature(inherent_associated_types)]
 
-pub mod constants;
 pub mod elgamal;
 pub mod fields;
 pub mod hash;
