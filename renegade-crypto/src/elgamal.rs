@@ -1,8 +1,8 @@
 //! Helpers for creating encryptions of values
 
 use ark_ff::FftField;
+use constants::Scalar;
 use lazy_static::lazy_static;
-use mpc_stark::algebra::scalar::Scalar;
 use num_bigint::BigUint;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};
@@ -10,13 +10,8 @@ use serde::{Deserialize, Serialize};
 use crate::fields::{biguint_to_scalar, get_scalar_field_modulus, scalar_to_biguint};
 
 lazy_static! {
-    /// We use the generator 3 here as per the field configured in the `mpc-stark` library:
-    /// https://github.com/renegade-fi/mpc-stark/blob/master/src/algebra/scalar.rs#L39
-    ///
-    /// This generator is intended to be used with the Stark curve scalar field of prime
-    /// order defined here:
-    /// https://crypto.stackexchange.com/questions/98124/is-the-stark-curve-a-safecurve
-    pub static ref DEFAULT_ELGAMAL_GENERATOR: Scalar = Scalar::from(Scalar::Field::GENERATOR);
+    /// The group generator of the multiplicative subgroup of the Scalar's field
+    pub static ref DEFAULT_ELGAMAL_GENERATOR: Scalar = Scalar::new(Scalar::Field::GENERATOR);
     /// A bigint version of the above generator
     pub static ref DEFAULT_ELGAMAL_GENERATOR_BIGUINT: BigUint = scalar_to_biguint(&DEFAULT_ELGAMAL_GENERATOR);
 }
@@ -67,7 +62,7 @@ pub fn decrypt_scalar(cipher: ElGamalCiphertext, secret_key: &BigUint) -> Scalar
 
 #[cfg(test)]
 mod tests {
-    use mpc_stark::algebra::scalar::Scalar;
+    use constants::Scalar;
     use rand::thread_rng;
 
     use crate::fields::{get_scalar_field_modulus, scalar_to_biguint};
