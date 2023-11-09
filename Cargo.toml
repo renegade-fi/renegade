@@ -42,6 +42,8 @@ lto = true
 # === Arithmetic + Cryptography === #
 ark-mpc = { git = "https://github.com/renegade-fi/ark-mpc" }
 merlin = { git = "https://github.com/renegade-fi/merlin" }
+mpc-plonk = { git = "https://github.com/renegade-fi/mpc-jellyfish.git" }
+mpc-relation = { git = "https://github.com/renegade-fi/mpc-jellyfish.git" }
 mpc-bulletproof = { git = "https://github.com/renegade-fi/mpc-bulletproof" }
 mpc-stark = "0.2"
 num-bigint = { version = "0.4.3" }
