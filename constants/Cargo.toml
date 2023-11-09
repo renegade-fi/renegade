@@ -3,6 +3,10 @@ name = "constants"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["mpc-types"]
+mpc-types = ["dep:ark-mpc"]
+
 [dependencies]
 ark-bn254 = "0.4"
-ark-mpc = { workspace = true }
+ark-mpc = { workspace = true, optional = true }
