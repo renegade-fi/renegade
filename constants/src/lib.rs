@@ -4,8 +4,11 @@
 #![deny(clippy::missing_docs_in_private_items)]
 #![deny(missing_docs)]
 
+use ark_ec::Group;
 #[cfg(feature = "mpc-types")]
-use ark_mpc::algebra::{CurvePoint as GenericCurvePoint, Scalar as GenericScalar};
+use ark_mpc::algebra::{
+    AuthenticatedScalarResult, CurvePoint as GenericCurvePoint, Scalar as GenericScalar,
+};
 
 // -------------------------
 // | System-Wide Constants |
@@ -34,7 +37,13 @@ pub const MERKLE_ROOT_HISTORY_LENGTH: usize = 30;
 // ------------------------------------
 
 /// The curve that our proof system operates over
-pub type Curve = ark_bn254::G1Projective;
+pub type SystemCurve = ark_bn254::Bn254;
+
+/// The curve group that our proof system operates over
+pub type SystemCurveGroup = ark_bn254::G1Projective;
+
+/// The scalar field the curve is defined over
+pub type ScalarField = <ark_bn254::G1Projective as Group>::ScalarField;
 
 /// The scalar type that the MPC is defined over    
 #[cfg(feature = "mpc-types")]
@@ -43,6 +52,10 @@ pub type Scalar = GenericScalar<Curve>;
 /// The curve point type that the MPC is defined over
 #[cfg(feature = "mpc-types")]
 pub type CurvePoint = GenericCurvePoint<Curve>;
+
+/// The authenticated scalar type that the MPC is defined over
+#[cfg(feature = "mpc-types")]
+pub type AuthenticatedScalar = AuthenticatedScalarResult<SystemCurveGroup>;
 
 // ----------------------
 // | Starknet Constants |

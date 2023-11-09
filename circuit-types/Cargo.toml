@@ -8,9 +8,10 @@ edition = "2021"
 [dependencies]
 # === Crytography === #
 ark-ff = "0.4"
-ed25519-dalek = "1.0.1"
-mpc-stark = { workspace = true }
-mpc-bulletproof = { workspace = true }
+ark-ec = "0.4"
+ark-mpc = { workspace = true }
+mpc-plonk = { workspace = true }
+mpc-relation = { workspace = true }
 
 # === Arithmetic === #
 bigdecimal = "0.3"
