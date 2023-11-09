@@ -7266,14 +7266,14 @@ dependencies = [
 name = "test-helpers"
 version = "0.1.0"
 dependencies = [
+ "ark-ec",
+ "ark-mpc",
  "async-trait",
  "constants",
  "dns-lookup",
  "eyre",
  "futures",
- "inventory",
  "itertools 0.10.5",
- "mpc-stark",
  "num-bigint",
  "rand 0.8.5",
  "renegade-crypto",
@@ -7282,7 +7282,6 @@ dependencies = [
  "serde_json",
  "starknet",
  "tokio",
- "tokio-condvar",
  "tracing",
 ]
 
@@ -7404,15 +7403,6 @@ dependencies = [
  "socket2 0.5.5",
  "tokio-macros",
  "windows-sys 0.48.0",
-]
-
-[[package]]
-name = "tokio-condvar"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7233b09174540ef9bf9fc8326bcad6ccebc631e7c9a1e2e48d956a133056f9d"
-dependencies = [
- "tokio",
 ]
 
 [[package]]
