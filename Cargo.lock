@@ -1229,13 +1229,8 @@ name = "circuit-macros"
 version = "0.1.0"
 dependencies = [
  "itertools 0.10.5",
- "lazy_static",
- "merlin 2.0.0",
- "mpc-bulletproof",
  "proc-macro2",
  "quote",
- "rand 0.8.5",
- "rand_core 0.5.1",
  "syn 1.0.109",
 ]
 

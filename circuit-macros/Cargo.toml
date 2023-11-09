@@ -10,16 +10,8 @@ proc-macro = true
 bench = []
 
 [dependencies]
-mpc-bulletproof = { workspace = true }
-
 proc-macro2 = "1.0.50"
 quote = "1.0.23"
 syn = { version = "1.0", features = ["full"] }
 
 itertools = "0.10"
-
-[dev-dependencies]
-lazy_static = "1.4"
-merlin = { workspace = true }
-rand = "0.8"
-rand_core = "0.5"
