@@ -1,13 +1,10 @@
 //! Macro implementation of the `circuit_type` macro that defines associated
 //! types and conversions between them for an application level base type
 
-mod linkable_types;
 mod mpc_types;
 mod multiprover_circuit_types;
 mod secret_share_types;
 mod singleprover_circuit_types;
-
-use std::collections::HashSet;
 
 use itertools::Itertools;
 use proc_macro::TokenStream;
@@ -23,8 +20,8 @@ use syn::{
 };
 
 use self::{
-    linkable_types::build_linkable_types, mpc_types::build_mpc_types,
-    secret_share_types::build_secret_share_types, singleprover_circuit_types::build_circuit_types,
+    mpc_types::build_mpc_types, secret_share_types::build_secret_share_types,
+    singleprover_circuit_types::build_circuit_types,
 };
 
 /// The trait name for the base type that all other types are derived from
@@ -36,15 +33,8 @@ const FROM_SCALARS_METHOD_NAME: &str = "from_scalars";
 /// The name of the method that converts a base type to a serialized vector of
 /// scalars
 const TO_SCALARS_METHOD_NAME: &str = "to_scalars";
-/// The name of the method that converts a base type to a serialized vector of
-/// scalars including the scalars needed to commit to the base type in a
-/// (possibly) linkable manner
-const TO_SCALARS_LINKING_METHOD_NAME: &str = "to_scalars_with_linking";
 /// The identifier of the `Scalar` type
 const SCALAR_TYPE_IDENT: &str = "Scalar";
-
-/// The method name for creating commitment randomness to a base type
-pub(crate) const COMMITMENT_RANDOMNESS_METHOD_NAME: &str = "commitment_randomness";
 
 /// The flag indicating the expansion should include a single prover circuit
 /// type definition for the base type
@@ -54,13 +44,9 @@ const ARG_MPC_TYPE: &str = "mpc";
 /// The flag indicating the expansion should include types for a multiprover
 /// circuit
 const ARG_MULTIPROVER_TYPE: &str = "multiprover_circuit";
-/// The flag indicating the expansion should include a proof-linkable type
-const ARG_LINKABLE_TYPE: &str = "linkable";
-/// The flag indicating the expansion should include multiprover linkable types
-const ARG_MULTIPROVER_LINKABLE_TYPES: &str = "multiprover_linkable";
 /// The flag indicating the expansion should include secret share types
 const ARG_SHARE_TYPE: &str = "secret_share";
-/// The flag indicating the expansion should include serde derivations
+/// The flag indicating the expansion should include serde traits
 const ARG_SERDE: &str = "serde";
 
 /// The arguments to the `circuit_trace` macro
@@ -68,18 +54,13 @@ const ARG_SERDE: &str = "serde";
 pub(crate) struct MacroArgs {
     /// Whether or not to allocate a circuit type for the struct
     pub build_singleprover_types: bool,
-    /// Whether or not to allocate linkable commitment types for the struct
-    pub build_linkable_types: bool,
     /// Whether or not to allocate MPC circuit types for the struct
     pub build_mpc_types: bool,
     /// Whether or not to allocate multiprover circuit types for the struct
     pub build_multiprover_types: bool,
-    /// Whether or not to allocate multiprover linkable circuit types for the
-    /// struct
-    pub build_multiprover_linkable_types: bool,
     /// Whether or not to allocate secret share types for the struct
     pub build_secret_share_types: bool,
-    /// Whether or not to include serde derivations for the type
+    /// Whether or not to derive serde traits for the struct
     pub serde: bool,
 }
 
@@ -92,22 +73,6 @@ impl MacroArgs {
                 self.build_singleprover_types && self.build_mpc_types,
                 "multiprover circuit type requires singleprover and mpc circuit types"
             );
-        }
-
-        // A linkable type also requires a circuit base type to be defined
-        if self.build_linkable_types {
-            assert!(
-                self.build_singleprover_types,
-                "linkable types require a circuit base type to implement"
-            )
-        }
-
-        // A multiprover linkable type must also be linkable and a circuit base type
-        if self.build_multiprover_linkable_types {
-            assert!(
-                self.build_singleprover_types && self.build_linkable_types,
-                "multiprover linkable types require both circuit base type and base linkable types"
-            )
         }
 
         // A secret share type requires the base type be a single-prover circuit type
@@ -129,10 +94,8 @@ pub(crate) fn parse_macro_args(args: TokenStream) -> Result<MacroArgs> {
     for arg in parsed_args.iter() {
         match arg.to_string().as_str() {
             ARG_SINGLEPROVER_TYPE => macro_args.build_singleprover_types = true,
-            ARG_LINKABLE_TYPE => macro_args.build_linkable_types = true,
             ARG_MPC_TYPE => macro_args.build_mpc_types = true,
             ARG_MULTIPROVER_TYPE => macro_args.build_multiprover_types = true,
-            ARG_MULTIPROVER_LINKABLE_TYPES => macro_args.build_multiprover_linkable_types = true,
             ARG_SHARE_TYPE => macro_args.build_secret_share_types = true,
             ARG_SERDE => macro_args.serde = true,
             unknown => panic!("received unexpected argument {unknown}"),
@@ -158,28 +121,14 @@ pub(crate) fn circuit_type_impl(target_struct: ItemStruct, macro_args: MacroArgs
 
     // Build singleprover circuit types
     if macro_args.build_singleprover_types {
-        let circuit_type_tokens = build_circuit_types(&target_struct, macro_args.serde);
+        let circuit_type_tokens = build_circuit_types(&target_struct);
         out_tokens.extend(circuit_type_tokens);
     }
 
     // Build MPC types
     if macro_args.build_mpc_types {
-        let mpc_type_tokens = build_mpc_types(
-            &target_struct,
-            macro_args.build_multiprover_types,
-            false, // multiprover_base_only
-        );
+        let mpc_type_tokens = build_mpc_types(&target_struct, macro_args.build_multiprover_types);
         out_tokens.extend(mpc_type_tokens);
-    }
-
-    // Build the commitment-linkable type
-    if macro_args.build_linkable_types {
-        let linkable_type_tokens = build_linkable_types(
-            &target_struct,
-            macro_args.build_multiprover_linkable_types,
-            macro_args.serde,
-        );
-        out_tokens.extend(linkable_type_tokens);
     }
 
     // Build secret share types
@@ -218,19 +167,12 @@ fn build_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
         base_type,
     );
 
-    let to_scalars_linking_impl = build_serialize_method(
-        new_ident(TO_SCALARS_LINKING_METHOD_NAME),
-        scalar_type_path,
-        base_type,
-    );
-
     let impl_block: ItemImpl = parse_quote! {
         impl #generics #trait_ident for #base_type_ident <#base_type_params>
             #where_clause
         {
             #from_scalars_impl
             #to_scalars_impl
-            #to_scalars_linking_impl
         }
     };
     impl_block.to_token_stream()
@@ -297,35 +239,6 @@ fn params_from_generics(generics: Generics) -> Punctuated<Ident, Comma> {
     res
 }
 
-/// Merge two sets of `Generics`
-fn merge_generics(mut generics1: Generics, generics2: Generics) -> Generics {
-    // Combine the params, deduplicating between the sets of generics
-    let generic_params: HashSet<Ident> = params_from_generics(generics1.clone())
-        .into_iter()
-        .collect();
-    generics1
-        .params
-        .extend(generics2.params.into_iter().filter(|param| match param {
-            GenericParam::Type(type_param) => !generic_params.contains(&type_param.ident),
-            GenericParam::Const(const_param) => !generic_params.contains(&const_param.ident),
-            _ => true, // Ignore lifetime params
-        }));
-
-    // Combine the where clauses
-    let mut generics1_predicates = generics1
-        .where_clause
-        .map(|where_clause| where_clause.predicates)
-        .unwrap_or_default();
-    let generics2_predicates = generics2
-        .where_clause
-        .map(|where_clause| where_clause.predicates)
-        .unwrap_or_default();
-
-    generics1_predicates.extend(generics2_predicates);
-    generics1.where_clause = Some(parse_quote!(where #generics1_predicates));
-    generics1
-}
-
 /// Implements a serialization function that looks like
 ///     fn #method_name(self) -> Vec<#target_type> {
 ///         vec![self.field1, self.field2, ...]
@@ -389,35 +302,6 @@ fn build_deserialize_method(
             }
         }
     }
-}
-
-/// Build an implementation of the `commitment_randomness` method that calls out
-/// to each field's implementation
-pub(crate) fn build_commitment_randomness_method(
-    base_type: &ItemStruct,
-    from_trait: Path,
-    result_type: Path,
-) -> TokenStream2 {
-    // Build the body of the `commitment_randomness` method
-    let commitment_randomness_ident = new_ident(COMMITMENT_RANDOMNESS_METHOD_NAME);
-    let mut field_stmts: Vec<Stmt> = Vec::new();
-    for field in base_type.fields.iter() {
-        let field_ident = field.ident.clone();
-        let field_type = field.ty.clone();
-        field_stmts.push(parse_quote! {
-            res.extend(<#field_type as #from_trait>::#commitment_randomness_ident(&self.#field_ident, r));
-        });
-    }
-
-    let fn_def: ItemFn = parse_quote! {
-        fn #commitment_randomness_ident <R: RngCore + CryptoRng>(&self, r: &mut R) -> Vec<#result_type> {
-            let mut res = Vec::new();
-            #(#field_stmts)*
-
-            res
-        }
-    };
-    fn_def.to_token_stream()
 }
 
 /// Implement `Clone` by cloning each field individually, this is useful when we

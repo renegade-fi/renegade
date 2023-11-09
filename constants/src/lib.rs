@@ -47,11 +47,11 @@ pub type ScalarField = <ark_bn254::G1Projective as Group>::ScalarField;
 
 /// The scalar type that the MPC is defined over    
 #[cfg(feature = "mpc-types")]
-pub type Scalar = GenericScalar<Curve>;
+pub type Scalar = GenericScalar<SystemCurveGroup>;
 
 /// The curve point type that the MPC is defined over
 #[cfg(feature = "mpc-types")]
-pub type CurvePoint = GenericCurvePoint<Curve>;
+pub type CurvePoint = GenericCurvePoint<SystemCurveGroup>;
 
 /// The authenticated scalar type that the MPC is defined over
 #[cfg(feature = "mpc-types")]
