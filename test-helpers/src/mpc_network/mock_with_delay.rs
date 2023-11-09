@@ -7,17 +7,18 @@ use std::{
     time::{Duration, Instant},
 };
 
-use async_trait::async_trait;
-use futures::{ready, FutureExt, Sink, Stream};
-use mpc_stark::{
+use ark_mpc::{
     error::MpcNetworkError,
     network::{MpcNetwork, NetworkOutbound, PartyId},
 };
+use async_trait::async_trait;
+use constants::SystemCurveGroup;
+use futures::{ready, FutureExt, Sink, Stream};
 
 use super::mocks::UnboundedDuplexStream;
 
 /// A type alias for a network message with a send timestamp attached
-type NetworkOutboundWithTimestamp = (Instant, NetworkOutbound);
+type NetworkOutboundWithTimestamp = (Instant, NetworkOutbound<SystemCurveGroup>);
 
 /// The representation of a delayed network connection
 pub struct MockNetworkWithDelay {
@@ -70,7 +71,7 @@ impl MockNetworkWithDelay {
 }
 
 #[async_trait]
-impl MpcNetwork for MockNetworkWithDelay {
+impl MpcNetwork<SystemCurveGroup> for MockNetworkWithDelay {
     fn party_id(&self) -> PartyId {
         self.party_id
     }
@@ -81,7 +82,7 @@ impl MpcNetwork for MockNetworkWithDelay {
 }
 
 impl Stream for MockNetworkWithDelay {
-    type Item = Result<NetworkOutbound, MpcNetworkError>;
+    type Item = Result<NetworkOutbound<SystemCurveGroup>, MpcNetworkError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         // Check the buffer to see if a message is ready to be received
@@ -108,14 +109,17 @@ impl Stream for MockNetworkWithDelay {
 }
 
 /// Send side directly calls out to the underlying mock connection
-impl Sink<NetworkOutbound> for MockNetworkWithDelay {
+impl Sink<NetworkOutbound<SystemCurveGroup>> for MockNetworkWithDelay {
     type Error = MpcNetworkError;
 
     fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
-    fn start_send(mut self: Pin<&mut Self>, item: NetworkOutbound) -> Result<(), Self::Error> {
+    fn start_send(
+        mut self: Pin<&mut Self>,
+        item: NetworkOutbound<SystemCurveGroup>,
+    ) -> Result<(), Self::Error> {
         let send_time = Instant::now();
         self.mock_conn.send((send_time, item));
         Ok(())
@@ -134,12 +138,12 @@ impl Sink<NetworkOutbound> for MockNetworkWithDelay {
 mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-    use futures::{SinkExt, StreamExt};
-    use mpc_stark::{
-        algebra::scalar::Scalar,
+    use ark_mpc::{
         network::{NetworkOutbound, NetworkPayload},
         PARTY0,
     };
+    use constants::Scalar;
+    use futures::{SinkExt, StreamExt};
     use renegade_crypto::fields::scalar_to_u64;
 
     use crate::mpc_network::{mock_with_delay::MockNetworkWithDelay, mocks::UnboundedDuplexStream};
