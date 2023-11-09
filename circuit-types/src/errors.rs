@@ -5,7 +5,7 @@ use std::{
     fmt::{Display, Formatter, Result},
 };
 
-use mpc_bulletproof::r1cs_mpc::{MultiproverError, R1CSError};
+use mpc_plonk::errors::PlonkError;
 
 /// Represents an error during the course of an MPC circuit execution
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,15 +30,13 @@ impl Display for MpcError {
 impl Error for MpcError {}
 
 /// Represents an error during the course of proving a statement
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum ProverError {
     /// An error during the course of a multi-prover execution that results
     /// from the MPC network itself
     Mpc(MpcError),
-    /// An error that occurs from the execution of a collaborative proof
-    Collaborative(MultiproverError),
-    /// An error that occurs from an R1CS error directly
-    R1CS(R1CSError),
+    /// An error executing the Plonk prover
+    Plonk(PlonkError),
 }
 
 impl Display for ProverError {
@@ -49,10 +47,10 @@ impl Display for ProverError {
 impl Error for ProverError {}
 
 /// Represents an error during proof verification
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum VerifierError {
-    /// An error that occurs as a result of R1CS non-satisfaction
-    R1CS(R1CSError),
+    /// An error in plonk verification
+    Plonk(PlonkError),
 }
 
 impl Display for VerifierError {

@@ -10,3 +10,4 @@ mpc-types = ["dep:ark-mpc"]
 [dependencies]
 ark-bn254 = "0.4"
 ark-mpc = { workspace = true, optional = true }
+ark-ec = "0.4"

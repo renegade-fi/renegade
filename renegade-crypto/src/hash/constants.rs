@@ -6,7 +6,7 @@
 
 use ark_ec::Group;
 use ark_ff::BigInt;
-use constants::Curve;
+use constants::SystemCurveGroup as Curve;
 
 /// The scalar field type that the hash function operates over
 pub type ScalarField = <Curve as Group>::ScalarField;
