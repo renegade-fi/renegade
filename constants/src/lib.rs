@@ -4,6 +4,7 @@
 #![deny(clippy::missing_docs_in_private_items)]
 #![deny(missing_docs)]
 
+#[cfg(feature = "mpc-types")]
 use ark_mpc::algebra::{CurvePoint as GenericCurvePoint, Scalar as GenericScalar};
 
 // -------------------------
@@ -36,9 +37,11 @@ pub const MERKLE_ROOT_HISTORY_LENGTH: usize = 30;
 pub type Curve = ark_bn254::G1Projective;
 
 /// The scalar type that the MPC is defined over    
+#[cfg(feature = "mpc-types")]
 pub type Scalar = GenericScalar<Curve>;
 
 /// The curve point type that the MPC is defined over
+#[cfg(feature = "mpc-types")]
 pub type CurvePoint = GenericCurvePoint<Curve>;
 
 // ----------------------

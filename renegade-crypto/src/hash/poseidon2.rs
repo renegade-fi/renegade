@@ -215,6 +215,7 @@ impl Poseidon2Sponge {
 }
 
 #[cfg(test)]
+#[cfg(feature = "non-wasm")]
 mod test {
 
     use ark_ff::BigInt;
