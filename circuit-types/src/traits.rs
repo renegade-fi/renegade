@@ -121,6 +121,25 @@ pub trait CircuitVarType: Clone {
     fn to_vars(&self) -> Vec<Variable>;
     /// Convert from an iterable of variables representing the serialized type
     fn from_vars<I: Iterator<Item = Variable>>(i: &mut I) -> Self;
+    /// Evaluate the variable type in the constraint system to retrieve the base
+    /// type
+    fn eval<T: CircuitBaseType>(&self, circuit: &PlonkCircuit) -> T {
+        let vars = self.to_vars();
+        let mut scalars = vars
+            .into_iter()
+            .map(|v| circuit.witness(v).unwrap())
+            .map(Scalar::new);
+
+        T::from_scalars(&mut scalars)
+    }
+    /// Evaluate the variable type in a multiprover constraint system to
+    /// retrieve the base type
+    fn eval_multiprover<T: MultiproverCircuitBaseType>(&self, circuit: &MpcPlonkCircuit) -> T {
+        let vars = self.to_vars();
+        let mut scalars = vars.into_iter().map(|v| circuit.witness(v).unwrap());
+
+        T::from_authenticated_scalars(&mut scalars)
+    }
 }
 
 // --- MPC Circuit Traits --- //
@@ -236,7 +255,7 @@ pub trait SecretShareType: Sized + BaseType {
     /// implement traits on generics types (e.g. `[T]` where `T:
     /// SecretShareType`). Requiring an additional trait bound on `T` would
     /// prevent this.
-    fn add_shares(self, rhs: Self) -> Self::Base {
+    fn add_shares(&self, rhs: &Self) -> Self::Base {
         let mut res_scalars = self
             .to_scalars()
             .into_iter()
@@ -278,7 +297,7 @@ pub trait SecretShareVarType: Sized + CircuitVarType {
     /// implement traits on generics types (e.g. `[T]` where `T:
     /// SecretShareType`). Requiring an additional trait bound on `T` would
     /// prevent this.
-    fn add_shares<R>(self, rhs: R, circuit: &mut PlonkCircuit) -> Self::Base
+    fn add_shares<R>(&self, rhs: &R, circuit: &mut PlonkCircuit) -> Self::Base
     where
         R: SecretShareVarType,
     {
