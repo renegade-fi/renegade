@@ -10,14 +10,14 @@ async-trait = "0.1"
 dns-lookup = "1.0"
 futures = "0.3"
 tokio = { workspace = true }
-tokio-condvar = "0.1"
 
 # === Node Interaction === #
 starknet = { workspace = true }
 reqwest = "0.11.13"
 
 # === Cryptography + Arithmetic === #
-mpc-stark = { workspace = true }
+ark-mpc = { workspace = true }
+ark-ec = "0.4"
 num-bigint = { version = "0.4", features = ["rand"] }
 
 # === Workspace Dependencies === # 
@@ -25,7 +25,6 @@ constants = { path = "../constants" }
 renegade-crypto = { path = "../renegade-crypto" }
 
 # === Misc Dependencies === #
-inventory = "0.3"
 itertools = "0.10.5"
 eyre = { workspace = true }
 rand = { workspace = true }

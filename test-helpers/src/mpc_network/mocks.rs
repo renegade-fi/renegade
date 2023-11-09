@@ -5,15 +5,15 @@ use std::{
     task::{Context, Poll},
 };
 
-use async_trait::async_trait;
-
-use futures::{Future, Sink, Stream};
-use mpc_stark::{
-    algebra::scalar::Scalar,
+use ark_mpc::{
     beaver::SharedValueSource,
     error::MpcNetworkError,
     network::{MpcNetwork, NetworkOutbound, PartyId},
 };
+use async_trait::async_trait;
+
+use constants::{Scalar, SystemCurveGroup};
+use futures::{Future, Sink, Stream};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 /// The maximum message length in the mock network, used for debugging
@@ -37,7 +37,7 @@ impl PartyIDBeaverSource {
 /// The PartyIDBeaverSource returns beaver triplets split statically between the
 /// parties. We assume a = 2, b = 3 ==> c = 6. [a] = (1, 1); [b] = (3, 0) [c] =
 /// (2, 4)
-impl SharedValueSource for PartyIDBeaverSource {
+impl SharedValueSource<SystemCurveGroup> for PartyIDBeaverSource {
     fn next_shared_bit(&mut self) -> Scalar {
         // Simply output partyID, assume partyID \in {0, 1}
         assert!(self.party_id == 0 || self.party_id == 1);
@@ -103,12 +103,15 @@ pub struct MockNetwork {
     /// The ID of the local party
     party_id: PartyId,
     /// The underlying mock network connection
-    mock_conn: UnboundedDuplexStream<NetworkOutbound>,
+    mock_conn: UnboundedDuplexStream<NetworkOutbound<SystemCurveGroup>>,
 }
 
 impl MockNetwork {
     /// Create a new mock network from one half of a duplex stream
-    pub fn new(party_id: PartyId, stream: UnboundedDuplexStream<NetworkOutbound>) -> Self {
+    pub fn new(
+        party_id: PartyId,
+        stream: UnboundedDuplexStream<NetworkOutbound<SystemCurveGroup>>,
+    ) -> Self {
         Self {
             party_id,
             mock_conn: stream,
@@ -117,7 +120,7 @@ impl MockNetwork {
 }
 
 #[async_trait]
-impl MpcNetwork for MockNetwork {
+impl MpcNetwork<SystemCurveGroup> for MockNetwork {
     fn party_id(&self) -> PartyId {
         self.party_id
     }
@@ -128,7 +131,7 @@ impl MpcNetwork for MockNetwork {
 }
 
 impl Stream for MockNetwork {
-    type Item = Result<NetworkOutbound, MpcNetworkError>;
+    type Item = Result<NetworkOutbound<SystemCurveGroup>, MpcNetworkError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Box::pin(self.mock_conn.recv())
@@ -138,14 +141,17 @@ impl Stream for MockNetwork {
     }
 }
 
-impl Sink<NetworkOutbound> for MockNetwork {
+impl Sink<NetworkOutbound<SystemCurveGroup>> for MockNetwork {
     type Error = MpcNetworkError;
 
     fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
-    fn start_send(mut self: Pin<&mut Self>, item: NetworkOutbound) -> Result<(), Self::Error> {
+    fn start_send(
+        mut self: Pin<&mut Self>,
+        item: NetworkOutbound<SystemCurveGroup>,
+    ) -> Result<(), Self::Error> {
         self.mock_conn.send(item);
         Ok(())
     }

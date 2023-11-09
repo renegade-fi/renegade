@@ -4,12 +4,13 @@ pub mod mocks;
 
 use std::{fmt::Debug, net::SocketAddr, sync::Arc, time::Duration};
 
-use dns_lookup::lookup_host;
-use futures::{executor::block_on, future::join_all, Future};
-use mpc_stark::{
+use ark_mpc::{
     network::{MpcNetwork, QuicTwoPartyNet},
     MpcFabric, PARTY0, PARTY1,
 };
+use constants::SystemCurveGroup;
+use dns_lookup::lookup_host;
+use futures::{executor::block_on, future::join_all, Future};
 use tokio::runtime::Handle;
 
 use crate::mpc_network::mocks::MockNetwork;
@@ -28,7 +29,12 @@ pub const DEFAULT_MPC_SIZE_HINT: usize = 1_000_000;
 
 /// Sets up a basic MPC fabric between two parties using the QUIC transport and
 /// the beaver triplet source defined above
-pub fn setup_mpc_fabric(party_id: u64, local_port: u64, peer_port: u64, docker: bool) -> MpcFabric {
+pub fn setup_mpc_fabric(
+    party_id: u64,
+    local_port: u64,
+    peer_port: u64,
+    docker: bool,
+) -> MpcFabric<SystemCurveGroup> {
     // Listen on 0.0.0.0 (all network interfaces) with the given port
     // We do this because listening on localhost when running in a container points
     // to the container's loopback interface, not the docker bridge
@@ -74,7 +80,7 @@ pub async fn execute_mock_mpc<T, S, F>(f: F) -> (T, T)
 where
     T: Send + 'static,
     S: Future<Output = T> + Send + 'static,
-    F: Fn(MpcFabric) -> S + Send + Sync + 'static,
+    F: Fn(MpcFabric<SystemCurveGroup>) -> S + Send + Sync + 'static,
 {
     // Build a duplex stream to broker communication between the two parties
     let (party0_stream, party1_stream) = UnboundedDuplexStream::new_duplex_pair();
@@ -90,7 +96,7 @@ pub async fn execute_mock_mpc_with_delay<T, S, F>(f: F, delay: Duration) -> (T, 
 where
     T: Send + 'static,
     S: Future<Output = T> + Send + 'static,
-    F: Fn(MpcFabric) -> S + Send + Sync + 'static,
+    F: Fn(MpcFabric<SystemCurveGroup>) -> S + Send + Sync + 'static,
 {
     // Build a duplex stream to broker communication between the two parties
     let (party0_stream, party1_stream) = UnboundedDuplexStream::new_duplex_pair();
@@ -105,8 +111,8 @@ async fn execute_mock_mpc_with_network<T, S, F, N>(f: F, party0_conn: N, party1_
 where
     T: Send + 'static,
     S: Future<Output = T> + Send + 'static,
-    F: Fn(MpcFabric) -> S + Send + Sync + 'static,
-    N: MpcNetwork + Send + Sync + 'static,
+    F: Fn(MpcFabric<SystemCurveGroup>) -> S + Send + Sync + 'static,
+    N: MpcNetwork<SystemCurveGroup> + Send + Sync + 'static,
 {
     // Build a duplex stream to broker communication between the two parties
     let party0_fabric = MpcFabric::new(party0_conn, PartyIDBeaverSource::new(PARTY0));
