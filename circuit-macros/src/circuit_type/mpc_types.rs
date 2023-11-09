@@ -31,33 +31,21 @@ const MPC_NATIVE_TYPE_ASSOCIATED_NAME: &str = "NativeType";
 /// Scalar repr
 const FROM_AUTHENTICATED_SCALARS_METHOD_NAME: &str = "from_authenticated_scalars";
 /// The type that is deserialized from for an MPC type
-const MPC_TYPE_SERIALIZED_IDENT: &str = "AuthenticatedScalarResult";
+const MPC_TYPE_SERIALIZED_IDENT: &str = "AuthenticatedScalar";
 /// The method name that serializes an authenticated type to a vector of
 /// allocated Scalars
 const TO_AUTHENTICATED_SCALARS_METHOD_NAME: &str = "to_authenticated_scalars";
-/// The method name that serialized an authenticated type to a vector of
-/// allocated scalars including the scalars needed to commit to the value in a
-/// (possibly) linkable manner
-const TO_AUTHENTICATED_SCALARS_LINKABLE_METHOD_NAME: &str = "to_authenticated_scalars_with_linking";
 
 /// Build the MPC types from a base type
 ///
 /// If `include_multiprover` is set, the MPC types will also implement
 /// `MultiproverBaseType` and multi-prover circuit types will be allocated for
 /// the struct
-pub(crate) fn build_mpc_types(
-    base_struct: &ItemStruct,
-    include_multiprover: bool,
-    multiprover_base_only: bool,
-) -> TokenStream2 {
+pub(crate) fn build_mpc_types(base_struct: &ItemStruct, include_multiprover: bool) -> TokenStream2 {
     // Implement `MpcBaseType` for the base struct
     let mut res = build_mpc_base_type_impl(base_struct);
     // Build the MPC type and implementations
-    res.extend(build_mpc_type(
-        base_struct,
-        include_multiprover,
-        multiprover_base_only,
-    ));
+    res.extend(build_mpc_type(base_struct, include_multiprover));
 
     res
 }
@@ -84,11 +72,7 @@ fn build_mpc_base_type_impl(base_struct: &ItemStruct) -> TokenStream2 {
 }
 
 /// Build the core `Authenticated` type that implements `MpcType`
-fn build_mpc_type(
-    base_struct: &ItemStruct,
-    include_multiprover: bool,
-    multiprover_base_only: bool,
-) -> TokenStream2 {
+fn build_mpc_type(base_struct: &ItemStruct, include_multiprover: bool) -> TokenStream2 {
     let base_type_name = base_struct.ident.clone();
     let new_name_ident = ident_with_prefix(&base_type_name.to_string(), MPC_TYPE_PREFIX);
 
@@ -112,11 +96,8 @@ fn build_mpc_type(
     res.extend(impl_clone_by_fields(&mpc_type));
 
     // Implement multiprover types
-    if include_multiprover || multiprover_base_only {
-        res.extend(build_multiprover_circuit_types(
-            &mpc_type,
-            multiprover_base_only,
-        ));
+    if include_multiprover {
+        res.extend(build_multiprover_circuit_types(&mpc_type));
     }
 
     res
@@ -154,7 +135,7 @@ fn build_mpc_type_impl(mpc_type: &ItemStruct, base_type: &ItemStruct) -> TokenSt
         .clone()
         .unwrap();
     let fabric_method: ImplItemMethod = parse_quote! {
-        fn fabric(&self) -> &MpcFabric {
+        fn fabric(&self) -> &Fabric {
             &self.#first_element.fabric()
         }
     };
@@ -163,13 +144,6 @@ fn build_mpc_type_impl(mpc_type: &ItemStruct, base_type: &ItemStruct) -> TokenSt
     let to_auth_scalars_method = build_serialize_method(
         new_ident(TO_AUTHENTICATED_SCALARS_METHOD_NAME),
         authenticated_scalar_type.clone(),
-        mpc_type,
-    );
-
-    // Build a `to_authenticated_scalars_with_linking` method
-    let to_auth_scalars_linkable_method = build_serialize_method(
-        new_ident(TO_AUTHENTICATED_SCALARS_LINKABLE_METHOD_NAME),
-        authenticated_scalar_type,
         mpc_type,
     );
 
@@ -182,7 +156,6 @@ fn build_mpc_type_impl(mpc_type: &ItemStruct, base_type: &ItemStruct) -> TokenSt
             #fabric_method
             #from_auth_scalars_method
             #to_auth_scalars_method
-            #to_auth_scalars_linkable_method
         }
     };
     impl_block.to_token_stream()

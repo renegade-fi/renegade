@@ -11,13 +11,8 @@ use crate::circuit_type::{
 
 use super::{
     build_base_type_impl, build_serde_methods, ident_with_generics,
-    linkable_types::build_linkable_types,
-    merge_generics,
-    multiprover_circuit_types::VAR_SUFFIX,
-    singleprover_circuit_types::{
-        build_circuit_types, build_var_type_generics, with_var_type_generics,
-    },
-    FROM_SCALARS_METHOD_NAME, SCALAR_TYPE_IDENT, TO_SCALARS_METHOD_NAME,
+    multiprover_circuit_types::VAR_SUFFIX, singleprover_circuit_types::build_circuit_types,
+    str_to_path, FROM_SCALARS_METHOD_NAME, SCALAR_TYPE_IDENT, TO_SCALARS_METHOD_NAME,
 };
 
 /// The trait name of the base type
@@ -30,8 +25,6 @@ const SECRET_SHARE_TYPE_TRAIT_NAME: &str = "SecretShareType";
 const SECRET_SHARE_BASE_ASSOCIATED_NAME: &str = "Base";
 /// The trait name of the secret share var trait
 const SECRET_SHARE_VAR_TRAIT_NAME: &str = "SecretShareVarType";
-/// The associated type of the blinder type on the base type
-const SECRET_SHARE_BLINDED_ASSOCIATED_NAME: &str = "BlindType";
 
 /// The suffix appended to secret share types
 const SHARE_SUFFIX: &str = "Share";
@@ -97,16 +90,9 @@ fn build_secret_share_type(base_type: &ItemStruct, serde: bool) -> TokenStream2 
     res.extend(build_secret_share_type_impl(&secret_share_type));
 
     // Build singleprover circuit types for the secret shares
-    res.extend(build_circuit_types(&secret_share_type, serde));
-    res.extend(build_var_type_addition_impl(&secret_share_type));
+    res.extend(build_circuit_types(&secret_share_type));
     res.extend(build_share_var_impl(&secret_share_type));
 
-    // Build linkable commitment types for the secret shares
-    res.extend(build_linkable_types(
-        &secret_share_type,
-        false, // include_multiprover
-        serde,
-    ));
     res.extend(secret_share_type.to_token_stream());
 
     // Implement serialization
@@ -141,7 +127,7 @@ fn build_addition_impl(base_type: &ItemStruct) -> TokenStream2 {
 
     let output_type_name = ident_with_generics(base_type.ident.clone(), generics.clone());
 
-    // Implementation calls out to
+    // Implementation calls out to the `add_shares`
     let impl_block: ItemImpl = parse_quote! {
         impl #generics Add<#secret_share_type_name> for #secret_share_type_name
             #where_clause
@@ -149,50 +135,7 @@ fn build_addition_impl(base_type: &ItemStruct) -> TokenStream2 {
             type Output = #output_type_name;
 
             fn add(self, rhs: #secret_share_type_name) -> Self::Output {
-                self.add_shares(rhs)
-            }
-        }
-    };
-    impl_block.to_token_stream()
-}
-
-/// Build an addition implementation on secret share variable types
-fn build_var_type_addition_impl(secret_share_type: &ItemStruct) -> TokenStream2 {
-    let generics = secret_share_type.generics.clone();
-    let impl_generics = merge_generics(
-        parse_quote!(<L1: LinearCombinationLike, L2: LinearCombinationLike>),
-        generics.clone(),
-    );
-    let where_clause = secret_share_type.generics.where_clause.clone();
-
-    let var_type_name = ident_with_suffix(&secret_share_type.ident.to_string(), VAR_SUFFIX);
-    let lhs_var_name = ident_with_generics(
-        var_type_name.clone(),
-        merge_generics(parse_quote!(<L1>), generics.clone()),
-    );
-    let rhs_var_name = ident_with_generics(
-        var_type_name,
-        merge_generics(parse_quote!(<L2>), generics.clone()),
-    );
-
-    let output_type_name = ident_with_suffix(
-        &ident_strip_suffix(&secret_share_type.ident.to_string(), SHARE_SUFFIX).to_string(),
-        VAR_SUFFIX,
-    );
-    let output_type_with_generics: Path = ident_with_generics(
-        output_type_name,
-        merge_generics(parse_quote!(<LinearCombination>), generics),
-    );
-
-    let impl_block: ItemImpl = parse_quote! {
-        impl #impl_generics
-            Add<#rhs_var_name> for #lhs_var_name
-        #where_clause
-        {
-            type Output = #output_type_with_generics;
-
-            fn add(self, rhs: #rhs_var_name) -> Self::Output {
-                self.add_shares(rhs)
+                self.add_shares(&rhs)
             }
         }
     };
@@ -230,30 +173,24 @@ fn build_share_var_impl(secret_share_type: &ItemStruct) -> TokenStream2 {
     let generics = secret_share_type.generics.clone();
     let where_clause = secret_share_type.generics.where_clause.clone();
 
-    let trait_name = with_var_type_generics(new_ident(SECRET_SHARE_VAR_TRAIT_NAME));
-    let impl_generics = merge_generics(build_var_type_generics(), generics.clone());
+    let trait_name = str_to_path(SECRET_SHARE_VAR_TRAIT_NAME);
+    let impl_generics = generics.clone();
 
     let var_type_name = ident_with_suffix(&secret_share_type.ident.to_string(), VAR_SUFFIX);
     let var_type_with_generics = ident_with_generics(var_type_name.clone(), impl_generics.clone());
 
     let base_type_associated_name = new_ident(SECRET_SHARE_BASE_ASSOCIATED_NAME);
-    let blind_type_associated_name = new_ident(SECRET_SHARE_BLINDED_ASSOCIATED_NAME);
-
-    let associated_type_generics = merge_generics(parse_quote!(<LinearCombination>), generics);
     let base_type_name = ident_with_suffix(
         &ident_strip_suffix(&secret_share_type.ident.to_string(), SHARE_SUFFIX).to_string(),
         VAR_SUFFIX,
     );
-    let base_type_with_generics: Path =
-        ident_with_generics(base_type_name, associated_type_generics.clone());
-    let blind_type_name: Path = ident_with_generics(var_type_name, associated_type_generics);
+    let base_type_with_generics: Path = ident_with_generics(base_type_name, generics.clone());
 
     let impl_block: ItemImpl = parse_quote! {
         impl #impl_generics #trait_name for #var_type_with_generics
             #where_clause
         {
             type #base_type_associated_name = #base_type_with_generics;
-            type #blind_type_associated_name = #blind_type_name;
         }
     };
     impl_block.to_token_stream()
