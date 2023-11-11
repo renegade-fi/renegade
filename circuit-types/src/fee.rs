@@ -3,29 +3,21 @@
 
 use std::ops::Add;
 
+use circuit_macros::circuit_type;
+use constants::{AuthenticatedScalar, Scalar};
+use mpc_relation::Variable;
+use num_bigint::BigUint;
+use serde::{Deserialize, Serialize};
+
 use crate::{
     biguint_from_hex_string, biguint_to_hex_string,
     fixed_point::FixedPoint,
     traits::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-        LinkableBaseType, LinkableType, MpcBaseType, MpcLinearCombinationLike, MpcType,
-        MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
-        MultiproverCircuitVariableType, SecretShareBaseType, SecretShareType, SecretShareVarType,
+        BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
+        MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
+    Fabric,
 };
-use circuit_macros::circuit_type;
-use mpc_bulletproof::r1cs::{LinearCombination, Variable};
-use mpc_stark::{
-    algebra::{
-        authenticated_scalar::AuthenticatedScalarResult,
-        authenticated_stark_point::AuthenticatedStarkPointOpenResult, scalar::Scalar,
-        stark_curve::StarkPoint,
-    },
-    MpcFabric,
-};
-use num_bigint::BigUint;
-use rand::{CryptoRng, RngCore};
-use serde::{Deserialize, Serialize};
 
 // -----------------
 // | Fee Base Type |
@@ -33,14 +25,7 @@ use serde::{Deserialize, Serialize};
 
 /// Represents a fee-tuple in the state, i.e. a commitment to pay a relayer for
 /// a given match
-#[circuit_type(
-    serde,
-    singleprover_circuit,
-    mpc,
-    multiprover_circuit,
-    linkable,
-    secret_share
-)]
+#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Fee {
     /// The public settle key of the cluster collecting fees

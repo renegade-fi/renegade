@@ -19,16 +19,17 @@ pub mod traits;
 pub mod transfers;
 pub mod wallet;
 
+use ark_ff::BigInt;
+use ark_mpc::MpcFabric;
 use bigdecimal::Num;
-use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
+use constants::{
+    Scalar, ScalarField, SystemCurveGroup, MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT,
+};
 use fixed_point::DEFAULT_FP_PRECISION;
 use merkle::MerkleOpening;
-use mpc_bulletproof::PedersenGens;
-use mpc_stark::algebra::{
-    authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar, stark_curve::StarkPoint,
-};
+use mpc_plonk::multiprover::proof_system::MpcPlonkCircuit as GenericMpcPlonkCircuit;
+use mpc_relation::PlonkCircuit as GenericPlonkCircuit;
 use num_bigint::BigUint;
-use rand::thread_rng;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use serde::{de::Error as SerdeErr, Deserialize, Deserializer, Serialize, Serializer};
 use wallet::{Wallet, WalletShare};
@@ -37,12 +38,24 @@ use wallet::{Wallet, WalletShare};
 // | Constants |
 // -------------
 
+/// The zero value in the Scalar field we work over
+pub const SCALAR_ZERO: ScalarField = ScalarField::new(BigInt::new([0, 0, 0, 0]));
+/// The one value in the Scalar field we work over
+pub const SCALAR_ONE: ScalarField = ScalarField::new(BigInt::new([1, 0, 0, 0]));
+
 /// The number of bits allowed in a balance or transaction "amount"
 pub const AMOUNT_BITS: usize = 64;
 /// The number of bits allowed in a price
 ///
 /// This is the default fixed point precision plus 32 bits for the integral part
 pub const PRICE_BITS: usize = DEFAULT_FP_PRECISION + 32;
+
+/// An MPC fabric with curve generic attached
+pub type Fabric = MpcFabric<SystemCurveGroup>;
+/// A circuit type with curve generic attached
+pub type PlonkCircuit = GenericPlonkCircuit<ScalarField>;
+/// A circuit type with curve generic attached in a multiprover context
+pub type MpcPlonkCircuit = GenericMpcPlonkCircuit<SystemCurveGroup>;
 
 // --------------------------
 // | Default Generic Values |
@@ -56,9 +69,18 @@ pub type SizedWalletShare = WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 /// attached
 pub type SizedMerkleOpening = MerkleOpening<MERKLE_HEIGHT>;
 
-// -----------------------------------------
-// | Serialization Deserialization Helpers |
-// -----------------------------------------
+// -----------
+// | Helpers |
+// -----------
+
+/// Converts an element of the arkworks `ScalarField` to an `ark-mpc` type
+/// `Scalar`
+#[macro_export]
+macro_rules! scalar {
+    ($x:expr) => {
+        Scalar::new($x)
+    };
+}
 
 /// A helper to serialize a Scalar to a hex string
 pub fn scalar_to_hex_string<S>(val: &Scalar, s: S) -> Result<S::Ok, S::Error>
@@ -126,101 +148,20 @@ where
         .map_err(|_| SerdeErr::custom("incorrect size of serialized array"))
 }
 
-// --------------
-// | Meta Types |
-// --------------
-
-/// A linkable commitment is a commitment used in multiple proofs. We split the
-/// constraints of the matching engine into roughly 3 pieces:
-///     1. Input validity checks, done offline by managing relayers (`VALID
-///        COMMITMENTS`)
-///     2. The matching engine execution, proved collaboratively over an MPC
-///        fabric (`VALID MATCH MPC`)
-///     3. Output validity checks: i.e. note construction and encryption (`VALID
-///        MATCH ENCRYPTION`)
-/// These components are split to remove as many constraints from the bottleneck
-/// (the collaborative proof) as possible.
-///
-/// However, we need to ensure that -- for example -- the order used in the
-/// proof of `VALID COMMITMENTS` is the same order as the order used in `VALID
-/// MATCH MPC`. This can be done by constructing the Pedersen commitments to the
-/// orders using the same randomness across proofs. That way, the verified may
-/// use the shared Pedersen commitment as an implicit constraint that witness
-/// values are equal across proofs.
-///
-/// The `LinkableCommitment` type allows this from the prover side by storing
-/// the randomness used in the original commitment along with the value itself.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct LinkableCommitment {
-    /// The underlying value committed to
-    pub val: Scalar,
-    /// The randomness used to blind the commitment
-    randomness: Scalar,
-}
-
-impl LinkableCommitment {
-    /// Create a new linkable commitment from a given value
-    pub fn new(val: Scalar) -> Self {
-        // Choose a random blinder
-        let mut rng = thread_rng();
-        let randomness = Scalar::random(&mut rng);
-        Self { val, randomness }
-    }
-
-    /// Get the Pedersen commitment to this value
-    pub fn compute_commitment(&self) -> StarkPoint {
-        let pedersen_generators = PedersenGens::default();
-        pedersen_generators.commit(self.val, self.randomness)
-    }
-}
-
-impl From<Scalar> for LinkableCommitment {
-    fn from(val: Scalar) -> Self {
-        LinkableCommitment::new(val)
-    }
-}
-
-impl From<LinkableCommitment> for Scalar {
-    fn from(comm: LinkableCommitment) -> Self {
-        comm.val
-    }
-}
-
-/// A linkable commitment that has been allocated inside of an MPC fabric
-#[derive(Clone, Debug)]
-pub struct AuthenticatedLinkableCommitment {
-    /// The underlying shared scalar
-    pub(crate) val: AuthenticatedScalarResult,
-    /// The randomness used to blind the commitment
-    randomness: AuthenticatedScalarResult,
-}
-
-impl AuthenticatedLinkableCommitment {
-    /// Create a linkable commitment from a shared scalar by sampling a shared
-    /// blinder
-    pub fn new(val: AuthenticatedScalarResult, randomness: AuthenticatedScalarResult) -> Self {
-        Self { val, randomness }
-    }
-
-    /// Get the underlying value of the commitment
-    pub fn value(&self) -> &AuthenticatedScalarResult {
-        &self.val
-    }
-}
-
 /// Groups helpers that operate on native types; which correspond to circuitry
 /// defined in this library
 ///
 /// For example; when computing witnesses, wallet commitments, note commitments,
 /// nullifiers, etc are all useful helpers
 pub mod native_helpers {
+    use constants::Scalar;
+    use itertools::Itertools;
+    use renegade_crypto::hash::{compute_poseidon_hash, evaluate_hash_chain};
+
     use crate::{
         traits::BaseType,
         wallet::{Nullifier, Wallet, WalletShare, WalletShareStateCommitment},
     };
-    use itertools::Itertools;
-    use mpc_stark::algebra::scalar::Scalar;
-    use renegade_crypto::hash::{compute_poseidon_hash, evaluate_hash_chain};
 
     /// Recover a wallet from blinded secret shares
     pub fn wallet_from_blinded_shares<
@@ -318,8 +259,10 @@ pub mod native_helpers {
     {
         // Sample new wallet blinders from the `blinder` CSPRNG
         // See the comments in `valid_reblind.rs` for an explanation of the two CSPRNGs
-        let mut blinder_samples =
-            evaluate_hash_chain(private_secret_shares.blinder, 2 /* length */);
+        let mut blinder_samples = evaluate_hash_chain(
+            private_secret_shares.blinder,
+            2, // length
+        );
         let mut blinder_drain = blinder_samples.drain(..);
         let new_blinder = blinder_drain.next().unwrap();
         let new_blinder_private_share = blinder_drain.next().unwrap();

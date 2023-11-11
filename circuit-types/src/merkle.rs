@@ -3,16 +3,13 @@
 #![allow(missing_docs)]
 
 use circuit_macros::circuit_type;
-use mpc_bulletproof::r1cs::{LinearCombination, Variable};
-use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
-use rand::{CryptoRng, RngCore};
+use constants::Scalar;
+use mpc_relation::Variable;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     deserialize_array, serialize_array,
-    traits::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-    },
+    traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
 
 /// A type alias for readability

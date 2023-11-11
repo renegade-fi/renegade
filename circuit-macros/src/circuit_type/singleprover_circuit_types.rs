@@ -1,7 +1,7 @@
 //! Groups type and trait definitions built when the `singleprover_circuit`
 //! argument is given to the macro
 
-use proc_macro2::{Ident, TokenStream as TokenStream2};
+use proc_macro2::TokenStream as TokenStream2;
 use quote::ToTokens;
 use syn::{parse_quote, Attribute, ItemImpl, ItemStruct, Path};
 

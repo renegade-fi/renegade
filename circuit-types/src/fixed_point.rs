@@ -11,7 +11,6 @@ use constants::{AuthenticatedScalar, Scalar, ScalarField};
 use lazy_static::lazy_static;
 use mpc_relation::{ConstraintSystem, Variable};
 use num_bigint::BigUint;
-use rand::{CryptoRng, RngCore};
 use renegade_crypto::fields::{
     bigint_to_scalar, biguint_to_scalar, scalar_to_bigdecimal, scalar_to_bigint, scalar_to_u64,
 };
@@ -23,7 +22,7 @@ use crate::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
         MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    Fabric, MpcPlonkCircuit, PlonkCircuit, SCALAR_ONE, SCALAR_ZERO,
+    Fabric, PlonkCircuit, SCALAR_ONE,
 };
 
 /// The default fixed point decimal precision in bits

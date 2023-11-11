@@ -1,43 +1,24 @@
 //! Groups the type definitions for matches
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
+use circuit_macros::circuit_type;
+use constants::{AuthenticatedScalar, Scalar};
+use mpc_relation::Variable;
+use num_bigint::BigUint;
+
 use crate::{
     traits::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-        LinkableBaseType, LinkableType, MpcBaseType, MpcLinearCombinationLike, MpcType,
-        MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
-        MultiproverCircuitVariableType,
+        BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType, MultiproverCircuitBaseType,
     },
-    AuthenticatedLinkableCommitment,
+    Fabric,
 };
-
-use circuit_macros::circuit_type;
-use itertools::Itertools;
-use mpc_bulletproof::r1cs::{LinearCombination, Variable};
-use mpc_stark::{
-    algebra::{
-        authenticated_scalar::AuthenticatedScalarResult,
-        authenticated_stark_point::AuthenticatedStarkPointOpenResult, scalar::Scalar,
-        stark_curve::StarkPoint,
-    },
-    MpcFabric,
-};
-use num_bigint::BigUint;
-use rand::{rngs::OsRng, CryptoRng, RngCore};
 
 /// Represents the match result of a matching MPC in the cleartext
 /// in which two tokens are exchanged
 /// TODO: When we convert these values to fixed point rationals, we will need to
 /// sacrifice one bit of precision to ensure that the difference in prices is
 /// divisible by two
-#[circuit_type(
-    serde,
-    singleprover_circuit,
-    mpc,
-    multiprover_circuit,
-    multiprover_linkable,
-    linkable
-)]
+#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct MatchResult {
     /// The mint of the order token in the asset pair being matched
@@ -66,27 +47,4 @@ pub struct MatchResult {
     /// The index of the order (0 or 1) that has the minimum amount, i.e. the
     /// order that is completely filled by this match
     pub min_amount_order_index: u64,
-}
-
-impl AuthenticatedMatchResult {
-    /// Construct a linkable type from the base, shared type
-    pub fn link_commitments(self, fabric: &MpcFabric) -> AuthenticatedLinkableMatchResult {
-        let mut rng = OsRng {};
-        let self_serialized = self.to_authenticated_scalars();
-        let randomness = (0..self_serialized.len())
-            .map(|_| Scalar::random(&mut rng))
-            .collect_vec();
-
-        let authenticated_randomness = fabric.batch_allocate_preshared_scalar(randomness);
-
-        let mut authenticated_linkable_scalars = self_serialized
-            .into_iter()
-            .zip(authenticated_randomness)
-            .map(|(scalar, randomness)| AuthenticatedLinkableCommitment::new(scalar, randomness))
-            .flat_map(|linked_scalar| linked_scalar.to_authenticated_scalars_with_linking());
-
-        AuthenticatedLinkableMatchResult::from_authenticated_scalars(
-            &mut authenticated_linkable_scalars,
-        )
-    }
 }

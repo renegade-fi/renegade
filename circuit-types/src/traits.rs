@@ -18,24 +18,19 @@
 
 use ark_mpc::{algebra::AuthenticatedScalarResult, network::PartyId};
 use async_trait::async_trait;
-use constants::{AuthenticatedScalar, Scalar, ScalarField, SystemCurve, SystemCurveGroup};
+use constants::{AuthenticatedScalar, Scalar, SystemCurve};
 use futures::future::join_all;
 use itertools::Itertools;
 use mpc_plonk::{
     errors::PlonkError,
-    multiprover::proof_system::{
-        CollaborativeProof, MpcCircuit, MpcPlonkCircuit as GenericMpcPlonkCircuit,
-        MultiproverPlonkKzgSnark,
-    },
+    multiprover::proof_system::{CollaborativeProof, MpcCircuit, MultiproverPlonkKzgSnark},
     proof_system::{
         structs::{Proof, ProvingKey, VerifyingKey},
         PlonkKzgSnark, UniversalSNARK,
     },
     transcript::SolidityTranscript,
 };
-use mpc_relation::{
-    constraint_system::Circuit, ConstraintSystem, PlonkCircuit as GenericPlonkCircuit, Variable,
-};
+use mpc_relation::{constraint_system::Circuit, ConstraintSystem, Variable};
 use num_bigint::BigUint;
 use rand::thread_rng;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint, scalar_to_u64};
