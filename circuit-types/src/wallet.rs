@@ -5,18 +5,18 @@
 use std::ops::Add;
 
 use circuit_macros::circuit_type;
+use constants::Scalar;
 use itertools::Itertools;
-use mpc_bulletproof::r1cs::{LinearCombination, Variable};
-use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
-use rand::{CryptoRng, RngCore};
+use mpc_relation::Variable;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     scalar_from_hex_string, scalar_to_hex_string,
     traits::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-        LinkableBaseType, LinkableType, SecretShareBaseType, SecretShareType, SecretShareVarType,
+        BaseType, CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType,
+        SecretShareVarType,
     },
+    PlonkCircuit,
 };
 
 use super::{
@@ -132,12 +132,8 @@ where
     }
 }
 
-impl<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-        L: LinearCombinationLike,
-    > WalletShareVar<L, MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
+    WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
@@ -146,25 +142,27 @@ where
     /// This is necessary because the default implementation of `blind` that is
     /// derived by the macro will blind the blinder as well as the shares,
     /// which is undesirable
-    pub fn blind_shares<L1: LinearCombinationLike>(
+    pub fn blind_shares(
         self,
-        blinder: L1,
-    ) -> WalletShareVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
-        let prev_blinder = self.blinder.clone();
-        let mut blinded = self.blind(blinder);
-        blinded.blinder = prev_blinder.into();
+        blinder: Variable,
+        circuit: &mut PlonkCircuit,
+    ) -> WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
+        let prev_blinder = self.blinder;
+        let mut blinded = self.blind(blinder, circuit);
+        blinded.blinder = prev_blinder;
 
         blinded
     }
 
     /// Unblinds the wallet, but does not unblind the blinder itself
-    pub fn unblind_shares<L1: LinearCombinationLike>(
+    pub fn unblind_shares(
         self,
-        blinder: L1,
-    ) -> WalletShareVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
-        let prev_blinder = self.blinder.clone();
-        let mut unblinded = self.unblind(blinder);
-        unblinded.blinder = prev_blinder.into();
+        blinder: Variable,
+        circuit: &mut PlonkCircuit,
+    ) -> WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
+        let prev_blinder = self.blinder;
+        let mut unblinded = self.unblind(blinder, circuit);
+        unblinded.blinder = prev_blinder;
 
         unblinded
     }
