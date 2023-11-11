@@ -4,40 +4,23 @@
 use std::ops::Add;
 
 use circuit_macros::circuit_type;
-use mpc_bulletproof::r1cs::{LinearCombination, Variable};
-use mpc_stark::{
-    algebra::{
-        authenticated_scalar::AuthenticatedScalarResult,
-        authenticated_stark_point::AuthenticatedStarkPointOpenResult, scalar::Scalar,
-        stark_curve::StarkPoint,
-    },
-    MpcFabric,
-};
+use constants::{AuthenticatedScalar, Scalar};
+use mpc_relation::Variable;
 use num_bigint::BigUint;
-use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     biguint_from_hex_string, biguint_to_hex_string,
     traits::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-        LinkableBaseType, LinkableType, MpcBaseType, MpcLinearCombinationLike, MpcType,
-        MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
-        MultiproverCircuitVariableType, SecretShareBaseType, SecretShareType, SecretShareVarType,
+        BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
+        MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
+    Fabric,
 };
 
 /// Represents the base type of a balance in tuple holding a reference to the
 /// ERC-20 token and its amount
-#[circuit_type(
-    serde,
-    singleprover_circuit,
-    mpc,
-    multiprover_circuit,
-    linkable,
-    secret_share,
-    multiprover_linkable
-)]
+#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)]
 #[derive(Clone, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Balance {
     /// The mint (ERC-20 token address) of the token in the balance

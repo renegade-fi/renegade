@@ -10,6 +10,7 @@ edition = "2021"
 ark-ff = "0.4"
 ark-ec = "0.4"
 ark-mpc = { workspace = true }
+ed25519-dalek = "1.0.1"
 mpc-plonk = { workspace = true }
 mpc-relation = { workspace = true }
 

@@ -6,16 +6,13 @@
 // ----------------------
 
 use circuit_macros::circuit_type;
-use mpc_bulletproof::r1cs::{LinearCombination, Variable};
-use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
+use constants::Scalar;
+use mpc_relation::Variable;
 use num_bigint::BigUint;
-use rand::{CryptoRng, RngCore};
 use renegade_crypto::fields::scalar_to_u64;
 use serde::{Deserialize, Serialize};
 
-use crate::traits::{
-    BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-};
+use crate::traits::{BaseType, CircuitBaseType, CircuitVarType};
 
 /// The base external transfer type, not allocated in a constraint system
 /// or an MPC circuit
@@ -56,12 +53,7 @@ impl BaseType for ExternalTransferDirection {
 }
 
 impl CircuitBaseType for ExternalTransferDirection {
-    type VarType<L: LinearCombinationLike> = L;
-    type CommitmentType = StarkPoint;
-
-    fn commitment_randomness<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Vec<Scalar> {
-        vec![Scalar::random(rng)]
-    }
+    type VarType = Variable;
 }
 
 impl Default for ExternalTransferDirection {

@@ -2,17 +2,9 @@
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
 use circuit_macros::circuit_type;
-use mpc_bulletproof::r1cs::{LinearCombination, Variable};
-use mpc_stark::{
-    algebra::{
-        authenticated_scalar::AuthenticatedScalarResult,
-        authenticated_stark_point::AuthenticatedStarkPointOpenResult, scalar::Scalar,
-        stark_curve::StarkPoint,
-    },
-    MpcFabric,
-};
+use constants::{AuthenticatedScalar, Scalar};
+use mpc_relation::Variable;
 use num_bigint::BigUint;
-use rand::{CryptoRng, RngCore};
 use renegade_crypto::fields::scalar_to_u64;
 use serde::{Deserialize, Serialize};
 use std::ops::Add;
@@ -21,25 +13,15 @@ use crate::{
     biguint_from_hex_string, biguint_to_hex_string,
     fixed_point::FixedPoint,
     traits::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-        LinkableBaseType, LinkableType, MpcBaseType, MpcLinearCombinationLike, MpcType,
-        MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
-        MultiproverCircuitVariableType, SecretShareBaseType, SecretShareType, SecretShareVarType,
+        BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
+        MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    LinkableCommitment,
+    Fabric,
 };
 
 /// Represents the base type of an open order, including the asset pair, the
 /// amount, price, and direction
-#[circuit_type(
-    serde,
-    singleprover_circuit,
-    mpc,
-    multiprover_circuit,
-    multiprover_linkable,
-    linkable,
-    secret_share
-)]
+#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Order {
     /// The mint (ERC-20 contract address) of the quote token
@@ -126,24 +108,11 @@ impl BaseType for OrderSide {
 }
 
 impl CircuitBaseType for OrderSide {
-    type VarType<L: LinearCombinationLike> = L;
-    type CommitmentType = StarkPoint;
-
-    fn commitment_randomness<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Vec<Scalar> {
-        vec![Scalar::random(rng)]
-    }
+    type VarType = Variable;
 }
 
 impl MpcBaseType for OrderSide {
-    type AllocatedType = AuthenticatedScalarResult;
-}
-
-impl LinkableBaseType for OrderSide {
-    type Linkable = LinkableCommitment;
-
-    fn to_linkable(&self) -> Self::Linkable {
-        LinkableCommitment::from(self.to_scalars()[0])
-    }
+    type AllocatedType = AuthenticatedScalar;
 }
 
 impl SecretShareBaseType for OrderSide {
