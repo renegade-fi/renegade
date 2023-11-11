@@ -33,25 +33,22 @@ use mpc_plonk::{
     },
     transcript::SolidityTranscript,
 };
-use mpc_relation::{constraint_system::Circuit, PlonkCircuit as GenericPlonkCircuit, Variable};
+use mpc_relation::{
+    constraint_system::Circuit, ConstraintSystem, PlonkCircuit as GenericPlonkCircuit, Variable,
+};
 use num_bigint::BigUint;
 use rand::thread_rng;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint, scalar_to_u64};
 
 use crate::{
     errors::{MpcError, ProverError, VerifierError},
-    Fabric,
+    Fabric, MpcPlonkCircuit, PlonkCircuit,
 };
 
 /// The error message emitted when too few scalars are given
 const ERR_TOO_FEW_SCALARS: &str = "from_scalars: Invalid number of scalars";
 /// The error message emitted when too few variables are given
 const ERR_TOO_FEW_VARS: &str = "from_vars: Invalid number of variables";
-
-/// A circuit type with curve generic attached
-type PlonkCircuit = GenericPlonkCircuit<ScalarField>;
-/// A circuit type with curve generic attached in a multiprover context
-type MpcPlonkCircuit = GenericMpcPlonkCircuit<SystemCurveGroup>;
 
 // ---------------
 // | Type Traits |
@@ -117,20 +114,23 @@ pub trait CircuitBaseType: BaseType {
 /// Implementing types are variable types that may appear in constraints in
 /// a constraint system
 pub trait CircuitVarType: Clone {
+    /// The base type that this variable type is a representation of
+    type BaseType: CircuitBaseType;
+
     /// Convert to a collection of serialized variables for the type
     fn to_vars(&self) -> Vec<Variable>;
     /// Convert from an iterable of variables representing the serialized type
     fn from_vars<I: Iterator<Item = Variable>>(i: &mut I) -> Self;
     /// Evaluate the variable type in the constraint system to retrieve the base
     /// type
-    fn eval<T: CircuitBaseType>(&self, circuit: &PlonkCircuit) -> T {
+    fn eval(&self, circuit: &PlonkCircuit) -> Self::BaseType {
         let vars = self.to_vars();
         let mut scalars = vars
             .into_iter()
             .map(|v| circuit.witness(v).unwrap())
             .map(Scalar::new);
 
-        T::from_scalars(&mut scalars)
+        Self::BaseType::from_scalars(&mut scalars)
     }
     /// Evaluate the variable type in a multiprover constraint system to
     /// retrieve the base type
@@ -393,6 +393,8 @@ impl<const N: usize, T: CircuitBaseType> CircuitBaseType for [T; N] {
 }
 
 impl CircuitVarType for Variable {
+    type BaseType = Scalar;
+
     fn to_vars(&self) -> Vec<Variable> {
         vec![*self]
     }
@@ -403,6 +405,8 @@ impl CircuitVarType for Variable {
 }
 
 impl CircuitVarType for () {
+    type BaseType = ();
+
     fn from_vars<I: Iterator<Item = Variable>>(_: &mut I) -> Self {}
 
     fn to_vars(&self) -> Vec<Variable> {
@@ -411,6 +415,8 @@ impl CircuitVarType for () {
 }
 
 impl<const N: usize, T: CircuitVarType> CircuitVarType for [T; N] {
+    type BaseType = [T::BaseType; N];
+
     fn to_vars(&self) -> Vec<Variable> {
         self.iter().flat_map(|x| x.to_vars()).collect()
     }

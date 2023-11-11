@@ -4,23 +4,12 @@
 
 use std::ops::{Add, Mul, Neg, Sub};
 
+use ark_ff::{BigInteger, Field, PrimeField};
 use bigdecimal::{BigDecimal, ToPrimitive};
 use circuit_macros::circuit_type;
+use constants::{AuthenticatedScalar, Scalar, ScalarField};
 use lazy_static::lazy_static;
-use mpc_bulletproof::{
-    r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
-    r1cs_mpc::{
-        MpcLinearCombination, MpcRandomizableConstraintSystem, MpcVariable, MultiproverError,
-    },
-};
-use mpc_stark::{
-    algebra::{
-        authenticated_scalar::AuthenticatedScalarResult,
-        authenticated_stark_point::AuthenticatedStarkPointOpenResult, scalar::Scalar,
-        stark_curve::StarkPoint,
-    },
-    MpcFabric,
-};
+use mpc_relation::{ConstraintSystem, Variable};
 use num_bigint::BigUint;
 use rand::{CryptoRng, RngCore};
 use renegade_crypto::fields::{
@@ -29,13 +18,12 @@ use renegade_crypto::fields::{
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
+    scalar,
     traits::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-        LinkableBaseType, LinkableType, MpcBaseType, MpcLinearCombinationLike, MpcType,
-        MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
-        MultiproverCircuitVariableType, SecretShareBaseType, SecretShareType, SecretShareVarType,
+        BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
+        MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    LinkableCommitment,
+    Fabric, MpcPlonkCircuit, PlonkCircuit, SCALAR_ONE, SCALAR_ZERO,
 };
 
 /// The default fixed point decimal precision in bits
@@ -47,14 +35,24 @@ lazy_static! {
     pub static ref TWO_TO_M: BigUint = BigUint::from(1u8) << DEFAULT_FP_PRECISION;
 
     /// The shift, converted to a scalar
-    pub static ref TWO_TO_M_SCALAR: Scalar = biguint_to_scalar(&TWO_TO_M);
+    pub static ref TWO_TO_M_SCALAR: ScalarField = biguint_to_scalar(&TWO_TO_M).inner();
 
     /// Compute the constant 2^-M (mod p), so that we may conveniently reduce after
     /// multiplications
-    pub static ref TWO_TO_NEG_M: Scalar = {
-        let two_to_m_scalar = biguint_to_scalar(&TWO_TO_M);
-        two_to_m_scalar.inverse()
-    };
+    pub static ref TWO_TO_NEG_M: ScalarField = TWO_TO_M_SCALAR.inverse().unwrap();
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Shift a given Scalar by M bits to the right
+pub fn right_shift_scalar_by_m(scalar: Scalar) -> Scalar {
+    // Directly modify the underlying `BigInt` representation
+    let mut inner = scalar.inner().into_bigint();
+    inner.divn(DEFAULT_FP_PRECISION as u32);
+
+    Scalar::new(ScalarField::new(inner))
 }
 
 // ------------------------------
@@ -65,14 +63,7 @@ lazy_static! {
 ///
 /// This is useful for centralizing conversion logic to provide an abstract
 /// to_scalar, from_scalar interface to modules that commit to this value
-#[circuit_type(
-    singleprover_circuit,
-    mpc,
-    multiprover_circuit,
-    multiprover_linkable,
-    linkable,
-    secret_share
-)]
+#[circuit_type(singleprover_circuit, mpc, multiprover_circuit, secret_share)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct FixedPoint {
     /// The underlying scalar representing the fixed point variable
@@ -80,9 +71,24 @@ pub struct FixedPoint {
 }
 
 impl FixedPoint {
+    /// Whether the represented fixed point is negative
+    pub fn is_negative(&self) -> bool {
+        let neg_threshold = ScalarField::MODULUS_MINUS_ONE_DIV_TWO;
+        self.repr.inner() > neg_threshold.into()
+    }
+
+    /// Return the absolute value of the fixed point
+    pub fn abs(&self) -> Self {
+        if self.is_negative() {
+            self.neg()
+        } else {
+            *self
+        }
+    }
+
     /// Create a new fixed point representation of the given u64
     pub fn from_integer(val: u64) -> Self {
-        let val_shifted = Scalar::from(val) * *TWO_TO_M_SCALAR;
+        let val_shifted = Scalar::from(val) * scalar!(*TWO_TO_M_SCALAR);
         Self { repr: val_shifted }
     }
 
@@ -103,17 +109,16 @@ impl FixedPoint {
 
     /// Return the represented value as an f64
     pub fn to_f64(&self) -> f64 {
-        let mut dec = BigDecimal::from(scalar_to_bigint(&self.repr));
-        dec = &dec / (1u64 << DEFAULT_FP_PRECISION);
-        dec.to_f64().unwrap()
+        let dec = BigDecimal::from(scalar_to_bigint(&self.abs().repr));
+        let result = &dec / (1u64 << DEFAULT_FP_PRECISION);
+
+        let neg = self.is_negative();
+        result.to_f64().map(|x| if neg { -x } else { x }).unwrap()
     }
 
-    /// Multiply one fixed point value by another
-    pub fn mul_fixed_point(&self, rhs: FixedPoint) -> Self {
-        let direct_mul = self.repr * rhs.repr;
-        Self {
-            repr: *TWO_TO_NEG_M * direct_mul,
-        }
+    /// Return the represented value as an f32
+    pub fn to_f32(&self) -> f32 {
+        self.to_f64() as f32
     }
 
     /// Rounds down the given value to an integer and returns the integer
@@ -181,7 +186,7 @@ impl Add<Scalar> for FixedPoint {
     type Output = FixedPoint;
     fn add(self, rhs: Scalar) -> Self::Output {
         Self {
-            repr: self.repr + *TWO_TO_M_SCALAR * rhs,
+            repr: self.repr + scalar!(*TWO_TO_M_SCALAR) * rhs,
         }
     }
 }
@@ -190,6 +195,18 @@ impl Add<FixedPoint> for Scalar {
     type Output = FixedPoint;
     fn add(self, rhs: FixedPoint) -> Self::Output {
         rhs + self
+    }
+}
+
+impl Mul<FixedPoint> for FixedPoint {
+    type Output = FixedPoint;
+
+    fn mul(self, rhs: FixedPoint) -> Self::Output {
+        // Multiply representations directly then reduce
+        let res_repr = self.repr * rhs.repr;
+        Self {
+            repr: right_shift_scalar_by_m(res_repr),
+        }
     }
 }
 
@@ -259,59 +276,65 @@ impl<'de> Deserialize<'de> for FixedPoint {
     }
 }
 
-impl From<FixedPoint> for LinkableFixedPoint {
-    fn from(fp: FixedPoint) -> Self {
-        Self {
-            repr: LinkableCommitment::new(fp.repr),
-        }
-    }
-}
-
-impl From<LinkableFixedPoint> for FixedPoint {
-    fn from(fp: LinkableFixedPoint) -> Self {
-        Self { repr: fp.repr.val }
-    }
-}
-
 // ---------------------------------------------
 // | Constraint System Variable Implementation |
 // ---------------------------------------------
 
 /// A commitment to a fixed-precision variable
 
-impl<L: LinearCombinationLike> FixedPointVar<L> {
+impl FixedPointVar {
     /// Evaluate the given fixed point variable in the constraint system and
     /// return the underlying value as a floating point
     ///
     /// Note: not optimized, used mostly for tests
-    pub fn eval<CS: RandomizableConstraintSystem>(&self, cs: &CS) -> f32 {
-        // Evaluate the scalar into a wide decimal form, shift it, then case
-        // to f32
-        let eval = scalar_to_bigdecimal(&cs.eval(&self.repr.clone().into()));
-        let shifted_eval = &eval / (2f64.powi(DEFAULT_FP_PRECISION as i32));
-
-        // Shift down the precision
-        shifted_eval.to_f32().unwrap()
+    pub fn eval_f64(&self, circuit: &PlonkCircuit) -> f64 {
+        // Evaluate the scalar into a wide decimal form, shift it, then cast
+        // to f64
+        self.eval(circuit).to_f64()
     }
 
-    /// Multiplication cannot be implemented directly via the std::ops trait,
-    /// because it needs access to a constraint system
-    ///
-    /// When we multiply two fixed point variables (say x and y for z = x * y,
-    /// represented as x' = x * 2^M);
-    /// we get the result x' * y' = x * 2^M * y * 2^M = z' * 2^M,
-    /// so we need an extra reduction step in which we multiply the result by
-    /// 2^-M
-    pub fn mul_fixed_point<CS: RandomizableConstraintSystem>(
-        &self,
-        rhs: &Self,
-        cs: &mut CS,
-    ) -> FixedPointVar<LinearCombination> {
-        let (_, _, direct_mul) = cs.multiply(self.repr.clone().into(), rhs.repr.clone().into());
-        FixedPointVar {
-            repr: *TWO_TO_NEG_M * direct_mul,
-        }
+    // --------------
+    // | Arithmetic |
+    // --------------
+
+    /// Add one fixed point variable to another
+    pub fn add<C: ConstraintSystem<ScalarField>>(&self, rhs: &Self, cs: &mut C) -> Self {
+        let repr = cs.add(self.repr, rhs.repr).unwrap();
+        Self { repr }
     }
+
+    /// Add an integer to a fixed point variable
+    pub fn add_integer<C: ConstraintSystem<ScalarField>>(&self, rhs: Variable, cs: &mut C) -> Self {
+        let repr = cs
+            .add_with_coeffs(self.repr, rhs, &SCALAR_ONE, &TWO_TO_M_SCALAR)
+            .unwrap();
+        Self { repr }
+    }
+
+    /// Subtract a fixed point variable from another
+    pub fn sub<C: ConstraintSystem<ScalarField>>(&self, rhs: &Self, cs: &mut C) -> Self {
+        let repr = cs.sub(self.repr, rhs.repr).unwrap();
+        Self { repr }
+    }
+
+    /// Subtract an integer from a fixed point variable
+    pub fn sub_integer<C: ConstraintSystem<ScalarField>>(&self, rhs: Variable, cs: &mut C) -> Self {
+        let repr = cs
+            .add_with_coeffs(self.repr, rhs, &SCALAR_ONE, &TWO_TO_M_SCALAR.neg())
+            .unwrap();
+
+        Self { repr }
+    }
+
+    /// Negate a fixed point variable
+    pub fn neg<C: ConstraintSystem<ScalarField>>(&self, cs: &mut C) -> Self {
+        let repr = cs.mul_constant(self.repr, &(-SCALAR_ONE)).unwrap();
+
+        Self { repr }
+    }
+
+    /// TODO: Implement truncation logic and fixed-point * fixed-point if
+    /// necessary
 
     /// Multiplication with an integer value
     ///
@@ -319,127 +342,33 @@ impl<L: LinearCombinationLike> FixedPointVar<L> {
     /// converting the integer to a fixed-point representation. I.e. instead
     /// of taking x * 2^M * y * 2^M * 2^-M, we can just directly multiply x
     /// * 2^M * y
-    pub fn mul_integer<L1, CS>(&self, rhs: L1, cs: &mut CS) -> FixedPointVar<LinearCombination>
-    where
-        L1: LinearCombinationLike,
-        CS: RandomizableConstraintSystem,
-    {
-        let (_, _, direct_mul) = cs.multiply(self.repr.clone().into(), rhs.into());
-        FixedPointVar {
-            repr: direct_mul.into(),
-        }
+    pub fn mul_integer<C: ConstraintSystem<ScalarField>>(
+        &self,
+        rhs: Variable,
+        cs: &mut C,
+    ) -> FixedPointVar {
+        let repr = cs.mul(self.repr, rhs).unwrap();
+        FixedPointVar { repr }
     }
 }
 
-impl<L: LinearCombinationLike> Add<FixedPointVar<L>> for FixedPointVar<L> {
-    type Output = FixedPointVar<LinearCombination>;
-
-    fn add(self, rhs: FixedPointVar<L>) -> Self::Output {
-        Self::Output {
-            repr: self.repr.into() + rhs.repr.into(),
-        }
-    }
-}
-
-/// Addition with an integer, requires that we first convert the integer to
-/// its fixed point representation
-impl<L: LinearCombinationLike> Add<Variable> for FixedPointVar<L> {
-    type Output = FixedPointVar<LinearCombination>;
-
-    fn add(self, rhs: Variable) -> Self::Output {
-        let rhs_shifted = rhs * *TWO_TO_M_SCALAR;
-
-        Self::Output {
-            repr: self.repr.into() + rhs_shifted,
-        }
-    }
-}
-
-/// Addition with an integer on the left hand side
-impl<L: LinearCombinationLike> Add<FixedPointVar<L>> for Variable {
-    type Output = FixedPointVar<LinearCombination>;
-
-    fn add(self, rhs: FixedPointVar<L>) -> Self::Output {
-        // Commutative
-        rhs + self
-    }
-}
-
-/// Negation of a fixed point variable, simply negate the underlying
-/// representation
-impl<L: LinearCombinationLike> Neg for FixedPointVar<L> {
-    type Output = FixedPointVar<LinearCombination>;
-
-    fn neg(self) -> Self::Output {
-        Self::Output {
-            repr: self.repr.into() * Scalar::one().neg(),
-        }
-    }
-}
-
-/// Subtraction of a fixed point variable with another
-impl<L: LinearCombinationLike> Sub<FixedPointVar<L>> for FixedPointVar<L> {
-    type Output = FixedPointVar<LinearCombination>;
-
-    fn sub(self, rhs: FixedPointVar<L>) -> Self::Output {
-        Self::Output {
-            repr: self.repr.into() - rhs.repr.into(),
-        }
-    }
-}
-
-/// Subtraction of a fixed point variable from an integer
-impl<L: LinearCombinationLike> Sub<FixedPointVar<L>> for Variable {
-    type Output = FixedPointVar<LinearCombination>;
-
-    #[allow(clippy::suspicious_arithmetic_impl)]
-    fn sub(self, rhs: FixedPointVar<L>) -> Self::Output {
-        self + rhs.neg()
-    }
-}
-
-/// Subtraction of an integer from a fixed point variable
-impl<L: LinearCombinationLike> Sub<Variable> for FixedPointVar<L> {
-    type Output = FixedPointVar<LinearCombination>;
-
-    fn sub(self, rhs: Variable) -> Self::Output {
-        // Convert the integer to a fixed point variable
-        let shifted_rhs = *TWO_TO_M_SCALAR * rhs;
-        Self::Output {
-            repr: self.repr.into() - shifted_rhs,
-        }
-    }
-}
-
-impl From<AuthenticatedScalarResult> for AuthenticatedFixedPoint {
-    fn from(val: AuthenticatedScalarResult) -> Self {
+impl From<AuthenticatedScalar> for AuthenticatedFixedPoint {
+    fn from(val: AuthenticatedScalar) -> Self {
         Self { repr: val }
     }
 }
 
-impl Mul<&AuthenticatedFixedPoint> for &AuthenticatedFixedPoint {
+impl Mul<&AuthenticatedScalar> for &AuthenticatedFixedPoint {
     type Output = AuthenticatedFixedPoint;
 
-    fn mul(self, rhs: &AuthenticatedFixedPoint) -> Self::Output {
-        // Multiply representations directly then reduce
-        let res_repr = self.repr.clone() * rhs.repr.clone();
-        AuthenticatedFixedPoint {
-            repr: *TWO_TO_NEG_M * res_repr,
-        }
-    }
-}
-
-impl Mul<&AuthenticatedScalarResult> for &AuthenticatedFixedPoint {
-    type Output = AuthenticatedFixedPoint;
-
-    fn mul(self, rhs: &AuthenticatedScalarResult) -> Self::Output {
+    fn mul(self, rhs: &AuthenticatedScalar) -> Self::Output {
         AuthenticatedFixedPoint {
             repr: self.repr.clone() * rhs,
         }
     }
 }
 
-impl Mul<&AuthenticatedFixedPoint> for AuthenticatedScalarResult {
+impl Mul<&AuthenticatedFixedPoint> for AuthenticatedScalar {
     type Output = AuthenticatedFixedPoint;
 
     fn mul(self, rhs: &AuthenticatedFixedPoint) -> Self::Output {
@@ -460,19 +389,19 @@ impl Add<&AuthenticatedFixedPoint> for &AuthenticatedFixedPoint {
 }
 
 /// Add a scalar to a fixed-point
-impl Add<&AuthenticatedScalarResult> for &AuthenticatedFixedPoint {
+impl Add<&AuthenticatedScalar> for &AuthenticatedFixedPoint {
     type Output = AuthenticatedFixedPoint;
 
-    fn add(self, rhs: &AuthenticatedScalarResult) -> Self::Output {
+    fn add(self, rhs: &AuthenticatedScalar) -> Self::Output {
         // Shift the integer
-        let rhs_shifted = *TWO_TO_M_SCALAR * rhs;
+        let rhs_shifted = scalar!(*TWO_TO_M_SCALAR) * rhs;
         AuthenticatedFixedPoint {
             repr: self.repr.clone() + rhs_shifted,
         }
     }
 }
 
-impl Add<&AuthenticatedFixedPoint> for &AuthenticatedScalarResult {
+impl Add<&AuthenticatedFixedPoint> for &AuthenticatedScalar {
     type Output = AuthenticatedFixedPoint;
 
     fn add(self, rhs: &AuthenticatedFixedPoint) -> Self::Output {
@@ -499,157 +428,21 @@ impl Sub<&AuthenticatedFixedPoint> for &AuthenticatedFixedPoint {
     }
 }
 
-impl Sub<&AuthenticatedScalarResult> for &AuthenticatedFixedPoint {
+impl Sub<&AuthenticatedScalar> for &AuthenticatedFixedPoint {
     type Output = AuthenticatedFixedPoint;
 
     #[allow(clippy::suspicious_arithmetic_impl)]
-    fn sub(self, rhs: &AuthenticatedScalarResult) -> Self::Output {
+    fn sub(self, rhs: &AuthenticatedScalar) -> Self::Output {
         self + &rhs.neg()
     }
 }
 
-impl Sub<&AuthenticatedFixedPoint> for &AuthenticatedScalarResult {
+impl Sub<&AuthenticatedFixedPoint> for &AuthenticatedScalar {
     type Output = AuthenticatedFixedPoint;
 
     #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: &AuthenticatedFixedPoint) -> Self::Output {
         self + &rhs.neg()
-    }
-}
-
-// ------------------------------------------------
-// | Multiprover Constraint System Implementation |
-// ------------------------------------------------
-
-impl<L: MpcLinearCombinationLike> AuthenticatedFixedPointVar<L> {
-    /// Constrain two authenticated fixed point variables to equal one another
-    pub fn constrain_equal<L1, CS>(&self, rhs: &AuthenticatedFixedPointVar<L1>, cs: &mut CS)
-    where
-        L1: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem,
-    {
-        cs.constrain(self.repr.clone().into() - rhs.repr.clone().into());
-    }
-
-    /// Convert the underlying type to an `MpcLinearCombination`
-    pub fn to_lc(self) -> AuthenticatedFixedPointVar<MpcLinearCombination> {
-        AuthenticatedFixedPointVar {
-            repr: self.repr.into(),
-        }
-    }
-}
-
-impl From<AuthenticatedFixedPointVar<MpcVariable>>
-    for AuthenticatedFixedPointVar<MpcLinearCombination>
-{
-    fn from(value: AuthenticatedFixedPointVar<MpcVariable>) -> Self {
-        AuthenticatedFixedPointVar {
-            repr: value.repr.into(),
-        }
-    }
-}
-
-impl<L: MpcLinearCombinationLike> AuthenticatedFixedPointVar<L> {
-    /// Multiply with another fixed point variable
-    ///
-    /// We cannot implement the `Mul` trait directly, because the variables need
-    /// access to their constraint system
-    pub fn mul_fixed_point<CS: MpcRandomizableConstraintSystem>(
-        &self,
-        rhs: &Self,
-        cs: &mut CS,
-    ) -> Result<AuthenticatedFixedPointVar<MpcLinearCombination>, MultiproverError> {
-        let (_, _, res_repr) = cs.multiply(&self.repr.clone().into(), &rhs.repr.clone().into())?;
-        Ok(AuthenticatedFixedPointVar {
-            repr: *TWO_TO_NEG_M * res_repr,
-        })
-    }
-
-    /// Multiply a fixed-point variable with a native integer
-    pub fn mul_integer<L1, CS>(
-        &self,
-        rhs: L1,
-        cs: &mut CS,
-    ) -> Result<AuthenticatedFixedPointVar<MpcVariable>, MultiproverError>
-    where
-        L1: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem,
-    {
-        let (_, _, res_repr) = cs.multiply(&self.repr.clone().into(), &rhs.into())?;
-        Ok(AuthenticatedFixedPointVar { repr: res_repr })
-    }
-}
-
-impl<L: MpcLinearCombinationLike> Add<AuthenticatedFixedPointVar<L>>
-    for AuthenticatedFixedPointVar<L>
-{
-    type Output = AuthenticatedFixedPointVar<MpcLinearCombination>;
-
-    fn add(self, rhs: AuthenticatedFixedPointVar<L>) -> Self::Output {
-        AuthenticatedFixedPointVar {
-            repr: self.repr.into() + rhs.repr.into(),
-        }
-    }
-}
-
-/// Addition with field elements (integer representation)
-impl<L: MpcLinearCombinationLike> Add<L> for AuthenticatedFixedPointVar<L> {
-    type Output = AuthenticatedFixedPointVar<MpcLinearCombination>;
-
-    fn add(self, rhs: L) -> Self::Output {
-        // Shift the integer into a fixed point representation
-        let rhs_shifted = *TWO_TO_M_SCALAR * rhs.into();
-        AuthenticatedFixedPointVar {
-            repr: self.repr.into() + rhs_shifted,
-        }
-    }
-}
-
-/// Addition with field elements, fixed-point on the rhs
-impl Add<AuthenticatedFixedPointVar<MpcLinearCombination>> for MpcLinearCombination {
-    type Output = AuthenticatedFixedPointVar<MpcLinearCombination>;
-
-    fn add(self, rhs: AuthenticatedFixedPointVar<MpcLinearCombination>) -> Self::Output {
-        rhs + self
-    }
-}
-
-impl<L: MpcLinearCombinationLike> Neg for AuthenticatedFixedPointVar<L> {
-    type Output = AuthenticatedFixedPointVar<MpcLinearCombination>;
-
-    fn neg(self) -> Self::Output {
-        AuthenticatedFixedPointVar {
-            repr: self.repr.into() * Scalar::one().neg(),
-        }
-    }
-}
-
-impl<L: MpcLinearCombinationLike> Sub<AuthenticatedFixedPointVar<L>>
-    for AuthenticatedFixedPointVar<L>
-{
-    type Output = AuthenticatedFixedPointVar<MpcLinearCombination>;
-
-    #[allow(clippy::suspicious_arithmetic_impl)]
-    fn sub(self, rhs: AuthenticatedFixedPointVar<L>) -> Self::Output {
-        self.to_lc() + rhs.neg()
-    }
-}
-
-impl<L: MpcLinearCombinationLike> Sub<L> for AuthenticatedFixedPointVar<L> {
-    type Output = AuthenticatedFixedPointVar<MpcLinearCombination>;
-
-    #[allow(clippy::suspicious_arithmetic_impl)]
-    fn sub(self, rhs: L) -> Self::Output {
-        self.to_lc() + rhs.into().neg()
-    }
-}
-
-impl<L: MpcLinearCombinationLike> Sub<AuthenticatedFixedPointVar<L>> for MpcLinearCombination {
-    type Output = AuthenticatedFixedPointVar<MpcLinearCombination>;
-
-    #[allow(clippy::suspicious_arithmetic_impl)]
-    fn sub(self, rhs: AuthenticatedFixedPointVar<L>) -> Self::Output {
-        self + rhs.neg()
     }
 }
 
@@ -659,204 +452,310 @@ impl<L: MpcLinearCombinationLike> Sub<AuthenticatedFixedPointVar<L>> for MpcLine
 
 #[cfg(test)]
 mod fixed_point_tests {
-    use bigdecimal::{BigDecimal, FromPrimitive, Signed};
-    use merlin::HashChainTranscript as Transcript;
-    use mpc_bulletproof::{
-        r1cs::{ConstraintSystem, Prover},
-        PedersenGens,
-    };
-    use num_bigint::{BigInt, ToBigInt};
-    use rand::{thread_rng, Rng, RngCore};
-    use renegade_crypto::fields::{
-        get_scalar_field_modulus, scalar_to_bigdecimal, scalar_to_bigint,
-    };
+
+    use ark_mpc::{PARTY0, PARTY1};
+    use rand::{thread_rng, Rng};
+    use test_helpers::mpc_network::execute_mock_mpc;
 
     use super::*;
 
-    /// Tests that converting to and from f32 works properly
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// The tolerance to use for equality checks with f64
+    const F64_TOLERANCE: f64 = 1e-6;
+    /// Integer tolerance for equality, integers magnify the differences between
+    /// fixed point representations and floating point representations so this
+    /// value is higher
+    const INTEGER_TOLERANCE: f64 = 50.;
+
+    /// Check that a given f64 is within some tolerance of another
+    fn check_within_tolerance(val: f64, expected: f64, tolerance: f64) {
+        assert!(
+            (val - expected).abs() < tolerance,
+            "Expected {} to be within {} of {}",
+            val,
+            tolerance,
+            expected
+        );
+    }
+
+    // ----------------------------
+    // | Native Fixed Point Tests |
+    // ----------------------------
+
+    /// Tests conversion f64 <--> FixedPoint
     #[test]
     fn test_repr() {
-        let n_tests = 100;
         let mut rng = thread_rng();
+        let val: f64 = rng.gen();
 
-        // Create a constraint system and allocate the floating points
-        let mut prover_transcript = Transcript::new("test".as_bytes());
-        let pc_gens = PedersenGens::default();
-        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+        let fp = FixedPoint::from_f64_round_down(val);
+        let recovered = fp.to_f64();
 
-        for _ in 0..n_tests {
-            // Generate two random fixed point values
-            let val: f32 = rng.gen_range(0.0..1000000.);
-            let fp1 = FixedPoint::from(val);
-            let fp1_var = fp1.commit_public(&mut prover);
-
-            let fp1_eval = fp1_var.eval(&prover);
-            assert_eq!(fp1_eval, val);
-        }
+        check_within_tolerance(val, recovered, F64_TOLERANCE);
     }
 
-    /// Tests adding together two fixed point values
-    #[test]
-    fn test_mul() {
-        let n_tests = 100;
-        let mut rng = thread_rng();
-
-        // Create a constraint system and allocate the floating points
-        let mut prover_transcript = Transcript::new("test".as_bytes());
-        let pc_gens = PedersenGens::default();
-        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
-
-        for _ in 0..n_tests {
-            // Generate two random fixed point values
-            let fp1 = rng.gen_range(0.0..1000000.);
-            let fp2 = rng.gen_range(0.0..1000000.);
-
-            let expected_res = fp1 * fp2;
-
-            let fp1_var = FixedPoint::from(fp1).commit_public(&mut prover);
-            let fp2_var = FixedPoint::from(fp2).commit_public(&mut prover);
-
-            let res_var = fp1_var.mul_fixed_point(&fp2_var, &mut prover);
-            let res_eval = res_var.eval(&prover);
-
-            assert_eq!(res_eval, expected_res);
-        }
-    }
-
-    /// Tests the addition of two fixed-point variables
+    /// Tests addition with `FixedPoint` and with `Scalar`
     #[test]
     fn test_add() {
-        let n_tests = 100;
         let mut rng = thread_rng();
+        let (fp1, fp2) = rng.gen();
+        let int: u32 = rng.gen();
 
-        // Create a constraint system and allocate the floating points
-        let mut prover_transcript = Transcript::new("test".as_bytes());
-        let pc_gens = PedersenGens::default();
-        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+        let fixed1 = FixedPoint::from_f64_round_down(fp1);
+        let fixed2 = FixedPoint::from_f64_round_down(fp2);
+        let integer = Scalar::from(int);
 
-        for _ in 0..n_tests {
-            // Generate two random fixed point values
-            let fp1 = rng.gen_range(0.0..1000000.);
-            let fp2 = rng.gen_range(0.0..1000000.);
+        let res1 = fixed1 + fixed2;
+        let res2 = fixed1 + integer;
 
-            // Compute expected res in f64 to ensure we have enough representational
-            // capacity
-            let expected_res = (fp1 as f64) + (fp2 as f64);
+        let expected1 = fp1 + fp2;
+        let expected2 = fp1 + (int as f64);
 
-            let mut expected_repr = BigDecimal::try_from(expected_res).unwrap();
-            expected_repr = &expected_repr * (BigInt::from(1u8) << DEFAULT_FP_PRECISION);
-
-            let fp1_var = FixedPoint::from(fp1).commit_public(&mut prover);
-            let fp2_var = FixedPoint::from(fp2).commit_public(&mut prover);
-
-            let res_var = fp1_var + fp2_var;
-
-            // Compare the reprs, easier than trying to properly cast down precision to f32
-            let res_var_repr = scalar_to_bigint(&prover.eval(&res_var.repr));
-
-            let expected_repr_bigint = expected_repr.to_bigint().unwrap();
-
-            // Computing the actual expected value has some room for floating point
-            // mis-precision; as a result we constraint the values to be close
-            assert!((res_var_repr - expected_repr_bigint).abs() < BigInt::from(10u8));
-        }
+        check_within_tolerance(res1.to_f64(), expected1, F64_TOLERANCE);
+        check_within_tolerance(res2.to_f64(), expected2, F64_TOLERANCE);
     }
 
-    /// Tests multiplying an integer with a fixed point number
-    #[test]
-    fn test_integer_mul() {
-        let n_tests = 100;
-        let mut rng = thread_rng();
-
-        // Create a constraint system and allocate the floating points
-        let mut prover_transcript = Transcript::new("test".as_bytes());
-        let pc_gens = PedersenGens::default();
-        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
-
-        for _ in 0..n_tests {
-            // Generate a random fixed point value and a random integer
-            let fp1 = rng.gen_range(0.0..1000000.);
-            let int = rng.next_u32();
-
-            let expected_res = fp1 * (int as f32);
-
-            let fp_var = FixedPoint::from(fp1).commit_public(&mut prover);
-            let int_var = prover.commit_public(Scalar::from(int));
-
-            let res_var = fp_var.mul_integer(int_var, &mut prover);
-            let res = res_var.eval(&prover);
-
-            // Using floating points as a base comparison loses some precision, especially
-            // for large numbers. Instead just check that the floating point
-            // error is sufficiently small
-            assert!((res - expected_res).abs() / res < 0.001);
-        }
-    }
-
-    #[test]
-    fn test_integer_add() {
-        let n_tests = 100;
-        let mut rng = thread_rng();
-
-        // Create a constraint system and allocate the floating points
-        let mut prover_transcript = Transcript::new("test".as_bytes());
-        let pc_gens = PedersenGens::default();
-        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
-
-        for _ in 0..n_tests {
-            // Generate a random fixed point value and a random integer
-            let fp1 = rng.gen_range(0.0..1000000.);
-            let int = rng.next_u32();
-
-            let expected_res = fp1 + (int as f32);
-
-            let fp_var = FixedPoint::from(fp1).commit_public(&mut prover);
-            let int_var = prover.commit_public(Scalar::from(int));
-
-            let res_var = fp_var + int_var;
-            let res = res_var.eval(&prover);
-
-            // Using floating points as a base comparison loses some precision, especially
-            // for large numbers. Instead just check that the floating point
-            // error is sufficiently small
-            assert!((res - expected_res).abs() / res < 0.001);
-        }
-    }
-
-    /// Tests subtracting one fixed point variable from another
+    /// Tests subtraction with `FixedPoint` and with `Scalar`
     #[test]
     fn test_sub() {
-        let n_tests = 100;
         let mut rng = thread_rng();
+        let (fp1, fp2) = rng.gen();
+        let int: u32 = rng.gen();
 
-        // Create a constraint system and allocate the floating points
-        let mut prover_transcript = Transcript::new("test".as_bytes());
-        let pc_gens = PedersenGens::default();
-        let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+        let fixed1 = FixedPoint::from_f64_round_down(fp1);
+        let fixed2 = FixedPoint::from_f64_round_down(fp2);
+        let integer = Scalar::from(int);
 
-        for _ in 0..n_tests {
-            // Generate a random fixed point value and a random integer
-            let fp1 = rng.gen_range(0.0..1000000.);
-            let fp2 = rng.gen_range(0.0..1000000.);
+        let res1 = fixed1 - fixed2;
+        let res2 = fixed1 - integer;
 
-            let expected_res = fp1 - fp2;
+        let expected1 = fp1 - fp2;
+        let expected2 = fp1 - (int as f64);
 
-            let fp1_var = FixedPoint::from(fp1).commit_public(&mut prover);
-            let fp2_var = FixedPoint::from(fp2).commit_public(&mut prover);
+        check_within_tolerance(res1.to_f64(), expected1, F64_TOLERANCE);
+        check_within_tolerance(res2.to_f64(), expected2, F64_TOLERANCE);
+    }
 
-            let res_var = fp1_var - fp2_var;
-            let res_repr = scalar_to_bigdecimal(&prover.eval(&res_var.repr));
+    /// Tests multiplication with `FixedPoint` and with `Scalar`
+    #[test]
+    fn test_mul() {
+        let mut rng = thread_rng();
+        let (fp1, fp2) = rng.gen();
+        let int: u32 = rng.gen();
 
-            let mut expected_repr = &BigDecimal::from_f32(expected_res).unwrap()
-                * (BigInt::from(1u8) << DEFAULT_FP_PRECISION);
-            if expected_repr < BigDecimal::from_i8(0).unwrap() {
-                expected_repr = (&get_scalar_field_modulus().to_bigint().unwrap()
-                    - &expected_repr.to_bigint().unwrap())
-                    .into();
-            }
+        let fixed1 = FixedPoint::from_f32_round_down(fp1);
+        let fixed2 = FixedPoint::from_f32_round_down(fp2);
+        let integer = Scalar::from(int);
 
-            // Check the representation directly, this is less prone to error
-            assert!((&res_repr - expected_repr) / &res_repr < BigDecimal::from_f32(0.01).unwrap())
-        }
+        let res1 = fixed1 * fixed2;
+        let res2 = fixed1 * integer;
+
+        let expected1 = fp1 * fp2;
+        let expected2 = fp1 * (int as f32);
+
+        check_within_tolerance(res1.to_f64(), expected1 as f64, F64_TOLERANCE);
+        check_within_tolerance(res2.to_f64(), expected2 as f64, INTEGER_TOLERANCE);
+    }
+
+    // ---------------------------------------
+    // | Constraint System Fixed Point Tests |
+    // ---------------------------------------
+
+    /// Tests the eval method in the constraint system
+    #[test]
+    fn test_eval() {
+        let mut rng = thread_rng();
+        let val: f64 = rng.gen();
+
+        let fp = FixedPoint::from_f64_round_down(val);
+
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let fp_var = fp.create_witness(&mut cs);
+        let eval = fp_var.eval(&cs);
+
+        assert_eq!(fp, eval);
+    }
+
+    /// Tests addition in a constraint system
+    #[test]
+    fn test_add_circuit() {
+        let mut rng = thread_rng();
+        let (fp1, fp2) = rng.gen();
+        let int: u32 = rng.gen();
+
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+
+        let fixed1 = FixedPoint::from_f64_round_down(fp1).create_witness(&mut cs);
+        let fixed2 = FixedPoint::from_f64_round_down(fp2).create_witness(&mut cs);
+        let integer = Scalar::from(int).create_witness(&mut cs);
+
+        let res1 = fixed1.add(&fixed2, &mut cs);
+        let res2 = fixed1.add_integer(integer, &mut cs);
+
+        let expected1 = fp1 + fp2;
+        let expected2 = fp1 + (int as f64);
+
+        check_within_tolerance(res1.eval(&cs).to_f64(), expected1, F64_TOLERANCE);
+        check_within_tolerance(res2.eval(&cs).to_f64(), expected2, F64_TOLERANCE);
+    }
+
+    /// Tests subtraction in a constraint system
+    #[test]
+    fn test_sub_circuit() {
+        let mut rng = thread_rng();
+        let (fp1, fp2) = rng.gen();
+        let int: u32 = rng.gen();
+
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+
+        let fixed1 = FixedPoint::from_f64_round_down(fp1).create_witness(&mut cs);
+        let fixed2 = FixedPoint::from_f64_round_down(fp2).create_witness(&mut cs);
+        let integer = Scalar::from(int).create_witness(&mut cs);
+
+        let res1 = fixed1.sub(&fixed2, &mut cs);
+        let res2 = fixed1.sub_integer(integer, &mut cs);
+
+        let expected1 = fp1 - fp2;
+        let expected2 = fp1 - (int as f64);
+
+        check_within_tolerance(res1.eval(&cs).to_f64(), expected1, F64_TOLERANCE);
+        check_within_tolerance(res2.eval(&cs).to_f64(), expected2, F64_TOLERANCE);
+    }
+
+    /// Tests multiplication in a circuit
+    ///
+    /// TODO: Test fp x fp multiplication
+    #[test]
+    fn test_mul_circuit() {
+        let mut rng = thread_rng();
+        let fp1 = rng.gen();
+        let int: u32 = rng.gen();
+
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+
+        let fixed1 = FixedPoint::from_f32_round_down(fp1).create_witness(&mut cs);
+        let integer = Scalar::from(int).create_witness(&mut cs);
+
+        let res = fixed1.mul_integer(integer, &mut cs);
+        let expected = fp1 * (int as f32);
+
+        check_within_tolerance(res.eval(&cs).to_f64(), expected as f64, INTEGER_TOLERANCE);
+    }
+
+    // -------------------------
+    // | MPC Fixed Point Tests |
+    // -------------------------
+
+    /// Tests opening a shared fixed point variable
+    #[tokio::test]
+    async fn test_open_eval() {
+        let mut rng = thread_rng();
+        let fp = rng.gen();
+
+        let fixed = FixedPoint::from_f64_round_down(fp);
+
+        let (res, _) = execute_mock_mpc(move |fabric| async move {
+            let shared = fixed.allocate(PARTY0, &fabric);
+            let open = shared.open_and_authenticate().await.unwrap();
+
+            open.to_f64()
+        })
+        .await;
+
+        check_within_tolerance(res, fp, F64_TOLERANCE);
+    }
+
+    /// Tests addition in an MPC
+    #[tokio::test]
+    async fn test_add_mpc() {
+        let mut rng = thread_rng();
+        let (fp1, fp2) = rng.gen();
+        let int: u32 = rng.gen();
+
+        let fixed1 = FixedPoint::from_f64_round_down(fp1);
+        let fixed2 = FixedPoint::from_f64_round_down(fp2);
+        let integer = Scalar::from(int);
+
+        let ((res1, res2), _) = execute_mock_mpc(move |fabric| async move {
+            let fp1 = fixed1.allocate(PARTY0, &fabric);
+            let fp2 = fixed2.allocate(PARTY1, &fabric);
+            let int = integer.allocate(PARTY0, &fabric);
+
+            let res1 = &fp1 + &fp2;
+            let res2 = &fp1 + &int;
+
+            (
+                res1.open_and_authenticate().await.unwrap().to_f64(),
+                res2.open_and_authenticate().await.unwrap().to_f64(),
+            )
+        })
+        .await;
+
+        let expected1 = fp1 + fp2;
+        let expected2 = fp1 + (int as f64);
+
+        check_within_tolerance(res1, expected1, F64_TOLERANCE);
+        check_within_tolerance(res2, expected2, F64_TOLERANCE);
+    }
+
+    /// Tests subtraction in an MPC
+    #[tokio::test]
+    async fn test_sub_mpc() {
+        let mut rng = thread_rng();
+        let (fp1, fp2) = rng.gen();
+        let int: u32 = rng.gen();
+
+        let fixed1 = FixedPoint::from_f64_round_down(fp1);
+        let fixed2 = FixedPoint::from_f64_round_down(fp2);
+        let integer = Scalar::from(int);
+
+        let ((res1, res2), _) = execute_mock_mpc(move |fabric| async move {
+            let fp1 = fixed1.allocate(PARTY0, &fabric);
+            let fp2 = fixed2.allocate(PARTY1, &fabric);
+            let int = integer.allocate(PARTY0, &fabric);
+
+            let res1 = &fp1 - &fp2;
+            let res2 = &fp1 - &int;
+
+            (
+                res1.open_and_authenticate().await.unwrap().to_f64(),
+                res2.open_and_authenticate().await.unwrap().to_f64(),
+            )
+        })
+        .await;
+
+        let expected1 = fp1 - fp2;
+        let expected2 = fp1 - (int as f64);
+
+        check_within_tolerance(res1, expected1, F64_TOLERANCE);
+        check_within_tolerance(res2, expected2, F64_TOLERANCE);
+    }
+
+    /// Tests multiplication in an MPC
+    ///
+    /// TODO: Test fp x fp multiplication
+    #[tokio::test]
+    async fn test_mul_mpc() {
+        let mut rng = thread_rng();
+        let fp = rng.gen();
+        let int: u32 = rng.gen();
+
+        let fixed = FixedPoint::from_f64_round_down(fp);
+        let integer = Scalar::from(int);
+
+        let (res, _) = execute_mock_mpc(move |fabric| async move {
+            let fp = fixed.allocate(PARTY0, &fabric);
+            let int = integer.allocate(PARTY0, &fabric);
+
+            let res = &fp * &int;
+            res.open_and_authenticate().await.unwrap().to_f64()
+        })
+        .await;
+
+        let expected = fp * (int as f64);
+        check_within_tolerance(res, expected, INTEGER_TOLERANCE);
     }
 }
