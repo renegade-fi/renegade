@@ -10,7 +10,7 @@ mod test {
     use circuit_macros::circuit_type;
     use constants::{AuthenticatedScalar, Scalar};
     use mpc_plonk::multiprover::proof_system::MpcPlonkCircuit;
-    use mpc_relation::{Circuit, PlonkCircuit, Variable};
+    use mpc_relation::{ConstraintSystem, PlonkCircuit, Variable};
     use std::ops::Add;
     use test_helpers::mpc_network::execute_mock_mpc;
 
@@ -182,13 +182,16 @@ mod test {
         // Test blind and unblind
         let blinded = var1.blind(circuit.one(), &mut circuit);
         assert_eq!(
-            TestType {
+            TestTypeShare {
                 val: Scalar::from(2u8)
             },
-            blinded.val.eval(&circuit)
+            blinded.eval(&circuit)
         );
 
         let unblinded = blinded.unblind(circuit.one(), &mut circuit);
-        assert_eq!(TestType { val: Scalar::one() }, unblinded.eval(&circuit));
+        assert_eq!(
+            TestTypeShare { val: Scalar::one() },
+            unblinded.eval(&circuit)
+        );
     }
 }

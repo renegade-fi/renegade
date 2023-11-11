@@ -1248,7 +1248,6 @@ dependencies = [
  "futures",
  "itertools 0.10.5",
  "lazy_static",
- "merlin 2.0.0",
  "mpc-plonk",
  "mpc-relation",
  "num-bigint",
