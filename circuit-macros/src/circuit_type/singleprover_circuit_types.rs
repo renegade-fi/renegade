@@ -1,15 +1,15 @@
 //! Groups type and trait definitions built when the `singleprover_circuit`
 //! argument is given to the macro
 
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::ToTokens;
-use syn::{parse_quote, Attribute, ItemImpl, ItemStruct};
+use syn::{parse_quote, Attribute, ItemImpl, ItemStruct, Path};
 
 use crate::circuit_type::{ident_with_suffix, new_ident};
 
 use super::{
     build_deserialize_method, build_modified_struct_from_associated_types, build_serialize_method,
-    ident_with_generics, params_from_generics, str_to_path,
+    ident_with_generics, params_from_generics, str_to_path, BASE_TYPE_TRAIT_NAME,
 };
 
 // -------------
@@ -90,13 +90,14 @@ pub(crate) fn build_var_type(base_type: &ItemStruct) -> TokenStream2 {
         base_type,
         var_name,
         vec![derive_clone],
-        generics,
+        generics.clone(),
         str_to_path(CIRCUIT_BASE_TYPE_TRAIT_NAME),
         str_to_path(VAR_TYPE_ASSOCIATED_NAME),
     );
 
     // Implement `CircuitVarType` for this struct and append to the result
-    let circuit_var_impl = build_var_type_impl(&var_struct);
+    let circuit_var_impl =
+        build_var_type_impl(&var_struct, ident_with_generics(base_name, generics));
     let mut res = var_struct.to_token_stream();
     res.extend(circuit_var_impl);
 
@@ -104,13 +105,15 @@ pub(crate) fn build_var_type(base_type: &ItemStruct) -> TokenStream2 {
 }
 
 /// Build an implementation of the `CircuitVarType` trait for the new var type
-fn build_var_type_impl(var_struct: &ItemStruct) -> TokenStream2 {
+fn build_var_type_impl(var_struct: &ItemStruct, base_name: Path) -> TokenStream2 {
     // Build the impl prelude
     let generics = var_struct.generics.clone();
     let trait_ident = str_to_path(VAR_TYPE_TRAIT_NAME);
     let where_clause = generics.where_clause.clone();
 
     let var_struct_ident = ident_with_generics(var_struct.ident.clone(), generics.clone());
+
+    let base_type_associated_name = new_ident(BASE_TYPE_TRAIT_NAME);
 
     let serialized_type = str_to_path(VARIABLE_TYPE);
     let serialize_method_expr = build_serialize_method(
@@ -130,6 +133,8 @@ fn build_var_type_impl(var_struct: &ItemStruct) -> TokenStream2 {
         impl #generics #trait_ident for #var_struct_ident
             #where_clause
         {
+            type #base_type_associated_name = #base_name;
+
             #serialize_method_expr
             #deserialize_method_expr
         }
