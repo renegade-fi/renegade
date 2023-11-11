@@ -4,29 +4,20 @@
 use std::ops::Add;
 
 use circuit_macros::circuit_type;
+use constants::{AuthenticatedScalar, Scalar};
 use ed25519_dalek::PublicKey as DalekKey;
-use mpc_bulletproof::r1cs::{LinearCombination, Variable};
-use mpc_stark::{
-    algebra::{
-        authenticated_scalar::AuthenticatedScalarResult,
-        authenticated_stark_point::AuthenticatedStarkPointOpenResult, scalar::Scalar,
-        stark_curve::StarkPoint,
-    },
-    MpcFabric,
-};
+use mpc_relation::Variable;
 use num_bigint::BigUint;
-use rand::{CryptoRng, RngCore};
 use renegade_crypto::fields::get_scalar_field_modulus;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     scalar_from_hex_string, scalar_to_hex_string,
     traits::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-        LinkableBaseType, LinkableType, MpcBaseType, MpcLinearCombinationLike, MpcType,
-        MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
-        MultiproverCircuitVariableType, SecretShareBaseType, SecretShareType, SecretShareVarType,
+        BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
+        MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
+    Fabric,
 };
 
 use super::{biguint_from_hex_string, biguint_to_hex_string};
@@ -44,7 +35,7 @@ pub const ROOT_KEY_WORDS: usize = 2;
 
 /// A public identification key is the image-under-hash of the secret
 /// identification key knowledge of which is proved in a circuit
-#[circuit_type(singleprover_circuit, mpc, multiprover_circuit, linkable, secret_share)]
+#[circuit_type(singleprover_circuit, mpc, multiprover_circuit, secret_share)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct PublicIdentificationKey {
     pub key: Scalar,
@@ -122,14 +113,7 @@ impl From<SecretIdentificationKey> for Scalar {
 
 /// A non-native key is a key that exists over a non-native field
 /// (i.e. not Starknet Scalar)
-#[circuit_type(
-    serde,
-    singleprover_circuit,
-    mpc,
-    multiprover_circuit,
-    linkable,
-    secret_share
-)]
+#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NonNativeKey<const KEY_WORDS: usize> {
     /// The `Scalar` words used to represent the key
@@ -242,14 +226,7 @@ pub type SecretSigningKey = NonNativeKey<ROOT_KEY_WORDS>;
 /// zero-knowledge identification scheme (not necessarily a signature scheme).
 /// Concretely, this currently is setup as `pk_identity` = Hash(`sk_identity`),
 /// and the prover proves knowledge of pre-image in a related circuit
-#[circuit_type(
-    serde,
-    singleprover_circuit,
-    mpc,
-    multiprover_circuit,
-    linkable,
-    secret_share
-)]
+#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicKeyChain {
     /// The public root key
