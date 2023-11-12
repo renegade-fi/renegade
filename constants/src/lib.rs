@@ -8,6 +8,7 @@ use ark_ec::Group;
 #[cfg(feature = "mpc-types")]
 use ark_mpc::algebra::{
     AuthenticatedScalarResult, CurvePoint as GenericCurvePoint, Scalar as GenericScalar,
+    ScalarResult as GenericScalarResult,
 };
 
 // -------------------------
@@ -48,6 +49,10 @@ pub type ScalarField = <ark_bn254::G1Projective as Group>::ScalarField;
 /// The scalar type that the MPC is defined over    
 #[cfg(feature = "mpc-types")]
 pub type Scalar = GenericScalar<SystemCurveGroup>;
+
+/// The scalar result type that the MPC is defined over
+#[cfg(feature = "mpc-types")]
+pub type ScalarResult = GenericScalarResult<SystemCurveGroup>;
 
 /// The curve point type that the MPC is defined over
 #[cfg(feature = "mpc-types")]
