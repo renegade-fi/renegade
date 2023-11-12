@@ -6,7 +6,7 @@ edition = "2021"
 [features]
 test_helpers = []
 large_benchmarks = []
-stats = ["mpc-stark/stats"]
+stats = ["ark-mpc/stats"]
 
 [[test]]
 name = "integration"
@@ -56,10 +56,8 @@ ark-crypto-primitives = { version = "0.4", features = [
     "sponge",
 ] }
 ark-ff = "0.4"
+ark-mpc = { workspace = true }
 bigdecimal = "0.3"
-merlin = { workspace = true }
-mpc-stark = { workspace = true }
-mpc-bulletproof = { workspace = true }
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
 num-integer = "0.1"
 

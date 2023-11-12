@@ -27,13 +27,11 @@ futures = "0.3"
 circuit-macros = { path = "../circuit-macros" }
 constants = { path = "../constants" }
 renegade-crypto = { path = "../renegade-crypto" }
-util = { path = "../util" }
 
 # === Misc === #
 itertools = "0.10"
 lazy_static = "1.4"
 serde = { version = "1.0.139", features = ["serde_derive"] }
-serde_arrays = "0.1"
 serde_json = "1.0"
 
 
