@@ -1,12 +1,8 @@
 //! Groups logic for computing modulo and truncation operators
 
-use mpc_stark::{
-    algebra::{
-        authenticated_scalar::AuthenticatedScalarResult,
-        scalar::{Scalar, ScalarResult},
-    },
-    MpcFabric, ResultValue,
-};
+use ark_mpc::ResultValue;
+use circuit_types::Fabric;
+use constants::{AuthenticatedScalar, Scalar, ScalarResult};
 use num_bigint::BigUint;
 
 use crate::{scalar_2_to_m, SCALAR_MAX_BITS};
@@ -40,15 +36,12 @@ fn scalar_mod_2m(val: &ScalarResult, m: usize) -> ScalarResult {
 /// One catch is that if the resulting value of the modulo is less than the
 /// blinding factor, we have to shift the value up by one addition of the
 /// modulus.
-pub fn mod_2m<const M: usize>(
-    a: &AuthenticatedScalarResult,
-    fabric: &MpcFabric,
-) -> AuthenticatedScalarResult {
+pub fn mod_2m<const M: usize>(a: &AuthenticatedScalar, fabric: &Fabric) -> AuthenticatedScalar {
     // The input has 256 bits, so any modulus larger can be ignored
     if M >= 256 {
         return a.clone();
     }
-    let scalar_2m = scalar_2_to_m(M);
+    let scalar_2m = scalar_2_to_m(M as u64);
 
     // Generate random blinding bits
     let random_bits = fabric.random_shared_bits(M);
@@ -80,10 +73,7 @@ pub fn mod_2m<const M: usize>(
 }
 
 /// Computes the input with the `m` least significant bits truncated
-pub fn truncate<const M: usize>(
-    x: &AuthenticatedScalarResult,
-    fabric: &MpcFabric,
-) -> AuthenticatedScalarResult {
+pub fn truncate<const M: usize>(x: &AuthenticatedScalar, fabric: &Fabric) -> AuthenticatedScalar {
     // Apply mod2m and then subtract the result to make the value divisible by a
     // public 2^-m
     if M >= SCALAR_MAX_BITS {
@@ -91,7 +81,7 @@ pub fn truncate<const M: usize>(
     }
 
     let x_mod_2m = mod_2m::<M>(x, fabric);
-    scalar_2_to_m(M).inverse() * (x - &x_mod_2m)
+    scalar_2_to_m(M as u64).inverse() * (x - &x_mod_2m)
 }
 
 /// Shifts the input right by the specified amount
@@ -99,9 +89,9 @@ pub fn truncate<const M: usize>(
 /// Effectively just calls out to truncate, but is placed here for abstraction
 /// purposes
 pub fn shift_right<const M: usize>(
-    a: &AuthenticatedScalarResult,
-    fabric: &MpcFabric,
-) -> AuthenticatedScalarResult {
+    a: &AuthenticatedScalar,
+    fabric: &Fabric,
+) -> AuthenticatedScalar {
     if M >= 256 {
         return fabric.zero_authenticated();
     }
@@ -111,8 +101,9 @@ pub fn shift_right<const M: usize>(
 
 #[cfg(test)]
 mod tests {
+    use ark_mpc::PARTY0;
     use circuit_types::errors::MpcError;
-    use mpc_stark::{algebra::scalar::Scalar, PARTY0};
+    use constants::Scalar;
     use rand::{thread_rng, RngCore};
     use test_helpers::mpc_network::execute_mock_mpc;
 
