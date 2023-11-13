@@ -11,6 +11,11 @@ libp2p = { workspace = true }
 futures = "0.3"
 tokio = { workspace = true }
 
+# === Workspace Dependencies === #
+circuit-types = { path = "../circuit-types" }
+constants = { path = "../constants" }
+renegade-crypto = { path = "../renegade-crypto" }
+
 # === Misc === #
 chrono = "0.4"
 env_logger = "0.9"
@@ -18,3 +23,6 @@ eyre = { workspace = true }
 json = "0.12"
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = "0.3"
+
+[dev-dependencies]
+lazy_static = "1.4"

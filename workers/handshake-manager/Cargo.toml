@@ -28,6 +28,7 @@ state = { path = "../../state" }
 system-bus = { path = "../../system-bus" }
 task-driver = { path = "../../task-driver" }
 test-helpers = { path = "../../test-helpers" }
+util = { path = "../../util" }
 
 # === Misc Dependencies === #
 ark-serialize = "0.4"

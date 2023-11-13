@@ -8,6 +8,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub mod logging;
+pub mod matching_engine;
 pub mod networking;
 pub mod runtime;
 pub mod starknet;
