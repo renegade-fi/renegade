@@ -5,4 +5,3 @@ pub mod bits;
 pub mod comparators;
 pub mod fixed_point;
 pub mod modulo;
-pub mod poseidon;
