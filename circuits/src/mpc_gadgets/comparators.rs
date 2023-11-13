@@ -5,7 +5,7 @@ use std::iter;
 use circuit_types::Fabric;
 use constants::{AuthenticatedScalar, Scalar};
 
-use crate::{SCALAR_BITS_MINUS_TWO, SCALAR_MAX_BITS};
+use crate::SCALAR_BITS_MINUS_TWO;
 
 use super::{
     arithmetic::product,
