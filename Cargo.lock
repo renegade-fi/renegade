@@ -2923,6 +2923,7 @@ dependencies = [
  "test-helpers",
  "tokio",
  "tracing",
+ "util",
  "uuid 1.5.0",
 ]
 
@@ -7796,11 +7797,15 @@ name = "util"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "circuit-types",
+ "constants",
  "env_logger 0.9.3",
  "eyre",
  "futures",
  "json",
+ "lazy_static",
  "libp2p",
+ "renegade-crypto",
  "tokio",
  "tracing",
  "tracing-subscriber 0.3.17",
