@@ -58,6 +58,8 @@ ark-crypto-primitives = { version = "0.4", features = [
 ark-ff = "0.4"
 ark-mpc = { workspace = true }
 bigdecimal = "0.3"
+mpc-plonk = { workspace = true }
+mpc-relation = { workspace = true }
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
 num-integer = "0.1"
 
