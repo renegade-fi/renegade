@@ -21,7 +21,7 @@ const BLINDING_FACTOR_MAX_BITS: usize = 252;
 
 /// Composes a sequence of `Scalar`s representing bits in little endian order
 /// into a single scalar
-fn scalar_from_bits_le(bits: &[AuthenticatedScalar]) -> AuthenticatedScalar {
+pub(crate) fn scalar_from_bits_le(bits: &[AuthenticatedScalar]) -> AuthenticatedScalar {
     assert!(
         !bits.is_empty(),
         "scalar_from_bits_le cannot be called with empty bit array"
@@ -38,7 +38,7 @@ fn scalar_from_bits_le(bits: &[AuthenticatedScalar]) -> AuthenticatedScalar {
 
 /// Returns a list of `Scalar`s representing the `m` least significant bits of
 /// `a`
-fn scalar_to_bits_le<const N: usize>(a: &ScalarResult) -> Vec<ScalarResult> {
+pub(crate) fn scalar_to_bits_le<const N: usize>(a: &ScalarResult) -> Vec<ScalarResult> {
     // The byte (8 bit) boundary we must iterate through to fetch `M` bits
     a.fabric().new_batch_gate_op(vec![a.id()], N, |mut args| {
         let a: Scalar = args.pop().unwrap().into();
@@ -303,7 +303,10 @@ mod tests {
     use rand::{thread_rng, Rng, RngCore};
     use test_helpers::mpc_network::execute_mock_mpc;
 
-    use crate::mpc_gadgets::bits::{bit_add, bit_add_public, bit_lt, bit_lt_public, to_bits_le};
+    use crate::{
+        mpc_gadgets::bits::{bit_add, bit_add_public, bit_lt, bit_lt_public, to_bits_le},
+        scalar_2_to_m,
+    };
 
     use super::{scalar_from_bits_le, scalar_to_bits_le};
 
@@ -438,8 +441,9 @@ mod tests {
                 let shared_bits1 = fabric.batch_share_scalar(bits1, PARTY0);
                 let shared_bits2 = fabric.batch_share_scalar(bits2, PARTY1);
 
-                let (res_bits, _) = bit_add(&shared_bits1, &shared_bits2, &fabric);
-                let res = scalar_from_bits_le(&res_bits);
+                let (res_bits, carry) = bit_add(&shared_bits1, &shared_bits2, &fabric);
+                let mut res = scalar_from_bits_le(&res_bits);
+                res = res + carry * scalar_2_to_m(N as u64);
 
                 res.open_authenticated().await
             }
@@ -468,8 +472,9 @@ mod tests {
                 let shared_bits1 = fabric.allocate_scalars(bits1);
                 let shared_bits2 = fabric.batch_share_scalar(bits2, PARTY1);
 
-                let (res_bits, _) = bit_add_public(&shared_bits1, &shared_bits2, &fabric);
-                let res = scalar_from_bits_le(&res_bits);
+                let (res_bits, carry) = bit_add_public(&shared_bits1, &shared_bits2, &fabric);
+                let mut res = scalar_from_bits_le(&res_bits);
+                res = res + carry * scalar_2_to_m(N as u64);
 
                 res.open_authenticated().await
             }
