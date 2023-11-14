@@ -2,8 +2,8 @@
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
 use circuit_macros::circuit_type;
-use constants::{AuthenticatedScalar, Scalar};
-use mpc_relation::Variable;
+use constants::{AuthenticatedScalar, Scalar, ScalarField};
+use mpc_relation::{ConstraintSystem, Variable};
 use num_bigint::BigUint;
 
 use crate::{

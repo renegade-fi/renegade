@@ -23,7 +23,8 @@ use ark_ff::BigInt;
 use ark_mpc::MpcFabric;
 use bigdecimal::Num;
 use constants::{
-    Scalar, ScalarField, SystemCurveGroup, MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT,
+    AuthenticatedScalar, Scalar, ScalarField, SystemCurveGroup, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+    MERKLE_HEIGHT,
 };
 use fixed_point::DEFAULT_FP_PRECISION;
 use merkle::MerkleOpening;
@@ -68,6 +69,14 @@ pub type SizedWalletShare = WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 /// A type alias for the Merkle opening with system-wide default generics
 /// attached
 pub type SizedMerkleOpening = MerkleOpening<MERKLE_HEIGHT>;
+
+// --------------------
+// | Type Definitions |
+// --------------------
+
+/// A boolean allocated in an MPC network
+#[derive(Clone, Debug)]
+pub struct AuthenticatedBool(AuthenticatedScalar);
 
 // -----------
 // | Helpers |
