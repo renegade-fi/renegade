@@ -5,9 +5,9 @@
 use std::ops::Add;
 
 use circuit_macros::circuit_type;
-use constants::Scalar;
+use constants::{Scalar, ScalarField};
 use itertools::Itertools;
-use mpc_relation::Variable;
+use mpc_relation::{ConstraintSystem, Variable};
 use serde::{Deserialize, Serialize};
 
 use crate::{

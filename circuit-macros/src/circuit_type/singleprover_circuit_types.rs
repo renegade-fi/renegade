@@ -3,13 +3,18 @@
 
 use proc_macro2::TokenStream as TokenStream2;
 use quote::ToTokens;
-use syn::{parse_quote, Attribute, ItemImpl, ItemStruct, Path};
+use syn::{
+    parse_quote,
+    punctuated::Punctuated,
+    token::{Colon, Comma},
+    Attribute, Expr, FieldValue, ItemImpl, ItemStruct, Member, Path,
+};
 
 use crate::circuit_type::{ident_with_suffix, new_ident};
 
 use super::{
-    build_deserialize_method, build_modified_struct_from_associated_types, build_serialize_method,
-    ident_with_generics, params_from_generics, str_to_path, BASE_TYPE_TRAIT_NAME,
+    build_modified_struct_from_associated_types, build_serialize_method, ident_with_generics,
+    params_from_generics, str_to_path, BASE_TYPE_TRAIT_NAME,
 };
 
 // -------------
@@ -122,12 +127,7 @@ fn build_var_type_impl(var_struct: &ItemStruct, base_name: Path) -> TokenStream2
         var_struct,
     );
 
-    let deserialize_method_expr = build_deserialize_method(
-        new_ident(FROM_VARS_METHOD_NAME),
-        serialized_type,
-        trait_ident.clone(),
-        var_struct,
-    );
+    let deserialize_method_expr = build_from_vars(var_struct);
 
     let impl_block: ItemImpl = parse_quote! {
         impl #generics #trait_ident for #var_struct_ident
@@ -140,4 +140,40 @@ fn build_var_type_impl(var_struct: &ItemStruct, base_name: Path) -> TokenStream2
         }
     };
     impl_block.to_token_stream()
+}
+
+/// Builds the `from_vars` method on a circuit type, this method cannot use the
+/// `build_deserialize_method` as it takes an extra parameter in the form of a
+/// circuit
+fn build_from_vars(self_struct: &ItemStruct) -> TokenStream2 {
+    let method_name = new_ident(FROM_VARS_METHOD_NAME);
+    let from_type = new_ident(VARIABLE_TYPE);
+    let trait_ident = new_ident(VAR_TYPE_TRAIT_NAME);
+
+    let mut fields_expr: Punctuated<FieldValue, Comma> = Punctuated::new();
+
+    for field in self_struct.fields.iter().cloned() {
+        let ident = field.ident.expect("only named fields supported");
+        let field_type = field.ty;
+
+        // The parse field expr recursively calls `#method_name` on the field type
+        let parse_field_expr: Expr = parse_quote! {
+            <#field_type as #trait_ident>::#method_name(i, cs)
+        };
+
+        fields_expr.push(FieldValue {
+            attrs: Vec::new(),
+            member: Member::Named(ident),
+            colon_token: Some(Colon::default()),
+            expr: parse_field_expr,
+        });
+    }
+
+    parse_quote! {
+        fn #method_name<I: Iterator<Item = #from_type>, C: ConstraintSystem<ScalarField>>(i: &mut I, cs: &mut C) -> Self {
+            Self {
+                #fields_expr
+            }
+        }
+    }
 }
