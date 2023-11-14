@@ -157,7 +157,6 @@ impl PoseidonHashGadget {
 
         // Compute full_rounds / 2 rounds of the permutation
         const HALF: usize = R_F / 2;
-        #[allow(clippy::never_loop)]
         for round in 0..HALF {
             self.external_round(round, cs)?;
         }
