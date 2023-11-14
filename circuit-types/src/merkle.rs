@@ -3,8 +3,8 @@
 #![allow(missing_docs)]
 
 use circuit_macros::circuit_type;
-use constants::Scalar;
-use mpc_relation::Variable;
+use constants::{Scalar, ScalarField};
+use mpc_relation::{ConstraintSystem, Variable};
 use serde::{Deserialize, Serialize};
 
 use crate::{

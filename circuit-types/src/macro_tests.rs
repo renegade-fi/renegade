@@ -8,7 +8,7 @@
 mod test {
     use ark_mpc::PARTY0;
     use circuit_macros::circuit_type;
-    use constants::{AuthenticatedScalar, Scalar};
+    use constants::{AuthenticatedScalar, Scalar, ScalarField};
     use mpc_plonk::multiprover::proof_system::MpcPlonkCircuit;
     use mpc_relation::{ConstraintSystem, PlonkCircuit, Variable};
     use std::ops::Add;

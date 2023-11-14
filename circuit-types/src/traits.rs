@@ -18,7 +18,7 @@
 
 use ark_mpc::{algebra::AuthenticatedScalarResult, network::PartyId};
 use async_trait::async_trait;
-use constants::{AuthenticatedScalar, Scalar, SystemCurve};
+use constants::{AuthenticatedScalar, Scalar, ScalarField, SystemCurve};
 use futures::future::join_all;
 use itertools::Itertools;
 use mpc_plonk::{
@@ -30,14 +30,14 @@ use mpc_plonk::{
     },
     transcript::SolidityTranscript,
 };
-use mpc_relation::{constraint_system::Circuit, ConstraintSystem, Variable};
+use mpc_relation::{constraint_system::Circuit, BoolVar, ConstraintSystem, Variable};
 use num_bigint::BigUint;
 use rand::thread_rng;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint, scalar_to_u64};
 
 use crate::{
     errors::{MpcError, ProverError, VerifierError},
-    Fabric, MpcPlonkCircuit, PlonkCircuit,
+    AuthenticatedBool, Fabric, MpcPlonkCircuit, PlonkCircuit,
 };
 
 /// The error message emitted when too few scalars are given
@@ -88,21 +88,23 @@ pub trait CircuitBaseType: BaseType {
     /// associate with the base type
     fn create_witness(&self, circuit: &mut PlonkCircuit) -> Self::VarType {
         let scalars: Vec<Scalar> = self.clone().to_scalars();
-        let mut vars = scalars
+        let vars = scalars
             .into_iter()
-            .map(|s| circuit.create_variable(s.inner()).unwrap());
+            .map(|s| circuit.create_variable(s.inner()).unwrap())
+            .collect_vec();
 
-        Self::VarType::from_vars(&mut vars)
+        Self::VarType::from_vars(&mut vars.into_iter(), circuit)
     }
 
     /// Allocate the base type as a public variable in a constraint system
     fn create_public_var(&self, circuit: &mut PlonkCircuit) -> Self::VarType {
         let scalars: Vec<Scalar> = self.clone().to_scalars();
-        let mut vars = scalars
+        let vars = scalars
             .into_iter()
-            .map(|s| circuit.create_public_variable(s.inner()).unwrap());
+            .map(|s| circuit.create_public_variable(s.inner()).unwrap())
+            .collect_vec();
 
-        Self::VarType::from_vars(&mut vars)
+        Self::VarType::from_vars(&mut vars.into_iter(), circuit)
     }
 }
 
@@ -115,7 +117,10 @@ pub trait CircuitVarType: Clone {
     /// Convert to a collection of serialized variables for the type
     fn to_vars(&self) -> Vec<Variable>;
     /// Convert from an iterable of variables representing the serialized type
-    fn from_vars<I: Iterator<Item = Variable>>(i: &mut I) -> Self;
+    fn from_vars<I: Iterator<Item = Variable>, C: ConstraintSystem<ScalarField>>(
+        i: &mut I,
+        cs: &mut C,
+    ) -> Self;
     /// Evaluate the variable type in the constraint system to retrieve the base
     /// type
     fn eval(&self, circuit: &PlonkCircuit) -> Self::BaseType {
@@ -204,18 +209,34 @@ pub trait MultiproverCircuitBaseType: MpcType {
     /// allocating the base type in a multiprover constraint system
     type VarType: CircuitVarType;
 
-    /// Commit to the value in a multiprover constraint system
-    #[allow(clippy::type_complexity)]
+    /// Allocate the value in a multiprover constraint system as a witness
+    /// element
     fn create_shared_witness(
         &self,
         circuit: &mut MpcPlonkCircuit,
     ) -> Result<Self::VarType, MpcError> {
         let self_scalars = self.clone().to_authenticated_scalars();
-        let mut vars = self_scalars
+        let vars = self_scalars
             .into_iter()
-            .map(|s| circuit.create_variable(s).unwrap());
+            .map(|s| circuit.create_variable(s).unwrap())
+            .collect_vec();
 
-        Ok(Self::VarType::from_vars(&mut vars))
+        Ok(Self::VarType::from_vars(&mut vars.into_iter(), circuit))
+    }
+
+    /// Allocate the value in a multiprover constraint system as a public
+    /// element
+    fn create_shared_public_var(
+        &self,
+        circuit: &mut MpcPlonkCircuit,
+    ) -> Result<Self::VarType, MpcError> {
+        let self_scalars = self.clone().to_authenticated_scalars();
+        let vars = self_scalars
+            .into_iter()
+            .map(|s| circuit.create_public_variable(s).unwrap())
+            .collect_vec();
+
+        Ok(Self::VarType::from_vars(&mut vars.into_iter(), circuit))
     }
 }
 
@@ -268,22 +289,24 @@ pub trait SecretShareVarType: Sized + CircuitVarType {
 
     /// Apply an additive blinder to each element of the secret shares
     fn blind(self, blinder: Variable, circuit: &mut PlonkCircuit) -> Self {
-        let mut res_vars = self
+        let res_vars = self
             .to_vars()
             .into_iter()
-            .map(|v| circuit.add(v, blinder).unwrap());
+            .map(|v| circuit.add(v, blinder).unwrap())
+            .collect_vec();
 
-        Self::from_vars(&mut res_vars)
+        Self::from_vars(&mut res_vars.into_iter(), circuit)
     }
 
     /// Remove an additive blind from each element of the secret shares
     fn unblind(self, blinder: Variable, circuit: &mut PlonkCircuit) -> Self {
-        let mut res_vars = self
+        let res_vars = self
             .to_vars()
             .into_iter()
-            .map(|v| circuit.sub(v, blinder).unwrap());
+            .map(|v| circuit.sub(v, blinder).unwrap())
+            .collect_vec();
 
-        Self::from_vars(&mut res_vars)
+        Self::from_vars(&mut res_vars.into_iter(), circuit)
     }
 
     /// Add two sets of shares to recover the base type
@@ -296,13 +319,14 @@ pub trait SecretShareVarType: Sized + CircuitVarType {
     where
         R: SecretShareVarType,
     {
-        let mut res_vars = self
+        let res_vars = self
             .to_vars()
             .into_iter()
             .zip(rhs.to_vars())
-            .map(|(v1, v2)| circuit.add(v1, v2).unwrap());
+            .map(|(v1, v2)| circuit.add(v1, v2).unwrap())
+            .collect_vec();
 
-        Self::Base::from_vars(&mut res_vars)
+        Self::Base::from_vars(&mut res_vars.into_iter(), circuit)
     }
 }
 
@@ -329,6 +353,20 @@ impl BaseType for u64 {
 
     fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
         scalar_to_u64(&i.next().unwrap())
+    }
+}
+
+impl BaseType for bool {
+    fn to_scalars(&self) -> Vec<Scalar> {
+        vec![Scalar::from(*self as u8)]
+    }
+
+    fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
+        let val = i.next().unwrap();
+        let is_bool = (val * (Scalar::one() - val)) == Scalar::zero();
+        assert!(is_bool, "from_scalars: Invalid boolean scalar value");
+
+        val == Scalar::one()
     }
 }
 
@@ -379,6 +417,18 @@ impl CircuitBaseType for BigUint {
     type VarType = Variable;
 }
 
+impl CircuitBaseType for bool {
+    type VarType = BoolVar;
+
+    fn create_public_var(&self, circuit: &mut PlonkCircuit) -> Self::VarType {
+        circuit.create_public_boolean_variable(*self).unwrap()
+    }
+
+    fn create_witness(&self, circuit: &mut PlonkCircuit) -> Self::VarType {
+        circuit.create_boolean_variable(*self).unwrap()
+    }
+}
+
 impl CircuitBaseType for () {
     type VarType = ();
 }
@@ -394,15 +444,40 @@ impl CircuitVarType for Variable {
         vec![*self]
     }
 
-    fn from_vars<I: Iterator<Item = Variable>>(i: &mut I) -> Self {
+    fn from_vars<I: Iterator<Item = Variable>, C: ConstraintSystem<ScalarField>>(
+        i: &mut I,
+        _cs: &mut C,
+    ) -> Self {
         i.next().unwrap()
+    }
+}
+
+impl CircuitVarType for BoolVar {
+    type BaseType = bool;
+
+    fn to_vars(&self) -> Vec<Variable> {
+        vec![(*self).into()]
+    }
+
+    fn from_vars<I: Iterator<Item = Variable>, C: ConstraintSystem<ScalarField>>(
+        i: &mut I,
+        cs: &mut C,
+    ) -> Self {
+        let var = i.next().unwrap();
+        cs.enforce_bool(var).unwrap();
+
+        BoolVar::new_unchecked(var)
     }
 }
 
 impl CircuitVarType for () {
     type BaseType = ();
 
-    fn from_vars<I: Iterator<Item = Variable>>(_: &mut I) -> Self {}
+    fn from_vars<I: Iterator<Item = Variable>, C: ConstraintSystem<ScalarField>>(
+        _: &mut I,
+        _cs: &mut C,
+    ) -> Self {
+    }
 
     fn to_vars(&self) -> Vec<Variable> {
         vec![]
@@ -416,9 +491,12 @@ impl<const N: usize, T: CircuitVarType> CircuitVarType for [T; N] {
         self.iter().flat_map(|x| x.to_vars()).collect()
     }
 
-    fn from_vars<I: Iterator<Item = Variable>>(i: &mut I) -> Self {
+    fn from_vars<I: Iterator<Item = Variable>, C: ConstraintSystem<ScalarField>>(
+        i: &mut I,
+        cs: &mut C,
+    ) -> Self {
         (0..N)
-            .map(|_| T::from_vars(i))
+            .map(|_| T::from_vars(i, cs))
             .collect_vec()
             .try_into()
             .map_err(|_| ERR_TOO_FEW_VARS)
@@ -434,6 +512,10 @@ impl MpcBaseType for Scalar {
 
 impl MpcBaseType for u64 {
     type AllocatedType = AuthenticatedScalar;
+}
+
+impl MpcBaseType for bool {
+    type AllocatedType = AuthenticatedBool;
 }
 
 impl MpcBaseType for BigUint {
@@ -461,6 +543,22 @@ impl MpcType for AuthenticatedScalar {
 
     fn to_authenticated_scalars(&self) -> Vec<AuthenticatedScalar> {
         vec![self.clone()]
+    }
+}
+
+impl MpcType for AuthenticatedBool {
+    type NativeType = bool;
+
+    fn fabric(&self) -> &Fabric {
+        self.0.fabric()
+    }
+
+    fn from_authenticated_scalars<I: Iterator<Item = AuthenticatedScalar>>(i: &mut I) -> Self {
+        AuthenticatedBool(i.next().unwrap())
+    }
+
+    fn to_authenticated_scalars(&self) -> Vec<AuthenticatedScalar> {
+        vec![self.0.clone()]
     }
 }
 
@@ -506,6 +604,11 @@ impl<const L: usize, T: MpcType> MpcType for [T; L] {
 impl MultiproverCircuitBaseType for AuthenticatedScalar {
     type BaseType = Scalar;
     type VarType = Variable;
+}
+
+impl MultiproverCircuitBaseType for AuthenticatedBool {
+    type BaseType = bool;
+    type VarType = BoolVar;
 }
 
 impl MultiproverCircuitBaseType for () {
