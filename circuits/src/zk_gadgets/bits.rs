@@ -13,7 +13,7 @@ use constants::{Scalar, ScalarField};
 use itertools::Itertools;
 use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
 
-use crate::mpc_gadgets::bits::to_bits_le;
+use crate::{mpc_gadgets::bits::to_bits_le, SCALAR_BITS_MINUS_TWO};
 
 /// Convert a scalar to its little endian bit representation where each bit
 /// is itself a `Scalar`
@@ -49,6 +49,12 @@ impl<const D: usize> MultiproverToBitsGadget<D> {
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<Vec<Variable>, CircuitError> {
+        assert!(
+            D <= SCALAR_BITS_MINUS_TWO,
+            "a positive value may only have {:?} bits",
+            SCALAR_BITS_MINUS_TWO
+        );
+
         // Evaluate the linear combination so that we can use a raw MPC to get the bits
         let a_scalar = a.eval_multiprover(cs);
 
