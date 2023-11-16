@@ -14,6 +14,7 @@ members = [
 	"statev2/state",
 	"statev2/proto",
 	"starknet-client",
+	"arbitrum-client",
 	"system-bus",
 	"task-driver",
 	"test-helpers",
