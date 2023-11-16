@@ -5,7 +5,7 @@ use ark_ff::One;
 use constants::ScalarField;
 use itertools::Itertools;
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{constants::GATE_WIDTH, ConstraintSystem, Variable};
+use mpc_relation::{constants::GATE_WIDTH, traits::Circuit, Variable};
 use renegade_crypto::hash::{
     CAPACITY, FULL_ROUND_CONSTANTS, PARTIAL_ROUND_CONSTANTS, RATE, R_F, R_P, WIDTH as SPONGE_WIDTH,
 };
@@ -43,7 +43,7 @@ impl PoseidonHashGadget {
     }
 
     /// Reset the internal state of the hasher
-    pub fn reset_state<C: ConstraintSystem<ScalarField>>(&mut self, cs: &C) {
+    pub fn reset_state<C: Circuit<ScalarField>>(&mut self, cs: &C) {
         let zero = cs.zero();
         self.state = (0..CAPACITY + RATE).map(|_| zero).collect_vec();
         self.in_squeeze_state = false;
@@ -51,7 +51,7 @@ impl PoseidonHashGadget {
 
     /// Hashes the given input and constraints the result to equal the expected
     /// output
-    pub fn hash<C: ConstraintSystem<ScalarField>>(
+    pub fn hash<C: Circuit<ScalarField>>(
         &mut self,
         hash_input: &[Variable],
         expected_output: Variable,
@@ -62,7 +62,7 @@ impl PoseidonHashGadget {
     }
 
     /// Absorb an input into the hasher state
-    pub fn absorb<C: ConstraintSystem<ScalarField>>(
+    pub fn absorb<C: Circuit<ScalarField>>(
         &mut self,
         a: Variable,
         cs: &mut C,
@@ -85,7 +85,7 @@ impl PoseidonHashGadget {
     }
 
     /// Absorb a batch of inputs into the hasher state
-    pub fn batch_absorb<C: ConstraintSystem<ScalarField>>(
+    pub fn batch_absorb<C: Circuit<ScalarField>>(
         &mut self,
         a: &[Variable],
         cs: &mut C,
@@ -95,10 +95,7 @@ impl PoseidonHashGadget {
 
     /// Squeeze an element from the sponge and return its representation in the
     /// constraint system
-    pub fn squeeze<C: ConstraintSystem<ScalarField>>(
-        &mut self,
-        cs: &mut C,
-    ) -> Result<Variable, PlonkError> {
+    pub fn squeeze<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<Variable, PlonkError> {
         // Once we exit the absorb state, ensure that the digest state is permuted
         // before squeezing
         if !self.in_squeeze_state || self.next_index == RATE {
@@ -112,7 +109,7 @@ impl PoseidonHashGadget {
 
     /// Squeeze a batch of elements from the sponge and return their
     /// representation in the constraint system
-    pub fn batch_squeeze<C: ConstraintSystem<ScalarField>>(
+    pub fn batch_squeeze<C: Circuit<ScalarField>>(
         &mut self,
         num_elements: usize,
         cs: &mut C,
@@ -127,7 +124,7 @@ impl PoseidonHashGadget {
 
     /// Squeeze an output from the hasher, and constraint its value to equal the
     /// provided statement variable.
-    pub fn constrained_squeeze<C: ConstraintSystem<ScalarField>>(
+    pub fn constrained_squeeze<C: Circuit<ScalarField>>(
         &mut self,
         expected: Variable,
         cs: &mut C,
@@ -139,7 +136,7 @@ impl PoseidonHashGadget {
 
     /// Squeeze a set of elements from the hasher, and constraint the elements
     /// to be equal to the provided statement variables
-    pub fn batch_constrained_squeeze<C: ConstraintSystem<ScalarField>>(
+    pub fn batch_constrained_squeeze<C: Circuit<ScalarField>>(
         &mut self,
         expected: &[Variable],
         cs: &mut C,
@@ -151,7 +148,7 @@ impl PoseidonHashGadget {
 
     /// Permute the state using the Poseidon 2 permutation
     #[allow(clippy::missing_docs_in_private_items)]
-    fn permute<C: ConstraintSystem<ScalarField>>(&mut self, cs: &mut C) -> Result<(), PlonkError> {
+    fn permute<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), PlonkError> {
         // Multiply by the external round matrix
         self.external_mds(cs)?;
 
@@ -175,7 +172,7 @@ impl PoseidonHashGadget {
     }
 
     /// Run an external round on the state
-    fn external_round<C: ConstraintSystem<ScalarField>>(
+    fn external_round<C: Circuit<ScalarField>>(
         &mut self,
         round_number: usize,
         cs: &mut C,
@@ -186,7 +183,7 @@ impl PoseidonHashGadget {
     }
 
     /// Add round constants in an external round
-    fn external_add_rc<C: ConstraintSystem<ScalarField>>(
+    fn external_add_rc<C: Circuit<ScalarField>>(
         &mut self,
         round_number: usize,
         cs: &mut C,
@@ -200,10 +197,7 @@ impl PoseidonHashGadget {
     }
 
     /// Apply the sbox to the state in an external round
-    fn external_sbox<C: ConstraintSystem<ScalarField>>(
-        &mut self,
-        cs: &mut C,
-    ) -> Result<(), PlonkError> {
+    fn external_sbox<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), PlonkError> {
         for state_elem in self.state.iter_mut() {
             *state_elem = cs.pow5(*state_elem)?;
         }
@@ -219,10 +213,7 @@ impl PoseidonHashGadget {
     /// it, or more efficiently: adding the sum of the elements to each
     /// individual element. This efficient structure is borrowed from:
     ///     https://github.com/HorizenLabs/poseidon2/blob/main/plain_implementations/src/poseidon2/poseidon2.rs#L129-L137
-    fn external_mds<C: ConstraintSystem<ScalarField>>(
-        &mut self,
-        cs: &mut C,
-    ) -> Result<(), PlonkError> {
+    fn external_mds<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), PlonkError> {
         let coeffs = [ScalarField::one(); GATE_WIDTH];
         let in_wires = self.state.clone();
         for state_elem in self.state.iter_mut() {
@@ -234,7 +225,7 @@ impl PoseidonHashGadget {
     }
 
     /// Run an internal round on the state
-    fn internal_round<C: ConstraintSystem<ScalarField>>(
+    fn internal_round<C: Circuit<ScalarField>>(
         &mut self,
         round_number: usize,
         cs: &mut C,
@@ -245,7 +236,7 @@ impl PoseidonHashGadget {
     }
 
     /// Add round constants in an internal round
-    fn internal_add_rc<C: ConstraintSystem<ScalarField>>(
+    fn internal_add_rc<C: Circuit<ScalarField>>(
         &mut self,
         round_number: usize,
         cs: &mut C,
@@ -257,10 +248,7 @@ impl PoseidonHashGadget {
     }
 
     /// Apply the sbox to the state in an internal round
-    fn internal_sbox<C: ConstraintSystem<ScalarField>>(
-        &mut self,
-        cs: &mut C,
-    ) -> Result<(), PlonkError> {
+    fn internal_sbox<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), PlonkError> {
         self.state[0] = cs.pow5(self.state[0])?;
         Ok(())
     }
@@ -275,10 +263,7 @@ impl PoseidonHashGadget {
     /// This can be done efficiently by adding the sum to each element as in the
     /// external MDS case but adding an additional copy of the final state
     /// element
-    fn internal_mds<C: ConstraintSystem<ScalarField>>(
-        &mut self,
-        cs: &mut C,
-    ) -> Result<(), PlonkError> {
+    fn internal_mds<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), PlonkError> {
         let mut coeffs = [ScalarField::one(); GATE_WIDTH];
         let in_wires = self.state.clone();
 
@@ -307,7 +292,7 @@ mod test {
     use circuit_types::{traits::CircuitBaseType, PlonkCircuit};
     use constants::Scalar;
     use itertools::Itertools;
-    use mpc_relation::{Circuit, ConstraintSystem};
+    use mpc_relation::traits::Circuit;
     use rand::thread_rng;
     use renegade_crypto::hash::compute_poseidon_hash;
 
