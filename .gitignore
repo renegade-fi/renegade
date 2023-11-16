@@ -6,3 +6,4 @@
 *.sw[a-p]
 secrets.env
 **/flamegraph.svg
+/.gitattributes
