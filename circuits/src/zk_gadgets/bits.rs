@@ -11,8 +11,7 @@ use bitvec::{order::Lsb0, slice::BitSlice};
 use circuit_types::{traits::CircuitVarType, Fabric, MpcPlonkCircuit, PlonkCircuit};
 use constants::{Scalar, ScalarField};
 use itertools::Itertools;
-use mpc_plonk::multiprover::proof_system::MpcCircuit;
-use mpc_relation::{errors::CircuitError, BoolVar, ConstraintSystem, Variable};
+use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
 
 use crate::mpc_gadgets::bits::to_bits_le;
 
@@ -86,8 +85,7 @@ mod bits_test {
         MpcPlonkCircuit, PlonkCircuit,
     };
     use constants::Scalar;
-    use mpc_plonk::multiprover::proof_system::MpcCircuit;
-    use mpc_relation::{Circuit, ConstraintSystem};
+    use mpc_relation::traits::Circuit;
     use rand::{thread_rng, RngCore};
     use renegade_crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
     use test_helpers::mpc_network::execute_mock_mpc;
@@ -148,7 +146,7 @@ mod bits_test {
                     cs.enforce_constant(bit, expected.inner()).unwrap();
                 }
 
-                cs.check_circuit_satisfiability(&[]).await
+                cs.check_circuit_satisfiability(&[])
             }
         })
         .await;

@@ -2,7 +2,7 @@
 
 use circuit_types::traits::CircuitVarType;
 use constants::ScalarField;
-use mpc_relation::{errors::CircuitError, BoolVar, ConstraintSystem};
+use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar};
 
 /// Implements the control flow gate if selector { a } else { b }
 pub struct CondSelectGadget;
@@ -11,7 +11,7 @@ impl CondSelectGadget {
     pub fn select<V, C>(a: V, b: V, selector: BoolVar, cs: &mut C) -> Result<V, CircuitError>
     where
         V: CircuitVarType,
-        C: ConstraintSystem<ScalarField>,
+        C: Circuit<ScalarField>,
     {
         let a_vars = a.to_vars();
         let b_vars = b.to_vars();
@@ -44,7 +44,7 @@ impl CondSelectVectorGadget {
     ) -> Result<Vec<V>, CircuitError>
     where
         V: CircuitVarType,
-        C: ConstraintSystem<ScalarField>,
+        C: Circuit<ScalarField>,
     {
         assert_eq!(a.len(), b.len(), "a and b must be of equal length");
 
@@ -70,8 +70,7 @@ mod cond_select_test {
         MpcPlonkCircuit, PlonkCircuit,
     };
     use constants::Scalar;
-    use mpc_plonk::multiprover::proof_system::MpcCircuit;
-    use mpc_relation::{Circuit, ConstraintSystem};
+    use mpc_relation::traits::Circuit;
     use rand::{rngs::OsRng, thread_rng};
     use test_helpers::mpc_network::execute_mock_mpc;
 
@@ -135,7 +134,7 @@ mod cond_select_test {
             let res = CondSelectGadget::select(a_var, b_var, sel, &mut cs).unwrap();
             cs.enforce_equal(res, b_var).unwrap();
 
-            cs.check_circuit_satisfiability(&[a, b]).await
+            cs.check_circuit_satisfiability(&[a, b])
         })
         .await;
 
