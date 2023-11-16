@@ -4,7 +4,7 @@
 
 use std::ops::{Add, Mul, Neg, Sub};
 
-use ark_ff::{BigInteger, Field, One, PrimeField};
+use ark_ff::{BigInteger, Field, PrimeField};
 use bigdecimal::{BigDecimal, ToPrimitive};
 use circuit_macros::circuit_type;
 use constants::{AuthenticatedScalar, Scalar, ScalarField};

@@ -1,22 +1,26 @@
 //! Groups gadgets for binary comparison operators
+//!
+//! Some gadgets are implemented for both single-prover and multi-prover
+//! however, some gadgets are only implemented for single-prover circuits.
+//! This is done when the gadget is inefficient and unneeded in an MPC circuit.
+//! Or, for example with `EqZero` gadget, if the gadget would leak privacy.
 
+use ark_ff::{Field, One, Zero};
 use circuit_types::{
-    errors::ProverError,
-    traits::{
-        CircuitVarType, LinearCombinationLike, MpcLinearCombinationLike,
-        MultiproverCircuitVariableType,
-    },
+    traits::{CircuitBaseType, CircuitVarType, MultiproverCircuitBaseType},
+    Fabric, MpcPlonkCircuit, PlonkCircuit,
 };
+use constants::{Scalar, ScalarField};
 use itertools::Itertools;
-use mpc_bulletproof::{
-    r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
-    r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem},
-};
-use mpc_stark::{algebra::scalar::Scalar, MpcFabric};
+use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
 
 use crate::{
-    mpc_gadgets::bits::to_bits_le, zk_gadgets::bits::scalar_to_bits_le, POSITIVE_SCALAR_MAX_BITS,
+    mpc_gadgets::bits::to_bits_le, zk_gadgets::bits::scalar_to_bits_le, SCALAR_BITS_MINUS_TWO,
 };
+
+// ------------------------
+// | Singleprover Gadgets |
+// ------------------------
 
 /// A gadget that returns whether a value is equal to zero
 ///
@@ -29,54 +33,52 @@ impl EqZeroGadget {
     ///
     /// Relies on the fact that modulo a prime field, all elements (except zero)
     /// have a valid multiplicative inverse
-    pub fn eq_zero<L, CS>(val: L, cs: &mut CS) -> Variable
-    where
-        L: LinearCombinationLike,
-        CS: RandomizableConstraintSystem,
-    {
-        // Compute the inverse of the value outside the constraint
-        let val_lc: LinearCombination = val.into();
-        let val_eval = cs.eval(&val_lc);
+    pub fn eq_zero(val: Variable, cs: &mut PlonkCircuit) -> Result<BoolVar, CircuitError> {
+        // Compute the inverse of the value outside the circuit then allocate it in the
+        // circuit
+        let val_eval = cs.witness(val).unwrap();
 
-        let (is_zero, inverse) = if val_eval == Scalar::zero() {
+        let (is_zero, inverse) = if val_eval == ScalarField::zero() {
             (Scalar::one(), Scalar::zero())
         } else {
-            (Scalar::zero(), val_eval.inverse())
+            (Scalar::zero(), Scalar::new(val_eval.inverse().unwrap()))
         };
 
-        // Constrain the inverse to be computed correctly and such that
-        //  is_zero == 1 - inv * val
-        // If the input is zero, inv * val should be zero, and is_zero should be one
-        // If the input is non-zero, inv * val should be one, and is_zero should be zero
-        let is_zero_var = cs.allocate(Some(is_zero)).unwrap();
-        let inv_var = cs.allocate(Some(inverse)).unwrap();
-        let (_, _, val_times_inv) = cs.multiply(val_lc.clone(), inv_var.into());
-        cs.constrain(is_zero_var - Scalar::one() + val_times_inv);
+        let is_zero_var = is_zero.create_witness(cs);
+        let inv_var = inverse.create_witness(cs);
 
-        // Constrain the input times the output to equal zero, this handles the edge
-        // case in the above constraint in which the value is one, the prover
-        // assigns inv and is_zero such that inv is neither zero nor one
-        // I.e. the only way to satisfy this constraint when the value is non-zero is if
-        // is_zero == 0
-        let (_, _, in_times_out) = cs.multiply(val_lc, is_zero_var.into());
-        cs.constrain(in_times_out.into());
+        // Constrain `is_zero == 1 - val * inv`
+        //
+        // If the value is zero, then the right hand side will always be one, so the
+        // circuit is well constrained
+        //
+        // If the value is non-zero (and inv is correctly assigned), then the right hand
+        // side will be zero. The only check left is that inv is not set to
+        // zero, allowing a non-zero `val` to satisfy the constraints with `is_zero = 1`
+        // This is implicitly handled in the second constraint by ensuring that the
+        // input times the output is zero, which for non-zero input is only true
+        // if the output is zero
+        let zero_var = cs.zero();
+        let one_var = cs.one();
+        let one = ScalarField::one();
 
-        is_zero_var
+        cs.mul_add_gate(&[val, inv_var, one_var, one_var, is_zero_var], &[-one, one])?;
+        cs.mul_gate(is_zero_var, val, zero_var)?;
+
+        // We do not need to enforce that the result is boolean, only 0 or 1 will
+        // satisfy the previous two constraints
+        Ok(BoolVar::new_unchecked(is_zero_var))
     }
 }
 
-/// Returns 1 if a == b otherwise 0
+/// Gadget for testing and constraining equality
 #[derive(Clone, Debug)]
 pub struct EqGadget {}
 impl EqGadget {
     /// Computes a == b
-    pub fn eq<L1, L2, V1, V2, CS>(a: V1, b: V2, cs: &mut CS) -> Variable
+    pub fn eq<V>(a: V, b: V, cs: &mut PlonkCircuit) -> Result<BoolVar, CircuitError>
     where
-        L1: LinearCombinationLike,
-        L2: LinearCombinationLike,
-        V1: CircuitVarType<L1>,
-        V2: CircuitVarType<L2>,
-        CS: RandomizableConstraintSystem,
+        V: CircuitVarType,
     {
         let a_vars = a.to_vars();
         let b_vars = b.to_vars();
@@ -85,13 +87,10 @@ impl EqGadget {
     }
 
     /// Constraints a == b
-    pub fn constrain_eq<L1, L2, V1, V2, CS>(a: V1, b: V2, cs: &mut CS)
+    pub fn constrain_eq<V, C>(a: V, b: V, cs: &mut C) -> Result<(), CircuitError>
     where
-        L1: LinearCombinationLike,
-        L2: LinearCombinationLike,
-        V1: CircuitVarType<L1>,
-        V2: CircuitVarType<L2>,
-        CS: RandomizableConstraintSystem,
+        V: CircuitVarType,
+        C: Circuit<ScalarField>,
     {
         let a_vars = a.to_vars();
         let b_vars = b.to_vars();
@@ -104,54 +103,35 @@ impl EqGadget {
     }
 }
 
-/// Returns 1 if a_i = b_i for all i, otherwise 0
+/// Gadgets for testing or constraining the equality of vectors of variable
+/// types
 #[derive(Clone, Debug)]
 pub struct EqVecGadget {}
 impl EqVecGadget {
     /// Returns 1 if \vec{a} = \vec{b}, otherwise 0
-    pub fn eq_vec<L1, L2, V1, V2, CS>(a: &[V1], b: &[V2], cs: &mut CS) -> Variable
+    pub fn eq_vec<V>(a: &[V], b: &[V], cs: &mut PlonkCircuit) -> Result<BoolVar, CircuitError>
     where
-        L1: LinearCombinationLike,
-        L2: LinearCombinationLike,
-        V1: CircuitVarType<L1>,
-        V2: CircuitVarType<L2>,
-        CS: RandomizableConstraintSystem,
+        V: CircuitVarType,
     {
         assert_eq!(a.len(), b.len(), "eq_vec expects equal length vectors");
-        let a_vals = a
-            .iter()
-            .cloned()
-            .flat_map(|a_val| a_val.to_vars())
-            .collect_vec();
-        let b_vals = b
-            .iter()
-            .cloned()
-            .flat_map(|b_val| b_val.to_vars())
-            .collect_vec();
+        let a_vals = a.iter().cloned().flat_map(|a_val| a_val.to_vars());
+        let b_vals = b.iter().cloned().flat_map(|b_val| b_val.to_vars());
 
-        // Compare each vector element
-        let mut not_equal_values = Vec::with_capacity(a.len());
-        for (a_val, b_val) in a_vals.into_iter().zip(b_vals.into_iter()) {
-            not_equal_values.push(NotEqualGadget::not_equal(a_val.clone(), b_val.clone(), cs));
+        let mut component_eq_vals = Vec::new();
+        for (a_val, b_val) in a_vals.zip(b_vals) {
+            let a_minus_b = cs.sub(a_val, b_val)?;
+            let eq_val = EqZeroGadget::eq_zero(a_minus_b, cs)?;
+            component_eq_vals.push(eq_val);
         }
 
-        // Sum up all the a_i != b_i and return whether this value equals zero
-        let mut not_equal_sum: LinearCombination = Variable::Zero().into();
-        for ne_val in not_equal_values.iter() {
-            not_equal_sum += ne_val.clone();
-        }
-
-        EqZeroGadget::eq_zero(not_equal_sum, cs)
+        cs.logic_and_all(&component_eq_vals)
     }
 
     /// Constraints the two vectors to be equal
-    pub fn constrain_eq_vec<L1, L2, V1, V2, CS>(a: &[V1], b: &[V2], cs: &mut CS)
+    pub fn constrain_eq_vec<V, C>(a: &[V], b: &[V], cs: &mut C) -> Result<(), CircuitError>
     where
-        L1: LinearCombinationLike,
-        L2: LinearCombinationLike,
-        V1: CircuitVarType<L1>,
-        V2: CircuitVarType<L2>,
-        CS: RandomizableConstraintSystem,
+        V: CircuitVarType,
+        C: Circuit<ScalarField>,
     {
         assert_eq!(a.len(), b.len(), "eq_vec expects equal length vectors");
         let a_vars = a
@@ -166,10 +146,10 @@ impl EqVecGadget {
             .collect_vec();
 
         for (a_val, b_val) in a_vars.into_iter().zip(b_vars) {
-            let a_lc: LinearCombination = a_val.into();
-            let b_lc: LinearCombination = b_val.into();
-            cs.constrain(a_lc - b_lc);
+            cs.enforce_equal(a_val, b_val)?;
         }
+
+        Ok(())
     }
 }
 
@@ -178,14 +158,13 @@ impl EqVecGadget {
 pub struct NotEqualGadget {}
 impl NotEqualGadget {
     /// Computes a != b
-    pub fn not_equal<L1, L2, CS>(a: L1, b: L2, cs: &mut CS) -> LinearCombination
-    where
-        L1: LinearCombinationLike,
-        L2: LinearCombinationLike,
-        CS: RandomizableConstraintSystem,
-    {
-        let eq_zero = EqZeroGadget::eq_zero(a.into() - b.into(), cs);
-        Variable::One() - eq_zero
+    pub fn not_equal(
+        a: Variable,
+        b: Variable,
+        cs: &mut PlonkCircuit,
+    ) -> Result<BoolVar, CircuitError> {
+        let eq = EqGadget::eq(a, b, cs)?;
+        cs.logic_neg(eq)
     }
 }
 
@@ -194,27 +173,22 @@ impl NotEqualGadget {
 pub struct GreaterThanEqZeroGadget<const D: usize> {}
 impl<const D: usize> GreaterThanEqZeroGadget<D> {
     /// Evaluate the condition x >= 0; returns 1 if true, otherwise 0
-    pub fn greater_than_zero<L, CS>(x: L, cs: &mut CS) -> Variable
-    where
-        L: LinearCombinationLike,
-        CS: RandomizableConstraintSystem,
-    {
+    pub fn greater_than_zero(x: Variable, cs: &mut PlonkCircuit) -> Result<BoolVar, CircuitError> {
         // If we can reconstruct the value without the highest bit, the value is
         // non-negative
-        let bit_reconstructed = Self::bit_decompose_reconstruct(x.clone(), cs);
-        EqZeroGadget::eq_zero(bit_reconstructed - x.into(), cs)
+        let bit_reconstructed = Self::bit_decompose_reconstruct(x, cs)?;
+        EqGadget::eq(bit_reconstructed, x, cs)
     }
 
     /// Constrain the value to be greater than zero
-    pub fn constrain_greater_than_zero<L, CS>(x: L, cs: &mut CS)
-    where
-        L: LinearCombinationLike,
-        CS: RandomizableConstraintSystem,
-    {
+    pub fn constrain_greater_than_zero(
+        x: Variable,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
         // If we can reconstruct the value without the highest bit, the value is
         // non-negative
-        let bit_reconstructed = Self::bit_decompose_reconstruct(x.clone(), cs);
-        cs.constrain(bit_reconstructed - x.into())
+        let bit_reconstructed = Self::bit_decompose_reconstruct(x, cs)?;
+        EqGadget::constrain_eq(bit_reconstructed, x, cs)
     }
 
     /// A helper function to decompose a scalar into bits and then reconstruct
@@ -223,88 +197,37 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
     /// This is used by limiting the bit width of the decomposition -- if a
     /// value can be reconstructed without its highest bit (i.e. highest bit
     /// is zero) then it is non-negative
-    fn bit_decompose_reconstruct<L, CS>(x: L, cs: &mut CS) -> LinearCombination
-    where
-        L: LinearCombinationLike,
-        CS: RandomizableConstraintSystem,
-    {
+    fn bit_decompose_reconstruct(
+        x: Variable,
+        cs: &mut PlonkCircuit,
+    ) -> Result<Variable, CircuitError> {
         assert!(
-            D <= POSITIVE_SCALAR_MAX_BITS,
+            D <= SCALAR_BITS_MINUS_TWO,
             "a positive value may only have {:?} bits",
-            POSITIVE_SCALAR_MAX_BITS
+            SCALAR_BITS_MINUS_TWO
         );
 
         // Bit decompose the input
-        let bits = scalar_to_bits_le::<D>(&cs.eval(&x.into()))[..D]
+        let x_eval = x.eval(cs);
+        let bits = scalar_to_bits_le::<D>(&x_eval)[..D]
             .iter()
-            .map(|bit| cs.allocate(Some(*bit)).unwrap())
+            .map(|bit| bit.create_witness(cs))
             .collect_vec();
 
         // Constrain the bit decomposition to be correct
         // This implicitly constrains the value to be greater than zero, i.e. if it can
         // be represented without the highest bit set, then it is greater than
         // zero. This assumes a two's complement representation
-        let mut res = LinearCombination::default();
-        for bit in bits.into_iter().rev() {
-            res = res * Scalar::from(2u64) + bit
-        }
-
-        res
-    }
-}
-
-/// A multiprover version of the greater than or equal to zero gadget
-pub struct MultiproverGreaterThanEqZeroGadget<const D: usize>;
-impl<const D: usize> MultiproverGreaterThanEqZeroGadget<D> {
-    /// Constrains the input value to be greater than or equal to zero
-    /// implicitly by bit-decomposing the value and re-composing it
-    /// thereafter
-    pub fn constrain_greater_than_zero<L, CS>(
-        x: L,
-        fabric: &MpcFabric,
-        cs: &mut CS,
-    ) -> Result<(), ProverError>
-    where
-        L: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem,
-    {
-        let reconstructed_res = Self::bit_decompose_reconstruct(x.clone(), fabric, cs)?;
-        cs.constrain(reconstructed_res - x.into());
-        Ok(())
-    }
-
-    /// A helper function to compute the bit decomposition of an allocated
-    /// scalar and then reconstruct from the bit decomposition.
-    ///
-    /// This is useful because we can bit decompose with all but the highest
-    /// bit. If the reconstructed result is equal to the input; the highest
-    /// bit is not set and the value is non-negative
-    fn bit_decompose_reconstruct<L, CS>(
-        x: L,
-        fabric: &MpcFabric,
-        cs: &mut CS,
-    ) -> Result<MpcLinearCombination, ProverError>
-    where
-        L: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem,
-    {
-        // Evaluate the assignment of the value in the underlying constraint system
-        let value_assignment = cs.eval(&x.into());
-        let bits = to_bits_le::<D>(&value_assignment, fabric)
-            .into_iter()
-            .map(|bit| cs.allocate(Some(bit)).unwrap())
+        let two = ScalarField::from(2u64);
+        let coeffs = (0..D)
+            .scan(ScalarField::one(), |state, _| {
+                let res = *state;
+                *state *= two;
+                Some(res)
+            })
             .collect_vec();
 
-        // Constrain the bit decomposition to be correct
-        // This implicitly constrains the value to be greater than zero, i.e. if it can
-        // be represented without the highest bit set, then it is greater than
-        // zero. This assumes a two's complement representation
-        let mut res = MpcLinearCombination::default();
-        for bit in bits.into_iter().rev() {
-            res = res * Scalar::from(2u64) + bit;
-        }
-
-        Ok(res)
+        cs.lc_sum(&bits, &coeffs)
     }
 }
 
@@ -314,21 +237,23 @@ impl<const D: usize> MultiproverGreaterThanEqZeroGadget<D> {
 pub struct GreaterThanEqGadget<const D: usize> {}
 impl<const D: usize> GreaterThanEqGadget<D> {
     /// Evaluates the comparator a >= b; returns 1 if true, otherwise 0
-    pub fn greater_than_eq<L, CS>(a: L, b: L, cs: &mut CS) -> Variable
-    where
-        L: LinearCombinationLike,
-        CS: RandomizableConstraintSystem,
-    {
-        GreaterThanEqZeroGadget::<D>::greater_than_zero(a.into() - b.into(), cs)
+    pub fn greater_than_eq(
+        a: Variable,
+        b: Variable,
+        cs: &mut PlonkCircuit,
+    ) -> Result<BoolVar, CircuitError> {
+        let a_minus_b = cs.sub(a, b)?;
+        GreaterThanEqZeroGadget::<D>::greater_than_zero(a_minus_b, cs)
     }
 
     /// Constrains the values to satisfy a >= b
-    pub fn constrain_greater_than_eq<L, CS>(a: L, b: L, cs: &mut CS)
-    where
-        L: LinearCombinationLike,
-        CS: RandomizableConstraintSystem,
-    {
-        GreaterThanEqZeroGadget::<D>::constrain_greater_than_zero(a.into() - b.into(), cs);
+    pub fn constrain_greater_than_eq(
+        a: Variable,
+        b: Variable,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let a_minus_b = cs.sub(a, b)?;
+        GreaterThanEqZeroGadget::<D>::constrain_greater_than_zero(a_minus_b, cs)
     }
 }
 
@@ -339,49 +264,77 @@ impl<const D: usize> GreaterThanEqGadget<D> {
 pub struct LessThanGadget<const D: usize> {}
 impl<const D: usize> LessThanGadget<D> {
     /// Compute the boolean a < b; returns 1 if true, otherwise 0
-    pub fn less_than<L, CS>(a: L, b: L, cs: &mut CS) -> LinearCombination
-    where
-        L: LinearCombinationLike,
-        CS: RandomizableConstraintSystem,
-    {
-        let a_geq_b = GreaterThanEqGadget::<D>::greater_than_eq(a, b, cs);
-        Variable::One() - a_geq_b
+    pub fn less_than(
+        a: Variable,
+        b: Variable,
+        cs: &mut PlonkCircuit,
+    ) -> Result<BoolVar, CircuitError> {
+        let a_geq_b = GreaterThanEqGadget::<D>::greater_than_eq(a, b, cs)?;
+        cs.logic_neg(a_geq_b)
     }
 
     /// Constrain a to be less than b
-    pub fn constrain_less_than<L, CS>(a: L, b: L, cs: &mut CS)
-    where
-        L: LinearCombinationLike,
-        CS: RandomizableConstraintSystem,
-    {
-        let lt_result = Self::less_than(a, b, cs);
-        cs.constrain(Variable::One() - lt_result);
+    pub fn constrain_less_than(
+        a: Variable,
+        b: Variable,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let lt_result = Self::less_than(a, b, cs)?;
+        cs.enforce_true(lt_result)
     }
 }
 
-/// A multiprover variant of the EqGadget
-pub struct MultiproverEqGadget;
-impl MultiproverEqGadget {
-    /// Constraint two values to be equal
-    pub fn constrain_eq<L1, L2, V1, V2, CS>(a: V1, b: V2, cs: &mut CS)
-    where
-        L1: MpcLinearCombinationLike,
-        L2: MpcLinearCombinationLike,
-        V1: MultiproverCircuitVariableType<L1>,
-        V2: MultiproverCircuitVariableType<L2>,
-        CS: MpcRandomizableConstraintSystem,
-    {
-        let a_vars = a.to_mpc_vars();
-        let b_vars = b.to_mpc_vars();
-        assert_eq!(
-            a_vars.len(),
-            b_vars.len(),
-            "a and b must have the same length"
-        );
+// -----------------------
+// | Multiprover Gadgets |
+// -----------------------
 
-        for (a_var, b_var) in a_vars.into_iter().zip(b_vars.into_iter()) {
-            cs.constrain(a_var.into() - b_var.into());
-        }
+/// A multiprover version of the greater than or equal to zero gadget
+pub struct MultiproverGreaterThanEqZeroGadget<const D: usize>;
+impl<const D: usize> MultiproverGreaterThanEqZeroGadget<D> {
+    /// Constrains the input value to be greater than or equal to zero
+    /// implicitly by bit-decomposing the value and re-composing it
+    /// thereafter
+    pub fn constrain_greater_than_zero(
+        x: Variable,
+        fabric: &Fabric,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let reconstructed_res = Self::bit_decompose_reconstruct(x, fabric, cs)?;
+        cs.enforce_equal(reconstructed_res, x)
+    }
+
+    /// A helper function to compute the bit decomposition of an allocated
+    /// scalar and then reconstruct from the bit decomposition.
+    ///
+    /// This is useful because we can bit decompose with all but the highest
+    /// bit. If the reconstructed result is equal to the input; the highest
+    /// bit is not set and the value is non-negative
+    fn bit_decompose_reconstruct(
+        x: Variable,
+        fabric: &Fabric,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<Variable, CircuitError> {
+        // Evaluate the assignment of the value in the underlying constraint system
+        let value_assignment = x.eval_multiprover(cs);
+        let bits = to_bits_le::<D>(&value_assignment, fabric)
+            .into_iter()
+            .map(|bit| bit.create_shared_witness(cs).unwrap())
+            .collect_vec();
+
+        // Constrain the bit decomposition to be correct
+        // This implicitly constrains the value to be greater than zero, i.e. if it can
+        // be represented without the highest bit set, then it is greater than
+        // zero. This assumes a two's complement representation
+        let two = ScalarField::from(2u64);
+        let coeffs = (0..D)
+            .scan(ScalarField::one(), |state, _| {
+                let res = *state;
+                *state *= two;
+                Some(res)
+            })
+            .collect_vec();
+
+        cs.lc_sum(&bits, &coeffs)
     }
 }
 
@@ -391,106 +344,223 @@ impl MultiproverEqGadget {
 pub struct MultiproverGreaterThanEqGadget<const D: usize>;
 impl<const D: usize> MultiproverGreaterThanEqGadget<D> {
     /// Constrain the relation a >= b
-    pub fn constrain_greater_than_eq<L, CS>(
-        a: L,
-        b: L,
-        fabric: &MpcFabric,
-        cs: &mut CS,
-    ) -> Result<(), ProverError>
-    where
-        L: MpcLinearCombinationLike,
-        CS: MpcRandomizableConstraintSystem,
-    {
-        MultiproverGreaterThanEqZeroGadget::<D>::constrain_greater_than_zero(
-            a.into() - b.into(),
-            fabric,
-            cs,
-        )
+    pub fn constrain_greater_than_eq(
+        a: Variable,
+        b: Variable,
+        fabric: &Fabric,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let a_geq_b = cs.sub(a, b)?;
+        MultiproverGreaterThanEqZeroGadget::<D>::constrain_greater_than_zero(a_geq_b, fabric, cs)
     }
 }
 
 #[cfg(test)]
-mod comparators_test {
-    use std::{cmp, ops::Neg};
-
-    use circuit_types::traits::CircuitBaseType;
-    use merlin::HashChainTranscript as Transcript;
-    use mpc_bulletproof::{
-        r1cs::{ConstraintSystem, Prover},
-        PedersenGens,
+mod test {
+    use ark_ff::One;
+    use ark_mpc::{PARTY0, PARTY1};
+    use circuit_types::{
+        fixed_point::FixedPoint,
+        order::{Order, OrderSide},
+        traits::{CircuitBaseType, MpcBaseType, MultiproverCircuitBaseType},
+        MpcPlonkCircuit, PlonkCircuit,
     };
-    use mpc_stark::algebra::scalar::Scalar;
-    use rand::{thread_rng, RngCore};
+    use constants::{Scalar, ScalarField};
+    use mpc_relation::traits::Circuit;
+    use num_bigint::RandBigInt;
+    use rand::{seq::SliceRandom, thread_rng, Rng, RngCore};
+    use test_helpers::mpc_network::execute_mock_mpc;
 
-    use super::{EqZeroGadget, GreaterThanEqGadget, GreaterThanEqZeroGadget};
+    use crate::{
+        zk_gadgets::comparators::{
+            EqGadget, GreaterThanEqGadget, GreaterThanEqZeroGadget, LessThanGadget,
+            MultiproverGreaterThanEqGadget, MultiproverGreaterThanEqZeroGadget,
+        },
+        SCALAR_MAX_BITS,
+    };
 
-    /// Test the equal zero gadget
+    use super::EqZeroGadget;
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Get a random order for testing
+    fn random_order() -> Order {
+        let mut rng = thread_rng();
+
+        let bit_size = (SCALAR_MAX_BITS - 1) as u64;
+        Order {
+            quote_mint: rng.gen_biguint(bit_size),
+            base_mint: rng.gen_biguint(bit_size),
+            amount: rng.gen(),
+            side: *[OrderSide::Buy, OrderSide::Sell].choose(&mut rng).unwrap(),
+            worst_case_price: FixedPoint::from_f32_round_down(rng.gen()),
+            timestamp: rng.gen(),
+        }
+    }
+
+    // ---------
+    // | Tests |
+    // ---------
+
+    /// Tests the `EqZeroGadget`
     #[test]
     fn test_eq_zero() {
-        // Build a constraint system
-        let pc_gens = PedersenGens::default();
-        let mut transcript = Transcript::new(b"test");
-        let mut prover = Prover::new(&pc_gens, &mut transcript);
-
-        // First tests with a non-zero value
         let mut rng = thread_rng();
-        let val = Scalar::random(&mut rng).commit_public(&mut prover);
+        let a = Scalar::random(&mut rng);
+        let zero = Scalar::zero();
 
-        let res = EqZeroGadget::eq_zero(val, &mut prover);
-        assert_eq!(Scalar::zero(), prover.eval(&res.into()));
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let a_var = a.create_witness(&mut cs);
+        let zero_var = zero.create_witness(&mut cs);
 
-        // Now test with the zero value
-        let val = Scalar::zero().commit_public(&mut prover);
-        let res = EqZeroGadget::eq_zero(val, &mut prover);
+        let eq_zero1 = EqZeroGadget::eq_zero(a_var, &mut cs).unwrap();
+        let eq_zero2 = EqZeroGadget::eq_zero(zero_var, &mut cs).unwrap();
 
-        assert_eq!(Scalar::one(), prover.eval(&res.into()));
+        cs.enforce_false(eq_zero1).unwrap();
+        cs.enforce_true(eq_zero2).unwrap();
+
+        assert!(cs.check_circuit_satisfiability(&[]).is_ok());
     }
 
-    /// Test the greater than zero constraint
+    /// Tests the `EqGadget`
+    ///
+    /// We use orders here but the type can be abstract
     #[test]
-    fn test_greater_than_zero() {
-        let mut rng = thread_rng();
-        let pc_gens = PedersenGens::default();
-        let mut transcript = Transcript::new(b"test");
-        let mut prover = Prover::new(&pc_gens, &mut transcript);
+    fn test_eq_gadget() {
+        let o1 = random_order();
+        let o2 = random_order();
 
-        // Test first with a positive value
-        let value1 = Scalar::from(rng.next_u64()).commit_public(&mut prover);
-        let res = GreaterThanEqZeroGadget::<64 /* bits */>::greater_than_zero(value1, &mut prover);
-        assert_eq!(Scalar::one(), prover.eval(&res.into()));
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let o1_var = o1.create_witness(&mut cs);
+        let o2_var = o2.create_witness(&mut cs);
 
-        // Test with a negative value
-        let value2 = Scalar::from(rng.next_u64())
-            .neg()
-            .commit_public(&mut prover);
-        let res = GreaterThanEqZeroGadget::<64 /* bits */>::greater_than_zero(value2, &mut prover);
-        assert_eq!(Scalar::zero(), prover.eval(&res.into()));
+        let eq1 = EqGadget::eq(o1_var.clone(), o2_var.clone(), &mut cs).unwrap(); // o1 == o2
+        let eq2 = EqGadget::eq(o1_var.clone(), o1_var.clone(), &mut cs).unwrap(); // o1 == o1
+        EqGadget::constrain_eq(o1_var.clone(), o1_var, &mut cs).unwrap();
+
+        cs.enforce_false(eq1).unwrap();
+        cs.enforce_true(eq2).unwrap();
+
+        assert!(cs.check_circuit_satisfiability(&[]).is_ok());
     }
 
-    /// Test the greater than or equal to constraint
     #[test]
-    fn test_greater_than_eq() {
+    #[rustfmt::skip]
+    fn test_geq_gadget() {
         let mut rng = thread_rng();
-        let pc_gens = PedersenGens::default();
-        let mut transcript = Transcript::new(b"test");
-        let mut prover = Prover::new(&pc_gens, &mut transcript);
 
+        const BITS: usize = 64;
         let a = rng.next_u64();
         let b = rng.next_u64();
 
-        let max = Scalar::from(cmp::max(a, b)).commit_public(&mut prover);
-        let min = Scalar::from(cmp::min(a, b)).commit_public(&mut prover);
+        // Order the two
+        let (a, b) = if a > b { (a, b) } else { (b, a) };
 
-        // Test with a > b = false
-        let res = GreaterThanEqGadget::<64 /* bits */>::greater_than_eq(min, max, &mut prover);
-        assert_eq!(Scalar::zero(), prover.eval(&res.into()));
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let a_var = a.create_witness(&mut cs);
+        let a_neg = cs.mul_constant(a_var, &-ScalarField::one()).unwrap();
+        let b_var = b.create_witness(&mut cs);
 
-        // Test with equal values
-        let res = GreaterThanEqGadget::<64 /* bits */>::greater_than_eq(min, min, &mut prover);
-        assert_eq!(Scalar::one(), prover.eval(&res.into()));
+        let geq_zero1 = GreaterThanEqZeroGadget::<BITS>::greater_than_zero(a_var, &mut cs).unwrap(); // a > 0
+        let geq_zero2 = GreaterThanEqZeroGadget::<BITS>::greater_than_zero(a_neg, &mut cs).unwrap(); // -a > 0
+        GreaterThanEqZeroGadget::<BITS>::constrain_greater_than_zero(a_var, &mut cs).unwrap();
 
-        // Test with a > b = true
-        let res = GreaterThanEqGadget::<64 /* bits */>::greater_than_eq(max, min, &mut prover);
-        assert_eq!(Scalar::one(), prover.eval(&res.into()));
+        let geq1 = GreaterThanEqGadget::<BITS>::greater_than_eq(a_var, b_var, &mut cs).unwrap(); // a >= b
+        let geq2 = GreaterThanEqGadget::<BITS>::greater_than_eq(b_var, a_var, &mut cs).unwrap(); // b >= a 
+        let geq3 = GreaterThanEqGadget::<BITS>::greater_than_eq(a_var, a_var, &mut cs).unwrap(); // a >= a
+        GreaterThanEqGadget::<BITS>::constrain_greater_than_eq(a_var, b_var, &mut cs).unwrap();
+
+        let lt1 = LessThanGadget::<BITS>::less_than(a_var, b_var, &mut cs).unwrap(); // a < b
+        let lt2 = LessThanGadget::<BITS>::less_than(b_var, a_var, &mut cs).unwrap(); // b < a
+        let lt3 = LessThanGadget::<BITS>::less_than(a_var, a_var, &mut cs).unwrap(); // a < a
+        LessThanGadget::<BITS>::constrain_less_than(b_var, a_var, &mut cs).unwrap();
+
+        cs.enforce_true(geq_zero1).unwrap();
+        cs.enforce_false(geq_zero2).unwrap();
+        cs.enforce_true(geq1).unwrap();
+        cs.enforce_false(geq2).unwrap();
+        cs.enforce_true(geq3).unwrap();
+        cs.enforce_false(lt1).unwrap();
+        cs.enforce_true(lt2).unwrap();
+        cs.enforce_false(lt3).unwrap();
+
+        assert!(cs.check_circuit_satisfiability(&[]).is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_geq_multiprover() {
+        let mut rng = thread_rng();
+
+        const BITS: usize = 64;
+        let a = rng.next_u64();
+        let b = rng.next_u64();
+
+        // Order the two
+        let (a, b) = if a > b { (a, b) } else { (b, a) };
+
+        let (res, _) = execute_mock_mpc(move |fabric| async move {
+            let shared_a = a.allocate(PARTY0, &fabric);
+            let shared_b = b.allocate(PARTY1, &fabric);
+
+            // a >= 0
+            let mut cs = MpcPlonkCircuit::new(fabric.clone());
+            let a_var = shared_a.create_shared_witness(&mut cs).unwrap();
+
+            MultiproverGreaterThanEqZeroGadget::<BITS>::constrain_greater_than_zero(
+                a_var, &fabric, &mut cs,
+            )
+            .unwrap();
+            let mut res = cs.check_circuit_satisfiability(&[]).is_ok();
+
+            // -a >= 0
+            let mut cs = MpcPlonkCircuit::new(fabric.clone());
+            let a_var = shared_a.create_shared_witness(&mut cs).unwrap();
+            let neg_a = cs.mul_constant(a_var, &-ScalarField::one()).unwrap();
+
+            MultiproverGreaterThanEqZeroGadget::<BITS>::constrain_greater_than_zero(
+                neg_a, &fabric, &mut cs,
+            )
+            .unwrap();
+            res &= cs.check_circuit_satisfiability(&[]).is_err();
+
+            // a >= b
+            let mut cs = MpcPlonkCircuit::new(fabric.clone());
+            let a_var = shared_a.create_shared_witness(&mut cs).unwrap();
+            let b_var = shared_b.create_shared_witness(&mut cs).unwrap();
+
+            MultiproverGreaterThanEqGadget::<BITS>::constrain_greater_than_eq(
+                a_var, b_var, &fabric, &mut cs,
+            )
+            .unwrap();
+            res &= cs.check_circuit_satisfiability(&[]).is_ok();
+
+            // b >= a
+            let mut cs = MpcPlonkCircuit::new(fabric.clone());
+            let a_var = shared_a.create_shared_witness(&mut cs).unwrap();
+            let b_var = shared_b.create_shared_witness(&mut cs).unwrap();
+
+            MultiproverGreaterThanEqGadget::<BITS>::constrain_greater_than_eq(
+                b_var, a_var, &fabric, &mut cs,
+            )
+            .unwrap();
+            res &= cs.check_circuit_satisfiability(&[]).is_err();
+
+            // a >= a
+            let mut cs = MpcPlonkCircuit::new(fabric.clone());
+            let a_var = shared_a.create_shared_witness(&mut cs).unwrap();
+
+            MultiproverGreaterThanEqGadget::<BITS>::constrain_greater_than_eq(
+                a_var, a_var, &fabric, &mut cs,
+            )
+            .unwrap();
+            res &= cs.check_circuit_satisfiability(&[]).is_ok();
+
+            res
+        })
+        .await;
+
+        assert!(res);
     }
 }
