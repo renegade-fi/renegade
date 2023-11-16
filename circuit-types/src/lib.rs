@@ -159,9 +159,6 @@ where
 
 /// Groups helpers that operate on native types; which correspond to circuitry
 /// defined in this library
-///
-/// For example; when computing witnesses, wallet commitments, note commitments,
-/// nullifiers, etc are all useful helpers
 pub mod native_helpers {
     use constants::Scalar;
     use itertools::Itertools;

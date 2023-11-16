@@ -23,14 +23,14 @@ use futures::future::join_all;
 use itertools::Itertools;
 use mpc_plonk::{
     errors::PlonkError,
-    multiprover::proof_system::{CollaborativeProof, MpcCircuit, MultiproverPlonkKzgSnark},
+    multiprover::proof_system::{CollaborativeProof, MultiproverPlonkKzgSnark},
     proof_system::{
         structs::{Proof, ProvingKey, VerifyingKey},
         PlonkKzgSnark, UniversalSNARK,
     },
     transcript::SolidityTranscript,
 };
-use mpc_relation::{constraint_system::Circuit, BoolVar, ConstraintSystem, Variable};
+use mpc_relation::{traits::Circuit, BoolVar, Variable};
 use num_bigint::BigUint;
 use rand::thread_rng;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint, scalar_to_u64};
@@ -117,7 +117,7 @@ pub trait CircuitVarType: Clone {
     /// Convert to a collection of serialized variables for the type
     fn to_vars(&self) -> Vec<Variable>;
     /// Convert from an iterable of variables representing the serialized type
-    fn from_vars<I: Iterator<Item = Variable>, C: ConstraintSystem<ScalarField>>(
+    fn from_vars<I: Iterator<Item = Variable>, C: Circuit<ScalarField>>(
         i: &mut I,
         cs: &mut C,
     ) -> Self;
@@ -444,7 +444,7 @@ impl CircuitVarType for Variable {
         vec![*self]
     }
 
-    fn from_vars<I: Iterator<Item = Variable>, C: ConstraintSystem<ScalarField>>(
+    fn from_vars<I: Iterator<Item = Variable>, C: Circuit<ScalarField>>(
         i: &mut I,
         _cs: &mut C,
     ) -> Self {
@@ -459,7 +459,7 @@ impl CircuitVarType for BoolVar {
         vec![(*self).into()]
     }
 
-    fn from_vars<I: Iterator<Item = Variable>, C: ConstraintSystem<ScalarField>>(
+    fn from_vars<I: Iterator<Item = Variable>, C: Circuit<ScalarField>>(
         i: &mut I,
         cs: &mut C,
     ) -> Self {
@@ -473,7 +473,7 @@ impl CircuitVarType for BoolVar {
 impl CircuitVarType for () {
     type BaseType = ();
 
-    fn from_vars<I: Iterator<Item = Variable>, C: ConstraintSystem<ScalarField>>(
+    fn from_vars<I: Iterator<Item = Variable>, C: Circuit<ScalarField>>(
         _: &mut I,
         _cs: &mut C,
     ) -> Self {
@@ -491,7 +491,7 @@ impl<const N: usize, T: CircuitVarType> CircuitVarType for [T; N] {
         self.iter().flat_map(|x| x.to_vars()).collect()
     }
 
-    fn from_vars<I: Iterator<Item = Variable>, C: ConstraintSystem<ScalarField>>(
+    fn from_vars<I: Iterator<Item = Variable>, C: Circuit<ScalarField>>(
         i: &mut I,
         cs: &mut C,
     ) -> Self {

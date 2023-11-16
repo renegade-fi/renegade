@@ -7,7 +7,7 @@
 
 use circuit_macros::circuit_type;
 use constants::{Scalar, ScalarField};
-use mpc_relation::{ConstraintSystem, Variable};
+use mpc_relation::{traits::Circuit, Variable};
 use num_bigint::BigUint;
 use renegade_crypto::fields::scalar_to_u64;
 use serde::{Deserialize, Serialize};
