@@ -10,7 +10,7 @@ mod test {
     use circuit_macros::circuit_type;
     use constants::{AuthenticatedScalar, Scalar, ScalarField};
     use mpc_plonk::multiprover::proof_system::MpcPlonkCircuit;
-    use mpc_relation::{ConstraintSystem, PlonkCircuit, Variable};
+    use mpc_relation::{traits::Circuit, PlonkCircuit, Variable};
     use std::ops::Add;
     use test_helpers::mpc_network::execute_mock_mpc;
 

@@ -5,7 +5,7 @@ use std::ops::Add;
 
 use circuit_macros::circuit_type;
 use constants::{AuthenticatedScalar, Scalar, ScalarField};
-use mpc_relation::{ConstraintSystem, Variable};
+use mpc_relation::{traits::Circuit, Variable};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 

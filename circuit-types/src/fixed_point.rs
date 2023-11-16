@@ -4,12 +4,12 @@
 
 use std::ops::{Add, Mul, Neg, Sub};
 
-use ark_ff::{BigInteger, Field, PrimeField};
+use ark_ff::{BigInteger, Field, One, PrimeField};
 use bigdecimal::{BigDecimal, ToPrimitive};
 use circuit_macros::circuit_type;
 use constants::{AuthenticatedScalar, Scalar, ScalarField};
 use lazy_static::lazy_static;
-use mpc_relation::{ConstraintSystem, Variable};
+use mpc_relation::{traits::Circuit, Variable};
 use num_bigint::BigUint;
 use renegade_crypto::fields::{
     bigint_to_scalar, biguint_to_scalar, scalar_to_bigdecimal, scalar_to_bigint, scalar_to_u64,
@@ -297,13 +297,13 @@ impl FixedPointVar {
     // --------------
 
     /// Add one fixed point variable to another
-    pub fn add<C: ConstraintSystem<ScalarField>>(&self, rhs: &Self, cs: &mut C) -> Self {
+    pub fn add<C: Circuit<ScalarField>>(&self, rhs: &Self, cs: &mut C) -> Self {
         let repr = cs.add(self.repr, rhs.repr).unwrap();
         Self { repr }
     }
 
     /// Add an integer to a fixed point variable
-    pub fn add_integer<C: ConstraintSystem<ScalarField>>(&self, rhs: Variable, cs: &mut C) -> Self {
+    pub fn add_integer<C: Circuit<ScalarField>>(&self, rhs: Variable, cs: &mut C) -> Self {
         let repr = cs
             .add_with_coeffs(self.repr, rhs, &SCALAR_ONE, &TWO_TO_M_SCALAR)
             .unwrap();
@@ -311,13 +311,13 @@ impl FixedPointVar {
     }
 
     /// Subtract a fixed point variable from another
-    pub fn sub<C: ConstraintSystem<ScalarField>>(&self, rhs: &Self, cs: &mut C) -> Self {
+    pub fn sub<C: Circuit<ScalarField>>(&self, rhs: &Self, cs: &mut C) -> Self {
         let repr = cs.sub(self.repr, rhs.repr).unwrap();
         Self { repr }
     }
 
     /// Subtract an integer from a fixed point variable
-    pub fn sub_integer<C: ConstraintSystem<ScalarField>>(&self, rhs: Variable, cs: &mut C) -> Self {
+    pub fn sub_integer<C: Circuit<ScalarField>>(&self, rhs: Variable, cs: &mut C) -> Self {
         let repr = cs
             .add_with_coeffs(self.repr, rhs, &SCALAR_ONE, &TWO_TO_M_SCALAR.neg())
             .unwrap();
@@ -326,7 +326,7 @@ impl FixedPointVar {
     }
 
     /// Negate a fixed point variable
-    pub fn neg<C: ConstraintSystem<ScalarField>>(&self, cs: &mut C) -> Self {
+    pub fn neg<C: Circuit<ScalarField>>(&self, cs: &mut C) -> Self {
         let repr = cs.mul_constant(self.repr, &(-SCALAR_ONE)).unwrap();
 
         Self { repr }
@@ -341,11 +341,7 @@ impl FixedPointVar {
     /// converting the integer to a fixed-point representation. I.e. instead
     /// of taking x * 2^M * y * 2^M * 2^-M, we can just directly multiply x
     /// * 2^M * y
-    pub fn mul_integer<C: ConstraintSystem<ScalarField>>(
-        &self,
-        rhs: Variable,
-        cs: &mut C,
-    ) -> FixedPointVar {
+    pub fn mul_integer<C: Circuit<ScalarField>>(&self, rhs: Variable, cs: &mut C) -> FixedPointVar {
         let repr = cs.mul(self.repr, rhs).unwrap();
         FixedPointVar { repr }
     }
