@@ -6,6 +6,7 @@ use std::{
 };
 
 use mpc_plonk::errors::PlonkError;
+use mpc_relation::errors::CircuitError;
 
 /// Represents an error during the course of an MPC circuit execution
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,6 +33,8 @@ impl Error for MpcError {}
 /// Represents an error during the course of proving a statement
 #[derive(Debug)]
 pub enum ProverError {
+    /// An error building a circuit
+    Circuit(CircuitError),
     /// An error during the course of a multi-prover execution that results
     /// from the MPC network itself
     Mpc(MpcError),
