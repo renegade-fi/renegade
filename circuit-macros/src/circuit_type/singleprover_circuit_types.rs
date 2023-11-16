@@ -170,7 +170,7 @@ fn build_from_vars(self_struct: &ItemStruct) -> TokenStream2 {
     }
 
     parse_quote! {
-        fn #method_name<I: Iterator<Item = #from_type>, C: ConstraintSystem<ScalarField>>(i: &mut I, cs: &mut C) -> Self {
+        fn #method_name<I: Iterator<Item = #from_type>, C: Circuit<ScalarField>>(i: &mut I, cs: &mut C) -> Self {
             Self {
                 #fields_expr
             }
