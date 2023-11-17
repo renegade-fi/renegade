@@ -5,3 +5,12 @@ edition = "2021"
 
 [dependencies]
 ethers = "2"
+renegade_contracts_common = { git = "https://github.com/renegade-fi/renegade-contracts.git", package = "common" }
+
+# === Workspace Dependencies === #
+constants = { path = "../constants" }
+circuit-types = { path = "../circuit-types" }
+
+# === Serde === #
+serde = { workspace = true }
+postcard = { version = "1", features = ["alloc"] }
