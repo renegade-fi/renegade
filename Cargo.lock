@@ -166,6 +166,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0942ffc6dcaadf03badf6e6a2d0228460359d5e34b57ccdc720b7382dfbd5ec5"
 
 [[package]]
+name = "alloy-primitives"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e416903084d3392ebd32d94735c395d6709415b76c7728e594d3f996f2b03e65"
+dependencies = [
+ "bytes",
+ "cfg-if",
+ "const-hex",
+ "derive_more",
+ "hex-literal",
+ "itoa",
+ "ruint",
+ "tiny-keccak",
+]
+
+[[package]]
 name = "android-tzdata"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -246,7 +262,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "circuit-types",
- "common",
+ "common 0.1.0",
  "constants",
  "crossbeam",
  "ed25519-dalek 1.0.1",
@@ -287,7 +303,12 @@ dependencies = [
 name = "arbitrum-client"
 version = "0.1.0"
 dependencies = [
+ "circuit-types",
+ "common 0.1.0 (git+https://github.com/renegade-fi/renegade-contracts.git)",
+ "constants",
  "ethers",
+ "postcard",
+ "serde",
 ]
 
 [[package]]
@@ -417,8 +438,7 @@ dependencies = [
 [[package]]
 name = "ark-ff"
 version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec847af850f44ad29048935519032c33da8aa03340876d351dfab5660d2966ba"
+source = "git+https://github.com/renegade-fi/algebra.git?branch=bin-opt-feature#e28d6efd1460eb76b142a97ef09cfb2921eb976f"
 dependencies = [
  "ark-ff-asm",
  "ark-ff-macros",
@@ -438,8 +458,7 @@ dependencies = [
 [[package]]
 name = "ark-ff-asm"
 version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ed4aa4fe255d0bc6d79373f7e31d2ea147bcf486cba1be5ba7ea85abdb92348"
+source = "git+https://github.com/renegade-fi/algebra.git?branch=bin-opt-feature#e28d6efd1460eb76b142a97ef09cfb2921eb976f"
 dependencies = [
  "quote",
  "syn 1.0.109",
@@ -448,8 +467,7 @@ dependencies = [
 [[package]]
 name = "ark-ff-macros"
 version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7abe79b0e4288889c4574159ab790824d0033b9fdcb2a112a3182fac2e514565"
+source = "git+https://github.com/renegade-fi/algebra.git?branch=bin-opt-feature#e28d6efd1460eb76b142a97ef09cfb2921eb976f"
 dependencies = [
  "num-bigint",
  "num-traits",
@@ -529,8 +547,7 @@ dependencies = [
 [[package]]
 name = "ark-serialize"
 version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "adb7b85a02b83d2f22f89bd5cac66c9c89474240cb6207cb1efc16d098e822a5"
+source = "git+https://github.com/renegade-fi/algebra.git?branch=bin-opt-feature#e28d6efd1460eb76b142a97ef09cfb2921eb976f"
 dependencies = [
  "ark-serialize-derive",
  "ark-std",
@@ -541,8 +558,7 @@ dependencies = [
 [[package]]
 name = "ark-serialize-derive"
 version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae3281bc6d0fd7e549af32b52511e1302185bd688fd3359fa36423346ff682ea"
+source = "git+https://github.com/renegade-fi/algebra.git?branch=bin-opt-feature#e28d6efd1460eb76b142a97ef09cfb2921eb976f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -724,6 +740,15 @@ dependencies = [
  "futures-util",
  "memchr",
  "pin-project-lite",
+]
+
+[[package]]
+name = "atomic-polyfill"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3ff7eb3f316534d83a8a2c3d1674ace8a5a71198eba31e2e2b597833f699b28"
+dependencies = [
+ "critical-section",
 ]
 
 [[package]]
@@ -1217,7 +1242,7 @@ name = "chain-events"
 version = "0.1.0"
 dependencies = [
  "circuit-types",
- "common",
+ "common 0.1.0",
  "crossbeam",
  "gossip-api",
  "job-types",
@@ -1467,6 +1492,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "702fc72eb24e5a1e48ce58027a675bc24edd52096d5397d4aea7c6dd9eca0bd1"
 
 [[package]]
+name = "cobs"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67ba02a97a2bd10f4b59b25c7973101c79642302776489e030cd13cdab09ed15"
+
+[[package]]
 name = "coins-bip32"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1569,6 +1600,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "common"
+version = "0.1.0"
+source = "git+https://github.com/renegade-fi/renegade-contracts.git#4a8100e76308fc8423f57a5f49324779ded69cda"
+dependencies = [
+ "alloy-primitives",
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff",
+ "ark-serialize",
+ "serde",
+ "serde_with 3.4.0",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1583,7 +1628,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.13.1",
  "clap 3.2.25",
- "common",
+ "common 0.1.0",
  "ed25519-dalek 1.0.1",
  "libp2p",
  "rand_core 0.5.1",
@@ -1631,6 +1676,8 @@ dependencies = [
  "ark-bn254",
  "ark-ec",
  "ark-mpc",
+ "jf-primitives",
+ "mpc-plonk",
 ]
 
 [[package]]
@@ -1750,6 +1797,12 @@ dependencies = [
  "cast",
  "itertools 0.10.5",
 ]
+
+[[package]]
+name = "critical-section"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7059fff8937831a9ae6f0fe4d658ffabf58f2ca96aa9dec1c889f936f705f216"
 
 [[package]]
 name = "crossbeam"
@@ -2487,6 +2540,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "embedded-io"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef1a6892d9eef45c8fa6b9e0086428a2cca8491aca8f787c534a3d6d0bcb3ced"
+
+[[package]]
 name = "ena"
 version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2967,7 +3026,7 @@ name = "external-api"
 version = "0.1.0"
 dependencies = [
  "circuit-types",
- "common",
+ "common 0.1.0",
  "itertools 0.10.5",
  "num-bigint",
  "num-traits",
@@ -3371,7 +3430,7 @@ name = "gossip-api"
 version = "0.1.0"
 dependencies = [
  "circuit-types",
- "common",
+ "common 0.1.0",
  "ed25519-dalek 1.0.1",
  "libp2p",
  "serde",
@@ -3385,7 +3444,7 @@ version = "0.1.0"
 dependencies = [
  "circuit-types",
  "circuits",
- "common",
+ "common 0.1.0",
  "futures",
  "gossip-api",
  "job-types",
@@ -3475,7 +3534,7 @@ dependencies = [
  "ark-serialize",
  "circuit-types",
  "circuits",
- "common",
+ "common 0.1.0",
  "constants",
  "crossbeam",
  "external-api",
@@ -3500,6 +3559,15 @@ dependencies = [
  "tracing",
  "util",
  "uuid 1.6.1",
+]
+
+[[package]]
+name = "hash32"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0c35f58762feb77d74ebe43bdbc3210f09be9fe6742234d573bacc26ed92b67"
+dependencies = [
+ "byteorder",
 ]
 
 [[package]]
@@ -3561,6 +3629,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "heapless"
+version = "0.7.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db04bc24a18b9ea980628ecf00e6c0264f3c1426dac36c00cb49b6fbad8b0743"
+dependencies = [
+ "atomic-polyfill",
+ "hash32",
+ "rustc_version",
+ "serde",
+ "spin 0.9.8",
+ "stable_deref_trait",
+]
+
+[[package]]
 name = "heck"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3592,6 +3674,12 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
+name = "hex-literal"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 
 [[package]]
 name = "hex_fmt"
@@ -4005,7 +4093,7 @@ checksum = "af150ab688ff2122fcef229be89cb50dd66af9e01a4ff320cc137eecc9bacc38"
 [[package]]
 name = "jf-primitives"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#dee7e229f42a1395761fdbbb7f4c4a19897ef529"
+source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#996790a4903bec7a21fefe0863d4ff92093a6cd0"
 dependencies = [
  "anyhow",
  "ark-bls12-377",
@@ -4049,7 +4137,7 @@ dependencies = [
 [[package]]
 name = "jf-utils"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#dee7e229f42a1395761fdbbb7f4c4a19897ef529"
+source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#996790a4903bec7a21fefe0863d4ff92093a6cd0"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -4069,8 +4157,7 @@ dependencies = [
  "ark-mpc",
  "circuit-types",
  "circuits",
- "common",
- "constants",
+ "common 0.1.0",
  "gossip-api",
  "lazy_static",
  "libp2p",
@@ -4880,7 +4967,7 @@ dependencies = [
 [[package]]
 name = "mpc-plonk"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#dee7e229f42a1395761fdbbb7f4c4a19897ef529"
+source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#996790a4903bec7a21fefe0863d4ff92093a6cd0"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -4912,7 +4999,7 @@ dependencies = [
 [[package]]
 name = "mpc-relation"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#dee7e229f42a1395761fdbbb7f4c4a19897ef529"
+source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#996790a4903bec7a21fefe0863d4ff92093a6cd0"
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-381",
@@ -5161,7 +5248,7 @@ name = "network-manager"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "common",
+ "common 0.1.0",
  "ed25519-dalek 1.0.1",
  "external-api",
  "futures",
@@ -5937,6 +6024,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "postcard"
+version = "1.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a55c51ee6c0db07e68448e336cf8ea4131a620edefebf9893e759b2d793420f8"
+dependencies = [
+ "cobs",
+ "embedded-io",
+ "heapless",
+ "serde",
+]
+
+[[package]]
 name = "powerfmt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5970,7 +6069,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "atomic_float",
- "common",
+ "common 0.1.0",
  "create2",
  "external-api",
  "futures",
@@ -6104,7 +6203,7 @@ dependencies = [
  "ark-mpc",
  "circuit-types",
  "circuits",
- "common",
+ "common 0.1.0",
  "constants",
  "crossbeam",
  "job-types",
@@ -6578,7 +6677,7 @@ dependencies = [
  "chrono",
  "circuit-types",
  "clap 3.2.25",
- "common",
+ "common 0.1.0",
  "config",
  "crossbeam",
  "env_logger 0.10.1",
@@ -6771,6 +6870,26 @@ dependencies = [
  "thiserror",
  "webrtc-util",
 ]
+
+[[package]]
+name = "ruint"
+version = "1.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "724fd11728a3804e9944b14cab63825024c40bf42f8af87c8b5d97c4bbacf426"
+dependencies = [
+ "proptest",
+ "rand 0.8.5",
+ "ruint-macro",
+ "serde",
+ "valuable",
+ "zeroize",
+]
+
+[[package]]
+name = "ruint-macro"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e666a5496a0b2186dbcd0ff6106e29e093c15591bde62c20d3842007c6978a09"
 
 [[package]]
 name = "rustc-demangle"
@@ -7196,7 +7315,22 @@ dependencies = [
  "indexmap 1.9.3",
  "serde",
  "serde_json",
- "serde_with_macros",
+ "serde_with_macros 2.3.3",
+ "time",
+]
+
+[[package]]
+name = "serde_with"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64cd236ccc1b7a29e7e2739f27c0b2dd199804abc4290e32f59f3b68d6405c23"
+dependencies = [
+ "base64 0.21.5",
+ "chrono",
+ "hex 0.4.3",
+ "serde",
+ "serde_json",
+ "serde_with_macros 3.4.0",
  "time",
 ]
 
@@ -7205,6 +7339,18 @@ name = "serde_with_macros"
 version = "2.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "881b6f881b17d13214e5d494c939ebab463d01264ce1811e9d4ac3a882e7695f"
+dependencies = [
+ "darling 0.20.3",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.39",
+]
+
+[[package]]
+name = "serde_with_macros"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93634eb5f75a2323b16de4748022ac4297f9e76b6dced2be287a099f41b5e788"
 dependencies = [
  "darling 0.20.3",
  "proc-macro2",
@@ -7584,6 +7730,9 @@ name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+dependencies = [
+ "lock_api",
+]
 
 [[package]]
 name = "spki"
@@ -7604,6 +7753,12 @@ dependencies = [
  "base64ct",
  "der 0.7.8",
 ]
+
+[[package]]
+name = "stable_deref_trait"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "starknet"
@@ -7635,6 +7790,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "starknet-client"
+version = "0.1.0"
+dependencies = [
+ "ark-ff",
+ "circuit-types",
+ "circuits",
+ "clap 4.4.8",
+ "colored",
+ "common 0.1.0",
+ "constants",
+ "eyre",
+ "inventory",
+ "itertools 0.10.5",
+ "json",
+ "lazy_static",
+ "mpc-bulletproof",
+ "mpc-stark",
+ "num-bigint",
+ "rand 0.8.5",
+ "renegade-crypto",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "starknet",
+ "state",
+ "test-helpers",
+ "tokio",
+ "tracing",
+ "util",
+]
+
+[[package]]
 name = "starknet-contract"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7642,7 +7829,7 @@ checksum = "d0d6f81a647694b2cb669ab60e77954b57bf5fbc757f5fcaf0a791c3bd341f04"
 dependencies = [
  "serde",
  "serde_json",
- "serde_with",
+ "serde_with 2.3.3",
  "starknet-accounts",
  "starknet-core 0.5.1",
  "starknet-providers",
@@ -7661,7 +7848,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_json_pythonic",
- "serde_with",
+ "serde_with 2.3.3",
  "sha3 0.10.8",
  "starknet-crypto",
  "starknet-ff",
@@ -7679,7 +7866,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_json_pythonic",
- "serde_with",
+ "serde_with 2.3.3",
  "sha3 0.10.8",
  "starknet-crypto",
  "starknet-ff",
@@ -7764,7 +7951,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "serde_with",
+ "serde_with 2.3.3",
  "starknet-core 0.5.1",
  "thiserror",
  "url",
@@ -7793,7 +7980,7 @@ dependencies = [
  "base64 0.13.1",
  "circuit-types",
  "circuits",
- "common",
+ "common 0.1.0",
  "config",
  "constants",
  "crossterm 0.26.1",
@@ -7826,8 +8013,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "circuit-types",
- "common",
- "constants",
+ "common 0.1.0",
  "derive_builder 0.12.0",
  "eyre",
  "indexmap 2.1.0",
@@ -7846,7 +8032,7 @@ name = "statev2"
 version = "0.1.0"
 dependencies = [
  "circuit-types",
- "common",
+ "common 0.1.0",
  "config",
  "constants",
  "crossbeam",
@@ -8024,7 +8210,7 @@ name = "system-bus"
 version = "0.1.0"
 dependencies = [
  "bus",
- "common",
+ "common 0.1.0",
  "futures",
  "rand 0.8.5",
  "serde",
@@ -8100,7 +8286,7 @@ dependencies = [
  "circuits",
  "clap 4.4.8",
  "colored",
- "common",
+ "common 0.1.0",
  "constants",
  "crossbeam",
  "external-api",
@@ -8431,17 +8617,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3550f4e9685620ac18a50ed434eb3aec30db8ba93b0287467bca5826ea25baf1"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "toml_edit"
-version = "0.20.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70f427fce4d84c72b5b732388bf4a9f4531b53f74e2887e3ecb2481f68f66d81"
-dependencies = [
- "indexmap 2.1.0",
- "toml_datetime",
- "winnow",
 ]
 
 [[package]]
