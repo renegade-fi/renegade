@@ -26,21 +26,22 @@ pub struct MerkleOpening<const HEIGHT: usize> {
         deserialize_with = "deserialize_array"
     )]
     pub elems: [Scalar; HEIGHT],
-    /// The opening indices from the leaf node to the root, each value is zero
-    /// or one: 0 indicating that the node in the opening at index i is a
-    /// left hand child of its parent, 1 indicating it's a right hand child
+    /// The opening indices from the leaf node to the root, each value is a bool
+    /// representing whether the current node is a left child
+    ///
+    /// I.e. `true` means that it is a right child, `false` a left
     #[serde(
         serialize_with = "serialize_array",
         deserialize_with = "deserialize_array"
     )]
-    pub indices: [Scalar; HEIGHT],
+    pub indices: [bool; HEIGHT],
 }
 
 impl<const HEIGHT: usize> Default for MerkleOpening<HEIGHT> {
     fn default() -> Self {
         Self {
             elems: [Scalar::zero(); HEIGHT],
-            indices: [Scalar::zero(); HEIGHT],
+            indices: [false; HEIGHT],
         }
     }
 }
