@@ -4,8 +4,7 @@
 use ark_ff::One;
 use constants::ScalarField;
 use itertools::Itertools;
-use mpc_plonk::errors::PlonkError;
-use mpc_relation::{constants::GATE_WIDTH, traits::Circuit, Variable};
+use mpc_relation::{constants::GATE_WIDTH, errors::CircuitError, traits::Circuit, Variable};
 use renegade_crypto::hash::{
     CAPACITY, FULL_ROUND_CONSTANTS, PARTIAL_ROUND_CONSTANTS, RATE, R_F, R_P, WIDTH as SPONGE_WIDTH,
 };
@@ -56,7 +55,7 @@ impl PoseidonHashGadget {
         hash_input: &[Variable],
         expected_output: Variable,
         cs: &mut C,
-    ) -> Result<(), PlonkError> {
+    ) -> Result<(), CircuitError> {
         self.batch_absorb(hash_input, cs)?;
         self.constrained_squeeze(expected_output, cs)
     }
@@ -66,7 +65,7 @@ impl PoseidonHashGadget {
         &mut self,
         a: Variable,
         cs: &mut C,
-    ) -> Result<(), PlonkError> {
+    ) -> Result<(), CircuitError> {
         assert!(
             !self.in_squeeze_state,
             "Cannot absorb from a sponge that has already been squeezed"
@@ -89,13 +88,16 @@ impl PoseidonHashGadget {
         &mut self,
         a: &[Variable],
         cs: &mut C,
-    ) -> Result<(), PlonkError> {
+    ) -> Result<(), CircuitError> {
         a.iter().try_for_each(|val| self.absorb(*val, cs))
     }
 
     /// Squeeze an element from the sponge and return its representation in the
     /// constraint system
-    pub fn squeeze<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<Variable, PlonkError> {
+    pub fn squeeze<C: Circuit<ScalarField>>(
+        &mut self,
+        cs: &mut C,
+    ) -> Result<Variable, CircuitError> {
         // Once we exit the absorb state, ensure that the digest state is permuted
         // before squeezing
         if !self.in_squeeze_state || self.next_index == RATE {
@@ -113,7 +115,7 @@ impl PoseidonHashGadget {
         &mut self,
         num_elements: usize,
         cs: &mut C,
-    ) -> Result<Vec<Variable>, PlonkError> {
+    ) -> Result<Vec<Variable>, CircuitError> {
         let mut res = Vec::with_capacity(num_elements);
         for _ in 0..num_elements {
             res.push(self.squeeze(cs)?)
@@ -128,7 +130,7 @@ impl PoseidonHashGadget {
         &mut self,
         expected: Variable,
         cs: &mut C,
-    ) -> Result<(), PlonkError> {
+    ) -> Result<(), CircuitError> {
         let squeezed_elem = self.squeeze(cs)?;
         cs.enforce_equal(expected, squeezed_elem)?;
         Ok(())
@@ -140,7 +142,7 @@ impl PoseidonHashGadget {
         &mut self,
         expected: &[Variable],
         cs: &mut C,
-    ) -> Result<(), PlonkError> {
+    ) -> Result<(), CircuitError> {
         expected
             .iter()
             .try_for_each(|val| self.constrained_squeeze(*val, cs))
@@ -148,7 +150,7 @@ impl PoseidonHashGadget {
 
     /// Permute the state using the Poseidon 2 permutation
     #[allow(clippy::missing_docs_in_private_items)]
-    fn permute<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), PlonkError> {
+    fn permute<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), CircuitError> {
         // Multiply by the external round matrix
         self.external_mds(cs)?;
 
@@ -176,7 +178,7 @@ impl PoseidonHashGadget {
         &mut self,
         round_number: usize,
         cs: &mut C,
-    ) -> Result<(), PlonkError> {
+    ) -> Result<(), CircuitError> {
         self.external_add_rc(round_number, cs)?;
         self.external_sbox(cs)?;
         self.external_mds(cs)
@@ -187,7 +189,7 @@ impl PoseidonHashGadget {
         &mut self,
         round_number: usize,
         cs: &mut C,
-    ) -> Result<(), PlonkError> {
+    ) -> Result<(), CircuitError> {
         let rc = &FULL_ROUND_CONSTANTS[round_number];
         for (state_elem, rc) in self.state.iter_mut().zip(rc.iter()) {
             *state_elem = cs.add_constant(*state_elem, rc)?;
@@ -197,7 +199,7 @@ impl PoseidonHashGadget {
     }
 
     /// Apply the sbox to the state in an external round
-    fn external_sbox<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), PlonkError> {
+    fn external_sbox<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), CircuitError> {
         for state_elem in self.state.iter_mut() {
             *state_elem = cs.pow5(*state_elem)?;
         }
@@ -213,7 +215,7 @@ impl PoseidonHashGadget {
     /// it, or more efficiently: adding the sum of the elements to each
     /// individual element. This efficient structure is borrowed from:
     ///     https://github.com/HorizenLabs/poseidon2/blob/main/plain_implementations/src/poseidon2/poseidon2.rs#L129-L137
-    fn external_mds<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), PlonkError> {
+    fn external_mds<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), CircuitError> {
         let coeffs = [ScalarField::one(); GATE_WIDTH];
         let in_wires = self.state.clone();
         for state_elem in self.state.iter_mut() {
@@ -229,7 +231,7 @@ impl PoseidonHashGadget {
         &mut self,
         round_number: usize,
         cs: &mut C,
-    ) -> Result<(), PlonkError> {
+    ) -> Result<(), CircuitError> {
         self.internal_add_rc(round_number, cs)?;
         self.internal_sbox(cs)?;
         self.internal_mds(cs)
@@ -240,7 +242,7 @@ impl PoseidonHashGadget {
         &mut self,
         round_number: usize,
         cs: &mut C,
-    ) -> Result<(), PlonkError> {
+    ) -> Result<(), CircuitError> {
         let rc = &PARTIAL_ROUND_CONSTANTS[round_number];
         self.state[0] = cs.add_constant(self.state[0], rc)?;
 
@@ -248,7 +250,7 @@ impl PoseidonHashGadget {
     }
 
     /// Apply the sbox to the state in an internal round
-    fn internal_sbox<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), PlonkError> {
+    fn internal_sbox<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), CircuitError> {
         self.state[0] = cs.pow5(self.state[0])?;
         Ok(())
     }
@@ -263,7 +265,7 @@ impl PoseidonHashGadget {
     /// This can be done efficiently by adding the sum to each element as in the
     /// external MDS case but adding an additional copy of the final state
     /// element
-    fn internal_mds<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), PlonkError> {
+    fn internal_mds<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), CircuitError> {
         let mut coeffs = [ScalarField::one(); GATE_WIDTH];
         let in_wires = self.state.clone();
 
