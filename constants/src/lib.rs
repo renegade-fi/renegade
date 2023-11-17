@@ -10,6 +10,8 @@ use ark_mpc::algebra::{
     AuthenticatedScalarResult, CurvePoint as GenericCurvePoint, Scalar as GenericScalar,
     ScalarResult as GenericScalarResult,
 };
+use jf_primitives::pcs::prelude::Commitment;
+use mpc_plonk::proof_system::structs::Proof;
 
 // -------------------------
 // | System-Wide Constants |
@@ -61,6 +63,12 @@ pub type CurvePoint = GenericCurvePoint<SystemCurveGroup>;
 /// The authenticated scalar type that the MPC is defined over
 #[cfg(feature = "mpc-types")]
 pub type AuthenticatedScalar = AuthenticatedScalarResult<SystemCurveGroup>;
+
+/// The (unbatched) proof type that the proof system generates
+pub type SystemProof = Proof<SystemCurve>;
+
+/// The polynomial commitment type that the proof system utilizes
+pub type SystemCommitment = Commitment<SystemCurve>;
 
 // ----------------------
 // | Starknet Constants |
