@@ -8,6 +8,12 @@
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
 
 mod abi;
 pub mod client;
+mod conversion;
+pub mod errors;
+mod helpers;
+pub mod types;
