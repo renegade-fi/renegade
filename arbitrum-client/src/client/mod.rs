@@ -11,11 +11,12 @@ use ethers::{
     types::Address,
 };
 
-use crate::abi::DarkpoolContract;
+use crate::{
+    abi::DarkpoolContract,
+    errors::{ArbitrumClientConfigError, ArbitrumClientError},
+};
 
-use self::errors::{ArbitrumClientConfigError, ArbitrumClientError};
-
-pub mod errors;
+mod contract_interaction;
 
 /// A configuration struct for the Arbitrum client, consists of relevant
 /// contract addresses, and endpoint for setting up an RPC client, and a private
