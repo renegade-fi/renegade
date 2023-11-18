@@ -4041,6 +4041,7 @@ checksum = "af150ab688ff2122fcef229be89cb50dd66af9e01a4ff320cc137eecc9bacc38"
 [[package]]
 name = "jf-primitives"
 version = "0.4.0-pre.0"
+source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#dee7e229f42a1395761fdbbb7f4c4a19897ef529"
 dependencies = [
  "anyhow",
  "ark-bls12-377",
@@ -4084,6 +4085,7 @@ dependencies = [
 [[package]]
 name = "jf-utils"
 version = "0.4.0-pre.0"
+source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#dee7e229f42a1395761fdbbb7f4c4a19897ef529"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -4919,6 +4921,7 @@ dependencies = [
 [[package]]
 name = "mpc-plonk"
 version = "0.4.0-pre.0"
+source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#dee7e229f42a1395761fdbbb7f4c4a19897ef529"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -4950,6 +4953,7 @@ dependencies = [
 [[package]]
 name = "mpc-relation"
 version = "0.4.0-pre.0"
+source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#dee7e229f42a1395761fdbbb7f4c4a19897ef529"
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-381",
