@@ -7,57 +7,23 @@
 #![feature(generic_const_exprs)]
 #![feature(inherent_associated_types)]
 
-use crate::zk_circuits::{
-    valid_commitments::SizedValidCommitments, valid_match_mpc::ValidMatchMpcCircuit,
-    valid_reblind::SizedValidReblind, valid_settle::SizedValidSettle,
-    valid_wallet_create::SizedValidWalletCreate, valid_wallet_update::SizedValidWalletUpdate,
-};
-use circuit_types::{
-    errors::{ProverError, VerifierError},
-    traits::{
-        CircuitBaseType, MultiProverCircuit, MultiproverCircuitBaseType,
-        MultiproverCircuitCommitmentType, SingleProverCircuit,
-    },
-};
-use lazy_static::lazy_static;
-use merlin::HashChainTranscript as Transcript;
-use mpc_bulletproof::{
-    r1cs::{Prover, R1CSProof, Verifier},
-    r1cs_mpc::{MpcProver, PartiallySharedR1CSProof},
-    BulletproofGens, PedersenGens,
-};
+use constants::Scalar;
 
 pub mod mpc_circuits;
 pub mod mpc_gadgets;
-mod tracing;
 pub mod zk_circuits;
 pub mod zk_gadgets;
 
-/// The highest possible set bit in the Dalek scalar field
-pub(crate) const SCALAR_MAX_BITS: usize = 253;
-/// The seed for a fiat-shamir transcript
-pub(crate) const TRANSCRIPT_SEED: &str = "merlin seed";
-/// The maximum bit index that may be set in a positive `Scalar`
-pub(crate) const POSITIVE_SCALAR_MAX_BITS: usize = 250;
+// -------------
+// | Constants |
+// -------------
 
-lazy_static! {
-    /// The maximum number of generators that may be needed for any of the circuits
-    /// so that the generators may be pre-allocated and re-used between proofs
-    static ref MAX_GENERATORS: usize = vec![
-        SizedValidWalletCreate::BP_GENS_CAPACITY,
-        SizedValidWalletUpdate::BP_GENS_CAPACITY,
-        SizedValidReblind::BP_GENS_CAPACITY,
-        SizedValidCommitments::BP_GENS_CAPACITY,
-        ValidMatchMpcCircuit::BP_GENS_CAPACITY,
-        SizedValidSettle::BP_GENS_CAPACITY,
-    ]
-    .into_iter()
-    .max()
-    .unwrap();
-
-    /// The pre-allocated bulletproof generators for the circuits
-    static ref PRE_ALLOCATED_GENS: BulletproofGens = BulletproofGens::new(*MAX_GENERATORS, 1 /* party_capacity */);
-}
+/// The number of bits in a `Scalar`
+pub(crate) const SCALAR_MAX_BITS: usize = 254;
+/// The number of bits in a `Scalar` minus two
+///
+/// Used to truncate values to the range of positive integers in our field
+pub(crate) const SCALAR_BITS_MINUS_TWO: usize = SCALAR_MAX_BITS - 2;
 
 // ----------
 // | Macros |
@@ -68,9 +34,10 @@ lazy_static! {
 #[allow(unused)]
 macro_rules! print_wire {
     ($x:expr, $cs:ident) => {{
+        use circuit_types::traits::CircuitVarType;
         use crypto::fields::scalar_to_biguint;
         use tracing::log;
-        let x_eval = $cs.eval(&$x.into());
+        let x_eval = $x.eval($cs);
         log::info!("eval({}): {x_eval}", stringify!($x));
     }};
 }
@@ -80,8 +47,10 @@ macro_rules! print_wire {
 macro_rules! print_mpc_wire {
     ($x:expr) => {{
         use crypto::fields::scalar_to_biguint;
+        use futures::executor::block_on;
         use tracing::log;
-        let x_eval = $x.open().unwrap().to_scalar();
+
+        let x_eval = block_on($x.open());
         log::info!("eval({}): {:?}", stringify!($x), scalar_to_biguint(&x_eval));
     }};
 }
@@ -90,16 +59,17 @@ macro_rules! print_mpc_wire {
 #[allow(unused)]
 macro_rules! print_multiprover_wire {
     ($x:expr, $cs:ident) => {{
+        use circuit_types::traits::CircuitVarType;
         use futures::executor::block_on;
         use mpc_stark::algebra::authenticated_scalar::AuthenticatedScalarResult;
         use tracing::log;
 
-        let x_eval = block_on(AuthenticatedScalarResult::open(&$cs.eval(&$x.into())));
+        let eval = $x.eval_multiprover($cs);
+        let x_eval = block_on(x.open());
         log::info!("eval({}): {x_eval}", stringify!($x));
     }};
 }
 
-use mpc_stark::{algebra::scalar::Scalar, MpcFabric};
 #[allow(unused)]
 pub(crate) use print_mpc_wire;
 #[allow(unused)]
@@ -107,103 +77,18 @@ pub(crate) use print_multiprover_wire;
 #[allow(unused)]
 pub(crate) use print_wire;
 
-// ------------------
-// | Helper Methods |
-// ------------------
+// -----------
+// | Helpers |
+// -----------
 
-/// Represents 2^m as a scalar
-pub fn scalar_2_to_m(m: usize) -> Scalar {
-    if m >= SCALAR_MAX_BITS {
-        return Scalar::zero();
-    }
-    if (128..SCALAR_MAX_BITS).contains(&m) {
-        Scalar::from(1u128 << 127) * Scalar::from(1u128 << (m - 127))
-    } else {
-        Scalar::from(1u128 << m)
-    }
-}
+/// Construct the `Scalar` representation of 2^m
+pub fn scalar_2_to_m(m: u64) -> Scalar {
+    assert!(
+        m < SCALAR_MAX_BITS as u64,
+        "result would overflow Scalar field"
+    );
 
-/// Abstracts over the flow of proving a single-prover circuit
-pub fn singleprover_prove<C: SingleProverCircuit>(
-    witness: C::Witness,
-    statement: C::Statement,
-) -> Result<(<C::Witness as CircuitBaseType>::CommitmentType, R1CSProof), ProverError> {
-    let mut transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
-    let pc_gens = PedersenGens::default();
-    let prover = Prover::new(&pc_gens, &mut transcript);
-
-    C::prove(witness, statement, &PRE_ALLOCATED_GENS, prover)
-}
-
-/// Abstracts over the flow of collaboratively proving a generic circuit
-#[allow(clippy::type_complexity)]
-pub fn multiprover_prove<C>(
-    witness: C::Witness,
-    statement: C::Statement,
-    fabric: MpcFabric,
-) -> Result<
-    (
-        <C::Witness as MultiproverCircuitBaseType>::MultiproverCommType,
-        PartiallySharedR1CSProof,
-    ),
-    ProverError,
->
-where
-    C: MultiProverCircuit,
-{
-    let transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
-    let pc_gens = PedersenGens::default();
-    let prover = MpcProver::new_with_fabric(fabric.clone(), transcript, pc_gens);
-
-    // Prove the statement
-    C::prove(witness, statement, &PRE_ALLOCATED_GENS, fabric, prover)
-}
-
-/// Abstracts over the flow of verifying a proof for a single-prover proved
-/// circuit
-pub fn verify_singleprover_proof<C: SingleProverCircuit>(
-    statement: C::Statement,
-    witness_commitment: <C::Witness as CircuitBaseType>::CommitmentType,
-    proof: R1CSProof,
-) -> Result<(), VerifierError> {
-    // Verify the statement with a fresh transcript
-    let mut verifier_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
-    let pc_gens = PedersenGens::default();
-    let verifier = Verifier::new(&pc_gens, &mut verifier_transcript);
-
-    C::verify(
-        witness_commitment,
-        statement,
-        proof,
-        &PRE_ALLOCATED_GENS,
-        verifier,
-    )
-}
-
-/// Abstracts over the flow of verifying a proof for a collaboratively proved
-/// circuit
-pub fn verify_collaborative_proof<C>(
-    statement: <C::Statement as MultiproverCircuitBaseType>::BaseType,
-    witness_commitment: <
-        <C::Witness as MultiproverCircuitBaseType>::MultiproverCommType as MultiproverCircuitCommitmentType
-        >::BaseCommitType,
-    proof: R1CSProof,
-) -> Result<(), VerifierError>
-where
-    C: MultiProverCircuit,
-{
-    // Verify the statement with a fresh transcript
-    let mut verifier_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
-    let pc_gens = PedersenGens::default();
-    let verifier = Verifier::new(&pc_gens, &mut verifier_transcript);
-
-    C::verify(
-        witness_commitment,
-        statement,
-        proof,
-        &PRE_ALLOCATED_GENS,
-        verifier,
-    )
+    Scalar::from(2u8).pow(m)
 }
 
 // ----------------
@@ -211,20 +96,31 @@ where
 // ----------------
 #[cfg(test)]
 pub(crate) mod test_helpers {
-    use circuit_types::{errors::VerifierError, traits::SingleProverCircuit};
+    use ark_mpc::error::MpcError;
+    use constants::{AuthenticatedScalar, Scalar};
     use env_logger::{Builder, Env, Target};
-    use merlin::HashChainTranscript as Transcript;
-    use mpc_bulletproof::{
-        r1cs::{Prover, Verifier},
-        BulletproofGens, PedersenGens,
-    };
+    use futures::{future::join_all, Future, FutureExt};
+    use itertools::Itertools;
+    use rand::thread_rng;
     use tracing::log::LevelFilter;
 
-    const TRANSCRIPT_SEED: &str = "test";
+    // -----------
+    // | Helpers |
+    // -----------
 
-    // ---------
-    // | Setup |
-    // ---------
+    #[macro_export]
+    macro_rules! open_unwrap {
+        ($x:expr) => {
+            $x.open_authenticated().await.unwrap()
+        };
+    }
+
+    #[macro_export]
+    macro_rules! open_unwrap_vec {
+        ($x:expr) => {
+            $crate::test_helpers::joint_open($x).await.unwrap()
+        };
+    }
 
     /// Constructor to initialize logging in tests
     #[ctor::ctor]
@@ -232,6 +128,7 @@ pub(crate) mod test_helpers {
         init_logger()
     }
 
+    /// Initialize a logger
     pub fn init_logger() {
         let env = Env::default().filter_or("MY_CRATE_LOG", "trace");
 
@@ -242,51 +139,21 @@ pub(crate) mod test_helpers {
         builder.init();
     }
 
-    // -----------
-    // | Helpers |
-    // -----------
-
-    /// Abstracts over the flow of proving and verifying a circuit given
-    /// a valid statement + witness assignment
-    ///
-    /// Here we do not use the pre-allocated generators, as this is too
-    /// expensive to do in tests
-    pub fn bulletproof_prove_and_verify<C: SingleProverCircuit>(
-        witness: C::Witness,
-        statement: C::Statement,
-    ) -> Result<(), VerifierError> {
-        let mut transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
-        let pc_gens = PedersenGens::default();
-        let prover = Prover::new(&pc_gens, &mut transcript);
-
-        let bp_gens = BulletproofGens::new(C::BP_GENS_CAPACITY, 1 /* party_capacity */);
-
-        // Prove the statement
-        let (witness_commitment, proof) =
-            C::prove(witness, statement.clone(), &bp_gens, prover).unwrap();
-
-        // Verify the statement with a fresh transcript
-        let mut verifier_transcript = Transcript::new(TRANSCRIPT_SEED.as_bytes());
-        let verifier = Verifier::new(&pc_gens, &mut verifier_transcript);
-
-        C::verify(witness_commitment, statement, proof, &bp_gens, verifier)
+    /// Create a random sequence of field elements
+    pub fn random_field_elements(n: usize) -> Vec<Scalar> {
+        let mut rng = thread_rng();
+        (0..n).map(|_| Scalar::random(&mut rng)).collect_vec()
     }
-}
 
-#[cfg(test)]
-mod circuits_test {
-    use num_bigint::BigInt;
-    use rand::{thread_rng, Rng};
-    use renegade_crypto::fields::bigint_to_scalar;
+    /// Open a batch of values and join into a single future
+    pub fn joint_open(
+        values: Vec<AuthenticatedScalar>,
+    ) -> impl Future<Output = Result<Vec<Scalar>, MpcError>> {
+        let mut futures = Vec::new();
+        for value in values {
+            futures.push(value.open_authenticated());
+        }
 
-    use crate::scalar_2_to_m;
-
-    #[test]
-    fn test_scalar_2_to_m() {
-        let rand_m: usize = thread_rng().gen_range(0..256);
-        let res = scalar_2_to_m(rand_m);
-
-        let expected = bigint_to_scalar(&(BigInt::from(1u64) << rand_m));
-        assert_eq!(res, expected);
+        join_all(futures).map(|res| res.into_iter().collect::<Result<Vec<_>, _>>())
     }
 }
