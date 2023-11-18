@@ -10,21 +10,17 @@
 
 use circuit_macros::circuit_type;
 use circuit_types::{
-    traits::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-    },
+    traits::{BaseType, CircuitBaseType, CircuitVarType, SecretShareVarType, SingleProverCircuit},
     wallet::{WalletShare, WalletVar},
+    PlonkCircuit,
 };
+use constants::{Scalar, ScalarField};
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
-use mpc_bulletproof::{
-    r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
-    r1cs_mpc::R1CSError,
-};
-use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
-use rand::{CryptoRng, RngCore};
+use mpc_plonk::errors::PlonkError;
+use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 use serde::{Deserialize, Serialize};
 
-use crate::{zk_gadgets::wallet_operations::WalletShareCommitGadget, SingleProverCircuit};
+use crate::zk_gadgets::wallet_operations::WalletShareCommitGadget;
 
 /// A type alias for an instantiation of this circuit with default generics
 pub type SizedValidWalletCreate = ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
@@ -48,47 +44,51 @@ where
 {
     /// Applies constraints to the constraint system specifying the statement of
     /// VALID WALLET CREATE
-    fn circuit<CS>(
-        statement: ValidWalletCreateStatementVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        witness: ValidWalletCreateWitnessVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        cs: &mut CS,
-    ) -> Result<(), R1CSError>
-    where
-        CS: RandomizableConstraintSystem,
-    {
+    fn circuit(
+        statement: ValidWalletCreateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        witness: ValidWalletCreateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
         // Validate the commitment given in the statement is a valid commitment to the
         // private secret shares
         let commitment = WalletShareCommitGadget::compute_private_commitment(
             witness.private_wallet_share.clone(),
             cs,
         )?;
-        cs.constrain(commitment - statement.private_shares_commitment);
+        cs.enforce_equal(commitment, statement.private_shares_commitment)?;
 
         // Unblind the public shares then reconstruct the wallet
-        let blinder = witness.private_wallet_share.blinder + statement.public_wallet_shares.blinder;
-        let unblinded_public_shares = statement.public_wallet_shares.unblind_shares(blinder);
-        let wallet = witness.private_wallet_share + unblinded_public_shares;
+        let blinder = cs.add(
+            witness.private_wallet_share.blinder,
+            statement.public_wallet_shares.blinder,
+        )?;
+
+        let unblinded_public_shares = statement.public_wallet_shares.unblind_shares(blinder, cs);
+        let wallet = witness
+            .private_wallet_share
+            .add_shares(&unblinded_public_shares, cs);
 
         // Verify that the orders and balances are zero'd
-        Self::verify_zero_wallet(wallet, cs);
-
-        Ok(())
+        Self::verify_zero_wallet(wallet, cs)
     }
 
     /// Constrains a wallet to have all zero'd out orders and balances
-    fn verify_zero_wallet<CS: RandomizableConstraintSystem>(
-        wallet: WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        cs: &mut CS,
-    ) {
+    fn verify_zero_wallet(
+        wallet: WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
         // Constrain balances to be zero
+        let zero = cs.zero();
         for balance_var in wallet.balances.into_iter().flat_map(|b| b.to_vars()) {
-            cs.constrain(balance_var);
+            cs.enforce_equal(balance_var, zero)?;
         }
 
         // Constrain orders to be zero
         for order_var in wallet.orders.into_iter().flat_map(|o| o.to_vars()) {
-            cs.constrain(order_var);
+            cs.enforce_equal(order_var, zero)?;
         }
+
+        Ok(())
     }
 }
 
@@ -149,14 +149,12 @@ where
     type Statement = ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type Witness = ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
-    const BP_GENS_CAPACITY: usize = 10000;
-
-    fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: <Self::Witness as CircuitBaseType>::VarType<Variable>,
-        statement_var: <Self::Statement as CircuitBaseType>::VarType<Variable>,
-        cs: &mut CS,
-    ) -> Result<(), R1CSError> {
-        Self::circuit(statement_var, witness_var, cs)
+    fn apply_constraints(
+        witness_var: ValidWalletCreateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        statement_var: ValidWalletCreateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), PlonkError> {
+        Self::circuit(statement_var, witness_var, cs).map_err(PlonkError::CircuitError)
     }
 }
 
@@ -229,45 +227,25 @@ pub mod test_helpers {
 
 #[cfg(test)]
 pub mod tests {
-    use circuit_types::traits::CircuitBaseType;
-    use merlin::HashChainTranscript as Transcript;
-    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
-    use mpc_stark::algebra::scalar::Scalar;
-    use rand::thread_rng;
+    use constants::Scalar;
 
     use crate::{
-        test_helpers::bulletproof_prove_and_verify,
+        plonk_prove_and_verify,
         zk_circuits::{
-            test_helpers::{INITIAL_BALANCES, INITIAL_ORDERS, MAX_BALANCES, MAX_FEES, MAX_ORDERS},
+            test_helpers::{
+                check_constraint_satisfaction, INITIAL_BALANCES, INITIAL_ORDERS, MAX_BALANCES,
+                MAX_FEES, MAX_ORDERS,
+            },
             valid_wallet_create::{
                 test_helpers::create_default_witness_statement, ValidWalletCreate,
             },
         },
     };
 
-    use super::test_helpers::{
-        create_empty_wallet, create_witness_statement_from_wallet, SizedStatement, SizedWitness,
-    };
+    use super::test_helpers::{create_empty_wallet, create_witness_statement_from_wallet};
 
-    /// Asserts that a given witness, statement pair is invalid
-    pub(super) fn assert_invalid_witness_statement(
-        witness: SizedWitness,
-        statement: SizedStatement,
-    ) {
-        // Create a constraint system
-        let pc_gens = PedersenGens::default();
-        let mut transcript = Transcript::new(b"test");
-        let mut prover = Prover::new(&pc_gens, &mut transcript);
-
-        // Allocate the witness and statement in the constraint system
-        let mut rng = thread_rng();
-        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover);
-        let statement_var = statement.commit_public(&mut prover);
-
-        // Apply the constraints
-        ValidWalletCreate::circuit(statement_var, witness_var, &mut prover).unwrap();
-        assert!(!prover.constraints_satisfied());
-    }
+    /// A type alias for the circuit with testing parameters attached
+    type SizedWalletCreate = ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     // ---------
     // | Tests |
@@ -278,11 +256,10 @@ pub mod tests {
     #[test]
     fn test_valid_initial_wallet() {
         let (witness, statement) = create_default_witness_statement();
-
-        let res = bulletproof_prove_and_verify::<
-            ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        >(witness, statement);
-        assert!(res.is_ok())
+        plonk_prove_and_verify::<ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>(
+            witness, statement,
+        )
+        .unwrap()
     }
 
     /// Tests the case in which the commitment to the private shares is
@@ -292,7 +269,9 @@ pub mod tests {
         let (witness, mut statement) = create_default_witness_statement();
         statement.private_shares_commitment += Scalar::from(1u8);
 
-        assert_invalid_witness_statement(witness, statement);
+        assert!(!check_constraint_satisfaction::<SizedWalletCreate>(
+            witness, statement
+        ))
     }
 
     /// Tests the case in which a non-zero order is given
@@ -302,7 +281,9 @@ pub mod tests {
         wallet.orders[0] = INITIAL_ORDERS[0].clone();
 
         let (witness, statement) = create_witness_statement_from_wallet(&wallet);
-        assert_invalid_witness_statement(witness, statement);
+        assert!(!check_constraint_satisfaction::<SizedWalletCreate>(
+            witness, statement
+        ));
     }
 
     /// Tests the cas in which a non-zero balance is given
@@ -312,6 +293,8 @@ pub mod tests {
         wallet.balances[0] = INITIAL_BALANCES[0].clone();
 
         let (witness, statement) = create_witness_statement_from_wallet(&wallet);
-        assert_invalid_witness_statement(witness, statement);
+        assert!(!check_constraint_satisfaction::<SizedWalletCreate>(
+            witness, statement
+        ));
     }
 }

@@ -7,6 +7,7 @@
 #![feature(generic_const_exprs)]
 #![feature(inherent_associated_types)]
 
+use circuit_types::{errors::ProverError, traits::SingleProverCircuit};
 use constants::Scalar;
 
 pub mod mpc_circuits;
@@ -89,6 +90,15 @@ pub fn scalar_2_to_m(m: u64) -> Scalar {
     );
 
     Scalar::from(2u8).pow(m)
+}
+
+/// Generate a proof of a circuit and verify it
+pub fn plonk_prove_and_verify<C: SingleProverCircuit>(
+    witness: C::Witness,
+    statement: C::Statement,
+) -> Result<(), ProverError> {
+    let proof = C::prove(witness, statement.clone())?;
+    C::verify(statement, &proof).map_err(ProverError::Verification)
 }
 
 // ----------------

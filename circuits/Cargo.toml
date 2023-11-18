@@ -58,7 +58,7 @@ ark-crypto-primitives = { version = "0.4", features = [
 ark-ff = "0.4"
 ark-mpc = { workspace = true }
 bigdecimal = "0.3"
-mpc-plonk = { workspace = true }
+mpc-plonk = { workspace = true, features = ["parallel"] }
 mpc-relation = { workspace = true }
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
 num-integer = "0.1"
@@ -83,6 +83,7 @@ tracing = { version = "0.1", features = ["log"] }
 [dev-dependencies]
 ark-ec = "0.4"
 ark-ed25519 = "0.4"
+circuit-types = { path = "../circuit-types", features = ["test-helpers"] }
 chrono = "0.4"
 clap = { version = "4.0", features = ["derive"] }
 colored = "2"
