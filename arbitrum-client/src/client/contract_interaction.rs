@@ -1,17 +1,17 @@
 //! Defines `ArbitrumClient` helpers that allow for interacting with the
 //! darkpool contract
 
-use circuit_types::{merkle::MerkleRoot, wallet::Nullifier};
-use constants::{Scalar, ScalarField, SystemProof};
-use renegade_contracts_common::{
-    serde_def_types::SerdeScalarField,
-    types::{ValidWalletCreateStatement, ValidWalletUpdateStatement, ValidMatchSettleStatement},
-};
+use circuit_types::{merkle::MerkleRoot, wallet::Nullifier, PlonkProof};
+use constants::{Scalar, ScalarField};
 
 use crate::{
-    conversion::ToContractType,
     errors::ArbitrumClientError,
-    helpers::{deserialize_retdata, serialize_calldata}, types::MatchPayload,
+    helpers::{deserialize_retdata, serialize_calldata},
+    serde_def_types::SerdeScalarField,
+    types::{
+        MatchPayload, Proof, ValidMatchSettleStatement, ValidWalletCreateStatement,
+        ValidWalletUpdateStatement,
+    },
 };
 
 use super::ArbitrumClient;
@@ -33,7 +33,9 @@ impl ArbitrumClient {
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?;
 
-        Ok(deserialize_retdata::<SerdeScalarField>(&merkle_root_bytes)?.0)
+        Ok(
+            deserialize_retdata::<SerdeScalarField>(&merkle_root_bytes)?.0, // ScalarField
+        )
     }
 
     /// Check whether the given Merkle root is a valid historical root
@@ -41,8 +43,10 @@ impl ArbitrumClient {
         &self,
         root: MerkleRoot,
     ) -> Result<bool, ArbitrumClientError> {
+        let root_calldata = serialize_calldata(&SerdeScalarField(root.inner()))?;
+
         self.darkpool_contract
-            .root_in_history(serialize_calldata(&SerdeScalarField(root.inner()))?)
+            .root_in_history(root_calldata)
             .call()
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))
@@ -53,8 +57,10 @@ impl ArbitrumClient {
         &self,
         nullifier: Nullifier,
     ) -> Result<bool, ArbitrumClientError> {
+        let nullifier_calldata = serialize_calldata(&SerdeScalarField(nullifier.inner()))?;
+
         self.darkpool_contract
-            .is_nullifier_spent(serialize_calldata(&SerdeScalarField(nullifier.inner()))?)
+            .is_nullifier_spent(nullifier_calldata)
             .call()
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))
@@ -74,21 +80,27 @@ impl ArbitrumClient {
         &self,
         wallet_blinder_share: Scalar,
         valid_wallet_create_statement: ValidWalletCreateStatement,
-        proof: SystemProof,
+        proof: PlonkProof,
     ) -> Result<(), ArbitrumClientError> {
+        let wallet_blinder_share_calldata =
+            serialize_calldata(&SerdeScalarField(wallet_blinder_share.inner()))?;
+        let contract_proof: Proof = proof.try_into()?;
+        let proof_calldata = serialize_calldata(&contract_proof)?;
+        let valid_wallet_create_statement_calldata =
+            serialize_calldata(&valid_wallet_create_statement)?;
+
         self.darkpool_contract
             .new_wallet(
-                serialize_calldata(&SerdeScalarField(wallet_blinder_share.inner()))?,
-                serialize_calldata(&proof.to_contract_type()?)?,
-                serialize_calldata(&valid_wallet_create_statement)?,
+                wallet_blinder_share_calldata,
+                proof_calldata,
+                valid_wallet_create_statement_calldata,
             )
             .send()
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
             .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?;
-
-        Ok(())
+            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))
+            .map(|_| ())
     }
 
     /// Call the `update_wallet` contract method with the given
@@ -100,57 +112,88 @@ impl ArbitrumClient {
         wallet_blinder_share: Scalar,
         valid_wallet_update_statement: ValidWalletUpdateStatement,
         statement_signature: Vec<u8>,
-        proof: SystemProof,
+        proof: PlonkProof,
     ) -> Result<(), ArbitrumClientError> {
+        let wallet_blinder_share_calldata =
+            serialize_calldata(&SerdeScalarField(wallet_blinder_share.inner()))?;
+        let contract_proof: Proof = proof.try_into()?;
+        let proof_calldata = serialize_calldata(&contract_proof)?;
+        let valid_wallet_update_statement_calldata =
+            serialize_calldata(&valid_wallet_update_statement)?;
+
         self.darkpool_contract
             .update_wallet(
-                serialize_calldata(&SerdeScalarField(wallet_blinder_share.inner()))?,
-                serialize_calldata(&proof.to_contract_type()?)?,
-                serialize_calldata(&valid_wallet_update_statement)?,
+                wallet_blinder_share_calldata,
+                proof_calldata,
+                valid_wallet_update_statement_calldata,
                 statement_signature.into(),
             )
             .send()
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
             .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?;
-
-        Ok(())
+            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))
+            .map(|_| ())
     }
 
     /// Call the `process_match_settle` contract method with the given
     /// match payloads and `VALID MATCH SETTLE` statement
-    /// 
+    ///
     /// Awaits until the transaction is confirmed on-chain
     #[allow(clippy::too_many_arguments)]
     pub async fn process_match_settle(
         &self,
         party_0_match_payload: MatchPayload,
-        party_0_valid_commitments_proof: SystemProof,
-        party_0_valid_reblind_proof: SystemProof,
+        party_0_valid_commitments_proof: PlonkProof,
+        party_0_valid_reblind_proof: PlonkProof,
         party_1_match_payload: MatchPayload,
-        party_1_valid_commitments_proof: SystemProof,
-        party_1_valid_reblind_proof: SystemProof,
+        party_1_valid_commitments_proof: PlonkProof,
+        party_1_valid_reblind_proof: PlonkProof,
         valid_match_settle_statement: ValidMatchSettleStatement,
-        valid_match_settle_proof: SystemProof,
+        valid_match_settle_proof: PlonkProof,
     ) -> Result<(), ArbitrumClientError> {
+        let party_0_match_payload_calldata = serialize_calldata(&party_0_match_payload)?;
+
+        let party_0_valid_commitments_proof: Proof = party_0_valid_commitments_proof.try_into()?;
+        let party_0_valid_commitments_proof_calldata =
+            serialize_calldata(&party_0_valid_commitments_proof)?;
+
+        let party_0_valid_reblind_proof: Proof = party_0_valid_reblind_proof.try_into()?;
+        let party_0_valid_reblind_proof_calldata =
+            serialize_calldata(&party_0_valid_reblind_proof)?;
+
+        let party_1_match_payload_calldata = serialize_calldata(&party_1_match_payload)?;
+
+        let party_1_valid_commitments_proof: Proof = party_1_valid_commitments_proof.try_into()?;
+        let party_1_valid_commitments_proof_calldata =
+            serialize_calldata(&party_1_valid_commitments_proof)?;
+
+        let party_1_valid_reblind_proof: Proof = party_1_valid_reblind_proof.try_into()?;
+        let party_1_valid_reblind_proof_calldata =
+            serialize_calldata(&party_1_valid_reblind_proof)?;
+
+        let valid_match_settle_statement_calldata =
+            serialize_calldata(&valid_match_settle_statement)?;
+
+        let valid_match_settle_proof: Proof = valid_match_settle_proof.try_into()?;
+        let valid_match_settle_proof_calldata = serialize_calldata(&valid_match_settle_proof)?;
+
         self.darkpool_contract
             .process_match_settle(
-                serialize_calldata(&party_0_match_payload.to_contract_type()?)?,
-                serialize_calldata(&party_0_valid_commitments_proof.to_contract_type()?)?,
-                serialize_calldata(&party_0_valid_reblind_proof.to_contract_type()?)?,
-                serialize_calldata(&party_1_match_payload.to_contract_type()?)?,
-                serialize_calldata(&party_1_valid_commitments_proof.to_contract_type()?)?,
-                serialize_calldata(&party_1_valid_reblind_proof.to_contract_type()?)?,
-                serialize_calldata(&valid_match_settle_statement)?,
-                serialize_calldata(&valid_match_settle_proof.to_contract_type()?)?,
+                party_0_match_payload_calldata,
+                party_0_valid_commitments_proof_calldata,
+                party_0_valid_reblind_proof_calldata,
+                party_1_match_payload_calldata,
+                party_1_valid_commitments_proof_calldata,
+                party_1_valid_reblind_proof_calldata,
+                valid_match_settle_statement_calldata,
+                valid_match_settle_proof_calldata,
             )
             .send()
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
             .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?;
-
-        Ok(())
+            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))
+            .map(|_| ())
     }
 }

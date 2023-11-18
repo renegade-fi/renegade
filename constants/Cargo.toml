@@ -11,5 +11,3 @@ mpc-types = ["dep:ark-mpc"]
 ark-bn254 = "0.4"
 ark-mpc = { workspace = true, optional = true }
 ark-ec = "0.4"
-mpc-plonk = { workspace = true }
-jf-primitives = { git = "https://github.com/renegade-fi/mpc-jellyfish.git" }
