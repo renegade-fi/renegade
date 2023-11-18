@@ -34,6 +34,7 @@ use mpc_relation::{traits::Circuit, BoolVar, Variable};
 use num_bigint::BigUint;
 use rand::thread_rng;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint, scalar_to_u64};
+use std::sync::Arc;
 
 use crate::{
     errors::{MpcError, ProverError, VerifierError},
@@ -659,6 +660,32 @@ impl<const N: usize, T: SecretShareVarType> SecretShareVarType for [T; N] {
 // | Circuit Traits |
 // ------------------
 
+/// A helper to get the proving and verifying keys for a circuit in tests
+#[cfg(feature = "test-helpers")]
+pub fn setup_preprocessed_keys<C: SingleProverCircuit>(
+) -> (ProvingKey<SystemCurve>, VerifyingKey<SystemCurve>) {
+    use crate::test_helpers::TESTING_SRS;
+    use std::iter;
+
+    // Create a dummy circuit of correct topology to generate the keys
+    // We use zero'd scalars here to give valid boolean types as well as scalar
+    // types
+    let mut scalars = iter::repeat(Scalar::zero());
+    let witness = C::Witness::from_scalars(&mut scalars);
+    let statement = C::Statement::from_scalars(&mut scalars);
+
+    let mut cs = PlonkCircuit::new_turbo_plonk();
+    let witness_var = witness.create_witness(&mut cs);
+    let statement_var = statement.create_public_var(&mut cs);
+
+    // Apply the constraints
+    C::apply_constraints(witness_var, statement_var, &mut cs).unwrap();
+    cs.finalize_for_arithmetization().unwrap();
+
+    // Generate the keys
+    PlonkKzgSnark::<SystemCurve>::preprocess(&TESTING_SRS, &cs).unwrap()
+}
+
 /// Defines the abstraction of a Circuit
 ///
 /// A circuit represents a provable unit, a complete NP statement that takes as
@@ -669,13 +696,43 @@ impl<const N: usize, T: SecretShareVarType> SecretShareVarType for [T; N] {
 /// but that the verifier does not. The statement is the set of public inputs
 /// and any other circuit meta-parameters that both prover and verifier have
 /// access to
-pub trait SingleProverCircuit {
+pub trait SingleProverCircuit: Sized {
     /// The witness type, given only to the prover, which generates a blinding
     /// commitment that can be given to the verifier
     type Witness: CircuitBaseType;
     /// The statement type, given to both the prover and verifier, parameterizes
     /// the underlying NP statement being proven
     type Statement: CircuitBaseType;
+
+    /// Returns a reference to the proving key for the circuit
+    #[cfg(not(feature = "test-helpers"))]
+    fn proving_key() -> Arc<ProvingKey<SystemCurve>> {
+        unimplemented!("proving_key: Not yet implemented for non-test circuits")
+    }
+
+    /// Returns a reference to the proving key for the circuit
+    ///
+    /// Default implementation of the `proving_key` method for tests
+    #[cfg(feature = "test-helpers")]
+    fn proving_key() -> Arc<ProvingKey<SystemCurve>> {
+        let (pk, _) = setup_preprocessed_keys::<Self>();
+        Arc::new(pk)
+    }
+
+    /// Returns a reference to the verifying key for the circuit
+    #[cfg(not(feature = "test-helpers"))]
+    fn verifying_key() -> Arc<VerifyingKey<SystemCurve>> {
+        unimplemented!("verifying_key: Not yet implemented for non-test circuits")
+    }
+
+    /// Returns a reference to the verifying key for the circuit
+    ///
+    /// Default implementation of the `verifying_key` method for tests
+    #[cfg(feature = "test-helpers")]
+    fn verifying_key() -> Arc<VerifyingKey<SystemCurve>> {
+        let (_, vk) = setup_preprocessed_keys::<Self>();
+        Arc::new(vk)
+    }
 
     /// Apply the constraints of the circuit to a given constraint system
     fn apply_constraints(
@@ -690,21 +747,24 @@ pub trait SingleProverCircuit {
     fn prove(
         witness: Self::Witness,
         statement: Self::Statement,
-        pk: &ProvingKey<SystemCurve>,
-        mut circuit: PlonkCircuit,
     ) -> Result<Proof<SystemCurve>, ProverError> {
         // Allocate the witness and statement in the constraint system
+        let mut circuit = PlonkCircuit::new_turbo_plonk();
         let witness_var = witness.create_witness(&mut circuit);
         let statement_var = statement.create_public_var(&mut circuit);
 
         // Apply the constraints
         Self::apply_constraints(witness_var, statement_var, &mut circuit)
             .map_err(ProverError::Plonk)?;
+        circuit
+            .finalize_for_arithmetization()
+            .map_err(ProverError::Circuit)?;
 
         // Generate the proof
         let mut rng = thread_rng();
+        let pk = Self::proving_key();
         PlonkKzgSnark::prove::<_, _, SolidityTranscript>(
-            &mut rng, &circuit, pk, None, // extra_init_msg
+            &mut rng, &circuit, &pk, None, // extra_init_msg
         )
         .map_err(ProverError::Plonk)
     }
@@ -712,11 +772,7 @@ pub trait SingleProverCircuit {
     /// Verify a proof of the statement represented by the circuit
     ///
     /// The verifier has access to the statement variables, but not the witness
-    fn verify(
-        statement: Self::Statement,
-        proof: Proof<SystemCurve>,
-        vk: &VerifyingKey<SystemCurve>,
-    ) -> Result<(), VerifierError> {
+    fn verify(statement: Self::Statement, proof: &Proof<SystemCurve>) -> Result<(), VerifierError> {
         // Allocate the statement in the constraint system
         let statement_vals = statement
             .to_scalars()
@@ -725,10 +781,11 @@ pub trait SingleProverCircuit {
             .collect_vec();
 
         // Verify the proof
+        let vk = Self::verifying_key();
         PlonkKzgSnark::verify::<SolidityTranscript>(
-            vk,
+            &vk,
             &statement_vals,
-            &proof,
+            proof,
             None, // extra_init_msg
         )
         .map_err(VerifierError::Plonk)
@@ -761,6 +818,16 @@ pub trait MultiProverCircuit {
         Statement = <Self::Statement as MultiproverCircuitBaseType>::BaseType,
     >;
 
+    /// Returns a reference to the proving key for the circuit
+    fn proving_key() -> Arc<ProvingKey<SystemCurve>> {
+        Self::BaseCircuit::proving_key()
+    }
+
+    /// Returns a reference to the verifying key for the circuit
+    fn verifying_key() -> Arc<VerifyingKey<SystemCurve>> {
+        Self::BaseCircuit::verifying_key()
+    }
+
     /// Apply the constraints of the circuit to a multiprover constraint system
     fn apply_constraints_multiprover(
         witness: <Self::Witness as MultiproverCircuitBaseType>::VarType,
@@ -776,7 +843,6 @@ pub trait MultiProverCircuit {
     fn prove(
         witness: Self::Witness,
         statement: Self::Statement,
-        pk: &ProvingKey<SystemCurve>,
         fabric: Fabric,
         circuit: &mut MpcPlonkCircuit,
     ) -> Result<CollaborativeProof<SystemCurve>, ProverError> {
@@ -792,7 +858,8 @@ pub trait MultiProverCircuit {
         Self::apply_constraints_multiprover(witness_var, statement_var, &fabric, circuit)?;
 
         // Generate the proof
-        MultiproverPlonkKzgSnark::prove(circuit, pk, fabric).map_err(ProverError::Plonk)
+        let pk = Self::proving_key();
+        MultiproverPlonkKzgSnark::prove(circuit, &pk, fabric).map_err(ProverError::Plonk)
     }
 
     /// Verify a proof of the statement represented by the circuit
@@ -807,9 +874,8 @@ pub trait MultiProverCircuit {
     /// passed to the verifier.
     fn verify(
         statement: <Self::Statement as MultiproverCircuitBaseType>::BaseType,
-        proof: Proof<SystemCurve>,
-        vk: &VerifyingKey<SystemCurve>,
+        proof: &Proof<SystemCurve>,
     ) -> Result<(), VerifierError> {
-        Self::BaseCircuit::verify(statement, proof, vk)
+        Self::BaseCircuit::verify(statement, proof)
     }
 }

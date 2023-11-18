@@ -3,7 +3,8 @@ name = "circuit-types"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+test-helpers = ["mpc-plonk/test-srs", "dep:jf-primitives"]
 
 [dependencies]
 # === Crytography === #
@@ -11,6 +12,7 @@ ark-ff = "0.4"
 ark-ec = "0.4"
 ark-mpc = { workspace = true }
 ed25519-dalek = "1.0.1"
+jf-primitives = { workspace = true, optional = true }
 mpc-plonk = { workspace = true }
 mpc-relation = { workspace = true }
 
