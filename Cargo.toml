@@ -73,7 +73,3 @@ itertools = "0.10"
 serde = { version = "1.0.139" }
 serde_json = "1.0.64"
 tracing = "0.1"
-
-[patch.crates-io]
-ark-ff = { git = "https://github.com/renegade-fi/algebra.git", branch = "bin-opt-feature" }
-ark-serialize = { git = "https://github.com/renegade-fi/algebra.git", branch = "bin-opt-feature" }
