@@ -2,13 +2,12 @@
 //! in proving knowledge of witness for throughout the network
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-pub mod commitment_links;
-pub mod valid_commitments;
-pub mod valid_match_mpc;
-pub mod valid_reblind;
-pub mod valid_settle;
-pub mod valid_wallet_create;
-pub mod valid_wallet_update;
+// pub mod valid_commitments;
+// pub mod valid_match_mpc;
+// pub mod valid_reblind;
+// pub mod valid_settle;
+// pub mod valid_wallet_create;
+// pub mod valid_wallet_update;
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
@@ -23,9 +22,9 @@ pub mod test_helpers {
         order::{Order, OrderSide},
         wallet::{Wallet, WalletShare},
     };
+    use constants::Scalar;
     use itertools::Itertools;
     use lazy_static::lazy_static;
-    use mpc_stark::algebra::scalar::Scalar;
     use num_bigint::BigUint;
     use rand::thread_rng;
     use renegade_crypto::hash::compute_poseidon_hash;
@@ -226,12 +225,12 @@ pub mod test_helpers {
     ///
     /// Here, the indices are represented as `Scalar` values where `0`
     /// represents a left child and `1` represents a right child
-    fn get_opening_indices(leaf_index: usize, height: usize) -> Vec<Scalar> {
+    fn get_opening_indices(leaf_index: usize, height: usize) -> Vec<bool> {
         let mut leaf_index = leaf_index as u64;
         let mut indices = Vec::with_capacity(height);
 
         for _ in 0..height {
-            indices.push(Scalar::from(leaf_index & 1));
+            indices.push(leaf_index % 2 == 1);
             leaf_index >>= 1;
         }
         indices
@@ -285,16 +284,13 @@ pub mod test_helpers {
         let (_, openings) = create_multi_opening::<HEIGHT>(&leaves);
 
         // Check the indices
-        let expected_first_indices =
-            vec![Scalar::from(0u64), Scalar::from(0u64), Scalar::from(0u64)];
+        let expected_first_indices = vec![false, false, false];
         assert_eq!(openings[0].indices.to_vec(), expected_first_indices);
 
-        let expected_second_indices =
-            vec![Scalar::from(1u64), Scalar::from(0u64), Scalar::from(0u64)];
+        let expected_second_indices = vec![true, false, false];
         assert_eq!(openings[1].indices.to_vec(), expected_second_indices);
 
-        let expected_third_indices =
-            vec![Scalar::from(0u64), Scalar::from(1u64), Scalar::from(0u64)];
+        let expected_third_indices = vec![false, true, false];
         assert_eq!(openings[2].indices.to_vec(), expected_third_indices);
     }
 
