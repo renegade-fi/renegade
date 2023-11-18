@@ -280,7 +280,7 @@ impl<'de> Deserialize<'de> for FixedPoint {
 // ---------------------------------------------
 
 /// A commitment to a fixed-precision variable
-
+impl Copy for FixedPointVar {}
 impl FixedPointVar {
     /// Evaluate the given fixed point variable in the constraint system and
     /// return the underlying value as a floating point
