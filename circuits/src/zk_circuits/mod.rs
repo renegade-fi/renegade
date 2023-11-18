@@ -6,7 +6,7 @@
 // pub mod valid_match_mpc;
 // pub mod valid_reblind;
 // pub mod valid_settle;
-// pub mod valid_wallet_create;
+pub mod valid_wallet_create;
 // pub mod valid_wallet_update;
 
 #[cfg(any(test, feature = "test_helpers"))]
@@ -20,11 +20,14 @@ pub mod test_helpers {
         keychain::{PublicKeyChain, PublicSigningKey, NUM_KEYS},
         merkle::MerkleOpening,
         order::{Order, OrderSide},
+        traits::{BaseType, CircuitBaseType, SingleProverCircuit},
         wallet::{Wallet, WalletShare},
+        PlonkCircuit,
     };
     use constants::Scalar;
     use itertools::Itertools;
     use lazy_static::lazy_static;
+    use mpc_relation::traits::Circuit;
     use num_bigint::BigUint;
     use rand::thread_rng;
     use renegade_crypto::hash::compute_poseidon_hash;
@@ -104,6 +107,28 @@ pub mod test_helpers {
     // -----------
     // | Helpers |
     // -----------
+
+    /// Check whether a witness and statement satisfy wire assignments for a
+    /// circuit
+    pub fn check_constraint_satisfaction<C: SingleProverCircuit>(
+        witness: C::Witness,
+        statement: C::Statement,
+    ) -> bool {
+        // Apply the constraints
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let witness_var = witness.create_witness(&mut cs);
+        let statement_var = statement.create_public_var(&mut cs);
+
+        C::apply_constraints(witness_var, statement_var, &mut cs).unwrap();
+
+        // Check for satisfaction
+        let statement_scalars = statement
+            .to_scalars()
+            .iter()
+            .map(Scalar::inner)
+            .collect_vec();
+        cs.check_circuit_satisfiability(&statement_scalars).is_ok()
+    }
 
     /// Construct secret shares of a wallet for testing
     pub fn create_wallet_shares<

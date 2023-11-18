@@ -40,6 +40,8 @@ pub enum ProverError {
     Mpc(MpcError),
     /// An error executing the Plonk prover
     Plonk(PlonkError),
+    /// An error verifying a proof in a prove-then-verify setup
+    Verification(VerifierError),
 }
 
 impl Display for ProverError {
