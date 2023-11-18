@@ -1,7 +1,7 @@
 //! Groups ZK gadgets used as arithmetic primitives in more complicated
 //! computations
 
-use ark_ff::{One, Zero};
+use ark_ff::One;
 use circuit_types::traits::{CircuitBaseType, CircuitVarType};
 use circuit_types::PlonkCircuit;
 use constants::ScalarField;
@@ -10,7 +10,6 @@ use mpc_relation::traits::Circuit;
 use mpc_relation::Variable;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 
-use num_bigint::BigUint;
 use num_integer::Integer;
 
 use super::comparators::LessThanGadget;
