@@ -15,6 +15,7 @@ ed25519-dalek = "1.0.1"
 jf-primitives = { workspace = true, optional = true }
 mpc-plonk = { workspace = true }
 mpc-relation = { workspace = true }
+jf-primitives = { git = "https://github.com/renegade-fi/mpc-jellyfish.git" }
 
 # === Arithmetic === #
 bigdecimal = "0.3"

@@ -13,7 +13,7 @@
 
 mod abi;
 pub mod client;
-mod conversion;
 pub mod errors;
 mod helpers;
+mod serde_def_types;
 pub mod types;

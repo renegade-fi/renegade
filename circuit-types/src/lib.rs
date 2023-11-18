@@ -25,12 +25,13 @@ use ark_ff::BigInt;
 use ark_mpc::MpcFabric;
 use bigdecimal::Num;
 use constants::{
-    AuthenticatedScalar, Scalar, ScalarField, SystemCurveGroup, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
-    MERKLE_HEIGHT,
+    AuthenticatedScalar, Scalar, ScalarField, SystemCurve, SystemCurveGroup, MAX_BALANCES,
+    MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT,
 };
 use fixed_point::DEFAULT_FP_PRECISION;
+use jf_primitives::pcs::prelude::Commitment;
 use merkle::MerkleOpening;
-use mpc_plonk::multiprover::proof_system::MpcPlonkCircuit as GenericMpcPlonkCircuit;
+use mpc_plonk::{multiprover::proof_system::MpcPlonkCircuit as GenericMpcPlonkCircuit, proof_system::structs::Proof};
 use mpc_relation::PlonkCircuit as GenericPlonkCircuit;
 use num_bigint::BigUint;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
@@ -59,6 +60,10 @@ pub type Fabric = MpcFabric<SystemCurveGroup>;
 pub type PlonkCircuit = GenericPlonkCircuit<ScalarField>;
 /// A circuit type with curve generic attached in a multiprover context
 pub type MpcPlonkCircuit = GenericMpcPlonkCircuit<SystemCurveGroup>;
+/// The (unbatched) proof type that the proof system generates
+pub type PlonkProof = Proof<SystemCurve>;
+/// The polynomial commitment type that the proof system utilizes
+pub type PolynomialCommitment = Commitment<SystemCurve>;
 
 // --------------------------
 // | Default Generic Values |
