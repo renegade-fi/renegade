@@ -25,7 +25,7 @@ where
 {
     /// Compute the commitment to the private wallet shares
     pub fn compute_private_commitment<C: Circuit<ScalarField>>(
-        private_wallet_share: WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        private_wallet_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut C,
     ) -> Result<Variable, CircuitError> {
         // Serialize the wallet and hash it into the hasher's state
@@ -40,7 +40,7 @@ where
     /// Compute the commitment to the full wallet given a commitment to the
     /// private shares
     pub fn compute_wallet_commitment_from_private<C: Circuit<ScalarField>>(
-        blinded_public_wallet_share: WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        blinded_public_wallet_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         private_commitment: Variable,
         cs: &mut C,
     ) -> Result<Variable, CircuitError> {
@@ -56,8 +56,8 @@ where
     /// Compute the full commitment of a wallet's shares given both the public
     /// and private shares
     pub fn compute_wallet_share_commitment<C: Circuit<ScalarField>>(
-        public_wallet_share: WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        private_wallet_share: WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        public_wallet_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        private_wallet_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut C,
     ) -> Result<Variable, CircuitError> {
         // First compute the private half, then absorb in the public
@@ -125,22 +125,21 @@ mod test {
         let public_share_var = public_shares.create_witness(&mut cs);
 
         // Private share commitment
-        let expected_private = compute_wallet_private_share_commitment(private_shares.clone());
+        let expected_private = compute_wallet_private_share_commitment(&private_shares);
         let expected_var = expected_private.create_public_var(&mut cs);
 
         let priv_comm =
-            WalletShareCommitGadget::compute_private_commitment(private_share_var.clone(), &mut cs)
+            WalletShareCommitGadget::compute_private_commitment(&private_share_var, &mut cs)
                 .unwrap();
 
         cs.enforce_equal(priv_comm, expected_var).unwrap();
 
         // Public share commitment
-        let expected_pub =
-            compute_wallet_commitment_from_private(public_shares.clone(), expected_private);
+        let expected_pub = compute_wallet_commitment_from_private(&public_shares, expected_private);
         let expected_var = expected_pub.create_public_var(&mut cs);
 
         let pub_comm = WalletShareCommitGadget::compute_wallet_commitment_from_private(
-            public_share_var.clone(),
+            &public_share_var,
             priv_comm,
             &mut cs,
         )
@@ -149,12 +148,12 @@ mod test {
         cs.enforce_equal(pub_comm, expected_var).unwrap();
 
         // Full wallet commitment
-        let expected_full = compute_wallet_share_commitment(public_shares, private_shares);
+        let expected_full = compute_wallet_share_commitment(&public_shares, &private_shares);
         let expected_var = expected_full.create_public_var(&mut cs);
 
         let full_comm = WalletShareCommitGadget::compute_wallet_share_commitment(
-            public_share_var,
-            private_share_var,
+            &public_share_var,
+            &private_share_var,
             &mut cs,
         );
 
