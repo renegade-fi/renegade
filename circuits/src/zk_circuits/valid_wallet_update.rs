@@ -108,7 +108,7 @@ where
         // -- Authorization -- //
 
         // Check pk_root in the statement corresponds to pk_root in the wallet
-        EqGadget::constrain_eq(statement.old_pk_root, old_wallet.keys.pk_root.clone(), cs)?;
+        EqGadget::constrain_eq(&statement.old_pk_root, &old_wallet.keys.pk_root, cs)?;
 
         // -- State transition validity -- //
 
@@ -203,8 +203,8 @@ where
             // The external transfer term applies if either the old balance's mint or the
             // new balance's mint equals the transfer mint. These two mints are
             // constrained to be consistent with one another below
-            let equals_old_mint = EqGadget::eq(old_balance.mint, external_transfer.mint, cs)?;
-            let equals_new_mint = EqGadget::eq(new_balance.mint, external_transfer.mint, cs)?;
+            let equals_old_mint = EqGadget::eq(&old_balance.mint, &external_transfer.mint, cs)?;
+            let equals_new_mint = EqGadget::eq(&new_balance.mint, &external_transfer.mint, cs)?;
             let equals_external_transfer_mint = cs.logic_or(equals_old_mint, equals_new_mint)?;
 
             let external_transfer_term =
@@ -237,8 +237,9 @@ where
             //  2. The mint of the transfer if the balance was previously zero; balances are
             //     constrained to be unique elsewhere in the circuit
             //  3. The zero mint, if the balance is zero
-            let mints_equal = EqGadget::eq(old_balance.mint, new_balance.mint, cs)?;
-            let equals_transfer_mint = EqGadget::eq(new_balance.mint, external_transfer.mint, cs)?;
+            let mints_equal = EqGadget::eq(&old_balance.mint, &new_balance.mint, cs)?;
+            let equals_transfer_mint =
+                EqGadget::eq(&new_balance.mint, &external_transfer.mint, cs)?;
             let mint_is_zero = EqZeroGadget::eq_zero(new_balance.mint, cs)?;
             let new_balance_zero = EqZeroGadget::eq_zero(new_balance.amount, cs)?;
             let prev_balance_zero = EqZeroGadget::eq_zero(old_balance.amount, cs)?;
@@ -311,6 +312,11 @@ where
         new_timestamp: Variable,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
+        // Ensure all orders have boolean side
+        for order in new_wallet.orders.iter() {
+            cs.enforce_bool(order.side)?;
+        }
+
         // Ensure that all order's asset pairs are unique
         Self::constrain_unique_order_pairs(new_wallet, cs)?;
 
@@ -332,8 +338,9 @@ where
             let order_is_zero = Self::order_is_zero(new_order, cs)?;
             let equals_old_order = Self::orders_equal_except_timestamp(old_order, new_order, cs)?;
 
-            let timestamp_not_updated = EqGadget::eq(new_order.timestamp, old_order.timestamp, cs)?;
-            let timestamp_updated = EqGadget::eq(new_order.timestamp, new_timestamp, cs)?;
+            let timestamp_not_updated =
+                EqGadget::eq(&new_order.timestamp, &old_order.timestamp, cs)?;
+            let timestamp_updated = EqGadget::eq(&new_order.timestamp, &new_timestamp, cs)?;
 
             // Either the orders are equal and the timestamp is not updated, or the
             // timestamp has been updated to the new timestamp
@@ -407,7 +414,7 @@ where
         let mut order2 = order2.clone();
         order2.timestamp = order1.timestamp;
 
-        EqGadget::eq(order1.clone(), order2, cs)
+        EqGadget::eq(order1, &order2, cs)
     }
 }
 

@@ -37,7 +37,7 @@ impl FixedPointGadget {
         cs: &mut C,
     ) -> Result<(), CircuitError> {
         let fixed_point_repr = Self::integer_to_fixed_point(rhs, cs)?;
-        EqGadget::constrain_eq(lhs, fixed_point_repr, cs)?;
+        EqGadget::constrain_eq(&lhs, &fixed_point_repr, cs)?;
 
         Ok(())
     }
@@ -51,7 +51,7 @@ impl FixedPointGadget {
         cs: &mut PlonkCircuit,
     ) -> Result<BoolVar, CircuitError> {
         let fixed_point_repr = Self::integer_to_fixed_point(rhs, cs)?;
-        EqGadget::eq(lhs, fixed_point_repr, cs)
+        EqGadget::eq(&lhs, &fixed_point_repr, cs)
     }
 
     /// Constrain a fixed point variable to be equal to the given integer
