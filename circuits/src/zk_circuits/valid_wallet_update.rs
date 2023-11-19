@@ -7,26 +7,21 @@
 // | Circuit Definition |
 // ----------------------
 
+use ark_ff::{One, Zero};
 use circuit_macros::circuit_type;
 use circuit_types::{
     fixed_point::FixedPointVar,
     keychain::PublicSigningKey,
     merkle::{MerkleOpening, MerkleRoot},
     order::OrderVar,
-    traits::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-    },
+    traits::{BaseType, CircuitBaseType, CircuitVarType, SecretShareVarType},
     transfers::{ExternalTransfer, ExternalTransferVar},
     wallet::{Nullifier, WalletShare, WalletShareStateCommitment, WalletVar},
-    AMOUNT_BITS,
+    PlonkCircuit, AMOUNT_BITS,
 };
-use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
-use mpc_bulletproof::{
-    r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
-    r1cs_mpc::R1CSError,
-};
-use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
-use rand::{CryptoRng, RngCore};
+use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
+use mpc_plonk::errors::PlonkError;
+use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -34,9 +29,7 @@ use crate::{
         comparators::{
             EqGadget, EqVecGadget, EqZeroGadget, GreaterThanEqZeroGadget, NotEqualGadget,
         },
-        gates::{AndGate, ConstrainBinaryGadget, NotGate, OrGate},
         merkle::PoseidonMerkleHashGadget,
-        select::CondSelectGadget,
         wallet_operations::{NullifierGadget, WalletShareCommitGadget},
     },
     SingleProverCircuit,
@@ -64,17 +57,11 @@ where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
     /// Apply the circuit constraints to a given constraint system
-    pub fn circuit<CS: RandomizableConstraintSystem>(
-        statement: ValidWalletUpdateStatementVar<Variable, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        witness: ValidWalletUpdateWitnessVar<
-            Variable,
-            MAX_BALANCES,
-            MAX_ORDERS,
-            MAX_FEES,
-            MERKLE_HEIGHT,
-        >,
-        cs: &mut CS,
-    ) -> Result<(), R1CSError> {
+    pub fn circuit(
+        statement: ValidWalletUpdateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        witness: ValidWalletUpdateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
         // -- State Validity -- //
 
         // Verify the opening of the old wallet's secret shares
@@ -84,51 +71,57 @@ where
             cs,
         )?;
         let computed_root = PoseidonMerkleHashGadget::compute_root_prehashed(
-            old_shares_comm.clone(),
+            old_shares_comm,
             witness.old_shares_opening,
             cs,
         )?;
-        cs.constrain(statement.merkle_root - computed_root);
+        cs.enforce_equal(statement.merkle_root, computed_root)?;
 
         // Reconstruct the wallet from secret shares
-        let recovered_blinder =
-            witness.old_wallet_private_shares.blinder + witness.old_wallet_public_shares.blinder;
+        let recovered_blinder = cs.add(
+            witness.old_wallet_private_shares.blinder,
+            witness.old_wallet_public_shares.blinder,
+        )?;
         let unblinded_public_shares = witness
             .old_wallet_public_shares
-            .unblind_shares(recovered_blinder);
+            .unblind_shares(recovered_blinder, cs);
 
-        let old_wallet = witness.old_wallet_private_shares + unblinded_public_shares;
+        let old_wallet = witness
+            .old_wallet_private_shares
+            .add_shares(&unblinded_public_shares, cs);
 
         // Verify that the nullifier of the shares is correctly computed
-        let old_shares_nullifier = NullifierGadget::wallet_shares_nullifier(
-            old_shares_comm,
-            old_wallet.blinder.clone(),
-            cs,
-        )?;
-        cs.constrain(old_shares_nullifier - statement.old_shares_nullifier);
+        let old_shares_nullifier =
+            NullifierGadget::wallet_shares_nullifier(old_shares_comm, old_wallet.blinder, cs)?;
+        cs.enforce_equal(old_shares_nullifier, statement.old_shares_nullifier)?;
 
         // Validate the commitment to the new wallet private shares
         let new_wallet_private_commitment = WalletShareCommitGadget::compute_private_commitment(
             witness.new_wallet_private_shares.clone(),
             cs,
         )?;
-        cs.constrain(statement.new_private_shares_commitment - new_wallet_private_commitment);
+        cs.enforce_equal(
+            new_wallet_private_commitment,
+            statement.new_private_shares_commitment,
+        )?;
 
         // -- Authorization -- //
 
         // Check pk_root in the statement corresponds to pk_root in the wallet
-        EqGadget::constrain_eq(statement.old_pk_root, old_wallet.keys.pk_root.clone(), cs);
+        EqGadget::constrain_eq(statement.old_pk_root, old_wallet.keys.pk_root.clone(), cs)?;
 
         // -- State transition validity -- //
 
         // Reconstruct the new wallet from shares
-        let recovered_blinder =
-            witness.new_wallet_private_shares.blinder + statement.new_public_shares.blinder;
+        let recovered_blinder = cs.add(
+            witness.new_wallet_private_shares.blinder,
+            statement.new_public_shares.blinder,
+        )?;
+
         let unblinded_public_shares = statement
             .new_public_shares
-            .unblind_shares(recovered_blinder);
-
-        let new_wallet = unblinded_public_shares + witness.new_wallet_private_shares;
+            .unblind_shares(recovered_blinder, cs);
+        let new_wallet = unblinded_public_shares.add_shares(&witness.new_wallet_private_shares, cs);
 
         Self::verify_wallet_transition(
             old_wallet,
@@ -136,27 +129,25 @@ where
             statement.external_transfer,
             statement.timestamp,
             cs,
-        );
-
-        Ok(())
+        )
     }
 
     /// Verify a state transition between two wallets
-    fn verify_wallet_transition<CS: RandomizableConstraintSystem>(
-        old_wallet: WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        new_wallet: WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        external_transfer: ExternalTransferVar<Variable>,
+    fn verify_wallet_transition(
+        old_wallet: WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        new_wallet: WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        external_transfer: ExternalTransferVar,
         update_timestamp: Variable,
-        cs: &mut CS,
-    ) {
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
         // External transfer must have binary direction
-        ConstrainBinaryGadget::constrain_binary(external_transfer.direction, cs);
+        cs.enforce_bool(external_transfer.direction)?;
 
         // Validate updates to the orders within the wallet
-        Self::validate_order_updates(&old_wallet, &new_wallet, update_timestamp, cs);
+        Self::validate_order_updates(&old_wallet, &new_wallet, update_timestamp, cs)?;
 
         // Validate updates to the balances within the wallet
-        Self::validate_balance_updates(&old_wallet, &new_wallet, external_transfer, cs);
+        Self::validate_balance_updates(&old_wallet, &new_wallet, external_transfer, cs)
     }
 
     // ------------
@@ -164,73 +155,81 @@ where
     // ------------
 
     /// Validates the balance updates in the wallet
-    fn validate_balance_updates<CS: RandomizableConstraintSystem>(
-        old_wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        new_wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        external_transfer: ExternalTransferVar<Variable>,
-        cs: &mut CS,
-    ) {
+    fn validate_balance_updates(
+        old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        external_transfer: ExternalTransferVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
         // Ensure that all mints in the updated balances are unique
-        Self::constrain_unique_balance_mints(new_wallet, cs);
+        Self::constrain_unique_balance_mints(new_wallet, cs)?;
         // Validate that the external transfer has been correctly applied
-        Self::validate_external_transfer(old_wallet, new_wallet, external_transfer, cs);
+        Self::validate_external_transfer(old_wallet, new_wallet, external_transfer, cs)
     }
 
     /// Validates the application of the external transfer to the balance state
-    pub(crate) fn validate_external_transfer<CS: RandomizableConstraintSystem>(
-        old_wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        new_wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        external_transfer: ExternalTransferVar<Variable>,
-        cs: &mut CS,
-    ) {
+    pub(crate) fn validate_external_transfer(
+        old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        external_transfer: ExternalTransferVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let zero = ScalarField::zero();
+        let one = ScalarField::one();
+
         // Zero out the external transfer amount if its mint is zero
-        let external_transfer_zero = EqZeroGadget::eq_zero(external_transfer.mint, cs);
-        let external_transfer_not_zero = NotGate::not(external_transfer_zero, cs);
-        let (_, _, transfer_amount) =
-            cs.multiply(external_transfer.amount.into(), external_transfer_not_zero);
+        let external_transfer_zero = EqZeroGadget::eq_zero(external_transfer.mint, cs)?;
+        let external_transfer_not_zero = cs.logic_neg(external_transfer_zero)?;
+
+        let transfer_amount =
+            cs.mul(external_transfer.amount, external_transfer_not_zero.into())?;
+        let neg_amount = cs.mul_constant(transfer_amount, &-one)?;
 
         // The term added to the balance matching the external transfer mint
-        let external_transfer_term: LinearCombination = CondSelectGadget::select(
-            -transfer_amount,
-            transfer_amount.into(),
-            external_transfer.direction,
-            cs,
-        );
+        let external_transfer_term = cs.mux(
+            BoolVar::new_unchecked(external_transfer.direction),
+            neg_amount,
+            transfer_amount,
+        )?;
 
         // Stores a boolean indicating whether the external transfer appeared in the new
         // balances it must be applied to at least one balance
-        let mut external_transfer_applied: LinearCombination = Variable::Zero().into();
+        let mut external_transfer_applied = cs.false_var();
 
         // Check the balance state transition for each balance
         for (old_balance, new_balance) in old_wallet.balances.iter().zip(new_wallet.balances.iter())
         {
-            // The initial balance before updates
-            let mut expected_balance = old_balance.amount.clone();
-
             // Add in the external transfer information term if applicable
             // The external transfer term applies if either the old balance's mint or the
             // new balance's mint equals the transfer mint. These two mints are
             // constrained to be consistent with one another below
-            let equals_external_transfer_mint = OrGate::or(
-                EqGadget::eq(old_balance.mint.clone(), external_transfer.mint, cs),
-                EqGadget::eq(new_balance.mint.clone(), external_transfer.mint, cs),
-                cs,
-            );
+            let equals_old_mint = EqGadget::eq(old_balance.mint, external_transfer.mint, cs)?;
+            let equals_new_mint = EqGadget::eq(new_balance.mint, external_transfer.mint, cs)?;
+            let equals_external_transfer_mint = cs.logic_or(equals_old_mint, equals_new_mint)?;
 
-            let (_, _, external_transfer_term) = cs.multiply(
-                equals_external_transfer_mint.clone(),
-                external_transfer_term.clone(),
-            );
-
-            external_transfer_applied += equals_external_transfer_mint;
-            expected_balance += external_transfer_term;
+            let external_transfer_term =
+                cs.mul(equals_external_transfer_mint.into(), external_transfer_term)?;
+            external_transfer_applied =
+                cs.logic_or(external_transfer_applied, equals_external_transfer_mint)?;
 
             // Constrain the updated balance to be non-negative and correctly updated
-            cs.constrain(new_balance.amount.clone() - expected_balance);
+            //  `new_balance.amount - old_balance.amount - external_transfer_term`
+            cs.lc_gate(
+                &[
+                    new_balance.amount,
+                    old_balance.amount,
+                    external_transfer_term,
+                    cs.one(),
+                    cs.zero(), // output
+                ],
+                &[one, -one, -one, zero],
+            )?;
+
+            // Constrain the new balance to be non-negative
             GreaterThanEqZeroGadget::<AMOUNT_BITS /* bitwidth */>::constrain_greater_than_zero(
-                new_balance.amount.clone(),
+                new_balance.amount,
                 cs,
-            );
+            )?;
 
             // Constrain the mints to be set correctly. A valid mint is one of:
             //  1. The same mint as in the old wallet, if the balance previously existed and
@@ -238,69 +237,67 @@ where
             //  2. The mint of the transfer if the balance was previously zero; balances are
             //     constrained to be unique elsewhere in the circuit
             //  3. The zero mint, if the balance is zero
-            let mints_equal = EqGadget::eq(old_balance.mint.clone(), new_balance.mint.clone(), cs);
-            let equals_transfer_mint =
-                EqGadget::eq(new_balance.mint.clone(), external_transfer.mint, cs);
-            let mint_is_zero = EqZeroGadget::eq_zero(new_balance.mint.clone(), cs);
-            let new_balance_zero = EqZeroGadget::eq_zero(new_balance.amount.clone(), cs);
-            let prev_balance_zero = EqZeroGadget::eq_zero(old_balance.amount.clone(), cs);
+            let mints_equal = EqGadget::eq(old_balance.mint, new_balance.mint, cs)?;
+            let equals_transfer_mint = EqGadget::eq(new_balance.mint, external_transfer.mint, cs)?;
+            let mint_is_zero = EqZeroGadget::eq_zero(new_balance.mint, cs)?;
+            let new_balance_zero = EqZeroGadget::eq_zero(new_balance.amount, cs)?;
+            let prev_balance_zero = EqZeroGadget::eq_zero(old_balance.amount, cs)?;
 
             // Condition 1 -- same mint as old wallet, balance not zero'd
-            let valid_mint1 = AndGate::multi_and(
-                &[
-                    mints_equal.into(),
-                    NotGate::not(prev_balance_zero, cs),
-                    NotGate::not(new_balance_zero, cs),
-                ],
-                cs,
-            );
+            let prev_balance_not_zero = cs.logic_neg(prev_balance_zero)?;
+            let new_balance_not_zero = cs.logic_neg(new_balance_zero)?;
+            let valid_mint1 =
+                cs.logic_and_all(&[mints_equal, prev_balance_not_zero, new_balance_not_zero])?;
 
             // Condition 2 -- new mint added to wallet
-            let valid_mint2 = AndGate::multi_and(
-                &[
-                    equals_transfer_mint.into(),
-                    prev_balance_zero.into(),
-                    NotGate::not(new_balance_zero, cs),
-                ],
-                cs,
-            );
+            let valid_mint2 = cs.logic_and_all(&[
+                equals_transfer_mint,
+                prev_balance_zero,
+                new_balance_not_zero,
+            ])?;
 
             // Condition 3 -- withdrawal of entire balance, mint is now zero
-            let valid_mint3 = AndGate::multi_and(&[mint_is_zero, new_balance_zero], cs);
+            let valid_mint3 = cs.logic_and(mint_is_zero, new_balance_zero)?;
 
             // Constrain one of the three mint conditions to hold
-            let valid_mint = OrGate::multi_or(&[valid_mint1, valid_mint2, valid_mint3], cs);
-            cs.constrain(Variable::One() - valid_mint);
+            let valid_mint = cs.logic_or_all(&[valid_mint1, valid_mint2, valid_mint3])?;
+            cs.enforce_true(valid_mint)?;
         }
 
         // Validate that the external transfer's mint did show up in exactly one of the
         // balances
-        let transfer_applied = EqGadget::eq(external_transfer_applied, Variable::One(), cs);
-        let transfer_applied_or_zero = OrGate::or(transfer_applied, external_transfer_zero, cs);
-        cs.constrain(transfer_applied_or_zero - Variable::One());
+        let transfer_applied_or_zero =
+            cs.logic_or(external_transfer_applied, external_transfer_zero)?;
+        cs.enforce_true(transfer_applied_or_zero)
     }
 
     /// Constrains all balance mints to be unique or zero
-    fn constrain_unique_balance_mints<CS: RandomizableConstraintSystem>(
-        wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        cs: &mut CS,
-    ) {
+    fn constrain_unique_balance_mints(
+        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let one = ScalarField::one();
+
         for i in 0..wallet.balances.len() {
             for j in (i + 1)..wallet.balances.len() {
                 // Check whether balance[i] != balance[j]
                 let ij_unique = NotEqualGadget::not_equal(
-                    wallet.balances[i].mint.clone(),
-                    wallet.balances[j].mint.clone(),
+                    wallet.balances[i].mint,
+                    wallet.balances[j].mint,
                     cs,
-                );
+                )?;
 
                 // Evaluate the polynomial mint * (1 - ij_unique) which is 0 iff
                 // the mint is zero, or balance[i] != balance[j]
-                let (_, _, constraint_poly) =
-                    cs.multiply(wallet.balances[i].mint.clone(), Variable::One() - ij_unique);
-                cs.constrain(constraint_poly.into());
+                let mint = wallet.balances[i].mint;
+                cs.mul_add_gate(
+                    &[mint, cs.one(), mint, ij_unique.into(), cs.zero()],
+                    &[one, -one],
+                )?;
             }
         }
+
+        Ok(())
     }
 
     // ----------
@@ -308,118 +305,107 @@ where
     // ----------
 
     /// Validates the orders of the new wallet
-    fn validate_order_updates<CS: RandomizableConstraintSystem>(
-        old_wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        new_wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    fn validate_order_updates(
+        old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         new_timestamp: Variable,
-        cs: &mut CS,
-    ) {
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
         // Ensure that all order's asset pairs are unique
-        Self::constrain_unique_order_pairs(new_wallet, cs);
+        Self::constrain_unique_order_pairs(new_wallet, cs)?;
 
         // Ensure that the timestamps for all orders are properly set
-        Self::constrain_updated_order_timestamps(old_wallet, new_wallet, new_timestamp, cs);
+        Self::constrain_updated_order_timestamps(old_wallet, new_wallet, new_timestamp, cs)
     }
 
     /// Constrain the timestamps to be properly updated
     /// For each order, if the order is unchanged from the previous wallet, the
     /// timestamp should remain constant. Otherwise, the timestamp should be
     /// updated to the current timestamp passed as a public variable
-    fn constrain_updated_order_timestamps<CS: RandomizableConstraintSystem>(
-        old_wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        new_wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    fn constrain_updated_order_timestamps(
+        old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         new_timestamp: Variable,
-        cs: &mut CS,
-    ) {
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
         for (old_order, new_order) in old_wallet.orders.iter().zip(new_wallet.orders.iter()) {
-            let order_is_zero = Self::order_is_zero(new_order, cs);
-            let equals_old_order = Self::orders_equal_except_timestamp(old_order, new_order, cs);
+            let order_is_zero = Self::order_is_zero(new_order, cs)?;
+            let equals_old_order = Self::orders_equal_except_timestamp(old_order, new_order, cs)?;
 
-            let timestamp_not_updated =
-                EqGadget::eq(new_order.timestamp.clone(), old_order.timestamp.clone(), cs);
-            let timestamp_updated = EqGadget::eq(new_order.timestamp.clone(), new_timestamp, cs);
+            let timestamp_not_updated = EqGadget::eq(new_order.timestamp, old_order.timestamp, cs)?;
+            let timestamp_updated = EqGadget::eq(new_order.timestamp, new_timestamp, cs)?;
 
             // Either the orders are equal and the timestamp is not updated, or the
             // timestamp has been updated to the new timestamp
-            let equal_and_not_updated = AndGate::and(equals_old_order, timestamp_not_updated, cs);
-            let not_equal_and_updated = AndGate::and(
-                NotGate::not(equals_old_order, cs),
-                timestamp_updated.into(),
-                cs,
-            );
+            let equal_and_not_updated = cs.logic_and(equals_old_order, timestamp_not_updated)?;
+
+            let not_equal = cs.logic_neg(equals_old_order)?;
+            let not_equal_and_updated = cs.logic_and(not_equal, timestamp_updated)?;
 
             // Validate that if the order is in one of the following states:
             //  1. Updated order with updated timestamp
             //  2. Non-updated order with non-updated timestamp
             //  3. Cancelled order
-            let valid_order = OrGate::multi_or(
-                &[not_equal_and_updated, equal_and_not_updated, order_is_zero],
-                cs,
-            );
-            cs.constrain(Variable::One() - valid_order);
+            let valid_order =
+                cs.logic_or_all(&[not_equal_and_updated, equal_and_not_updated, order_is_zero])?;
+            cs.enforce_true(valid_order)?;
         }
+
+        Ok(())
     }
 
     /// Assert that all order pairs in a wallet have unique asset pairs
-    fn constrain_unique_order_pairs<CS: RandomizableConstraintSystem>(
-        wallet: &WalletVar<LinearCombination, MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        cs: &mut CS,
-    ) {
+    fn constrain_unique_order_pairs(
+        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
         // Validate that all mints pairs are zero or unique
         for i in 0..wallet.orders.len() {
-            let order_zero = Self::order_is_zero(&wallet.orders[i], cs);
+            let order_zero = Self::order_is_zero(&wallet.orders[i], cs)?;
 
             for j in (i + 1)..wallet.orders.len() {
                 // Check if the ith order is unique
                 let mints_equal = EqVecGadget::eq_vec(
-                    &[
-                        wallet.orders[i].quote_mint.clone(),
-                        wallet.orders[i].base_mint.clone(),
-                    ],
-                    &[
-                        wallet.orders[j].quote_mint.clone(),
-                        wallet.orders[j].base_mint.clone(),
-                    ],
+                    &[wallet.orders[i].quote_mint, wallet.orders[i].base_mint],
+                    &[wallet.orders[j].quote_mint, wallet.orders[j].base_mint],
                     cs,
-                );
+                )?;
 
-                let mints_not_equal = NotGate::not(mints_equal, cs);
-                let valid_mints = OrGate::or(order_zero.into(), mints_not_equal, cs);
-                cs.constrain(Variable::One() - valid_mints);
+                let mints_not_equal = cs.logic_neg(mints_equal)?;
+                let valid_mints = cs.logic_or(order_zero, mints_not_equal)?;
+                cs.enforce_true(valid_mints)?;
             }
         }
+
+        Ok(())
     }
 
     /// Returns 1 if the order is a zero'd order, otherwise 0
-    fn order_is_zero<CS: RandomizableConstraintSystem>(
-        order: &OrderVar<LinearCombination>,
-        cs: &mut CS,
-    ) -> Variable {
+    fn order_is_zero(order: &OrderVar, cs: &mut PlonkCircuit) -> Result<BoolVar, CircuitError> {
+        let zero = cs.zero();
         Self::orders_equal_except_timestamp(
             order,
             &OrderVar {
-                quote_mint: Variable::Zero().into(),
-                base_mint: Variable::Zero().into(),
-                side: Variable::Zero().into(),
-                amount: Variable::Zero().into(),
-                worst_case_price: FixedPointVar {
-                    repr: Variable::Zero().into(),
-                },
-                timestamp: Variable::Zero().into(),
+                quote_mint: zero,
+                base_mint: zero,
+                side: zero,
+                amount: zero,
+                worst_case_price: FixedPointVar { repr: zero },
+                timestamp: zero,
             },
             cs,
         )
     }
 
     /// Returns 1 if the orders are equal (except the timestamp) and 0 otherwise
-    fn orders_equal_except_timestamp<CS: RandomizableConstraintSystem>(
-        order1: &OrderVar<LinearCombination>,
-        order2: &OrderVar<LinearCombination>,
-        cs: &mut CS,
-    ) -> Variable {
+    fn orders_equal_except_timestamp(
+        order1: &OrderVar,
+        order2: &OrderVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<BoolVar, CircuitError> {
         // Mutate the orders to have the same timestamp
         let mut order2 = order2.clone();
-        order2.timestamp = order1.timestamp.clone();
+        order2.timestamp = order1.timestamp;
 
         EqGadget::eq(order1.clone(), order2, cs)
     }
@@ -503,14 +489,12 @@ where
     type Witness = ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
     type Statement = ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
-    const BP_GENS_CAPACITY: usize = 65536;
-
-    fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: <Self::Witness as CircuitBaseType>::VarType<Variable>,
-        statement_var: <Self::Statement as CircuitBaseType>::VarType<Variable>,
-        cs: &mut CS,
-    ) -> Result<(), R1CSError> {
-        Self::circuit(statement_var, witness_var, cs)
+    fn apply_constraints(
+        witness_var: ValidWalletUpdateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
+        statement_var: ValidWalletUpdateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), PlonkError> {
+        Self::circuit(statement_var, witness_var, cs).map_err(PlonkError::CircuitError)
     }
 }
 
@@ -617,21 +601,21 @@ mod test {
     use circuit_types::{
         balance::Balance,
         order::Order,
-        traits::CircuitBaseType,
         transfers::{ExternalTransfer, ExternalTransferDirection},
     };
-    use merlin::HashChainTranscript as Transcript;
-    use mpc_bulletproof::{r1cs::Prover, PedersenGens};
     use num_bigint::BigUint;
     use rand::{thread_rng, RngCore};
 
     use crate::zk_circuits::{
-        test_helpers::{SizedWallet, INITIAL_WALLET, TIMESTAMP},
+        test_helpers::{
+            check_constraint_satisfaction, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES,
+            MAX_ORDERS, TIMESTAMP,
+        },
         valid_wallet_update::test_helpers::NEW_TIMESTAMP,
     };
 
     use super::{
-        test_helpers::{construct_witness_statement, SizedStatement, SizedWitness},
+        test_helpers::{construct_witness_statement, MERKLE_HEIGHT},
         ValidWalletUpdate,
     };
 
@@ -643,25 +627,9 @@ mod test {
         transfer: ExternalTransfer,
     ) -> bool {
         let (witness, statement) = construct_witness_statement(old_wallet, new_wallet, transfer);
-        constraints_satisfied(statement, witness)
-    }
-
-    /// Return true if the circuit constraints are satisfied on a given
-    /// statement, witness pair
-    fn constraints_satisfied(statement: SizedStatement, witness: SizedWitness) -> bool {
-        // Build a constraint system
-        let pc_gens = PedersenGens::default();
-        let mut transcript = Transcript::new(b"test");
-        let mut prover = Prover::new(&pc_gens, &mut transcript);
-
-        // Allocate the witness and statement in the constraint system
-        let mut rng = thread_rng();
-        let statement_var = statement.commit_public(&mut prover);
-        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover);
-
-        // Apply the constraints
-        ValidWalletUpdate::circuit(statement_var, witness_var, &mut prover).unwrap();
-        prover.constraints_satisfied()
+        check_constraint_satisfaction::<
+            ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
+        >(witness, statement)
     }
 
     // ------------------------------

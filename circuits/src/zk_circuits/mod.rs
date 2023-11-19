@@ -7,7 +7,7 @@
 // pub mod valid_reblind;
 // pub mod valid_settle;
 pub mod valid_wallet_create;
-// pub mod valid_wallet_update;
+pub mod valid_wallet_update;
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
