@@ -76,7 +76,7 @@ impl EqZeroGadget {
 pub struct EqGadget {}
 impl EqGadget {
     /// Computes a == b
-    pub fn eq<V>(a: V, b: V, cs: &mut PlonkCircuit) -> Result<BoolVar, CircuitError>
+    pub fn eq<V>(a: &V, b: &V, cs: &mut PlonkCircuit) -> Result<BoolVar, CircuitError>
     where
         V: CircuitVarType,
     {
@@ -87,7 +87,7 @@ impl EqGadget {
     }
 
     /// Constraints a == b
-    pub fn constrain_eq<V, C>(a: V, b: V, cs: &mut C) -> Result<(), CircuitError>
+    pub fn constrain_eq<V, C>(a: &V, b: &V, cs: &mut C) -> Result<(), CircuitError>
     where
         V: CircuitVarType,
         C: Circuit<ScalarField>,
@@ -163,7 +163,7 @@ impl NotEqualGadget {
         b: Variable,
         cs: &mut PlonkCircuit,
     ) -> Result<BoolVar, CircuitError> {
-        let eq = EqGadget::eq(a, b, cs)?;
+        let eq = EqGadget::eq(&a, &b, cs)?;
         cs.logic_neg(eq)
     }
 }
@@ -177,7 +177,7 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
         // If we can reconstruct the value without the highest bit, the value is
         // non-negative
         let bit_reconstructed = Self::bit_decompose_reconstruct(x, cs)?;
-        EqGadget::eq(bit_reconstructed, x, cs)
+        EqGadget::eq(&bit_reconstructed, &x, cs)
     }
 
     /// Constrain the value to be greater than zero
@@ -188,7 +188,7 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
         // If we can reconstruct the value without the highest bit, the value is
         // non-negative
         let bit_reconstructed = Self::bit_decompose_reconstruct(x, cs)?;
-        EqGadget::constrain_eq(bit_reconstructed, x, cs)
+        EqGadget::constrain_eq(&bit_reconstructed, &x, cs)
     }
 
     /// A helper function to decompose a scalar into bits and then reconstruct
@@ -436,9 +436,9 @@ mod test {
         let o1_var = o1.create_witness(&mut cs);
         let o2_var = o2.create_witness(&mut cs);
 
-        let eq1 = EqGadget::eq(o1_var.clone(), o2_var.clone(), &mut cs).unwrap(); // o1 == o2
-        let eq2 = EqGadget::eq(o1_var.clone(), o1_var.clone(), &mut cs).unwrap(); // o1 == o1
-        EqGadget::constrain_eq(o1_var.clone(), o1_var, &mut cs).unwrap();
+        let eq1 = EqGadget::eq(&o1_var, &o2_var, &mut cs).unwrap(); // o1 == o2
+        let eq2 = EqGadget::eq(&o1_var, &o1_var, &mut cs).unwrap(); // o1 == o1
+        EqGadget::constrain_eq(&o1_var, &o1_var, &mut cs).unwrap();
 
         cs.enforce_false(eq1).unwrap();
         cs.enforce_true(eq2).unwrap();
