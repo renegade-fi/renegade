@@ -15,12 +15,12 @@ impl<const HEIGHT: usize> PoseidonMerkleHashGadget<HEIGHT> {
     /// Compute the root of the tree given the leaf node and the path of
     /// sister nodes leading to the root
     pub fn compute_root<C: Circuit<ScalarField>>(
-        leaf_node: Vec<Variable>,
-        opening: MerkleOpeningVar<HEIGHT>,
+        leaf_node: &[Variable],
+        opening: &MerkleOpeningVar<HEIGHT>,
         cs: &mut C,
     ) -> Result<Variable, CircuitError> {
         // Hash the leaf_node into a field element
-        let leaf_hash = Self::leaf_hash(&leaf_node, cs)?;
+        let leaf_hash = Self::leaf_hash(leaf_node, cs)?;
         Self::compute_root_prehashed(leaf_hash, opening, cs)
     }
 
@@ -28,7 +28,7 @@ impl<const HEIGHT: usize> PoseidonMerkleHashGadget<HEIGHT> {
     /// buffer first
     pub fn compute_root_prehashed<C: Circuit<ScalarField>>(
         leaf_node: Variable,
-        opening: MerkleOpeningVar<HEIGHT>,
+        opening: &MerkleOpeningVar<HEIGHT>,
         cs: &mut C,
     ) -> Result<Variable, CircuitError> {
         // Hash the leaf_node into a field element
@@ -45,8 +45,8 @@ impl<const HEIGHT: usize> PoseidonMerkleHashGadget<HEIGHT> {
 
     /// Compute the root and constrain it to an expected value
     pub fn compute_and_constrain_root<C: Circuit<ScalarField>>(
-        leaf_node: Vec<Variable>,
-        opening: MerkleOpeningVar<HEIGHT>,
+        leaf_node: &[Variable],
+        opening: &MerkleOpeningVar<HEIGHT>,
         expected_root: Variable,
         cs: &mut C,
     ) -> Result<(), CircuitError> {
@@ -58,7 +58,7 @@ impl<const HEIGHT: usize> PoseidonMerkleHashGadget<HEIGHT> {
     /// value
     pub fn compute_and_constrain_root_prehashed<C: Circuit<ScalarField>>(
         leaf_node: Variable,
-        opening: MerkleOpeningVar<HEIGHT>,
+        opening: &MerkleOpeningVar<HEIGHT>,
         expected_root: Variable,
         cs: &mut C,
     ) -> Result<(), CircuitError> {
@@ -308,8 +308,13 @@ pub(crate) mod merkle_test {
         let root = expected_root.create_public_var(&mut cs);
 
         // Apply the merkle constraints
-        PoseidonMerkleHashGadget::compute_and_constrain_root(leaf_vars, opening_var, root, &mut cs)
-            .unwrap();
+        PoseidonMerkleHashGadget::compute_and_constrain_root(
+            &leaf_vars,
+            &opening_var,
+            root,
+            &mut cs,
+        )
+        .unwrap();
 
         assert!(cs
             .check_circuit_satisfiability(&[expected_root.inner()])
@@ -331,8 +336,13 @@ pub(crate) mod merkle_test {
         let root = expected_root.create_public_var(&mut cs);
 
         // Apply the merkle constraints
-        PoseidonMerkleHashGadget::compute_and_constrain_root(leaf_vars, opening_var, root, &mut cs)
-            .unwrap();
+        PoseidonMerkleHashGadget::compute_and_constrain_root(
+            &leaf_vars,
+            &opening_var,
+            root,
+            &mut cs,
+        )
+        .unwrap();
 
         // Check constraint satisfaction with a different root
         let rand_root = Scalar::random(&mut thread_rng()).inner();

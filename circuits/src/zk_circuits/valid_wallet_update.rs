@@ -66,13 +66,13 @@ where
 
         // Verify the opening of the old wallet's secret shares
         let old_shares_comm = WalletShareCommitGadget::compute_wallet_share_commitment(
-            witness.old_wallet_public_shares.clone(),
-            witness.old_wallet_private_shares.clone(),
+            &witness.old_wallet_public_shares,
+            &witness.old_wallet_private_shares,
             cs,
         )?;
         let computed_root = PoseidonMerkleHashGadget::compute_root_prehashed(
             old_shares_comm,
-            witness.old_shares_opening,
+            &witness.old_shares_opening,
             cs,
         )?;
         cs.enforce_equal(statement.merkle_root, computed_root)?;
@@ -97,7 +97,7 @@ where
 
         // Validate the commitment to the new wallet private shares
         let new_wallet_private_commitment = WalletShareCommitGadget::compute_private_commitment(
-            witness.new_wallet_private_shares.clone(),
+            &witness.new_wallet_private_shares,
             cs,
         )?;
         cs.enforce_equal(
@@ -124,9 +124,9 @@ where
         let new_wallet = unblinded_public_shares.add_shares(&witness.new_wallet_private_shares, cs);
 
         Self::verify_wallet_transition(
-            old_wallet,
-            new_wallet,
-            statement.external_transfer,
+            &old_wallet,
+            &new_wallet,
+            &statement.external_transfer,
             statement.timestamp,
             cs,
         )
@@ -134,9 +134,9 @@ where
 
     /// Verify a state transition between two wallets
     fn verify_wallet_transition(
-        old_wallet: WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        new_wallet: WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        external_transfer: ExternalTransferVar,
+        old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        external_transfer: &ExternalTransferVar,
         update_timestamp: Variable,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -144,10 +144,10 @@ where
         cs.enforce_bool(external_transfer.direction)?;
 
         // Validate updates to the orders within the wallet
-        Self::validate_order_updates(&old_wallet, &new_wallet, update_timestamp, cs)?;
+        Self::validate_order_updates(old_wallet, new_wallet, update_timestamp, cs)?;
 
         // Validate updates to the balances within the wallet
-        Self::validate_balance_updates(&old_wallet, &new_wallet, external_transfer, cs)
+        Self::validate_balance_updates(old_wallet, new_wallet, external_transfer, cs)
     }
 
     // ------------
@@ -158,7 +158,7 @@ where
     fn validate_balance_updates(
         old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        external_transfer: ExternalTransferVar,
+        external_transfer: &ExternalTransferVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // Ensure that all mints in the updated balances are unique
@@ -171,7 +171,7 @@ where
     pub(crate) fn validate_external_transfer(
         old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        external_transfer: ExternalTransferVar,
+        external_transfer: &ExternalTransferVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let zero = ScalarField::zero();
@@ -548,8 +548,8 @@ pub mod test_helpers {
         const MAX_FEES: usize,
         const MERKLE_HEIGHT: usize,
     >(
-        old_wallet: Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        new_wallet: Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        old_wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        new_wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         external_transfer: ExternalTransfer,
     ) -> (
         ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
@@ -560,15 +560,13 @@ pub mod test_helpers {
     {
         // Construct secret shares of the wallets
         let (old_wallet_private_shares, old_wallet_public_shares) =
-            create_wallet_shares(old_wallet.clone());
+            create_wallet_shares(old_wallet);
         let (new_wallet_private_shares, new_wallet_public_shares) =
             create_wallet_shares(new_wallet);
 
         // Create dummy openings for the old shares
-        let old_shares_commitment = compute_wallet_share_commitment(
-            old_wallet_public_shares.clone(),
-            old_wallet_private_shares.clone(),
-        );
+        let old_shares_commitment =
+            compute_wallet_share_commitment(&old_wallet_public_shares, &old_wallet_private_shares);
         let (merkle_root, mut opening) =
             create_multi_opening::<MERKLE_HEIGHT>(&[old_shares_commitment]);
         let old_shares_opening = opening.pop().unwrap();
@@ -579,7 +577,7 @@ pub mod test_helpers {
 
         // Commit to the new private shares
         let new_private_shares_commitment =
-            compute_wallet_private_share_commitment(new_wallet_private_shares.clone());
+            compute_wallet_private_share_commitment(&new_wallet_private_shares);
 
         let witness = ValidWalletUpdateWitness {
             old_wallet_private_shares,
@@ -589,7 +587,7 @@ pub mod test_helpers {
         };
         let statement = ValidWalletUpdateStatement {
             old_shares_nullifier,
-            old_pk_root: old_wallet.keys.pk_root,
+            old_pk_root: old_wallet.keys.pk_root.clone(),
             new_private_shares_commitment,
             new_public_shares: new_wallet_public_shares,
             merkle_root,
@@ -629,14 +627,14 @@ mod test {
     /// Returns true if the circuit constraints are satisfied on the given
     /// parameters
     fn constraints_satisfied_on_wallets(
-        old_wallet: SizedWallet,
-        new_wallet: SizedWallet,
+        old_wallet: &SizedWallet,
+        new_wallet: &SizedWallet,
         transfer: ExternalTransfer,
     ) -> bool {
         let (witness, statement) = construct_witness_statement(old_wallet, new_wallet, transfer);
         check_constraint_satisfaction::<
             ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
-        >(witness, statement)
+        >(&witness, &statement)
     }
 
     // ------------------------------
@@ -654,8 +652,8 @@ mod test {
         old_wallet.orders[0] = Order::default();
 
         assert!(constraints_satisfied_on_wallets(
-            old_wallet,
-            new_wallet,
+            &old_wallet,
+            &new_wallet,
             ExternalTransfer::default()
         ));
     }
@@ -668,8 +666,8 @@ mod test {
         new_wallet.orders[0] = Order::default();
 
         assert!(constraints_satisfied_on_wallets(
-            old_wallet,
-            new_wallet,
+            &old_wallet,
+            &new_wallet,
             ExternalTransfer::default()
         ))
     }
@@ -686,8 +684,8 @@ mod test {
         old_wallet.orders[0] = Order::default();
 
         assert!(!constraints_satisfied_on_wallets(
-            old_wallet,
-            new_wallet,
+            &old_wallet,
+            &new_wallet,
             ExternalTransfer::default()
         ));
     }
@@ -701,8 +699,8 @@ mod test {
         new_wallet.orders[0].timestamp = NEW_TIMESTAMP;
 
         assert!(!constraints_satisfied_on_wallets(
-            old_wallet,
-            new_wallet,
+            &old_wallet,
+            &new_wallet,
             ExternalTransfer::default()
         ));
     }
@@ -723,8 +721,8 @@ mod test {
         old_wallet.orders[1] = Order::default();
 
         assert!(!constraints_satisfied_on_wallets(
-            old_wallet,
-            new_wallet,
+            &old_wallet,
+            &new_wallet,
             ExternalTransfer::default()
         ));
     }
@@ -744,8 +742,8 @@ mod test {
         old_wallet.balances[1] = Balance::default();
 
         assert!(!constraints_satisfied_on_wallets(
-            old_wallet,
-            new_wallet,
+            &old_wallet,
+            &new_wallet,
             ExternalTransfer::default()
         ));
     }
@@ -770,7 +768,9 @@ mod test {
         };
 
         assert!(constraints_satisfied_on_wallets(
-            old_wallet, new_wallet, transfer
+            &old_wallet,
+            &new_wallet,
+            transfer
         ));
     }
 
@@ -798,7 +798,9 @@ mod test {
         };
 
         assert!(constraints_satisfied_on_wallets(
-            old_wallet, new_wallet, transfer
+            &old_wallet,
+            &new_wallet,
+            transfer
         ));
     }
 
@@ -826,7 +828,9 @@ mod test {
         };
 
         assert!(!constraints_satisfied_on_wallets(
-            old_wallet, new_wallet, transfer
+            &old_wallet,
+            &new_wallet,
+            transfer
         ));
     }
 
@@ -852,7 +856,9 @@ mod test {
         };
 
         assert!(!constraints_satisfied_on_wallets(
-            old_wallet, new_wallet, transfer
+            &old_wallet,
+            &new_wallet,
+            transfer
         ));
     }
 
@@ -877,7 +883,9 @@ mod test {
         };
 
         assert!(!constraints_satisfied_on_wallets(
-            old_wallet, new_wallet, transfer
+            &old_wallet,
+            &new_wallet,
+            transfer
         ));
     }
 
@@ -905,7 +913,9 @@ mod test {
         };
 
         assert!(!constraints_satisfied_on_wallets(
-            old_wallet, new_wallet, transfer
+            &old_wallet,
+            &new_wallet,
+            transfer
         ));
     }
 
@@ -934,7 +944,9 @@ mod test {
         };
 
         assert!(constraints_satisfied_on_wallets(
-            old_wallet, new_wallet, transfer
+            &old_wallet,
+            &new_wallet,
+            transfer
         ));
     }
 
@@ -958,7 +970,9 @@ mod test {
         };
 
         assert!(constraints_satisfied_on_wallets(
-            old_wallet, new_wallet, transfer
+            &old_wallet,
+            &new_wallet,
+            transfer
         ));
     }
 
@@ -983,7 +997,9 @@ mod test {
         };
 
         assert!(!constraints_satisfied_on_wallets(
-            old_wallet, new_wallet, transfer
+            &old_wallet,
+            &new_wallet,
+            transfer
         ));
     }
 
@@ -1011,7 +1027,9 @@ mod test {
         };
 
         assert!(!constraints_satisfied_on_wallets(
-            old_wallet, new_wallet, transfer
+            &old_wallet,
+            &new_wallet,
+            transfer
         ));
     }
 
@@ -1030,8 +1048,8 @@ mod test {
         new_wallet.balances[0] = Balance::default();
 
         assert!(!constraints_satisfied_on_wallets(
-            old_wallet,
-            new_wallet,
+            &old_wallet,
+            &new_wallet,
             ExternalTransfer::default()
         ));
     }

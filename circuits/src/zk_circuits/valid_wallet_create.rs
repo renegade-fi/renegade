@@ -46,15 +46,13 @@ where
     /// VALID WALLET CREATE
     fn circuit(
         statement: ValidWalletCreateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        witness: ValidWalletCreateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        witness: &ValidWalletCreateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // Validate the commitment given in the statement is a valid commitment to the
         // private secret shares
-        let commitment = WalletShareCommitGadget::compute_private_commitment(
-            witness.private_wallet_share.clone(),
-            cs,
-        )?;
+        let commitment =
+            WalletShareCommitGadget::compute_private_commitment(&witness.private_wallet_share, cs)?;
         cs.enforce_equal(commitment, statement.private_shares_commitment)?;
 
         // Unblind the public shares then reconstruct the wallet
@@ -154,7 +152,7 @@ where
         statement_var: ValidWalletCreateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), PlonkError> {
-        Self::circuit(statement_var, witness_var, cs).map_err(PlonkError::CircuitError)
+        Self::circuit(statement_var, &witness_var, cs).map_err(PlonkError::CircuitError)
     }
 }
 
@@ -207,10 +205,10 @@ pub mod test_helpers {
     pub fn create_witness_statement_from_wallet(
         wallet: &SizedWallet,
     ) -> (SizedWitness, SizedStatement) {
-        let (private_shares, public_shares) = create_wallet_shares(wallet.clone());
+        let (private_shares, public_shares) = create_wallet_shares(wallet);
 
         // Build a commitment to the private secret shares
-        let commitment = compute_wallet_private_share_commitment(private_shares.clone());
+        let commitment = compute_wallet_private_share_commitment(&private_shares);
 
         // Prove and verify
         let witness = ValidWalletCreateWitness {
@@ -270,7 +268,7 @@ pub mod tests {
         statement.private_shares_commitment += Scalar::from(1u8);
 
         assert!(!check_constraint_satisfaction::<SizedWalletCreate>(
-            witness, statement
+            &witness, &statement
         ))
     }
 
@@ -282,7 +280,7 @@ pub mod tests {
 
         let (witness, statement) = create_witness_statement_from_wallet(&wallet);
         assert!(!check_constraint_satisfaction::<SizedWalletCreate>(
-            witness, statement
+            &witness, &statement
         ));
     }
 
@@ -294,7 +292,7 @@ pub mod tests {
 
         let (witness, statement) = create_witness_statement_from_wallet(&wallet);
         assert!(!check_constraint_satisfaction::<SizedWalletCreate>(
-            witness, statement
+            &witness, &statement
         ));
     }
 }
