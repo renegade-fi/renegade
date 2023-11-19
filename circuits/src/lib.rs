@@ -36,7 +36,6 @@ pub(crate) const SCALAR_BITS_MINUS_TWO: usize = SCALAR_MAX_BITS - 2;
 macro_rules! print_wire {
     ($x:expr, $cs:ident) => {{
         use circuit_types::traits::CircuitVarType;
-        use crypto::fields::scalar_to_biguint;
         use tracing::log;
         let x_eval = $x.eval($cs);
         log::info!("eval({}): {x_eval}", stringify!($x));
