@@ -13,6 +13,7 @@
 
 mod abi;
 pub mod client;
+pub mod constants;
 pub mod errors;
 mod helpers;
 mod serde_def_types;

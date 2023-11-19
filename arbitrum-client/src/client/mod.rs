@@ -8,15 +8,17 @@ use ethers::{
     middleware::SignerMiddleware,
     providers::{Http, Middleware, Provider},
     signers::{LocalWallet, Signer, Wallet},
-    types::Address,
+    types::{Address, BlockNumber},
 };
 
 use crate::{
-    abi::DarkpoolContract,
+    abi::{DarkpoolContract, DarkpoolEventSource},
+    constants::{Chain, DEVNET_RPC_URL, TESTNET_RPC_URL, TESTNET_DEPLOY_BLOCK, DEVNET_DEPLOY_BLOCK},
     errors::{ArbitrumClientConfigError, ArbitrumClientError},
 };
 
 mod contract_interaction;
+mod event_indexing;
 
 /// A configuration struct for the Arbitrum client, consists of relevant
 /// contract addresses, and endpoint for setting up an RPC client, and a private
@@ -30,8 +32,9 @@ pub struct ArbitrumClientConfig {
     ///
     /// This is used to filter for events emitted by the darkpool.
     pub event_source: String,
-    /// The HTTP-addressable URL of the Arbitrum RPC endpoint
-    pub rpc_url: String,
+    /// Which chain the client should interact with,
+    /// e.g. mainnet, testnet, or devnet
+    pub chain: Chain,
     /// The private key of the account to use for signing transactions
     pub arb_priv_key: String,
 }
@@ -42,10 +45,28 @@ pub struct ArbitrumClientConfig {
 type SignerHttpProvider = SignerMiddleware<Provider<Http>, Wallet<SigningKey>>;
 
 impl ArbitrumClientConfig {
+    /// Gets the block number at which the darkpool was deployed
+    fn get_deploy_block(&self) -> BlockNumber {
+        match self.chain {
+            Chain::Mainnet => unimplemented!(),
+            Chain::Testnet => BlockNumber::Number(TESTNET_DEPLOY_BLOCK.into()),
+            Chain::Devnet => BlockNumber::Number(DEVNET_DEPLOY_BLOCK.into()),
+        }
+    }
+
+    /// Gets the RPC url for the config's chain environment
+    fn get_rpc_url(&self) -> &'static str {
+        match self.chain {
+            Chain::Mainnet => unimplemented!(),
+            Chain::Testnet => TESTNET_RPC_URL,
+            Chain::Devnet => DEVNET_RPC_URL,
+        }
+    }
+
     /// Constructs an RPC client capable of signing transactions from the
     /// configuration
     async fn get_rpc_client(&self) -> Result<Arc<SignerHttpProvider>, ArbitrumClientConfigError> {
-        let provider = Provider::<Http>::try_from(&self.rpc_url)
+        let provider = Provider::<Http>::try_from(self.get_rpc_url())
             .map_err(|e| ArbitrumClientConfigError::RpcClientInitialization(e.to_string()))?;
 
         let wallet = LocalWallet::from_str(&self.arb_priv_key)
@@ -75,7 +96,7 @@ impl ArbitrumClientConfig {
     /// Parses the darkpool implementation address from the configuration,
     /// from which the events are emitted, returning an
     /// [`ethers::types::Address`]
-    pub fn get_event_source(&self) -> Result<Address, ArbitrumClientConfigError> {
+    fn get_event_source(&self) -> Result<Address, ArbitrumClientConfigError> {
         Address::from_str(&self.event_source)
             .map_err(|e| ArbitrumClientConfigError::AddressParsing(e.to_string()))
     }
@@ -83,36 +104,52 @@ impl ArbitrumClientConfig {
     /// Constructs a [`DarkpoolContract`] instance from the configuration,
     /// which provides strongly-typed, RPC-client-aware bindings for the
     /// darkpool contract methods.
-    pub async fn get_contract_instance(
+    pub async fn construct_contract_instance(
         &self,
     ) -> Result<DarkpoolContract<SignerHttpProvider>, ArbitrumClientConfigError> {
         let rpc_client = self.get_rpc_client().await?;
         let contract_address = self.get_darkpool_address()?;
-        let contract = DarkpoolContract::new(contract_address, rpc_client);
-        Ok(contract)
+        let instance = DarkpoolContract::new(contract_address, rpc_client);
+        Ok(instance)
+    }
+
+    /// Constructs a [`DarkpoolEventSource`] instance from the configuration,
+    /// which provides strongly-typed, RPC-client-aware bindings for accessing
+    /// darkpool events
+    pub async fn construct_event_source(
+        &self,
+    ) -> Result<DarkpoolEventSource<SignerHttpProvider>, ArbitrumClientConfigError> {
+        let rpc_client = self.get_rpc_client().await?;
+        let event_source = self.get_event_source()?;
+        let instance = DarkpoolEventSource::new(event_source, rpc_client);
+        Ok(instance)
     }
 }
 
-#[derive(Clone)]
 /// The Arbitrum client, which provides a higher-level interface to the darkpool
 /// contract for Renegade-specific access patterns.
+#[derive(Clone)]
 pub struct ArbitrumClient {
     /// The darkpool contract instance, used to make calls to the darkpool
     darkpool_contract: DarkpoolContract<SignerHttpProvider>,
-    /// The address of the darkpool implementation contract, used to filter
+    /// The darkpool implementation contract instance, used to filter
     /// for events emitted from the darkpool
-    darkpool_event_source: Address,
+    darkpool_event_source: DarkpoolEventSource<SignerHttpProvider>,
+    /// The block number at which the darkpool was deployed
+    deploy_block: BlockNumber,
 }
 
 impl ArbitrumClient {
     /// Constructs a new Arbitrum client from the given configuration
     pub async fn new(config: ArbitrumClientConfig) -> Result<Self, ArbitrumClientError> {
-        let darkpool_contract = config.get_contract_instance().await?;
-        let darkpool_implementation_address = config.get_event_source()?;
+        let darkpool_contract = config.construct_contract_instance().await?;
+        let darkpool_event_source = config.construct_event_source().await?;
+        let deploy_block = config.get_deploy_block();
 
         Ok(Self {
             darkpool_contract,
-            darkpool_event_source: darkpool_implementation_address,
+            darkpool_event_source,
+            deploy_block,
         })
     }
 }
