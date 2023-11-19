@@ -8,7 +8,7 @@ use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar};
 pub struct CondSelectGadget;
 impl CondSelectGadget {
     /// Computes the control flow statement if selector { a } else { b }
-    pub fn select<V, C>(a: V, b: V, selector: BoolVar, cs: &mut C) -> Result<V, CircuitError>
+    pub fn select<V, C>(a: &V, b: &V, selector: BoolVar, cs: &mut C) -> Result<V, CircuitError>
     where
         V: CircuitVarType,
         C: Circuit<ScalarField>,
@@ -50,12 +50,7 @@ impl CondSelectVectorGadget {
 
         let mut selected = Vec::with_capacity(a.len());
         for (a_val, b_val) in a.iter().zip(b.iter()) {
-            selected.push(CondSelectGadget::select(
-                a_val.clone(),
-                b_val.clone(),
-                selector,
-                cs,
-            )?);
+            selected.push(CondSelectGadget::select(a_val, b_val, selector, cs)?);
         }
 
         Ok(selected)
@@ -90,13 +85,13 @@ mod cond_select_test {
 
         // Selector = 1
         let selector = true.create_witness(&mut cs);
-        let res = CondSelectGadget::select(a_var, b_var, selector, &mut cs).unwrap();
+        let res = CondSelectGadget::select(&a_var, &b_var, selector, &mut cs).unwrap();
 
         cs.enforce_equal(res, a_var).unwrap();
 
         // Selector = 0
         let selector = false.create_witness(&mut cs);
-        let res = CondSelectGadget::select(a_var, b_var, selector, &mut cs).unwrap();
+        let res = CondSelectGadget::select(&a_var, &b_var, selector, &mut cs).unwrap();
 
         cs.enforce_equal(res, b_var).unwrap();
 
@@ -124,14 +119,14 @@ mod cond_select_test {
             let sel = true.allocate(PARTY0, &fabric);
             let sel = sel.create_shared_witness(&mut cs).unwrap();
 
-            let res = CondSelectGadget::select(a_var, b_var, sel, &mut cs).unwrap();
+            let res = CondSelectGadget::select(&a_var, &b_var, sel, &mut cs).unwrap();
             cs.enforce_equal(res, a_var).unwrap();
 
             // Selector = 0
             let sel = false.allocate(PARTY0, &fabric);
             let sel = sel.create_shared_witness(&mut cs).unwrap();
 
-            let res = CondSelectGadget::select(a_var, b_var, sel, &mut cs).unwrap();
+            let res = CondSelectGadget::select(&a_var, &b_var, sel, &mut cs).unwrap();
             cs.enforce_equal(res, b_var).unwrap();
 
             cs.check_circuit_satisfiability(&[a, b])

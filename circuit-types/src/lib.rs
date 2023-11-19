@@ -2,6 +2,8 @@
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
 #![deny(unsafe_code)]
+#![deny(clippy::needless_pass_by_value)]
+#![deny(clippy::needless_pass_by_ref_mut)]
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 #![feature(future_join)]
@@ -175,15 +177,15 @@ pub mod native_helpers {
         const MAX_ORDERS: usize,
         const MAX_FEES: usize,
     >(
-        private_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        private_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        public_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     ) -> Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
     where
         [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
     {
         let recovered_blinder = private_shares.blinder + public_shares.blinder;
         let unblinded_public_shares = public_shares.unblind_shares(recovered_blinder);
-        private_shares + unblinded_public_shares
+        private_shares.clone() + unblinded_public_shares
     }
 
     /// Compute a commitment to the shares of a wallet
@@ -192,8 +194,8 @@ pub mod native_helpers {
         const MAX_ORDERS: usize,
         const MAX_FEES: usize,
     >(
-        public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        private_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        public_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        private_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     ) -> WalletShareStateCommitment
     where
         [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
@@ -212,7 +214,7 @@ pub mod native_helpers {
         const MAX_ORDERS: usize,
         const MAX_FEES: usize,
     >(
-        private_share: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        private_share: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     ) -> Scalar
     where
         [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
@@ -227,7 +229,7 @@ pub mod native_helpers {
         const MAX_ORDERS: usize,
         const MAX_FEES: usize,
     >(
-        public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        public_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         private_share_comm: WalletShareStateCommitment,
     ) -> WalletShareStateCommitment
     where
@@ -254,7 +256,7 @@ pub mod native_helpers {
         const MAX_ORDERS: usize,
         const MAX_FEES: usize,
     >(
-        private_secret_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        private_secret_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     ) -> (
         WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,

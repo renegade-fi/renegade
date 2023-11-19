@@ -47,7 +47,7 @@ where
 {
     /// The circuit constraints for VALID COMMITMENTS
     pub fn circuit(
-        statement: ValidCommitmentsStatementVar,
+        statement: &ValidCommitmentsStatementVar,
         witness: ValidCommitmentsWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -361,7 +361,7 @@ where
         statement_var: ValidCommitmentsStatementVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), PlonkError> {
-        Self::circuit(statement_var, witness_var, cs).map_err(PlonkError::CircuitError)
+        Self::circuit(&statement_var, witness_var, cs).map_err(PlonkError::CircuitError)
     }
 }
 
@@ -407,7 +407,7 @@ pub mod test_helpers {
         let mut rng = thread_rng();
 
         // Split the wallet into secret shares
-        let (private_secret_shares, public_secret_shares) = create_wallet_shares(wallet.clone());
+        let (private_secret_shares, public_secret_shares) = create_wallet_shares(wallet);
 
         // Choose an order and fee to match on
         let ind_order = 0;
@@ -564,7 +564,7 @@ mod test {
         let (witness, statement) = create_witness_and_statement(&wallet);
 
         assert!(check_constraint_satisfaction::<SizedCommitments>(
-            witness, statement
+            &witness, &statement
         ))
     }
 
@@ -575,7 +575,7 @@ mod test {
         let (witness, statement) = create_witness_and_statement(&wallet);
 
         assert!(check_constraint_satisfaction::<SizedCommitments>(
-            witness, statement
+            &witness, &statement
         ))
     }
 
@@ -593,7 +593,7 @@ mod test {
         witness.balance_receive.amount += 1u64;
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            witness, statement
+            &witness, &statement
         ));
     }
 
@@ -612,7 +612,7 @@ mod test {
         };
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            witness, statement
+            &witness, &statement
         ))
     }
 
@@ -627,7 +627,7 @@ mod test {
         witness.augmented_public_shares.orders[1].amount += Scalar::one();
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            witness, statement
+            &witness, &statement
         ));
     }
 
@@ -641,7 +641,7 @@ mod test {
         // Modify a fee in the wallet
         witness.augmented_public_shares.fees[0].gas_token_amount += Scalar::one();
         assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            witness, statement
+            &witness, &statement
         ));
     }
 
@@ -655,7 +655,7 @@ mod test {
         // Modify a key in the wallet
         witness.augmented_public_shares.keys.pk_match.key = Scalar::one();
         assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            witness, statement
+            &witness, &statement
         ));
     }
 
@@ -669,7 +669,7 @@ mod test {
         // Modify the wallet blinder
         witness.augmented_public_shares.blinder += Scalar::one();
         assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            witness, statement
+            &witness, &statement
         ))
     }
 
@@ -683,7 +683,7 @@ mod test {
         statement.balance_send_index += 1;
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            witness, statement
+            &witness, &statement
         ))
     }
 
@@ -697,7 +697,7 @@ mod test {
         statement.balance_receive_index += 1;
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            witness, statement
+            &witness, &statement
         ))
     }
 
@@ -711,7 +711,7 @@ mod test {
         statement.order_index += 1;
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            witness, statement
+            &witness, &statement
         ))
     }
 
@@ -729,7 +729,7 @@ mod test {
             };
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            witness, statement
+            &witness, &statement
         ));
     }
 
@@ -747,7 +747,7 @@ mod test {
             };
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            witness, statement
+            &witness, &statement
         ));
     }
 
@@ -771,7 +771,7 @@ mod test {
             });
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            witness, statement
+            &witness, &statement
         ));
     }
 
@@ -794,7 +794,7 @@ mod test {
         };
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            witness, statement
+            &witness, &statement
         ));
     }
 
@@ -822,7 +822,7 @@ mod test {
             });
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            witness, statement
+            &witness, &statement
         ));
     }
 }
