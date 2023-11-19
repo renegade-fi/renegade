@@ -121,7 +121,7 @@ where
 
     /// Unblinds the wallet, but does not unblind the blinder itself
     pub fn unblind_shares(
-        self,
+        &self,
         blinder: Scalar,
     ) -> WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
         let prev_blinder = self.blinder;

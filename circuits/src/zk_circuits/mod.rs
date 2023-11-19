@@ -4,7 +4,7 @@
 
 pub mod valid_commitments;
 // pub mod valid_match_mpc;
-// pub mod valid_reblind;
+pub mod valid_reblind;
 // pub mod valid_settle;
 pub mod valid_wallet_create;
 pub mod valid_wallet_update;
@@ -111,8 +111,8 @@ pub mod test_helpers {
     /// Check whether a witness and statement satisfy wire assignments for a
     /// circuit
     pub fn check_constraint_satisfaction<C: SingleProverCircuit>(
-        witness: C::Witness,
-        statement: C::Statement,
+        witness: &C::Witness,
+        statement: &C::Statement,
     ) -> bool {
         // Apply the constraints
         let mut cs = PlonkCircuit::new_turbo_plonk();
@@ -136,7 +136,7 @@ pub mod test_helpers {
         const MAX_ORDERS: usize,
         const MAX_FEES: usize,
     >(
-        wallet: Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     ) -> (
         WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
@@ -150,7 +150,7 @@ pub mod test_helpers {
 
         let blinder = wallet.blinder;
         create_wallet_shares_with_randomness(
-            &wallet,
+            wallet,
             blinder,
             blinder_share,
             from_fn(|| Some(Scalar::random(&mut rng))),
@@ -325,7 +325,7 @@ pub mod test_helpers {
         // Split into secret shares
         let wallet = INITIAL_WALLET.clone();
         let wallet_blinder = wallet.blinder;
-        let (private_share, public_share) = create_wallet_shares(wallet.clone());
+        let (private_share, public_share) = create_wallet_shares(&wallet);
 
         // Unblind the public shares, recover from shares
         let unblinded_public_shares = public_share.unblind_shares(wallet_blinder);
@@ -341,11 +341,11 @@ pub mod test_helpers {
         use circuit_types::native_helpers::reblind_wallet;
 
         let mut wallet = INITIAL_WALLET.clone();
-        let (private_share, _) = create_wallet_shares(wallet.clone());
+        let (private_share, _) = create_wallet_shares(&wallet);
 
         // Reblind the shares
         let (reblinded_private_shares, reblinded_public_shares) =
-            reblind_wallet(private_share, &wallet);
+            reblind_wallet(&private_share, &wallet);
 
         // Unblind the public shares, recover from shares
         let recovered_blinder = reblinded_public_shares.blinder + reblinded_private_shares.blinder;

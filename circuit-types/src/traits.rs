@@ -255,13 +255,13 @@ pub trait SecretShareType: Sized + BaseType {
     /// The base type that this secret share is a representation of
     type Base: BaseType;
     /// Apply an additive blinder to each element of the secret shares
-    fn blind(self, blinder: Scalar) -> Self {
+    fn blind(&self, blinder: Scalar) -> Self {
         let mut res_scalars = self.to_scalars().into_iter().map(|s| s + blinder);
         Self::from_scalars(&mut res_scalars)
     }
 
     /// Remove an additive blind from each element of the secret shares
-    fn unblind(self, blinder: Scalar) -> Self {
+    fn unblind(&self, blinder: Scalar) -> Self {
         let mut res_scalars = self.to_scalars().into_iter().map(|s| s - blinder);
         Self::from_scalars(&mut res_scalars)
     }
@@ -300,7 +300,7 @@ pub trait SecretShareVarType: Sized + CircuitVarType {
     }
 
     /// Remove an additive blind from each element of the secret shares
-    fn unblind(self, blinder: Variable, circuit: &mut PlonkCircuit) -> Self {
+    fn unblind(&self, blinder: Variable, circuit: &mut PlonkCircuit) -> Self {
         let res_vars = self
             .to_vars()
             .into_iter()
