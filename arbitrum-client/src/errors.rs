@@ -12,7 +12,9 @@ pub enum ArbitrumClientError {
     /// Error thrown when serializing/deserializing calldata/retdata
     Serde(String),
     /// Error thrown when converting between relayer & smart contract types
-    ConversionError(ConversionError),
+    Conversion(ConversionError),
+    /// Error thrown when querying events
+    EventQuerying(String),
 }
 
 impl Display for ArbitrumClientError {
@@ -61,6 +63,6 @@ impl Error for ConversionError {}
 
 impl From<ConversionError> for ArbitrumClientError {
     fn from(e: ConversionError) -> Self {
-        Self::ConversionError(e)
+        Self::Conversion(e)
     }
 }
