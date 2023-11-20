@@ -33,6 +33,9 @@ pub const EMPTY_LEAF_VALUE: Scalar = Scalar(Fp(
     PhantomData,
 ));
 
+/// The number of bytes in a Solidity function selector
+pub const SELECTOR_LEN: usize = 4;
+
 lazy_static! {
     // ------------------------
     // | Merkle Tree Metadata |

@@ -1,17 +1,29 @@
 //! Defines `ArbitrumClient` helpers that allow for indexing events
 //! emitted by the darkpool contract
 
+use alloy_sol_types::SolCall;
+use circuit_types::{traits::BaseType, SizedWalletShare};
 use common::types::merkle::{MerkleAuthenticationPath, MerkleTreeCoords};
 use constants::{Scalar, MERKLE_HEIGHT};
 use ethers::types::TxHash;
 use num_bigint::BigUint;
 
 use crate::{
-    abi::{NodeChangedFilter, WalletUpdatedFilter},
-    constants::DEFAULT_AUTHENTICATION_PATH,
+    abi::{
+        newWalletCall, processMatchSettleCall, updateWalletCall, NodeChangedFilter,
+        WalletUpdatedFilter,
+    },
+    constants::{DEFAULT_AUTHENTICATION_PATH, SELECTOR_LEN},
     errors::ArbitrumClientError,
-    helpers::keccak_hash_scalar,
+    helpers::{
+        deserialize_calldata, keccak_hash_scalar, parse_shares_from_new_wallet,
+        parse_shares_from_process_match_settle, parse_shares_from_update_wallet,
+    },
     serde_def_types::SerdeScalarField,
+    types::{
+        MatchPayload, ValidMatchSettleStatement, ValidWalletCreateStatement,
+        ValidWalletUpdateStatement,
+    },
 };
 
 use super::ArbitrumClient;
@@ -100,5 +112,36 @@ impl ArbitrumClient {
             .last()
             .map(|event| event.index)
             .ok_or(ArbitrumClientError::CommitmentNotFound)
+    }
+
+    /// Fetch and parse the public secret shares from the calldata of the given
+    /// transaction
+    ///
+    /// In the case that the referenced transaction is a `process_match_settle`,
+    /// we disambiguate between the two parties by adding the public blinder of
+    /// the party's shares the caller intends to fetch
+    // TODO: Add support for nested calls
+    pub async fn fetch_public_shares_from_tx(
+        &self,
+        public_blinder_share: Scalar,
+        tx_hash: TxHash,
+    ) -> Result<SizedWalletShare, ArbitrumClientError> {
+        let tx = self
+            .darkpool_contract
+            .client()
+            .get_transaction(tx_hash)
+            .await
+            .map_err(|e| ArbitrumClientError::TxNotFound(e.to_string()))?;
+
+        let calldata: Vec<u8> = tx.input.into();
+        let selector = &calldata[..SELECTOR_LEN];
+        match selector {
+            &<newWalletCall as SolCall>::SELECTOR => parse_shares_from_new_wallet(&calldata),
+            &<updateWalletCall as SolCall>::SELECTOR => parse_shares_from_update_wallet(&calldata),
+            &<processMatchSettleCall as SolCall>::SELECTOR => {
+                parse_shares_from_process_match_settle(&calldata)
+            },
+            _ => return Err(ArbitrumClientError::InvalidSelector),
+        }
     }
 }

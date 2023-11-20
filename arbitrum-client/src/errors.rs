@@ -17,6 +17,15 @@ pub enum ArbitrumClientError {
     EventQuerying(String),
     /// Error thrown when a commitment can't be found in the Merkle tree
     CommitmentNotFound,
+    /// Error thrown when a transaction can't be found
+    TxNotFound(String),
+    /// Error thrown when a transaction's selector doesn't match
+    /// one of the supported ones
+    /// (`newWallet`, `updateWallet`, `processMatchSettle`)
+    InvalidSelector,
+    /// Error thrown when a target public blinder share was not found
+    /// in a given transaction
+    BlinderNotFound,
 }
 
 impl Display for ArbitrumClientError {
