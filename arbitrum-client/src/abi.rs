@@ -1,6 +1,7 @@
 //! Solidity ABI definitions of smart contracts, events, and other on-chain
 //! data structures used by the Arbitrum client.
 
+use alloy_sol_types::sol;
 use ethers::contract::abigen;
 
 abigen!(
@@ -23,3 +24,9 @@ abigen!(
         event NodeChanged(uint8 indexed height, uint128 indexed index, bytes indexed new_value_hash, bytes new_value)
     ]"#
 );
+
+sol! {
+    function newWallet(bytes memory wallet_blinder_share, bytes memory proof, bytes memory valid_wallet_create_statement_bytes) external;
+    function updateWallet(bytes memory wallet_blinder_share, bytes memory proof, bytes memory valid_wallet_update_statement_bytes, bytes memory public_inputs_signature) external;
+    function processMatchSettle(bytes memory party_0_match_payload, bytes memory party_0_valid_commitments_proof, bytes memory party_0_valid_reblind_proof, bytes memory party_1_match_payload, bytes memory party_1_valid_commitments_proof, bytes memory party_1_valid_reblind_proof, bytes memory valid_match_settle_proof, bytes memory valid_match_settle_statement_bytes,) external;
+}
