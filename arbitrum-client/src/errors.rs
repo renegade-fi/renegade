@@ -15,6 +15,8 @@ pub enum ArbitrumClientError {
     Conversion(ConversionError),
     /// Error thrown when querying events
     EventQuerying(String),
+    /// Error thrown when a commitment can't be found in the Merkle tree
+    CommitmentNotFound,
 }
 
 impl Display for ArbitrumClientError {
