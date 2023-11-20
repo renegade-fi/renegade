@@ -63,18 +63,18 @@ pub type CurvePoint = GenericCurvePoint<SystemCurveGroup>;
 pub type AuthenticatedScalar = AuthenticatedScalarResult<SystemCurveGroup>;
 
 // ----------------------
-// | Starknet Constants |
+// | Arbitrum Constants |
 // ----------------------
 
 /// The deployment block for the Mainnet contract
 /// TODO: Update this once the contract is deployed
-pub const MAINNET_CONTRACT_DEPLOYMENT_BLOCK: u64 = 780361;
+pub const MAINNET_CONTRACT_DEPLOYMENT_BLOCK: u64 = 0;
 
-/// The deployment block for the Goerli contract
-pub const GOERLI_CONTRACT_DEPLOYMENT_BLOCK: u64 = 780361;
+/// The block number at which the darkpool was deployed on devnet
+pub const DEVNET_DEPLOY_BLOCK: u64 = 0;
 
-/// The deployment block for the devnet contract
-pub const DEVNET_CONTRACT_DEPLOYMENT_BLOCK: u64 = 0;
+/// The block number at which the darkpool was deployed on testnet
+pub const TESTNET_DEPLOY_BLOCK: u64 = 604069;
 
 // ----------------------
 // | Pubsub Topic Names |
