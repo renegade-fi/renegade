@@ -9,6 +9,7 @@ ark-bn254 = "0.4.0"
 ark-ec = "0.4.0"
 ark-ff = "0.4.0"
 alloy-primitives = "0.3.1"
+alloy-sol-types = "0.3.1"
 num-bigint = { workspace = true }
 lazy_static = "1.4.0"
 
