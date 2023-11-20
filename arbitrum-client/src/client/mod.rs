@@ -3,6 +3,7 @@
 
 use std::{str::FromStr, sync::Arc};
 
+use constants::{DEVNET_DEPLOY_BLOCK, TESTNET_DEPLOY_BLOCK};
 use ethers::{
     core::k256::ecdsa::SigningKey,
     middleware::SignerMiddleware,
@@ -13,7 +14,7 @@ use ethers::{
 
 use crate::{
     abi::{DarkpoolContract, DarkpoolEventSource},
-    constants::{Chain, DEVNET_RPC_URL, TESTNET_RPC_URL, TESTNET_DEPLOY_BLOCK, DEVNET_DEPLOY_BLOCK},
+    constants::{Chain, DEVNET_RPC_URL, TESTNET_RPC_URL},
     errors::{ArbitrumClientConfigError, ArbitrumClientError},
 };
 
@@ -35,6 +36,8 @@ pub struct ArbitrumClientConfig {
     /// Which chain the client should interact with,
     /// e.g. mainnet, testnet, or devnet
     pub chain: Chain,
+    /// HTTP-addressable RPC endpoint for the client to connect to
+    pub rpc_url: String,
     /// The private key of the account to use for signing transactions
     pub arb_priv_key: String,
 }
@@ -54,19 +57,10 @@ impl ArbitrumClientConfig {
         }
     }
 
-    /// Gets the RPC url for the config's chain environment
-    fn get_rpc_url(&self) -> &'static str {
-        match self.chain {
-            Chain::Mainnet => unimplemented!(),
-            Chain::Testnet => TESTNET_RPC_URL,
-            Chain::Devnet => DEVNET_RPC_URL,
-        }
-    }
-
     /// Constructs an RPC client capable of signing transactions from the
     /// configuration
     async fn get_rpc_client(&self) -> Result<Arc<SignerHttpProvider>, ArbitrumClientConfigError> {
-        let provider = Provider::<Http>::try_from(self.get_rpc_url())
+        let provider = Provider::<Http>::try_from(self.rpc_url)
             .map_err(|e| ArbitrumClientConfigError::RpcClientInitialization(e.to_string()))?;
 
         let wallet = LocalWallet::from_str(&self.arb_priv_key)

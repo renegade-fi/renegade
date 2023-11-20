@@ -2,7 +2,7 @@
 //! darkpool contract
 
 use circuit_types::{merkle::MerkleRoot, wallet::Nullifier, PlonkProof};
-use constants::{Scalar, ScalarField};
+use constants::Scalar;
 
 use crate::{
     errors::ArbitrumClientError,
@@ -25,7 +25,7 @@ impl ArbitrumClient {
     // -----------
 
     /// Get the current Merkle root in the contract
-    pub async fn get_merkle_root(&self) -> Result<ScalarField, ArbitrumClientError> {
+    pub async fn get_merkle_root(&self) -> Result<Scalar, ArbitrumClientError> {
         let merkle_root_bytes = self
             .darkpool_contract
             .get_root()
@@ -33,9 +33,9 @@ impl ArbitrumClient {
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?;
 
-        Ok(
-            deserialize_retdata::<SerdeScalarField>(&merkle_root_bytes)?.0, // ScalarField
-        )
+        let merkle_root = deserialize_retdata::<SerdeScalarField>(&merkle_root_bytes)?.0;
+
+        Ok(Scalar::new(merkle_root))
     }
 
     /// Check whether the given Merkle root is a valid historical root
