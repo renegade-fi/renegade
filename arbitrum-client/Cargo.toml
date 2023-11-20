@@ -9,10 +9,13 @@ ark-bn254 = "0.4.0"
 ark-ec = "0.4.0"
 ark-ff = "0.4.0"
 alloy-primitives = "0.3.1"
+num-bigint = { workspace = true }
+lazy_static = "1.4.0"
 
 # === Workspace Dependencies === #
 constants = { path = "../constants" }
 circuit-types = { path = "../circuit-types" }
+common = { path = "../common" }
 
 # === Serde === #
 serde = { workspace = true }
