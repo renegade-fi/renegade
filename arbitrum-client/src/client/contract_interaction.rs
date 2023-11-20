@@ -6,7 +6,7 @@ use constants::Scalar;
 
 use crate::{
     errors::ArbitrumClientError,
-    helpers::{deserialize_retdata, serialize_calldata},
+    helpers::{deserialize_calldata, serialize_calldata},
     serde_def_types::SerdeScalarField,
     types::{
         MatchPayload, Proof, ValidMatchSettleStatement, ValidWalletCreateStatement,
@@ -33,7 +33,7 @@ impl ArbitrumClient {
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?;
 
-        let merkle_root = deserialize_retdata::<SerdeScalarField>(&merkle_root_bytes)?.0;
+        let merkle_root = deserialize_calldata::<SerdeScalarField>(&merkle_root_bytes)?.0;
 
         Ok(Scalar::new(merkle_root))
     }
