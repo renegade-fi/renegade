@@ -265,7 +265,9 @@ dependencies = [
  "ethers",
  "lazy_static",
  "num-bigint",
+ "num-traits",
  "postcard",
+ "renegade-crypto",
  "serde",
  "serde_with 3.4.0",
 ]
