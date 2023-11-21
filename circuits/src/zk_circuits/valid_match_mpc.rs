@@ -4,46 +4,31 @@
 //! See the whitepaper (https://renegade.fi/whitepaper.pdf) appendix A.5
 //! for a formal specification
 
+use ark_ff::{One, Zero};
 use circuit_types::{
-    balance::{AuthenticatedBalanceVar, BalanceVar, LinkableBalance},
-    errors::ProverError,
-    fixed_point::{AuthenticatedFixedPointVar, FixedPoint, FixedPointVar, DEFAULT_FP_PRECISION},
-    order::{AuthenticatedOrderVar, LinkableOrder, OrderVar},
-    r#match::{AuthenticatedMatchResultVar, LinkableMatchResult, MatchResultVar},
+    balance::{Balance, BalanceVar},
+    fixed_point::{FixedPoint, FixedPointVar, DEFAULT_FP_PRECISION},
+    order::{Order, OrderVar},
+    r#match::{MatchResult, MatchResultVar},
     traits::{
-        BaseType, CircuitBaseType, CircuitCommitmentType, CircuitVarType, LinearCombinationLike,
-        MpcBaseType, MpcLinearCombinationLike, MpcType, MultiProverCircuit,
-        MultiproverCircuitBaseType, MultiproverCircuitCommitmentType,
-        MultiproverCircuitVariableType, SingleProverCircuit,
+        BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType, MultiProverCircuit,
+        MultiproverCircuitBaseType, SingleProverCircuit,
     },
-    AMOUNT_BITS, PRICE_BITS,
+    Fabric, MpcPlonkCircuit, PlonkCircuit, AMOUNT_BITS, PRICE_BITS,
 };
-use mpc_stark::{
-    algebra::{
-        authenticated_scalar::AuthenticatedScalarResult,
-        authenticated_stark_point::AuthenticatedStarkPointOpenResult, scalar::Scalar,
-        stark_curve::StarkPoint,
-    },
-    MpcFabric,
-};
+use constants::{AuthenticatedScalar, Scalar, ScalarField};
+use mpc_plonk::errors::PlonkError;
+use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 
 use crate::zk_gadgets::{
     comparators::{
-        EqGadget, GreaterThanEqGadget, GreaterThanEqZeroGadget, MultiproverEqGadget,
-        MultiproverGreaterThanEqGadget, MultiproverGreaterThanEqZeroGadget,
+        EqGadget, GreaterThanEqGadget, GreaterThanEqZeroGadget, MultiproverGreaterThanEqGadget,
+        MultiproverGreaterThanEqZeroGadget,
     },
     fixed_point::{FixedPointGadget, MultiproverFixedPointGadget},
-    select::{
-        CondSelectGadget, CondSelectVectorGadget, MultiproverCondSelectGadget,
-        MultiproverCondSelectVectorGadget,
-    },
+    select::{CondSelectGadget, CondSelectVectorGadget},
 };
 use circuit_macros::circuit_type;
-use mpc_bulletproof::{
-    r1cs::{LinearCombination, RandomizableConstraintSystem, Variable},
-    r1cs_mpc::{MpcLinearCombination, MpcRandomizableConstraintSystem, MpcVariable, R1CSError},
-};
-use rand::{CryptoRng, RngCore};
 
 // ----------------------
 // | Circuit Definition |
@@ -54,48 +39,43 @@ use rand::{CryptoRng, RngCore};
 /// This statement is only proven within the context of an MPC, so it only
 /// implements the Multiprover circuit trait
 #[derive(Clone, Debug)]
-pub struct ValidMatchMpcCircuit;
-impl ValidMatchMpcCircuit {
+pub struct ValidMatchMpc;
+impl ValidMatchMpc {
     /// The order crossing check, verifies that the matches result is valid
     /// given the orders and balances of the two parties
-    pub fn matching_engine_check<CS>(
-        witness: AuthenticatedValidMatchMpcWitnessVar<MpcVariable>,
-        fabric: MpcFabric,
-        cs: &mut CS,
-    ) -> Result<(), ProverError>
-    where
-        CS: MpcRandomizableConstraintSystem,
-    {
+    pub fn multi_prover_circuit(
+        witness: &ValidMatchMpcWitnessVar,
+        fabric: &Fabric,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let zero = ScalarField::zero();
+        let one = ScalarField::one();
+
+        let zero_var = cs.zero();
+        let one_var = cs.one();
+
         // --- Match Engine Input Validity --- //
         // Check that both orders are for the matched asset pair
-        cs.constrain(witness.order1.quote_mint.clone() - witness.match_res.quote_mint.clone());
-        cs.constrain(witness.order1.base_mint.clone() - witness.match_res.base_mint.clone());
-        cs.constrain(witness.order2.quote_mint.clone() - witness.match_res.quote_mint.clone());
-        cs.constrain(witness.order2.base_mint.clone() - witness.match_res.base_mint.clone());
+        cs.enforce_equal(witness.order1.quote_mint, witness.match_res.quote_mint)?;
+        cs.enforce_equal(witness.order1.base_mint, witness.match_res.base_mint)?;
+        cs.enforce_equal(witness.order2.quote_mint, witness.match_res.quote_mint)?;
+        cs.enforce_equal(witness.order2.base_mint, witness.match_res.base_mint)?;
 
         // Check that the prices supplied by the parties are equal, these should be
         // agreed upon outside of the circuit
-        MultiproverEqGadget::constrain_eq(witness.price1.clone(), witness.price2.clone(), cs);
+        EqGadget::constrain_eq(&witness.price1, &witness.price2, cs)?;
 
         // Check that the balances supplied are for the correct mints; i.e. for the mint
         // that each party sells in the settlement
-        let mut selected_mints =
-            MultiproverCondSelectVectorGadget::select::<_, MpcLinearCombination, _>(
-                &[
-                    witness.match_res.base_mint.clone().into(),
-                    witness.match_res.quote_mint.clone().into(),
-                ],
-                &[
-                    witness.match_res.quote_mint.clone().into(),
-                    witness.match_res.base_mint.clone().into(),
-                ],
-                witness.match_res.direction.clone(),
-                &fabric,
-                cs,
-            )?;
+        let selected_mints = CondSelectGadget::select(
+            &[witness.match_res.base_mint, witness.match_res.quote_mint],
+            &[witness.match_res.quote_mint, witness.match_res.base_mint],
+            witness.match_res.direction,
+            cs,
+        )?;
 
-        cs.constrain(witness.balance1.mint.clone() - selected_mints.remove(0));
-        cs.constrain(witness.balance2.mint.clone() - selected_mints.remove(0));
+        cs.enforce_equal(witness.balance1.mint, selected_mints[0])?;
+        cs.enforce_equal(witness.balance2.mint, selected_mints[1])?;
 
         // Check that the max amount match supplied by both parties is covered by the
         // balance no greater than the amount specified in the order
@@ -103,7 +83,7 @@ impl ValidMatchMpcCircuit {
             &witness.match_res,
             &witness.balance1,
             &witness.order1,
-            fabric.clone(),
+            fabric,
             cs,
         )?;
 
@@ -111,34 +91,33 @@ impl ValidMatchMpcCircuit {
             &witness.match_res,
             &witness.balance2,
             &witness.order2,
-            fabric.clone(),
+            fabric,
             cs,
         )?;
 
         // --- Match Engine Execution Validity --- //
         // Check that the direction of the match is the same as the first party's
         // direction
-        cs.constrain(witness.match_res.direction.clone() - witness.order1.side.clone());
+        cs.enforce_equal(
+            witness.match_res.direction.into(),
+            witness.order1.side.into(),
+        )?;
 
         // Check that the orders are on opposite sides of the market. It is assumed that
         // order sides are already constrained to be binary when they are
         // submitted. More broadly it is assumed that orders are well formed,
         // checking this amounts to checking their inclusion in the state tree,
         // which is done in `input_consistency_check`
-        cs.constrain(
-            &witness.order1.side + &witness.order2.side - MpcVariable::one(fabric.clone()),
-        );
-
-        // Constrain the min_amount_order_index to be binary
-        // i.e. 0 === min_amount_order_index * (1 - min_amount_order_index)
-        let (_, _, mul_out) = cs
-            .multiply(
-                &witness.match_res.min_amount_order_index.clone().into(),
-                &(MpcLinearCombination::from_scalar(Scalar::one(), fabric.clone())
-                    - &witness.match_res.min_amount_order_index),
-            )
-            .map_err(ProverError::Collaborative)?;
-        cs.constrain(mul_out.into());
+        cs.lc_gate(
+            &[
+                witness.order1.side.into(),
+                witness.order2.side.into(),
+                one_var,
+                one_var,
+                zero_var, // out wire
+            ],
+            &[one, one, -one, zero],
+        )?;
 
         // Check that the amount of base currency exchanged is equal to the minimum of
         // the two order's amounts
@@ -146,17 +125,14 @@ impl ValidMatchMpcCircuit {
         // 1. Constrain the max_minus_min_amount to be correctly computed with respect
         //    to the argmin
         // witness variable min_amount_order_index
-        let max_minus_min1 = &witness.amount1 - &witness.amount2;
-        let max_minus_min2 = &witness.amount2 - &witness.amount1;
-        let max_minus_min_expected =
-            MultiproverCondSelectGadget::select::<_, MpcLinearCombination, _>(
-                max_minus_min1,
-                max_minus_min2,
-                witness.match_res.min_amount_order_index,
-                &fabric,
-                cs,
-            )?;
-        cs.constrain(&max_minus_min_expected - &witness.match_res.max_minus_min_amount);
+        let max_minus_min1 = cs.sub(witness.amount1, witness.amount2)?;
+        let max_minus_min2 = cs.sub(witness.amount2, witness.amount1)?;
+        cs.mux_gate(
+            witness.match_res.min_amount_order_index,
+            max_minus_min1,
+            max_minus_min2,
+            witness.match_res.max_minus_min_amount, // out wire
+        )?;
 
         // 2. Constrain the max_minus_min_amount value to be positive
         // This, along with the previous check, constrain `max_minus_min_amount` to be
@@ -166,8 +142,8 @@ impl ValidMatchMpcCircuit {
         // Constraining the value to be positive forces it to be equal to max(amounts) -
         // min(amounts)
         MultiproverGreaterThanEqZeroGadget::<AMOUNT_BITS>::constrain_greater_than_zero(
-            witness.match_res.max_minus_min_amount.clone(),
-            &fabric,
+            witness.match_res.max_minus_min_amount,
+            fabric,
             cs,
         )?;
 
@@ -177,47 +153,52 @@ impl ValidMatchMpcCircuit {
         //      min(a, b) = 1/2 * (a + b - [max(a, b) - min(a, b)])
         // Above we are given max(a, b) - min(a, b), so we can enforce the constraint
         //      2 * executed_amount = amount1 + amount2 - max_minus_min_amount
-        let lhs = Scalar::from(2u64) * &witness.match_res.base_amount;
-        let rhs = &witness.amount1 + &witness.amount2 - &witness.match_res.max_minus_min_amount;
-        cs.constrain(lhs - rhs);
+        let two = ScalarField::from(2u64);
+        cs.lc_gate(
+            &[
+                witness.match_res.base_amount,
+                witness.amount1,
+                witness.amount2,
+                witness.match_res.max_minus_min_amount,
+                zero_var, // out wire
+            ],
+            &[two, -one, -one, one],
+        )?;
 
         // The quote amount should then equal the price multiplied by the base amount
         let expected_quote_amount = witness
             .price1
-            .mul_integer(witness.match_res.base_amount.clone(), cs)
-            .map_err(ProverError::Collaborative)?;
+            .mul_integer(witness.match_res.base_amount, cs)?;
 
         MultiproverFixedPointGadget::constrain_equal_integer_ignore_fraction(
-            &expected_quote_amount,
-            &witness.match_res.quote_amount,
-            &fabric,
+            expected_quote_amount,
+            witness.match_res.quote_amount,
+            fabric,
             cs,
         )?;
 
         // --- Price Protection --- //
-        Self::verify_price_protection(&witness.price1, &witness.order1, fabric.clone(), cs)?;
-        Self::verify_price_protection(&witness.price2, &witness.order2, fabric, cs)?;
-
-        Ok(())
+        Self::verify_price_protection(&witness.price1, &witness.order1, fabric, cs)?;
+        Self::verify_price_protection(&witness.price2, &witness.order2, fabric, cs)
     }
 
     /// Check that a balance covers the advertised amount at a given price, and
     /// that the amount is less than the maximum amount allowed by the order
-    pub fn validate_volume_constraints<CS: MpcRandomizableConstraintSystem>(
-        match_res: &AuthenticatedMatchResultVar<MpcVariable>,
-        balance: &AuthenticatedBalanceVar<MpcVariable>,
-        order: &AuthenticatedOrderVar<MpcVariable>,
-        fabric: MpcFabric,
-        cs: &mut CS,
-    ) -> Result<(), ProverError>
+    pub fn validate_volume_constraints(
+        match_res: &MatchResultVar,
+        balance: &BalanceVar,
+        order: &OrderVar,
+        fabric: &Fabric,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<(), CircuitError>
     where
         [(); AMOUNT_BITS + DEFAULT_FP_PRECISION]: Sized,
     {
         // Validate that the amount is less than the maximum amount given in the order
         MultiproverGreaterThanEqGadget::<AMOUNT_BITS /* bitlength */>::constrain_greater_than_eq(
-            order.amount.clone(),
-            match_res.base_amount.clone(),
-            &fabric,
+            order.amount,
+            match_res.base_amount,
+            fabric,
             cs,
         )?;
 
@@ -226,93 +207,83 @@ impl ValidMatchMpcCircuit {
         // cover the amount of the quote token sold in the swap
         // If the direction of the order is 1 (sell the base) then the balance must
         // cover the amount of the base token sold in the swap
-        let amount_sold = MultiproverCondSelectGadget::select::<_, MpcLinearCombination, _>(
-            match_res.base_amount.clone().into(),
-            match_res.quote_amount.clone().into(),
-            order.side.clone(),
-            &fabric,
+        let amount_sold = CondSelectGadget::select(
+            &match_res.base_amount,
+            &match_res.quote_amount,
+            order.side,
             cs,
         )?;
         MultiproverGreaterThanEqGadget::<AMOUNT_BITS>::constrain_greater_than_eq(
-            balance.amount.clone().into(),
+            balance.amount,
             amount_sold,
-            &fabric,
+            fabric,
             cs,
         )
     }
 
     /// Verify the price protection on the orders; i.e. that the executed price
     /// is not worse than some user-defined limit
-    #[allow(unused)]
-    pub fn verify_price_protection<CS: MpcRandomizableConstraintSystem>(
-        price: &AuthenticatedFixedPointVar<MpcVariable>,
-        order: &AuthenticatedOrderVar<MpcVariable>,
-        fabric: MpcFabric,
-        cs: &mut CS,
-    ) -> Result<(), ProverError> {
+    pub fn verify_price_protection(
+        price: &FixedPointVar,
+        order: &OrderVar,
+        fabric: &Fabric,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<(), CircuitError> {
         // If the order is buy side, verify that the execution price is less
         // than the limit price. If the order is sell side, verify that the
         // execution price is greater than the limit price
-        let mut gte_terms = MultiproverCondSelectVectorGadget::select(
-            &[
-                price.clone().to_lc(),
-                order.worst_case_price.clone().to_lc(),
-            ],
-            &[
-                order.worst_case_price.clone().to_lc(),
-                price.clone().to_lc(),
-            ],
-            order.side.clone(),
-            &fabric,
+        let mut gte_terms = CondSelectVectorGadget::select(
+            &[*price, order.worst_case_price],
+            &[order.worst_case_price, *price],
+            order.side,
             cs,
         )?;
 
         MultiproverGreaterThanEqGadget::<PRICE_BITS>::constrain_greater_than_eq(
             gte_terms.remove(0).repr,
             gte_terms.remove(0).repr,
-            &fabric,
+            fabric,
             cs,
-        );
-
-        Ok(())
+        )
     }
 }
 
-pub struct ValidMatchMpcSingleProver;
-impl ValidMatchMpcSingleProver {
+impl ValidMatchMpc {
     /// The order crossing check, for a single prover
     ///
     /// Used to apply constraints to the verifier
-    pub fn matching_engine_check_single_prover<CS>(
-        witness: ValidMatchMpcWitnessVar<Variable>,
-        cs: &mut CS,
-    ) -> Result<(), R1CSError>
-    where
-        CS: RandomizableConstraintSystem,
-    {
+    pub fn single_prover_circuit(
+        witness: &ValidMatchMpcWitnessVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let zero = ScalarField::zero();
+        let one = ScalarField::one();
+
+        let zero_var = cs.zero();
+        let one_var = cs.one();
+
         // --- Match Engine Input Validity --- //
         // Check that both orders are for the matched asset pair
-        cs.constrain(witness.order1.quote_mint - witness.match_res.quote_mint);
-        cs.constrain(witness.order1.base_mint - witness.match_res.base_mint);
-        cs.constrain(witness.order2.quote_mint - witness.match_res.quote_mint);
-        cs.constrain(witness.order2.base_mint - witness.match_res.base_mint);
+        cs.enforce_equal(witness.order1.quote_mint, witness.match_res.quote_mint)?;
+        cs.enforce_equal(witness.order1.base_mint, witness.match_res.base_mint)?;
+        cs.enforce_equal(witness.order2.quote_mint, witness.match_res.quote_mint)?;
+        cs.enforce_equal(witness.order2.base_mint, witness.match_res.base_mint)?;
 
         // Check that the prices supplied by the parties are equal, these should be
         // agreed upon outside of the circuit
-        EqGadget::constrain_eq(witness.price1.clone(), witness.price2.clone(), cs);
+        EqGadget::constrain_eq(&witness.price1, &witness.price2, cs)?;
 
         // Check that the balances supplied are for the correct mints; i.e. for the mint
         // that each party sells in the settlement
-        let mut selected_mints =
-            CondSelectVectorGadget::select::<_, _, Variable, LinearCombination, _>(
-                &[witness.match_res.base_mint, witness.match_res.quote_mint],
-                &[witness.match_res.quote_mint, witness.match_res.base_mint],
-                witness.match_res.direction,
-                cs,
-            );
+        let mut selected_mints = CondSelectVectorGadget::select(
+            &[witness.match_res.base_mint, witness.match_res.quote_mint],
+            &[witness.match_res.quote_mint, witness.match_res.base_mint],
+            witness.match_res.direction,
+            cs,
+        )?;
 
-        cs.constrain(witness.balance1.mint - selected_mints.remove(0));
-        cs.constrain(witness.balance2.mint - selected_mints.remove(0));
+        cs.enforce_equal(witness.balance1.mint, selected_mints.remove(0))?;
+        cs.enforce_equal(witness.balance2.mint, selected_mints.remove(0))?;
 
         // Check that the max amount match supplied by both parties is covered by the
         // balance no greater than the amount specified in the order
@@ -321,34 +292,38 @@ impl ValidMatchMpcSingleProver {
             &witness.balance1,
             &witness.order1,
             cs,
-        );
+        )?;
 
         Self::validate_volume_constraints_single_prover(
             &witness.match_res,
             &witness.balance2,
             &witness.order2,
             cs,
-        );
+        )?;
 
         // --- Match Engine Execution Validity --- //
         // Check that the direction of the match is the same as the first party's
         // direction
-        cs.constrain(witness.match_res.direction - witness.order1.side);
+        cs.enforce_equal(
+            witness.match_res.direction.into(),
+            witness.order1.side.into(),
+        )?;
 
         // Check that the orders are on opposite sides of the market. It is assumed that
         // order sides are already constrained to be binary when they are
         // submitted. More broadly it is assumed that orders are well formed,
         // checking this amounts to checking their inclusion in the state tree,
         // which is done in `input_consistency_check`
-        cs.constrain(witness.order1.side + witness.order2.side - Variable::One());
-
-        // Constrain the min_amount_order_index to be binary
-        // i.e. 0 === min_amount_order_index * (1 - min_amount_order_index)
-        let (_, _, mul_out) = cs.multiply(
-            witness.match_res.min_amount_order_index.into(),
-            Variable::One() - witness.match_res.min_amount_order_index,
-        );
-        cs.constrain(mul_out.into());
+        cs.lc_gate(
+            &[
+                witness.order1.side.into(),
+                witness.order2.side.into(),
+                one_var,
+                one_var,
+                zero_var,
+            ],
+            &[one, one, -one, zero],
+        )?;
 
         // Check that the amount of base currency exchanged is equal to the minimum of
         // the two order's amounts
@@ -356,15 +331,14 @@ impl ValidMatchMpcSingleProver {
         // 1. Constrain the max_minus_min_amount to be correctly computed with respect
         //    to the argmin
         // witness variable min_amount_order_index
-        let max_minus_min1 = witness.amount1 - witness.amount2;
-        let max_minus_min2 = witness.amount2 - witness.amount1;
-        let max_minus_min_expected: LinearCombination = CondSelectGadget::select(
+        let max_minus_min1 = cs.sub(witness.amount1, witness.amount2)?;
+        let max_minus_min2 = cs.sub(witness.amount2, witness.amount1)?;
+        cs.mux_gate(
+            witness.match_res.min_amount_order_index,
             max_minus_min1,
             max_minus_min2,
-            witness.match_res.min_amount_order_index,
-            cs,
-        );
-        cs.constrain(max_minus_min_expected - witness.match_res.max_minus_min_amount);
+            witness.match_res.max_minus_min_amount, // out wire
+        )?;
 
         // 2. Constrain the max_minus_min_amount value to be positive
         // This, along with the previous check, constrain `max_minus_min_amount` to be
@@ -376,7 +350,7 @@ impl ValidMatchMpcSingleProver {
         GreaterThanEqZeroGadget::<AMOUNT_BITS>::constrain_greater_than_zero(
             witness.match_res.max_minus_min_amount,
             cs,
-        );
+        )?;
 
         // 3. Constrain the executed base amount to be the minimum of the two order
         //    amounts
@@ -384,35 +358,43 @@ impl ValidMatchMpcSingleProver {
         //      min(a, b) = 1/2 * (a + b - [max(a, b) - min(a, b)])
         // Above we are given max(a, b) - min(a, b), so we can enforce the constraint
         //      2 * executed_amount = amount1 + amount2 - max_minus_min_amount
-        let lhs = Scalar::from(2u64) * witness.match_res.base_amount;
-        let rhs = witness.amount1 + witness.amount2 - witness.match_res.max_minus_min_amount;
-        cs.constrain(lhs - rhs);
+
+        let two = ScalarField::from(2u64);
+        cs.lc_gate(
+            &[
+                witness.match_res.base_amount,
+                witness.amount1,
+                witness.amount2,
+                witness.match_res.max_minus_min_amount,
+                zero_var, // output
+            ],
+            &[two, -one, -one, one],
+        )?;
 
         // The quote amount should then equal the price multiplied by the base amount
         let expected_quote_amount = witness
             .price1
-            .mul_integer(witness.match_res.base_amount, cs);
+            .mul_integer(witness.match_res.base_amount, cs)?;
         FixedPointGadget::constrain_equal_integer_ignore_fraction(
             expected_quote_amount,
             witness.match_res.quote_amount,
             cs,
-        );
+        )?;
 
         // --- Price Protection --- //
-        Self::verify_price_protection_single_prover(&witness.price1, &witness.order1, cs);
-        Self::verify_price_protection_single_prover(&witness.price2, &witness.order2, cs);
-
-        Ok(())
+        Self::verify_price_protection_single_prover(&witness.price1, &witness.order1, cs)?;
+        Self::verify_price_protection_single_prover(&witness.price2, &witness.order2, cs)
     }
 
     /// Check that a balance covers the advertised amount at a given price, and
     /// that the amount is less than the maximum amount allowed by the order
-    pub fn validate_volume_constraints_single_prover<CS: RandomizableConstraintSystem>(
-        match_res: &MatchResultVar<Variable>,
-        balance: &BalanceVar<Variable>,
-        order: &OrderVar<Variable>,
-        cs: &mut CS,
-    ) where
+    pub fn validate_volume_constraints_single_prover(
+        match_res: &MatchResultVar,
+        balance: &BalanceVar,
+        order: &OrderVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError>
+    where
         [(); AMOUNT_BITS + DEFAULT_FP_PRECISION]: Sized,
     {
         // Validate that the amount is less than the maximum amount given in the order
@@ -420,55 +402,50 @@ impl ValidMatchMpcSingleProver {
             order.amount,
             match_res.base_amount,
             cs,
-        );
+        )?;
 
         // Validate that the amount matched is covered by the balance
         // If the direction of the order is 0 (buy the base) then the balance must
         // cover the amount of the quote token sold in the swap
         // If the direction of the order is 1 (sell the base) then the balance must
         // cover the amount of the base token sold in the swap
-        let amount_sold: LinearCombination = CondSelectGadget::select(
-            match_res.base_amount,
-            match_res.quote_amount,
+        let amount_sold = CondSelectGadget::select(
+            &match_res.base_amount,
+            &match_res.quote_amount,
             order.side,
             cs,
-        );
+        )?;
+
         GreaterThanEqGadget::<AMOUNT_BITS>::constrain_greater_than_eq(
-            balance.amount.into(),
+            balance.amount,
             amount_sold,
             cs,
-        );
+        )
     }
 
     /// Verify the price protection on the orders; i.e. that the executed price
     /// is not worse than some user-defined limit
     #[allow(unused)]
-    pub fn verify_price_protection_single_prover<CS: RandomizableConstraintSystem>(
-        price: &FixedPointVar<Variable>,
-        order: &OrderVar<Variable>,
-        cs: &mut CS,
-    ) {
+    pub fn verify_price_protection_single_prover(
+        price: &FixedPointVar,
+        order: &OrderVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
         // If the order is buy side, verify that the execution price is less
         // than the limit price. If the order is sell side, verify that the
         // execution price is greater than the limit price
-        let mut gte_terms: Vec<FixedPointVar<LinearCombination>> = CondSelectVectorGadget::select(
-            &[
-                price.clone().to_lc(),
-                order.worst_case_price.clone().to_lc(),
-            ],
-            &[
-                order.worst_case_price.clone().to_lc(),
-                price.clone().to_lc(),
-            ],
+        let mut gte_terms: Vec<FixedPointVar> = CondSelectVectorGadget::select(
+            &[*price, order.worst_case_price],
+            &[order.worst_case_price, *price],
             order.side,
             cs,
-        );
+        )?;
 
         GreaterThanEqGadget::<PRICE_BITS>::constrain_greater_than_eq(
             gte_terms.remove(0).repr,
             gte_terms.remove(0).repr,
             cs,
-        );
+        )
     }
 }
 
@@ -482,17 +459,17 @@ impl ValidMatchMpcSingleProver {
 #[derive(Clone, Debug)]
 pub struct ValidMatchMpcWitness {
     /// The first party's order
-    pub order1: LinkableOrder,
+    pub order1: Order,
     /// The first party's balance
-    pub balance1: LinkableBalance,
+    pub balance1: Balance,
     /// The price that the first party agreed to execute at for their asset
     pub price1: FixedPoint,
     /// The maximum amount that the first party may match
     pub amount1: Scalar,
     /// The second party's order
-    pub order2: LinkableOrder,
+    pub order2: Order,
     /// The second party's balance
-    pub balance2: LinkableBalance,
+    pub balance2: Balance,
     /// The price that the second party agreed to execute at for their asset
     pub price2: FixedPoint,
     /// The maximum amount that the second party may match
@@ -501,7 +478,7 @@ pub struct ValidMatchMpcWitness {
     ///
     /// We do not open this value before proving so that we can avoid leaking
     /// information before the collaborative proof has finished
-    pub match_res: LinkableMatchResult,
+    pub match_res: MatchResult,
 }
 
 // ---------------------
@@ -509,49 +486,31 @@ pub struct ValidMatchMpcWitness {
 // ---------------------
 
 /// Prover implementation of the Valid Match circuit
-impl MultiProverCircuit for ValidMatchMpcCircuit {
+impl MultiProverCircuit for ValidMatchMpc {
     type Statement = ();
     type Witness = AuthenticatedValidMatchMpcWitness;
+    type BaseCircuit = Self;
 
-    const BP_GENS_CAPACITY: usize = 512;
-
-    fn apply_constraints_multiprover<CS: MpcRandomizableConstraintSystem>(
-        witness: <Self::Witness as MultiproverCircuitBaseType>::MultiproverVarType<MpcVariable>,
-        _statement: <Self::Statement as MultiproverCircuitBaseType>::MultiproverVarType<
-            MpcVariable,
-        >,
-        fabric: MpcFabric,
-        cs: &mut CS,
-    ) -> Result<(), ProverError> {
-        Self::matching_engine_check(witness, fabric, cs)
-    }
-
-    fn apply_constraints_singleprover<CS: RandomizableConstraintSystem>(
-        witness:
-                <<<Self::Witness as MultiproverCircuitBaseType>::MultiproverCommType
-                    as MultiproverCircuitCommitmentType>::BaseCommitType
-                    as CircuitCommitmentType>::VarType,
-        statement:
-                <<Self::Statement as MultiproverCircuitBaseType>::BaseType
-                    as CircuitBaseType>::VarType<Variable>,
-        cs: &mut CS,
-    ) -> Result<(), R1CSError> {
-        ValidMatchMpcSingleProver::apply_constraints(witness, statement, cs)
+    fn apply_constraints_multiprover(
+        witness: ValidMatchMpcWitnessVar,
+        _statement: (),
+        fabric: &Fabric,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<(), PlonkError> {
+        Self::multi_prover_circuit(&witness, fabric, cs).map_err(PlonkError::CircuitError)
     }
 }
 
-impl SingleProverCircuit for ValidMatchMpcSingleProver {
+impl SingleProverCircuit for ValidMatchMpc {
     type Witness = ValidMatchMpcWitness;
     type Statement = ();
 
-    const BP_GENS_CAPACITY: usize = 512;
-
-    fn apply_constraints<CS: RandomizableConstraintSystem>(
-        witness_var: <Self::Witness as CircuitBaseType>::VarType<Variable>,
-        _statement_var: <Self::Statement as CircuitBaseType>::VarType<Variable>,
-        cs: &mut CS,
-    ) -> Result<(), R1CSError> {
-        Self::matching_engine_check_single_prover(witness_var, cs)
+    fn apply_constraints(
+        witness: ValidMatchMpcWitnessVar,
+        _statement_var: (),
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), PlonkError> {
+        ValidMatchMpc::single_prover_circuit(&witness, cs).map_err(PlonkError::CircuitError)
     }
 }
 
@@ -561,145 +520,78 @@ impl SingleProverCircuit for ValidMatchMpcSingleProver {
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use circuit_types::{
-        balance::Balance,
-        fixed_point::FixedPoint,
-        order::{Order, OrderSide},
-        r#match::MatchResult,
-        traits::{LinkableBaseType, MpcBaseType},
-    };
-    use mpc_stark::{algebra::scalar::Scalar, MpcFabric, PARTY0, PARTY1};
-    use renegade_crypto::fields::scalar_to_u64;
+    use ark_mpc::algebra::Scalar;
+    use circuit_types::balance::Balance;
 
-    use crate::zk_circuits::valid_match_mpc::AuthenticatedValidMatchMpcWitness;
+    use crate::test_helpers::random_orders_and_match;
+
+    use super::ValidMatchMpcWitness;
 
     /// Create a dummy witness to match on
-    pub fn create_dummy_witness(fabric: &MpcFabric) -> AuthenticatedValidMatchMpcWitness {
-        let min_amount = 5u64;
-        let max_amount = 15u64;
+    pub fn create_dummy_witness() -> ValidMatchMpcWitness {
+        let (o1, o2, price, match_res) = random_orders_and_match();
 
-        // Create two orders to match
-        let order1 = Order {
-            quote_mint: 1u8.into(),
-            base_mint: 2u8.into(),
-            side: OrderSide::Buy,
-            worst_case_price: FixedPoint::from(15.),
-            amount: min_amount,
-            timestamp: 0,
-        }
-        .to_linkable();
-        let balance1 = Balance {
-            mint: 1u8.into(),
-            amount: 300,
-        }
-        .to_linkable();
+        // Build mock balances around the order
 
-        let order2 = Order {
-            quote_mint: 1u8.into(),
-            base_mint: 2u8.into(),
-            side: OrderSide::Sell,
-            worst_case_price: FixedPoint::from(5.),
-            amount: max_amount,
-            timestamp: 0,
-        }
-        .to_linkable();
-        let balance2 = Balance {
-            mint: 2u8.into(),
-            amount: 300,
-        }
-        .to_linkable();
+        // Buy side, buys the base selling the quote
+        let b1 = Balance {
+            mint: match_res.quote_mint.clone(),
+            amount: match_res.quote_amount + 1,
+        };
 
-        let price = FixedPoint::from(9.);
+        // Sell side sells the base, buying the quote
+        let b2 = Balance {
+            mint: match_res.base_mint.clone(),
+            amount: match_res.base_amount + 1,
+        };
 
-        // Match the orders directly
-        let match_res = MatchResult {
-            quote_mint: 1u8.into(),
-            base_mint: 2u8.into(),
-            quote_amount: scalar_to_u64(&(price * Scalar::from(order1.amount)).floor()),
-            base_amount: min_amount,
-            direction: 0,
-            min_amount_order_index: 0,
-            max_minus_min_amount: max_amount - min_amount,
-        }
-        .to_linkable();
-
-        // Create a witness
-        AuthenticatedValidMatchMpcWitness {
-            order1: order1.allocate(PARTY0, fabric),
-            order2: order2.allocate(PARTY0, fabric),
-            balance1: balance1.allocate(PARTY0, fabric),
-            balance2: balance2.allocate(PARTY0, fabric),
-            price1: price.allocate(PARTY0, fabric),
-            price2: price.allocate(PARTY0, fabric),
-            amount1: order1.amount.val.allocate(PARTY0, fabric),
-            amount2: order2.amount.val.allocate(PARTY1, fabric),
-            match_res: match_res.allocate(PARTY0, fabric),
+        let amount1 = Scalar::from(o1.amount);
+        let amount2 = Scalar::from(o2.amount);
+        ValidMatchMpcWitness {
+            order1: o1,
+            balance1: b1,
+            price1: price,
+            amount1,
+            order2: o2,
+            balance2: b2,
+            price2: price,
+            amount2,
+            match_res,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use circuit_types::traits::{MultiProverCircuit, MultiproverCircuitCommitmentType};
-    use merlin::HashChainTranscript;
-    use mpc_bulletproof::{r1cs::Verifier, r1cs_mpc::MpcProver, BulletproofGens, PedersenGens};
+    use ark_mpc::PARTY0;
+    use circuit_types::traits::MpcBaseType;
+
     use test_helpers::mpc_network::execute_mock_mpc;
 
-    use crate::zk_circuits::valid_match_mpc::{
-        test_helpers::create_dummy_witness, ValidMatchMpcCircuit,
+    use crate::{
+        multiprover_prove_and_verify,
+        zk_circuits::valid_match_mpc::{test_helpers::create_dummy_witness, ValidMatchMpc},
     };
 
     /// Tests proving a valid match with a valid witness
     #[tokio::test]
     async fn prove_valid_witness() {
-        // Execute an MPC to prove the match
-        let ((witness_commitment, proof), _) = execute_mock_mpc(|fabric| async move {
-            let witness = create_dummy_witness(&fabric);
+        let witness = create_dummy_witness();
+        let (res, _) = execute_mock_mpc(move |fabric| {
+            let witness = witness.clone();
 
-            let (witness_commitment, proof) = {
-                let pc_gens = PedersenGens::default();
-                let transcript = HashChainTranscript::new(b"test");
-                let prover = MpcProver::new_with_fabric(fabric.clone(), transcript, pc_gens);
-
-                let bp_gens = BulletproofGens::new(
-                    ValidMatchMpcCircuit::BP_GENS_CAPACITY,
-                    1, // party_capacity
-                );
-
-                ValidMatchMpcCircuit::prove(
+            async move {
+                let witness = witness.allocate(PARTY0, &fabric);
+                multiprover_prove_and_verify::<ValidMatchMpc>(
                     witness,
                     (), // statement
-                    &bp_gens,
-                    fabric.clone(),
-                    prover,
+                    fabric,
                 )
-                .unwrap()
-            }; // Let `prover` go out of scope as it is not `Send`
-
-            (
-                witness_commitment.open_and_authenticate().await.unwrap(),
-                proof.open().await.unwrap(),
-            )
+                .await
+            }
         })
         .await;
 
-        // Verify the proof
-        let pc_gens = PedersenGens::default();
-        let mut transcript = HashChainTranscript::new(b"test");
-        let verifier = Verifier::new(&pc_gens, &mut transcript);
-
-        let bp_gens = BulletproofGens::new(
-            ValidMatchMpcCircuit::BP_GENS_CAPACITY,
-            1, // party_capacity
-        );
-
-        ValidMatchMpcCircuit::verify(
-            witness_commitment,
-            (), // statement
-            proof,
-            &bp_gens,
-            verifier,
-        )
-        .unwrap();
+        assert!(res.is_ok())
     }
 }

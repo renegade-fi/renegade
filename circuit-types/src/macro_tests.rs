@@ -112,7 +112,7 @@ mod test {
 
             // Allocate the dummy value in the constraint system
             let dummy_allocated = value.allocate(PARTY0, &fabric);
-            let shared_var = dummy_allocated.create_shared_witness(&mut circuit).unwrap();
+            let shared_var = dummy_allocated.create_shared_witness(&mut circuit);
 
             // Evaluate the first variable in the var type
             let eval: AuthenticatedTestType = shared_var.eval_multiprover(&circuit);

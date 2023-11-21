@@ -228,7 +228,7 @@ pub mod tests {
     use constants::Scalar;
 
     use crate::{
-        plonk_prove_and_verify,
+        singleprover_prove_and_verify,
         zk_circuits::{
             test_helpers::{
                 check_constraint_satisfaction, INITIAL_BALANCES, INITIAL_ORDERS, MAX_BALANCES,
@@ -254,7 +254,7 @@ pub mod tests {
     #[test]
     fn test_valid_initial_wallet() {
         let (witness, statement) = create_default_witness_statement();
-        plonk_prove_and_verify::<ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>(
+        singleprover_prove_and_verify::<ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>(
             witness, statement,
         )
         .unwrap()

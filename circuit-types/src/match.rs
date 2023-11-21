@@ -29,10 +29,10 @@ pub struct MatchResult {
     pub quote_amount: u64,
     /// The amount of the base token exchanged by this match
     pub base_amount: u64,
-    /// The direction of the match, 0 implies that party 1 buys the base and
-    /// sells the quote; 1 implies that party 2 buys the base and sells the
-    /// quote
-    pub direction: u64, // Binary
+    /// The direction of the match, `true` implies that party 1 buys the quote
+    /// and sells the base, `false` implies that party 1 buys the base and
+    /// sells the quote
+    pub direction: bool,
 
     /// The following are supporting variables, derivable from the above, but
     /// useful for shrinking the size of the zero knowledge circuit. As
@@ -46,5 +46,8 @@ pub struct MatchResult {
     pub max_minus_min_amount: u64,
     /// The index of the order (0 or 1) that has the minimum amount, i.e. the
     /// order that is completely filled by this match
-    pub min_amount_order_index: u64,
+    ///
+    /// We serialize this as a `bool` to automatically constrain it to be 0 or 1
+    /// in a circuit. So `false` means 0 and `true` means 1
+    pub min_amount_order_index: bool,
 }

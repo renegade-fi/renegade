@@ -9,7 +9,7 @@ use bigdecimal::{BigDecimal, ToPrimitive};
 use circuit_macros::circuit_type;
 use constants::{AuthenticatedScalar, Scalar, ScalarField};
 use lazy_static::lazy_static;
-use mpc_relation::{traits::Circuit, Variable};
+use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 use num_bigint::BigUint;
 use renegade_crypto::fields::{
     bigint_to_scalar, biguint_to_scalar, scalar_to_bigdecimal, scalar_to_bigint, scalar_to_u64,
@@ -341,9 +341,13 @@ impl FixedPointVar {
     /// converting the integer to a fixed-point representation. I.e. instead
     /// of taking x * 2^M * y * 2^M * 2^-M, we can just directly multiply x
     /// * 2^M * y
-    pub fn mul_integer<C: Circuit<ScalarField>>(&self, rhs: Variable, cs: &mut C) -> FixedPointVar {
-        let repr = cs.mul(self.repr, rhs).unwrap();
-        FixedPointVar { repr }
+    pub fn mul_integer<C: Circuit<ScalarField>>(
+        &self,
+        rhs: Variable,
+        cs: &mut C,
+    ) -> Result<FixedPointVar, CircuitError> {
+        let repr = cs.mul(self.repr, rhs)?;
+        Ok(FixedPointVar { repr })
     }
 }
 
@@ -634,7 +638,7 @@ mod fixed_point_tests {
         let fixed1 = FixedPoint::from_f32_round_down(fp1).create_witness(&mut cs);
         let integer = Scalar::from(int).create_witness(&mut cs);
 
-        let res = fixed1.mul_integer(integer, &mut cs);
+        let res = fixed1.mul_integer(integer, &mut cs).unwrap();
         let expected = fp1 * (int as f32);
 
         check_within_tolerance(res.eval(&cs).to_f64(), expected as f64, INTEGER_TOLERANCE);

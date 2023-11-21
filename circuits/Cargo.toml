@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-test_helpers = []
+test_helpers = ["dep:env_logger", "dep:ctor", "dep:util"]
 large_benchmarks = []
 stats = ["ark-mpc/stats"]
 
@@ -58,8 +58,8 @@ ark-crypto-primitives = { version = "0.4", features = [
 ark-ff = "0.4"
 ark-mpc = { workspace = true }
 bigdecimal = "0.3"
-mpc-plonk = { workspace = true, features = ["parallel"] }
-mpc-relation = { workspace = true }
+mpc-plonk = { workspace = true, features = ["parallel", "std"] }
+mpc-relation = { workspace = true, features = ["parallel", "std"] }
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
 num-integer = "0.1"
 
@@ -68,9 +68,12 @@ circuit-macros = { path = "../circuit-macros" }
 circuit-types = { path = "../circuit-types" }
 constants = { path = "../constants" }
 renegade-crypto = { path = "../renegade-crypto" }
+util = { path = "../util", optional = true }
 
 # === Misc Dependencies === #
 bitvec = "1.0"
+ctor = { version = "0.1", optional = true }
+env_logger = { version = "0.9", optional = true }
 futures = "0.3"
 itertools = "0.10"
 lazy_static = "1.4"
@@ -94,7 +97,7 @@ env_logger = "0.9"
 eyre = { workspace = true }
 futures = "0.3"
 inventory = "0.3"
-mpc-plonk = { workspace = true, features = ["test_apis"] }
+mpc-plonk = { workspace = true, features = ["test_apis", "std"] }
 rand = "0.8"
 serde_json = "1.0"
 test-helpers = { path = "../test-helpers" }

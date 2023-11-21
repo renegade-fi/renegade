@@ -3,7 +3,7 @@
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
 pub mod valid_commitments;
-// pub mod valid_match_mpc;
+pub mod valid_match_mpc;
 pub mod valid_reblind;
 // pub mod valid_settle;
 pub mod valid_wallet_create;
@@ -20,9 +20,12 @@ pub mod test_helpers {
         keychain::{PublicKeyChain, PublicSigningKey, NUM_KEYS},
         merkle::MerkleOpening,
         order::{Order, OrderSide},
-        traits::{BaseType, CircuitBaseType, SingleProverCircuit},
+        traits::{
+            BaseType, CircuitBaseType, MpcType, MultiProverCircuit, MultiproverCircuitBaseType,
+            SingleProverCircuit,
+        },
         wallet::{Wallet, WalletShare},
-        PlonkCircuit,
+        Fabric, MpcPlonkCircuit, PlonkCircuit,
     };
     use constants::Scalar;
     use itertools::Itertools;
@@ -127,6 +130,24 @@ pub mod test_helpers {
             .iter()
             .map(Scalar::inner)
             .collect_vec();
+        cs.check_circuit_satisfiability(&statement_scalars).is_ok()
+    }
+
+    /// Check whether a witness and statement satisfy wire assignments for a
+    /// multiprover circuit
+    pub fn check_constraint_satisfaction_multiprover<C: MultiProverCircuit>(
+        witness: &C::Witness,
+        statement: &C::Statement,
+        fabric: &Fabric,
+    ) -> bool {
+        let mut cs = MpcPlonkCircuit::new(fabric.clone());
+        let witness_var = witness.create_shared_witness(&mut cs);
+        let statement_var = statement.create_shared_public_var(&mut cs);
+
+        C::apply_constraints_multiprover(witness_var, statement_var, fabric, &mut cs).unwrap();
+
+        // Check for satisfaction
+        let statement_scalars = statement.to_authenticated_scalars();
         cs.check_circuit_satisfiability(&statement_scalars).is_ok()
     }
 
