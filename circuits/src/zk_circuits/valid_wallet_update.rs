@@ -312,11 +312,6 @@ where
         new_timestamp: Variable,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        // Ensure all orders have boolean side
-        for order in new_wallet.orders.iter() {
-            cs.enforce_bool(order.side)?;
-        }
-
         // Ensure that all order's asset pairs are unique
         Self::constrain_unique_order_pairs(new_wallet, cs)?;
 
@@ -395,7 +390,7 @@ where
             &OrderVar {
                 quote_mint: zero,
                 base_mint: zero,
-                side: zero,
+                side: cs.false_var(),
                 amount: zero,
                 worst_case_price: FixedPointVar { repr: zero },
                 timestamp: zero,

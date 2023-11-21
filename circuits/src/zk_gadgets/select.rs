@@ -112,19 +112,19 @@ mod cond_select_test {
             let b = b.allocate(PARTY0, &fabric);
 
             let mut cs = MpcPlonkCircuit::new(fabric.clone());
-            let a_var = a.create_shared_public_var(&mut cs).unwrap();
-            let b_var = b.create_shared_public_var(&mut cs).unwrap();
+            let a_var = a.create_shared_public_var(&mut cs);
+            let b_var = b.create_shared_public_var(&mut cs);
 
             // Selector = 1
             let sel = true.allocate(PARTY0, &fabric);
-            let sel = sel.create_shared_witness(&mut cs).unwrap();
+            let sel = sel.create_shared_witness(&mut cs);
 
             let res = CondSelectGadget::select(&a_var, &b_var, sel, &mut cs).unwrap();
             cs.enforce_equal(res, a_var).unwrap();
 
             // Selector = 0
             let sel = false.allocate(PARTY0, &fabric);
-            let sel = sel.create_shared_witness(&mut cs).unwrap();
+            let sel = sel.create_shared_witness(&mut cs);
 
             let res = CondSelectGadget::select(&a_var, &b_var, sel, &mut cs).unwrap();
             cs.enforce_equal(res, b_var).unwrap();

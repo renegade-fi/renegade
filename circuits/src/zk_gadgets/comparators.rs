@@ -318,7 +318,7 @@ impl<const D: usize> MultiproverGreaterThanEqZeroGadget<D> {
         let value_assignment = x.eval_multiprover(cs);
         let bits = to_bits_le::<D>(&value_assignment, fabric)
             .into_iter()
-            .map(|bit| bit.create_shared_witness(cs).unwrap())
+            .map(|bit| bit.create_shared_witness(cs))
             .collect_vec();
 
         // Constrain the bit decomposition to be correct
@@ -506,7 +506,7 @@ mod test {
 
             // a >= 0
             let mut cs = MpcPlonkCircuit::new(fabric.clone());
-            let a_var = shared_a.create_shared_witness(&mut cs).unwrap();
+            let a_var = shared_a.create_shared_witness(&mut cs);
 
             MultiproverGreaterThanEqZeroGadget::<BITS>::constrain_greater_than_zero(
                 a_var, &fabric, &mut cs,
@@ -516,7 +516,7 @@ mod test {
 
             // -a >= 0
             let mut cs = MpcPlonkCircuit::new(fabric.clone());
-            let a_var = shared_a.create_shared_witness(&mut cs).unwrap();
+            let a_var = shared_a.create_shared_witness(&mut cs);
             let neg_a = cs.mul_constant(a_var, &-ScalarField::one()).unwrap();
 
             MultiproverGreaterThanEqZeroGadget::<BITS>::constrain_greater_than_zero(
@@ -527,8 +527,8 @@ mod test {
 
             // a >= b
             let mut cs = MpcPlonkCircuit::new(fabric.clone());
-            let a_var = shared_a.create_shared_witness(&mut cs).unwrap();
-            let b_var = shared_b.create_shared_witness(&mut cs).unwrap();
+            let a_var = shared_a.create_shared_witness(&mut cs);
+            let b_var = shared_b.create_shared_witness(&mut cs);
 
             MultiproverGreaterThanEqGadget::<BITS>::constrain_greater_than_eq(
                 a_var, b_var, &fabric, &mut cs,
@@ -538,8 +538,8 @@ mod test {
 
             // b >= a
             let mut cs = MpcPlonkCircuit::new(fabric.clone());
-            let a_var = shared_a.create_shared_witness(&mut cs).unwrap();
-            let b_var = shared_b.create_shared_witness(&mut cs).unwrap();
+            let a_var = shared_a.create_shared_witness(&mut cs);
+            let b_var = shared_b.create_shared_witness(&mut cs);
 
             MultiproverGreaterThanEqGadget::<BITS>::constrain_greater_than_eq(
                 b_var, a_var, &fabric, &mut cs,
@@ -549,7 +549,7 @@ mod test {
 
             // a >= a
             let mut cs = MpcPlonkCircuit::new(fabric.clone());
-            let a_var = shared_a.create_shared_witness(&mut cs).unwrap();
+            let a_var = shared_a.create_shared_witness(&mut cs);
 
             MultiproverGreaterThanEqGadget::<BITS>::constrain_greater_than_eq(
                 a_var, a_var, &fabric, &mut cs,
