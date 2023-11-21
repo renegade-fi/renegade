@@ -6,10 +6,10 @@
 //!
 //! Some low level gadgets are defined here to provide MPC efficiency
 
-pub mod arithmetic;
+// pub mod arithmetic;
 pub mod bits;
-pub mod comparators;
-pub mod fixed_point;
+// pub mod comparators;
+// pub mod fixed_point;
 pub mod merkle;
 pub mod poseidon;
 pub mod select;
