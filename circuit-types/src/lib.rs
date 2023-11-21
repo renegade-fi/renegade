@@ -31,7 +31,10 @@ use constants::{
 use fixed_point::DEFAULT_FP_PRECISION;
 use jf_primitives::pcs::prelude::Commitment;
 use merkle::MerkleOpening;
-use mpc_plonk::{multiprover::proof_system::MpcPlonkCircuit as GenericMpcPlonkCircuit, proof_system::structs::Proof};
+use mpc_plonk::{
+    multiprover::proof_system::MpcPlonkCircuit as GenericMpcPlonkCircuit,
+    proof_system::structs::Proof,
+};
 use mpc_relation::PlonkCircuit as GenericPlonkCircuit;
 use num_bigint::BigUint;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
