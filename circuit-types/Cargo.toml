@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-test-helpers = ["mpc-plonk/test-srs", "dep:jf-primitives"]
+test-helpers = ["mpc-plonk/test-srs"]
 
 [dependencies]
 # === Crytography === #
@@ -12,10 +12,9 @@ ark-ff = "0.4"
 ark-ec = "0.4"
 ark-mpc = { workspace = true }
 ed25519-dalek = "1.0.1"
-jf-primitives = { workspace = true, optional = true }
+jf-primitives = { workspace = true }
 mpc-plonk = { workspace = true }
 mpc-relation = { workspace = true }
-jf-primitives = { git = "https://github.com/renegade-fi/mpc-jellyfish.git" }
 
 # === Arithmetic === #
 bigdecimal = "0.3"
