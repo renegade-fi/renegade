@@ -14,7 +14,7 @@ use ethers::{
 
 use crate::{
     abi::{DarkpoolContract, DarkpoolEventSource},
-    constants::{Chain, DEVNET_RPC_URL, TESTNET_RPC_URL},
+    constants::Chain,
     errors::{ArbitrumClientConfigError, ArbitrumClientError},
 };
 
@@ -60,7 +60,7 @@ impl ArbitrumClientConfig {
     /// Constructs an RPC client capable of signing transactions from the
     /// configuration
     async fn get_rpc_client(&self) -> Result<Arc<SignerHttpProvider>, ArbitrumClientConfigError> {
-        let provider = Provider::<Http>::try_from(self.rpc_url)
+        let provider = Provider::<Http>::try_from(&self.rpc_url)
             .map_err(|e| ArbitrumClientConfigError::RpcClientInitialization(e.to_string()))?;
 
         let wallet = LocalWallet::from_str(&self.arb_priv_key)
