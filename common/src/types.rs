@@ -2,13 +2,13 @@
 pub mod chain_id;
 pub mod exchange;
 pub mod gossip;
-pub mod handshake;
+// pub mod handshake;
 pub mod merkle;
-pub mod network_order;
-pub mod proof_bundles;
+// pub mod network_order;
+// pub mod proof_bundles;
 pub mod tasks;
 pub mod token;
-pub mod wallet;
+// pub mod wallet;
 
 // Re-export the mock types
 #[cfg(feature = "mocks")]

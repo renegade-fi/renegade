@@ -1,9 +1,10 @@
 //! Defines types related to Merkle trees within the system
 
 use circuit_types::{merkle::MerkleOpening, SizedMerkleOpening};
+use constants::Scalar;
 use constants::MERKLE_HEIGHT;
 use itertools::Itertools;
-use mpc_stark::algebra::scalar::Scalar;
+// use mpc_stark::algebra::scalar::Scalar;
 use num_bigint::BigUint;
 use renegade_crypto::hash::compute_poseidon_hash;
 use serde::{Deserialize, Serialize};
@@ -125,7 +126,7 @@ impl From<MerkleAuthenticationPath> for SizedMerkleOpening {
         // the leaf index
         let path_indices = (0..MERKLE_HEIGHT)
             .map(|bit| native_path.leaf_index.bit(bit as u64))
-            .map(|bit| if bit { Scalar::one() } else { Scalar::zero() })
+            // .map(|bit| if bit { Scalar::one() } else { Scalar::zero() })
             .collect_vec();
 
         MerkleOpening {
