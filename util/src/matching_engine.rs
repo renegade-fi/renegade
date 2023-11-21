@@ -74,9 +74,9 @@ pub fn match_orders_with_max_amount(
         quote_mint: o1.quote_mint.clone(),
         base_amount: min_base_amount,
         quote_amount,
-        direction: o1.side.into(),
+        direction: matches!(o1.side, OrderSide::Sell),
         max_minus_min_amount,
-        min_amount_order_index: if max1 <= max2 { 0 } else { 1 },
+        min_amount_order_index: max1 > max2,
     })
 }
 
@@ -177,9 +177,9 @@ mod tests {
             res.quote_amount,
             350 // midpoint_price * base_amount
         );
-        assert_eq!(res.direction, 0);
+        assert_eq!(res.direction as u8, 0);
         assert_eq!(res.max_minus_min_amount, 50);
-        assert_eq!(res.min_amount_order_index, 0);
+        assert_eq!(res.min_amount_order_index as u8, 0);
     }
 
     /// Test a valid match between two order where the buy side is
@@ -208,9 +208,9 @@ mod tests {
         assert_eq!(res.quote_mint, 2u64.into());
         assert_eq!(res.base_amount, 10);
         assert_eq!(res.quote_amount, 70 /* midpoint_price * base_amount */);
-        assert_eq!(res.direction, 0);
+        assert_eq!(res.direction as u8, 0);
         assert_eq!(res.max_minus_min_amount, 90);
-        assert_eq!(res.min_amount_order_index, 0);
+        assert_eq!(res.min_amount_order_index as u8, 0);
     }
 
     /// Test a valid match between two order where the sell side is
@@ -239,9 +239,9 @@ mod tests {
         assert_eq!(res.quote_mint, 2u64.into());
         assert_eq!(res.base_amount, 10);
         assert_eq!(res.quote_amount, 70 /* midpoint_price * base_amount */);
-        assert_eq!(res.direction, 0);
+        assert_eq!(res.direction as u8, 0);
         assert_eq!(res.max_minus_min_amount, 40);
-        assert_eq!(res.min_amount_order_index, 1);
+        assert_eq!(res.min_amount_order_index as u8, 1);
     }
 
     /// Test mismatched base mints

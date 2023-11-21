@@ -143,7 +143,7 @@ mod bits_test {
             async move {
                 let mut cs = MpcPlonkCircuit::new(fabric.clone());
                 let val = witness.allocate(PARTY0, &fabric);
-                let input_var = val.create_shared_witness(&mut cs).unwrap();
+                let input_var = val.create_shared_witness(&mut cs);
 
                 let res =
                     MultiproverToBitsGadget::<64 /* bits */>::to_bits(input_var, &fabric, &mut cs)

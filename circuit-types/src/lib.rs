@@ -80,6 +80,17 @@ pub type SizedMerkleOpening = MerkleOpening<MERKLE_HEIGHT>;
 #[derive(Clone, Debug)]
 pub struct AuthenticatedBool(AuthenticatedScalar);
 
+/// This implementation does no validation of the underlying value, to do so
+/// would require leaking privacy or otherwise complicated circuitry
+///
+/// The values here are eventually constrained in a collaborative proof, so
+/// there is no need to validate them here
+impl From<AuthenticatedScalar> for AuthenticatedBool {
+    fn from(value: AuthenticatedScalar) -> Self {
+        Self(value)
+    }
+}
+
 // -----------
 // | Helpers |
 // -----------
