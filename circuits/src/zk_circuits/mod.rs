@@ -3,9 +3,8 @@
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
 pub mod valid_commitments;
-pub mod valid_match_mpc;
+pub mod valid_match_settle;
 pub mod valid_reblind;
-// pub mod valid_settle;
 pub mod valid_wallet_create;
 pub mod valid_wallet_update;
 
