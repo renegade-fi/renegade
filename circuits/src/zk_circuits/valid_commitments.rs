@@ -24,7 +24,7 @@ use circuit_types::{
 };
 use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
+use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 use serde::{Deserialize, Serialize};
 
 // ----------------------
@@ -71,15 +71,11 @@ where
             .private_secret_shares
             .add_shares(&unblinded_augmented_shares, cs);
 
-        // The order side should be binary
-        cs.enforce_bool(witness.order.side)?;
-        let side = BoolVar::new_unchecked(witness.order.side);
-
         // The mint that the wallet will receive if the order is matched
         let mut receive_send_mint = CondSelectVectorGadget::select(
             &[witness.order.quote_mint, witness.order.base_mint],
             &[witness.order.base_mint, witness.order.quote_mint],
-            side,
+            witness.order.side,
             cs,
         )?;
         let receive_mint = receive_send_mint.remove(0);

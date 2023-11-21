@@ -162,7 +162,7 @@ pub trait MpcBaseType: BaseType {
 /// An implementing type is the representation of a `BaseType` in an MPC circuit
 /// *outside* of a multiprover constraint system
 #[async_trait]
-pub trait MpcType: Clone {
+pub trait MpcType: Clone + Send {
     /// The native type when the value is opened out of a circuit
     type NativeType: BaseType;
     /// Get a reference to the underlying MPC fabric
@@ -203,7 +203,7 @@ pub trait MpcType: Clone {
 // --- Multiprover Circuit Traits --- //
 
 /// A base type for allocating within a multiprover constraint system
-pub trait MultiproverCircuitBaseType: MpcType {
+pub trait MultiproverCircuitBaseType: MpcType<NativeType = Self::BaseType> {
     /// The base type of the multiprover circuit type
     type BaseType: CircuitBaseType;
     /// The constraint system variable type that results when
@@ -212,32 +212,26 @@ pub trait MultiproverCircuitBaseType: MpcType {
 
     /// Allocate the value in a multiprover constraint system as a witness
     /// element
-    fn create_shared_witness(
-        &self,
-        circuit: &mut MpcPlonkCircuit,
-    ) -> Result<Self::VarType, MpcError> {
+    fn create_shared_witness(&self, circuit: &mut MpcPlonkCircuit) -> Self::VarType {
         let self_scalars = self.clone().to_authenticated_scalars();
         let vars = self_scalars
             .into_iter()
             .map(|s| circuit.create_variable(s).unwrap())
             .collect_vec();
 
-        Ok(Self::VarType::from_vars(&mut vars.into_iter(), circuit))
+        Self::VarType::from_vars(&mut vars.into_iter(), circuit)
     }
 
     /// Allocate the value in a multiprover constraint system as a public
     /// element
-    fn create_shared_public_var(
-        &self,
-        circuit: &mut MpcPlonkCircuit,
-    ) -> Result<Self::VarType, MpcError> {
+    fn create_shared_public_var(&self, circuit: &mut MpcPlonkCircuit) -> Self::VarType {
         let self_scalars = self.clone().to_authenticated_scalars();
         let vars = self_scalars
             .into_iter()
             .map(|s| circuit.create_public_variable(s).unwrap())
             .collect_vec();
 
-        Ok(Self::VarType::from_vars(&mut vars.into_iter(), circuit))
+        Self::VarType::from_vars(&mut vars.into_iter(), circuit)
     }
 }
 
@@ -834,32 +828,30 @@ pub trait MultiProverCircuit {
         statement: <Self::Statement as MultiproverCircuitBaseType>::VarType,
         fabric: &Fabric,
         circuit: &mut MpcPlonkCircuit,
-    ) -> Result<(), ProverError>;
+    ) -> Result<(), PlonkError>;
 
     /// Generate a proof of the statement represented by the circuit
     ///
     /// Returns both the commitment to the inputs, as well as the proof itself
-    #[allow(clippy::type_complexity)]
     fn prove(
         witness: Self::Witness,
         statement: Self::Statement,
         fabric: Fabric,
-        circuit: &mut MpcPlonkCircuit,
-    ) -> Result<CollaborativeProof<SystemCurve>, ProverError> {
+    ) -> Result<CollaborativeProof<SystemCurve>, PlonkError> {
         // Allocate the witness and statement in the constraint system
-        let witness_var = witness
-            .create_shared_witness(circuit)
-            .map_err(ProverError::Mpc)?;
-        let statement_var = statement
-            .create_shared_witness(circuit)
-            .map_err(ProverError::Mpc)?;
+        let mut circuit = MpcPlonkCircuit::new(fabric.clone());
+        let witness_var = witness.create_shared_witness(&mut circuit);
+        let statement_var = statement.create_shared_witness(&mut circuit);
 
         // Apply the constraints
-        Self::apply_constraints_multiprover(witness_var, statement_var, &fabric, circuit)?;
+        Self::apply_constraints_multiprover(witness_var, statement_var, &fabric, &mut circuit)?;
+        circuit
+            .finalize_for_arithmetization()
+            .map_err(PlonkError::CircuitError)?;
 
         // Generate the proof
         let pk = Self::proving_key();
-        MultiproverPlonkKzgSnark::prove(circuit, &pk, fabric).map_err(ProverError::Plonk)
+        MultiproverPlonkKzgSnark::prove(&circuit, &pk, fabric)
     }
 
     /// Verify a proof of the statement represented by the circuit

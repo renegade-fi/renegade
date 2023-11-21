@@ -47,68 +47,23 @@ pub fn compute_match(
         base_amount: min_base_amount,
         direction: order1.side.clone(),
         max_minus_min_amount,
-        min_amount_order_index: min_index,
+        min_amount_order_index: min_index.into(),
     }
 }
 
 #[cfg(test)]
 mod test {
     use ark_mpc::{PARTY0, PARTY1};
-    use circuit_types::{
-        fixed_point::FixedPoint,
-        order::{Order, OrderSide},
-        r#match::MatchResult,
-        traits::{MpcBaseType, MpcType},
-    };
+    use circuit_types::traits::{MpcBaseType, MpcType};
 
-    use constants::Scalar;
-    use rand::{thread_rng, Rng, RngCore};
-    use renegade_crypto::fields::scalar_to_biguint;
     use test_helpers::mpc_network::execute_mock_mpc;
-    use util::matching_engine::match_orders_with_max_amount;
 
-    use crate::mpc_circuits::r#match::compute_match;
-
-    /// Get two random orders that cross along with their match result
-    pub fn random_orders() -> (Order, Order, FixedPoint, MatchResult) {
-        let mut rng = thread_rng();
-        let quote_mint = scalar_to_biguint(&Scalar::random(&mut rng));
-        let base_mint = scalar_to_biguint(&Scalar::random(&mut rng));
-
-        let price = FixedPoint::from_f64_round_down(rng.gen_range(0.0..100.0));
-        let base_amount = rng.next_u64();
-
-        // Buy side
-        let o1 = Order {
-            quote_mint: quote_mint.clone(),
-            base_mint: base_mint.clone(),
-            side: OrderSide::Buy,
-            amount: rng.gen_range(1..base_amount),
-            worst_case_price: price + Scalar::one(),
-            timestamp: 0,
-        };
-
-        // Sell side
-        let o2 = Order {
-            quote_mint: quote_mint.clone(),
-            base_mint: base_mint.clone(),
-            side: OrderSide::Sell,
-            amount: rng.gen_range(1..base_amount),
-            worst_case_price: price - Scalar::one(),
-            timestamp: 0,
-        };
-
-        // Match orders assuming they are fully capitalized
-        let match_res =
-            match_orders_with_max_amount(&o1, &o2, o1.amount, o2.amount, price).unwrap();
-
-        (o1, o2, price, match_res)
-    }
+    use crate::{mpc_circuits::r#match::compute_match, test_helpers::random_orders_and_match};
 
     /// Tests the match computation circuit
     #[tokio::test]
     async fn test_match_valid() {
-        let (o1, o2, price, expected) = random_orders();
+        let (o1, o2, price, expected) = random_orders_and_match();
 
         let (res, _) = execute_mock_mpc(move |fabric| {
             let o1 = o1.clone();

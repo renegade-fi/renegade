@@ -62,17 +62,18 @@ impl FixedPointGadget {
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // Shift the integer and take the difference
-        let shifted_rhs = Self::integer_to_fixed_point(rhs, cs)?;
-        let lhs_minus_rhs = cs.sub(lhs.repr, shifted_rhs.repr)?;
+        let zero_var = cs.zero();
+        let one_var = cs.one();
+        let one = ScalarField::one();
+
+        let lhs_minus_rhs = cs.lc(
+            &[lhs.repr, rhs, zero_var, zero_var],
+            &[one, -*TWO_TO_M_SCALAR, one, one],
+        )?;
 
         // Constrain the difference to be less than the precision on the fixed point,
         // This is effectively the same as constraining the difference to have an
         // integral component of zero
-
-        let one_var = cs.one();
-        let zero_var = cs.zero();
-        let one = ScalarField::one();
-
         // 2^m - (lhs - rhs) > 0
         let diff = cs.lc(
             &[one_var, lhs_minus_rhs, zero_var, zero_var],
@@ -213,16 +214,11 @@ mod test {
 
             let fp_var = FixedPoint::from_f64_round_down(fp1)
                 .allocate(PARTY0, &fabric)
-                .create_shared_witness(&mut cs)
-                .unwrap();
+                .create_shared_witness(&mut cs);
             let floor_var = fp_floor
                 .allocate(PARTY0, &fabric)
-                .create_shared_witness(&mut cs)
-                .unwrap();
-            let int_var = int
-                .allocate(PARTY0, &fabric)
-                .create_shared_witness(&mut cs)
-                .unwrap();
+                .create_shared_witness(&mut cs);
+            let int_var = int.allocate(PARTY0, &fabric).create_shared_witness(&mut cs);
 
             // fp1 == floor(fp1), when ignoring the fractional part
             MultiproverFixedPointGadget::constrain_equal_integer_ignore_fraction(
