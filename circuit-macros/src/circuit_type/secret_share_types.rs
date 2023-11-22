@@ -10,7 +10,7 @@ use crate::circuit_type::{
 };
 
 use super::{
-    build_base_type_impl, build_serde_methods, ident_with_generics,
+    build_base_type_impl, build_serde_methods, ident_with_generics, mpc_types::build_mpc_types,
     multiprover_circuit_types::VAR_SUFFIX, singleprover_circuit_types::build_circuit_types,
     str_to_path, FROM_SCALARS_METHOD_NAME, SCALAR_TYPE_IDENT, TO_SCALARS_METHOD_NAME,
 };
@@ -30,10 +30,10 @@ const SECRET_SHARE_VAR_TRAIT_NAME: &str = "SecretShareVarType";
 const SHARE_SUFFIX: &str = "Share";
 
 /// Build the secret share types for the base type
-pub fn build_secret_share_types(base_type: &ItemStruct, serde: bool) -> TokenStream2 {
+pub fn build_secret_share_types(base_type: &ItemStruct, mpc: bool, serde: bool) -> TokenStream2 {
     // Implement `SecretShareBaseType`
     let mut res = build_secret_share_base_type_impl(base_type);
-    res.extend(build_secret_share_type(base_type, serde));
+    res.extend(build_secret_share_type(base_type, mpc, serde));
 
     res
 }
@@ -63,7 +63,7 @@ fn build_secret_share_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
 }
 
 /// Build the secret share type
-fn build_secret_share_type(base_type: &ItemStruct, serde: bool) -> TokenStream2 {
+fn build_secret_share_type(base_type: &ItemStruct, mpc: bool, serde: bool) -> TokenStream2 {
     // Build the derived struct
     let new_name = ident_with_suffix(&base_type.ident.to_string(), SHARE_SUFFIX);
     let derive: Attribute = parse_quote!(#[derive(Clone, Debug, Eq, PartialEq)]);
@@ -92,6 +92,14 @@ fn build_secret_share_type(base_type: &ItemStruct, serde: bool) -> TokenStream2 
     // Build singleprover circuit types for the secret shares
     res.extend(build_circuit_types(&secret_share_type));
     res.extend(build_share_var_impl(&secret_share_type));
+
+    // Build MPC and multiprover base types
+    if mpc {
+        res.extend(build_mpc_types(
+            &secret_share_type,
+            true, // multiprover
+        ));
+    }
 
     res.extend(secret_share_type.to_token_stream());
 

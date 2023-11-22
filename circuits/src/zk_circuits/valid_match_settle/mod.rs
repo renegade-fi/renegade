@@ -26,6 +26,8 @@ use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 use circuit_macros::circuit_type;
 use serde::{Deserialize, Serialize};
 
+use super::valid_commitments::OrderSettlementIndices;
+
 /// A circuit with default sizing parameters
 pub type SizedValidMatchSettle = ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
@@ -47,6 +49,7 @@ where
 {
     /// Applies the constraints of the match-settle circuit
     pub fn multiprover_circuit(
+        statement: &ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
@@ -55,13 +58,14 @@ where
         Self::validate_matching_engine(witness, fabric, cs)?;
 
         // Apply the constraints of the match settlement
-        Self::validate_settlement(witness, (), fabric, cs)
+        Self::validate_settlement(statement, witness, fabric, cs)
     }
 
     /// The order crossing check, for a single prover
     ///
     /// Used to apply constraints to the verifier
     pub fn singleprover_circuit(
+        statement: &ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -69,7 +73,7 @@ where
         Self::validate_matching_engine_singleprover(witness, cs)?;
 
         // Apply the constraints of the match settlement
-        Self::validate_settlement_singleprover(witness, (), cs)
+        Self::validate_settlement_singleprover(statement, witness, cs)
     }
 }
 
@@ -119,7 +123,7 @@ pub struct ValidMatchSettleWitness<
 pub type SizedValidMatchSettleWitness = ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 /// The statement type for `VALID MATCH SETTLE`
-#[circuit_type(singleprover_circuit)]
+#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidMatchSettleStatement<
     const MAX_BALANCES: usize,
@@ -132,19 +136,10 @@ pub struct ValidMatchSettleStatement<
     pub party0_modified_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The modified public secret shares of the second party
     pub party1_modified_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The index of the balance that the first party sent in the settlement
-    pub party0_send_balance_index: u64,
-    /// The index of teh balance that the first party received in the settlement
-    pub party0_receive_balance_index: u64,
-    /// The index of the first party's order that was matched
-    pub party0_order_index: u64,
-    /// The index of the balance that the second party sent in the settlement
-    pub party1_send_balance_index: u64,
-    /// The index of teh balance that the second party received in the
-    /// settlement
-    pub party1_receive_balance_index: u64,
-    /// The index of the second party's order that was matched
-    pub party1_order_index: u64,
+    /// The indices that settlement should modify in the first party's wallet
+    pub party0_indices: OrderSettlementIndices,
+    /// The indices that settlement should modify in the second party's wallet
+    pub party1_indices: OrderSettlementIndices,
 }
 
 /// A `VALID MATCH SETTLE` statement with default const generic sizing
@@ -161,34 +156,36 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> 
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
-    type Statement = ();
-    type Witness = AuthenticatedValidMatchSettleWitness<MAX_ORDERS, MAX_BALANCES, MAX_FEES>;
+    type Witness = AuthenticatedValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type Statement = AuthenticatedValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type BaseCircuit = Self;
 
     fn apply_constraints_multiprover(
-        witness: ValidMatchSettleWitnessVar<MAX_ORDERS, MAX_BALANCES, MAX_FEES>,
-        _statement: (),
+        witness: ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        statement: ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), PlonkError> {
-        Self::multiprover_circuit(&witness, fabric, cs).map_err(PlonkError::CircuitError)
+        Self::multiprover_circuit(&statement, &witness, fabric, cs)
+            .map_err(PlonkError::CircuitError)
     }
 }
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> SingleProverCircuit
-    for ValidMatchSettle<MAX_ORDERS, MAX_BALANCES, MAX_FEES>
+    for ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
-    type Witness = ValidMatchSettleWitness<MAX_ORDERS, MAX_BALANCES, MAX_FEES>;
-    type Statement = ();
+    type Witness = ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type Statement = ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     fn apply_constraints(
-        witness: ValidMatchSettleWitnessVar<MAX_ORDERS, MAX_BALANCES, MAX_FEES>,
-        _statement_var: (),
+        witness: ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        statement: ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), PlonkError> {
-        ValidMatchSettle::singleprover_circuit(&witness, cs).map_err(PlonkError::CircuitError)
+        ValidMatchSettle::singleprover_circuit(&statement, &witness, cs)
+            .map_err(PlonkError::CircuitError)
     }
 }
 
@@ -198,49 +195,162 @@ where
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use ark_mpc::algebra::Scalar;
-    use circuit_types::balance::Balance;
-    use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+    use circuit_types::{
+        balance::Balance,
+        order::{Order, OrderSide},
+        r#match::MatchResult,
+    };
+    use constants::Scalar;
+    use rand::{distributions::uniform::SampleRange, thread_rng, RngCore};
 
-    use crate::test_helpers::random_orders_and_match;
+    use crate::{
+        test_helpers::random_orders_and_match,
+        zk_circuits::{
+            test_helpers::{
+                create_wallet_shares, SizedWallet, SizedWalletShare, INITIAL_WALLET, MAX_BALANCES,
+                MAX_FEES, MAX_ORDERS,
+            },
+            valid_commitments::OrderSettlementIndices,
+        },
+    };
 
-    use super::ValidMatchSettleWitness;
+    use super::{ValidMatchSettle, ValidMatchSettleStatement, ValidMatchSettleWitness};
 
-    /// A witness with with default sizing parameters attached
+    /// A match settle circuit with default sizing parameters
+    pub type SizedValidMatchSettle = ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    /// A witness with default sizing parameters attached
     pub type SizedValidMatchSettleWitness =
         ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    /// A statement with default sizing parameters attached
+    pub type SizedValidMatchSettleStatement =
+        ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     /// Create a dummy witness to match on
-    pub fn create_dummy_witness() -> SizedValidMatchSettleWitness {
+    pub fn dummy_witness_and_statement(
+    ) -> (SizedValidMatchSettleWitness, SizedValidMatchSettleStatement) {
         let (o1, o2, price, match_res) = random_orders_and_match();
 
-        // Build mock balances around the order
+        // Build wallets for the crossing orders
+        let (wallet1, party0_indices) = build_wallet_and_indices(&o1, &match_res);
+        let (wallet2, party1_indices) = build_wallet_and_indices(&o2, &match_res);
+        let (_, party0_public_shares) = create_wallet_shares(&wallet1);
+        let (_, party1_public_shares) = create_wallet_shares(&wallet2);
 
-        // Buy side, buys the base selling the quote
-        let b1 = Balance {
-            mint: match_res.quote_mint.clone(),
-            amount: match_res.quote_amount + 1,
-        };
-
-        // Sell side sells the base, buying the quote
-        let b2 = Balance {
-            mint: match_res.base_mint.clone(),
-            amount: match_res.base_amount + 1,
-        };
+        // Update the wallets
+        let party0_modified_shares =
+            apply_match_to_shares(&party0_public_shares, &party0_indices, &match_res, o1.side);
+        let party1_modified_shares =
+            apply_match_to_shares(&party1_public_shares, &party1_indices, &match_res, o2.side);
 
         let amount1 = Scalar::from(o1.amount);
         let amount2 = Scalar::from(o2.amount);
-        ValidMatchSettleWitness {
-            order1: o1,
-            balance1: b1,
-            price1: price,
-            amount1,
-            order2: o2,
-            balance2: b2,
-            price2: price,
-            amount2,
-            match_res,
+
+        (
+            ValidMatchSettleWitness {
+                order1: o1,
+                balance1: wallet1.balances[party0_indices.balance_send as usize].clone(),
+                price1: price,
+                amount1,
+                order2: o2,
+                balance2: wallet2.balances[party1_indices.balance_send as usize].clone(),
+                price2: price,
+                amount2,
+                match_res,
+                party0_public_shares,
+                party1_public_shares,
+            },
+            ValidMatchSettleStatement {
+                party0_indices,
+                party1_indices,
+                party0_modified_shares,
+                party1_modified_shares,
+            },
+        )
+    }
+
+    // Build two wallets and sample indices for the orders and balances for the
+    // match to be placed into
+    fn build_wallet_and_indices(
+        order: &Order,
+        match_res: &MatchResult,
+    ) -> (SizedWallet, OrderSettlementIndices) {
+        let mut rng = thread_rng();
+        let mut wallet = INITIAL_WALLET.clone();
+
+        let send = (0..MAX_BALANCES).sample_single(&mut rng);
+        let recv = MAX_BALANCES - send - 1;
+        let order_ind = (0..MAX_ORDERS).sample_single(&mut rng);
+
+        // Insert the order and balances into the wallet
+        wallet.orders[order_ind] = order.clone();
+        wallet.balances[send] = send_balance(order, match_res);
+        wallet.balances[recv] = receive_balance(order);
+
+        (
+            wallet,
+            OrderSettlementIndices {
+                balance_send: send as u64,
+                balance_receive: recv as u64,
+                order: order_ind as u64,
+            },
+        )
+    }
+
+    /// Build a send balance given an order
+    ///
+    /// This builds a balance that fully capitalizes the position the order
+    /// represents
+    fn send_balance(order: &Order, match_res: &MatchResult) -> Balance {
+        let (mint, amount) = match order.side {
+            // Buy the base sell the quote
+            OrderSide::Buy => (order.quote_mint.clone(), match_res.quote_amount + 1),
+            // Sell the base buy the quote
+            OrderSide::Sell => (order.base_mint.clone(), match_res.base_amount + 1),
+        };
+
+        Balance { mint, amount }
+    }
+
+    /// Build a receive balance given an order
+    ///
+    /// This gives a random initial balance to the order
+    fn receive_balance(order: &Order) -> Balance {
+        let mut rng = thread_rng();
+        let mint = match order.side {
+            // Buy the base sell the quote
+            OrderSide::Buy => order.base_mint.clone(),
+            // Sell the base buy the quote
+            OrderSide::Sell => order.quote_mint.clone(),
+        };
+
+        Balance {
+            mint,
+            amount: rng.next_u32() as u64,
         }
+    }
+
+    /// Applies a match to the shares of a wallet
+    ///
+    /// Returns a new wallet share with the match applied
+    fn apply_match_to_shares(
+        shares: &SizedWalletShare,
+        indices: &OrderSettlementIndices,
+        match_res: &MatchResult,
+        side: OrderSide,
+    ) -> SizedWalletShare {
+        let (send_amt, recv_amt) = match side {
+            // Buy side; send quote, receive base
+            OrderSide::Buy => (match_res.quote_amount, match_res.base_amount),
+            // Sell side; send base, receive quote
+            OrderSide::Sell => (match_res.base_amount, match_res.quote_amount),
+        };
+
+        let mut new_shares = shares.clone();
+        new_shares.balances[indices.balance_send as usize].amount -= Scalar::from(send_amt);
+        new_shares.balances[indices.balance_receive as usize].amount += Scalar::from(recv_amt);
+        new_shares.orders[indices.order as usize].amount -= Scalar::from(match_res.base_amount);
+
+        new_shares
     }
 }
 
@@ -253,24 +363,25 @@ mod tests {
 
     use crate::{
         multiprover_prove_and_verify,
-        zk_circuits::valid_match_settle::{test_helpers::create_dummy_witness, ValidMatchSettle},
+        zk_circuits::valid_match_settle::test_helpers::{
+            dummy_witness_and_statement, SizedValidMatchSettle,
+        },
     };
 
     /// Tests proving a valid match with a valid witness
     #[tokio::test]
     async fn prove_valid_witness() {
-        let witness = create_dummy_witness();
+        let (witness, statement) = dummy_witness_and_statement();
         let (res, _) = execute_mock_mpc(move |fabric| {
             let witness = witness.clone();
+            let statement = statement.clone();
 
             async move {
                 let witness = witness.allocate(PARTY0, &fabric);
-                multiprover_prove_and_verify::<ValidMatchSettle>(
-                    witness,
-                    (), // statement
-                    fabric,
-                )
-                .await
+                let statement = statement.allocate(PARTY0, &fabric);
+
+                multiprover_prove_and_verify::<SizedValidMatchSettle>(witness, statement, fabric)
+                    .await
             }
         })
         .await;
