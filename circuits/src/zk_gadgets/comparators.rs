@@ -6,11 +6,12 @@
 //! Or, for example with `EqZero` gadget, if the gadget would leak privacy.
 
 use ark_ff::{Field, One, Zero};
+use ark_mpc::ResultValue;
 use circuit_types::{
     traits::{CircuitBaseType, CircuitVarType, MultiproverCircuitBaseType},
     Fabric, MpcPlonkCircuit, PlonkCircuit,
 };
-use constants::{Scalar, ScalarField};
+use constants::{AuthenticatedScalar, Scalar, ScalarField, ScalarResult};
 use itertools::Itertools;
 use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
 
@@ -23,9 +24,6 @@ use crate::{
 // ------------------------
 
 /// A gadget that returns whether a value is equal to zero
-///
-/// Its output is Variable::One() if the input is equal to zero,
-/// or Variable::Zero() if not
 #[derive(Clone, Debug)]
 pub struct EqZeroGadget {}
 impl EqZeroGadget {
@@ -288,6 +286,114 @@ impl<const D: usize> LessThanGadget<D> {
 // | Multiprover Gadgets |
 // -----------------------
 
+/// A multiprover version of the equal gadget
+pub struct MultiproverEqGadget;
+impl MultiproverEqGadget {
+    /// Computes whether the given input is equal to zero
+    ///
+    /// Warning: This requires opening the value to both parties so that they
+    /// may assign a wire to the true/false value. This leaks privacy and
+    /// should only be used in situations where it is okay to open the value
+    /// to both parties. For example, in a statement value that will be
+    /// opened anyways. Care should be taken that early opening does not leak
+    /// privacy
+    pub fn eq_zero_public(
+        a: Variable,
+        fabric: &Fabric,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<BoolVar, CircuitError> {
+        // Evaluate the value and open it to both parties, this does not require an
+        // authenticated opening because a corrupted value will not be able to
+        // satisfy the constraints
+        let a_eval: AuthenticatedScalar = a.eval_multiprover(cs);
+        let a_open: ScalarResult = AuthenticatedScalar::open(&a_eval);
+
+        // Allocate a gate to check whether the underlying value is zero
+        let mut res = fabric.new_batch_gate_op(vec![a_open.id()], 2 /* arity */, |mut args| {
+            let val: Scalar = args.remove(0).into();
+            let (is_zero, inv) = if val == Scalar::zero() {
+                (Scalar::one(), Scalar::zero())
+            } else {
+                (Scalar::zero(), val.inverse())
+            };
+
+            vec![ResultValue::Scalar(is_zero), ResultValue::Scalar(inv)]
+        });
+
+        // Destructure the values and multiply them by 1 to get authenticated scalars
+        let is_zero: ScalarResult = res.remove(0);
+        let inverse: ScalarResult = res.remove(0);
+
+        let one_authenticated = fabric.one_authenticated();
+        let is_zero: AuthenticatedScalar = is_zero * &one_authenticated;
+        let inverse: AuthenticatedScalar = inverse * &one_authenticated;
+
+        // Proceed as in the single prover analog of the gadget
+        let is_zero_var = is_zero.create_shared_witness(cs);
+        let inv_var = inverse.create_shared_witness(cs);
+
+        // Constrain `is_zero == 1 - val * inv`
+        //
+        // If the value is zero, then the right hand side will always be one, so the
+        // circuit is well constrained
+        //
+        // If the value is non-zero (and inv is correctly assigned), then the right hand
+        // side will be zero. The only check left is that inv is not set to
+        // zero, allowing a non-zero `val` to satisfy the constraints with `is_zero = 1`
+        // This is implicitly handled in the second constraint by ensuring that the
+        // input times the output is zero, which for non-zero input is only true
+        // if the output is zero
+        let zero_var = cs.zero();
+        let one_var = cs.one();
+        let one = ScalarField::one();
+
+        cs.mul_add_gate(&[a, inv_var, one_var, one_var, is_zero_var], &[-one, one])?;
+        cs.mul_gate(is_zero_var, a, zero_var)?;
+
+        // We do not need to enforce that the result is boolean, only 0 or 1 will
+        // satisfy the previous two constraints
+        Ok(BoolVar::new_unchecked(is_zero_var))
+    }
+
+    /// Computes whether the given inputs are equal to one another
+    ///
+    /// Note that this opens the values to both parties, see the method above
+    pub fn eq_public<V: CircuitVarType>(
+        a: &V,
+        b: &V,
+        fabric: &Fabric,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<BoolVar, CircuitError> {
+        let a_vars = a.to_vars();
+        let b_vars = b.to_vars();
+
+        Self::eq_vec_public(&a_vars, &b_vars, fabric, cs)
+    }
+
+    /// Computes whether the given vectors of inputs are equal
+    ///
+    /// Note that this opens the values to both parties, see the method above
+    pub fn eq_vec_public<V: CircuitVarType>(
+        a: &[V],
+        b: &[V],
+        fabric: &Fabric,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<BoolVar, CircuitError> {
+        assert_eq!(a.len(), b.len(), "eq_vec expects equal length vectors");
+        let a_vals = a.iter().cloned().flat_map(|a_val| a_val.to_vars());
+        let b_vals = b.iter().cloned().flat_map(|b_val| b_val.to_vars());
+
+        let mut component_eq_vals = Vec::new();
+        for (a_val, b_val) in a_vals.zip(b_vals) {
+            let a_minus_b = cs.sub(a_val, b_val)?;
+            let eq_val = Self::eq_zero_public(a_minus_b, fabric, cs)?;
+            component_eq_vals.push(eq_val);
+        }
+
+        cs.logic_and_all(&component_eq_vals)
+    }
+}
+
 /// A multiprover version of the greater than or equal to zero gadget
 pub struct MultiproverGreaterThanEqZeroGadget<const D: usize>;
 impl<const D: usize> MultiproverGreaterThanEqZeroGadget<D> {
@@ -374,7 +480,8 @@ mod test {
     use crate::{
         zk_gadgets::comparators::{
             EqGadget, GreaterThanEqGadget, GreaterThanEqZeroGadget, LessThanGadget,
-            MultiproverGreaterThanEqGadget, MultiproverGreaterThanEqZeroGadget,
+            MultiproverEqGadget, MultiproverGreaterThanEqGadget,
+            MultiproverGreaterThanEqZeroGadget,
         },
         SCALAR_MAX_BITS,
     };
@@ -444,6 +551,39 @@ mod test {
         cs.enforce_true(eq2).unwrap();
 
         assert!(cs.check_circuit_satisfiability(&[]).is_ok());
+    }
+
+    /// Tests the `MultiproverEqGadget`
+    #[tokio::test]
+    async fn test_eq_gadget_multiprover() {
+        let o1 = random_order();
+        let o2 = random_order();
+
+        let (res, _) = execute_mock_mpc(move |fabric| {
+            let o1 = o1.clone();
+            let o2 = o2.clone();
+
+            async move {
+                let mut cs = MpcPlonkCircuit::new(fabric.clone());
+                let o1_var = o1.allocate(PARTY0, &fabric).create_shared_witness(&mut cs);
+                let o2_var = o2.allocate(PARTY1, &fabric).create_shared_witness(&mut cs);
+
+                // o1 == o2
+                let eq1 =
+                    MultiproverEqGadget::eq_public(&o1_var, &o2_var, &fabric, &mut cs).unwrap();
+                // o1 == o1
+                let eq2 =
+                    MultiproverEqGadget::eq_public(&o1_var, &o1_var, &fabric, &mut cs).unwrap();
+
+                cs.enforce_false(eq1).unwrap();
+                cs.enforce_true(eq2).unwrap();
+
+                cs.check_circuit_satisfiability(&[]).is_ok()
+            }
+        })
+        .await;
+
+        assert!(res);
     }
 
     #[test]
