@@ -20,11 +20,15 @@ use crate::zk_gadgets::{
 
 // --- Matching Engine --- //
 
-impl ValidMatchSettle {
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
+    ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
     /// The order crossing check, verifies that the matches result is valid
     /// given the orders and balances of the two parties
     pub(crate) fn validate_matching_engine(
-        witness: &ValidMatchSettleWitnessVar,
+        witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -230,12 +234,16 @@ impl ValidMatchSettle {
 
 // --- Settlement --- //
 
-impl ValidMatchSettle {
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
+    ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
     /// Validate settlement of a match result into the wallets of the two
     /// parties
     #[allow(clippy::needless_pass_by_ref_mut)]
     pub(crate) fn validate_settlement(
-        witness: &ValidMatchSettleWitnessVar,
+        witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         statement: (),
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,

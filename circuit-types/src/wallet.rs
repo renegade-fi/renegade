@@ -5,7 +5,7 @@
 use std::ops::Add;
 
 use circuit_macros::circuit_type;
-use constants::{Scalar, ScalarField};
+use constants::{AuthenticatedScalar, Scalar, ScalarField};
 use itertools::Itertools;
 use mpc_relation::{traits::Circuit, Variable};
 use serde::{Deserialize, Serialize};
@@ -13,10 +13,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     scalar_from_hex_string, scalar_to_hex_string,
     traits::{
-        BaseType, CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType,
-        SecretShareVarType,
+        BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
+        MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    PlonkCircuit,
+    Fabric, PlonkCircuit,
 };
 
 use super::{
@@ -38,7 +38,7 @@ pub type Nullifier = Scalar;
 
 /// Represents the base type of a wallet holding orders, balances, fees, keys
 /// and cryptographic randomness
-#[circuit_type(serde, singleprover_circuit, secret_share)]
+#[circuit_type(serde, singleprover_circuit, secret_share, mpc, multiprover_circuit)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Wallet<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
 where
