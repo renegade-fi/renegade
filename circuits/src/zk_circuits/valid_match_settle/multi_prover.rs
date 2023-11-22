@@ -6,16 +6,23 @@ use circuit_types::{
     fixed_point::{FixedPointVar, DEFAULT_FP_PRECISION},
     order::OrderVar,
     r#match::MatchResultVar,
+    wallet::WalletShareVar,
     Fabric, MpcPlonkCircuit, AMOUNT_BITS, PRICE_BITS,
 };
 use constants::ScalarField;
-use mpc_relation::{errors::CircuitError, traits::Circuit};
+use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 
-use super::{ValidMatchSettle, ValidMatchSettleWitnessVar};
-use crate::zk_gadgets::{
-    comparators::{EqGadget, MultiproverGreaterThanEqGadget, MultiproverGreaterThanEqZeroGadget},
-    fixed_point::MultiproverFixedPointGadget,
-    select::{CondSelectGadget, CondSelectVectorGadget},
+use super::{ValidMatchSettle, ValidMatchSettleStatementVar, ValidMatchSettleWitnessVar};
+use crate::{
+    zk_circuits::valid_commitments::OrderSettlementIndicesVar,
+    zk_gadgets::{
+        comparators::{
+            EqGadget, MultiproverEqGadget, MultiproverGreaterThanEqGadget,
+            MultiproverGreaterThanEqZeroGadget,
+        },
+        fixed_point::MultiproverFixedPointGadget,
+        select::{CondSelectGadget, CondSelectVectorGadget},
+    },
 };
 
 // --- Matching Engine --- //
@@ -241,13 +248,177 @@ where
 {
     /// Validate settlement of a match result into the wallets of the two
     /// parties
-    #[allow(clippy::needless_pass_by_ref_mut)]
     pub(crate) fn validate_settlement(
+        statement: &ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        statement: (),
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
+        // Select the balances received by each party
+        let (base_amt, quote_amt) = (
+            witness.match_res.base_amount,
+            witness.match_res.quote_amount,
+        );
+        let party0_party1_received = CondSelectGadget::select(
+            &[quote_amt, base_amt],
+            &[base_amt, quote_amt],
+            witness.match_res.direction,
+            cs,
+        )?;
+
+        let party0_received_amount = party0_party1_received[0];
+        let party1_received_amount = party0_party1_received[1];
+
+        // Constrain the wallet updates to party0's shares
+        Self::validate_balance_updates(
+            party1_received_amount,
+            party0_received_amount,
+            &statement.party0_indices,
+            &witness.party0_public_shares,
+            &statement.party0_modified_shares,
+            fabric,
+            cs,
+        )?;
+
+        Self::validate_order_updates(
+            witness.match_res.base_amount,
+            &statement.party0_indices,
+            &witness.party0_public_shares,
+            &statement.party0_modified_shares,
+            fabric,
+            cs,
+        )?;
+
+        Self::validate_fees_keys_blinder_updates(
+            &witness.party0_public_shares,
+            &statement.party0_modified_shares,
+            cs,
+        )?;
+
+        // Constrain the wallet update to party1's shares
+        Self::validate_balance_updates(
+            party0_received_amount,
+            party1_received_amount,
+            &statement.party1_indices,
+            &witness.party1_public_shares,
+            &statement.party1_modified_shares,
+            fabric,
+            cs,
+        )?;
+
+        Self::validate_order_updates(
+            witness.match_res.base_amount,
+            &statement.party1_indices,
+            &witness.party1_public_shares,
+            &statement.party1_modified_shares,
+            fabric,
+            cs,
+        )?;
+
+        Self::validate_fees_keys_blinder_updates(
+            &witness.party1_public_shares,
+            &statement.party1_modified_shares,
+            cs,
+        )
+    }
+
+    /// Verify that the balance updates to a wallet are valid
+    ///
+    /// That is, all balances in the settled wallet are the same as in the
+    /// pre-settle wallet except for the balance sent and the balance
+    /// received, which have the correct amounts applied from the match
+    fn validate_balance_updates(
+        send_amount: Variable,
+        received_amount: Variable,
+        indices: &OrderSettlementIndicesVar,
+        pre_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        post_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        fabric: &Fabric,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let one = ScalarField::one();
+
+        let mut curr_index = cs.zero();
+        for (pre_update_balance, post_update_balance) in pre_update_shares
+            .balances
+            .clone()
+            .into_iter()
+            .zip(post_update_shares.balances.clone().into_iter())
+        {
+            // Mask the send term
+            let send_term_index_mask =
+                MultiproverEqGadget::eq_public(&indices.balance_send, &curr_index, fabric, cs)?;
+            let masked_send = cs.mul_with_coeff(send_term_index_mask.into(), send_amount, &-one)?;
+
+            // Mask the receive term
+            let receive_term_index_mask =
+                MultiproverEqGadget::eq_public(&indices.balance_receive, &curr_index, fabric, cs)?;
+            let masked_receive = cs.mul(receive_term_index_mask.into(), received_amount)?;
+
+            // Add the terms together to get the expected update
+            let expected_balance_amount =
+                cs.sum(&[pre_update_balance.amount, masked_send, masked_receive])?;
+            let mut expected_balance_shares = pre_update_balance.clone();
+            expected_balance_shares.amount = expected_balance_amount;
+
+            EqGadget::constrain_eq(&expected_balance_shares, &post_update_balance, cs)?;
+
+            // Increment the index
+            curr_index = cs.add(curr_index, cs.one())?;
+        }
+
         Ok(())
+    }
+
+    /// Verify that order updates to a wallet are valid
+    ///
+    /// The orders should all be equal except that the amount of the matched
+    /// order should be decremented by the amount of the base token swapped
+    fn validate_order_updates(
+        base_amount_swapped: Variable,
+        indices: &OrderSettlementIndicesVar,
+        pre_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        post_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        fabric: &Fabric,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let one = ScalarField::one();
+
+        let mut curr_index = cs.zero();
+        for (pre_update_order, post_update_order) in pre_update_shares
+            .orders
+            .clone()
+            .into_iter()
+            .zip(post_update_shares.orders.clone().into_iter())
+        {
+            // Mask with the index
+            let index_mask =
+                MultiproverEqGadget::eq_public(&indices.order, &curr_index, fabric, cs)?;
+            let delta_term = cs.mul_with_coeff(index_mask.into(), base_amount_swapped, &-one)?;
+
+            // Constrain the order update to be correct
+            let expected_volume = cs.add(pre_update_order.amount, delta_term)?;
+            let mut expected_order_shares = pre_update_order.clone();
+            expected_order_shares.amount = expected_volume;
+
+            EqGadget::constrain_eq(&expected_order_shares, &post_update_order, cs)?;
+
+            // Increment the index
+            curr_index = cs.add(curr_index, cs.one())?;
+        }
+
+        Ok(())
+    }
+
+    /// Validate that fees, keys, and blinders remain the same in the pre and
+    /// post wallet shares
+    fn validate_fees_keys_blinder_updates(
+        pre_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        post_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        EqGadget::constrain_eq(&pre_update_shares.fees, &post_update_shares.fees, cs)?;
+        EqGadget::constrain_eq(&pre_update_shares.keys, &post_update_shares.keys, cs)?;
+        EqGadget::constrain_eq(&pre_update_shares.blinder, &post_update_shares.blinder, cs)
     }
 }
