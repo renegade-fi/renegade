@@ -133,7 +133,8 @@ pub(crate) fn circuit_type_impl(target_struct: ItemStruct, macro_args: MacroArgs
 
     // Build secret share types
     if macro_args.build_secret_share_types {
-        let secret_share_type_tokens = build_secret_share_types(&target_struct, macro_args.serde);
+        let secret_share_type_tokens =
+            build_secret_share_types(&target_struct, macro_args.build_mpc_types, macro_args.serde);
         out_tokens.extend(secret_share_type_tokens);
     }
 

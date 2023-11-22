@@ -841,7 +841,7 @@ pub trait MultiProverCircuit {
         // Allocate the witness and statement in the constraint system
         let mut circuit = MpcPlonkCircuit::new(fabric.clone());
         let witness_var = witness.create_shared_witness(&mut circuit);
-        let statement_var = statement.create_shared_witness(&mut circuit);
+        let statement_var = statement.create_shared_public_var(&mut circuit);
 
         // Apply the constraints
         Self::apply_constraints_multiprover(witness_var, statement_var, &fabric, &mut circuit)?;

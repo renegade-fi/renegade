@@ -18,11 +18,14 @@ use circuit_types::{
     balance::{Balance, BalanceVar},
     fee::{Fee, FeeVar},
     order::{Order, OrderVar},
-    traits::{BaseType, CircuitBaseType, CircuitVarType, SecretShareVarType},
+    traits::{
+        BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
+        MultiproverCircuitBaseType, SecretShareVarType,
+    },
     wallet::{WalletShare, WalletVar},
-    PlonkCircuit,
+    Fabric, PlonkCircuit,
 };
-use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use constants::{AuthenticatedScalar, Scalar, ScalarField, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 use serde::{Deserialize, Serialize};
@@ -85,7 +88,7 @@ where
         // of zero for the received mint of the order. This augmented balance
         // must come in place of a previous balance that was zero.
         Self::verify_wallets_equal_with_augmentation(
-            statement.balance_receive_index,
+            statement.indices.balance_receive,
             receive_mint,
             &base_wallet,
             &augmented_wallet,
@@ -94,7 +97,7 @@ where
 
         // Verify that the send balance is at the correct index
         Self::contains_balance_at_index(
-            statement.balance_send_index,
+            statement.indices.balance_send,
             &witness.balance_send,
             &augmented_wallet,
             cs,
@@ -103,7 +106,7 @@ where
 
         // Verify that the receive balance is at the correct index
         Self::contains_balance_at_index(
-            statement.balance_receive_index,
+            statement.indices.balance_receive,
             &witness.balance_receive,
             &augmented_wallet,
             cs,
@@ -117,7 +120,7 @@ where
 
         // Verify that the order is at the correct index
         Self::contains_order_at_index(
-            statement.order_index,
+            statement.indices.order,
             &witness.order,
             &augmented_wallet,
             cs,
@@ -328,16 +331,25 @@ pub type SizedValidCommitmentsWitness = ValidCommitmentsWitness<MAX_BALANCES, MA
 
 /// The statement type for `VALID COMMITMENTS`
 #[circuit_type(singleprover_circuit)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct ValidCommitmentsStatement {
+    /// The indices used in settling this order once matched
+    pub indices: OrderSettlementIndices,
+}
+
+/// The indices that specify where settlement logic should modify the wallet
+/// shares
+#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub struct OrderSettlementIndices {
     /// The index of the balance that holds the mint that the wallet will
     /// send if a successful match occurs
-    pub balance_send_index: u64,
+    pub balance_send: u64,
     /// The index of the balance that holds the mint that the wallet will
     /// receive if a successful match occurs
-    pub balance_receive_index: u64,
+    pub balance_receive: u64,
     /// The index of the order that is to be matched
-    pub order_index: u64,
+    pub order: u64,
 }
 
 // ---------------------
@@ -378,7 +390,7 @@ pub mod test_helpers {
         create_wallet_shares, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
     };
 
-    use super::{ValidCommitmentsStatement, ValidCommitmentsWitness};
+    use super::{OrderSettlementIndices, ValidCommitmentsStatement, ValidCommitmentsWitness};
 
     /// A type alias for the VALID COMMITMENTS witness with size parameters
     /// attached
@@ -457,9 +469,11 @@ pub mod test_helpers {
         };
 
         let statement = ValidCommitmentsStatement {
-            balance_send_index: ind_send as u64,
-            balance_receive_index: ind_receive as u64,
-            order_index: ind_order as u64,
+            indices: OrderSettlementIndices {
+                balance_send: ind_send as u64,
+                balance_receive: ind_receive as u64,
+                order: ind_order as u64,
+            },
         };
 
         (witness, statement)
@@ -583,7 +597,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Prover attempt to augment the wallet with a non-zero balance
-        let augmented_balance_index = statement.balance_receive_index;
+        let augmented_balance_index = statement.indices.balance_receive;
         witness.augmented_public_shares.balances[augmented_balance_index as usize].amount +=
             Scalar::one();
         witness.balance_receive.amount += 1u64;
@@ -601,7 +615,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Reset the original wallet such that the augmented balance was non-zero
-        let augmentation_index = statement.balance_receive_index;
+        let augmentation_index = statement.indices.balance_receive;
         witness.public_secret_shares.balances[augmentation_index as usize] = BalanceShare {
             amount: Scalar::one(),
             mint: Scalar::one(),
@@ -676,7 +690,7 @@ mod test {
         let (witness, mut statement) = create_witness_and_statement(&wallet);
 
         // Modify the index of the send balance
-        statement.balance_send_index += 1;
+        statement.indices.balance_send += 1;
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(
             &witness, &statement
@@ -690,7 +704,7 @@ mod test {
         let (witness, mut statement) = create_witness_and_statement(&wallet);
 
         // Modify the index of the send balance
-        statement.balance_receive_index += 1;
+        statement.indices.balance_receive += 1;
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(
             &witness, &statement
@@ -704,7 +718,7 @@ mod test {
         let (witness, mut statement) = create_witness_and_statement(&wallet);
 
         // Modify the index of the order
-        statement.order_index += 1;
+        statement.indices.order += 1;
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(
             &witness, &statement
@@ -718,7 +732,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the send balance from the order
-        witness.augmented_public_shares.balances[statement.balance_send_index as usize] =
+        witness.augmented_public_shares.balances[statement.indices.balance_send as usize] =
             BalanceShare {
                 mint: Scalar::zero(),
                 amount: Scalar::zero(),
@@ -736,7 +750,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the receive balance from the order
-        witness.augmented_public_shares.balances[statement.balance_receive_index as usize] =
+        witness.augmented_public_shares.balances[statement.indices.balance_receive as usize] =
             BalanceShare {
                 mint: Scalar::zero(),
                 amount: Scalar::zero(),
@@ -778,7 +792,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the order being proved on
-        witness.augmented_public_shares.orders[statement.order_index as usize] = OrderShare {
+        witness.augmented_public_shares.orders[statement.indices.order as usize] = OrderShare {
             quote_mint: Scalar::zero(),
             base_mint: Scalar::zero(),
             side: Scalar::zero(),
