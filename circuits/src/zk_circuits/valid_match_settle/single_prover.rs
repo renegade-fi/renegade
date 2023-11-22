@@ -21,12 +21,16 @@ use super::{ValidMatchSettle, ValidMatchSettleWitnessVar};
 
 // --- Matching Engine --- //
 
-impl ValidMatchSettle {
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
+    ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
     /// The order crossing check, for a single prover
     ///
     /// Used to apply constraints to the verifier
     pub(crate) fn validate_matching_engine_singleprover(
-        witness: &ValidMatchSettleWitnessVar,
+        witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let zero = ScalarField::zero();
@@ -223,12 +227,16 @@ impl ValidMatchSettle {
 
 // --- Settlement --- //
 
-impl ValidMatchSettle {
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
+    ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
     /// Validate settlement of a match result into the wallets of the two
     /// parties
     #[allow(clippy::needless_pass_by_ref_mut)]
     pub(crate) fn validate_settlement_singleprover(
-        witness: &ValidMatchSettleWitnessVar,
+        witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         statement: (),
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
