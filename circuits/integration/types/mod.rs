@@ -6,7 +6,7 @@ use circuit_types::{
     native_helpers::create_wallet_shares_with_randomness,
     wallet::{Wallet, WalletShare},
 };
-use mpc_stark::algebra::scalar::Scalar;
+use constants::Scalar;
 use rand::rngs::OsRng;
 
 pub mod sharing;

@@ -460,11 +460,7 @@ mod tests {
     fn test_valid_match__invalid_balance_mint() {
         let (mut witness, statement) = dummy_witness_and_statement();
 
-<<<<<<< HEAD
         // Corrupt the mint
-=======
-        // Switch the mint of the balance to be the wrong asset in the pair
->>>>>>> 1e36d44 (circuits: zk-circuits: valid-match-settle: Add match unit tests)
         rand_branch!(witness.balance1.mint += 1u8, witness.balance2.mint += 1u8);
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
             &witness, &statement
@@ -507,11 +503,7 @@ mod tests {
         let mut rng = thread_rng();
         let (mut witness, statement) = dummy_witness_and_statement();
 
-<<<<<<< HEAD
         // Change the max minus min amount
-=======
-        // Add one to the max minus min amount
->>>>>>> 1e36d44 (circuits: zk-circuits: valid-match-settle: Add match unit tests)
         witness.match_res.max_minus_min_amount = rng.next_u64();
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
             &witness, &statement

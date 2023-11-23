@@ -102,7 +102,7 @@ impl BaseType for OrderSide {
     fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
         match scalar_to_u64(&i.next().unwrap()) {
             val @ 0..=1 => OrderSide::from(val),
-            _ => panic!("invalid value for OrderSide"),
+            x => panic!("invalid value for OrderSide({x})"),
         }
     }
 }

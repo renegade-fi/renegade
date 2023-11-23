@@ -12,6 +12,7 @@ stats = ["ark-mpc/stats"]
 name = "integration"
 path = "integration/main.rs"
 harness = false
+required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_wallet_create"
