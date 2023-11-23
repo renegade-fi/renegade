@@ -126,7 +126,7 @@ pub async fn multiprover_prove_and_verify<C: MultiProverCircuit>(
 // | Test Helpers |
 // ----------------
 #[cfg(any(test, feature = "test_helpers"))]
-pub(crate) mod test_helpers {
+pub mod test_helpers {
     //! Helpers used in tests throughout the crate and integration tests outside
     //! the crate
 
@@ -163,12 +163,6 @@ pub(crate) mod test_helpers {
         ($x:expr) => {
             $crate::test_helpers::joint_open($x).await.unwrap()
         };
-    }
-
-    /// Constructor to initialize logging in tests
-    #[ctor::ctor]
-    fn setup() {
-        init_logger()
     }
 
     /// Initialize a logger

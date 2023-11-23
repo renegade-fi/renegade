@@ -6,13 +6,11 @@
 #![feature(inherent_associated_types)]
 
 mod mpc_circuits;
-mod mpc_gadgets;
 mod types;
-mod zk_circuits;
-mod zk_gadgets;
+// mod zk_circuits;
 
+use circuit_types::Fabric;
 use clap::Parser;
-use mpc_stark::MpcFabric;
 use test_helpers::{integration_test_main, mpc_network::setup_mpc_fabric};
 use util::logging::LevelFilter;
 
@@ -44,7 +42,7 @@ struct CliArgs {
 #[derive(Debug, Clone)]
 struct IntegrationTestArgs {
     /// The MPC fabric to use during the course of the integration test
-    pub(crate) mpc_fabric: MpcFabric,
+    pub(crate) mpc_fabric: Fabric,
 }
 
 impl From<CliArgs> for IntegrationTestArgs {
