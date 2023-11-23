@@ -358,9 +358,10 @@ pub mod test_helpers {
 mod tests {
     #![allow(non_snake_case)]
     use ark_mpc::PARTY0;
-    use circuit_types::traits::MpcBaseType;
+    use circuit_types::{fixed_point::FixedPoint, order::OrderSide, traits::MpcBaseType};
 
     use constants::Scalar;
+    use rand::{thread_rng, Rng, RngCore};
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::{
@@ -392,6 +393,174 @@ mod tests {
         .await;
 
         assert!(res.is_ok())
+    }
+
+    // ---------------
+    // | Match Tests |
+    // ---------------
+
+    /// Randomly perform one of two operation
+    macro_rules! rand_branch {
+        ($x:expr, $y:expr) => {
+            if rand::thread_rng().gen_bool(0.5) {
+                $x;
+            } else {
+                $y;
+            }
+        };
+    }
+
+    /// Test the case in which the two parties attempt to match on different
+    /// mints
+    #[test]
+    fn test_valid_match__different_mints() {
+        let (original_witness, statement) = dummy_witness_and_statement();
+
+        // One party switches the quote mint of their order
+        let mut witness = original_witness.clone();
+        rand_branch!(
+            witness.order1.quote_mint += 1u8,
+            witness.order2.quote_mint += 1u8
+        );
+
+        // Validate that the constraints are not satisfied
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness, &statement
+        ));
+
+        // Now test with base mint switched
+        let mut witness = original_witness;
+        rand_branch!(
+            witness.order1.base_mint += 1u8,
+            witness.order2.base_mint += 1u8
+        );
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness, &statement
+        ));
+    }
+
+    /// Test the case in which the parties sit on the same side of the book
+    #[test]
+    fn test_valid_match__same_side() {
+        let (mut witness, statement) = dummy_witness_and_statement();
+
+        // Swap the sides of one of the orders
+        rand_branch!(
+            witness.order1.side = witness.order1.side.opposite(),
+            witness.order2.side = witness.order2.side.opposite()
+        );
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness, &statement
+        ));
+    }
+
+    /// Test the case in which the balance provided to the matching engine is
+    /// not for the correct asset
+    #[test]
+    fn test_valid_match__invalid_balance_mint() {
+        let (mut witness, statement) = dummy_witness_and_statement();
+
+        // Corrupt the mint
+        rand_branch!(witness.balance1.mint += 1u8, witness.balance2.mint += 1u8);
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness, &statement
+        ));
+    }
+
+    /// Test the case in which the balance provided does not cover the
+    /// advertised amount
+    #[test]
+    fn test_valid_match__insufficient_balance() {
+        let (mut witness, statement) = dummy_witness_and_statement();
+
+        // Reduce the balance to be less than the amount matched
+        rand_branch!(witness.balance1.amount = 1, witness.balance2.amount = 1);
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness, &statement
+        ));
+    }
+
+    /// Test the case in which the matched amount exceeds the order size for a
+    /// party
+    #[test]
+    fn test_valid_match__amount_exceeds_order() {
+        let (mut witness, statement) = dummy_witness_and_statement();
+
+        // Place one party's order amount below the min amount
+        rand_branch!(
+            witness.order1.amount = witness.match_res.base_amount - 1,
+            witness.order2.amount = witness.match_res.base_amount - 1
+        );
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness, &statement
+        ));
+    }
+
+    /// Test the case in which the `max_minus_min` field is incorrectly computed
+    #[test]
+    fn test_valid_match__incorrect_max_minus_min() {
+        let mut rng = thread_rng();
+        let (mut witness, statement) = dummy_witness_and_statement();
+
+        // Change the max minus min amount
+        witness.match_res.max_minus_min_amount = rng.next_u64();
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness, &statement
+        ));
+    }
+
+    /// Test the case in which the `min_amount_order_index` field is incorrectly
+    /// computed
+    #[test]
+    fn test_valid_match__incorrect_min_amount_order_index() {
+        let (mut witness, statement) = dummy_witness_and_statement();
+
+        // Invert the index
+        witness.match_res.min_amount_order_index = !witness.match_res.min_amount_order_index;
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness, &statement
+        ));
+    }
+
+    /// Test the case in which the execution price exceeds the buy side price
+    /// protection
+    #[test]
+    fn test_valid_match__price_protection_violated_buy_side() {
+        let (mut witness, statement) = dummy_witness_and_statement();
+        let execution_price =
+            (witness.match_res.quote_amount as f64) / (witness.match_res.base_amount as f64);
+
+        // Execution price exceeds the buy side maximum price
+        let new_price = FixedPoint::from_f64_round_down(execution_price - 1.);
+        match witness.order1.side {
+            OrderSide::Buy => witness.price1 = new_price,
+            OrderSide::Sell => witness.price2 = new_price,
+        };
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness, &statement
+        ));
+    }
+
+    /// Test the case in which the execution price falls sort of the sell
+    /// side price protection
+    #[test]
+    fn test_valid_match__price_protection_violated_sell_side() {
+        let (mut witness, statement) = dummy_witness_and_statement();
+        let execution_price =
+            (witness.match_res.quote_amount as f64) / (witness.match_res.base_amount as f64);
+
+        // Execution price exceeds the buy side maximum price
+        let new_price = FixedPoint::from_f64_round_down(execution_price + 1.);
+        match witness.order1.side {
+            OrderSide::Sell => witness.price1 = new_price,
+            OrderSide::Buy => witness.price2 = new_price,
+        };
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness, &statement
+        ));
     }
 
     // --------------------
