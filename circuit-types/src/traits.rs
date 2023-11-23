@@ -68,7 +68,7 @@ pub trait BaseType: Clone {
     /// This method is added to the `BaseType` trait for maximum flexibility, so
     /// that types may be shared without requiring them to implement the
     /// full `MpcBaseType` trait
-    async fn share_public(&self, owning_party: PartyId, fabric: Fabric) -> Self {
+    async fn share_public(&self, owning_party: PartyId, fabric: &Fabric) -> Self {
         let self_scalars = self.to_scalars();
         let res_scalars = fabric
             .batch_share_plaintext(self_scalars, owning_party)
