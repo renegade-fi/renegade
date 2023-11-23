@@ -356,15 +356,20 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod tests {
+    #![allow(non_snake_case)]
     use ark_mpc::PARTY0;
     use circuit_types::traits::MpcBaseType;
 
+    use constants::Scalar;
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::{
         multiprover_prove_and_verify,
-        zk_circuits::valid_match_settle::test_helpers::{
-            dummy_witness_and_statement, SizedValidMatchSettle,
+        zk_circuits::{
+            test_helpers::check_constraint_satisfaction,
+            valid_match_settle::test_helpers::{
+                dummy_witness_and_statement, SizedValidMatchSettle,
+            },
         },
     };
 
@@ -387,5 +392,171 @@ mod tests {
         .await;
 
         assert!(res.is_ok())
+    }
+
+    // --------------------
+    // | Settlement Tests |
+    // --------------------
+
+    /// Tests the case in which an incorrect balance index is given
+    #[test]
+    fn test_invalid_settle__invalid_balance_index() {
+        let (witness, original_statement) = dummy_witness_and_statement();
+
+        // Party 0 send balance corrupted
+        let mut statement = original_statement.clone();
+        statement.party0_indices.balance_send += 1;
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness.clone(),
+            &statement
+        ));
+
+        // Party 0 receive balance corrupted
+        let mut statement = original_statement.clone();
+        statement.party0_indices.balance_receive += 1;
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness.clone(),
+            &statement
+        ));
+
+        // Party 1 send balance corrupted
+        let mut statement = original_statement.clone();
+        statement.party1_indices.balance_send += 1;
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness.clone(),
+            &statement
+        ));
+
+        // Party 1 receive balance corrupted
+        let mut statement = original_statement;
+        statement.party1_indices.balance_receive += 1;
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness.clone(),
+            &statement
+        ));
+    }
+
+    /// Test the case in which the order index of a settlement is incorrect
+    #[test]
+    fn test_invalid_settle__invalid_order_index() {
+        let (witness, original_statement) = dummy_witness_and_statement();
+
+        // Party 0 order index corrupted
+        let mut statement = original_statement.clone();
+        statement.party0_indices.order += 1;
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness.clone(),
+            &statement
+        ));
+
+        // Party 1 order index corrupted
+        let mut statement = original_statement;
+        statement.party1_indices.order += 1;
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness.clone(),
+            &statement
+        ));
+    }
+
+    /// Test case in which the send balance is incorrectly updated
+    #[test]
+    fn test_invalid_settle__invalid_send_balance() {
+        let (witness, mut statement) = dummy_witness_and_statement();
+
+        // Modify the send balance of party 0
+        statement.party0_modified_shares.balances
+            [statement.party0_indices.balance_send as usize]
+            .amount += Scalar::one();
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness.clone(),
+            &statement
+        ));
+    }
+
+    /// Tests the case in which the receive balance is incorrectly updated
+    #[test]
+    fn test_invalid_settle__invalid_receive_balance() {
+        let (witness, mut statement) = dummy_witness_and_statement();
+
+        // Modify the receive balance of party 1
+        statement.party1_modified_shares.balances
+            [statement.party1_indices.balance_receive as usize]
+            .amount += Scalar::one();
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness.clone(),
+            &statement
+        ));
+    }
+
+    /// Tests the case in which the order amount is incorrectly modified
+    #[test]
+    fn test_invalid_settle__invalid_order_update() {
+        let (witness, mut statement) = dummy_witness_and_statement();
+
+        // Modify the order of party 0
+        statement.party0_modified_shares.orders[statement.party0_indices.order as usize].amount -=
+            Scalar::one();
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness.clone(),
+            &statement
+        ));
+    }
+
+    /// Tests cases in which an element is spuriously modified that should not
+    /// be
+    #[test]
+    fn test_invalid_settle__spurious_modifications() {
+        let (witness, original_statement) = dummy_witness_and_statement();
+
+        // Modify a balance that should not be modified
+        let mut statement = original_statement.clone();
+        statement.party0_modified_shares.balances
+            [statement.party0_indices.balance_send as usize]
+            .mint += Scalar::one();
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness.clone(),
+            &statement
+        ));
+
+        // Modify an order that should not be modified
+        let mut statement = original_statement.clone();
+        statement.party1_modified_shares.orders[statement.party1_indices.order as usize].amount -=
+            Scalar::one();
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness.clone(),
+            &statement
+        ));
+
+        // Modify a fee
+        let mut statement = original_statement.clone();
+        statement.party0_modified_shares.fees[0].gas_token_amount += Scalar::one();
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness.clone(),
+            &statement
+        ));
+
+        // Modify a key
+        let mut statement = original_statement.clone();
+        statement.party1_modified_shares.keys.pk_match.key += Scalar::one();
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness.clone(),
+            &statement
+        ));
+
+        // Modify the blinder
+        let mut statement = original_statement;
+        statement.party0_modified_shares.blinder += Scalar::one();
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness.clone(),
+            &statement
+        ));
     }
 }
