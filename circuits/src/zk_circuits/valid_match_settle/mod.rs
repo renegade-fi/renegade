@@ -199,6 +199,7 @@ pub mod test_helpers {
         balance::Balance,
         order::{Order, OrderSide},
         r#match::MatchResult,
+        wallet::WalletShare,
     };
     use constants::Scalar;
     use rand::{distributions::uniform::SampleRange, thread_rng, RngCore};
@@ -207,8 +208,8 @@ pub mod test_helpers {
         test_helpers::random_orders_and_match,
         zk_circuits::{
             test_helpers::{
-                create_wallet_shares, SizedWallet, SizedWalletShare, INITIAL_WALLET, MAX_BALANCES,
-                MAX_FEES, MAX_ORDERS,
+                create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES,
+                MAX_ORDERS,
             },
             valid_commitments::OrderSettlementIndices,
         },
@@ -332,12 +333,19 @@ pub mod test_helpers {
     /// Applies a match to the shares of a wallet
     ///
     /// Returns a new wallet share with the match applied
-    fn apply_match_to_shares(
-        shares: &SizedWalletShare,
+    pub(crate) fn apply_match_to_shares<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >(
+        shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         indices: &OrderSettlementIndices,
         match_res: &MatchResult,
         side: OrderSide,
-    ) -> SizedWalletShare {
+    ) -> WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+    where
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
         let (send_amt, recv_amt) = match side {
             // Buy side; send quote, receive base
             OrderSide::Buy => (match_res.quote_amount, match_res.base_amount),

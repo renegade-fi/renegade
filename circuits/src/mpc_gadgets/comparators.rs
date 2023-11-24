@@ -2,8 +2,9 @@
 
 use std::iter;
 
-use circuit_types::Fabric;
+use circuit_types::{AuthenticatedBool, Fabric};
 use constants::{AuthenticatedScalar, Scalar};
+use itertools::Itertools;
 
 use crate::SCALAR_BITS_MINUS_TWO;
 
@@ -201,19 +202,22 @@ pub fn min<const D: usize>(
 
 /// Computes res = a if s else b
 pub fn cond_select(
-    s: &AuthenticatedScalar,
+    s: &AuthenticatedBool,
     a: &AuthenticatedScalar,
     b: &AuthenticatedScalar,
 ) -> AuthenticatedScalar {
-    let selectors =
-        AuthenticatedScalar::batch_mul(&[a.clone(), b.clone()], &[s.clone(), Scalar::one() - s]);
+    let selector: AuthenticatedScalar = s.clone().into();
+    let terms = AuthenticatedScalar::batch_mul(
+        &[a.clone(), b.clone()],
+        &[selector.clone(), Scalar::one() - &selector],
+    );
 
-    &selectors[0] + &selectors[1]
+    &terms[0] + &terms[1]
 }
 
 /// Computes res = [a] if s else [b] where a and b are slices
 pub fn cond_select_vec(
-    s: &AuthenticatedScalar,
+    s: &AuthenticatedBool,
     a: &[AuthenticatedScalar],
     b: &[AuthenticatedScalar],
 ) -> Vec<AuthenticatedScalar> {
@@ -222,24 +226,27 @@ pub fn cond_select_vec(
         b.len(),
         "cond_select_vec requires equal length vectors"
     );
+
     // Batch mul each a value with `s` and each `b` value with 1 - s
-    let selectors = AuthenticatedScalar::batch_mul(
+    let n = a.len();
+    let selector: AuthenticatedScalar = s.clone().into();
+    let terms = AuthenticatedScalar::batch_mul(
         &a.iter()
             .cloned()
             .chain(b.iter().cloned())
             .collect::<Vec<_>>(),
-        &iter::repeat(s.clone())
-            .take(a.len())
-            .chain(iter::repeat(Scalar::one() - s).take(b.len()))
-            .collect::<Vec<_>>(),
+        &iter::repeat(selector.clone())
+            .take(n)
+            .chain(iter::repeat(Scalar::one() - &selector).take(n))
+            .collect_vec(),
     );
 
     // Destruct the vector by zipping its first half with its second half
     let mut result = Vec::with_capacity(a.len());
-    for (a_selected, b_selected) in selectors[..a.len()]
+    for (a_selected, b_selected) in terms[..a.len()]
         .as_ref()
         .iter()
-        .zip(selectors[a.len()..].iter())
+        .zip(terms[a.len()..].iter())
     {
         result.push(a_selected + b_selected)
     }
@@ -252,10 +259,11 @@ mod test {
     use std::ops::Neg;
 
     use ark_mpc::PARTY0;
+    use circuit_types::traits::MpcBaseType;
     use constants::Scalar;
     use itertools::Itertools;
     use num_bigint::RandBigInt;
-    use rand::{thread_rng, RngCore};
+    use rand::{thread_rng, Rng, RngCore};
     use renegade_crypto::fields::biguint_to_scalar;
     use test_helpers::mpc_network::execute_mock_mpc;
 
@@ -391,14 +399,14 @@ mod test {
         let mut rng = thread_rng();
         let a = Scalar::random(&mut rng);
         let b = Scalar::random(&mut rng);
-        let s = Scalar::from(rng.next_u64() % 2);
+        let s = rng.gen_bool(0.5);
 
-        let expected = if s == Scalar::one() { a } else { b };
+        let expected = if s { a } else { b };
 
         let (res, _) = execute_mock_mpc(move |fabric| async move {
-            let a = fabric.share_scalar(a, PARTY0);
-            let b = fabric.share_scalar(b, PARTY0);
-            let s = fabric.share_scalar(s, PARTY0);
+            let a = a.allocate(PARTY0, &fabric);
+            let b = b.allocate(PARTY0, &fabric);
+            let s = s.allocate(PARTY0, &fabric);
 
             let res = cond_select(&s, &a, &b);
 
@@ -417,13 +425,9 @@ mod test {
 
         let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
         let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
-        let s = Scalar::from(rng.next_u64() % 2);
+        let s = rng.gen_bool(0.5);
 
-        let expected = if s == Scalar::one() {
-            a.clone()
-        } else {
-            b.clone()
-        };
+        let expected = if s { a.clone() } else { b.clone() };
 
         let (res, _) = execute_mock_mpc(move |fabric| {
             let a = a.clone();
@@ -431,7 +435,7 @@ mod test {
             async move {
                 let a = fabric.batch_share_scalar(a, PARTY0);
                 let b = fabric.batch_share_scalar(b, PARTY0);
-                let s = fabric.share_scalar(s, PARTY0);
+                let s = s.allocate(PARTY0, &fabric);
 
                 let res = cond_select_vec(&s, &a, &b);
 
