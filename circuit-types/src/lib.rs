@@ -91,6 +91,12 @@ impl From<AuthenticatedScalar> for AuthenticatedBool {
     }
 }
 
+impl From<AuthenticatedBool> for AuthenticatedScalar {
+    fn from(value: AuthenticatedBool) -> Self {
+        value.0
+    }
+}
+
 // -----------
 // | Helpers |
 // -----------
