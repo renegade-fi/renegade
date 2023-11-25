@@ -351,9 +351,12 @@ dependencies = [
  "ark-ec",
  "ark-ff",
  "circuit-types",
+ "clap 4.4.8",
  "common",
  "constants",
  "ethers",
+ "eyre",
+ "json",
  "lazy_static",
  "num-bigint",
  "num-traits",
@@ -361,6 +364,8 @@ dependencies = [
  "renegade-crypto",
  "serde",
  "serde_with 3.4.0",
+ "test-helpers",
+ "util",
 ]
 
 [[package]]
