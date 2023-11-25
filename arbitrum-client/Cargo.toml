@@ -3,6 +3,11 @@ name = "arbitrum-client"
 version = "0.1.0"
 edition = "2021"
 
+[[test]]
+name = "integration"
+path = "integration/main.rs"
+harness = false
+
 [dependencies]
 ethers = "2"
 ark-bn254 = "0.4.0"
@@ -24,3 +29,10 @@ renegade-crypto = { path = "../renegade-crypto" }
 serde = { workspace = true }
 serde_with = "3.4"
 postcard = { version = "1", features = ["alloc"] }
+
+[dev-dependencies]
+clap = { version = "4.0", features = ["derive"] }
+eyre = { workspace = true }
+test-helpers = { path = "../test-helpers" }
+util = { path = "../util" }
+json = "0.12"
