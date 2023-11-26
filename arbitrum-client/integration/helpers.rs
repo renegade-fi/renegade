@@ -1,7 +1,7 @@
 //! Helper functions for Arbitrum client integration tests
 
+use eyre::{eyre, Result};
 use std::{fs::File, io::Read};
-use eyre::{Result, eyre};
 
 use crate::constants::DEPLOYMENTS_KEY;
 
