@@ -98,10 +98,7 @@ impl Worker for HandshakeManager {
     }
 
     fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
-        vec![
-            self.executor_handle.take().unwrap(),
-            self.scheduler_handle.take().unwrap(),
-        ]
+        vec![self.executor_handle.take().unwrap(), self.scheduler_handle.take().unwrap()]
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
@@ -130,10 +127,7 @@ impl Worker for HandshakeManager {
         let scheduler_handle = Builder::new()
             .name("handshake-scheduler-main".to_string())
             .spawn(move || {
-                let runtime = RuntimeBuilder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .unwrap();
+                let runtime = RuntimeBuilder::new_current_thread().enable_all().build().unwrap();
                 runtime.block_on(scheduler.execution_loop())
             })
             .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;

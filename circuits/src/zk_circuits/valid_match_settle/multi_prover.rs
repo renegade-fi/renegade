@@ -89,10 +89,7 @@ where
         // --- Match Engine Execution Validity --- //
         // Check that the direction of the match is the same as the first party's
         // direction
-        cs.enforce_equal(
-            witness.match_res.direction.into(),
-            witness.order1.side.into(),
-        )?;
+        cs.enforce_equal(witness.match_res.direction.into(), witness.order1.side.into())?;
 
         // Check that the orders are on opposite sides of the market. It is assumed that
         // order sides are already constrained to be binary when they are
@@ -157,9 +154,8 @@ where
         )?;
 
         // The quote amount should then equal the price multiplied by the base amount
-        let expected_quote_amount = witness
-            .price1
-            .mul_integer(witness.match_res.base_amount, cs)?;
+        let expected_quote_amount =
+            witness.price1.mul_integer(witness.match_res.base_amount, cs)?;
 
         MultiproverFixedPointGadget::constrain_equal_integer_ignore_fraction(
             expected_quote_amount,
@@ -255,10 +251,7 @@ where
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
         // Select the balances received by each party
-        let (base_amt, quote_amt) = (
-            witness.match_res.base_amount,
-            witness.match_res.quote_amount,
-        );
+        let (base_amt, quote_amt) = (witness.match_res.base_amount, witness.match_res.quote_amount);
         let party0_party1_received = CondSelectGadget::select(
             &[quote_amt, base_amt],
             &[base_amt, quote_amt],

@@ -417,10 +417,7 @@ fn build_modified_struct_from_associated_types(
         named.push(field);
     }
 
-    let named_fields = FieldsNamed {
-        brace_token: Brace::default(),
-        named,
-    };
+    let named_fields = FieldsNamed { brace_token: Brace::default(), named };
 
     ItemStruct {
         attrs: attributes,

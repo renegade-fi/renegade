@@ -157,12 +157,8 @@ impl OnChainEventListenerExecutor {
         }
 
         self.start_block = starting_block_number.unwrap();
-        self.merkle_last_consistent_block
-            .store(self.start_block, Ordering::Relaxed);
-        log::info!(
-            "Starting on-chain event listener with current block {}",
-            self.start_block
-        );
+        self.merkle_last_consistent_block.store(self.start_block, Ordering::Relaxed);
+        log::info!("Starting on-chain event listener with current block {}", self.start_block);
 
         // Poll for new events in a loop
         loop {
@@ -213,10 +209,8 @@ impl OnChainEventListenerExecutor {
         };
 
         let pagination_token = self.pagination_token.load(Ordering::Relaxed).to_string();
-        let resp = self
-            .rpc_client()
-            .get_events(filter, Some(pagination_token), EVENT_CHUNK_SIZE)
-            .await;
+        let resp =
+            self.rpc_client().get_events(filter, Some(pagination_token), EVENT_CHUNK_SIZE).await;
 
         let resp = match resp {
             Ok(events_page) => Ok(events_page),
@@ -243,8 +237,7 @@ impl OnChainEventListenerExecutor {
             // the number of events received. Ideally the API would do this, but
             // it simply returns None to indicate no more pages are ready. We
             // would like to persist this token across polls to getEvents.
-            self.pagination_token
-                .fetch_add(resp.events.len() as u64, Ordering::Relaxed);
+            self.pagination_token.fetch_add(resp.events.len() as u64, Ordering::Relaxed);
         }
 
         let continue_paging = resp.continuation_token.is_some();
@@ -267,8 +260,7 @@ impl OnChainEventListenerExecutor {
             self.handle_root_changed(event.block_number).await?;
 
             // Update the last consistent block
-            self.merkle_last_consistent_block
-                .store(event.block_number, Ordering::Relaxed);
+            self.merkle_last_consistent_block.store(event.block_number, Ordering::Relaxed);
         } else if key == *NULLIFIER_SPENT_EVENT_SELECTOR {
             // Parse the nullifier from the felt
             log::info!("Handling nullifier spent event");
@@ -363,11 +355,7 @@ impl OnChainEventListenerExecutor {
         merkle_proof: &mut MerkleAuthenticationPath,
         updated_nodes: &HashMap<MerkleTreeCoords, Scalar>,
     ) {
-        for (i, coord) in merkle_proof
-            .compute_authentication_path_coords()
-            .iter()
-            .enumerate()
-        {
+        for (i, coord) in merkle_proof.compute_authentication_path_coords().iter().enumerate() {
             if let Some(updated_value) = updated_nodes.get(coord) {
                 merkle_proof.path_siblings[i] = *updated_value;
             }

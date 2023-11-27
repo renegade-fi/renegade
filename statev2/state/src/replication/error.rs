@@ -47,9 +47,9 @@ impl From<ReplicationError> for RaftError {
             ReplicationError::EntryNotFound => RaftError::Store(RaftStorageError::Unavailable),
             ReplicationError::Raft(e) => e,
             ReplicationError::Storage(e) => e.into(),
-            ReplicationError::ParseValue(s) => RaftError::Store(RaftStorageError::Other(Box::new(
-                ReplicationError::ParseValue(s),
-            ))),
+            ReplicationError::ParseValue(s) => {
+                RaftError::Store(RaftStorageError::Other(Box::new(ReplicationError::ParseValue(s))))
+            },
             ReplicationError::SendMessage(e) | ReplicationError::RecvMessage(e) => RaftError::Io(e),
         }
     }

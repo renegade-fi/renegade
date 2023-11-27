@@ -72,9 +72,7 @@ pub fn replace_port(multiaddr: &mut Multiaddr, port: u16) {
 
     match index {
         Some(transport_index) => {
-            *multiaddr = multiaddr
-                .replace(transport_index, |_| Some(Protocol::Udp(port)))
-                .unwrap();
+            *multiaddr = multiaddr.replace(transport_index, |_| Some(Protocol::Udp(port))).unwrap();
         },
         None => *multiaddr = multiaddr.clone().with(Protocol::Udp(port)),
     }
@@ -242,9 +240,8 @@ impl NetworkManagerExecutor {
         let mut job_channel = self.job_channel.take().unwrap();
 
         // Subscribe to internal system bus topics
-        let mut wallet_update_reader = self
-            .system_bus
-            .subscribe(ALL_WALLET_UPDATES_TOPIC.to_string());
+        let mut wallet_update_reader =
+            self.system_bus.subscribe(ALL_WALLET_UPDATES_TOPIC.to_string());
 
         loop {
             tokio::select! {
@@ -332,10 +329,7 @@ impl NetworkManagerExecutor {
                     AuthenticatedGossipRequest::new_with_body(message, &self.cluster_key)
                         .map_err(|err| NetworkManagerError::Authentication(err.to_string()))?;
 
-                self.swarm
-                    .behaviour_mut()
-                    .request_response
-                    .send_request(&peer_id, req_body);
+                self.swarm.behaviour_mut().request_response.send_request(&peer_id, req_body);
 
                 Ok(())
             },

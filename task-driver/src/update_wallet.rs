@@ -229,9 +229,7 @@ impl UpdateWalletTask {
         );
 
         if recovered_wallet != new_circuit_wallet {
-            return Err(UpdateWalletTaskError::InvalidShares(
-                ERR_INVALID_BLINDING.to_string(),
-            ));
+            return Err(UpdateWalletTaskError::InvalidShares(ERR_INVALID_BLINDING.to_string()));
         }
 
         Ok(Self {
@@ -306,9 +304,7 @@ impl UpdateWalletTask {
             .update_wallet(
                 self.new_wallet.get_private_share_commitment(),
                 self.old_wallet.get_wallet_nullifier(),
-                self.external_transfer
-                    .clone()
-                    .map(|transfer| transfer.into()),
+                self.external_transfer.clone().map(|transfer| transfer.into()),
                 self.new_wallet.blinded_public_shares.clone(),
                 proof,
             )
@@ -322,9 +318,7 @@ impl UpdateWalletTask {
             .await
             .map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))?;
 
-        status
-            .into_result()
-            .map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))
+        status.into_result().map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))
     }
 
     /// Find the wallet opening for the new wallet and re-index the wallet in
@@ -339,9 +333,7 @@ impl UpdateWalletTask {
 
         // After the state is finalized on-chain, re-index the wallet in the global
         // state
-        self.global_state
-            .update_wallet(self.new_wallet.clone())
-            .await;
+        self.global_state.update_wallet(self.new_wallet.clone()).await;
 
         Ok(())
     }

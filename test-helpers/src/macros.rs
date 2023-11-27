@@ -60,10 +60,7 @@ macro_rules! integration_test_main {
             let args = <$cli_args>::parse();
             let verbose = args.verbose;
 
-            let runtime = RuntimeBuilder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap();
+            let runtime = RuntimeBuilder::new_multi_thread().enable_all().build().unwrap();
 
             let result = runtime.spawn_blocking(move || {
                 // ---------

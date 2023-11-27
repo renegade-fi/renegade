@@ -124,11 +124,7 @@ pub mod test_helpers {
         C::apply_constraints(witness_var, statement_var, &mut cs).unwrap();
 
         // Check for satisfaction
-        let statement_scalars = statement
-            .to_scalars()
-            .iter()
-            .map(Scalar::inner)
-            .collect_vec();
+        let statement_scalars = statement.to_scalars().iter().map(Scalar::inner).collect_vec();
         cs.check_circuit_satisfiability(&statement_scalars).is_ok()
     }
 
@@ -199,14 +195,8 @@ pub mod test_helpers {
         default_leaf: Scalar,
     ) -> (Scalar, Vec<MerkleOpening<HEIGHT>>) {
         let tree_capacity = 2usize.pow(HEIGHT as u32);
-        assert!(
-            items.len() <= tree_capacity,
-            "tree capacity exceeded by seed items"
-        );
-        assert!(
-            !items.is_empty(),
-            "cannot create a multi-opening for an empty tree"
-        );
+        assert!(items.len() <= tree_capacity, "tree capacity exceeded by seed items");
+        assert!(!items.is_empty(), "cannot create a multi-opening for an empty tree");
 
         let (root, mut opening_paths) =
             create_multi_opening_helper(items.to_vec(), default_leaf, HEIGHT);
@@ -244,10 +234,7 @@ pub mod test_helpers {
         // recursive level
         let pad_length = leaves.len() % 2;
         leaves.append(&mut vec![zero_value; pad_length]);
-        let next_level_leaves = leaves
-            .chunks_exact(2)
-            .map(compute_poseidon_hash)
-            .collect_vec();
+        let next_level_leaves = leaves.chunks_exact(2).map(compute_poseidon_hash).collect_vec();
 
         // Recurse up the tree
         let zero_value = compute_poseidon_hash(&[zero_value, zero_value]);

@@ -28,9 +28,6 @@ pub(crate) mod test_helpers {
         let tempdir = tempdir().unwrap();
         let path = tempdir.path().to_str().unwrap();
 
-        DB::new(DbConfig {
-            path: path.to_string(),
-        })
-        .unwrap()
+        DB::new(DbConfig { path: path.to_string() }).unwrap()
     }
 }

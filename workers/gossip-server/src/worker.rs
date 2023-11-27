@@ -52,10 +52,7 @@ impl Worker for GossipServer {
     type Error = GossipError;
 
     fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
-        Ok(Self {
-            config,
-            protocol_executor_handle: None,
-        })
+        Ok(Self { config, protocol_executor_handle: None })
     }
 
     fn is_recoverable(&self) -> bool {
@@ -94,10 +91,7 @@ impl Worker for GossipServer {
                     .build()
                     .unwrap();
 
-                tokio_runtime
-                    .block_on(protocol_executor.execution_loop(sender))
-                    .err()
-                    .unwrap()
+                tokio_runtime.block_on(protocol_executor.execution_loop(sender)).err().unwrap()
             })
             .map_err(|err| GossipError::ServerSetup(err.to_string()))?;
         self.protocol_executor_handle = Some(executor_handle);

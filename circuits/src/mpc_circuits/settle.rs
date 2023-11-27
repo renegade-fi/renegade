@@ -36,14 +36,8 @@ where
     // Select the correct ordering of the two mints for buy and sell side
     let mut amounts = cond_select_vec(
         &match_res.direction,
-        &[
-            match_res.quote_amount.clone(),
-            match_res.base_amount.clone(),
-        ],
-        &[
-            match_res.base_amount.clone(),
-            match_res.quote_amount.clone(),
-        ],
+        &[match_res.quote_amount.clone(), match_res.base_amount.clone()],
+        &[match_res.base_amount.clone(), match_res.quote_amount.clone()],
     );
 
     let party0_buy = amounts.remove(0);
@@ -166,11 +160,7 @@ mod test {
             balance_receive = random_index(MAX_BALANCES);
         }
 
-        OrderSettlementIndices {
-            order: random_index(MAX_ORDERS),
-            balance_send,
-            balance_receive,
-        }
+        OrderSettlementIndices { order: random_index(MAX_ORDERS), balance_send, balance_receive }
     }
 
     // Generate a random index bounded by a max

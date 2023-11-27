@@ -47,11 +47,7 @@ pub struct MerkleAuthenticationPath {
 impl MerkleAuthenticationPath {
     /// Constructor
     pub fn new(path_siblings: [Scalar; MERKLE_HEIGHT], leaf_index: BigUint, value: Scalar) -> Self {
-        Self {
-            path_siblings,
-            leaf_index,
-            value,
-        }
+        Self { path_siblings, leaf_index, value }
     }
 
     /// Static helper method to get the coordinates of a Merkle authentication

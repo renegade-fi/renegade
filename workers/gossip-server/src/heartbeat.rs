@@ -50,11 +50,7 @@ pub(super) const EXPIRY_CACHE_SIZE: usize = 100;
 impl GossipProtocolExecutor {
     /// Records a successful heartbeat
     pub(super) async fn record_heartbeat(&self, peer_id: WrappedPeerId) {
-        self.global_state
-            .read_peer_index()
-            .await
-            .record_heartbeat(&peer_id)
-            .await;
+        self.global_state.read_peer_index().await.record_heartbeat(&peer_id).await;
     }
 
     /// Sync the replication state when a heartbeat is received
@@ -106,8 +102,7 @@ impl GossipProtocolExecutor {
             return Ok(());
         }
 
-        self.add_new_peers(&peers_to_add, incoming_peer_info)
-            .await?;
+        self.add_new_peers(&peers_to_add, incoming_peer_info).await?;
         Ok(())
     }
 
@@ -126,14 +121,10 @@ impl GossipProtocolExecutor {
             //
             // In this case, we leave the expired peer in the invisibility window, waiting
             // for the expired peer to expire on all other cluster peers
-            wallet_info
-                .replicas
-                .retain(|replica| locked_peers.contains_peer(replica));
+            wallet_info.replicas.retain(|replica| locked_peers.contains_peer(replica));
 
             // Merge with the local copy of the wallet
-            locked_wallets
-                .merge_metadata(&wallet_id, &wallet_info)
-                .await
+            locked_wallets.merge_metadata(&wallet_id, &wallet_info).await
         }
     }
 
@@ -158,12 +149,8 @@ impl GossipProtocolExecutor {
         // Request order information for all new orders
         for (order_id, cluster) in new_orders.into_iter() {
             // Pick a cluster peer to dial for the order info
-            if let Some(peer_id) = self
-                .global_state
-                .read_peer_index()
-                .await
-                .sample_cluster_peer(&cluster)
-                .await
+            if let Some(peer_id) =
+                self.global_state.read_peer_index().await.sample_cluster_peer(&cluster).await
             {
                 self.network_channel
                     .send(GossipOutbound::Request {
@@ -222,9 +209,7 @@ impl GossipProtocolExecutor {
         // Add all filtered peers to the network manager's address table
         self.add_new_addrs(&filtered_peers, new_peer_info)?;
         // Add all filtered peers to the global peer index
-        self.global_state
-            .add_peers(&filtered_peers, new_peer_info)
-            .await;
+        self.global_state.add_peers(&filtered_peers, new_peer_info).await;
 
         Ok(true)
     }
@@ -238,12 +223,10 @@ impl GossipProtocolExecutor {
     ) -> Result<(), GossipError> {
         for peer in peer_ids.iter() {
             self.network_channel
-                .send(GossipOutbound::ManagementMessage(
-                    ManagerControlDirective::NewAddr {
-                        peer_id: *peer,
-                        address: peer_info.get(peer).unwrap().get_addr(),
-                    },
-                ))
+                .send(GossipOutbound::ManagementMessage(ManagerControlDirective::NewAddr {
+                    peer_id: *peer,
+                    address: peer_info.get(peer).unwrap().get_addr(),
+                }))
                 .map_err(|err| GossipError::SendMessage(err.to_string()))?;
         }
 
@@ -278,10 +261,7 @@ impl GossipProtocolExecutor {
         let peer_info = {
             // Fetch peer info for the peer
             let locked_peer_index = self.global_state.read_peer_index().await;
-            let peer_info = locked_peer_index
-                .read_peer(&peer_id)
-                .await
-                .map(|info| info.clone());
+            let peer_info = locked_peer_index.read_peer(&peer_id).await.map(|info| info.clone());
             if peer_info.is_none() {
                 return;
             }
@@ -290,9 +270,7 @@ impl GossipProtocolExecutor {
         };
 
         // Expire cluster peers sooner than non-cluster peers
-        let same_cluster = peer_info
-            .get_cluster_id()
-            .eq(&self.global_state.local_cluster_id);
+        let same_cluster = peer_info.get_cluster_id().eq(&self.global_state.local_cluster_id);
         let last_heartbeat = now - peer_info.get_last_heartbeat();
 
         #[allow(clippy::if_same_then_else)]

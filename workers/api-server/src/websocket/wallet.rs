@@ -32,10 +32,7 @@ pub struct WalletTopicHandler {
 impl WalletTopicHandler {
     /// Constructor
     pub fn new(global_state: RelayerState, system_bus: SystemBus<SystemBusMessage>) -> Self {
-        Self {
-            global_state,
-            system_bus,
-        }
+        Self { global_state, system_bus }
     }
 }
 
@@ -51,14 +48,7 @@ impl WebsocketTopicHandler for WalletTopicHandler {
         let wallet_id = parse_wallet_id_from_params(route_params)?;
 
         // If the wallet doesn't exist, throw an error
-        if self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
-            .is_none()
-        {
+        if self.global_state.read_wallet_index().await.get_wallet(&wallet_id).await.is_none() {
             return Err(ApiServerError::HttpStatusCode(
                 StatusCode::NOT_FOUND,
                 ERR_WALLET_NOT_FOUND.to_string(),

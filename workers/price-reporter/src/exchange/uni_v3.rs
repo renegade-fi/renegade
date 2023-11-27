@@ -116,10 +116,7 @@ impl UniswapV3Connection {
         swap_event_abi: &Event,
     ) -> Price {
         let swap = swap_event_abi
-            .parse_log(ethabi::RawLog {
-                topics: swap.topics,
-                data: swap.data.0,
-            })
+            .parse_log(ethabi::RawLog { topics: swap.topics, data: swap.data.0 })
             .unwrap();
 
         // Extract the `sqrtPriceX96` and convert it to the marginal price of the
@@ -203,12 +200,9 @@ impl UniswapV3Connection {
 
         // Build a filter for Uniswap Swap events
         let swap_event_abi = SWAP_EVENT_ABI.clone();
-        let swap_topic_filter = swap_event_abi
-            .filter(ethabi::RawTopicFilter::default())
-            .unwrap();
-        let mut swap_filter_builder = FilterBuilder::default()
-            .address(vec![pool_address])
-            .topic_filter(swap_topic_filter);
+        let swap_topic_filter = swap_event_abi.filter(ethabi::RawTopicFilter::default()).unwrap();
+        let mut swap_filter_builder =
+            FilterBuilder::default().address(vec![pool_address]).topic_filter(swap_topic_filter);
 
         // Add block constrains
         if let Some(block) = from_block {
@@ -258,9 +252,7 @@ impl UniswapV3Connection {
             fee[FEE_START_BYTE..].clone_from_slice(&fee_amt.to_be_bytes());
 
             let pool_address = create2::calc_addr_with_hash(
-                hex::decode(Self::FACTORY_ADDRESS).unwrap()[..20]
-                    .try_into()
-                    .unwrap(),
+                hex::decode(Self::FACTORY_ADDRESS).unwrap()[..20].try_into().unwrap(),
                 &keccak256(
                     &[
                         H256::from(first_token).as_bytes(),
@@ -269,9 +261,7 @@ impl UniswapV3Connection {
                     ]
                     .concat()[..],
                 ),
-                hex::decode(Self::POOL_INIT_CODE_HASH).unwrap()[..32]
-                    .try_into()
-                    .unwrap(),
+                hex::decode(Self::POOL_INIT_CODE_HASH).unwrap()[..32].try_into().unwrap(),
             );
 
             H160::from(pool_address)
@@ -374,25 +364,21 @@ impl ExchangeConnection for UniswapV3Connection {
 
         // Start streaming events from the swap_filter.
         let mapped_stream =
-            base_filter
-                .stream(Duration::new(1, 0))
-                .filter_map(move |swap| async move {
-                    match swap {
-                        Ok(swap_event) => Some(Ok(Self::midpoint_from_swap_event(
-                            swap_event,
-                            is_flipped,
-                            decimal_adjustment,
-                            &SWAP_EVENT_ABI,
-                        ))),
+            base_filter.stream(Duration::new(1, 0)).filter_map(move |swap| async move {
+                match swap {
+                    Ok(swap_event) => Some(Ok(Self::midpoint_from_swap_event(
+                        swap_event,
+                        is_flipped,
+                        decimal_adjustment,
+                        &SWAP_EVENT_ABI,
+                    ))),
 
-                        Err(e) => {
-                            log::error!("Error parsing Swap event from UniswapV3: {}", e);
-                            Some(Err(ExchangeConnectionError::ConnectionHangup(
-                                e.to_string(),
-                            )))
-                        },
-                    }
-                });
+                    Err(e) => {
+                        log::error!("Error parsing Swap event from UniswapV3: {}", e);
+                        Some(Err(ExchangeConnectionError::ConnectionHangup(e.to_string())))
+                    },
+                }
+            });
 
         // Build a price stream
         let price_stream = InitializablePriceStream::new_with_initial(
@@ -400,8 +386,6 @@ impl ExchangeConnection for UniswapV3Connection {
             initial_price_report,
         );
 
-        Ok(Self {
-            price_stream: Box::new(price_stream),
-        })
+        Ok(Self { price_stream: Box::new(price_stream) })
     }
 }

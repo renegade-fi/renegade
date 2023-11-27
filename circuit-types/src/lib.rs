@@ -171,9 +171,7 @@ where
 {
     // Deserialize a vec and then convert to an array
     let deserialized_vec: Vec<T> = Vec::deserialize(d)?;
-    deserialized_vec
-        .try_into()
-        .map_err(|_| SerdeErr::custom("incorrect size of serialized array"))
+    deserialized_vec.try_into().map_err(|_| SerdeErr::custom("incorrect size of serialized array"))
 }
 
 /// Groups helpers that operate on native types; which correspond to circuitry

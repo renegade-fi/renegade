@@ -116,9 +116,7 @@ mod arithmetic_tests {
         cs.enforce_equal(expected_q_var, q_res).unwrap();
         cs.enforce_equal(expected_r_var, r_res).unwrap();
 
-        assert!(cs
-            .check_circuit_satisfiability(&[expected_q.inner(), expected_r.inner()])
-            .is_ok())
+        assert!(cs.check_circuit_satisfiability(&[expected_q.inner(), expected_r.inner()]).is_ok())
     }
 
     /// Tests the exp gadget

@@ -32,11 +32,7 @@ pub struct WalletIndex {
 impl WalletIndex {
     /// Create a wallet index
     pub fn new(peer_id: WrappedPeerId) -> Self {
-        Self {
-            peer_id,
-            wallet_map: HashMap::new(),
-            order_to_wallet: HashMap::new(),
-        }
+        Self { peer_id, wallet_map: HashMap::new(), order_to_wallet: HashMap::new() }
     }
 
     // -----------
@@ -67,9 +63,7 @@ impl WalletIndex {
 
     /// Get the wallet with the given ID
     pub async fn get_wallet(&self, wallet_id: &WalletIdentifier) -> Option<Wallet> {
-        self.read_wallet(wallet_id)
-            .await
-            .map(|locked_val| locked_val.clone())
+        self.read_wallet(wallet_id).await.map(|locked_val| locked_val.clone())
     }
 
     /// Get the wallet that an order is allocated in
@@ -115,8 +109,7 @@ impl WalletIndex {
 
         // Index the wallet
         wallet.metadata.replicas.insert(self.peer_id);
-        self.wallet_map
-            .insert(wallet.wallet_id, new_async_shared(wallet));
+        self.wallet_map.insert(wallet.wallet_id, new_async_shared(wallet));
     }
 
     /// Add a given peer as a replica of a wallet
@@ -140,13 +133,7 @@ impl WalletIndex {
     /// Merge metadata for a given wallet into the local wallet state
     pub async fn merge_metadata(&self, wallet_id: &WalletIdentifier, metadata: &WalletMetadata) {
         if let Some(wallet) = self.wallet_map.get(wallet_id) {
-            if wallet
-                .read()
-                .await
-                .metadata
-                .replicas
-                .is_superset(&metadata.replicas)
-            {
+            if wallet.read().await.metadata.replicas.is_superset(&metadata.replicas) {
                 return;
             }
 
@@ -191,10 +178,7 @@ mod tests {
         assert_eq!(keychain, deserialized);
 
         // Test with no root specified
-        let keychain = PrivateKeyChain {
-            sk_root: None,
-            sk_match: Scalar::random(&mut rng).into(),
-        };
+        let keychain = PrivateKeyChain { sk_root: None, sk_match: Scalar::random(&mut rng).into() };
         let serialized = serde_json::to_string(&keychain).unwrap();
         let deserialized: PrivateKeyChain = serde_json::from_str(&serialized).unwrap();
         assert_eq!(keychain, deserialized);

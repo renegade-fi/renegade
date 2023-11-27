@@ -177,9 +177,7 @@ impl NetworkOrderBook {
     /// This amounts to validating that a copy of the validity proof and witness
     /// are stored locally
     pub async fn order_ready_for_handshake(&self, order_id: &OrderIdentifier) -> bool {
-        self.read_order(order_id)
-            .await
-            .map_or(false, |order_info| order_info.ready_for_match())
+        self.read_order(order_id).await.map_or(false, |order_info| order_info.ready_for_match())
     }
 
     /// Fetch a list of locally managed orders for which
@@ -188,10 +186,8 @@ impl NetworkOrderBook {
         let locked_local_orders = self.read_local_orders().await;
 
         // Get the set of local, verified orders
-        let local_verified_orders = locked_verified_orders
-            .intersection(&locked_local_orders)
-            .cloned()
-            .collect_vec();
+        let local_verified_orders =
+            locked_verified_orders.intersection(&locked_local_orders).cloned().collect_vec();
 
         // Filter out those for which the local node does not have a copy of the witness
         to_stream(local_verified_orders)
@@ -213,10 +209,7 @@ impl NetworkOrderBook {
         let locked_verified_orders = self.read_verified_orders().await;
         let locked_local_orders = self.read_local_orders().await;
 
-        locked_verified_orders
-            .difference(&locked_local_orders)
-            .cloned()
-            .collect_vec()
+        locked_verified_orders.difference(&locked_local_orders).cloned().collect_vec()
     }
 
     /// Return a list of all known order IDs in the book with clusters to
@@ -264,10 +257,7 @@ impl NetworkOrderBook {
         &self,
         order_id: &OrderIdentifier,
     ) -> Option<OrderValidityWitnessBundle> {
-        self.read_order(order_id)
-            .await?
-            .validity_proof_witnesses
-            .clone()
+        self.read_order(order_id).await?.validity_proof_witnesses.clone()
     }
 
     /// Fetch a copy of the local order book
@@ -300,19 +290,14 @@ impl NetworkOrderBook {
         }
 
         // Add an entry in the orders by nullifier index
-        self.write_nullifier_order_set(order.public_share_nullifier)
-            .await
-            .insert(order.id);
+        self.write_nullifier_order_set(order.public_share_nullifier).await.insert(order.id);
 
         // Add an entry in the order index
-        self.order_map
-            .insert(order.id, new_async_shared(order.clone()));
+        self.order_map.insert(order.id, new_async_shared(order.clone()));
 
         // Publish the new order to the system bus
-        self.system_bus.publish(
-            ORDER_STATE_CHANGE_TOPIC.to_string(),
-            SystemBusMessage::NewOrder { order },
-        )
+        self.system_bus
+            .publish(ORDER_STATE_CHANGE_TOPIC.to_string(), SystemBusMessage::NewOrder { order })
     }
 
     /// Update the validity proofs for an order
@@ -394,9 +379,7 @@ impl NetworkOrderBook {
 
             self.system_bus.publish(
                 ORDER_STATE_CHANGE_TOPIC.to_string(),
-                SystemBusMessage::OrderStateChange {
-                    order: order.clone(),
-                },
+                SystemBusMessage::OrderStateChange { order: order.clone() },
             );
         }
     }
@@ -411,9 +394,7 @@ impl NetworkOrderBook {
 
             self.system_bus.publish(
                 ORDER_STATE_CHANGE_TOPIC.to_string(),
-                SystemBusMessage::OrderStateChange {
-                    order: order.clone(),
-                },
+                SystemBusMessage::OrderStateChange { order: order.clone() },
             );
         }
     }
@@ -428,9 +409,7 @@ impl NetworkOrderBook {
 
             self.system_bus.publish(
                 ORDER_STATE_CHANGE_TOPIC.to_string(),
-                SystemBusMessage::OrderStateChange {
-                    order: order.clone(),
-                },
+                SystemBusMessage::OrderStateChange { order: order.clone() },
             );
         }
     }

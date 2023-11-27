@@ -49,8 +49,7 @@ impl<'de, T: Message> serde::Deserialize<'de> for ProtoStorageWrapper<T> {
         let bytes = <&[u8]>::deserialize(deserializer)?;
 
         let mut msg = T::new();
-        msg.merge_from_bytes(bytes)
-            .map_err(serde::de::Error::custom)?;
+        msg.merge_from_bytes(bytes).map_err(serde::de::Error::custom)?;
 
         Ok(ProtoStorageWrapper(msg))
     }

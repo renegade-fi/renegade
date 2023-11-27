@@ -66,10 +66,8 @@ impl FixedPointGadget {
         let one_var = cs.one();
         let one = ScalarField::one();
 
-        let lhs_minus_rhs = cs.lc(
-            &[lhs.repr, rhs, zero_var, zero_var],
-            &[one, -*TWO_TO_M_SCALAR, one, one],
-        )?;
+        let lhs_minus_rhs =
+            cs.lc(&[lhs.repr, rhs, zero_var, zero_var], &[one, -*TWO_TO_M_SCALAR, one, one])?;
 
         // Constrain the difference to be less than the precision on the fixed point,
         // This is effectively the same as constraining the difference to have an
@@ -115,10 +113,8 @@ impl MultiproverFixedPointGadget {
         let one_var = cs.one();
         let one = ScalarField::one();
 
-        let lhs_minus_rhs = cs.lc(
-            &[lhs.repr, rhs, zero_var, zero_var],
-            &[one, -*TWO_TO_M_SCALAR, one, one],
-        )?;
+        let lhs_minus_rhs =
+            cs.lc(&[lhs.repr, rhs, zero_var, zero_var], &[one, -*TWO_TO_M_SCALAR, one, one])?;
 
         // Constrain the difference to be less than the precision on the fixed point,
         // This is effectively the same as constraining the difference to have an
@@ -215,9 +211,7 @@ mod test {
             let fp_var = FixedPoint::from_f64_round_down(fp1)
                 .allocate(PARTY0, &fabric)
                 .create_shared_witness(&mut cs);
-            let floor_var = fp_floor
-                .allocate(PARTY0, &fabric)
-                .create_shared_witness(&mut cs);
+            let floor_var = fp_floor.allocate(PARTY0, &fabric).create_shared_witness(&mut cs);
             let int_var = int.allocate(PARTY0, &fabric).create_shared_witness(&mut cs);
 
             // fp1 == floor(fp1), when ignoring the fractional part

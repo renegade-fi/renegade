@@ -14,16 +14,10 @@ impl NetworkManagerExecutor {
         wallet: Box<Wallet>,
     ) -> Result<(), NetworkManagerError> {
         // Gossip the new wallet to all cluster peers
-        for peer in self
-            .global_state
-            .get_local_cluster_peers(false /* include_self */)
-            .await
-        {
+        for peer in self.global_state.get_local_cluster_peers(false /* include_self */).await {
             self.handle_outbound_message(GossipOutbound::Request {
                 peer_id: peer,
-                message: GossipRequest::WalletUpdate {
-                    wallet: wallet.clone(),
-                },
+                message: GossipRequest::WalletUpdate { wallet: wallet.clone() },
             })?;
         }
 

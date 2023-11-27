@@ -35,13 +35,14 @@ pub struct ArbitrumClientConfig {
     pub arb_priv_key: String,
 }
 
-/// A type alias for the RPC client, which is an ethers middleware stack that includes
-/// a signer derived from a raw private key, and a provider that connects to the RPC endpoint
-/// over HTTP.
+/// A type alias for the RPC client, which is an ethers middleware stack that
+/// includes a signer derived from a raw private key, and a provider that
+/// connects to the RPC endpoint over HTTP.
 type SignerHttpProvider = SignerMiddleware<Provider<Http>, Wallet<SigningKey>>;
 
 impl ArbitrumClientConfig {
-    /// Constructs an RPC client capable of signing transactions from the configuration
+    /// Constructs an RPC client capable of signing transactions from the
+    /// configuration
     async fn get_rpc_client(&self) -> Result<Arc<SignerHttpProvider>, ArbitrumClientConfigError> {
         let provider = Provider::<Http>::try_from(&self.rpc_url)
             .map_err(|e| ArbitrumClientConfigError::RpcClientInitialization(e.to_string()))?;
@@ -55,10 +56,8 @@ impl ArbitrumClientConfig {
             .map_err(|e| ArbitrumClientConfigError::RpcClientInitialization(e.to_string()))?
             .as_u64();
 
-        let rpc_client = Arc::new(SignerMiddleware::new(
-            provider,
-            wallet.clone().with_chain_id(chain_id),
-        ));
+        let rpc_client =
+            Arc::new(SignerMiddleware::new(provider, wallet.clone().with_chain_id(chain_id)));
 
         Ok(rpc_client)
     }
@@ -71,7 +70,8 @@ impl ArbitrumClientConfig {
     }
 
     /// Parses the darkpool implementation address from the configuration,
-    /// from which the events are emitted, returning an [`ethers::types::Address`]
+    /// from which the events are emitted, returning an
+    /// [`ethers::types::Address`]
     pub fn get_event_source(&self) -> Result<Address, ArbitrumClientConfigError> {
         Address::from_str(&self.event_source)
             .map_err(|e| ArbitrumClientConfigError::AddressParsing(e.to_string()))
@@ -107,9 +107,6 @@ impl ArbitrumClient {
         let darkpool_contract = config.get_contract_instance().await?;
         let darkpool_implementation_address = config.get_event_source()?;
 
-        Ok(Self {
-            darkpool_contract,
-            darkpool_event_source: darkpool_implementation_address,
-        })
+        Ok(Self { darkpool_contract, darkpool_event_source: darkpool_implementation_address })
     }
 }

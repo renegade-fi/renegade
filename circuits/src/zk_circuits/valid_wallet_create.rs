@@ -56,15 +56,11 @@ where
         cs.enforce_equal(commitment, statement.private_shares_commitment)?;
 
         // Unblind the public shares then reconstruct the wallet
-        let blinder = cs.add(
-            witness.private_wallet_share.blinder,
-            statement.public_wallet_shares.blinder,
-        )?;
+        let blinder =
+            cs.add(witness.private_wallet_share.blinder, statement.public_wallet_shares.blinder)?;
 
         let unblinded_public_shares = statement.public_wallet_shares.unblind_shares(blinder, cs);
-        let wallet = witness
-            .private_wallet_share
-            .add_shares(&unblinded_public_shares, cs);
+        let wallet = witness.private_wallet_share.add_shares(&unblinded_public_shares, cs);
 
         // Verify that the orders and balances are zero'd
         Self::verify_zero_wallet(wallet, cs)
@@ -185,10 +181,7 @@ pub mod test_helpers {
     pub fn create_empty_wallet() -> SizedWallet {
         // Zero out the balances and orders of the dummy wallet
         let mut wallet = INITIAL_WALLET.clone();
-        wallet
-            .balances
-            .iter_mut()
-            .for_each(|b| *b = Balance::default());
+        wallet.balances.iter_mut().for_each(|b| *b = Balance::default());
         wallet.orders.iter_mut().for_each(|o| *o = Order::default());
 
         wallet
@@ -211,9 +204,7 @@ pub mod test_helpers {
         let commitment = compute_wallet_private_share_commitment(&private_shares);
 
         // Prove and verify
-        let witness = ValidWalletCreateWitness {
-            private_wallet_share: private_shares,
-        };
+        let witness = ValidWalletCreateWitness { private_wallet_share: private_shares };
         let statement = ValidWalletCreateStatement {
             private_shares_commitment: commitment,
             public_wallet_shares: public_shares,
@@ -267,9 +258,7 @@ pub mod tests {
         let (witness, mut statement) = create_default_witness_statement();
         statement.private_shares_commitment += Scalar::from(1u8);
 
-        assert!(!check_constraint_satisfaction::<SizedWalletCreate>(
-            &witness, &statement
-        ))
+        assert!(!check_constraint_satisfaction::<SizedWalletCreate>(&witness, &statement))
     }
 
     /// Tests the case in which a non-zero order is given
@@ -279,9 +268,7 @@ pub mod tests {
         wallet.orders[0] = INITIAL_ORDERS[0].clone();
 
         let (witness, statement) = create_witness_statement_from_wallet(&wallet);
-        assert!(!check_constraint_satisfaction::<SizedWalletCreate>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedWalletCreate>(&witness, &statement));
     }
 
     /// Tests the cas in which a non-zero balance is given
@@ -291,8 +278,6 @@ pub mod tests {
         wallet.balances[0] = INITIAL_BALANCES[0].clone();
 
         let (witness, statement) = create_witness_statement_from_wallet(&wallet);
-        assert!(!check_constraint_satisfaction::<SizedWalletCreate>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedWalletCreate>(&witness, &statement));
     }
 }

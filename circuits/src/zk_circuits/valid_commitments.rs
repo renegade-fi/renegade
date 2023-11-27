@@ -55,24 +55,17 @@ where
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // Reconstruct the base and augmented wallets
-        let recovered_blinder = cs.add(
-            witness.private_secret_shares.blinder,
-            witness.public_secret_shares.blinder,
-        )?;
+        let recovered_blinder =
+            cs.add(witness.private_secret_shares.blinder, witness.public_secret_shares.blinder)?;
 
-        let unblinded_public_shares = witness
-            .public_secret_shares
-            .unblind_shares(recovered_blinder, cs);
-        let unblinded_augmented_shares = witness
-            .augmented_public_shares
-            .unblind_shares(recovered_blinder, cs);
+        let unblinded_public_shares =
+            witness.public_secret_shares.unblind_shares(recovered_blinder, cs);
+        let unblinded_augmented_shares =
+            witness.augmented_public_shares.unblind_shares(recovered_blinder, cs);
 
-        let base_wallet = witness
-            .private_secret_shares
-            .add_shares(&unblinded_public_shares, cs);
-        let augmented_wallet = witness
-            .private_secret_shares
-            .add_shares(&unblinded_augmented_shares, cs);
+        let base_wallet = witness.private_secret_shares.add_shares(&unblinded_public_shares, cs);
+        let augmented_wallet =
+            witness.private_secret_shares.add_shares(&unblinded_augmented_shares, cs);
 
         // The mint that the wallet will receive if the order is matched
         let mut receive_send_mint = CondSelectVectorGadget::select(
@@ -146,30 +139,19 @@ where
         let one_var = cs.one();
         let mut curr_index = zero_var;
 
-        for (base_balance, augmented_balance) in base_wallet
-            .balances
-            .iter()
-            .zip(augmented_wallet.balances.iter())
+        for (base_balance, augmented_balance) in
+            base_wallet.balances.iter().zip(augmented_wallet.balances.iter())
         {
             // Non-augmented case, balances are equal
             let balances_eq = EqGadget::eq(base_balance, augmented_balance, cs)?;
 
             // Validate a potential augmentation
-            let prev_balance_zero = EqGadget::eq(
-                base_balance,
-                &BalanceVar {
-                    mint: zero_var,
-                    amount: zero_var,
-                },
-                cs,
-            )?;
+            let prev_balance_zero =
+                EqGadget::eq(base_balance, &BalanceVar { mint: zero_var, amount: zero_var }, cs)?;
 
             let augmented_balance = EqGadget::eq(
                 augmented_balance,
-                &BalanceVar {
-                    mint: received_mint,
-                    amount: zero_var,
-                },
+                &BalanceVar { mint: received_mint, amount: zero_var },
                 cs,
             )?;
 
@@ -177,11 +159,8 @@ where
 
             // Validate that the balance is either unmodified or augmented from (0, 0) to
             // (receive_mint, 0)
-            let augmented_from_zero = cs.logic_and_all(&[
-                prev_balance_zero,
-                augmented_balance,
-                augmentation_index_mask,
-            ])?;
+            let augmented_from_zero =
+                cs.logic_and_all(&[prev_balance_zero, augmented_balance, augmentation_index_mask])?;
             let valid_balance = cs.logic_or(augmented_from_zero, balances_eq)?;
 
             cs.enforce_true(valid_balance)?;
@@ -189,10 +168,8 @@ where
         }
 
         // All orders should be the same
-        for (base_order, augmented_order) in base_wallet
-            .orders
-            .iter()
-            .zip(augmented_wallet.orders.iter())
+        for (base_order, augmented_order) in
+            base_wallet.orders.iter().zip(augmented_wallet.orders.iter())
         {
             EqGadget::constrain_eq(base_order, augmented_order, cs)?;
         }
@@ -405,10 +382,7 @@ pub mod test_helpers {
         const MAX_FEES: usize,
     >(
         wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    ) -> (
-        ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        ValidCommitmentsStatement,
-    )
+    ) -> (ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>, ValidCommitmentsStatement)
     where
         [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
     {
@@ -489,10 +463,7 @@ pub mod test_helpers {
         balances: &mut [Balance; MAX_BALANCES],
         augment: bool,
     ) -> (usize, Balance) {
-        let balance = balances
-            .iter()
-            .enumerate()
-            .find(|(_ind, balance)| balance.mint == mint);
+        let balance = balances.iter().enumerate().find(|(_ind, balance)| balance.mint == mint);
 
         match balance {
             Some((ind, balance)) => (ind, balance.clone()),
@@ -573,9 +544,7 @@ mod test {
         let wallet = INITIAL_WALLET.clone();
         let (witness, statement) = create_witness_and_statement(&wallet);
 
-        assert!(check_constraint_satisfaction::<SizedCommitments>(
-            &witness, &statement
-        ))
+        assert!(check_constraint_satisfaction::<SizedCommitments>(&witness, &statement))
     }
 
     /// Tests the case in which an augmented balance must be added
@@ -584,9 +553,7 @@ mod test {
         let wallet = UNAUGMENTED_WALLET.clone();
         let (witness, statement) = create_witness_and_statement(&wallet);
 
-        assert!(check_constraint_satisfaction::<SizedCommitments>(
-            &witness, &statement
-        ))
+        assert!(check_constraint_satisfaction::<SizedCommitments>(&witness, &statement))
     }
 
     /// Tests the case in which the prover attempts to add a non-zero balance to
@@ -602,9 +569,7 @@ mod test {
             Scalar::one();
         witness.balance_receive.amount += 1u64;
 
-        assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
 
     /// Tests the case in which the prover clobbers a non-zero balance to
@@ -616,14 +581,10 @@ mod test {
 
         // Reset the original wallet such that the augmented balance was non-zero
         let augmentation_index = statement.indices.balance_receive;
-        witness.public_secret_shares.balances[augmentation_index as usize] = BalanceShare {
-            amount: Scalar::one(),
-            mint: Scalar::one(),
-        };
+        witness.public_secret_shares.balances[augmentation_index as usize] =
+            BalanceShare { amount: Scalar::one(), mint: Scalar::one() };
 
-        assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            &witness, &statement
-        ))
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement))
     }
 
     /// Tests the case in which a prover attempts to modify an order in the
@@ -636,9 +597,7 @@ mod test {
         // Modify an order in the augmented wallet
         witness.augmented_public_shares.orders[1].amount += Scalar::one();
 
-        assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
 
     /// Test the case in which a prover attempts to modify a fee in the
@@ -650,9 +609,7 @@ mod test {
 
         // Modify a fee in the wallet
         witness.augmented_public_shares.fees[0].gas_token_amount += Scalar::one();
-        assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
 
     /// Test the case in which a prover attempts to modify wallet keys and
@@ -664,9 +621,7 @@ mod test {
 
         // Modify a key in the wallet
         witness.augmented_public_shares.keys.pk_match.key = Scalar::one();
-        assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
 
     /// Test the case in which a prover attempts to modify the blinder in
@@ -678,9 +633,7 @@ mod test {
 
         // Modify the wallet blinder
         witness.augmented_public_shares.blinder += Scalar::one();
-        assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            &witness, &statement
-        ))
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement))
     }
 
     /// Test the case in which the index of the send balance is incorrect
@@ -692,9 +645,7 @@ mod test {
         // Modify the index of the send balance
         statement.indices.balance_send += 1;
 
-        assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            &witness, &statement
-        ))
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement))
     }
 
     /// Test the case in which the index of the receive balance is incorrect
@@ -706,9 +657,7 @@ mod test {
         // Modify the index of the send balance
         statement.indices.balance_receive += 1;
 
-        assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            &witness, &statement
-        ))
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement))
     }
 
     /// Test the case in which the index of the matched order is incorrect
@@ -720,9 +669,7 @@ mod test {
         // Modify the index of the order
         statement.indices.order += 1;
 
-        assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            &witness, &statement
-        ))
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement))
     }
 
     /// Test the case in which a balance is missing from the wallet
@@ -733,14 +680,9 @@ mod test {
 
         // Modify the send balance from the order
         witness.augmented_public_shares.balances[statement.indices.balance_send as usize] =
-            BalanceShare {
-                mint: Scalar::zero(),
-                amount: Scalar::zero(),
-            };
+            BalanceShare { mint: Scalar::zero(), amount: Scalar::zero() };
 
-        assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
 
     /// Test the case in which the receive balance is missing from the wallet
@@ -751,14 +693,9 @@ mod test {
 
         // Modify the receive balance from the order
         witness.augmented_public_shares.balances[statement.indices.balance_receive as usize] =
-            BalanceShare {
-                mint: Scalar::zero(),
-                amount: Scalar::zero(),
-            };
+            BalanceShare { mint: Scalar::zero(), amount: Scalar::zero() };
 
-        assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
 
     /// Test the case in which the fee balance is missing from the wallet
@@ -769,20 +706,11 @@ mod test {
 
         // Modify the fee balance from the order; clobber all balances because this
         // does not come with an index
-        witness
-            .augmented_public_shares
-            .balances
-            .iter_mut()
-            .for_each(|balance| {
-                *balance = BalanceShare {
-                    mint: Scalar::zero(),
-                    amount: Scalar::zero(),
-                }
-            });
+        witness.augmented_public_shares.balances.iter_mut().for_each(|balance| {
+            *balance = BalanceShare { mint: Scalar::zero(), amount: Scalar::zero() }
+        });
 
-        assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
 
     /// Test the case in which the order is missing from the wallet
@@ -797,15 +725,11 @@ mod test {
             base_mint: Scalar::zero(),
             side: Scalar::zero(),
             amount: Scalar::zero(),
-            worst_case_price: FixedPointShare {
-                repr: Scalar::zero(),
-            },
+            worst_case_price: FixedPointShare { repr: Scalar::zero() },
             timestamp: Scalar::zero(),
         };
 
-        assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
 
     /// Test the case in which the fee is missing from the wallet
@@ -816,23 +740,15 @@ mod test {
 
         // Modify the fees, clobber all of them because the fee does not contain an
         // index
-        witness
-            .augmented_public_shares
-            .fees
-            .iter_mut()
-            .for_each(|fee| {
-                *fee = FeeShare {
-                    settle_key: Scalar::zero(),
-                    gas_addr: Scalar::zero(),
-                    gas_token_amount: Scalar::zero(),
-                    percentage_fee: FixedPointShare {
-                        repr: Scalar::zero(),
-                    },
-                }
-            });
+        witness.augmented_public_shares.fees.iter_mut().for_each(|fee| {
+            *fee = FeeShare {
+                settle_key: Scalar::zero(),
+                gas_addr: Scalar::zero(),
+                gas_token_amount: Scalar::zero(),
+                percentage_fee: FixedPointShare { repr: Scalar::zero() },
+            }
+        });
 
-        assert!(!check_constraint_satisfaction::<SizedCommitments>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
 }

@@ -87,10 +87,7 @@ fn benchmark_match_with_delay(c: &mut Criterion, delay: Duration) {
     let mut group = c.benchmark_group("full_match");
     group.bench_function(BenchmarkId::new("match", delay.as_millis()), |b| {
         // Build a Tokio runtime and spawn the benchmarks within it
-        let runtime = RuntimeBuilder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+        let runtime = RuntimeBuilder::new_multi_thread().enable_all().build().unwrap();
         let mut async_bencher = b.to_async(runtime);
 
         async_bencher.iter_custom(|n_iters| async move {

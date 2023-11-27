@@ -65,14 +65,9 @@ async fn find_wallet_for_update(
     state: &RelayerState,
 ) -> Result<Wallet, ApiServerError> {
     // Find the wallet in global state and use its keys to authenticate the request
-    let wallet = state
-        .read_wallet_index()
-        .await
-        .get_wallet(&wallet_id)
-        .await
-        .ok_or_else(|| {
-            ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, ERR_WALLET_NOT_FOUND.to_string())
-        })?;
+    let wallet = state.read_wallet_index().await.get_wallet(&wallet_id).await.ok_or_else(|| {
+        ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, ERR_WALLET_NOT_FOUND.to_string())
+    })?;
 
     // Acquire the lock for the wallet
     if wallet.is_locked() {
@@ -164,12 +159,8 @@ impl TypedHandler for GetWalletHandler {
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        let mut wallet = if let Some(wallet) = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
+        let mut wallet = if let Some(wallet) =
+            self.global_state.read_wallet_index().await.get_wallet(&wallet_id).await
         {
             wallet
         } else {
@@ -194,9 +185,7 @@ impl TypedHandler for GetWalletHandler {
             .collect();
         wallet.fees.retain(|fee| !fee.is_default());
 
-        Ok(GetWalletResponse {
-            wallet: wallet.into(),
-        })
+        Ok(GetWalletResponse { wallet: wallet.into() })
     }
 }
 
@@ -222,12 +211,7 @@ impl CreateWalletHandler {
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
-        Self {
-            starknet_client,
-            global_state,
-            proof_manager_work_queue,
-            task_driver,
-        }
+        Self { starknet_client, global_state, proof_manager_work_queue, task_driver }
     }
 }
 
@@ -319,10 +303,7 @@ impl TypedHandler for FindWalletHandler {
         );
         let (task_id, _) = self.task_driver.start_task(task).await;
 
-        Ok(FindWalletResponse {
-            wallet_id: req.wallet_id,
-            task_id,
-        })
+        Ok(FindWalletResponse { wallet_id: req.wallet_id, task_id })
     }
 }
 
@@ -356,12 +337,8 @@ impl TypedHandler for GetOrdersHandler {
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        if let Some(wallet) = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
+        if let Some(wallet) =
+            self.global_state.read_wallet_index().await.get_wallet(&wallet_id).await
         {
             // Filter out default orders used to pad the wallet to the circuit size
             let non_default_orders = wallet
@@ -371,9 +348,7 @@ impl TypedHandler for GetOrdersHandler {
                 .map(ApiOrder::from)
                 .collect_vec();
 
-            Ok(GetOrdersResponse {
-                orders: non_default_orders,
-            })
+            Ok(GetOrdersResponse { orders: non_default_orders })
         } else {
             Err(ApiServerError::HttpStatusCode(
                 StatusCode::NOT_FOUND,
@@ -412,23 +387,18 @@ impl TypedHandler for GetOrderByIdHandler {
         let order_id = parse_order_id_from_params(&params)?;
 
         // Find the wallet in global state and use its keys to authenticate the request
-        let wallet = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
-            .ok_or_else(|| {
-                ApiServerError::HttpStatusCode(
-                    StatusCode::NOT_FOUND,
-                    ERR_WALLET_NOT_FOUND.to_string(),
-                )
-            })?;
+        let wallet =
+            self.global_state.read_wallet_index().await.get_wallet(&wallet_id).await.ok_or_else(
+                || {
+                    ApiServerError::HttpStatusCode(
+                        StatusCode::NOT_FOUND,
+                        ERR_WALLET_NOT_FOUND.to_string(),
+                    )
+                },
+            )?;
 
         if let Some(order) = wallet.orders.get(&order_id).cloned() {
-            Ok(GetOrderByIdResponse {
-                order: (order_id, order).into(),
-            })
+            Ok(GetOrderByIdResponse { order: (order_id, order).into() })
         } else {
             Err(ApiServerError::HttpStatusCode(
                 StatusCode::NOT_FOUND,
@@ -490,11 +460,7 @@ impl TypedHandler for CreateOrderHandler {
         let old_wallet = find_wallet_for_update(wallet_id, &self.global_state).await?;
 
         // Ensure that there is space below MAX_ORDERS for the new order
-        let num_orders = old_wallet
-            .orders
-            .values()
-            .filter(|order| !order.is_default())
-            .count();
+        let num_orders = old_wallet.orders.values().filter(|order| !order.is_default()).count();
 
         if num_orders >= MAX_ORDERS {
             return Err(ApiServerError::HttpStatusCode(
@@ -697,10 +663,7 @@ impl TypedHandler for CancelOrderHandler {
         .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
         let (task_id, _) = self.task_driver.start_task(task).await;
 
-        Ok(CancelOrderResponse {
-            task_id,
-            order: (order_id, order).into(),
-        })
+        Ok(CancelOrderResponse { task_id, order: (order_id, order).into() })
     }
 }
 
@@ -734,12 +697,8 @@ impl TypedHandler for GetBalancesHandler {
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        if let Some(wallet) = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
+        if let Some(wallet) =
+            self.global_state.read_wallet_index().await.get_wallet(&wallet_id).await
         {
             // Filter out the default balances used to pad the wallet to the circuit size
             let non_default_balances = wallet
@@ -749,9 +708,7 @@ impl TypedHandler for GetBalancesHandler {
                 .map(ApiBalance::from)
                 .collect_vec();
 
-            Ok(GetBalancesResponse {
-                balances: non_default_balances,
-            })
+            Ok(GetBalancesResponse { balances: non_default_balances })
         } else {
             Err(ApiServerError::HttpStatusCode(
                 StatusCode::NOT_FOUND,
@@ -789,22 +746,15 @@ impl TypedHandler for GetBalanceByMintHandler {
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let mint = parse_mint_from_params(&params)?;
 
-        if let Some(wallet) = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
+        if let Some(wallet) =
+            self.global_state.read_wallet_index().await.get_wallet(&wallet_id).await
         {
             let balance = wallet
                 .balances
                 .get(&mint)
                 .cloned()
                 .map(|balance| balance.into())
-                .unwrap_or_else(|| ApiBalance {
-                    mint,
-                    amount: 0u8.into(),
-                });
+                .unwrap_or_else(|| ApiBalance { mint, amount: 0u8.into() });
 
             Ok(GetBalanceByMintResponse { balance })
         } else {
@@ -872,10 +822,7 @@ impl TypedHandler for DepositBalanceHandler {
         new_wallet
             .balances
             .entry(req.mint.clone())
-            .or_insert(StateBalance {
-                mint: req.mint.clone(),
-                amount: 0u64,
-            })
+            .or_insert(StateBalance { mint: req.mint.clone(), amount: 0u64 })
             .amount += req.amount.to_u64().unwrap();
         new_wallet.reblind_wallet();
 
@@ -1022,12 +969,8 @@ impl TypedHandler for GetFeesHandler {
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
-        if let Some(wallet) = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
+        if let Some(wallet) =
+            self.global_state.read_wallet_index().await.get_wallet(&wallet_id).await
         {
             // Filter out all the default fees used to pad the wallet to the circuit size
             let non_default_fees = wallet
@@ -1037,9 +980,7 @@ impl TypedHandler for GetFeesHandler {
                 .map(ApiFee::from)
                 .collect_vec();
 
-            Ok(GetFeesResponse {
-                fees: non_default_fees,
-            })
+            Ok(GetFeesResponse { fees: non_default_fees })
         } else {
             Err(ApiServerError::HttpStatusCode(
                 StatusCode::NOT_FOUND,
@@ -1101,11 +1042,7 @@ impl TypedHandler for AddFeeHandler {
         let old_wallet = find_wallet_for_update(wallet_id, &self.global_state).await?;
 
         // Ensure that the fees list is not full
-        let num_fees = old_wallet
-            .fees
-            .iter()
-            .filter(|fee| !fee.is_default())
-            .count();
+        let num_fees = old_wallet.fees.iter().filter(|fee| !fee.is_default()).count();
         if num_fees >= MAX_FEES {
             return Err(ApiServerError::HttpStatusCode(
                 StatusCode::BAD_REQUEST,
@@ -1214,9 +1151,6 @@ impl TypedHandler for RemoveFeeHandler {
         .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
         let (task_id, _) = self.task_driver.start_task(task).await;
 
-        Ok(RemoveFeeResponse {
-            task_id,
-            fee: removed_fee.into(),
-        })
+        Ok(RemoveFeeResponse { task_id, fee: removed_fee.into() })
     }
 }

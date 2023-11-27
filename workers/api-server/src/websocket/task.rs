@@ -33,10 +33,7 @@ pub struct TaskStatusHandler {
 impl TaskStatusHandler {
     /// Constructor
     pub fn new(task_driver: TaskDriver, system_bus: SystemBus<SystemBusMessage>) -> Self {
-        Self {
-            task_driver,
-            system_bus,
-        }
+        Self { task_driver, system_bus }
     }
 }
 

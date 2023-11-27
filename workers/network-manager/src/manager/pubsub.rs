@@ -25,8 +25,7 @@ impl NetworkManagerExecutor {
         // If the gossip server has not warmed up the local node into the network,
         // buffer the pubsub message for forwarding after the warmup
         if !self.warmup_finished {
-            self.warmup_buffer
-                .push(BufferedPubsubMessage { topic, message });
+            self.warmup_buffer.push(BufferedPubsubMessage { topic, message });
             return Ok(());
         }
 
@@ -52,16 +51,11 @@ impl NetworkManagerExecutor {
         // Deserialize into API types and verify auth
         let event: AuthenticatedPubsubMessage = message.data.into();
         if !event.verify_cluster_auth(&self.cluster_key.public) {
-            return Err(NetworkManagerError::Authentication(
-                ERR_SIG_VERIFY.to_string(),
-            ));
+            return Err(NetworkManagerError::Authentication(ERR_SIG_VERIFY.to_string()));
         }
 
         match event.body {
-            PubsubMessage::ClusterManagement {
-                cluster_id,
-                message,
-            } => {
+            PubsubMessage::ClusterManagement { cluster_id, message } => {
                 match message {
                     // --------------------
                     // | Cluster Metadata |
@@ -139,18 +133,10 @@ impl NetworkManagerExecutor {
                 }
             },
             PubsubMessage::OrderBookManagement(msg) => match msg {
-                OrderBookManagementMessage::OrderReceived {
-                    order_id,
-                    nullifier,
-                    cluster,
-                } => self
+                OrderBookManagementMessage::OrderReceived { order_id, nullifier, cluster } => self
                     .gossip_work_queue
                     .send(GossipServerJob::OrderBookManagement(
-                        OrderBookManagementJob::OrderReceived {
-                            order_id,
-                            nullifier,
-                            cluster,
-                        },
+                        OrderBookManagementJob::OrderReceived { order_id, nullifier, cluster },
                     ))
                     .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?,
 

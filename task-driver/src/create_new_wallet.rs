@@ -204,9 +204,7 @@ impl NewWalletTask {
         );
 
         if circuit_wallet != recovered_wallet {
-            return Err(NewWalletTaskError::InvalidShares(
-                ERR_INVALID_SHARING.to_string(),
-            ));
+            return Err(NewWalletTaskError::InvalidShares(ERR_INVALID_SHARING.to_string()));
         }
 
         Ok(Self {
@@ -221,14 +219,11 @@ impl NewWalletTask {
     /// Generate a proof of `VALID WALLET CREATE` for the new wallet
     async fn generate_proof(&self) -> Result<ValidWalletCreateBundle, NewWalletTaskError> {
         // Index the wallet in the global state
-        self.global_state
-            .add_wallets(vec![self.wallet.clone()])
-            .await;
+        self.global_state.add_wallets(vec![self.wallet.clone()]).await;
 
         // Construct the witness and statement for the proof
-        let witness = ValidWalletCreateWitness {
-            private_wallet_share: self.wallet.private_shares.clone(),
-        };
+        let witness =
+            ValidWalletCreateWitness { private_wallet_share: self.wallet.private_shares.clone() };
 
         let private_shares_commitment =
             compute_wallet_private_share_commitment(self.wallet.private_shares.clone());
@@ -266,11 +261,7 @@ impl NewWalletTask {
         let private_share_commitment = self.wallet.get_private_share_commitment();
         let tx_hash = self
             .starknet_client
-            .new_wallet(
-                private_share_commitment,
-                self.wallet.blinded_public_shares.clone(),
-                proof,
-            )
+            .new_wallet(private_share_commitment, self.wallet.blinded_public_shares.clone(), proof)
             .await
             .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))?;
 
@@ -281,9 +272,7 @@ impl NewWalletTask {
             .await
             .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))?;
 
-        status
-            .into_result()
-            .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))
+        status.into_result().map_err(|err| NewWalletTaskError::Starknet(err.to_string()))
     }
 
     /// A helper to find the new Merkle authentication path in the contract

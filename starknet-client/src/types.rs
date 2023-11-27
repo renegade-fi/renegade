@@ -54,12 +54,7 @@ impl ExternalTransfer {
         amount: BigUint,
         direction: ExternalTransferDirection,
     ) -> Self {
-        Self {
-            sender_address,
-            mint,
-            amount: amount.into(),
-            direction,
-        }
+        Self { sender_address, mint, amount: amount.into(), direction }
     }
 }
 
@@ -192,9 +187,8 @@ impl CalldataSerializable for Scalar {
 
 impl<I: Iterator<Item = StarknetFieldElement>> CalldataDeserializable<I> for Scalar {
     fn from_calldata(i: &mut I) -> Result<Self, StarknetClientError> {
-        let felt = i
-            .next()
-            .ok_or_else(|| StarknetClientError::Serde(ERR_CALLDATA_END.to_string()))?;
+        let felt =
+            i.next().ok_or_else(|| StarknetClientError::Serde(ERR_CALLDATA_END.to_string()))?;
         Ok(starknet_felt_to_scalar(&felt))
     }
 }
@@ -212,8 +206,7 @@ impl CalldataSerializable for Vec<Scalar> {
 impl<I: Iterator<Item = StarknetFieldElement>> CalldataDeserializable<I> for Vec<Scalar> {
     fn from_calldata(i: &mut I) -> Result<Self, StarknetClientError> {
         let len = starknet_felt_to_usize(
-            &i.next()
-                .ok_or_else(|| StarknetClientError::Serde(ERR_CALLDATA_END.to_string()))?,
+            &i.next().ok_or_else(|| StarknetClientError::Serde(ERR_CALLDATA_END.to_string()))?,
         );
 
         let mut scalars = Vec::with_capacity(len);
@@ -233,9 +226,8 @@ impl CalldataSerializable for BigUint {
 
 impl<I: Iterator<Item = StarknetFieldElement>> CalldataDeserializable<I> for BigUint {
     fn from_calldata(i: &mut I) -> Result<Self, StarknetClientError> {
-        let felt = i
-            .next()
-            .ok_or_else(|| StarknetClientError::Serde(ERR_CALLDATA_END.to_string()))?;
+        let felt =
+            i.next().ok_or_else(|| StarknetClientError::Serde(ERR_CALLDATA_END.to_string()))?;
         Ok(starknet_felt_to_biguint(&felt))
     }
 }
@@ -246,10 +238,7 @@ impl CalldataSerializable for StarkPoint {
             vec![StarknetFieldElement::ZERO, StarknetFieldElement::ZERO]
         } else {
             let aff = self.to_affine();
-            vec![
-                biguint_to_starknet_felt(&aff.x.into()),
-                biguint_to_starknet_felt(&aff.y.into()),
-            ]
+            vec![biguint_to_starknet_felt(&aff.x.into()), biguint_to_starknet_felt(&aff.y.into())]
         }
     }
 }
@@ -277,8 +266,7 @@ impl CalldataSerializable for Vec<StarkPoint> {
 impl<I: Iterator<Item = StarknetFieldElement>> CalldataDeserializable<I> for Vec<StarkPoint> {
     fn from_calldata(i: &mut I) -> Result<Self, StarknetClientError> {
         let len = starknet_felt_to_usize(
-            &i.next()
-                .ok_or_else(|| StarknetClientError::Serde(ERR_CALLDATA_END.to_string()))?,
+            &i.next().ok_or_else(|| StarknetClientError::Serde(ERR_CALLDATA_END.to_string()))?,
         );
 
         let mut points = Vec::with_capacity(len);
@@ -292,39 +280,24 @@ impl<I: Iterator<Item = StarknetFieldElement>> CalldataDeserializable<I> for Vec
 
 impl CalldataSerializable for StarknetU256 {
     fn to_calldata(&self) -> Vec<StarknetFieldElement> {
-        vec![
-            StarknetFieldElement::from(self.low),
-            StarknetFieldElement::from(self.high),
-        ]
+        vec![StarknetFieldElement::from(self.low), StarknetFieldElement::from(self.high)]
     }
 }
 
 impl CalldataSerializable for R1CSProof {
     fn to_calldata(&self) -> Vec<StarknetFieldElement> {
-        [
-            self.A_I1, self.A_O1, self.S1, self.T_1, self.T_3, self.T_4, self.T_5, self.T_6,
-        ]
-        .iter()
-        .flat_map(|p| p.to_calldata())
-        .chain(
-            [self.t_x, self.t_x_blinding, self.e_blinding]
-                .iter()
-                .map(scalar_to_starknet_felt),
-        )
-        .chain(iter::once(StarknetFieldElement::from(
-            self.ipp_proof.L_vec.len(),
-        )))
-        .chain(self.ipp_proof.L_vec.iter().flat_map(|p| p.to_calldata()))
-        .chain(iter::once(StarknetFieldElement::from(
-            self.ipp_proof.R_vec.len(),
-        )))
-        .chain(self.ipp_proof.R_vec.iter().flat_map(|p| p.to_calldata()))
-        .chain(
-            [self.ipp_proof.a, self.ipp_proof.b]
-                .iter()
-                .map(scalar_to_starknet_felt),
-        )
-        .collect()
+        [self.A_I1, self.A_O1, self.S1, self.T_1, self.T_3, self.T_4, self.T_5, self.T_6]
+            .iter()
+            .flat_map(|p| p.to_calldata())
+            .chain(
+                [self.t_x, self.t_x_blinding, self.e_blinding].iter().map(scalar_to_starknet_felt),
+            )
+            .chain(iter::once(StarknetFieldElement::from(self.ipp_proof.L_vec.len())))
+            .chain(self.ipp_proof.L_vec.iter().flat_map(|p| p.to_calldata()))
+            .chain(iter::once(StarknetFieldElement::from(self.ipp_proof.R_vec.len())))
+            .chain(self.ipp_proof.R_vec.iter().flat_map(|p| p.to_calldata()))
+            .chain([self.ipp_proof.a, self.ipp_proof.b].iter().map(scalar_to_starknet_felt))
+            .collect()
     }
 }
 
@@ -368,9 +341,7 @@ impl<I: Iterator<Item = StarknetFieldElement>> CalldataDeserializable<I>
 {
     fn from_calldata(i: &mut I) -> Result<Self, StarknetClientError> {
         let scalar = Scalar::from_calldata(i)?;
-        Ok(ExternalTransferDirection::from_scalars(
-            &mut vec![scalar].into_iter(),
-        ))
+        Ok(ExternalTransferDirection::from_scalars(&mut vec![scalar].into_iter()))
     }
 }
 
@@ -387,40 +358,22 @@ impl CalldataSerializable for ExternalTransfer {
 
 impl CalldataSerializable for MatchPayload {
     fn to_calldata(&self) -> Vec<StarknetFieldElement> {
-        [
-            self.wallet_blinder_share,
-            self.old_shares_nullifier,
-            self.wallet_share_commitment,
-        ]
-        .iter()
-        .map(scalar_to_starknet_felt)
-        .chain(iter::once(StarknetFieldElement::from(
-            self.public_wallet_shares.len(),
-        )))
-        .chain(
-            self.public_wallet_shares
-                .iter()
-                .map(scalar_to_starknet_felt),
-        )
-        .chain(self.valid_commitments_proof.to_calldata())
-        .chain(iter::once(StarknetFieldElement::from(
-            self.valid_commitments_witness_commitments.len(),
-        )))
-        .chain(
-            self.valid_commitments_witness_commitments
-                .iter()
-                .flat_map(|p| p.to_calldata()),
-        )
-        .chain(self.valid_reblind_proof.to_calldata())
-        .chain(iter::once(StarknetFieldElement::from(
-            self.valid_reblind_witness_commitments.len(),
-        )))
-        .chain(
-            self.valid_reblind_witness_commitments
-                .iter()
-                .flat_map(|p| p.to_calldata()),
-        )
-        .collect()
+        [self.wallet_blinder_share, self.old_shares_nullifier, self.wallet_share_commitment]
+            .iter()
+            .map(scalar_to_starknet_felt)
+            .chain(iter::once(StarknetFieldElement::from(self.public_wallet_shares.len())))
+            .chain(self.public_wallet_shares.iter().map(scalar_to_starknet_felt))
+            .chain(self.valid_commitments_proof.to_calldata())
+            .chain(iter::once(StarknetFieldElement::from(
+                self.valid_commitments_witness_commitments.len(),
+            )))
+            .chain(self.valid_commitments_witness_commitments.iter().flat_map(|p| p.to_calldata()))
+            .chain(self.valid_reblind_proof.to_calldata())
+            .chain(iter::once(StarknetFieldElement::from(
+                self.valid_reblind_witness_commitments.len(),
+            )))
+            .chain(self.valid_reblind_witness_commitments.iter().flat_map(|p| p.to_calldata()))
+            .collect()
     }
 }
 

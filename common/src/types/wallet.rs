@@ -79,16 +79,10 @@ pub struct Wallet {
     /// We use an `IndexMap` here to preserve the order of insertion
     /// on the orders. This is necessary because we must have
     /// order parity with the secret shared wallet stored on-chain
-    #[serde(
-        serialize_with = "serialize_indexmap",
-        deserialize_with = "deserialize_indexmap"
-    )]
+    #[serde(serialize_with = "serialize_indexmap", deserialize_with = "deserialize_indexmap")]
     pub orders: IndexMap<OrderIdentifier, Order>,
     /// A mapping of mint to Balance information
-    #[serde(
-        serialize_with = "serialize_indexmap",
-        deserialize_with = "deserialize_indexmap"
-    )]
+    #[serde(serialize_with = "serialize_indexmap", deserialize_with = "deserialize_indexmap")]
     pub balances: IndexMap<BigUint, Balance>,
     /// A list of the fees in this wallet
     pub fees: Vec<Fee>,

@@ -171,10 +171,7 @@ impl From<ProofBundle> for ValidWalletCreateBundle {
         if let ProofBundle::ValidWalletCreate(b) = bundle {
             b
         } else {
-            panic!(
-                "Proof bundle is not of type ValidWalletCreate: {:?}",
-                bundle
-            )
+            panic!("Proof bundle is not of type ValidWalletCreate: {:?}", bundle)
         }
     }
 }
@@ -204,10 +201,7 @@ impl From<ProofBundle> for ValidWalletUpdateBundle {
         if let ProofBundle::ValidWalletUpdate(b) = bundle {
             b
         } else {
-            panic!(
-                "Proof bundle is not of type ValidWalletUpdate: {:?}",
-                bundle
-            );
+            panic!("Proof bundle is not of type ValidWalletUpdate: {:?}", bundle);
         }
     }
 }
@@ -388,11 +382,7 @@ pub mod mocks {
         ));
         let proof = dummy_r1cs_proof();
 
-        Box::new(GenericValidWalletUpdateBundle {
-            statement,
-            commitment,
-            proof,
-        })
+        Box::new(GenericValidWalletUpdateBundle { statement, commitment, proof })
     }
 
     /// Create a dummy proof bundle for `VALID REBLIND`
@@ -402,11 +392,7 @@ pub mod mocks {
             StarkPoint::identity(),
         ));
 
-        Box::new(GenericValidReblindBundle {
-            statement,
-            commitment,
-            proof: dummy_r1cs_proof(),
-        })
+        Box::new(GenericValidReblindBundle { statement, commitment, proof: dummy_r1cs_proof() })
     }
 
     /// Create a dummy proof bundle for `VALID COMMITMENTS`
@@ -416,11 +402,7 @@ pub mod mocks {
             StarkPoint::identity(),
         ));
 
-        Box::new(GenericValidCommitmentsBundle {
-            statement,
-            commitment,
-            proof: dummy_r1cs_proof(),
-        })
+        Box::new(GenericValidCommitmentsBundle { statement, commitment, proof: dummy_r1cs_proof() })
     }
 
     /// Create a dummy validity proof bundle
@@ -451,11 +433,7 @@ pub mod mocks {
             StarkPoint::identity(),
         ));
 
-        Box::new(GenericValidSettleBundle {
-            statement,
-            commitment,
-            proof: dummy_r1cs_proof(),
-        })
+        Box::new(GenericValidSettleBundle { statement, commitment, proof: dummy_r1cs_proof() })
     }
 
     /// Create a dummy R1CS proof

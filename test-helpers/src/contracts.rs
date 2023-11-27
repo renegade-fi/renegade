@@ -98,12 +98,8 @@ pub async fn deploy_darkpool(
     log::info!("Declaring nullifier set...");
     let (nullifier_set_sierra, nullifier_set_casm) =
         get_artifacts(cairo_artifacts_path, NULLIFIER_SET_CONTRACT_NAME);
-    let nullifier_set_hash = declare_class(
-        &nullifier_set_sierra,
-        &nullifier_set_casm,
-        &deployer_account,
-    )
-    .await?;
+    let nullifier_set_hash =
+        declare_class(&nullifier_set_sierra, &nullifier_set_casm, &deployer_account).await?;
 
     // Deploy the darkpool
     log::info!("Deploying darkpool...");
@@ -122,11 +118,7 @@ pub async fn deploy_darkpool(
 
     // Initialize the contract
     log::info!("Initializing darkpool contract...");
-    let init_calldata = vec![
-        merkle_hash,
-        nullifier_set_hash,
-        FieldElement::from(MERKLE_HEIGHT),
-    ];
+    let init_calldata = vec![merkle_hash, nullifier_set_hash, FieldElement::from(MERKLE_HEIGHT)];
     let res = deployer_account
         .execute(vec![Call {
             to: addr,
@@ -163,12 +155,10 @@ fn build_deployer_acct(
 ///
 /// Borrowed from: https://github.com/renegade-fi/renegade-contracts/blob/main/starknet_scripts/src/commands/utils.rs#L85
 fn get_artifacts(artifacts_path: &str, contract_name: &str) -> (PathBuf, PathBuf) {
-    let sierra_path = Path::new(artifacts_path)
-        .join(contract_name)
-        .with_extension(SIERRA_FILE_EXTENSION);
-    let casm_path = Path::new(artifacts_path)
-        .join(contract_name)
-        .with_extension(CASM_FILE_EXTENSION);
+    let sierra_path =
+        Path::new(artifacts_path).join(contract_name).with_extension(SIERRA_FILE_EXTENSION);
+    let casm_path =
+        Path::new(artifacts_path).join(contract_name).with_extension(CASM_FILE_EXTENSION);
 
     (sierra_path, casm_path)
 }
@@ -188,10 +178,7 @@ async fn declare_class(
     let casm_contract: CompiledClass = serde_json::from_reader(File::open(casm_source)?)?;
     let casm_class_hash = casm_contract.class_hash()?;
 
-    let res = deployer
-        .declare(Arc::new(flattened_class), casm_class_hash)
-        .send()
-        .await?;
+    let res = deployer.declare(Arc::new(flattened_class), casm_class_hash).send().await?;
     await_transaction(res.transaction_hash, deployer).await?;
 
     Ok(res.class_hash)
@@ -230,10 +217,7 @@ async fn get_transaction_status(
     tx_hash: FieldElement,
     rpc_client: &StarknetTestAcct,
 ) -> Result<TransactionStatus> {
-    let tx_receipt = rpc_client
-        .provider()
-        .get_transaction_receipt(tx_hash)
-        .await?;
+    let tx_receipt = rpc_client.provider().get_transaction_receipt(tx_hash).await?;
     let status = match tx_receipt {
         MaybePendingTransactionReceipt::PendingReceipt(receipt) => {
             return Err(eyre!("Transaction is still pending: {:?}", receipt));

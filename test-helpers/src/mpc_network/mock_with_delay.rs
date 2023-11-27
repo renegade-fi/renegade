@@ -44,13 +44,7 @@ impl MockNetworkWithDelay {
         stream: UnboundedDuplexStream<NetworkOutboundWithTimestamp>,
         delay: Duration,
     ) -> Self {
-        Self {
-            party_id,
-            mock_conn: stream,
-            recv_buffer: None,
-            delay,
-            timer: None,
-        }
+        Self { party_id, mock_conn: stream, recv_buffer: None, delay, timer: None }
     }
 
     /// Register a timer to awake after the delay
@@ -150,10 +144,7 @@ mod tests {
 
     /// Get the time in milliseconds since the unix epoch
     pub fn unix_ts_millis() -> u64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("negative timestamp")
-            .as_millis() as u64
+        SystemTime::now().duration_since(UNIX_EPOCH).expect("negative timestamp").as_millis() as u64
     }
 
     /// Test that the delay is accurate

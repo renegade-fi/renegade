@@ -88,10 +88,7 @@ pub(crate) async fn lookup_wallet_and_check_result(
         .clone();
 
     // Compare the secret shares directly
-    assert_eq_result!(
-        state_wallet.blinded_public_shares,
-        expected_wallet.blinded_public_shares
-    )?;
+    assert_eq_result!(state_wallet.blinded_public_shares, expected_wallet.blinded_public_shares)?;
     assert_eq_result!(state_wallet.private_shares, expected_wallet.private_shares)
 }
 
@@ -119,9 +116,8 @@ pub async fn allocate_wallet_in_darkpool(wallet: &Wallet, client: &StarknetClien
     let share_comm = wallet.get_private_share_commitment();
     let proof = dummy_valid_wallet_create_bundle();
 
-    let tx_hash = client
-        .new_wallet(share_comm, wallet.blinded_public_shares.clone(), proof)
-        .await?;
+    let tx_hash =
+        client.new_wallet(share_comm, wallet.blinded_public_shares.clone(), proof).await?;
     client.poll_transaction_completed(tx_hash).await?;
     Ok(())
 }
@@ -163,19 +159,10 @@ pub(crate) async fn increase_erc20_allowance(
 
     // Add the `spender` and `amount` to the calldata
     let mut calldata = vec![felt_from_hex_string(darkpool_addr)];
-    calldata.extend(
-        StarknetU256 {
-            low: amount as u128,
-            high: 0,
-        }
-        .to_calldata(),
-    );
+    calldata.extend(StarknetU256 { low: amount as u128, high: 0 }.to_calldata());
 
-    let allow_call = Call {
-        to: felt_from_hex_string(mint),
-        selector: *ERC20_APPROVE_SELECTOR,
-        calldata,
-    };
+    let allow_call =
+        Call { to: felt_from_hex_string(mint), selector: *ERC20_APPROVE_SELECTOR, calldata };
 
     client.execute_transaction(allow_call).await?;
     Ok(())

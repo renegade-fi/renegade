@@ -96,11 +96,8 @@ where
         // -- Authorization -- //
 
         // Recover the old wallet
-        let pk_match_unblinded = witness
-            .original_wallet_public_shares
-            .keys
-            .pk_match
-            .unblind(recovered_old_blinder, cs);
+        let pk_match_unblinded =
+            witness.original_wallet_public_shares.keys.pk_match.unblind(recovered_old_blinder, cs);
         let recovered_public_key = witness
             .original_wallet_private_shares
             .keys
@@ -414,9 +411,7 @@ pub mod test_helpers {
             reblinded_wallet_private_shares: reblinded_private_shares,
             reblinded_wallet_public_shares: reblinded_public_shares,
             original_share_opening,
-            sk_match: SecretIdentificationKey {
-                key: PRIVATE_KEYS[1],
-            },
+            sk_match: SecretIdentificationKey { key: PRIVATE_KEYS[1] },
         };
 
         let statement = ValidReblindStatement {
@@ -488,9 +483,7 @@ mod test {
         let wallet = INITIAL_WALLET.clone();
         let (witness, statement) = construct_witness_statement(&wallet);
 
-        assert!(check_constraint_satisfaction::<SizedReblind>(
-            &witness, &statement
-        ))
+        assert!(check_constraint_satisfaction::<SizedReblind>(&witness, &statement))
     }
 
     /// Tests an invalid reblinding, i.e. a secret share that was sampled
@@ -532,9 +525,7 @@ mod test {
         );
 
         // Verify that the constraints are not satisfied on this statement, witness pair
-        assert!(!check_constraint_satisfaction::<SizedReblind>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedReblind>(&witness, &statement));
     }
 
     /// Tests an invalidly re-sampled wallet blinder
@@ -571,9 +562,7 @@ mod test {
         );
 
         // Verify that the constraints are not satisfied
-        assert!(!check_constraint_satisfaction::<SizedReblind>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedReblind>(&witness, &statement));
     }
 
     /// Tests a case in which the prover tries to modify a wallet element
@@ -589,9 +578,7 @@ mod test {
         statement.reblinded_private_share_commitment =
             compute_wallet_private_share_commitment(&witness.reblinded_wallet_private_shares);
 
-        assert!(!check_constraint_satisfaction::<SizedReblind>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedReblind>(&witness, &statement));
     }
 
     /// Tests the case in which the prover tries to modify a wallet element
@@ -607,9 +594,7 @@ mod test {
         statement.reblinded_private_share_commitment =
             compute_wallet_private_share_commitment(&witness.reblinded_wallet_private_shares);
 
-        assert!(!check_constraint_satisfaction::<SizedReblind>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedReblind>(&witness, &statement));
     }
 
     // ----------------------------
@@ -626,9 +611,7 @@ mod test {
         // Modify the key to emulate an incorrectly specified key
         witness.sk_match.key += Scalar::one();
 
-        assert!(!check_constraint_satisfaction::<SizedReblind>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedReblind>(&witness, &statement));
     }
 
     // -----------------------------
@@ -651,9 +634,7 @@ mod test {
         let random_index = rng.gen_range(0..witness.original_share_opening.elems.len());
         witness.original_share_opening.elems[random_index] = Scalar::random(&mut thread_rng());
 
-        assert!(!check_constraint_satisfaction::<SizedReblind>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedReblind>(&witness, &statement));
 
         // Invalid Merkle root
         let witness = original_witness;
@@ -661,9 +642,7 @@ mod test {
 
         statement.merkle_root = Scalar::random(&mut thread_rng());
 
-        assert!(!check_constraint_satisfaction::<SizedReblind>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedReblind>(&witness, &statement));
     }
 
     /// Tests an invalid nullifier given as a public variable
@@ -680,9 +659,7 @@ mod test {
         let mut statement = original_statement;
         statement.original_shares_nullifier = Scalar::random(&mut rng);
 
-        assert!(!check_constraint_satisfaction::<SizedReblind>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedReblind>(&witness, &statement));
     }
 
     /// Tests the case in which the prover uses an invalid private share
@@ -696,8 +673,6 @@ mod test {
         let mut rng = thread_rng();
         statement.reblinded_private_share_commitment = Scalar::random(&mut rng);
 
-        assert!(!check_constraint_satisfaction::<SizedReblind>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedReblind>(&witness, &statement));
     }
 }

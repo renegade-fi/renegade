@@ -123,10 +123,7 @@ impl Worker for NetworkManager {
 
     fn start(&mut self) -> Result<(), Self::Error> {
         // Build a quic transport
-        let hostport = format!(
-            "/ip4/{}/udp/{}/quic-v1",
-            self.config.bind_addr, self.config.port
-        );
+        let hostport = format!("/ip4/{}/udp/{}/quic-v1", self.config.bind_addr, self.config.port);
         let addr: Multiaddr = hostport.parse().unwrap();
 
         // Build the quic transport
@@ -145,32 +142,19 @@ impl Worker for NetworkManager {
 
         // Add any bootstrap addresses to the peer info table
         let peer_index = block_on(async {
-            self.config
-                .global_state
-                .read_peer_index()
-                .await
-                .get_info_map()
-                .await
+            self.config.global_state.read_peer_index().await.get_info_map().await
         });
 
         for (peer_id, peer_info) in peer_index.iter() {
-            log::info!(
-                "Adding {:?}: {} to routing table...",
-                peer_id,
-                peer_info.get_addr()
-            );
-            behavior
-                .kademlia_dht
-                .add_address(peer_id, peer_info.get_addr());
+            log::info!("Adding {:?}: {} to routing table...", peer_id, peer_info.get_addr());
+            behavior.kademlia_dht.add_address(peer_id, peer_info.get_addr());
         }
 
         // Connect the behavior and the transport via swarm and enter the network
         let mut swarm =
             SwarmBuilder::with_tokio_executor(quic_transport, behavior, *self.local_peer_id)
                 .build();
-        swarm
-            .listen_on(addr)
-            .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
+        swarm.listen_on(addr).map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
         // After assigning address and peer ID, update the global state
         block_on(self.update_global_state_after_startup());

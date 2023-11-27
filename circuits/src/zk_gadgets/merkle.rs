@@ -85,10 +85,8 @@ impl<const HEIGHT: usize> PoseidonMerkleHashGadget<HEIGHT> {
         let neg_one = -one;
         let zero_var = cs.zero();
 
-        let right_child = cs.lc(
-            &[current_hash, sister_node, left_child, zero_var],
-            &[one, one, neg_one, one],
-        )?;
+        let right_child =
+            cs.lc(&[current_hash, sister_node, left_child, zero_var], &[one, one, neg_one, one])?;
 
         Ok((left_child, right_child))
     }
@@ -213,10 +211,7 @@ pub(crate) mod merkle_test {
 
     /// Generate random leaf data
     fn random_leaf_data() -> Vec<ScalarField> {
-        random_field_elements(LEAF_SIZE)
-            .iter()
-            .map(Scalar::inner)
-            .collect_vec()
+        random_field_elements(LEAF_SIZE).iter().map(Scalar::inner).collect_vec()
     }
 
     /// Get the opening indices from the index, this can be done by
@@ -300,10 +295,7 @@ pub(crate) mod merkle_test {
 
         // Allocate the leaf data and opening in a constraint system
         let mut cs = PlonkCircuit::new_turbo_plonk();
-        let leaf_vars = leaf_data
-            .into_iter()
-            .map(|x| x.create_witness(&mut cs))
-            .collect_vec();
+        let leaf_vars = leaf_data.into_iter().map(|x| x.create_witness(&mut cs)).collect_vec();
         let opening_var = opening.create_witness(&mut cs);
         let root = expected_root.create_public_var(&mut cs);
 
@@ -316,9 +308,7 @@ pub(crate) mod merkle_test {
         )
         .unwrap();
 
-        assert!(cs
-            .check_circuit_satisfiability(&[expected_root.inner()])
-            .is_ok())
+        assert!(cs.check_circuit_satisfiability(&[expected_root.inner()]).is_ok())
     }
 
     #[test]
@@ -328,10 +318,7 @@ pub(crate) mod merkle_test {
 
         // Allocate the leaf data and opening in a constraint system
         let mut cs = PlonkCircuit::new_turbo_plonk();
-        let leaf_vars = leaf_data
-            .into_iter()
-            .map(|x| x.create_witness(&mut cs))
-            .collect_vec();
+        let leaf_vars = leaf_data.into_iter().map(|x| x.create_witness(&mut cs)).collect_vec();
         let opening_var = opening.create_witness(&mut cs);
         let root = expected_root.create_public_var(&mut cs);
 

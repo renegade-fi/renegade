@@ -135,9 +135,7 @@ pub(super) fn parse_shares_from_calldata(
         },
         _ => {
             log::error!("invalid selector received: {selector}");
-            return Err(StarknetClientError::NotFound(
-                ERR_INVALID_SELECTOR.to_string(),
-            ));
+            return Err(StarknetClientError::NotFound(ERR_INVALID_SELECTOR.to_string()));
         },
     };
 
@@ -184,8 +182,6 @@ fn parse_shares_from_match(
     } else if party1_payload.wallet_blinder_share == target_share {
         Ok(party1_payload.public_wallet_shares)
     } else {
-        Err(StarknetClientError::NotFound(
-            ERR_BLINDER_NOT_FOUND.to_string(),
-        ))
+        Err(StarknetClientError::NotFound(ERR_BLINDER_NOT_FOUND.to_string()))
     }
 }

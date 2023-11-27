@@ -69,10 +69,7 @@ impl ComposedNetworkBehavior {
         // Construct the point-to-point request response protocol
         let request_response = RequestResponse::new(
             RelayerGossipCodec::new(),
-            iter::once((
-                RelayerGossipProtocol::new(protocol_version),
-                ProtocolSupport::Full,
-            )),
+            iter::once((RelayerGossipProtocol::new(protocol_version), ProtocolSupport::Full)),
             Default::default(),
         );
 
@@ -83,10 +80,7 @@ impl ComposedNetworkBehavior {
         // Construct the pubsub network behavior
         let pubsub = Gossipsub::new(
             MessageAuthenticity::Signed(keypair.clone()),
-            GossipsubConfigBuilder::default()
-                .max_transmit_size(MAX_MESSAGE_SIZE)
-                .build()
-                .unwrap(),
+            GossipsubConfigBuilder::default().max_transmit_size(MAX_MESSAGE_SIZE).build().unwrap(),
         )
         .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
@@ -97,12 +91,7 @@ impl ComposedNetworkBehavior {
             keypair.public(),
         ));
 
-        Ok(Self {
-            request_response,
-            kademlia_dht,
-            pubsub,
-            identify,
-        })
+        Ok(Self { request_response, kademlia_dht, pubsub, identify })
     }
 }
 

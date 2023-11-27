@@ -29,14 +29,10 @@ impl NetworkManagerExecutor {
         // Multiplex over request/response message types
         match message {
             // Handle inbound request from another peer
-            RequestResponseMessage::Request {
-                request, channel, ..
-            } => {
+            RequestResponseMessage::Request { request, channel, .. } => {
                 // Authenticate the request
                 if !request.verify_cluster_auth(&self.cluster_key.public) {
-                    return Err(NetworkManagerError::Authentication(
-                        ERR_SIG_VERIFY.to_string(),
-                    ));
+                    return Err(NetworkManagerError::Authentication(ERR_SIG_VERIFY.to_string()));
                 }
 
                 match request.body {
@@ -55,10 +51,7 @@ impl NetworkManagerExecutor {
                         })
                         .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
 
-                    GossipRequest::Handshake {
-                        request_id,
-                        message,
-                    } => self
+                    GossipRequest::Handshake { request_id, message } => self
                         .handshake_work_queue
                         .send(HandshakeExecutionJob::ProcessHandshakeMessage {
                             request_id,
@@ -80,9 +73,9 @@ impl NetworkManagerExecutor {
 
                     GossipRequest::Replicate(replicate_message) => {
                         self.gossip_work_queue
-                            .send(GossipServerJob::Cluster(
-                                ClusterManagementJob::ReplicateRequest(replicate_message),
-                            ))
+                            .send(GossipServerJob::Cluster(ClusterManagementJob::ReplicateRequest(
+                                replicate_message,
+                            )))
                             .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
 
                         // Send a simple ack back to avoid closing the channel
@@ -95,15 +88,13 @@ impl NetworkManagerExecutor {
                             })
                     },
 
-                    GossipRequest::ValidityProof {
-                        order_id,
-                        proof_bundle,
-                    } => self
-                        .gossip_work_queue
-                        .send(GossipServerJob::Cluster(
-                            ClusterManagementJob::UpdateValidityProof(order_id, proof_bundle),
-                        ))
-                        .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
+                    GossipRequest::ValidityProof { order_id, proof_bundle } => {
+                        self.gossip_work_queue
+                            .send(GossipServerJob::Cluster(
+                                ClusterManagementJob::UpdateValidityProof(order_id, proof_bundle),
+                            ))
+                            .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))
+                    },
 
                     GossipRequest::ValidityWitness { order_id, witness } => {
                         self.gossip_work_queue
@@ -136,9 +127,7 @@ impl NetworkManagerExecutor {
             // Handle inbound response
             RequestResponseMessage::Response { response, .. } => {
                 if !response.verify_cluster_auth(&self.cluster_key.public) {
-                    return Err(NetworkManagerError::Authentication(
-                        ERR_SIG_VERIFY.to_string(),
-                    ));
+                    return Err(NetworkManagerError::Authentication(ERR_SIG_VERIFY.to_string()));
                 }
 
                 match response.body {
@@ -152,10 +141,7 @@ impl NetworkManagerExecutor {
                         })
                         .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string())),
 
-                    GossipResponse::Handshake {
-                        request_id,
-                        message,
-                    } => self
+                    GossipResponse::Handshake { request_id, message } => self
                         .handshake_work_queue
                         .send(HandshakeExecutionJob::ProcessHandshakeMessage {
                             request_id,

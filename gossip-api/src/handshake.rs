@@ -13,20 +13,13 @@ impl PriceVector {
     /// Returns the price of a given token pair, if it exists in the price
     /// vector
     pub fn find_pair(&self, base: &Token, quote: &Token) -> Option<MidpointPrice> {
-        self.0
-            .iter()
-            .find(|(b, q, _)| b == base && q == quote)
-            .cloned()
+        self.0.iter().find(|(b, q, _)| b == base && q == quote).cloned()
     }
 }
 
 impl From<PriceVector> for HashMap<(Token, Token), Price> {
     fn from(price_vector: PriceVector) -> Self {
-        price_vector
-            .0
-            .into_iter()
-            .map(|(base, quote, price)| ((base, quote), price))
-            .collect()
+        price_vector.0.into_iter().map(|(base, quote, price)| ((base, quote), price)).collect()
     }
 }
 

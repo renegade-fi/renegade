@@ -119,18 +119,12 @@ impl DB {
 
     /// Create a new read-write transaction
     pub fn new_write_tx(&self) -> Result<DbTxn<RW>, StorageError> {
-        self.db
-            .begin_rw_txn()
-            .map_err(StorageError::BeginTx)
-            .map(DbTxn::new)
+        self.db.begin_rw_txn().map_err(StorageError::BeginTx).map(DbTxn::new)
     }
 
     /// Flush the database to disk
     pub fn sync(&self) -> Result<(), StorageError> {
-        self.db
-            .sync(true /* force */)
-            .map_err(StorageError::Sync)
-            .map(|_| ())
+        self.db.sync(true /* force */).map_err(StorageError::Sync).map(|_| ())
     }
 }
 
@@ -160,9 +154,7 @@ impl<'db, T: TransactionKind> DbTxn<'db, T> {
     ) -> Result<Option<V>, StorageError> {
         // Read bytes then deserialize as a `serde::Serialize`
         let value_bytes = self.read_bytes(table_name, key)?;
-        value_bytes
-            .map(|bytes| deserialize_value(&bytes))
-            .transpose()
+        value_bytes.map(|bytes| deserialize_value(&bytes)).transpose()
     }
 
     /// Open a cursor in the txn
@@ -201,9 +193,7 @@ impl<'db, T: TransactionKind> DbTxn<'db, T> {
 
     /// Open a table if the transaction has not done so already
     fn open_table(&self, table_name: &str) -> Result<Table, StorageError> {
-        self.txn
-            .open_table(Some(table_name))
-            .map_err(StorageError::OpenTable)
+        self.txn.open_table(Some(table_name)).map_err(StorageError::OpenTable)
     }
 }
 
@@ -235,9 +225,7 @@ impl<'db> DbTxn<'db, RW> {
 
         // Delete the value
         let table = self.open_table(table_name)?;
-        self.txn
-            .del(&table, key_bytes, None /* data */)
-            .map_err(StorageError::TxOp)
+        self.txn.del(&table, key_bytes, None /* data */).map_err(StorageError::TxOp)
     }
 
     // -----------
@@ -291,11 +279,7 @@ mod test {
     impl TestValue {
         /// Get a dummy test value
         fn dummy() -> Self {
-            Self {
-                a: 1,
-                b: vec![String::from("test"), String::from("value")],
-                c: (1, 2),
-            }
+            Self { a: 1, b: vec![String::from("test"), String::from("value")], c: (1, 2) }
         }
     }
 
@@ -319,8 +303,7 @@ mod test {
         let key_name = "test_key".to_string();
 
         db.create_table(TABLE_NAME).unwrap();
-        db.write(TABLE_NAME, &key_name, &TestValue::dummy())
-            .unwrap();
+        db.write(TABLE_NAME, &key_name, &TestValue::dummy()).unwrap();
         let val: Option<TestValue> = db.read(TABLE_NAME, &key_name).unwrap();
 
         assert_eq!(val.unwrap(), TestValue::dummy());
@@ -345,8 +328,7 @@ mod test {
         let key_name = "test_key".to_string();
 
         db.create_table(TABLE_NAME).unwrap();
-        db.write(TABLE_NAME, &key_name, &TestValue::dummy())
-            .unwrap();
+        db.write(TABLE_NAME, &key_name, &TestValue::dummy()).unwrap();
         let exists = db.delete(TABLE_NAME, &key_name).unwrap();
         let val: Option<TestValue> = db.read(TABLE_NAME, &key_name).unwrap();
 
@@ -399,10 +381,7 @@ mod test {
         let key1 = "test_key".to_string();
         let key2 = "test_key2".to_string();
         let value1 = TestValue::dummy();
-        let value2 = TestValue {
-            a: 5,
-            ..Default::default()
-        };
+        let value2 = TestValue { a: 5, ..Default::default() };
 
         let tx = db.new_write_tx().unwrap();
         tx.write(TABLE_NAME, &key1, &value1).unwrap();
@@ -429,10 +408,7 @@ mod test {
         let key1 = "test_key".to_string();
         let key2 = "test_key2".to_string();
         let value1 = TestValue::dummy();
-        let value2 = TestValue {
-            a: 5,
-            ..Default::default()
-        };
+        let value2 = TestValue { a: 5, ..Default::default() };
 
         // Create a second table in the write tx
         const TABLE_NAME2: &str = "test_table2";
@@ -486,9 +462,7 @@ mod test {
         }
 
         // Await termination
-        join_handles
-            .into_iter()
-            .for_each(|handle| handle.join().unwrap());
+        join_handles.into_iter().for_each(|handle| handle.join().unwrap());
 
         // Now read back the value, it should be incremented twice
         let tx = db.new_read_tx().unwrap();
@@ -509,10 +483,7 @@ mod test {
 
         // Set a key
         let key = "test_key".to_string();
-        let value = TestValue {
-            a: 10,
-            ..Default::default()
-        };
+        let value = TestValue { a: 10, ..Default::default() };
 
         let tx = db.new_write_tx().unwrap();
         tx.create_table(TABLE_NAME).unwrap();
