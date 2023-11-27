@@ -89,10 +89,7 @@ pub(crate) use print_wire;
 
 /// Construct the `Scalar` representation of 2^m
 pub fn scalar_2_to_m(m: u64) -> Scalar {
-    assert!(
-        m < SCALAR_MAX_BITS as u64,
-        "result would overflow Scalar field"
-    );
+    assert!(m < SCALAR_MAX_BITS as u64, "result would overflow Scalar field");
 
     Scalar::from(2u8).pow(m)
 }
@@ -226,11 +223,7 @@ pub mod test_helpers {
         };
 
         // Randomly permute the orders
-        let (o1, o2) = if rng.gen_bool(0.5) {
-            (o1, o2)
-        } else {
-            (o2, o1)
-        };
+        let (o1, o2) = if rng.gen_bool(0.5) { (o1, o2) } else { (o2, o1) };
 
         // Match orders assuming they are fully capitalized
         let match_res =

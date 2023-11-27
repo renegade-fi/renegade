@@ -81,10 +81,7 @@ impl PriceReporterHandler {
         price_reporter_work_queue: TokioSender<PriceReporterManagerJob>,
         system_bus: SystemBus<SystemBusMessage>,
     ) -> Self {
-        Self {
-            price_reporter_work_queue,
-            system_bus,
-        }
+        Self { price_reporter_work_queue, system_bus }
     }
 }
 
@@ -112,9 +109,7 @@ impl WebsocketTopicHandler for PriceReporterHandler {
             })
             .map_err(|_| ApiServerError::WebsocketServerFailure(ERR_SENDING_MESSAGE.to_string()))?;
 
-        Ok(self
-            .system_bus
-            .subscribe(price_report_topic_name(&source, &base, &quote)))
+        Ok(self.system_bus.subscribe(price_report_topic_name(&source, &base, &quote)))
     }
 
     /// Handle an unsubscribe message from the price reporter

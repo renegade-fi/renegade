@@ -191,10 +191,7 @@ impl TaskDriver {
         // Add the task to the bookkeeping structure
         let task_id = Uuid::new_v4();
         {
-            self.open_tasks
-                .write()
-                .await
-                .insert(task_id, task.state().into());
+            self.open_tasks.write().await.insert(task_id, task.state().into());
         } // open_tasks lock released
 
         // Drive the task
@@ -233,10 +230,8 @@ impl TaskDriver {
                 tokio::time::sleep(curr_backoff).await;
                 log::info!("retrying task {task_id:?} from state: {}", task.state());
                 curr_backoff *= config.backoff_amplification_factor;
-                curr_backoff = Duration::min(
-                    curr_backoff,
-                    Duration::from_millis(config.backoff_ceiling_ms),
-                );
+                curr_backoff =
+                    Duration::min(curr_backoff, Duration::from_millis(config.backoff_ceiling_ms));
             }
 
             // Update the state in the registry
@@ -250,10 +245,7 @@ impl TaskDriver {
             // Publish the state to the system bus for listeners on this task
             self.config.system_bus.publish(
                 task_topic_name(&task_id),
-                SystemBusMessage::TaskStatusUpdate {
-                    task_id,
-                    state: task.state().to_string(),
-                },
+                SystemBusMessage::TaskStatusUpdate { task_id, state: task.state().to_string() },
             );
         }
 

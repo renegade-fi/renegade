@@ -38,10 +38,7 @@ impl NetworkManagerExecutor {
                     return Ok(());
                 }
 
-                self.swarm
-                    .behaviour_mut()
-                    .kademlia_dht
-                    .add_address(&peer_id, address);
+                self.swarm.behaviour_mut().kademlia_dht.add_address(&peer_id, address);
 
                 Ok(())
             },
@@ -162,9 +159,7 @@ impl NetworkManagerExecutor {
                 let local_addr: SocketAddr = format!("0.0.0.0:{local_port}").parse().unwrap();
                 let peer_addr: SocketAddr = "0.0.0.0:0".parse().unwrap();
                 let mut net = QuicTwoPartyNet::new(party_id, local_addr, peer_addr);
-                net.connect()
-                    .await
-                    .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
+                net.connect().await.map_err(|err| NetworkManagerError::Network(err.to_string()))?;
 
                 net
             },
@@ -173,11 +168,7 @@ impl NetworkManagerExecutor {
         // After the dependencies are injected into the network; forward it to the
         // handshake manager to dial the peer and begin the MPC
         handshake_work_queue
-            .send(HandshakeExecutionJob::MpcNetSetup {
-                request_id,
-                party_id,
-                net: mpc_net,
-            })
+            .send(HandshakeExecutionJob::MpcNetSetup { request_id, party_id, net: mpc_net })
             .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
         Ok(())
     }

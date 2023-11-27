@@ -194,10 +194,7 @@ pub fn min<const D: usize>(
     fabric: &Fabric,
 ) -> (AuthenticatedScalar, AuthenticatedScalar) {
     let a_lt_b = less_than::<D>(a, b, fabric);
-    (
-        Scalar::from(1u64) - a_lt_b.clone(),
-        &a_lt_b * a + (Scalar::one() - a_lt_b) * b,
-    )
+    (Scalar::from(1u64) - a_lt_b.clone(), &a_lt_b * a + (Scalar::one() - a_lt_b) * b)
 }
 
 /// Computes res = a if s else b
@@ -221,20 +218,13 @@ pub fn cond_select_vec(
     a: &[AuthenticatedScalar],
     b: &[AuthenticatedScalar],
 ) -> Vec<AuthenticatedScalar> {
-    assert_eq!(
-        a.len(),
-        b.len(),
-        "cond_select_vec requires equal length vectors"
-    );
+    assert_eq!(a.len(), b.len(), "cond_select_vec requires equal length vectors");
 
     // Batch mul each a value with `s` and each `b` value with 1 - s
     let n = a.len();
     let selector: AuthenticatedScalar = s.clone().into();
     let terms = AuthenticatedScalar::batch_mul(
-        &a.iter()
-            .cloned()
-            .chain(b.iter().cloned())
-            .collect::<Vec<_>>(),
+        &a.iter().cloned().chain(b.iter().cloned()).collect::<Vec<_>>(),
         &iter::repeat(selector.clone())
             .take(n)
             .chain(iter::repeat(Scalar::one() - &selector).take(n))
@@ -243,11 +233,7 @@ pub fn cond_select_vec(
 
     // Destruct the vector by zipping its first half with its second half
     let mut result = Vec::with_capacity(a.len());
-    for (a_selected, b_selected) in terms[..a.len()]
-        .as_ref()
-        .iter()
-        .zip(terms[a.len()..].iter())
-    {
+    for (a_selected, b_selected) in terms[..a.len()].as_ref().iter().zip(terms[a.len()..].iter()) {
         result.push(a_selected + b_selected)
     }
 
@@ -291,9 +277,7 @@ mod test {
 
         let (res, _) = execute_mock_mpc(move |fabric| async move {
             let shared_val = fabric.share_scalar(val, PARTY0);
-            less_than_zero::<MAX_BITS>(&shared_val, &fabric)
-                .open_authenticated()
-                .await
+            less_than_zero::<MAX_BITS>(&shared_val, &fabric).open_authenticated().await
         })
         .await;
 
@@ -374,11 +358,8 @@ mod test {
         let a = Scalar::from(rng.next_u64());
         let b = Scalar::from(rng.next_u64());
 
-        let (expected_idx, expected_min) = if a.inner() < b.inner() {
-            (Scalar::zero(), a)
-        } else {
-            (Scalar::one(), b)
-        };
+        let (expected_idx, expected_min) =
+            if a.inner() < b.inner() { (Scalar::zero(), a) } else { (Scalar::one(), b) };
 
         let ((min_idx, min), _) = execute_mock_mpc(move |fabric| async move {
             let a = fabric.share_scalar(a, PARTY0);

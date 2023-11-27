@@ -107,16 +107,10 @@ impl TypedHandler for GetNetworkOrderByIdHandler {
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let order_id = parse_order_id_from_params(&params)?;
-        if let Some(order) = self
-            .global_state
-            .read_order_book()
-            .await
-            .get_order_info(&order_id)
-            .await
+        if let Some(order) =
+            self.global_state.read_order_book().await.get_order_info(&order_id).await
         {
-            Ok(GetNetworkOrderByIdResponse {
-                order: order.into(),
-            })
+            Ok(GetNetworkOrderByIdResponse { order: order.into() })
         } else {
             Err(ApiServerError::HttpStatusCode(
                 StatusCode::NOT_FOUND,

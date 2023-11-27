@@ -56,18 +56,14 @@ impl HandshakeExecutor {
             .orders
             .get(&network_order.id)
             .ok_or_else(|| HandshakeManagerError::StateNotFound(ERR_NO_ORDER.to_string()))?;
-        let (my_proof, my_witness) = self
-            .get_validity_proof_and_witness(&network_order.id)
-            .await
-            .ok_or_else(|| HandshakeManagerError::StateNotFound(ERR_MISSING_PROOFS.to_string()))?;
+        let (my_proof, my_witness) =
+            self.get_validity_proof_and_witness(&network_order.id).await.ok_or_else(|| {
+                HandshakeManagerError::StateNotFound(ERR_MISSING_PROOFS.to_string())
+            })?;
 
         // Fetch all other orders that are ready for matches
-        let other_orders = self
-            .global_state
-            .read_order_book()
-            .await
-            .get_local_scheduleable_orders()
-            .await;
+        let other_orders =
+            self.global_state.read_order_book().await.get_local_scheduleable_orders().await;
 
         // Sample a price to match the order at
         let (base, quote) = self.token_pair_for_order(my_order);
@@ -170,9 +166,7 @@ impl HandshakeExecutor {
     ) -> Option<(OrderValidityProofBundle, OrderValidityWitnessBundle)> {
         let locked_order_book = self.global_state.read_order_book().await;
         let proof = locked_order_book.get_validity_proofs(order_id).await?;
-        let witness = locked_order_book
-            .get_validity_proof_witnesses(order_id)
-            .await?;
+        let witness = locked_order_book.get_validity_proof_witnesses(order_id).await?;
 
         Some((proof, witness))
     }

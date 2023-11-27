@@ -28,11 +28,7 @@ pub struct PeerIndex {
 impl PeerIndex {
     /// Create a new peer index
     pub fn new(allow_local: bool) -> Self {
-        Self {
-            allow_local,
-            peer_map: HashMap::new(),
-            cluster_peers: HashMap::new(),
-        }
+        Self { allow_local, peer_map: HashMap::new(), cluster_peers: HashMap::new() }
     }
 
     // -----------
@@ -180,10 +176,7 @@ impl PeerIndex {
             .cluster_peers
             .entry(peer_info.get_cluster_id())
             .or_insert_with(|| new_async_shared(HashSet::new()));
-        peer_cluster_record
-            .write()
-            .await
-            .insert(peer_info.get_peer_id());
+        peer_cluster_record.write().await.insert(peer_info.get_peer_id());
 
         // Add the peer only if it does not already exist
         if let Entry::Vacant(e) = self.peer_map.entry(peer_info.get_peer_id()) {
@@ -213,10 +206,7 @@ impl PeerIndex {
         peer_id: &WrappedPeerId,
         new_addr: Multiaddr,
     ) -> Option<Multiaddr> {
-        Some(mem::replace(
-            &mut self.write_peer(peer_id).await?.addr,
-            new_addr,
-        ))
+        Some(mem::replace(&mut self.write_peer(peer_id).await?.addr, new_addr))
     }
 
     /// Record a successful heartbeat for a peer

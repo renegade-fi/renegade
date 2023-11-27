@@ -161,13 +161,7 @@ impl InitializeStateTask {
     async fn add_initial_orders_to_book(global_state: RelayerState) {
         let local_cluster_id = global_state.local_cluster_id.clone();
 
-        for wallet in global_state
-            .read_wallet_index()
-            .await
-            .get_all_wallets()
-            .await
-            .into_iter()
-        {
+        for wallet in global_state.read_wallet_index().await.get_all_wallets().await.into_iter() {
             let wallet_nullifier = wallet.get_wallet_nullifier();
             for order_id in wallet.orders.into_keys() {
                 global_state
@@ -184,19 +178,10 @@ impl InitializeStateTask {
 
     /// Find all the wallet openings in the global state
     async fn find_wallet_openings(&mut self) -> Result<(), InitializeStateTaskError> {
-        for wallet in self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_all_wallets()
-            .await
-        {
+        for wallet in self.global_state.read_wallet_index().await.get_all_wallets().await {
             let res = find_merkle_path(&wallet, &self.starknet_client).await;
             if let Err(StarknetClientError::NotFound(_)) = res {
-                log::error!(
-                    "could not find wallet {} in contract state",
-                    wallet.wallet_id
-                );
+                log::error!("could not find wallet {} in contract state", wallet.wallet_id);
                 continue;
             }
 
@@ -221,13 +206,7 @@ impl InitializeStateTask {
 
         let mut reblind_response_channels = Vec::new();
         let mut commitment_response_channels = Vec::new();
-        for wallet in self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_all_wallets()
-            .await
-        {
+        for wallet in self.global_state.read_wallet_index().await.get_all_wallets().await {
             // Start a proof of `VALID REBLIND`
             let (reblind_witness, response_channel) = construct_wallet_reblind_proof(
                 wallet.clone(),
@@ -299,9 +278,7 @@ impl InitializeStateTask {
                 commitment_proof: Box::new(proof_bundle),
                 reblind_proof,
             };
-            self.global_state
-                .add_order_validity_proofs(&order_id, proof_bundle.clone())
-                .await;
+            self.global_state.add_order_validity_proofs(&order_id, proof_bundle.clone()).await;
 
             // Gossip about the updated proof to the network
             let message = GossipOutbound::Pubsub {

@@ -34,9 +34,8 @@ impl NetworkManagerExecutor {
                 // Optimistically broadcast the discovered identity to the network via
                 // the heartbeat sub-protocol
                 for peer in self.global_state.read_peer_index().await.get_all_peer_ids() {
-                    if let Err(e) = self
-                        .gossip_work_queue
-                        .send(GossipServerJob::ExecuteHeartbeat(peer))
+                    if let Err(e) =
+                        self.gossip_work_queue.send(GossipServerJob::ExecuteHeartbeat(peer))
                     {
                         log::error!("error forwarding heartbeat to gossip server: {e}")
                     }

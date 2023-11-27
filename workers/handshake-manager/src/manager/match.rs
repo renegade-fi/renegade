@@ -82,11 +82,8 @@ impl HandshakeExecutor {
         mpc_net: QuicTwoPartyNet,
     ) -> Result<Box<HandshakeResult>, HandshakeManagerError> {
         // Fetch the handshake state from the state index
-        let handshake_state = self
-            .handshake_state_index
-            .get_state(&request_id)
-            .await
-            .ok_or_else(|| {
+        let handshake_state =
+            self.handshake_state_index.get_state(&request_id).await.ok_or_else(|| {
                 HandshakeManagerError::StateNotFound(
                     "missing handshake state for request".to_string(),
                 )
@@ -97,9 +94,7 @@ impl HandshakeExecutor {
         let (cancel_sender, cancel_receiver) = bounded(1 /* capacity */);
         // Record the match as in progress and tag it with a cancel channel that may be
         // used to abort the MPC
-        self.handshake_state_index
-            .in_progress(&request_id, cancel_sender)
-            .await;
+        self.handshake_state_index.in_progress(&request_id, cancel_sender).await;
 
         // Wrap the current thread's execution in a Tokio blocking thread
         let self_clone = self.clone();
@@ -221,11 +216,8 @@ impl HandshakeExecutor {
         // equal the first party's in the subsequent proof of `VALID MATCH MPC`
         let price = my_price.allocate(PARTY0, fabric);
 
-        let my_amount = compute_max_amount(
-            my_price,
-            &my_order.to_base_type(),
-            &my_balance.to_base_type(),
-        );
+        let my_amount =
+            compute_max_amount(my_price, &my_order.to_base_type(), &my_balance.to_base_type());
         let amount1 = my_amount.allocate(PARTY0, fabric);
         let amount2 = my_amount.allocate(PARTY1, fabric);
 
@@ -298,14 +290,10 @@ impl HandshakeExecutor {
         cancel_channel: Receiver<()>,
     ) -> Result<Box<HandshakeResult>, HandshakeManagerError> {
         // Exchange fees and public secret shares before opening the match result
-        let party0_fee = validity_proof_witness
-            .commitment_witness
-            .fee
-            .share_public(PARTY0, fabric.clone());
-        let party1_fee = validity_proof_witness
-            .commitment_witness
-            .fee
-            .share_public(PARTY1, fabric.clone());
+        let party0_fee =
+            validity_proof_witness.commitment_witness.fee.share_public(PARTY0, fabric.clone());
+        let party1_fee =
+            validity_proof_witness.commitment_witness.fee.share_public(PARTY1, fabric.clone());
 
         let party0_public_shares = validity_proof_witness
             .commitment_witness
@@ -345,11 +333,7 @@ impl HandshakeExecutor {
 
         Ok(Box::new(HandshakeResult {
             match_: match_res_open,
-            match_proof: Box::new(GenericValidMatchMpcBundle {
-                commitment,
-                statement: (),
-                proof,
-            }),
+            match_proof: Box::new(GenericValidMatchMpcBundle { commitment, statement: (), proof }),
             party0_share_nullifier: handshake_state.local_share_nullifier,
             party1_share_nullifier: handshake_state.peer_share_nullifier,
             party0_reblinded_shares: party0_public_shares,

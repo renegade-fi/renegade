@@ -125,9 +125,7 @@ pub struct NonNativeKey<const KEY_WORDS: usize> {
 
 impl<const KEY_WORDS: usize> Default for NonNativeKey<KEY_WORDS> {
     fn default() -> Self {
-        Self {
-            key_words: [Scalar::zero(); KEY_WORDS],
-        }
+        Self { key_words: [Scalar::zero(); KEY_WORDS] }
     }
 }
 
@@ -151,17 +149,13 @@ impl<const KEY_WORDS: usize> NonNativeKey<KEY_WORDS> {
         self.key_words
             .iter()
             .rev()
-            .fold(BigUint::from(0u8), |acc, word| {
-                acc * &scalar_mod + word.to_biguint()
-            })
+            .fold(BigUint::from(0u8), |acc, word| acc * &scalar_mod + word.to_biguint())
     }
 }
 
 impl<const KEY_WORDS: usize> From<&BigUint> for NonNativeKey<KEY_WORDS> {
     fn from(val: &BigUint) -> Self {
-        Self {
-            key_words: Self::split_biguint_into_words(val.clone()),
-        }
+        Self { key_words: Self::split_biguint_into_words(val.clone()) }
     }
 }
 

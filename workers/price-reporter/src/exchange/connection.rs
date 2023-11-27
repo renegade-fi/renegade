@@ -75,9 +75,7 @@ pub(super) fn parse_json_field<T: FromStr>(
     response: &Value,
 ) -> Result<T, ExchangeConnectionError> {
     match response[field_name].as_str() {
-        None => Err(ExchangeConnectionError::InvalidMessage(
-            response.to_string(),
-        )),
+        None => Err(ExchangeConnectionError::InvalidMessage(response.to_string())),
         Some(field_value) => field_value
             .parse()
             .map_err(|_| ExchangeConnectionError::InvalidMessage(response.to_string())),
@@ -90,9 +88,7 @@ pub(super) fn parse_json_field_array<T: FromStr>(
     response: &Value,
 ) -> Result<T, ExchangeConnectionError> {
     match response[field_index].as_str() {
-        None => Err(ExchangeConnectionError::InvalidMessage(
-            response.to_string(),
-        )),
+        None => Err(ExchangeConnectionError::InvalidMessage(response.to_string())),
         Some(field_value) => field_value
             .parse()
             .map_err(|_| ExchangeConnectionError::InvalidMessage(response.to_string())),
@@ -129,10 +125,7 @@ pub fn parse_json_from_message(message: Message) -> Result<Option<Value>, Exchan
 
 /// Helper function to get the current UNIX epoch time in milliseconds
 pub fn get_current_time() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
 }
 
 // --------------------------

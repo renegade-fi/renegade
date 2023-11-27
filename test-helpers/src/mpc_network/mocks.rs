@@ -75,16 +75,7 @@ impl<T> UnboundedDuplexStream<T> {
         let (send1, recv1) = unbounded_channel();
         let (send2, recv2) = unbounded_channel();
 
-        (
-            Self {
-                send: send1,
-                recv: recv2,
-            },
-            Self {
-                send: send2,
-                recv: recv1,
-            },
-        )
+        (Self { send: send1, recv: recv2 }, Self { send: send2, recv: recv1 })
     }
 
     /// Send a message on the stream
@@ -112,10 +103,7 @@ impl MockNetwork {
         party_id: PartyId,
         stream: UnboundedDuplexStream<NetworkOutbound<SystemCurveGroup>>,
     ) -> Self {
-        Self {
-            party_id,
-            mock_conn: stream,
-        }
+        Self { party_id, mock_conn: stream }
     }
 }
 
@@ -134,10 +122,7 @@ impl Stream for MockNetwork {
     type Item = Result<NetworkOutbound<SystemCurveGroup>, MpcNetworkError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Box::pin(self.mock_conn.recv())
-            .as_mut()
-            .poll(cx)
-            .map(|value| Some(Ok(value)))
+        Box::pin(self.mock_conn.recv()).as_mut().poll(cx).map(|value| Some(Ok(value)))
     }
 }
 

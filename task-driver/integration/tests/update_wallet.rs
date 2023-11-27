@@ -252,13 +252,7 @@ async fn test_update_wallet__deposit_and_withdraw(test_args: IntegrationTestArgs
     let mint = biguint_from_hex_string(&test_args.erc20_addr);
     let amount = 10u64;
 
-    wallet.balances.insert(
-        mint.clone(),
-        Balance {
-            mint: mint.clone(),
-            amount,
-        },
-    );
+    wallet.balances.insert(mint.clone(), Balance { mint: mint.clone(), amount });
     wallet.reblind_wallet();
 
     // Approve the deposit on the ERC20 contract

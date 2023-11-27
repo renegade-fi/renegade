@@ -119,10 +119,8 @@ impl<M: Clone + Sync> TopicReader<M> {
             Poll::Ready(message)
         } else {
             // Add the local task waker to the list of waiting wakers for the topic
-            let mut locked_topic_wakers = self
-                .topic_wakers
-                .write()
-                .expect("topic_wakers lock poisoned");
+            let mut locked_topic_wakers =
+                self.topic_wakers.write().expect("topic_wakers lock poisoned");
             locked_topic_wakers.push(cx.waker().clone());
 
             Poll::Pending
@@ -238,9 +236,7 @@ pub struct SystemBus<M> {
 impl<M: Clone + Sync> SystemBus<M> {
     /// Construct a new system bus
     pub fn new() -> Self {
-        Self {
-            topic_mesh: Arc::new(RwLock::new(HashMap::new())),
-        }
+        Self { topic_mesh: Arc::new(RwLock::new(HashMap::new())) }
     }
 
     /// Acquire a read lock on the topic mesh
@@ -264,10 +260,7 @@ impl<M: Clone + Sync> SystemBus<M> {
         }
 
         // Otherwise, lock the topic and push a message onto it
-        let mut locked_topic = topic_entry
-            .unwrap()
-            .write()
-            .expect("topic_entry lock poisoned");
+        let mut locked_topic = topic_entry.unwrap().write().expect("topic_entry lock poisoned");
         locked_topic.write_message(message);
     }
 
@@ -279,21 +272,15 @@ impl<M: Clone + Sync> SystemBus<M> {
             let mut locked_mesh = self.write_topic_mesh();
             locked_mesh.insert(
                 topic.clone(),
-                Arc::new(RwLock::new(TopicFabric::new(
-                    topic.clone(),
-                    self.topic_mesh.clone(),
-                ))),
+                Arc::new(RwLock::new(TopicFabric::new(topic.clone(), self.topic_mesh.clone()))),
             );
         } // locked_mesh released
 
         // Build a reader on the topic of interest and return it as a pollable to the
         // subscriber
         let locked_mesh = self.read_topic_mesh();
-        let mut locked_topic = locked_mesh
-            .get(&topic)
-            .unwrap()
-            .write()
-            .expect("topic_entry lock poisoned");
+        let mut locked_topic =
+            locked_mesh.get(&topic).unwrap().write().expect("topic_entry lock poisoned");
 
         locked_topic.new_reader()
     }

@@ -55,14 +55,12 @@ fn authenticate_wallet_request(
             )
         })?
         .as_bytes();
-    let sig_expiration = headers
-        .get(RENEGADE_SIG_EXPIRATION_HEADER_NAME)
-        .ok_or_else(|| {
-            ApiServerError::HttpStatusCode(
-                StatusCode::BAD_REQUEST,
-                ERR_SIG_EXPIRATION_MISSING.to_string(),
-            )
-        })?;
+    let sig_expiration = headers.get(RENEGADE_SIG_EXPIRATION_HEADER_NAME).ok_or_else(|| {
+        ApiServerError::HttpStatusCode(
+            StatusCode::BAD_REQUEST,
+            ERR_SIG_EXPIRATION_MISSING.to_string(),
+        )
+    })?;
 
     // Parse the expiration into a timestamp
     let expiration = sig_expiration
@@ -125,7 +123,5 @@ fn validate_expiring_signature(
         ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_SIG_FORMAT_INVALID.to_string())
     })?;
 
-    Ok(pk_root
-        .verify_prehashed(hasher, None /* context */, &sig)
-        .is_ok())
+    Ok(pk_root.verify_prehashed(hasher, None /* context */, &sig).is_ok())
 }

@@ -23,16 +23,10 @@ async fn test_match(test_args: IntegrationTestArgs) -> Result<()> {
     let order1 = o1.allocate(PARTY0, fabric);
     let order2 = o2.allocate(PARTY0, fabric);
     let price_shared = price.allocate(PARTY0, fabric);
-    let res = compute_match(
-        &order1,
-        &order2,
-        &order1.amount,
-        &order2.amount,
-        &price_shared,
-        fabric,
-    )
-    .open_and_authenticate()
-    .await?;
+    let res =
+        compute_match(&order1, &order2, &order1.amount, &order2.amount, &price_shared, fabric)
+            .open_and_authenticate()
+            .await?;
 
     // Party 0 shares their expected match
     let expected = expected.share_public(PARTY0, fabric).await;

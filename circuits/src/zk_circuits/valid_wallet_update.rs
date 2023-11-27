@@ -82,13 +82,10 @@ where
             witness.old_wallet_private_shares.blinder,
             witness.old_wallet_public_shares.blinder,
         )?;
-        let unblinded_public_shares = witness
-            .old_wallet_public_shares
-            .unblind_shares(recovered_blinder, cs);
+        let unblinded_public_shares =
+            witness.old_wallet_public_shares.unblind_shares(recovered_blinder, cs);
 
-        let old_wallet = witness
-            .old_wallet_private_shares
-            .add_shares(&unblinded_public_shares, cs);
+        let old_wallet = witness.old_wallet_private_shares.add_shares(&unblinded_public_shares, cs);
 
         // Verify that the nullifier of the shares is correctly computed
         let old_shares_nullifier =
@@ -100,10 +97,7 @@ where
             &witness.new_wallet_private_shares,
             cs,
         )?;
-        cs.enforce_equal(
-            new_wallet_private_commitment,
-            statement.new_private_shares_commitment,
-        )?;
+        cs.enforce_equal(new_wallet_private_commitment, statement.new_private_shares_commitment)?;
 
         // -- Authorization -- //
 
@@ -113,14 +107,11 @@ where
         // -- State transition validity -- //
 
         // Reconstruct the new wallet from shares
-        let recovered_blinder = cs.add(
-            witness.new_wallet_private_shares.blinder,
-            statement.new_public_shares.blinder,
-        )?;
+        let recovered_blinder =
+            cs.add(witness.new_wallet_private_shares.blinder, statement.new_public_shares.blinder)?;
 
-        let unblinded_public_shares = statement
-            .new_public_shares
-            .unblind_shares(recovered_blinder, cs);
+        let unblinded_public_shares =
+            statement.new_public_shares.unblind_shares(recovered_blinder, cs);
         let new_wallet = unblinded_public_shares.add_shares(&witness.new_wallet_private_shares, cs);
 
         Self::verify_wallet_transition(
@@ -251,11 +242,8 @@ where
                 cs.logic_and_all(&[mints_equal, prev_balance_not_zero, new_balance_not_zero])?;
 
             // Condition 2 -- new mint added to wallet
-            let valid_mint2 = cs.logic_and_all(&[
-                equals_transfer_mint,
-                prev_balance_zero,
-                new_balance_not_zero,
-            ])?;
+            let valid_mint2 =
+                cs.logic_and_all(&[equals_transfer_mint, prev_balance_zero, new_balance_not_zero])?;
 
             // Condition 3 -- withdrawal of entire balance, mint is now zero
             let valid_mint3 = cs.logic_and(mint_is_zero, new_balance_zero)?;
@@ -762,11 +750,7 @@ mod test {
             account_addr: BigUint::from(0u8),
         };
 
-        assert!(constraints_satisfied_on_wallets(
-            &old_wallet,
-            &new_wallet,
-            transfer
-        ));
+        assert!(constraints_satisfied_on_wallets(&old_wallet, &new_wallet, transfer));
     }
 
     /// Tests a valid external transfer that withdraws a partial balance
@@ -779,10 +763,7 @@ mod test {
         let withdrawn_mint = old_wallet.balances[1].mint.clone();
         let withdrawn_amount = old_wallet.balances[1].amount - 1; // all but one
 
-        new_wallet.balances[1] = Balance {
-            mint: withdrawn_mint.clone(),
-            amount: 1,
-        };
+        new_wallet.balances[1] = Balance { mint: withdrawn_mint.clone(), amount: 1 };
 
         // Build a valid transfer
         let transfer = ExternalTransfer {
@@ -792,11 +773,7 @@ mod test {
             account_addr: BigUint::from(0u8),
         };
 
-        assert!(constraints_satisfied_on_wallets(
-            &old_wallet,
-            &new_wallet,
-            transfer
-        ));
+        assert!(constraints_satisfied_on_wallets(&old_wallet, &new_wallet, transfer));
     }
 
     /// Tests an invalid withdrawal in which a balance is incorrectly updated
@@ -822,11 +799,7 @@ mod test {
             account_addr: BigUint::from(0u8),
         };
 
-        assert!(!constraints_satisfied_on_wallets(
-            &old_wallet,
-            &new_wallet,
-            transfer
-        ));
+        assert!(!constraints_satisfied_on_wallets(&old_wallet, &new_wallet, transfer));
     }
 
     /// Tests an invalid external transfer in which the prover attempts to
@@ -850,11 +823,7 @@ mod test {
             account_addr: BigUint::from(0u8),
         };
 
-        assert!(!constraints_satisfied_on_wallets(
-            &old_wallet,
-            &new_wallet,
-            transfer
-        ));
+        assert!(!constraints_satisfied_on_wallets(&old_wallet, &new_wallet, transfer));
     }
 
     /// Tests an invalid withdrawal in which the prover attempts to withdraw a
@@ -877,11 +846,7 @@ mod test {
             account_addr: BigUint::from(0u8),
         };
 
-        assert!(!constraints_satisfied_on_wallets(
-            &old_wallet,
-            &new_wallet,
-            transfer
-        ));
+        assert!(!constraints_satisfied_on_wallets(&old_wallet, &new_wallet, transfer));
     }
 
     /// Tests an invalid withdrawal in which the prover adds an unrelated
@@ -907,11 +872,7 @@ mod test {
             account_addr: BigUint::from(0u8),
         };
 
-        assert!(!constraints_satisfied_on_wallets(
-            &old_wallet,
-            &new_wallet,
-            transfer
-        ));
+        assert!(!constraints_satisfied_on_wallets(&old_wallet, &new_wallet, transfer));
     }
 
     // ----------------------
@@ -938,11 +899,7 @@ mod test {
             account_addr: BigUint::from(0u8),
         };
 
-        assert!(constraints_satisfied_on_wallets(
-            &old_wallet,
-            &new_wallet,
-            transfer
-        ));
+        assert!(constraints_satisfied_on_wallets(&old_wallet, &new_wallet, transfer));
     }
 
     /// Tests a valid deposit into the wallet that adds to an existing balance
@@ -964,11 +921,7 @@ mod test {
             account_addr: BigUint::from(0u8),
         };
 
-        assert!(constraints_satisfied_on_wallets(
-            &old_wallet,
-            &new_wallet,
-            transfer
-        ));
+        assert!(constraints_satisfied_on_wallets(&old_wallet, &new_wallet, transfer));
     }
 
     /// Tests an invalid deposit in which the balance is updated incorrectly
@@ -991,11 +944,7 @@ mod test {
             account_addr: BigUint::from(0u8),
         };
 
-        assert!(!constraints_satisfied_on_wallets(
-            &old_wallet,
-            &new_wallet,
-            transfer
-        ));
+        assert!(!constraints_satisfied_on_wallets(&old_wallet, &new_wallet, transfer));
     }
 
     /// Tests an invalid deposit in which the prover adds an unrelated balance
@@ -1021,11 +970,7 @@ mod test {
             account_addr: BigUint::from(0u8),
         };
 
-        assert!(!constraints_satisfied_on_wallets(
-            &old_wallet,
-            &new_wallet,
-            transfer
-        ));
+        assert!(!constraints_satisfied_on_wallets(&old_wallet, &new_wallet, transfer));
     }
 
     // -------------------------------

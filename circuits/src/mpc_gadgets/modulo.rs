@@ -118,10 +118,7 @@ mod tests {
 
         let (res, _): (Result<bool, MpcError>, _) = execute_mock_mpc(move |fabric| async move {
             let shared_value = fabric.share_scalar(value, PARTY0);
-            let res = mod_2m::<M>(&shared_value, &fabric)
-                .open_authenticated()
-                .await
-                .unwrap();
+            let res = mod_2m::<M>(&shared_value, &fabric).open_authenticated().await.unwrap();
 
             let expected = Scalar::from(value.to_biguint() % (1u64 << M));
             Ok(res == expected)

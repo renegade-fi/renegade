@@ -104,14 +104,8 @@ impl AtomicPriceStreamState {
         // for a race in between updating the timestamp and the price. This is
         // generally okay as the timestamp is only used for determining staleness
         // and given a race the timestamp will be very close to correct
-        self.price_map
-            .get(&exchange)
-            .unwrap()
-            .store(price, Ordering::Relaxed);
-        self.last_received
-            .get(&exchange)
-            .unwrap()
-            .store(timestamp, Ordering::Relaxed);
+        self.price_map.get(&exchange).unwrap().store(price, Ordering::Relaxed);
+        self.last_received.get(&exchange).unwrap().store(timestamp, Ordering::Relaxed);
     }
 
     /// Read the price and timestamp from a given exchange
@@ -156,11 +150,7 @@ impl PriceReporter {
         tokio::spawn(connection_muxer.execution_loop());
 
         // Spawn a thread to stream median price reports
-        let self_ = Self {
-            base_token,
-            quote_token,
-            exchange_info: shared_exchange_state,
-        };
+        let self_ = Self { base_token, quote_token, exchange_info: shared_exchange_state };
 
         let self_clone = self_.clone();
         #[allow(clippy::redundant_async_block)]
@@ -207,10 +197,8 @@ impl PriceReporter {
         loop {
             if system_bus.has_listeners(&topic_name) {
                 if let PriceReporterState::Nominal(report) = self.get_state() {
-                    system_bus.publish(
-                        topic_name.clone(),
-                        SystemBusMessage::PriceReportMedian(report),
-                    );
+                    system_bus
+                        .publish(topic_name.clone(), SystemBusMessage::PriceReportMedian(report));
                 }
             }
 
@@ -472,12 +460,7 @@ impl ConnectionMuxer {
         let conns = try_join_all(futures.into_iter()).await?;
 
         // Build a shared, mapped stream from the individual exchange streams
-        Ok(self
-            .exchanges
-            .clone()
-            .into_iter()
-            .zip(conns.into_iter())
-            .collect::<StreamMap<_, _>>())
+        Ok(self.exchanges.clone().into_iter().zip(conns.into_iter()).collect::<StreamMap<_, _>>())
     }
 
     /// Retries an exchange connection after it has failed

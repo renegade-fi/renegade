@@ -57,9 +57,7 @@ impl TypedHandler for GetTaskStatusHandler {
         // Lookup the task status in the task driver's state
         let task_id = parse_task_id_from_params(&params)?;
         if let Some(status) = self.task_driver.get_task_state(&task_id).await {
-            Ok(GetTaskStatusResponse {
-                status: status.to_string(),
-            })
+            Ok(GetTaskStatusResponse { status: status.to_string() })
         } else {
             Err(ApiServerError::HttpStatusCode(
                 StatusCode::NOT_FOUND,

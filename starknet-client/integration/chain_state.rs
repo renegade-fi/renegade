@@ -61,10 +61,8 @@ async fn test_find_merkle_path(test_args: IntegrationTestArgs) -> Result<()> {
     .into_iter()
     .enumerate()
     {
-        let merkle_path: MerkleOpening<MERKLE_HEIGHT> = client
-            .find_merkle_authentication_path(commitment)
-            .await?
-            .into(); // Convert to circuit type for easy comparison
+        let merkle_path: MerkleOpening<MERKLE_HEIGHT> =
+            client.find_merkle_authentication_path(commitment).await?.into(); // Convert to circuit type for easy comparison
 
         assert_eq_result!(merkle_path.indices, expected_paths[index].indices)?;
         log::warn!("Merkle path validity not checked, implement this test after contract migrates to Poseidon");
@@ -96,9 +94,8 @@ async fn test_parse_public_shares_from_calldata(test_args: IntegrationTestArgs) 
             .ok_or_else(|| eyre::eyre!("public blinder share not found in contract state"))?;
 
         // Parse the public shares from the calldata
-        let public_shares = client
-            .fetch_public_shares_from_tx(blinder_share, transaction_hash)
-            .await?;
+        let public_shares =
+            client.fetch_public_shares_from_tx(blinder_share, transaction_hash).await?;
 
         // Check that the public shares match the expected public shares
         assert_eq_result!(public_shares, expected_public_share)?;

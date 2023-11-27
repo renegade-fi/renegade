@@ -89,12 +89,7 @@ const ERR_NO_PRICE_DATA: &str = "no price data found for token pair";
 
 /// Get the current unix timestamp in milliseconds since the epoch
 fn get_timestamp_millis() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis()
-        .try_into()
-        .unwrap()
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis().try_into().unwrap()
 }
 
 // ------------------------
@@ -241,18 +236,12 @@ impl HandshakeExecutor {
                 message,
                 response_channel,
                 ..
-            } => {
-                self.handle_handshake_message(request_id, message, response_channel)
-                    .await
-            },
+            } => self.handle_handshake_message(request_id, message, response_channel).await,
 
             // A peer has completed a match on the given order pair; cache this match pair as
             // completed and do not schedule the pair going forward
             HandshakeExecutionJob::CacheEntry { order1, order2 } => {
-                self.handshake_cache
-                    .write()
-                    .await
-                    .mark_completed(order1, order2);
+                self.handshake_cache.write().await.mark_completed(order1, order2);
 
                 Ok(())
             },
@@ -271,17 +260,10 @@ impl HandshakeExecutor {
 
             // Indicates that the network manager has setup a network connection for a handshake to
             // execute over the local peer should connect and go forward with the MPC
-            HandshakeExecutionJob::MpcNetSetup {
-                request_id,
-                party_id,
-                net,
-            } => {
+            HandshakeExecutionJob::MpcNetSetup { request_id, party_id, net } => {
                 // Fetch the local handshake state to get an order for the MPC
-                let order_state = self
-                    .handshake_state_index
-                    .get_state(&request_id)
-                    .await
-                    .ok_or_else(|| {
+                let order_state =
+                    self.handshake_state_index.get_state(&request_id).await.ok_or_else(|| {
                         HandshakeManagerError::InvalidRequest(format!(
                             "request_id: {:?}",
                             request_id
@@ -343,17 +325,14 @@ impl HandshakeExecutor {
                 self.record_completed_match(request_id).await?;
 
                 if res.is_nontrivial() {
-                    self.submit_match(party0_proof, party1_proof, order_state, res)
-                        .await;
+                    self.submit_match(party0_proof, party1_proof, order_state, res).await;
                 }
                 Ok(())
             },
 
             // Indicates that in-flight MPCs on the given nullifier should be terminated
             HandshakeExecutionJob::MpcShootdown { nullifier } => {
-                self.handshake_state_index
-                    .shootdown_nullifier(nullifier)
-                    .await
+                self.handshake_state_index.shootdown_nullifier(nullifier).await
             },
         }
     }
@@ -369,10 +348,7 @@ impl HandshakeExecutor {
     ) -> Result<(), HandshakeManagerError> {
         if let Some(local_order_id) = self.choose_match_proposal(peer_order_id).await {
             // Choose a peer to match this order with
-            let managing_peer = self
-                .global_state
-                .get_peer_managing_order(&peer_order_id)
-                .await;
+            let managing_peer = self.global_state.get_peer_managing_order(&peer_order_id).await;
             if managing_peer.is_none() {
                 // TODO: Lower the order priority for this order
                 return Ok(());
@@ -398,11 +374,10 @@ impl HandshakeExecutor {
                 .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
             // Determine the execution price for the new order
-            let order = self
-                .global_state
-                .get_order(&local_order_id)
-                .await
-                .ok_or_else(|| HandshakeManagerError::StateNotFound(ERR_NO_WALLET.to_string()))?;
+            let order =
+                self.global_state.get_order(&local_order_id).await.ok_or_else(|| {
+                    HandshakeManagerError::StateNotFound(ERR_NO_WALLET.to_string())
+                })?;
             let (base, quote) = self.token_pair_for_order(&order);
 
             let execution_price = price_vector
@@ -458,27 +433,15 @@ impl HandshakeExecutor {
 
             // A peer has rejected a proposed match candidate, this can happen for a number of
             // reasons, enumerated by the `reason` field in the message
-            HandshakeMessage::RejectMatchCandidate {
-                peer_order,
-                sender_order,
-                reason,
-                ..
-            } => {
-                self.handle_proposal_rejection(peer_order, sender_order, reason)
-                    .await;
+            HandshakeMessage::RejectMatchCandidate { peer_order, sender_order, reason, .. } => {
+                self.handle_proposal_rejection(peer_order, sender_order, reason).await;
                 Ok(())
             },
 
             // The response to ProposeMatchCandidate, indicating whether the peers should initiate
             // an MPC; if the responding peer has the proposed order pair cached it will
             // indicate so and the two peers will abandon the handshake
-            HandshakeMessage::AcceptMatchCandidate {
-                peer_id,
-                port,
-                order1,
-                order2,
-                ..
-            } => {
+            HandshakeMessage::AcceptMatchCandidate { peer_id, port, order1, order2, .. } => {
                 self.handle_execute_match(
                     request_id,
                     peer_id,
@@ -510,12 +473,8 @@ impl HandshakeExecutor {
     ) -> Result<(), HandshakeManagerError> {
         // Only accept the proposed order pair if the peer's order has already been
         // verified by the local node
-        let peer_order_info = self
-            .global_state
-            .read_order_book()
-            .await
-            .get_order_info(&sender_order)
-            .await;
+        let peer_order_info =
+            self.global_state.read_order_book().await.get_order_info(&sender_order).await;
         if peer_order_info.is_none()
             || peer_order_info.unwrap().state != NetworkOrderState::Verified
         {
@@ -530,13 +489,7 @@ impl HandshakeExecutor {
 
         // Do not accept handshakes on local orders that we don't have
         // validity proof or witness for
-        if !self
-            .global_state
-            .read_order_book()
-            .await
-            .order_ready_for_handshake(&my_order)
-            .await
-        {
+        if !self.global_state.read_order_book().await.order_ready_for_handshake(&my_order).await {
             return self.reject_match_proposal(
                 request_id,
                 sender_order,
@@ -595,15 +548,13 @@ impl HandshakeExecutor {
         // of listener in the connection setup
         let local_port = pick_unused_port().expect("all ports taken");
         self.network_channel
-            .send(GossipOutbound::ManagementMessage(
-                ManagerControlDirective::BrokerMpcNet {
-                    request_id,
-                    peer_id,
-                    peer_port: 0,
-                    local_port,
-                    local_role: ConnectionRole::Listener,
-                },
-            ))
+            .send(GossipOutbound::ManagementMessage(ManagerControlDirective::BrokerMpcNet {
+                request_id,
+                peer_id,
+                peer_port: 0,
+                local_port,
+                local_role: ConnectionRole::Listener,
+            }))
             .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
         // Send a pubsub message indicating intent to match on the given order pair
@@ -651,10 +602,7 @@ impl HandshakeExecutor {
         self.network_channel
             .send(GossipOutbound::Response {
                 channel: response_channel,
-                message: GossipResponse::Handshake {
-                    request_id,
-                    message,
-                },
+                message: GossipResponse::Handshake { request_id, message },
             })
             .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))
     }
@@ -669,10 +617,7 @@ impl HandshakeExecutor {
     ) {
         if let MatchRejectionReason::Cached = reason {
             // Update the local cache
-            self.handshake_cache
-                .write()
-                .await
-                .mark_completed(my_order, sender_order)
+            self.handshake_cache.write().await.mark_completed(my_order, sender_order)
         }
     }
 
@@ -688,23 +633,18 @@ impl HandshakeExecutor {
         response_channel: Option<ResponseChannel<AuthenticatedGossipResponse>>,
     ) -> Result<(), HandshakeManagerError> {
         // Cache the result of a handshake
-        self.handshake_cache
-            .write()
-            .await
-            .mark_completed(order1, order2);
+        self.handshake_cache.write().await.mark_completed(order1, order2);
 
         // Choose a local port to execute the handshake on
         let local_port = pick_unused_port().expect("all ports used");
         self.network_channel
-            .send(GossipOutbound::ManagementMessage(
-                ManagerControlDirective::BrokerMpcNet {
-                    request_id,
-                    peer_id,
-                    peer_port: port,
-                    local_port,
-                    local_role: ConnectionRole::Dialer,
-                },
-            ))
+            .send(GossipOutbound::ManagementMessage(ManagerControlDirective::BrokerMpcNet {
+                request_id,
+                peer_id,
+                peer_port: port,
+                local_port,
+                local_role: ConnectionRole::Dialer,
+            }))
             .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
         // Send back an ack
@@ -751,18 +691,12 @@ impl HandshakeExecutor {
         let outbound_request = if let Some(channel) = response_channel {
             GossipOutbound::Response {
                 channel,
-                message: GossipResponse::Handshake {
-                    request_id,
-                    message: response,
-                },
+                message: GossipResponse::Handshake { request_id, message: response },
             }
         } else {
             GossipOutbound::Request {
                 peer_id,
-                message: GossipRequest::Handshake {
-                    request_id,
-                    message: response,
-                },
+                message: GossipRequest::Handshake { request_id, message: response },
             }
         };
 
@@ -774,12 +708,8 @@ impl HandshakeExecutor {
     /// Chooses an order to match against a remote order
     async fn choose_match_proposal(&self, peer_order: OrderIdentifier) -> Option<OrderIdentifier> {
         let locked_handshake_cache = self.handshake_cache.read().await;
-        let local_verified_orders = self
-            .global_state
-            .read_order_book()
-            .await
-            .get_local_scheduleable_orders()
-            .await;
+        let local_verified_orders =
+            self.global_state.read_order_book().await.get_local_scheduleable_orders().await;
 
         // Choose an order that isn't cached
         for order_id in local_verified_orders.iter() {
@@ -794,13 +724,9 @@ impl HandshakeExecutor {
     /// Record a match as completed in the various state objects
     async fn record_completed_match(&self, request_id: Uuid) -> Result<(), HandshakeManagerError> {
         // Get the order IDs from the state machine
-        let state = self
-            .handshake_state_index
-            .get_state(&request_id)
-            .await
-            .ok_or_else(|| {
-                HandshakeManagerError::InvalidRequest(format!("request_id {:?}", request_id))
-            })?;
+        let state = self.handshake_state_index.get_state(&request_id).await.ok_or_else(|| {
+            HandshakeManagerError::InvalidRequest(format!("request_id {:?}", request_id))
+        })?;
 
         // Cache the order pair as completed
         self.handshake_cache
@@ -809,9 +735,7 @@ impl HandshakeExecutor {
             .mark_completed(state.local_order_id, state.peer_order_id);
 
         // Write to global state for debugging
-        self.global_state
-            .mark_order_pair_matched(state.local_order_id, state.peer_order_id)
-            .await;
+        self.global_state.mark_order_pair_matched(state.local_order_id, state.peer_order_id).await;
 
         // Update the state of the handshake in the completed state
         self.handshake_state_index.completed(&request_id).await;
@@ -890,11 +814,7 @@ impl HandshakeScheduler {
         global_state: RelayerState,
         cancel: CancelChannel,
     ) -> Self {
-        Self {
-            job_sender,
-            global_state,
-            cancel,
-        }
+        Self { job_sender, global_state, cancel }
     }
 
     /// The execution loop of the timer, periodically enqueues handshake jobs

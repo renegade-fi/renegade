@@ -21,27 +21,18 @@ pub type MerkleRoot = Scalar;
 pub struct MerkleOpening<const HEIGHT: usize> {
     /// The opening from the leaf node to the root, i.e. the set of sister nodes
     /// that hash together with the input from the leaf to the root
-    #[serde(
-        serialize_with = "serialize_array",
-        deserialize_with = "deserialize_array"
-    )]
+    #[serde(serialize_with = "serialize_array", deserialize_with = "deserialize_array")]
     pub elems: [Scalar; HEIGHT],
     /// The opening indices from the leaf node to the root, each value is a bool
     /// representing whether the current node is a left child
     ///
     /// I.e. `true` means that it is a right child, `false` a left
-    #[serde(
-        serialize_with = "serialize_array",
-        deserialize_with = "deserialize_array"
-    )]
+    #[serde(serialize_with = "serialize_array", deserialize_with = "deserialize_array")]
     pub indices: [bool; HEIGHT],
 }
 
 impl<const HEIGHT: usize> Default for MerkleOpening<HEIGHT> {
     fn default() -> Self {
-        Self {
-            elems: [Scalar::zero(); HEIGHT],
-            indices: [false; HEIGHT],
-        }
+        Self { elems: [Scalar::zero(); HEIGHT], indices: [false; HEIGHT] }
     }
 }

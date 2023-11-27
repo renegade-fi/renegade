@@ -62,13 +62,7 @@ pub(crate) mod test_helpers {
                 receivers.push(r);
             }
 
-            receivers
-                .into_iter()
-                .map(|r| Self {
-                    senders: senders.clone(),
-                    receiver: r,
-                })
-                .collect()
+            receivers.into_iter().map(|r| Self { senders: senders.clone(), receiver: r }).collect()
         }
 
         /// Create a double sided mock connection
@@ -100,10 +94,9 @@ pub(crate) mod test_helpers {
             match res {
                 Ok(message) => Ok(Some(message)),
                 Err(TryRecvError::Empty) => Ok(None),
-                Err(e) => Err(ReplicationError::RecvMessage(IOError::new(
-                    ErrorKind::NetworkDown,
-                    e,
-                ))),
+                Err(e) => {
+                    Err(ReplicationError::RecvMessage(IOError::new(ErrorKind::NetworkDown, e)))
+                },
             }
         }
     }

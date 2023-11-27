@@ -77,10 +77,7 @@ pub fn bench_match_mpc_with_delay(c: &mut Criterion, delay: Duration) {
     let mut group = c.benchmark_group("match-mpc");
     group.bench_function(BenchmarkId::new("match", delay.as_millis()), |b| {
         // Build a Tokio runtime and spawn the benchmarks within it
-        let runtime = RuntimeBuilder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+        let runtime = RuntimeBuilder::new_multi_thread().enable_all().build().unwrap();
         let mut async_bencher = b.to_async(runtime);
 
         async_bencher.iter_custom(|n_iters| async move {
@@ -121,66 +118,59 @@ pub fn bench_match_mpc_with_delay(c: &mut Criterion, delay: Duration) {
 pub fn bench_apply_constraints_with_delay(c: &mut Criterion, delay: Duration) {
     let mut group = c.benchmark_group("match-mpc");
 
-    group.bench_function(
-        BenchmarkId::new("constraint-generation", delay.as_millis()),
-        |b| {
-            let runtime = RuntimeBuilder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            let mut async_bencher = b.to_async(runtime);
+    group.bench_function(BenchmarkId::new("constraint-generation", delay.as_millis()), |b| {
+        let runtime = RuntimeBuilder::new_multi_thread().enable_all().build().unwrap();
+        let mut async_bencher = b.to_async(runtime);
 
-            async_bencher.iter_custom(|n_iters| async move {
-                let mut total_time = Duration::from_secs(0);
-                for _ in 0..n_iters {
-                    // Execute an MPC to generate the constraints
-                    let (party0_time, party1_time) = execute_mock_mpc_with_delay(
-                        |fabric| async move {
-                            // Create a witness to the proof
-                            let witness = create_dummy_witness(&fabric);
+        async_bencher.iter_custom(|n_iters| async move {
+            let mut total_time = Duration::from_secs(0);
+            for _ in 0..n_iters {
+                // Execute an MPC to generate the constraints
+                let (party0_time, party1_time) = execute_mock_mpc_with_delay(
+                    |fabric| async move {
+                        // Create a witness to the proof
+                        let witness = create_dummy_witness(&fabric);
 
-                            // Create a constraint system to allocate the constraints within
-                            let pc_gens = PedersenGens::default();
-                            let transcript = HashChainTranscript::new(b"test");
-                            let mut prover =
-                                MpcProver::new_with_fabric(fabric.clone(), transcript, pc_gens);
+                        // Create a constraint system to allocate the constraints within
+                        let pc_gens = PedersenGens::default();
+                        let transcript = HashChainTranscript::new(b"test");
+                        let mut prover =
+                            MpcProver::new_with_fabric(fabric.clone(), transcript, pc_gens);
 
-                            // Start the measurement after the setup code
-                            let start = Instant::now();
+                        // Start the measurement after the setup code
+                        let start = Instant::now();
 
-                            // Allocate the inputs in the constraint system
-                            let (witness_var, _) = witness
-                                .commit_shared(&mut thread_rng(), &mut prover)
-                                .unwrap();
-                            ValidMatchMpcCircuit::apply_constraints_multiprover(
-                                witness_var,
-                                (),
-                                fabric,
-                                &mut prover,
-                            )
-                            .unwrap();
+                        // Allocate the inputs in the constraint system
+                        let (witness_var, _) =
+                            witness.commit_shared(&mut thread_rng(), &mut prover).unwrap();
+                        ValidMatchMpcCircuit::apply_constraints_multiprover(
+                            witness_var,
+                            (),
+                            fabric,
+                            &mut prover,
+                        )
+                        .unwrap();
 
-                            // There is no great way to await the constraint generation, so we check
-                            // that the constraints are satisfied. This
-                            // is not an exact way to measure execution time, but it is a decent
-                            // approximation. The benchmarks below
-                            // measure time taken to generate constraints and prove, so they more
-                            // directly estimate constraint generation
-                            // latency, but as part of a larger circuit
-                            let _satisfied = prover.constraints_satisfied().await;
-                            start.elapsed()
-                        },
-                        delay,
-                    )
-                    .await;
+                        // There is no great way to await the constraint generation, so we check
+                        // that the constraints are satisfied. This
+                        // is not an exact way to measure execution time, but it is a decent
+                        // approximation. The benchmarks below
+                        // measure time taken to generate constraints and prove, so they more
+                        // directly estimate constraint generation
+                        // latency, but as part of a larger circuit
+                        let _satisfied = prover.constraints_satisfied().await;
+                        start.elapsed()
+                    },
+                    delay,
+                )
+                .await;
 
-                    total_time += Duration::max(party0_time, party1_time);
-                }
+                total_time += Duration::max(party0_time, party1_time);
+            }
 
-                total_time
-            });
-        },
-    );
+            total_time
+        });
+    });
 }
 
 /// Benchmarks the time it takes to prove a `VALID MATCH MPC` statement with a
@@ -189,10 +179,7 @@ pub fn bench_prover_latency_with_delay(c: &mut Criterion, delay: Duration) {
     let mut group = c.benchmark_group("match-mpc");
 
     group.bench_function(BenchmarkId::new("prover", delay.as_millis()), |b| {
-        let runtime = RuntimeBuilder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+        let runtime = RuntimeBuilder::new_multi_thread().enable_all().build().unwrap();
         let mut async_bencher = b.to_async(runtime);
 
         async_bencher.iter_custom(|n_iters| async move {

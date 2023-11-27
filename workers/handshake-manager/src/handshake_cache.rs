@@ -65,11 +65,7 @@ pub enum HandshakeCacheState {
 impl<O: Clone + Eq + Hash + Ord> HandshakeCache<O> {
     /// Create a new handshake cache with given capacity
     pub fn new(max_size: usize) -> Self {
-        Self {
-            size: 0,
-            max_size,
-            lru_cache: LruCache::new(NonZeroUsize::new(max_size).unwrap()),
-        }
+        Self { size: 0, max_size, lru_cache: LruCache::new(NonZeroUsize::new(max_size).unwrap()) }
     }
 
     /// Returns the number of elements currently cached
@@ -90,8 +86,7 @@ impl<O: Clone + Eq + Hash + Ord> HandshakeCache<O> {
 
     /// Caches an entry
     pub fn mark_completed(&mut self, o1: O, o2: O) {
-        self.lru_cache
-            .push(Self::cache_tuple(o1, o2), HandshakeCacheState::Completed);
+        self.lru_cache.push(Self::cache_tuple(o1, o2), HandshakeCacheState::Completed);
     }
 
     /// Mark the given pair as invisible for a duration
@@ -100,9 +95,7 @@ impl<O: Clone + Eq + Hash + Ord> HandshakeCache<O> {
     pub fn mark_invisible(&mut self, o1: O, o2: O, window: Duration) {
         self.lru_cache.push(
             Self::cache_tuple(o1, o2),
-            HandshakeCacheState::Invisible {
-                until: Instant::now() + window,
-            },
+            HandshakeCacheState::Invisible { until: Instant::now() + window },
         );
     }
 

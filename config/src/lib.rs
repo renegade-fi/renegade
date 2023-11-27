@@ -275,9 +275,8 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, String> {
     // command line arguments
     // However, the first argument from the command line is the executable name, so
     // place this before all args
-    let mut command_line_args: Vec<String> = env::args_os()
-        .map(|val| val.to_str().unwrap().to_string())
-        .collect();
+    let mut command_line_args: Vec<String> =
+        env::args_os().map(|val| val.to_str().unwrap().to_string()).collect();
     let config_file_args = config_file_args(&command_line_args)?;
 
     let mut full_args = vec![command_line_args.remove(0)];
@@ -321,18 +320,15 @@ fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, Strin
     // Parse the bootstrap servers into multiaddrs
     let mut parsed_bootstrap_addrs: Vec<(WrappedPeerId, Multiaddr)> = Vec::new();
     for addr in cli_args.bootstrap_servers.unwrap_or_default().iter() {
-        let parsed_addr: Multiaddr = addr
-            .parse()
-            .expect("Invalid address passed as --bootstrap-server");
+        let parsed_addr: Multiaddr =
+            addr.parse().expect("Invalid address passed as --bootstrap-server");
         let peer_id = PeerId::try_from_multiaddr(&parsed_addr)
             .expect("Invalid address passed as --bootstrap-server");
         parsed_bootstrap_addrs.push((WrappedPeerId(peer_id), parsed_addr));
     }
 
     let mut config = RelayerConfig {
-        version: cli_args
-            .version
-            .unwrap_or_else(|| String::from(DEFAULT_VERSION)),
+        version: cli_args.version.unwrap_or_else(|| String::from(DEFAULT_VERSION)),
         chain_id: cli_args.chain_id,
         contract_address: cli_args.contract_address,
         bootstrap_servers: parsed_bootstrap_addrs,
@@ -472,9 +468,7 @@ fn validate_keypair(keypair: &Keypair) -> Result<(), SignatureError> {
     hash_digest.update(DUMMY_MESSAGE);
 
     // Sign and verify with keypair
-    let sig = keypair
-        .sign_prehashed(hash_digest, None /* context */)
-        .unwrap();
+    let sig = keypair.sign_prehashed(hash_digest, None /* context */).unwrap();
 
     // Rehash, hashes are not clonable
     let mut second_hash: Sha512 = Sha512::new();

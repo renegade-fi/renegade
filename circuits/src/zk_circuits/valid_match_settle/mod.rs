@@ -324,10 +324,7 @@ pub mod test_helpers {
             OrderSide::Sell => order.quote_mint.clone(),
         };
 
-        Balance {
-            mint,
-            amount: rng.next_u32() as u64,
-        }
+        Balance { mint, amount: rng.next_u32() as u64 }
     }
 
     /// Applies a match to the shares of a wallet
@@ -426,25 +423,15 @@ mod tests {
 
         // One party switches the quote mint of their order
         let mut witness = original_witness.clone();
-        rand_branch!(
-            witness.order1.quote_mint += 1u8,
-            witness.order2.quote_mint += 1u8
-        );
+        rand_branch!(witness.order1.quote_mint += 1u8, witness.order2.quote_mint += 1u8);
 
         // Validate that the constraints are not satisfied
-        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
 
         // Now test with base mint switched
         let mut witness = original_witness;
-        rand_branch!(
-            witness.order1.base_mint += 1u8,
-            witness.order2.base_mint += 1u8
-        );
-        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
-            &witness, &statement
-        ));
+        rand_branch!(witness.order1.base_mint += 1u8, witness.order2.base_mint += 1u8);
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
     /// Test the case in which the parties sit on the same side of the book
@@ -457,9 +444,7 @@ mod tests {
             witness.order1.side = witness.order1.side.opposite(),
             witness.order2.side = witness.order2.side.opposite()
         );
-        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
     /// Test the case in which the balance provided to the matching engine is
@@ -470,9 +455,7 @@ mod tests {
 
         // Corrupt the mint
         rand_branch!(witness.balance1.mint += 1u8, witness.balance2.mint += 1u8);
-        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
     /// Test the case in which the balance provided does not cover the
@@ -483,9 +466,7 @@ mod tests {
 
         // Reduce the balance to be less than the amount matched
         rand_branch!(witness.balance1.amount = 1, witness.balance2.amount = 1);
-        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
     /// Test the case in which the matched amount exceeds the order size for a
@@ -500,9 +481,7 @@ mod tests {
             witness.order2.amount = witness.match_res.base_amount - 1
         );
 
-        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
     /// Test the case in which the `max_minus_min` field is incorrectly computed
@@ -513,9 +492,7 @@ mod tests {
 
         // Change the max minus min amount
         witness.match_res.max_minus_min_amount = rng.next_u64();
-        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
     /// Test the case in which the `min_amount_order_index` field is incorrectly
@@ -526,9 +503,7 @@ mod tests {
 
         // Invert the index
         witness.match_res.min_amount_order_index = !witness.match_res.min_amount_order_index;
-        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
     /// Test the case in which the execution price exceeds the buy side price
@@ -546,9 +521,7 @@ mod tests {
             OrderSide::Sell => witness.price2 = new_price,
         };
 
-        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
     /// Test the case in which the execution price falls sort of the sell
@@ -566,9 +539,7 @@ mod tests {
             OrderSide::Buy => witness.price2 = new_price,
         };
 
-        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
-            &witness, &statement
-        ));
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
     // --------------------

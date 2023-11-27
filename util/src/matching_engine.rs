@@ -161,14 +161,8 @@ mod tests {
         let balance2 = BALANCE2.clone();
         let midpoint_price = 7.;
 
-        let res = match_orders(
-            &order1,
-            &order2,
-            &balance1,
-            &balance2,
-            midpoint_price.into(),
-        )
-        .unwrap();
+        let res =
+            match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into()).unwrap();
 
         assert_eq!(res.base_mint, 1u64.into());
         assert_eq!(res.quote_mint, 2u64.into());
@@ -195,14 +189,8 @@ mod tests {
         // Can only buy 10 units of the base
         balance1.amount = (midpoint_price * 10.) as u64;
 
-        let res = match_orders(
-            &order1,
-            &order2,
-            &balance1,
-            &balance2,
-            midpoint_price.into(),
-        )
-        .unwrap();
+        let res =
+            match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into()).unwrap();
 
         assert_eq!(res.base_mint, 1u64.into());
         assert_eq!(res.quote_mint, 2u64.into());
@@ -226,14 +214,8 @@ mod tests {
         // Can only sell 10 units of the base
         balance2.amount = 10u64;
 
-        let res = match_orders(
-            &order1,
-            &order2,
-            &balance1,
-            &balance2,
-            midpoint_price.into(),
-        )
-        .unwrap();
+        let res =
+            match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into()).unwrap();
 
         assert_eq!(res.base_mint, 1u64.into());
         assert_eq!(res.quote_mint, 2u64.into());
@@ -255,13 +237,7 @@ mod tests {
         order2.base_mint = 3u64.into();
         let midpoint_price = 7.;
 
-        let res = match_orders(
-            &order1,
-            &order2,
-            &balance1,
-            &balance2,
-            midpoint_price.into(),
-        );
+        let res = match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into());
 
         assert!(res.is_none());
     }
@@ -277,13 +253,7 @@ mod tests {
         order2.quote_mint = 3u64.into();
         let midpoint_price = 7.;
 
-        let res = match_orders(
-            &order1,
-            &order2,
-            &balance1,
-            &balance2,
-            midpoint_price.into(),
-        );
+        let res = match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into());
 
         assert!(res.is_none());
     }
@@ -299,13 +269,7 @@ mod tests {
         order2.side = order1.side;
         let midpoint_price = 7.;
 
-        let res = match_orders(
-            &order1,
-            &order2,
-            &balance1,
-            &balance2,
-            midpoint_price.into(),
-        );
+        let res = match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into());
 
         assert!(res.is_none());
     }
@@ -320,13 +284,7 @@ mod tests {
 
         let midpoint_price = BUY_SIDE_WORST_CASE_PRICE + 1.;
 
-        let res = match_orders(
-            &order1,
-            &order2,
-            &balance1,
-            &balance2,
-            midpoint_price.into(),
-        );
+        let res = match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into());
 
         assert!(res.is_none());
     }
@@ -341,13 +299,7 @@ mod tests {
 
         let midpoint_price = SELL_SIDE_WORST_CASE_PRICE - 1.;
 
-        let res = match_orders(
-            &order1,
-            &order2,
-            &balance1,
-            &balance2,
-            midpoint_price.into(),
-        );
+        let res = match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into());
 
         assert!(res.is_none());
     }
@@ -363,13 +315,7 @@ mod tests {
         balance2.amount = 0;
         let midpoint_price = 7.;
 
-        let res = match_orders(
-            &order1,
-            &order2,
-            &balance1,
-            &balance2,
-            midpoint_price.into(),
-        );
+        let res = match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into());
 
         assert!(res.is_none());
     }

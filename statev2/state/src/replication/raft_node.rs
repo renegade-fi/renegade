@@ -84,13 +84,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         // TODO: Replace random node ID with the first 8 bytes of the local peer ID
         let my_id = thread_rng().next_u64();
 
-        Self::new_with_config(
-            config,
-            RaftConfig {
-                id: my_id,
-                ..Default::default()
-            },
-        )
+        Self::new_with_config(config, RaftConfig { id: my_id, ..Default::default() })
     }
 
     /// Creates a new replication node with a given raft config
@@ -164,17 +158,12 @@ impl<N: RaftNetwork> ReplicationNode<N> {
             thread::sleep(poll_interval);
 
             // Check for new proposals
-            while let Some(msg) = self
-                .proposal_queue
-                .try_recv()
-                .map(Some)
-                .or_else(|e| match e {
-                    TryRecvError::Empty => Ok(None),
-                    TryRecvError::Disconnected => Err(ReplicationError::ProposalQueue(
-                        PROPOSAL_QUEUE_DISCONNECTED.to_string(),
-                    )),
-                })?
-            {
+            while let Some(msg) = self.proposal_queue.try_recv().map(Some).or_else(|e| match e {
+                TryRecvError::Empty => Ok(None),
+                TryRecvError::Disconnected => {
+                    Err(ReplicationError::ProposalQueue(PROPOSAL_QUEUE_DISCONNECTED.to_string()))
+                },
+            })? {
                 self.process_proposal(msg)?;
             }
 
@@ -209,9 +198,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
                 let payload = serde_json::to_vec(&proposal)
                     .map_err(|e| ReplicationError::SerializeValue(e.to_string()))?;
 
-                self.inner
-                    .propose(vec![] /* context */, payload)
-                    .map_err(ReplicationError::Raft)
+                self.inner.propose(vec![] /* context */, payload).map_err(ReplicationError::Raft)
             },
         }
     }
@@ -337,10 +324,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
                     let transition: StateTransition = serde_json::from_slice(entry_bytes)
                         .map_err(|e| ReplicationError::ParseValue(e.to_string()))?;
 
-                    info!(
-                        "node {} applying state transition {transition:?}",
-                        self.inner.raft.id
-                    );
+                    info!("node {} applying state transition {transition:?}", self.inner.raft.id);
 
                     self.applicator
                         .handle_state_transition(transition)
@@ -423,9 +407,7 @@ pub(crate) mod test_helpers {
         /// Create a mock cluster of nodes
         pub fn new(n_nodes: usize) -> Self {
             let mut nets = MockNetwork::new_n_way_mesh(n_nodes);
-            let dbs = (0..n_nodes)
-                .map(|_| Arc::new(mock_db()))
-                .collect::<Vec<_>>();
+            let dbs = (0..n_nodes).map(|_| Arc::new(mock_db())).collect::<Vec<_>>();
 
             let mut senders = Vec::new();
             let mut receivers = Vec::new();
@@ -478,11 +460,7 @@ pub(crate) mod test_helpers {
                 thread::sleep(Duration::from_millis(50))
             }
 
-            Self {
-                handles,
-                dbs,
-                proposal_senders: senders,
-            }
+            Self { handles, dbs, proposal_senders: senders }
         }
 
         /// Get a reference to the `n`th node's DB
@@ -502,9 +480,7 @@ pub(crate) mod test_helpers {
         /// Remove a node from the cluster
         pub fn remove_node(&self, node_id: usize) {
             let remove_node = StateTransition::RemoveRaftPeer(node_id as u64);
-            self.proposal_senders[node_id - 1]
-                .send(remove_node)
-                .unwrap();
+            self.proposal_senders[node_id - 1].send(remove_node).unwrap();
         }
 
         /// Assert that no crashes have occurred

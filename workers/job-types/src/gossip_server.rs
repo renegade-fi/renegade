@@ -19,10 +19,7 @@ use libp2p::request_response::ResponseChannel;
 #[derive(Debug)]
 pub enum GossipServerJob {
     /// Handle a job to bootstrap a newly added peer
-    Bootstrap(
-        BootstrapRequest,
-        ResponseChannel<AuthenticatedGossipResponse>,
-    ),
+    Bootstrap(BootstrapRequest, ResponseChannel<AuthenticatedGossipResponse>),
     /// Handle an incoming cluster management job
     Cluster(ClusterManagementJob),
     /// Job type for the heartbeat executor to send an outbound heartbeat

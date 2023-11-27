@@ -15,8 +15,5 @@ pub mod starknet;
 
 /// Returns the current unix timestamp in seconds, represented as u64
 pub fn get_current_time_seconds() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("negative timestamp")
-        .as_secs()
+    SystemTime::now().duration_since(UNIX_EPOCH).expect("negative timestamp").as_secs()
 }

@@ -672,31 +672,23 @@ impl Display for Token {
 impl Token {
     /// Given an ERC-20 contract address, returns a new Token
     pub fn from_addr(addr: &str) -> Self {
-        Self {
-            addr: String::from(addr).to_lowercase(),
-        }
+        Self { addr: String::from(addr).to_lowercase() }
     }
 
     /// Given an ERC-20 address on Starknet-Goerli, return a new Token
     pub fn from_starknet_goerli_addr(addr: &str) -> Self {
-        Self {
-            addr: STARKNET_GOERLI_TOKEN_REMAP.get(addr).unwrap().to_string(),
-        }
+        Self { addr: STARKNET_GOERLI_TOKEN_REMAP.get(addr).unwrap().to_string() }
     }
 
     /// Given an ERC-20 address on Katana, return a new Token
     pub fn from_katana_addr(addr: &str) -> Self {
-        Self {
-            addr: KATANA_TOKEN_REMAP.get(addr).unwrap().to_string(),
-        }
+        Self { addr: KATANA_TOKEN_REMAP.get(addr).unwrap().to_string() }
     }
 
     /// Given an ERC-20 contract address represented as a `BigUint`, returns a
     /// Token
     pub fn from_addr_biguint(addr: &BigUint) -> Self {
-        Self {
-            addr: biguint_to_str_addr(addr),
-        }
+        Self { addr: biguint_to_str_addr(addr) }
     }
 
     /// Given an ERC-20 contract address on Starknet-Goerli (represented as a
@@ -716,9 +708,7 @@ impl Token {
         let addr = ADDR_TICKER_BIMAP
             .get_by_right(&String::from(ticker))
             .expect("Ticker is not supported; specify unnamed token by ERC-20 address using from_addr instead.");
-        Self {
-            addr: addr.to_string(),
-        }
+        Self { addr: addr.to_string() }
     }
 
     /// Returns the ERC-20 address.
@@ -730,9 +720,7 @@ impl Token {
     /// Tickers do not have any ERC-20 ticker, as we support long-tail
     /// assets.
     pub fn get_ticker(&self) -> Option<&str> {
-        ADDR_TICKER_BIMAP
-            .get_by_left(&self.addr)
-            .map(|ticker| &**ticker)
+        ADDR_TICKER_BIMAP.get_by_left(&self.addr).map(|ticker| &**ticker)
     }
 
     /// Returns the ERC-20 `decimals` field, if available.
@@ -756,12 +744,7 @@ impl Token {
             if *exchange == Exchange::UniswapV3 {
                 continue;
             }
-            if EXCHANGE_TICKERS
-                .get(exchange)
-                .unwrap()
-                .get(self.get_ticker().unwrap())
-                .is_some()
-            {
+            if EXCHANGE_TICKERS.get(exchange).unwrap().get(self.get_ticker().unwrap()).is_some() {
                 supported_exchanges.insert(*exchange);
             }
         }
@@ -775,10 +758,7 @@ impl Token {
     pub fn get_exchange_ticker(&self, exchange: Exchange) -> String {
         // If there is not a Renegade-native ticker, then the token must be Unnamed.
         if !self.is_named() {
-            panic!(
-                "Tried to get_exchange_ticker({}) for an unnamed Token.",
-                exchange
-            );
+            panic!("Tried to get_exchange_ticker({}) for an unnamed Token.", exchange);
         }
         EXCHANGE_TICKERS
             .get(&exchange)

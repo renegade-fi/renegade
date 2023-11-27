@@ -101,9 +101,7 @@ impl FixedPoint {
     /// representable float
     pub fn from_f64_round_down(val: f64) -> Self {
         let shifted_val = val * (2u64.pow(DEFAULT_FP_PRECISION as u32) as f64);
-        Self {
-            repr: Scalar::from(shifted_val.floor() as u64),
-        }
+        Self { repr: Scalar::from(shifted_val.floor() as u64) }
     }
 
     /// Return the represented value as an f64
@@ -140,9 +138,7 @@ impl From<f32> for FixedPoint {
             "Given value exceeds precision of constraint system"
         );
 
-        Self {
-            repr: Scalar::from(shifted_val as u64),
-        }
+        Self { repr: Scalar::from(shifted_val as u64) }
     }
 }
 
@@ -160,9 +156,7 @@ impl From<FixedPoint> for Scalar {
 
 impl From<u64> for FixedPoint {
     fn from(val: u64) -> Self {
-        Self {
-            repr: Scalar::from(val),
-        }
+        Self { repr: Scalar::from(val) }
     }
 }
 
@@ -175,18 +169,14 @@ impl From<FixedPoint> for u64 {
 impl Add<FixedPoint> for FixedPoint {
     type Output = FixedPoint;
     fn add(self, rhs: FixedPoint) -> Self::Output {
-        Self {
-            repr: self.repr + rhs.repr,
-        }
+        Self { repr: self.repr + rhs.repr }
     }
 }
 
 impl Add<Scalar> for FixedPoint {
     type Output = FixedPoint;
     fn add(self, rhs: Scalar) -> Self::Output {
-        Self {
-            repr: self.repr + scalar!(*TWO_TO_M_SCALAR) * rhs,
-        }
+        Self { repr: self.repr + scalar!(*TWO_TO_M_SCALAR) * rhs }
     }
 }
 
@@ -203,27 +193,21 @@ impl Mul<FixedPoint> for FixedPoint {
     fn mul(self, rhs: FixedPoint) -> Self::Output {
         // Multiply representations directly then reduce
         let res_repr = self.repr * rhs.repr;
-        Self {
-            repr: right_shift_scalar_by_m(res_repr),
-        }
+        Self { repr: right_shift_scalar_by_m(res_repr) }
     }
 }
 
 impl Mul<Scalar> for FixedPoint {
     type Output = FixedPoint;
     fn mul(self, rhs: Scalar) -> Self::Output {
-        Self {
-            repr: self.repr * rhs,
-        }
+        Self { repr: self.repr * rhs }
     }
 }
 
 impl Neg for FixedPoint {
     type Output = FixedPoint;
     fn neg(self) -> Self::Output {
-        Self {
-            repr: self.repr.neg(),
-        }
+        Self { repr: self.repr.neg() }
     }
 }
 
@@ -304,9 +288,7 @@ impl FixedPointVar {
 
     /// Add an integer to a fixed point variable
     pub fn add_integer<C: Circuit<ScalarField>>(&self, rhs: Variable, cs: &mut C) -> Self {
-        let repr = cs
-            .add_with_coeffs(self.repr, rhs, &SCALAR_ONE, &TWO_TO_M_SCALAR)
-            .unwrap();
+        let repr = cs.add_with_coeffs(self.repr, rhs, &SCALAR_ONE, &TWO_TO_M_SCALAR).unwrap();
         Self { repr }
     }
 
@@ -318,9 +300,7 @@ impl FixedPointVar {
 
     /// Subtract an integer from a fixed point variable
     pub fn sub_integer<C: Circuit<ScalarField>>(&self, rhs: Variable, cs: &mut C) -> Self {
-        let repr = cs
-            .add_with_coeffs(self.repr, rhs, &SCALAR_ONE, &TWO_TO_M_SCALAR.neg())
-            .unwrap();
+        let repr = cs.add_with_coeffs(self.repr, rhs, &SCALAR_ONE, &TWO_TO_M_SCALAR.neg()).unwrap();
 
         Self { repr }
     }
@@ -361,9 +341,7 @@ impl Mul<&AuthenticatedScalar> for &AuthenticatedFixedPoint {
     type Output = AuthenticatedFixedPoint;
 
     fn mul(self, rhs: &AuthenticatedScalar) -> Self::Output {
-        AuthenticatedFixedPoint {
-            repr: self.repr.clone() * rhs,
-        }
+        AuthenticatedFixedPoint { repr: self.repr.clone() * rhs }
     }
 }
 
@@ -371,9 +349,7 @@ impl Mul<&AuthenticatedFixedPoint> for AuthenticatedScalar {
     type Output = AuthenticatedFixedPoint;
 
     fn mul(self, rhs: &AuthenticatedFixedPoint) -> Self::Output {
-        AuthenticatedFixedPoint {
-            repr: self * rhs.repr.clone(),
-        }
+        AuthenticatedFixedPoint { repr: self * rhs.repr.clone() }
     }
 }
 
@@ -381,9 +357,7 @@ impl Add<&AuthenticatedFixedPoint> for &AuthenticatedFixedPoint {
     type Output = AuthenticatedFixedPoint;
 
     fn add(self, rhs: &AuthenticatedFixedPoint) -> Self::Output {
-        AuthenticatedFixedPoint {
-            repr: self.repr.clone() + rhs.repr.clone(),
-        }
+        AuthenticatedFixedPoint { repr: self.repr.clone() + rhs.repr.clone() }
     }
 }
 
@@ -394,9 +368,7 @@ impl Add<&AuthenticatedScalar> for &AuthenticatedFixedPoint {
     fn add(self, rhs: &AuthenticatedScalar) -> Self::Output {
         // Shift the integer
         let rhs_shifted = scalar!(*TWO_TO_M_SCALAR) * rhs;
-        AuthenticatedFixedPoint {
-            repr: self.repr.clone() + rhs_shifted,
-        }
+        AuthenticatedFixedPoint { repr: self.repr.clone() + rhs_shifted }
     }
 }
 
@@ -412,9 +384,7 @@ impl Neg for &AuthenticatedFixedPoint {
     type Output = AuthenticatedFixedPoint;
 
     fn neg(self) -> Self::Output {
-        AuthenticatedFixedPoint {
-            repr: self.repr.clone().neg(),
-        }
+        AuthenticatedFixedPoint { repr: self.repr.clone().neg() }
     }
 }
 

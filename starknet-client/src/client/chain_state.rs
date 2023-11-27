@@ -61,10 +61,7 @@ impl StarknetClient {
         // Estimate the fee and add a buffer to avoid rejected transaction
         let account_index = self.next_account_index();
         let acct_nonce = self.pending_block_nonce(account_index).await?;
-        let execution = self
-            .get_account(account_index)
-            .execute(vec![call])
-            .nonce(acct_nonce);
+        let execution = self.get_account(account_index).execute(vec![call]).nonce(acct_nonce);
 
         let fee_estimate = execution
             .estimate_fee()
@@ -96,10 +93,7 @@ impl StarknetClient {
         account_index: usize,
     ) -> Result<StarknetFieldElement, StarknetClientError> {
         self.jsonrpc_client
-            .get_nonce(
-                BlockId::Tag(BlockTag::Pending),
-                self.get_account(account_index).address(),
-            )
+            .get_nonce(BlockId::Tag(BlockTag::Pending), self.get_account(account_index).address())
             .await
             .map_err(|err| StarknetClientError::Rpc(err.to_string()))
     }
@@ -232,11 +226,7 @@ impl StarknetClient {
             from_block: None,
             to_block: None,
             address: Some(self.contract_address),
-            keys: if event_keys.is_empty() {
-                None
-            } else {
-                Some(vec![event_keys])
-            },
+            keys: if event_keys.is_empty() { None } else { Some(vec![event_keys]) },
         };
 
         // Paginate backwards in block history
@@ -244,9 +234,8 @@ impl StarknetClient {
 
         let mut end_block = BlockId::Tag(BlockTag::Latest);
         let start_block_limit = current_block.saturating_sub(BLOCK_PAGINATION_WINDOW as u64);
-        'outer: for start_block in (earliest_block..=start_block_limit)
-            .rev()
-            .step_by(BLOCK_PAGINATION_WINDOW)
+        'outer: for start_block in
+            (earliest_block..=start_block_limit).rev().step_by(BLOCK_PAGINATION_WINDOW)
         {
             // Exhaust events from the start block to the end block
             filter.from_block = Some(BlockId::Number(start_block));
@@ -317,9 +306,7 @@ impl StarknetClient {
                 },
             }
         } else {
-            return Err(StarknetClientError::NotFound(
-                ERR_UNEXPECTED_TX_TYPE.to_string(),
-            ));
+            return Err(StarknetClientError::NotFound(ERR_UNEXPECTED_TX_TYPE.to_string()));
         };
 
         // Parse the secret shares from the calldata

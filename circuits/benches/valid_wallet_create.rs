@@ -55,9 +55,7 @@ where
     let private_shares_commitment = compute_wallet_private_share_commitment(private_shares.clone());
 
     (
-        ValidWalletCreateWitness {
-            private_wallet_share: private_shares,
-        },
+        ValidWalletCreateWitness { private_wallet_share: private_shares },
         ValidWalletCreateStatement {
             private_shares_commitment,
             public_wallet_shares: public_shares,
@@ -130,10 +128,8 @@ pub fn bench_prover_with_sizes<
         create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>();
 
     let mut group = c.benchmark_group("valid_wallet_create");
-    let benchmark_id = BenchmarkId::new(
-        "prover",
-        format!("({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})"),
-    );
+    let benchmark_id =
+        BenchmarkId::new("prover", format!("({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})"));
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
             singleprover_prove::<ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>(
@@ -165,10 +161,8 @@ pub fn bench_verifier_with_sizes<
     .unwrap();
 
     let mut group = c.benchmark_group("valid_wallet_create");
-    let benchmark_id = BenchmarkId::new(
-        "verifier",
-        format!("({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})"),
-    );
+    let benchmark_id =
+        BenchmarkId::new("verifier", format!("({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})"));
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
             verify_singleprover_proof::<ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>(

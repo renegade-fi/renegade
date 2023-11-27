@@ -59,15 +59,15 @@ impl TransactionStatus {
         assert!(self.is_terminal());
         match self {
             TransactionStatus::AcceptedOnL1 | TransactionStatus::AcceptedOnL2 => Ok(()),
-            TransactionStatus::Rejected => Err(StarknetClientError::TransactionFailure(
-                "transaction rejected".to_string(),
-            )),
-            TransactionStatus::Reverted => Err(StarknetClientError::TransactionFailure(
-                "transaction reverted".to_string(),
-            )),
-            TransactionStatus::Aborted => Err(StarknetClientError::TransactionFailure(
-                "transaction aborted".to_string(),
-            )),
+            TransactionStatus::Rejected => {
+                Err(StarknetClientError::TransactionFailure("transaction rejected".to_string()))
+            },
+            TransactionStatus::Reverted => {
+                Err(StarknetClientError::TransactionFailure("transaction reverted".to_string()))
+            },
+            TransactionStatus::Aborted => {
+                Err(StarknetClientError::TransactionFailure("transaction aborted".to_string()))
+            },
             _ => unreachable!("non-terminal status found"),
         }
     }
@@ -136,10 +136,7 @@ impl StarknetClient {
             .and_then(|r| r.error_for_status())
             .map_err(|e| StarknetClientError::Rpc(e.to_string()))?;
 
-        let body_bytes = res
-            .bytes()
-            .await
-            .map_err(|e| StarknetClientError::Rpc(e.to_string()))?;
+        let body_bytes = res.bytes().await.map_err(|e| StarknetClientError::Rpc(e.to_string()))?;
 
         let resp: RawJsonRpcResponse<T> = serde_json::from_slice(&body_bytes)
             .map_err(|e| StarknetClientError::Serde(e.to_string()))?;

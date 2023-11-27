@@ -133,10 +133,7 @@ impl From<CliArgs> for IntegrationTestArgs {
         });
 
         let pre_allocated_state = setup_pre_allocated_state(&starknet_client).unwrap();
-        Self {
-            starknet_client,
-            pre_allocated_state,
-        }
+        Self { starknet_client, pre_allocated_state }
     }
 }
 

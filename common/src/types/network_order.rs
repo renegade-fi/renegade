@@ -105,10 +105,8 @@ impl NetworkOrder {
     ///     engine are valid (orders, balances, fees, etc). Proved per-order.
     pub fn attach_validity_proofs(&mut self, validity_proofs: OrderValidityProofBundle) {
         self.state = NetworkOrderState::Verified;
-        self.public_share_nullifier = validity_proofs
-            .reblind_proof
-            .statement
-            .original_shares_nullifier;
+        self.public_share_nullifier =
+            validity_proofs.reblind_proof.statement.original_shares_nullifier;
         self.validity_proofs = Some(validity_proofs)
     }
 

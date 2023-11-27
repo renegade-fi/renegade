@@ -20,10 +20,7 @@ impl StateApplicator {
 
     /// Add new peers to the peer index
     pub fn add_peers(&self, msg: AddPeersMsg) -> Result<()> {
-        let tx = self
-            .db()
-            .new_write_tx()
-            .map_err(StateApplicatorError::Storage)?;
+        let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
 
         // Index each peer
         for peer in msg.peers.into_iter() {
@@ -51,10 +48,7 @@ impl StateApplicator {
     pub fn remove_peer(&self, msg: RemovePeerMsg) -> Result<()> {
         let peer_id = WrappedPeerId::from_str(&msg.peer_id)
             .map_err(|e| StateApplicatorError::Parse(format!("PeerId: {}", e)))?;
-        let tx = self
-            .db()
-            .new_write_tx()
-            .map_err(StateApplicatorError::Storage)?;
+        let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
 
         Self::remove_peer_with_tx(peer_id, &tx)?;
         tx.commit().map_err(StateApplicatorError::Storage)?;
@@ -74,16 +68,14 @@ impl StateApplicator {
     /// Add a single peer to the global state
     fn add_peer_with_tx(peer: PeerInfo, tx: &DbTxn<'_, RW>) -> Result<()> {
         // Add the peer to the peer index
-        tx.write(PEER_INFO_TABLE, &peer.peer_id, &peer)
-            .map_err(StateApplicatorError::Storage)?;
+        tx.write(PEER_INFO_TABLE, &peer.peer_id, &peer).map_err(StateApplicatorError::Storage)?;
 
         // Read in the cluster peers list and append the new peer
         let cluster_id = &peer.cluster_id;
         let peer_id = peer.peer_id;
 
-        let mut peers: Vec<WrappedPeerId> = tx
-            .read(CLUSTER_MEMBERSHIP_TABLE, cluster_id)?
-            .unwrap_or_default();
+        let mut peers: Vec<WrappedPeerId> =
+            tx.read(CLUSTER_MEMBERSHIP_TABLE, cluster_id)?.unwrap_or_default();
         if !peers.contains(&peer_id) {
             peers.push(peer_id);
             tx.write(CLUSTER_MEMBERSHIP_TABLE, cluster_id, &peers)?;
@@ -96,14 +88,12 @@ impl StateApplicator {
     fn remove_peer_with_tx(peer_id: WrappedPeerId, tx: &DbTxn<'_, RW>) -> Result<()> {
         // Remove the peer from the peer index
         if let Some(info) = tx.read::<_, PeerInfo>(PEER_INFO_TABLE, &peer_id)? {
-            tx.delete(PEER_INFO_TABLE, &peer_id)
-                .map_err(StateApplicatorError::Storage)?;
+            tx.delete(PEER_INFO_TABLE, &peer_id).map_err(StateApplicatorError::Storage)?;
 
             // Remove the peer from its cluster's list
             let cluster_id = info.cluster_id;
-            let peers: Vec<WrappedPeerId> = tx
-                .read(CLUSTER_MEMBERSHIP_TABLE, &cluster_id)?
-                .unwrap_or_default();
+            let peers: Vec<WrappedPeerId> =
+                tx.read(CLUSTER_MEMBERSHIP_TABLE, &cluster_id)?.unwrap_or_default();
 
             let peers = peers.into_iter().filter(|p| p != &peer_id).collect_vec();
             tx.write(CLUSTER_MEMBERSHIP_TABLE, &cluster_id, &peers)?;
@@ -140,29 +130,20 @@ mod tests {
         let addr = Multiaddr::from(addr);
 
         let peer_info = PeerInfoBuilder::default()
-            .cluster_id(ClusterId {
-                id: cluster_id.clone(),
-            })
-            .peer_id(PeerId {
-                id: peer_id.clone(),
-            })
+            .cluster_id(ClusterId { id: cluster_id.clone() })
+            .peer_id(PeerId { id: peer_id.clone() })
             .addr(addr.to_string())
             .build()
             .unwrap();
 
-        let msg = AddPeersBuilder::default()
-            .peers(vec![peer_info.clone()])
-            .build()
-            .unwrap();
+        let msg = AddPeersBuilder::default().peers(vec![peer_info.clone()]).build().unwrap();
 
         (msg, PeerInfo::try_from(peer_info).unwrap())
     }
 
     /// Create a mock `RemovePeer` message
     fn remove_peer_msg(peer_id: &WrappedPeerId) -> RemovePeer {
-        RemovePeer {
-            peer_id: peer_id.to_string(),
-        }
+        RemovePeer { peer_id: peer_id.to_string() }
     }
 
     // ---------
@@ -179,14 +160,9 @@ mod tests {
 
         // Search for the peer in the db as well as its cluster info
         let db = applicator.db();
-        let info: PeerInfo = db
-            .read(PEER_INFO_TABLE, &peer_info.peer_id)
-            .unwrap()
-            .unwrap();
-        let cluster_peers: Vec<WrappedPeerId> = db
-            .read(CLUSTER_MEMBERSHIP_TABLE, &peer_info.cluster_id)
-            .unwrap()
-            .unwrap();
+        let info: PeerInfo = db.read(PEER_INFO_TABLE, &peer_info.peer_id).unwrap().unwrap();
+        let cluster_peers: Vec<WrappedPeerId> =
+            db.read(CLUSTER_MEMBERSHIP_TABLE, &peer_info.cluster_id).unwrap().unwrap();
 
         assert_eq!(info, peer_info);
         assert_eq!(cluster_peers, vec![peer_info.peer_id]);
@@ -223,20 +199,15 @@ mod tests {
         // Verify that the first peer isn't present, but the second s
         let db = applicator.db();
         let info1: Option<PeerInfo> = db.read(PEER_INFO_TABLE, &peer_info1.peer_id).unwrap();
-        let info2: PeerInfo = db
-            .read(PEER_INFO_TABLE, &peer_info2.peer_id)
-            .unwrap()
-            .unwrap();
+        let info2: PeerInfo = db.read(PEER_INFO_TABLE, &peer_info2.peer_id).unwrap().unwrap();
 
         assert!(info1.is_none());
         assert_eq!(info2, peer_info2);
 
         // Verify that the cluster membership for the peers' cluster only contains the
         // second peer
-        let cluster_peers: Vec<WrappedPeerId> = db
-            .read(CLUSTER_MEMBERSHIP_TABLE, &peer_info1.cluster_id)
-            .unwrap()
-            .unwrap();
+        let cluster_peers: Vec<WrappedPeerId> =
+            db.read(CLUSTER_MEMBERSHIP_TABLE, &peer_info1.cluster_id).unwrap().unwrap();
 
         assert_eq!(cluster_peers, vec![peer_info2.peer_id]);
     }

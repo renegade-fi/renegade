@@ -43,12 +43,8 @@ impl GossipProtocolExecutor {
         message: OrderBookManagementJob,
     ) -> Result<(), GossipError> {
         match message {
-            OrderBookManagementJob::OrderInfo {
-                order_id,
-                response_channel,
-            } => {
-                self.handle_order_info_request(order_id, response_channel)
-                    .await
+            OrderBookManagementJob::OrderInfo { order_id, response_channel } => {
+                self.handle_order_info_request(order_id, response_channel).await
             },
 
             OrderBookManagementJob::OrderInfoResponse { info, .. } => {
@@ -59,32 +55,20 @@ impl GossipProtocolExecutor {
                 Ok(())
             },
 
-            OrderBookManagementJob::OrderReceived {
-                order_id,
-                nullifier,
-                cluster,
-            } => self.handle_new_order(order_id, nullifier, cluster).await,
-
-            OrderBookManagementJob::OrderProofUpdated {
-                order_id,
-                cluster,
-                proof_bundle,
-            } => {
-                self.handle_new_validity_proof(order_id, cluster, proof_bundle)
-                    .await
+            OrderBookManagementJob::OrderReceived { order_id, nullifier, cluster } => {
+                self.handle_new_order(order_id, nullifier, cluster).await
             },
 
-            OrderBookManagementJob::OrderWitness {
-                order_id,
-                requesting_peer,
-            } => {
-                self.handle_validity_witness_request(order_id, requesting_peer)
-                    .await
+            OrderBookManagementJob::OrderProofUpdated { order_id, cluster, proof_bundle } => {
+                self.handle_new_validity_proof(order_id, cluster, proof_bundle).await
+            },
+
+            OrderBookManagementJob::OrderWitness { order_id, requesting_peer } => {
+                self.handle_validity_witness_request(order_id, requesting_peer).await
             },
 
             OrderBookManagementJob::OrderWitnessResponse { order_id, witness } => {
-                self.handle_validity_witness_response(order_id, witness)
-                    .await;
+                self.handle_validity_witness_response(order_id, witness).await;
                 Ok(())
             },
         }
@@ -96,12 +80,7 @@ impl GossipProtocolExecutor {
         order_id: OrderIdentifier,
         response_channel: ResponseChannel<AuthenticatedGossipResponse>,
     ) -> Result<(), GossipError> {
-        let order_info = self
-            .global_state
-            .read_order_book()
-            .await
-            .get_order_info(&order_id)
-            .await;
+        let order_info = self.global_state.read_order_book().await.get_order_info(&order_id).await;
 
         self.network_channel
             .send(GossipOutbound::Response {
@@ -155,9 +134,7 @@ impl GossipProtocolExecutor {
 
             // Update the state of the order to `Verified` by attaching the verified
             // validity proof
-            self.global_state
-                .add_order_validity_proofs(&order_id, proof_bundle)
-                .await;
+            self.global_state.add_order_validity_proofs(&order_id, proof_bundle).await;
         }
 
         Ok(())
@@ -213,28 +190,18 @@ impl GossipProtocolExecutor {
         }
 
         // Add the order to the book in the `Validated` state
-        if !self
-            .global_state
-            .read_order_book()
-            .await
-            .contains_order(&order_id)
-        {
+        if !self.global_state.read_order_book().await.contains_order(&order_id) {
             self.global_state
                 .add_order(NetworkOrder::new(
                     order_id,
-                    proof_bundle
-                        .reblind_proof
-                        .statement
-                        .original_shares_nullifier,
+                    proof_bundle.reblind_proof.statement.original_shares_nullifier,
                     cluster,
                     is_local,
                 ))
                 .await;
         }
 
-        self.global_state
-            .add_order_validity_proofs(&order_id, proof_bundle)
-            .await;
+        self.global_state.add_order_validity_proofs(&order_id, proof_bundle).await;
 
         // If the order is locally managed, also fetch the wintess used in the proof,
         // this is used for proof linking. I.e. the local node needs the commitment
@@ -350,8 +317,7 @@ impl GossipProtocolExecutor {
         }
 
         // Check that the proof shares' nullifiers are unused
-        self.assert_nullifier_unused(reblind_proof.statement.original_shares_nullifier)
-            .await?;
+        self.assert_nullifier_unused(reblind_proof.statement.original_shares_nullifier).await?;
 
         // Check that the Merkle root is a valid historical root
         if !self

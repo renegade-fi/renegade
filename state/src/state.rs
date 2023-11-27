@@ -120,21 +120,13 @@ impl RelayerState {
 
     /// Get the peer info for the local peer
     pub async fn local_peer_info(&self) -> PeerInfo {
-        self.read_peer_index()
-            .await
-            .get_peer_info(&self.local_peer_id)
-            .await
-            .unwrap()
+        self.read_peer_index().await.get_peer_info(&self.local_peer_id).await.unwrap()
     }
 
     /// Get the list of peers in the local peer's cluster
     pub async fn get_local_cluster_peers(&self, include_self: bool) -> Vec<WrappedPeerId> {
         let local_cluster_id = self.local_cluster_id.clone();
-        let mut peers = self
-            .read_peer_index()
-            .await
-            .get_all_cluster_peers(&local_cluster_id)
-            .await;
+        let mut peers = self.read_peer_index().await.get_all_cluster_peers(&local_cluster_id).await;
 
         if !include_self {
             peers.retain(|peer| *peer != self.local_peer_id);
@@ -154,12 +146,7 @@ impl RelayerState {
     /// Sample an order for handshake
     pub async fn choose_handshake_order(&self) -> Option<OrderIdentifier> {
         // Read the set of orders that are verified and thereby ready for batch
-        let verified_orders = {
-            self.read_order_book()
-                .await
-                .get_nonlocal_verified_orders()
-                .await
-        };
+        let verified_orders = { self.read_order_book().await.get_nonlocal_verified_orders().await };
         if verified_orders.is_empty() {
             return None;
         }
@@ -187,19 +174,11 @@ impl RelayerState {
         order_id: &OrderIdentifier,
     ) -> Option<WrappedPeerId> {
         // Get the cluster that manages this order
-        let managing_cluster = {
-            self.read_order_book()
-                .await
-                .get_order_info(order_id)
-                .await?
-                .cluster
-        };
+        let managing_cluster =
+            { self.read_order_book().await.get_order_info(order_id).await?.cluster };
 
         // Get a peer in this cluster
-        self.read_peer_index()
-            .await
-            .sample_cluster_peer(&managing_cluster)
-            .await
+        self.read_peer_index().await.sample_cluster_peer(&managing_cluster).await
     }
 
     // ----------------------
@@ -211,10 +190,7 @@ impl RelayerState {
     ///
     /// This should only be used when validation can be assumed from context
     pub async fn add_peer_unchecked(&self, peer_info: PeerInfo) {
-        self.write_peer_index()
-            .await
-            .add_peer_unchecked(peer_info)
-            .await;
+        self.write_peer_index().await.add_peer_unchecked(peer_info).await;
     }
 
     /// Add a single peer to the global state
@@ -255,10 +231,7 @@ impl RelayerState {
         // Update the peer index
         let expired_peer = self.write_peer_index().await.remove_peer(peer).await;
         // Update the replicas set for any wallets replicated by the expired peer
-        self.read_wallet_index()
-            .await
-            .remove_peer_replicas(peer)
-            .await;
+        self.read_wallet_index().await.remove_peer_replicas(peer).await;
 
         // Push an event onto the bus signalling the peer is expired
         if let Some(peer) = expired_peer {
@@ -273,10 +246,7 @@ impl RelayerState {
     ///
     /// Returns the previous address if one existed
     pub async fn update_local_peer_addr(&self, addr: Multiaddr) {
-        self.read_peer_index()
-            .await
-            .update_peer_addr(&self.local_peer_id, addr)
-            .await;
+        self.read_peer_index().await.update_peer_addr(&self.local_peer_id, addr).await;
     }
 
     // ----------------------
@@ -286,9 +256,7 @@ impl RelayerState {
     /// Add an order to the book
     pub async fn add_order(&self, order: NetworkOrder) {
         // Add the order to the book and to the priority store
-        self.write_handshake_priorities()
-            .await
-            .new_order(order.id, order.cluster.clone());
+        self.write_handshake_priorities().await.new_order(order.id, order.cluster.clone());
         self.write_order_book().await.add_order(order).await;
     }
 
@@ -298,10 +266,7 @@ impl RelayerState {
         order_id: &OrderIdentifier,
         validity_proofs: OrderValidityProofBundle,
     ) {
-        self.write_order_book()
-            .await
-            .update_order_validity_proofs(order_id, validity_proofs)
-            .await
+        self.write_order_book().await.update_order_validity_proofs(order_id, validity_proofs).await
     }
 
     /// Nullify all orders with a given nullifier
@@ -337,15 +302,11 @@ impl RelayerState {
             let wallet_topic = wallet_topic_name(&wallet.wallet_id);
             self.system_bus.publish(
                 wallet_topic,
-                SystemBusMessage::WalletUpdate {
-                    wallet: Box::new(wallet.clone().into()),
-                },
+                SystemBusMessage::WalletUpdate { wallet: Box::new(wallet.clone().into()) },
             );
             self.system_bus.publish(
                 ALL_WALLET_UPDATES_TOPIC.to_string(),
-                SystemBusMessage::InternalWalletUpdate {
-                    wallet: Box::new(wallet.clone()),
-                },
+                SystemBusMessage::InternalWalletUpdate { wallet: Box::new(wallet.clone()) },
             );
 
             // Index all orders in the wallet
@@ -374,11 +335,7 @@ impl RelayerState {
         // Add the wallet's orders to the book
         let mut locked_order_book = self.write_order_book().await;
         let wallet_share_nullifier = wallet.get_wallet_nullifier();
-        for order_id in wallet
-            .orders
-            .iter()
-            .filter(|(_, order)| !order.is_zero())
-            .map(|(id, _)| id)
+        for order_id in wallet.orders.iter().filter(|(_, order)| !order.is_zero()).map(|(id, _)| id)
         {
             if !locked_order_book.contains_order(order_id) {
                 locked_order_book
@@ -399,15 +356,11 @@ impl RelayerState {
         let wallet_topic = wallet_topic_name(&wallet.wallet_id);
         self.system_bus.publish(
             wallet_topic,
-            SystemBusMessage::WalletUpdate {
-                wallet: Box::new(wallet.clone().into()),
-            },
+            SystemBusMessage::WalletUpdate { wallet: Box::new(wallet.clone().into()) },
         );
         self.system_bus.publish(
             ALL_WALLET_UPDATES_TOPIC.to_string(),
-            SystemBusMessage::InternalWalletUpdate {
-                wallet: Box::new(wallet.clone()),
-            },
+            SystemBusMessage::InternalWalletUpdate { wallet: Box::new(wallet.clone()) },
         );
     }
 

@@ -67,9 +67,7 @@ impl Worker for ProofManager {
         let handle = Builder::new()
             .name(MAIN_THREAD_NAME.to_string())
             .spawn(move || {
-                Self::execution_loop(job_queue, thread_pool, cancel_channel)
-                    .err()
-                    .unwrap()
+                Self::execution_loop(job_queue, thread_pool, cancel_channel).err().unwrap()
             })
             .map_err(|err| ProofManagerError::Setup(err.to_string()))?;
 

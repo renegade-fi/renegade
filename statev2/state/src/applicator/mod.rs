@@ -99,8 +99,7 @@ impl StateApplicator {
         ]
         .iter()
         {
-            db.create_table(table)
-                .map_err(Into::<StateApplicatorError>::into)?;
+            db.create_table(table).map_err(Into::<StateApplicatorError>::into)?;
         }
 
         Ok(())

@@ -82,9 +82,7 @@ impl Stream for CoinbaseConnection {
 impl CoinbaseConnection {
     /// Get the URL of the Coinbase websocket endpoint
     fn websocket_url() -> Url {
-        String::from("wss://advanced-trade-ws.coinbase.com")
-            .parse()
-            .unwrap()
+        String::from("wss://advanced-trade-ws.coinbase.com").parse().unwrap()
     }
 
     /// Construct the websocket subscription message with HMAC authentication
@@ -101,10 +99,8 @@ impl CoinbaseConnection {
         // Authenticate the request with the API key
         let channel = "level2";
         let timestamp = get_current_time_seconds().to_string();
-        let signature_bytes = HMAC::mac(
-            format!("{}{}{}", timestamp, channel, product_ids),
-            api_secret,
-        );
+        let signature_bytes =
+            HMAC::mac(format!("{}{}{}", timestamp, channel, product_ids), api_secret);
 
         let signature = hex::encode(signature_bytes);
         json!({
@@ -169,11 +165,8 @@ impl CoinbaseConnection {
         }
 
         // Given the new order book, compute the best bid and offer
-        let best_bid = order_book
-            .bids
-            .keys()
-            .map(|key| key.parse::<f64>().unwrap())
-            .fold(0.0, f64::max);
+        let best_bid =
+            order_book.bids.keys().map(|key| key.parse::<f64>().unwrap()).fold(0.0, f64::max);
         let best_offer = order_book
             .offers
             .keys()
@@ -233,9 +226,7 @@ impl ExchangeConnection for CoinbaseConnection {
 
                     Err(e) => {
                         log::error!("Error reading message from Coinbase websocket: {e}");
-                        Some(Err(ExchangeConnectionError::ConnectionHangup(
-                            e.to_string(),
-                        )))
+                        Some(Err(ExchangeConnectionError::ConnectionHangup(e.to_string())))
                     },
                 }
             }
@@ -245,10 +236,7 @@ impl ExchangeConnection for CoinbaseConnection {
         // stream
         let price_stream = InitializablePriceStream::new(Box::pin(mapped_stream));
 
-        Ok(Self {
-            price_stream: Box::new(price_stream),
-            write_stream: Box::new(writer),
-        })
+        Ok(Self { price_stream: Box::new(price_stream), write_stream: Box::new(writer) })
     }
 
     async fn send_keepalive(&mut self) -> Result<(), ExchangeConnectionError> {

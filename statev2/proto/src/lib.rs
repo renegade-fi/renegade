@@ -124,9 +124,7 @@ impl TryFrom<ProtoUuid> for Uuid {
 
 impl From<Uuid> for ProtoUuid {
     fn from(value: Uuid) -> Self {
-        Self {
-            value: value.to_string(),
-        }
+        Self { value: value.to_string() }
     }
 }
 
@@ -139,9 +137,7 @@ impl From<ProtoScalar> for Scalar {
 
 impl From<Scalar> for ProtoScalar {
     fn from(value: Scalar) -> Self {
-        Self {
-            value: value.to_bytes_be(),
-        }
+        Self { value: value.to_bytes_be() }
     }
 }
 
@@ -154,9 +150,7 @@ impl From<ProtoBigInt> for BigUint {
 
 impl From<BigUint> for ProtoBigInt {
     fn from(value: BigUint) -> Self {
-        Self {
-            value: value.to_bytes_le(),
-        }
+        Self { value: value.to_bytes_le() }
     }
 }
 
@@ -180,18 +174,16 @@ impl TryFrom<PeerInfo> for RuntimePeerInfo {
     type Error = StateProtoError;
     fn try_from(info: PeerInfo) -> Result<Self, Self::Error> {
         // Parse the individual fields from the proto
-        let peer_id = info.peer_id.ok_or_else(|| StateProtoError::MissingField {
-            field_name: "peer_id".to_string(),
-        })?;
+        let peer_id = info
+            .peer_id
+            .ok_or_else(|| StateProtoError::MissingField { field_name: "peer_id".to_string() })?;
 
         let addr = Multiaddr::from_str(&info.addr)
             .map_err(|e| StateProtoError::ParseError(format!("Multiaddr: {e}")))?;
 
-        let cluster_id = info
-            .cluster_id
-            .ok_or_else(|| StateProtoError::MissingField {
-                field_name: "cluster_id".to_string(),
-            })?;
+        let cluster_id = info.cluster_id.ok_or_else(|| StateProtoError::MissingField {
+            field_name: "cluster_id".to_string(),
+        })?;
 
         // Collect into the runtime type
         Ok(RuntimePeerInfo {
@@ -222,9 +214,7 @@ impl TryFrom<NetworkOrder> for RuntimeNetworkOrder {
         let id: Uuid = order
             .id
             .clone()
-            .ok_or_else(|| StateProtoError::MissingField {
-                field_name: "id".to_string(),
-            })
+            .ok_or_else(|| StateProtoError::MissingField { field_name: "id".to_string() })
             .and_then(|id| {
                 Uuid::try_from(id).map_err(|e| StateProtoError::ParseError(e.to_string()))
             })?;
@@ -232,17 +222,12 @@ impl TryFrom<NetworkOrder> for RuntimeNetworkOrder {
         let nullifier: Scalar = order
             .nullifier
             .clone()
-            .ok_or_else(|| StateProtoError::MissingField {
-                field_name: "nullifier".to_string(),
-            })?
+            .ok_or_else(|| StateProtoError::MissingField { field_name: "nullifier".to_string() })?
             .into();
 
-        let cluster_id = order
-            .cluster
-            .clone()
-            .ok_or_else(|| StateProtoError::MissingField {
-                field_name: "cluster_id".to_string(),
-            })?;
+        let cluster_id = order.cluster.clone().ok_or_else(|| StateProtoError::MissingField {
+            field_name: "cluster_id".to_string(),
+        })?;
 
         let state = order.state();
 
@@ -295,14 +280,7 @@ impl From<Order> for CircuitOrder {
         let worst_case_price = FixedPoint::from_f64_round_down(value.worst_case_price);
         let timestamp = value.timestamp;
 
-        CircuitOrder {
-            quote_mint,
-            base_mint,
-            side,
-            amount,
-            worst_case_price,
-            timestamp,
-        }
+        CircuitOrder { quote_mint, base_mint, side, amount, worst_case_price, timestamp }
     }
 }
 
@@ -313,12 +291,7 @@ impl From<Fee> for CircuitFee {
         let gas_token_amount = value.gas_amount;
         let percentage_fee = FixedPoint::from_f64_round_down(value.percentage_fee);
 
-        CircuitFee {
-            settle_key,
-            gas_addr,
-            gas_token_amount,
-            percentage_fee,
-        }
+        CircuitFee { settle_key, gas_addr, gas_token_amount, percentage_fee }
     }
 }
 
@@ -338,15 +311,10 @@ impl TryFrom<PrivateKeyChain> for RuntimePrivateKeyChain {
         let sk_match: Scalar = value
             .sk_match
             .clone()
-            .ok_or_else(|| StateProtoError::MissingField {
-                field_name: "sk_match".to_string(),
-            })?
+            .ok_or_else(|| StateProtoError::MissingField { field_name: "sk_match".to_string() })?
             .into();
 
-        Ok(RuntimePrivateKeyChain {
-            sk_root,
-            sk_match: SecretIdentificationKey { key: sk_match },
-        })
+        Ok(RuntimePrivateKeyChain { sk_root, sk_match: SecretIdentificationKey { key: sk_match } })
     }
 }
 
@@ -359,15 +327,10 @@ impl TryFrom<PublicKeyChain> for CircuitPublicKeyChain {
         let pk_match: Scalar = value
             .pk_match
             .clone()
-            .ok_or_else(|| StateProtoError::MissingField {
-                field_name: "pk_match".to_string(),
-            })?
+            .ok_or_else(|| StateProtoError::MissingField { field_name: "pk_match".to_string() })?
             .into();
 
-        Ok(CircuitPublicKeyChain {
-            pk_root,
-            pk_match: PublicIdentificationKey { key: pk_match },
-        })
+        Ok(CircuitPublicKeyChain { pk_root, pk_match: PublicIdentificationKey { key: pk_match } })
     }
 }
 
@@ -390,10 +353,7 @@ impl TryFrom<KeyChain> for RuntimeKeyChain {
             })
             .and_then(TryInto::try_into)?;
 
-        Ok(RuntimeKeyChain {
-            public_keys,
-            secret_keys,
-        })
+        Ok(RuntimeKeyChain { public_keys, secret_keys })
     }
 }
 
@@ -401,11 +361,8 @@ impl TryFrom<WalletMetadata> for RuntimeWalletMetadata {
     type Error = StateProtoError;
 
     fn try_from(value: WalletMetadata) -> Result<Self, Self::Error> {
-        let replicas = value
-            .replicas
-            .into_iter()
-            .map(TryInto::try_into)
-            .collect::<Result<HashSet<_>, _>>()?;
+        let replicas =
+            value.replicas.into_iter().map(TryInto::try_into).collect::<Result<HashSet<_>, _>>()?;
 
         Ok(RuntimeWalletMetadata { replicas })
     }
@@ -426,16 +383,10 @@ impl TryFrom<WalletAuthenticationPath> for MerkleAuthenticationPath {
         let leaf_index = BigUint::from(path.leaf_index);
         let value = path
             .value
-            .ok_or_else(|| StateProtoError::MissingField {
-                field_name: "value".to_string(),
-            })?
+            .ok_or_else(|| StateProtoError::MissingField { field_name: "value".to_string() })?
             .into();
 
-        Ok(MerkleAuthenticationPath {
-            path_siblings,
-            leaf_index,
-            value,
-        })
+        Ok(MerkleAuthenticationPath { path_siblings, leaf_index, value })
     }
 }
 
@@ -464,16 +415,12 @@ impl TryFrom<Wallet> for RuntimeWallet {
 
         let key_chain: RuntimeKeyChain = value
             .keychain
-            .ok_or_else(|| StateProtoError::MissingField {
-                field_name: "keychain".to_string(),
-            })
+            .ok_or_else(|| StateProtoError::MissingField { field_name: "keychain".to_string() })
             .and_then(TryInto::try_into)?;
 
         let blinder: Scalar = value
             .blinder
-            .ok_or_else(|| StateProtoError::MissingField {
-                field_name: "blinder".to_string(),
-            })?
+            .ok_or_else(|| StateProtoError::MissingField { field_name: "blinder".to_string() })?
             .into();
 
         // Zero pad the shares to avoid panicking in the `from_scalars` method
@@ -523,14 +470,9 @@ mod tests {
     /// Tests the add new peer message
     #[test]
     fn test_new_peer_serialization() {
-        let new_peer = PeerInfoBuilder::default()
-            .peer_id("1234".to_string().into())
-            .build()
-            .unwrap();
-        let msg = AddPeersBuilder::default()
-            .peers(vec![new_peer])
-            .build()
-            .unwrap();
+        let new_peer =
+            PeerInfoBuilder::default().peer_id("1234".to_string().into()).build().unwrap();
+        let msg = AddPeersBuilder::default().peers(vec![new_peer]).build().unwrap();
 
         let bytes = msg.encode_to_vec();
         let recovered: AddPeers = AddPeers::decode(bytes.as_slice()).unwrap();
@@ -541,10 +483,7 @@ mod tests {
     /// Tests the add new order message
     #[test]
     fn test_new_order_serialization() {
-        let order = NetworkOrderBuilder::default()
-            .id("1234".to_string().into())
-            .build()
-            .unwrap();
+        let order = NetworkOrderBuilder::default().id("1234".to_string().into()).build().unwrap();
         let msg = AddOrderBuilder::default().order(order).build().unwrap();
 
         let bytes = msg.encode_to_vec();

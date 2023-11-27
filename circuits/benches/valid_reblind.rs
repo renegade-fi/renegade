@@ -39,10 +39,8 @@ pub fn create_sized_witness_statement<
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
     const MERKLE_HEIGHT: usize,
->() -> (
-    ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
-    ValidReblindStatement,
-)
+>(
+) -> (ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>, ValidReblindStatement)
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {

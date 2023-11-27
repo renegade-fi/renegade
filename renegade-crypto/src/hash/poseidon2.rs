@@ -25,11 +25,7 @@ pub struct Poseidon2Sponge {
 impl Poseidon2Sponge {
     /// Constructor
     pub fn new() -> Self {
-        Self {
-            state: [ScalarField::zero(); WIDTH],
-            next_index: 0,
-            squeezing: false,
-        }
+        Self { state: [ScalarField::zero(); WIDTH], next_index: 0, squeezing: false }
     }
 
     // --------------------
@@ -143,10 +139,7 @@ impl Poseidon2Sponge {
     ///     https://github.com/HorizenLabs/poseidon2/blob/main/plain_implementations/src/poseidon2/poseidon2.rs#L129-L137
     #[cfg_attr(feature = "inline", inline)]
     fn external_mds(&mut self) {
-        let sum = self
-            .state
-            .iter()
-            .fold(ScalarField::zero(), |acc, x| acc + x);
+        let sum = self.state.iter().fold(ScalarField::zero(), |acc, x| acc + x);
 
         for state_elem in self.state.iter_mut() {
             *state_elem += sum;
@@ -190,10 +183,7 @@ impl Poseidon2Sponge {
     /// element
     #[cfg_attr(feature = "inline", inline)]
     fn internal_mds(&mut self) {
-        let sum = self
-            .state
-            .iter()
-            .fold(ScalarField::zero(), |acc, x| acc + x);
+        let sum = self.state.iter().fold(ScalarField::zero(), |acc, x| acc + x);
 
         self.state[WIDTH - 1].double_in_place();
         for state_elem in self.state.iter_mut() {
@@ -246,14 +236,7 @@ mod test {
         // the Bn254 scalar field, meaning it has a different runtime type than
         // our scalar field
         let expected_res = expected_hasher
-            .permutation(
-                &values
-                    .iter()
-                    .cloned()
-                    .map(BigInt::from)
-                    .map(FpBN256::from)
-                    .collect_vec(),
-            )
+            .permutation(&values.iter().cloned().map(BigInt::from).map(FpBN256::from).collect_vec())
             .into_iter()
             .map(BigInt::from)
             .collect_vec();
@@ -278,11 +261,8 @@ mod test {
 
         // Run the expected implementation, we zero prepend the input to mimic a
         // capacity buffer in a sponge
-        let perm_input = [
-            vec![BigInt::zero()],
-            values.iter().cloned().map(BigInt::from).collect_vec(),
-        ]
-        .concat();
+        let perm_input =
+            [vec![BigInt::zero()], values.iter().cloned().map(BigInt::from).collect_vec()].concat();
         let perm_out = expected_hasher
             .permutation(&perm_input.into_iter().map(FpBN256::from).collect_vec())
             .into_iter()

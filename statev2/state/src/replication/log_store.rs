@@ -53,8 +53,7 @@ pub const UNUSED: u64 = 0;
 
 /// Parse a raft LSN from a string
 fn parse_lsn(s: &str) -> Result<u64, ReplicationError> {
-    s.parse::<u64>()
-        .map_err(|_| ReplicationError::ParseValue(s.to_string()))
+    s.parse::<u64>().map_err(|_| ReplicationError::ParseValue(s.to_string()))
 }
 
 /// Format a raft LSN as a string
@@ -76,10 +75,8 @@ impl LogStore {
     /// Constructor
     pub fn new(db: Arc<DB>) -> Result<Self, ReplicationError> {
         // Create the logs table in the db
-        db.create_table(RAFT_METADATA_TABLE)
-            .map_err(ReplicationError::Storage)?;
-        db.create_table(RAFT_LOGS_TABLE)
-            .map_err(ReplicationError::Storage)?;
+        db.create_table(RAFT_METADATA_TABLE).map_err(ReplicationError::Storage)?;
+        db.create_table(RAFT_LOGS_TABLE).map_err(ReplicationError::Storage)?;
 
         // Write a default snapshot to the metadata table
         let self_ = Self { db };
@@ -135,8 +132,7 @@ impl LogStore {
         &self,
         tx: &DbTxn<'_, T>,
     ) -> Result<DbCursor<'_, T, String, ProtoStorageWrapper<RaftEntry>>, ReplicationError> {
-        tx.cursor(RAFT_LOGS_TABLE)
-            .map_err(ReplicationError::Storage)
+        tx.cursor(RAFT_LOGS_TABLE).map_err(ReplicationError::Storage)
     }
 
     // -----------
@@ -172,8 +168,7 @@ impl LogStore {
             let key = lsn_to_key(entry.index);
             let value = ProtoStorageWrapper(entry);
 
-            tx.write(RAFT_LOGS_TABLE, &key, &value)
-                .map_err(ReplicationError::Storage)?;
+            tx.write(RAFT_LOGS_TABLE, &key, &value).map_err(ReplicationError::Storage)?;
         }
 
         tx.commit().map_err(ReplicationError::Storage)
@@ -202,12 +197,8 @@ impl LogStore {
         new_state.set_term(cmp::max(new_state.get_term(), meta.get_term()));
         new_state.set_commit(meta.index);
 
-        tx.write(
-            RAFT_METADATA_TABLE,
-            &HARD_STATE_KEY.to_string(),
-            &ProtoStorageWrapper(new_state),
-        )
-        .map_err(ReplicationError::Storage)?;
+        tx.write(RAFT_METADATA_TABLE, &HARD_STATE_KEY.to_string(), &ProtoStorageWrapper(new_state))
+            .map_err(ReplicationError::Storage)?;
 
         // Write the snapshot metadata
         tx.write(
@@ -229,10 +220,7 @@ impl Storage for LogStore {
         let hard_state = self.read_hard_state_with_tx(&tx)?;
         let conf_state = self.read_conf_state_with_tx(&tx)?;
 
-        Ok(RaftState {
-            hard_state,
-            conf_state,
-        })
+        Ok(RaftState { hard_state, conf_state })
     }
 
     /// Returns the log entries between two indices, capped at a max size
@@ -256,9 +244,7 @@ impl Storage for LogStore {
         let mut remaining_space = max_size.into().map(|v| v as u32).unwrap_or(u32::MAX);
 
         for record in cursor.map(|entry| {
-            entry
-                .map_err(RaftError::from)
-                .map(|(key, value)| (key, value.into_inner()))
+            entry.map_err(RaftError::from).map(|(key, value)| (key, value.into_inner()))
         }) {
             let (key, entry) = record?;
             let lsn = parse_lsn(&key).map_err(RaftError::from)?;
@@ -309,10 +295,8 @@ impl Storage for LogStore {
         match cursor.get_current().map_err(RaftError::from)? {
             Some((key, _)) => parse_lsn(&key).map_err(RaftError::from),
             None => {
-                let snapshot_idx = self
-                    .snapshot(0 /* request_idx */, UNUSED)?
-                    .get_metadata()
-                    .get_index();
+                let snapshot_idx =
+                    self.snapshot(0 /* request_idx */, UNUSED)?.get_metadata().get_index();
 
                 Ok(snapshot_idx + 1)
             },
@@ -328,10 +312,8 @@ impl Storage for LogStore {
         match cursor.get_current().map_err(RaftError::from)? {
             Some((key, _)) => parse_lsn(&key).map_err(RaftError::from),
             None => {
-                let snapshot_idx = self
-                    .snapshot(0 /* request_idx */, UNUSED)?
-                    .get_metadata()
-                    .get_index();
+                let snapshot_idx =
+                    self.snapshot(0 /* request_idx */, UNUSED)?.get_metadata().get_index();
 
                 Ok(snapshot_idx)
             },
@@ -361,10 +343,9 @@ impl Storage for LogStore {
 
         md.term = match md.index.cmp(&stored_metadata.index) {
             Ordering::Equal => stored_metadata.term,
-            Ordering::Greater => self
-                .read_log_entry(md.index)
-                .map(|entry| entry.term)
-                .map_err(RaftError::from)?,
+            Ordering::Greater => {
+                self.read_log_entry(md.index).map(|entry| entry.term).map_err(RaftError::from)?
+            },
             Ordering::Less => {
                 return Err(RaftError::Store(RaftStorageError::SnapshotOutOfDate));
             },
@@ -528,12 +509,7 @@ mod test {
 
         // Fetch the entries
         let entries = store
-            .entries(
-                first,
-                last + 1,
-                None,
-                GetEntriesContext::empty(false /* can_async */),
-            )
+            .entries(first, last + 1, None, GetEntriesContext::empty(false /* can_async */))
             .unwrap();
 
         assert_eq!(entries.len(), N);
@@ -556,12 +532,7 @@ mod test {
 
         // Fetch the entries
         let entries_res = store
-            .entries(
-                low as u64,
-                high as u64,
-                None,
-                GetEntriesContext::empty(false /* can_async */),
-            )
+            .entries(low as u64, high as u64, None, GetEntriesContext::empty(false /* can_async */))
             .unwrap();
 
         assert_eq!(entries_res.len(), high - low);
@@ -584,10 +555,8 @@ mod test {
 
         // Cap the size at an amount that will give a random number of entries
         let n_entries = (0..(high - low)).choose(&mut rng).unwrap();
-        let max_size = entries[low..(low + n_entries)]
-            .iter()
-            .map(|entry| entry.compute_size())
-            .sum::<u32>();
+        let max_size =
+            entries[low..(low + n_entries)].iter().map(|entry| entry.compute_size()).sum::<u32>();
 
         // Fetch the entries
         let entries_res = store

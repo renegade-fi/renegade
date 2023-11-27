@@ -53,11 +53,7 @@ impl DefaultHandler {
         topic_remap: String,
         system_bus: SystemBus<SystemBusMessage>,
     ) -> Self {
-        Self {
-            authenticated,
-            system_bus,
-            topic_remap: Some(topic_remap),
-        }
+        Self { authenticated, system_bus, topic_remap: Some(topic_remap) }
     }
 }
 

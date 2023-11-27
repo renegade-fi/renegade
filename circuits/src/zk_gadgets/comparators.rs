@@ -92,10 +92,7 @@ impl EqGadget {
     {
         let a_vars = a.to_vars();
         let b_vars = b.to_vars();
-        assert!(
-            a_vars.len() == b_vars.len(),
-            "a and b must have the same length"
-        );
+        assert!(a_vars.len() == b_vars.len(), "a and b must have the same length");
 
         EqVecGadget::constrain_eq_vec(&a_vars, &b_vars, cs)
     }
@@ -132,16 +129,8 @@ impl EqVecGadget {
         C: Circuit<ScalarField>,
     {
         assert_eq!(a.len(), b.len(), "eq_vec expects equal length vectors");
-        let a_vars = a
-            .iter()
-            .cloned()
-            .flat_map(|a_val| a_val.to_vars())
-            .collect_vec();
-        let b_vars = b
-            .iter()
-            .cloned()
-            .flat_map(|b_val| b_val.to_vars())
-            .collect_vec();
+        let a_vars = a.iter().cloned().flat_map(|a_val| a_val.to_vars()).collect_vec();
+        let b_vars = b.iter().cloned().flat_map(|b_val| b_val.to_vars()).collect_vec();
 
         for (a_val, b_val) in a_vars.into_iter().zip(b_vars) {
             cs.enforce_equal(a_val, b_val)?;

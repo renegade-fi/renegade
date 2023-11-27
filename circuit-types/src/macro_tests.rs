@@ -45,9 +45,7 @@ mod test {
     /// Test that the `BaseType` trait was correctly implemented
     #[test]
     fn test_base_type_implementation() {
-        let a = TestType {
-            val: Scalar::from(2u8),
-        };
+        let a = TestType { val: Scalar::from(2u8) };
         let serialized = a.to_scalars();
         let deserialized = TestType::from_scalars(&mut serialized.into_iter());
 
@@ -83,9 +81,7 @@ mod test {
     async fn test_mpc_derived_type() {
         // Execute an MPC that allocates the value then opens it
         let (party0_res, party1_res) = execute_mock_mpc(|fabric| async move {
-            let value = TestType {
-                val: Scalar::from(2u8),
-            };
+            let value = TestType { val: Scalar::from(2u8) };
 
             let allocated = value.allocate(PARTY0, &fabric);
             allocated.open().await
@@ -93,9 +89,7 @@ mod test {
         .await;
 
         // Verify that both parties saw the same value: `TestType { 2 }`
-        let expected_value = TestType {
-            val: Scalar::from(2u8),
-        };
+        let expected_value = TestType { val: Scalar::from(2u8) };
         assert_eq!(expected_value, party0_res.unwrap());
         assert_eq!(expected_value, party1_res.unwrap());
     }
@@ -104,9 +98,7 @@ mod test {
     async fn test_multiprover_derived_types() {
         let (party0_res, party1_res) = execute_mock_mpc(|fabric| async move {
             // Setup a dummy value to allocate in the constraint system
-            let value = TestType {
-                val: Scalar::from(2u8),
-            };
+            let value = TestType { val: Scalar::from(2u8) };
 
             let mut circuit = MpcPlonkCircuit::new(fabric.clone());
 
@@ -120,9 +112,7 @@ mod test {
         })
         .await;
 
-        let expected_value = TestType {
-            val: Scalar::from(2u8),
-        };
+        let expected_value = TestType { val: Scalar::from(2u8) };
 
         assert_eq!(party0_res.unwrap(), expected_value);
         assert_eq!(party1_res.unwrap(), expected_value);
@@ -172,26 +162,13 @@ mod test {
         let var2 = share2.create_witness(&mut circuit);
 
         let sum: TestType = var1.add_shares(&var2, &mut circuit).eval(&circuit);
-        assert_eq!(
-            TestType {
-                val: Scalar::from(2u8)
-            },
-            sum
-        );
+        assert_eq!(TestType { val: Scalar::from(2u8) }, sum);
 
         // Test blind and unblind
         let blinded = var1.blind(circuit.one(), &mut circuit);
-        assert_eq!(
-            TestTypeShare {
-                val: Scalar::from(2u8)
-            },
-            blinded.eval(&circuit)
-        );
+        assert_eq!(TestTypeShare { val: Scalar::from(2u8) }, blinded.eval(&circuit));
 
         let unblinded = blinded.unblind(circuit.one(), &mut circuit);
-        assert_eq!(
-            TestTypeShare { val: Scalar::one() },
-            unblinded.eval(&circuit)
-        );
+        assert_eq!(TestTypeShare { val: Scalar::one() }, unblinded.eval(&circuit));
     }
 }

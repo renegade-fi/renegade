@@ -219,10 +219,7 @@ impl HttpServer {
     pub(super) fn new(config: ApiServerConfig, global_state: RelayerState) -> Self {
         // Build the router, server, and register routes
         let router = Self::build_router(&config, global_state);
-        Self {
-            router: Arc::new(router),
-            config,
-        }
+        Self { router: Arc::new(router), config }
     }
 
     /// Build a router and register routes on it
@@ -488,9 +485,7 @@ impl HttpServer {
         });
 
         // Build the http server and enter its execution loop
-        let addr: SocketAddr = format!("0.0.0.0:{}", self.config.http_port)
-            .parse()
-            .unwrap();
+        let addr: SocketAddr = format!("0.0.0.0:{}", self.config.http_port).parse().unwrap();
         Server::bind(&addr)
             .serve(make_service)
             .await
@@ -499,9 +494,7 @@ impl HttpServer {
 
     /// Serve an http request
     async fn serve_request(&self, req: Request<Body>) -> Response<Body> {
-        self.router
-            .handle_req(req.method().to_owned(), req.uri().path().to_string(), req)
-            .await
+        self.router.handle_req(req.method().to_owned(), req.uri().path().to_string(), req).await
     }
 }
 
@@ -526,10 +519,7 @@ impl TypedHandler for PingHandler {
         _req: Self::Request,
         _params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
         Ok(PingResponse { timestamp })
     }
 }
