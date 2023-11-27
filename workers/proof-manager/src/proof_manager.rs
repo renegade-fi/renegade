@@ -79,9 +79,7 @@ impl ProofManager {
                 .map_err(|err| ProofManagerError::RecvError(err.to_string()))?
             {
                 log::info!("Proof manager cancelled, shutting down...");
-                return Err(ProofManagerError::Cancelled(
-                    "received cancel signal".to_string(),
-                ));
+                return Err(ProofManagerError::Cancelled("received cancel signal".to_string()));
             }
 
             // Dequeue the next job and hand it to the thread pool
@@ -160,11 +158,7 @@ impl ProofManager {
         >(witness, statement.clone())
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Box::new(GenericValidWalletCreateBundle {
-            commitment,
-            statement,
-            proof,
-        }))
+        Ok(Box::new(GenericValidWalletCreateBundle { commitment, statement, proof }))
     }
 
     /// Create a proof of `VALID REBLIND`
@@ -178,11 +172,7 @@ impl ProofManager {
         >(witness, statement.clone())
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Box::new(GenericValidReblindBundle {
-            commitment: witness_comm,
-            statement,
-            proof,
-        }))
+        Ok(Box::new(GenericValidReblindBundle { commitment: witness_comm, statement, proof }))
     }
 
     /// Create a proof of `VALID COMMITMENTS`
@@ -196,11 +186,7 @@ impl ProofManager {
         >(witness, statement.clone())
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Box::new(GenericValidCommitmentsBundle {
-            commitment: witness_comm,
-            statement,
-            proof,
-        }))
+        Ok(Box::new(GenericValidCommitmentsBundle { commitment: witness_comm, statement, proof }))
     }
 
     /// Create a proof of `VALID WALLET UPDATE`
@@ -213,11 +199,7 @@ impl ProofManager {
         >(witness, statement.clone())
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Box::new(GenericValidWalletUpdateBundle {
-            commitment: witness_comm,
-            statement,
-            proof,
-        }))
+        Ok(Box::new(GenericValidWalletUpdateBundle { commitment: witness_comm, statement, proof }))
     }
 
     /// Create a proof of `VALID MATCH MPC`
@@ -227,11 +209,7 @@ impl ProofManager {
         let (witness_comm, proof) = singleprover_prove::<ValidMatchMpcSingleProver>(witness, ())
             .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Box::new(GenericValidMatchMpcBundle {
-            commitment: witness_comm,
-            statement: (),
-            proof,
-        }))
+        Ok(Box::new(GenericValidMatchMpcBundle { commitment: witness_comm, statement: (), proof }))
     }
 
     /// Create a proof of `VALID SETTLE`
@@ -244,10 +222,6 @@ impl ProofManager {
         >(witness, statement.clone())
         .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Box::new(GenericValidSettleBundle {
-            commitment: witness_comm,
-            statement,
-            proof,
-        }))
+        Ok(Box::new(GenericValidSettleBundle { commitment: witness_comm, statement, proof }))
     }
 }

@@ -49,10 +49,7 @@ pub fn setup_mpc_fabric(
             let other_host_alias = format!("party{}", if party_id == 1 { 0 } else { 1 });
             let hosts = lookup_host(other_host_alias.as_str()).unwrap();
 
-            println!(
-                "Lookup successful for {}... found hosts: {:?}",
-                other_host_alias, hosts
-            );
+            println!("Lookup successful for {}... found hosts: {:?}", other_host_alias, hosts);
 
             format!("{}:{}", hosts[0], peer_port).parse().unwrap()
         } else {
@@ -156,9 +153,7 @@ where
     F: Future<Output = Result<T, E>>,
     E: Debug,
 {
-    Handle::current()
-        .block_on(f)
-        .map_err(|e| format!("error awaiting result: {e:?}"))
+    Handle::current().block_on(f).map_err(|e| format!("error awaiting result: {e:?}"))
 }
 
 /// Await a batch of results in a fabric, blocking the current thread

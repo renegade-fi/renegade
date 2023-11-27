@@ -63,14 +63,10 @@ fn dummy_order(side: OrderSide, test_args: &IntegrationTestArgs) -> Order {
 /// Create a dummy balance
 fn dummy_balance(side: OrderSide, test_args: &IntegrationTestArgs) -> Balance {
     match side {
-        OrderSide::Buy => Balance {
-            mint: biguint_from_hex_string(&test_args.erc20_addr),
-            amount: 500,
+        OrderSide::Buy => {
+            Balance { mint: biguint_from_hex_string(&test_args.erc20_addr), amount: 500 }
         },
-        OrderSide::Sell => Balance {
-            mint: biguint_from_hex_string(WETH_ADDR),
-            amount: 200,
-        },
+        OrderSide::Sell => Balance { mint: biguint_from_hex_string(WETH_ADDR), amount: 200 },
     }
 }
 
@@ -87,9 +83,7 @@ async fn setup_wallet_with_order_balance(
 
     // Deposit the balance into the wallet
     let old_wallet = wallet.clone();
-    wallet
-        .balances
-        .insert(balance.mint.clone(), balance.clone());
+    wallet.balances.insert(balance.mint.clone(), balance.clone());
     wallet.reblind_wallet();
 
     // Increase the deposit allowance to transfer the balance
@@ -162,11 +156,7 @@ async fn setup_match_result(
     let price = FixedPoint::from_f64_round_down(EXECUTION_PRICE);
     let base_amount = 10;
     let quote_amount = price * Scalar::from(base_amount);
-    let direction = if wallet1.orders.first().unwrap().1.side == OrderSide::Buy {
-        0
-    } else {
-        1
-    };
+    let direction = if wallet1.orders.first().unwrap().1.side == OrderSide::Buy { 0 } else { 1 };
 
     let match_ = MatchResult {
         quote_mint: biguint_from_hex_string(&test_args.erc20_addr),
@@ -257,9 +247,7 @@ async fn dummy_match_proof(
     test_args.proof_job_queue.send(job)?;
 
     // Await a response
-    recv.await
-        .map(|bundle| bundle.into())
-        .map_err(|_| eyre!("Failed to receive proof bundle"))
+    recv.await.map(|bundle| bundle.into()).map_err(|_| eyre!("Failed to receive proof bundle"))
 }
 
 /// Verify that a match has been correctly applied to a wallet
@@ -287,10 +275,7 @@ async fn verify_settlement(
 
     assert_eq_result!(new_wallet.blinder, wallet.blinder)?;
 
-    assert_eq_result!(
-        new_wallet.blinded_public_shares,
-        wallet.blinded_public_shares
-    )?;
+    assert_eq_result!(new_wallet.blinded_public_shares, wallet.blinded_public_shares)?;
     assert_eq_result!(new_wallet.private_shares, wallet.private_shares)?;
 
     // 3. Lookup the wallet on-chain, verify that this matches the expected
@@ -324,10 +309,7 @@ fn apply_match(wallet: &mut Wallet, order_side: OrderSide, match_res: &MatchResu
 
 /// Add a u64 to an i64 without overflowing
 fn apply_balance_update(wallet: &mut Wallet, mint: BigUint, amount: i64) {
-    let entry = wallet
-        .balances
-        .entry(mint.clone())
-        .or_insert_with(|| Balance { mint, amount: 0 });
+    let entry = wallet.balances.entry(mint.clone()).or_insert_with(|| Balance { mint, amount: 0 });
 
     if amount < 0 {
         entry.amount = entry.amount.saturating_sub(amount.unsigned_abs());

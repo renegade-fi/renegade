@@ -74,33 +74,17 @@ impl From<IndexedWallet> for Wallet {
         wallet.remove_default_elements();
 
         // Build API types from the indexed wallet
-        let orders = wallet
-            .orders
-            .into_iter()
-            .map(|order| order.into())
-            .collect_vec();
+        let orders = wallet.orders.into_iter().map(|order| order.into()).collect_vec();
 
-        let balances = wallet
-            .balances
-            .into_values()
-            .map(|balance| balance.into())
-            .collect_vec();
+        let balances = wallet.balances.into_values().map(|balance| balance.into()).collect_vec();
 
         let fees = wallet.fees.into_iter().map(|fee| fee.into()).collect_vec();
 
         // Serialize the shares then convert all values to BigUint
-        let blinded_public_shares = wallet
-            .blinded_public_shares
-            .to_scalars()
-            .iter()
-            .map(scalar_to_biguint)
-            .collect_vec();
-        let private_shares = wallet
-            .private_shares
-            .to_scalars()
-            .iter()
-            .map(scalar_to_biguint)
-            .collect_vec();
+        let blinded_public_shares =
+            wallet.blinded_public_shares.to_scalars().iter().map(scalar_to_biguint).collect_vec();
+        let private_shares =
+            wallet.private_shares.to_scalars().iter().map(scalar_to_biguint).collect_vec();
 
         Self {
             id: wallet.wallet_id,
@@ -118,11 +102,8 @@ impl From<IndexedWallet> for Wallet {
 
 impl From<Wallet> for IndexedWallet {
     fn from(wallet: Wallet) -> Self {
-        let orders = wallet
-            .orders
-            .into_iter()
-            .map(|order| (Uuid::new_v4(), order.into()))
-            .collect();
+        let orders =
+            wallet.orders.into_iter().map(|order| (Uuid::new_v4(), order.into())).collect();
         let balances = wallet
             .balances
             .into_iter()
@@ -240,19 +221,13 @@ pub struct Balance {
 
 impl From<IndexedBalance> for Balance {
     fn from(balance: IndexedBalance) -> Self {
-        Balance {
-            mint: balance.mint,
-            amount: BigUint::from(balance.amount),
-        }
+        Balance { mint: balance.mint, amount: BigUint::from(balance.amount) }
     }
 }
 
 impl From<Balance> for IndexedBalance {
     fn from(balance: Balance) -> Self {
-        IndexedBalance {
-            mint: balance.mint,
-            amount: balance.amount.try_into().unwrap(),
-        }
+        IndexedBalance { mint: balance.mint, amount: balance.amount.try_into().unwrap() }
     }
 }
 
@@ -360,10 +335,7 @@ impl From<HashMap<String, Vec<Peer>>> for Network {
     fn from(cluster_membership: HashMap<String, Vec<Peer>>) -> Self {
         let mut clusters = Vec::with_capacity(cluster_membership.len());
         for (cluster_id, peers) in cluster_membership.into_iter() {
-            clusters.push(Cluster {
-                id: cluster_id,
-                peers,
-            });
+            clusters.push(Cluster { id: cluster_id, peers });
         }
 
         Self {

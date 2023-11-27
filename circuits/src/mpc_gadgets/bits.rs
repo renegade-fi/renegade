@@ -22,10 +22,7 @@ const BLINDING_FACTOR_MAX_BITS: usize = 252;
 /// Composes a sequence of `Scalar`s representing bits in little endian order
 /// into a single scalar
 pub(crate) fn scalar_from_bits_le(bits: &[AuthenticatedScalar]) -> AuthenticatedScalar {
-    assert!(
-        !bits.is_empty(),
-        "scalar_from_bits_le cannot be called with empty bit array"
-    );
+    assert!(!bits.is_empty(), "scalar_from_bits_le cannot be called with empty bit array");
     let two = Scalar::from(2u64);
     let mut result = bits[bits.len() - 1].clone();
 
@@ -127,11 +124,7 @@ fn bit_add_impl(
     b: &[AuthenticatedScalar],
     initial_carry: AuthenticatedScalar,
 ) -> (Vec<AuthenticatedScalar>, AuthenticatedScalar) {
-    assert_eq!(
-        a.len(),
-        b.len(),
-        "bit_add takes bit representations of equal length"
-    );
+    assert_eq!(a.len(), b.len(), "bit_add takes bit representations of equal length");
     let mut result = Vec::with_capacity(a.len());
     let mut carry = initial_carry;
 
@@ -163,11 +156,7 @@ fn bit_add_impl_public(
     b: &[AuthenticatedScalar],
     initial_carry: AuthenticatedScalar,
 ) -> (Vec<AuthenticatedScalar>, AuthenticatedScalar) {
-    assert_eq!(
-        a.len(),
-        b.len(),
-        "bit_add takes bit representations of equal length"
-    );
+    assert_eq!(a.len(), b.len(), "bit_add takes bit representations of equal length");
     let mut result = Vec::with_capacity(a.len());
     let mut carry = initial_carry;
 
@@ -210,11 +199,7 @@ pub fn to_bits_le<const D: usize>(
     x: &AuthenticatedScalar,
     fabric: &Fabric,
 ) -> Vec<AuthenticatedScalar> {
-    assert!(
-        D < SCALAR_MAX_BITS,
-        "Can only support scalars of up to {:?} bits",
-        SCALAR_MAX_BITS
-    );
+    assert!(D < SCALAR_MAX_BITS, "Can only support scalars of up to {:?} bits", SCALAR_MAX_BITS);
 
     // Sample a random batch of bits and create a random m-bit shared scalar
     let random_bits =
@@ -318,9 +303,9 @@ mod tests {
 
     /// Recover a `Scalar` from a set of bits in little endian order
     fn scalar_from_bits(bits: &[u8]) -> Scalar {
-        bits.iter().rev().fold(Scalar::zero(), |acc, bit| {
-            acc * Scalar::from(2u64) + Scalar::from(*bit)
-        })
+        bits.iter()
+            .rev()
+            .fold(Scalar::zero(), |acc, bit| acc * Scalar::from(2u64) + Scalar::from(*bit))
     }
 
     // -----------
@@ -336,10 +321,8 @@ mod tests {
 
             let bits = scalar_to_bits_le::<64>(&mpc_val);
 
-            let reconstructed = bits
-                .iter()
-                .rev()
-                .fold(fabric.zero(), |acc, bit| acc * Scalar::from(2u64) + bit);
+            let reconstructed =
+                bits.iter().rev().fold(fabric.zero(), |acc, bit| acc * Scalar::from(2u64) + bit);
 
             scalar == reconstructed.await
         })
@@ -352,9 +335,8 @@ mod tests {
     async fn test_scalar_to_bits_all_one() {
         let (res, _) = execute_mock_mpc(|fabric| async move {
             const N: usize = 250; // Power of 2 to fills bits up to
-            let scalar = (0..N).fold(Scalar::zero(), |acc, _| {
-                acc * Scalar::from(2u64) + Scalar::from(1u64)
-            });
+            let scalar =
+                (0..N).fold(Scalar::zero(), |acc, _| acc * Scalar::from(2u64) + Scalar::from(1u64));
             let allocated = fabric.allocate_scalar(scalar);
 
             let res = join_all(scalar_to_bits_le::<N>(&allocated)).await;
@@ -527,14 +509,10 @@ mod tests {
                 let max_bits = to_bits_le::<N>(&max_value, &fabric);
 
                 // min_value < max_value == true
-                let res1 = bit_lt(&min_bits, &max_bits, &fabric)
-                    .open_authenticated()
-                    .await?;
+                let res1 = bit_lt(&min_bits, &max_bits, &fabric).open_authenticated().await?;
 
                 // max_value < min_value == false
-                let res2 = bit_lt(&max_bits, &min_bits, &fabric)
-                    .open_authenticated()
-                    .await?;
+                let res2 = bit_lt(&max_bits, &min_bits, &fabric).open_authenticated().await?;
 
                 Ok((res1 == Scalar::one(), res2 == Scalar::zero()))
             })

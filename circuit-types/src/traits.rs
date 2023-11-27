@@ -70,9 +70,7 @@ pub trait BaseType: Clone {
     /// full `MpcBaseType` trait
     async fn share_public(&self, owning_party: PartyId, fabric: &Fabric) -> Self {
         let self_scalars = self.to_scalars();
-        let res_scalars = fabric
-            .batch_share_plaintext(self_scalars, owning_party)
-            .await;
+        let res_scalars = fabric.batch_share_plaintext(self_scalars, owning_party).await;
 
         Self::from_scalars(&mut res_scalars.into_iter())
     }
@@ -89,10 +87,8 @@ pub trait CircuitBaseType: BaseType {
     /// associate with the base type
     fn create_witness(&self, circuit: &mut PlonkCircuit) -> Self::VarType {
         let scalars: Vec<Scalar> = self.clone().to_scalars();
-        let vars = scalars
-            .into_iter()
-            .map(|s| circuit.create_variable(s.inner()).unwrap())
-            .collect_vec();
+        let vars =
+            scalars.into_iter().map(|s| circuit.create_variable(s.inner()).unwrap()).collect_vec();
 
         Self::VarType::from_vars(&mut vars.into_iter(), circuit)
     }
@@ -126,10 +122,7 @@ pub trait CircuitVarType: Clone {
     /// type
     fn eval(&self, circuit: &PlonkCircuit) -> Self::BaseType {
         let vars = self.to_vars();
-        let mut scalars = vars
-            .into_iter()
-            .map(|v| circuit.witness(v).unwrap())
-            .map(Scalar::new);
+        let mut scalars = vars.into_iter().map(|v| circuit.witness(v).unwrap()).map(Scalar::new);
 
         Self::BaseType::from_scalars(&mut scalars)
     }
@@ -178,25 +171,20 @@ pub trait MpcType: Clone + Send {
         let self_scalars = self.to_authenticated_scalars();
         let opened_scalars = join_all(AuthenticatedScalarResult::open_batch(&self_scalars)).await;
 
-        Ok(Self::NativeType::from_scalars(
-            &mut opened_scalars.into_iter(),
-        ))
+        Ok(Self::NativeType::from_scalars(&mut opened_scalars.into_iter()))
     }
 
     /// Opens the shared type and authenticates the result
     async fn open_and_authenticate(self) -> Result<Self::NativeType, MpcError> {
         let self_scalars = self.to_authenticated_scalars();
-        let opened_scalars = join_all(AuthenticatedScalarResult::open_authenticated_batch(
-            &self_scalars,
-        ))
-        .await
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| MpcError::OpeningError(err.to_string()))?;
+        let opened_scalars =
+            join_all(AuthenticatedScalarResult::open_authenticated_batch(&self_scalars))
+                .await
+                .into_iter()
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|err| MpcError::OpeningError(err.to_string()))?;
 
-        Ok(Self::NativeType::from_scalars(
-            &mut opened_scalars.into_iter(),
-        ))
+        Ok(Self::NativeType::from_scalars(&mut opened_scalars.into_iter()))
     }
 }
 
@@ -214,10 +202,8 @@ pub trait MultiproverCircuitBaseType: MpcType<NativeType = Self::BaseType> {
     /// element
     fn create_shared_witness(&self, circuit: &mut MpcPlonkCircuit) -> Self::VarType {
         let self_scalars = self.clone().to_authenticated_scalars();
-        let vars = self_scalars
-            .into_iter()
-            .map(|s| circuit.create_variable(s).unwrap())
-            .collect_vec();
+        let vars =
+            self_scalars.into_iter().map(|s| circuit.create_variable(s).unwrap()).collect_vec();
 
         Self::VarType::from_vars(&mut vars.into_iter(), circuit)
     }
@@ -267,11 +253,8 @@ pub trait SecretShareType: Sized + BaseType {
     /// SecretShareType`). Requiring an additional trait bound on `T` would
     /// prevent this.
     fn add_shares(&self, rhs: &Self) -> Self::Base {
-        let mut res_scalars = self
-            .to_scalars()
-            .into_iter()
-            .zip(rhs.to_scalars())
-            .map(|(s1, s2)| s1 + s2);
+        let mut res_scalars =
+            self.to_scalars().into_iter().zip(rhs.to_scalars()).map(|(s1, s2)| s1 + s2);
 
         Self::Base::from_scalars(&mut res_scalars)
     }
@@ -284,22 +267,16 @@ pub trait SecretShareVarType: Sized + CircuitVarType {
 
     /// Apply an additive blinder to each element of the secret shares
     fn blind(self, blinder: Variable, circuit: &mut PlonkCircuit) -> Self {
-        let res_vars = self
-            .to_vars()
-            .into_iter()
-            .map(|v| circuit.add(v, blinder).unwrap())
-            .collect_vec();
+        let res_vars =
+            self.to_vars().into_iter().map(|v| circuit.add(v, blinder).unwrap()).collect_vec();
 
         Self::from_vars(&mut res_vars.into_iter(), circuit)
     }
 
     /// Remove an additive blind from each element of the secret shares
     fn unblind(&self, blinder: Variable, circuit: &mut PlonkCircuit) -> Self {
-        let res_vars = self
-            .to_vars()
-            .into_iter()
-            .map(|v| circuit.sub(v, blinder).unwrap())
-            .collect_vec();
+        let res_vars =
+            self.to_vars().into_iter().map(|v| circuit.sub(v, blinder).unwrap()).collect_vec();
 
         Self::from_vars(&mut res_vars.into_iter(), circuit)
     }
@@ -588,9 +565,7 @@ impl<const L: usize, T: MpcType> MpcType for [T; L] {
     }
 
     fn to_authenticated_scalars(&self) -> Vec<AuthenticatedScalar> {
-        self.iter()
-            .flat_map(|x| x.to_authenticated_scalars())
-            .collect_vec()
+        self.iter().flat_map(|x| x.to_authenticated_scalars()).collect_vec()
     }
 }
 
@@ -750,9 +725,7 @@ pub trait SingleProverCircuit: Sized {
         // Apply the constraints
         Self::apply_constraints(witness_var, statement_var, &mut circuit)
             .map_err(ProverError::Plonk)?;
-        circuit
-            .finalize_for_arithmetization()
-            .map_err(ProverError::Circuit)?;
+        circuit.finalize_for_arithmetization().map_err(ProverError::Circuit)?;
 
         // Generate the proof
         let mut rng = thread_rng();
@@ -768,11 +741,7 @@ pub trait SingleProverCircuit: Sized {
     /// The verifier has access to the statement variables, but not the witness
     fn verify(statement: Self::Statement, proof: &Proof<SystemCurve>) -> Result<(), VerifierError> {
         // Allocate the statement in the constraint system
-        let statement_vals = statement
-            .to_scalars()
-            .iter()
-            .map(Scalar::inner)
-            .collect_vec();
+        let statement_vals = statement.to_scalars().iter().map(Scalar::inner).collect_vec();
 
         // Verify the proof
         let vk = Self::verifying_key();
@@ -845,9 +814,7 @@ pub trait MultiProverCircuit {
 
         // Apply the constraints
         Self::apply_constraints_multiprover(witness_var, statement_var, &fabric, &mut circuit)?;
-        circuit
-            .finalize_for_arithmetization()
-            .map_err(PlonkError::CircuitError)?;
+        circuit.finalize_for_arithmetization().map_err(PlonkError::CircuitError)?;
 
         // Generate the proof
         let pk = Self::proving_key();

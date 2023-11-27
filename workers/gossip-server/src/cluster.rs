@@ -41,8 +41,7 @@ impl GossipProtocolExecutor {
             },
 
             ClusterManagementJob::UpdateValidityProof(order_id, proof_bundle) => {
-                self.handle_updated_validity_proof(order_id, proof_bundle)
-                    .await;
+                self.handle_updated_validity_proof(order_id, proof_bundle).await;
             },
         }
 
@@ -63,16 +62,10 @@ impl GossipProtocolExecutor {
 
         // Add the peer to the cluster metadata
         // Move out of message to avoid clones
-        self.add_peer_to_cluster(message.peer_id, message.peer_info, cluster_id)
-            .await?;
+        self.add_peer_to_cluster(message.peer_id, message.peer_info, cluster_id).await?;
 
         // Request that the peer replicate all locally replicated wallets
-        let wallets = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_all_wallets()
-            .await;
+        let wallets = self.global_state.read_wallet_index().await.get_all_wallets().await;
         self.send_replicate_request(message.peer_id, wallets)
     }
 
@@ -92,12 +85,7 @@ impl GossipProtocolExecutor {
         self.global_state.add_single_peer(peer_id, peer_info).await;
 
         // Request that the peer replicate all locally replicated wallets
-        let wallets = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_all_wallets()
-            .await;
+        let wallets = self.global_state.read_wallet_index().await.get_all_wallets().await;
         self.send_replicate_request(peer_id, wallets)
     }
 
@@ -141,10 +129,7 @@ impl GossipProtocolExecutor {
             }),
         };
         self.network_channel
-            .send(GossipOutbound::Pubsub {
-                topic: topic.clone(),
-                message: replicated_message,
-            })
+            .send(GossipOutbound::Pubsub { topic: topic.clone(), message: replicated_message })
             .map_err(|err| GossipError::SendMessage(err.to_string()))?;
 
         // Broadcast a message requesting proofs for all new orders
@@ -168,10 +153,7 @@ impl GossipProtocolExecutor {
             }),
         };
         self.network_channel
-            .send(GossipOutbound::Pubsub {
-                topic,
-                message: proof_request,
-            })
+            .send(GossipOutbound::Pubsub { topic, message: proof_request })
             .map_err(|err| GossipError::SendMessage(err.to_string()))?;
 
         Ok(())
@@ -180,11 +162,7 @@ impl GossipProtocolExecutor {
     /// Handles an incoming job to update a wallet's replicas with a newly added
     /// peer
     async fn handle_add_replica_job(&self, peer_id: WrappedPeerId, wallet_id: WalletIdentifier) {
-        self.global_state
-            .read_wallet_index()
-            .await
-            .add_replica(&wallet_id, peer_id)
-            .await;
+        self.global_state.read_wallet_index().await.add_replica(&wallet_id, peer_id).await;
     }
 
     /// Handles an incoming job to check for validity proofs and send them to a
@@ -200,10 +178,8 @@ impl GossipProtocolExecutor {
             let locked_order_book = self.global_state.read_order_book().await;
             for order_id in req.order_ids.iter() {
                 if let Some(proof_bundle) = locked_order_book.get_validity_proofs(order_id).await {
-                    outbound_messages.push(GossipRequest::ValidityProof {
-                        order_id: *order_id,
-                        proof_bundle,
-                    });
+                    outbound_messages
+                        .push(GossipRequest::ValidityProof { order_id: *order_id, proof_bundle });
                 }
             }
         } // locked_order_book released
@@ -211,10 +187,7 @@ impl GossipProtocolExecutor {
         // Forward outbound proof messages to the network manager
         for message in outbound_messages.into_iter() {
             self.network_channel
-                .send(GossipOutbound::Request {
-                    peer_id: req.sender,
-                    message,
-                })
+                .send(GossipOutbound::Request { peer_id: req.sender, message })
                 .map_err(|err| GossipError::SendMessage(err.to_string()))?;
         }
 
@@ -228,8 +201,6 @@ impl GossipProtocolExecutor {
         order_id: OrderIdentifier,
         proof_bundle: OrderValidityProofBundle,
     ) {
-        self.global_state
-            .add_order_validity_proofs(&order_id, proof_bundle)
-            .await
+        self.global_state.add_order_validity_proofs(&order_id, proof_bundle).await
     }
 }

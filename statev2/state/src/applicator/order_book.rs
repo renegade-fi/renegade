@@ -85,39 +85,28 @@ impl StateApplicator {
             .and_then(|order| NetworkOrder::try_from(order).map_err(StateApplicatorError::Proto))?;
 
         // Index the order
-        let tx = self
-            .db()
-            .new_write_tx()
-            .map_err(StateApplicatorError::Storage)?;
+        let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
         Self::write_order_priority_with_tx(&order, &tx)?;
         Self::add_order_with_tx(&order, &tx)?;
 
         tx.commit().map_err(StateApplicatorError::Storage)?;
 
         // Push a message to the bus
-        self.system_bus().publish(
-            ORDER_STATE_CHANGE_TOPIC.to_string(),
-            SystemBusMessage::NewOrder { order },
-        );
+        self.system_bus()
+            .publish(ORDER_STATE_CHANGE_TOPIC.to_string(), SystemBusMessage::NewOrder { order });
         Ok(())
     }
 
     /// Add a validity proof for an order
     pub fn add_order_validity_proof(&self, msg: AddOrderValidityProofMsg) -> Result<()> {
         // Deserialize the proof bundle
-        let id: OrderIdentifier = msg
-            .order_id
-            .unwrap_or_default()
-            .try_into()
-            .map_err(StateApplicatorError::Proto)?;
+        let id: OrderIdentifier =
+            msg.order_id.unwrap_or_default().try_into().map_err(StateApplicatorError::Proto)?;
 
         let bundle: OrderValidityProofBundle = serde_json::from_slice(&msg.proof)
             .map_err(|e| StateApplicatorError::Parse(e.to_string()))?;
 
-        let tx = self
-            .db()
-            .new_write_tx()
-            .map_err(StateApplicatorError::Storage)?;
+        let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
         Self::attach_validity_proof_with_tx(&id, bundle, &tx)?;
         let order_info = Self::read_order_info_unchecked(&id, &tx)?;
         tx.commit().map_err(StateApplicatorError::Storage)?;
@@ -132,10 +121,7 @@ impl StateApplicator {
     /// Nullify orders indexed by a given wallet share nullifier
     pub fn nullify_orders(&self, msg: NullifyOrdersMsg) -> Result<()> {
         let nullifier: Scalar = msg.nullifier.unwrap_or_default().into();
-        let tx = self
-            .db()
-            .new_write_tx()
-            .map_err(StateApplicatorError::Storage)?;
+        let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
 
         self.nullify_orders_with_tx(nullifier, &tx)?;
         tx.commit().map_err(StateApplicatorError::Storage)
@@ -232,15 +218,13 @@ impl StateApplicator {
         tx: &DbTxn<'_, T>,
     ) -> Result<Option<NetworkOrder>> {
         let order_key = Self::order_key(order_id);
-        tx.read(ORDERS_TABLE, &order_key)
-            .map_err(StateApplicatorError::Storage)
+        tx.read(ORDERS_TABLE, &order_key).map_err(StateApplicatorError::Storage)
     }
 
     /// Writes the order info for the given order to storage
     fn write_order_info(order: &NetworkOrder, tx: &DbTxn<'_, RW>) -> Result<()> {
         let order_key = Self::order_key(&order.id);
-        tx.write(ORDERS_TABLE, &order_key, order)
-            .map_err(StateApplicatorError::Storage)
+        tx.write(ORDERS_TABLE, &order_key, order).map_err(StateApplicatorError::Storage)
     }
 
     // --------------------------
@@ -261,13 +245,9 @@ impl StateApplicator {
     fn write_order_priority_with_tx(order: &NetworkOrder, tx: &DbTxn<'_, RW>) -> Result<()> {
         // Lookup the cluster priority and write the order's priority
         let cluster_priority = Self::get_cluster_priority_with_tx(&order.cluster, tx)?;
-        let priority = OrderPriority {
-            cluster_priority,
-            order_priority: ORDER_DEFAULT_PRIORITY,
-        };
+        let priority = OrderPriority { cluster_priority, order_priority: ORDER_DEFAULT_PRIORITY };
 
-        tx.write(PRIORITIES_TABLE, &order.id, &priority)
-            .map_err(StateApplicatorError::Storage)
+        tx.write(PRIORITIES_TABLE, &order.id, &priority).map_err(StateApplicatorError::Storage)
     }
 
     // -------------------------
@@ -293,10 +273,7 @@ impl StateApplicator {
     ) -> Result<()> {
         // Read the nullifier set for the old nullifier and remove the order
         let old_set = Self::read_nullifier_set(old_nullifier, tx)?;
-        let updated_old_set = old_set
-            .into_iter()
-            .filter(|id| id != order_id)
-            .collect_vec();
+        let updated_old_set = old_set.into_iter().filter(|id| id != order_id).collect_vec();
         Self::write_nullifier_set(old_nullifier, updated_old_set, tx)?;
 
         // Add the order to the new nullifier set
@@ -324,8 +301,7 @@ impl StateApplicator {
         let mut nullifier_set = Self::read_nullifier_set(nullifier, tx)?;
         if !nullifier_set.contains(&order_id) {
             nullifier_set.push(order_id);
-            tx.write(ORDERS_TABLE, &key, &nullifier_set)
-                .map_err(StateApplicatorError::Storage)?;
+            tx.write(ORDERS_TABLE, &key, &nullifier_set).map_err(StateApplicatorError::Storage)?;
         }
 
         Ok(())
@@ -338,8 +314,7 @@ impl StateApplicator {
         tx: &DbTxn<'_, RW>,
     ) -> Result<()> {
         let key = Self::nullifier_key(nullifier);
-        tx.write(ORDERS_TABLE, &key, &nullifier_set)
-            .map_err(StateApplicatorError::Storage)
+        tx.write(ORDERS_TABLE, &key, &nullifier_set).map_err(StateApplicatorError::Storage)
     }
 
     /// Create an order key from an order ID
@@ -417,10 +392,7 @@ mod test {
 
         let expected_order: NetworkOrder = msg.order.unwrap().try_into().unwrap();
         let order = db
-            .read::<_, NetworkOrder>(
-                ORDERS_TABLE,
-                &StateApplicator::order_key(&expected_order.id),
-            )
+            .read::<_, NetworkOrder>(ORDERS_TABLE, &StateApplicator::order_key(&expected_order.id))
             .unwrap()
             .unwrap();
 
@@ -438,10 +410,8 @@ mod test {
         assert_eq!(orders, vec![expected_order.id]);
 
         // Verify that the priority of the order is set to the default
-        let priority: OrderPriority = db
-            .read(PRIORITIES_TABLE, &expected_order.id)
-            .unwrap()
-            .unwrap();
+        let priority: OrderPriority =
+            db.read(PRIORITIES_TABLE, &expected_order.id).unwrap().unwrap();
         assert_eq!(priority, OrderPriority::default());
     }
 
@@ -461,10 +431,8 @@ mod test {
 
         // Verify that the order's state is updated
         let db = applicator.db();
-        let tx: NetworkOrder = db
-            .read(ORDERS_TABLE, &StateApplicator::order_key(&order_id))
-            .unwrap()
-            .unwrap();
+        let tx: NetworkOrder =
+            db.read(ORDERS_TABLE, &StateApplicator::order_key(&order_id)).unwrap().unwrap();
 
         assert_eq!(tx.state, NetworkOrderState::Verified.into());
         assert!(tx.validity_proofs.is_some());
@@ -492,20 +460,15 @@ mod test {
 
         // Verify that the first order is cancelled
         let db = applicator.db();
-        let order1: NetworkOrder = db
-            .read(ORDERS_TABLE, &StateApplicator::order_key(&first_order.id))
-            .unwrap()
-            .unwrap();
+        let order1: NetworkOrder =
+            db.read(ORDERS_TABLE, &StateApplicator::order_key(&first_order.id)).unwrap().unwrap();
 
         assert_eq!(order1.state, NetworkOrderState::Cancelled.into());
 
         // Verify that the second order is unmodified
         let expected_order2: NetworkOrder = order_msg2.order.unwrap().try_into().unwrap();
         let order2: NetworkOrder = db
-            .read(
-                ORDERS_TABLE,
-                &StateApplicator::order_key(&expected_order2.id),
-            )
+            .read(ORDERS_TABLE, &StateApplicator::order_key(&expected_order2.id))
             .unwrap()
             .unwrap();
 

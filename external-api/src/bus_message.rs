@@ -34,12 +34,7 @@ pub fn task_topic_name(task_id: &TaskIdentifier) -> String {
 
 /// Get the topic name for a price report
 pub fn price_report_topic_name(source: &str, base: &Token, quote: &Token) -> String {
-    format!(
-        "{}-price-report-{}-{}",
-        source,
-        base.get_addr(),
-        quote.get_addr()
-    )
+    format!("{}-price-report-{}-{}", source, base.get_addr(), quote.get_addr())
 }
 
 /// A message type for generic system bus messages, broadcast to all modules

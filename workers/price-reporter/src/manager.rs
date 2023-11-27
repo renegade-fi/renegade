@@ -96,24 +96,16 @@ impl PriceReporterManagerExecutor {
         job: PriceReporterManagerJob,
     ) -> Result<(), PriceReporterManagerError> {
         match job {
-            PriceReporterManagerJob::StartPriceReporter {
-                base_token,
-                quote_token,
-            } => self.start_price_reporter(base_token, quote_token).await,
+            PriceReporterManagerJob::StartPriceReporter { base_token, quote_token } => {
+                self.start_price_reporter(base_token, quote_token).await
+            },
 
-            PriceReporterManagerJob::PeekMedian {
-                base_token,
-                quote_token,
-                channel,
-            } => self.peek_median(base_token, quote_token, channel).await,
+            PriceReporterManagerJob::PeekMedian { base_token, quote_token, channel } => {
+                self.peek_median(base_token, quote_token, channel).await
+            },
 
-            PriceReporterManagerJob::PeekAllExchanges {
-                base_token,
-                quote_token,
-                channel,
-            } => {
-                self.peek_all_exchanges(base_token, quote_token, channel)
-                    .await
+            PriceReporterManagerJob::PeekAllExchanges { base_token, quote_token, channel } => {
+                self.peek_all_exchanges(base_token, quote_token, channel).await
             },
         }
     }
@@ -150,9 +142,7 @@ impl PriceReporterManagerExecutor {
         quote_token: Token,
         channel: TokioSender<PriceReporterState>,
     ) -> Result<(), PriceReporterManagerError> {
-        let price_reporter = self
-            .get_price_reporter_or_create(base_token, quote_token)
-            .await?;
+        let price_reporter = self.get_price_reporter_or_create(base_token, quote_token).await?;
         channel.send(price_reporter.peek_median()).unwrap();
         Ok(())
     }
@@ -164,9 +154,7 @@ impl PriceReporterManagerExecutor {
         quote_token: Token,
         channel: TokioSender<HashMap<Exchange, ExchangeConnectionState>>,
     ) -> Result<(), PriceReporterManagerError> {
-        let price_reporter = self
-            .get_price_reporter_or_create(base_token, quote_token)
-            .await?;
+        let price_reporter = self.get_price_reporter_or_create(base_token, quote_token).await?;
         channel.send(price_reporter.peek_all_exchanges()).unwrap();
         Ok(())
     }
@@ -183,15 +171,12 @@ impl PriceReporterManagerExecutor {
         quote_token: Token,
     ) -> Result<PriceReporter, PriceReporterManagerError> {
         let locked_reporters = self.active_price_reporters.read().await;
-        locked_reporters
-            .get(&(base_token.clone(), quote_token.clone()))
-            .cloned()
-            .ok_or_else(|| {
-                PriceReporterManagerError::PriceReporterNotCreated(format!(
-                    "{:?}",
-                    (base_token, quote_token)
-                ))
-            })
+        locked_reporters.get(&(base_token.clone(), quote_token.clone())).cloned().ok_or_else(|| {
+            PriceReporterManagerError::PriceReporterNotCreated(format!(
+                "{:?}",
+                (base_token, quote_token)
+            ))
+        })
     }
 
     /// Internal helper function to get a (base_token, quote_token)
@@ -210,8 +195,7 @@ impl PriceReporterManagerExecutor {
         };
 
         if !reporter_exists {
-            self.start_price_reporter(base_token.clone(), quote_token.clone())
-                .await?;
+            self.start_price_reporter(base_token.clone(), quote_token.clone()).await?;
         }
         self.get_price_reporter(base_token, quote_token).await
     }

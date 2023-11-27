@@ -12,12 +12,7 @@ fn bench_encrypt(c: &mut Criterion) {
 
     group.bench_function(BenchmarkId::from_parameter(1), |b| {
         b.iter_batched(
-            || {
-                (
-                    Scalar::random(&mut rng),
-                    Scalar::random(&mut rng).to_biguint(),
-                )
-            },
+            || (Scalar::random(&mut rng), Scalar::random(&mut rng).to_biguint()),
             |(plaintext, public_key)| encrypt_scalar(plaintext, &public_key),
             BatchSize::SmallInput,
         );

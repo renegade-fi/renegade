@@ -71,10 +71,7 @@ impl AuthenticatedGossipRequest {
         let sig = if body.requires_cluster_auth() {
             let mut hash_digest: Sha512 = Sha512::new();
             hash_digest.update(&serde_json::to_vec(&body).unwrap());
-            cluster_key
-                .sign_prehashed(hash_digest, None)?
-                .to_bytes()
-                .to_vec()
+            cluster_key.sign_prehashed(hash_digest, None)?.to_bytes().to_vec()
         } else {
             Vec::new()
         };
@@ -93,9 +90,7 @@ impl AuthenticatedGossipRequest {
         if let Ok(sig) = sig_unmarshalled {
             let mut hash_digest = Sha512::new();
             hash_digest.update(&serde_json::to_vec(&self.body).unwrap());
-            cluster_pubkey
-                .verify_prehashed(hash_digest, None, &sig)
-                .is_ok()
+            cluster_pubkey.verify_prehashed(hash_digest, None, &sig).is_ok()
         } else {
             false
         }
@@ -181,10 +176,7 @@ impl AuthenticatedGossipResponse {
     /// A helper function to create a simple ack without needing to explicitly
     /// construct the nested enumerative types
     pub fn new_ack() -> Self {
-        Self {
-            sig: Vec::new(),
-            body: GossipResponse::Ack,
-        }
+        Self { sig: Vec::new(), body: GossipResponse::Ack }
     }
 
     /// Constructs a new authenticated gossip request given the request body.
@@ -198,10 +190,7 @@ impl AuthenticatedGossipResponse {
         let sig = if body.requires_cluster_auth() {
             let mut hash_digest: Sha512 = Sha512::new();
             hash_digest.update(&serde_json::to_vec(&body).unwrap());
-            cluster_key
-                .sign_prehashed(hash_digest, None)?
-                .to_bytes()
-                .to_vec()
+            cluster_key.sign_prehashed(hash_digest, None)?.to_bytes().to_vec()
         } else {
             Vec::new()
         };
@@ -220,9 +209,7 @@ impl AuthenticatedGossipResponse {
         if let Ok(sig) = sig_unmarshalled {
             let mut hash_digest = Sha512::new();
             hash_digest.update(&serde_json::to_vec(&self.body).unwrap());
-            cluster_pubkey
-                .verify_prehashed(hash_digest, None, &sig)
-                .is_ok()
+            cluster_pubkey.verify_prehashed(hash_digest, None, &sig).is_ok()
         } else {
             false
         }
@@ -285,10 +272,7 @@ impl AuthenticatedPubsubMessage {
         let sig = if body.requires_cluster_auth() {
             let mut hash_digest: Sha512 = Sha512::new();
             hash_digest.update(&serde_json::to_vec(&body).unwrap());
-            cluster_key
-                .sign_prehashed(hash_digest, None)?
-                .to_bytes()
-                .to_vec()
+            cluster_key.sign_prehashed(hash_digest, None)?.to_bytes().to_vec()
         } else {
             Vec::new()
         };
@@ -307,9 +291,7 @@ impl AuthenticatedPubsubMessage {
         if let Ok(sig) = sig_unmarshalled {
             let mut hash_digest = Sha512::new();
             hash_digest.update(&serde_json::to_vec(&self.body).unwrap());
-            cluster_pubkey
-                .verify_prehashed(hash_digest, None, &sig)
-                .is_ok()
+            cluster_pubkey.verify_prehashed(hash_digest, None, &sig).is_ok()
         } else {
             false
         }

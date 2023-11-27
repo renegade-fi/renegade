@@ -29,26 +29,17 @@ pub(super) const ERR_WALLET_NOT_FOUND: &str = "wallet not found";
 
 /// Builds an empty HTTP 400 (Bad Request) response
 pub(super) fn build_400_response(err: String) -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::BAD_REQUEST)
-        .body(Body::from(err))
-        .unwrap()
+    Response::builder().status(StatusCode::BAD_REQUEST).body(Body::from(err)).unwrap()
 }
 
 /// Builds an empty HTTP 404 (Not Found) response
 pub(super) fn build_404_response(err: String) -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::NOT_FOUND)
-        .body(Body::from(err))
-        .unwrap()
+    Response::builder().status(StatusCode::NOT_FOUND).body(Body::from(err)).unwrap()
 }
 
 /// Builds an empty HTTP 500 (Internal Server Error) response
 pub(super) fn build_500_response(err: String) -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::INTERNAL_SERVER_ERROR)
-        .body(Body::from(err))
-        .unwrap()
+    Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(err)).unwrap()
 }
 
 /// Builds an empty HTTP XXX response
@@ -56,10 +47,7 @@ pub(super) fn build_response_from_status_code(
     status_code: StatusCode,
     err: String,
 ) -> Response<Body> {
-    Response::builder()
-        .status(status_code)
-        .body(Body::from(err))
-        .unwrap()
+    Response::builder().status(status_code).body(Body::from(err)).unwrap()
 }
 
 // -------------------------
@@ -139,17 +127,14 @@ impl<
 
                 // TODO: Either remove this in the future, or ensure that no sensitive
                 // information can leak from cross-origin requests.
-                builder
-                    .body(Body::from(serde_json::to_vec(&resp).unwrap()))
-                    .unwrap()
+                builder.body(Body::from(serde_json::to_vec(&resp).unwrap())).unwrap()
             },
             Err(ApiServerError::HttpStatusCode(status, msg)) => {
                 builder.status(status).body(Body::from(msg)).unwrap()
             },
-            Err(_) => builder
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::empty())
-                .unwrap(),
+            Err(_) => {
+                builder.status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty()).unwrap()
+            },
         }
     }
 }
@@ -171,10 +156,7 @@ impl Router {
     /// Create a new router with no routes established
     pub fn new(global_state: RelayerState) -> Self {
         let router = MatchRouter::new();
-        Self {
-            router,
-            global_state,
-        }
+        Self { router, global_state }
     }
 
     /// Helper to build a routable path from a method and a concrete route
@@ -263,10 +245,7 @@ impl Router {
             .collect_vec();
 
         // Combine the allowed methods into a comma separated string
-        let allowed_methods_str = allowed_methods
-            .iter()
-            .map(|method| method.as_str())
-            .join(",");
+        let allowed_methods_str = allowed_methods.iter().map(|method| method.as_str()).join(",");
 
         Response::builder()
             .header("Access-Control-Allow-Origin", "*")
@@ -288,18 +267,15 @@ impl Router {
         let wallet_id = parse_wallet_id_from_params(url_params)?;
 
         // Lookup the wallet in the global state
-        let wallet = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
-            .ok_or_else(|| {
-                ApiServerError::HttpStatusCode(
-                    StatusCode::NOT_FOUND,
-                    ERR_WALLET_NOT_FOUND.to_string(),
-                )
-            })?;
+        let wallet =
+            self.global_state.read_wallet_index().await.get_wallet(&wallet_id).await.ok_or_else(
+                || {
+                    ApiServerError::HttpStatusCode(
+                        StatusCode::NOT_FOUND,
+                        ERR_WALLET_NOT_FOUND.to_string(),
+                    )
+                },
+            )?;
 
         // Get the request bytes
         let req_body = to_bytes(req.body_mut()).await.map_err(|err| {

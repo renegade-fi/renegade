@@ -91,9 +91,7 @@ impl PeerInfo {
         // Generate an auth signature for the cluster
         let mut hash_digest = Sha512::new();
         hash_digest.update(&serde_json::to_vec(&peer_id).unwrap());
-        let sig = cluster_keypair
-            .sign_prehashed(hash_digest, None /* context */)
-            .unwrap();
+        let sig = cluster_keypair.sign_prehashed(hash_digest, None /* context */).unwrap();
 
         Self::new(peer_id, cluster_id, addr, sig.to_bytes().to_vec())
     }
@@ -102,10 +100,7 @@ impl PeerInfo {
     pub fn verify_cluster_auth_sig(&self) -> Result<(), SignatureError> {
         let sig = Signature::from_bytes(&self.cluster_auth_signature)
             .map_err(|_| SignatureError::new())?;
-        let pubkey = self
-            .cluster_id
-            .get_public_key()
-            .map_err(|_| SignatureError::new())?;
+        let pubkey = self.cluster_id.get_public_key().map_err(|_| SignatureError::new())?;
 
         // Hash the peer ID and verify the signature
         let mut hash_digest = Sha512::new();
@@ -135,8 +130,7 @@ impl PeerInfo {
 
     /// Records a successful heartbeat
     pub fn successful_heartbeat(&self) {
-        self.last_heartbeat
-            .store(current_time_seconds(), Ordering::Relaxed);
+        self.last_heartbeat.store(current_time_seconds(), Ordering::Relaxed);
     }
 
     /// Get the last time a heartbeat was recorded for this peer
@@ -291,10 +285,7 @@ impl FromStr for ClusterId {
 
 /// Returns a u64 representing the current unix timestamp in seconds
 fn current_time_seconds() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("negative timestamp")
-        .as_secs()
+    SystemTime::now().duration_since(UNIX_EPOCH).expect("negative timestamp").as_secs()
 }
 
 #[cfg(test)]

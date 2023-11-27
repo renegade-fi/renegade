@@ -162,9 +162,7 @@ impl ExchangeConnection for BinanceConnection {
                 // Error on the incoming (filtered) stream
                 Err(e) => {
                     log::error!("Error reading message from Binance ws: {}", e);
-                    Some(Err(ExchangeConnectionError::ConnectionHangup(
-                        e.to_string(),
-                    )))
+                    Some(Err(ExchangeConnectionError::ConnectionHangup(e.to_string())))
                 },
             }
         });
@@ -176,10 +174,7 @@ impl ExchangeConnection for BinanceConnection {
             initial_price_report.midpoint_price,
         );
 
-        Ok(Self {
-            price_stream: Box::new(price_stream),
-            write_stream: Box::new(write),
-        })
+        Ok(Self { price_stream: Box::new(price_stream), write_stream: Box::new(write) })
     }
 
     async fn send_keepalive(&mut self) -> Result<(), ExchangeConnectionError> {

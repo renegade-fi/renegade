@@ -70,9 +70,7 @@ pub(super) async fn find_merkle_path(
     starknet_client: &StarknetClient,
 ) -> Result<WalletAuthenticationPath, StarknetClientError> {
     // Find the authentication path of the wallet's private shares commitment
-    starknet_client
-        .find_merkle_authentication_path(wallet.get_wallet_share_commitment())
-        .await
+    starknet_client.find_merkle_authentication_path(wallet.get_wallet_share_commitment()).await
 }
 
 /// Re-blind the wallet and prove `VALID REBLIND` for the wallet
@@ -81,10 +79,8 @@ pub(super) fn construct_wallet_reblind_proof(
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
 ) -> Result<(SizedValidReblindWitness, TokioReceiver<ProofBundle>), String> {
     // If the wallet doesn't have an authentication path return an error
-    let authentication_path = wallet
-        .merkle_proof
-        .clone()
-        .ok_or_else(|| ERR_MISSING_AUTHENTICATION_PATH.to_string())?;
+    let authentication_path =
+        wallet.merkle_proof.clone().ok_or_else(|| ERR_MISSING_AUTHENTICATION_PATH.to_string())?;
 
     // Reblind the wallet
     let circuit_wallet: SizedWallet = wallet_from_blinded_shares(
@@ -117,10 +113,7 @@ pub(super) fn construct_wallet_reblind_proof(
     let (proof_sender, proof_receiver) = oneshot::channel();
     proof_manager_work_queue
         .send(ProofManagerJob {
-            type_: ProofJob::ValidReblind {
-                witness: witness.clone(),
-                statement,
-            },
+            type_: ProofJob::ValidReblind { witness: witness.clone(), statement },
             response_channel: proof_sender,
         })
         .map_err(|_| ERR_ENQUEUING_JOB.to_string())?;
@@ -149,14 +142,8 @@ pub(super) fn construct_wallet_commitment_proof(
 
     // Build an augmented wallet and find balances to update
     let mut augmented_wallet: SizedWallet = wallet_from_blinded_shares(
-        valid_reblind_witness
-            .reblinded_wallet_private_shares
-            .clone()
-            .to_base_type(),
-        valid_reblind_witness
-            .reblinded_wallet_public_shares
-            .clone()
-            .to_base_type(),
+        valid_reblind_witness.reblinded_wallet_private_shares.clone().to_base_type(),
+        valid_reblind_witness.reblinded_wallet_public_shares.clone().to_base_type(),
     );
 
     let (send_mint, receive_mint) = match order.side {
@@ -184,21 +171,13 @@ pub(super) fn construct_wallet_commitment_proof(
         find_order(&order, &augmented_wallet).ok_or_else(|| ERR_ORDER_NOT_FOUND.to_string())?;
 
     // Create new augmented public secret shares
-    let reblinded_private_blinder = valid_reblind_witness
-        .reblinded_wallet_private_shares
-        .blinder
-        .val;
-    let reblinded_public_blinder = valid_reblind_witness
-        .reblinded_wallet_public_shares
-        .blinder
-        .val;
+    let reblinded_private_blinder =
+        valid_reblind_witness.reblinded_wallet_private_shares.blinder.val;
+    let reblinded_public_blinder = valid_reblind_witness.reblinded_wallet_public_shares.blinder.val;
     let augmented_blinder = reblinded_private_blinder + reblinded_public_blinder;
     let (_, augmented_public_shares) = create_wallet_shares_from_private(
         &augmented_wallet,
-        &valid_reblind_witness
-            .reblinded_wallet_private_shares
-            .clone()
-            .to_base_type(),
+        &valid_reblind_witness.reblinded_wallet_private_shares.clone().to_base_type(),
         augmented_blinder,
     );
 
@@ -210,9 +189,7 @@ pub(super) fn construct_wallet_commitment_proof(
     };
     let witness = ValidCommitmentsWitness {
         // Use the linkable commitments from `VALID REBLIND` to link the two proofs together
-        private_secret_shares: valid_reblind_witness
-            .reblinded_wallet_private_shares
-            .clone(),
+        private_secret_shares: valid_reblind_witness.reblinded_wallet_private_shares.clone(),
         public_secret_shares: valid_reblind_witness.reblinded_wallet_public_shares.clone(),
         augmented_public_shares: augmented_public_shares.to_linkable(),
         order: order.to_linkable(),
@@ -227,10 +204,7 @@ pub(super) fn construct_wallet_commitment_proof(
     proof_manager_work_queue
         .send(ProofManagerJob {
             response_channel: proof_sender,
-            type_: ProofJob::ValidCommitments {
-                witness: witness.clone(),
-                statement,
-            },
+            type_: ProofJob::ValidCommitments { witness: witness.clone(), statement },
         })
         .map_err(|_| ERR_ENQUEUING_JOB.to_string())?;
 
@@ -248,11 +222,7 @@ fn find_or_augment_balance(
     wallet: &mut SizedWallet,
     augment: bool,
 ) -> Option<(usize, Balance)> {
-    let index = wallet
-        .balances
-        .iter()
-        .enumerate()
-        .find(|(_ind, balance)| mint.eq(&balance.mint));
+    let index = wallet.balances.iter().enumerate().find(|(_ind, balance)| mint.eq(&balance.mint));
     match index {
         Some((index, balance)) => Some((index, balance.clone())),
         None => {
@@ -268,26 +238,15 @@ fn find_or_augment_balance(
                 .find(|(_ind, balance)| balance.mint.eq(&BigUint::from(0u8)))
                 .map(|(ind, _balance)| ind)?;
 
-            wallet.balances[empty_balance_ind] = Balance {
-                mint: mint.clone(),
-                amount: 0,
-            };
-            Some((
-                empty_balance_ind,
-                wallet.balances[empty_balance_ind].clone(),
-            ))
+            wallet.balances[empty_balance_ind] = Balance { mint: mint.clone(), amount: 0 };
+            Some((empty_balance_ind, wallet.balances[empty_balance_ind].clone()))
         },
     }
 }
 
 /// Find an order in the wallet, returns the index at which the order was found
 fn find_order(order: &Order, wallet: &SizedWallet) -> Option<usize> {
-    wallet
-        .orders
-        .iter()
-        .enumerate()
-        .find(|(_ind, o)| (*o).eq(order))
-        .map(|(ind, _o)| ind)
+    wallet.orders.iter().enumerate().find(|(_ind, o)| (*o).eq(order)).map(|(ind, _o)| ind)
 }
 
 /// Find a wallet on-chain, and update its validity proofs. That is, a proof of
@@ -346,27 +305,21 @@ pub(super) async fn update_wallet_validity_proofs(
     }
 
     // Await the proof of `VALID REBLIND`
-    let reblind_proof: ValidReblindBundle = reblind_response_channel
-        .await
-        .map_err(|_| ERR_PROVE_REBLIND_FAILED.to_string())?
-        .into();
+    let reblind_proof: ValidReblindBundle =
+        reblind_response_channel.await.map_err(|_| ERR_PROVE_REBLIND_FAILED.to_string())?.into();
     let reblind_proof = Box::new(reblind_proof);
 
     // Await proofs for each order, store them in the state
     for (order_id, receiver) in commitments_response_channels.into_iter() {
         // Await a proof
-        let commitment_proof: ValidCommitmentsBundle = receiver
-            .await
-            .map_err(|_| ERR_PROVE_COMMITMENTS_FAILED.to_string())?
-            .into();
+        let commitment_proof: ValidCommitmentsBundle =
+            receiver.await.map_err(|_| ERR_PROVE_COMMITMENTS_FAILED.to_string())?.into();
 
         let proof_bundle = OrderValidityProofBundle {
             reblind_proof: reblind_proof.clone(),
             commitment_proof: Box::new(commitment_proof),
         };
-        global_state
-            .add_order_validity_proofs(&order_id, proof_bundle.clone())
-            .await;
+        global_state.add_order_validity_proofs(&order_id, proof_bundle.clone()).await;
 
         // Gossip the updated proofs to the network
         let message = GossipOutbound::Pubsub {

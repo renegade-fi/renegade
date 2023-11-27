@@ -83,10 +83,7 @@ impl HandshakePriorityStore {
 
     /// Read an order's priority
     pub async fn get_order_priority(&self, order_id: &OrderIdentifier) -> OrderPriority {
-        self.read_order_priority(order_id)
-            .await
-            .map(|order| order.clone())
-            .unwrap_or_default()
+        self.read_order_priority(order_id).await.map(|order| order.clone()).unwrap_or_default()
     }
 
     /// Read a cluster's priority, returns default if not indexed

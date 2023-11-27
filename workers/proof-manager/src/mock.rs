@@ -79,12 +79,7 @@ fn create_mock_proof() -> R1CSProof {
 
 /// Create a mock `InnerProductProof`
 fn create_mock_inner_product_proof() -> InnerProductProof {
-    InnerProductProof {
-        L_vec: vec![],
-        R_vec: vec![],
-        a: Scalar::zero(),
-        b: Scalar::zero(),
-    }
+    InnerProductProof { L_vec: vec![], R_vec: vec![], a: Scalar::zero(), b: Scalar::zero() }
 }
 
 /// The mock proof manager
@@ -126,9 +121,7 @@ impl MockProofManager {
             },
         };
 
-        response_channel
-            .send(bundle)
-            .expect(ERR_RESPONSE_CHANNEL_CLOSED);
+        response_channel.send(bundle).expect(ERR_RESPONSE_CHANNEL_CLOSED);
     }
 
     /// Generate a dummy proof of `VALID WALLET CREATE`
@@ -139,11 +132,7 @@ impl MockProofManager {
         let commitment = create_mock_commitment::<SizedValidWalletCreate>(witness);
         let proof = create_mock_proof();
 
-        Box::new(GenericValidWalletCreateBundle {
-            statement,
-            commitment,
-            proof,
-        })
+        Box::new(GenericValidWalletCreateBundle { statement, commitment, proof })
     }
 
     /// Generate a dummy proof of `VALID WALLET UPDATE`
@@ -154,11 +143,7 @@ impl MockProofManager {
         let commitment = create_mock_commitment::<SizedValidWalletUpdate>(witness);
         let proof = create_mock_proof();
 
-        Box::new(GenericValidWalletUpdateBundle {
-            statement,
-            commitment,
-            proof,
-        })
+        Box::new(GenericValidWalletUpdateBundle { statement, commitment, proof })
     }
 
     /// Generate a dummy proof of `VALID REBLIND`
@@ -169,11 +154,7 @@ impl MockProofManager {
         let commitment = create_mock_commitment::<SizedValidReblind>(witness);
         let proof = create_mock_proof();
 
-        Box::new(GenericValidReblindBundle {
-            statement,
-            commitment,
-            proof,
-        })
+        Box::new(GenericValidReblindBundle { statement, commitment, proof })
     }
 
     /// Create a dummy proof of `VALID COMMITMENTS`
@@ -184,11 +165,7 @@ impl MockProofManager {
         let commitment = create_mock_commitment::<SizedValidCommitments>(witness);
         let proof = create_mock_proof();
 
-        Box::new(GenericValidCommitmentsBundle {
-            statement,
-            commitment,
-            proof,
-        })
+        Box::new(GenericValidCommitmentsBundle { statement, commitment, proof })
     }
 
     /// Create a dummy proof of `VALID MATCH MPC`
@@ -196,11 +173,7 @@ impl MockProofManager {
         let commitment = create_mock_commitment::<ValidMatchMpcSingleProver>(witness);
         let proof = create_mock_proof();
 
-        Box::new(GenericValidMatchMpcBundle {
-            commitment,
-            statement: (),
-            proof,
-        })
+        Box::new(GenericValidMatchMpcBundle { commitment, statement: (), proof })
     }
 
     /// Create a dummy proof of `VALID SETTLE`
@@ -211,11 +184,7 @@ impl MockProofManager {
         let commitment = create_mock_commitment::<SizedValidSettle>(witness);
         let proof = create_mock_proof();
 
-        Box::new(GenericValidSettleBundle {
-            statement,
-            commitment,
-            proof,
-        })
+        Box::new(GenericValidSettleBundle { statement, commitment, proof })
     }
 }
 
@@ -238,10 +207,7 @@ mod test {
     #[tokio::test]
     async fn test_simple_proof() {
         // Create a runtime to manage spawn the mock within
-        let runtime = RuntimeBuilder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+        let runtime = RuntimeBuilder::new_current_thread().enable_all().build().unwrap();
 
         let (job_send, job_recv) = unbounded();
         runtime.spawn_blocking(move || MockProofManager::start(job_recv));

@@ -55,8 +55,6 @@ mod test {
             "/ip4/35.183.229.42/tcp/8000/p2p/12D3KooWS9m8drb9NFtZB6t3S8hnUeikyG96DupQ6EvMJ6c1ARWn";
         let addr_parsed: Multiaddr = addr_str.parse().unwrap();
 
-        assert!(!is_local_addr(
-            &multiaddr_to_socketaddr(&addr_parsed, 0 /* port */).unwrap()
-        ))
+        assert!(!is_local_addr(&multiaddr_to_socketaddr(&addr_parsed, 0 /* port */).unwrap()))
     }
 }

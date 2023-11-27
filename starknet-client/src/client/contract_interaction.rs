@@ -96,16 +96,13 @@ impl StarknetClient {
             calldata: vec![reduced_blinder_share],
         };
 
-        self.call_contract(call)
-            .await
-            .map(|call_res| call_res[0])
-            .map(|ret_val| {
-                if ret_val.eq(&StarknetFieldElement::from(0u8)) {
-                    None
-                } else {
-                    Some(ret_val)
-                }
-            })
+        self.call_contract(call).await.map(|call_res| call_res[0]).map(|ret_val| {
+            if ret_val.eq(&StarknetFieldElement::from(0u8)) {
+                None
+            } else {
+                Some(ret_val)
+            }
+        })
     }
 
     // --- Setters --- //
@@ -120,10 +117,7 @@ impl StarknetClient {
         public_shares: SizedWalletShare,
         valid_wallet_create: ValidWalletCreateBundle,
     ) -> Result<TransactionHash, StarknetClientError> {
-        assert!(
-            self.config.account_enabled(),
-            "no private key given to sign transactions with"
-        );
+        assert!(self.config.account_enabled(), "no private key given to sign transactions with");
 
         // Compute a commitment to the public shares
         let wallet_share_commitment =
@@ -134,12 +128,7 @@ impl StarknetClient {
         calldata.extend(wallet_share_commitment.to_calldata());
         calldata.extend(public_shares.to_scalars().to_calldata());
         calldata.extend(valid_wallet_create.proof.to_calldata());
-        calldata.extend(
-            valid_wallet_create
-                .commitment
-                .to_commitments()
-                .to_calldata(),
-        );
+        calldata.extend(valid_wallet_create.commitment.to_commitments().to_calldata());
 
         // Call the `new_wallet` contract function
         self.execute_transaction(Call {
@@ -184,12 +173,7 @@ impl StarknetClient {
         }
 
         calldata.extend(valid_wallet_update.proof.to_calldata());
-        calldata.extend(
-            valid_wallet_update
-                .commitment
-                .to_commitments()
-                .to_calldata(),
-        );
+        calldata.extend(valid_wallet_update.commitment.to_commitments().to_calldata());
 
         // Call the `update_wallet` function in the contract
         self.execute_transaction(Call {

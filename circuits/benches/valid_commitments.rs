@@ -38,10 +38,7 @@ pub fn create_sized_witness_statement<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
->() -> (
-    ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    ValidCommitmentsStatement,
-)
+>() -> (ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>, ValidCommitmentsStatement)
 where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
@@ -102,10 +99,8 @@ pub fn bench_prover_with_sizes<
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
     let mut group = c.benchmark_group("valid_commitments");
-    let benchmark_id = BenchmarkId::new(
-        "prover",
-        format!("({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})"),
-    );
+    let benchmark_id =
+        BenchmarkId::new("prover", format!("({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})"));
 
     group.bench_function(benchmark_id, |b| {
         // Build a witness and statement
@@ -132,10 +127,8 @@ pub fn bench_verifier_with_sizes<
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
     let mut group = c.benchmark_group("valid_commitments");
-    let benchmark_id = BenchmarkId::new(
-        "verifier",
-        format!("({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})"),
-    );
+    let benchmark_id =
+        BenchmarkId::new("verifier", format!("({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})"));
 
     group.bench_function(benchmark_id, |b| {
         // First generate a proof that will be verified multiple times

@@ -75,19 +75,15 @@ impl GossipServer {
         for (peer_id, peer_addr) in self.config.bootstrap_servers.iter() {
             self.config
                 .network_sender
-                .send(GossipOutbound::ManagementMessage(
-                    ManagerControlDirective::NewAddr {
-                        peer_id: *peer_id,
-                        address: peer_addr.clone(),
-                    },
-                ))
+                .send(GossipOutbound::ManagementMessage(ManagerControlDirective::NewAddr {
+                    peer_id: *peer_id,
+                    address: peer_addr.clone(),
+                }))
                 .map_err(|err| GossipError::SendMessage(err.to_string()))?;
         }
 
         // 2. Send bootstrap requests to all known peers
-        let req = BootstrapRequest {
-            peer_info: self.config.global_state.local_peer_info().await,
-        };
+        let req = BootstrapRequest { peer_info: self.config.global_state.local_peer_info().await };
         for (peer_id, _) in self.config.bootstrap_servers.iter() {
             self.config
                 .network_sender
@@ -99,13 +95,7 @@ impl GossipServer {
         }
 
         // 3. Send heartbeats to all known peers to sync state
-        let peer_ids = {
-            self.config
-                .global_state
-                .read_peer_index()
-                .await
-                .get_all_peer_ids()
-        }; // peer_index lock released
+        let peer_ids = { self.config.global_state.read_peer_index().await.get_all_peer_ids() }; // peer_index lock released
         for peer in peer_ids.into_iter() {
             self.config
                 .job_sender
@@ -273,10 +263,7 @@ impl GossipProtocolExecutor {
                 // Add the bootstrapping peer to the index
                 let peer_id = req.peer_info.get_peer_id();
                 let peer_info_map = HashMap::from([(req.peer_info.get_peer_id(), req.peer_info)]);
-                let res = self
-                    .add_new_peers(&[peer_id], &peer_info_map)
-                    .await
-                    .map(|_| ());
+                let res = self.add_new_peers(&[peer_id], &peer_info_map).await.map(|_| ());
 
                 // Send a heartbeat response for simplicity
                 let heartbeat_resp =
@@ -290,18 +277,13 @@ impl GossipProtocolExecutor {
                     .and(res)
             },
             GossipServerJob::ExecuteHeartbeat(peer_id) => self.send_heartbeat(peer_id).await,
-            GossipServerJob::HandleHeartbeatReq {
-                message, channel, ..
-            } => {
+            GossipServerJob::HandleHeartbeatReq { message, channel, .. } => {
                 // Respond on the channel given in the request
                 let heartbeat_resp =
                     GossipResponse::Heartbeat(self.build_heartbeat_message().await);
                 let res = self
                     .network_channel
-                    .send(GossipOutbound::Response {
-                        channel,
-                        message: heartbeat_resp,
-                    })
+                    .send(GossipOutbound::Response { channel, message: heartbeat_resp })
                     .map_err(|err| GossipError::SendMessage(err.to_string()));
 
                 // Merge newly discovered peers into local state
@@ -313,8 +295,7 @@ impl GossipProtocolExecutor {
             },
             GossipServerJob::Cluster(job) => self.handle_cluster_management_job(job).await,
             GossipServerJob::OrderBookManagement(management_message) => {
-                self.handle_order_book_management_job(management_message)
-                    .await
+                self.handle_order_book_management_job(management_message).await
             },
             GossipServerJob::WalletUpdate { wallet } => {
                 self.global_state.update_wallet(*wallet).await;
@@ -323,10 +304,7 @@ impl GossipProtocolExecutor {
         };
 
         if let Err(err) = res {
-            log::info!(
-                "Error in gossip server execution loop: {:?}",
-                err.to_string()
-            );
+            log::info!("Error in gossip server execution loop: {:?}", err.to_string());
         }
     }
 }

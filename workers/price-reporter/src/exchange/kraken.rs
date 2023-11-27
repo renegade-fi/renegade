@@ -65,9 +65,7 @@ pub struct KrakenConnection {
 impl KrakenConnection {
     /// Get the URL for the Kraken websocket endpoint
     fn websocket_url() -> Url {
-        String::from("wss://ws.kraken.com")
-            .parse()
-            .expect("Failed to parse Kraken websocket URL")
+        String::from("wss://ws.kraken.com").parse().expect("Failed to parse Kraken websocket URL")
     }
 
     /// Parse a price report from a Kraken websocket message
@@ -82,12 +80,9 @@ impl KrakenConnection {
         let message_json = json_blob.unwrap();
 
         // Kraken sends status update messages. Ignore these.
-        if KRAKEN_MSG_IGNORE_LIST.contains(
-            &message_json[KRAKEN_EVENT]
-                .as_str()
-                .unwrap_or("")
-                .to_string(),
-        ) {
+        if KRAKEN_MSG_IGNORE_LIST
+            .contains(&message_json[KRAKEN_EVENT].as_str().unwrap_or("").to_string())
+        {
             return Ok(None);
         }
 
@@ -153,19 +148,14 @@ impl ExchangeConnection for KrakenConnection {
                 // Error reading from the websocket
                 Err(e) => {
                     log::error!("Error reading message from Kraken ws: {}", e);
-                    Some(Err(ExchangeConnectionError::ConnectionHangup(
-                        e.to_string(),
-                    )))
+                    Some(Err(ExchangeConnectionError::ConnectionHangup(e.to_string())))
                 },
             }
         });
 
         // Build a price stream
         let price_stream = InitializablePriceStream::new(Box::pin(mapped_stream));
-        Ok(Self {
-            price_stream: Box::new(price_stream),
-            write_stream: Box::new(write),
-        })
+        Ok(Self { price_stream: Box::new(price_stream), write_stream: Box::new(write) })
     }
 
     async fn send_keepalive(&mut self) -> Result<(), ExchangeConnectionError> {

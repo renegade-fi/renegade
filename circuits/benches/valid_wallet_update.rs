@@ -51,11 +51,7 @@ where
     let mut modified_wallet = original_wallet.clone();
     modified_wallet.orders[0] = Order::default();
 
-    construct_witness_statement(
-        original_wallet,
-        modified_wallet,
-        ExternalTransfer::default(),
-    )
+    construct_witness_statement(original_wallet, modified_wallet, ExternalTransfer::default())
 }
 
 /// Benchmark constraint generation for the circuit
@@ -72,10 +68,7 @@ pub fn bench_apply_constraints_with_sizes<
     let mut group = c.benchmark_group("valid_wallet_update");
     let benchmark_id = BenchmarkId::new(
         "constraint-generation",
-        format!(
-            "({}, {}, {}, {})",
-            MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT
-        ),
+        format!("({}, {}, {}, {})", MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT),
     );
 
     group.bench_function(benchmark_id, |b| {
@@ -115,10 +108,7 @@ pub fn bench_prover_with_sizes<
     let mut group = c.benchmark_group("valid_wallet_update");
     let benchmark_id = BenchmarkId::new(
         "prover",
-        format!(
-            "({}, {}, {}, {})",
-            MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT
-        ),
+        format!("({}, {}, {}, {})", MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT),
     );
 
     group.bench_function(benchmark_id, |b| {
@@ -149,10 +139,7 @@ pub fn bench_verifier<
     let mut group = c.benchmark_group("valid_wallet_update");
     let benchmark_id = BenchmarkId::new(
         "verifier",
-        format!(
-            "({}, {}, {}, {})",
-            MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT
-        ),
+        format!("({}, {}, {}, {})", MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT),
     );
 
     group.bench_function(benchmark_id, |b| {

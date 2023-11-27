@@ -171,9 +171,7 @@ async fn main() -> Result<(), CoordinatorError> {
     };
     let mut network_manager =
         NetworkManager::new(network_manager_config).expect("failed to build network manager");
-    network_manager
-        .start()
-        .expect("failed to start network manager");
+    network_manager.start().expect("failed to start network manager");
 
     let (network_failure_sender, mut network_failure_receiver) =
         mpsc::channel(1 /* buffer size */);
@@ -194,9 +192,7 @@ async fn main() -> Result<(), CoordinatorError> {
         cancel_channel: gossip_cancel_receiver,
     })
     .expect("failed to build gossip server");
-    gossip_server
-        .start()
-        .expect("failed to start gossip server");
+    gossip_server.start().expect("failed to start gossip server");
     let (gossip_failure_sender, mut gossip_failure_receiver) =
         mpsc::channel(1 /* buffer size */);
     watch_worker::<GossipServer>(&mut gossip_server, gossip_failure_sender);
@@ -217,9 +213,7 @@ async fn main() -> Result<(), CoordinatorError> {
         cancel_channel: handshake_cancel_receiver,
     })
     .expect("failed to build handshake manager");
-    handshake_manager
-        .start()
-        .expect("failed to start handshake manager");
+    handshake_manager.start().expect("failed to start handshake manager");
     let (handshake_failure_sender, mut handshake_failure_receiver) =
         mpsc::channel(1 /* buffer size */);
     watch_worker::<HandshakeManager>(&mut handshake_manager, handshake_failure_sender);
@@ -237,9 +231,7 @@ async fn main() -> Result<(), CoordinatorError> {
         disabled_exchanges: args.disabled_exchanges,
     })
     .expect("failed to build price reporter manager");
-    price_reporter_manager
-        .start()
-        .expect("failed to start price reporter manager");
+    price_reporter_manager.start().expect("failed to start price reporter manager");
     let (price_reporter_failure_sender, mut price_reporter_failure_receiver) =
         mpsc::channel(1 /* buffer size */);
     watch_worker::<PriceReporterManager>(
@@ -258,9 +250,7 @@ async fn main() -> Result<(), CoordinatorError> {
         cancel_channel: chain_listener_cancel_receiver,
     })
     .expect("failed to build on-chain event listener");
-    chain_listener
-        .start()
-        .expect("failed to start on-chain event listener");
+    chain_listener.start().expect("failed to start on-chain event listener");
     let (chain_listener_failure_sender, mut chain_listener_failure_receiver) =
         mpsc::channel(1 /* buffer_size */);
     watch_worker::<OnChainEventListener>(&mut chain_listener, chain_listener_failure_sender);
@@ -291,9 +281,7 @@ async fn main() -> Result<(), CoordinatorError> {
         cancel_channel: proof_manager_cancel_receiver,
     })
     .expect("failed to build proof generation module");
-    proof_manager
-        .start()
-        .expect("failed to start proof generation module");
+    proof_manager.start().expect("failed to start proof generation module");
     let (proof_manager_failure_sender, mut proof_manager_failure_receiver) =
         mpsc::channel(1 /* buffer_size */);
     watch_worker::<ProofManager>(&mut proof_manager, proof_manager_failure_sender);

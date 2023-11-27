@@ -63,16 +63,12 @@ impl HandshakeStateIndex {
     ) -> Result<(), HandshakeManagerError> {
         // Lookup the public share nullifiers for the order
         let locked_order_book = self.global_state.read_order_book().await;
-        let local_nullifier = locked_order_book
-            .get_nullifier(&local_order_id)
-            .await
-            .ok_or_else(|| {
+        let local_nullifier =
+            locked_order_book.get_nullifier(&local_order_id).await.ok_or_else(|| {
                 HandshakeManagerError::StateNotFound(ERR_NULLIFIER_MISSING.to_string())
             })?;
-        let peer_nullifier = locked_order_book
-            .get_nullifier(&peer_order_id)
-            .await
-            .ok_or_else(|| {
+        let peer_nullifier =
+            locked_order_book.get_nullifier(&peer_order_id).await.ok_or_else(|| {
                 HandshakeManagerError::StateNotFound(ERR_NULLIFIER_MISSING.to_string())
             })?;
 
@@ -96,14 +92,8 @@ impl HandshakeStateIndex {
         // Index by nullifier
         {
             let mut locked_nullifier_map = self.nullifier_map.write().await;
-            locked_nullifier_map
-                .entry(local_nullifier)
-                .or_default()
-                .insert(request_id);
-            locked_nullifier_map
-                .entry(peer_nullifier)
-                .or_default()
-                .insert(request_id);
+            locked_nullifier_map.entry(local_nullifier).or_default().insert(request_id);
+            locked_nullifier_map.entry(peer_nullifier).or_default().insert(request_id);
         } // locked_nullifier_map released
 
         Ok(())

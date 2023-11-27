@@ -162,13 +162,10 @@ impl WebsocketServer {
     /// The main execution loop of the websocket server
     pub async fn execution_loop(self) -> Result<(), ApiServerError> {
         // Bind the server to the given port
-        let addr: SocketAddr = format!("0.0.0.0:{:?}", self.config.websocket_port)
-            .parse()
-            .unwrap();
+        let addr: SocketAddr = format!("0.0.0.0:{:?}", self.config.websocket_port).parse().unwrap();
 
-        let listener = TcpListener::bind(addr)
-            .await
-            .map_err(|err| ApiServerError::Setup(err.to_string()))?;
+        let listener =
+            TcpListener::bind(addr).await.map_err(|err| ApiServerError::Setup(err.to_string()))?;
 
         // Await incoming websocket connections
         while let Ok((stream, _)) = listener.accept().await {
@@ -204,10 +201,7 @@ impl WebsocketServer {
         // streams are registered, indicating that the mapped stream is empty.
         // We would prefer it to return `Poll::Pending` in this case, so we
         // enter a dummy stream into the map.
-        let dummy_reader = self
-            .config
-            .system_bus
-            .subscribe(DUMMY_SUBSCRIPTION_TOPIC.to_string());
+        let dummy_reader = self.config.system_bus.subscribe(DUMMY_SUBSCRIPTION_TOPIC.to_string());
         subscriptions.insert(DUMMY_SUBSCRIPTION_TOPIC.to_string(), dummy_reader);
 
         // Begin the listener loop
@@ -260,16 +254,15 @@ impl WebsocketServer {
             let resp = match deserialized {
                 // Valid message body
                 Ok(message) => {
-                    let response = match self
-                        .handle_subscription_message(message, client_subscriptions)
-                        .await
-                    {
-                        Ok(resp) => serde_json::to_string(&resp).map_err(|err| {
-                            ApiServerError::WebsocketServerFailure(err.to_string())
-                        })?,
+                    let response =
+                        match self.handle_subscription_message(message, client_subscriptions).await
+                        {
+                            Ok(resp) => serde_json::to_string(&resp).map_err(|err| {
+                                ApiServerError::WebsocketServerFailure(err.to_string())
+                            })?,
 
-                        Err(e) => e.to_string(),
-                    };
+                            Err(e) => e.to_string(),
+                        };
 
                     Message::Text(response)
                 },
@@ -307,18 +300,14 @@ impl WebsocketServer {
 
                 // Register the topic subscription in the system bus and in the stream
                 // map that the listener loop polls
-                let reader = route_handler
-                    .handle_subscribe_message(topic.clone(), &params)
-                    .await?;
+                let reader = route_handler.handle_subscribe_message(topic.clone(), &params).await?;
                 client_subscriptions.insert(topic.clone(), reader);
             },
 
             WebsocketMessage::Unsubscribe { topic } => {
                 // Parse the route and apply a handler to it
                 let (params, route_handler) = self.parse_route_and_params(&topic)?;
-                route_handler
-                    .handle_unsubscribe_message(topic.clone(), &params)
-                    .await?;
+                route_handler.handle_unsubscribe_message(topic.clone(), &params).await?;
 
                 // Remove the topic subscription from the stream map
                 client_subscriptions.remove(&topic);

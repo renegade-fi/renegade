@@ -121,11 +121,8 @@ fn build_var_type_impl(var_struct: &ItemStruct, base_name: Path) -> TokenStream2
     let base_type_associated_name = new_ident(BASE_TYPE_TRAIT_NAME);
 
     let serialized_type = str_to_path(VARIABLE_TYPE);
-    let serialize_method_expr = build_serialize_method(
-        new_ident(TO_VARS_METHOD_NAME),
-        serialized_type.clone(),
-        var_struct,
-    );
+    let serialize_method_expr =
+        build_serialize_method(new_ident(TO_VARS_METHOD_NAME), serialized_type.clone(), var_struct);
 
     let deserialize_method_expr = build_from_vars(var_struct);
 

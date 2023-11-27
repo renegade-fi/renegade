@@ -67,27 +67,17 @@ impl TypedHandler for GetNetworkTopologyHandler {
         _params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Fetch all peer info
-        let peers = self
-            .global_state
-            .read_peer_index()
-            .await
-            .get_info_map()
-            .await;
+        let peers = self.global_state.read_peer_index().await.get_info_map().await;
 
         // Gather by cluster
         let mut peers_by_cluster: HashMap<String, Vec<Peer>> = HashMap::with_capacity(peers.len());
         for peer in peers.values().cloned() {
             let peer: Peer = peer.into();
-            peers_by_cluster
-                .entry(peer.cluster_id.clone())
-                .or_default()
-                .push(peer);
+            peers_by_cluster.entry(peer.cluster_id.clone()).or_default().push(peer);
         }
 
         // Reformat into response
-        Ok(GetNetworkTopologyResponse {
-            network: peers_by_cluster.into(),
-        })
+        Ok(GetNetworkTopologyResponse { network: peers_by_cluster.into() })
     }
 }
 
@@ -119,12 +109,7 @@ impl TypedHandler for GetClusterInfoHandler {
         let cluster_id = parse_cluster_id_from_params(&params)?;
 
         // For simplicity, fetch all peer info and filter by cluster
-        let peers = self
-            .global_state
-            .read_peer_index()
-            .await
-            .get_info_map()
-            .await;
+        let peers = self.global_state.read_peer_index().await.get_info_map().await;
 
         let peers: Vec<Peer> = peers
             .into_iter()
@@ -132,12 +117,7 @@ impl TypedHandler for GetClusterInfoHandler {
             .map(|(_, peer_info)| peer_info.into())
             .collect_vec();
 
-        Ok(GetClusterInfoResponse {
-            cluster: Cluster {
-                id: cluster_id.to_string(),
-                peers,
-            },
-        })
+        Ok(GetClusterInfoResponse { cluster: Cluster { id: cluster_id.to_string(), peers } })
     }
 }
 
@@ -167,12 +147,7 @@ impl TypedHandler for GetPeerInfoHandler {
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let peer_id = parse_peer_id_from_params(&params)?;
-        if let Some(info) = self
-            .global_state
-            .read_peer_index()
-            .await
-            .get_peer_info(&peer_id)
-            .await
+        if let Some(info) = self.global_state.read_peer_index().await.get_peer_info(&peer_id).await
         {
             Ok(GetPeerInfoResponse { peer: info.into() })
         } else {

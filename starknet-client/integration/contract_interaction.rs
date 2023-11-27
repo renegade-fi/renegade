@@ -73,9 +73,8 @@ async fn test_new_wallet(test_args: IntegrationTestArgs) -> Result<()> {
         .get_public_blinder_tx(public_shares.blinder)
         .await?
         .ok_or(eyre::eyre!("No transaction found for public blinder"))?;
-    let recovered_public_shares = client
-        .fetch_public_shares_from_tx(public_shares.blinder, tx_hash)
-        .await?;
+    let recovered_public_shares =
+        client.fetch_public_shares_from_tx(public_shares.blinder, tx_hash).await?;
 
     // Check that the recovered public shares are the same as the original ones
     assert_eq_result!(public_shares, recovered_public_shares)
@@ -112,9 +111,8 @@ async fn test_update_wallet(test_args: IntegrationTestArgs) -> Result<()> {
         .get_public_blinder_tx(new_shares.blinder)
         .await?
         .ok_or(eyre::eyre!("No transaction found for public blinder"))?;
-    let recovered_public_shares = client
-        .fetch_public_shares_from_tx(new_shares.blinder, tx_hash)
-        .await?;
+    let recovered_public_shares =
+        client.fetch_public_shares_from_tx(new_shares.blinder, tx_hash).await?;
 
     // Check that the recovered public shares are the same as the original ones
     assert_eq_result!(new_shares, recovered_public_shares)
@@ -156,9 +154,8 @@ async fn test_match(test_args: IntegrationTestArgs) -> Result<()> {
         .get_public_blinder_tx(new_shares1.blinder)
         .await?
         .ok_or(eyre::eyre!("No transaction found for public blinder"))?;
-    let recovered_public_shares_1 = client
-        .fetch_public_shares_from_tx(new_shares1.blinder, tx_hash)
-        .await?;
+    let recovered_public_shares_1 =
+        client.fetch_public_shares_from_tx(new_shares1.blinder, tx_hash).await?;
 
     // Check that the recovered public shares are the same as the original ones
     assert_eq_result!(new_shares1, recovered_public_shares_1)?;
@@ -168,9 +165,8 @@ async fn test_match(test_args: IntegrationTestArgs) -> Result<()> {
         .get_public_blinder_tx(new_shares2.blinder)
         .await?
         .ok_or(eyre::eyre!("No transaction found for public blinder"))?;
-    let recovered_public_shares_2 = client
-        .fetch_public_shares_from_tx(new_shares2.blinder, tx_hash)
-        .await?;
+    let recovered_public_shares_2 =
+        client.fetch_public_shares_from_tx(new_shares2.blinder, tx_hash).await?;
 
     // Check that the recovered public shares are the same as the original ones
     assert_eq_result!(new_shares2, recovered_public_shares_2)

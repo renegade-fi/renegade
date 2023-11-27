@@ -148,19 +148,14 @@ impl ExchangeConnection for OkxConnection {
                 // Error reading from the websocket
                 Err(e) => {
                     log::error!("Error reading message from Okx ws: {}", e);
-                    Some(Err(ExchangeConnectionError::ConnectionHangup(
-                        e.to_string(),
-                    )))
+                    Some(Err(ExchangeConnectionError::ConnectionHangup(e.to_string())))
                 },
             }
         });
 
         // Build a price stream
         let price_stream = InitializablePriceStream::new(Box::pin(mapped_stream));
-        Ok(Self {
-            price_stream: Box::new(price_stream),
-            write_stream: Box::new(write),
-        })
+        Ok(Self { price_stream: Box::new(price_stream), write_stream: Box::new(write) })
     }
 
     async fn send_keepalive(&mut self) -> Result<(), ExchangeConnectionError> {

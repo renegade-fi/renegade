@@ -37,10 +37,7 @@ fn prefix_product_impl(
     fabric: &Fabric,
 ) -> Vec<AuthenticatedScalar> {
     let n = a.len();
-    assert!(
-        pre.iter().all(|x| x < &n),
-        "All prefixes requested must be in range"
-    );
+    assert!(pre.iter().all(|x| x < &n), "All prefixes requested must be in range");
 
     // Fetch one inverse pair per element from the pre-processing source
     let (b_values, b_inv_values) = fabric.random_inverse_pairs(n + 1 /* num_inverses */);
@@ -70,15 +67,11 @@ fn prefix_product_impl(
     // To do so, we first batch multiply b_0^-1 * b_i for i > 0
     let cancellation_factors = AuthenticatedScalar::batch_mul(
         &vec![b_inv_values[0].clone(); pre.len()], // Each prefix product starts at 0
-        &pre.iter()
-            .map(|index| b_values[*index].clone())
-            .collect::<Vec<_>>(),
+        &pre.iter().map(|index| b_values[*index].clone()).collect::<Vec<_>>(),
     );
 
-    let selected_partial_products = pre
-        .iter()
-        .map(|index| partial_products[*index].clone())
-        .collect::<Vec<_>>();
+    let selected_partial_products =
+        pre.iter().map(|index| partial_products[*index].clone()).collect::<Vec<_>>();
 
     // No communication is required here, the partial_products are public and the
     // cancellation_factors are shared, so computation can be done locally.

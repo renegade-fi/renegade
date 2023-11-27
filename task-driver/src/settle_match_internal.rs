@@ -200,12 +200,8 @@ impl Task for SettleMatchInternalTask {
     }
 
     async fn cleanup(&mut self) -> Result<(), Self::Error> {
-        self.find_wallet_for_order(&self.order_id1)
-            .await?
-            .unlock_wallet();
-        self.find_wallet_for_order(&self.order_id2)
-            .await?
-            .unlock_wallet();
+        self.find_wallet_for_order(&self.order_id1).await?.unlock_wallet();
+        self.find_wallet_for_order(&self.order_id2).await?.unlock_wallet();
 
         Ok(())
     }
@@ -282,15 +278,11 @@ impl SettleMatchInternalTask {
         let wallet2 = self.find_wallet_for_order(order2).await?;
 
         if !wallet1.try_lock_wallet() {
-            return Err(SettleMatchInternalTaskError::WalletLocked(
-                wallet1.wallet_id,
-            ));
+            return Err(SettleMatchInternalTaskError::WalletLocked(wallet1.wallet_id));
         }
 
         if !wallet2.try_lock_wallet() {
-            return Err(SettleMatchInternalTaskError::WalletLocked(
-                wallet2.wallet_id,
-            ));
+            return Err(SettleMatchInternalTaskError::WalletLocked(wallet2.wallet_id));
         }
 
         Ok(())
@@ -302,18 +294,13 @@ impl SettleMatchInternalTask {
         order: &OrderIdentifier,
     ) -> Result<Wallet, SettleMatchInternalTaskError> {
         let locked_wallet_index = self.global_state.read_wallet_index().await;
-        let wallet_id = locked_wallet_index
-            .get_wallet_for_order(order)
-            .ok_or_else(|| {
-                SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
-            })?;
+        let wallet_id = locked_wallet_index.get_wallet_for_order(order).ok_or_else(|| {
+            SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
+        })?;
 
-        locked_wallet_index
-            .get_wallet(&wallet_id)
-            .await
-            .ok_or_else(|| {
-                SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
-            })
+        locked_wallet_index.get_wallet(&wallet_id).await.ok_or_else(|| {
+            SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
+        })
     }
 
     /// Prove `VALID MATCH MPC` on the order pair
@@ -359,14 +346,10 @@ impl SettleMatchInternalTask {
     /// TODO: Shootdown nullifiers of now-spent wallets
     async fn prove_settle(&mut self) -> Result<(), SettleMatchInternalTaskError> {
         // Build a witness
-        let party0_public_shares = &self
-            .order1_validity_witness
-            .reblind_witness
-            .reblinded_wallet_public_shares;
-        let party1_public_shares = &self
-            .order2_validity_witness
-            .reblind_witness
-            .reblinded_wallet_public_shares;
+        let party0_public_shares =
+            &self.order1_validity_witness.reblind_witness.reblinded_wallet_public_shares;
+        let party1_public_shares =
+            &self.order2_validity_witness.reblind_witness.reblinded_wallet_public_shares;
         let witness = ValidSettleWitness {
             match_res: self.match_result.clone(),
             party0_public_shares: party0_public_shares.clone(),
@@ -467,12 +450,8 @@ impl SettleMatchInternalTask {
 
         // If the transaction is successful, cancel all orders on the old wallet
         // nullifiers and await new validity proofs
-        self.global_state
-            .nullify_orders(party0_reblind_proof.original_shares_nullifier)
-            .await;
-        self.global_state
-            .nullify_orders(party1_reblind_proof.original_shares_nullifier)
-            .await;
+        self.global_state.nullify_orders(party0_reblind_proof.original_shares_nullifier).await;
+        self.global_state.nullify_orders(party1_reblind_proof.original_shares_nullifier).await;
 
         Ok(())
     }
@@ -533,10 +512,7 @@ impl SettleMatchInternalTask {
     /// A helper to add or subtract from the balance of a wallet the given
     /// amount
     fn update_balance(mint: BigUint, amount: i64, wallet: &mut Wallet) {
-        let balance = wallet
-            .balances
-            .entry(mint.clone())
-            .or_insert(Balance { mint, amount: 0 });
+        let balance = wallet.balances.entry(mint.clone()).or_insert(Balance { mint, amount: 0 });
         balance.amount = balance.amount.checked_add_signed(amount).unwrap();
     }
 

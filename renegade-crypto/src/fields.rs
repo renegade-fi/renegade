@@ -77,11 +77,7 @@ pub fn bigint_to_scalar_bits<const D: usize>(a: &BigInt) -> Vec<Scalar> {
     let mut res = Vec::with_capacity(D);
     // Reverse the iterator; BigInt::bits expects big endian
     for i in 0..D {
-        res.push(if a.bit(i as u64) {
-            Scalar::one()
-        } else {
-            Scalar::zero()
-        })
+        res.push(if a.bit(i as u64) { Scalar::one() } else { Scalar::zero() })
     }
 
     res
@@ -118,9 +114,8 @@ mod field_helper_test {
     #[test]
     fn test_bigint_to_scalar_bits() {
         let mut rng = thread_rng();
-        let random_scalar_bits = (0..256)
-            .map(|_| rng.gen_bool(0.5 /* p */) as u64)
-            .collect::<Vec<_>>();
+        let random_scalar_bits =
+            (0..256).map(|_| rng.gen_bool(0.5 /* p */) as u64).collect::<Vec<_>>();
 
         let random_bigint = random_scalar_bits
             .iter()
@@ -128,10 +123,7 @@ mod field_helper_test {
             .cloned()
             .map(BigInt::from)
             .fold(BigInt::from(0u64), |acc, val| acc * 2 + val);
-        let scalar_bits = random_scalar_bits
-            .into_iter()
-            .map(Scalar::from)
-            .collect::<Vec<_>>();
+        let scalar_bits = random_scalar_bits.into_iter().map(Scalar::from).collect::<Vec<_>>();
 
         let res = bigint_to_scalar_bits::<256 /* bits */>(&random_bigint);
 

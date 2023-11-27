@@ -66,11 +66,7 @@ impl Worker for PriceReporterManager {
     type Error = PriceReporterManagerError;
 
     fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
-        Ok(Self {
-            config,
-            manager_executor_handle: None,
-            manager_runtime: None,
-        })
+        Ok(Self { config, manager_executor_handle: None, manager_runtime: None })
     }
 
     fn is_recoverable(&self) -> bool {
@@ -114,10 +110,7 @@ impl Worker for PriceReporterManager {
                         .build()
                         .unwrap();
 
-                    runtime
-                        .block_on(manager_executor.execution_loop())
-                        .err()
-                        .unwrap()
+                    runtime.block_on(manager_executor.execution_loop()).err().unwrap()
                 })
                 .map_err(|err| PriceReporterManagerError::ManagerSetup(err.to_string()))
         }?;

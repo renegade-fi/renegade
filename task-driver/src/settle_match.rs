@@ -226,16 +226,10 @@ impl SettleMatchTask {
     /// Apply the match to the wallets and prove `VALID SETTLE`
     async fn prove_settle(&self) -> Result<ValidSettleBundle, SettleMatchTaskError> {
         // Modify the secret shares
-        let mut party0_modified_shares: SizedWalletShare = self
-            .handshake_result
-            .party0_reblinded_shares
-            .clone()
-            .to_base_type();
-        let mut party1_modified_shares: SizedWalletShare = self
-            .handshake_result
-            .party1_reblinded_shares
-            .clone()
-            .to_base_type();
+        let mut party0_modified_shares: SizedWalletShare =
+            self.handshake_result.party0_reblinded_shares.clone().to_base_type();
+        let mut party1_modified_shares: SizedWalletShare =
+            self.handshake_result.party1_reblinded_shares.clone().to_base_type();
         let party0_commit_proof = self.party0_validity_proof.commitment_proof.clone();
         let party1_commit_proof = self.party1_validity_proof.commitment_proof.clone();
 
@@ -326,12 +320,8 @@ impl SettleMatchTask {
 
         // If the transaction was successful, cancel all orders on both nullifiers,
         // await new validity proofs
-        self.global_state
-            .nullify_orders(party0_reblind_proof.original_shares_nullifier)
-            .await;
-        self.global_state
-            .nullify_orders(party1_reblind_proof.original_shares_nullifier)
-            .await;
+        self.global_state.nullify_orders(party0_reblind_proof.original_shares_nullifier).await;
+        self.global_state.nullify_orders(party1_reblind_proof.original_shares_nullifier).await;
 
         Ok(())
     }
@@ -377,16 +367,9 @@ impl SettleMatchTask {
         wallet
             .balances
             .entry(receive_mint.clone())
-            .or_insert_with(|| Balance {
-                mint: receive_mint,
-                amount: 0u64,
-            })
+            .or_insert_with(|| Balance { mint: receive_mint, amount: 0u64 })
             .amount += receive_amount;
-        wallet
-            .orders
-            .get_mut(&self.handshake_state.local_order_id)
-            .unwrap()
-            .amount -= fill_size;
+        wallet.orders.get_mut(&self.handshake_state.local_order_id).unwrap().amount -= fill_size;
 
         // Reblind the wallet
         wallet.reblind_wallet();
@@ -405,13 +388,8 @@ impl SettleMatchTask {
 
     /// Update the validity proofs for all orders in the wallet after settlement
     async fn update_validity_proofs(&self) -> Result<(), SettleMatchTaskError> {
-        let wallet = self
-            .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&self.wallet_id)
-            .await
-            .unwrap();
+        let wallet =
+            self.global_state.read_wallet_index().await.get_wallet(&self.wallet_id).await.unwrap();
 
         update_wallet_validity_proofs(
             &wallet,

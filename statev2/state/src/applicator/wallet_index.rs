@@ -32,16 +32,9 @@ impl StateApplicator {
             .and_then(|w| w.try_into().map_err(StateApplicatorError::Proto))?;
 
         // Add the wallet to the wallet indices
-        let tx = self
-            .db()
-            .new_write_tx()
-            .map_err(StateApplicatorError::Storage)?;
+        let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
 
-        Self::index_orders(
-            &wallet.wallet_id,
-            &wallet.orders.keys().cloned().collect_vec(),
-            &tx,
-        )?;
+        Self::index_orders(&wallet.wallet_id, &wallet.orders.keys().cloned().collect_vec(), &tx)?;
         Self::write_wallet_with_tx(&wallet, &tx)?;
 
         tx.commit().map_err(StateApplicatorError::Storage)?;
@@ -50,9 +43,7 @@ impl StateApplicator {
         let wallet_topic = wallet_topic_name(&wallet.wallet_id);
         self.system_bus().publish(
             wallet_topic,
-            SystemBusMessage::WalletUpdate {
-                wallet: Box::new(wallet.clone().into()),
-            },
+            SystemBusMessage::WalletUpdate { wallet: Box::new(wallet.clone().into()) },
         );
 
         Ok(())
@@ -76,10 +67,7 @@ impl StateApplicator {
             })
             .and_then(|w| w.try_into().map_err(StateApplicatorError::Proto))?;
 
-        let tx = self
-            .db()
-            .new_write_tx()
-            .map_err(StateApplicatorError::Storage)?;
+        let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
 
         // Any new orders in the wallet should be added to the orderbook
         let nullifier = wallet.get_wallet_nullifier();
@@ -96,11 +84,7 @@ impl StateApplicator {
         }
 
         // Update the order -> wallet mapping and index the wallet
-        Self::index_orders(
-            &wallet.wallet_id,
-            &wallet.orders.keys().cloned().collect_vec(),
-            &tx,
-        )?;
+        Self::index_orders(&wallet.wallet_id, &wallet.orders.keys().cloned().collect_vec(), &tx)?;
         Self::write_wallet_with_tx(&wallet, &tx)?;
 
         tx.commit().map_err(StateApplicatorError::Storage)?;
@@ -109,9 +93,7 @@ impl StateApplicator {
         let wallet_topic = wallet_topic_name(&wallet.wallet_id);
         self.system_bus().publish(
             wallet_topic,
-            SystemBusMessage::WalletUpdate {
-                wallet: Box::new(wallet.clone().into()),
-            },
+            SystemBusMessage::WalletUpdate { wallet: Box::new(wallet.clone().into()) },
         );
 
         Ok(())
@@ -137,8 +119,7 @@ impl StateApplicator {
 
     /// Write a given wallet to storage
     fn write_wallet_with_tx(wallet: &Wallet, tx: &DbTxn<'_, RW>) -> Result<()> {
-        tx.write(WALLETS_TABLE, &wallet.wallet_id, wallet)
-            .map_err(StateApplicatorError::Storage)
+        tx.write(WALLETS_TABLE, &wallet.wallet_id, wallet).map_err(StateApplicatorError::Storage)
     }
 }
 
@@ -209,11 +190,7 @@ pub(crate) mod test {
         let opening = WalletAuthenticationPathBuilder::default()
             .leaf_index(0)
             .value(Scalar::random(&mut rng).into())
-            .path_siblings(
-                (0..MERKLE_HEIGHT)
-                    .map(|_| Scalar::random(&mut rng).into())
-                    .collect(),
-            )
+            .path_siblings((0..MERKLE_HEIGHT).map(|_| Scalar::random(&mut rng).into()).collect())
             .build()
             .unwrap();
 
@@ -247,10 +224,7 @@ pub(crate) mod test {
         let expected_wallet: Wallet = msg.wallet.unwrap().try_into().unwrap();
 
         let db = applicator.db();
-        let wallet: Wallet = db
-            .read(WALLETS_TABLE, &expected_wallet.wallet_id)
-            .unwrap()
-            .unwrap();
+        let wallet: Wallet = db.read(WALLETS_TABLE, &expected_wallet.wallet_id).unwrap().unwrap();
 
         assert_eq!(wallet, expected_wallet);
 
@@ -273,19 +247,13 @@ pub(crate) mod test {
         // Update the wallet by removing the orders
         let mut wallet = msg.wallet.unwrap();
         wallet.orders = vec![];
-        let new_msg = UpdateWalletBuilder::default()
-            .wallet(wallet.clone())
-            .build()
-            .unwrap();
+        let new_msg = UpdateWalletBuilder::default().wallet(wallet.clone()).build().unwrap();
         applicator.update_wallet(new_msg).unwrap();
 
         // Check that the indexed wallet is as expected
         let expected_wallet: Wallet = wallet.try_into().unwrap();
         let db = applicator.db();
-        let wallet: Wallet = db
-            .read(WALLETS_TABLE, &expected_wallet.wallet_id)
-            .unwrap()
-            .unwrap();
+        let wallet: Wallet = db.read(WALLETS_TABLE, &expected_wallet.wallet_id).unwrap().unwrap();
 
         assert_eq!(wallet, expected_wallet);
     }

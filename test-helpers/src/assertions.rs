@@ -8,10 +8,7 @@ macro_rules! assert_true_result {
         if $x {
             Ok(())
         } else {
-            Err(eyre::eyre!(
-                "Expected `{} == true`, got `false`",
-                stringify!($x)
-            ))
+            Err(eyre::eyre!("Expected `{} == true`, got `false`", stringify!($x)))
         }
     };
 }

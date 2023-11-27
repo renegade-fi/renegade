@@ -207,10 +207,7 @@ impl LookupWalletTask {
 
         let latest_tx = updating_tx
             .ok_or_else(|| LookupWalletTaskError::NotFound(ERR_WALLET_NOT_FOUND.to_string()))?;
-        log::info!(
-            "latest updating tx: 0x{:x}",
-            starknet_felt_to_biguint(&latest_tx)
-        );
+        log::info!("latest updating tx: 0x{:x}", starknet_felt_to_biguint(&latest_tx));
 
         // Fetch the secret shares from the tx
         let blinder_public_share = curr_blinder - curr_blinder_private_share;
@@ -226,9 +223,7 @@ impl LookupWalletTask {
         // randomness, so we take the serialized length minus one
         let shares_per_wallet = public_shares.to_scalars().len();
         let mut private_share_csprng = PoseidonCSPRNG::new(self.secret_share_seed);
-        private_share_csprng
-            .advance_by((blinder_index - 1) * (shares_per_wallet - 1))
-            .unwrap();
+        private_share_csprng.advance_by((blinder_index - 1) * (shares_per_wallet - 1)).unwrap();
 
         // Sample private secret shares for the wallet
         let mut new_private_shares = private_share_csprng.take(shares_per_wallet);
@@ -242,12 +237,7 @@ impl LookupWalletTask {
 
         let mut wallet = Wallet {
             wallet_id: self.wallet_id,
-            orders: circuit_wallet
-                .orders
-                .iter()
-                .cloned()
-                .map(|o| (Uuid::new_v4(), o))
-                .collect(),
+            orders: circuit_wallet.orders.iter().cloned().map(|o| (Uuid::new_v4(), o)).collect(),
             balances: circuit_wallet
                 .balances
                 .iter()

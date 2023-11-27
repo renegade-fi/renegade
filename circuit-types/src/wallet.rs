@@ -45,31 +45,19 @@ where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
     /// The list of balances in the wallet
-    #[serde(
-        serialize_with = "serialize_array",
-        deserialize_with = "deserialize_array"
-    )]
+    #[serde(serialize_with = "serialize_array", deserialize_with = "deserialize_array")]
     pub balances: [Balance; MAX_BALANCES],
     /// The list of open orders in the wallet
-    #[serde(
-        serialize_with = "serialize_array",
-        deserialize_with = "deserialize_array"
-    )]
+    #[serde(serialize_with = "serialize_array", deserialize_with = "deserialize_array")]
     pub orders: [Order; MAX_ORDERS],
     /// The list of payable fees in the wallet
-    #[serde(
-        serialize_with = "serialize_array",
-        deserialize_with = "deserialize_array"
-    )]
+    #[serde(serialize_with = "serialize_array", deserialize_with = "deserialize_array")]
     pub fees: [Fee; MAX_FEES],
     /// The key tuple used by the wallet; i.e. (pk_root, pk_match, pk_settle,
     /// pk_view)
     pub keys: PublicKeyChain,
     /// The wallet randomness used to blind secret shares
-    #[serde(
-        serialize_with = "scalar_to_hex_string",
-        deserialize_with = "scalar_from_hex_string"
-    )]
+    #[serde(serialize_with = "scalar_to_hex_string", deserialize_with = "scalar_from_hex_string")]
     pub blinder: Scalar,
 }
 
@@ -85,16 +73,8 @@ where
                 .collect_vec()
                 .try_into()
                 .unwrap(),
-            orders: (0..MAX_ORDERS)
-                .map(|_| Order::default())
-                .collect_vec()
-                .try_into()
-                .unwrap(),
-            fees: (0..MAX_FEES)
-                .map(|_| Fee::default())
-                .collect_vec()
-                .try_into()
-                .unwrap(),
+            orders: (0..MAX_ORDERS).map(|_| Order::default()).collect_vec().try_into().unwrap(),
+            fees: (0..MAX_FEES).map(|_| Fee::default()).collect_vec().try_into().unwrap(),
             keys: PublicKeyChain::default(),
             blinder: Scalar::zero(),
         }

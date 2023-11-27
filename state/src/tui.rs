@@ -89,10 +89,7 @@ pub enum AppTab {
 impl AppTab {
     /// Get the list of tab names
     pub fn tab_names() -> Vec<String> {
-        ["Main", "Logs"]
-            .iter()
-            .map(|str| str.to_string())
-            .collect_vec()
+        ["Main", "Logs"].iter().map(|str| str.to_string()).collect_vec()
     }
 }
 
@@ -184,11 +181,7 @@ impl StateTuiApp {
 
         // Restore the terminal state
         disable_raw_mode().unwrap();
-        execute!(
-            self.terminal.borrow_mut().backend_mut(),
-            LeaveAlternateScreen,
-        )
-        .unwrap();
+        execute!(self.terminal.borrow_mut().backend_mut(), LeaveAlternateScreen,).unwrap();
         self.terminal.borrow_mut().show_cursor().unwrap();
     }
 
@@ -311,10 +304,7 @@ impl StateTuiApp {
 
     /// Create a tab selection pane
     fn create_tab_selection(&self) -> Tabs {
-        let tab_names = AppTab::tab_names()
-            .into_iter()
-            .map(Spans::from)
-            .collect_vec();
+        let tab_names = AppTab::tab_names().into_iter().map(Spans::from).collect_vec();
 
         Tabs::new(tab_names)
             .block(Self::create_block_with_title("Tabs"))
@@ -338,16 +328,10 @@ impl StateTuiApp {
                 .get_addr()
         });
         let full_addr = format!("{local_addr}/p2p/{peer_id}");
-        let price_reporter_enabled = if self.config.disable_price_reporter {
-            STR_DISABLED
-        } else {
-            STR_ENABLED
-        };
-        let chain_events_enabled = if self.config.starknet_jsonrpc_node.is_some() {
-            STR_ENABLED
-        } else {
-            STR_DISABLED
-        };
+        let price_reporter_enabled =
+            if self.config.disable_price_reporter { STR_DISABLED } else { STR_ENABLED };
+        let chain_events_enabled =
+            if self.config.starknet_jsonrpc_node.is_some() { STR_ENABLED } else { STR_DISABLED };
 
         // Style and collect into a list
         let line1 = Spans::from(vec![
@@ -401,10 +385,8 @@ impl StateTuiApp {
     fn create_cluster_metadata_pane(&self) -> List {
         // Read the relevant state
         let cluster_id = self.global_state.local_cluster_id.clone();
-        let cluster_peers = block_on(
-            self.global_state
-                .get_local_cluster_peers(true /* include_self */),
-        );
+        let cluster_peers =
+            block_on(self.global_state.get_local_cluster_peers(true /* include_self */));
 
         // Style and collect into a list
         let line1 = Spans::from(vec![
@@ -427,39 +409,25 @@ impl StateTuiApp {
     fn create_peer_index_pane(&self) -> Table {
         // Read the necessary state
         let local_peer_id = self.global_state.local_peer_id();
-        let peer_info = block_on(async {
-            self.global_state
-                .read_peer_index()
-                .await
-                .get_info_map()
-                .await
-        });
+        let peer_info =
+            block_on(async { self.global_state.read_peer_index().await.get_info_map().await });
 
         // Sort the keys so that the table does not re-arrange every frame
         let mut sorted_keys = peer_info.keys().cloned().collect_vec();
         sorted_keys.sort();
 
         // Collect into a table
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         let mut rows = Vec::new();
-        for (peer_id, info) in sorted_keys
-            .iter()
-            .map(|key| (key, peer_info.get(key).unwrap()))
-        {
+        for (peer_id, info) in sorted_keys.iter().map(|key| (key, peer_info.get(key).unwrap())) {
             let last_heartbeat_elapsed = if peer_id.ne(&local_peer_id) {
                 (now - info.get_last_heartbeat()) * 1000
             } else {
                 0
             };
 
-            let row = Row::new(vec![
-                peer_id.to_string(),
-                format!("{last_heartbeat_elapsed} ms"),
-            ])
-            .style(*TABLE_ROW_STYLE);
+            let row = Row::new(vec![peer_id.to_string(), format!("{last_heartbeat_elapsed} ms")])
+                .style(*TABLE_ROW_STYLE);
             rows.push(row);
         }
 
@@ -478,11 +446,7 @@ impl StateTuiApp {
     fn create_order_book_pane(&self) -> Table {
         // Read the necessary state
         let order_book = block_on(async {
-            self.global_state
-                .read_order_book()
-                .await
-                .get_order_book_snapshot()
-                .await
+            self.global_state.read_order_book().await.get_order_book_snapshot().await
         });
 
         let mut sorted_keys = order_book.keys().clone().collect_vec();
@@ -490,17 +454,10 @@ impl StateTuiApp {
 
         // Style and collect into a table
         let mut rows = Vec::new();
-        for (order_id, info) in sorted_keys
-            .iter()
-            .map(|key| (*key, order_book.get(key).unwrap()))
-        {
+        for (order_id, info) in sorted_keys.iter().map(|key| (*key, order_book.get(key).unwrap())) {
             let local_nonlocal = if info.local { "local" } else { "nonlocal" }.to_string();
-            let row = Row::new(vec![
-                order_id.to_string(),
-                info.state.to_string(),
-                local_nonlocal,
-            ])
-            .style(*TABLE_ROW_STYLE);
+            let row = Row::new(vec![order_id.to_string(), info.state.to_string(), local_nonlocal])
+                .style(*TABLE_ROW_STYLE);
 
             rows.push(row)
         }

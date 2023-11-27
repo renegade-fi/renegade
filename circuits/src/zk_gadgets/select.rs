@@ -15,11 +15,7 @@ impl CondSelectGadget {
     {
         let a_vars = a.to_vars();
         let b_vars = b.to_vars();
-        assert_eq!(
-            a_vars.len(),
-            b_vars.len(),
-            "a and b must be of equal length"
-        );
+        assert_eq!(a_vars.len(), b_vars.len(), "a and b must be of equal length");
 
         // Computes selector * a + (1 - selector) * b
         let mut res = Vec::with_capacity(a_vars.len());
@@ -95,9 +91,7 @@ mod cond_select_test {
 
         cs.enforce_equal(res, b_var).unwrap();
 
-        assert!(cs
-            .check_circuit_satisfiability(&[a.inner(), b.inner()])
-            .is_ok());
+        assert!(cs.check_circuit_satisfiability(&[a.inner(), b.inner()]).is_ok());
     }
 
     /// Test the cond select gadget in a multiprover setting

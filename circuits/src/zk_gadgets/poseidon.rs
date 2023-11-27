@@ -143,9 +143,7 @@ impl PoseidonHashGadget {
         expected: &[Variable],
         cs: &mut C,
     ) -> Result<(), CircuitError> {
-        expected
-            .iter()
-            .try_for_each(|val| self.constrained_squeeze(*val, cs))
+        expected.iter().try_for_each(|val| self.constrained_squeeze(*val, cs))
     }
 
     /// Permute the state using the Poseidon 2 permutation
@@ -277,12 +275,7 @@ impl PoseidonHashGadget {
 
         // The last element of the state requires an additional copy of itself
         coeffs[0] = ScalarField::from(2u8);
-        let lc_wires = [
-            self.state[SPONGE_WIDTH - 1],
-            in_wires[0],
-            in_wires[1],
-            in_wires[2],
-        ];
+        let lc_wires = [self.state[SPONGE_WIDTH - 1], in_wires[0], in_wires[1], in_wires[2]];
         self.state[SPONGE_WIDTH - 1] = cs.lc(&lc_wires, &coeffs)?;
 
         Ok(())
@@ -315,10 +308,7 @@ mod test {
         let mut gadget = PoseidonHashGadget::new(cs.zero());
 
         // Allocate the values in the constraint system
-        let input_vars = values
-            .iter()
-            .map(|v| v.create_witness(&mut cs))
-            .collect_vec();
+        let input_vars = values.iter().map(|v| v.create_witness(&mut cs)).collect_vec();
         let output_var = expected.create_public_var(&mut cs);
 
         gadget.hash(&input_vars, output_var, &mut cs).unwrap();

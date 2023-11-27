@@ -34,11 +34,7 @@ pub struct DbCursor<'txn, Tx: TransactionKind, K: Key, V: Value> {
 impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     /// Constructor
     pub fn new(cursor: Cursor<'txn, Tx>) -> Self {
-        Self {
-            inner: cursor,
-            buffered_value: None,
-            _phantom: PhantomData,
-        }
+        Self { inner: cursor, buffered_value: None, _phantom: PhantomData }
     }
 
     /// Get the key/value at the current position
@@ -47,42 +43,28 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
             return Ok(Some((k, v)));
         }
 
-        let res = self
-            .inner
-            .get_current::<CowBuffer, CowBuffer>()
-            .map_err(StorageError::TxOp)?;
+        let res = self.inner.get_current::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)?;
 
-        res.map(|(k, v)| Self::deserialize_key_value(k, v))
-            .transpose()
+        res.map(|(k, v)| Self::deserialize_key_value(k, v)).transpose()
     }
 
     /// Position the cursor at the previous key value pair and return it
     pub fn prev(&mut self) -> Result<Option<(K, V)>, StorageError> {
-        let res = self
-            .inner
-            .prev::<CowBuffer, CowBuffer>()
-            .map_err(StorageError::TxOp)?;
+        let res = self.inner.prev::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)?;
 
-        res.map(|(k, v)| Self::deserialize_key_value(k, v))
-            .transpose()
+        res.map(|(k, v)| Self::deserialize_key_value(k, v)).transpose()
     }
 
     /// Seek to the first key in the table
     pub fn seek_first(&mut self) -> Result<(), StorageError> {
-        let res = self
-            .inner
-            .first::<CowBuffer, CowBuffer>()
-            .map_err(StorageError::TxOp)?;
+        let res = self.inner.first::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)?;
 
         self.buffer_kv_pair(res)
     }
 
     /// Seek to the last key in the table
     pub fn seek_last(&mut self) -> Result<(), StorageError> {
-        let res = self
-            .inner
-            .last::<CowBuffer, CowBuffer>()
-            .map_err(StorageError::TxOp)?;
+        let res = self.inner.last::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)?;
 
         self.buffer_kv_pair(res)
     }
@@ -90,10 +72,8 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     /// Position the cursor at a specific key
     pub fn seek(&mut self, k: &K) -> Result<(), StorageError> {
         let k_bytes = serialize_value(&k)?;
-        let res = self
-            .inner
-            .set_key::<CowBuffer, CowBuffer>(&k_bytes)
-            .map_err(StorageError::TxOp)?;
+        let res =
+            self.inner.set_key::<CowBuffer, CowBuffer>(&k_bytes).map_err(StorageError::TxOp)?;
 
         self.buffer_kv_pair(res)
     }
@@ -101,10 +81,8 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     /// Position at the first key greater than or equal to the given key
     pub fn seek_geq(&mut self, k: &K) -> Result<(), StorageError> {
         let k_bytes = serialize_value(k)?;
-        let res = self
-            .inner
-            .set_range::<CowBuffer, CowBuffer>(&k_bytes)
-            .map_err(StorageError::TxOp)?;
+        let res =
+            self.inner.set_range::<CowBuffer, CowBuffer>(&k_bytes).map_err(StorageError::TxOp)?;
 
         self.buffer_kv_pair(res)
     }
@@ -123,9 +101,7 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
 
     /// Buffer the kv pair at the current position
     fn buffer_kv_pair(&mut self, pair: Option<(CowBuffer, CowBuffer)>) -> Result<(), StorageError> {
-        self.buffered_value = pair
-            .map(|(k, v)| Self::deserialize_key_value(k, v))
-            .transpose()?;
+        self.buffered_value = pair.map(|(k, v)| Self::deserialize_key_value(k, v)).transpose()?;
 
         Ok(())
     }
@@ -139,16 +115,12 @@ impl<'txn, K: Key, V: Value> DbCursor<'txn, RW, K, V> {
         let k_bytes = serialize_value(k)?;
         let v_bytes = serialize_value(v)?;
 
-        self.inner
-            .put(&k_bytes, &v_bytes, WriteFlags::default())
-            .map_err(StorageError::TxOp)
+        self.inner.put(&k_bytes, &v_bytes, WriteFlags::default()).map_err(StorageError::TxOp)
     }
 
     /// Delete the current key/value pair
     pub fn delete(&mut self) -> Result<(), StorageError> {
-        self.inner
-            .del(WriteFlags::default())
-            .map_err(StorageError::TxOp)
+        self.inner.del(WriteFlags::default()).map_err(StorageError::TxOp)
     }
 }
 
