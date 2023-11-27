@@ -9,19 +9,22 @@ path = "integration/main.rs"
 harness = false
 
 [dependencies]
-ethers = "2"
+# === Cryptography / Arithmetic === #
 ark-bn254 = "0.4.0"
 ark-ec = "0.4.0"
 ark-ff = "0.4.0"
-alloy-primitives = "0.3.1"
-alloy-sol-types = "0.3.1"
 num-bigint = { workspace = true }
 num-traits = "0.2"
-lazy_static = "1.4.0"
+
+# === Networking / Blockchain === #
+ethers = "2"
+alloy-primitives = "0.3.1"
+alloy-sol-types = "0.3.1"
 
 # === Workspace Dependencies === #
 constants = { path = "../constants" }
-circuit-types = { path = "../circuit-types" }
+circuit-types = { path = "../circuit-types", features = ["test-helpers"] }
+circuits = { path = "../circuits", features = ["test_helpers"] }
 common = { path = "../common" }
 renegade-crypto = { path = "../renegade-crypto" }
 
@@ -30,9 +33,13 @@ serde = { workspace = true }
 serde_with = "3.4"
 postcard = { version = "1", features = ["alloc"] }
 
+# === Misc === #
+lazy_static = "1.4.0"
+
 [dev-dependencies]
 clap = { version = "4.0", features = ["derive"] }
 eyre = { workspace = true }
 test-helpers = { path = "../test-helpers" }
 util = { path = "../util" }
 json = "0.12"
+tokio = { workspace = true }

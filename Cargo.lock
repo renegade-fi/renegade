@@ -260,7 +260,8 @@ dependencies = [
  "ark-ec",
  "ark-ff",
  "circuit-types",
- "clap 4.4.8",
+ "circuits",
+ "clap 4.4.11",
  "common",
  "constants",
  "ethers",
@@ -274,6 +275,7 @@ dependencies = [
  "serde",
  "serde_with 3.4.0",
  "test-helpers",
+ "tokio",
  "util",
 ]
 
