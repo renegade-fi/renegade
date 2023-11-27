@@ -9,8 +9,8 @@ use crate::{
     helpers::{deserialize_calldata, serialize_calldata},
     serde_def_types::SerdeScalarField,
     types::{
-        MatchPayload, Proof, ValidMatchSettleStatement, ValidWalletCreateStatement,
-        ValidWalletUpdateStatement,
+        ContractProof, ContractValidMatchSettleStatement, ContractValidWalletCreateStatement,
+        ContractValidWalletUpdateStatement, MatchPayload,
     },
 };
 
@@ -79,12 +79,12 @@ impl ArbitrumClient {
     pub async fn new_wallet(
         &self,
         wallet_blinder_share: Scalar,
-        valid_wallet_create_statement: ValidWalletCreateStatement,
+        valid_wallet_create_statement: ContractValidWalletCreateStatement,
         proof: PlonkProof,
     ) -> Result<(), ArbitrumClientError> {
         let wallet_blinder_share_calldata =
             serialize_calldata(&SerdeScalarField(wallet_blinder_share.inner()))?;
-        let contract_proof: Proof = proof.try_into()?;
+        let contract_proof: ContractProof = proof.try_into()?;
         let proof_calldata = serialize_calldata(&contract_proof)?;
         let valid_wallet_create_statement_calldata =
             serialize_calldata(&valid_wallet_create_statement)?;
@@ -110,13 +110,13 @@ impl ArbitrumClient {
     pub async fn update_wallet(
         &self,
         wallet_blinder_share: Scalar,
-        valid_wallet_update_statement: ValidWalletUpdateStatement,
+        valid_wallet_update_statement: ContractValidWalletUpdateStatement,
         statement_signature: Vec<u8>,
         proof: PlonkProof,
     ) -> Result<(), ArbitrumClientError> {
         let wallet_blinder_share_calldata =
             serialize_calldata(&SerdeScalarField(wallet_blinder_share.inner()))?;
-        let contract_proof: Proof = proof.try_into()?;
+        let contract_proof: ContractProof = proof.try_into()?;
         let proof_calldata = serialize_calldata(&contract_proof)?;
         let valid_wallet_update_statement_calldata =
             serialize_calldata(&valid_wallet_update_statement)?;
@@ -149,33 +149,35 @@ impl ArbitrumClient {
         party_1_match_payload: MatchPayload,
         party_1_valid_commitments_proof: PlonkProof,
         party_1_valid_reblind_proof: PlonkProof,
-        valid_match_settle_statement: ValidMatchSettleStatement,
+        valid_match_settle_statement: ContractValidMatchSettleStatement,
         valid_match_settle_proof: PlonkProof,
     ) -> Result<(), ArbitrumClientError> {
         let party_0_match_payload_calldata = serialize_calldata(&party_0_match_payload)?;
 
-        let party_0_valid_commitments_proof: Proof = party_0_valid_commitments_proof.try_into()?;
+        let party_0_valid_commitments_proof: ContractProof =
+            party_0_valid_commitments_proof.try_into()?;
         let party_0_valid_commitments_proof_calldata =
             serialize_calldata(&party_0_valid_commitments_proof)?;
 
-        let party_0_valid_reblind_proof: Proof = party_0_valid_reblind_proof.try_into()?;
+        let party_0_valid_reblind_proof: ContractProof = party_0_valid_reblind_proof.try_into()?;
         let party_0_valid_reblind_proof_calldata =
             serialize_calldata(&party_0_valid_reblind_proof)?;
 
         let party_1_match_payload_calldata = serialize_calldata(&party_1_match_payload)?;
 
-        let party_1_valid_commitments_proof: Proof = party_1_valid_commitments_proof.try_into()?;
+        let party_1_valid_commitments_proof: ContractProof =
+            party_1_valid_commitments_proof.try_into()?;
         let party_1_valid_commitments_proof_calldata =
             serialize_calldata(&party_1_valid_commitments_proof)?;
 
-        let party_1_valid_reblind_proof: Proof = party_1_valid_reblind_proof.try_into()?;
+        let party_1_valid_reblind_proof: ContractProof = party_1_valid_reblind_proof.try_into()?;
         let party_1_valid_reblind_proof_calldata =
             serialize_calldata(&party_1_valid_reblind_proof)?;
 
         let valid_match_settle_statement_calldata =
             serialize_calldata(&valid_match_settle_statement)?;
 
-        let valid_match_settle_proof: Proof = valid_match_settle_proof.try_into()?;
+        let valid_match_settle_proof: ContractProof = valid_match_settle_proof.try_into()?;
         let valid_match_settle_proof_calldata = serialize_calldata(&valid_match_settle_proof)?;
 
         self.darkpool_contract

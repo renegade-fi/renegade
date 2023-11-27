@@ -5,7 +5,8 @@
 use alloy_primitives::{Address, U256};
 use ark_bn254::{g1::Config as G1Config, Fq};
 use ark_ec::short_weierstrass::Affine;
-use circuit_types::{PlonkProof, PolynomialCommitment};
+use circuit_types::{traits::BaseType, PlonkProof, PolynomialCommitment};
+use circuits::zk_circuits::valid_wallet_create::ValidWalletCreateStatement;
 use constants::ScalarField;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -24,7 +25,7 @@ pub type G1BaseField = Fq;
 /// A Plonk proof, using the "fast prover" strategy described in the paper.
 #[serde_as]
 #[derive(Serialize, Deserialize)]
-pub struct Proof {
+pub struct ContractProof {
     /// The commitments to the wire polynomials
     #[serde_as(as = "[G1AffineDef; NUM_WIRE_TYPES]")]
     pub wire_comms: [G1Affine; NUM_WIRE_TYPES],
@@ -54,10 +55,35 @@ pub struct Proof {
     pub z_bar: ScalarField,
 }
 
+impl TryFrom<PlonkProof> for ContractProof {
+    type Error = ConversionError;
+
+    fn try_from(value: PlonkProof) -> Result<Self, Self::Error> {
+        Ok(ContractProof {
+            wire_comms: try_unwrap_commitments(&value.wires_poly_comms)?,
+            z_comm: value.prod_perm_poly_comm.0,
+            quotient_comms: try_unwrap_commitments(&value.split_quot_poly_comms)?,
+            w_zeta: value.opening_proof.0,
+            w_zeta_omega: value.shifted_opening_proof.0,
+            wire_evals: value
+                .poly_evals
+                .wires_evals
+                .try_into()
+                .map_err(|_| ConversionError::InvalidLength)?,
+            sigma_evals: value
+                .poly_evals
+                .wire_sigma_evals
+                .try_into()
+                .map_err(|_| ConversionError::InvalidLength)?,
+            z_bar: value.poly_evals.perm_next_eval,
+        })
+    }
+}
+
 /// Represents an external transfer of an ERC20 token
 #[serde_as]
 #[derive(Serialize, Deserialize, Default)]
-pub struct ExternalTransfer {
+pub struct ContractExternalTransfer {
     /// The address of the account contract to deposit from or withdraw to
     #[serde_as(as = "AddressDef")]
     pub account_addr: Address,
@@ -76,7 +102,7 @@ pub struct ExternalTransfer {
 /// field, it takes 2 Bn254 scalar field elements to represent each coordinate.
 #[serde_as]
 #[derive(Serialize, Deserialize)]
-pub struct PublicSigningKey {
+pub struct ContractPublicSigningKey {
     /// The affine x-coordinate of the public key
     #[serde_as(as = "[ScalarFieldDef; 2]")]
     pub x: [ScalarField; 2],
@@ -88,7 +114,7 @@ pub struct PublicSigningKey {
 /// Statement for `VALID_WALLET_CREATE` circuit
 #[serde_as]
 #[derive(Serialize, Deserialize)]
-pub struct ValidWalletCreateStatement {
+pub struct ContractValidWalletCreateStatement {
     /// The commitment to the private secret shares of the wallet
     #[serde_as(as = "ScalarFieldDef")]
     pub private_shares_commitment: ScalarField,
@@ -97,10 +123,31 @@ pub struct ValidWalletCreateStatement {
     pub public_wallet_shares: Vec<ScalarField>,
 }
 
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
+    From<ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>
+    for ContractValidWalletCreateStatement
+where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
+    fn from(value: ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>) -> Self {
+        let public_wallet_shares = value
+            .public_wallet_shares
+            .to_scalars()
+            .into_iter()
+            .map(|s| s.inner())
+            .collect();
+
+        ContractValidWalletCreateStatement {
+            private_shares_commitment: value.private_shares_commitment.inner(),
+            public_wallet_shares,
+        }
+    }
+}
+
 /// Statement for `VALID_WALLET_UPDATE` circuit
 #[serde_as]
 #[derive(Serialize, Deserialize)]
-pub struct ValidWalletUpdateStatement {
+pub struct ContractValidWalletUpdateStatement {
     /// The nullifier of the old wallet's secret shares
     #[serde_as(as = "ScalarFieldDef")]
     pub old_shares_nullifier: ScalarField,
@@ -115,9 +162,9 @@ pub struct ValidWalletUpdateStatement {
     #[serde_as(as = "ScalarFieldDef")]
     pub merkle_root: ScalarField,
     /// The external transfer associated with this update
-    pub external_transfer: Option<ExternalTransfer>,
+    pub external_transfer: Option<ContractExternalTransfer>,
     /// The public root key of the old wallet, rotated out after this update
-    pub old_pk_root: PublicSigningKey,
+    pub old_pk_root: ContractPublicSigningKey,
     /// The timestamp this update was applied at
     pub timestamp: u64,
 }
@@ -125,7 +172,7 @@ pub struct ValidWalletUpdateStatement {
 /// Statement for the `VALID_REBLIND` circuit
 #[serde_as]
 #[derive(Serialize, Deserialize)]
-pub struct ValidReblindStatement {
+pub struct ContractValidReblindStatement {
     /// The nullifier of the original wallet's secret shares
     #[serde_as(as = "ScalarFieldDef")]
     pub original_shares_nullifier: ScalarField,
@@ -140,7 +187,7 @@ pub struct ValidReblindStatement {
 
 /// Statememt for the `VALID_COMMITMENTS` circuit
 #[derive(Serialize, Deserialize)]
-pub struct ValidCommitmentsStatement {
+pub struct ContractValidCommitmentsStatement {
     /// The index of the balance sent by the party if a successful match occurs
     pub balance_send_index: u64,
     /// The index of the balance received by the party if a successful match
@@ -153,7 +200,7 @@ pub struct ValidCommitmentsStatement {
 /// Statement for the `VALID_MATCH_SETTLE` circuit
 #[serde_as]
 #[derive(Serialize, Deserialize)]
-pub struct ValidMatchSettleStatement {
+pub struct ContractValidMatchSettleStatement {
     /// The modified blinded public secret shares of the first party
     #[serde_as(as = "Vec<ScalarFieldDef>")]
     pub party0_modified_shares: Vec<ScalarField>,
@@ -182,9 +229,9 @@ pub struct MatchPayload {
     #[serde_as(as = "ScalarFieldDef")]
     pub wallet_blinder_share: ScalarField,
     /// The statement for the party's `VALID_COMMITMENTS` proof
-    pub valid_commitments_statement: ValidCommitmentsStatement,
+    pub valid_commitments_statement: ContractValidCommitmentsStatement,
     /// The statement for the party's `VALID_REBLIND` proof
-    pub valid_reblind_statement: ValidReblindStatement,
+    pub valid_reblind_statement: ContractValidReblindStatement,
 }
 
 // ------------------------
@@ -193,7 +240,7 @@ pub struct MatchPayload {
 
 /// Try to extract a fixed-length array of G1Affine points
 /// from a slice of proof system commitments
-fn try_unwrap_commitments<const N: usize>(
+pub fn try_unwrap_commitments<const N: usize>(
     comms: &[PolynomialCommitment],
 ) -> Result<[G1Affine; N], ConversionError> {
     comms
@@ -202,29 +249,4 @@ fn try_unwrap_commitments<const N: usize>(
         .collect::<Vec<_>>()
         .try_into()
         .map_err(|_| ConversionError::InvalidLength)
-}
-
-impl TryFrom<PlonkProof> for Proof {
-    type Error = ConversionError;
-
-    fn try_from(value: PlonkProof) -> Result<Self, Self::Error> {
-        Ok(Proof {
-            wire_comms: try_unwrap_commitments(&value.wires_poly_comms)?,
-            z_comm: value.prod_perm_poly_comm.0,
-            quotient_comms: try_unwrap_commitments(&value.split_quot_poly_comms)?,
-            w_zeta: value.opening_proof.0,
-            w_zeta_omega: value.shifted_opening_proof.0,
-            wire_evals: value
-                .poly_evals
-                .wires_evals
-                .try_into()
-                .map_err(|_| ConversionError::InvalidLength)?,
-            sigma_evals: value
-                .poly_evals
-                .wire_sigma_evals
-                .try_into()
-                .map_err(|_| ConversionError::InvalidLength)?,
-            z_bar: value.poly_evals.perm_next_eval,
-        })
-    }
 }
