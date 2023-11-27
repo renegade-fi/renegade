@@ -447,6 +447,17 @@ mod tests {
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
+    /// Test the case in which parties attempt to match on different prices
+    #[test]
+    fn test_valid_match__different_prices() {
+        let (mut witness, statement) = dummy_witness_and_statement();
+
+        // Change the price of one of the orders
+        let one = Scalar::one();
+        rand_branch!(witness.price1 = witness.price1 + one, witness.price2 = witness.price2 + one);
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
+    }
+
     /// Test the case in which the balance provided to the matching engine is
     /// not for the correct asset
     #[test]

@@ -155,7 +155,7 @@ pub trait MpcBaseType: BaseType {
 /// An implementing type is the representation of a `BaseType` in an MPC circuit
 /// *outside* of a multiprover constraint system
 #[async_trait]
-pub trait MpcType: Clone + Send {
+pub trait MpcType: Clone + Send + Sync {
     /// The native type when the value is opened out of a circuit
     type NativeType: BaseType;
     /// Get a reference to the underlying MPC fabric
@@ -167,7 +167,7 @@ pub trait MpcType: Clone + Send {
     fn to_authenticated_scalars(&self) -> Vec<AuthenticatedScalar>;
 
     /// Opens the shared type without authenticating
-    async fn open(self) -> Result<Self::NativeType, MpcError> {
+    async fn open(&self) -> Result<Self::NativeType, MpcError> {
         let self_scalars = self.to_authenticated_scalars();
         let opened_scalars = join_all(AuthenticatedScalarResult::open_batch(&self_scalars)).await;
 
@@ -175,7 +175,7 @@ pub trait MpcType: Clone + Send {
     }
 
     /// Opens the shared type and authenticates the result
-    async fn open_and_authenticate(self) -> Result<Self::NativeType, MpcError> {
+    async fn open_and_authenticate(&self) -> Result<Self::NativeType, MpcError> {
         let self_scalars = self.to_authenticated_scalars();
         let opened_scalars =
             join_all(AuthenticatedScalarResult::open_authenticated_batch(&self_scalars))

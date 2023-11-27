@@ -74,13 +74,14 @@ mod test {
         traits::{BaseType, MpcBaseType, MpcType},
         SizedWalletShare,
     };
-    use constants::{Scalar, MAX_BALANCES, MAX_ORDERS};
+    use constants::Scalar;
     use rand::{thread_rng, Rng};
     use renegade_crypto::fields::scalar_to_biguint;
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::{
         mpc_circuits::settle::settle_match,
+        test_helpers::random_indices,
         zk_circuits::{
             valid_commitments::OrderSettlementIndices,
             valid_match_settle::test_helpers::apply_match_to_shares,
@@ -149,24 +150,6 @@ mod test {
     fn random_shares() -> SizedWalletShare {
         let mut rng = thread_rng();
         SizedWalletShare::from_scalars(&mut iter::from_fn(|| Some(Scalar::random(&mut rng))))
-    }
-
-    /// Generate a random set of settlement indices
-    fn random_indices() -> OrderSettlementIndices {
-        let balance_send = random_index(MAX_BALANCES);
-        let mut balance_receive = random_index(MAX_BALANCES);
-
-        while balance_send == balance_receive {
-            balance_receive = random_index(MAX_BALANCES);
-        }
-
-        OrderSettlementIndices { order: random_index(MAX_ORDERS), balance_send, balance_receive }
-    }
-
-    // Generate a random index bounded by a max
-    fn random_index(max: usize) -> u64 {
-        let mut rng = thread_rng();
-        rng.gen_range(0..max) as u64
     }
 
     /// Tests settlement of a match into two wallets
