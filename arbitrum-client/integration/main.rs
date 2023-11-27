@@ -122,7 +122,7 @@ impl From<CliArgs> for IntegrationTestArgs {
 
 /// Sets up pre-allocated state used by the integration tests
 fn setup_pre_allocated_state(client: &ArbitrumClient) -> Result<PreAllocatedState> {
-    // Insert two new wallets into the contract
+    // Insert three new wallets into the contract
     let (index0_commitment, index0_shares) = block_on_result(deploy_new_wallet(client))?;
     let (index1_commitment, index1_shares) = block_on_result(deploy_new_wallet(client))?;
     let (index2_commitment, index2_shares) = block_on_result(deploy_new_wallet(client))?;
