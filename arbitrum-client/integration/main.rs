@@ -7,13 +7,16 @@
 mod constants;
 mod helpers;
 
+use ::constants::Scalar;
 use arbitrum_client::{
     client::{ArbitrumClient, ArbitrumClientConfig},
     constants::Chain,
 };
+use circuits::zk_circuits::test_helpers::SizedWalletShare;
 use clap::Parser;
 use constants::{DARKPOOL_CONTRACT_KEY, DARKPOOL_PROXY_CONTRACT_KEY};
-use helpers::parse_addr_from_deployments_file;
+use eyre::Result;
+use helpers::{deploy_new_wallet, parse_addr_from_deployments_file};
 use test_helpers::integration_test_main;
 use util::{logging::LevelFilter, runtime::block_on_result};
 
@@ -53,6 +56,32 @@ struct CliArgs {
 struct IntegrationTestArgs {
     /// The Arbitrum client that resolves to a locally running devnet node
     client: ArbitrumClient,
+    /// The pre-allocated state elements in the contract
+    pre_allocated_state: PreAllocatedState,
+}
+
+/// The set of pre-allocated state elements in the contract
+///
+/// We insert three wallets into the state to test against, this gives two
+/// wallets in each other's first-level Merkle authentication paths, and one
+/// with a default value in its first-level Merkle authentication path
+#[derive(Clone)]
+struct PreAllocatedState {
+    /// The commitment inserted at index 0 in the Merkle tree when integration
+    /// tests begin
+    index0_commitment: Scalar,
+    /// The commitment inserted at index 1 in the Merkle tree when integration
+    /// tests begin
+    index1_commitment: Scalar,
+    /// The commitment inserted at index 2 in the Merkle tree when integration
+    /// tests begin
+    index2_commitment: Scalar,
+    /// The public wallet shares of the first wallet added to the tree
+    index0_public_wallet_shares: SizedWalletShare,
+    /// The public wallet shares of the second wallet added to the tree
+    index1_public_wallet_shares: SizedWalletShare,
+    /// The public wallet shares of the third wallet added to the tree
+    index2_public_wallet_shares: SizedWalletShare,
 }
 
 impl From<CliArgs> for IntegrationTestArgs {
@@ -82,8 +111,30 @@ impl From<CliArgs> for IntegrationTestArgs {
         }))
         .unwrap();
 
-        Self { client }
+        let pre_allocated_state = setup_pre_allocated_state(&client).unwrap();
+
+        Self {
+            client,
+            pre_allocated_state,
+        }
     }
+}
+
+/// Sets up pre-allocated state used by the integration tests
+fn setup_pre_allocated_state(client: &ArbitrumClient) -> Result<PreAllocatedState> {
+    // Insert two new wallets into the contract
+    let (index0_commitment, index0_shares) = block_on_result(deploy_new_wallet(client))?;
+    let (index1_commitment, index1_shares) = block_on_result(deploy_new_wallet(client))?;
+    let (index2_commitment, index2_shares) = block_on_result(deploy_new_wallet(client))?;
+
+    Ok(PreAllocatedState {
+        index0_commitment,
+        index1_commitment,
+        index2_commitment,
+        index0_public_wallet_shares: index0_shares,
+        index1_public_wallet_shares: index1_shares,
+        index2_public_wallet_shares: index2_shares,
+    })
 }
 
 /// Setup code for the integration tests
