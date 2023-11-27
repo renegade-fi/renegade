@@ -11,14 +11,18 @@ use crate::mpc_gadgets::{comparators::min, fixed_point::FixedPointMpcGadget};
 /// Executes a match computation that returns matches from a given order
 /// intersection
 ///
+/// We do not need to take in both orders directly, we instead take in the
+/// advertised volume, which may be less than the order amount if the balances
+/// in the wallet do not fully capitalize the order. The validity of these
+/// amounts is constrained to be correct in the `VALID MATCH MPC` proof
+///
 /// We do not check whether the orders are valid and overlapping, this is left
 /// to the `VALID MATCH MPC` circuit, which both parties verify before opening
 /// the match result. So, if the match result is invalid, the orders don't
 /// overlap, etc; the result will never be opened, and the information never
 /// leaked. Therefore, we do not need to zero out any values in the circuit.
 pub fn compute_match(
-    order1: &AuthenticatedOrder,
-    order2: &AuthenticatedOrder,
+    party0_order: &AuthenticatedOrder,
     amount1: &AuthenticatedScalar,
     amount2: &AuthenticatedScalar,
     price: &AuthenticatedFixedPoint,
@@ -29,8 +33,7 @@ pub fn compute_match(
     let (min_index, min_base_amount) = min::<AMOUNT_BITS>(amount1, amount2, fabric);
 
     // The maximum of the two amounts minus the minimum of the two amounts
-    let max_minus_min_amount =
-        &order1.amount + &order2.amount - Scalar::from(2u64) * &min_base_amount;
+    let max_minus_min_amount = amount1 + amount2 - Scalar::from(2u64) * &min_base_amount;
 
     // The amount of quote token exchanged
     // Round down to the nearest integer value
@@ -39,11 +42,11 @@ pub fn compute_match(
 
     // Zero out the orders if any of the initial checks failed
     AuthenticatedMatchResult {
-        quote_mint: order1.quote_mint.clone(),
-        base_mint: order1.base_mint.clone(),
+        quote_mint: party0_order.quote_mint.clone(),
+        base_mint: party0_order.base_mint.clone(),
         quote_amount: quote_exchanged,
         base_amount: min_base_amount,
-        direction: order1.side.clone(),
+        direction: party0_order.side.clone(),
         max_minus_min_amount,
         min_amount_order_index: min_index.into(),
     }
@@ -74,7 +77,6 @@ mod test {
 
                 let res = compute_match(
                     &o1_shared,
-                    &o2_shared,
                     &o1_shared.amount,
                     &o2_shared.amount,
                     &price,

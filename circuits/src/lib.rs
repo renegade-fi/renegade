@@ -66,12 +66,12 @@ macro_rules! print_mpc_wire {
 macro_rules! print_multiprover_wire {
     ($x:expr, $cs:ident) => {{
         use circuit_types::traits::CircuitVarType;
+        use constants::AuthenticatedScalar;
         use futures::executor::block_on;
-        use mpc_stark::algebra::authenticated_scalar::AuthenticatedScalarResult;
         use tracing::log;
 
-        let eval = $x.eval_multiprover($cs);
-        let x_eval = block_on(x.open());
+        let eval: AuthenticatedScalar = $x.eval_multiprover($cs);
+        let x_eval = block_on(eval.open());
         log::info!("eval({}): {x_eval}", stringify!($x));
     }};
 }
@@ -142,6 +142,11 @@ pub mod test_helpers {
     use tracing::log::LevelFilter;
     use util::matching_engine::match_orders_with_max_amount;
 
+    use crate::zk_circuits::{
+        test_helpers::{MAX_BALANCES, MAX_ORDERS},
+        valid_commitments::OrderSettlementIndices,
+    };
+
     // -----------
     // | Helpers |
     // -----------
@@ -178,6 +183,24 @@ pub mod test_helpers {
     pub fn random_field_elements(n: usize) -> Vec<Scalar> {
         let mut rng = thread_rng();
         (0..n).map(|_| Scalar::random(&mut rng)).collect_vec()
+    }
+
+    /// Generate a random set of settlement indices
+    pub fn random_indices() -> OrderSettlementIndices {
+        let balance_send = random_index(MAX_BALANCES);
+        let mut balance_receive = random_index(MAX_BALANCES);
+
+        while balance_send == balance_receive {
+            balance_receive = random_index(MAX_BALANCES);
+        }
+
+        OrderSettlementIndices { order: random_index(MAX_ORDERS), balance_send, balance_receive }
+    }
+
+    /// Generate a random index bounded by a max
+    fn random_index(max: usize) -> u64 {
+        let mut rng = thread_rng();
+        rng.gen_range(0..max) as u64
     }
 
     /// Open a batch of values and join into a single future

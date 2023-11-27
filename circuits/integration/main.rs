@@ -7,7 +7,6 @@
 
 mod mpc_circuits;
 mod types;
-// mod zk_circuits;
 
 use circuit_types::Fabric;
 use clap::Parser;
