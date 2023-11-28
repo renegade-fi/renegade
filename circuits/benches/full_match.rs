@@ -4,19 +4,26 @@
 
 use std::time::{Duration, Instant};
 
+use ark_mpc::{PARTY0, PARTY1};
 use circuit_types::{
     balance::Balance,
     fixed_point::FixedPoint,
+    native_helpers::create_wallet_shares_with_randomness,
     order::Order,
-    traits::{LinkableBaseType, LinkableType, MpcBaseType, MultiproverCircuitCommitmentType},
+    traits::{BaseType, MpcBaseType},
+    Fabric,
 };
 use circuits::{
-    mpc_circuits::r#match::compute_match,
+    mpc_circuits::{r#match::compute_match, settle::settle_match},
     multiprover_prove,
-    zk_circuits::valid_match_mpc::{AuthenticatedValidMatchMpcWitness, ValidMatchMpcCircuit},
+    test_helpers::{dummy_wallet_share, random_indices},
+    zk_circuits::valid_match_settle::{
+        AuthenticatedValidMatchSettleStatement, AuthenticatedValidMatchSettleWitness,
+        SizedValidMatchSettle, ValidMatchSettle,
+    },
 };
+use constants::{Scalar, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use mpc_stark::{algebra::scalar::Scalar, MpcFabric, PARTY0, PARTY1};
 use test_helpers::mpc_network::execute_mock_mpc_with_delay;
 use tokio::runtime::Builder as RuntimeBuilder;
 
@@ -33,6 +40,13 @@ const LARGE_DELAY_MS: u64 = 100;
 // | Helpers |
 // -----------
 
+/// A witness to `VALID MATCH SETTLE` with default sizing parameters
+type SizedValidMatchSettleWitness =
+    AuthenticatedValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+/// A statement of `VALID MATCH SETTLE` with default sizing parameters
+type SizedValidMatchSettleStatement =
+    AuthenticatedValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+
 /// Benchmark a match end-to-end with a given connection latency
 ///
 /// Returns the total time taken for the critical path
@@ -40,39 +54,14 @@ async fn run_match_with_delay(delay: Duration) -> Duration {
     let (party0_time, party1_time) = execute_mock_mpc_with_delay(
         |fabric| async move {
             let start_time = Instant::now();
-            let order1 = Order::default().to_linkable().allocate(PARTY0, &fabric);
-            let balance1 = Balance::default().to_linkable().allocate(PARTY0, &fabric);
-            let amount1 = Scalar::one().allocate(PARTY0, &fabric);
 
-            let order2 = Order::default().to_linkable().allocate(PARTY1, &fabric);
-            let balance2 = Balance::default().to_linkable().allocate(PARTY1, &fabric);
-            let amount2 = Scalar::one().allocate(PARTY1, &fabric);
-            let price = FixedPoint::from_integer(1).allocate(PARTY0, &fabric);
+            // Generate a proof of `VALID MATCH SETTLE`
+            let (witness, statement) = create_witness_and_statement(&fabric).await;
+            let proof =
+                multiprover_prove::<SizedValidMatchSettle>(witness, statement, fabric).unwrap();
 
-            // Run the MPC to generate a witness for the proof
-            let match_res = compute_match(&order1, &order2, &amount1, &amount2, &price, &fabric);
-
-            // Generate a proof of `VALID MATCH MPC`
-            let witness = AuthenticatedValidMatchMpcWitness {
-                order1,
-                balance1,
-                price1: price.clone(),
-                amount1,
-                order2,
-                balance2,
-                price2: price.clone(),
-                amount2,
-                match_res: match_res.link_commitments(&fabric),
-            };
-
-            let (commitments, proof) =
-                multiprover_prove::<ValidMatchMpcCircuit>(witness, () /* statement */, fabric)
-                    .unwrap();
-
-            // Allocate both openings and then await
-            let _proof = black_box(proof.open().await.unwrap());
-            let _comms = black_box(commitments.open_and_authenticate().await.unwrap());
-
+            // Open the proof and await the result
+            let _proof = black_box(proof.open_authenticated().await.unwrap());
             start_time.elapsed()
         },
         delay,
@@ -80,6 +69,51 @@ async fn run_match_with_delay(delay: Duration) -> Duration {
     .await;
 
     Duration::max(party0_time, party1_time)
+}
+
+/// Create a witness and statement for `VALID MATCH SETTLE` in an mpc
+async fn create_witness_and_statement(
+    fabric: &Fabric,
+) -> (SizedValidMatchSettleWitness, SizedValidMatchSettleStatement) {
+    let order1 = Order::default().allocate(PARTY0, fabric);
+    let balance1 = Balance::default().allocate(PARTY0, fabric);
+    let amount1 = Scalar::one().allocate(PARTY0, fabric);
+    let ind1 = random_indices().share_public(PARTY0, fabric).await;
+    let party0_pre_shares = dummy_wallet_share().allocate(PARTY0, fabric);
+
+    let order2 = Order::default().allocate(PARTY1, fabric);
+    let balance2 = Balance::default().allocate(PARTY1, fabric);
+    let amount2 = Scalar::one().allocate(PARTY1, fabric);
+    let ind2 = random_indices().share_public(PARTY0, fabric).await;
+    let party1_pre_shares = dummy_wallet_share().allocate(PARTY1, fabric);
+    let price = FixedPoint::from_integer(1).allocate(PARTY0, fabric);
+
+    // Compute the match and settle it
+    let match_res = compute_match(&order1, &amount1, &amount2, &price, fabric);
+    let (party0_modified_shares, party1_modified_shares) =
+        settle_match(ind1, ind2, &party0_pre_shares, &party1_pre_shares, &match_res);
+
+    (
+        SizedValidMatchSettleWitness {
+            order1,
+            balance1,
+            amount1,
+            price1: price.clone(),
+            order2,
+            balance2,
+            amount2,
+            price2: price,
+            party0_public_shares: party0_pre_shares,
+            party1_public_shares: party1_pre_shares,
+            match_res,
+        },
+        SizedValidMatchSettleStatement {
+            party0_indices: ind1.allocate(PARTY0, fabric),
+            party1_indices: ind2.allocate(PARTY0, fabric),
+            party0_modified_shares,
+            party1_modified_shares,
+        },
+    )
 }
 
 /// Run a criterion benchmark on the match with delay
