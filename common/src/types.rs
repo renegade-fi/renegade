@@ -1,5 +1,4 @@
 //! Defines common types that many crates can depend on
-pub mod chain_id;
 pub mod exchange;
 pub mod gossip;
 pub mod handshake;

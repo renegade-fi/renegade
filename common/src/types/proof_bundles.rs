@@ -1,19 +1,14 @@
 //! Defines proof bundles that are passed across worker boundaries
 
+use circuit_types::PlonkProof;
 use circuits::zk_circuits::{
-    valid_commitments::{
-        SizedValidCommitmentsWitness, ValidCommitmentsStatement, ValidCommitmentsWitnessCommitment,
-    },
-    valid_match_mpc::ValidMatchMpcWitnessCommitment,
-    valid_reblind::{
-        SizedValidReblindWitness, ValidReblindStatement, ValidReblindWitnessCommitment,
-    },
-    valid_settle::{ValidSettleStatement, ValidSettleWitnessCommitment},
-    valid_wallet_create::{ValidWalletCreateStatement, ValidWalletCreateWitnessCommitment},
-    valid_wallet_update::{ValidWalletUpdateStatement, ValidWalletUpdateWitnessCommitment},
+    valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
+    valid_match_settle::ValidMatchSettleStatement,
+    valid_reblind::{SizedValidReblindWitness, ValidReblindStatement},
+    valid_wallet_create::ValidWalletCreateStatement,
+    valid_wallet_update::ValidWalletUpdateStatement,
 };
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
-use mpc_bulletproof::r1cs::R1CSProof;
 use serde::{Deserialize, Serialize};
 
 // -----------------
@@ -29,12 +24,10 @@ pub struct GenericValidWalletCreateBundle<
 > where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
-    /// A commitment to the witness type for `VALID WALLET CREATE`
-    pub commitment: ValidWalletCreateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The statement (public variables) used to create the proof
     pub statement: ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The proof itself
-    pub proof: R1CSProof,
+    pub proof: PlonkProof,
 }
 
 /// A type alias that specifies default generics for
@@ -52,13 +45,10 @@ pub struct GenericValidWalletUpdateBundle<
 > where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
-    /// A commitment to the witness type of `VALID WALLET UPDATE`
-    pub commitment:
-        ValidWalletUpdateWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
     /// The statement (public variables) used to prove `VALID WALLET UPDATE`
     pub statement: ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The proof itself
-    pub proof: R1CSProof,
+    pub proof: PlonkProof,
 }
 
 /// A type alias that specifies the default generics for
@@ -76,13 +66,10 @@ pub struct GenericValidReblindBundle<
 > where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
-    /// A commitment to the witness type of `VALID REBLIND`
-    pub commitment:
-        ValidReblindWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
     /// The statement (public variables) used to prover `VALID REBLIND`
     pub statement: ValidReblindStatement,
     /// The proof itself
-    pub proof: R1CSProof,
+    pub proof: PlonkProof,
 }
 
 /// A type alias that specifies default generics for `GenericValidReblindBundle`
@@ -98,12 +85,10 @@ pub struct GenericValidCommitmentsBundle<
 > where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
-    /// A commitment to the witness type of `VALID COMMITMENTS`
-    pub commitment: ValidCommitmentsWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The statement (public variables) used to prove `VALID COMMITMENTS`
     pub statement: ValidCommitmentsStatement,
     /// The proof itself
-    pub proof: R1CSProof,
+    pub proof: PlonkProof,
 }
 
 /// A type alias that specifies the default generics for
@@ -112,40 +97,23 @@ pub type ValidCommitmentsBundle =
     Box<GenericValidCommitmentsBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>;
 
 /// A bundle of the statement, witness commitment, and proof of `VALID MATCH
-/// MPC`
+/// SETTLE`
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenericValidMatchMpcBundle {
-    /// A commitment to the witness type of `VALID COMMITMENTS`
-    pub commitment: ValidMatchMpcWitnessCommitment,
-    /// The statement (public variables) used to prove `VALID COMMITMENTS`
-    pub statement: (),
-    /// The proof itself
-    pub proof: R1CSProof,
-}
-
-/// A type alias that boxes a `GenericValidMatchMpcBundle`
-pub type ValidMatchMpcBundle = Box<GenericValidMatchMpcBundle>;
-
-/// The response type for a request to generate a proof of `VALID SETTLE`
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenericValidSettleBundle<
+pub struct GenericMatchSettleBundle<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
 > where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    [(); 2 * MAX_BALANCES + 6 * MAX_ORDERS + 4 * MAX_FEES + 1]: Sized,
 {
-    /// A commitment to the witness type of `VALID SETTLE`
-    pub commitment: ValidSettleWitnessCommitment<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The statement (public variables) used to prove `VALID SETTLE`
-    pub statement: ValidSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    /// The statement (public variables) used to prove `VALID MATCH SETTLE`
+    pub statement: ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The proof itself
-    pub proof: R1CSProof,
+    pub proof: PlonkProof,
 }
 
-/// A type alias that specifies default generics for `GenericValidSettleBundle`
-pub type ValidSettleBundle = Box<GenericValidSettleBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>;
+/// A type alias that boxes a `GenericValidMatchMpcBundle`
+pub type ValidMatchSettleBundle = Box<GenericMatchSettleBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>;
 
 /// The bundle returned by the proof generation module
 #[derive(Clone, Debug)]
@@ -159,10 +127,8 @@ pub enum ProofBundle {
     ValidCommitments(ValidCommitmentsBundle),
     /// A witness commitment, statement, and proof of `VALID WALLET UPDATE`
     ValidWalletUpdate(ValidWalletUpdateBundle),
-    /// A witness commitment and proof of `VALID MATCH MPC`
-    ValidMatchMpc(ValidMatchMpcBundle),
-    /// A witness commitment, statement, and proof of `VALID SETTLE`
-    ValidSettle(ValidSettleBundle),
+    /// A witness commitment and proof of `VALID MATCH SETTLE`
+    ValidMatchSettle(ValidMatchSettleBundle),
 }
 
 /// Unsafe cast implementations, will panic if type is incorrect
@@ -206,22 +172,12 @@ impl From<ProofBundle> for ValidWalletUpdateBundle {
     }
 }
 
-impl From<ProofBundle> for ValidMatchMpcBundle {
+impl From<ProofBundle> for ValidMatchSettleBundle {
     fn from(bundle: ProofBundle) -> Self {
-        if let ProofBundle::ValidMatchMpc(b) = bundle {
+        if let ProofBundle::ValidMatchSettle(b) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidMatchMpc: {:?}", bundle)
-        }
-    }
-}
-
-impl From<ProofBundle> for ValidSettleBundle {
-    fn from(bundle: ProofBundle) -> Self {
-        if let ProofBundle::ValidSettle(b) = bundle {
-            b
-        } else {
-            panic!("Proof bundle is not of type ValidSettle: {:?}", bundle)
         }
     }
 }
@@ -341,68 +297,47 @@ pub mod mocks {
 
     use std::iter;
 
-    use circuit_types::traits::{BaseType, CircuitCommitmentType};
+    use ark_ec::CurveGroup;
+    use circuit_types::{traits::BaseType, PlonkProof};
     use circuits::zk_circuits::{
-        valid_commitments::{ValidCommitmentsStatement, ValidCommitmentsWitnessCommitment},
-        valid_match_mpc::ValidMatchMpcWitnessCommitment,
-        valid_reblind::{ValidReblindStatement, ValidReblindWitnessCommitment},
-        valid_settle::{ValidSettleStatement, ValidSettleWitnessCommitment},
-        valid_wallet_create::{ValidWalletCreateStatement, ValidWalletCreateWitnessCommitment},
-        valid_wallet_update::{ValidWalletUpdateStatement, ValidWalletUpdateWitnessCommitment},
+        valid_commitments::ValidCommitmentsStatement,
+        valid_match_settle::ValidMatchSettleStatement, valid_reblind::ValidReblindStatement,
+        valid_wallet_create::ValidWalletCreateStatement,
+        valid_wallet_update::ValidWalletUpdateStatement,
     };
-    use mpc_bulletproof::{r1cs::R1CSProof, InnerProductProof};
-    use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
+    use constants::{Scalar, ScalarField, SystemCurve, SystemCurveGroup};
+    use jf_primitives::pcs::prelude::Commitment;
+    use mpc_plonk::proof_system::structs::ProofEvaluations;
 
     use super::{
-        GenericValidCommitmentsBundle, GenericValidMatchMpcBundle, GenericValidReblindBundle,
-        GenericValidSettleBundle, GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle,
-        OrderValidityProofBundle, ValidCommitmentsBundle, ValidMatchMpcBundle, ValidReblindBundle,
-        ValidSettleBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
+        GenericMatchSettleBundle, GenericValidCommitmentsBundle, GenericValidReblindBundle,
+        GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle, OrderValidityProofBundle,
+        ValidCommitmentsBundle, ValidMatchSettleBundle, ValidReblindBundle,
+        ValidWalletCreateBundle, ValidWalletUpdateBundle,
     };
 
     /// Create a dummy proof bundle for `VALID WALLET CREATE`
     pub fn dummy_valid_wallet_create_bundle() -> ValidWalletCreateBundle {
         let statement = ValidWalletCreateStatement::from_scalars(&mut iter::repeat(Scalar::one()));
-        let commitment = ValidWalletCreateWitnessCommitment::from_commitments(&mut iter::repeat(
-            StarkPoint::identity(),
-        ));
-
-        Box::new(GenericValidWalletCreateBundle {
-            statement,
-            commitment,
-            proof: dummy_r1cs_proof(),
-        })
+        Box::new(GenericValidWalletCreateBundle { statement, proof: dummy_proof() })
     }
 
     /// Create a dummy proof bundle for `VALID WALLET UPDATE`
     pub fn dummy_valid_wallet_update_bundle() -> ValidWalletUpdateBundle {
         let statement = ValidWalletUpdateStatement::from_scalars(&mut iter::repeat(Scalar::one()));
-        let commitment = ValidWalletUpdateWitnessCommitment::from_commitments(&mut iter::repeat(
-            StarkPoint::identity(),
-        ));
-        let proof = dummy_r1cs_proof();
-
-        Box::new(GenericValidWalletUpdateBundle { statement, commitment, proof })
+        Box::new(GenericValidWalletUpdateBundle { statement, proof: dummy_proof() })
     }
 
     /// Create a dummy proof bundle for `VALID REBLIND`
     pub fn dummy_valid_reblind_bundle() -> ValidReblindBundle {
         let statement = ValidReblindStatement::from_scalars(&mut iter::repeat(Scalar::one()));
-        let commitment = ValidReblindWitnessCommitment::from_commitments(&mut iter::repeat(
-            StarkPoint::identity(),
-        ));
-
-        Box::new(GenericValidReblindBundle { statement, commitment, proof: dummy_r1cs_proof() })
+        Box::new(GenericValidReblindBundle { statement, proof: dummy_proof() })
     }
 
     /// Create a dummy proof bundle for `VALID COMMITMENTS`
     pub fn dummy_valid_commitments_bundle() -> ValidCommitmentsBundle {
         let statement = ValidCommitmentsStatement::from_scalars(&mut iter::repeat(Scalar::one()));
-        let commitment = ValidCommitmentsWitnessCommitment::from_commitments(&mut iter::repeat(
-            StarkPoint::identity(),
-        ));
-
-        Box::new(GenericValidCommitmentsBundle { statement, commitment, proof: dummy_r1cs_proof() })
+        Box::new(GenericValidCommitmentsBundle { statement, proof: dummy_proof() })
     }
 
     /// Create a dummy validity proof bundle
@@ -413,57 +348,37 @@ pub mod mocks {
         }
     }
 
-    /// Create a dummy proof bundle for `VALID MATCH MPC`
-    pub fn dummy_valid_match_mpc_bundle() -> ValidMatchMpcBundle {
-        let commitment = ValidMatchMpcWitnessCommitment::from_commitments(&mut iter::repeat(
-            StarkPoint::identity(),
-        ));
-
-        Box::new(GenericValidMatchMpcBundle {
-            commitment,
-            statement: (),
-            proof: dummy_r1cs_proof(),
-        })
-    }
-
-    /// Create a dummy proof bundle ofr `VALID SETTLE`
-    pub fn dummy_valid_settle_bundle() -> ValidSettleBundle {
-        let statement = ValidSettleStatement::from_scalars(&mut iter::repeat(Scalar::one()));
-        let commitment = ValidSettleWitnessCommitment::from_commitments(&mut iter::repeat(
-            StarkPoint::identity(),
-        ));
-
-        Box::new(GenericValidSettleBundle { statement, commitment, proof: dummy_r1cs_proof() })
+    /// Create a dummy proof bundle for `VALID MATCH SETTLE`
+    pub fn dummy_valid_match_settle_bundle() -> ValidMatchSettleBundle {
+        let statement = ValidMatchSettleStatement::from_scalars(&mut iter::repeat(Scalar::one()));
+        Box::new(GenericMatchSettleBundle { statement, proof: dummy_proof() })
     }
 
     /// Create a dummy R1CS proof
-    pub fn dummy_r1cs_proof() -> R1CSProof {
-        R1CSProof {
-            A_I1: StarkPoint::identity(),
-            A_O1: StarkPoint::identity(),
-            S1: StarkPoint::identity(),
-            A_I2: StarkPoint::identity(),
-            A_O2: StarkPoint::identity(),
-            S2: StarkPoint::identity(),
-            T_1: StarkPoint::identity(),
-            T_3: StarkPoint::identity(),
-            T_4: StarkPoint::identity(),
-            T_5: StarkPoint::identity(),
-            T_6: StarkPoint::identity(),
-            t_x: Scalar::one(),
-            t_x_blinding: Scalar::one(),
-            e_blinding: Scalar::one(),
-            ipp_proof: dummy_ip_proof(),
+    pub fn dummy_proof() -> PlonkProof {
+        PlonkProof {
+            wires_poly_comms: vec![],
+            prod_perm_poly_comm: dummy_commitment(),
+            split_quot_poly_comms: vec![],
+            opening_proof: dummy_commitment(),
+            shifted_opening_proof: dummy_commitment(),
+            poly_evals: dummy_poly_evals(),
+            plookup_proof: None,
         }
     }
 
-    /// Create a dummy inner product proof
-    pub fn dummy_ip_proof() -> InnerProductProof {
-        InnerProductProof {
-            L_vec: vec![StarkPoint::identity()],
-            R_vec: vec![StarkPoint::identity()],
-            a: Scalar::one(),
-            b: Scalar::one(),
+    /// Create a dummy commitment to be used as part of a `PlonkProof`
+    fn dummy_commitment() -> Commitment<SystemCurve> {
+        Commitment(<SystemCurveGroup as CurveGroup>::Affine::default())
+    }
+
+    /// Create a set of dummy polynomial evaluations to be used as part of a
+    /// `PlonkProof`
+    fn dummy_poly_evals() -> ProofEvaluations<ScalarField> {
+        ProofEvaluations {
+            wires_evals: vec![],
+            wire_sigma_evals: vec![],
+            perm_next_eval: ScalarField::default(),
         }
     }
 }
