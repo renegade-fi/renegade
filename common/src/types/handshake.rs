@@ -1,20 +1,13 @@
 //! Groups type definitions for handshake state objects used throughout the node
 
 use circuit_types::{
-    fee::LinkableFee,
-    fixed_point::FixedPoint,
-    r#match::LinkableMatchResult,
-    wallet::{LinkableWalletShare, Nullifier},
+    fee::Fee, fixed_point::FixedPoint, r#match::MatchResult, wallet::Nullifier, SizedWalletShare,
 };
-use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use constants::Scalar;
 use crossbeam::channel::Sender;
-use mpc_stark::algebra::scalar::Scalar;
 use uuid::Uuid;
 
-use super::{proof_bundles::ValidMatchMpcBundle, wallet::OrderIdentifier};
-
-/// A type alias for a linkable wallet share with default sizing parameters
-pub type SizedLinkableWalletShare = LinkableWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+use super::{proof_bundles::ValidMatchSettleBundle, wallet::OrderIdentifier};
 
 /// The role in an MPC network setup; either Dialer or Listener depending on
 /// which node initiates the connection
@@ -144,21 +137,21 @@ impl HandshakeState {
 #[derive(Clone, Debug)]
 pub struct HandshakeResult {
     /// The plaintext, opened result of the match
-    pub match_: LinkableMatchResult,
+    pub match_: MatchResult,
     /// The first party's public wallet share nullifier
     pub party0_share_nullifier: Nullifier,
     /// The second party's public wallet share nullifier,
     pub party1_share_nullifier: Nullifier,
     /// The first party's public reblinded secret shares
-    pub party0_reblinded_shares: SizedLinkableWalletShare,
+    pub party0_reblinded_shares: SizedWalletShare,
     /// The second party's public reblinded secret shares
-    pub party1_reblinded_shares: SizedLinkableWalletShare,
+    pub party1_reblinded_shares: SizedWalletShare,
     /// The proof of `VALID MATCH MPC` along with associated commitments
-    pub match_proof: ValidMatchMpcBundle,
+    pub match_settle_proof: ValidMatchSettleBundle,
     /// The first party's fee
-    pub party0_fee: LinkableFee,
+    pub party0_fee: Fee,
     /// The second party's fee
-    pub party1_fee: LinkableFee,
+    pub party1_fee: Fee,
 }
 
 impl HandshakeResult {
@@ -167,7 +160,7 @@ impl HandshakeResult {
     /// that do not cross. In this case the fields of the match will be
     /// zero'd out
     pub fn is_nontrivial(&self) -> bool {
-        self.match_.base_amount.val.ne(&Scalar::zero())
+        self.match_.base_amount != 0
     }
 }
 
@@ -175,7 +168,7 @@ impl HandshakeResult {
 pub mod mocks {
     //! Handshake object mocks for testing
     use circuit_types::fixed_point::FixedPoint;
-    use mpc_stark::algebra::scalar::Scalar;
+    use constants::Scalar;
     use rand::thread_rng;
     use uuid::Uuid;
 

@@ -23,11 +23,10 @@ use circuit_types::{
     wallet::{Nullifier, WalletShare, WalletShareStateCommitment},
     SizedWallet as SizedCircuitWallet, SizedWalletShare,
 };
-use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use constants::{Scalar, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use derivative::Derivative;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use mpc_stark::algebra::scalar::Scalar;
 use num_bigint::BigUint;
 use renegade_crypto::hash::evaluate_hash_chain;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -204,15 +203,12 @@ impl Wallet {
 
     /// Computes the commitment to the private shares of the wallet
     pub fn get_private_share_commitment(&self) -> WalletShareStateCommitment {
-        compute_wallet_private_share_commitment(self.private_shares.clone())
+        compute_wallet_private_share_commitment(&self.private_shares)
     }
 
     /// Compute the commitment to the full wallet shares
     pub fn get_wallet_share_commitment(&self) -> WalletShareStateCommitment {
-        compute_wallet_share_commitment(
-            self.blinded_public_shares.clone(),
-            self.private_shares.clone(),
-        )
+        compute_wallet_share_commitment(&self.blinded_public_shares, &self.private_shares)
     }
 
     /// Compute the wallet nullifier
@@ -304,9 +300,8 @@ pub mod mocks {
         traits::BaseType,
         SizedWalletShare,
     };
-    use constants::MERKLE_HEIGHT;
+    use constants::{Scalar, MERKLE_HEIGHT};
     use indexmap::IndexMap;
-    use mpc_stark::algebra::scalar::Scalar;
     use num_bigint::BigUint;
     use rand::thread_rng;
     use uuid::Uuid;

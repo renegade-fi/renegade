@@ -4,13 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-mocks = ["rand"]
+mocks = ["rand", "jf-primitives", "mpc-plonk", "ark-ec"]
 
 [dependencies]
 # === Cryptography + Arithmetic === #
+ark-mpc = { workspace = true }
+ark-ec = { version = "0.4", optional = true }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
-mpc-bulletproof = { workspace = true }
-mpc-stark = { workspace = true }
+jf-primitives = { workspace = true, optional = true }
+mpc-plonk = { workspace = true, optional = true }
 num-bigint = { workspace = true }
 
 # === Runtime + Networking === #
@@ -37,7 +39,6 @@ lazy_static = "1.4"
 rand = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-starknet = { workspace = true }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
 
 [dev-dependencies]

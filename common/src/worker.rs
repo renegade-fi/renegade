@@ -58,7 +58,7 @@ pub trait Worker {
 ///
 /// A worker may have more than one join handle in the case that it spawns
 /// multiple sub-worker threads. Each will be individually watched
-pub fn watch_worker<W: Worker>(worker: &mut W, failure_channel: Sender<()>) {
+pub fn watch_worker<W: Worker>(worker: &mut W, failure_channel: &Sender<()>) {
     let watcher_name = format!("{}-watcher", worker.name());
     for join_handle in worker.join() {
         let worker_name = worker.name();
