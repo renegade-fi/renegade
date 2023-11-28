@@ -10,8 +10,8 @@ pub(crate) const DEFAULT_DEVNET_PKEY: &str =
 /// The deployments key in the `deployments.json` file
 pub(crate) const DEPLOYMENTS_KEY: &str = "deployments";
 
-/// The darkpool contract key in the `deployments.json` file
-pub(crate) const DARKPOOL_CONTRACT_KEY: &str = "darkpool_contract";
+/// The Merkle contract key in the `deployments.json` file
+pub(crate) const MERKLE_CONTRACT_KEY: &str = "merkle_contract";
 
 /// The darkpool proxy contract key in the `deployments.json` file
 pub(crate) const DARKPOOL_PROXY_CONTRACT_KEY: &str = "darkpool_proxy_contract";

@@ -122,7 +122,6 @@ impl From<MerkleAuthenticationPath> for SizedMerkleOpening {
         // the leaf index
         let path_indices = (0..MERKLE_HEIGHT)
             .map(|bit| native_path.leaf_index.bit(bit as u64))
-            // .map(|bit| if bit { Scalar::one() } else { Scalar::zero() })
             .collect_vec();
 
         MerkleOpening {

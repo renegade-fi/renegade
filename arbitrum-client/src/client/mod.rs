@@ -13,7 +13,7 @@ use ethers::{
 };
 
 use crate::{
-    abi::{DarkpoolContract, DarkpoolEventSource},
+    abi::DarkpoolContract,
     constants::Chain,
     errors::{ArbitrumClientConfigError, ArbitrumClientError},
 };
@@ -32,7 +32,7 @@ pub struct ArbitrumClientConfig {
     /// The address of the darkpool implementation contract.
     ///
     /// This is used to filter for events emitted by the darkpool.
-    pub event_source: String,
+    pub merkle_event_source: String,
     /// Which chain the client should interact with,
     /// e.g. mainnet, testnet, or devnet
     pub chain: Chain,
@@ -85,11 +85,11 @@ impl ArbitrumClientConfig {
             .map_err(|e| ArbitrumClientConfigError::AddressParsing(e.to_string()))
     }
 
-    /// Parses the darkpool implementation address from the configuration,
+    /// Parses the Merkle implementation address from the configuration,
     /// from which the events are emitted, returning an
     /// [`ethers::types::Address`]
-    fn get_event_source(&self) -> Result<Address, ArbitrumClientConfigError> {
-        Address::from_str(&self.event_source)
+    fn get_merkle_event_source(&self) -> Result<Address, ArbitrumClientConfigError> {
+        Address::from_str(&self.merkle_event_source)
             .map_err(|e| ArbitrumClientConfigError::AddressParsing(e.to_string()))
     }
 
@@ -104,18 +104,6 @@ impl ArbitrumClientConfig {
         let instance = DarkpoolContract::new(contract_address, rpc_client);
         Ok(instance)
     }
-
-    /// Constructs a [`DarkpoolEventSource`] instance from the configuration,
-    /// which provides strongly-typed, RPC-client-aware bindings for accessing
-    /// darkpool events
-    pub async fn construct_event_source(
-        &self,
-    ) -> Result<DarkpoolEventSource<SignerHttpProvider>, ArbitrumClientConfigError> {
-        let rpc_client = self.get_rpc_client().await?;
-        let event_source = self.get_event_source()?;
-        let instance = DarkpoolEventSource::new(event_source, rpc_client);
-        Ok(instance)
-    }
 }
 
 /// The Arbitrum client, which provides a higher-level interface to the darkpool
@@ -124,9 +112,9 @@ impl ArbitrumClientConfig {
 pub struct ArbitrumClient {
     /// The darkpool contract instance, used to make calls to the darkpool
     darkpool_contract: DarkpoolContract<SignerHttpProvider>,
-    /// The darkpool implementation contract instance, used to filter
-    /// for events emitted from the darkpool
-    darkpool_event_source: DarkpoolEventSource<SignerHttpProvider>,
+    /// The Merkle implementation address, used to filter
+    /// for events emitted from the Merkle tree
+    merkle_event_source: Address,
     /// The block number at which the darkpool was deployed
     deploy_block: BlockNumber,
 }
@@ -135,12 +123,12 @@ impl ArbitrumClient {
     /// Constructs a new Arbitrum client from the given configuration
     pub async fn new(config: ArbitrumClientConfig) -> Result<Self, ArbitrumClientError> {
         let darkpool_contract = config.construct_contract_instance().await?;
-        let darkpool_event_source = config.construct_event_source().await?;
+        let merkle_event_source = config.get_merkle_event_source()?;
         let deploy_block = config.get_deploy_block();
 
         Ok(Self {
             darkpool_contract,
-            darkpool_event_source,
+            merkle_event_source,
             deploy_block,
         })
     }
